@@ -1,0 +1,40 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+vendor/
+
+# Logs
+*.log
+logs/
+
+# Database backups only
+backups/
+restore/
+*.sql.gz
+*.sql.enc
+*.sha256
+
+# Temporary files
+tmp/
+temp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Capacitor generated builds
+mobile/android/
+mobile/ios/
+
+# Sensitive certificates
+*.pem
+*.key
+*.crt
