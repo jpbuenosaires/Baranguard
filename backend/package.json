@@ -1,0 +1,10 @@
+{
+  "name": "baranguard-backend",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "mysql2": "^3.11.0",
+    "argon2": "^0.41.1",
+    "dotenv": "^16.4.5"
+  }
+}
