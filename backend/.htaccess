@@ -1,0 +1,7 @@
+# Defense-in-depth only: this folder (backend/) should NEVER be the Apache
+# document root — it holds config/, migrations/, scripts/, and .env
+# alongside the app code. Point your XAMPP vhost's DocumentRoot at
+# backend/public instead (see backend/scripts/README-serving.md). If this
+# rule is actually taking effect for you, fix the DocumentRoot rather than
+# removing this file.
+Require all denied
