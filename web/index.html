@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Baranguard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/styles/base.css">
+  <script>
+    // Resolved decision (DEVLOG.md): API base URL is a page-level global,
+    // not a build-time env var — §1's stack has no bundler to inject one.
+    // Default matches backend/scripts/README-serving.md Option B (PHP
+    // built-in server). Point this at the real vhost
+    // (http://baranguard.local/api/v1) for anything beyond quick local
+    // dev — see web/README-serving.md.
+    window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8080/api/v1';
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

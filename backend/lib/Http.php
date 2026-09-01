@@ -51,6 +51,19 @@ final class Http
         return $token !== '' ? $token : null;
     }
 
+    /**
+     * Added for W2 (GET /reports/summary?date_from=&date_to=) — the first
+     * endpoint in this repo that reads query-string params. No prior
+     * controller needed this, so it wasn't part of Sprint 1's original
+     * auth cut; adding it here is new scope on top of that file, not a
+     * rewrite of anything DEVLOG already lists as done.
+     */
+    public static function query(string $name): ?string
+    {
+        $value = $_GET[$name] ?? null;
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
     /** @param array<string,mixed> $body */
     public static function send(int $status, array $body): never
     {
