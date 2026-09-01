@@ -355,3 +355,189 @@ environment risk flagged earlier in this entry.
   else in §6 — all later sprints per the Sprint Map.
 - `models/` layer — direct PDO in the controller for now (see decisions
   above).
+
+---
+
+# DEVLOG — Sprint 1 continued: W2 Admin Dashboard
+
+## Today's cut
+"W2 Admin Dashboard — wire existing frontend to real GET /reports/summary"
+— one box from Sprint 1's menu. Nothing else from the remaining checklist
+(W3a/W3b Dispatch Center, W4 GIS, W5 Heatmap, W6 Blotter, W9 Reports,
+W15 Settings, W16 Citizen Inbox, W19 Public Report, Scheduler+fatigue) was
+started this session.
+
+**Scope note, not a deviation from "pick exactly ONE":** the box's own
+name ("wire *existing* frontend") assumed a frontend to wire into. There
+wasn't one — `web/src/{api,components,pages,styles}` were empty README
+stub folders (confirmed by listing the actual directory before writing
+any code, per this sprint's "ALREADY BUILT — DO NOT RECREATE" rule cutting
+both ways: nothing existed to avoid recreating). W2 is unreachable/
+untestable without *some* way to authenticate first, so this session also
+built a minimal W1 login page — not a full W1 polish pass, just the form
++ generic-failure message + redirect the spec requires — as necessary
+plumbing for W2 to exist as a working screen, the same way Sprint 1's
+auth *middleware* wasn't its own checked box but was built alongside
+auth's endpoints as required infrastructure.
+
+## Scope delivered
+Backend: `GET /reports/summary` (§6 Audit/reports, §9 W2). Frontend:
+`apiClient.js` (the one central `/api/v1` boundary per §4), a minimal W1
+login page, and the full W2 dashboard (KPI cards, trend chart,
+by-status/by-incident-type breakdowns, date-range controls, Loading/
+Empty/Error/Populated states per §8).
+
+## Files
+- `backend/lib/Http.php` (MODIFIED, additive) — added `Http::query(string
+  $name): ?string` for reading `$_GET` params. No prior endpoint read a
+  query string; this is new scope on top of an already-shipped file, not
+  a rewrite of it.
+- `backend/routes/reports.php` (NEW) — `GET /reports/summary` route entry.
+- `backend/controllers/ReportsController.php` (NEW) — `ReportsController::summary(PDO $pdo, array $identity): void`.
+- `backend/scripts/verify-w2-reports.sh` (NEW) — disposable-DB validation
+  script, same pattern as `verify-sprint0.sh`/`verify-sprint1-auth.sh`.
+- `web/index.html` (NEW) — page shell; sets `window.BARANGUARD_API_BASE_URL`.
+- `web/README-serving.md` (NEW) — how to serve the static frontend locally.
+- `web/src/api/apiClient.js` (NEW) — `login()`, `logout()`,
+  `getReportsSummary()`, `getSession()`, `isAuthenticated()`,
+  `ApiClientError`. Session (token/expiry/user) lives in `sessionStorage`.
+- `web/src/styles/base.css` (NEW) — §8 design tokens + shared layout/card/
+  status-pill/state-block/trend-chart styles.
+- `web/src/components/KpiCard.js`, `web/src/components/TrendChart.js` (NEW)
+  — PascalCase per §4; plain DOM-returning functions, no framework.
+- `web/src/pages/login.js`, `web/src/pages/admin-dashboard.js` (NEW) —
+  kebab-case per §4.
+- `web/src/main.js` (NEW) — bootstrap/router: login page if no session;
+  W2 dashboard for `admin`/`punong_barangay`; an honest "not built yet"
+  screen for any other role that successfully authenticates (Secretary/
+  Tanod can log in — §6 doesn't gate login by role, only `lupon` is
+  blocked at the account level — but their screens don't exist yet).
+
+## Resolved decisions not stated in the reference (logged, don't reopen without review)
+- **`GET /reports/summary` query params**: `date_from`/`date_to`,
+  optional, `YYYY-MM-DD`, inclusive, Asia/Manila calendar days. Default
+  (both omitted) is trailing 30 days. Range capped at 366 days → 400
+  VALIDATION_ERROR if exceeded, same as a malformed date or `date_from`
+  after `date_to`.
+- **`by_incident_type` / `by_status` shape**: objects keyed by every §5
+  enum member, value = count, always present at 0 (never omitted) — so
+  the client never has to assume which keys can appear.
+- **`trend[]` shape**: one `{date, count}` entry per calendar day in the
+  range, in order, every day present even at `count:0` — no gaps for the
+  chart to infer.
+- **`avg_response_time_minutes` is `null`, not `0`**, when no incident in
+  range reached `arrived` — a real zero-minute average and "no data" must
+  not collide on the same value. Rounded to 1 decimal otherwise.
+- **`active_tanods` is a current-state snapshot**, not filtered by the
+  date range (same-barangay active Tanods whose most recently recorded
+  `duty_status` is `on_duty`/`responding`). Sprint 1 hasn't built
+  duty-toggle yet (mobile M2, Sprint 2), so this legitimately reads 0
+  until then.
+- **Day-bucketing uses a fixed Asia/Manila = UTC+8 offset in PHP**, not
+  MariaDB's `CONVERT_TZ()` — that function depends on the
+  `mysql.time_zone_name` tables being loaded, which is not guaranteed on
+  a stock XAMPP install. `incident.created_at` is fetched as its stored
+  UTC value and converted in PHP per row instead.
+- **Web API base URL is a page-level global**
+  (`window.BARANGUARD_API_BASE_URL` in `index.html`), not a build-time env
+  var — §1's stack has no bundler to inject one. Defaults to the PHP
+  built-in server's URL (`backend/scripts/README-serving.md` Option B).
+- **Session storage is `sessionStorage`, not `localStorage`** — a session
+  that dies with the tab is the safer default for a shared-workstation
+  CAD-style system (§8 tone), while still surviving an accidental reload.
+- **`apiClient.js` hand-maps each endpoint's snake_case↔camelCase fields
+  rather than deep-recursively converting every object key.** A blind
+  recursive converter would rewrite `by_incident_type`'s enum-valued keys
+  (`physical_injury`, `traffic_incident`, ...) into `physicalInjury` etc.,
+  corrupting data identity, not just formatting a field name. Structural
+  keys convert; enum-valued keys pass through unchanged.
+- **W2's "fresh deployment" empty state** (§9: "Fresh deployments show an
+  intentional empty state") triggers on `totalIncidents === 0 &&
+  activeTanods === 0` for the *current* dashboard load — not on a
+  separate "has this barangay ever had any data" signal the API doesn't
+  provide. A quiet barangay with real historical data but zero activity
+  in a narrow selected date range still renders real (all-zero) KPI
+  cards, not the empty state — those are different facts.
+
+## Bug found and fixed during this session's own testing
+**Initial dashboard load computed its own "default 30-day range" in the
+browser's local timezone and sent it explicitly, instead of ever actually
+using the server's default.** `ReportsController`'s default range is
+correct (Asia/Manila-based), but `admin-dashboard.js` originally
+pre-filled the date inputs via client-side `Date` math and always sent
+`date_from`/`date_to` on the very first load — meaning the *client's*
+timezone, not the server's, silently defined "the last 30 days" for a
+new page load. Caught by the Playwright end-to-end check
+(`Total Incidents` KPI: expected 8, got 7) right at a UTC/Asia-Manila
+day-boundary, not by inspection. Fixed: the initial load now omits
+`date_from`/`date_to` entirely so the server's real default wins; once
+the response comes back, the date inputs are corrected to the range the
+server actually used, so a later manual "Apply" starts from truth. The
+same class of bug was caught a second time while writing
+`verify-w2-reports.sh` itself (a curl date built from `date -u`, not
+Asia/Manila) — fixed there too, both logged as the identical lesson:
+never assume the caller's "today" matches the server's Asia/Manila
+"today" without converting.
+
+## Tests performed (with evidence)
+1. **Sandbox setup**: disposable `baranguard_w2_check` DB, disposable app
+   user, PHP 8.4.21 + MariaDB 10.11.14 (this session's cloud sandbox, not
+   XAMPP — flagged below as the same "needs real-XAMPP re-run" pattern as
+   Sprint 0/1).
+2. **`verify-w2-reports.sh`** (30 checks, all passing): connectivity;
+   schema/seed setup; 401 with no `Authorization` header; 403 for
+   `secretary` and `tanod` roles; 200 for `punong_barangay` (read-only
+   role, same GET); all 7 response keys present; `total_incidents=8`,
+   `resolved_count=4`, `avg_response_time_minutes=11.3` (known dispatch
+   times 12/8/20/5 min → 11.25 → rounds to 11.3), `active_tanods=2`
+   (one `on_duty`, one `responding`, one `off_duty` correctly excluded);
+   `sum(trend[].count)` and `sum(by_status)` both equal `total_incidents`
+   (no incident lost/double-counted in bucketing); `by_incident_type` has
+   all 11 §5 enum members present; **tenant isolation** — a second
+   barangay's admin sees only their own 1 incident, and the first
+   barangay's count is unaffected (no cross-tenant leakage); malformed
+   `date_from`, `date_from` after `date_to`, and a >366-day range all
+   400; a same-day narrow range returns exactly the incidents created
+   that Asia/Manila day.
+3. **Playwright end-to-end browser test** (throwaway script, not
+   committed — no browser-automation dependency exists in this project
+   yet and one script shouldn't introduce it unasked): real Chromium
+   against the real PHP server and the real static `web/` files, not a
+   DOM-less unit test. 15/15 checks: login form has no role selector; a
+   wrong password shows the exact generic W1 message; correct login
+   (with mixed-case username, exercising server-side normalization
+   end-to-end) reaches the dashboard; all 4 KPI cards show the values
+   the seeded data implies; trend bars and status-pill breakdowns render;
+   changing the date range via Apply changes the KPIs; sign-out returns
+   to the login page; a page reload after sign-out stays on the login
+   page (session actually cleared, not just hidden); Punong Barangay
+   reaches the same dashboard labeled "(read-only)"; Secretary
+   authenticates successfully but sees the honest "not built yet" screen,
+   never a blank page or a crash.
+4. **PHP lint**: `php -l` clean on every new/modified PHP file.
+5. **JS syntax**: `node --check` clean on every new JS module.
+
+## Known environment risk to verify (same pattern as Sprint 0/1)
+All of the above ran against this cloud sandbox's MariaDB 10.11.14 + PHP
+8.4.21, not the real local XAMPP (MariaDB 10.4.32 + PHP 8.2.12). Nothing
+in `ReportsController.php` uses a MariaDB 10.5+-only feature or a
+PHP-8.3+-only language feature, but per this project's own established
+practice, this needs a real-XAMPP re-run before being trusted —
+`backend/scripts/verify-w2-reports.sh` is built for exactly that, same
+disposable/re-runnable/non-destructive pattern as the Sprint 0/1 scripts.
+
+## Not yet done (explicitly out of this cut)
+- `GET /reports/heatmap`, `GET /reports/export` — separate Sprint 1/7
+  boxes, not built here.
+- Every other Sprint 1 checklist item (W3a/W3b/W4/W5/W6/W9/W15/W16/W19,
+  scheduler+fatigue) — none started.
+- W1's full spec beyond the minimal plumbing built here (no "forgot
+  password", no further branding).
+- A nav-shell entry for anything beyond Dashboard — deliberately not
+  added, since a link to a screen that doesn't exist yet is its own kind
+  of demo tell (§8).
+- No automated JS test runner/browser-automation dependency was added to
+  the repo — the Playwright check above was this session's own
+  verification tooling, not a shipped artifact. If a future sprint wants
+  a real regression suite for the web frontend, that's a decision to make
+  explicitly, not one to back into via a leftover script.
