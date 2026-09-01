@@ -154,3 +154,204 @@ no password), and drops that user at cleanup too.
 - Final backup schedule/retention number is not yet recorded in a
   deployment runbook (§11 requires this before UAT, not before Sprint 0).
 
+---
+
+# DEVLOG — Sprint 1 (Auth backend + shared middleware)
+
+## Today's cut
+"Auth backend + middleware" — the item explicitly called out in the sprint
+prompt as unblocking every other Sprint 1 item. Nothing else from Sprint
+1's checklist (W2 Admin Dashboard, W3a/W3b Dispatch Center, W4 GIS, W5
+Heatmap, W6 Blotter, W9 Reports, W15 Settings, W16 Citizen Inbox, W19
+Public Report, Scheduler+fatigue) was started this session — stopping
+here deliberately, per the sprint prompt's own rule.
+
+## Decision required before coding, now resolved
+§1 lists the stack as "PHP 8.2 + Node.js" jointly without saying which one
+serves `/api/v1/*`; the sprint prompt requires stopping to ask rather than
+assuming. **Answer: PHP 8.2 serves the API.** Node stays for the Sprint 0
+CLI tooling (`bootstrap-admin.js`) — no Node HTTP service exists or is
+planned from this. Logged here so no later session re-decides this
+differently.
+
+## Scope delivered
+- `POST /auth/login`, `POST /auth/logout` exactly per §6's "Auth" section.
+- Shared middleware (`AuthMiddleware`) implementing §2 Rule 9's full check
+  (signature, algorithm, expiry, session existence, revocation, user
+  activation, tenant identity) as `authenticate()`, plus `requireRole()`
+  and `requireTenant()` helpers every future controller should call —
+  this is the reusable piece the rest of Sprint 1 depends on.
+- Explicitly NOT delivered this cut (own checklist item / own sprint,
+  intentionally): `POST /auth/change-password` (§6 lists it under Auth,
+  but it's not part of the "Auth backend + middleware" box specifically
+  and fits more naturally under W15 Settings/Account later).
+
+## Files
+- `config/env.php` — minimal `.env` loader for PHP (no `vlucas/phpdotenv`
+  dependency was ever actually added despite `db.php`'s Sprint 0 comment
+  mentioning it — Apache/PHP doesn't read `.env` on its own the way
+  Node's `dotenv` does, so without this, `getenv()` returned nothing
+  under Apache). Never overrides an already-set env var, same precedence
+  as the Node side.
+- `config/autoload.php` — minimal PSR-4-ish autoloader for the
+  `Baranguard\` namespace. No Composer dependency (nothing else in
+  `backend/` uses one yet). One class per file, enforced by hand — see
+  the ApiError/JwtException bug below for what happens when that's
+  violated.
+- `services/auth/Jwt.php` — HS256 JWT encode/decode, explicit `alg`
+  allow-list (never trusts a token-supplied algorithm), `hash_equals` for
+  signature comparison. `services/auth/JwtException.php` — split out
+  after a real bug (see below).
+- `services/auth/PasswordPolicy.php`, `services/auth/Username.php` — the
+  password composition rule (12+ chars, upper+lower+digit) and username
+  normalization rule (trim, lowercase, `^[a-z0-9._-]{3,64}$`), extracted
+  as the canonical definitions matching Sprint 0's `bootstrap-admin.js`
+  exactly, since PHP and Node can't literally share code. If this policy
+  ever changes, update both by hand.
+- `lib/Http.php` — JSON body/header helpers, response envelope.
+  `lib/ApiError.php` — the exception used to short-circuit to a standard
+  error response. Split into its own file for the same reason as
+  JwtException.
+- `middleware/AuthMiddleware.php` — `authenticate()` (strict gate for
+  ordinary protected endpoints), `resolveForLogout()` (deliberately
+  looser — see logout idempotency bug below), `requireRole()`,
+  `requireTenant()`.
+- `controllers/AuthController.php` — `login()`, `logout()`.
+- `routes/auth.php` — route table consumed by `public/index.php`'s
+  router; the pattern every future `routes/*.php` file should follow.
+- `public/index.php` — front controller. All `/api/v1/*` traffic routes
+  through here. `public/.htaccess` — rewrites everything to `index.php`.
+  `backend/.htaccess` — defense-in-depth `Require all denied` in case the
+  Apache DocumentRoot ever gets pointed at `backend/` instead of
+  `backend/public/`.
+- `scripts/README-serving.md` — how to actually serve this under XAMPP
+  (vhost pointed at `backend/public`) or via PHP's built-in server for
+  quick local testing.
+- `scripts/verify-sprint1-auth.sh` — new end-to-end validation script,
+  same pattern as `verify-sprint0.sh`: disposable database
+  (`baranguard_sprint1_check`), disposable app-user, disposable test
+  admin (hashed with PHP's own `password_hash()`, not Node's argon2 —
+  deliberately, to prove PHP `password_verify()` actually accepts the
+  hash format this app will really store), a PHP dev server on a
+  throwaway port, then cleans up everything including the process.
+- `.env.example` — added `CORS_ALLOWED_ORIGIN` (default `*`, fine for a
+  local-only/LAN system per Rule 7) and a one-liner for generating a real
+  `JWT_SECRET`.
+
+## Resolved decisions not stated in the reference (flagging per the
+## prompt's own instruction to log deviations)
+- **Error envelope shape**: §6 lists the error *codes* but never the JSON
+  shape. Chosen: `{"error":{"code":"...","message":"..."}}`. Every future
+  controller must reuse this exact shape via `Http::sendError()`, not
+  invent a new one.
+- **Login lockout numbers**: the `user` table schema clearly expects a
+  lockout policy (`failed_login_attempts`,
+  `login_failure_window_started_at`, `locked_until`) but no section
+  states the actual thresholds. Chosen: 5 failed attempts inside a
+  rolling 15-minute window locks the account for 15 minutes.
+- **CORS**: not addressed anywhere in the reference. Chosen: permissive
+  default (`*`) since this is a locally-hosted, LAN-only system (Rule 7),
+  overridable via `.env`.
+- **`backend/public/` folder**: §4's folder list doesn't include
+  `/public`, but serving PHP directly out of `backend/` (which also holds
+  `.env`, `config/`, `migrations/`, `scripts/`) from the web root would
+  expose all of that over HTTP. `backend/public/index.php` as the actual
+  Apache DocumentRoot, with a defense-in-depth `backend/.htaccess`
+  denying everything, is the standard fix — added deliberately, not an
+  oversight of the documented structure.
+- **No Composer / no model layer yet**: JWT and autoloading are hand
+  -rolled (see Jwt.php's own comment) rather than pulling in
+  `firebase/php-jwt` and Composer for one algorithm. `AuthController`
+  talks to PDO directly rather than through a `models/` abstraction —
+  reasonable for two endpoints; revisit if `models/` earns its keep once
+  more controllers exist.
+- **405 for wrong-method-on-known-route**: §6's standard error list
+  doesn't include 405; used it anyway with `VALIDATION_ERROR` as the
+  closest documented code, since it's a real, correct HTTP status the
+  router needs to return.
+
+## Bugs found and fixed during this session's own testing (not just
+## claimed — here's what testing against a real server actually caught)
+1. **Logout idempotency**: §6 requires "the server ignores a second
+   logout safely" (`{success:true}` both times). The first implementation
+   ran `logout()` through the same strict `AuthMiddleware::authenticate()`
+   gate as every other protected endpoint — which correctly rejects an
+   already-revoked session with 401. That's right for ordinary endpoints,
+   wrong for logout's own idempotency requirement. Fixed with a separate
+   `AuthMiddleware::resolveForLogout()` that still requires a validly
+   -signed, unexpired token tied to a real session row (a forged/garbage
+   token still gets 401), but tolerates the session already being
+   revoked. Caught by testing logout twice in a row against a live
+   server, not by inspection.
+2. **Autoloader / one-class-per-file violation**: `ApiError` was
+   originally declared inside `lib/Http.php` alongside the `Http` class,
+   and `JwtException` inside `services/auth/Jwt.php` alongside `Jwt`. The
+   autoloader maps class name -> exact filename, so this only "worked" by
+   accident whenever something loaded `Http`/`Jwt` first (which every
+   end-to-end HTTP request through `index.php` does, since `index.php`
+   uses `Http::` constantly). A direct unit test of
+   `AuthMiddleware::requireRole()` in isolation — which never touches
+   `Http` — hit a fatal "Class ApiError not found". Fixed by splitting
+   both exception classes into their own files
+   (`lib/ApiError.php`, `services/auth/JwtException.php`). Caught by
+   testing the middleware directly, not only through the full HTTP path
+   — worth remembering for future sessions: end-to-end tests can mask
+   autoloading bugs that only show up when a class is used from an
+   unexpected entry point.
+
+## Tests performed (with evidence)
+All of the above was built and first validated in a Linux sandbox running
+MariaDB 10.11 + PHP 8.4 (not the real XAMPP target) — same caveat as
+Sprint 0's first pass. Ran there: empty-body validation, unknown-user and
+wrong-password both returning the identical generic 401 (Rule 9's
+externally-indistinguishable requirement), 5-failed-attempts lockout then
+still-denied on the 6th attempt with the *correct* password, successful
+login with un-normalized username casing/whitespace, logout, idempotent
+repeat logout, garbage-token and missing-header both 401, unknown route
+404, wrong method 405, CORS preflight headers present, sliding renewal
+(`X-Renewed-Token`) verified directly against `AuthMiddleware::authenticate()`
+once remaining session life dropped below 50%, and audit_log rows for
+`login_success`/`login_failure`/`logout` present with no password ever
+appearing in `metadata_json`. `scripts/verify-sprint1-auth.sh` automates
+all of the HTTP-level checks (22 checks) and is safely re-runnable.
+
+**Still needs to be re-run against the real local XAMPP MariaDB 10.4 +
+PHP install** — `backend/scripts/verify-sprint1-auth.sh` is written for
+exactly that, same non-destructive disposable-database pattern as
+`verify-sprint0.sh`. Not yet run there as of this entry.
+
+## Known environment risk to verify on the real XAMPP install
+PHP's `password_verify()` must support `argon2id` for login to work
+at all (Sprint 0's `bootstrap-admin.js` hashes with Node's argon2
+library; Sprint 1's login verifies with PHP's native `password_verify()`
+— the hash format is a standard PHC string so this should just work, but
+older/minimal PHP builds sometimes lack Argon2 support compiled in).
+`verify-sprint1-auth.sh` checks `password_algos()` up front and prints a
+warning if `argon2id` isn't listed, rather than failing silently later.
+
+## Real-environment validation (XAMPP MariaDB 10.4.32 + PHP 8.2.12)
+Re-run on 2026-09-01 against the real local XAMPP install via
+`backend/scripts/verify-sprint1-auth.sh` — MariaDB 10.4.32 and PHP
+8.2.12, both matching this sprint's actual targets (not just
+version-compatible substitutes, unlike Sprint 0's first sandbox pass).
+All 22 checks passed: schema/seed/test-admin setup, empty-body
+validation, unknown-user and wrong-password both 401 with the identical
+message, 5-attempt lockout enforced (6th attempt denied even with the
+correct password), successful login with un-normalized username
+casing/whitespace, logout, idempotent repeat logout (200 both times, one
+audit row), garbage-token and missing-header both 401, unknown route 404,
+wrong method 405, CORS preflight headers, and full audit trail with no
+password ever appearing in `metadata_json`. The `password_algos()`
+argon2id check passed silently (no warning) — confirms the Node
+(bootstrap) → PHP (login) argon2id hash handoff works on the actual
+target environment, not just in the sandbox. This closes out the one
+environment risk flagged earlier in this entry.
+
+## Not yet done (explicitly out of this cut)
+- `POST /auth/change-password` (§6 Auth section, but not in today's box).
+- Every other Sprint 1 checklist item (W2/W3a/W3b/W4/W5/W6/W9/W15/W16/
+  W19, scheduler+fatigue) — none started.
+- User/device-lifecycle endpoints, incidents, dispatch, GPS, everything
+  else in §6 — all later sprints per the Sprint Map.
+- `models/` layer — direct PDO in the controller for now (see decisions
+  above).
