@@ -7,6 +7,16 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/styles/base.css">
+  <!--
+    MapLibre GL JS v4.7.1, vendored locally under /vendor (not loaded from
+    a public CDN) — §1 names MapLibre as the stack's mapping library, and
+    §2 Rule 7 treats this as a locally hosted system with no internet
+    exposure assumed, so the library file itself shouldn't require a live
+    internet connection to load. See web/src/components/LiveMap.js for
+    the shared component this backs (W3's map pane + W4 both use it).
+  -->
+  <link rel="stylesheet" href="/vendor/maplibre-gl/maplibre-gl.css">
+  <script src="/vendor/maplibre-gl/maplibre-gl.js"></script>
   <script>
     // Resolved decision (DEVLOG.md): API base URL is a page-level global,
     // not a build-time env var — §1's stack has no bundler to inject one.

@@ -226,3 +226,185 @@ export async function getReportsSummary({ dateFrom, dateTo } = {}) {
     trend: json.trend,
   };
 }
+
+// --- Users (Tanod-picker name lookup only) ----------------------------------
+
+/** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
+export async function getUsers({ role, page, limit } = {}) {
+  const json = await request('GET', '/users', { query: { role, page, limit }, auth: true });
+  return {
+    items: json.items.map((row) => ({
+      userId: row.user_id,
+      fullName: row.full_name,
+      username: row.username,
+      role: row.role, // enum value, unconverted
+      contactNumber: row.contact_number,
+      isActive: row.is_active,
+      createdAt: row.created_at,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
+}
+
+// --- Incidents (W3 Dispatch Center queue) -----------------------------------
+
+/** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
+export async function getIncidents({ status, priority, page, limit } = {}) {
+  const json = await request('GET', '/incidents', {
+    query: { status, priority, page, limit },
+    auth: true,
+  });
+  return {
+    items: json.items.map((row) => ({
+      incidentId: row.incident_id,
+      barangayId: row.barangay_id,
+      reportedBy: row.reported_by,
+      incidentType: row.incident_type, // enum value, unconverted
+      priority: row.priority,          // enum value, unconverted
+      status: row.status,              // enum value, unconverted
+      source: row.source,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      createdAt: row.created_at,
+      deviceOfflineCreatedAt: row.device_offline_created_at,
+      syncedAt: row.synced_at,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
+}
+
+// --- Dispatch (W3a/W3b) -----------------------------------------------------
+
+/** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
+export async function getDispatches({ status, page, limit } = {}) {
+  const json = await request('GET', '/dispatch', { query: { status, page, limit }, auth: true });
+  return {
+    items: json.items.map(mapDispatch),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
+}
+
+/**
+ * POST /dispatch. `requestId` is the required idempotency key (§6) — the
+ * caller generates one UUID per user-initiated create action and reuses
+ * it only on an automatic retry of that same action, never on a new one.
+ */
+export async function createDispatch({ incidentId, tanodId, requestId }) {
+  const json = await request('POST', '/dispatch', {
+    body: { incident_id: incidentId, tanod_id: tanodId, request_id: requestId },
+    auth: true,
+  });
+  return {
+    dispatchId: json.dispatch_id,
+    status: json.status,
+    incidentId: json.incident_id,
+    routeStatus: json.route_status,
+  };
+}
+
+export async function cancelDispatch(dispatchId) {
+  const json = await request('PATCH', `/dispatch/${dispatchId}/cancel`, { body: {}, auth: true });
+  return {
+    dispatchId: json.dispatch_id,
+    status: json.status,
+    incidentId: json.incident_id,
+    incidentStatus: json.incident_status,
+    cancelledAt: json.cancelled_at,
+  };
+}
+
+function mapDispatch(row) {
+  return {
+    dispatchId: row.dispatch_id,
+    incidentId: row.incident_id,
+    tanodId: row.tanod_id,
+    priority: row.priority,
+    routeJson: row.route_json,
+    routeStatus: row.route_status,
+    status: row.status,
+    dispatchedAt: row.dispatched_at,
+    enRouteAt: row.en_route_at,
+    arrivedAt: row.arrived_at,
+    completedAt: row.completed_at,
+    cancelledAt: row.cancelled_at,
+  };
+}
+
+// --- GPS (W4 GIS Live Tracking) ---------------------------------------------
+
+/** @returns {Promise<Array<object>>} */
+export async function getGpsLive(barangayId) {
+  const json = await request('GET', '/gps/live', { query: { barangay_id: barangayId }, auth: true });
+  return json.items.map((row) => ({
+    userId: row.user_id,
+    fullName: row.full_name,
+    dispatchId: row.dispatch_id,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    accuracyM: row.accuracy_m,
+    recordedAt: row.recorded_at,
+    receivedAt: row.received_at,
+    ageSeconds: row.age_seconds,
+    isStale: row.is_stale,
+  }));
+}
+
+export async function getGpsHistory({ userId, dateFrom, dateTo, page, limit }) {
+  const json = await request('GET', '/gps/history', {
+    query: { user_id: userId, date_from: dateFrom, date_to: dateTo, page, limit },
+    auth: true,
+  });
+  return {
+    items: json.items.map((row) => ({
+      trackId: row.track_id,
+      userId: row.user_id,
+      dispatchId: row.dispatch_id,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      accuracyM: row.accuracy_m,
+      recordedAt: row.recorded_at,
+      receivedAt: row.received_at,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
+}
+
+// --- Tanod SOS (read-only this sprint) --------------------------------------
+
+/** @returns {Promise<Array<object>>} */
+export async function getTanodSos({ status } = {}) {
+  const json = await request('GET', '/tanod-sos', { query: { status }, auth: true });
+  return json.items.map((row) => ({
+    sosId: row.sos_id,
+    userId: row.user_id,
+    dispatchId: row.dispatch_id,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    triggeredAt: row.triggered_at,
+    receivedAt: row.received_at,
+    status: row.status, // enum value, unconverted
+    acknowledgedAt: row.acknowledged_at,
+    resolvedAt: row.resolved_at,
+  }));
+}
+
+// --- Duty status (read-only this sprint: Admin's Tanod-picker source) ------
+
+/** @returns {Promise<Array<{userId:number, status:string, channel:string, changedAt:string}>>} */
+export async function getDutyStatus(barangayId) {
+  const json = await request('GET', '/duty-status', { query: { barangay_id: barangayId }, auth: true });
+  return json.items.map((row) => ({
+    userId: row.user_id,
+    status: row.status, // enum value, unconverted
+    channel: row.channel,
+    changedAt: row.changed_at,
+  }));
+}

@@ -5,7 +5,12 @@
 
 # Dependencies
 node_modules/
-vendor/
+/backend/vendor/
+# NOTE: intentionally scoped to /backend/vendor/ (PHP Composer, unused so
+# far) rather than a bare "vendor/", which would also match and silently
+# swallow web/vendor/ — the vendored MapLibre GL JS committed on purpose
+# for the W4/W3 LiveMap component (Sprint 1). Caught via `git check-ignore
+# -v` before committing; a bare "vendor/" pattern had been hiding it.
 
 # Logs
 *.log
