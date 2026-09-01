@@ -1,4 +1,5 @@
 # DEVLOG — Sprint 0 (Local MariaDB Setup + Executable Schema)
+# then Sprint 1 (Auth backend + shared middleware) below
 
 ## Scope delivered
 (a) env-driven DB connection (Node + PHP), (b) migrations for §5, applied in
@@ -110,6 +111,39 @@ backup/restore baseline.
   that it satisfies §6 in full — revisit when `POST /auth/login` /
   password-policy enforcement is implemented.
 
+## Real-environment validation (XAMPP MariaDB 10.4.32)
+All of the above was originally validated against MariaDB 10.11.14 in a
+Linux sandbox, not the actual local XAMPP target — flagged as an open item
+at the time. Re-run on 2026-09-01 against the real local XAMPP install
+(MariaDB 10.4.32, confirmed via `SELECT VERSION()`), using
+`backend/scripts/verify-sprint0.sh` (new — an end-to-end runner that
+exercises steps 1-10 below against a disposable `baranguard_sprint0_check`
+database plus a disposable `baranguard_sprint0_check_restore_test`
+database, so the real `baranguard` database and `backend/backups/` are
+never touched, and drops both throwaway databases at the end):
+
+- Empty-DB apply: 0001_baseline_schema.sql — 0 errors, 24 tables, 57 FKs.
+- Rollback/reapply: down.sql drops all 24 tables cleanly; forward
+  migration re-applies cleanly, 24 tables again.
+- Seed idempotency: 0002_seed_barangays.sql run twice — barangay count
+  stayed at 4, `user` table stayed empty.
+- Bootstrap CLI: happy-path admin creation (role=admin, active, valid
+  `$argon2id$` hash), `bootstrap_first_admin` audit_log row present,
+  one-time guard correctly refused a second bootstrap for the same
+  barangay, and a full grep of `backend/` (excluding the verification
+  script and log files themselves) found the test password nowhere.
+- Backup/restore: `backup.sh` produced an encrypted `.sql.enc` + `.sha256`
+  with no plaintext `.sql` left on disk; `restore.sh` verified the
+  checksum, decrypted, and restored into a separate `_restore_test`
+  database with 24 tables and the expected 4 barangay rows.
+
+Result: 19/19 checks passed. `backend/scripts/verify-sprint0.sh` is kept
+in the repo as a repeatable regression check for future changes to the
+Sprint 0 migration/seed/bootstrap/backup chain — it creates its own
+disposable MySQL user for the bootstrap/backup steps (since both scripts
+correctly reject an empty `DB_PASSWORD`, and XAMPP's default `root` has
+no password), and drops that user at cleanup too.
+
 ## Not yet done (explicitly out of Sprint 0's cut)
 - No API/route/controller code (Sprints 1+).
 - No `/sms`, `/dispatch`, `/incidents` endpoints — this session was schema
@@ -119,3 +153,4 @@ backup/restore baseline.
   retention table would apply to.
 - Final backup schedule/retention number is not yet recorded in a
   deployment runbook (§11 requires this before UAT, not before Sprint 0).
+
