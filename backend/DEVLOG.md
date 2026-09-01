@@ -541,3 +541,261 @@ disposable/re-runnable/non-destructive pattern as the Sprint 0/1 scripts.
   verification tooling, not a shipped artifact. If a future sprint wants
   a real regression suite for the web frontend, that's a decision to make
   explicitly, not one to back into via a leftover script.
+
+---
+
+# DEVLOG — Sprint 1 continued: W4 GIS Live Tracking + W3a/W3b Dispatch Center
+
+## Today's cut
+
+Three Sprint 1 boxes together — **W4 (GIS Live Tracking / shared LiveMap
+component)**, **W3a (Dispatch Center — pending queue + Tanod picker,
+read-only)**, and **W3b (Dispatch Center — create/cancel actions)** — per
+a deliberate, explicit exception to the "pick exactly ONE" rule that the
+user confirmed twice in the prior (Claude Desktop) session, continued
+here in Claude Code. Each of the three is tested individually below with
+real evidence, same discipline as every other entry — the exception is
+only about how many get built before the next check-in, not about
+skipping tests.
+
+## Bug found before any new code was written (blocking, not part of this
+## cut's own scope, fixed anyway)
+
+`web/index.html` and every existing page/component (`admin-dashboard.js`,
+`login.js`, `KpiCard.js`, `TrendChart.js`, `main.js`) referenced
+`web/src/styles/base.css` and its class names from the moment they were
+written, but the file was never actually committed — confirmed via
+`git show <W2 commit> --stat`, which touched 13 files and never touched
+`web/src/styles/`. The dashboard as committed was unstyled. Recreated
+from §8's tokens plus every class name the existing files already
+depended on (see Frontend section below) — necessary infrastructure, not
+new scope creep, the same category as W2's own minimal login page.
+
+## Resolved decisions (logged per this project's own convention; not to
+## be re-opened without explicit review)
+
+- **Router path params.** `backend/public/index.php`'s router previously
+  discarded `preg_match` capture groups since no route needed one yet.
+  `PATCH /dispatch/:id/cancel` does. Fixed by capturing groups and
+  forwarding them as trailing handler args
+  (`$handler($pdo, $identity, ...$routeParams)`); PHP silently ignores
+  extra args on handlers that don't declare them, so `auth.php`/
+  `reports.php`'s existing 2-arg handlers are unaffected.
+- **LiveMap rendering.** Real MapLibre GL JS v4.7.1, vendored locally
+  under `web/vendor/maplibre-gl/` (fetched once during this build, no
+  runtime CDN dependency — consistent with this being a locally hosted
+  system, §2 Rule 7) rather than loaded from a public CDN or hand-rolled
+  as a non-MapLibre canvas. No basemap tile source is wired up (none
+  exists for the web dashboard yet, online or offline — that's a
+  distinct, undocumented-for-Sprint-1 dependency): the style is a flat
+  background color plus GeoJSON layers for the barangay boundary (when a
+  future endpoint provides `boundary_geojson`) and DOM markers for
+  Tanods/SOS. No barangay-metadata endpoint exists yet either, so the map
+  falls back to a fixed default view centered on Pilar, Sorsogon
+  (~12.9186°N, 123.6667°E) and fits bounds to whatever markers are
+  actually present.
+- **Notification creation is explicitly NOT done in `POST /dispatch`.**
+  §6 says dispatch creation "records notification creation," but the
+  notification/notification_target/notification_delivery data model and
+  FCM/SMS transports are their own separate, not-yet-built Sprint 4
+  boxes. Writing a bare `notification` row now, with no transport able to
+  attempt delivery, would jump ahead of that dependency chain. Deferred
+  deliberately.
+- **OSRM is not wired up.** Every new dispatch gets
+  `route_status="unavailable"`, `route_json=NULL` — treated identically
+  to a documented OSRM failure (§6 already says this doesn't roll back
+  dispatch creation).
+- **Tanod eligibility ("on-duty")** for assignment means the Tanod's most
+  recent `duty_status` row is exactly `on_duty` — `responding` (already
+  engaged) and `off_duty` are excluded. Every reason a `tanod_id` is
+  unusable (wrong barangay, wrong role, inactive, not on-duty, doesn't
+  exist) collapses into the same generic `422 UNPROCESSABLE_ENTITY` so
+  error-message differences can't leak cross-tenant information.
+  Incident not-found/wrong-barangay uses the existing `requireTenant()`
+  404 pattern.
+- **`GET /users?role=`** (§6 "Users & device lifecycle") was added this
+  session even though CLAUDE.md's original endpoint list didn't name it —
+  necessary plumbing, same precedent as W2's login page: the Tanod picker
+  needs Tanod full names, and `GET /duty-status?barangay_id=`'s
+  documented shape (§6) is fixed to `{user_id,status,channel,changed_at}`
+  with no name. Only list (`index`) is built.
+- **`GET /gps/live`'s response shape** (§6 only describes it in prose):
+  one row per same-barangay active Tanod who has *ever* recorded a GPS
+  point — their single latest `gps_track` row plus freshness. A Tanod
+  with no GPS row at all is simply absent from `items`, which is the
+  correct, expected state until Sprint 3's mobile GPS broadcast exists.
+  `age_seconds`/`is_stale` are computed against `recorded_at`, not
+  `received_at`.
+- **`GET /gps/history`'s date-range cap** reuses `ReportsController`'s
+  366-day cap for consistency.
+- **`GET /duty-status`'s two query shapes** (`?user_id=me` vs.
+  `?barangay_id=`) are dispatched inside one controller method rather
+  than two routes, since they share a path per §6.
+- **Dispatch queue empty-state / SOS banner:** the pending queue and
+  active-dispatch sections each show their own inline empty note rather
+  than taking over the whole screen (the map pane is a permanent
+  operational surface, not conditionally hidden). SOS banner text is
+  driven by `status !== 'resolved'` (acknowledged still shows, per §9's
+  explicit note that acknowledging an SOS doesn't clear the banner).
+- **GIS Live Tracking polling:** §6 doesn't specify a refresh cadence for
+  `GET /gps/live`; resolved at 15 seconds — same order of magnitude as
+  the 120-second staleness threshold without being wasteful. A background
+  poll failure doesn't blank an already-populated map; only the first
+  load shows the Error state.
+
+## Scope delivered
+
+Backend: `GET /incidents` (tenant-scoped queue read), `POST /dispatch` +
+`GET /dispatch` + `PATCH /dispatch/:id/cancel` (full create/list/cancel
+per §6, idempotent via `request_id`), `GET /gps/live` + `GET /gps/history`
+(freshness/staleness per §6), `GET /tanod-sos` (read-only), `GET
+/duty-status` (both query shapes), `GET /users?role=` (Tanod-picker
+plumbing). Frontend: `base.css` (recreated — see bug above), vendored
+MapLibre GL JS, the shared `LiveMap` component, `AppShell` component
+(extracted sidebar/topbar, now shared by all three screens instead of
+duplicated), `dispatch-center.js` (W3a+W3b), `gis-live-tracking.js` (W4),
+and `apiClient.js`/`main.js` updates to wire it all together.
+
+## Files
+
+- `backend/public/index.php` (MODIFIED, additive) — router now forwards
+  regex capture groups to handlers as trailing args.
+- `backend/controllers/IncidentsController.php` (NEW) — `GET /incidents`.
+- `backend/controllers/DispatchController.php` (NEW) — `create()`,
+  `index()`, `cancel()`.
+- `backend/controllers/GpsController.php` (NEW) — `live()`, `history()`.
+- `backend/controllers/TanodSosController.php` (NEW) — `index()` only.
+- `backend/controllers/DutyStatusController.php` (NEW) — `index()`
+  dispatching both query shapes.
+- `backend/controllers/UsersController.php` (NEW) — `index()` only.
+- `backend/routes/incidents.php`, `dispatch.php`, `gps.php`,
+  `tanod-sos.php`, `duty-status.php`, `users.php` (NEW) — one route table
+  per resource, same shape as `routes/reports.php`.
+- `backend/scripts/verify-w3-w4-dispatch-gis.sh` (NEW) — disposable-DB
+  end-to-end validation script, same pattern as the three prior verify
+  scripts.
+- `web/src/styles/base.css` (NEW — recreated, see bug above).
+- `web/vendor/maplibre-gl/maplibre-gl.js` + `.css` (NEW) — vendored
+  v4.7.1.
+- `web/src/components/LiveMap.js` (NEW) — the shared map component;
+  `setMarkers()`, `setSosMarkers()`, `setBoundary()`, `destroy()`.
+- `web/src/components/AppShell.js` (NEW) — sidebar+topbar, extracted from
+  `admin-dashboard.js`'s previously inlined version now that 3 screens
+  need it; role-filters nav items per §9 (Dispatch Center hidden from PB,
+  who has no read-only variant built this session).
+- `web/src/pages/dispatch-center.js` (NEW) — W3a+W3b.
+- `web/src/pages/gis-live-tracking.js` (NEW) — W4.
+- `web/src/pages/admin-dashboard.js` (MODIFIED) — now uses `AppShell`
+  instead of its own inlined sidebar/topbar.
+- `web/src/api/apiClient.js` (MODIFIED, additive) — `getUsers`,
+  `getIncidents`, `getDispatches`, `createDispatch`, `cancelDispatch`,
+  `getGpsLive`, `getGpsHistory`, `getTanodSos`, `getDutyStatus`.
+- `web/src/main.js` (MODIFIED) — routes between all 3 built screens by
+  role, stops a page's polling handle before navigating away.
+- `web/index.html` (MODIFIED) — added vendored MapLibre `<link>`/
+  `<script>` tags.
+
+## Bug found and fixed during this session's own testing (not just
+## claimed — here's what a real browser run actually caught)
+
+**Sign-out from the GIS Live Tracking page crashed instead of returning
+to the login page.** `gis-live-tracking.js`'s own sign-out handler calls
+`stopPolling()` immediately (for responsiveness) before calling
+`logout()`; `main.js`'s `boot()` *also* calls the page's stored stop
+handle at the start of every navigation, including the one that follows
+sign-out — so `stopPolling()` legitimately runs twice for the same
+`LiveMap` instance. `LiveMap.destroy()` wasn't idempotent: a second
+`map.remove()` threw inside MapLibre's own teardown ("Cannot read
+properties of undefined (reading 'destroy')"), which aborted `boot()`
+before it could render the login page, leaving `#app` empty. Caught by a
+real Playwright run against a live Chromium browser (not a stub), not by
+inspection — the first two run attempts also surfaced two flaws in the
+*test script itself* (a fixed 500ms wait that was occasionally too short
+for the login-error assertion, and a GPS-freshness assertion that broke
+because real wall-clock time had passed between seeding "15 seconds ago"
+and actually running the check) before this real app bug surfaced as a
+`pageerror` in the browser console. Fixed by making `LiveMap.destroy()`
+idempotent (guards on a `destroyed` flag) — the more robust fix than
+trying to guarantee every caller invokes it exactly once.
+
+## Tests performed (with evidence)
+
+1. **PHP lint** (`php -l`) and **JS syntax check** (`node --check`) clean
+   on every new/modified file.
+2. **`backend/scripts/verify-w3-w4-dispatch-gis.sh` against the real
+   local XAMPP install (MariaDB 10.4.32 + PHP 8.2.12)** — 37/37 checks
+   passed: `GET /users?role=tanod` role-gating + count; `GET /incidents`
+   pending-queue count + tenant isolation; `GET /duty-status` both query
+   shapes + role-gating; `GET /gps/live` freshness/staleness (fresh vs.
+   5-minute-old point) + tenant isolation (404 cross-tenant); `GET
+   /gps/history` + Admin-only gating (PB correctly 403); `GET /tanod-sos`
+   + role-gating; `POST /dispatch` create + `route_status=unavailable` +
+   incident transitions to `dispatched` + **idempotent retry returns the
+   same dispatch (verified only 1 row exists in the DB, not just that the
+   response looked right)** + off-duty-Tanod rejection (422) +
+   already-dispatched-incident rejection (409) + cross-tenant-Tanod
+   rejection (422) + Secretary role-gating (403); `GET /dispatch` tenant/
+   ownership scoping (Tanod forced to own, cross-tenant Admin sees 0);
+   `PATCH /dispatch/:id/cancel` cross-tenant rejection (404) + successful
+   cancel + incident reverts to `pending` + re-cancel rejection (409).
+   One real bug was caught and fixed *while writing this script*: two
+   incidents seeded with identical `created_at` timestamps meant `ORDER
+   BY created_at DESC` had no guaranteed tie-break, so a test variable
+   selecting "the first pending incident" could nondeterministically
+   resolve to either row — fixed by selecting each incident by its
+   distinct `priority` value instead of list position, in the test script
+   only (not an application bug).
+3. **Real browser walkthrough via Playwright (`playwright-core` driving a
+   pre-cached local Chromium, throwaway tooling — not committed, same
+   precedent as W2's own Playwright script)** against the real PHP dev
+   server + real static `web/` files, using a fresh disposable database
+   (`baranguard_browser_check`, dropped after) with realistic seed data —
+   23/23 checks passed after two real bugs were found and fixed (one in
+   this session's application code, `LiveMap.destroy()` above; the rest
+   were flaws in the test script itself, corrected before the final run):
+   login form has no role selector; wrong password shows the exact
+   generic W1 message; correct login reaches the Dashboard; Admin sees
+   all 3 real nav items; Dashboard KPI cards render; Dispatch Center shows
+   the 2 seeded pending incidents; the SOS banner renders for the seeded
+   active SOS; a MapLibre `<canvas>` actually renders inside the map
+   pane; the Tanod picker shows exactly the 1 on-duty Tanod by name;
+   assigning moves the incident from pending to active and it reflects
+   live in the UI without a page reload; cancelling returns it to
+   pending; navigating to GIS Live Tracking renders its own MapLibre
+   canvas + roster; a fresh (seconds-old) GPS point shows "Live"; sign-out
+   returns to the login page; a reload after sign-out stays on the login
+   page (session actually cleared, not just hidden); zero *unexpected*
+   console/page errors across the entire run (the only two logged were
+   the intentional wrong-password 401 and the browser's own automatic
+   `/favicon.ico` 404 — confirmed via direct `curl`, not assumed).
+4. All test infrastructure (disposable database, disposable app-user,
+   throwaway Playwright script/scratch directory, both dev-server
+   processes) was torn down after — the real `baranguard` database and
+   `backend/.env` were never touched, same as every prior verify script
+   in this repo.
+
+## Known environment note (same pattern as every prior entry)
+
+Both the shell-script and browser validation above ran directly against
+this session's real local XAMPP install (MariaDB 10.4.32 + PHP 8.2.12) —
+not a cloud sandbox — since this session runs as Claude Code on the
+actual workstation. No separate "real-XAMPP re-run" caveat applies here,
+unlike Sprint 0/1/W2's first passes.
+
+## Not yet done (explicitly out of this cut)
+
+- Real basemap tiles (online or offline/MBTiles) for the web LiveMap —
+  distinct, undocumented-for-Sprint-1 dependency; the map currently shows
+  a flat background + boundary/marker layers only.
+- A barangay-metadata endpoint (so `boundary_geojson` can actually reach
+  the frontend) — `LiveMap.setBoundary()` exists and is ready for one.
+- `POST /dispatch/:id/status` (Tanod/Admin status transitions
+  assigned→en_route→arrived→completed) — a separate, unbuilt §6 endpoint;
+  W3's active-dispatch cards show status but have no transition UI yet
+  beyond Cancel.
+- Notification creation on dispatch (Sprint 4, see resolved decisions).
+- `POST /tanod-sos`, acknowledge/resolve endpoints (Sprint 4).
+- `POST /duty-status` (Tanod toggle, mobile M2/Sprint 2).
+- `GET /users` create/edit/reset-password (separate §6 endpoints; only
+  list was built, as Tanod-picker plumbing).
+- W5–W20 web screens and all mobile screens — untouched.

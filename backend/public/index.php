@@ -67,7 +67,7 @@ try {
 
     $matchedPathButNotMethod = false;
     foreach ($routes as [$routeMethod, $pattern, $handler, $requiresAuth]) {
-        if (!preg_match($pattern, $path)) {
+        if (!preg_match($pattern, $path, $matches)) {
             continue;
         }
         $matchedPathButNotMethod = true;
@@ -75,14 +75,23 @@ try {
             continue;
         }
 
+        // Numbered capture groups (e.g. the `(\d+)` in
+        // `#^/dispatch/(\d+)/cancel$#`) become trailing handler args, in
+        // order, after $pdo/$identity — the first route needing this is
+        // PATCH /dispatch/:id/cancel. $matches[0] is the whole match, not
+        // a capture, so it's dropped. Extra args are silently ignored by
+        // PHP on handlers that don't declare them, so every existing
+        // 2-arg handler (auth.php/reports.php) keeps working unchanged.
+        $routeParams = array_slice($matches, 1);
+
         if ($requiresAuth) {
             $identity = AuthMiddleware::authenticate($pdo);
             if ($identity['renewedToken'] !== null) {
                 header('X-Renewed-Token: ' . $identity['renewedToken']);
             }
-            $handler($pdo, $identity);
+            $handler($pdo, $identity, ...$routeParams);
         } else {
-            $handler($pdo);
+            $handler($pdo, ...$routeParams);
         }
         exit; // Handlers call Http::send()/sendError(), which already exit.
     }

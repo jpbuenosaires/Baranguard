@@ -13,6 +13,7 @@
 import { getReportsSummary, logout, ApiClientError } from '../api/apiClient.js';
 import { KpiCard } from '../components/KpiCard.js';
 import { TrendChart } from '../components/TrendChart.js';
+import { AppShell } from '../components/AppShell.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -37,51 +38,20 @@ function daysAgoIso(n) {
  * @param {HTMLElement} root
  * @param {{fullName:string, role:string}} user
  * @param {() => void} onLoggedOut
+ * @param {(page: string) => void} navigate
  */
-export function renderAdminDashboardPage(root, user, onLoggedOut) {
+export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   root.innerHTML = '';
 
-  const shell = document.createElement('div');
-  shell.className = 'app-shell';
-
-  // --- Sidebar --------------------------------------------------------
-  const sidebar = document.createElement('div');
-  sidebar.className = 'sidebar';
-  sidebar.innerHTML = `
-    <div class="sidebar__brand">Baranguard</div>
-    <nav class="sidebar__nav">
-      <div class="sidebar__nav-item active">Dashboard</div>
-    </nav>
-  `;
-  // Only Dashboard exists so far (this is the only built screen this
-  // session) — no placeholder links to unbuilt screens, per §8's
-  // "no demo/prototype tells" (a dead nav link is its own kind of tell).
-
-  // --- Main column ------------------------------------------------------
-  const mainColumn = document.createElement('div');
-  mainColumn.className = 'main-column';
-
-  const topbar = document.createElement('div');
-  topbar.className = 'topbar';
-  const roleLabel = user.role === 'punong_barangay' ? 'Punong Barangay (read-only)' : 'Admin';
-  topbar.innerHTML = `<div><h2>Admin Dashboard</h2></div>`;
-  const topbarUser = document.createElement('div');
-  topbarUser.className = 'topbar__user';
-  const userLabel = document.createElement('span');
-  userLabel.textContent = `${user.fullName} · ${roleLabel}`;
-  const logoutButton = document.createElement('button');
-  logoutButton.className = 'ghost';
-  logoutButton.textContent = 'Sign out';
-  logoutButton.addEventListener('click', async () => {
-    logoutButton.disabled = true;
+  const shell = AppShell(user, 'dashboard', navigate, async () => {
+    shell.logoutButton.disabled = true;
     await logout();
     onLoggedOut();
   });
-  topbarUser.append(userLabel, logoutButton);
-  topbar.appendChild(topbarUser);
+  const { content } = shell;
+  root.appendChild(shell.el);
 
-  const content = document.createElement('div');
-  content.className = 'page-content';
+  content.innerHTML = '<h2 style="margin-bottom:16px;">Admin Dashboard</h2>';
 
   // Date range controls
   const controls = document.createElement('div');
@@ -108,9 +78,6 @@ export function renderAdminDashboardPage(root, user, onLoggedOut) {
   const body = document.createElement('div');
 
   content.append(controls, body);
-  mainColumn.append(topbar, content);
-  shell.append(sidebar, mainColumn);
-  root.appendChild(shell);
 
   applyButton.addEventListener('click', () => load(fromInput.value, toInput.value));
   // Initial load sends NO date params, deliberately — see load()'s comment
