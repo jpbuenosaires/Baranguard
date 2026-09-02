@@ -27,7 +27,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   IonButton,
   IonContent,
-  IonInput,
   IonItem,
   IonList,
   IonNote,
@@ -35,6 +34,7 @@ import {
   IonSpinner,
   IonText,
 } from '@ionic/react';
+import { TextField } from '../components/FormFields';
 import { ApiError, getMapPackage, login, registerDevice } from '../services/apiService';
 import { getDeviceId, getFcmToken } from '../services/deviceIdentity';
 
@@ -89,23 +89,20 @@ const LoginPage: React.FC = () => {
           <form onSubmit={handleSubmit}>
             <IonList inset>
               <IonItem>
-                <IonInput
+                <TextField
                   label="Username"
-                  labelPlacement="floating"
                   autocapitalize="off"
-                  autocorrect={false}
                   value={username}
-                  onIonInput={(e) => setUsername(e.detail.value ?? '')}
+                  onChange={setUsername}
                   disabled={busy}
                 />
               </IonItem>
               <IonItem>
-                <IonInput
+                <TextField
                   label="Password"
-                  labelPlacement="floating"
                   type="password"
                   value={password}
-                  onIonInput={(e) => setPassword(e.detail.value ?? '')}
+                  onChange={setPassword}
                   disabled={busy}
                 />
               </IonItem>
