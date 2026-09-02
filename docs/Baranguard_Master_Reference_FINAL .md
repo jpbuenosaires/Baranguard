@@ -23,7 +23,7 @@ here — check §5/§6/§7 first.
 |---|---|
 | Backend | PHP 8.2 + Node.js |
 | Web frontend | Vanilla JS (ES2023+), plain CSS — no framework, no Tailwind/Bootstrap |
-| Mobile | Ionic 8.8.5 + Capacitor 8.0 (Android) — pinned tested baseline; patch updates require compatibility testing |
+| Mobile | Ionic React 9.0.1 + Capacitor 8.5.1 (Android) — pinned tested baseline; patch updates require compatibility testing. (Was "Ionic 8.8.5 + Capacitor 8.0" until 2026-09-02: the Ionic starter now generates Ionic 9 + React 19, and adopting it rather than downgrading was an explicit decision at scaffold time — see `backend/DEVLOG.md`. The **React** flavor was also chosen here; §1 previously named only "Ionic", which left Angular/React/Vue undecided.) |
 | Server-side DB | MariaDB 10.4 (via XAMPP) — MySQL-compatible; local current system of record; cloud hosting deferred/undecided |
 | Mobile local DB | SQLite via a Capacitor SQLite plugin (e.g. `@capacitor-community/sqlite`), encrypted-database mode (SQLCipher-backed) |
 | AI | Llama-SEA-LION-v3.5-8B-R via Ollama, self-hosted on the unified administrative workstation — **never** an external AI API |
