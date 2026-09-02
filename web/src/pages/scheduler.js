@@ -19,13 +19,32 @@
  * treats an offset-less timestamp as Asia/Manila wall-clock time, which
  * is exactly what typing "2026-09-10 14:30" into this form means.
  *
+ * 2026-09-02: migrated the shift list from stacked cards with a
+ * replace-my-own-DOM edit toggle to the shared `DataTable` component —
+ * one row is put into "edit mode" by re-rendering the whole table with
+ * that row's cells swapped for live inputs (`editingShiftId` in the
+ * closure below), rather than DataTable gaining any new per-row-state
+ * API of its own. Error handling on save moved from an inline error box
+ * to `alert()`, matching every other DataTable-based action this session
+ * (Swap Requests' Approve/Deny, Fatigue Flags' Acknowledge) for
+ * consistency, rather than reinventing an inline error slot for just
+ * this one screen.
+ *
  * kebab-case filename per §4 (pages/routes convention).
  */
 
 import { getUsers, getShifts, createShift, updateShift, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
+import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
+
+const SCHEDULE_COLUMNS = [
+  { key: 'tanod', label: 'Tanod' },
+  { key: 'zone', label: 'Patrol Zone' },
+  { key: 'timeRange', label: 'Time Range' },
+  { key: 'actions', label: 'Actions', align: 'right' },
+];
 
 /** @param {HTMLElement} root @param {{fullName:string, role:string}} user */
 export function renderSchedulerPage(root, user, onLoggedOut, navigate) {
@@ -51,6 +70,9 @@ export function renderSchedulerPage(root, user, onLoggedOut, navigate) {
   layout.append(listPane, formPane);
 
   let tanods = [];
+  let shifts = [];
+  let editingShiftId = null;
+
   load();
 
   async function load() {
@@ -61,18 +83,32 @@ export function renderSchedulerPage(root, user, onLoggedOut, navigate) {
         getShifts({ limit: 100 }),
       ]);
       tanods = tanodsRes.items;
+      shifts = shiftsRes.items;
+      editingShiftId = null;
       const newFormPane = buildNewShiftForm(tanods, load);
       layout.replaceChild(newFormPane, formPane);
       formPane = newFormPane;
-      if (shiftsRes.items.length === 0) {
+      if (shifts.length === 0) {
         renderEmpty(listPane);
       } else {
-        renderList(listPane, shiftsRes.items, tanods, load);
+        renderShiftsTable();
       }
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading the scheduler.';
       renderError(listPane, message, load);
     }
+  }
+
+  function renderShiftsTable() {
+    renderList(listPane, shifts, tanods, editingShiftId, startEdit, cancelEdit, load);
+  }
+  function startEdit(shiftId) {
+    editingShiftId = shiftId;
+    renderShiftsTable();
+  }
+  function cancelEdit() {
+    editingShiftId = null;
+    renderShiftsTable();
   }
 }
 
@@ -191,64 +227,71 @@ function buildNewShiftForm(tanods, onCreated) {
   return card;
 }
 
-function renderList(container, shifts, tanods, onChanged) {
+function renderList(container, shifts, tanods, editingShiftId, onStartEdit, onCancelEdit, onSaved) {
   container.innerHTML = '';
-  const list = document.createElement('div');
-  list.className = 'stack';
-  for (const shift of shifts) {
-    list.appendChild(renderShiftRow(shift, tanods, onChanged));
-  }
-  container.appendChild(list);
-}
 
-function renderShiftRow(shift, tanods, onChanged) {
-  const row = document.createElement('div');
-  row.className = 'card card--compact';
+  // Populated on the editing row's first cell (column order below always
+  // puts 'tanod' first) and read back by that same row's later cells —
+  // see the file header comment for why DataTable itself doesn't need to
+  // know about this.
+  let editFields = null;
 
-  const view = document.createElement('div');
-  const name = tanodName(tanods, shift.userId);
-  view.innerHTML = `
-    <div class="row-between">
-      <strong>${name ? escapeHtml(name) : 'Unassigned'}</strong>
-      <button class="ghost" type="button">Edit</button>
-    </div>
-    <div class="label" style="text-transform:none; font-weight:400; margin-top:4px;">
-      ${shift.patrolZone ? escapeHtml(shift.patrolZone) + ' · ' : ''}${new Date(shift.startAt).toLocaleString()} – ${new Date(shift.endAt).toLocaleString()}
-    </div>
-  `;
-  row.appendChild(view);
-  view.querySelector('button').addEventListener('click', () => {
-    row.innerHTML = '';
-    row.appendChild(buildEditForm(shift, tanods, onChanged, () => {
-      row.innerHTML = '';
-      row.appendChild(view);
-    }));
+  const table = DataTable({
+    columns: SCHEDULE_COLUMNS,
+    rows: shifts,
+    rowKey: (row) => row.shiftId,
+    caption: 'Shift schedule',
+    renderCell: (shift, key) => {
+      const isEditing = shift.shiftId === editingShiftId;
+
+      if (isEditing) {
+        if (key === 'tanod') {
+          editFields = buildEditFields(shift, tanods);
+          return editFields.tanodSelect;
+        }
+        if (key === 'zone') return editFields.zoneInput;
+        if (key === 'timeRange') return editFields.timeRangeWrap;
+        if (key === 'actions') return buildEditActions(shift, editFields, onSaved, onCancelEdit);
+        return '';
+      }
+
+      switch (key) {
+        case 'tanod': {
+          const name = tanodName(tanods, shift.userId);
+          if (!name) return 'Unassigned';
+          const span = document.createElement('span');
+          span.textContent = name;
+          return span;
+        }
+        case 'zone': {
+          if (!shift.patrolZone) return '—';
+          const span = document.createElement('span');
+          span.textContent = shift.patrolZone;
+          return span;
+        }
+        case 'timeRange':
+          return `${new Date(shift.startAt).toLocaleString()} – ${new Date(shift.endAt).toLocaleString()}`;
+        case 'actions': {
+          const button = document.createElement('button');
+          button.className = 'ghost';
+          button.type = 'button';
+          button.textContent = 'Edit';
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            onStartEdit(shift.shiftId);
+          });
+          return button;
+        }
+        default:
+          return '';
+      }
+    },
   });
-
-  return row;
+  container.appendChild(table);
 }
 
-function buildEditForm(shift, tanods, onChanged, onCancel) {
-  const form = document.createElement('form');
-  form.className = 'stack';
-  form.noValidate = true;
-
-  const errorBox = document.createElement('div');
-  errorBox.className = 'login-form__error';
-  errorBox.setAttribute('role', 'alert');
-  errorBox.hidden = true;
-
-  // Unique ids per shift — several rows can be in edit mode at once, so
-  // a shared static id would collide (§ux: every field needs its own
-  // programmatically-linked label, not just adjacent text).
-  const idPrefix = `scheduler-edit-${shift.shiftId}`;
-
-  const tanodLabel = document.createElement('label');
-  tanodLabel.className = 'sr-only';
-  tanodLabel.htmlFor = `${idPrefix}-tanod`;
-  tanodLabel.textContent = 'Tanod';
+function buildEditFields(shift, tanods) {
   const tanodSelect = document.createElement('select');
-  tanodSelect.id = `${idPrefix}-tanod`;
   const unassignedOption = document.createElement('option');
   unassignedOption.value = '';
   unassignedOption.textContent = 'Unassigned';
@@ -261,85 +304,70 @@ function buildEditForm(shift, tanods, onChanged, onCancel) {
     tanodSelect.appendChild(option);
   }
 
-  const zoneLabel = document.createElement('label');
-  zoneLabel.className = 'sr-only';
-  zoneLabel.htmlFor = `${idPrefix}-zone`;
-  zoneLabel.textContent = 'Patrol zone';
   const zoneInput = document.createElement('input');
-  zoneInput.id = `${idPrefix}-zone`;
   zoneInput.type = 'text';
   zoneInput.value = shift.patrolZone || '';
   zoneInput.placeholder = 'Patrol zone';
 
-  const startLabel = document.createElement('label');
-  startLabel.className = 'sr-only';
-  startLabel.htmlFor = `${idPrefix}-start`;
-  startLabel.textContent = 'Start';
   const startInput = document.createElement('input');
-  startInput.id = `${idPrefix}-start`;
   startInput.type = 'datetime-local';
   startInput.value = toDatetimeLocal(shift.startAt);
-
-  const endLabel = document.createElement('label');
-  endLabel.className = 'sr-only';
-  endLabel.htmlFor = `${idPrefix}-end`;
-  endLabel.textContent = 'End';
   const endInput = document.createElement('input');
-  endInput.id = `${idPrefix}-end`;
   endInput.type = 'datetime-local';
   endInput.value = toDatetimeLocal(shift.endAt);
+  const timeRangeWrap = document.createElement('div');
+  timeRangeWrap.style.cssText = 'display:flex; flex-direction:column; gap:0.25rem;';
+  timeRangeWrap.append(startInput, endInput);
 
-  const actions = document.createElement('div');
-  actions.style.cssText = 'display:flex; gap:8px;';
+  return { tanodSelect, zoneInput, startInput, endInput, timeRangeWrap };
+}
+
+function buildEditActions(shift, editFields, onSaved, onCancelEdit) {
+  const wrap = document.createElement('span');
+  wrap.className = 'data-table__actions';
+
   const saveButton = document.createElement('button');
-  saveButton.type = 'submit';
   saveButton.className = 'primary';
+  saveButton.type = 'button';
   saveButton.textContent = 'Save';
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'ghost';
-  cancelButton.textContent = 'Cancel';
-  cancelButton.addEventListener('click', onCancel);
-  actions.append(saveButton, cancelButton);
-
-  form.append(errorBox, tanodLabel, tanodSelect, zoneLabel, zoneInput, startLabel, startInput, endLabel, endInput, actions);
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    errorBox.hidden = true;
+  saveButton.addEventListener('click', async (event) => {
+    event.stopPropagation();
     saveButton.disabled = true;
     saveButton.textContent = 'Saving…';
     try {
       await updateShift(shift.shiftId, {
-        userId: tanodSelect.value ? Number(tanodSelect.value) : null,
-        patrolZone: zoneInput.value.trim() || null,
-        startAt: startInput.value,
-        endAt: endInput.value,
+        userId: editFields.tanodSelect.value ? Number(editFields.tanodSelect.value) : null,
+        patrolZone: editFields.zoneInput.value.trim() || null,
+        startAt: editFields.startInput.value,
+        endAt: editFields.endInput.value,
         version: shift.version ?? 1,
       });
-      onChanged();
+      onSaved();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Could not save this shift.';
-      errorBox.textContent = message;
-      errorBox.hidden = false;
+      alert(message);
       saveButton.disabled = false;
       saveButton.textContent = 'Save';
     }
   });
 
-  return form;
+  const cancelButton = document.createElement('button');
+  cancelButton.className = 'ghost';
+  cancelButton.type = 'button';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    onCancelEdit();
+  });
+
+  wrap.append(saveButton, cancelButton);
+  return wrap;
 }
 
 function toDatetimeLocal(isoString) {
   const d = new Date(isoString);
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 function renderLoading(container) {
@@ -351,7 +379,7 @@ function renderLoading(container) {
   for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:64px; border-radius:12px;';
+    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);

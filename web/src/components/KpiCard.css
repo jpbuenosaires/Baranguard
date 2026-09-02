@@ -17,6 +17,7 @@
 .kpi-card__label { margin-bottom: var(--spacing-sm); }
 .kpi-card__value { font-size: var(--font-size-3xl); font-weight: 700; }
 .kpi-card__value.empty { color: var(--color-text-secondary); font-size: var(--font-size-lg); font-weight: 500; }
+.kpi-card__delta { margin-top: var(--spacing-xs); font-size: var(--font-size-label); color: var(--color-text-tertiary); }
 
 @media (max-width: 1024px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }

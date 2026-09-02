@@ -12,6 +12,15 @@
  * Admin-only, so this page is not offered to PB at all; §9 gives PB no
  * separate W3 variant).
  *
+ * 2026-09-02: migrated both queue lists (Pending Incidents, Active
+ * Dispatches) from stacked cards to the shared `DataTable` component —
+ * each row's own inline Tanod-picker/Assign or Cancel action now lives
+ * in a `data-table__actions` cell instead of a card footer. Priority is
+ * now conveyed by the dedicated Priority column's pill color, which
+ * replaces the old card-level `dispatch-card--critical`/`--high`
+ * left-dot accent (the same signal, in a real column instead of a
+ * decorative pseudo-element — nothing lost, just relocated).
+ *
  * kebab-case filename per §4.
  */
 
@@ -23,10 +32,12 @@ import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { StatStrip } from '../components/StatStrip.js';
+import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 const PRIORITY_LABELS = { normal: 'Normal', high: 'High', critical: 'Critical' };
+const PRIORITY_PILL_CLASS = { normal: 'status-pill--neutral', high: 'status-pill--pending', critical: 'status-pill--critical' };
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
   domestic_dispute: 'Domestic Dispute', vandalism: 'Vandalism',
@@ -34,6 +45,19 @@ const INCIDENT_TYPE_LABELS = {
   medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
+
+const PENDING_COLUMNS = [
+  { key: 'type', label: 'Type' },
+  { key: 'priority', label: 'Priority' },
+  { key: 'reported', label: 'Reported' },
+  { key: 'assign', label: 'Assign', align: 'right' },
+];
+const ACTIVE_COLUMNS = [
+  { key: 'dispatch', label: 'Dispatch' },
+  { key: 'tanod', label: 'Tanod' },
+  { key: 'status', label: 'Status' },
+  { key: 'actions', label: 'Actions', align: 'right' },
+];
 
 /**
  * @param {HTMLElement} root
@@ -136,9 +160,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     if (pendingIncidents.length === 0) {
       queue.appendChild(emptyNote('No pending incidents right now.'));
     } else {
-      for (const incident of pendingIncidents) {
-        queue.appendChild(renderPendingCard(incident, eligibleTanods, () => load()));
-      }
+      queue.appendChild(renderPendingIncidentsTable(pendingIncidents, eligibleTanods, () => load()));
     }
 
     const activeTitle = document.createElement('h3');
@@ -150,9 +172,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     if (activeDispatches.length === 0) {
       queue.appendChild(emptyNote('No active dispatches right now.'));
     } else {
-      for (const dispatch of activeDispatches) {
-        queue.appendChild(renderActiveCard(dispatch, () => load()));
-      }
+      queue.appendChild(renderActiveDispatchesTable(activeDispatches, () => load()));
     }
 
     const mapPane = document.createElement('div');
@@ -170,85 +190,122 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   }
 }
 
-function renderPendingCard(incident, eligibleTanods, onChanged) {
-  const card = document.createElement('div');
-  card.className = 'dispatch-card' + (incident.priority === 'critical' ? ' dispatch-card--critical' : incident.priority === 'high' ? ' dispatch-card--high' : '');
+function renderPendingIncidentsTable(incidents, eligibleTanods, onChanged) {
+  return DataTable({
+    columns: PENDING_COLUMNS,
+    rows: incidents,
+    rowKey: (row) => row.incidentId,
+    caption: 'Pending incidents',
+    renderCell: (incident, key) => {
+      switch (key) {
+        case 'type':
+          return INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
+        case 'priority': {
+          const span = document.createElement('span');
+          span.className = `status-pill ${PRIORITY_PILL_CLASS[incident.priority] || 'status-pill--neutral'}`;
+          span.textContent = PRIORITY_LABELS[incident.priority] || incident.priority;
+          return span;
+        }
+        case 'reported':
+          return `#${incident.incidentId} · ${new Date(incident.createdAt).toLocaleString()}`;
+        case 'assign':
+          return renderAssignCell(incident, eligibleTanods, onChanged);
+        default:
+          return '';
+      }
+    },
+  });
+}
 
-  const header = document.createElement('div');
-  header.className = 'dispatch-card__header';
-  header.innerHTML = `<strong>${INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType}</strong>
-    <span class="status-pill status-pill--pending">${PRIORITY_LABELS[incident.priority] || incident.priority}</span>`;
-
-  const meta = document.createElement('div');
-  meta.className = 'dispatch-card__meta';
-  meta.textContent = `Incident #${incident.incidentId} · Reported ${new Date(incident.createdAt).toLocaleString()}`;
-
-  const actions = document.createElement('div');
-  actions.className = 'dispatch-card__actions';
+function renderAssignCell(incident, eligibleTanods, onChanged) {
+  const wrap = document.createElement('span');
+  wrap.className = 'data-table__actions';
 
   if (eligibleTanods.length === 0) {
     const note = document.createElement('span');
-    note.className = 'label';
+    note.className = 'note';
     note.textContent = 'No on-duty Tanods available';
-    actions.appendChild(note);
-  } else {
-    const select = document.createElement('select');
-    select.style.width = 'auto';
-    for (const tanod of eligibleTanods) {
-      const option = document.createElement('option');
-      option.value = String(tanod.userId);
-      option.textContent = tanod.fullName;
-      select.appendChild(option);
-    }
-    const assignButton = document.createElement('button');
-    assignButton.className = 'primary';
-    assignButton.textContent = 'Assign';
-    assignButton.addEventListener('click', async () => {
-      assignButton.disabled = true;
-      assignButton.textContent = 'Assigning…';
-      try {
-        await createDispatch({
-          incidentId: incident.incidentId,
-          tanodId: Number(select.value),
-          requestId: crypto.randomUUID(),
-        });
-        onChanged();
-      } catch (err) {
-        assignButton.disabled = false;
-        assignButton.textContent = 'Assign';
-        const message = err instanceof ApiClientError ? err.message : 'Could not create the dispatch.';
-        alert(message);
-      }
-    });
-    actions.append(select, assignButton);
+    wrap.appendChild(note);
+    return wrap;
   }
 
-  card.append(header, meta, actions);
-  return card;
+  const select = document.createElement('select');
+  select.style.width = 'auto';
+  for (const tanod of eligibleTanods) {
+    const option = document.createElement('option');
+    option.value = String(tanod.userId);
+    option.textContent = tanod.fullName;
+    select.appendChild(option);
+  }
+  const assignButton = document.createElement('button');
+  assignButton.className = 'primary';
+  assignButton.textContent = 'Assign';
+  assignButton.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    assignButton.disabled = true;
+    assignButton.textContent = 'Assigning…';
+    try {
+      await createDispatch({
+        incidentId: incident.incidentId,
+        tanodId: Number(select.value),
+        requestId: crypto.randomUUID(),
+      });
+      onChanged();
+    } catch (err) {
+      assignButton.disabled = false;
+      assignButton.textContent = 'Assign';
+      const message = err instanceof ApiClientError ? err.message : 'Could not create the dispatch.';
+      alert(message);
+    }
+  });
+  wrap.append(select, assignButton);
+  return wrap;
 }
 
-function renderActiveCard(dispatch, onChanged) {
-  const card = document.createElement('div');
-  card.className = 'dispatch-card';
+function renderActiveDispatchesTable(dispatches, onChanged) {
+  return DataTable({
+    columns: ACTIVE_COLUMNS,
+    rows: dispatches,
+    rowKey: (row) => row.dispatchId,
+    caption: 'Active dispatches',
+    renderCell: (dispatch, key) => {
+      switch (key) {
+        case 'dispatch': {
+          const wrap = document.createElement('div');
+          const main = document.createElement('div');
+          main.textContent = `#${dispatch.dispatchId} · Incident #${dispatch.incidentId}`;
+          const sub = document.createElement('div');
+          sub.className = 'data-table__sub';
+          sub.textContent = `Since ${new Date(dispatch.dispatchedAt).toLocaleString()}`
+            + (dispatch.routeStatus === 'unavailable' ? ' · Route unavailable' : '');
+          wrap.append(main, sub);
+          return wrap;
+        }
+        case 'tanod':
+          return `Tanod #${dispatch.tanodId}`;
+        case 'status': {
+          const span = document.createElement('span');
+          span.className = 'status-pill status-pill--info';
+          span.textContent = dispatch.status.replace('_', ' ');
+          return span;
+        }
+        case 'actions':
+          return renderCancelCell(dispatch, onChanged);
+        default:
+          return '';
+      }
+    },
+  });
+}
 
-  const header = document.createElement('div');
-  header.className = 'dispatch-card__header';
-  header.innerHTML = `<strong>Dispatch #${dispatch.dispatchId}</strong>
-    <span class="status-pill status-pill--info">${dispatch.status.replace('_', ' ')}</span>`;
-
-  const meta = document.createElement('div');
-  meta.className = 'dispatch-card__meta';
-  meta.textContent = `Incident #${dispatch.incidentId} · Tanod #${dispatch.tanodId} · Since ${new Date(dispatch.dispatchedAt).toLocaleString()}`;
-  if (dispatch.routeStatus === 'unavailable') {
-    meta.textContent += ' · Route unavailable';
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'dispatch-card__actions';
+function renderCancelCell(dispatch, onChanged) {
+  const wrap = document.createElement('span');
+  wrap.className = 'data-table__actions';
   const cancelButton = document.createElement('button');
   cancelButton.className = 'danger';
   cancelButton.textContent = 'Cancel';
-  cancelButton.addEventListener('click', async () => {
+  cancelButton.addEventListener('click', async (event) => {
+    event.stopPropagation();
     if (!confirm(`Cancel dispatch #${dispatch.dispatchId}? The incident will return to the pending queue.`)) return;
     cancelButton.disabled = true;
     cancelButton.textContent = 'Cancelling…';
@@ -262,10 +319,8 @@ function renderActiveCard(dispatch, onChanged) {
       alert(message);
     }
   });
-  actions.appendChild(cancelButton);
-
-  card.append(header, meta, actions);
-  return card;
+  wrap.appendChild(cancelButton);
+  return wrap;
 }
 
 function emptyNote(text) {
@@ -287,7 +342,7 @@ function renderLoading(container) {
   for (let i = 0; i < 3; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:96px; border-radius:12px;';
+    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
     queue.appendChild(skeleton);
   }
   const mapSkeleton = document.createElement('div');
@@ -310,4 +365,3 @@ function renderError(container, message, onRetry) {
   block.append(text, retryButton);
   container.appendChild(block);
 }
-
