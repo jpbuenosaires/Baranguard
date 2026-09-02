@@ -1,0 +1,109 @@
+/**
+ * app.css — shared layout/utility classes for the Tanod app, built only
+ * from §8's tokens.
+ *
+ * Exists so component files can stop carrying inline `style={{ ... }}`
+ * objects with raw pixel and colour values — §8: "Never hardcode a hex
+ * value, pixel spacing, or font name in a component file." (The first
+ * version of these screens did exactly that; this is the correction.)
+ *
+ * Mirrors the WEB dashboard's `base.css` in spirit — same tokens, same
+ * status-pill treatment — while keeping mobile-native layout. Notably it
+ * does NOT copy the web's `html { font-size: 75% }` density knob: that
+ * was tuned for desktop information density, and shrinking a touch UI by
+ * a quarter would undercut minimum touch-target sizes.
+ */
+
+/* --- Layout ---------------------------------------------------------- */
+
+/* Centres a form/content column on larger screens without stretching it
+   edge-to-edge on a tablet. */
+.app-column {
+  max-width: 420px;
+  margin: 0 auto;
+  padding-top: var(--spacing-2xl);
+}
+
+.app-stack > * + * {
+  margin-top: var(--spacing-md);
+}
+
+.app-section {
+  margin-top: var(--spacing-xl);
+}
+
+/* --- Typography ------------------------------------------------------ */
+
+.app-title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.app-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* Secondary explanatory copy — e.g. "saved on this device first". */
+.app-note {
+  display: block;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin-top: var(--spacing-md);
+}
+
+.app-error {
+  display: block;
+  color: var(--color-critical);
+  font-size: var(--font-size-sm);
+  padding: 0 var(--spacing-md) var(--spacing-sm);
+}
+
+/* --- Status pills ---------------------------------------------------- */
+/* §8: "fully-rounded (999px), small uppercase label, tinted low-opacity
+   background of the status color, solid color as text — never a flat
+   solid-fill badge." Tints use color-mix so the tint is derived from the
+   status token itself rather than a second hardcoded hex. */
+
+.status-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-pill--pending {
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  color: var(--color-warning);
+}
+.status-pill--info {
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: var(--color-info);
+}
+.status-pill--success {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+}
+.status-pill--critical {
+  background: color-mix(in srgb, var(--color-critical) 12%, transparent);
+  color: var(--color-critical);
+}
+.status-pill--neutral {
+  background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent);
+  color: var(--color-text-secondary);
+}
+
+/* --- Reference / monospace identifiers -------------------------------- */
+
+.app-reference {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}

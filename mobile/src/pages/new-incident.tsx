@@ -126,7 +126,7 @@ const NewIncidentPage: React.FC = () => {
         </IonList>
 
         {error && (
-          <IonNote color="danger" role="alert" style={{ display: 'block', padding: '0 16px 12px' }}>
+          <IonNote className="app-error" role="alert">
             {error}
           </IonNote>
         )}
@@ -136,7 +136,7 @@ const NewIncidentPage: React.FC = () => {
         </IonButton>
 
         <IonLabel>
-          <IonNote style={{ display: 'block', marginTop: 16, lineHeight: 1.5 }}>
+          <IonNote className="app-note">
             Saved on this device first. Sending to the barangay workstation happens
             later — this screen never reports it as submitted.
           </IonNote>

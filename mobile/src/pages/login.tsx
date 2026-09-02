@@ -80,10 +80,10 @@ const LoginPage: React.FC = () => {
   return (
     <IonPage>
       <IonContent className="ion-padding">
-        <div style={{ maxWidth: 420, margin: '0 auto', paddingTop: 48 }}>
+        <div className="app-column">
           <IonText>
-            <h1 style={{ marginBottom: 4 }}>Baranguard</h1>
-            <p style={{ marginTop: 0, opacity: 0.7 }}>Tanod sign in</p>
+            <h1 className="app-title">Baranguard</h1>
+            <p className="app-subtitle">Tanod sign in</p>
           </IonText>
 
           <form onSubmit={handleSubmit}>
@@ -109,7 +109,7 @@ const LoginPage: React.FC = () => {
             </IonList>
 
             {error && (
-              <IonNote color="danger" role="alert" style={{ display: 'block', padding: '0 16px 12px' }}>
+              <IonNote className="app-error" role="alert">
                 {error}
               </IonNote>
             )}

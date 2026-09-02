@@ -2330,6 +2330,63 @@ throwaway port + the Vite dev server, driving a real browser:
 M3 and M4 remain unexecuted beyond their form rendering — actually
 writing to the encrypted store still requires a device.
 
+### §8 design system ported to mobile (same session)
+
+The scaffold shipped stock Ionic theming — its own blue, and
+`dark.system.css` following the OS — so the Tanod app looked nothing like
+the light navy/blue web dashboard. §8's heading is explicit that the
+design system is "Global — applies to every screen", and it forbids
+hardcoding "a hex value, pixel spacing, or font name in a component
+file". The first version of these screens violated that directly with
+inline `style={{ maxWidth: 420, paddingTop: 48 }}` objects; this pass
+corrects both.
+
+- `mobile/src/theme/variables.css` — §8's tokens verbatim, plus the Ionic
+  theming variables (`--ion-color-primary` etc., with the `-rgb`
+  companions Ionic needs) mapped onto them. Navy is carried on Ionic's
+  "secondary", critical on its "danger".
+- `mobile/src/theme/app.css` — shared utility classes (`app-column`,
+  `app-title`, `app-note`, `app-error`, `status-pill--*`) built only from
+  tokens, mirroring the web's `base.css` in spirit. Status pills follow
+  §8's rule exactly: fully-rounded, uppercase, tinted background with
+  solid-colour text, never a flat solid fill. Tints use `color-mix` so
+  they derive from the status token rather than a second hardcoded hex.
+- M4's sync states now render as §8 status pills, mapped through the
+  §8 status table: saved-locally → warning, queued → info, synced /
+  duplicate-reconciled → success, needs-attention → critical. Deliberately
+  NOT success for the local-only states, since §9 M4 forbids implying
+  server acceptance before it has happened.
+
+**Scope of "match the web", decided deliberately:** the design LANGUAGE
+transfers (palette, type scale, radii, shadows, status pills); the
+desktop LAYOUT does not. A sidebar, dense `DataTable` rows, and the web's
+`html { font-size: 75% }` density knob are all wrong on a phone — that
+knob was tuned for desktop information density, and shrinking a touch UI
+by a quarter would undercut minimum touch-target sizes. Mobile uses §8's
+spacing scale at full size.
+
+**Two decisions recorded (reversible, but deliberate):**
+
+1. **Light, not dark.** The dark palette import was removed. §8 defines
+   exactly ONE palette and it is light (`--color-bg: #F8FAFC`); there is
+   no documented dark variant, and inventing one would mean inventing
+   tokens the reference doesn't define. If night-shift readability later
+   argues for dark, that needs its own token set, not a default inherited
+   from a starter template.
+2. **Inter is requested but never fetched over the network.** §8 names
+   Inter and the web dashboard loads it from Google Fonts; doing that
+   here would put a CDN dependency inside an offline-first field app,
+   which §2 Rule 7 rules out — a Tanod with no connectivity would
+   silently get a different typeface. The stack asks for Inter and falls
+   back to the platform UI font. Vendoring the Inter files into the
+   bundle is the correct completion (a file addition, not a network
+   dependency) and is still outstanding.
+
+Verified in the browser at both desktop and a 375x812 phone viewport:
+light §8 palette, `#1D4ED8` primary, white surfaces on `#F8FAFC`, and
+login still working after the theme change (no regression). `npm run
+build` and `npm run lint` both clean.
+
 ## NOT verified — stated plainly (as written before the M1 test above)
 
 **None of M1, M3, or M4 has ever been executed.** They type-check, lint,

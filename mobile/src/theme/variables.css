@@ -1,2 +1,136 @@
-/* For information on how to create your own theme, please refer to:
-http://ionicframework.com/docs/theming/ */
+/**
+ * variables.css — §8 "Design System (Global — applies to every screen)"
+ * ported to the mobile app.
+ *
+ * §8's heading is explicit that it applies to EVERY screen, not just the
+ * web dashboard, and it forbids hardcoding "a hex value, pixel spacing,
+ * or font name in a component file". The scaffold shipped stock Ionic
+ * theming (its own blue, OS-following dark mode), which matched nothing
+ * in §8 — this file replaces that with the real tokens so the Tanod app
+ * and the web command center are visibly one product.
+ *
+ * WHAT IS SHARED WITH WEB: the palette, type scale, radii, shadows,
+ * status-pill treatment. WHAT IS DELIBERATELY NOT: the web's layout
+ * patterns and its `html { font-size: 75% }` density knob. That knob was
+ * a desktop-density decision; shrinking a phone UI by 25% would fight
+ * touch-target minimums. Mobile uses §8's spacing scale at full size.
+ *
+ * TWO DECISIONS RECORDED HERE (reversible, but deliberate):
+ *
+ * 1. **Light, not dark.** The scaffold imported Ionic's
+ *    `dark.system.css`, so the app followed the OS and rendered dark
+ *    while the web dashboard is light. §8 defines exactly ONE palette and
+ *    it is light (`--color-bg: #F8FAFC`, `--color-text-primary:
+ *    #0F172A`); there is no documented dark variant, and inventing one
+ *    would mean inventing tokens the reference doesn't define. The dark
+ *    import is removed in App.tsx. If night-shift readability later
+ *    argues for a dark theme, that is a real design decision needing its
+ *    own token set — not a default inherited from a starter template.
+ *
+ * 2. **Inter is requested but NOT fetched over the network.** §8 names
+ *    Inter; the web dashboard loads it from Google Fonts. Doing that here
+ *    would put a CDN dependency inside an offline-first field app, which
+ *    §2 Rule 7 (locally hosted, no internet exposure assumed) rules out —
+ *    a Tanod with no connectivity would silently get a different
+ *    typeface. The stack below asks for Inter and falls back to the
+ *    platform UI font. Vendoring the Inter font files into the app
+ *    bundle is the correct completion, and is a file addition rather
+ *    than a network dependency.
+ */
+
+:root {
+  /* --- §8 tokens, verbatim ------------------------------------------- */
+  --color-navy: #1e3a6e;
+  --color-primary: #1d4ed8;
+  --color-accent: #3b82f6;
+  --color-surface-blue: #e0f2fe;
+  --color-white: #ffffff;
+  --color-bg: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-critical: #dc2626;
+  --color-warning: #d97706;
+  --color-success: #16a34a;
+  --color-info: #0891b2;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+
+  --font-base: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-size-label: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.75rem;
+  --font-size-2xl: 2.25rem;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-elevated: 0 4px 12px rgba(15, 23, 42, 0.1);
+
+  /* --- Ionic theming, mapped onto the tokens above -------------------- */
+  /* Ionic needs -rgb companions for its own alpha compositing. */
+  --ion-font-family: var(--font-base);
+  --ion-background-color: var(--color-bg);
+  --ion-background-color-rgb: 248, 250, 252;
+  --ion-text-color: var(--color-text-primary);
+  --ion-text-color-rgb: 15, 23, 42;
+  --ion-border-color: var(--color-border);
+
+  --ion-card-background: var(--color-white);
+  --ion-item-background: var(--color-white);
+  --ion-toolbar-background: var(--color-white);
+  --ion-toolbar-color: var(--color-text-primary);
+
+  --ion-color-primary: #1d4ed8;
+  --ion-color-primary-rgb: 29, 78, 216;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: #1a45be;
+  --ion-color-primary-tint: #3460dc;
+
+  /* "secondary" carries §8's navy — the web sidebar/brand colour. */
+  --ion-color-secondary: #1e3a6e;
+  --ion-color-secondary-rgb: 30, 58, 110;
+  --ion-color-secondary-contrast: #ffffff;
+  --ion-color-secondary-contrast-rgb: 255, 255, 255;
+  --ion-color-secondary-shade: #1a3361;
+  --ion-color-secondary-tint: #354e7d;
+
+  --ion-color-success: #16a34a;
+  --ion-color-success-rgb: 22, 163, 74;
+  --ion-color-success-contrast: #ffffff;
+  --ion-color-success-contrast-rgb: 255, 255, 255;
+  --ion-color-success-shade: #138f41;
+  --ion-color-success-tint: #2dac5c;
+
+  --ion-color-warning: #d97706;
+  --ion-color-warning-rgb: 217, 119, 6;
+  --ion-color-warning-contrast: #ffffff;
+  --ion-color-warning-contrast-rgb: 255, 255, 255;
+  --ion-color-warning-shade: #bf6905;
+  --ion-color-warning-tint: #dd8524;
+
+  /* Ionic's "danger" is §8's critical. */
+  --ion-color-danger: #dc2626;
+  --ion-color-danger-rgb: 220, 38, 38;
+  --ion-color-danger-contrast: #ffffff;
+  --ion-color-danger-contrast-rgb: 255, 255, 255;
+  --ion-color-danger-shade: #c22121;
+  --ion-color-danger-tint: #e03c3c;
+
+  --ion-color-medium: #475569;
+  --ion-color-medium-rgb: 71, 85, 105;
+  --ion-color-medium-contrast: #ffffff;
+  --ion-color-medium-contrast-rgb: 255, 255, 255;
+  --ion-color-medium-shade: #3e4b5c;
+  --ion-color-medium-tint: #596678;
+}

@@ -37,6 +37,19 @@ const STATE_LABELS: Record<SyncState, string> = {
   needs_attention: 'Needs attention',
 };
 
+/**
+ * §8's status→token mapping, applied to M4's sync states. "Saved locally"
+ * and "Queued" are in-progress states (warning/info), never success —
+ * §9 M4 forbids implying server acceptance before it has happened.
+ */
+const STATE_PILL: Record<SyncState, string> = {
+  saved_locally: 'status-pill--pending',
+  queued: 'status-pill--info',
+  synced: 'status-pill--success',
+  duplicate_reconciled: 'status-pill--success',
+  needs_attention: 'status-pill--critical',
+};
+
 const STATE_DETAIL: Record<SyncState, string> = {
   saved_locally:
     'This report is stored on your device. It has NOT been sent to the barangay workstation yet.',
@@ -90,20 +103,20 @@ const IncidentSubmittedPage: React.FC = () => {
 
         {!loading && row && state && (
           <>
-            <h2 style={{ marginTop: 0 }}>{STATE_LABELS[state]}</h2>
-            <p style={{ lineHeight: 1.5 }}>{STATE_DETAIL[state]}</p>
+            <span className={`status-pill ${STATE_PILL[state]}`}>{STATE_LABELS[state]}</span>
+            <p className="app-note">{STATE_DETAIL[state]}</p>
 
-            <IonNote style={{ display: 'block', marginTop: 16, lineHeight: 1.6 }}>
+            <IonNote className="app-note">
               {/* The client_event_id is the identity the workstation will use to
                   recognise this exact report and avoid creating a duplicate,
                   whichever transport eventually carries it (§5 sync invariants).
                   Shown so a Tanod can quote it if they need to follow up. */}
-              Reference: <code>{row.client_event_id}</code>
+              Reference: <span className="app-reference">{row.client_event_id}</span>
               <br />
               Captured: {new Date(row.created_offline_at).toLocaleString()}
             </IonNote>
 
-            <IonButton expand="block" style={{ marginTop: 32 }} onClick={() => navigate('/home', { replace: true })}>
+            <IonButton expand="block" className="app-section" onClick={() => navigate('/home', { replace: true })}>
               Done
             </IonButton>
             <IonButton
