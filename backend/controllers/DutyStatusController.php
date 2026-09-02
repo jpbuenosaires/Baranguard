@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
@@ -15,14 +16,26 @@ use PDO;
  *
  * §6 documents two distinct query shapes on the same path:
  * `?user_id=me` (Tanod, own history) and `?barangay_id=` (Admin/PB,
- * current status per active user). `POST /duty-status` (Tanod-only
- * toggle) is mobile M2/Sprint 2 scope, not built here — this session's
- * Dispatch Center only needs to *read* who is currently on duty.
+ * current status per active user).
+ *
+ * `POST /duty-status` — added for Sprint 2's M2 Home box. §6: "Tanod
+ * only; body `{status,client_event_id}` -> `{status_id,status,
+ * channel:"app",changed_at}`. Valid statuses are on_duty|responding|
+ * off_duty; server writes channel=app."
+ *
+ * Resolved decision (logged in DEVLOG.md — §6 states the contract but not
+ * this specific): **idempotent retry via `client_event_id`.** §5's
+ * `duty_status` table has `UNIQUE(user_id,client_event_id)` specifically
+ * so a retried toggle (e.g. a Tanod double-tapping on a slow connection)
+ * returns the original row instead of erroring or creating a second
+ * status change — same pattern already used by `POST /dispatch`'s
+ * `request_id` and `POST /shifts`'s `request_id`.
  */
 final class DutyStatusController
 {
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
+    private const VALID_STATUSES = ['on_duty', 'responding', 'off_duty'];
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
@@ -54,6 +67,73 @@ final class DutyStatusController
         }
 
         throw new ApiError(400, 'VALIDATION_ERROR', 'Provide either user_id=me or barangay_id.');
+    }
+
+    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    public static function create(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['tanod']);
+
+        $body = Http::jsonBody();
+        $status = $body['status'] ?? null;
+        $clientEventId = $body['client_event_id'] ?? null;
+
+        if (!is_string($status) || !in_array($status, self::VALID_STATUSES, true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of on_duty, responding, off_duty.');
+        }
+        if (!is_string($clientEventId) || !preg_match('/^[0-9a-fA-F-]{36}$/', $clientEventId)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'client_event_id must be a UUID.');
+        }
+
+        // Idempotent retry: the same (user_id, client_event_id) pair returns
+        // the row already written instead of erroring on the UNIQUE
+        // constraint or creating a duplicate status change.
+        $existingStmt = $pdo->prepare(
+            'SELECT status_id, status, channel, changed_at FROM duty_status
+             WHERE user_id = :user_id AND client_event_id = :client_event_id LIMIT 1'
+        );
+        $existingStmt->execute(['user_id' => $identity['user_id'], 'client_event_id' => $clientEventId]);
+        $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+        if ($existing !== false) {
+            Http::send(200, [
+                'status_id' => (int) $existing['status_id'],
+                'status' => $existing['status'],
+                'channel' => $existing['channel'],
+                'changed_at' => $existing['changed_at'],
+            ]);
+        }
+
+        $insertStmt = $pdo->prepare(
+            "INSERT INTO duty_status (user_id, status, channel, client_event_id, changed_at)
+             VALUES (:user_id, :status, 'app', :client_event_id, UTC_TIMESTAMP())"
+        );
+        $insertStmt->execute([
+            'user_id' => $identity['user_id'],
+            'status' => $status,
+            'client_event_id' => $clientEventId,
+        ]);
+        $statusId = (int) $pdo->lastInsertId();
+
+        $readBack = $pdo->prepare('SELECT status, channel, changed_at FROM duty_status WHERE status_id = :id');
+        $readBack->execute(['id' => $statusId]);
+        $created = $readBack->fetch(PDO::FETCH_ASSOC);
+
+        Audit::record(
+            $pdo,
+            $identity['barangay_id'],
+            $identity['user_id'],
+            'duty_status_changed',
+            'duty_status',
+            $statusId,
+            ['status' => $status, 'channel' => 'app']
+        );
+
+        Http::send(201, [
+            'status_id' => $statusId,
+            'status' => $created['status'],
+            'channel' => $created['channel'],
+            'changed_at' => $created['changed_at'],
+        ]);
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */

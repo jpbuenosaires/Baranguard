@@ -27,16 +27,49 @@
  *    argues for a dark theme, that is a real design decision needing its
  *    own token set — not a default inherited from a starter template.
  *
- * 2. **Inter is requested but NOT fetched over the network.** §8 names
- *    Inter; the web dashboard loads it from Google Fonts. Doing that here
- *    would put a CDN dependency inside an offline-first field app, which
- *    §2 Rule 7 (locally hosted, no internet exposure assumed) rules out —
- *    a Tanod with no connectivity would silently get a different
- *    typeface. The stack below asks for Inter and falls back to the
- *    platform UI font. Vendoring the Inter font files into the app
- *    bundle is the correct completion, and is a file addition rather
- *    than a network dependency.
+ * 2. **Inter is vendored into the app bundle (2026-09-03), not fetched
+ *    over the network.** §8 names Inter; the web dashboard loads it from
+ *    Google Fonts, which would put a CDN dependency inside an
+ *    offline-first field app — §2 Rule 7 (locally hosted, no internet
+ *    exposure assumed) rules that out, since a Tanod with no connectivity
+ *    would silently get a different typeface. The four weights actually
+ *    used in this app (400/500/600/700) were pulled from the
+ *    `@fontsource/inter` npm package — a one-time build-time fetch, same
+ *    precedent as vendoring MapLibre GL JS for the web dashboard — and
+ *    copied into `theme/fonts/`; the `@font-face` rules below reference
+ *    those local files, so nothing at runtime ever leaves the device. The
+ *    stack still falls back to the platform UI font if a build somehow
+ *    ships without them.
  */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/inter-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/inter-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/inter-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/inter-latin-700-normal.woff2') format('woff2');
+}
 
 :root {
   /* --- §8 tokens, verbatim ------------------------------------------- */

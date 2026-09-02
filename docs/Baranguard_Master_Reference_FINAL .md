@@ -518,15 +518,17 @@ screens add a fifth: **Offline** (queued locally, shown via M11).
 
 **Nav shell:** Web — dark navy collapsible sidebar, role-filtered per §7;
 white top bar (breadcrumbs, search, avatar dropdown). Critical operational alerts appear in W3/W4 rather than a generic web notification inbox.
-Mobile — bottom nav (Home, Assignments, Map, Schedule, Profile); persistent
-offline banner (M11) docks above it when active. **Open question, not yet
-resolved:** the Figma reference gives "Log Incident" a persistent bottom-tab
-slot instead of Schedule, on the reasoning that a field emergency app should
-put its most time-critical action one tap away at all times. That's a
-legitimate alternative to the current Schedule-in-bottom-nav choice above —
-flagging it here for a deliberate decision before M3/M8's nav wiring is
-built, rather than silently picking one. Until decided, build to the
-Home/Assignments/Map/Schedule/Profile list already stated above.
+Mobile — bottom nav: **Home, Assignments, Log Incident, Map, Profile**;
+persistent offline banner (M11) docks above it when active. **RESOLVED
+2026-09-03** (confirmed with the user): Log Incident takes the persistent
+bottom-tab slot instead of Schedule, on the Figma reference's reasoning
+that a field emergency app should put its most time-critical action one
+tap away at all times. Schedule (M8) is reachable from Profile instead —
+it isn't built yet, and when it is, it's used at most a few times a week,
+not dozens of times a shift the way Log Incident is. Implemented in
+`mobile/src/App.tsx`'s `TabbedShell`; Assignments/Map/Profile tabs are
+real and reachable now but route to an honest "not built yet" placeholder
+(`NotBuiltYetPage`) until their own Sprint 3+ boxes land.
 
 **Responsive:** Desktop-first 1440px (primary) → Tablet 768px (sidebar
 collapses, multi-column stacks) → Mobile 375px (tables become stacked

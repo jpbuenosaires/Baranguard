@@ -2416,3 +2416,302 @@ offline capture surviving app kill — both explicitly demanded by Sprint
   slot question ("Log Incident" vs "Schedule") is still unresolved and
   still gates M3/M8 nav.
 - Everything under "NOT verified" above.
+
+---
+
+# DEVLOG — Sprint 2 continued: M2 Home, photo/voice capture, bottom-nav
+# tabs, POST /duty-status + POST /map-packages, Keystore passphrase, Inter
+# vendoring
+
+## Today's cut
+
+The full "Sprint 2 (Mobile) — remaining" list from the working checklist,
+taken together at the user's explicit direction (same documented exception
+as prior multi-box Sprint 1/2 sessions): M2 Home, `POST /duty-status`,
+`POST /map-packages`, the two blocking decisions (bottom-nav slot,
+photo/voice scope), and the two small debts (Inter font vendoring, DB
+passphrase → Android Keystore). `evidence_attachment_local` + full
+photo/voice capture (not schema-only) followed from the photo/voice
+decision below.
+
+## Decisions required before coding, now resolved (asked via AskUserQuestion, not picked silently)
+
+1. **Bottom-nav slot: Log Incident replaces Schedule.** §8 flagged this as
+   an open question. User chose Log Incident, on the Figma reference's
+   reasoning that a field emergency app should put its most time-critical
+   action one tap away at all times. Schedule (M8, unbuilt) now belongs
+   behind Profile instead of a persistent tab. §8 updated.
+2. **Photo/voice capture: build in full now, not schema-only.** Weighed
+   against deferring (avoids stacking a device-dependent feature on top of
+   already-unverified M1/M3/M4) — user chose to build it in full, accepting
+   it joins M3/M4 as untested until the Android SDK exists.
+
+## Scope delivered
+
+**Backend** (fully verified against real XAMPP — see Tests below):
+`POST /duty-status` (M2's duty toggle, idempotent via `client_event_id`),
+`POST /map-packages` (Admin multipart upload, MBTiles structure
+validation, atomic single-published-package-per-barangay enforcement).
+
+**Mobile local schema**: migration 2 adds `evidence_attachment_local`
+(`LOCAL_SCHEMA_VERSION` 1 → 2), verified via the existing Node-based
+harness (no device needed for the schema half, same as migration 1).
+
+**Mobile frontend**: M2 Home (real duty toggle, SOS visibly disabled),
+bottom-nav tab bar (`TabbedShell` in `App.tsx`) with honest placeholders
+for unbuilt destinations, photo/voice capture wired into M3 (`Camera`,
+`capacitor-voice-recorder`, `Filesystem` plugins → `evidenceRepository.ts`
+→ `evidence_attachment_local`), DB passphrase moved to an Android
+Keystore-backed plugin, Inter font vendored into the app bundle.
+
+## Files
+
+- `backend/controllers/DutyStatusController.php` (MODIFIED, additive) —
+  `create()`.
+- `backend/routes/duty-status.php` (MODIFIED) — POST route registered.
+- `backend/controllers/MapPackagesController.php` (MODIFIED, additive) —
+  `create()`, `validateMbtilesStructure()`, `baseStorageDir()` (also
+  de-duplicated `resolvePackagePath()`'s copy of the same base-dir logic).
+- `backend/routes/map-packages.php` (MODIFIED) — POST route registered.
+- `backend/scripts/verify-duty-status-map-upload.sh` (NEW) — disposable-DB
+  end-to-end validation script, same pattern as every prior verify script;
+  builds a real, structurally valid MBTiles fixture via PHP's own
+  `pdo_sqlite` (the same driver the controller uses) rather than faking
+  bytes by hand.
+- `mobile/src/services/db/localSchema.ts` (MODIFIED, additive) —
+  `MIGRATION_002_EVIDENCE`, `EvidenceAttachmentLocalRow`,
+  `LOCAL_SCHEMA_VERSION` bumped to 2.
+- `mobile/scripts/verify-local-schema.mjs` (MODIFIED, additive) —
+  evidence_attachment_local column/default assertions, plus a new v1->v2
+  in-place upgrade test (a device already on schema v1 keeps its rows).
+- `mobile/src/services/db/evidenceRepository.ts` (NEW) —
+  `saveEvidenceLocally()`, `getEvidenceForIncident()`.
+- `mobile/src/services/evidenceCapture.ts` (NEW) — `capturePhoto()`,
+  `startVoiceRecording()`/`stopVoiceRecording()`/`cancelVoiceRecording()`,
+  `isRecordingVoice()`. The Capacitor/plugin platform edge, deliberately
+  separate from the repository layer (same split as `localDatabase.ts` vs
+  `localSchema.ts`).
+- `mobile/src/services/uuid.ts` (NEW) — shared UUID helper, extracted now
+  that a third/fourth caller needed one (same precedent as
+  `backend/lib/Audit.php`'s own extraction; the two existing private
+  copies in `incidentRepository.ts`/`deviceIdentity.ts` were left alone).
+- `mobile/src/services/apiService.ts` (MODIFIED, additive) —
+  `setDutyStatus()`, `getOwnDutyStatus()`, `DutyStatus`/`DutyStatusEntry`.
+- `mobile/src/services/db/passphrase.ts` (MODIFIED) — Keystore upgrade,
+  see decisions below.
+- `mobile/src/pages/home.tsx` (REWRITTEN) — was the M1-era minimal
+  placeholder; now the real M2 Home.
+- `mobile/src/pages/new-incident.tsx` (MODIFIED, additive) — Add
+  Photo/Record Voice Note buttons, staged-attachment list, evidence
+  persisted after the incident saves.
+- `mobile/src/components/NotBuiltYetPage.tsx` (NEW) — shared honest
+  placeholder for an unbuilt tab destination.
+- `mobile/src/App.tsx` (MODIFIED) — `TabbedShell` (IonTabs + nested
+  IonRouterOutlet), `RequireSession` changed to check once per mount
+  instead of on every navigation (see bug note below).
+- `mobile/src/theme/variables.css` (MODIFIED) — `@font-face` rules for the
+  four vendored Inter weights actually used (400/500/600/700).
+- `mobile/src/theme/fonts/*.woff2` (NEW) — the vendored font files
+  themselves, pulled once from the `@fontsource/inter` npm package.
+- `mobile/package.json` (MODIFIED) — `@capacitor/camera`,
+  `@capacitor/filesystem`, `capacitor-voice-recorder`,
+  `@aparajita/capacitor-secure-storage` (dependencies); `@fontsource/inter`
+  (devDependency — only ever used to source the vendored files, nothing
+  in app code imports it).
+- `.claude/launch.json` (NEW) — dev-server config so the mobile app can be
+  previewed via the Browser tool (`npm run dev --prefix mobile`); didn't
+  exist before this session.
+- `docs/Baranguard_Master_Reference_FINAL .md` (MODIFIED) — §8 bottom-nav
+  question marked RESOLVED.
+- `docs/Baranguard_Sprint_Prompts.md` (MODIFIED) — Sprint 2 menu + working
+  checklist updated throughout to reflect everything above.
+
+## Resolved decisions not stated in the reference (logged, don't reopen without review)
+
+- **`POST /duty-status` idempotency key.** §5's `duty_status` table already
+  has `UNIQUE(user_id,client_event_id)` — a retried toggle with the same
+  `client_event_id` returns the original row (200) rather than erroring on
+  the constraint or creating a duplicate status change (201 on the real
+  first write). Same pattern as `POST /dispatch`/`POST /shifts`'s
+  `request_id`.
+- **MBTiles structure validation is two-tier.** Every upload's first 16
+  bytes are checked against the SQLite file-format magic header (MBTiles
+  IS a SQLite database). If this PHP build's `pdo_sqlite` driver is
+  available (confirmed present on this XAMPP install), a stricter check
+  additionally opens the file and confirms `tiles`/`metadata` tables exist
+  in `sqlite_master`. If the driver is absent, the endpoint still accepts
+  the upload on the header check alone rather than hard-failing — logged
+  via `error_log` so the gap is visible, not silently assumed away.
+- **"Exactly one published package per barangay" (§5's own invariant, not
+  previously implemented)** is enforced transactionally: `SELECT ...
+  FOR UPDATE` locks the barangay's existing package rows, any currently-
+  published version is flipped to `is_published=0`, then the new row is
+  inserted published — all in one transaction, with the uploaded file
+  deleted if the transaction rolls back.
+- **500MB package size ceiling** — no §5/§6 number exists for this; picked
+  as a sane ceiling for a barangay basemap hosted on a local XAMPP disk.
+- **`evidence_attachment_local.incident_local_id` is the FK, not a server
+  incident id** — a Tanod can attach a photo/voice note to an incident
+  that has only ever been saved locally, and that link must resolve
+  without a network round trip; mirrors how the incident itself is
+  identified before it has a server id.
+- **Evidence capture is staged in component state, then persisted only
+  after the incident saves.** An evidence-save failure is logged but does
+  NOT block navigation to M4 — the incident record (the actual atomicity
+  guarantee M3 exists to provide) is already safe either way. This mirrors
+  §6's own framing of evidence as a separate, best-effort upload channel
+  from the incident's own sync.
+- **Voice recording writes directly to app-private storage via the
+  plugin's own `directory`/`subDirectory` options** (returns a real file
+  path) rather than holding the whole recording as base64 in memory — the
+  plugin's own README flags the base64 path as a real performance cost for
+  longer recordings; the base64 fallback is kept only for the platform
+  case (declared web behavior) where no `path` comes back.
+- **Photo capture copies out of the Camera plugin's own temp file into
+  `Directory.Data` immediately** — the temp URI is never referenced again,
+  and every `StagedAttachment`'s `sha256`/`byteSize` are computed from the
+  bytes actually on disk after the copy, not trusted from the plugin.
+- **DB passphrase → Android Keystore, via `@aparajita/capacitor-secure-
+  storage`.** Confirmed against the plugin's own README (not assumed):
+  "data is encrypted using AES in GCM mode with a secret key generated by
+  the Android KeyStore, then stored in SharedPreferences" — exactly the
+  upgrade path `passphrase.ts`'s own prior doc comment named. Only that
+  one file changed; `localDatabase.ts` still only asks for a
+  `PassphraseProvider`. A one-time migration reads an existing install's
+  passphrase out of the old `@capacitor/preferences` key, writes it into
+  secure storage, and deletes the old copy — generating a second
+  passphrase would orphan the already-encrypted database.
+- **Inter vendored via `@fontsource/inter`, not hand-downloaded.** Same
+  precedent as vendoring MapLibre GL JS for the web dashboard: a one-time
+  build-time npm fetch, not a runtime CDN dependency. Only the four
+  weights the app actually uses (400/500/600/700) were copied into
+  `theme/fonts/`, keeping the addition to ~100KB.
+- **Bottom-nav's three not-yet-built destinations (Assignments/Map/
+  Profile) are real, reachable tabs that route to an honest placeholder**,
+  not hidden tabs and not fake functional-looking screens — same
+  precedent as the web dashboard's `renderUnavailable()` and this app's
+  own original M1-era `home.tsx`.
+
+## Bugs found and fixed during this session's own testing (not just claimed)
+
+**A real app bug, caught only by testing the bottom-nav tabs in a live
+browser, not by inspection or `tsc`/`eslint`:** `RequireSession`'s
+"is the session live" check originally re-ran on every `location.pathname`
+change. Before this session, each protected route had its own separate
+`RequireSession` instance, so that was harmless — a location-keyed effect
+only fired on an actual top-level route change. Once `TabbedShell` wrapped
+the whole tabbed area in a SINGLE `RequireSession` for its entire
+lifetime, the same dependency would have re-run the async session check —
+and flashed a loading spinner — on every tab switch, something a Tanod
+would hit dozens of times a shift. Fixed by checking once per mount
+(`useEffect(..., [])`) instead of per-navigation; a fresh mount (login, or
+sign-out then back in) still checks again correctly. Caught while manually
+exercising the new tab bar in a real browser session, not from a type
+error or lint warning — neither would have flagged this.
+
+**A test-environment artifact, not an application bug, that cost real
+debugging time and is worth recording so a future session doesn't chase
+it again:** driving the mobile app through this session's headless
+Browser tool, a client-side route transition (login → `/home` via a
+programmatic form submit) left the DOM in a state where BOTH the old and
+new `<ion-page>` were present with the new one's Ionic-managed wrapper
+still carrying `ion-page-invisible`/`opacity:0`, while `location.href` had
+already correctly changed to `/home` and the actual page content was
+already correct in the DOM. Screenshots and `computer` actions kept
+showing the stale login page; `get_page_text` and direct DOM inspection
+via `javascript_tool` showed the true state. Root-caused to Chrome
+throttling `requestAnimationFrame`/CSS-transition completion callbacks for
+a backgrounded/hidden tab (the tool's own status line repeatedly reported
+"The Browser pane is currently hidden" right before this), which is
+exactly what Ionic's page-transition system depends on to finish and
+un-hide the new page. Worked around by navigating directly to the target
+URL (a full page load bypasses the client-side transition entirely) for
+verification purposes; not a fix to any application file, since real
+device usage doesn't background the tab mid-transition the way this
+automation environment did.
+
+## Tests performed (with evidence)
+
+1. **`php -l` clean** on `DutyStatusController.php`, `MapPackagesController.php`,
+   `routes/duty-status.php`, `routes/map-packages.php`.
+2. **`backend/scripts/verify-duty-status-map-upload.sh` against real XAMPP
+   (MariaDB 10.4.32 + PHP 8.2.12, pdo_sqlite confirmed present) — 40/40
+   passed**: role gating (Admin blocked from duty-toggle, Tanod blocked
+   from map upload); invalid status/missing-client_event_id/malformed-UUID
+   all 400; happy-path toggle returns `channel:"app"`; **idempotent retry
+   on the same `client_event_id` returns the identical `status_id`, and
+   exactly 1 DB row exists for it (verified in the DB, not just the
+   response)**; a second real toggle creates a second row; `GET
+   /duty-status?barangay_id=` reflects the latest toggle; map-package
+   upload validation (missing version, illegal version characters, missing
+   file, non-SQLite garbage all 400); happy-path upload's
+   `checksum_sha256` matches the real uploaded file's hash (computed
+   independently); duplicate `(barangay,version)` → 409; **publishing a
+   second version automatically unpublishes the first — verified in the
+   DB that exactly one row stays `is_published=1` for that barangay**; the
+   newly published package is immediately servable via the pre-existing
+   GET/download endpoints; barangay-2 admin's upload is scoped to their
+   own `barangay_id` server-side (not client-suppliable) and does not
+   disturb barangay-1's published package.
+3. **`node scripts/verify-local-schema.mjs` — 65/65 passed** (up from
+   47/47): all prior checks still pass, plus `evidence_attachment_local`
+   column-for-column against §5, its `synced`/`attempts` defaults, and a
+   new upgrade-path test — a database seeded at schema v1 with an existing
+   `incident_local` row correctly reaches v2, keeps that row, and gains
+   the new table.
+4. **`npm run build` (tsc + vite) and `npm run lint` — both clean** after
+   fixing one real type error (Camera's `MediaResult` has no `format`
+   field in this plugin version — moved to `metadata.format` via
+   `includeMetadata: true`) and one lint warning (an unused
+   `eslint-disable` comment).
+5. **Real browser walkthrough** (disposable DB `baranguard_m2_browser_check`
+   + disposable PHP dev server on a throwaway port + the Vite dev server,
+   `.claude/launch.json` created for this and left in the repo as reusable
+   tooling) — login as a real Tanod account renders M2 Home with the
+   authenticated user's real name (not a placeholder) and a real
+   `OFF DUTY` status read from `GET /duty-status?user_id=me`; the bottom
+   tab bar shows all 5 tabs with Log Incident correctly in the persistent
+   slot; clicking "Go On Duty" produces a live `POST /duty-status` (201),
+   the UI updates to `ON DUTY`/"Go Off Duty" from the SERVER's response
+   (not an optimistic local flip), and **the resulting row was confirmed
+   directly in the database** (`status='on_duty', channel='app'`); SOS
+   renders disabled with its explanatory note; the Assignments tab renders
+   the honest "isn't built yet" placeholder; the Log Incident tab shows
+   the new Add Photo/Record Voice Note buttons and the "not uploaded yet"
+   note. Zero unexpected console errors — the only ones logged were the
+   expected, already-documented non-blocking 404 from M1's map-package
+   version check (no package published in this throwaway DB). All test
+   infrastructure (disposable database, disposable app-user, both dev
+   servers, `.env.local`) was torn down after — the real `baranguard`
+   database and `backend/.env` were never touched.
+
+## NOT verified this session (stated plainly)
+
+- **Photo/voice capture has never executed on a device.** `evidenceCapture.ts`
+  compiles and type-checks against `@capacitor/camera`,
+  `capacitor-voice-recorder`, and `@capacitor/filesystem`'s documented
+  contracts; nothing in it has run. No microphone/camera permission flow,
+  no actual file write, no sha256-of-a-real-file has been exercised.
+- **The Keystore passphrase upgrade has never executed on a device.**
+  `@aparajita/capacitor-secure-storage`'s `getItem`/`setItem` are asserted
+  by its README, not by running this app's code against a real Android
+  Keystore. The legacy-migration path (existing `@capacitor/preferences`
+  value → secure storage) is similarly unexercised.
+- **`evidence_attachment_local`'s schema half IS verified** (65/65, no
+  device needed — same split as every other local table), but the
+  end-to-end "capture a photo, save the incident, confirm the evidence row
+  and the file both exist" flow is not.
+- All of the above are blocked on the same, already-tracked Android SDK
+  install — nothing new here, just a longer list of what's now waiting on
+  it.
+
+## Not yet done (explicitly out of this cut)
+
+- Mobile branch of `POST /incidents` (device_id + client_event_id
+  idempotency path — the web path from Sprint 1 is a different code path
+  that has never been exercised from mobile).
+- The `dispatch_local` cache-shape ambiguity (Sprint 2 vs Sprint 3) is
+  still unresolved.
+- M5/M6/M7 (Assignments/Assignment Detail/Live Map), `/sync/batch`,
+  `POST /gps` — Sprint 3, untouched.
+- Every item under "NOT verified this session" above.
