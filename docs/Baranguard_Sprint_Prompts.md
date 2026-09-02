@@ -212,6 +212,11 @@ Map packages: GET /map-packages/:barangay_id, GET /map-packages/:barangay_id/dow
 — client verifies SHA-256 before activation, per §6.
 
 Today's cut — pick exactly ONE:
+  [x] Local schema: incident_local + mobile_device_local +
+      offline_map_package_local
+      DONE 2026-09-02, commit d61a213. Also scaffolded the Ionic React
+      app (prerequisite plumbing — /mobile was an empty placeholder).
+      Verified 47/47 against §5 via mobile/scripts/verify-local-schema.mjs.
   [ ] M1 Login — device registration + map-package metadata/download
       (non-blocking; enters M2 without waiting on map download)
   [ ] M2 Home — duty status control + SOS entry point
@@ -220,14 +225,72 @@ Today's cut — pick exactly ONE:
   [ ] M4 Incident Submitted Confirmation — sync-state display only
       (Saved locally / Queued / Synced / Duplicate reconciled / Needs
       attention)
-  [ ] Local schema: incident_local + mobile_device_local +
-      offline_map_package_local
   [ ] Local schema: evidence_attachment_local (only if this session also
       builds photo/voice capture — otherwise defer)
 
 If nothing above is checked and nothing is named in prose, stop and ask
 which one before writing any code. If you finish early, end the session
 and log it rather than continuing into the next box.
+
+--- Sprint 2 working checklist (added 2026-09-02) -------------------------
+Derived from this menu + §9's M-screens + §10's S2-tagged backlog, so a
+later session inherits it instead of re-deriving it. None of the items
+below are extra scope — they are the prerequisites the boxes above
+already imply.
+
+BLOCKERS — environment (gate Sprint 2's OWN required tests):
+  [ ] Install Android SDK / Android Studio on the workstation, then
+      `npx cap add android && npx cap sync` (mobile/android/ is gitignored)
+  [ ] Verify SQLCipher ACTUALLY encrypts the DB file on a device — this
+      prompt's own "encrypted store actually encrypted — verify, don't
+      assume". Not possible without the SDK; unverified as of d61a213.
+  [ ] Verify offline capture survives app kill — same, needs a device.
+
+BLOCKERS — decisions (each gates a specific box):
+  [ ] DB passphrase source → gates M3 storing a real raw_narrative.
+      localDatabase.ts exposes a PassphraseProvider that THROWS if
+      unconfigured, deliberately: a hardcoded key ships inside the APK
+      and would make "encrypted at rest" a demo tell (§8). Candidates:
+      device-keystore secret generated at registration, or a server-issued
+      per-device secret delivered by POST /devices/register.
+  [ ] Bottom-nav slot: "Log Incident" vs "Schedule" (§8 open question) →
+      gates M3/M8 nav wiring.
+  [ ] Is photo/voice attachment in Sprint 2? §10 tags it S2, but the menu
+      defers evidence_attachment_local unless capture ships with it.
+
+BACKEND — documented in §6, none built yet (PHP side):
+  [ ] POST /devices/register              (M1)
+  [ ] PATCH /devices/:id/deactivate       (M1, and M10 logout later)
+  [ ] GET  /map-packages/:barangay_id     (M1)
+  [ ] GET  /map-packages/:barangay_id/download  (M1)
+  [ ] POST /map-packages                  (Admin upload — without it there
+      is no package for a device to download at all)
+  [ ] POST /duty-status                   (M2)
+  [ ] Mobile branch of POST /incidents — the web path exists (Sprint 1)
+      but mobile idempotency is device_id + client_event_id, a different
+      code path that has never been exercised.
+
+MOBILE INFRASTRUCTURE — not built yet:
+  [ ] apiService.ts — the ONE mobile API boundary §4 mandates
+  [ ] On-device session storage (JWT, 15-min expiry, sliding renewal per
+      Rule 9); offline capture must keep working while the session is
+      expired/unreachable
+  [ ] Repository layer over the local schema — the three tables exist but
+      nothing reads or writes them yet
+
+AMBIGUITIES to settle before they cause drift:
+  [ ] This block's scope line says "dispatch_local cache shape", but it is
+      not a menu box and §10 tags cached dispatch/route detail as S2–3.
+      Decide whether it lands in Sprint 2 or Sprint 3.
+  [ ] M2's SOS entry point cannot fully work in Sprint 2: POST /tanod-sos
+      and acknowledge/resolve are Sprint 4. Either defer SOS out of M2, or
+      build it honestly as visibly "not wired up yet" — never as a button
+      that looks functional but silently does nothing.
+
+Suggested order: Android SDK → backend device+map-package endpoints →
+apiService.ts + session → M1 → M3 (after the passphrase decision) → M4 →
+M2 (last, since its SOS half is Sprint-4-blocked).
+--------------------------------------------------------------------------
 
 Requirements: every local write gets a stable client_event_id at time of
 first save — the same ID must survive direct POST, sync, and SMS fallback

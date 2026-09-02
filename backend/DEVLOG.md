@@ -2012,3 +2012,140 @@ same cut ships photo/voice capture — it doesn't).
   (still unresolved — must be decided before M3/M8 nav is wired).
 - The remaining §5 local tables, and `apiService.ts` (the single mobile
   API boundary named in §4) — no mobile screen calls the server yet.
+
+---
+
+# DEVLOG — Sprint 2 backend: device lifecycle + map packages
+# (M1's prerequisites), plus a real env-loading regression fix
+
+## Today's cut
+
+Continuing Sprint 2 at the user's explicit direction to work the agreed
+order "until M4" rather than stopping after one box — same documented
+exception as Sprint 1's multi-box sessions. This entry covers the backend
+prerequisites M1 Login cannot exist without: `POST /devices/register`,
+`PATCH /devices/:id/deactivate`, `GET /map-packages/:barangay_id`, and
+`GET /map-packages/:barangay_id/download`.
+
+## REGRESSION FOUND AND FIXED — introduced by this session's own earlier
+## env.php change (commit d38f524), with a live-data risk
+
+The `$_ENV`/`$_SERVER` thread-safety rewrite made `baranguard_load_env()`
+skip the `.env` file only when `isset($_ENV[$name]) || isset($_SERVER[$name])`.
+Under **PHP's built-in server (cli-server SAPI) — which every
+`backend/scripts/verify-*.sh` uses** — a shell-exported variable reaches
+`getenv()` but **neither** superglobal. Verified empirically with a probe
+served through `php -S`: `$_ENV` NULL, `$_SERVER` NULL, `getenv()` correct.
+(Plain `php -r` behaves differently — `$_SERVER` *is* populated there —
+which is exactly why this was easy to miss.)
+
+Consequence: every verify script's `export DB_NAME=<disposable>` was
+silently discarded, `.env` won, and the test API server pointed at the
+**real `baranguard` database**. Scripts like `verify-sprint1-remaining.sh`
+POST incidents and citizen reports — those writes would have landed in
+real data.
+
+Fixed in `backend/config/env.php` by adding `getenv($name) !== false` to
+the skip condition, restoring the precedence that file's own doc comment
+already promised ("never overrides an already-set env var"). Reading
+`getenv()` reintroduces none of the original hazard: that was about
+`putenv()` *writes* to the shared process environment, and nothing calls
+`putenv()` any more. Proven after the fix: with `DB_NAME=disposable_test_db`
+exported, a `php -S` request resolved `DB_NAME` to `disposable_test_db`
+while `.env` said `baranguard`.
+
+The new verify script deliberately does **not** pass
+`-d variables_order=EGPCS`, so it depends on this fix and will fail its
+very first login if the fix is ever reverted — an intentional canary.
+
+## Scope decisions (logged, don't reopen without review)
+
+- **`POST /map-packages` (Admin upload) was NOT built.** It needs
+  multipart upload + MBTiles structure validation + atomic publish, has no
+  §9 web screen consuming it, and M1 only ever *reads* packages.
+  Consequence stated rather than hidden: on a fresh install both
+  map-package endpoints legitimately 404 until rows are created
+  out-of-band. Tracked on the Sprint 2 checklist.
+- **`POST /duty-status` not built** — it belongs to M2, which the agreed
+  order puts last (its SOS half is Sprint-4-blocked anyway).
+- **Re-registering the same device by its own owner is an update, not a
+  409.** This is the ordinary FCM-token-refresh path; treating it as a
+  conflict would strand a Tanod whose token rotated. A device owned by a
+  *different* user is 409 — that is §6's "device ownership is validated",
+  and silently reassigning would break Rule 13's server-derived SMS
+  sender identity.
+- **Unknown device and someone-else's device both return 404** — a
+  distinct 403 would confirm a guessed device_id exists.
+- **`deactivate` is idempotent**, and a repeat writes no second audit row.
+- **`download_url` is API-relative**; the server has no reliable
+  externally-visible host under Rule 7 (LAN-only), and the client knows
+  its own API base.
+- **Package files resolve under `MAP_PACKAGE_DIR`** (env, default
+  `backend/storage/map-packages`), with `file_path` treated as relative
+  and the resolved real path asserted to stay inside that directory.
+- **`X-Checksum-SHA256` is served on download** so §6's mandatory
+  pre-activation verification needs no second request.
+- **`backend/lib/Audit.php` extracted.** `audit()` was already duplicated
+  privately in AuthController and CitizenReportsController; these two new
+  controllers would have made copies three and four. New code uses the
+  shared helper; the two existing controllers were deliberately left
+  alone rather than restructured.
+
+## Files
+
+- `backend/config/env.php` (MODIFIED) — the regression fix above.
+- `backend/lib/Audit.php` (NEW) — shared `audit_log` writer.
+- `backend/controllers/DevicesController.php` (NEW) — `register()`,
+  `deactivate()`.
+- `backend/controllers/MapPackagesController.php` (NEW) — `show()`,
+  `download()`, plus path-containment resolution.
+- `backend/routes/devices.php`, `backend/routes/map-packages.php` (NEW).
+- `backend/scripts/verify-devices-map-packages.sh` (NEW).
+
+## Tests performed (with evidence)
+
+`php -l` clean on every new/modified file, then
+**`backend/scripts/verify-devices-map-packages.sh` against real XAMPP
+(MariaDB + PHP 8.2.12) — 53/53 passed**, disposable DB + disposable
+app-user + disposable package files + throwaway port, all torn down after:
+
+- Role gating: Admin and Secretary both 403 on device registration;
+  Secretary 403 on map metadata; Admin 403 on package *download* but 200
+  on metadata (§6 splits these two differently).
+- Validation: short device_id, non-`android` platform, missing
+  `fcm_token`, and illegal device_id characters all 400.
+- Happy path: `{device_id, registered:true}`; **response contains no FCM
+  token** and **audit metadata contains no FCM token** (both asserted by
+  grepping the actual response/row, per §6 and Rule 17).
+- Registering a second device deactivates the first **verified in the
+  DB**, not just from the response.
+- Token refresh on the same device returns 200, updates `fcm_token`/
+  `app_version`, and **does not deactivate itself**.
+- Hijack attempt by another Tanod → 409, with the DB confirming the row
+  still belongs to the original owner and the attacker's token was never
+  written.
+- Deactivate: own device 200 → `is_active=0`; second call idempotent 200
+  with **no second audit row**; another Tanod's device 404 **and that
+  device still active afterwards**; unknown id 404; malformed id in the
+  URL 404 (route miss, not a 400 that would confirm the route).
+- Map packages: 404 before anything is published (M1 must treat this as
+  non-fatal); after publishing, metadata returns version/checksum/
+  download_url/is_published with the checksum **matching the real file's
+  hash**; cross-tenant reads 404 both directions; download bytes hash
+  **identical to the source file**; `X-Checksum-SHA256` header matches;
+  unpublished packages serve neither metadata nor bytes.
+- **Path-traversal containment**: a hostile `file_path` of `../../.env`
+  returns 503 and the response body was grepped to confirm it contains no
+  `DB_PASSWORD`/`JWT_SECRET`.
+
+Two failures during development were **the test's own wrong expectations**,
+corrected rather than papered over: Git-Bash `/c/...` paths passed to
+native `php.exe` (fixed with `cygpath -m`), and expecting 404 for a
+malformed `device_id` on `POST /devices/register`, whose path is fixed —
+the id is in the body, so 400 is correct there.
+
+## Not yet done (explicitly out of this cut)
+
+- `POST /map-packages`, `POST /duty-status` — see decisions above.
+- The mobile-side work this unblocks: `apiService.ts`, on-device session
+  storage, M1/M3/M4 screens.
