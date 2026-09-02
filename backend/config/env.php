@@ -61,8 +61,22 @@ function baranguard_load_env(?string $path = null): void
                 $value = substr($value, 1, -1);
             }
         }
-        if ($name === '' || isset($_ENV[$name]) || isset($_SERVER[$name])) {
-            continue; // Already set — never override.
+        // Already set — never override. getenv() is consulted here too,
+        // and that is NOT redundant: under PHP's built-in server
+        // (cli-server SAPI, which every backend/scripts/verify-*.sh uses)
+        // a shell-exported variable reaches getenv() but NOT $_ENV (this
+        // XAMPP's php.ini ships variables_order="GPCS", no "E") and NOT
+        // the per-request $_SERVER either — verified empirically, both
+        // came back NULL while getenv() returned the value. Without this
+        // clause those scripts silently lost their disposable-database
+        // overrides and fell through to the REAL backend/.env, pointing
+        // destructive test writes at the production database. Reading
+        // getenv() carries none of the thread-safety risk documented
+        // above: that hazard is putenv()'s *writes* to the shared process
+        // environment, and nothing in this codebase calls putenv() any
+        // more.
+        if ($name === '' || isset($_ENV[$name]) || isset($_SERVER[$name]) || getenv($name) !== false) {
+            continue;
         }
         $_ENV[$name] = $value;
         $_SERVER[$name] = $value;
