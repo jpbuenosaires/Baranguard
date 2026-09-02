@@ -21,6 +21,7 @@
 import { getGpsLive, getTanodSos, logout, ApiClientError } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
+import { icons } from '../components/icons.js';
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -43,7 +44,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   const { content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = '<h2 style="margin-bottom:16px;">GIS Live Tracking</h2>';
+  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.map(22)}GIS Live Tracking</h2>`;
   const body = document.createElement('div');
   body.style.cssText = 'height:calc(100% - 40px); min-height:0;';
   content.appendChild(body);

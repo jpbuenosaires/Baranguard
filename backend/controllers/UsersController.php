@@ -21,6 +21,7 @@ use PDO;
  */
 final class UsersController
 {
+    private const CONTACT_NUMBER_MAX_LENGTH = 32;
     private const ROLES = ['admin', 'secretary', 'tanod', 'punong_barangay', 'lupon'];
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
@@ -79,5 +80,60 @@ final class UsersController
         }, $rows);
 
         Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total]);
+    }
+
+    /**
+     * PATCH /users/:id -- W15 Settings/Account's "edit my name/contact"
+     * action. Section 6/Section 7 describe this endpoint as serving TWO
+     * paths (Admin editing same-barangay others, with a role/is_active/
+     * session-revocation cascade; and self editing only
+     * full_name/contact_number) -- only the self path is built here. W10
+     * User Management (admin-editing-others) is a separate, unbuilt
+     * screen with its own design needs (which fields toggle is_active,
+     * the device/session revocation transaction, "at least one active
+     * Admin must remain"); half-building that risked getting it wrong, so
+     * a caller here may only ever edit their own row and only ever change
+     * full_name/contact_number -- any other user_id is rejected with 403.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function update(PDO $pdo, array $identity, string $userIdParam): void
+    {
+        if (!ctype_digit($userIdParam) || (int) $userIdParam !== $identity['user_id']) {
+            throw new ApiError(403, 'FORBIDDEN', 'You may only edit your own account.');
+        }
+
+        $body = Http::jsonBody();
+        $fullName = $body['full_name'] ?? null;
+        $contactNumber = $body['contact_number'] ?? null;
+        $hasFullName = array_key_exists('full_name', $body);
+        $hasContactNumber = array_key_exists('contact_number', $body);
+
+        if (!$hasFullName && !$hasContactNumber) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Provide full_name and/or contact_number to update.');
+        }
+        if ($hasFullName && (!is_string($fullName) || trim($fullName) === '')) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'full_name must be a non-empty string.');
+        }
+        if ($hasContactNumber && $contactNumber !== null && (!is_string($contactNumber) || strlen($contactNumber) > self::CONTACT_NUMBER_MAX_LENGTH)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'contact_number must be a string of at most ' . self::CONTACT_NUMBER_MAX_LENGTH . ' characters.');
+        }
+
+        $sets = [];
+        $params = ['user_id' => $identity['user_id']];
+        if ($hasFullName) {
+            $sets[] = 'full_name = :full_name';
+            $params['full_name'] = $fullName;
+        }
+        if ($hasContactNumber) {
+            $sets[] = 'contact_number = :contact_number';
+            $params['contact_number'] = $contactNumber;
+        }
+        $sets[] = 'updated_at = UTC_TIMESTAMP()';
+
+        $stmt = $pdo->prepare('UPDATE user SET ' . implode(', ', $sets) . ' WHERE user_id = :user_id');
+        $stmt->execute($params);
+
+        Http::send(200, ['user_id' => $identity['user_id'], 'updated' => true]);
     }
 }

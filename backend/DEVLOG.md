@@ -799,3 +799,530 @@ unlike Sprint 0/1/W2's first passes.
 - `GET /users` create/edit/reset-password (separate §6 endpoints; only
   list was built, as Tanod-picker plumbing).
 - W5–W20 web screens and all mobile screens — untouched.
+
+---
+
+# DEVLOG — Sprint 1 continued: W5/W6/W9/W15/W16/W19 (remaining "Today's cut" items)
+
+## Today's cut
+
+Six items in one session, not the usual one — an explicit user decision
+to go through Sprint 1's remaining unchecked boxes in sequence rather
+than stop-and-ask per item, since the sprint prompt's own "pick exactly
+ONE" convention was flagged to them first and they chose to proceed with
+all six: W5 Historical Heatmap, W6 Electronic Blotter List, W9
+Statistical Reports (Generate only), W15 Settings/Account, W16 Citizen
+Reports Inbox (list only), W19 Public Citizen Report. Each was built,
+then validated together against real XAMPP (backend) and a real browser
+(frontend) before moving to the next.
+
+Deliberately NOT built this cut (see "Not yet done" below and each
+item's own file-level doc comment for why): `GET /reports/export` (S7),
+`GET /reports/notifications-summary` (not in Sprint 1's own listed
+endpoint set; its data model is S4), `POST /citizen-reports/:id/convert`
+(W16 is explicitly "list only"), and the admin-editing-another-user half
+of `PATCH /users/:id` (W10, a separate unbuilt screen).
+
+## Scope delivered
+
+**Backend** — `GET /reports/heatmap` (W5), `POST /incidents` web path with
+`Idempotency-Key` header support (W6), `POST /auth/change-password` +
+`PATCH /users/:id` self-only (W15), `POST /citizen-reports` (public, W19)
++ `GET /citizen-reports` (W16). W9 needed no new endpoint — it's a fuller
+presentation of the already-built `GET /reports/summary`.
+
+**Frontend** — `icons.js` (small inline-SVG icon set — this app has no
+npm/bundler step, so lucide-react itself isn't an option; see the file's
+own doc), `HeatmapMap.js` (a MapLibre `heatmap`-layer component, kept
+separate from the shared `LiveMap.js` since §9 reserves that component
+for W3/W4's live-tracking maps specifically), 6 new pages
+(`historical-heatmap.js`, `blotter-list.js`, `statistical-reports.js`,
+`settings.js`, `citizen-reports-inbox.js`, `citizen-report.js`), `AppShell`
+nav extended to 8 items total (role-filtered), and `main.js` extended
+with a hash-route (`#/citizen-report`) for the one public, session-less
+screen.
+
+Also folded in: the Figma-driven `base.css`/markup reskin from earlier in
+this session (icon badges throughout, the login page's two-column hero
+panel) — see that work's own commit/description; not re-described here.
+
+## Files
+
+- `backend/controllers/ReportsController.php` (MODIFIED, additive) —
+  `heatmap()`.
+- `backend/controllers/IncidentsController.php` (MODIFIED, additive) —
+  `create()` + `mapIncident()`/`validateCoordinates()` helpers.
+- `backend/controllers/AuthController.php` (MODIFIED, additive) —
+  `changePassword()`.
+- `backend/controllers/UsersController.php` (MODIFIED, additive) —
+  `update()` (self-only).
+- `backend/controllers/CitizenReportsController.php` (NEW) — `submit()`,
+  `index()`.
+- `backend/routes/reports.php`, `incidents.php`, `auth.php`, `users.php`
+  (MODIFIED, additive routes) — `backend/routes/citizen-reports.php` (NEW).
+- `backend/scripts/verify-sprint1-remaining.sh` (NEW) — disposable-DB
+  end-to-end validation script, same pattern as the four prior verify
+  scripts; 34/34 checks passed against real XAMPP.
+- `web/src/components/icons.js` (MODIFIED, additive icons: flame,
+  fileText, barChart, settings, inbox, megaphone).
+- `web/src/components/HeatmapMap.js` (NEW).
+- `web/src/components/AppShell.js` (MODIFIED) — nav extended; `ROLE_LABELS`
+  generalized beyond admin/PB now that Secretary is a real web user;
+  `setFullName()` added to the returned handle (see bug below).
+- `web/src/pages/historical-heatmap.js`, `blotter-list.js`,
+  `statistical-reports.js`, `settings.js`, `citizen-reports-inbox.js`,
+  `citizen-report.js` (all NEW).
+- `web/src/api/apiClient.js` (MODIFIED, additive) — `idempotencyKey`
+  option on the low-level `request()` helper; `getReportsHeatmap`,
+  `createIncident`, `changePassword`, `updateProfile`,
+  `submitCitizenReport`, `getCitizenReports`.
+- `web/src/main.js` (MODIFIED) — new `PAGE_ROLES` entries; hash-route
+  check for `#/citizen-report` before the session-gated `boot()`;
+  `renderUnavailable()`'s copy generalized (Secretary now has real
+  screens, so the old "only Admin/PB screens exist" text was no longer
+  accurate for every non-covered role, just Tanod).
+
+## Resolved decisions not stated in the reference (logged, don't reopen without review)
+
+- **Web-path incident idempotency storage.** §6 requires the
+  `Idempotency-Key` header for trusted web incident creation but the only
+  existing idempotency column (`incident.client_event_id`) is paired with
+  `device_id` in a nullable composite UNIQUE key that doesn't dedupe
+  across `device_id IS NULL` rows (NULL ≠ NULL in a unique index) — §5's
+  own schema note anticipates exactly this ("nullable composite UNIQUE
+  constraints plus transactional checks are used where a partial
+  constraint would otherwise be required"). Web creates store the header
+  value in `client_event_id` with `device_id` NULL, and a
+  lookup-then-insert-inside-one-transaction (mirroring
+  `DispatchController::create()`'s own replay pattern) supplies the
+  "transactional check" half. Verified in the DB, not just the response:
+  a retried create leaves exactly 1 row for that key.
+- **No `priority` field on `POST /incidents`.** §6's documented body for
+  this endpoint has no `priority` key; the schema already defaults it to
+  `'normal'`. Never accepted, rather than inventing an unlisted field.
+- **`GET /reports/heatmap`'s `weight`** is always `1` per point (one row
+  per incident with known coordinates in range) rather than a
+  pre-aggregated grid count — MapLibre's `heatmap` layer (like most GIS
+  heatmap renderers) computes visual density itself from overlapping
+  weighted points; §6 doesn't describe a grid/cell shape to bin into, and
+  "historical coordinates only" reads as "source from `incident.
+  latitude/longitude`, never `gps_track`" (that's W4's live-tracking data,
+  a different concept).
+- **Citizen-report rate limiting** reuses `audit_log` (has `ip_address`,
+  `action`, `created_at`) rather than adding a new table —
+  `citizen_report` itself has no IP column to key a limiter off of. Every
+  *accepted* submission writes an `audit_log` row
+  (`action='citizen_report_submitted'`); a 4th submission from the same
+  IP inside a rolling 15-minute window gets `429 RATE_LIMITED`. Validation
+  failures (bad barangay, empty description) never reach that write, so
+  they don't consume quota — verified by testing exactly this sequence,
+  not assumed.
+- **`citizen_report.confirmation`** is always `null` in the response — no
+  SMS/GSM transport exists yet (Sprint 4 dependency), so there is no
+  optional confirmation SMS to report the outcome of. Same "don't claim a
+  side effect that never happened" precedent as `dispatch.route_status
+  ="unavailable"` for the not-yet-built OSRM integration.
+- **The four barangays are hardcoded in the public W19 form.** §6 never
+  documents a `GET /barangays` (or similar) endpoint anywhere, and §5
+  states the four rows are deterministic/fixed — matching
+  `migrations/0002_seed_barangays.sql` exactly (Dao=1, Binanuahan=2,
+  Marifosque=3, Banuyo=4) is the only way this public, unauthenticated
+  screen can offer a barangay choice without inventing a new endpoint
+  outside this sprint's scope.
+- **`#/citizen-report` hash routing.** This app has no bundler/URL router
+  and no server-side rewrite configured for the static `web/` folder —
+  rather than requiring a new server path, W19 is reached via a hash
+  fragment on the same `index.html`, checked before `main.js`'s normal
+  session-gated `boot()`. Hash fragments never reach the server, so this
+  works identically under the PHP built-in server, Apache, or any static
+  host with zero rewrite configuration. Caveat found during testing (see
+  below): this only works on an actual navigation (a fresh tab/reload) —
+  a same-tab, hash-only URL change while the app is already loaded is a
+  same-document navigation and doesn't re-run `main.js`. That matches
+  W19's real-world entry point exactly (someone opens a shared link/QR
+  code in a new tab), so it was left as-is rather than adding a
+  `hashchange` listener nothing currently needs.
+- **`PATCH /users/:id` is self-only this cut.** §6/§7 describe this
+  endpoint serving two paths — Admin editing same-barangay others (with a
+  role/`is_active`/session-revocation cascade), and self editing only
+  `full_name`/`contact_number`. W10 User Management (the admin-editing-
+  others screen) isn't one of this sprint's six items and needs its own
+  design pass (which fields toggle `is_active`, "at least one active
+  Admin must remain," the device/session revocation transaction).
+  Building that half now risked getting it wrong; a caller here may only
+  ever edit their own row, and any other `user_id` is rejected with `403`
+  — verified, not just assumed correct.
+- **W9 omits notification reliability.** `GET /reports/notifications-summary`
+  isn't in Sprint 1's own listed endpoint set (only `GET /reports/summary`,
+  `/heatmap`, and the incidents/dispatch/citizen-reports endpoints are),
+  and its data model (`notification`/`notification_target`/
+  `notification_delivery`) is Sprint 4 scope — nothing would ever populate
+  it yet. Building an endpoint outside this sprint's listed set risked the
+  same "jumping ahead of a dependency chain" problem `DispatchController`
+  deliberately avoided by not writing bare `notification` rows for
+  dispatch creation.
+
+## Bug found and fixed during this session's own testing (not just claimed — here's what a real browser run actually caught)
+
+**The topbar's signed-in-user name went stale after a Settings profile
+save.** `AppShell.js` only ever set the topbar `userLabel` text once, from
+the `user` object it was constructed with; `apiClient.updateProfile()`
+correctly updated `sessionStorage`, but nothing re-rendered the
+already-mounted DOM text node from that updated session — so the name in
+the top-right corner kept showing the old value until the next full page
+navigation happened to reconstruct `AppShell` from a freshly-read
+session. Caught by a real Playwright run (not just inspection): the test
+changed the profile's `full_name`, then read the topbar text back and
+compared it, rather than only checking for the "Profile updated." success
+message. Fixed by having `AppShell` return a `setFullName()` handle that
+`settings.js` calls right after a successful save — updates the topbar in
+place without a full navigation, so the success message on the same page
+stays visible too.
+
+Two flaws in the *test script itself* were also found and fixed before
+the final run, not application bugs: (1) a Statistical Reports assertion
+checked for Title-Case label text (`"Total Incidents"`), but
+`page.innerText()` reflects the *rendered* text — the KPI labels sit
+inside a `.label` element with CSS `text-transform:uppercase`, so the
+visible text is `"TOTAL INCIDENTS"` even though the DOM string isn't;
+fixed by matching case-insensitively. (2) the change-password assertion
+used a fixed 500ms wait, which was occasionally too short — Argon2id
+hashing is deliberately memory-hard/slow, and the combined
+hash+session-revocation+audit transaction can take longer than a
+plain-UPDATE request; fixed by waiting for the submit button to
+re-enable instead of guessing a duration.
+
+A real environment issue was also found and fixed in the test harness
+(not the app): earlier throwaway test runs' `pkill -f "php -S ..."`
+cleanup silently failed to actually terminate the native Windows `php.exe`
+processes spawned from Git Bash, leaving up to five stale dev-server
+processes all still bound to port 8080 across runs. Windows apparently
+tolerated multiple processes listening on the same address:port here, and
+requests got inconsistently routed to whichever process happened to
+handle them — including stale ones still holding a since-dropped
+disposable database's credentials, which is what produced a real-looking
+500 on `/auth/login` in an otherwise-correct test run. Fixed the
+throwaway harness's own cleanup to kill by actual port ownership
+(`netstat`/`taskkill`) as a fallback, not just by the PID bash thinks it
+started.
+
+## Tests performed (with evidence)
+
+1. **PHP lint** (`php -l`) and **JS syntax check** (`node --check`) clean
+   on every new/modified file.
+2. **`backend/scripts/verify-sprint1-remaining.sh` against the real local
+   XAMPP install (MariaDB 10.4.32 + PHP 8.2.12)** — 34/34 checks passed:
+   `GET /reports/heatmap` own-barangay count + role gating (Tanod → 403)
+   + tenant isolation (barangay-2 admin sees only their own point); `POST
+   /incidents` web-path create (Secretary and Admin both → 201, Tanod →
+   403) + **idempotent retry returns the same incident_id (verified only
+   1 DB row exists for that Idempotency-Key, not just that the response
+   looked right)** + missing-header → 400; `GET /incidents` (blotter list,
+   no status filter) total count; `GET /reports/summary` PB role-gate
+   spot check; `POST /auth/change-password` wrong-current-password → 401,
+   weak-new-password → 400, correct change → 200, **current session
+   survives the change while a second concurrent session gets revoked
+   (verified both directions)**, re-login with the new password works;
+   `PATCH /users/:id` self-edit persists to the DB (verified via direct
+   SELECT, not just the response) + editing a different user_id → 403;
+   `POST /citizen-reports` public (no Authorization header) → 201 with a
+   `report_id`, unknown barangay_id → 400, empty description → 400, **4th
+   submission from the same IP inside the rate-limit window → 429** (with
+   the 3 prior *accepted* submissions actually counted, and the earlier
+   *rejected* 400 attempts correctly NOT counted, per the resolved
+   decision above); `GET /citizen-reports` inbox total + Tanod role-gate
+   (403) + cross-tenant isolation (barangay-2 admin sees 0).
+3. **Real browser walkthrough via Playwright (`playwright-core` driving a
+   pre-cached local Chromium, throwaway tooling — not committed, same
+   precedent as every prior session's own Playwright script)** against
+   the real PHP dev server + real static `web/` files, using a fresh
+   disposable database (`baranguard_s1rem_browser_check`, dropped after)
+   with realistic seed data — 13/13 checks passed after the one real app
+   bug above was found and fixed, plus the two test-script flaws and one
+   test-harness environment issue also described above: admin login
+   reaches the dashboard; the Heatmap page renders an actual MapLibre
+   `<canvas>` (not just an empty container) once incidents with
+   coordinates exist; the Blotter list shows seeded incidents and a
+   newly-submitted entry actually appears after submit (not just that the
+   POST returned 201); Statistical Reports' Generate button produces the
+   full KPI/breakdown report, not the "choose a range" prompt; the Citizen
+   Reports inbox shows the seeded report's real description text; a
+   Settings profile save updates the topbar name in place (the bug above)
+   and a password change both shows its own success message *and* the new
+   password actually works on a fresh login afterward; **a Secretary
+   account — the first time this role has ever reached a real screen in
+   this web app — lands on Electronic Blotter (not the old "not built
+   yet" message) and its sidebar shows exactly Blotter/Citizen
+   Reports/Settings, never Dashboard/Dispatch Center/Heatmap/Statistical
+   Reports**; the public `#/citizen-report` screen is reachable with zero
+   session from a fresh tab and a real submission shows a success
+   confirmation with a `#<number>` reference; zero *unexpected*
+   console/page errors across the entire run (the only one logged was the
+   browser's own automatic `/favicon.ico` 404 — confirmed via the dev
+   server's own access log line, not assumed).
+4. All test infrastructure (disposable databases, disposable app-users,
+   throwaway Playwright scripts/scratch directory, all dev-server
+   processes including the stale ones found during debugging) was torn
+   down after — the real `baranguard` database and `backend/.env` were
+   never touched, same as every prior verify script in this repo.
+
+## Known environment note (same pattern as every prior entry)
+
+All testing above ran directly against this session's real local XAMPP
+install (MariaDB 10.4.32 + PHP 8.2.12) — not a cloud sandbox — since this
+session runs as Claude Code on the actual workstation. No separate
+"real-XAMPP re-run" caveat applies here.
+
+## Not yet done (explicitly out of this cut)
+
+- `GET /reports/export` + audited export (Sprint 7, per Sprint_Prompts.md
+  explicitly excluding it from Sprint 1).
+- `GET /reports/notifications-summary` and the notification reliability
+  section of W9 (Sprint 4 dependency — see resolved decisions).
+- `POST /citizen-reports/:id/convert` (W16 was explicitly "list only" this
+  cut) — the inbox has no convert action/button yet.
+- The admin-editing-another-user half of `PATCH /users/:id`, and the rest
+  of W10 User Management generally (create/reset-password too).
+- W7, W8, W10–W14, W17, W18, W20 web screens, and all mobile screens —
+  still untouched.
+- Nothing in this cut, nor the earlier CSS/markup reskin from this same
+  session, has been committed yet — both are sitting in the working tree
+  pending the user's explicit go-ahead to commit.
+
+---
+
+# DEVLOG — Sprint 1 continued: W11/W12/W13 Scheduler + Swap Requests + Fatigue Flags (Sprint 1's last "Today's cut" box)
+
+## Today's cut
+
+The one remaining Sprint 1 checklist item — "Scheduler + fatigue calc
+(optional this sprint per §10)" — built at the user's explicit request to
+finish out the rest of Sprint 1. With this, every box in Sprint 1's
+"Today's cut" list is done: Auth, W2, W3a/W3b, W4, W5, W6, W9, W15, W16,
+W19, and now this.
+
+## Schema conflict found before writing any code (stopped and asked)
+
+§5 originally fixed `shift_schedule.user_id` as `NOT NULL`, but §6's
+`PATCH /shift-swap-requests/:id` explicitly documents that an approved
+swap request with no named target "leaves the shift unassigned" — a
+`NOT NULL` column cannot represent "unassigned" at all. This wasn't a
+judgment call to make silently: it changes the schema of an
+already-migrated, already-tested table. Presented to the user as a
+choice (make the column nullable vs. keep it NOT NULL and deviate from
+§6's literal wording); they chose nullable. Resolved via a NEW migration
+(`0003_shift_schedule_nullable_user.sql` + its own `.down.sql`), not by
+editing the completed `0001_baseline_schema.sql`, per this project's own
+convention. Verified directly against `information_schema.COLUMNS` that
+the column is actually nullable post-migration, not just assumed from
+the migration file's intent.
+
+## Scope delivered
+
+**Backend** — `POST/GET /shifts`, `PATCH /shifts/:id` (W11); `POST/GET
+/shift-swap-requests`, `PATCH /shift-swap-requests/:id` (W12); `GET
+/shifts/fatigue-flags`, `PATCH /fatigue-flags/:id/acknowledge` (W13). A
+shared `FatigueCalculator` service (Section 6: "fatigue recalculated for
+affected user" on shift create/edit/reassignment) used by both the
+shifts and swap-request controllers.
+
+**Frontend** — three new pages: `scheduler.js` (list + new-shift form +
+per-row inline edit, all using the API's own `version` optimistic
+concurrency), `swap-requests.js` (Admin approve/deny, since Tanod-side
+request creation isn't reachable from this web app — Tanod is mobile-only
+and unbuilt), `fatigue-flags.js` (list + acknowledge, PB read-only). Two
+new icons (`calendar`, `repeat`, `batteryWarning`). `AppShell`/`main.js`
+extended with 3 more nav items/routes.
+
+## Resolved decisions not stated in the reference (logged, don't reopen without review)
+
+- **Fatigue threshold: 56 scheduled hours in a rolling 7-day window**
+  (~8h/day average) — §10 explicitly says "Fatigue threshold is a project
+  safety rule, not a statutory claim about tanods," i.e. the reference
+  deliberately leaves the actual number unstated. A project safety
+  default, not a labor-law citation, same spirit as `AuthController`'s
+  login-lockout numbers.
+- **Fatigue window anchors to the triggering shift's own `end_at`**, not
+  "the 7 days ending right now." A scheduler mostly assigns *future*
+  shifts — anchoring to "now" would never count a newly-created
+  week-from-now shift. Anchoring to the shift's own end_at correctly
+  covers both a retrospective edit and a prospective assignment. Full
+  reasoning in `FatigueCalculator.php`'s own doc comment.
+- **A flag once raised is never deleted or un-raised** by a later
+  recalculation that drops back under threshold — only an explicit
+  acknowledge touches an existing row (§9 W13's "never deletes or hides
+  the historical record," extended to recalculation too). Verified
+  directly: after reassigning a fatigued Tanod's flagged shift away from
+  them, their fatigue_flag row still exists in the DB, not silently
+  removed just because they're no longer over threshold from that shift.
+- **`version` added to `GET /shifts`/`POST /shifts` responses** even
+  though §6's documented list item shape omits it — a mechanical spec
+  gap, not an architectural fork: `version` already exists on the table
+  and the very next endpoint in the same section (`PATCH /shifts/:id`)
+  cannot function without the client knowing the current value first.
+  Fixed without pausing to ask, unlike the `user_id` nullability
+  question above, which changed the schema itself. Logged in
+  `ShiftsController.php`'s own doc comment too.
+- **Shift-swap wire field is `client_request_id`**, not `request_id` —
+  §6 is explicit about this name specifically for this endpoint, unlike
+  `POST /dispatch`/`POST /shifts` which both use `request_id` in the body
+  for their own differently-named columns. Kept as documented rather than
+  normalized to match the other two.
+- **`barangay_id?` in `POST /shifts`'s body is accepted but ignored** —
+  every other write endpoint in this codebase derives tenant strictly
+  from the caller's own session; the `?` marking it optional in §6
+  doesn't carry license to trust a client-supplied barangay over the
+  Admin's own token.
+- **Approve-with-no-target releases the shift to unassigned** (`user_id
+  = NULL`) rather than leaving the requester's name on a shift they were
+  just released from — matches §6's literal wording, made possible by the
+  schema change above. No fatigue recalculation is triggered for the
+  released user in this path (no new/changed assignment to anchor a flag
+  to for someone being removed from one) — their historical flags, if
+  any, are untouched.
+- **Revalidation on swap-request approval**: if the shift's *current*
+  occupant no longer matches `requesting_user_id` (an Admin reassigned it
+  via a normal edit after the request was submitted, before it was
+  resolved), approval is rejected with `409` rather than silently
+  approving a swap for a shift the requester no longer holds — matches
+  §9's "revalidate current users, assignment, time overlap, and
+  fatigue." Verified with a real interleaved sequence (create request →
+  reassign the shift out from under it → attempt approve → 409), not
+  just read from the code.
+- **Timezone handling for shift times.** §5: "operational shift times
+  are interpreted in Asia/Manila." An HTML `datetime-local` input value
+  carries no offset of its own — treated as Asia/Manila wall-clock time
+  by default and converted to UTC before storage; a DB round-trip value
+  (an `update()` field the caller didn't touch) is already a naive UTC
+  string, so it's re-parsed with UTC as the default instead — same
+  parser (`ShiftsController::parseTimestamp()`), different default
+  depending on the value's actual source, per PHP's own
+  `DateTimeImmutable` rule that an explicit offset/zone in the string
+  always wins over whichever default was passed in. A real gap in the
+  first draft (both call sites originally parsed with no explicit
+  default at all, which would have silently used PHP's ambient
+  `date.timezone` ini setting rather than a value tied to the data's
+  actual source) was found and fixed before any test ran against it, not
+  after.
+
+## Bugs found and fixed during this session's own testing (not just claimed — here's what real runs actually caught)
+
+**A real app bug:** `scheduler.js`'s new-shift form pane was replaced via
+`layout.replaceChild(formPane, layout.children[1] ?? document.createElement('div'))`
+on every `load()` call — but on the *first* load, `layout` only had one
+child (the list pane), so `layout.children[1]` was `undefined` and the
+`??` fallback created a orphan `<div>` that was never actually a child of
+`layout`. Calling `replaceChild` with a node that isn't a real child
+throws `NotFoundError`, which would have crashed the Scheduler page on
+every single visit. Caught by a real Playwright run, not by inspection —
+fixed by appending a real placeholder `formPane` alongside the list pane
+at construction time and always replacing that same tracked reference on
+each load, rather than guessing at `layout.children[1]`.
+
+**A real app bug, caught before it ever reached a browser:** `fatigue-
+flags.js` originally called `getUsers({role:'tanod'})` unconditionally to
+build a name lookup — but `GET /users` is Admin-only server-side
+(`UsersController.php`), and this screen's own role matrix (§9 W13) grants
+Punong Barangay read-only access to it. A PB session would have gotten a
+403 on that call, and since it was inside the same `Promise.all` as the
+actual fatigue-flags fetch, the *entire* page would have failed to render
+for a role the reference explicitly says should be able to view it. Found
+by re-reading the role matrix against the code before testing, not by a
+PB-specific test case — fixed by only requesting the name lookup as
+Admin; PB falls back to "Tanod #id" labels instead of a crashed page.
+
+**Three flaws in the test scripts themselves**, not application bugs,
+found and fixed before the final passing runs:
+1. `verify-scheduler-fatigue.sh` checked a NULL column value with `[ -z
+   "$DB_USER" ]` — but `mysql -N -s` prints the literal text `"NULL"` for
+   a SQL NULL, not an empty string (confirmed directly, not assumed) —
+   fixed to compare against that literal string.
+2. The same script asserted a `fatigue_flag` row should exist for a
+   Tanod who received a reassigned shift contributing only 10 hours to
+   their own 7-day window — but 10 hours is correctly *under* the 56-hour
+   threshold, so no flag should exist; the assertion itself encoded a
+   wrong expectation, not a wrong implementation. Fixed to assert the
+   *absence* of a flag instead, which is the actually-meaningful check
+   here (recalculation must not over-flag someone who isn't fatigued).
+3. `scheduler-browser-check.js` (Playwright) checked page text for
+   `"Unassigned"`/`"Acknowledged"` in mixed case, but both sit inside a
+   `.status-pill` element with CSS `text-transform:uppercase` —
+   `page.innerText()` reflects the *rendered* text ("UNASSIGNED"), not
+   the DOM string. Same class of flaw as a case-sensitivity issue caught
+   in the previous session's own Playwright script against Statistical
+   Reports' KPI labels — fixed by matching case-insensitively, and worth
+   remembering as a recurring category, not just a one-off.
+
+**One real environment/tooling issue, not an application bug:** an
+earlier interrupted verification run left one or more stale `php.exe`
+processes still bound to a throwaway port from a *previous* run (this
+project's recurring `pkill -f` unreliability against Git-Bash-spawned
+native Windows processes — see the previous DEVLOG entry's own note on
+this). One `verify-scheduler-fatigue.sh` run produced a real-looking
+`VALIDATION_ERROR` ("start_at must be before end_at") on a request whose
+inputs were independently verified correct in isolation; a second run
+against freshly-cleared ports passed the identical step cleanly,
+confirming the transient stale-process explanation rather than a logic
+bug in the request itself.
+
+## Tests performed (with evidence)
+
+1. **PHP lint** and **JS syntax check** clean on every new/modified file.
+2. **`backend/scripts/verify-scheduler-fatigue.sh` against the real
+   local XAMPP install (MariaDB 10.4.32 + PHP 8.2.12)** — 42/42 checks
+   passed: migration 0003 applied and confirmed nullable via
+   `information_schema` (not assumed); `POST /shifts` create + idempotent
+   retry (**verified only 1 DB row exists for the request_id, not just
+   that the response looked right**) + overlap rejection (409) +
+   role-gating (Tanod → 403) + cross-tenant Tanod → 422; `GET /shifts`
+   role scoping (Admin sees all barangay shifts, Tanod forced to own);
+   `PATCH /shifts/:id` stale-version → 409, correct-version → 200 with
+   the new `patrol_zone` verified via direct SELECT, and unassign
+   (`user_id:null`) verified as an actual SQL NULL afterward; a real
+   fatigue-triggering sequence (48 pre-existing hours + one new 10-hour
+   shift = 58h) produces a `fatigue_flag` row keyed to the triggering
+   shift with the exact computed `hours_worked_7day` (58.00, verified in
+   the DB); `GET /shifts/fatigue-flags` + role gating (Tanod → 403) +
+   tenant isolation + `PATCH /fatigue-flags/:id/acknowledge` with the
+   flag row confirmed to still exist afterward (never deleted); `POST
+   /shift-swap-requests` ownership check (403 for a non-owner) + a named
+   target correctly echoed back; approving a request **with** a named
+   target actually reassigns the shift in the DB and correctly
+   recalculates fatigue for *both* the outgoing and incoming Tanod (the
+   incoming one correctly gets *no* flag, since their own total is under
+   threshold); the revalidation path (shift reassigned out from under a
+   pending request → approval → 409) exercised with a real interleaved
+   sequence; version conflict and already-resolved conflict on
+   deny/re-approve; `GET /shift-swap-requests` role scoping.
+3. **Real browser walkthrough via Playwright** (throwaway tooling, not
+   committed) against the real PHP dev server + real static `web/`
+   files, disposable database (`baranguard_sched_browser_check`, dropped
+   after) — 6/6 checks passed after the two real app bugs above were
+   found and fixed, plus the test-script case-sensitivity issue also
+   described above: the Scheduler lists real seeded shifts for two
+   different Tanods; an inline per-row edit (renaming a patrol zone)
+   actually persists and is visible after save without a page reload;
+   Swap Requests shows a real requester name and reason; approving a
+   no-target request shows "Unassigned — Admin action required" exactly
+   per §6's wording; Fatigue Flags shows a real seeded over-threshold
+   flag; acknowledging it shows the "Acknowledged" state while the row
+   itself stays visible (never disappears). Zero unexpected console/page
+   errors (only the browser's own automatic `/favicon.ico` 404).
+4. All test infrastructure (disposable databases, disposable app-users,
+   throwaway Playwright scripts, all dev-server processes — including
+   the stale ones found during debugging) was torn down after — the real
+   `baranguard` database and `backend/.env` were never touched.
+
+## Known environment note (same pattern as every prior entry)
+
+All testing above ran directly against this session's real local XAMPP
+install (MariaDB 10.4.32 + PHP 8.2.12) — not a cloud sandbox.
+
+## Not yet done (explicitly out of this cut)
+
+- W7, W8, W10, W14, W17, W18, W20 web screens, and all mobile screens —
+  still untouched. Sprint 1 itself is now fully complete (every "Today's
+  cut" box checked, including the optional one).
+- Nothing from this session — this cut, the earlier 6-item cut, or the
+  CSS/markup reskin — has been committed yet; all of it is sitting in
+  the working tree pending the user's explicit go-ahead to commit.

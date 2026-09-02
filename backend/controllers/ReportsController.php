@@ -169,6 +169,67 @@ final class ReportsController
         ]);
     }
 
+    /**
+     * GET /reports/heatmap -- W5 Historical Heatmap. Section 6: "Admin/PB
+     * own barangay -> {items:[{latitude,longitude,weight}]}; historical
+     * coordinates only." Resolved decisions, logged in DEVLOG.md:
+     *   - Reuses the exact same date_from/date_to query shape as
+     *     GET /reports/summary (trailing-30-day default, 366-day cap) --
+     *     Section 6 doesn't restate the param names for this endpoint, but
+     *     nothing suggests a different convention, and reusing one date-
+     *     range contract across both report endpoints avoids two subtly
+     *     different date-handling rules in the same file.
+     *   - "Historical coordinates only" is read as: source from
+     *     incident.latitude/longitude (a point per incident with known
+     *     coordinates in range), never gps_track -- that's live/near-live
+     *     Tanod movement (W4's own data source), a different concept from
+     *     a historical incident-density heatmap.
+     *   - weight is always 1 per point rather than a pre-aggregated grid
+     *     count: MapLibre's heatmap layer (like most GIS heatmap
+     *     renderers) computes visual density itself from overlapping
+     *     weighted points -- pre-binning into a grid isn't needed and
+     *     Section 6 doesn't describe a grid/cell shape to bin into.
+     *   - Incidents with NULL latitude/longitude are excluded (nothing to
+     *     plot), not counted as zero-weight points.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function heatmap(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+        $barangayId = $identity['barangay_id'];
+
+        $manila = new \DateTimeZone('Asia/Manila');
+        $utc = new \DateTimeZone('UTC');
+        [$from, $to] = self::resolveDateRange(Http::query('date_from'), Http::query('date_to'), $manila);
+        $rangeStartUtc = $from->setTime(0, 0, 0)->setTimezone($utc);
+        $rangeEndUtc = $to->setTime(0, 0, 0)->modify('+1 day')->setTimezone($utc);
+
+        $stmt = $pdo->prepare(
+            'SELECT latitude, longitude
+             FROM incident
+             WHERE barangay_id = :barangay_id
+               AND created_at >= :range_start AND created_at < :range_end
+               AND latitude IS NOT NULL AND longitude IS NOT NULL'
+        );
+        $stmt->execute([
+            'barangay_id' => $barangayId,
+            'range_start' => $rangeStartUtc->format('Y-m-d H:i:s'),
+            'range_end' => $rangeEndUtc->format('Y-m-d H:i:s'),
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $items = array_map(static function (array $row): array {
+            return [
+                'latitude' => (float) $row['latitude'],
+                'longitude' => (float) $row['longitude'],
+                'weight' => 1,
+            ];
+        }, $rows);
+
+        Http::send(200, ['items' => $items]);
+    }
+
     /** @return array{0:\DateTimeImmutable,1:\DateTimeImmutable} */
     private static function resolveDateRange(?string $fromRaw, ?string $toRaw, \DateTimeZone $manila): array
     {

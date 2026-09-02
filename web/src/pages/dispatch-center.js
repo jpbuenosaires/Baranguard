@@ -21,6 +21,7 @@ import {
 } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
+import { icons } from '../components/icons.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 const PRIORITY_LABELS = { normal: 'Normal', high: 'High', critical: 'Critical' };
@@ -49,7 +50,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   const { content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = '<h2 style="margin-bottom:16px;">Dispatch Center</h2>';
+  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.radio(22)}Dispatch Center</h2>`;
   const body = document.createElement('div');
   body.style.cssText = 'height:calc(100% - 40px); min-height:0;';
   content.appendChild(body);
@@ -95,9 +96,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     if (openSos.length > 0) {
       const banner = document.createElement('div');
       banner.className = 'sos-banner';
-      banner.textContent = openSos.length === 1
+      const bannerText = openSos.length === 1
         ? '1 Tanod SOS requires attention.'
         : `${openSos.length} Tanod SOS alerts require attention.`;
+      banner.innerHTML = `${icons.alertTriangle(20)}<span>${bannerText}</span>`;
       container.appendChild(banner);
     }
 

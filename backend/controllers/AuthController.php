@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Auth\Jwt;
+use Baranguard\Services\Auth\PasswordPolicy;
 use Baranguard\Services\Auth\Username;
 use PDO;
 
@@ -152,6 +153,71 @@ final class AuthController
             );
             $stmt->execute(['jti' => $identity['jti']]);
             self::audit($pdo, $identity['barangay_id'], $identity['user_id'], 'logout', 'auth_session', $identity['session_id'], []);
+        }
+
+        Http::send(200, ['success' => true]);
+    }
+
+    /**
+     * POST /auth/change-password -- Section 6 Auth section: "any
+     * authenticated role, self only. Rehashes Argon2id and revokes every
+     * other active session for the user. Current session remains valid
+     * with updated authentication state." W15 Settings/Account's own
+     * change-password action.
+     *
+     * Resolved decision, logged in DEVLOG.md: a wrong current_password
+     * returns the same generic 401 shape as a failed login (not a
+     * distinguishable "current password incorrect" 400/422) -- the
+     * schema's lockout counters are login-specific
+     * (login_failure_window_started_at etc.), so this endpoint doesn't
+     * feed them, but it still shouldn't hand back a message shape that's
+     * easier to probe than the login endpoint itself.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string,jti:string} $identity
+     */
+    public static function changePassword(PDO $pdo, array $identity): void
+    {
+        $body = Http::jsonBody();
+        $currentPassword = $body['current_password'] ?? null;
+        $newPassword = $body['new_password'] ?? null;
+
+        if (!is_string($currentPassword) || $currentPassword === '' || !is_string($newPassword) || $newPassword === '') {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'current_password and new_password are required.');
+        }
+
+        $stmt = $pdo->prepare('SELECT password_hash FROM user WHERE user_id = :user_id LIMIT 1');
+        $stmt->execute(['user_id' => $identity['user_id']]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false || !password_verify($currentPassword, $row['password_hash'])) {
+            throw new ApiError(401, 'UNAUTHORIZED', 'Current password is incorrect.');
+        }
+
+        $policyError = PasswordPolicy::validate($newPassword);
+        if ($policyError !== null) {
+            throw new ApiError(400, 'VALIDATION_ERROR', $policyError);
+        }
+
+        $newHash = password_hash($newPassword, PASSWORD_ARGON2ID);
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare(
+                'UPDATE user SET password_hash = :hash, updated_at = UTC_TIMESTAMP() WHERE user_id = :user_id'
+            )->execute(['hash' => $newHash, 'user_id' => $identity['user_id']]);
+
+            // "Revokes every other active session for the user. Current
+            // session remains valid" -- exclude this request's own jti.
+            $pdo->prepare(
+                'UPDATE auth_session SET revoked_at = UTC_TIMESTAMP()
+                 WHERE user_id = :user_id AND jti != :current_jti AND revoked_at IS NULL'
+            )->execute(['user_id' => $identity['user_id'], 'current_jti' => $identity['jti']]);
+
+            self::audit($pdo, $identity['barangay_id'], $identity['user_id'], 'password_changed', 'user', $identity['user_id'], []);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
         }
 
         Http::send(200, ['success' => true]);

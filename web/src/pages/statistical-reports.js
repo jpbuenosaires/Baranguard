@@ -1,17 +1,32 @@
 /**
- * admin-dashboard.js — W2 Admin Dashboard (§9): "KPI cards plus trend
- * chart. The API returns trend[] with a defined date bucket and counts,
- * so the chart never invents a client-side data shape. Fresh deployments
- * show an intentional empty state." Roles: Admin, Punong Barangay
- * (read-only) — this screen has no write action at all, so there is
- * nothing role-specific to disable in the UI; both roles just call the
- * same GET.
+ * statistical-reports.js — W9 Statistical Reports, Generate only (§9):
+ * "Contains exact trend, incident, status, response-time, and
+ * notification reliability datasets. Generate and Export are separate;
+ * Export calls GET /reports/export and is audited." Roles: Admin, Punong
+ * Barangay (read-only) — same as W2, both just call the same GET.
+ *
+ * Two things deliberately scoped out of this cut, logged in DEVLOG.md:
+ *   - **Export** is `GET /reports/export`, a separate Sprint 7 "Today's
+ *     cut" box per Sprint_Prompts.md ("excluding export/service-health
+ *     which are S7") — not built here, no Export button on this page.
+ *   - **Notification reliability** isn't shown. §6's
+ *     `GET /reports/notifications-summary` isn't in Sprint 1's own listed
+ *     endpoint set, and its data model (notification/notification_target/
+ *     notification_delivery) is Sprint 4 scope — nothing would ever
+ *     populate it yet. Building an endpoint outside this sprint's listed
+ *     set risked getting ahead of a dependency chain the same way
+ *     `DispatchController` deliberately didn't write bare `notification`
+ *     rows for the same reason.
+ *
+ * Deliberately distinct from W2 Admin Dashboard: this is an explicit
+ * "Generate" action for a chosen range (no auto-load on open), producing
+ * the fuller trend/type/status/response-time breakdown — not just the
+ * top-line KPI cards.
  *
  * kebab-case filename per §4 (pages/routes convention).
  */
 
 import { getReportsSummary, logout, ApiClientError } from '../api/apiClient.js';
-import { KpiCard } from '../components/KpiCard.js';
 import { TrendChart } from '../components/TrendChart.js';
 import { AppShell } from '../components/AppShell.js';
 import { icons } from '../components/icons.js';
@@ -41,10 +56,10 @@ function daysAgoIso(n) {
  * @param {() => void} onLoggedOut
  * @param {(page: string) => void} navigate
  */
-export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
+export function renderStatisticalReportsPage(root, user, onLoggedOut, navigate) {
   root.innerHTML = '';
 
-  const shell = AppShell(user, 'dashboard', navigate, async () => {
+  const shell = AppShell(user, 'reports', navigate, async () => {
     shell.logoutButton.disabled = true;
     await logout();
     onLoggedOut();
@@ -52,11 +67,10 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   const { content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = '<h2 style="margin-bottom:16px;">Admin Dashboard</h2>';
+  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.barChart(22)}Statistical Reports</h2>`;
 
-  // Date range controls
   const controls = document.createElement('div');
-  controls.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:24px;';
+  controls.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:24px; flex-wrap:wrap;';
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.value = daysAgoIso(29);
@@ -65,89 +79,55 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   toInput.type = 'date';
   toInput.value = todayIso();
   toInput.style.width = 'auto';
-  const applyButton = document.createElement('button');
-  applyButton.className = 'primary';
-  applyButton.textContent = 'Apply';
+  const generateButton = document.createElement('button');
+  generateButton.className = 'primary';
+  generateButton.textContent = 'Generate';
   controls.append(
     Object.assign(document.createElement('span'), { className: 'label', textContent: 'From' }),
     fromInput,
     Object.assign(document.createElement('span'), { className: 'label', textContent: 'To' }),
     toInput,
-    applyButton
+    generateButton
   );
 
   const body = document.createElement('div');
-
   content.append(controls, body);
+  renderPrompt(body);
 
-  applyButton.addEventListener('click', () => load(fromInput.value, toInput.value));
-  // Initial load sends NO date params, deliberately — see load()'s comment
-  // below for why. fromInput/toInput start out showing a client-computed
-  // guess only so the date pickers aren't empty; load() overwrites them
-  // with the server's actual range once the response comes back.
-  load(undefined, undefined);
+  generateButton.addEventListener('click', () => load(fromInput.value, toInput.value));
 
   async function load(dateFrom, dateTo) {
     renderLoading(body);
+    generateButton.disabled = true;
     try {
       const summary = await getReportsSummary({ dateFrom, dateTo });
-
-      // The date inputs show a *guess* at the default range, computed in
-      // the browser's local timezone (todayIso()/daysAgoIso() above) —
-      // that can disagree with the server's Asia/Manila-based default by
-      // a day at the boundary. Explicitly sending that guessed range on
-      // first load would make the client, not the server, define "the
-      // last 30 days" — silently wrong by a day whenever the two
-      // timezones' calendar days don't line up. So the initial load omits
-      // date_from/date_to entirely and lets the server's real default
-      // win; once summary.trend comes back, the inputs are corrected to
-      // reflect the range the server actually used, so a later manual
-      // Apply starts from truth, not from the initial guess.
-      if (summary.trend && summary.trend.length > 0) {
-        fromInput.value = summary.trend[0].date;
-        toInput.value = summary.trend[summary.trend.length - 1].date;
-      }
-
-      const isFreshDeployment = summary.totalIncidents === 0 && summary.activeTanods === 0;
-      if (isFreshDeployment) {
-        renderEmpty(body);
-      } else {
-        renderPopulated(body, summary);
-      }
+      renderReport(body, summary);
     } catch (err) {
-      const message = err instanceof ApiClientError
-        ? err.message
-        : 'Something went wrong loading the dashboard.';
+      const message = err instanceof ApiClientError ? err.message : 'Something went wrong generating the report.';
       renderError(body, message, () => load(dateFrom, dateTo));
+    } finally {
+      generateButton.disabled = false;
     }
   }
 }
 
-function renderLoading(container) {
-  container.innerHTML = '';
-  const grid = document.createElement('div');
-  grid.className = 'kpi-grid';
-  for (let i = 0; i < 4; i++) {
-    const skeleton = document.createElement('div');
-    skeleton.className = 'card';
-    skeleton.innerHTML = '<div class="skeleton" style="height:14px;width:60%;margin-bottom:12px;"></div><div class="skeleton" style="height:32px;width:40%;"></div>';
-    grid.appendChild(skeleton);
-  }
-  const chartSkeleton = document.createElement('div');
-  chartSkeleton.className = 'card skeleton';
-  chartSkeleton.style.height = '176px';
-  container.append(grid, chartSkeleton);
-}
-
-function renderEmpty(container) {
+function renderPrompt(container) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block';
   block.innerHTML = `
-    <h3>No activity yet</h3>
-    <p>This barangay hasn't logged any incidents or on-duty Tanods yet. Once incidents are reported and Tanods are on duty, this dashboard fills in automatically.</p>
+    <h3>Choose a date range</h3>
+    <p>Pick a From/To range above and click Generate to produce the incident, status, and response-time breakdown for that period.</p>
   `;
   container.appendChild(block);
+}
+
+function renderLoading(container) {
+  container.innerHTML = '';
+  const chartSkeleton = document.createElement('div');
+  chartSkeleton.className = 'card skeleton';
+  chartSkeleton.style.height = '176px';
+  container.appendChild(chartSkeleton);
 }
 
 function renderError(container, message, onRetry) {
@@ -164,22 +144,28 @@ function renderError(container, message, onRetry) {
   container.appendChild(block);
 }
 
-function renderPopulated(container, summary) {
+function renderReport(container, summary) {
   container.innerHTML = '';
 
-  const grid = document.createElement('div');
-  grid.className = 'kpi-grid';
-  grid.append(
-    KpiCard({ label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue' }),
-    KpiCard({ label: 'Resolved', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green' }),
-    KpiCard({
-      label: 'Avg. Response Time',
-      value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
-      emptyText: 'No arrivals yet',
-      icon: icons.clock,
-      accent: 'orange',
-    }),
-    KpiCard({ label: 'Tanods On Duty', value: summary.activeTanods, icon: icons.users, accent: 'teal' })
+  const isEmpty = summary.totalIncidents === 0;
+  if (isEmpty) {
+    const block = document.createElement('div');
+    block.className = 'card state-block';
+    block.innerHTML = `
+      <h3>No incidents in this range</h3>
+      <p>No incidents were reported in the selected date range. Try widening it.</p>
+    `;
+    container.appendChild(block);
+    return;
+  }
+
+  const kpiGrid = document.createElement('div');
+  kpiGrid.className = 'kpi-grid';
+  kpiGrid.append(
+    kpiTile('Total Incidents', summary.totalIncidents),
+    kpiTile('Resolved', summary.resolvedCount),
+    kpiTile('Avg. Response Time', summary.avgResponseTimeMinutes === null ? 'No arrivals yet' : `${summary.avgResponseTimeMinutes} min`),
+    kpiTile('Active Tanods', summary.activeTanods)
   );
 
   const trendCard = document.createElement('div');
@@ -194,7 +180,20 @@ function renderPopulated(container, summary) {
     renderBreakdownCard('By Incident Type', summary.byIncidentType, INCIDENT_TYPE_LABELS, {})
   );
 
-  container.append(grid, trendCard, breakdownGrid);
+  container.append(kpiGrid, trendCard, breakdownGrid);
+}
+
+function kpiTile(label, value) {
+  const el = document.createElement('div');
+  el.className = 'card kpi-card';
+  const labelEl = document.createElement('div');
+  labelEl.className = 'label kpi-card__label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('div');
+  valueEl.className = 'kpi-card__value';
+  valueEl.textContent = String(value);
+  el.append(labelEl, valueEl);
+  return el;
 }
 
 function renderBreakdownCard(title, counts, labels, pillClasses) {
