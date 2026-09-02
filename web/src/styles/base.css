@@ -1,12 +1,26 @@
 /**
  * base.css — global design tokens + shared component styles (§8 "Design
- * System"). This file was referenced by index.html and every existing
- * page/component's class names from the moment they were written, but it
- * was never actually committed (confirmed against `git show <W2 commit>
- * --stat`, which never touched web/src/styles/) — recreated here as a
- * real bug fix, not new scope. Every class name below is either a §8
- * token/requirement or a class some existing or new-this-session JS file
- * already references; none are speculative.
+ * System"). Restyled to match the project's Figma Make export
+ * (Downloads/Baranguard.zip — a shadcn/Tailwind React prototype), same
+ * Figma file confirmed live via the Figma MCP server against
+ * https://www.figma.com/make/llfBj3M4ilW1bZNnEnLGLY/Baranguard.
+ *
+ * First pass here was CSS-only and still looked visibly different from
+ * the real design — the gap wasn't tokens (colors/radii below already
+ * matched), it was structural: the mockup's icon system (lucide-react,
+ * on the sidebar brand mark, every nav item, every KPI card, the login
+ * hero) and its two-column login hero panel don't exist as DOM in this
+ * app at all, and no CSS can add markup that isn't there. This pass adds
+ * that markup (see icons.js, AppShell.js, KpiCard.js, login.js) with the
+ * user's explicit go-ahead to expand scope beyond "CSS only" for real
+ * visual fidelity.
+ *
+ * Design tokens below are pulled directly from the export's
+ * src/styles/theme.css (same hex values, --radius: 0.75rem base scale)
+ * and its component source (button.tsx/card.tsx/badge.tsx class lists,
+ * DashboardLayout.tsx/LoginPage.tsx/AdminDashboard.tsx/
+ * DispatcherDashboard.tsx/GISTracking.tsx inline Tailwind classes) —
+ * not invented independently of it.
  *
  * "Never hardcode a hex value, pixel spacing, or font name in a
  * component file" (§8) — that rule is about page/component JS, which is
@@ -23,17 +37,69 @@
   --color-text-secondary: #475569;
   --color-critical: #DC2626;      --color-warning: #D97706;
   --color-success: #16A34A;       --color-info: #0891B2;
+
+  /* Solid pastel tints (not alpha blends) — matches the export's exact
+     status-pill/stat-card background hexes, e.g. DispatcherDashboard.tsx's
+     `bg-[#DCFCE7] text-[#16A34A]` / `bg-[#FEE2E2]` / `bg-[#F3F4F6]`. */
+  --tint-success-bg: #DCFCE7;     --tint-critical-bg: #FEE2E2;
+  --tint-warning-bg: #FEF3C7;     --tint-info-bg: var(--color-surface-blue);
+  --tint-neutral-bg: #F3F4F6;
+
   --spacing-xs: 4px; --spacing-sm: 8px; --spacing-md: 16px;
   --spacing-lg: 24px; --spacing-xl: 32px; --spacing-2xl: 48px;
   --font-base: "Inter", system-ui, -apple-system, sans-serif;
   --font-size-label: 0.75rem; --font-size-sm: 0.875rem; --font-size-md: 1rem;
   --font-size-lg: 1.25rem; --font-size-xl: 1.75rem; --font-size-2xl: 2.25rem;
-  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;
-  --shadow-card: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.06);
-  --shadow-elevated: 0 4px 12px rgba(15,23,42,.10);
+
+  /* Export's --radius: 0.75rem (12px) base, sm/md/lg/xl derived the same
+     way its @theme inline block does: sm = radius-4, md = radius-2,
+     lg = radius, xl = radius+4. */
+  --radius-sm: 8px; --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px;
+
+  /* Export's cards are flat (border only) at rest and only elevate via
+     `hover:shadow-lg` — kept subtle at rest, matching that, with a
+     distinct stronger tier for floating map overlays (`shadow-xl`/`2xl`
+     on the legend/detail cards in GISTracking.tsx/DispatcherDashboard.tsx). */
+  --shadow-card: 0 1px 2px rgba(15,23,42,.05);
+  --shadow-elevated: 0 10px 15px -3px rgba(15,23,42,.10), 0 4px 6px -4px rgba(15,23,42,.10);
+  --shadow-floating: 0 20px 25px -5px rgba(15,23,42,.12), 0 8px 10px -6px rgba(15,23,42,.10);
 }
 
 * { box-sizing: border-box; }
+
+/* --- Icon badges --------------------------------------------------------
+   Figma's icon system (lucide-react, via icons.js's inline-SVG port):
+   sidebar brand mark, login hero logo/features, KPI card badges all use
+   the same "colored box, centered icon, white glyph" shape at different
+   sizes/backgrounds rather than a bare icon floating in the layout. */
+
+.icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-white);
+}
+.icon-badge--brand {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+}
+.icon-badge--hero {
+  width: 56px; height: 56px;
+  border-radius: var(--radius-xl);
+  background: rgba(255, 255, 255, 0.2);
+}
+.icon-badge--feature {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.2);
+}
+.icon-badge--kpi { width: 48px; height: 48px; border-radius: var(--radius-lg); }
+.icon-badge--kpi.accent-blue { background: var(--color-accent); }
+.icon-badge--kpi.accent-green { background: var(--color-success); }
+.icon-badge--kpi.accent-orange { background: var(--color-warning); }
+.icon-badge--kpi.accent-teal { background: var(--color-info); }
 
 html, body {
   margin: 0;
@@ -49,8 +115,8 @@ html, body {
 
 h1, h2, h3, p { margin: 0; }
 h1 { font-size: var(--font-size-2xl); font-weight: 700; }
-h2 { font-size: var(--font-size-xl); font-weight: 600; }
-h3 { font-size: var(--font-size-lg); font-weight: 600; }
+h2 { font-size: var(--font-size-xl); font-weight: 700; }
+h3 { font-size: var(--font-size-lg); font-weight: 700; }
 
 .label {
   font-size: var(--font-size-label);
@@ -65,26 +131,34 @@ input, select {
   font-size: var(--font-size-sm);
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-white);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
   color: var(--color-text-primary);
   width: 100%;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
 input:focus, select:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -1px;
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--color-primary);
 }
 
 button {
   font-family: inherit;
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: 500;
   padding: var(--spacing-sm) var(--spacing-lg);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   cursor: pointer;
   min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
 }
+button svg { flex-shrink: 0; }
 button.primary {
   background: var(--color-primary);
   color: var(--color-white);
@@ -92,11 +166,10 @@ button.primary {
 button.primary:hover { background: var(--color-navy); }
 button.primary:disabled { background: var(--color-border); color: var(--color-text-secondary); cursor: not-allowed; }
 button.ghost {
-  background: transparent;
-  border-color: var(--color-border);
-  color: var(--color-text-primary);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
 }
-button.ghost:hover { background: var(--color-surface-blue); }
+button.ghost:hover { background: var(--color-border); }
 button.danger {
   background: var(--color-white);
   border-color: var(--color-critical);
@@ -110,10 +183,12 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .card {
   background: var(--color-white);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   padding: var(--spacing-lg);
+  transition: box-shadow .15s ease;
 }
+.card:hover { box-shadow: var(--shadow-elevated); }
 
 .state-block {
   text-align: center;
@@ -123,6 +198,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   align-items: center;
   gap: var(--spacing-md);
 }
+.state-block:hover { box-shadow: var(--shadow-card); } /* static content, no lift */
 .state-block h3 { color: var(--color-text-primary); }
 .state-block p { color: var(--color-text-secondary); max-width: 420px; }
 .state-block--error p { color: var(--color-critical); }
@@ -131,31 +207,39 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   background: linear-gradient(90deg, var(--color-border) 25%, #f1f5f9 37%, var(--color-border) 63%);
   background-size: 400% 100%;
   animation: skeleton-shimmer 1.4s ease infinite;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 @keyframes skeleton-shimmer {
   0% { background-position: 100% 50%; }
   100% { background-position: 0 50%; }
 }
 
-/* --- Status pills (§8) -------------------------------------------------- */
+/* --- Status pills -------------------------------------------------------
+   Solid pastel tints (not translucent blends) matching the export's exact
+   status-pill hexes across DispatcherDashboard.tsx/GISTracking.tsx. */
 
 .status-pill {
   display: inline-block;
-  padding: 2px var(--spacing-sm);
+  padding: 4px var(--spacing-sm);
   border-radius: 999px;
   font-size: var(--font-size-label);
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-.status-pill--pending { background: color-mix(in srgb, var(--color-warning) 15%, transparent); color: var(--color-warning); }
-.status-pill--info { background: color-mix(in srgb, var(--color-info) 15%, transparent); color: var(--color-info); }
-.status-pill--success { background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success); }
-.status-pill--neutral { background: color-mix(in srgb, var(--color-text-secondary) 15%, transparent); color: var(--color-text-secondary); }
-.status-pill--critical { background: color-mix(in srgb, var(--color-critical) 15%, transparent); color: var(--color-critical); }
+.status-pill--pending { background: var(--tint-warning-bg); color: var(--color-warning); }
+.status-pill--info { background: var(--tint-info-bg); color: var(--color-primary); }
+.status-pill--success { background: var(--tint-success-bg); color: var(--color-success); }
+.status-pill--neutral { background: var(--tint-neutral-bg); color: var(--color-text-secondary); }
+.status-pill--critical { background: var(--tint-critical-bg); color: var(--color-critical); }
 
-/* --- KPI grid (W2) ------------------------------------------------------ */
+/* --- KPI grid (W2) -------------------------------------------------------
+   AdminDashboard.tsx's KPI cards each carry a distinct accent color via a
+   colored icon box (Bell/blue, CheckCircle/green, Clock/orange,
+   Users/teal) — KpiCard.js now renders that badge directly (icon-badge
+   --kpi.accent-*) instead of approximating it with a CSS-only accent
+   bar, keyed to the fixed KPI order admin-dashboard.js always renders in
+   (Total / Resolved / Avg Response / Active Tanods). */
 
 .kpi-grid {
   display: grid;
@@ -163,6 +247,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-md);
 }
+.kpi-card__header { margin-bottom: var(--spacing-md); }
 .kpi-card__label { margin-bottom: var(--spacing-sm); }
 .kpi-card__value { font-size: var(--font-size-2xl); font-weight: 700; }
 .kpi-card__value.empty { color: var(--color-text-secondary); font-size: var(--font-size-lg); font-weight: 500; }
@@ -178,8 +263,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .trend-chart__bar {
   flex: 1;
   min-width: 2px;
-  background: var(--color-accent);
-  border-radius: 2px 2px 0 0;
+  background: var(--color-primary);
+  border-radius: 4px 4px 0 0;
 }
 .trend-chart__empty-row {
   height: 140px;
@@ -190,7 +275,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   font-size: var(--font-size-sm);
 }
 
-/* --- App shell: sidebar + topbar ---------------------------------------- */
+/* --- App shell: sidebar + topbar ----------------------------------------
+   DashboardLayout.tsx: full solid-color active nav item (not a left
+   border accent), gradient-tinted brand mark, sky-tinted inactive labels. */
 
 .app-shell {
   display: flex;
@@ -198,7 +285,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 .sidebar {
-  width: 240px;
+  width: 256px;
   flex-shrink: 0;
   background: var(--color-navy);
   color: var(--color-white);
@@ -210,20 +297,29 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   font-size: var(--font-size-lg);
   font-weight: 700;
   padding: 0 var(--spacing-lg) var(--spacing-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 .sidebar__nav { display: flex; flex-direction: column; }
 .sidebar__nav-item {
-  padding: var(--spacing-sm) var(--spacing-lg);
+  margin: 2px var(--spacing-sm);
+  padding: 10px var(--spacing-md);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
-  color: rgba(255,255,255,0.75);
+  font-weight: 500;
+  color: var(--color-surface-blue);
   cursor: pointer;
-  border-left: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  transition: background-color .15s ease, color .15s ease;
 }
-.sidebar__nav-item:hover { background: rgba(255,255,255,0.06); color: var(--color-white); }
+.sidebar__nav-icon { display: flex; flex-shrink: 0; }
+.sidebar__nav-item:hover { background: color-mix(in srgb, var(--color-primary) 50%, transparent); color: var(--color-white); }
 .sidebar__nav-item.active {
   color: var(--color-white);
-  background: rgba(255,255,255,0.08);
-  border-left-color: var(--color-accent);
+  background: var(--color-primary);
   font-weight: 600;
 }
 
@@ -258,29 +354,114 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   padding: var(--spacing-lg);
 }
 
-/* --- Login (W1) ----------------------------------------------------------- */
+/* --- Login (W1) -----------------------------------------------------------
+   `.login-page`/`.login-card` stay as the simple centered-card layout —
+   still used as-is by main.js's renderUnavailable() fallback screen (a
+   role that authenticated but has no built screen yet). The real login,
+   login.js, uses the new `.login-screen` split layout below, matching
+   LoginPage.tsx's two-column hero + form-panel (§9's "no role selector"
+   is the one deliberate content omission — see login.js's own comment). */
 
 .login-page {
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-navy);
+  background: linear-gradient(135deg, var(--color-navy), var(--color-primary));
   padding: var(--spacing-lg);
 }
-.login-card { width: 100%; max-width: 360px; }
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-floating);
+  padding: var(--spacing-xl);
+  background: var(--color-white);
+}
 .login-card__brand { text-align: center; margin-bottom: var(--spacing-lg); }
-.login-card__brand h1 { color: var(--color-navy); margin-bottom: var(--spacing-xs); }
+.login-card__brand h2 { color: var(--color-text-primary); margin-bottom: var(--spacing-xs); }
+.login-card__brand p { color: var(--color-text-secondary); }
+.login-card__mobile-brand {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
 .login-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
 .login-form__error {
-  background: color-mix(in srgb, var(--color-critical) 10%, transparent);
+  background: var(--tint-critical-bg);
   color: var(--color-critical);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   padding: var(--spacing-sm) var(--spacing-md);
   font-size: var(--font-size-sm);
 }
 
-/* --- Dispatch Center (W3) -------------------------------------------------- */
+.login-screen {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.login-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--spacing-2xl);
+  background: linear-gradient(135deg, var(--color-navy), var(--color-primary));
+  color: var(--color-white);
+  overflow: auto;
+}
+.login-hero__inner { max-width: 460px; margin: 0 auto; }
+.login-hero__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+}
+.login-hero__wordmark { font-size: var(--font-size-lg); font-weight: 700; letter-spacing: 0.02em; }
+.login-hero h1 {
+  font-size: var(--font-size-xl);
+  line-height: 1.25;
+  margin-bottom: var(--spacing-md);
+}
+.login-hero__lede {
+  color: var(--color-surface-blue);
+  line-height: 1.6;
+  margin-bottom: var(--spacing-xl);
+}
+.login-hero__features { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+.login-hero__feature { display: flex; align-items: flex-start; gap: var(--spacing-md); }
+.login-hero__feature h3 { font-size: var(--font-size-md); margin-bottom: 2px; }
+.login-hero__feature p { color: var(--color-surface-blue); font-size: var(--font-size-sm); }
+.login-hero__footer {
+  margin-top: var(--spacing-2xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--color-surface-blue);
+  font-size: var(--font-size-sm);
+}
+
+.login-form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  background: var(--color-bg);
+  overflow: auto;
+}
+
+@media (max-width: 1024px) {
+  .login-screen { grid-template-columns: 1fr; }
+  .login-hero { display: none; }
+  .login-card__mobile-brand { display: flex; }
+}
+
+/* --- Dispatch Center (W3) ---------------------------------------------------
+   DispatcherDashboard.tsx: 2px-border queue cards, priority shown as a
+   small colored dot (not a border accent), light-tint status pills,
+   hover:shadow-lg lift. */
 
 .dispatch-layout {
   display: grid;
@@ -300,17 +481,30 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   margin-bottom: var(--spacing-sm);
 }
 .dispatch-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-md);
   background: var(--color-white);
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+  transition: box-shadow .15s ease, border-color .15s ease;
 }
-.dispatch-card--critical { border-left: 4px solid var(--color-critical); }
-.dispatch-card--high { border-left: 4px solid var(--color-warning); }
+.dispatch-card:hover { box-shadow: var(--shadow-elevated); border-color: var(--color-accent); }
+/* Priority dot before the card title, matching the export's small
+   colored-circle priority indicator rather than a border accent. */
+.dispatch-card__header strong { display: inline-flex; align-items: center; gap: var(--spacing-sm); }
+.dispatch-card__header strong::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+  flex-shrink: 0;
+}
+.dispatch-card--high .dispatch-card__header strong::before { background: var(--color-warning); }
+.dispatch-card--critical .dispatch-card__header strong::before { background: var(--color-critical); }
 .dispatch-card__header {
   display: flex;
   justify-content: space-between;
@@ -327,23 +521,28 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .dispatch-map-pane {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   min-height: 0;
   position: relative;
 }
 
 .sos-banner {
-  background: color-mix(in srgb, var(--color-critical) 12%, var(--color-white));
-  border: 1px solid var(--color-critical);
-  color: var(--color-critical);
-  border-radius: var(--radius-md);
+  background: var(--color-critical);
+  color: var(--color-white);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-md);
   font-weight: 600;
   margin-bottom: var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
+.sos-banner svg { flex-shrink: 0; }
 
-/* --- LiveMap component (shared, W3 + W4) ---------------------------------- */
+/* --- LiveMap component (shared, W3 + W4) -----------------------------------
+   GISTracking.tsx's floating legend/detail cards use a much stronger
+   shadow (shadow-xl) than an ordinary content card. */
 
 .live-map {
   width: 100%;
@@ -356,26 +555,28 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   left: var(--spacing-md);
   background: var(--color-white);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
   font-size: var(--font-size-label);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-floating);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--spacing-sm);
   z-index: 5;
 }
 .live-map__legend-row { display: flex; align-items: center; gap: var(--spacing-sm); }
-.live-map__legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.live-map__legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 
 .live-map__marker {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid var(--color-white);
-  box-shadow: var(--shadow-card);
+  border: 3px solid var(--color-white);
+  box-shadow: var(--shadow-elevated);
   cursor: pointer;
+  transition: transform .1s ease;
 }
+.live-map__marker:hover { transform: scale(1.15); }
 .live-map__marker--tanod { background: var(--color-success); }
 /* §9 W4: "A stale location is not visually presented as live" — never
    color alone either (§8): the tooltip text always says "(stale)" too. */
@@ -384,7 +585,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   width: 22px;
   height: 22px;
   background: var(--color-critical);
-  border-width: 3px;
+  border-width: 4px;
   animation: sos-pulse 1.4s ease-in-out infinite;
 }
 @keyframes sos-pulse {
@@ -405,7 +606,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   flex: 1;
   min-height: 0;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   position: relative;
 }
@@ -420,9 +621,11 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   align-items: center;
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
+  transition: border-color .15s ease, background-color .15s ease;
 }
+.gis-roster__row:hover { border-color: var(--color-accent); background: var(--color-bg); }
 
 /* --- Responsive (§8: 1440 desktop-first -> 768 tablet -> 375 mobile) ---- */
 
@@ -433,6 +636,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 @media (max-width: 768px) {
   .sidebar { width: 72px; }
-  .sidebar__brand, .sidebar__nav-item span { display: none; }
+  .sidebar__brand { justify-content: center; padding: 0 var(--spacing-sm) var(--spacing-lg); }
+  .sidebar__brand > :not(:first-child), .sidebar__nav-label { display: none; }
+  .sidebar__nav-item { justify-content: center; }
   .kpi-grid { grid-template-columns: 1fr; }
 }

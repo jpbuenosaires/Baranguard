@@ -23,4 +23,5 @@ use Baranguard\Controllers\AuthController;
 return [
     ['POST', '#^/auth/login$#', [AuthController::class, 'login'], false],
     ['POST', '#^/auth/logout$#', [AuthController::class, 'logout'], false],
+    ['POST', '#^/auth/change-password$#', [AuthController::class, 'changePassword'], true],
 ];

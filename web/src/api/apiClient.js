@@ -84,7 +84,7 @@ export function isAuthenticated() {
 
 // --- Low-level request helper ----------------------------------------------
 
-async function request(method, path, { query, body, auth = true } = {}) {
+async function request(method, path, { query, body, auth = true, idempotencyKey } = {}) {
   let url = `${BASE_URL}${path}`;
   if (query) {
     const params = new URLSearchParams();
@@ -99,6 +99,7 @@ async function request(method, path, { query, body, auth = true } = {}) {
 
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
   const session = auth ? readSession() : null;
   if (auth) {
@@ -184,6 +185,14 @@ export async function login(username, password) {
   return session.user;
 }
 
+/** W15 Settings/Account. Throws ApiClientError(401,...) on a wrong current password. */
+export async function changePassword(currentPassword, newPassword) {
+  await request('POST', '/auth/change-password', {
+    body: { current_password: currentPassword, new_password: newPassword },
+    auth: true,
+  });
+}
+
 export async function logout() {
   try {
     await request('POST', '/auth/logout', { auth: true, body: {} });
@@ -225,6 +234,15 @@ export async function getReportsSummary({ dateFrom, dateTo } = {}) {
     byStatus: json.by_status,
     trend: json.trend,
   };
+}
+
+/** GET /reports/heatmap (W5). Same date_from/date_to convention as getReportsSummary. */
+export async function getReportsHeatmap({ dateFrom, dateTo } = {}) {
+  const json = await request('GET', '/reports/heatmap', {
+    query: { date_from: dateFrom, date_to: dateTo },
+    auth: true,
+  });
+  return json.items.map((row) => ({ latitude: row.latitude, longitude: row.longitude, weight: row.weight }));
 }
 
 // --- Users (Tanod-picker name lookup only) ----------------------------------
@@ -274,6 +292,32 @@ export async function getIncidents({ status, priority, page, limit } = {}) {
     page: json.page,
     limit: json.limit,
     total: json.total,
+  };
+}
+
+/**
+ * POST /incidents (web path, W6 Electronic Blotter List's new-entry form).
+ * `idempotencyKey` is the required UUID (Idempotency-Key header, not a
+ * body field for web writes — see IncidentsController.php) — generate one
+ * per user-initiated submit and reuse only on an automatic retry.
+ */
+export async function createIncident({ incidentType, rawNarrative, latitude, longitude, idempotencyKey }) {
+  const json = await request('POST', '/incidents', {
+    body: { incident_type: incidentType, raw_narrative: rawNarrative, latitude, longitude },
+    idempotencyKey,
+    auth: true,
+  });
+  return {
+    incidentId: json.incident_id,
+    barangayId: json.barangay_id,
+    reportedBy: json.reported_by,
+    incidentType: json.incident_type,
+    priority: json.priority,
+    status: json.status,
+    source: json.source,
+    latitude: json.latitude,
+    longitude: json.longitude,
+    createdAt: json.created_at,
   };
 }
 
@@ -407,4 +451,154 @@ export async function getDutyStatus(barangayId) {
     channel: row.channel,
     changedAt: row.changed_at,
   }));
+}
+
+// --- Settings/Account (W15) --------------------------------------------------
+
+/** PATCH /users/:id, self-only (full_name and/or contact_number). */
+export async function updateProfile(userId, { fullName, contactNumber } = {}) {
+  const body = {};
+  if (fullName !== undefined) body.full_name = fullName;
+  if (contactNumber !== undefined) body.contact_number = contactNumber;
+  const json = await request('PATCH', `/users/${userId}`, { body, auth: true });
+  // Keep the in-memory session's display name in sync — there's no
+  // "GET /users/me" endpoint (§6 never documents one) to re-fetch from,
+  // so the client applies its own known-good write locally instead.
+  if (fullName !== undefined) {
+    const session = readSession();
+    if (session) writeSession({ ...session, user: { ...session.user, fullName } });
+  }
+  return { userId: json.user_id, updated: json.updated };
+}
+
+// --- Citizen reports (W16 inbox, W19 public form) ---------------------------
+
+/** POST /citizen-reports — public, no session required. */
+export async function submitCitizenReport({ barangayId, description, contactNumber, latitude, longitude }) {
+  const json = await request('POST', '/citizen-reports', {
+    body: {
+      barangay_id: barangayId,
+      description,
+      contact_number: contactNumber,
+      latitude,
+      longitude,
+    },
+    auth: false,
+  });
+  return { reportId: json.report_id, confirmation: json.confirmation };
+}
+
+/** GET /citizen-reports (W16 inbox — list only, no convert action yet). */
+export async function getCitizenReports({ status, page, limit } = {}) {
+  const json = await request('GET', '/citizen-reports', { query: { status, page, limit }, auth: true });
+  return {
+    items: json.items.map((row) => ({
+      reportId: row.report_id,
+      description: row.description,
+      contactNumber: row.contact_number,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      submittedAt: row.submitted_at,
+      incidentId: row.incident_id,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
+}
+
+// --- Shifts / fatigue (W11 Scheduler, W12 Swap Requests, W13 Fatigue Flags) -
+
+function mapShift(row) {
+  return { shiftId: row.shift_id, userId: row.user_id, patrolZone: row.patrol_zone, startAt: row.start_at, endAt: row.end_at, version: row.version };
+}
+
+/** POST /shifts. `requestId` is the required idempotency key (§6). */
+export async function createShift({ userId, patrolZone, startAt, endAt, requestId }) {
+  const json = await request('POST', '/shifts', {
+    body: { user_id: userId, patrol_zone: patrolZone, start_at: startAt, end_at: endAt, request_id: requestId },
+    auth: true,
+  });
+  return mapShift(json);
+}
+
+/** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
+export async function getShifts({ page, limit } = {}) {
+  const json = await request('GET', '/shifts', { query: { page, limit }, auth: true });
+  return { items: json.items.map(mapShift), page: json.page, limit: json.limit, total: json.total };
+}
+
+/**
+ * PATCH /shifts/:id. `version` is the required optimistic-concurrency
+ * token from the shift's last-known state (§6) — a stale version means
+ * someone else changed it first; the caller should reload and retry.
+ * `userId` may be `null` to explicitly unassign a shift.
+ */
+export async function updateShift(shiftId, { userId, patrolZone, startAt, endAt, version }) {
+  const body = { version };
+  if (userId !== undefined) body.user_id = userId;
+  if (patrolZone !== undefined) body.patrol_zone = patrolZone;
+  if (startAt !== undefined) body.start_at = startAt;
+  if (endAt !== undefined) body.end_at = endAt;
+  const json = await request('PATCH', `/shifts/${shiftId}`, { body, auth: true });
+  return { shiftId: json.shift_id, updatedAt: json.updated_at, version: json.version };
+}
+
+/** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
+export async function getShiftSwapRequests({ page, limit } = {}) {
+  const json = await request('GET', '/shift-swap-requests', { query: { page, limit }, auth: true });
+  return {
+    items: json.items.map((row) => ({
+      requestId: row.request_id,
+      requestingUserId: row.requesting_user_id,
+      shiftId: row.shift_id,
+      targetUserId: row.target_user_id,
+      reason: row.reason,
+      status: row.status, // enum value, unconverted
+      requestedAt: row.requested_at,
+      resolvedAt: row.resolved_at,
+      resolvedBy: row.resolved_by,
+      version: row.version,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
+}
+
+/** PATCH /shift-swap-requests/:id. `status` is 'approved' or 'denied'. */
+export async function resolveShiftSwapRequest(requestId, status, version) {
+  const json = await request('PATCH', `/shift-swap-requests/${requestId}`, { body: { status, version }, auth: true });
+  return {
+    requestId: json.request_id,
+    status: json.status,
+    resolvedAt: json.resolved_at,
+    resolvedBy: json.resolved_by,
+    shiftId: json.shift_id,
+    targetUserId: json.target_user_id,
+  };
+}
+
+/** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
+export async function getFatigueFlags({ page, limit } = {}) {
+  const json = await request('GET', '/shifts/fatigue-flags', { query: { page, limit }, auth: true });
+  return {
+    items: json.items.map((row) => ({
+      flagId: row.flag_id,
+      userId: row.user_id,
+      shiftId: row.shift_id,
+      hoursWorked7Day: row.hours_worked_7day,
+      calculationBasis: row.calculation_basis,
+      flaggedAt: row.flagged_at,
+      acknowledgedAt: row.acknowledged_at,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
+}
+
+export async function acknowledgeFatigueFlag(flagId) {
+  const json = await request('PATCH', `/fatigue-flags/${flagId}/acknowledge`, { body: {}, auth: true });
+  return { flagId: json.flag_id, acknowledgedBy: json.acknowledged_by, acknowledgedAt: json.acknowledged_at };
 }

@@ -14,6 +14,7 @@ import { getReportsSummary, logout, ApiClientError } from '../api/apiClient.js';
 import { KpiCard } from '../components/KpiCard.js';
 import { TrendChart } from '../components/TrendChart.js';
 import { AppShell } from '../components/AppShell.js';
+import { icons } from '../components/icons.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -169,14 +170,16 @@ function renderPopulated(container, summary) {
   const grid = document.createElement('div');
   grid.className = 'kpi-grid';
   grid.append(
-    KpiCard({ label: 'Total Incidents', value: summary.totalIncidents }),
-    KpiCard({ label: 'Resolved', value: summary.resolvedCount }),
+    KpiCard({ label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue' }),
+    KpiCard({ label: 'Resolved', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green' }),
     KpiCard({
       label: 'Avg. Response Time',
       value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
       emptyText: 'No arrivals yet',
+      icon: icons.clock,
+      accent: 'orange',
     }),
-    KpiCard({ label: 'Tanods On Duty', value: summary.activeTanods })
+    KpiCard({ label: 'Tanods On Duty', value: summary.activeTanods, icon: icons.users, accent: 'teal' })
   );
 
   const trendCard = document.createElement('div');
