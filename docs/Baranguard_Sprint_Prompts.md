@@ -217,14 +217,21 @@ Today's cut — pick exactly ONE:
       DONE 2026-09-02, commit d61a213. Also scaffolded the Ionic React
       app (prerequisite plumbing — /mobile was an empty placeholder).
       Verified 47/47 against §5 via mobile/scripts/verify-local-schema.mjs.
-  [ ] M1 Login — device registration + map-package metadata/download
-      (non-blocking; enters M2 without waiting on map download)
+  [x] M1 Login — device registration + map-package metadata/download
+      DONE 2026-09-02, commit 40dbde5. CAVEAT: the "registers FCM" half is
+      Sprint-4-blocked (devices/register needs an fcm_token that cannot
+      exist until FCM is set up); getFcmToken() returns null and
+      registration is skipped rather than sending a placeholder.
   [ ] M2 Home — duty status control + SOS entry point
-  [ ] M3 Log New Incident — local SQLite write path (client_event_id
+      (a minimal non-M2 landing screen exists as plumbing — no duty
+      toggle, no SOS, no stats; see home.tsx's header)
+  [x] M3 Log New Incident — local SQLite write path (client_event_id
       assigned at time of first save, atomic before the user can leave)
-  [ ] M4 Incident Submitted Confirmation — sync-state display only
+      DONE 2026-09-02, commit 40dbde5. NEVER EXECUTED — see below.
+  [x] M4 Incident Submitted Confirmation — sync-state display only
       (Saved locally / Queued / Synced / Duplicate reconciled / Needs
       attention)
+      DONE 2026-09-02, commit 40dbde5. NEVER EXECUTED — see below.
   [ ] Local schema: evidence_attachment_local (only if this session also
       builds photo/voice capture — otherwise defer)
 
@@ -247,7 +254,12 @@ BLOCKERS — environment (gate Sprint 2's OWN required tests):
   [ ] Verify offline capture survives app kill — same, needs a device.
 
 BLOCKERS — decisions (each gates a specific box):
-  [ ] DB passphrase source → gates M3 storing a real raw_narrative.
+  [x] DB passphrase source → RESOLVED 2026-09-02 (commit 40dbde5):
+      device-generated 256-bit random secret, persisted app-privately via
+      @capacitor/preferences. Caveat: SharedPreferences is app-private but
+      NOT hardware-backed; documented upgrade path is a Keystore plugin,
+      swapping only passphrase.ts. Original note kept below for context:
+      DB passphrase source → gated M3 storing a real raw_narrative.
       localDatabase.ts exposes a PassphraseProvider that THROWS if
       unconfigured, deliberately: a hardcoded key ships inside the APK
       and would make "encrypted at rest" a demo tell (§8). Candidates:
@@ -259,10 +271,10 @@ BLOCKERS — decisions (each gates a specific box):
       defers evidence_attachment_local unless capture ships with it.
 
 BACKEND — documented in §6, none built yet (PHP side):
-  [ ] POST /devices/register              (M1)
-  [ ] PATCH /devices/:id/deactivate       (M1, and M10 logout later)
-  [ ] GET  /map-packages/:barangay_id     (M1)
-  [ ] GET  /map-packages/:barangay_id/download  (M1)
+  [x] POST /devices/register              DONE (cb27272), 53/53 verified
+  [x] PATCH /devices/:id/deactivate       DONE (cb27272)
+  [x] GET  /map-packages/:barangay_id     DONE (cb27272)
+  [x] GET  /map-packages/:barangay_id/download  DONE (cb27272)
   [ ] POST /map-packages                  (Admin upload — without it there
       is no package for a device to download at all)
   [ ] POST /duty-status                   (M2)
@@ -271,12 +283,12 @@ BACKEND — documented in §6, none built yet (PHP side):
       code path that has never been exercised.
 
 MOBILE INFRASTRUCTURE — not built yet:
-  [ ] apiService.ts — the ONE mobile API boundary §4 mandates
-  [ ] On-device session storage (JWT, 15-min expiry, sliding renewal per
-      Rule 9); offline capture must keep working while the session is
-      expired/unreachable
-  [ ] Repository layer over the local schema — the three tables exist but
-      nothing reads or writes them yet
+  [x] apiService.ts — DONE (40dbde5)
+  [x] On-device session storage — DONE (40dbde5); sliding renewal refuses
+      to move a token's expiry backwards, per Rule 9
+  [~] Repository layer over the local schema — incident_local DONE
+      (40dbde5); mobile_device_local and offline_map_package_local still
+      have no reader/writer
 
 AMBIGUITIES to settle before they cause drift:
   [ ] This block's scope line says "dispatch_local cache shape", but it is
