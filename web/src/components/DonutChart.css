@@ -1,0 +1,58 @@
+/**
+ * DonutChart.css — co-located with DonutChart.js (W2/W9 "By Incident
+ * Type"). Split out of base.css during the 2026-09-02 responsive/density
+ * pass. Ring shrinks and the legend drops below it on narrow screens
+ * instead of the two staying side-by-side and squeezing.
+ */
+
+.donut-chart {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+.donut-chart__empty {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-lg) 0;
+}
+.donut-chart__ring {
+  position: relative;
+  width: 8.75rem;
+  height: 8.75rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.donut-chart__hole {
+  position: absolute;
+  inset: 1.375rem;
+  background: var(--color-white);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.donut-chart__total { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-text-primary); line-height: 1.1; }
+.donut-chart__total-label { font-size: var(--font-size-label); color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+.donut-chart__legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 11.25rem;
+  flex: 1;
+}
+.donut-chart__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+.donut-chart__swatch { width: 0.625rem; height: 0.625rem; border-radius: 50%; flex-shrink: 0; }
+.donut-chart__legend-label { flex: 1; color: var(--color-text-primary); }
+.donut-chart__legend-value { color: var(--color-text-secondary); font-weight: 500; }
+
+@media (max-width: 480px) {
+  .donut-chart__ring { width: 6.875rem; height: 6.875rem; }
+  .donut-chart__hole { inset: 1.125rem; }
+}

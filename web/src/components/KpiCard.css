@@ -1,0 +1,26 @@
+/**
+ * KpiCard.css — co-located with KpiCard.js (used by W2 Dashboard, W9
+ * Statistical Reports). Split out of base.css during the 2026-09-02
+ * responsive/density pass. KPI numbers use the dedicated --font-size-3xl
+ * (30px) token, not the page-title 2xl token they were briefly merged
+ * with in that pass — the design reference keeps these two sizes
+ * distinct; see base.css's token comment for the full correction.
+ */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+.kpi-card__header { margin-bottom: var(--spacing-sm); }
+.kpi-card__label { margin-bottom: var(--spacing-sm); }
+.kpi-card__value { font-size: var(--font-size-3xl); font-weight: 700; }
+.kpi-card__value.empty { color: var(--color-text-secondary); font-size: var(--font-size-lg); font-weight: 500; }
+
+@media (max-width: 1024px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+}

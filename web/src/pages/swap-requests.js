@@ -9,14 +9,28 @@
  * page is the Admin approve/deny side only, matching what §7 actually
  * grants a web Admin session.
  *
+ * 2026-09-02: migrated header to PageHeader and the stacked-card list to
+ * the shared DataTable component (Figma-alignment pass).
+ *
  * kebab-case filename per §4 (pages/routes convention).
  */
 
 import { getShiftSwapRequests, getShifts, getUsers, resolveShiftSwapRequest, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
+import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
+import { avatarInitials } from '../components/Avatar.js';
 
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', approved: 'status-pill--success', denied: 'status-pill--neutral' };
+
+const COLUMNS = [
+  { key: 'requester', label: 'Requester' },
+  { key: 'shift', label: 'Shift' },
+  { key: 'target', label: 'Target' },
+  { key: 'status', label: 'Status' },
+  { key: 'actions', label: 'Actions', align: 'right' },
+];
 
 /** @param {HTMLElement} root @param {{fullName:string, role:string}} user */
 export function renderSwapRequestsPage(root, user, onLoggedOut, navigate) {
@@ -27,10 +41,12 @@ export function renderSwapRequestsPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.repeat(22)}Shift Swap Requests</h2>`;
+  const pageHeader = PageHeader({ title: 'Shift Swap Requests', subtitle: 'Review and resolve Tanod-submitted swap requests', icon: icons.repeat });
+  header.appendChild(pageHeader.el);
+
   const body = document.createElement('div');
   content.appendChild(body);
 
@@ -60,89 +76,97 @@ export function renderSwapRequestsPage(root, user, onLoggedOut, navigate) {
 
 function renderList(container, requests, shiftsById, namesById, onChanged) {
   container.innerHTML = '';
-  const list = document.createElement('div');
-  list.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
-  for (const req of requests) {
-    list.appendChild(renderRequestCard(req, shiftsById, namesById, onChanged));
-  }
-  container.appendChild(list);
+  const table = DataTable({
+    columns: COLUMNS,
+    rows: requests,
+    rowKey: (req) => req.requestId,
+    caption: 'Shift swap requests',
+    renderCell: (req, key) => {
+      const shift = shiftsById.get(req.shiftId);
+      const requesterName = namesById.get(req.requestingUserId) || `Tanod #${req.requestingUserId}`;
+      const targetName = req.targetUserId !== null ? (namesById.get(req.targetUserId) || `Tanod #${req.targetUserId}`) : null;
+
+      switch (key) {
+        case 'requester': {
+          const span = document.createElement('span');
+          span.className = 'avatar-row';
+          span.innerHTML = `${avatarInitials(requesterName, 24)}${escapeHtml(requesterName)}`;
+          return span;
+        }
+        case 'shift':
+          return shift
+            ? `${shift.patrolZone ? escapeHtml(shift.patrolZone) + ' · ' : ''}${new Date(shift.startAt).toLocaleString()} – ${new Date(shift.endAt).toLocaleString()}`
+            : `Shift #${req.shiftId}`;
+        case 'target': {
+          const wrap = document.createElement('div');
+          const line = document.createElement('div');
+          line.textContent = targetName ? `Swap with ${targetName}` : 'Any eligible Tanod';
+          wrap.appendChild(line);
+          if (req.reason) {
+            const reason = document.createElement('div');
+            reason.className = 'data-table__sub';
+            reason.textContent = req.reason;
+            wrap.appendChild(reason);
+          }
+          return wrap;
+        }
+        case 'status': {
+          const wrap = document.createElement('div');
+          const pillClass = STATUS_PILL_CLASS[req.status] || 'status-pill--neutral';
+          const pill = document.createElement('span');
+          pill.className = `status-pill ${pillClass}`;
+          pill.textContent = req.status;
+          wrap.appendChild(pill);
+          if (req.status === 'approved' && req.targetUserId === null) {
+            const note = document.createElement('div');
+            note.className = 'data-table__sub';
+            note.textContent = 'Unassigned — Admin action required';
+            wrap.appendChild(note);
+          }
+          return wrap;
+        }
+        case 'actions':
+          return req.status === 'pending' ? renderActionsCell(req, onChanged) : '';
+        default:
+          return '';
+      }
+    },
+  });
+  container.appendChild(table);
 }
 
-function renderRequestCard(req, shiftsById, namesById, onChanged) {
-  const card = document.createElement('div');
-  card.className = 'card';
+function renderActionsCell(req, onChanged) {
+  const wrap = document.createElement('span');
+  wrap.className = 'data-table__actions';
 
-  const shift = shiftsById.get(req.shiftId);
-  const requesterName = namesById.get(req.requestingUserId) || `Tanod #${req.requestingUserId}`;
-  const targetName = req.targetUserId !== null ? (namesById.get(req.targetUserId) || `Tanod #${req.targetUserId}`) : null;
-  const pillClass = STATUS_PILL_CLASS[req.status] || 'status-pill--neutral';
+  const approveButton = document.createElement('button');
+  approveButton.className = 'primary';
+  approveButton.textContent = 'Approve';
+  const denyButton = document.createElement('button');
+  denyButton.className = 'danger';
+  denyButton.textContent = 'Deny';
 
-  const header = document.createElement('div');
-  header.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
-  header.innerHTML = `<strong>${escapeHtml(requesterName)}</strong><span class="status-pill ${pillClass}">${req.status}</span>`;
-
-  const meta = document.createElement('div');
-  meta.className = 'label';
-  meta.style.cssText = 'text-transform:none; font-weight:400; margin-top:8px;';
-  meta.textContent = shift
-    ? `Shift: ${shift.patrolZone ? shift.patrolZone + ' · ' : ''}${new Date(shift.startAt).toLocaleString()} – ${new Date(shift.endAt).toLocaleString()}`
-    : `Shift #${req.shiftId}`;
-
-  const targetLine = document.createElement('div');
-  targetLine.className = 'label';
-  targetLine.style.cssText = 'text-transform:none; font-weight:400; margin-top:4px;';
-  targetLine.textContent = targetName ? `Requested swap with: ${targetName}` : 'No specific target — any eligible Tanod';
-
-  card.append(header, meta, targetLine);
-
-  if (req.reason) {
-    const reasonLine = document.createElement('p');
-    reasonLine.style.marginTop = '8px';
-    reasonLine.textContent = req.reason;
-    card.appendChild(reasonLine);
-  }
-
-  if (req.status === 'approved' && req.targetUserId === null) {
-    const note = document.createElement('div');
-    note.className = 'status-pill status-pill--pending';
-    note.style.marginTop = '8px';
-    note.textContent = 'Unassigned — Admin action required';
-    card.appendChild(note);
-  }
-
-  if (req.status === 'pending') {
-    const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex; gap:8px; margin-top:12px;';
-    const approveButton = document.createElement('button');
-    approveButton.className = 'primary';
-    approveButton.textContent = 'Approve';
-    const denyButton = document.createElement('button');
-    denyButton.className = 'danger';
-    denyButton.textContent = 'Deny';
-
-    const resolve = async (status, button) => {
-      approveButton.disabled = true;
-      denyButton.disabled = true;
-      button.textContent = status === 'approved' ? 'Approving…' : 'Denying…';
-      try {
-        await resolveShiftSwapRequest(req.requestId, status, req.version);
-        onChanged();
-      } catch (err) {
-        const message = err instanceof ApiClientError ? err.message : 'Could not resolve this request.';
-        alert(message);
-        approveButton.disabled = false;
-        denyButton.disabled = false;
-        approveButton.textContent = 'Approve';
-        denyButton.textContent = 'Deny';
-      }
-    };
-    approveButton.addEventListener('click', () => resolve('approved', approveButton));
-    denyButton.addEventListener('click', () => resolve('denied', denyButton));
-    actions.append(approveButton, denyButton);
-    card.appendChild(actions);
-  }
-
-  return card;
+  const resolve = async (status, button, event) => {
+    event.stopPropagation();
+    approveButton.disabled = true;
+    denyButton.disabled = true;
+    button.textContent = status === 'approved' ? 'Approving…' : 'Denying…';
+    try {
+      await resolveShiftSwapRequest(req.requestId, status, req.version);
+      onChanged();
+    } catch (err) {
+      const message = err instanceof ApiClientError ? err.message : 'Could not resolve this request.';
+      alert(message);
+      approveButton.disabled = false;
+      denyButton.disabled = false;
+      approveButton.textContent = 'Approve';
+      denyButton.textContent = 'Deny';
+    }
+  };
+  approveButton.addEventListener('click', (event) => resolve('approved', approveButton, event));
+  denyButton.addEventListener('click', (event) => resolve('denied', denyButton, event));
+  wrap.append(approveButton, denyButton);
+  return wrap;
 }
 
 function escapeHtml(text) {
@@ -154,11 +178,13 @@ function escapeHtml(text) {
 function renderLoading(container) {
   container.innerHTML = '';
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
-  for (let i = 0; i < 3; i++) {
+  wrap.className = 'stack';
+  wrap.setAttribute('role', 'status');
+  wrap.setAttribute('aria-label', 'Loading swap requests');
+  for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:96px; border-radius:12px;';
+    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);
@@ -176,6 +202,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');

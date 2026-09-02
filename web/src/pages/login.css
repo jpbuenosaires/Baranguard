@@ -1,0 +1,108 @@
+/**
+ * login.css — co-located with login.js (W1). Split out of base.css during
+ * the 2026-09-02 responsive/density pass. `.login-page`/`.login-card`
+ * (the simple centered-card layout) also back main.js's renderUnavailable()
+ * fallback and citizen-report.js's public form — kept generic enough for
+ * that reuse, unlike the split-screen `.login-screen` below which is W1-only.
+ */
+
+.login-page {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-navy), var(--color-primary));
+  padding: var(--spacing-lg);
+}
+.login-card {
+  width: 100%;
+  max-width: 25rem;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-floating);
+  padding: var(--spacing-xl);
+  background: var(--color-white);
+}
+.login-card__brand { text-align: center; margin-bottom: var(--spacing-lg); }
+.login-card__brand h2 { color: var(--color-text-primary); margin-bottom: var(--spacing-xs); }
+.login-card__brand p { color: var(--color-text-secondary); }
+.login-card__mobile-brand {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.login-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
+.login-form__error {
+  background: var(--tint-critical-bg);
+  color: var(--color-critical);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+}
+
+.login-screen {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.login-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--spacing-2xl);
+  background: linear-gradient(135deg, var(--color-navy), var(--color-primary));
+  color: var(--color-white);
+  overflow: auto;
+}
+.login-hero__inner { max-width: 28.75rem; margin: 0 auto; }
+.login-hero__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+}
+.login-hero__wordmark { font-size: var(--font-size-lg); font-weight: 700; letter-spacing: 0.02em; }
+.login-hero h1 {
+  font-size: var(--font-size-xl);
+  line-height: 1.25;
+  margin-bottom: var(--spacing-md);
+}
+.login-hero__lede {
+  color: var(--color-surface-blue);
+  line-height: 1.6;
+  margin-bottom: var(--spacing-xl);
+}
+.login-hero__features { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+.login-hero__feature { display: flex; align-items: flex-start; gap: var(--spacing-md); }
+.login-hero__feature h3 { font-size: var(--font-size-md); margin-bottom: 0.125rem; }
+.login-hero__feature p { color: var(--color-surface-blue); font-size: var(--font-size-sm); }
+.login-hero__footer {
+  margin-top: var(--spacing-2xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--color-surface-blue);
+  font-size: var(--font-size-sm);
+}
+
+.login-form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  background: var(--color-bg);
+  overflow: auto;
+}
+
+@media (max-width: 1024px) {
+  .login-screen { grid-template-columns: 1fr; }
+  .login-hero { display: none; }
+  .login-card__mobile-brand { display: flex; }
+}
+
+@media (max-width: 480px) {
+  .login-form-panel { padding: var(--spacing-md); }
+  .login-card { padding: var(--spacing-lg); }
+}

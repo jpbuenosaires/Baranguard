@@ -21,7 +21,9 @@
 import { getGpsLive, getTanodSos, logout, ApiClientError } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
+import { avatarInitials } from '../components/Avatar.js';
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -41,13 +43,18 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.map(22)}GIS Live Tracking</h2>`;
+  const pageHeader = PageHeader({ title: 'GIS Live Tracking', subtitle: 'Real-time Tanod locations and SOS alerts', icon: icons.map });
+  header.appendChild(pageHeader.el);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'flex-col grow';
+  content.appendChild(wrapper);
   const body = document.createElement('div');
-  body.style.cssText = 'height:calc(100% - 40px); min-height:0;';
-  content.appendChild(body);
+  body.className = 'grow';
+  wrapper.appendChild(body);
 
   let liveMap = null;
   let timer = null;
@@ -118,8 +125,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     roster.innerHTML = '';
     if (gpsItems.length === 0) {
       const empty = document.createElement('p');
-      empty.className = 'label';
-      empty.style.cssText = 'text-transform:none; font-weight:400;';
+      empty.className = 'note';
       empty.textContent = 'No Tanod locations have been reported yet.';
       roster.appendChild(empty);
     } else {
@@ -128,7 +134,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         row.className = 'gis-roster__row';
         const pillClass = g.isStale ? 'status-pill--neutral' : 'status-pill--success';
         const ageLabel = formatAge(g.ageSeconds);
-        row.innerHTML = `<span>${g.fullName}</span><span class="status-pill ${pillClass}">${g.isStale ? 'Stale' : 'Live'} · ${ageLabel}</span>`;
+        row.innerHTML = `<span class="avatar-row">${avatarInitials(g.fullName, 24)}${g.fullName}</span><span class="status-pill ${pillClass}">${g.isStale ? 'Stale' : 'Live'} · ${ageLabel}</span>`;
         roster.appendChild(row);
       }
     }
@@ -148,6 +154,8 @@ function renderLoading(container) {
   container.innerHTML = '';
   const page = document.createElement('div');
   page.className = 'gis-page';
+  page.setAttribute('role', 'status');
+  page.setAttribute('aria-label', 'Loading live tracking');
   const mapSkeleton = document.createElement('div');
   mapSkeleton.className = 'skeleton gis-page__map-wrapper';
   const rosterSkeleton = document.createElement('div');
@@ -161,6 +169,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');

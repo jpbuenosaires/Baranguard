@@ -93,35 +93,54 @@ final class IncidentsController
         $limit = min($limit, self::MAX_LIMIT);
         $offset = ($page - 1) * $limit;
 
-        $where = ['barangay_id = :barangay_id'];
+        // Qualified with i. throughout — the officer-name join below adds
+        // `dispatch` (also has status/priority columns) and `user` (also
+        // has barangay_id), so an unqualified column here would be
+        // ambiguous rather than merely wrong.
+        $where = ['i.barangay_id = :barangay_id'];
         $params = ['barangay_id' => $identity['barangay_id']];
 
         // §6: "Tanod forced to reported_by=me" — server-enforced, not a
         // client-supplied filter the caller could override.
         if ($identity['role'] === 'tanod') {
-            $where[] = 'reported_by = :reported_by';
+            $where[] = 'i.reported_by = :reported_by';
             $params['reported_by'] = $identity['user_id'];
         }
         if ($status !== null) {
-            $where[] = 'status = :status';
+            $where[] = 'i.status = :status';
             $params['status'] = $status;
         }
         if ($priority !== null) {
-            $where[] = 'priority = :priority';
+            $where[] = 'i.priority = :priority';
             $params['priority'] = $priority;
         }
         $whereSql = implode(' AND ', $where);
 
-        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM incident WHERE {$whereSql}");
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM incident i WHERE {$whereSql}");
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
+        // officer_name: the Tanod name off this incident's most recent
+        // dispatch (any status, including cancelled — an incident that was
+        // dispatched then cancelled still meaningfully had "an officer
+        // handle it" for blotter purposes; a fresh, never-dispatched
+        // incident correctly has none). §6's item shape for GET /incidents
+        // doesn't list this field; added as W6 blotter-table plumbing, same
+        // precedent as GET /users?role= being added for the Tanod picker.
         $stmt = $pdo->prepare(
-            "SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
-                    latitude, longitude, created_at, device_offline_created_at, synced_at
-             FROM incident
+            "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
+                    i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
+                    tanod.full_name AS officer_name
+             FROM incident i
+             LEFT JOIN dispatch d ON d.dispatch_id = (
+                 SELECT d2.dispatch_id FROM dispatch d2
+                 WHERE d2.incident_id = i.incident_id
+                 ORDER BY d2.dispatched_at DESC
+                 LIMIT 1
+             )
+             LEFT JOIN user tanod ON tanod.user_id = d.tanod_id
              WHERE {$whereSql}
-             ORDER BY created_at DESC
+             ORDER BY i.created_at DESC
              LIMIT :limit OFFSET :offset"
         );
         foreach ($params as $key => $value) {
@@ -146,6 +165,7 @@ final class IncidentsController
                 'created_at' => $row['created_at'],
                 'device_offline_created_at' => $row['device_offline_created_at'],
                 'synced_at' => $row['synced_at'],
+                'officer_name' => $row['officer_name'] ?? null,
             ];
         }, $rows);
 
@@ -265,6 +285,10 @@ final class IncidentsController
             'created_at' => $row['created_at'],
             'device_offline_created_at' => $row['device_offline_created_at'],
             'synced_at' => $row['synced_at'],
+            // create()'s callers never join dispatch — a just-created
+            // incident can't have one yet — so this is always null here,
+            // same shape as index()'s items for a one-consistent contract.
+            'officer_name' => $row['officer_name'] ?? null,
         ];
     }
 

@@ -24,6 +24,7 @@
 
 import { getUsers, getShifts, createShift, updateShift, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 
 /** @param {HTMLElement} root @param {{fullName:string, role:string}} user */
@@ -35,13 +36,14 @@ export function renderSchedulerPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.calendar(22)}Shift Scheduler</h2>`;
+  const pageHeader = PageHeader({ title: 'Shift Scheduler', subtitle: 'Assign and edit Tanod patrol shifts', icon: icons.calendar });
+  header.appendChild(pageHeader.el);
 
   const layout = document.createElement('div');
-  layout.style.cssText = 'display:grid; grid-template-columns: 1fr 360px; gap:16px; align-items:start;';
+  layout.className = 'split-panel';
   content.appendChild(layout);
 
   const listPane = document.createElement('div');
@@ -89,17 +91,20 @@ function buildNewShiftForm(tanods, onCreated) {
   heading.style.marginBottom = '16px';
 
   const form = document.createElement('form');
-  form.style.cssText = 'display:flex; flex-direction:column; gap:12px;';
+  form.className = 'form-stack';
   form.noValidate = true;
 
   const errorBox = document.createElement('div');
   errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
 
   const tanodLabel = document.createElement('label');
   tanodLabel.className = 'label';
+  tanodLabel.htmlFor = 'scheduler-new-tanod';
   tanodLabel.textContent = 'Tanod';
   const tanodSelect = document.createElement('select');
+  tanodSelect.id = 'scheduler-new-tanod';
   for (const t of tanods) {
     const option = document.createElement('option');
     option.value = String(t.userId);
@@ -109,21 +114,27 @@ function buildNewShiftForm(tanods, onCreated) {
 
   const zoneLabel = document.createElement('label');
   zoneLabel.className = 'label';
+  zoneLabel.htmlFor = 'scheduler-new-zone';
   zoneLabel.textContent = 'Patrol Zone (optional)';
   const zoneInput = document.createElement('input');
+  zoneInput.id = 'scheduler-new-zone';
   zoneInput.type = 'text';
 
   const startLabel = document.createElement('label');
   startLabel.className = 'label';
+  startLabel.htmlFor = 'scheduler-new-start';
   startLabel.textContent = 'Start';
   const startInput = document.createElement('input');
+  startInput.id = 'scheduler-new-start';
   startInput.type = 'datetime-local';
   startInput.required = true;
 
   const endLabel = document.createElement('label');
   endLabel.className = 'label';
+  endLabel.htmlFor = 'scheduler-new-end';
   endLabel.textContent = 'End';
   const endInput = document.createElement('input');
+  endInput.id = 'scheduler-new-end';
   endInput.type = 'datetime-local';
   endInput.required = true;
 
@@ -138,8 +149,7 @@ function buildNewShiftForm(tanods, onCreated) {
   if (tanods.length === 0) {
     form.hidden = true;
     const note = document.createElement('p');
-    note.className = 'label';
-    note.style.cssText = 'text-transform:none; font-weight:400;';
+    note.className = 'note';
     note.textContent = 'No Tanods exist in this barangay yet.';
     card.appendChild(note);
   }
@@ -184,7 +194,7 @@ function buildNewShiftForm(tanods, onCreated) {
 function renderList(container, shifts, tanods, onChanged) {
   container.innerHTML = '';
   const list = document.createElement('div');
-  list.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
+  list.className = 'stack';
   for (const shift of shifts) {
     list.appendChild(renderShiftRow(shift, tanods, onChanged));
   }
@@ -193,13 +203,12 @@ function renderList(container, shifts, tanods, onChanged) {
 
 function renderShiftRow(shift, tanods, onChanged) {
   const row = document.createElement('div');
-  row.className = 'card';
-  row.style.padding = '16px';
+  row.className = 'card card--compact';
 
   const view = document.createElement('div');
   const name = tanodName(tanods, shift.userId);
   view.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="row-between">
       <strong>${name ? escapeHtml(name) : 'Unassigned'}</strong>
       <button class="ghost" type="button">Edit</button>
     </div>
@@ -221,14 +230,25 @@ function renderShiftRow(shift, tanods, onChanged) {
 
 function buildEditForm(shift, tanods, onChanged, onCancel) {
   const form = document.createElement('form');
-  form.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
+  form.className = 'stack';
   form.noValidate = true;
 
   const errorBox = document.createElement('div');
   errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
 
+  // Unique ids per shift — several rows can be in edit mode at once, so
+  // a shared static id would collide (§ux: every field needs its own
+  // programmatically-linked label, not just adjacent text).
+  const idPrefix = `scheduler-edit-${shift.shiftId}`;
+
+  const tanodLabel = document.createElement('label');
+  tanodLabel.className = 'sr-only';
+  tanodLabel.htmlFor = `${idPrefix}-tanod`;
+  tanodLabel.textContent = 'Tanod';
   const tanodSelect = document.createElement('select');
+  tanodSelect.id = `${idPrefix}-tanod`;
   const unassignedOption = document.createElement('option');
   unassignedOption.value = '';
   unassignedOption.textContent = 'Unassigned';
@@ -241,16 +261,31 @@ function buildEditForm(shift, tanods, onChanged, onCancel) {
     tanodSelect.appendChild(option);
   }
 
+  const zoneLabel = document.createElement('label');
+  zoneLabel.className = 'sr-only';
+  zoneLabel.htmlFor = `${idPrefix}-zone`;
+  zoneLabel.textContent = 'Patrol zone';
   const zoneInput = document.createElement('input');
+  zoneInput.id = `${idPrefix}-zone`;
   zoneInput.type = 'text';
   zoneInput.value = shift.patrolZone || '';
   zoneInput.placeholder = 'Patrol zone';
 
+  const startLabel = document.createElement('label');
+  startLabel.className = 'sr-only';
+  startLabel.htmlFor = `${idPrefix}-start`;
+  startLabel.textContent = 'Start';
   const startInput = document.createElement('input');
+  startInput.id = `${idPrefix}-start`;
   startInput.type = 'datetime-local';
   startInput.value = toDatetimeLocal(shift.startAt);
 
+  const endLabel = document.createElement('label');
+  endLabel.className = 'sr-only';
+  endLabel.htmlFor = `${idPrefix}-end`;
+  endLabel.textContent = 'End';
   const endInput = document.createElement('input');
+  endInput.id = `${idPrefix}-end`;
   endInput.type = 'datetime-local';
   endInput.value = toDatetimeLocal(shift.endAt);
 
@@ -267,7 +302,7 @@ function buildEditForm(shift, tanods, onChanged, onCancel) {
   cancelButton.addEventListener('click', onCancel);
   actions.append(saveButton, cancelButton);
 
-  form.append(errorBox, tanodSelect, zoneInput, startInput, endInput, actions);
+  form.append(errorBox, tanodLabel, tanodSelect, zoneLabel, zoneInput, startLabel, startInput, endLabel, endInput, actions);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -310,7 +345,9 @@ function escapeHtml(text) {
 function renderLoading(container) {
   container.innerHTML = '';
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
+  wrap.className = 'stack';
+  wrap.setAttribute('role', 'status');
+  wrap.setAttribute('aria-label', 'Loading scheduler');
   for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
@@ -332,6 +369,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');

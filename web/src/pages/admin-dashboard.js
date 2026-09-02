@@ -13,7 +13,9 @@
 import { getReportsSummary, logout, ApiClientError } from '../api/apiClient.js';
 import { KpiCard } from '../components/KpiCard.js';
 import { TrendChart } from '../components/TrendChart.js';
+import { DonutChart } from '../components/DonutChart.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 
 const INCIDENT_TYPE_LABELS = {
@@ -23,6 +25,13 @@ const INCIDENT_TYPE_LABELS = {
   medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
+// §8 "Adopted UI reference": categorical chart palette, cycled since §5
+// fixes incident_type to exactly these 11 enum members.
+const INCIDENT_TYPE_COLORS = [
+  'var(--chart-cat-1)', 'var(--chart-cat-2)', 'var(--chart-cat-3)', 'var(--chart-cat-4)',
+  'var(--chart-cat-5)', 'var(--chart-cat-6)', 'var(--chart-cat-7)', 'var(--chart-cat-8)',
+  'var(--chart-cat-1)', 'var(--chart-cat-2)', 'var(--chart-cat-3)',
+];
 const STATUS_LABELS = { pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved' };
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success' };
 
@@ -49,14 +58,15 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = '<h2 style="margin-bottom:16px;">Admin Dashboard</h2>';
+  const pageHeader = PageHeader({ title: 'Admin Dashboard', subtitle: 'Barangay-wide incident summary and activity', icon: icons.layoutDashboard });
+  header.appendChild(pageHeader.el);
 
   // Date range controls
   const controls = document.createElement('div');
-  controls.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:24px;';
+  controls.className = 'filter-bar';
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.value = daysAgoIso(29);
@@ -127,6 +137,8 @@ function renderLoading(container) {
   container.innerHTML = '';
   const grid = document.createElement('div');
   grid.className = 'kpi-grid';
+  grid.setAttribute('role', 'status');
+  grid.setAttribute('aria-label', 'Loading dashboard');
   for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'card';
@@ -154,6 +166,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');
@@ -188,13 +201,27 @@ function renderPopulated(container, summary) {
   trendCard.appendChild(TrendChart({ trend: summary.trend }));
 
   const breakdownGrid = document.createElement('div');
-  breakdownGrid.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:16px;';
+  breakdownGrid.className = 'two-col-grid';
+  breakdownGrid.style.marginTop = '16px';
   breakdownGrid.append(
     renderBreakdownCard('By Status', summary.byStatus, STATUS_LABELS, STATUS_PILL_CLASS),
-    renderBreakdownCard('By Incident Type', summary.byIncidentType, INCIDENT_TYPE_LABELS, {})
+    renderIncidentTypeDonutCard(summary.byIncidentType)
   );
 
   container.append(grid, trendCard, breakdownGrid);
+}
+
+function renderIncidentTypeDonutCard(counts) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const heading = document.createElement('h3');
+  heading.textContent = 'By Incident Type';
+  heading.style.marginBottom = '12px';
+  const rows = Object.entries(counts).map(([key, count], i) => ({
+    key, count, label: INCIDENT_TYPE_LABELS[key] || key, color: INCIDENT_TYPE_COLORS[i % INCIDENT_TYPE_COLORS.length],
+  }));
+  card.append(heading, DonutChart({ rows }));
+  return card;
 }
 
 function renderBreakdownCard(title, counts, labels, pillClasses) {
@@ -206,10 +233,11 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
   card.appendChild(heading);
 
   const list = document.createElement('div');
-  list.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
+  list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; font-size:0.875rem;';
+    row.className = 'row-between';
+    row.style.fontSize = 'var(--font-size-sm)';
     const label = document.createElement('span');
     const pillClass = pillClasses[key];
     if (pillClass) {

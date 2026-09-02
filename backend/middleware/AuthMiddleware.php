@@ -46,7 +46,7 @@ final class AuthMiddleware
             throw new ApiError(401, 'UNAUTHORIZED', 'Missing or malformed Authorization header.');
         }
 
-        $secret = getenv('JWT_SECRET');
+        $secret = baranguard_env('JWT_SECRET');
         if ($secret === false || $secret === '') {
             // A missing secret is a server misconfiguration, not a client
             // error — never blame the caller's token for this.
@@ -129,7 +129,7 @@ final class AuthMiddleware
             throw new ApiError(401, 'UNAUTHORIZED', 'Missing or malformed Authorization header.');
         }
 
-        $secret = getenv('JWT_SECRET');
+        $secret = baranguard_env('JWT_SECRET');
         if ($secret === false || $secret === '') {
             throw new ApiError(500, 'SERVER_ERROR', 'Server authentication is not configured.');
         }
@@ -193,7 +193,7 @@ final class AuthMiddleware
 
     private static function maybeRenew(PDO $pdo, int $sessionId, string $jti, int $userId, int $barangayId, string $role, int $currentExpiresAt): ?string
     {
-        $expiresInMinutes = (int) (getenv('JWT_EXPIRES_IN_MINUTES') ?: 15);
+        $expiresInMinutes = (int) (baranguard_env('JWT_EXPIRES_IN_MINUTES') ?: 15);
         $lifetimeSeconds = $expiresInMinutes * 60;
         $remaining = $currentExpiresAt - time();
 
@@ -227,6 +227,6 @@ final class AuthMiddleware
             'barangay_id' => $barangayId,
             'iat' => time(),
             'exp' => $newExpiresAt,
-        ], getenv('JWT_SECRET'));
+        ], baranguard_env('JWT_SECRET'));
     }
 }

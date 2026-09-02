@@ -1,0 +1,86 @@
+/**
+ * dispatch-center.css — co-located with dispatch-center.js (W3). Split
+ * out of base.css during the 2026-09-02 responsive/density pass. This
+ * layout was already a real class with a working @1024px stack rule
+ * (unlike blotter-list.js/scheduler.js's old inline-style split panels,
+ * which is what prompted this whole pass) — kept as-is here.
+ */
+
+.dispatch-layout {
+  display: grid;
+  grid-template-columns: 26.25rem 1fr;
+  gap: var(--spacing-md);
+  height: 100%;
+  min-height: 0;
+}
+.dispatch-queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  overflow-y: auto;
+  min-height: 0;
+}
+.dispatch-queue__section-title {
+  margin-bottom: var(--spacing-sm);
+}
+.dispatch-card {
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  background: var(--color-white);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  transition: box-shadow .15s ease, border-color .15s ease;
+}
+.dispatch-card:hover { box-shadow: var(--shadow-elevated); border-color: var(--color-accent); }
+.dispatch-card__header strong { display: inline-flex; align-items: center; gap: var(--spacing-sm); }
+.dispatch-card__header strong::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--color-success);
+  flex-shrink: 0;
+}
+.dispatch-card--high .dispatch-card__header strong::before { background: var(--color-warning); }
+.dispatch-card--critical .dispatch-card__header strong::before { background: var(--color-critical); }
+.dispatch-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.dispatch-card__meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.dispatch-card__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+.dispatch-map-pane {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+}
+
+.sos-banner {
+  background: var(--color-critical);
+  color: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  font-weight: 600;
+  margin-bottom: var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.sos-banner svg { flex-shrink: 0; }
+
+@media (max-width: 1024px) {
+  .dispatch-layout { grid-template-columns: 1fr; }
+}

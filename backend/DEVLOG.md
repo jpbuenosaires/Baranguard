@@ -1326,3 +1326,251 @@ install (MariaDB 10.4.32 + PHP 8.2.12) — not a cloud sandbox.
 - Nothing from this session — this cut, the earlier 6-item cut, or the
   CSS/markup reskin — has been committed yet; all of it is sitting in
   the working tree pending the user's explicit go-ahead to commit.
+
+---
+
+# DEVLOG — Sprint 1 continued: real search/system-health, UI-scale knob,
+# Figma pixel-alignment pass, and three production bugs found post-XAMPP
+
+## Today's cut
+
+Not one Sprint-Prompt box — a user-directed sequence of fixes/polish on
+top of the already-complete Sprint 1, across several sessions: (1) make
+the dashboard's global search and "system operational" badge real instead
+of decorative, and remove remaining hardcoded UI data; (2) a CSS density/
+responsiveness pass after the user flagged the dashboard as "too big" and
+"not responsive"; (3) a full pixel-alignment pass against the actual
+Figma Make export (installed and run locally, not inferred from
+screenshots) — new shared components, a global UI-scale mechanism, and a
+Blotter→DataTable migration extended to every other list-style screen;
+(4) three real bugs found only once the app was served through real
+Apache/XAMPP rather than PHP's built-in dev server or a cloud sandbox.
+
+## Scope delivered
+
+**Real backend behind previously-decorative UI:**
+- `GET /barangays` (public) — `backend/controllers/BarangaysController.php`
+  + `routes/barangays.php`. Backs the public citizen-report barangay
+  picker with the real seeded table instead of a hardcoded 4-item array.
+- `GET /search?q=` (authenticated) — `backend/controllers/SearchController.php`
+  + `routes/search.php`. Same tenant/ownership scoping as `GET /incidents`;
+  searches incidents by ID/type/status. Backs the topbar's search box,
+  which previously had no backing endpoint at all.
+- `GET /system/health` — `backend/controllers/SystemHealthController.php`
+  + `routes/system.php`. Real `SELECT 1` DB check, real backup-file
+  `filemtime()`, and an honest `not_configured` status (derived from
+  actual env-var absence) for every dependency not wired up yet
+  (OSRM/Ollama/GSM/notification transports) — replaces a hardcoded
+  "All Systems Operational" badge, which §8 already forbids as a
+  demo/prototype tell.
+- `GET /incidents` extended with `officer_name` — a LEFT JOIN to each
+  incident's most recent `dispatch` row, resolving the assigned Tanod's
+  `full_name`. Required qualifying every `WHERE` column with `i.` (the
+  join brings in `dispatch`/`user` columns — `status`, `priority`,
+  `barangay_id` — that collide with `incident`'s own, so an unqualified
+  column became ambiguous, not just wrong). Added to both the list items
+  and `create()`'s response shape (always `null` there — a just-created
+  incident has no dispatch yet).
+
+**UI Scale Knob** (`web/src/styles/base.css`): the fix for "the UI is too
+big at 100% view, but looks right at 75% zoom." Rather than hand-tuning
+individual values (which the project's own density pass earlier had
+already found to cause drift/inconsistency), every size token
+(`--spacing-*`, `--font-size-*`, `--radius-*`, every component dimension)
+was converted from `px` to `rem`, and `html { font-size: 75%; }` became
+the single global density control — one line scales the whole app
+proportionally, and it's a percentage (not a fixed px) so it still
+respects a user's own browser-level accessibility font-size preference.
+1px borders and `50%`/`999px` shape radii were deliberately left
+unscaled; media-query breakpoints stay in `px` since they test real
+viewport pixels, not the scaled root.
+
+**Shared components added** (Figma-alignment, co-located `.js`+`.css`
+per file, all explicitly `<link>`ed in `web/index.html` — no bundler):
+- `PageHeader.js`/`.css` — white full-bleed title bar (24px title + 14px
+  subtitle + a right-aligned actions slot), mounted in a new `header`
+  slot `AppShell` now returns (between the topbar and the scrolling
+  content area) so it stays fixed while content scrolls. Replaces the
+  old per-page pattern of an inline-styled `<h2>` written straight into
+  the content area, which produced a different header treatment on every
+  screen and ate ~140px of vertical space before any data appeared.
+- `DataTable.js`/`.css` — a real `<table>` (not divs), ~44px rows against
+  the old stacked-card pattern's ~90px — roughly half the information
+  density, and the main reason the UI read as oversized regardless of
+  font size. `scope="col"` headers, keyboard-operable clickable rows,
+  wraps itself in its own horizontally-scrollable container.
+- `StatStrip.js`/`.css` — inline "12 · 3 · 2"-style count row for a page
+  header's actions slot; values are always caller-computed real counts,
+  never invented.
+- `Avatar.js`/`.css` extracted to its own file (was inline in AppShell).
+- `AppShell.css`, `DonutChart.css`, `LiveMap.css`, `KpiCard.css`,
+  `TrendChart.css`, `dispatch-center.css`, `gis-live-tracking.css`,
+  `login.css` split out of the old monolithic `base.css` into
+  co-located files as part of the same pass.
+- `icons.js` — `svg()` helper switched from `px` to `rem` sizing (so
+  icons scale with the root knob too) and 8 new icons added
+  (`x`, `menu`, `search`, `chevronDown`, `eye`, `plus`, `download`,
+  `mapPin`).
+
+**Every AppShell page migrated to `PageHeader`**: `admin-dashboard.js`,
+`dispatch-center.js`, `gis-live-tracking.js`, `statistical-reports.js`,
+`citizen-reports-inbox.js`, `blotter-list.js`, `scheduler.js`,
+`swap-requests.js`, `fatigue-flags.js`, `settings.js`. `login.js` and
+the public `citizen-report.js` are unauthenticated, use no `AppShell`,
+and already had their own hero/card layout from the earlier Figma
+markup reskin — left as-is.
+
+**Card lists migrated to `DataTable`**: `blotter-list.js` (ID/Type/
+Officer/Location/Date/Status — Location as raw lat,lng per an explicit
+decision below), `citizen-reports-inbox.js` (ID/Description/Contact/
+Submitted/Status), `swap-requests.js` (Requester/Shift/Target/Status/
+Actions, with Approve/Deny buttons in the Actions cell), `fatigue-flags.js`
+(Tanod/Hours/Flagged/Status, Acknowledge button folded into the Status
+cell). `dispatch-center.js`'s queue cards and `scheduler.js`'s
+edit-in-place rows were deliberately **not** migrated — see decisions
+below.
+
+**Dispatch Center** additionally got a `StatStrip` in its `PageHeader`
+actions slot (Pending / Active / Critical / SOS — all real counts,
+recomputed on every load/poll, not static).
+
+**`statistical-reports.js`** had its own duplicate inline `kpiTile()`
+helper replaced with the shared `KpiCard` component (same icons/accents
+as the Dashboard) — same data, less duplicated markup code.
+
+## Resolved decisions not stated in the reference (logged, don't reopen without review)
+
+- **Blotter table's location column shows raw coordinates**, not a
+  reverse-geocoded address — `incident` stores lat/lng only, and adding
+  reverse geocoding means a new backend dependency this offline-first
+  system doesn't currently have wired up. Confirmed with the user rather
+  than guessed (asked: raw coordinates vs. reverse-geocoded address vs.
+  coordinates-as-a-map-link; raw coordinates was chosen).
+- **Blotter table's Officer column was confirmed in-scope**, not skipped
+  — the user explicitly asked for it over leaving the column out, which
+  is what justified the `GET /incidents` backend extension above rather
+  than treating it as unlisted scope creep.
+- **`officer_name` is the incident's most recent dispatch's Tanod, any
+  status including cancelled** — an incident that was dispatched then
+  cancelled still meaningfully "had an officer handle it" for blotter
+  purposes; a never-dispatched incident correctly shows none.
+- **Scheduler's list was not migrated to `DataTable`.** Its per-row
+  inline edit (click a row → swap its content for a live edit form, using
+  the shift's own `version` for optimistic concurrency) doesn't map
+  cleanly onto `DataTable`'s static `renderCell` model without a larger,
+  riskier rework of a screen that already works correctly. Left as
+  compact cards; flagged as remaining work rather than silently skipped.
+- **Dispatch Center's queue cards were not migrated to `DataTable`**
+  either — each card carries a live Tanod-picker `<select>` + Assign
+  button (pending) or a Cancel button (active), which reads more like the
+  Figma reference's own queue-card pattern than a table row; only the
+  page's header/stat-strip were migrated.
+- **`html, body { overflow: hidden; }` added**, with `#app` matching —
+  `height: 100%` alone sets a box's size but doesn't clip a taller child,
+  so any page whose stacked content was even slightly taller than the
+  viewport pushed `body` past 100vh, producing an outer page-level
+  scrollbar *in addition to* `.page-content`'s own intended
+  `overflow: auto` region. `.page-content` is now the only scroll region
+  on any page. Same root cause, applied at the document level, as the
+  next bug.
+- **`.sidebar` got `min-height: 0`, `.sidebar__nav` got `flex: 1` +
+  `overflow-x: hidden`.** Without `min-height: 0`, `.sidebar` had no
+  height ceiling of its own and just grew to fit its content, pushing the
+  page taller than the viewport instead of letting `.sidebar__nav`'s own
+  `overflow-y: auto` do the scrolling. Separately, setting only
+  `overflow-y` (with no explicit `overflow-x`) forces the browser to
+  compute `overflow-x` as `auto` too per the CSS spec — that's what was
+  producing the sidebar's horizontal scrollbar with no visible horizontal
+  overflow cause.
+
+## Bugs found and fixed (real, found only against real Apache/XAMPP —
+## not caught by the PHP built-in dev server every verify-*.sh script uses)
+
+1. **`DB_HOST` intermittent 500s under real concurrent load.**
+   `putenv()`/`getenv()` operate on the single OS-level process
+   environment table, shared across every thread of one Apache worker
+   process under `mpm_winnt` (150 threads/process on this XAMPP install)
+   — neither call is documented thread-safe. Concurrent requests calling
+   `baranguard_load_env()` raced on that shared table and intermittently
+   produced "Missing required environment variable: DB_HOST" even though
+   the value was correctly in `.env` — caught via the real Apache error
+   log, not a hunch (an earlier session had wrongly dismissed the same
+   symptom as transient). Fixed by rewriting `backend/config/env.php` to
+   populate only `$_ENV`/`$_SERVER` (per-request-safe PHP superglobals,
+   not shared OS state) and never call `putenv()`; added a
+   `baranguard_env()` helper every consumer (`config/db.php`,
+   `controllers/AuthController.php`, `middleware/AuthMiddleware.php`,
+   `public/index.php`, `controllers/SystemHealthController.php`) now
+   calls instead of raw `getenv()`. Verified: `php -l` clean on all 6
+   files; `grep -rn "getenv("` confirms no remaining raw consumer call
+   site (only the helper's own internal fallback).
+2. **Every authenticated request 401'd under real Apache
+   ("Missing or malformed Authorization header") despite a correct
+   token.** Apache/mod_php doesn't forward the `Authorization` header
+   into `$_SERVER['HTTP_AUTHORIZATION']` by default — unlike PHP's
+   built-in dev server, which every `backend/scripts/verify-*.sh` script
+   uses, so this never surfaced in any of those runs. Fixed with a
+   `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]` line
+   in `backend/public/.htaccess`, ahead of the existing front-controller
+   rewrite.
+3. **A prior session's `sidebar__nav` scrollbar fix was only half-done**
+   (see decisions above) — actually two separate bugs, not one; both
+   needed fixing, not just the one that happened to be diagnosed first.
+
+## Tests performed (with evidence — and what was **not** verified this session)
+
+1. `php -l` clean on every modified/new PHP file
+   (`IncidentsController.php`, `SystemHealthController.php`,
+   `BarangaysController.php`, `SearchController.php`, `config/env.php`,
+   `config/db.php`, `controllers/AuthController.php`,
+   `middleware/AuthMiddleware.php`, `public/index.php`).
+2. `node --check` clean on every modified/new JS file (all 9 migrated
+   page files, `DataTable.js`, `PageHeader.js`, `StatStrip.js`,
+   `apiClient.js`, `icons.js`).
+3. **The scrollbar and `overflow:hidden` fixes were verified live**,
+   against the real served app at `http://localhost/baranguard/` (Apache/
+   XAMPP, not a dev server) — fetched `base.css` directly with
+   `cache: 'no-store'` to confirm the fix was actually served (not just
+   present on disk), then read `document.documentElement.scrollHeight`
+   vs. `window.innerHeight` via the live page's own computed styles: they
+   matched exactly (720/720) with `overflow: hidden` computed on both
+   `html` and `body` — zero document-level overflow.
+4. **The `DataTable`/`PageHeader`/`StatStrip` migrations (admin-dashboard,
+   dispatch-center, gis-live-tracking, statistical-reports,
+   citizen-reports-inbox, blotter-list, scheduler, swap-requests,
+   fatigue-flags, settings) were NOT verified in a real logged-in browser
+   session this pass** — no test-admin credentials were available to this
+   session (the real `baranguard` database's Admin was bootstrapped
+   interactively by the user in Sprint 0, and the password is
+   correctly never stored anywhere). Verification here is code-level
+   only: syntax checks above, and manual re-reading of each `renderCell`
+   against the exact fields `apiClient.js` returns. The user was asked to
+   spot-check the rendered pages manually rather than this session
+   building throwaway seed data + a disposable test admin for a pure
+   styling pass — flagged explicitly here rather than claimed tested.
+5. `GET /incidents`'s new `officer_name` join was checked by inspection
+   (qualified `WHERE` columns against the join's added tables) and
+   reasoned through for the ambiguous-column failure mode it fixes, but
+   **not executed against a live database this session** — same
+   credentials gap as above. Should be spot-checked against a real
+   incident with a cancelled-then-reassigned dispatch history before
+   being trusted at UAT time.
+
+## Not yet done (explicitly out of this pass)
+
+- Dashboard (W2) still doesn't have a "Recent Incidents" or "Tanods On
+  Duty" panel, or KPI period-over-period deltas, or a real axis-labeled
+  line chart — all discussed as Figma-alignment "Phase 1" targets but
+  deliberately deferred: the KPI-delta and Recent-Incidents panels need
+  new backend fields/joins nobody has explicitly approved yet, and
+  inventing that scope silently was exactly the kind of unlisted-field
+  addition this project's own rules warn against.
+- Scheduler's shift list and Dispatch Center's queue cards remain
+  card-based, not `DataTable` — see decisions above for why.
+- `GET /reports/export`, `GET /reports/notifications-summary`, W7/W8/W10/
+  W14/W17/W18/W20, all mobile screens — unchanged from the prior entry's
+  "not yet done" list.
+- The docs reorganization (11 old fragmented `docs/*.md` files deleted, 2
+  new consolidated ones added) remains deliberately uncommitted per the
+  user's own earlier instruction — untouched by this pass, not part of
+  the commit this entry describes.

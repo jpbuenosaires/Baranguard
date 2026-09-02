@@ -1,5 +1,14 @@
-# Rewrite every request that isn't a real file/dir to the front controller.
+# Apache/mod_php does not forward the Authorization header into
+# $_SERVER['HTTP_AUTHORIZATION'] by default (unlike PHP's built-in dev
+# server, which every backend/scripts/verify-*.sh script uses — so this
+# never surfaced until the app was first served through real Apache).
+# Http::bearerToken() reads that exact key; without this line every
+# authenticated request 401s with "Missing or malformed Authorization
+# header" even with a correct token.
 RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Rewrite every request that isn't a real file/dir to the front controller.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]

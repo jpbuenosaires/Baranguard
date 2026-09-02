@@ -38,10 +38,13 @@ export function renderHistoricalHeatmapPage(root, user, onLoggedOut, navigate) {
   const { content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.flame(22)}Historical Heatmap</h2>`;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'flex-col';
+  content.appendChild(wrapper);
+  wrapper.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.flame(22)}Historical Heatmap</h2>`;
 
   const controls = document.createElement('div');
-  controls.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap;';
+  controls.className = 'filter-bar';
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.value = daysAgoIso(29);
@@ -62,14 +65,14 @@ export function renderHistoricalHeatmapPage(root, user, onLoggedOut, navigate) {
   );
 
   const notice = document.createElement('p');
-  notice.className = 'label';
-  notice.style.cssText = 'text-transform:none; font-weight:400; margin-bottom:16px;';
+  notice.className = 'note';
+  notice.style.marginBottom = 'var(--spacing-md)';
   notice.textContent = 'Historical incident patterns only — not a predictive or real-time view.';
 
   const body = document.createElement('div');
-  body.style.cssText = 'height:calc(100% - 132px); min-height:0;';
+  body.className = 'grow';
 
-  content.append(controls, notice, body);
+  wrapper.append(controls, notice, body);
 
   let heatmap = null;
 
@@ -110,6 +113,8 @@ function renderLoading(container) {
   container.innerHTML = '';
   const skeleton = document.createElement('div');
   skeleton.className = 'skeleton';
+  skeleton.setAttribute('role', 'status');
+  skeleton.setAttribute('aria-label', 'Loading heatmap');
   skeleton.style.cssText = 'height:100%; border-radius:16px;';
   container.appendChild(skeleton);
 }
@@ -129,6 +134,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');

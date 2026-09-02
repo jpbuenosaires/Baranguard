@@ -1,0 +1,27 @@
+/**
+ * TrendChart.css — co-located with TrendChart.js (W2/W9 incident trend
+ * bars). Split out of base.css during the 2026-09-02 responsive/density
+ * pass; height trimmed slightly (140px->120px) as part of that pass's
+ * density tightening.
+ */
+
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.1875rem;
+  height: 7.5rem;
+}
+.trend-chart__bar {
+  flex: 1;
+  min-width: 0.125rem;
+  background: var(--color-primary);
+  border-radius: 0.25rem 0.25rem 0 0;
+}
+.trend-chart__empty-row {
+  height: 7.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}

@@ -1,0 +1,71 @@
+/**
+ * LiveMap.css — co-located with LiveMap.js (shared, W3 Dispatch Center +
+ * W4 GIS Live Tracking). Split out of base.css during the 2026-09-02
+ * responsive/density pass.
+ */
+
+.live-map {
+  width: 100%;
+  height: 100%;
+  min-height: 20rem;
+}
+.live-map__legend {
+  position: absolute;
+  bottom: var(--spacing-md);
+  left: var(--spacing-md);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  font-size: var(--font-size-label);
+  box-shadow: var(--shadow-floating);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  z-index: 5;
+}
+.live-map__legend-row { display: flex; align-items: center; gap: var(--spacing-sm); }
+.live-map__legend-dot { width: 0.75rem; height: 0.75rem; border-radius: 50%; display: inline-block; }
+
+.live-map__marker {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 3px solid var(--color-white);
+  box-shadow: var(--shadow-elevated);
+  cursor: pointer;
+  transition: transform .1s ease;
+}
+.live-map__marker:hover { transform: scale(1.15); }
+/* "GIS map pins... use animate-pulse to signal live positions" — applied
+   only to a genuinely fresh marker, deliberately NOT to a stale one:
+   §9 W4 requires "a stale location is not visually presented as live",
+   which takes priority over the generic pulse-everything styling rule —
+   pulsing a stale marker would be exactly the thing that rule forbids. */
+.live-map__marker--tanod { background: var(--color-success); animation: marker-pulse 2s ease-in-out infinite; }
+.live-map__marker--tanod.live-map__marker--stale { background: var(--color-text-secondary); animation: none; }
+@keyframes marker-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-map__marker--tanod { animation: none; }
+}
+.live-map__marker--sos {
+  width: 1.375rem;
+  height: 1.375rem;
+  background: var(--color-critical);
+  border-width: 4px;
+  animation: sos-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sos-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-critical) 45%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-critical) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-map__marker--sos { animation: none; box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-critical) 25%, transparent); }
+}
+
+@media (max-width: 480px) {
+  .live-map__legend { font-size: 0.625rem; padding: var(--spacing-sm); }
+}

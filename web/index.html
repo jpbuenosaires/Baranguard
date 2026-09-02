@@ -5,8 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Baranguard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/src/styles/base.css">
+  <!-- 500/800 added: button/label text sets font-weight:500 and the type
+       spec calls for an 800 weight on prominent headings — without the
+       actual font file loaded, a browser synthesizes ("fake bold")
+       instead of rendering the real Inter Medium/ExtraBold. -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="src/styles/base.css">
+  <!-- Component/page CSS, co-located with their .js files (2026-09-02
+       responsive/density pass split these out of the old monolithic
+       base.css — see that file's own header comment). Order after
+       base.css doesn't matter between these (no rule here overrides
+       another file's selectors), but each file must load somewhere. -->
+  <link rel="stylesheet" href="src/components/AppShell.css">
+  <link rel="stylesheet" href="src/components/PageHeader.css">
+  <link rel="stylesheet" href="src/components/DataTable.css">
+  <link rel="stylesheet" href="src/components/StatStrip.css">
+  <link rel="stylesheet" href="src/components/KpiCard.css">
+  <link rel="stylesheet" href="src/components/DonutChart.css">
+  <link rel="stylesheet" href="src/components/TrendChart.css">
+  <link rel="stylesheet" href="src/components/Avatar.css">
+  <link rel="stylesheet" href="src/components/LiveMap.css">
+  <link rel="stylesheet" href="src/pages/login.css">
+  <link rel="stylesheet" href="src/pages/dispatch-center.css">
+  <link rel="stylesheet" href="src/pages/gis-live-tracking.css">
   <!--
     MapLibre GL JS v4.7.1, vendored locally under /vendor (not loaded from
     a public CDN) — §1 names MapLibre as the stack's mapping library, and
@@ -15,20 +36,20 @@
     internet connection to load. See web/src/components/LiveMap.js for
     the shared component this backs (W3's map pane + W4 both use it).
   -->
-  <link rel="stylesheet" href="/vendor/maplibre-gl/maplibre-gl.css">
-  <script src="/vendor/maplibre-gl/maplibre-gl.js"></script>
+  <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
+  <script src="vendor/maplibre-gl/maplibre-gl.js"></script>
   <script>
     // Resolved decision (DEVLOG.md): API base URL is a page-level global,
     // not a build-time env var — §1's stack has no bundler to inject one.
-    // Default matches backend/scripts/README-serving.md Option B (PHP
-    // built-in server). Point this at the real vhost
-    // (http://baranguard.local/api/v1) for anything beyond quick local
-    // dev — see web/README-serving.md.
-    window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8080/api/v1';
+    // The API needs its OWN Apache DocumentRoot (backend/public), not a
+    // htdocs subfolder — the front controller matches REQUEST_URI against
+    // exactly "/api/v1", so a subfolder mount 404s. Served on its own
+    // port instead: see web/README-serving.md ("Option C").
+    window.BARANGUARD_API_BASE_URL = 'http://localhost:8081/api/v1';
   </script>
 </head>
 <body>
   <div id="app"></div>
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>

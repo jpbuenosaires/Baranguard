@@ -85,7 +85,7 @@ final class AuthController
         }
 
         // Success: reset lockout state, issue a session.
-        $expiresInMinutes = (int) (getenv('JWT_EXPIRES_IN_MINUTES') ?: 15);
+        $expiresInMinutes = (int) (baranguard_env('JWT_EXPIRES_IN_MINUTES') ?: 15);
         $expiresAt = $now->add(new \DateInterval("PT{$expiresInMinutes}M"));
         $jti = self::generateUuidV4();
 
@@ -123,7 +123,7 @@ final class AuthController
             'barangay_id' => (int) $user['barangay_id'],
             'iat' => $now->getTimestamp(),
             'exp' => $expiresAt->getTimestamp(),
-        ], (string) getenv('JWT_SECRET'));
+        ], (string) baranguard_env('JWT_SECRET'));
 
         Http::send(200, [
             'token' => $token,

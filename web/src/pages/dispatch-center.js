@@ -21,6 +21,8 @@ import {
 } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
+import { StatStrip } from '../components/StatStrip.js';
 import { icons } from '../components/icons.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
@@ -47,13 +49,18 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.radio(22)}Dispatch Center</h2>`;
+  const pageHeader = PageHeader({ title: 'Dispatch Center', subtitle: 'Assign on-duty Tanods and track active responses', icon: icons.radio });
+  header.appendChild(pageHeader.el);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'flex-col grow';
+  content.appendChild(wrapper);
   const body = document.createElement('div');
-  body.style.cssText = 'height:calc(100% - 40px); min-height:0;';
-  content.appendChild(body);
+  body.className = 'grow';
+  wrapper.appendChild(body);
 
   let liveMap = null;
 
@@ -92,6 +99,18 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
   function renderPopulated(container, { pendingIncidents, activeDispatches, eligibleTanods, openSos, gpsItems }) {
     container.innerHTML = '';
+    container.className = 'grow flex-col';
+
+    const criticalCount = pendingIncidents.filter((i) => i.priority === 'critical').length;
+    pageHeader.actions.innerHTML = '';
+    pageHeader.actions.appendChild(StatStrip({
+      items: [
+        { label: 'Pending', value: pendingIncidents.length },
+        { label: 'Active', value: activeDispatches.length, tone: 'info' },
+        { label: 'Critical', value: criticalCount, tone: criticalCount > 0 ? 'critical' : 'default' },
+        { label: 'SOS', value: openSos.length, tone: openSos.length > 0 ? 'critical' : 'default' },
+      ],
+    }));
 
     if (openSos.length > 0) {
       const banner = document.createElement('div');
@@ -104,8 +123,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     }
 
     const layout = document.createElement('div');
-    layout.className = 'dispatch-layout';
-    layout.style.height = openSos.length > 0 ? 'calc(100% - 56px)' : '100%';
+    layout.className = 'dispatch-layout grow';
 
     const queue = document.createElement('div');
     queue.className = 'dispatch-queue';
@@ -252,8 +270,8 @@ function renderActiveCard(dispatch, onChanged) {
 
 function emptyNote(text) {
   const note = document.createElement('p');
-  note.className = 'label';
-  note.style.cssText = 'text-transform:none; font-weight:400; padding:12px 0;';
+  note.className = 'note';
+  note.style.padding = 'var(--spacing-sm) 0';
   note.textContent = text;
   return note;
 }
@@ -262,6 +280,8 @@ function renderLoading(container) {
   container.innerHTML = '';
   const layout = document.createElement('div');
   layout.className = 'dispatch-layout';
+  layout.setAttribute('role', 'status');
+  layout.setAttribute('aria-label', 'Loading dispatch center');
   const queue = document.createElement('div');
   queue.className = 'dispatch-queue';
   for (let i = 0; i < 3; i++) {
@@ -280,6 +300,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');

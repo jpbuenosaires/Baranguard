@@ -10,13 +10,21 @@
  * not just pending ones. Only the same redacted item shape W3 already
  * gets (no raw_narrative — that's Secretary-only, via a different,
  * unbuilt detail endpoint) — matches "Server-provided redacted excerpt
- * only" exactly.
+ * only" exactly, plus `officerName` (2026-09-02 addition — the Tanod off
+ * the incident's most recent dispatch, see IncidentsController.php).
+ *
+ * 2026-09-02: migrated the list from stacked cards to the shared
+ * DataTable component (Phase 2 of the Figma-alignment pass) — cards ran
+ * ~90px/row against the reference's ~44px, the single biggest density
+ * gap on this screen. Header also migrated to PageHeader.
  *
  * kebab-case filename per §4 (pages/routes convention).
  */
 
 import { getIncidents, createIncident, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
+import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 
 const INCIDENT_TYPE_LABELS = {
@@ -27,6 +35,15 @@ const INCIDENT_TYPE_LABELS = {
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success' };
+
+const COLUMNS = [
+  { key: 'id', label: 'ID', width: '4.5rem' },
+  { key: 'type', label: 'Type' },
+  { key: 'officer', label: 'Officer' },
+  { key: 'location', label: 'Location' },
+  { key: 'date', label: 'Date' },
+  { key: 'status', label: 'Status', align: 'right' },
+];
 
 /**
  * @param {HTMLElement} root
@@ -44,22 +61,64 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.fileText(22)}Electronic Blotter</h2>`;
+  const pageHeader = PageHeader({ title: 'Electronic Blotter', subtitle: 'Running ledger of every logged incident', icon: icons.fileText });
+  header.appendChild(pageHeader.el);
+
+  const filterPanel = document.createElement('div');
+  filterPanel.className = 'filter-panel';
+  const searchWrap = document.createElement('div');
+  searchWrap.className = 'filter-panel__search';
+  const searchIcon = document.createElement('span');
+  searchIcon.className = 'filter-panel__search-icon';
+  searchIcon.setAttribute('aria-hidden', 'true');
+  searchIcon.innerHTML = icons.search(16);
+  const searchLabel = document.createElement('label');
+  searchLabel.className = 'sr-only';
+  searchLabel.htmlFor = 'blotter-search';
+  searchLabel.textContent = 'Search blotter entries';
+  const searchInput = document.createElement('input');
+  searchInput.id = 'blotter-search';
+  searchInput.type = 'search';
+  searchInput.placeholder = 'Search by incident ID, type, officer, or status…';
+  searchWrap.append(searchIcon, searchLabel, searchInput);
+  filterPanel.appendChild(searchWrap);
+  header.appendChild(filterPanel);
 
   const layout = document.createElement('div');
-  layout.style.cssText = canCreate ? 'display:grid; grid-template-columns: 1fr 360px; gap:16px; align-items:start;' : '';
+  layout.className = canCreate ? 'split-panel' : '';
   content.appendChild(layout);
 
   const listPane = document.createElement('div');
   layout.appendChild(listPane);
 
-  let formPane = null;
   if (canCreate) {
-    formPane = buildNewEntryForm(() => load());
-    layout.appendChild(formPane);
+    layout.appendChild(buildNewEntryForm(() => load()));
+  }
+
+  let allItems = [];
+  searchInput.addEventListener('input', () => applyFilter());
+
+  function applyFilter() {
+    const q = searchInput.value.trim().toLowerCase();
+    const filtered = q
+      ? allItems.filter((incident) => {
+          const typeLabel = (INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType).toLowerCase();
+          return (
+            String(incident.incidentId).includes(q) ||
+            typeLabel.includes(q) ||
+            incident.status.toLowerCase().includes(q) ||
+            (incident.officerName || '').toLowerCase().includes(q)
+          );
+        })
+      : allItems;
+    if (filtered.length === 0) {
+      renderEmpty(listPane, q ? 'No entries match your search.' : undefined);
+    } else {
+      renderList(listPane, filtered);
+    }
   }
 
   load();
@@ -68,11 +127,8 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
     renderLoading(listPane);
     try {
       const result = await getIncidents({ limit: 100 });
-      if (result.items.length === 0) {
-        renderEmpty(listPane);
-      } else {
-        renderList(listPane, result.items);
-      }
+      allItems = result.items;
+      applyFilter();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading the blotter.';
       renderError(listPane, message, load);
@@ -89,17 +145,20 @@ function buildNewEntryForm(onCreated) {
   heading.style.marginBottom = '16px';
 
   const form = document.createElement('form');
-  form.style.cssText = 'display:flex; flex-direction:column; gap:12px;';
+  form.className = 'form-stack';
   form.noValidate = true;
 
   const errorBox = document.createElement('div');
   errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
 
   const typeLabel = document.createElement('label');
   typeLabel.className = 'label';
+  typeLabel.htmlFor = 'blotter-new-type';
   typeLabel.textContent = 'Incident Type';
   const typeSelect = document.createElement('select');
+  typeSelect.id = 'blotter-new-type';
   for (const [value, label] of Object.entries(INCIDENT_TYPE_LABELS)) {
     const option = document.createElement('option');
     option.value = value;
@@ -109,11 +168,13 @@ function buildNewEntryForm(onCreated) {
 
   const narrativeLabel = document.createElement('label');
   narrativeLabel.className = 'label';
+  narrativeLabel.htmlFor = 'blotter-new-narrative';
   narrativeLabel.textContent = 'Narrative';
   const narrativeInput = document.createElement('textarea');
+  narrativeInput.id = 'blotter-new-narrative';
   narrativeInput.rows = 5;
   narrativeInput.required = true;
-  narrativeInput.style.cssText = 'width:100%; font-family:inherit; font-size:0.875rem; padding:8px 16px; border:1px solid var(--color-border); border-radius:10px; resize:vertical;';
+  narrativeInput.style.resize = 'vertical';
 
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
@@ -160,48 +221,62 @@ function buildNewEntryForm(onCreated) {
 
 function renderList(container, items) {
   container.innerHTML = '';
-  const list = document.createElement('div');
-  list.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
-  for (const incident of items) {
-    const row = document.createElement('div');
-    row.className = 'card';
-    row.style.padding = '16px';
-    const pillClass = STATUS_PILL_CLASS[incident.status] || 'status-pill--neutral';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-        <strong>${INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType}</strong>
-        <span class="status-pill ${pillClass}">${incident.status}</span>
-      </div>
-      <div class="label" style="text-transform:none; font-weight:400;">
-        Incident #${incident.incidentId} · ${new Date(incident.createdAt).toLocaleString()} · source: ${incident.source}
-      </div>
-    `;
-    list.appendChild(row);
-  }
-  container.appendChild(list);
+  const table = DataTable({
+    columns: COLUMNS,
+    rows: items,
+    rowKey: (row) => row.incidentId,
+    caption: 'Electronic blotter entries',
+    renderCell: (row, key) => {
+      switch (key) {
+        case 'id':
+          return `#${row.incidentId}`;
+        case 'type':
+          return INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType;
+        case 'officer':
+          return row.officerName || '—';
+        case 'location':
+          return row.latitude != null && row.longitude != null
+            ? `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`
+            : '—';
+        case 'date':
+          return new Date(row.createdAt).toLocaleString();
+        case 'status': {
+          const pillClass = STATUS_PILL_CLASS[row.status] || 'status-pill--neutral';
+          const span = document.createElement('span');
+          span.className = `status-pill ${pillClass}`;
+          span.textContent = row.status;
+          return span;
+        }
+        default:
+          return '';
+      }
+    },
+  });
+  container.appendChild(table);
 }
 
 function renderLoading(container) {
   container.innerHTML = '';
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
-  for (let i = 0; i < 4; i++) {
+  wrap.className = 'stack';
+  wrap.setAttribute('role', 'status');
+  wrap.setAttribute('aria-label', 'Loading blotter');
+  for (let i = 0; i < 6; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:64px; border-radius:12px;';
+    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);
 }
 
-function renderEmpty(container) {
+function renderEmpty(container, searchMessage) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block';
-  block.innerHTML = `
-    <h3>No blotter entries yet</h3>
-    <p>Once incidents are logged, they'll appear here as a running blotter ledger.</p>
-  `;
+  block.innerHTML = searchMessage
+    ? `<h3>${searchMessage}</h3><p>Try a different search term.</p>`
+    : `<h3>No blotter entries yet</h3><p>Once incidents are logged, they'll appear here as a running blotter ledger.</p>`;
   container.appendChild(block);
 }
 
@@ -209,6 +284,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');
