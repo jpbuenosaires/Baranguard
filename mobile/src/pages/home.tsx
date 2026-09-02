@@ -1,20 +1,26 @@
 /**
- * home.tsx — MINIMAL post-login landing screen.
+ * home.tsx — M2 Home (§9 Mobile).
  *
- * This is NOT M2 Home. M2 ("duty status control + SOS entry point", with
- * a greeting card, quick-stat row, and 2x2 quick-actions grid) is its own
- * unbuilt Sprint 2 box, and its SOS half is additionally Sprint-4-blocked
- * (`POST /tanod-sos` doesn't exist). This screen exists only because M1
- * has to navigate somewhere and M3 has to be reachable — the same
- * "necessary plumbing" precedent as the minimal login page built for W2
- * in Sprint 1.
+ * §9 M2: "Duty control remains primary. SOS supports the local/offline
+ * fallback path ... The duty toggle must call POST /duty-status, not just
+ * flip local UI state." That's the one hard requirement this screen must
+ * satisfy, and it does: `handleToggleDuty` always round-trips through
+ * `apiService.setDutyStatus`, and the displayed status is loaded from
+ * `GET /duty-status?user_id=me` on mount rather than assumed — a Tanod
+ * may have last toggled from a different device.
  *
- * Deliberately absent: duty toggle, SOS button, and any performance
- * stats. §9 M2 warns that the Figma reference bakes in a fake identity
- * and fabricated stats; §8 forbids shipping controls that look functional
- * but aren't wired to anything. A duty toggle here would be exactly that,
- * since `POST /duty-status` is not built. The name below comes from the
- * authenticated session, never a placeholder.
+ * SOS is shown but NOT functional. §9 M2's own quick-actions grid
+ * (SOS/Log Incident/Call Dispatch/Share Location) is an "acceptable
+ * pattern", but `POST /tanod-sos` is Sprint-4-blocked — the Sprint 2
+ * checklist's own resolved ambiguity note is explicit: "build it honestly
+ * as visibly 'not wired up yet' — never as a button that looks functional
+ * but silently does nothing." The button is disabled with a plain-text
+ * explanation, not hidden and not clickable-but-inert.
+ *
+ * No fabricated identity or stats (§9 M2's warning about the Figma
+ * reference's fake "Juan Dela Cruz" / invented numbers): the greeting
+ * name comes from the authenticated session, and nothing on this screen
+ * claims a number that isn't backed by a real query.
  */
 
 import { useEffect, useState } from 'react';
@@ -25,19 +31,73 @@ import {
   IonHeader,
   IonNote,
   IonPage,
+  IonSpinner,
   IonTitle,
   IonToolbar,
 } from '@ionic/react';
-import { logout } from '../services/apiService';
+import { getOwnDutyStatus, logout, setDutyStatus, type DutyStatus } from '../services/apiService';
+import { ApiError } from '../services/apiService';
 import { clearSession, loadSession } from '../services/session';
+import { uuid } from '../services/uuid';
+
+const STATUS_LABEL: Record<DutyStatus, string> = {
+  on_duty: 'On Duty',
+  responding: 'Responding',
+  off_duty: 'Off Duty',
+};
+
+const STATUS_PILL_CLASS: Record<DutyStatus, string> = {
+  on_duty: 'status-pill--success',
+  responding: 'status-pill--info',
+  off_duty: 'status-pill--neutral',
+};
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const [fullName, setFullName] = useState('');
+  const [status, setStatus] = useState<DutyStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [toggling, setToggling] = useState(false);
+  const [dutyError, setDutyError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSession().then((session) => setFullName(session?.fullName ?? ''));
+
+    getOwnDutyStatus()
+      .then((entry) => setStatus(entry?.status ?? 'off_duty'))
+      .catch((error: unknown) => {
+        // Own-status is a convenience, not a gate — a Tanod arriving here
+        // offline can still see the screen; the toggle button itself will
+        // surface the real error the moment it's actually used.
+        setStatus(null);
+        setDutyError(
+          error instanceof ApiError && error.isOffline
+            ? 'Offline — current duty status unknown until reconnected.'
+            : 'Could not load current duty status.'
+        );
+      })
+      .finally(() => setLoadingStatus(false));
   }, []);
+
+  async function handleToggleDuty() {
+    const next: DutyStatus = status === 'on_duty' ? 'off_duty' : 'on_duty';
+    setDutyError(null);
+    setToggling(true);
+    try {
+      const entry = await setDutyStatus(next, uuid());
+      setStatus(entry.status);
+    } catch (error) {
+      setDutyError(
+        error instanceof ApiError && error.isOffline
+          ? 'Cannot reach the barangay workstation — duty status was not changed.'
+          : error instanceof Error
+            ? error.message
+            : 'Could not update duty status.'
+      );
+    } finally {
+      setToggling(false);
+    }
+  }
 
   async function handleSignOut() {
     try {
@@ -61,14 +121,46 @@ const HomePage: React.FC = () => {
       <IonContent className="ion-padding">
         {fullName && <h2 className="app-title">{fullName}</h2>}
 
+        <div className="app-section">
+          {loadingStatus ? (
+            <IonSpinner name="dots" />
+          ) : (
+            <span className={`status-pill ${status ? STATUS_PILL_CLASS[status] : 'status-pill--neutral'}`}>
+              {status ? STATUS_LABEL[status] : 'Unknown'}
+            </span>
+          )}
+          <IonButton
+            expand="block"
+            className="app-stack"
+            disabled={loadingStatus || toggling}
+            onClick={handleToggleDuty}
+          >
+            {toggling ? (
+              <IonSpinner name="dots" />
+            ) : status === 'on_duty' ? (
+              'Go Off Duty'
+            ) : (
+              'Go On Duty'
+            )}
+          </IonButton>
+          {dutyError && (
+            <IonNote className="app-error" role="alert">
+              {dutyError}
+            </IonNote>
+          )}
+        </div>
+
         <IonButton expand="block" className="app-section" onClick={() => navigate('/incidents/new')}>
           Log New Incident
         </IonButton>
 
+        <IonButton expand="block" fill="outline" color="medium" disabled className="app-section">
+          SOS
+        </IonButton>
         <IonNote className="app-note">
-          Duty status and SOS are not built yet — they are part of the M2 Home
-          screen, and SOS additionally needs the Sprint 4 alert backend. They
-          are left out rather than shown as buttons that would do nothing.
+          SOS is not wired up yet — it needs the Sprint 4 alert backend
+          (`POST /tanod-sos`). Shown disabled rather than as a button that
+          would silently do nothing.
         </IonNote>
 
         <IonButton expand="block" fill="outline" color="medium" onClick={handleSignOut} className="app-section">

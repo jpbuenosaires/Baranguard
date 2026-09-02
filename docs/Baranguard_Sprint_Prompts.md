@@ -222,18 +222,29 @@ Today's cut — pick exactly ONE:
       Sprint-4-blocked (devices/register needs an fcm_token that cannot
       exist until FCM is set up); getFcmToken() returns null and
       registration is skipped rather than sending a placeholder.
-  [ ] M2 Home — duty status control + SOS entry point
-      (a minimal non-M2 landing screen exists as plumbing — no duty
-      toggle, no SOS, no stats; see home.tsx's header)
+  [x] M2 Home — duty status control + SOS entry point
+      DONE 2026-09-03. Duty toggle calls real POST /duty-status (browser-
+      verified: DB row confirmed, channel='app'); own current status loaded
+      from GET /duty-status?user_id=me on mount rather than assumed. SOS
+      shown but disabled with an explanatory note (Sprint-4-blocked, per
+      the resolved ambiguity below) — never a button that looks functional
+      but silently does nothing.
   [x] M3 Log New Incident — local SQLite write path (client_event_id
       assigned at time of first save, atomic before the user can leave)
-      DONE 2026-09-02, commit 40dbde5. NEVER EXECUTED — see below.
+      DONE 2026-09-02, commit 40dbde5. Extended 2026-09-03 with photo/voice
+      capture (staged in-memory, persisted to evidence_attachment_local
+      only after the incident itself saves). STILL NEVER EXECUTED ON A
+      DEVICE — see below; the form itself (including the new Add
+      Photo/Record Voice Note buttons) IS browser-verified to render.
   [x] M4 Incident Submitted Confirmation — sync-state display only
       (Saved locally / Queued / Synced / Duplicate reconciled / Needs
       attention)
       DONE 2026-09-02, commit 40dbde5. NEVER EXECUTED — see below.
-  [ ] Local schema: evidence_attachment_local (only if this session also
-      builds photo/voice capture — otherwise defer)
+  [x] Local schema: evidence_attachment_local
+      DONE 2026-09-03 — photo/voice capture shipped in this same cut, so
+      the deferral condition didn't apply. Migration 2 (LOCAL_SCHEMA_
+      VERSION now 2); verified 65/65 including a v1->v2 in-place upgrade
+      test (a device already on schema v1 keeps its existing rows).
 
 If nothing above is checked and nothing is named in prose, stop and ask
 which one before writing any code. If you finish early, end the session
@@ -247,61 +258,83 @@ already imply.
 
 BLOCKERS — environment (gate Sprint 2's OWN required tests):
   [ ] Install Android SDK / Android Studio on the workstation, then
-      `npx cap add android && npx cap sync` (mobile/android/ is gitignored)
+      `npx cap add android && npx cap sync` (mobile/android/ is gitignored).
+      Now also needed for: @capacitor/camera, capacitor-voice-recorder,
+      @aparajita/capacitor-secure-storage — added 2026-09-03, none have
+      ever run on a device either. AndroidManifest.xml permissions
+      (CAMERA, RECORD_AUDIO) don't exist yet since `cap add android`
+      hasn't run — add them when it does.
   [ ] Verify SQLCipher ACTUALLY encrypts the DB file on a device — this
       prompt's own "encrypted store actually encrypted — verify, don't
       assume". Not possible without the SDK; unverified as of d61a213.
   [ ] Verify offline capture survives app kill — same, needs a device.
+  [ ] Verify photo/voice capture actually produces a playable file, that
+      SecureStorage.getItem/setItem round-trip on Android Keystore, and
+      that the passphrase migration path (old @capacitor/preferences value
+      -> secure storage) works on an install that predates 2026-09-03.
 
 BLOCKERS — decisions (each gates a specific box):
-  [x] DB passphrase source → RESOLVED 2026-09-02 (commit 40dbde5):
-      device-generated 256-bit random secret, persisted app-privately via
-      @capacitor/preferences. Caveat: SharedPreferences is app-private but
-      NOT hardware-backed; documented upgrade path is a Keystore plugin,
-      swapping only passphrase.ts. Original note kept below for context:
-      DB passphrase source → gated M3 storing a real raw_narrative.
-      localDatabase.ts exposes a PassphraseProvider that THROWS if
-      unconfigured, deliberately: a hardcoded key ships inside the APK
-      and would make "encrypted at rest" a demo tell (§8). Candidates:
-      device-keystore secret generated at registration, or a server-issued
-      per-device secret delivered by POST /devices/register.
-  [ ] Bottom-nav slot: "Log Incident" vs "Schedule" (§8 open question) →
-      gates M3/M8 nav wiring.
-  [ ] Is photo/voice attachment in Sprint 2? §10 tags it S2, but the menu
-      defers evidence_attachment_local unless capture ships with it.
+  [x] DB passphrase source → RESOLVED 2026-09-02 (commit 40dbde5), UPGRADED
+      2026-09-03: now uses @aparajita/capacitor-secure-storage, whose
+      Android implementation encrypts under an Android-Keystore-generated
+      key before writing to SharedPreferences (confirmed against the
+      plugin's own README) — the Keystore upgrade this note's own original
+      text flagged as the documented next step. Only passphrase.ts changed,
+      exactly as anticipated; a one-time migration reads an old
+      @capacitor/preferences value on an existing install rather than
+      generating a second passphrase.
+  [x] Bottom-nav slot: "Log Incident" vs "Schedule" → RESOLVED 2026-09-03
+      (confirmed with the user): Log Incident takes the persistent tab
+      slot; Schedule (M8, unbuilt) moves behind Profile. §8 updated.
+      Implemented as `TabbedShell` in mobile/src/App.tsx; unbuilt tabs
+      (Assignments/Map/Profile) route to an honest `NotBuiltYetPage`
+      rather than being hidden or faked.
+  [x] Is photo/voice attachment in Sprint 2? → RESOLVED 2026-09-03: yes,
+      built in full this cut (not schema-only) — see the M3/local-schema
+      boxes above.
 
-BACKEND — documented in §6, none built yet (PHP side):
+BACKEND — documented in §6:
   [x] POST /devices/register              DONE (cb27272), 53/53 verified
   [x] PATCH /devices/:id/deactivate       DONE (cb27272)
   [x] GET  /map-packages/:barangay_id     DONE (cb27272)
   [x] GET  /map-packages/:barangay_id/download  DONE (cb27272)
-  [ ] POST /map-packages                  (Admin upload — without it there
-      is no package for a device to download at all)
-  [ ] POST /duty-status                   (M2)
+  [x] POST /map-packages                  DONE 2026-09-03. Admin-only,
+      MBTiles structure validated (SQLite header always; tiles/metadata
+      table check when pdo_sqlite is available), atomic publish enforcing
+      §5's "exactly one published package per barangay" via SELECT...FOR
+      UPDATE. 40/40 verified against real XAMPP
+      (verify-duty-status-map-upload.sh).
+  [x] POST /duty-status                   DONE 2026-09-03 (M2). Idempotent
+      via client_event_id, same 40/40 script.
   [ ] Mobile branch of POST /incidents — the web path exists (Sprint 1)
       but mobile idempotency is device_id + client_event_id, a different
       code path that has never been exercised.
 
-MOBILE INFRASTRUCTURE — not built yet:
-  [x] apiService.ts — DONE (40dbde5)
+MOBILE INFRASTRUCTURE:
+  [x] apiService.ts — DONE (40dbde5); extended 2026-09-03 with
+      setDutyStatus/getOwnDutyStatus.
   [x] On-device session storage — DONE (40dbde5); sliding renewal refuses
       to move a token's expiry backwards, per Rule 9
   [~] Repository layer over the local schema — incident_local DONE
-      (40dbde5); mobile_device_local and offline_map_package_local still
-      have no reader/writer
+      (40dbde5); evidence_attachment_local DONE 2026-09-03
+      (evidenceRepository.ts); mobile_device_local and
+      offline_map_package_local still have no reader/writer
+  [x] evidenceCapture.ts (Camera/Filesystem/voice-recorder platform edge)
+      — DONE 2026-09-03, type-checked against each plugin's documented
+      contract, NOT device-verified (see environment blockers above).
 
 AMBIGUITIES to settle before they cause drift:
   [ ] This block's scope line says "dispatch_local cache shape", but it is
       not a menu box and §10 tags cached dispatch/route detail as S2–3.
       Decide whether it lands in Sprint 2 or Sprint 3.
-  [ ] M2's SOS entry point cannot fully work in Sprint 2: POST /tanod-sos
-      and acknowledge/resolve are Sprint 4. Either defer SOS out of M2, or
-      build it honestly as visibly "not wired up yet" — never as a button
-      that looks functional but silently does nothing.
+  [x] M2's SOS entry point → RESOLVED 2026-09-03: built visibly disabled
+      with an explanatory note, not hidden and not silently non-functional.
+      Still fully blocked on Sprint 4's POST /tanod-sos.
 
-Suggested order: Android SDK → backend device+map-package endpoints →
-apiService.ts + session → M1 → M3 (after the passphrase decision) → M4 →
-M2 (last, since its SOS half is Sprint-4-blocked).
+Suggested order for what's left: Android SDK install (unblocks every
+device-only verification above) → device run of M1/M3/M4/M2 → mobile
+POST /incidents branch → dispatch_local cache shape decision → Sprint 3
+proper (M5/M6/M7, /sync/batch, POST /gps).
 --------------------------------------------------------------------------
 
 Requirements: every local write gets a stable client_event_id at time of

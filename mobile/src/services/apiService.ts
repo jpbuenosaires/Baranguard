@@ -236,3 +236,44 @@ export async function getMapPackage(barangayId: number): Promise<MapPackageMetad
 export function mapPackageDownloadUrl(barangayId: number): string {
   return `${API_BASE_URL}/map-packages/${barangayId}/download`;
 }
+
+// --- Duty status (§6, M2 Home) ----------------------------------------------
+
+/** §5 duty_status.status enum — the only accepted values. */
+export type DutyStatus = 'on_duty' | 'responding' | 'off_duty';
+
+export interface DutyStatusEntry {
+  statusId: number;
+  status: DutyStatus;
+  channel: string;
+  changedAt: string;
+}
+
+/**
+ * POST /duty-status. `clientEventId` must be a fresh UUID per real toggle
+ * (a retry of the SAME toggle should reuse the same id so the server's
+ * idempotent-retry path returns the original row instead of creating a
+ * duplicate status change).
+ */
+export async function setDutyStatus(status: DutyStatus, clientEventId: string): Promise<DutyStatusEntry> {
+  const json = await request<{ status_id: number; status: DutyStatus; channel: string; changed_at: string }>(
+    '/duty-status',
+    { method: 'POST', body: { status, client_event_id: clientEventId } }
+  );
+  return { statusId: json.status_id, status: json.status, channel: json.channel, changedAt: json.changed_at };
+}
+
+/**
+ * GET /duty-status?user_id=me — the caller's own most recent toggle, for
+ * M2 to show the TRUE current status on load rather than an optimistic
+ * local guess (a Tanod may have toggled from a different device, or via
+ * the SMS fallback channel once Sprint 4 exists).
+ */
+export async function getOwnDutyStatus(): Promise<DutyStatusEntry | null> {
+  const json = await request<{
+    items: { status_id: number; status: DutyStatus; channel: string; changed_at: string }[];
+  }>('/duty-status?user_id=me&limit=1');
+  const latest = json.items[0];
+  if (!latest) return null;
+  return { statusId: latest.status_id, status: latest.status, channel: latest.channel, changedAt: latest.changed_at };
+}

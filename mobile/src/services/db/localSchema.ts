@@ -2,16 +2,15 @@
  * localSchema.ts — the encrypted-SQLite local schema for the Tanod app,
  * transcribed from Master Reference §5 "Mobile Local".
  *
- * Sprint 2, "Today's cut": local schema for `incident_local`,
- * `mobile_device_local`, and `offline_map_package_local` only. The other
- * §5 local tables (`dispatch_local`, `gps_track_local`,
- * `duty_status_local`, `evidence_attachment_local`, `offline_queue_local`)
- * are deliberately NOT created here — each belongs to a later box/sprint
- * (M5/M6 dispatch caching and `/sync/batch` are Sprint 3;
- * `evidence_attachment_local` is explicitly deferred by Sprint 2's own
- * menu unless photo/voice capture ships in the same cut). Adding them
- * early would create empty tables no code reads, and would claim schema
- * coverage this cut hasn't actually tested.
+ * Sprint 2 baseline (migration 1): `incident_local`, `mobile_device_local`,
+ * `offline_map_package_local`. Migration 2 (this follow-up cut) adds
+ * `evidence_attachment_local` now that photo/voice capture is in scope —
+ * see `evidenceCapture.ts`/`evidenceRepository.ts`. The remaining §5 local
+ * tables (`dispatch_local`, `gps_track_local`, `duty_status_local`,
+ * `offline_queue_local`) are still deliberately NOT created here — each
+ * belongs to Sprint 3 (M5/M6 dispatch/GPS caching and `/sync/batch`).
+ * Adding them early would create empty tables no code reads, and would
+ * claim schema coverage this cut hasn't actually tested.
  *
  * DELIBERATELY PLUGIN-AGNOSTIC: this module imports nothing from
  * Capacitor. It is pure SQL strings + types, so the exact DDL that ships
@@ -39,9 +38,9 @@
  * unsynced field captures, which Rule 2 ("offline capture is durable
  * until reconciliation") forbids.
  */
-export const LOCAL_SCHEMA_VERSION = 1;
+export const LOCAL_SCHEMA_VERSION = 2;
 
-/** Statements for schema version 1 (this cut). */
+/** Statements for schema version 1 (Sprint 2 baseline cut). */
 const MIGRATION_001_BASELINE: readonly string[] = [
   // §5: incident_local — the offline incident capture record. `raw_narrative`
   // is "encrypted at rest": that is provided by whole-database SQLCipher
@@ -107,12 +106,51 @@ const MIGRATION_001_BASELINE: readonly string[] = [
 ];
 
 /**
+ * Statements for schema version 2 (photo/voice evidence capture cut).
+ *
+ * §5 `evidence_attachment_local` — evidence staged/captured on this
+ * device before the owning incident has a server ID. `incident_local_id`
+ * (not `server_incident_id`) is the foreign reference deliberately: a
+ * Tanod can attach a photo/voice note to an incident that has only ever
+ * been saved locally, and that link must resolve without a network round
+ * trip. `synced`/`uploaded_url`/`last_attempt_at`/`attempts` mirror the
+ * upload-retry bookkeeping `incident_local` already has for its own sync
+ * state, since §6 says evidence uploads individually via
+ * `/incidents/:id/evidence` — a separate transport from `/sync/batch`'s
+ * JSON body — once the parent incident has a server id.
+ */
+const MIGRATION_002_EVIDENCE: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS evidence_attachment_local (
+    local_id            TEXT    NOT NULL PRIMARY KEY,
+    server_attachment_id INTEGER NULL,
+    incident_local_id   TEXT    NOT NULL,
+    type                TEXT    NOT NULL,
+    file_path           TEXT    NOT NULL,
+    sha256              TEXT    NOT NULL,
+    byte_size           INTEGER NOT NULL,
+    mime_type           TEXT    NOT NULL,
+    synced              INTEGER NOT NULL DEFAULT 0,
+    uploaded_url         TEXT    NULL,
+    last_attempt_at      TEXT    NULL,
+    attempts             INTEGER NOT NULL DEFAULT 0
+  )`,
+  // Backs "all evidence for this incident" (attach-flow + M4 confirmation
+  // display) and "everything still unsynced" (a future upload worker),
+  // same shape as incident_local's own unsynced index.
+  `CREATE INDEX IF NOT EXISTS idx_evidence_local_incident
+     ON evidence_attachment_local (incident_local_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_evidence_local_unsynced
+     ON evidence_attachment_local (synced)`,
+];
+
+/**
  * Ordered migrations. Index 0 takes the DB from user_version 0 -> 1,
- * index 1 would take it 1 -> 2, and so on. Append only — never edit a
+ * index 1 takes it 1 -> 2, and so on. Append only — never edit a
  * released entry (same rule as the backend's completed migration files).
  */
 export const LOCAL_MIGRATIONS: readonly (readonly string[])[] = [
   MIGRATION_001_BASELINE,
+  MIGRATION_002_EVIDENCE,
 ];
 
 /** Every table this cut is responsible for, for assertions/diagnostics. */
@@ -120,6 +158,7 @@ export const LOCAL_TABLES = [
   'incident_local',
   'mobile_device_local',
   'offline_map_package_local',
+  'evidence_attachment_local',
 ] as const;
 
 export type LocalTableName = (typeof LOCAL_TABLES)[number];
@@ -176,4 +215,21 @@ export interface OfflineMapPackageLocalRow {
   /** ISO 8601 UTC string (§5). */
   installed_at: string;
   is_active: number;
+}
+
+export interface EvidenceAttachmentLocalRow {
+  local_id: string;
+  server_attachment_id: number | null;
+  /** FK to incident_local.local_id — resolves offline, before any server id exists. */
+  incident_local_id: string;
+  type: string;
+  /** App-private storage path, never a public/shared location. */
+  file_path: string;
+  sha256: string;
+  byte_size: number;
+  mime_type: string;
+  synced: number;
+  uploaded_url: string | null;
+  last_attempt_at: string | null;
+  attempts: number;
 }

@@ -73,6 +73,20 @@ const EXPECTED = {
     installed_at:    ['TEXT', 1, null, 0],
     is_active:       ['INTEGER', 1, '0', 0],
   },
+  evidence_attachment_local: {
+    local_id:              ['TEXT', 1, null, 1],
+    server_attachment_id:  ['INTEGER', 0, null, 0],
+    incident_local_id:     ['TEXT', 1, null, 0],
+    type:                  ['TEXT', 1, null, 0],
+    file_path:             ['TEXT', 1, null, 0],
+    sha256:                ['TEXT', 1, null, 0],
+    byte_size:             ['INTEGER', 1, null, 0],
+    mime_type:             ['TEXT', 1, null, 0],
+    synced:                ['INTEGER', 1, '0', 0],
+    uploaded_url:          ['TEXT', 0, null, 0],
+    last_attempt_at:       ['TEXT', 0, null, 0],
+    attempts:              ['INTEGER', 1, '0', 0],
+  },
 };
 
 /** Applies LOCAL_MIGRATIONS exactly the way localDatabase.ts does. */
@@ -177,7 +191,42 @@ const pkg = db.prepare('SELECT is_active FROM offline_map_package_local WHERE pa
 check(pkg.is_active === 0,
   `offline_map_package_local.is_active defaults to 0 — a downloaded package is not active until the SHA-256 is verified (§6) (got ${pkg.is_active})`);
 
-// --- 6. Migration is idempotent (re-running must not error or double-apply) -
+db.prepare(
+  `INSERT INTO evidence_attachment_local
+     (local_id, incident_local_id, type, file_path, sha256, byte_size, mime_type)
+   VALUES ('ev-1', 'local-1', 'photo', '/data/photo.jpg', 'deadbeef', 12345, 'image/jpeg')`
+).run();
+const evidence = db.prepare('SELECT synced, attempts FROM evidence_attachment_local WHERE local_id = ?').get('ev-1');
+check(evidence.synced === 0, `evidence_attachment_local.synced defaults to 0 (got ${evidence.synced})`);
+check(evidence.attempts === 0, `evidence_attachment_local.attempts defaults to 0 (got ${evidence.attempts})`);
+
+// --- 6. A device already on schema v1 upgrades to v2 in place, without ----
+// losing existing rows — the real-world path an already-installed app
+// takes, not just a fresh install migrating 0 -> latest in one pass.
+{
+  const upgradeDb = new DatabaseSync(':memory:');
+  for (const statement of LOCAL_MIGRATIONS[0]) upgradeDb.exec(statement);
+  upgradeDb.exec('PRAGMA user_version = 1');
+  upgradeDb.prepare(
+    `INSERT INTO incident_local
+       (local_id, barangay_id, incident_type, raw_narrative, source, created_offline_at, client_event_id)
+     VALUES ('pre-upgrade', 1, 'theft', 'captured before the app updated', 'app', '2026-09-01T00:00:00Z', 'event-pre-upgrade')`
+  ).run();
+
+  migrate(upgradeDb); // brings a v1 device to LOCAL_SCHEMA_VERSION
+  const upgradedVersion = Number(upgradeDb.prepare('PRAGMA user_version').get().user_version);
+  check(upgradedVersion === LOCAL_SCHEMA_VERSION,
+    `A device already on schema v1 upgrades to v${LOCAL_SCHEMA_VERSION} (got v${upgradedVersion})`);
+  const survived = upgradeDb.prepare('SELECT COUNT(*) AS n FROM incident_local').get().n;
+  check(survived === 1, `Pre-upgrade incident_local row survives the v1->v2 migration (Rule 2)`);
+  const hasEvidenceTable = upgradeDb.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='evidence_attachment_local'"
+  ).get();
+  check(!!hasEvidenceTable, 'evidence_attachment_local exists after upgrading from v1');
+  upgradeDb.close();
+}
+
+// --- 7. Migration is idempotent (re-running must not error or double-apply) -
 try {
   migrate(db);
   const v = Number(db.prepare('PRAGMA user_version').get().user_version);

@@ -26,16 +26,43 @@ use PDO;
  *     barangay. "Streams the published package; client verifies SHA-256
  *     before activation."
  *
- * NOT built here: `POST /map-packages` (Admin multipart upload +
- * MBTiles-structure validation + atomic publish). It is a separate,
- * larger piece with no §9 web screen consuming it, and M1 only ever
- * READS packages — building an upload path this cut would be scope the
- * chosen box doesn't need. Consequence, stated plainly rather than left
- * implicit: until it exists, `offline_map_package` rows must be created
- * out-of-band, so both endpoints below will legitimately 404 on a fresh
- * install. Logged in DEVLOG.md and on the Sprint 2 checklist.
+ * `POST /map-packages` — Admin only, own barangay. §6: "Body multipart
+ * {version,file}. Server derives barangay, validates MBTiles
+ * structure/checksum/size/version uniqueness, publishes atomically ->
+ * {package_id,version,checksum_sha256,is_published}."
  *
- * Resolved decisions (§6 states the contract but not these specifics):
+ * Resolved decisions for the upload path (§6 states the contract but not
+ * these specifics — logged in DEVLOG.md):
+ *   - **"Validates MBTiles structure"** is two-tier. Every upload's first
+ *     16 bytes are checked against the SQLite file-format magic header
+ *     (MBTiles IS a SQLite database, per the MBTiles spec) — this alone
+ *     rejects arbitrary non-package uploads with no extra dependency. If
+ *     this PHP build's `pdo_sqlite` driver is available, a second,
+ *     stricter check opens the file and confirms `tiles`/`metadata`
+ *     tables actually exist in `sqlite_master`. If the driver is absent,
+ *     the endpoint still works (does not hard-fail) but only the header
+ *     check ran — logged via `error_log` so that gap is visible in
+ *     practice, not silently assumed away.
+ *   - **"Atomic publish"** implements §5's own invariant on
+ *     `offline_map_package`: "Exactly one package is published per
+ *     barangay, enforced transactionally by locking the barangay package
+ *     set before publication." A `SELECT ... FOR UPDATE` locks that
+ *     barangay's existing rows, any previously-published version is
+ *     flipped to `is_published=0`, then the new row is inserted
+ *     published — all inside one transaction. The uploaded file is only
+ *     moved into permanent storage after validation passes, and is
+ *     deleted if the transaction rolls back, so a failed publish never
+ *     leaves an orphaned file.
+ *   - **500MB size ceiling** — no §6/§5 number is given for a barangay
+ *     basemap package; picked as a sane ceiling for hosting on a local
+ *     XAMPP workstation disk, not a documented requirement.
+ *   - **Version string**: same charset as other identifier fields in this
+ *     codebase (`device_id`, etc.) — `[A-Za-z0-9._-]{1,64}` — rather than
+ *     accepting arbitrary bytes into a value that becomes part of a
+ *     stored filename.
+ *
+ * Resolved decisions from the original read-only cut (§6 states the
+ * contract but not these specifics):
  *   - **Package files live under `MAP_PACKAGE_DIR`** (env; defaults to
  *     `backend/storage/map-packages`), and `offline_map_package.file_path`
  *     is interpreted as a path RELATIVE to it. The resolved real path is
@@ -55,6 +82,153 @@ use PDO;
  */
 final class MapPackagesController
 {
+    /** §5 offline_map_package.version is VARCHAR(64). */
+    private const VERSION_PATTERN = '/^[A-Za-z0-9._-]{1,64}$/';
+    private const MAX_BYTES = 500 * 1024 * 1024;
+
+    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    public static function create(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+
+        $version = $_POST['version'] ?? null;
+        if (!is_string($version) || !preg_match(self::VERSION_PATTERN, $version)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'version must be 1-64 characters of A-Z a-z 0-9 . _ or -.');
+        }
+
+        $file = $_FILES['file'] ?? null;
+        if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'file is required.');
+        }
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'File upload failed.');
+        }
+        $tmpPath = (string) $file['tmp_name'];
+        if (!is_uploaded_file($tmpPath)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Invalid upload.');
+        }
+
+        $byteSize = filesize($tmpPath);
+        if ($byteSize === false || $byteSize === 0) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Uploaded file is empty.');
+        }
+        if ($byteSize > self::MAX_BYTES) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'File exceeds the maximum package size (500MB).');
+        }
+
+        self::validateMbtilesStructure($tmpPath);
+        $checksum = hash_file('sha256', $tmpPath);
+
+        // Uniqueness pre-check for a clean 409 rather than a raw DB
+        // constraint-violation error; §5 UNIQUE(barangay_id,version).
+        $dupStmt = $pdo->prepare(
+            'SELECT package_id FROM offline_map_package WHERE barangay_id = :barangay_id AND version = :version LIMIT 1'
+        );
+        $dupStmt->execute(['barangay_id' => $identity['barangay_id'], 'version' => $version]);
+        if ($dupStmt->fetchColumn() !== false) {
+            throw new ApiError(409, 'CONFLICT', 'A package with this version already exists for this barangay.');
+        }
+
+        $baseDir = self::baseStorageDir();
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0750, true) && !is_dir($baseDir)) {
+            throw new ApiError(500, 'SERVER_ERROR', 'Could not prepare storage directory.');
+        }
+        $relativeFilename = 'barangay-' . $identity['barangay_id'] . '-' . $version . '-' . bin2hex(random_bytes(4)) . '.mbtiles';
+        $destination = $baseDir . DIRECTORY_SEPARATOR . $relativeFilename;
+        if (!move_uploaded_file($tmpPath, $destination)) {
+            throw new ApiError(500, 'SERVER_ERROR', 'Could not store the uploaded package.');
+        }
+
+        try {
+            $pdo->beginTransaction();
+
+            // §5: "Exactly one package is published per barangay, enforced
+            // transactionally by locking the barangay package set before
+            // publication."
+            $pdo->prepare('SELECT package_id FROM offline_map_package WHERE barangay_id = :barangay_id FOR UPDATE')
+                ->execute(['barangay_id' => $identity['barangay_id']]);
+            $pdo->prepare('UPDATE offline_map_package SET is_published = 0 WHERE barangay_id = :barangay_id AND is_published = 1')
+                ->execute(['barangay_id' => $identity['barangay_id']]);
+
+            $insertStmt = $pdo->prepare(
+                'INSERT INTO offline_map_package
+                    (barangay_id, version, file_path, checksum_sha256, byte_size, created_by, created_at, is_published)
+                 VALUES (:barangay_id, :version, :file_path, :checksum, :byte_size, :created_by, UTC_TIMESTAMP(), 1)'
+            );
+            $insertStmt->execute([
+                'barangay_id' => $identity['barangay_id'],
+                'version' => $version,
+                'file_path' => $relativeFilename,
+                'checksum' => $checksum,
+                'byte_size' => $byteSize,
+                'created_by' => $identity['user_id'],
+            ]);
+            $packageId = (int) $pdo->lastInsertId();
+
+            Audit::record(
+                $pdo,
+                $identity['barangay_id'],
+                $identity['user_id'],
+                'map_package_published',
+                'offline_map_package',
+                $packageId,
+                ['version' => $version, 'byte_size' => $byteSize]
+            );
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            @unlink($destination);
+            throw $e;
+        }
+
+        Http::send(201, [
+            'package_id' => $packageId,
+            'version' => $version,
+            'checksum_sha256' => $checksum,
+            'is_published' => true,
+        ]);
+    }
+
+    private static function validateMbtilesStructure(string $path): void
+    {
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Could not read the uploaded file.');
+        }
+        $header = fread($handle, 16);
+        fclose($handle);
+        if ($header !== "SQLite format 3\000") {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'File is not a valid MBTiles (SQLite) package.');
+        }
+
+        if (!in_array('sqlite', \PDO::getAvailableDrivers(), true)) {
+            error_log('[baranguard] pdo_sqlite unavailable on this PHP build; MBTiles structure validated by header only for ' . $path);
+            return;
+        }
+
+        try {
+            $sqlite = new \PDO('sqlite:' . $path);
+            $tables = $sqlite->query("SELECT name FROM sqlite_master WHERE type='table'")->fetchAll(\PDO::FETCH_COLUMN);
+        } catch (\Throwable $e) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'File could not be opened as a SQLite/MBTiles database.');
+        }
+        if (!in_array('tiles', $tables, true) || !in_array('metadata', $tables, true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "MBTiles file must contain 'tiles' and 'metadata' tables.");
+        }
+    }
+
+    private static function baseStorageDir(): string
+    {
+        $baseDir = baranguard_env('MAP_PACKAGE_DIR');
+        if ($baseDir === false || $baseDir === '') {
+            $baseDir = dirname(__DIR__) . '/storage/map-packages';
+        }
+        return $baseDir;
+    }
+
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function show(PDO $pdo, array $identity, string $barangayId): void
     {
@@ -150,11 +324,7 @@ final class MapPackagesController
      */
     private static function resolvePackagePath(string $filePath): ?string
     {
-        $baseDir = baranguard_env('MAP_PACKAGE_DIR');
-        if ($baseDir === false || $baseDir === '') {
-            $baseDir = dirname(__DIR__) . '/storage/map-packages';
-        }
-        $realBase = realpath($baseDir);
+        $realBase = realpath(self::baseStorageDir());
         if ($realBase === false) {
             return null;
         }
