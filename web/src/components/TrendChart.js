@@ -10,16 +10,22 @@
  * @returns {HTMLElement}
  */
 export function TrendChart({ trend }) {
-  const wrapper = document.createElement('div');
+  const host = document.createElement('div');
 
   if (!trend || trend.length === 0) {
-    wrapper.className = 'trend-chart__empty-row';
-    return wrapper;
+    host.className = 'trend-chart__empty-row';
+    return host;
   }
 
   const max = Math.max(1, ...trend.map((row) => row.count));
 
+  const wrapper = document.createElement('div');
   wrapper.className = 'trend-chart';
+  wrapper.setAttribute('role', 'img');
+  wrapper.setAttribute(
+    'aria-label',
+    `Incident trend from ${trend[0].date} to ${trend[trend.length - 1].date}: ${trend.map((r) => `${r.date} ${r.count}`).join(', ')}`
+  );
   for (const row of trend) {
     const bar = document.createElement('div');
     bar.className = 'trend-chart__bar';
@@ -29,5 +35,16 @@ export function TrendChart({ trend }) {
     wrapper.appendChild(bar);
   }
 
-  return wrapper;
+  // §chart Accessibility Notes: "Visible data table plus concise trend
+  // summary" as the a11y fallback for a bar/line chart — kept as a
+  // screen-reader-only table (not visible) so the visual chart stays
+  // exactly as designed, per this pass's "same visual language" scope.
+  const table = document.createElement('table');
+  table.className = 'sr-only';
+  table.innerHTML = `<caption>Incident trend by day</caption><thead><tr><th scope="col">Date</th><th scope="col">Incidents</th></tr></thead><tbody>${
+    trend.map((row) => `<tr><td>${row.date}</td><td>${row.count}</td></tr>`).join('')
+  }</tbody>`;
+
+  host.append(wrapper, table);
+  return host;
 }

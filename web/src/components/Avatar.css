@@ -1,0 +1,14 @@
+/**
+ * Avatar.css — co-located with Avatar.js. Split out of base.css during
+ * the 2026-09-02 responsive/density pass.
+ */
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-white);
+  font-weight: 600;
+  flex-shrink: 0;
+}

@@ -92,16 +92,31 @@ export function renderLoginPage(root, onSuccess) {
 
   const errorBox = document.createElement('div');
   errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
 
+  // Labels are visually hidden, not omitted — the visible placeholder
+  // text stays exactly as designed, but "placeholder-only" leaves screen
+  // reader / autofill users with no accessible name (§ux Forms
+  // anti-pattern). sr-only labels give both without changing the look.
+  const usernameLabel = document.createElement('label');
+  usernameLabel.className = 'sr-only';
+  usernameLabel.htmlFor = 'login-username';
+  usernameLabel.textContent = 'Username';
   const usernameInput = document.createElement('input');
+  usernameInput.id = 'login-username';
   usernameInput.type = 'text';
   usernameInput.name = 'username';
   usernameInput.placeholder = 'Username';
   usernameInput.autocomplete = 'username';
   usernameInput.required = true;
 
+  const passwordLabel = document.createElement('label');
+  passwordLabel.className = 'sr-only';
+  passwordLabel.htmlFor = 'login-password';
+  passwordLabel.textContent = 'Password';
   const passwordInput = document.createElement('input');
+  passwordInput.id = 'login-password';
   passwordInput.type = 'password';
   passwordInput.name = 'password';
   passwordInput.placeholder = 'Password';
@@ -113,7 +128,7 @@ export function renderLoginPage(root, onSuccess) {
   submitButton.className = 'primary';
   submitButton.textContent = 'Sign in';
 
-  form.append(errorBox, usernameInput, passwordInput, submitButton);
+  form.append(errorBox, usernameLabel, usernameInput, passwordLabel, passwordInput, submitButton);
   card.append(mobileBrand, brand, form);
   formPanel.appendChild(card);
   screen.append(hero, formPanel);

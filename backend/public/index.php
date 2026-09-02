@@ -30,7 +30,7 @@ use Baranguard\Middleware\AuthMiddleware;
 // reasonable dev convenience here — override via CORS_ALLOWED_ORIGIN in
 // .env for anything stricter. Logged as a resolved decision in
 // DEVLOG.md since the reference doesn't specify CORS policy.
-$corsOrigin = getenv('CORS_ALLOWED_ORIGIN') ?: '*';
+$corsOrigin = baranguard_env('CORS_ALLOWED_ORIGIN') ?: '*';
 header("Access-Control-Allow-Origin: {$corsOrigin}");
 header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key');

@@ -14,39 +14,69 @@ roles not listed).
 ## Current status (as of 2026-09-02)
 
 Sprint 0: done, real-XAMPP validated (19/19 checks), committed and pushed.
-Sprint 1: Auth backend + middleware done (real-XAMPP validated 22/22),
-and W2 Admin Dashboard + GET /reports/summary done (real-XAMPP validated
-30/30). Both committed and pushed to `origin/main`.
 
-**Done this session (Claude Code, continuing the prior Claude Desktop
-session), not yet committed:** the three-item exception to "pick exactly
-ONE" — W4 (GIS Live Tracking / shared LiveMap component), W3a (Dispatch
-Center — pending queue + Tanod picker, read-only), and W3b (Dispatch
-Center — create/cancel actions) — all built and individually validated:
-`backend/scripts/verify-w3-w4-dispatch-gis.sh` 37/37 against real XAMPP,
-plus a real Playwright browser walkthrough 23/23 (found and fixed a real
-bug along the way — see backend/DEVLOG.md's "W4 GIS Live Tracking +
-W3a/W3b" entry for both). Also fixed a real pre-existing bug found before
-this cut's own work started: `web/src/styles/base.css` was referenced
-everywhere but never actually committed in the W2 commit — recreated.
-Added `GET /users?role=` (not originally listed below) as necessary
-Tanod-picker plumbing, same precedent as W2's login page.
+**Sprint 1: fully complete** — every "Today's cut" box checked (Auth,
+W2, W3a/W3b, W4, W5, W6, W9, W15, W16, W19, and the optional W11/W12/W13
+scheduler+fatigue box), committed and pushed to `origin/main` as commit
+`7cf8390` ("[Sprint1] Figma reskin + W5/W6/W9/W15/W16/W19 +
+W11/W12/W13 scheduler/fatigue"), on top of the three earlier Sprint 1
+commits (Auth, W2, W4+W3a/W3b). Full endpoint list, resolved decisions,
+bugs found/fixed, and test evidence for every item live in
+`backend/DEVLOG.md` — it has one entry per work session; read the
+tail of it for the most recent ones rather than assuming this summary
+is exhaustive.
 
-New backend endpoints now built: `GET /gps/live`, `GET /gps/history`,
-`GET /tanod-sos`, `GET /incidents`, `GET /dispatch`, `POST /dispatch`,
-`PATCH /dispatch/:id/cancel`, `GET /duty-status`, `GET /users?role=`.
-New frontend: `LiveMap` shared component (vendored MapLibre GL JS,
-`web/vendor/maplibre-gl/`), `AppShell` shared component, `dispatch-center.js`,
-`gis-live-tracking.js`. Not yet in real-XAMPP terms needing a re-run flag
-— this session's tests already ran directly against the real local XAMPP
-install, not a cloud sandbox.
+Highlights from the last two sessions (both in `backend/DEVLOG.md`):
+- A full CSS/markup reskin of the web dashboard against the real Figma
+  Make design (icon system in `web/src/components/icons.js`, login
+  page's two-column hero panel) — a prior CSS-only pass still looked
+  visibly different; the gap turned out to be missing markup (icons,
+  hero panel), not tokens.
+- W5/W6/W9/W15/W16/W19 (heatmap, blotter list + web incident entry,
+  fuller statistical reports, settings/change-password, citizen reports
+  inbox, public citizen report intake) — first screens Secretary has
+  ever reached in this web app.
+- W11/W12/W13 (shift scheduler, swap requests, fatigue flags) — required
+  a new migration (`backend/migrations/0003_shift_schedule_nullable_user.sql`)
+  making `shift_schedule.user_id` nullable, a schema/spec conflict
+  confirmed with the user before coding (§6 requires an approved
+  no-target swap to leave a shift "unassigned"; the original schema
+  didn't allow that).
 
-Still not started: `POST /dispatch/:id/status` (Tanod/Admin transitions),
-notification creation on dispatch (Sprint 4), `POST /tanod-sos` +
-acknowledge/resolve (Sprint 4), `POST /duty-status` (mobile M2/Sprint 2),
-a barangay-metadata endpoint for real boundary polygons, real basemap
-tiles for the web map. Full list in DEVLOG.md's "Not yet done" for this
-entry.
+All of it validated against real XAMPP (MariaDB 10.4.32 + PHP 8.2.12) via
+disposable-DB scripts in `backend/scripts/` and real Chromium browser
+walkthroughs via Playwright (throwaway, not committed) — several real
+app bugs were caught and fixed by these runs, not just claimed working;
+see DEVLOG.md for specifics.
+
+**Since then (post-Sprint-1 polish, see DEVLOG.md's "real search/
+system-health, UI-scale knob, Figma pixel-alignment pass" entry):**
+`GET /barangays`, `GET /search`, `GET /system/health` built (the topbar
+search and status badge are now real, not decorative); `officer_name`
+added to `GET /incidents`; a global UI-scale mechanism
+(`html{font-size:75%}` + all-rem tokens in `base.css`) replaced ad-hoc
+px sizing; every list-style web screen migrated to shared `PageHeader`/
+`DataTable`/`StatStrip` components against the actual Figma Make export
+(run locally, not inferred from screenshots); a real thread-safety bug
+(`DB_HOST` intermittently missing under Apache's threaded MPM) and a
+real Apache `Authorization`-header-forwarding bug were found and fixed —
+both only surfaced once running through actual Apache/XAMPP rather than
+PHP's built-in dev server. **The DataTable/PageHeader page migrations
+were not re-verified in a live logged-in browser this pass** (no test
+credentials available to that session) — spot-check before trusting.
+
+**Not yet started:** W7, W8, W10, W14, W17, W18, W20 web screens; all
+mobile screens (Sprint 2+); `GET /reports/export` (Sprint 7);
+`GET /reports/notifications-summary` + the rest of the notification data
+model (Sprint 4); `POST /dispatch/:id/status`; `POST /tanod-sos` +
+acknowledge/resolve (Sprint 4); `POST /duty-status` (mobile M2/Sprint 2);
+a barangay-*metadata* endpoint for real boundary polygons (distinct from
+the new `GET /barangays` lookup, which is just id/name); real basemap
+tiles for the web map; the admin-editing-another-user half of
+`PATCH /users/:id` (W10 proper); Dashboard KPI-deltas/Recent-Incidents
+panels and a real axis chart (discussed, deliberately deferred — needs
+backend scope nobody's approved yet); Scheduler's list and Dispatch
+Center's queue cards still card-based, not `DataTable` (see DEVLOG.md).
 
 Two things worth knowing before touching git in this repo:
 - Three stray empty files sit in the repo root (`cls`, `git`, `main)`) —

@@ -27,8 +27,11 @@
  */
 
 import { getReportsSummary, logout, ApiClientError } from '../api/apiClient.js';
+import { KpiCard } from '../components/KpiCard.js';
 import { TrendChart } from '../components/TrendChart.js';
+import { DonutChart } from '../components/DonutChart.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 
 const INCIDENT_TYPE_LABELS = {
@@ -38,6 +41,13 @@ const INCIDENT_TYPE_LABELS = {
   medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
+// §8 "Adopted UI reference": categorical chart palette, cycled since §5
+// fixes incident_type to exactly these 11 enum members.
+const INCIDENT_TYPE_COLORS = [
+  'var(--chart-cat-1)', 'var(--chart-cat-2)', 'var(--chart-cat-3)', 'var(--chart-cat-4)',
+  'var(--chart-cat-5)', 'var(--chart-cat-6)', 'var(--chart-cat-7)', 'var(--chart-cat-8)',
+  'var(--chart-cat-1)', 'var(--chart-cat-2)', 'var(--chart-cat-3)',
+];
 const STATUS_LABELS = { pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved' };
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success' };
 
@@ -64,13 +74,14 @@ export function renderStatisticalReportsPage(root, user, onLoggedOut, navigate) 
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.barChart(22)}Statistical Reports</h2>`;
+  const pageHeader = PageHeader({ title: 'Statistical Reports', subtitle: 'Generate a trend, status, and response-time breakdown for a date range', icon: icons.barChart });
+  header.appendChild(pageHeader.el);
 
   const controls = document.createElement('div');
-  controls.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:24px; flex-wrap:wrap;';
+  controls.className = 'filter-bar';
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.value = daysAgoIso(29);
@@ -126,6 +137,8 @@ function renderLoading(container) {
   container.innerHTML = '';
   const chartSkeleton = document.createElement('div');
   chartSkeleton.className = 'card skeleton';
+  chartSkeleton.setAttribute('role', 'status');
+  chartSkeleton.setAttribute('aria-label', 'Generating report');
   chartSkeleton.style.height = '176px';
   container.appendChild(chartSkeleton);
 }
@@ -134,6 +147,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');
@@ -162,10 +176,16 @@ function renderReport(container, summary) {
   const kpiGrid = document.createElement('div');
   kpiGrid.className = 'kpi-grid';
   kpiGrid.append(
-    kpiTile('Total Incidents', summary.totalIncidents),
-    kpiTile('Resolved', summary.resolvedCount),
-    kpiTile('Avg. Response Time', summary.avgResponseTimeMinutes === null ? 'No arrivals yet' : `${summary.avgResponseTimeMinutes} min`),
-    kpiTile('Active Tanods', summary.activeTanods)
+    KpiCard({ label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue' }),
+    KpiCard({ label: 'Resolved', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green' }),
+    KpiCard({
+      label: 'Avg. Response Time',
+      value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
+      emptyText: 'No arrivals yet',
+      icon: icons.clock,
+      accent: 'orange',
+    }),
+    KpiCard({ label: 'Active Tanods', value: summary.activeTanods, icon: icons.users, accent: 'teal' })
   );
 
   const trendCard = document.createElement('div');
@@ -174,26 +194,27 @@ function renderReport(container, summary) {
   trendCard.appendChild(TrendChart({ trend: summary.trend }));
 
   const breakdownGrid = document.createElement('div');
-  breakdownGrid.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:16px;';
+  breakdownGrid.className = 'two-col-grid';
+  breakdownGrid.style.marginTop = '16px';
   breakdownGrid.append(
     renderBreakdownCard('By Status', summary.byStatus, STATUS_LABELS, STATUS_PILL_CLASS),
-    renderBreakdownCard('By Incident Type', summary.byIncidentType, INCIDENT_TYPE_LABELS, {})
+    renderIncidentTypeDonutCard(summary.byIncidentType)
   );
 
   container.append(kpiGrid, trendCard, breakdownGrid);
 }
 
-function kpiTile(label, value) {
-  const el = document.createElement('div');
-  el.className = 'card kpi-card';
-  const labelEl = document.createElement('div');
-  labelEl.className = 'label kpi-card__label';
-  labelEl.textContent = label;
-  const valueEl = document.createElement('div');
-  valueEl.className = 'kpi-card__value';
-  valueEl.textContent = String(value);
-  el.append(labelEl, valueEl);
-  return el;
+function renderIncidentTypeDonutCard(counts) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const heading = document.createElement('h3');
+  heading.textContent = 'By Incident Type';
+  heading.style.marginBottom = '12px';
+  const rows = Object.entries(counts).map(([key, count], i) => ({
+    key, count, label: INCIDENT_TYPE_LABELS[key] || key, color: INCIDENT_TYPE_COLORS[i % INCIDENT_TYPE_COLORS.length],
+  }));
+  card.append(heading, DonutChart({ rows }));
+  return card;
 }
 
 function renderBreakdownCard(title, counts, labels, pillClasses) {
@@ -205,10 +226,11 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
   card.appendChild(heading);
 
   const list = document.createElement('div');
-  list.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
+  list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; font-size:0.875rem;';
+    row.className = 'row-between';
+    row.style.fontSize = 'var(--font-size-sm)';
     const label = document.createElement('span');
     const pillClass = pillClasses[key];
     if (pillClass) {

@@ -1,65 +1,102 @@
 /**
- * base.css — global design tokens + shared component styles (§8 "Design
- * System"). Restyled to match the project's Figma Make export
- * (Downloads/Baranguard.zip — a shadcn/Tailwind React prototype), same
- * Figma file confirmed live via the Figma MCP server against
- * https://www.figma.com/make/llfBj3M4ilW1bZNnEnLGLY/Baranguard.
+ * base.css — global design tokens + shared primitives only (§8 "Design
+ * System"). Everything screen/component-specific lives co-located with
+ * its owning .js file (AppShell.css next to AppShell.js, login.css next
+ * to login.js, etc.). index.html loads every stylesheet explicitly (no
+ * bundler per §1) — check there for the current file list.
  *
- * First pass here was CSS-only and still looked visibly different from
- * the real design — the gap wasn't tokens (colors/radii below already
- * matched), it was structural: the mockup's icon system (lucide-react,
- * on the sidebar brand mark, every nav item, every KPI card, the login
- * hero) and its two-column login hero panel don't exist as DOM in this
- * app at all, and no CSS can add markup that isn't there. This pass adds
- * that markup (see icons.js, AppShell.js, KpiCard.js, login.js) with the
- * user's explicit go-ahead to expand scope beyond "CSS only" for real
- * visual fidelity.
+ * ─── UI SCALE KNOB ────────────────────────────────────────────────────
+ * `html { font-size: 75% }` below is the single control for how large
+ * the whole interface renders. Every size token here is in `rem`, so
+ * changing that one percentage scales fonts, spacing, radii, icons and
+ * component dimensions together, in proportion.
  *
- * Design tokens below are pulled directly from the export's
- * src/styles/theme.css (same hex values, --radius: 0.75rem base scale)
- * and its component source (button.tsx/card.tsx/badge.tsx class lists,
- * DashboardLayout.tsx/LoginPage.tsx/AdminDashboard.tsx/
- * DispatcherDashboard.tsx/GISTracking.tsx inline Tailwind classes) —
- * not invented independently of it.
+ * Why 75%: the Figma reference is authored at a 16px root, but viewed at
+ * 100% browser zoom on a real 1080p+ workstation it reads oversized for
+ * an operational dispatch console — the same design at 75% zoom is what
+ * actually feels right. Rather than ask every user to zoom out, the
+ * design is reproduced faithfully at its documented rem values and the
+ * root is scaled once, here. A token that reads `1rem` still means
+ * "16px in the reference design"; it just renders at 12px.
+ *
+ * To tune: raise/lower this one value (e.g. 80% for slightly larger).
+ * Never hand-adjust individual token values to change overall size —
+ * that's what caused the earlier drift where some values were trimmed
+ * and others weren't.
+ *
+ * Percentage (not a px value) on purpose: it scales from whatever root
+ * size the user's browser is set to, so someone who has raised their
+ * default font size for readability keeps that benefit. A hardcoded
+ * `12px` would silently override that accessibility preference.
+ *
+ * Exceptions that stay in px, deliberately: 1px borders (a 0.75px
+ * border renders blurry or disappears), and `50%`/`999px` radii which
+ * are shape declarations, not sizes.
+ * ──────────────────────────────────────────────────────────────────────
+ *
+ * Design tokens are pulled from the Figma Make export's theme.css (same
+ * hex values, --radius: 0.75rem base scale) and its precise Tailwind
+ * class breakdown for type/spacing.
  *
  * "Never hardcode a hex value, pixel spacing, or font name in a
- * component file" (§8) — that rule is about page/component JS, which is
- * why admin-dashboard.js's inline styles for one-off layout (e.g. the
- * date-range controls) are the exception this file's own tokens still
- * back: this file is where the hardcoded values are *allowed* to live.
+ * component file" (§8) — that rule is about page/component JS. The
+ * utility layout classes below exist specifically so pages don't need
+ * to: ad-hoc `style.cssText` layout strings in JS can never respond to
+ * a media query, which is what broke responsiveness before.
  */
+
+html { font-size: 75%; }
 
 :root {
   --color-navy: #1E3A6E;          --color-primary: #1D4ED8;
-  --color-accent: #3B82F6;        --color-surface-blue: #E0F2FE;
+  --color-primary-hover: #1E40AF; --color-accent: #3B82F6;
+  --color-surface-blue: #E0F2FE;
   --color-white: #FFFFFF;         --color-bg: #F8FAFC;
   --color-border: #E2E8F0;        --color-text-primary: #0F172A;
   --color-text-secondary: #475569;
+  /* Tertiary — placeholders, timestamps, uppercase .label text, and the
+     disabled-state text color, per the source's own neutral table. */
+  --color-text-tertiary: #94A3B8;
+  --color-disabled-bg: #CBD5E1;
   --color-critical: #DC2626;      --color-warning: #D97706;
   --color-success: #16A34A;       --color-info: #0891B2;
+  /* Selected/hover row tint — distinct from --color-bg. */
+  --color-row-active-bg: #EFF6FF;
+  --color-border-blue: #BFDBFE;
+  --color-divider: #F1F5F9;
 
-  /* Solid pastel tints (not alpha blends) — matches the export's exact
-     status-pill/stat-card background hexes, e.g. DispatcherDashboard.tsx's
-     `bg-[#DCFCE7] text-[#16A34A]` / `bg-[#FEE2E2]` / `bg-[#F3F4F6]`. */
-  --tint-success-bg: #DCFCE7;     --tint-critical-bg: #FEE2E2;
-  --tint-warning-bg: #FEF3C7;     --tint-info-bg: var(--color-surface-blue);
+  /* Solid pastel tints. Note the source documents a different, more
+     saturated success green (#DCFCE7) for the one topbar "system
+     status" pill — see AppShell.css — than for status pills elsewhere. */
+  --tint-success-bg: #F0FDF4;     --tint-critical-bg: #FEE2E2;
+  --tint-warning-bg: #FEF3C7;     --tint-info-bg: #DBEAFE;
   --tint-neutral-bg: #F3F4F6;
 
-  --spacing-xs: 4px; --spacing-sm: 8px; --spacing-md: 16px;
-  --spacing-lg: 24px; --spacing-xl: 32px; --spacing-2xl: 48px;
+  /* Categorical chart palette (DonutChart.js) — the source's documented
+     7-colour sequence; slot 8 is an extra so 11 incident types don't
+     repeat too early. */
+  --chart-cat-1: var(--color-primary); --chart-cat-2: var(--color-success);
+  --chart-cat-3: var(--color-warning); --chart-cat-4: var(--color-critical);
+  --chart-cat-5: var(--color-info);    --chart-cat-6: #8B5CF6;
+  --chart-cat-7: var(--color-accent);  --chart-cat-8: #DB2777;
+
+  /* Spacing — rem so the root scale knob applies. Values are the
+     source's own scale expressed against a 16px reference:
+     0.25=4px, 0.5=8px, 0.75=12px(gap-3), 1=16px, 1.5=24px, 2=32px, 3=48px. */
+  --spacing-xs: 0.25rem;  --spacing-sm: 0.5rem;  --spacing-sm-md: 0.75rem;
+  --spacing-md: 1rem;     --spacing-lg: 1.5rem;  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
+
   --font-base: "Inter", system-ui, -apple-system, sans-serif;
+  /* text-xs(12) / sm(14) / base(16) / lg(18, card titles) /
+     xl(20, panel headings) / 2xl(24, page titles) / 3xl(30, KPI values) */
   --font-size-label: 0.75rem; --font-size-sm: 0.875rem; --font-size-md: 1rem;
-  --font-size-lg: 1.25rem; --font-size-xl: 1.75rem; --font-size-2xl: 2.25rem;
+  --font-size-lg: 1.125rem;   --font-size-xl: 1.25rem;  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
 
-  /* Export's --radius: 0.75rem (12px) base, sm/md/lg/xl derived the same
-     way its @theme inline block does: sm = radius-4, md = radius-2,
-     lg = radius, xl = radius+4. */
-  --radius-sm: 8px; --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px;
+  /* radius: sm 8 / md 10 / lg 12 / xl 16 against the 16px reference. */
+  --radius-sm: 0.5rem; --radius-md: 0.625rem; --radius-lg: 0.75rem; --radius-xl: 1rem;
 
-  /* Export's cards are flat (border only) at rest and only elevate via
-     `hover:shadow-lg` — kept subtle at rest, matching that, with a
-     distinct stronger tier for floating map overlays (`shadow-xl`/`2xl`
-     on the legend/detail cards in GISTracking.tsx/DispatcherDashboard.tsx). */
   --shadow-card: 0 1px 2px rgba(15,23,42,.05);
   --shadow-elevated: 0 10px 15px -3px rgba(15,23,42,.10), 0 4px 6px -4px rgba(15,23,42,.10);
   --shadow-floating: 0 20px 25px -5px rgba(15,23,42,.12), 0 8px 10px -6px rgba(15,23,42,.10);
@@ -67,11 +104,20 @@
 
 * { box-sizing: border-box; }
 
+/* Visually hidden but still reachable by screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* --- Icon badges --------------------------------------------------------
-   Figma's icon system (lucide-react, via icons.js's inline-SVG port):
-   sidebar brand mark, login hero logo/features, KPI card badges all use
-   the same "colored box, centered icon, white glyph" shape at different
-   sizes/backgrounds rather than a bare icon floating in the layout. */
+   "colored box, centered icon, white glyph" — sidebar brand mark, login
+   hero, KPI card badges all use this shape at different sizes. */
 
 .icon-badge {
   display: inline-flex;
@@ -81,21 +127,21 @@
   color: var(--color-white);
 }
 .icon-badge--brand {
-  width: 40px; height: 40px;
+  width: 2.5rem; height: 2.5rem;
   border-radius: var(--radius-md);
   background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
 }
 .icon-badge--hero {
-  width: 56px; height: 56px;
+  width: 3.5rem; height: 3.5rem;
   border-radius: var(--radius-xl);
   background: rgba(255, 255, 255, 0.2);
 }
 .icon-badge--feature {
-  width: 40px; height: 40px;
+  width: 2.5rem; height: 2.5rem;
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.2);
 }
-.icon-badge--kpi { width: 48px; height: 48px; border-radius: var(--radius-lg); }
+.icon-badge--kpi { width: 3rem; height: 3rem; border-radius: var(--radius-lg); }
 .icon-badge--kpi.accent-blue { background: var(--color-accent); }
 .icon-badge--kpi.accent-green { background: var(--color-success); }
 .icon-badge--kpi.accent-orange { background: var(--color-warning); }
@@ -105,71 +151,88 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* height:100% alone only sets the box's size — it doesn't clip a taller
+     child. Without this, any page whose stacked content (KPI cards +
+     chart + panels) is even slightly taller than the viewport pushes
+     body past 100vh, producing an outer page-level scrollbar *in
+     addition to* .page-content's own overflow:auto — the same "two
+     scrollbars" bug as the earlier sidebar fix, at the document level
+     instead. .page-content is the one intended scroll region. */
+  overflow: hidden;
   background: var(--color-bg);
   color: var(--color-text-primary);
   font-family: var(--font-base);
   font-size: var(--font-size-md);
 }
 
-#app { height: 100%; }
+#app { height: 100%; overflow: hidden; }
 
 h1, h2, h3, p { margin: 0; }
 h1 { font-size: var(--font-size-2xl); font-weight: 700; }
-h2 { font-size: var(--font-size-xl); font-weight: 700; }
+/* h2 is this app's page-title element ("Admin Dashboard") — the source's
+   page-title size (24px/2xl), not its generic h2 = panel-heading (20px). */
+h2 { font-size: var(--font-size-2xl); font-weight: 700; }
 h3 { font-size: var(--font-size-lg); font-weight: 700; }
 
 .label {
   font-size: var(--font-size-label);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
   font-weight: 600;
 }
 
-input, select {
+input, select, textarea {
   font-family: inherit;
   font-size: var(--font-size-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-sm-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--color-bg);
   color: var(--color-text-primary);
   width: 100%;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-input:focus, select:focus {
+input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: transparent;
   box-shadow: 0 0 0 2px var(--color-primary);
 }
+input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); }
 
 button {
   font-family: inherit;
   font-size: var(--font-size-sm);
   font-weight: 500;
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-lg);
   border: 1px solid transparent;
   cursor: pointer;
-  min-height: 40px;
+  min-height: 2.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm);
   transition: background-color .15s ease, color .15s ease, border-color .15s ease;
 }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-white), 0 0 0 4px var(--color-primary);
+}
 button svg { flex-shrink: 0; }
 button.primary {
   background: var(--color-primary);
   color: var(--color-white);
 }
-button.primary:hover { background: var(--color-navy); }
-button.primary:disabled { background: var(--color-border); color: var(--color-text-secondary); cursor: not-allowed; }
+button.primary:hover { background: var(--color-primary-hover); }
+button.primary:disabled { background: var(--color-border); color: var(--color-text-tertiary); cursor: not-allowed; }
+/* White + visible border at rest, --color-bg only on hover (per source). */
 button.ghost {
-  background: var(--color-bg);
+  background: var(--color-white);
+  border-color: var(--color-border);
   color: var(--color-text-secondary);
 }
-button.ghost:hover { background: var(--color-border); }
+button.ghost:hover { background: var(--color-bg); }
 button.danger {
   background: var(--color-white);
   border-color: var(--color-critical);
@@ -177,6 +240,19 @@ button.danger {
 }
 button.danger:hover { background: var(--color-critical); color: var(--color-white); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Icon-only action button (table row edit/delete) — source spec:
+   p-1.5 with a tinted hover per action type. */
+button.icon-btn {
+  min-height: 0;
+  padding: var(--spacing-xs);
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md);
+}
+button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--color-primary); }
+button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(--color-critical); }
 
 /* --- Cards / surfaces -------------------------------------------------- */
 
@@ -190,9 +266,25 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .card:hover { box-shadow: var(--shadow-elevated); }
 
+/* Tighter padding for dense list rows; dashboards keep the roomier default. */
+.card--compact { padding: var(--spacing-md); }
+
+/* Card header — title + subtitle + optional corner icon (source pattern
+   used on every chart/panel card). */
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+.card-header__title { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-text-primary); }
+.card-header__subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-top: 0.125rem; }
+.card-header__icon { color: var(--color-primary); flex-shrink: 0; }
+
 .state-block {
   text-align: center;
-  padding: var(--spacing-2xl) var(--spacing-lg);
+  padding: var(--spacing-xl) var(--spacing-lg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -200,11 +292,11 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .state-block:hover { box-shadow: var(--shadow-card); } /* static content, no lift */
 .state-block h3 { color: var(--color-text-primary); }
-.state-block p { color: var(--color-text-secondary); max-width: 420px; }
+.state-block p { color: var(--color-text-secondary); max-width: 26rem; }
 .state-block--error p { color: var(--color-critical); }
 
 .skeleton {
-  background: linear-gradient(90deg, var(--color-border) 25%, #f1f5f9 37%, var(--color-border) 63%);
+  background: linear-gradient(90deg, var(--color-border) 25%, var(--color-divider) 37%, var(--color-border) 63%);
   background-size: 400% 100%;
   animation: skeleton-shimmer 1.4s ease infinite;
   border-radius: var(--radius-md);
@@ -213,14 +305,15 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   0% { background-position: 100% 50%; }
   100% { background-position: 0 50%; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
 
-/* --- Status pills -------------------------------------------------------
-   Solid pastel tints (not translucent blends) matching the export's exact
-   status-pill hexes across DispatcherDashboard.tsx/GISTracking.tsx. */
+/* --- Status pills ------------------------------------------------------- */
 
 .status-pill {
   display: inline-block;
-  padding: 4px var(--spacing-sm);
+  padding: 0.375rem var(--spacing-sm-md);
   border-radius: 999px;
   font-size: var(--font-size-label);
   font-weight: 600;
@@ -233,411 +326,57 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .status-pill--neutral { background: var(--tint-neutral-bg); color: var(--color-text-secondary); }
 .status-pill--critical { background: var(--tint-critical-bg); color: var(--color-critical); }
 
-/* --- KPI grid (W2) -------------------------------------------------------
-   AdminDashboard.tsx's KPI cards each carry a distinct accent color via a
-   colored icon box (Bell/blue, CheckCircle/green, Clock/orange,
-   Users/teal) — KpiCard.js now renders that badge directly (icon-badge
-   --kpi.accent-*) instead of approximating it with a CSS-only accent
-   bar, keyed to the fixed KPI order admin-dashboard.js always renders in
-   (Total / Resolved / Avg Response / Active Tanods). */
+/* --- Layout utilities ---------------------------------------------------
+   Replace per-page inline `style.cssText` layout strings — the source of
+   both the density drift and the responsiveness bugs (inline styles can
+   never carry a media query). Use these instead of a new inline style. */
 
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
-}
-.kpi-card__header { margin-bottom: var(--spacing-md); }
-.kpi-card__label { margin-bottom: var(--spacing-sm); }
-.kpi-card__value { font-size: var(--font-size-2xl); font-weight: 700; }
-.kpi-card__value.empty { color: var(--color-text-secondary); font-size: var(--font-size-lg); font-weight: 500; }
+.stack { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+.stack--md { gap: var(--spacing-md); }
 
-/* --- Trend chart (W2) ---------------------------------------------------- */
+/* 12px (gap-3) — the source's "form rows" spacing. */
+.form-stack { display: flex; flex-direction: column; gap: var(--spacing-sm-md); }
 
-.trend-chart {
+.search-bar { margin-bottom: var(--spacing-md); }
+
+/* A row of filter controls that wraps instead of overflowing. */
+.filter-bar {
   display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 140px;
-}
-.trend-chart__bar {
-  flex: 1;
-  min-width: 2px;
-  background: var(--color-primary);
-  border-radius: 4px 4px 0 0;
-}
-.trend-chart__empty-row {
-  height: 140px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-}
-
-/* --- App shell: sidebar + topbar ----------------------------------------
-   DashboardLayout.tsx: full solid-color active nav item (not a left
-   border accent), gradient-tinted brand mark, sky-tinted inactive labels. */
-
-.app-shell {
-  display: flex;
-  height: 100%;
-}
-
-.sidebar {
-  width: 256px;
-  flex-shrink: 0;
-  background: var(--color-navy);
-  color: var(--color-white);
-  display: flex;
-  flex-direction: column;
-  padding: var(--spacing-lg) 0;
-}
-.sidebar__brand {
-  font-size: var(--font-size-lg);
-  font-weight: 700;
-  padding: 0 var(--spacing-lg) var(--spacing-lg);
-  display: flex;
-  align-items: center;
   gap: var(--spacing-sm);
-}
-.sidebar__nav { display: flex; flex-direction: column; }
-.sidebar__nav-item {
-  margin: 2px var(--spacing-sm);
-  padding: 10px var(--spacing-md);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  color: var(--color-surface-blue);
-  cursor: pointer;
-  display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  transition: background-color .15s ease, color .15s ease;
-}
-.sidebar__nav-icon { display: flex; flex-shrink: 0; }
-.sidebar__nav-item:hover { background: color-mix(in srgb, var(--color-primary) 50%, transparent); color: var(--color-white); }
-.sidebar__nav-item.active {
-  color: var(--color-white);
-  background: var(--color-primary);
-  font-weight: 600;
-}
-
-.main-column {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.topbar {
-  background: var(--color-white);
-  border-bottom: 1px solid var(--color-border);
-  padding: var(--spacing-md) var(--spacing-lg);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.topbar__user {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-
-.page-content {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--spacing-lg);
-}
-
-/* --- Login (W1) -----------------------------------------------------------
-   `.login-page`/`.login-card` stay as the simple centered-card layout —
-   still used as-is by main.js's renderUnavailable() fallback screen (a
-   role that authenticated but has no built screen yet). The real login,
-   login.js, uses the new `.login-screen` split layout below, matching
-   LoginPage.tsx's two-column hero + form-panel (§9's "no role selector"
-   is the one deliberate content omission — see login.js's own comment). */
-
-.login-page {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--color-navy), var(--color-primary));
-  padding: var(--spacing-lg);
-}
-.login-card {
-  width: 100%;
-  max-width: 400px;
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-floating);
-  padding: var(--spacing-xl);
-  background: var(--color-white);
-}
-.login-card__brand { text-align: center; margin-bottom: var(--spacing-lg); }
-.login-card__brand h2 { color: var(--color-text-primary); margin-bottom: var(--spacing-xs); }
-.login-card__brand p { color: var(--color-text-secondary); }
-.login-card__mobile-brand {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm);
+  flex-wrap: wrap;
   margin-bottom: var(--spacing-lg);
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-.login-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
-.login-form__error {
-  background: var(--tint-critical-bg);
-  color: var(--color-critical);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: var(--font-size-sm);
 }
 
-.login-screen {
-  height: 100%;
+.row-between { display: flex; justify-content: space-between; align-items: center; gap: var(--spacing-sm); }
+.avatar-row { display: flex; align-items: center; gap: var(--spacing-sm); }
+.note { text-transform: none; font-weight: 400; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+
+.two-col-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-}
-.login-hero {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: var(--spacing-2xl);
-  background: linear-gradient(135deg, var(--color-navy), var(--color-primary));
-  color: var(--color-white);
-  overflow: auto;
-}
-.login-hero__inner { max-width: 460px; margin: 0 auto; }
-.login-hero__brand {
-  display: flex;
-  align-items: center;
   gap: var(--spacing-md);
-  margin-bottom: var(--spacing-xl);
-}
-.login-hero__wordmark { font-size: var(--font-size-lg); font-weight: 700; letter-spacing: 0.02em; }
-.login-hero h1 {
-  font-size: var(--font-size-xl);
-  line-height: 1.25;
-  margin-bottom: var(--spacing-md);
-}
-.login-hero__lede {
-  color: var(--color-surface-blue);
-  line-height: 1.6;
-  margin-bottom: var(--spacing-xl);
-}
-.login-hero__features { display: flex; flex-direction: column; gap: var(--spacing-lg); }
-.login-hero__feature { display: flex; align-items: flex-start; gap: var(--spacing-md); }
-.login-hero__feature h3 { font-size: var(--font-size-md); margin-bottom: 2px; }
-.login-hero__feature p { color: var(--color-surface-blue); font-size: var(--font-size-sm); }
-.login-hero__footer {
-  margin-top: var(--spacing-2xl);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  color: var(--color-surface-blue);
-  font-size: var(--font-size-sm);
 }
 
-.login-form-panel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-xl);
-  background: var(--color-bg);
-  overflow: auto;
-}
-
-@media (max-width: 1024px) {
-  .login-screen { grid-template-columns: 1fr; }
-  .login-hero { display: none; }
-  .login-card__mobile-brand { display: flex; }
-}
-
-/* --- Dispatch Center (W3) ---------------------------------------------------
-   DispatcherDashboard.tsx: 2px-border queue cards, priority shown as a
-   small colored dot (not a border accent), light-tint status pills,
-   hover:shadow-lg lift. */
-
-.dispatch-layout {
+/* Main content + capped-width side panel; stacks below 1024px. */
+.split-panel {
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: 1fr 20rem;
   gap: var(--spacing-md);
-  height: 100%;
-  min-height: 0;
-}
-.dispatch-queue {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  overflow-y: auto;
-  min-height: 0;
-}
-.dispatch-queue__section-title {
-  margin-bottom: var(--spacing-sm);
-}
-.dispatch-card {
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  background: var(--color-white);
-  box-shadow: var(--shadow-card);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  transition: box-shadow .15s ease, border-color .15s ease;
-}
-.dispatch-card:hover { box-shadow: var(--shadow-elevated); border-color: var(--color-accent); }
-/* Priority dot before the card title, matching the export's small
-   colored-circle priority indicator rather than a border accent. */
-.dispatch-card__header strong { display: inline-flex; align-items: center; gap: var(--spacing-sm); }
-.dispatch-card__header strong::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-success);
-  flex-shrink: 0;
-}
-.dispatch-card--high .dispatch-card__header strong::before { background: var(--color-warning); }
-.dispatch-card--critical .dispatch-card__header strong::before { background: var(--color-critical); }
-.dispatch-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.dispatch-card__meta {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-.dispatch-card__actions {
-  display: flex;
-  gap: var(--spacing-sm);
-  align-items: center;
-}
-.dispatch-map-pane {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  min-height: 0;
-  position: relative;
+  align-items: start;
 }
 
-.sos-banner {
-  background: var(--color-critical);
-  color: var(--color-white);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  font-weight: 600;
-  margin-bottom: var(--spacing-md);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-.sos-banner svg { flex-shrink: 0; }
+/* Flex-column wrapper + its one growing child — replaces fragile
+   `height: calc(100% - Npx)` pixel math. */
+.flex-col { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.grow { flex: 1; min-height: 0; }
 
-/* --- LiveMap component (shared, W3 + W4) -----------------------------------
-   GISTracking.tsx's floating legend/detail cards use a much stronger
-   shadow (shadow-xl) than an ordinary content card. */
-
-.live-map {
-  width: 100%;
-  height: 100%;
-  min-height: 320px;
-}
-.live-map__legend {
-  position: absolute;
-  bottom: var(--spacing-md);
-  left: var(--spacing-md);
-  background: var(--color-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  font-size: var(--font-size-label);
-  box-shadow: var(--shadow-floating);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  z-index: 5;
-}
-.live-map__legend-row { display: flex; align-items: center; gap: var(--spacing-sm); }
-.live-map__legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-
-.live-map__marker {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 3px solid var(--color-white);
-  box-shadow: var(--shadow-elevated);
-  cursor: pointer;
-  transition: transform .1s ease;
-}
-.live-map__marker:hover { transform: scale(1.15); }
-.live-map__marker--tanod { background: var(--color-success); }
-/* §9 W4: "A stale location is not visually presented as live" — never
-   color alone either (§8): the tooltip text always says "(stale)" too. */
-.live-map__marker--tanod.live-map__marker--stale { background: var(--color-text-secondary); }
-.live-map__marker--sos {
-  width: 22px;
-  height: 22px;
-  background: var(--color-critical);
-  border-width: 4px;
-  animation: sos-pulse 1.4s ease-in-out infinite;
-}
-@keyframes sos-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-critical) 45%, transparent); }
-  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-critical) 0%, transparent); }
-}
-
-/* --- GIS Live Tracking (W4) ------------------------------------------------ */
-
-.gis-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  height: 100%;
-  min-height: 0;
-}
-.gis-page__map-wrapper {
-  flex: 1;
-  min-height: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  position: relative;
-}
-.gis-roster {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-.gis-roster__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  transition: border-color .15s ease, background-color .15s ease;
-}
-.gis-roster__row:hover { border-color: var(--color-accent); background: var(--color-bg); }
-
-/* --- Responsive (§8: 1440 desktop-first -> 768 tablet -> 375 mobile) ---- */
-
+/* Breakpoints stay in px — a media query tests the real viewport, which
+   the root-font scale must not shift. */
 @media (max-width: 1024px) {
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-  .dispatch-layout { grid-template-columns: 1fr; }
+  .split-panel { grid-template-columns: 1fr; }
 }
-
 @media (max-width: 768px) {
-  .sidebar { width: 72px; }
-  .sidebar__brand { justify-content: center; padding: 0 var(--spacing-sm) var(--spacing-lg); }
-  .sidebar__brand > :not(:first-child), .sidebar__nav-label { display: none; }
-  .sidebar__nav-item { justify-content: center; }
-  .kpi-grid { grid-template-columns: 1fr; }
+  .two-col-grid { grid-template-columns: 1fr; }
+  .filter-bar { margin-bottom: var(--spacing-md); }
 }

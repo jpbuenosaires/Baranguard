@@ -288,6 +288,7 @@ export async function getIncidents({ status, priority, page, limit } = {}) {
       createdAt: row.created_at,
       deviceOfflineCreatedAt: row.device_offline_created_at,
       syncedAt: row.synced_at,
+      officerName: row.officer_name,
     })),
     page: json.page,
     limit: json.limit,
@@ -601,4 +602,34 @@ export async function getFatigueFlags({ page, limit } = {}) {
 export async function acknowledgeFatigueFlag(flagId) {
   const json = await request('PATCH', `/fatigue-flags/${flagId}/acknowledge`, { body: {}, auth: true });
   return { flagId: json.flag_id, acknowledgedBy: json.acknowledged_by, acknowledgedAt: json.acknowledged_at };
+}
+
+// --- Reference / lookup (added 2026-09-02: real backing for the topbar
+// search box and W19's barangay picker, replacing hardcoded UI content) ---
+
+/** GET /barangays — public, no session required. Always the four real seeded rows. */
+export async function getBarangays() {
+  const json = await request('GET', '/barangays', { auth: false });
+  return json.items.map((row) => ({
+    barangayId: row.barangay_id, name: row.name, municipality: row.municipality, province: row.province,
+  }));
+}
+
+/** GET /search?q= — topbar global search. Incidents only (see class doc in SearchController.php for why). */
+export async function search(q) {
+  const json = await request('GET', '/search', { query: { q }, auth: true });
+  return json.items.map((row) => ({
+    incidentId: row.incident_id, incidentType: row.incident_type, status: row.status,
+    priority: row.priority, createdAt: row.created_at,
+  }));
+}
+
+/** GET /system/health — Admin only. Coarse status per dependency; see SystemHealthController.php. */
+export async function getSystemHealth() {
+  const json = await request('GET', '/system/health', { auth: true });
+  return {
+    api: json.api, db: json.db, osrm: json.osrm, ollama: json.ollama,
+    gsmIngestion: json.gsm_ingestion, notificationConfig: json.notification_config,
+    backupLastSuccess: json.backup_last_success, restoreTestAt: json.restore_test_at,
+  };
 }

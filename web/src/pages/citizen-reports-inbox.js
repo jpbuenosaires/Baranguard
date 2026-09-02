@@ -10,12 +10,28 @@
  * Shows the unconverted queue (`?status=unconverted`) — the actionable
  * "inbox" set, not a historical log of every report ever submitted.
  *
+ * 2026-09-02: migrated header to PageHeader and the stacked-card list to
+ * the shared DataTable component (Figma-alignment pass, same as W6
+ * Blotter). Description/contact cells are built as text nodes rather than
+ * innerHTML strings — both are raw citizen-submitted text, so this avoids
+ * re-introducing the manual escapeHtml() the card version needed.
+ *
  * kebab-case filename per §4 (pages/routes convention).
  */
 
 import { getCitizenReports, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
+import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
+
+const COLUMNS = [
+  { key: 'id', label: 'ID', width: '4.5rem' },
+  { key: 'description', label: 'Description' },
+  { key: 'contact', label: 'Contact' },
+  { key: 'date', label: 'Submitted' },
+  { key: 'status', label: 'Status', align: 'right' },
+];
 
 /**
  * @param {HTMLElement} root
@@ -31,12 +47,49 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.inbox(22)}Citizen Reports</h2>`;
+  const pageHeader = PageHeader({ title: 'Citizen Reports', subtitle: 'Unconverted public submissions awaiting review', icon: icons.inbox });
+  header.appendChild(pageHeader.el);
+
+  const filterPanel = document.createElement('div');
+  filterPanel.className = 'filter-panel';
+  const searchWrap = document.createElement('div');
+  searchWrap.className = 'filter-panel__search';
+  const searchIcon = document.createElement('span');
+  searchIcon.className = 'filter-panel__search-icon';
+  searchIcon.setAttribute('aria-hidden', 'true');
+  searchIcon.innerHTML = icons.search(16);
+  const searchLabel = document.createElement('label');
+  searchLabel.className = 'sr-only';
+  searchLabel.htmlFor = 'citizen-inbox-search';
+  searchLabel.textContent = 'Search citizen reports';
+  const searchInput = document.createElement('input');
+  searchInput.id = 'citizen-inbox-search';
+  searchInput.type = 'search';
+  searchInput.placeholder = 'Search by description or reference number…';
+  searchWrap.append(searchIcon, searchLabel, searchInput);
+  filterPanel.appendChild(searchWrap);
+  header.appendChild(filterPanel);
+
   const body = document.createElement('div');
   content.appendChild(body);
+
+  let allItems = [];
+  searchInput.addEventListener('input', () => applyFilter());
+
+  function applyFilter() {
+    const q = searchInput.value.trim().toLowerCase();
+    const filtered = q
+      ? allItems.filter((r) => String(r.reportId).includes(q) || r.description.toLowerCase().includes(q))
+      : allItems;
+    if (filtered.length === 0) {
+      renderEmpty(body, q ? 'No reports match your search.' : undefined);
+    } else {
+      renderList(body, filtered);
+    }
+  }
 
   load();
 
@@ -44,11 +97,8 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     renderLoading(body);
     try {
       const result = await getCitizenReports({ status: 'unconverted', limit: 100 });
-      if (result.items.length === 0) {
-        renderEmpty(body);
-      } else {
-        renderList(body, result.items);
-      }
+      allItems = result.items;
+      applyFilter();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading citizen reports.';
       renderError(body, message, load);
@@ -58,53 +108,64 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
 function renderList(container, items) {
   container.innerHTML = '';
-  const list = document.createElement('div');
-  list.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
-  for (const report of items) {
-    const row = document.createElement('div');
-    row.className = 'card';
-    row.style.padding = '16px';
-    const contactLine = report.contactNumber
-      ? `<div class="label" style="text-transform:none; font-weight:400; margin-top:4px;">Contact: ${escapeHtml(report.contactNumber)}</div>`
-      : '';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <strong>Report #${report.reportId}</strong>
-        <span class="status-pill status-pill--pending">Unconverted</span>
-      </div>
-      <p style="margin-top:8px;">${escapeHtml(report.description)}</p>
-      ${contactLine}
-      <div class="label" style="text-transform:none; font-weight:400; margin-top:4px;">${new Date(report.submittedAt).toLocaleString()}</div>
-    `;
-    list.appendChild(row);
-  }
-  container.appendChild(list);
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  const table = DataTable({
+    columns: COLUMNS,
+    rows: items,
+    rowKey: (row) => row.reportId,
+    caption: 'Citizen report inbox',
+    renderCell: (row, key) => {
+      switch (key) {
+        case 'id':
+          return `#${row.reportId}`;
+        case 'description': {
+          const span = document.createElement('span');
+          span.className = 'data-table__sub';
+          span.textContent = row.description;
+          return span;
+        }
+        case 'contact': {
+          const span = document.createElement('span');
+          span.textContent = row.contactNumber || '—';
+          return span;
+        }
+        case 'date':
+          return new Date(row.submittedAt).toLocaleString();
+        case 'status': {
+          const span = document.createElement('span');
+          span.className = 'status-pill status-pill--pending';
+          span.textContent = 'Unconverted';
+          return span;
+        }
+        default:
+          return '';
+      }
+    },
+  });
+  container.appendChild(table);
 }
 
 function renderLoading(container) {
   container.innerHTML = '';
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
-  for (let i = 0; i < 3; i++) {
+  wrap.className = 'stack';
+  wrap.setAttribute('role', 'status');
+  wrap.setAttribute('aria-label', 'Loading citizen reports');
+  for (let i = 0; i < 5; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:96px; border-radius:12px;';
+    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);
 }
 
-function renderEmpty(container) {
+function renderEmpty(container, searchMessage) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block';
-  block.innerHTML = `
+  block.innerHTML = searchMessage
+    ? `<h3>${searchMessage}</h3><p>Try a different search term.</p>`
+    : `
     <h3>Inbox is empty</h3>
     <p>No unconverted citizen reports right now. New public submissions will appear here.</p>
   `;
@@ -115,6 +176,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');

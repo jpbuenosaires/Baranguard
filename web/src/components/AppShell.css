@@ -1,0 +1,286 @@
+/**
+ * AppShell.css — sidebar + topbar nav shell, co-located with AppShell.js
+ * (moved out of the old monolithic base.css during the 2026-09-02
+ * responsive/density pass — see that commit's notes). Tokens still come
+ * from base.css's :root; this file only lays out the shell itself.
+ */
+
+.app-shell {
+  display: flex;
+  height: 100%;
+}
+
+.sidebar {
+  width: 16rem;
+  flex-shrink: 0;
+  background: var(--color-navy);
+  color: var(--color-white);
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-lg) 0;
+  /* Without this, .sidebar has no height ceiling of its own — it just
+     grows to fit brand+nav+user-footer content. With enough nav items
+     that total can exceed the viewport, and since nothing here clips,
+     the whole .app-shell (and then the page) grows past 100vh instead,
+     producing a second, outer browser scrollbar. min-height:0 lets this
+     flex item actually shrink to its parent's height so .sidebar__nav's
+     own overflow:auto below is what scrolls, not the page. */
+  min-height: 0;
+}
+.sidebar__brand {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  padding: 0 var(--spacing-sm-md) var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+}
+.sidebar__wordmark { letter-spacing: 0.02em; flex: 1; min-width: 0; }
+.sidebar__collapse {
+  min-height: 0;
+  padding: var(--spacing-xs);
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-surface-blue);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+.sidebar__collapse:hover { background: var(--color-primary); color: var(--color-white); }
+
+/* Sidebar user footer — pinned to the bottom, above the nav's overflow. */
+.sidebar__user {
+  margin-top: auto;
+  padding: var(--spacing-md) var(--spacing-sm-md) 0;
+  border-top: 1px solid var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+  min-width: 0;
+}
+.sidebar__user-text { min-width: 0; }
+.sidebar__user-name {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar__user-role {
+  font-size: var(--font-size-label);
+  color: var(--color-surface-blue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Manual collapse (the reference's X/Menu toggle) — same icon-rail
+   treatment the 768px breakpoint applies, driven by a class instead. */
+.sidebar.is-collapsed { width: 4.5rem; }
+.sidebar.is-collapsed .sidebar__wordmark,
+.sidebar.is-collapsed .sidebar__nav-label,
+.sidebar.is-collapsed .sidebar__user-text { display: none; }
+/* Collapsed: only the toggle remains in the logo row (reference shows
+   the Menu button alone), so the brand mark hides rather than stacking. */
+.sidebar.is-collapsed .sidebar__brand { justify-content: center; }
+.sidebar.is-collapsed .sidebar__brand .icon-badge--brand { display: none; }
+.sidebar.is-collapsed .sidebar__nav-item { justify-content: center; }
+.sidebar.is-collapsed .sidebar__user { justify-content: center; }
+.sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  /* flex:1 is what actually bounds this element to "whatever vertical
+     space is left in the sidebar column" — without it (the earlier bug)
+     this had no height constraint to overflow *against*, so overflow-y:
+     auto was inert and the whole .sidebar grew instead (see .sidebar's
+     own comment). overflow-x:hidden kills a second, unrelated bug: the
+     CSS spec forces overflow-x to *also* become computed as `auto`
+     whenever only overflow-y is set to a non-visible value, so any
+     sub-pixel horizontal overflow (icon+label+padding rounding under
+     the rem-based UI-scale knob) was showing a horizontal scrollbar. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.sidebar__nav-item {
+  margin: 0.125rem var(--spacing-sm);
+  padding: 0.625rem var(--spacing-sm-md);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-surface-blue);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--spacing-sm-md);
+  width: 100%;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  transition: background-color .15s ease, color .15s ease;
+}
+.sidebar__nav-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-navy), 0 0 0 4px var(--color-white);
+}
+.sidebar__nav-icon { display: flex; flex-shrink: 0; }
+.sidebar__nav-item:hover { background: color-mix(in srgb, var(--color-primary) 50%, transparent); color: var(--color-white); }
+.sidebar__nav-item.active {
+  color: var(--color-white);
+  background: var(--color-primary);
+  font-weight: 600;
+}
+
+.main-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-md) var(--spacing-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+.topbar__user {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.topbar__search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  max-width: 26.25rem;
+}
+.topbar__search input[type="search"] { margin: 0; }
+.topbar__search-results {
+  position: absolute;
+  top: calc(100% + var(--spacing-xs));
+  left: 0;
+  right: 0;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-floating);
+  max-height: 20rem;
+  overflow-y: auto;
+  z-index: 20;
+}
+.topbar__search-result {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: 0;
+  background: var(--color-white);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.topbar__search-result:hover, .topbar__search-result:focus-visible { background: var(--color-bg); }
+.topbar__search-empty {
+  padding: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.status-badge__dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; }
+.status-badge--checking { background: var(--tint-neutral-bg); color: var(--color-text-secondary); }
+.status-badge--checking .status-badge__dot { background: var(--color-text-secondary); }
+/* #DCFCE7 here specifically, not --tint-success-bg (#F0FDF4) — the
+   source documents this one topbar "system status" pill with its own,
+   slightly more saturated green, distinct from status/priority pills
+   elsewhere. Not a typo; see base.css's tint-success-bg comment. */
+.status-badge--ok { background: #DCFCE7; color: var(--color-success); }
+/* "Live Pulse Indicator" — spec calls for animate-pulse on an online/
+   active status dot specifically (not on the checking/down states). */
+.status-badge--ok .status-badge__dot { background: var(--color-success); animation: status-dot-pulse 2s ease-in-out infinite; }
+@keyframes status-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-badge--ok .status-badge__dot { animation: none; }
+}
+.status-badge--down { background: var(--tint-critical-bg); color: var(--color-critical); }
+.status-badge--down .status-badge__dot { background: var(--color-critical); }
+
+/* Empty until a page mounts a PageHeader into it; collapses to nothing
+   when unused so pages that don't have one are unaffected. */
+.page-header-host { flex-shrink: 0; }
+
+.topbar__user-name { font-weight: 500; color: var(--color-text-primary); }
+
+.page-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--spacing-md);
+}
+
+/* Filter bar as its own full-bleed white band directly under the page
+   header (the reference's list-screen pattern), as opposed to the plain
+   `.filter-bar` utility which sits inline within padded content. */
+.filter-panel {
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-sm-md) var(--spacing-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.filter-panel__search { position: relative; flex: 1; min-width: 12rem; max-width: 26.25rem; }
+.filter-panel__search input { padding-left: 2.25rem; }
+.filter-panel__search-icon {
+  position: absolute;
+  left: var(--spacing-sm-md);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  display: flex;
+  pointer-events: none;
+}
+.filter-panel select { width: auto; min-width: 9rem; }
+
+/* --- Responsive: sidebar collapses to icon rail, topbar stacks search below --- */
+
+@media (max-width: 768px) {
+  .sidebar { width: 4.5rem; }
+  .sidebar__brand { justify-content: center; padding: 0 var(--spacing-sm) var(--spacing-lg); }
+  .sidebar__brand > :not(:first-child), .sidebar__nav-label { display: none; }
+  .sidebar__nav-item { justify-content: center; }
+  .topbar { flex-wrap: wrap; }
+  .topbar__search { max-width: none; order: 3; flex-basis: 100%; }
+}

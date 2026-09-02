@@ -1,0 +1,64 @@
+/**
+ * DataTable.css — co-located with DataTable.js. Matches the Figma
+ * reference's table spec: --color-bg header row, uppercase 12px grey
+ * column labels, --color-divider row dividers, --color-bg hover,
+ * --color-row-active-bg for the selected row.
+ */
+
+.data-table-wrap {
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.data-table thead th {
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  text-align: left;
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.data-table tbody tr { border-top: 1px solid var(--color-divider); }
+.data-table tbody tr:first-child { border-top: none; }
+.data-table tbody td {
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  color: var(--color-text-primary);
+  vertical-align: middle;
+}
+
+.data-table tbody tr.is-clickable { cursor: pointer; transition: background-color .15s ease; }
+.data-table tbody tr.is-clickable:hover { background: var(--color-bg); }
+.data-table tbody tr.is-clickable:focus-visible {
+  outline: none;
+  background: var(--color-row-active-bg);
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+.data-table tbody tr.is-selected { background: var(--color-row-active-bg); }
+
+.data-table .is-right { text-align: right; }
+
+/* Secondary line inside a cell (e.g. a timestamp under an ID). */
+.data-table__sub {
+  display: block;
+  font-size: var(--font-size-label);
+  color: var(--color-text-tertiary);
+  margin-top: 0.125rem;
+}
+/* Row action cluster (view / edit / delete icon buttons). */
+.data-table__actions { display: flex; align-items: center; gap: var(--spacing-xs); justify-content: flex-end; }

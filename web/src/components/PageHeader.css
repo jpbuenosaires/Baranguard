@@ -1,0 +1,43 @@
+/**
+ * PageHeader.css — co-located with PageHeader.js. Matches the Figma
+ * reference's page header bar: white, full-bleed, border-bottom,
+ * px-6 py-4, title + subtitle left, actions right.
+ */
+
+.page-header {
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-md) var(--spacing-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.page-header__titles { min-width: 0; }
+.page-header__title {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+}
+.page-header__icon { display: inline-flex; color: var(--color-primary); }
+.page-header__subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-top: 0.125rem;
+}
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .page-header { padding: var(--spacing-sm-md) var(--spacing-md); }
+  .page-header__actions { width: 100%; }
+}

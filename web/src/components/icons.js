@@ -12,8 +12,17 @@
  * it directly via `.innerHTML` at whatever size the badge/context needs.
  */
 
+/**
+ * `size` is expressed in reference-design pixels (the same numbers the
+ * Figma source uses: 16/20/24) but emitted as `rem` so icons scale with
+ * base.css's root UI-scale knob along with everything else. Dividing by
+ * 16 keeps every existing call site's number meaningful — `icons.map(22)`
+ * still means "22px in the reference design", it just renders smaller at
+ * a sub-100% root scale. Changing this one line rescales every icon in
+ * the app; never hand-adjust call sites to change overall icon size.
+ */
 const svg = (paths, size) =>
-  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  `<svg width="${size / 16}rem" height="${size / 16}rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
 
 export const icons = {
   shield: (size = 20) => svg('<path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6z"/>', size),
@@ -37,4 +46,12 @@ export const icons = {
   calendar: (size = 20) => svg('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>', size),
   repeat: (size = 20) => svg('<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>', size),
   batteryWarning: (size = 20) => svg('<rect x="2" y="7" width="16" height="10" rx="2"/><line x1="22" y1="11" x2="22" y2="13"/><line x1="9" y1="9" x2="9" y2="13"/><line x1="9" y1="16" x2="9.01" y2="16"/>', size),
+  x: (size = 20) => svg('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', size),
+  menu: (size = 20) => svg('<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>', size),
+  search: (size = 20) => svg('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>', size),
+  chevronDown: (size = 20) => svg('<polyline points="6 9 12 15 18 9"/>', size),
+  eye: (size = 20) => svg('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>', size),
+  plus: (size = 20) => svg('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>', size),
+  download: (size = 20) => svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', size),
+  mapPin: (size = 20) => svg('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>', size),
 };

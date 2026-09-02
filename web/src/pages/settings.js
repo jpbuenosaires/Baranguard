@@ -22,6 +22,7 @@
 
 import { updateProfile, changePassword, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 
 const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay', tanod: 'Tanod' };
@@ -40,13 +41,15 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.settings(22)}Settings</h2>`;
+  const pageHeader = PageHeader({ title: 'Settings', subtitle: 'Manage your profile and password', icon: icons.settings });
+  header.appendChild(pageHeader.el);
 
   const layout = document.createElement('div');
-  layout.style.cssText = 'display:flex; flex-direction:column; gap:16px; max-width:480px;';
+  layout.className = 'stack--md';
+  layout.style.maxWidth = '480px';
   content.appendChild(layout);
 
   layout.append(buildProfileCard(user, shell.setFullName), buildPasswordCard());
@@ -61,35 +64,41 @@ function buildProfileCard(user, onFullNameSaved) {
   heading.style.marginBottom = '16px';
 
   const roleLine = document.createElement('p');
-  roleLine.className = 'label';
-  roleLine.style.cssText = 'text-transform:none; font-weight:400; margin-bottom:16px;';
+  roleLine.className = 'note';
+  roleLine.style.marginBottom = 'var(--spacing-md)';
   roleLine.textContent = `Role: ${ROLE_LABELS[user.role] || user.role}`;
 
   const form = document.createElement('form');
-  form.style.cssText = 'display:flex; flex-direction:column; gap:12px;';
+  form.className = 'form-stack';
   form.noValidate = true;
 
   const errorBox = document.createElement('div');
   errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
   const successBox = document.createElement('div');
   successBox.className = 'login-form__error';
+  successBox.setAttribute('role', 'status');
   successBox.style.background = 'var(--tint-success-bg)';
   successBox.style.color = 'var(--color-success)';
   successBox.hidden = true;
 
   const nameLabel = document.createElement('label');
   nameLabel.className = 'label';
+  nameLabel.htmlFor = 'settings-fullname';
   nameLabel.textContent = 'Full name';
   const nameInput = document.createElement('input');
+  nameInput.id = 'settings-fullname';
   nameInput.type = 'text';
   nameInput.value = user.fullName;
   nameInput.required = true;
 
   const contactLabel = document.createElement('label');
   contactLabel.className = 'label';
+  contactLabel.htmlFor = 'settings-contact';
   contactLabel.textContent = 'Contact number';
   const contactInput = document.createElement('input');
+  contactInput.id = 'settings-contact';
   contactInput.type = 'text';
   contactInput.placeholder = 'Enter a new number to update it — leave blank to keep the current one';
 
@@ -146,31 +155,48 @@ function buildPasswordCard() {
   heading.style.marginBottom = '16px';
 
   const form = document.createElement('form');
-  form.style.cssText = 'display:flex; flex-direction:column; gap:12px;';
+  form.className = 'form-stack';
   form.noValidate = true;
 
   const errorBox = document.createElement('div');
   errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
   const successBox = document.createElement('div');
   successBox.className = 'login-form__error';
+  successBox.setAttribute('role', 'status');
   successBox.style.background = 'var(--tint-success-bg)';
   successBox.style.color = 'var(--color-success)';
   successBox.hidden = true;
 
+  const currentLabel = document.createElement('label');
+  currentLabel.className = 'sr-only';
+  currentLabel.htmlFor = 'settings-current-password';
+  currentLabel.textContent = 'Current password';
   const currentInput = document.createElement('input');
+  currentInput.id = 'settings-current-password';
   currentInput.type = 'password';
   currentInput.placeholder = 'Current password';
   currentInput.autocomplete = 'current-password';
   currentInput.required = true;
 
+  const newLabel = document.createElement('label');
+  newLabel.className = 'sr-only';
+  newLabel.htmlFor = 'settings-new-password';
+  newLabel.textContent = 'New password (min. 12 characters, upper/lower/digit)';
   const newInput = document.createElement('input');
+  newInput.id = 'settings-new-password';
   newInput.type = 'password';
   newInput.placeholder = 'New password (min. 12 characters, upper/lower/digit)';
   newInput.autocomplete = 'new-password';
   newInput.required = true;
 
+  const confirmLabel = document.createElement('label');
+  confirmLabel.className = 'sr-only';
+  confirmLabel.htmlFor = 'settings-confirm-password';
+  confirmLabel.textContent = 'Confirm new password';
   const confirmInput = document.createElement('input');
+  confirmInput.id = 'settings-confirm-password';
   confirmInput.type = 'password';
   confirmInput.placeholder = 'Confirm new password';
   confirmInput.autocomplete = 'new-password';
@@ -181,7 +207,7 @@ function buildPasswordCard() {
   submitButton.className = 'primary';
   submitButton.textContent = 'Update password';
 
-  form.append(errorBox, successBox, currentInput, newInput, confirmInput, submitButton);
+  form.append(errorBox, successBox, currentLabel, currentInput, newLabel, newInput, confirmLabel, confirmInput, submitButton);
   card.appendChild(heading);
   card.appendChild(form);
 

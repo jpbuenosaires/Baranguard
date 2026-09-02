@@ -1,0 +1,32 @@
+/**
+ * StatStrip.css — co-located with StatStrip.js. Big coloured number over
+ * a small grey label, laid out inline, per the Figma reference's header
+ * count rows.
+ */
+
+.stat-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+.stat-strip__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+.stat-strip__value {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.1;
+}
+.stat-strip__value.tone-success { color: var(--color-success); }
+.stat-strip__value.tone-warning { color: var(--color-warning); }
+.stat-strip__value.tone-critical { color: var(--color-critical); }
+.stat-strip__value.tone-info { color: var(--color-primary); }
+.stat-strip__label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}

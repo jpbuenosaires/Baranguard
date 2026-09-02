@@ -3,13 +3,14 @@ declare(strict_types=1);
 
 /**
  * Env-driven MariaDB PDO connection (PHP side of the backend).
- * Never hardcode credentials here — everything comes from getenv(),
- * loaded from .env by the process entrypoint (e.g. vlucas/phpdotenv).
+ * Never hardcode credentials here — everything comes from
+ * baranguard_env() (config/env.php), never raw getenv() — see that
+ * file's own comment for the thread-safety bug this avoids.
  */
 
 function baranguard_require_env(string $name): string
 {
-    $value = getenv($name);
+    $value = baranguard_env($name);
     if ($value === false || $value === '') {
         throw new RuntimeException("Missing required environment variable: {$name}");
     }
@@ -25,7 +26,7 @@ function baranguard_db(): PDO
     }
 
     $host = baranguard_require_env('DB_HOST');
-    $port = getenv('DB_PORT') ?: '3306';
+    $port = baranguard_env('DB_PORT') ?: '3306';
     $name = baranguard_require_env('DB_NAME');
     $user = baranguard_require_env('DB_USER');
     $pass = baranguard_require_env('DB_PASSWORD');

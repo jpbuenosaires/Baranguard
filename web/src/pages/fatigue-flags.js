@@ -4,12 +4,25 @@
  * Roles: Admin (full), Punong Barangay (read-only — no Acknowledge
  * button shown).
  *
+ * 2026-09-02: migrated header to PageHeader and the stacked-row list to
+ * the shared DataTable component (Figma-alignment pass).
+ *
  * kebab-case filename per §4 (pages/routes convention).
  */
 
 import { getFatigueFlags, getUsers, acknowledgeFatigueFlag, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
+import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
+import { avatarInitials } from '../components/Avatar.js';
+
+const COLUMNS = [
+  { key: 'tanod', label: 'Tanod' },
+  { key: 'hours', label: 'Hours (7-day)' },
+  { key: 'flagged', label: 'Flagged' },
+  { key: 'action', label: 'Status', align: 'right' },
+];
 
 /** @param {HTMLElement} root @param {{fullName:string, role:string}} user */
 export function renderFatigueFlagsPage(root, user, onLoggedOut, navigate) {
@@ -27,10 +40,12 @@ export function renderFatigueFlagsPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
-  content.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.batteryWarning(22)}Fatigue Flags</h2>`;
+  const pageHeader = PageHeader({ title: 'Fatigue Flags', subtitle: 'Tanods scheduled over the safe 7-day hours threshold', icon: icons.batteryWarning });
+  header.appendChild(pageHeader.el);
+
   const body = document.createElement('div');
   content.appendChild(body);
 
@@ -58,63 +73,73 @@ export function renderFatigueFlagsPage(root, user, onLoggedOut, navigate) {
 
 function renderList(container, flags, namesById, canAcknowledge, onChanged) {
   container.innerHTML = '';
-  const list = document.createElement('div');
-  list.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
-  for (const flag of flags) {
-    list.appendChild(renderFlagRow(flag, namesById, canAcknowledge, onChanged));
-  }
-  container.appendChild(list);
+  const table = DataTable({
+    columns: COLUMNS,
+    rows: flags,
+    rowKey: (row) => row.flagId,
+    caption: 'Fatigue flags',
+    renderCell: (flag, key) => {
+      const name = namesById.get(flag.userId) || `Tanod #${flag.userId}`;
+      switch (key) {
+        case 'tanod': {
+          const span = document.createElement('span');
+          span.className = 'avatar-row';
+          span.innerHTML = `${avatarInitials(name, 24)}${escapeHtml(name)}`;
+          return span;
+        }
+        case 'hours':
+          return `${flag.hoursWorked7Day} hrs (${flag.calculationBasis.replace('_', ' ')})`;
+        case 'flagged':
+          return new Date(flag.flaggedAt).toLocaleString();
+        case 'action':
+          return renderActionCell(flag, canAcknowledge, onChanged);
+        default:
+          return '';
+      }
+    },
+  });
+  container.appendChild(table);
 }
 
-function renderFlagRow(flag, namesById, canAcknowledge, onChanged) {
-  const row = document.createElement('div');
-  row.className = 'card';
-  row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:16px;';
+function renderActionCell(flag, canAcknowledge, onChanged) {
+  const wrap = document.createElement('span');
+  wrap.className = 'data-table__actions';
 
-  const name = namesById.get(flag.userId) || `Tanod #${flag.userId}`;
-  const left = document.createElement('div');
-  left.innerHTML = `
-    <strong>${escapeHtml(name)}</strong>
-    <div class="label" style="text-transform:none; font-weight:400; margin-top:4px;">
-      ${flag.hoursWorked7Day} hrs in 7 days (${flag.calculationBasis.replace('_', ' ')}) · flagged ${new Date(flag.flaggedAt).toLocaleString()}
-    </div>
-  `;
-
-  const right = document.createElement('div');
-  right.style.cssText = 'display:flex; align-items:center; gap:12px;';
   if (flag.acknowledgedAt) {
     const pill = document.createElement('span');
     pill.className = 'status-pill status-pill--success';
     pill.textContent = 'Acknowledged';
-    right.appendChild(pill);
-  } else {
-    const pill = document.createElement('span');
-    pill.className = 'status-pill status-pill--critical';
-    pill.textContent = 'Needs review';
-    right.appendChild(pill);
-    if (canAcknowledge) {
-      const ackButton = document.createElement('button');
-      ackButton.className = 'primary';
-      ackButton.textContent = 'Acknowledge';
-      ackButton.addEventListener('click', async () => {
-        ackButton.disabled = true;
-        ackButton.textContent = 'Acknowledging…';
-        try {
-          await acknowledgeFatigueFlag(flag.flagId);
-          onChanged();
-        } catch (err) {
-          const message = err instanceof ApiClientError ? err.message : 'Could not acknowledge this flag.';
-          alert(message);
-          ackButton.disabled = false;
-          ackButton.textContent = 'Acknowledge';
-        }
-      });
-      right.appendChild(ackButton);
-    }
+    wrap.appendChild(pill);
+    return wrap;
   }
 
-  row.append(left, right);
-  return row;
+  const pill = document.createElement('span');
+  pill.className = 'status-pill status-pill--critical';
+  pill.textContent = 'Needs review';
+  wrap.appendChild(pill);
+
+  if (canAcknowledge) {
+    const ackButton = document.createElement('button');
+    ackButton.className = 'primary';
+    ackButton.textContent = 'Acknowledge';
+    ackButton.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      ackButton.disabled = true;
+      ackButton.textContent = 'Acknowledging…';
+      try {
+        await acknowledgeFatigueFlag(flag.flagId);
+        onChanged();
+      } catch (err) {
+        const message = err instanceof ApiClientError ? err.message : 'Could not acknowledge this flag.';
+        alert(message);
+        ackButton.disabled = false;
+        ackButton.textContent = 'Acknowledge';
+      }
+    });
+    wrap.appendChild(ackButton);
+  }
+
+  return wrap;
 }
 
 function escapeHtml(text) {
@@ -126,11 +151,13 @@ function escapeHtml(text) {
 function renderLoading(container) {
   container.innerHTML = '';
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
-  for (let i = 0; i < 3; i++) {
+  wrap.className = 'stack';
+  wrap.setAttribute('role', 'status');
+  wrap.setAttribute('aria-label', 'Loading fatigue flags');
+  for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:64px; border-radius:12px;';
+    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);
@@ -148,6 +175,7 @@ function renderError(container, message, onRetry) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block state-block--error';
+  block.setAttribute('role', 'alert');
   const text = document.createElement('p');
   text.textContent = message;
   const retryButton = document.createElement('button');
