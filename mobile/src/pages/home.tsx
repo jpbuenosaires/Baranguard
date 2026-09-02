@@ -59,19 +59,19 @@ const HomePage: React.FC = () => {
         </IonToolbar>
       </IonHeader>
       <IonContent className="ion-padding">
-        {fullName && <h2 style={{ marginTop: 0 }}>{fullName}</h2>}
+        {fullName && <h2 className="app-title">{fullName}</h2>}
 
-        <IonButton expand="block" onClick={() => navigate('/incidents/new')}>
+        <IonButton expand="block" className="app-section" onClick={() => navigate('/incidents/new')}>
           Log New Incident
         </IonButton>
 
-        <IonNote style={{ display: 'block', marginTop: 24, lineHeight: 1.5 }}>
+        <IonNote className="app-note">
           Duty status and SOS are not built yet — they are part of the M2 Home
           screen, and SOS additionally needs the Sprint 4 alert backend. They
           are left out rather than shown as buttons that would do nothing.
         </IonNote>
 
-        <IonButton expand="block" fill="outline" color="medium" onClick={handleSignOut} style={{ marginTop: 32 }}>
+        <IonButton expand="block" fill="outline" color="medium" onClick={handleSignOut} className="app-section">
           Sign out
         </IonButton>
       </IonContent>

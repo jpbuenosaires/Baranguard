@@ -24,10 +24,14 @@ import '@ionic/react/css/text-transformation.css';
 import '@ionic/react/css/flex-utils.css';
 import '@ionic/react/css/display.css';
 
-import '@ionic/react/css/palettes/dark.system.css';
+/* NOTE: the scaffold imported '@ionic/react/css/palettes/dark.system.css'
+   here, which made the app follow the OS into dark mode while the web
+   dashboard is light. §8 defines exactly one palette and it is light, so
+   that import is deliberately removed — see theme/variables.css. */
 
-/* Theme variables */
+/* Theme variables (§8 design tokens) + shared utility classes */
 import './theme/variables.css';
+import './theme/app.css';
 
 setupIonicReact();
 
