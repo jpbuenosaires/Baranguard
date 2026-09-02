@@ -33,13 +33,11 @@ import {
   IonList,
   IonNote,
   IonPage,
-  IonSelect,
-  IonSelectOption,
   IonSpinner,
-  IonTextarea,
   IonTitle,
   IonToolbar,
 } from '@ionic/react';
+import { SelectField, TextAreaField } from '../components/FormFields';
 import { INCIDENT_TYPES, saveIncidentLocally, type IncidentType } from '../services/db/incidentRepository';
 import { loadSession } from '../services/session';
 
@@ -109,29 +107,20 @@ const NewIncidentPage: React.FC = () => {
       <IonContent className="ion-padding">
         <IonList inset>
           <IonItem>
-            <IonSelect
+            <SelectField
               label="Incident type"
-              labelPlacement="floating"
               value={incidentType}
+              onChange={setIncidentType}
               disabled={saving}
-              onIonChange={(e) => setIncidentType(e.detail.value as IncidentType)}
-            >
-              {INCIDENT_TYPES.map((type) => (
-                <IonSelectOption key={type} value={type}>
-                  {TYPE_LABELS[type]}
-                </IonSelectOption>
-              ))}
-            </IonSelect>
+              options={INCIDENT_TYPES.map((type) => ({ value: type, label: TYPE_LABELS[type] }))}
+            />
           </IonItem>
           <IonItem>
-            <IonTextarea
+            <TextAreaField
               label="What happened?"
-              labelPlacement="floating"
-              autoGrow
-              rows={6}
               value={narrative}
+              onChange={setNarrative}
               disabled={saving}
-              onIonInput={(e) => setNarrative(e.detail.value ?? '')}
             />
           </IonItem>
         </IonList>

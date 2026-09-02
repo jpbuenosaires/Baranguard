@@ -2279,7 +2279,58 @@ calling code changes.
 3. **`npm run verify.schema` — 47/47 still passing**, confirming the
    local schema this work builds on is unchanged.
 
-## NOT verified — stated plainly
+## UPDATE — M1 has since been browser-verified (same session)
+
+The "never executed" statement below was true when written and is now
+superseded for M1. Verified against a disposable database + PHP API on a
+throwaway port + the Vite dev server, driving a real browser:
+
+- `/` with no session redirects to `/login` (the gate works).
+- Wrong password → exactly **"Unable to sign in with those
+  credentials."**, the generic message §2 Rule 9 requires, with the
+  password field cleared and the username kept.
+- Correct password → reaches `/home` showing **"Rodrigo Bautista"**, the
+  real `full_name` from the authenticated session (not a placeholder —
+  the thing §9 M2 warns about).
+- Network trace proves M1's documented sequence: `POST /auth/login` 401,
+  then 200, then `GET /map-packages/1` **404 — and login still
+  completed**, which is §9 M1's "enters M2 without blocking on map
+  download", demonstrated rather than asserted.
+- No `POST /devices/register` call appears, confirming the Sprint-4-blocked
+  FCM path is genuinely skipped rather than sending a placeholder token.
+- Session persists across reload; sign-out returns to `/login`; a reload
+  after sign-out **stays** on `/login` (session actually cleared).
+- M3's form renders and its fields bind; pressing Save hits the
+  deliberate web-platform guard and shows an honest
+  "encrypted local store is Android-only" error instead of crashing or
+  falsely reporting a save.
+
+### TWO REAL BUGS this browser test caught (neither was visible to tsc/eslint)
+
+1. **Ionic React 9 + React 19 never invoked `onIonInput`/`onIonChange`.**
+   The props type-check and the component renders, but the handler was
+   never called: the login form rejected a fully filled-in form as blank.
+   Diagnosed by attaching a raw listener in the page — the `ionInput` DOM
+   event fired and the web component held the right value while React
+   state stayed empty, with a clean console (nothing was throwing).
+   Fixed with `mobile/src/components/FormFields.tsx`, which binds to the
+   real DOM events; that is version-proof, since it depends on the
+   Stencil component's documented event rather than on how the React
+   wrapper of the day maps props.
+2. **A timing bug in that very fix, caught only on a COLD LOAD.** The
+   first version used `useRef`, but `ref.current` was still null when the
+   effect first ran (the wrapper assigns the element afterwards), and
+   with stable dependencies the effect never re-ran — so no listener was
+   ever attached. It worked under hot-reload (the element already existed
+   on remount) and failed on a fresh page load. Fixed by storing the
+   element in state via a callback ref, making its arrival a dependency
+   change. Worth remembering as a category: HMR can mask mount-order bugs
+   entirely, so a cold reload is a distinct test, not a redundant one.
+
+M3 and M4 remain unexecuted beyond their form rendering — actually
+writing to the encrypted store still requires a device.
+
+## NOT verified — stated plainly (as written before the M1 test above)
 
 **None of M1, M3, or M4 has ever been executed.** They type-check, lint,
 and build; no screen has been rendered and no local write has actually
