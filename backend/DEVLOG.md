@@ -2149,3 +2149,162 @@ the id is in the body, so 400 is correct there.
 - `POST /map-packages`, `POST /duty-status` — see decisions above.
 - The mobile-side work this unblocks: `apiService.ts`, on-device session
   storage, M1/M3/M4 screens.
+
+---
+
+# DEVLOG — Sprint 2 mobile: apiService + session, M1 Login, M3 Log New
+# Incident (local write path), M4 Submitted Confirmation
+
+## Today's cut
+
+Continuing the user-directed run "in recommended order until M4". Covers
+the mobile boxes M1, M3, M4 plus the `apiService.ts`/session
+infrastructure §4 requires. Multiple boxes in one session is again an
+explicit user decision, same documented exception as Sprint 1's multi-box
+sessions.
+
+## Decision required before coding, now resolved
+
+**DB passphrase source: a device-generated random secret.** Asked rather
+than assumed (§5 mandates encryption at rest but names no key source, and
+§6 has no key-provisioning endpoint). 32 random bytes from
+`crypto.getRandomValues`, generated at first run and persisted
+app-privately via `@capacitor/preferences`.
+
+Rejected alternatives, with reasons: a **server-issued** secret would
+leave a brand-new install unable to capture anything until it had first
+reached the workstation, contradicting Rule 2 and Rule 7's offline-first
+guarantee, and would require changing §6's documented
+`POST /devices/register` response; **deriving from the user's password**
+fails because the password is unavailable offline after login and a
+password change would orphan the database.
+
+Storage caveat recorded honestly in `passphrase.ts` rather than
+overstated: SharedPreferences is app-private on a non-rooted device but
+is **not** hardware-backed. That is a large improvement over a key
+hardcoded in the APK and is not equivalent to Android Keystore; the
+documented upgrade path swaps that one function for a Keystore-backed
+plugin, since `localDatabase.ts` only ever asks for a
+`PassphraseProvider`.
+
+## Conflict found: M1's "registers FCM" step is Sprint-4-blocked
+
+§9 M1 says the app "validates the device, registers FCM" at login, but
+`POST /devices/register` requires `fcm_token` and §5's
+`mobile_device.fcm_token` is NOT NULL — while FCM registration itself is
+Sprint 4 (§10 "FCM registration/critical notifications (S4)"). So device
+registration genuinely cannot complete honestly in Sprint 2.
+
+Resolved by shipping `getFcmToken()` as a seam that returns `null` until
+Sprint 4, with M1 skipping registration while it is null. Sending a
+placeholder token was explicitly rejected: it would write a row claiming
+the device is push-reachable when it is not, producing silent delivery
+failures for a Tanod the system believes it can reach — and §2 Rule 12
+depends on "no active FCM registration" being a *truthful* signal that
+routes straight to SMS. Sprint 4 replaces the function body only; no
+calling code changes.
+
+## Scope decisions (logged, don't reopen without review)
+
+- **`home.tsx` is NOT M2.** M1 has to navigate somewhere and M3 has to be
+  reachable, so a minimal landing screen was built as necessary plumbing
+  (same precedent as Sprint 1's minimal login page for W2). It
+  deliberately has **no duty toggle, no SOS button, and no stats** —
+  `POST /duty-status` isn't built and SOS is Sprint 4, so those controls
+  would look functional and do nothing (§8). The screen says so in plain
+  words instead. The displayed name comes from the authenticated session,
+  never a placeholder (§9 M2 warns about the Figma reference's fake
+  identity).
+- **No GPS captured in M3.** `latitude`/`longitude` are written as NULL.
+  GPS is Sprint 3, the columns are nullable, and adding a geolocation
+  plugin this cut cannot verify on a device would be unverifiable scope.
+- **`client_event_id` is minted at first save inside the insert
+  transaction**, per §5's sync invariants — not at sync time and not
+  regenerated on retry, so Sprint 3's `/sync/batch` and Sprint 4's SMS
+  fallback can reuse the same identity. M4 surfaces it as the user-facing
+  reference.
+- **M4 derives its state from the stored row** (`deriveSyncState`) rather
+  than trusting a "submitted" flag handed over by M3 — that is precisely
+  §9 M4's "never claims server submission when only local persistence has
+  occurred". In Sprint 2 only `saved_locally` is reachable; the other
+  states are implemented but unreachable until a sync worker exists.
+- **The session gate is UX only** (§2 Rule 6), and is deliberately not
+  consulted by the local-capture path: Rule 9 requires offline capture to
+  keep working with an expired session.
+- **Sliding renewal keeps the later-expiring token.** `storeRenewedToken`
+  refuses to replace a stored token with one expiring earlier, so an
+  out-of-order response cannot roll a session backwards (Rule 9).
+- **`apiService.ts` hand-maps snake_case→camelCase per endpoint**, never
+  a recursive key walker — same resolved decision as the web client, for
+  the same reason: a blind converter would rewrite enum VALUES like
+  `physical_injury` and corrupt data identity.
+- **Windows case-collision handled:** writing `pages/home.tsx` replaced
+  the scaffold's `pages/Home.tsx` (same file on a case-insensitive
+  filesystem). The rename was recorded explicitly in git so the tree is
+  correct on case-sensitive systems too, and the orphaned 0-byte
+  `Home.css` plus the now-unimported `ExploreContainer` scaffold
+  component were removed (the latter was also the only eslint failure).
+
+## Files
+
+- `mobile/src/services/apiService.ts` (NEW) — the single §4 API boundary:
+  `login`, `logout`, `registerDevice`, `deactivateDevice`,
+  `getMapPackage`, `mapPackageDownloadUrl`; `X-Renewed-Token` handling;
+  `ApiError` with a distinct `NETWORK_ERROR`/`isOffline` signal.
+- `mobile/src/services/session.ts` (NEW) — app-private session storage,
+  JWT `exp` decoding, non-decreasing-expiry renewal, `hasLiveSession`.
+- `mobile/src/services/deviceIdentity.ts` (NEW) — stable client-generated
+  `device_id`; `getFcmToken()` seam.
+- `mobile/src/services/db/passphrase.ts` (NEW) — the key provisioning
+  decision above.
+- `mobile/src/services/db/incidentRepository.ts` (NEW) — transactional
+  `saveIncidentLocally`, `getLocalIncident`, `deriveSyncState`.
+- `mobile/src/pages/login.tsx`, `home.tsx`, `new-incident.tsx`,
+  `incident-submitted.tsx` (NEW) — M1, the minimal landing screen, M3, M4.
+- `mobile/src/App.tsx`, `main.tsx` (MODIFIED) — routes + `RequireSession`
+  gate; passphrase provider registered once at startup.
+- Removed: `mobile/src/components/ExploreContainer.{tsx,css}`,
+  `mobile/src/pages/Home.css` (orphaned scaffold).
+
+## Tests performed (with evidence)
+
+1. **`npm run build` (tsc + vite) — exit 0.** Type-checks every new
+   module against the installed `@capacitor-community/sqlite` 8.1.1 and
+   `@capacitor/preferences` 8.0.1 typings. One real type error was found
+   and fixed this way (`autocorrect` on `IonInput` is boolean in Ionic 9,
+   not `"off"`), and a bundler warning about a needless dynamic import of
+   `session.ts` was cleaned up rather than ignored.
+2. **`npm run lint` — exit 0**, after removing the orphaned scaffold
+   component that was its only failure.
+3. **`npm run verify.schema` — 47/47 still passing**, confirming the
+   local schema this work builds on is unchanged.
+
+## NOT verified — stated plainly
+
+**None of M1, M3, or M4 has ever been executed.** They type-check, lint,
+and build; no screen has been rendered and no local write has actually
+run. Two separate reasons:
+
+- There is still **no Android SDK/emulator on this machine**, so the app
+  cannot be built or run on a device.
+- M3/M4 additionally **cannot be exercised in a browser at all**:
+  `localDatabase.ts` deliberately throws on the web platform, because the
+  plugin's web target is not SQLCipher-encrypted and would otherwise open
+  an unencrypted store that behaves like the real one. That guard was
+  kept rather than relaxed for testing convenience.
+
+M1 alone *could* be browser-verified against a dev API server (it touches
+no SQLite) — not done this session; noted as the cheapest next
+verification step. Everything device-side (SQLCipher actually encrypting,
+offline capture surviving app kill — both explicitly demanded by Sprint
+2's own prompt) remains outstanding and is gated on the Android SDK.
+
+## Not yet done (explicitly out of this cut)
+
+- M2 Home (duty toggle + SOS), `POST /duty-status`, `POST /map-packages`.
+- Actually downloading/SHA-256-verifying a map package (M1 only *checks*
+  the version, per §9).
+- `evidence_attachment_local` + photo/voice capture; the §8 bottom-nav
+  slot question ("Log Incident" vs "Schedule") is still unresolved and
+  still gates M3/M8 nav.
+- Everything under "NOT verified" above.
