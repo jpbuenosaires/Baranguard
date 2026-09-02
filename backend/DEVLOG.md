@@ -1853,3 +1853,162 @@ read-only list does.
   unchanged from prior entries. Every screen originally flagged for a
   `DataTable`/`PageHeader` migration is now migrated; no further screens
   are queued for this specific pass.
+
+---
+
+# DEVLOG — Sprint 2 (Mobile): scaffold + local schema
+# (incident_local / mobile_device_local / offline_map_package_local)
+
+## Today's cut
+
+Sprint 2's **"Local schema: incident_local + mobile_device_local +
+offline_map_package_local"** box, plus the Ionic/Capacitor scaffold that
+box necessarily sits on (the `/mobile` folder was a bare placeholder —
+README + empty `src/` — so there was nothing to build into). Scaffolding
+is prerequisite plumbing, not a second box, same precedent as W2's login
+page in Sprint 1.
+
+Explicitly NOT built: M1/M2/M3/M4 screens, and
+`evidence_attachment_local` (Sprint 2's own menu defers it unless the
+same cut ships photo/voice capture — it doesn't).
+
+## Decisions required before coding, now resolved
+
+1. **Ionic flavor: React.** §1 said only "Ionic 8.8.5 + Capacitor 8.0",
+   which left Angular vs React vs Vue undecided — the same class of gap
+   as Sprint 1's "PHP or Node serves the API?". Asked rather than
+   assumed. **React** chosen: the web dashboard is vanilla JS built from
+   plain functions returning DOM nodes, which maps onto React function
+   components far more directly than Angular's modules/DI/RxJS, and
+   §14's integrity rule (be able to explain every module) favors the
+   smaller conceptual jump. §1 updated to name the flavor.
+2. **Ionic 9, not the pinned 8.8.5.** The current Ionic starter generates
+   Ionic 9 + React 19 + react-router 6. This was surfaced as a conflict
+   with §1's pin rather than silently accepted *or* silently downgraded.
+   The user first chose "pin to 8.8.5", then changed to **"use version
+   9"** — so the scaffold's Ionic 9 output was kept and §1 was updated to
+   `Ionic React 9.0.1 + Capacitor 8.5.1`, with the previous pin and the
+   date of the change recorded inline in §1 so a future session doesn't
+   "fix" it back.
+3. **DB passphrase source: deliberately unresolved, left as a seam.** §5
+   requires the local store encrypted at rest but neither §5 nor §6 says
+   where the key comes from, and §6 defines no key-provisioning endpoint.
+   `localDatabase.ts` exposes a `PassphraseProvider` and **throws** if it
+   is not configured, rather than defaulting to a constant — a hardcoded
+   key ships inside the APK and would make "encrypted at rest" a demo
+   tell (§8). Flagged as must-resolve before M1/M3 persist a real
+   `raw_narrative`; candidates noted in the file (device-keystore secret
+   generated at registration, or a server-issued per-device secret
+   delivered by `POST /devices/register`).
+
+## Scope decisions (logged, don't reopen without review)
+
+- **Only the three tables in the box were created.** `dispatch_local`,
+  `gps_track_local`, `duty_status_local`, `offline_queue_local`, and
+  `evidence_attachment_local` are all in §5 but belong to later boxes
+  (M5/M6 + `/sync/batch` are Sprint 3). Creating them now would mean
+  empty tables no code reads and would claim schema coverage this cut
+  never tested.
+- **Schema is split from the platform edge on purpose.**
+  `localSchema.ts` imports nothing from Capacitor — pure SQL strings +
+  row types — so the *exact DDL that ships to a device* can be executed
+  against a real SQLite engine and asserted against §5 with no device in
+  the loop. `localDatabase.ts` holds all Capacitor/SQLCipher wiring. This
+  is what makes the verification below real rather than a copy-paste of
+  the schema into a test.
+- **Migrations are append-only and applied in place** via
+  `PRAGMA user_version`, mirroring `backend/migrations/000N_*.sql`.
+  Rule 2 forbids drop-and-recreate: it would destroy field captures not
+  yet reconciled with the server.
+- **`fcm_token_ref` stores a reference, never the raw FCM token** (§5
+  "protected at rest"; §6 `POST /devices/register` "Returns no FCM
+  token").
+- **`offline_map_package_local.package_id` is the server's id**, not a
+  device-local autoincrement (§6 map packages returns it), so it is a
+  plain `INTEGER PRIMARY KEY` with no AUTOINCREMENT.
+
+## Files
+
+- `mobile/` — Ionic React scaffold (blank starter): `package.json`
+  (renamed `ionic-app-base` → `baranguard-mobile`, added a
+  `verify.schema` script), `vite.config.ts`, `tsconfig*.json`,
+  `index.html`, `src/` starter page, `cypress/`, eslint config.
+- `mobile/capacitor.config.ts` (NEW) — `appId: ph.baranguard.tanod`,
+  `androidIsEncryption: true` (this is what puts the SQLite plugin into
+  SQLCipher mode; without it the plugin silently creates a plaintext
+  file). Biometric DB unlock deliberately disabled — not required by
+  §5/§6, and a Tanod must be able to capture one-handed in the field.
+- `mobile/src/services/db/localSchema.ts` (NEW) — §5 DDL for the three
+  tables, two supporting indexes, `LOCAL_SCHEMA_VERSION`, row types.
+- `mobile/src/services/db/localDatabase.ts` (NEW) — encrypted open +
+  `PRAGMA user_version` migration runner + close.
+- `mobile/scripts/verify-local-schema.mjs` (NEW) — the verification
+  harness described below; kept in-repo as a repeatable regression check,
+  same precedent as `backend/scripts/verify-*.sh`.
+- `mobile/README.md` (REWRITTEN) — real installed versions, commands,
+  and an explicit "not done yet" list.
+- `docs/Baranguard_Master_Reference_FINAL .md` (MODIFIED) — §1 mobile row
+  updated per decisions 1 and 2 above.
+
+## Tests performed (with evidence)
+
+1. **`npm run verify.schema` — 47/47 checks passed.** Executes the REAL
+   migration statements (imported from `localSchema.ts`, not duplicated)
+   against a real SQLite engine via Node 24's built-in `node:sqlite`,
+   in-memory, no device and no network. Asserts: all migrations execute;
+   `user_version` ends at 1; exactly the three expected tables exist;
+   every column of all three tables matches §5 for name/type/nullability/
+   default/primary-key (31 individual column assertions); the
+   `client_event_id` UNIQUE constraint **actually rejects** a duplicate
+   insert (not just that it's declared); every declared default really
+   applies on insert; and re-running the migrations is a no-op that
+   leaves existing rows intact (Rule 2).
+2. **`npm run build` — exit 0.** `tsc && vite build` compiles the whole
+   app including both new modules, so `localDatabase.ts`'s Capacitor/
+   plugin API usage at least type-checks against the installed
+   `@capacitor-community/sqlite` 8.1.1 typings.
+
+## NOT verified this session (stated plainly, not glossed over)
+
+- **SQLCipher encryption-at-rest was not verified.** Sprint 2's own
+  prompt demands "encrypted store actually encrypted — verify, don't
+  assume." This machine has **no Android SDK, no Android Studio, no
+  adb** (checked: `ANDROID_HOME`/`ANDROID_SDK_ROOT` unset, no SDK
+  directory, `adb` not found), so no APK could be built and no database
+  file could be pulled off a device and inspected. This is a workstation
+  task: install the Android SDK, `npx cap add android && npx cap sync`,
+  run on a device/emulator, then confirm the DB file is not readable as
+  plaintext SQLite.
+- **Nothing in `localDatabase.ts` was executed.** It type-checks; it has
+  never run. Every runtime claim about it (secret storage, connection
+  mode `'secret'`, transaction/rollback behaviour) is unverified.
+- **The Android platform was not added.** `npx cap add android` was
+  deliberately skipped rather than committing a native project that
+  cannot be built or tested here. `mobile/android/` is already
+  gitignored, so adding it later changes nothing tracked.
+
+## Environment notes
+
+- `npm`/`npx` shell wrappers fail under Git Bash on this machine
+  ("Could not determine Node.js install directory" — the space in
+  `C:\Program Files\nodejs`). Workaround used throughout: invoke the CLI
+  JS directly, `node "/c/Program Files/nodejs/node_modules/npm/bin/npm-cli.js" …`.
+- The network dropped repeatedly mid-install (`ENETUNREACH`, then a
+  10-minute hang). The scaffold had to be restarted and `npm install`
+  resumed in the background before it completed. Node's own
+  `node:sqlite` was used for verification partly because it adds no
+  dependency to fetch.
+- Scratch paths under the session temp directory exceeded Windows'
+  working-directory length limit, so scaffolding had to happen inside the
+  repo rather than a temp folder.
+
+## Not yet done (explicitly out of this cut)
+
+- M1 Login (needs `POST /devices/register`, `PATCH /devices/:id/deactivate`,
+  `GET /map-packages/:barangay_id`, `GET /map-packages/:barangay_id/download`
+  — all documented in §6, none built yet on the PHP side).
+- M2/M3/M4 screens; `POST /duty-status`; the §8 open question of whether
+  "Log Incident" or "Schedule" takes the persistent bottom-nav slot
+  (still unresolved — must be decided before M3/M8 nav is wired).
+- The remaining §5 local tables, and `apiService.ts` (the single mobile
+  API boundary named in §4) — no mobile screen calls the server yet.
