@@ -1574,3 +1574,282 @@ as the Dashboard) — same data, less duplicated markup code.
   new consolidated ones added) remains deliberately uncommitted per the
   user's own earlier instruction — untouched by this pass, not part of
   the commit this entry describes.
+
+---
+
+# DEVLOG — Post-Sprint-1 continued: officer_name/UI-migration verification,
+# docs consolidation committed, Dashboard "Phase 1"
+
+## Today's cut
+
+Three follow-ups the user explicitly directed, in order: (1) verify the
+previous entry's two unverified claims (`officer_name` join, the
+PageHeader/DataTable/StatStrip page migrations) with real evidence
+instead of leaving them flagged as untested; (2) review and commit the
+docs reorganization that had been sitting uncommitted on purpose; (3)
+build the deferred Dashboard "Phase 1" — Recent Incidents panel, Tanods
+On Duty panel, KPI period-over-period deltas.
+
+## 1. Verification of the previous entry's two flagged-unverified items
+
+Built a disposable-DB + disposable-app-user + PHP-dev-server rig (same
+non-destructive pattern as `backend/scripts/verify-*.sh`, kept in the
+session's own scratch directory rather than committed — this was a
+one-off check, not a persisted regression script) and drove it two ways:
+direct `curl` calls for the API-level claim, and the in-app Browser tool
+logged in as a throwaway admin for the UI-level claim.
+
+**officer_name join** — seeded one incident with two dispatch rows (an
+older one to "Juan Dela Cruz," both later marked `cancelled`, then a
+newer one to "Maria Santos," also `cancelled`), one incident with a
+single active dispatch, and one incident never dispatched. `GET
+/incidents` returned `officer_name: "Maria Santos"` for the first
+(proving "most recent by dispatched_at, any status including cancelled"
+— not just "most recent active"), `"Juan Dela Cruz"` for the second, and
+`null` for the third. All three matched the documented behavior exactly.
+
+**UI migrations** — logged in as the throwaway admin and clicked through
+all 10 migrated screens (Dashboard, Dispatch Center, GIS Live Tracking,
+Blotter, Statistical Reports, Citizen Reports Inbox, Scheduler, Swap
+Requests, Fatigue Flags, Settings) with realistic seeded data (incidents,
+shifts, a pending swap request, an unacknowledged fatigue flag, an
+unconverted citizen report). Zero console errors on any screen. Notable:
+Blotter's `DataTable` visually showed the exact officer_name results from
+the join test above; Dispatch Center's `StatStrip` read "2 Pending · 1
+Active · 0 Critical · 0 SOS," matching the seed data exactly; Fatigue
+Flags' Acknowledge button was actually clicked (not just screenshotted)
+and the row flipped to "Acknowledged" while staying visible — a real
+end-to-end interaction, not just a render check.
+
+One transparency note: the rig's first attempt used `php -S` without
+`-d variables_order=EGPCS`. This XAMPP install's php.ini ships
+`variables_order=GPCS` (no `E`), so `$_ENV` never picked up the
+disposable-DB credentials this rig exported via the shell — and since
+`config/env.php`'s `baranguard_load_env()` only skips loading the real
+`backend/.env` when `$_ENV`/`$_SERVER` already has the key, it silently
+fell through and loaded the real `backend/.env`, pointing the throwaway
+server at the real `baranguard` database for two login attempts before
+this was caught. Both attempts used a username (`ui_admin`) that doesn't
+exist in the real database, so `AuthController::recordFailure()` took its
+`$user === false` path — one harmless `login_failure` audit_log row
+written (user_id/barangay_id both null), no real user or data touched.
+Fixed by adding `-d variables_order=EGPCS` to the rig's `php -S`
+invocation; not an application bug, purely a test-harness one, disclosed
+here for the same reason every other bug in this log is.
+
+## 2. Docs reorganization — reviewed, then committed
+
+Read every old file's line count and section headers, then confirmed
+each subject area maps onto a specific section of the new
+`Baranguard_Master_Reference_FINAL .md` (§1-3 stack/architecture/roles,
+§4 naming, §5 schema, §6 API, §7 roles, §9 screens, §10 backlog, §12-14
+prompt library/checklists/integrity note) with `docs/DEVLOG.md` (91
+lines, stale duplicate) correctly superseded by this file
+(`backend/DEVLOG.md`, the one CLAUDE.md actually imports and the one
+every session has been appending to). No content gaps found. Committed
+as a separate commit from the code-only push (per the user's own
+"redo/re-verify before committing, not as-is" instruction — this
+required their explicit go-ahead, given after the review, not assumed).
+
+## 3. Dashboard "Phase 1" — Recent Incidents, Tanods On Duty, KPI deltas
+
+The prior entry flagged this as needing new backend fields/joins "nobody
+had approved yet." On actually designing it, that turned out to be
+wrong for all three pieces — every one is buildable from endpoints that
+already exist, so nothing new was added to the API surface:
+
+- **Recent Incidents panel**: `GET /incidents?limit=6` (already
+  default-sorted `created_at DESC`, already tenant/role-scoped) rendered
+  through the shared `DataTable` component (ID/Type/Status/Date).
+- **Tanods On Duty panel**: `GET /duty-status?barangay_id=` (already
+  returns one row per active Tanod's *current* status —
+  `DutyStatusController::currentByBarangay()`, not raw history) joined
+  client-side to `GET /users?role=tanod` for names — same pattern
+  `dispatch-center.js` already uses for its Tanod picker.
+  Deliberately has no delta ("vs previous period" doesn't mean anything
+  for a live current-state snapshot, same reasoning already applied to
+  the existing "Tanods On Duty" KPI card).
+- **KPI deltas**: computed by calling the *existing* `GET
+  /reports/summary` a second time, for the immediately-preceding period
+  of equal length to whatever range is currently selected (e.g. a 10-day
+  selection compares against the 10 days immediately before it), then
+  subtracting client-side. Only added to Total Incidents and Resolved —
+  Avg. Response Time's null-handling and Tanods On Duty's snapshot nature
+  both make a delta either awkward or meaningless for those two, so
+  neither got one.
+
+All three are wired as best-effort follow-up fetches *after* the core
+KPI/trend/breakdown data has already rendered (`loadDeltas`/
+`loadRecentIncidents`/`loadTanodsOnDuty`, each in their own try/catch) —
+a slow or failed previous-period/roster/recent-incidents call degrades
+that one panel to a "could not load" note, it never blocks or blanks the
+rest of the dashboard.
+
+## Files
+
+- `web/src/components/KpiCard.js` (MODIFIED, additive) — new optional
+  `delta`/`deltaLabel` props; renders a small "+2 vs previous period"
+  line under the value. Deliberately no green/red coloring — a KPI like
+  Total Incidents going up isn't inherently good or bad, so the delta
+  stays neutral-toned rather than encoding a value judgment the data
+  doesn't support.
+- `web/src/components/KpiCard.css` (MODIFIED, additive) — `.kpi-card__delta`.
+- `web/src/pages/admin-dashboard.js` (MODIFIED) — `previousPeriodRange()`
+  helper, `loadDeltas()`/`loadRecentIncidents()`/`loadTanodsOnDuty()`,
+  two new panel renderers (`renderRecentIncidentsTable`,
+  `renderTanodsOnDutyList`) in a new `.two-col-grid` row under the
+  existing By-Status/By-Incident-Type row.
+
+## Tests performed (with evidence)
+
+1. `node --check` clean on `admin-dashboard.js` and `KpiCard.js`.
+2. **Live browser verification** against the same disposable-DB rig from
+   part 1 above (fresh reseed): KPI cards read "Total Incidents 5 (+5 vs
+   previous period)" and "Resolved 2 (+2 vs previous period)" — correct,
+   since the seeded previous period had zero incidents, so the delta
+   equals the full current-period count, not a coincidental match.
+   Recent Incidents table showed all 5 seeded incidents, newest first,
+   with real type/status/date per row. Tanods On Duty showed "Juan Dela
+   Cruz — ON DUTY," matching the one seeded `duty_status` row. Zero
+   console errors. Disposable DB, app-user, and both dev servers torn
+   down afterward — the real `baranguard` database and `backend/.env`
+   were not touched by this second rig run (only the earlier verification
+   pass's variables_order bug touched the real DB, see part 1, and only
+   with one harmless audit row).
+
+## Not yet done (explicitly out of this cut)
+
+- Avg. Response Time and (deliberately) Tanods On Duty still have no
+  delta — see reasoning above.
+- W7, W8, W10, W14, W17, W18, W20 web screens, all mobile screens,
+  `GET /reports/export`, `GET /reports/notifications-summary` — all
+  unchanged from prior entries.
+
+---
+
+# DEVLOG — Scheduler + Dispatch Center migrated to DataTable (the two
+# screens the prior "Figma pixel-alignment pass" entry deliberately
+# skipped as riskier)
+
+## Today's cut
+
+The one item the "Figma pixel-alignment pass" entry explicitly deferred:
+migrate Scheduler's shift list and Dispatch Center's Pending/Active queue
+lists from stacked cards to the shared `DataTable` component too, at the
+user's explicit direction to go back and finish it. Both were skipped in
+that earlier pass specifically because they carry live inline-edit/action
+UX (per-row edit-in-place for Scheduler, a Tanod-picker + Assign or a
+Cancel button per row for Dispatch Center) that doesn't map onto
+`DataTable`'s plain `renderCell(row, columnKey)` contract as cleanly as a
+read-only list does.
+
+## Resolved decisions (logged, don't reopen without review)
+
+- **Scheduler's per-row edit state lives in the page, not in
+  `DataTable`.** `DataTable` itself gained no new API — no per-row
+  "editing" concept, no new prop. Instead `scheduler.js` keeps an
+  `editingShiftId` variable in its own closure; "Edit" sets it and
+  re-renders the *same* in-memory `shifts`/`tanods` arrays (no refetch),
+  "Cancel" clears it and re-renders, and a successful "Save" triggers a
+  real `load()` (full refetch, which also naturally resets
+  `editingShiftId` to `null`). This keeps `DataTable` a dumb, reusable
+  renderer rather than growing it a stateful-row mode that only this one
+  screen would ever use.
+- **A single row's edit-mode input elements are built once and shared
+  across that row's cells via a closure variable
+  (`editFields`), populated on the first cell `DataTable` asks for
+  (`tanod`, since that's first in `SCHEDULE_COLUMNS`) and read back by
+  the later cells in the same row (`zone`, `timeRange`, `actions`).**
+  This relies on `DataTable.js`'s existing column-iteration order being
+  stable and predictable (it always renders columns in exactly the array
+  order passed in) — true today and not something this change needed to
+  modify, just something worth documenting since a future edit to
+  `DataTable.js`'s iteration order would silently break this.
+- **Save/Cancel failures now use `alert()`, not an inline error box.**
+  The original card-based edit form had its own `errorBox` div. Dropped
+  in favor of `alert()`, matching the pattern every other DataTable
+  migration this session already established for row-level actions
+  (Swap Requests' Approve/Deny, Fatigue Flags' Acknowledge) — one
+  consistent failure-affordance across every table-row action in the
+  app, rather than a bespoke inline box for just this one screen.
+- **Dispatch Center's priority signal moved from a card-level colored
+  dot (`.dispatch-card--critical`/`--high`'s `::before` accent on the
+  incident-type text) to the dedicated Priority column's pill color.**
+  Same information, now in an actual column instead of a decorative
+  pseudo-element attached to a different field — arguably clearer (a
+  labeled "HIGH"/"CRITICAL" pill beats an unlabeled colored dot), and
+  nothing was dropped to make room for it.
+- **Active Dispatches' Tanod column still shows `Tanod #<id>`, not a
+  resolved name.** The original card version never resolved this to a
+  name either (Dispatch Center's `eligibleTanods` list only contains
+  *currently on-duty* Tanods, and an active dispatch's Tanod may no
+  longer be on duty by the time the page re-renders) — preserved exactly
+  as-is rather than silently changing behavior while migrating the
+  markup.
+
+## Files
+
+- `web/src/pages/scheduler.js` (MODIFIED) — `renderList()` now builds a
+  `DataTable` (Tanod/Patrol Zone/Time Range/Actions columns) instead of a
+  `.stack` of cards; `buildEditFields()`/`buildEditActions()` replace the
+  old `buildEditForm()`; `renderShiftRow()`/`toDatetimeLocal`'s old
+  direct-DOM-swap `Edit` handler is gone, replaced by the
+  `editingShiftId`/`startEdit`/`cancelEdit` closure state described
+  above. `escapeHtml()` no longer needed — `DataTable`'s renderCell
+  returns text-node-bearing `<span>` elements for name/zone instead of
+  interpolated HTML strings.
+- `web/src/pages/dispatch-center.js` (MODIFIED) — `renderPendingCard()`/
+  `renderActiveCard()` (per-item card builders) replaced by
+  `renderPendingIncidentsTable()`/`renderActiveDispatchesTable()` (each
+  builds one `DataTable` for the whole list) plus
+  `renderAssignCell()`/`renderCancelCell()` for the per-row action cells.
+  Added `PRIORITY_PILL_CLASS` mapping (normal→neutral, high→pending/
+  orange, critical→critical/red).
+
+## Tests performed (with evidence)
+
+1. `node --check` clean on both files.
+2. **Live browser verification**, disposable-DB rig (same one from the
+   prior two entries, fresh reseed), real interactions — not just
+   screenshots:
+   - **Dispatch Center Assign**: clicked "Assign" on the seeded "Theft"
+     pending incident with "Juan Dela Cruz" selected in the row's Tanod
+     picker. `StatStrip` updated from "2 Pending · 1 Active" to
+     "1 Pending · 2 Active" live, the incident disappeared from Pending
+     Incidents, and a new row appeared in Active Dispatches
+     ("#4 · Incident #1", "Tanod #4", "ASSIGNED", "Route unavailable") —
+     a real `POST /dispatch` round-trip through the new `Assign` cell.
+   - **Dispatch Center Cancel**: the button's own `confirm()` dialog is
+     auto-dismissed (returns `false`) by this browser-automation
+     environment by default — first click correctly did *nothing*
+     (verified via `read_network_requests`: zero requests fired),
+     proving the existing "cancel requires confirmation" guard still
+     works, not a new bug. Overrode `window.confirm` to return `true` via
+     the dev-tools JS console *only* to get past that automation
+     limitation, then re-clicked the same button: `StatStrip` went back
+     to "2 Pending · 1 Active," the dispatch disappeared from Active
+     Dispatches, and the Theft incident reappeared in Pending Incidents —
+     a real `PATCH /dispatch/:id/cancel` round-trip through the new
+     `Cancel` cell.
+   - **Scheduler inline edit**: clicked "Edit" on the seeded "Juan Dela
+     Cruz / Zone A" shift — row correctly swapped to a Tanod `<select>`,
+     Patrol Zone `<input>`, and two `datetime-local` inputs, all
+     pre-filled with the shift's real current values, while the *other*
+     row (Maria Santos) stayed in view mode — confirming per-row edit
+     state doesn't leak across rows. Changed the Patrol Zone field to
+     "Zone A-Verified" and clicked Save: the row exited edit mode, and
+     the table's next full reload (a real `GET /shifts` call, not an
+     optimistic local patch) showed "Zone A-Verified" — proving the save
+     actually persisted server-side, not just updated in memory.
+   - Zero console errors across all three flows.
+3. Disposable database, app-user, and both throwaway dev servers torn
+   down afterward — the real `baranguard` database and `backend/.env`
+   were not touched by this pass.
+
+## Not yet done (explicitly out of this cut)
+
+- W7, W8, W10, W14, W17, W18, W20 web screens, all mobile screens,
+  `GET /reports/export`, `GET /reports/notifications-summary` — all
+  unchanged from prior entries. Every screen originally flagged for a
+  `DataTable`/`PageHeader` migration is now migrated; no further screens
+  are queued for this specific pass.

@@ -8,14 +8,21 @@
  * Users/teal) rather than a plain text tile — `icon`/`accent` reproduce
  * that; both are optional so a caller can still render a bare KPI card.
  *
- * @param {{label:string, value:number|string|null, emptyText?:string, icon?:(size:number)=>string, accent?:'blue'|'green'|'orange'|'teal'}} props
+ * @param {{label:string, value:number|string|null, emptyText?:string, icon?:(size:number)=>string, accent?:'blue'|'green'|'orange'|'teal', delta?:number|null, deltaLabel?:string}} props
  *   `value === null` renders the empty state text instead of a number —
  *   used for avg_response_time_minutes when no incident in range reached
  *   `arrived` (a real 0 and "no data" must look different to the user,
  *   same reasoning as the API contract itself).
+ *   `delta` (optional): a caller-computed difference vs. a prior period
+ *   (e.g. previous equal-length date range) — rendered as a small "+2"/
+ *   "-1"/"±0" line under the value. Deliberately unstyled as good/bad
+ *   (no green/red) since a KPI like "Total Incidents" going up isn't
+ *   inherently positive or negative. Omit `delta` entirely (not `null`)
+ *   for a KPI with no meaningful period-over-period comparison, e.g. a
+ *   live snapshot like Tanods On Duty.
  * @returns {HTMLElement}
  */
-export function KpiCard({ label, value, emptyText = '—', icon, accent }) {
+export function KpiCard({ label, value, emptyText = '—', icon, accent, delta, deltaLabel = 'vs previous period' }) {
   const el = document.createElement('div');
   el.className = 'card kpi-card';
 
@@ -36,5 +43,14 @@ export function KpiCard({ label, value, emptyText = '—', icon, accent }) {
   valueEl.textContent = isEmpty ? emptyText : String(value);
 
   el.append(labelEl, valueEl);
+
+  if (!isEmpty && delta !== undefined && delta !== null) {
+    const deltaEl = document.createElement('div');
+    deltaEl.className = 'kpi-card__delta';
+    const sign = delta > 0 ? '+' : delta < 0 ? '' : '±';
+    deltaEl.textContent = `${sign}${delta} ${deltaLabel}`;
+    el.appendChild(deltaEl);
+  }
+
   return el;
 }
