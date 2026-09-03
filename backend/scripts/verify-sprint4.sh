@@ -202,14 +202,23 @@ SOS2_ID=$(echo "$SOS2" | jget sos_id)
 N2=$(db_one "SELECT notification_id FROM notification WHERE sos_id=$SOS2_ID;")
 expect_eq "$(status_of POST "/notifications/$N2/ack" "$ADMIN" '{}')" "403" "Admin cannot use the Tanod ack endpoint"
 expect_eq "$(status_of POST "/notifications/$N2/ack" "$OFFDUTY" '{}')" "404" "A Tanod who is not a target gets 404"
+# Rule 24: acknowledgment is NOT a transport record — captured BEFORE the
+# ack call, not asserted as a global zero. Since Sprint 4 Phase 2 wired
+# NotificationDispatcher into SOS/dispatch creation, delivery rows now
+# legitimately exist by this point (every SOS raised above already
+# attempted FCM/SMS and recorded 'failed' rows, since nothing is
+# configured on this machine) — the invariant this step actually checks is
+# narrower and still holds: calling POST /notifications/:id/ack itself
+# creates no NEW delivery row, logical acknowledgment and transport
+# attempts are recorded by entirely separate code paths.
+DELIVERY_COUNT_BEFORE_ACK=$(db_one "SELECT COUNT(*) FROM notification_delivery;")
 ACKN=$(body_of POST "/notifications/$N2/ack" "$ONDUTY" '{}')
 expect_contains "$ACKN" '"success":true' "Targeted Tanod can acknowledge"
 expect_eq "$(db_one "SELECT ack_status FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$N2 AND u.username='s4_tanod_on';")" "acknowledged" "ack_status recorded"
 FIRST_ACK=$(db_one "SELECT acknowledged_at FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$N2 AND u.username='s4_tanod_on';")
 body_of POST "/notifications/$N2/ack" "$ONDUTY" '{}' >/dev/null
 expect_eq "$(db_one "SELECT acknowledged_at FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$N2 AND u.username='s4_tanod_on';")" "$FIRST_ACK" "Repeat ack keeps the original timestamp (protects avg_ack_seconds)"
-# Rule 24: acknowledgment is NOT a transport record.
-expect_eq "$(db_one "SELECT COUNT(*) FROM notification_delivery;")" "0" "Acknowledgment created NO delivery row (logical != transport)"
+expect_eq "$(db_one "SELECT COUNT(*) FROM notification_delivery;")" "$DELIVERY_COUNT_BEFORE_ACK" "Acknowledgment (both calls) created NO NEW delivery row (logical != transport)"
 
 step "7. POST /dispatch now creates its notification"
 mysql_exec "$VALDB" -e "INSERT INTO incident (barangay_id,incident_type,priority,raw_narrative,status,source,created_at,updated_at) VALUES (1,'theft','normal','Seeded for dispatch.','pending','web',UTC_TIMESTAMP(),UTC_TIMESTAMP());"

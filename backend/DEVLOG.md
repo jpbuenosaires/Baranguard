@@ -4010,3 +4010,499 @@ works), `routes/tanod-sos.php`, `scripts/verify-sprint6.sh` (db_one retry).
   now exists, but wiring the app to it was not part of this cut.
 - No live send/receive verification is possible on this machine; that
   remains a workstation task, as Sprint 4's own prompt anticipates.
+
+---
+
+# DEVLOG — Sprint 4 Phases 2-5: FCM/SMS transport, Rule 12 ladder,
+# encrypted SMS envelopes + internal router, W14, M12/M13 (closes Sprint 4)
+
+## Today's cut
+
+The user asked to continue through Phase 2 to the end of Sprint 4 in one
+session — an explicit multi-box exception, same documented category as
+Sprint 3's and Sprint 5's own all-at-once sessions. Unlike those two, the
+BACKEND half here (Phases 2-3) is genuinely verified against real XAMPP —
+321 checks passing across five suites, zero failures (see Tests below) —
+because everything in Phases 2-3 is exercisable without live external
+credentials (see the two "no live creds" notes below for exactly why).
+Only the mobile half (Phase 5) is coded-but-unverified, for the same
+standing reason every mobile cut since Sprint 3 has been: no Android SDK/
+emulator exists in this environment.
+
+**Phase 2** — FCM HTTP v1 client, Semaphore SMS client, `NotificationDispatcher`
+(Rule 12's fallback ladder), `scripts/notification-worker.php` (the 60s
+ack-timeout sweep), wired into SOS/dispatch creation.
+**Phase 3** — device secret provisioning (`DeviceSecretVault`), AES-256-GCM
+SMS envelope crypto (`EnvelopeCrypto`), the internal-only `/internal/sms/*`
+router (`public/internal.php`, structurally separate from `/api/v1`), all
+six §6-documented internal endpoints, `GET /sms/logs`.
+**Phase 4** — W14 SMS Activity Log (Admin-only, read-only, exactly per
+Sprint_Prompts.md's own scoping note).
+**Phase 5** — mobile M12 Critical Alert Overlay + M13 SMS Fallback
+Confirmation, plus the real `getFcmToken()` implementation neither could
+exist without.
+
+**Two deliberate scope trims, both logged rather than silently absorbed:**
+GSM-modem OUTBOUND sending (the "+ tethered phone as GSM modem fallback"
+half of §1's SMS transport line) and on-device SMS SENDING (Android's
+SmsManager, the mobile-side mechanism M13's `sent_by_sms`/`sms_pending`/
+`sms_failed` states would eventually come from) are both NOT built this
+cut — neither has any hardware/credentials to develop or test against in
+this environment, and both are separate, sizeable native/hardware
+integrations rather than a rider on this cut (same category judgment as
+M7 Live Map's deferred basemap rendering). GSM-modem INBOUND ingestion
+(the tethered phone RECEIVING SMS) is NOT trimmed — it's the actual
+Phase 3 deliverable, exercised via a real AES-256-GCM envelope built by
+`scripts/sms-envelope-build.php`, standing in for hardware that doesn't
+exist, the same way this project has always substituted a disposable
+database for one it shouldn't touch.
+
+## Two "no live credentials, verify it anyway" notes — read before assuming untested means unverified
+
+**FCM/Semaphore being "not configured" is itself a fully deterministic
+code path.** Rule 12's ladder ("no active FCM registration -> SMS
+immediately; FCM error -> retry once -> SMS on second failure") treats a
+config-absence failure identically to a live-service rejection — neither
+distinction exists anywhere in `NotificationDispatcher`. So
+`verify-sprint4-phase2-3.sh` genuinely exercises every branch of the
+ladder (2 FCM attempts recorded, then exactly 1 SMS attempt, all with
+correct `failure_reason`s) with zero live credentials, runnable on any
+machine, forever — same principle `verify-sprint6.sh` already established
+by pointing `OLLAMA_URL` at a dead port.
+
+**`DEVICE_SECRET_MASTER_KEY` and `INTERNAL_SERVICE_TOKEN` are real local
+secrets this suite generates and uses for real.** Envelope crypto, replay
+protection, AAD binding, and the internal router's auth gate are not
+approximated or mocked anywhere — they are exercised with genuine
+AES-256-GCM operations end to end.
+
+## Resolved decisions (logged, don't reopen without review)
+
+**The Rule 12 ladder runs SYNCHRONOUSLY, right after the notification
+transaction commits — not queued.** §6 says SOS "immediately attempts
+configured FCM/SMS channels," and the same urgency applies to a dispatch
+assignment; unlike the AI pipeline (Rule 15: never call the model inline),
+nothing in §2 says notifications must be queue-only. Only the one piece
+that genuinely cannot happen synchronously — the 60s ack-timeout wait —
+is deferred to `notification-worker.php`. A transport failure never
+throws out of `dispatchAll()`; every branch is caught internally and
+recorded as a `failed` delivery row, and the calling controller
+(`TanodSosController`, `DispatchController`) wraps the whole call in
+try/catch again as a second line of defence, matching the SOS class doc's
+existing "a missing transport is never allowed to fail the request"
+principle.
+
+**FCM auth is hand-rolled OAuth2 service-account JWT signing (RS256 via
+`openssl_sign`), not a vendor SDK.** No Composer dependency exists in this
+repo (same reasoning as `Jwt.php`), and there is no legacy FCM server-key
+API left to use — Google shut it down in June 2024, so HTTP v1's
+service-account flow is the only option, real or not.
+
+**FCM `data` payload always carries `notification_id`/`notification_type`
+as strings.** FCM requires every `data` value to be a string; the mobile
+client (`criticalAlertStore.ts`) parses `notification_id` back to a
+number before using it, and rejects anything that doesn't parse or isn't
+a recognised critical type — never trusts the payload shape blindly.
+
+**The device's SMS-envelope symmetric key is server-generated and returned
+ONCE, at a device_id's first-ever registration, in the SAME
+`POST /devices/register` response — never a separate endpoint.** §6
+defines no key-provisioning endpoint at all; asked-and-resolved the same
+way Sprint 2's DB-passphrase-source gap was, except here the "ask" was
+answered by the constraint itself: this is genuinely the only point in the
+protocol where the device is both authenticated (device ownership already
+validated in `DevicesController`) and hasn't yet needed the key. A
+re-registration (ordinary FCM-token-refresh) reuses the SAME stored
+secret via `COALESCE(device_secret_ref, VALUES(device_secret_ref))` in
+one UPSERT — no branch in the SQL, no race window between "check if it
+exists" and "write it." Verified in the DB, not just the response: see
+Tests below.
+
+**`device_secret_ref` is encrypted at rest under a SEPARATE server-only
+master key (`DEVICE_SECRET_MASTER_KEY`), never the device's own key in
+plaintext in the database.** `DeviceSecretVault` wraps/unwraps with its
+own AES-256-GCM operation, independent of `EnvelopeCrypto`'s (which uses
+the device's raw key). Losing the master key doesn't expose past
+envelopes retroactively — it only means already-registered devices' rows
+can no longer be decrypted server-side, forcing re-registration.
+
+**The SMS envelope's cleartext header fields are bound to the ciphertext
+as GCM Additional Authenticated Data (AAD), not left as unauthenticated
+metadata.** `device_id` has to travel in the clear — the server needs it
+to know which device's key to try before it can decrypt anything — but
+binding it as AAD means a captured envelope's ciphertext can't be replayed
+under a DIFFERENT device_id header to attempt impersonation; the GCM tag
+fails immediately. Verified directly: step 13 of the suite takes a real
+envelope, swaps only the header's `device_id` (leaving the ciphertext
+untouched), and confirms it's rejected — not by inspection, by actually
+doing the attack and watching it fail.
+
+**Envelope replay protection is a DEDICATED table
+(`sms_envelope_replay`), not reused from `sms_log.correlation_id`.**
+`sms_log.correlation_id` is nullable and shared across many message
+types/directions/transports — not a clean fit for a fast, exclusive
+"have I seen this exact `message_id` before" check. The dedup itself is
+the table's own PRIMARY KEY doing the work: `resolveAndDecrypt()` inserts
+the message_id FIRST, before any decryption happens, and a duplicate-key
+exception IS the rejection — no separate SELECT-then-INSERT race.
+
+**Envelope max lifetime is capped at 30 minutes (`expiry - created_at`),
+independent of whether `message_id` replay-dedup would already catch a
+literal replay.** A sender that set a year-long expiry would otherwise
+let a leaked device key forge delayed messages within a technically-valid
+window; capping the WINDOW itself, not just the specific message_id, is
+the more defensible security posture.
+
+**A genuine, undocumented schema gap: `sms_log` had no `barangay_id`.**
+§6's `GET /sms/logs` says "Admin own barangay," but `report_id`/
+`incident_id`/`dispatch_id` are all nullable and a `duty_status`/
+`coord_ping` message can legitimately have all three NULL at once — no
+reliable derivation path existed for tenant-scoping those rows at all.
+Resolved with migration `0006_sms_log_barangay.sql` (ALTER TABLE, nullable
+column, new FK+index) rather than editing the completed 0001 baseline,
+same convention as 0003/0004/0005. Every write site in
+`NotificationDispatcher`/`SmsGatewayService` now populates it explicitly.
+
+**`GET /sms/logs`'s response NEVER includes `sender_number`/
+`receiver_number`, at all — not "returned but masked."** §6's own
+documented item shape for this endpoint genuinely omits both fields; "phone
+numbers are masked in UI" is read as belt-and-braces guidance for a screen
+that might need them later, not license to add an unlisted field on top of
+an already-exact contract (§10's own rule: "Do not invent missing API
+fields"). Verified directly: the suite asserts neither string appears
+anywhere in a real response body.
+
+**The internal `/internal/sms/*` router is a STRUCTURALLY separate front
+controller (`public/internal.php`), not a special-cased prefix inside
+`index.php`.** §6: "never exposed on the public API surface." `index.php`
+only ever globs `backend/routes/*.php`; `internal.php` only ever globs
+`backend/routes-internal/*.php` — the two directories never merge, so a
+route can never end up reachable from both surfaces by a future edit
+mistake. Two independent gates, both required: `REMOTE_ADDR` must be
+loopback (127.0.0.1/::1), AND an `X-Internal-Token` header must match
+`INTERNAL_SERVICE_TOKEN` — defense in depth, since this XAMPP install's
+Apache binding isn't guaranteed loopback-only by configuration alone.
+
+**`dispatch-payload`/`priority-alert` (the two OUTBOUND internal
+endpoints) are real, curl-able, and independently testable, but they are
+NOT the production trigger for outbound SMS.** `NotificationDispatcher`
+calls `SmsGatewayService::sendOutbound()` directly, in-process — looping
+back through HTTP to itself would add latency and a second failure mode
+for no benefit, since both are the same trusted PHP process. The two
+endpoints exist so §6's documented contract is real and independently
+verifiable (step 19 of the suite exercises them directly, never through a
+notification), and so a genuinely separate future ingestion process
+COULD call them if this were ever deployed that way.
+
+**PHP's built-in server (`php -S`, used by every `verify-*.sh` in this
+repo) does NOT read `.htaccess`, so `/internal/*` needed a second,
+TEST-ONLY router script (`public/dev-router.php`) to be testable at all.**
+Confirmed empirically before writing it: a bare `php -S -t public` with no
+router script automatically falls back to `index.php` for any
+non-existent path (which is WHY every existing verify script's
+`/api/v1/*` calls already worked without one) — but that automatic
+fallback only ever targets `index.php`, never a second file. Real Apache
+never uses `dev-router.php` at all; it reads `public/.htaccess` directly.
+
+**Inbound SMS handlers reuse the EXACT SAME core methods
+`SyncController` already reuses** (`IncidentsController::createMobileItem()`,
+`GpsController::createItem()`, `DutyStatusController::applyToggle()`,
+`TanodSosController::createItem()`) rather than a second copy of any of
+that logic. Two of those four needed a small additive signature change
+first: `createMobileItem()` gained a `string $source = 'app'` trailing
+param (an SMS-originated incident must record `source='sms'`, not `'app'`
+— §5's own enum already anticipates this), and `applyToggle()` gained a
+`string $channel = 'app'` trailing param (Rule 13: `duty_status.channel =
+'sms'` is written ONLY by the validated internal SMS handler). Both
+defaults preserve every existing caller's behaviour unchanged — verified
+by re-running every pre-existing suite that touches either method
+(`verify-sprint4.sh`, `verify-sprint6.sh`, `verify-devices-map-packages.sh`,
+`verify-duty-status-map-upload.sh`) and confirming all four still pass in
+full after the change.
+
+**Sender identity for every inbound envelope is resolved from the device
+mapping BEFORE the decrypted payload is ever read**, and no `receive*`
+method in `SmsGatewayService` ever looks for a user id inside that
+payload at all — Rule 13 ("any user ID included in the SMS payload is
+ignored for authorization") is structural here, not a filter applied
+after the fact. Verified directly: step 10 sends a real envelope from
+tanod_a's device and confirms the resulting `duty_status` row belongs to
+tanod_a, by device mapping, with nothing in the payload asserting who the
+sender is.
+
+**Every envelope rejection reason collapses into the SAME generic 422** —
+malformed shape, unknown device, wrong key, tampered ciphertext, expired,
+replayed, or message_type mismatch all produce identical HTTP output. A
+more specific error would let a probing attacker distinguish "this device
+doesn't exist" from "this envelope's tag failed," the same reasoning
+`DevicesController`/`DispatchController` already apply to ownership
+checks elsewhere in this codebase.
+
+**W14 stays exactly "read-only, Admin only," per Sprint_Prompts.md's own
+explicit standing note** — no reply/send/broadcast UI, matching the
+existing exclusion already recorded against the Figma reference's
+two-way-chat pattern.
+
+**M12's "full-screen presentation" is approximated as a fixed, full-
+viewport, highest-z-index overlay component mounted at the App root,
+NOT a native Android full-screen-intent activity.** The real native
+mechanism needs manifest/notification-channel configuration this cut does
+not add — logged as follow-up, same category as M7's deferred basemap
+rendering, not silently substituted without a note.
+
+**M12's Acknowledge button is fire-and-forget on failure.** If
+`POST /notifications/:id/ack` fails (workstation unreachable, session
+expired), the overlay still dismisses — §2 Rule 7/15's offline-first
+stance applies here too: a Tanod must be able to dismiss and act on a
+critical alert regardless of API reachability. The ack itself is already
+idempotent server-side (§6), so a background retry mechanism is
+straightforward, unscoped follow-up work, not something this overlay
+needs to solve by blocking the dismiss.
+
+**M13's `sent_by_sms`/`sms_pending`/`sms_failed` states are implemented
+in full and correctly typed, but are NOT reachable in this build** — only
+`saved_locally_for_retry` is, because nothing yet performs on-device SMS
+sending (see the scope-trim note above). `deriveSmsFallbackState()` never
+lies about this: it only ever returns a state that reflects what
+`smsAttempted`/`smsStatus` actually say, and today nothing sets those to
+anything but their "never attempted" defaults. The component and its
+state model are ready the moment SMS sending is wired up; nothing about
+this screen needs to change when that happens.
+
+## Files
+
+**Backend, new:**
+- `services/notifications/FcmClient.php` + `FcmException.php` — FCM HTTP
+  v1, hand-rolled OAuth2 JWT signing.
+- `services/notifications/SemaphoreClient.php` + `SemaphoreException.php`
+  — Semaphore `/messages` + `/priority` endpoints.
+- `services/notifications/NotificationDispatcher.php` — Rule 12's ladder;
+  Phase 2 of the split `NotificationService` its own class doc already
+  anticipated.
+- `services/sms/DeviceSecretVault.php` — device-secret at-rest encryption.
+- `services/sms/EnvelopeCrypto.php` + `EnvelopeException.php` —
+  AES-256-GCM envelope encrypt/decrypt, AAD binding.
+- `services/sms/SmsGatewayService.php` — inbound envelope resolution +
+  reconstruction (4 message types) and the shared outbound send/log core.
+- `controllers/InternalSmsController.php` — the 6 `/internal/sms/*`
+  handlers (thin wrappers over `SmsGatewayService`).
+- `controllers/SmsController.php` — `GET /sms/logs`.
+- `public/internal.php` — the internal-only front controller.
+- `public/dev-router.php` — TEST-ONLY router for `php -S`, mirrors
+  `.htaccess`; never used by real Apache.
+- `routes-internal/sms.php`, `routes/sms.php`.
+- `scripts/notification-worker.php` — the 60s ack-timeout sweep worker.
+- `scripts/sms-envelope-build.php` — test/dev tooling: builds a real,
+  valid encrypted envelope from a device's own key, standing in for the
+  GSM ingestion hardware this environment doesn't have.
+- `scripts/verify-sprint4-phase2-3.sh` — 68 checks.
+- `migrations/0005_sms_envelope_replay.sql` (+`.down.sql`),
+  `0006_sms_log_barangay.sql` (+`.down.sql`) — both applied to the real
+  local `baranguard` database this session, confirmed via
+  `SHOW TABLES`/`DESCRIBE`, not just written.
+
+**Backend, modified (all additive):**
+- `controllers/TanodSosController.php`, `controllers/DispatchController.php`
+  — call `NotificationDispatcher::dispatchAll()` after commit.
+- `controllers/IncidentsController.php` — `createMobileItem()` gained
+  `string $source = 'app'`.
+- `controllers/DutyStatusController.php` — `applyToggle()` gained
+  `string $channel = 'app'`.
+- `controllers/DevicesController.php` — device-secret provisioning in
+  `register()`.
+- `controllers/SystemHealthController.php` — fixed a pre-existing wrong
+  env-var name (`FCM_SERVICE_ACCOUNT_JSON` -> `FCM_SERVICE_ACCOUNT_PATH`,
+  never previously exercised so never previously caught); added `fcm`/
+  `sms_semaphore` fields; `gsm_ingestion` now reflects
+  `INTERNAL_SERVICE_TOKEN` instead of a var (`GSM_MODEM_DEVICE`) that was
+  never actually defined anywhere.
+- `public/.htaccess` — new `^internal/` rewrite rule, checked first.
+- `.env.example` — `FCM_SERVICE_ACCOUNT_PATH`, `SEMAPHORE_API_KEY`,
+  `SEMAPHORE_SENDER_NAME`, `INTERNAL_SERVICE_TOKEN`,
+  `DEVICE_SECRET_MASTER_KEY`.
+- `scripts/verify-sprint4.sh` — one assertion fixed (see Tests below);
+  everything else unchanged.
+
+**Web, new:** `web/src/pages/sms-log.js` (W14).
+**Web, modified:** `web/src/api/apiClient.js` (`getSmsLogs`, extended
+`getSystemHealth`), `web/src/components/AppShell.js` (nav item),
+`web/src/components/icons.js` (`messageSquare`/`arrowDownLeft`/
+`arrowUpRight`), `web/src/main.js` (route wiring).
+
+**Mobile, new:**
+- `src/services/messageEncryptionKey.ts` — Keystore-backed storage for
+  the per-device symmetric key, same pattern as `db/passphrase.ts`.
+- `src/services/criticalAlertStore.ts` — push-listener registration +
+  the minimal hand-rolled subscribe/notify store behind M12.
+- `src/services/smsFallbackState.ts` — M13's state model (4 states, only
+  1 reachable today — see decisions above).
+- `src/components/CriticalAlertOverlay.tsx` — M12.
+- `src/components/SmsFallbackBadge.tsx` — M13's display half.
+- `src/components/NotificationDiagnostics.tsx` — the "visible in
+  diagnostics" half of M12, mounted on the still-unbuilt Profile/M10 tab.
+
+**Mobile, modified:**
+- `src/services/deviceIdentity.ts` — `getFcmToken()` replaced: real
+  `@capacitor/push-notifications` permission request + registration flow,
+  never throws, resolves `null` on any failure mode.
+- `src/services/apiService.ts` — `registerDevice()` returns
+  `messageEncryptionKey?`; new `acknowledgeNotification()`.
+- `src/pages/login.tsx` — stores the key when a registration response
+  includes one.
+- `src/pages/incident-submitted.tsx` — mounts `SmsFallbackBadge` beside
+  M4's existing sync-state pill.
+- `src/components/NotBuiltYetPage.tsx` — additive `children` prop (a real
+  working sub-section on an otherwise-unbuilt page, not a second
+  placeholder).
+- `src/App.tsx` — mounts `CriticalAlertOverlay` at the root, outside the
+  tab router; registers push listeners once on app mount.
+- `src/theme/app.css` — `.critical-alert-overlay*` classes, built from
+  existing §8 tokens only.
+- `package.json` — `@capacitor/push-notifications` dependency added.
+
+## Tests performed (with evidence)
+
+1. **`php -l` clean on every new/modified backend PHP file** (26 files).
+2. **`backend/scripts/verify-sprint4-phase2-3.sh` — 68/68 against real
+   XAMPP** (MariaDB 10.4.32 + PHP 8.2.12), covering: device-secret
+   provisioning (first-registration-only, verified unchanged in the DB
+   across a re-registration) · `GET /system/health`'s new fields · the
+   full Rule 12 ladder for a target WITH a device (2 FCM attempts, both
+   `FCM_NOT_CONFIGURED`, then exactly 1 SMS attempt,
+   `SEMAPHORE_NOT_CONFIGURED`) AND for a target with NO device (0 FCM
+   attempts, straight to SMS) AND for a target with neither device nor
+   contact_number (`NO_CONTACT_NUMBER`, correctly never reaching
+   `SmsGatewayService` at all) · dispatch creation also triggering the
+   ladder · the ack-timeout worker (a 90s-stale row swept, a 10s-fresh row
+   left alone, re-running the sweep is a no-op, an ALREADY-ACKNOWLEDGED
+   target's stale row is NEVER swept — Rule 24) · the internal router's
+   loopback+token gate (both factors independently tested, plus
+   confirming a valid Bearer token alone does NOT reach it) · a REAL
+   AES-256-GCM envelope decrypting and reconstructing a duty_status row
+   with `channel='sms'` and the correct sender identity · replay
+   rejection (identical envelope twice, second rejected, DB confirms only
+   1 row) · tampered-ciphertext rejection (one flipped byte, GCM tag
+   fails) · AAD-binding rejection (swapped `device_id` header, same
+   ciphertext, fails authentication — a real attempted impersonation,
+   defeated) · expired-envelope rejection · message_type-mismatch
+   rejection · incident-fallback producing `source='sms'` · SOS-fallback
+   producing a real SOS with the SAME Rule 27 fan-out as an app-originated
+   one · inbound rows correctly logged with `barangay_id` · the two
+   outbound internal endpoints tested in isolation (502 on unconfigured
+   Semaphore, still logs the attempt; 400 on missing required fields) ·
+   `GET /sms/logs` role gating, tenant scoping, filter params, and the
+   confirmed ABSENCE of `sender_number`/`receiver_number` in the response.
+   Two rounds of real test-script bugs were found and fixed BEFORE the
+   clean run (both in the test's own setup, not the application): step
+   4's first assertion assumed only 1 outbound sms_log row would exist
+   for the SOS's 2 targets, not realising `dispatchAll()` is synchronous
+   and processes every target before the creating request even returns;
+   step 6 forgot to put `tanod_b` on-duty before raising the SOS meant to
+   target them, so `NotificationService::sosRecipients()` correctly
+   excluded them (working as designed) and the test's own expectation was
+   wrong, not the code.
+3. **Every pre-existing verify script that touches something Phase 2/3
+   changed was re-run in full, to confirm zero regression:**
+   - `verify-sprint4.sh` (Phase 1) — **48/48**, after fixing ONE assertion
+     that had genuinely gone stale (not a regression): it asserted a
+     GLOBAL zero `notification_delivery` row count as proof
+     acknowledgment isn't a transport record, which was only true before
+     Phase 2 existed. Fixed to capture the count immediately before the
+     ack call and assert it's UNCHANGED after — the actual invariant Rule
+     24 requires, now correctly isolated from the fact that Phase 2's SOS
+     creation legitimately produces delivery rows earlier in the same run.
+   - `verify-sprint6.sh` — **112/112**, untouched, confirming the AI
+     pipeline/blotter/approval work is unaffected.
+   - `verify-devices-map-packages.sh` — **53/53**.
+   - `verify-duty-status-map-upload.sh` — **40/40**.
+   - Combined with this session's own 68, **321 checks passing across
+     five suites, zero failures**, against real XAMPP.
+4. **`node scripts/verify-web-wiring.mjs` — 300/300**, up from 297 before
+   this cut. Caught two real bugs in `sms-log.js` before they shipped:
+   `.filter-panel__field` was invented without checking (the real pattern
+   is a bare `<select>` as a direct child of `.filter-panel`, already
+   styled in `AppShell.css`), and `status-pill--warning` doesn't exist
+   (the tinted-warning class is named `status-pill--pending`, matching
+   the web dashboard's own §8 naming exactly). Both are exactly the class
+   of bug this tool was built to catch, per its own Sprint 6 origin story
+   — `node --check`/`tsc` cannot see either one.
+5. **`node --check` clean** on every new/modified web JS file.
+6. **Real browser walkthrough of W14** (disposable DB + disposable admin +
+   two throwaway PHP servers, `web/index.html`'s API base URL temporarily
+   repointed and reverted afterward — confirmed via `git diff --stat`
+   showing no residual change): real seeded rows render with correct
+   direction icons/labels, transport names, and status pills; the
+   direction filter round-trips a REAL `GET /sms/logs?direction=inbound`
+   request and the table updates to show only the matching row; zero
+   console errors; network tab shows clean 200s throughout. Only the
+   Admin role and this one screen were exercised.
+7. **`tsc --noEmit` across the whole mobile project** — clean except for
+   the expected `Cannot find module '@capacitor/push-notifications'`
+   (its `npm install` was never run this session, same as
+   `@capacitor/geolocation` in Sprint 3) plus its two derived
+   implicit-`any` errors on that same missing type. Every other
+   new/modified mobile file — `messageEncryptionKey.ts`,
+   `criticalAlertStore.ts`, `smsFallbackState.ts`,
+   `CriticalAlertOverlay.tsx`, `SmsFallbackBadge.tsx`,
+   `NotificationDiagnostics.tsx`, `NotBuiltYetPage.tsx`, `App.tsx`,
+   `login.tsx`, `incident-submitted.tsx`, `apiService.ts` — type-checks
+   cleanly.
+8. **`eslint` clean** on every new/modified mobile file (via the real CLI
+   entry point directly, since the installed `.bin/eslint` shell wrapper
+   isn't `node`-executable in this shell — a tooling quirk, not a code
+   issue).
+
+## NOT done this session — stated plainly
+
+- **The model, FCM, and Semaphore have all still never been called with
+  real credentials.** Every "sent" outcome in this cut's tests is a
+  logical/local-crypto success (real AES-256-GCM, real replay/AAD
+  checks); every actual external send is a deliberately-unconfigured
+  `failed` outcome, proven correct rather than assumed.
+- **GSM-modem OUTBOUND sending** — not built, see the scope-trim note.
+- **A real Firebase project / `google-services.json` / a real Semaphore
+  account** — none exist on this workstation; `getFcmToken()` and
+  `FcmClient`/`SemaphoreClient` are all written against each provider's
+  real documented contract but have never executed against it.
+- **`npm install` in `mobile/`** was NOT run — `@capacitor/push-
+  notifications` exists only as a `package.json` entry. `npx cap sync`
+  and the AndroidManifest.xml `POST_NOTIFICATIONS` permission (Android
+  13+) are both still outstanding, same category as every other
+  native-plugin addition this repo has made without a working Android
+  build environment.
+- **No device run of anything in this cut.** M12/M13, the real
+  `getFcmToken()` flow, and the message-encryption-key storage are all
+  unverified on a real device — same standing blocker as M1/M3/M4 since
+  Sprint 2 (Android SDK/JDK 21).
+- **M12's presentation is a JS overlay, not a native full-screen-intent
+  activity** — see the decisions section above.
+- **On-device SMS sending is not built**, so M13 can only ever show
+  `saved_locally_for_retry` in this build — see the decisions section.
+- **Only W14 and only the Admin role were browser-verified on the web
+  side** — no Punong Barangay/Secretary/Tanod pass, and no other screen
+  was re-tested.
+- **Nothing from this session has been committed yet.**
+
+## Suggested order for the follow-up session
+
+1. Real Firebase project + `google-services.json` + `FCM_SERVICE_ACCOUNT_PATH`
+   on the backend, and a funded Semaphore account — only once BOTH exist
+   does a live send/receive test become possible at all.
+2. Resolve the Android SDK/JDK 21 blocker (already tracked since Sprint 2),
+   then `npm install` + `npx cap sync android` + add the
+   `POST_NOTIFICATIONS` manifest permission + a real device run through
+   M1 login (confirm `getFcmToken()` actually resolves a token and
+   `message_encryption_key` round-trips through `SecureStorage`) -> M12
+   (send a real test push, confirm the overlay renders and Acknowledge
+   round-trips) -> M13 (still only `saved_locally_for_retry` until SMS
+   sending exists).
+3. If GSM-modem hardware becomes available: build the real ingestion
+   daemon that reads the tethered phone and POSTs to `/internal/sms/*` —
+   `scripts/sms-envelope-build.php` already proves the exact contract it
+   needs to produce.
+4. If on-device SMS sending is wanted: a native SmsManager integration,
+   `SEND_SMS` runtime permission, wiring `smsFallbackState.ts`'s
+   `smsAttempted`/`smsStatus` to something real.
+5. Browser-verify W14 for Punong Barangay/Secretary/Tanod (403 expected
+   for all three) and spot-check the other 12 web screens for any
+   regression from this session's `AppShell.js`/`icons.js` changes.

@@ -6,6 +6,7 @@ namespace Baranguard\Controllers;
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
+use Baranguard\Services\Notifications\NotificationDispatcher;
 use Baranguard\Services\Notifications\NotificationService;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
@@ -230,7 +231,7 @@ final class TanodSosController
             $sosId = (int) $pdo->lastInsertId();
 
             // Rule 27's fan-out, in the SAME transaction as the SOS row.
-            NotificationService::create(
+            $notificationResult = NotificationService::create(
                 $pdo,
                 $identity['barangay_id'],
                 NotificationService::TYPE_SOS,
@@ -253,6 +254,16 @@ final class TanodSosController
         } catch (\Throwable $e) {
             $pdo->rollBack();
             throw $e;
+        }
+
+        // §6: "immediately attempts configured FCM/SMS channels" — done
+        // OUTSIDE the transaction (external HTTP calls should never hold a
+        // DB transaction open) and never allowed to fail the request that
+        // already recorded the SOS. See the class doc's third bullet.
+        try {
+            (new NotificationDispatcher())->dispatchAll($pdo, $notificationResult['notification_id']);
+        } catch (\Throwable $e) {
+            error_log('[baranguard] SOS notification dispatch failed for sos_id=' . $sosId . ': ' . $e->getMessage());
         }
 
         return [

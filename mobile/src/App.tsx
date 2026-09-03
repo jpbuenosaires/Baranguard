@@ -14,6 +14,8 @@ import {
 import { IonReactRouter } from '@ionic/react-router';
 import { addCircle, homeOutline, listOutline, mapOutline, personOutline } from 'ionicons/icons';
 import NotBuiltYetPage from './components/NotBuiltYetPage';
+import CriticalAlertOverlay from './components/CriticalAlertOverlay';
+import NotificationDiagnostics from './components/NotificationDiagnostics';
 import AssignmentDetailPage from './pages/assignment-detail';
 import AssignmentsPage from './pages/assignments';
 import HomePage from './pages/home';
@@ -22,6 +24,7 @@ import LiveMapPage from './pages/live-map';
 import LoginPage from './pages/login';
 import NewIncidentPage from './pages/new-incident';
 import { hasLiveSession } from './services/session';
+import { registerCriticalAlertListeners } from './services/criticalAlertStore';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -125,7 +128,9 @@ const TabbedShell: React.FC = () => (
           <NotBuiltYetPage
             title="Profile"
             detail="M10 Profile is not built yet. Sign out is still available from Home for now."
-          />
+          >
+            <NotificationDiagnostics />
+          </NotBuiltYetPage>
         }
       />
       <Route path="/" element={<Navigate to="/home" replace />} />
@@ -155,34 +160,55 @@ const TabbedShell: React.FC = () => (
   </IonTabs>
 );
 
-const App: React.FC = () => (
-  <IonApp>
-    <IonReactRouter>
-      <IonRouterOutlet>
-        <Route path="/login" element={<LoginPage />} />
-        {/* M4. Reads the stored row and derives its own state — it never
-            trusts a "submitted" claim handed over from the previous screen.
-            Deliberately OUTSIDE the tab bar: it's a one-shot confirmation
-            reached only right after M3's Save, not a nav destination. */}
-        <Route
-          path="/incidents/:localId/submitted"
-          element={
-            <RequireSession>
-              <IncidentSubmittedPage />
-            </RequireSession>
-          }
-        />
-        <Route
-          path="/*"
-          element={
-            <RequireSession>
-              <TabbedShell />
-            </RequireSession>
-          }
-        />
-      </IonRouterOutlet>
-    </IonReactRouter>
-  </IonApp>
-);
+/**
+ * M12's overlay is mounted here, OUTSIDE `IonReactRouter`/`IonRouterOutlet`
+ * entirely, so it can render above whatever screen is active — including
+ * the login page, since an already-registered device could theoretically
+ * still receive a push while signed out (the overlay itself does not
+ * gate on session state; `POST /notifications/:id/ack` will 401 if the
+ * session has expired, which is caught and swallowed exactly like every
+ * other failure mode there).
+ *
+ * `registerCriticalAlertListeners()` is called once, at the app's own
+ * mount — not inside `RequireSession` or any per-tab component — so a
+ * push arriving before login (device already registered from a previous
+ * session) is not silently missed.
+ */
+const App: React.FC = () => {
+  useEffect(() => {
+    registerCriticalAlertListeners();
+  }, []);
+
+  return (
+    <IonApp>
+      <CriticalAlertOverlay />
+      <IonReactRouter>
+        <IonRouterOutlet>
+          <Route path="/login" element={<LoginPage />} />
+          {/* M4. Reads the stored row and derives its own state — it never
+              trusts a "submitted" claim handed over from the previous screen.
+              Deliberately OUTSIDE the tab bar: it's a one-shot confirmation
+              reached only right after M3's Save, not a nav destination. */}
+          <Route
+            path="/incidents/:localId/submitted"
+            element={
+              <RequireSession>
+                <IncidentSubmittedPage />
+              </RequireSession>
+            }
+          />
+          <Route
+            path="/*"
+            element={
+              <RequireSession>
+                <TabbedShell />
+              </RequireSession>
+            }
+          />
+        </IonRouterOutlet>
+      </IonReactRouter>
+    </IonApp>
+  );
+};
 
 export default App;

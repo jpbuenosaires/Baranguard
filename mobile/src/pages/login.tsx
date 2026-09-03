@@ -37,6 +37,7 @@ import {
 import { TextField } from '../components/FormFields';
 import { ApiError, getMapPackage, login, registerDevice } from '../services/apiService';
 import { getDeviceId, getFcmToken } from '../services/deviceIdentity';
+import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
 
 const GENERIC_FAILURE = 'Unable to sign in with those credentials.';
 
@@ -137,7 +138,14 @@ async function runPostLoginSetup(barangayId: number): Promise<void> {
   try {
     const fcmToken = await getFcmToken();
     if (fcmToken) {
-      await registerDevice({ deviceId: await getDeviceId(), fcmToken });
+      const registration = await registerDevice({ deviceId: await getDeviceId(), fcmToken });
+      // Sprint 4 Phase 3: present ONLY on this device_id's first-ever
+      // registration — see DevicesController.php's own doc. Stored once,
+      // never re-fetched (there is nowhere else to get it from — the
+      // server does not re-return it on later calls, deliberately).
+      if (registration.messageEncryptionKey) {
+        await storeMessageEncryptionKey(registration.messageEncryptionKey);
+      }
     }
     // When fcmToken is null the device is deliberately NOT registered —
     // see getFcmToken()'s comment. Registering with a placeholder token

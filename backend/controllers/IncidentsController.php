@@ -707,9 +707,17 @@ final class IncidentsController
      *        for POST /incidents (mobile): {incident_type,raw_narrative,
      *        latitude,longitude,source?,device_offline_created_at?,
      *        client_event_id}.
+     * @param string $source §5 `incident.source` ENUM('app','sms','web').
+     *        Defaults to 'app' for the direct-POST and /sync/batch callers
+     *        (unchanged behaviour); `SmsGatewayService`'s
+     *        `/sms/incident-fallback` handler is the one caller that
+     *        passes 'sms' — an incident reconstructed from an encrypted
+     *        SMS envelope is honestly NOT the same source as one captured
+     *        through the app, and §9/§6 elsewhere already distinguish
+     *        `source` for exactly this kind of provenance tracking.
      * @return array{incident: array<string,mixed>, wasCreated: bool}
      */
-    public static function createMobileItem(PDO $pdo, array $identity, string $deviceId, array $item): array
+    public static function createMobileItem(PDO $pdo, array $identity, string $deviceId, array $item, string $source = 'app'): array
     {
         self::assertDeviceOwnership($pdo, $identity, $deviceId);
 
@@ -769,7 +777,7 @@ final class IncidentsController
                     (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
                      latitude, longitude, created_at, device_offline_created_at, client_event_id, updated_at)
                  VALUES
-                    (:barangay_id, :reported_by, :device_id, :incident_type, 'normal', :raw_narrative, 'pending', 'app',
+                    (:barangay_id, :reported_by, :device_id, :incident_type, 'normal', :raw_narrative, 'pending', :source,
                      :latitude, :longitude, UTC_TIMESTAMP(), :device_offline_created_at, :client_event_id, UTC_TIMESTAMP())"
             );
             $insertStmt->execute([
@@ -778,6 +786,7 @@ final class IncidentsController
                 'device_id' => $deviceId,
                 'incident_type' => $incidentType,
                 'raw_narrative' => $rawNarrative,
+                'source' => in_array($source, ['app', 'sms', 'web'], true) ? $source : 'app',
                 'latitude' => $latitude,
                 'longitude' => $longitude,
                 'device_offline_created_at' => $deviceOfflineCreatedAt,

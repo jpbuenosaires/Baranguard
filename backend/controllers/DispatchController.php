@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Notifications\NotificationDispatcher;
 use Baranguard\Services\Notifications\NotificationService;
 use PDO;
 
@@ -176,7 +177,7 @@ final class DispatchController
             // deferral is resolved here. The assigned Tanod is the sole
             // target — a dispatch is an instruction to one person, unlike an
             // SOS, which fans out.
-            NotificationService::create(
+            $notificationResult = NotificationService::create(
                 $pdo,
                 $identity['barangay_id'],
                 NotificationService::TYPE_DISPATCH,
@@ -189,6 +190,14 @@ final class DispatchController
         } catch (\Throwable $e) {
             $pdo->rollBack();
             throw $e;
+        }
+
+        // Same reasoning as TanodSosController: outside the transaction,
+        // never allowed to fail a dispatch the Admin already created.
+        try {
+            (new NotificationDispatcher())->dispatchAll($pdo, $notificationResult['notification_id']);
+        } catch (\Throwable $e) {
+            error_log('[baranguard] dispatch notification failed for dispatch_id=' . $dispatchId . ': ' . $e->getMessage());
         }
 
         Http::send(201, [

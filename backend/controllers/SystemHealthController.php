@@ -56,15 +56,34 @@ final class SystemHealthController
             $db = 'unhealthy';
         }
 
+        $fcmStatus = self::envConfiguredStatus('FCM_SERVICE_ACCOUNT_PATH');
+        $smsStatus = self::envConfiguredStatus('SEMAPHORE_API_KEY');
+
         Http::send(200, [
             'api' => 'healthy', // this code is executing, so the API itself responded.
             'db' => $db,
             'osrm' => self::envConfiguredStatus('OSRM_URL'),
             'ollama' => self::ollamaStatus(),
-            'gsm_ingestion' => self::envConfiguredStatus('GSM_MODEM_DEVICE'),
-            'notification_config' => self::envConfiguredStatus('FCM_SERVICE_ACCOUNT_JSON') === 'healthy' || self::envConfiguredStatus('SEMAPHORE_API_KEY') === 'healthy'
-                ? 'healthy'
-                : 'not_configured',
+            // §2 Rule 22's "internal ingestion service" isn't a process
+            // this endpoint can reach out and ping — INTERNAL_SERVICE_TOKEN
+            // being set is the honest signal actually available here: it's
+            // what the /internal/sms/* router itself requires before it
+            // will accept anything (see public/internal.php).
+            'gsm_ingestion' => self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN'),
+            // Fine-grained per-transport status (Sprint 4). `fcm` and
+            // `sms_semaphore` are each independently truthful about
+            // configuration presence — NEITHER is a live reachability
+            // probe the way `ollama` is: there is no cheap, side-effect-free
+            // way to "ping" FCM/Semaphore without actually sending
+            // something, so both stay at the coarser not_configured/healthy
+            // distinction that `ollama` itself used before Sprint 5's
+            // upgrade to a real probe. Same honest-not-fabricated principle,
+            // just without a free probe to make it more precise.
+            'fcm' => $fcmStatus,
+            'sms_semaphore' => $smsStatus,
+            // Kept for the existing web topbar tooltip (AppShell.js) —
+            // additive, not a breaking rename.
+            'notification_config' => ($fcmStatus === 'healthy' || $smsStatus === 'healthy') ? 'healthy' : 'not_configured',
             'backup_last_success' => self::latestBackupTimestamp(),
             // No restore-drill run has ever recorded its completion time
             // anywhere (backend/scripts/restore.sh doesn't log one) — null

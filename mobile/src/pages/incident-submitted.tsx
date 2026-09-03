@@ -28,6 +28,7 @@ import {
 } from '@ionic/react';
 import { deriveSyncState, getLocalIncident, type SyncState } from '../services/db/incidentRepository';
 import type { IncidentLocalRow } from '../services/db/localSchema';
+import SmsFallbackBadge from '../components/SmsFallbackBadge';
 
 const STATE_LABELS: Record<SyncState, string> = {
   saved_locally: 'Saved locally',
@@ -103,7 +104,19 @@ const IncidentSubmittedPage: React.FC = () => {
 
         {!loading && row && state && (
           <>
-            <span className={`status-pill ${STATE_PILL[state]}`}>{STATE_LABELS[state]}</span>
+            <span className={`status-pill ${STATE_PILL[state]}`}>{STATE_LABELS[state]}</span>{' '}
+            {/* M13 — a SEPARATE indicator from the app-sync state above:
+                this one answers "did the SMS fallback path carry it?",
+                which is a different question from "has the app-sync path
+                delivered it?" (smsFallbackState.ts's own doc explains why
+                only 'saved_locally_for_retry' is reachable today). */}
+            <SmsFallbackBadge
+              input={{
+                reachedWorkstation: state === 'synced' || state === 'duplicate_reconciled',
+                smsAttempted: false,
+                smsStatus: null,
+              }}
+            />
             <p className="app-note">{STATE_DETAIL[state]}</p>
 
             <IonNote className="app-note">

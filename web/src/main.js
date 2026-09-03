@@ -32,6 +32,7 @@ import { renderSwapRequestsPage } from './pages/swap-requests.js';
 import { renderFatigueFlagsPage } from './pages/fatigue-flags.js';
 import { renderAiReviewPage } from './pages/ai-review.js';
 import { renderBlotterDetailPage } from './pages/blotter-detail.js';
+import { renderSmsLogPage } from './pages/sms-log.js';
 
 const PAGE_ROLES = {
   dashboard: ['admin', 'punong_barangay'],
@@ -44,6 +45,8 @@ const PAGE_ROLES = {
   scheduler: ['admin'],
   'swap-requests': ['admin'],
   fatigue: ['admin', 'punong_barangay'],
+  // §9 W14 — Admin only, explicitly.
+  'sms-log': ['admin'],
   settings: ['admin', 'secretary', 'punong_barangay'],
   // W8 is a per-incident DETAIL view, not a destination in its own right:
   // it needs an incident id, so it has no sidebar entry and is reached by
@@ -121,6 +124,8 @@ function boot(currentPage, param) {
     renderSwapRequestsPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'fatigue') {
     renderFatigueFlagsPage(root, session.user, onLoggedOut, navigate);
+  } else if (page === 'sms-log') {
+    renderSmsLogPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'settings') {
     renderSettingsPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'blotter-detail') {

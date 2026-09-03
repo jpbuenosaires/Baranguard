@@ -115,9 +115,16 @@ final class DutyStatusController
      * Core duty-status-toggle logic, shared by the direct POST /duty-status
      * path and `SyncController::batch()`'s `duty_status_updates[]` items.
      *
+     * @param string $channel §5 `duty_status.channel` ENUM('app','sms').
+     *        Defaults to 'app'. §2 Rule 13: "`duty_status.channel = 'sms'`
+     *        is written only by the validated internal SMS handler" —
+     *        `SmsGatewayService`'s `/sms/duty-status` handler is the one
+     *        caller that passes 'sms', and only after resolving the
+     *        caller's identity server-side from the device mapping, never
+     *        from anything embedded in the SMS payload.
      * @return array{status_id:int,status:string,channel:string,changed_at:string,wasCreated:bool}
      */
-    public static function applyToggle(PDO $pdo, array $identity, string $status, mixed $clientEventId): array
+    public static function applyToggle(PDO $pdo, array $identity, string $status, mixed $clientEventId, string $channel = 'app'): array
     {
         if (!in_array($status, self::VALID_STATUSES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of on_duty, responding, off_duty.');
@@ -147,11 +154,12 @@ final class DutyStatusController
 
         $insertStmt = $pdo->prepare(
             "INSERT INTO duty_status (user_id, status, channel, client_event_id, changed_at)
-             VALUES (:user_id, :status, 'app', :client_event_id, UTC_TIMESTAMP())"
+             VALUES (:user_id, :status, :channel, :client_event_id, UTC_TIMESTAMP())"
         );
         $insertStmt->execute([
             'user_id' => $identity['user_id'],
             'status' => $status,
+            'channel' => in_array($channel, ['app', 'sms'], true) ? $channel : 'app',
             'client_event_id' => $clientEventId,
         ]);
         $statusId = (int) $pdo->lastInsertId();

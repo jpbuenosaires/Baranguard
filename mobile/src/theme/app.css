@@ -175,3 +175,50 @@
 .priority-dot--critical {
   background: var(--color-critical);
 }
+
+/* --- Critical Alert Overlay (M12) -------------------------------------- */
+/* §9 M12: "high-priority/full-screen presentation where the OS permits ...
+   heads-up/banner fallback". A true OS full-screen-intent activity needs
+   native manifest/channel configuration this cut does not add (see
+   DEVLOG.md) — this is the JS-reachable approximation: a fixed, full-
+   viewport overlay above every screen (mounted at the App.tsx root, not
+   inside any one tab), which is exactly what §9's "banner fallback" half
+   describes and is honest about not being the native full-screen-intent
+   variant. */
+
+.critical-alert-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--color-text-primary) 55%, transparent);
+  padding: var(--spacing-md);
+}
+
+.critical-alert-overlay__card {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-elevated);
+  padding: var(--spacing-lg);
+  border-top: 4px solid var(--color-critical);
+}
+
+.critical-alert-overlay__title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-critical);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.critical-alert-overlay__body {
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-md);
+}
+
+.critical-alert-overlay__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
