@@ -3884,3 +3884,129 @@ and **286 wiring checks**.
 4. Browser pass on W8 as a real Secretary account.
 5. Then Phase 3's evaluation harness, which is the only thing that can
    answer whether the redaction is actually good enough to rely on.
+
+---
+
+# DEVLOG — Sprint 4 Phase 1: notification model, Tanod SOS, acknowledgment
+
+## Today's cut
+
+Worked from an approved written plan that split Sprint 4 into five phases.
+This entry covers **Phase 1 — the notification core and SOS**, taken first
+because it is the one gap with real-world safety consequences: §2 Rule 27
+calls SOS a personal-safety channel, and until now `POST /tanod-sos` did
+not exist, M2's SOS button was visibly disabled, and `/sync/batch` answered
+every `sos[]` item with "not supported until Sprint 4".
+
+Phases 2–5 (FCM/SMS transports, the ack-timeout worker, the inbound
+`/sms/*` handlers and envelope crypto, W14, M12/M13) are NOT in this cut.
+
+## Verification
+
+**`backend/scripts/verify-sprint4.sh` — 48/48 against real XAMPP.**
+
+**No transport is configured when it runs, deliberately.** There is no GSM
+modem, no funded Semaphore account and no FCM credentials on this machine,
+and per Rule 12 "no active FCM registration" is a legitimate state the
+model must record rather than paper over. So the suite asserts the LOGICAL
+layer, which is fully determinable without sending anything — and it
+therefore runs anywhere, forever.
+
+What it actually pins down:
+
+- **Rule 27's fan-out, exactly**: an SOS targets the Admin and the *other*
+  on-duty Tanod, and the suite asserts the off-duty Tanod is **not**
+  targeted and the raiser is **not** alerted to their own emergency.
+- **SOS never depends on dispatch triage** — asserted by checking that
+  raising one creates **zero** incidents.
+- **Coordinates are never audited.** Rule 17 allow-lists audit metadata and
+  an SOS location is a person's position; the suite greps the audit row for
+  the seeded latitude and asserts it is absent.
+- Idempotent replay on `client_event_id` returns the original `sos_id` and
+  **raises no second alarm**.
+- Acknowledge does **not** resolve (§9's W3 banner must stay up), and a
+  repeat acknowledge keeps the ORIGINAL timestamp.
+- `POST /notifications/:id/ack` is idempotent and keeps the first
+  timestamp — which matters because overwriting it would corrupt §6's
+  `avg_ack_seconds` by rewarding a duplicate tap.
+- **Rule 24 made concrete**: acknowledgment creates **no**
+  `notification_delivery` row. Logical acknowledgment and transport
+  outcome are separate truths.
+- `POST /dispatch` now creates its notification, targeting exactly the
+  assigned Tanod — closing the deferral Sprint 1 wrote into
+  `DispatchController`'s own class doc.
+- `/sync/batch`'s `sos[]` works, and a queued offline SOS fans out
+  identically to a live one.
+
+## Resolved decisions (logged, don't reopen without review)
+
+**The entity-integrity matrix is enforced in PHP, and the suite proves why
+that is necessary rather than lazy.** §5 states the matrix but also says a
+table-level CHECK cannot express it — Sprint 0 confirmed MariaDB rejects
+that CHECK with ERROR 1901, because `dispatch_id`/`sos_id`/`incident_id`
+all carry `ON DELETE SET NULL`. Step 8 of the suite therefore inserts a
+malformed notification **directly via SQL and asserts the database ACCEPTS
+it**, then asserts `NotificationService` rejects all four bad type/entity
+combinations. That is the difference between claiming an application-level
+invariant and demonstrating the application is genuinely the only thing
+holding it.
+
+**SOS "on-duty" includes `responding`; dispatch assignment does not.**
+`DispatchController` excludes `responding` because it needs a *free* Tanod.
+An SOS wants every able body nearby, including one already handling
+something else — so `NotificationService::sosRecipients()` accepts
+`on_duty` OR `responding`. Same words, deliberately different meaning;
+worth not "harmonising" later.
+
+**The SOS row and its fan-out share one transaction.** A notification that
+outlived a rolled-back SOS would be worse than none. Conversely the fan-out
+must never fail the request on transport grounds — with nothing configured
+to send, the SOS is still recorded and still shows on W3's banner, because
+answering 500 would tell the app "SOS failed" for an emergency the server
+actually knows about.
+
+**A repeat acknowledge uses `COALESCE`** rather than overwriting, so two
+Admins reacting simultaneously is a non-event rather than a race.
+
+## A recurring test-harness flake, diagnosed enough to mitigate
+
+A `db_one` COUNT returned an **empty string** instead of a number — once in
+`verify-sprint6.sh`'s audit check, once here. An empty result from
+`mysql -N -s` means the client failed, not that the count was zero, and
+neither case reproduced in isolation (the exact failing JOIN was re-run
+standalone and returned the right answer). The likely cause is connection
+churn: every call spawns a fresh `mysql.exe` and TCP connection, and a long
+suite makes dozens in quick succession on Windows.
+
+`db_one` in **both** suites now retries once. That is a mitigation, not a
+root-cause fix, and it says so in the code — but it removes a false failure
+that would otherwise be mistaken for a real bug in the code under test,
+which is the more expensive outcome.
+
+## Files
+
+**New:** `services/notifications/NotificationService.php`,
+`controllers/NotificationsController.php`, `routes/notifications.php`,
+`scripts/verify-sprint4.sh`.
+
+**Modified:** `controllers/TanodSosController.php` (create/acknowledge/
+resolve added to the Sprint 1 read-only shell),
+`controllers/DispatchController.php` (notification on create; the stale
+"deferred" note retired), `controllers/SyncController.php` (`sos[]` now
+works), `routes/tanod-sos.php`, `scripts/verify-sprint6.sh` (db_one retry).
+
+## NOT done — stated plainly
+
+- **Nothing is actually delivered to anyone.** Phase 1 records who should
+  be told; no FCM or SMS attempt is made, `notification_delivery` is still
+  never written, and a Tanod's phone does not buzz.
+- **Rule 12's fallback ladder is unbuilt** (no-registration ⇒ SMS
+  immediately; error ⇒ retry once ⇒ SMS; sent-but-unacked ⇒ 60s
+  `ack_timeout` with no SMS). That is Phase 2.
+- **The inbound `/sms/*` handlers and the encrypted envelope do not exist**
+  (Phase 3), so the offline SMS fallback Rule 27 requires is still only a
+  local queue on the device.
+- **M2's SOS button is still disabled in the mobile app** — the endpoint
+  now exists, but wiring the app to it was not part of this cut.
+- No live send/receive verification is possible on this machine; that
+  remains a workstation task, as Sprint 4's own prompt anticipates.

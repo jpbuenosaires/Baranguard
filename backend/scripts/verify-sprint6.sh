@@ -202,7 +202,21 @@ body_of() { # body_of <method> <path> <token> [json-body]
   fi
 }
 jget() { "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo $d["'"$1"'"] ?? "";'; }
-db_one() { mysql_exec -N -s "$VALDB" -e "$1"; }
+db_one() { # single scalar, with ONE retry.
+  # Observed twice across this repo's suites (once in verify-sprint6.sh's
+  # audit-row check, once here): a COUNT query returns an EMPTY string
+  # rather than a number, late in a long script, and is not reproducible in
+  # isolation. An empty result from `mysql -N -s` means the client failed,
+  # not that the count was zero. The likely cause is connection churn —
+  # every call spawns a fresh mysql.exe and a fresh TCP connection, and a
+  # long suite makes dozens in quick succession on Windows. Retrying once
+  # costs nothing and removes a false failure that would otherwise be
+  # mistaken for a real bug in the code under test.
+  local out
+  out=$(mysql_exec -N -s "$VALDB" -e "$1" 2>/dev/null)
+  if [ -z "$out" ]; then sleep 0.4; out=$(mysql_exec -N -s "$VALDB" -e "$1" 2>/dev/null); fi
+  echo "$out"
+}
 json_body() { "$PHP_BIN" -r 'echo json_encode(json_decode(file_get_contents("php://stdin"), true));'; }
 
 # ============================================================

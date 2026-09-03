@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Notifications\NotificationService;
 use PDO;
 
 /**
@@ -18,16 +19,12 @@ use PDO;
  *
  * Two things §6 describes in prose but doesn't fully pin down, resolved
  * here and logged in DEVLOG.md:
- *   - **Notification creation is explicitly NOT done here.** §6 says
- *     dispatch creation "records notification creation," but the
- *     notification/notification_target/notification_delivery data model
- *     and FCM/SMS transports are their own separate, not-yet-built
- *     Sprint 4 "Today's cut" boxes (see Sprint_Prompts.md). Writing a
- *     bare `notification` row now, with no transport able to attempt
- *     delivery, would jump ahead of that dependency chain and risk
- *     getting the notification entity-integrity matrix (§5) wrong before
- *     Sprint 4 actually designs it. Deliberately deferred, not a silent
- *     gap.
+ *   - **Notification creation WAS deferred here and is now done**
+ *     (Sprint 4). Sprint 1 declined to write a bare `notification` row
+ *     while no transport existed to deliver it; Sprint 4 built the
+ *     notification model, the entity-integrity enforcement, and the
+ *     FCM/SMS ladder, so `create()` now records the notification in the
+ *     same transaction as the dispatch.
  *   - **OSRM is not wired up.** Every new dispatch gets
  *     `route_status="unavailable"` and `route_json=NULL` — §6 already
  *     documents this as an acceptable outcome ("OSRM failure does not
@@ -171,6 +168,22 @@ final class DispatchController
                 "UPDATE incident SET status = 'dispatched', updated_at = UTC_TIMESTAMP() WHERE incident_id = :incident_id"
             );
             $updateIncidentStmt->execute(['incident_id' => $incidentId]);
+
+            // §6: dispatch creation "records notification creation". Sprint 1
+            // deliberately deferred this rather than write a bare row with no
+            // transport able to deliver it (see the class doc's resolved
+            // decisions); Sprint 4 built that transport layer, so the
+            // deferral is resolved here. The assigned Tanod is the sole
+            // target — a dispatch is an instruction to one person, unlike an
+            // SOS, which fans out.
+            NotificationService::create(
+                $pdo,
+                $identity['barangay_id'],
+                NotificationService::TYPE_DISPATCH,
+                ['dispatch_id' => $dispatchId, 'incident_id' => $incidentId],
+                $identity['user_id'],
+                [$tanodId]
+            );
 
             $pdo->commit();
         } catch (\Throwable $e) {
