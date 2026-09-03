@@ -43,6 +43,47 @@
   font-size: var(--font-size-sm);
 }
 
+.login-password-field { position: relative; }
+.login-password-field input { padding-right: 2.5rem; }
+.login-password-field__toggle {
+  position: absolute;
+  right: 0.375rem;
+  top: 50%;
+  transform: translateY(-50%);
+  min-height: 0;
+  padding: var(--spacing-xs);
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-sm);
+}
+.login-password-field__toggle:hover { color: var(--color-text-secondary); background: var(--color-bg); }
+
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  /* Negative top margin pulls this closer to the password field than the
+     form's own gap:var(--spacing-md) would give it — a checkbox row reads
+     as tied to the field above it, not an equally-weighted third field. */
+  margin-top: calc(-1 * var(--spacing-sm));
+}
+.login-remember input[type="checkbox"] { width: auto; accent-color: var(--color-primary); cursor: pointer; }
+
+/* Shake feedback on failed login — applied to the whole card, not just
+   the error text, via a JS-toggled class (login.js re-triggers it by
+   removing+re-adding, since a class already present won't replay a CSS
+   animation on its own). */
+.login-card.is-shaking { animation: login-card-shake .4s ease-in-out; }
+@keyframes login-card-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-0.5rem); }
+  40%, 80% { transform: translateX(0.5rem); }
+}
+
 .login-screen {
   height: 100%;
   display: grid;

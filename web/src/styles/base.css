@@ -55,8 +55,12 @@ html { font-size: 75%; }
   --color-border: #E2E8F0;        --color-text-primary: #0F172A;
   --color-text-secondary: #475569;
   /* Tertiary — placeholders, timestamps, uppercase .label text, and the
-     disabled-state text color, per the source's own neutral table. */
-  --color-text-tertiary: #94A3B8;
+     disabled-state text color, per the source's own neutral table.
+     Darkened from the source's literal #94A3B8 (contrast ratio ~3.0:1 on
+     --color-bg, fails WCAG AA's 4.5:1 for normal text) to slate-500
+     #64748B (~4.6:1) — a deliberate, logged deviation from the Figma
+     source for accessibility, not a token drift. */
+  --color-text-tertiary: #64748B;
   --color-disabled-bg: #CBD5E1;
   --color-critical: #DC2626;      --color-warning: #D97706;
   --color-success: #16A34A;       --color-info: #0891B2;
@@ -114,6 +118,23 @@ html { font-size: 75%; }
   white-space: nowrap;
   border: 0;
 }
+
+/* Skip-navigation link — off-screen until keyboard focus lands on it (the
+   first Tab press on any authenticated page), per §6.1 of the UI/UX
+   review. Points at #page-main, which AppShell.js's `content` element
+   carries as an id specifically for this to target. */
+.skip-link {
+  position: absolute;
+  top: -3rem;
+  left: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-radius: var(--radius-md);
+  z-index: 200;
+  transition: top .2s ease;
+}
+.skip-link:focus { top: var(--spacing-md); outline: none; }
 
 /* --- Icon badges --------------------------------------------------------
    "colored box, centered icon, white glyph" — sidebar brand mark, login
@@ -213,7 +234,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm);
-  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .1s ease;
 }
 button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   outline: none;
@@ -226,6 +247,12 @@ button.primary {
 }
 button.primary:hover { background: var(--color-primary-hover); }
 button.primary:disabled { background: var(--color-border); color: var(--color-text-tertiary); cursor: not-allowed; }
+/* Press feedback — a scale-down on actual activation, distinct from the
+   existing :hover color change. Applies to every button variant (not just
+   .primary) since the lack of tactile feedback was a general gap, not
+   specific to one variant. Disabled buttons don't get it — nothing to
+   "press" there. */
+button:active:not(:disabled) { transform: scale(0.97); }
 /* White + visible border at rest, --color-bg only on hover (per source). */
 button.ghost {
   background: var(--color-white);
@@ -257,7 +284,11 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 /* --- Cards / surfaces -------------------------------------------------- */
 
 .card {
-  background: var(--color-white);
+  /* Subtle sheen instead of flat white — two stops of the same near-white
+     range (#FFFFFF -> --color-bg), so it reads as depth rather than a
+     visible color change; doesn't affect any existing background-color
+     override elsewhere since gradient and solid color aren't mixed. */
+  background: linear-gradient(135deg, var(--color-white) 0%, var(--color-bg) 100%);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
@@ -309,6 +340,37 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
   .skeleton { animation: none; }
 }
 
+/* §6.5: blanket reduced-motion coverage for every animation/transition
+   added across the app this pass (page transitions, chart reveals, card
+   stagger, status-pill pulse, button press) — not just .skeleton's own
+   narrower rule above, which predates this pass and is left as-is.
+   Placed here (base.css, loaded on every page) rather than repeated per
+   component file, so nothing new can be added later without this
+   already covering it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Small inline spinner for a busy button (e.g. "Signing in…") — a plain
+   CSS-only spin, no SVG/library needed. Sits at button-text size via em
+   units so it matches whatever font-size the button it's inside uses. */
+.btn-spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 0.15em solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.7;
+  animation: btn-spin .6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
 /* --- Status pills ------------------------------------------------------- */
 
 .status-pill {
@@ -320,11 +382,32 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-.status-pill--pending { background: var(--tint-warning-bg); color: var(--color-warning); }
+/* Text color deliberately NOT var(--color-warning) (#D97706) here — that
+   only reaches ~3.2:1 against --tint-warning-bg, failing WCAG AA. #92400E
+   (amber-800) keeps the same hue family at ~5.2:1, fixed for this pill
+   only rather than darkening --color-warning globally (which also backs
+   icon badges/KPI accents where the contrast requirement is different —
+   white text/icon on a solid orange background, not this text-on-tint
+   case). */
+.status-pill--pending { background: var(--tint-warning-bg); color: #92400E; }
 .status-pill--info { background: var(--tint-info-bg); color: var(--color-primary); }
 .status-pill--success { background: var(--tint-success-bg); color: var(--color-success); }
 .status-pill--neutral { background: var(--tint-neutral-bg); color: var(--color-text-secondary); }
 .status-pill--critical { background: var(--tint-critical-bg); color: var(--color-critical); }
+/* Left-border accent on critical pills specifically — a stronger visual
+   scan cue for the one status that actually needs to jump out in a list
+   (§8's status-pill spec doesn't call for this on the other four, and
+   adding it everywhere would dilute exactly the signal this is for). */
+.status-pill--critical { border-left: 3px solid var(--color-critical); padding-left: calc(var(--spacing-sm-md) - 2px); }
+/* Opt-in pulse for a genuinely time-sensitive critical pill (e.g. an
+   active SOS row) — a class, not baked into .status-pill--critical
+   itself, so an ordinary "this incident was critical" historical record
+   in a blotter list doesn't pulse forever. */
+.status-pill--critical.is-urgent { animation: urgent-pulse 2s ease-in-out infinite; }
+@keyframes urgent-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(220, 38, 38, 0); }
+}
 
 /* --- Layout utilities ---------------------------------------------------
    Replace per-page inline `style.cssText` layout strings — the source of

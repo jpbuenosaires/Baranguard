@@ -4,7 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Baranguard</title>
+  <!-- Branded favicon: a navy shield, matching icons.js's own `shield`
+       glyph — an inline SVG data URI so no separate binary asset/build
+       step is needed, consistent with icons.js's own "no external icon
+       library" approach (§1: no bundler). -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231E3A6E'%3E%3Cpath d='M12 2l8 3.5v6.5c0 5.6-3.8 9.4-8 10.7-4.2-1.3-8-5.1-8-10.7V5.5z'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <!-- gstatic.com is where the actual .woff2 font FILES load from (the
+       googleapis.com stylesheet just references them) — preconnecting
+       only to googleapis.com left that second, later-discovered
+       connection to warm up from scratch. §7.3 of the UI/UX review. -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- 500/800 added: button/label text sets font-weight:500 and the type
        spec calls for an 800 weight on prominent headings — without the
        actual font file loaded, a browser synthesizes ("fake bold")
@@ -25,6 +35,8 @@
   <link rel="stylesheet" href="src/components/TrendChart.css">
   <link rel="stylesheet" href="src/components/Avatar.css">
   <link rel="stylesheet" href="src/components/LiveMap.css">
+  <link rel="stylesheet" href="src/components/Toast.css">
+  <link rel="stylesheet" href="src/components/ConfirmDialog.css">
   <link rel="stylesheet" href="src/pages/login.css">
   <link rel="stylesheet" href="src/pages/dispatch-center.css">
   <link rel="stylesheet" href="src/pages/gis-live-tracking.css">

@@ -53,6 +53,26 @@
 
 .data-table .is-right { text-align: right; }
 
+/* Sortable column header — a real <button> filling the <th> so it's
+   keyboard/screen-reader operable, not a click handler on a bare span. */
+.data-table__sort-button {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+}
+.data-table__sort-button:hover { color: var(--color-primary); }
+.data-table__sort-icon { font-size: 0.625rem; width: 0.625rem; display: inline-block; }
+
 /* Secondary line inside a cell (e.g. a timestamp under an ID). */
 .data-table__sub {
   display: block;

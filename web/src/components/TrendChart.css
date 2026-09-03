@@ -16,6 +16,16 @@
   min-width: 0.125rem;
   background: var(--color-primary);
   border-radius: 0.25rem 0.25rem 0 0;
+  /* Grows from zero on mount. transform-origin:bottom so a 0-count bar
+     (height:0.5% from TrendChart.js, kept nonzero so it stays visible as
+     a sliver) still animates from the baseline rather than from its own
+     mid-point. */
+  transform-origin: bottom;
+  animation: trend-bar-grow .5s ease-out forwards;
+}
+@keyframes trend-bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
 }
 .trend-chart__empty-row {
   height: 7.5rem;

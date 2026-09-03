@@ -34,6 +34,8 @@ import { PageHeader } from '../components/PageHeader.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
+import { showToast } from '../components/Toast.js';
+import { confirmDialog } from '../components/ConfirmDialog.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 const PRIORITY_LABELS = { normal: 'Normal', high: 'High', critical: 'Critical' };
@@ -46,16 +48,20 @@ const INCIDENT_TYPE_LABELS = {
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
 
+// §3.3: column sorting wired here as the concrete first example — see
+// DataTable.js's own doc comment for why sortValue is required per column
+// rather than defaulted from the row.
+const PRIORITY_RANK = { normal: 0, high: 1, critical: 2 };
 const PENDING_COLUMNS = [
-  { key: 'type', label: 'Type' },
-  { key: 'priority', label: 'Priority' },
-  { key: 'reported', label: 'Reported' },
+  { key: 'type', label: 'Type', sortable: true, sortValue: (i) => INCIDENT_TYPE_LABELS[i.incidentType] || i.incidentType },
+  { key: 'priority', label: 'Priority', sortable: true, sortValue: (i) => PRIORITY_RANK[i.priority] ?? -1 },
+  { key: 'reported', label: 'Reported', sortable: true, sortValue: (i) => i.createdAt },
   { key: 'assign', label: 'Assign', align: 'right' },
 ];
 const ACTIVE_COLUMNS = [
-  { key: 'dispatch', label: 'Dispatch' },
-  { key: 'tanod', label: 'Tanod' },
-  { key: 'status', label: 'Status' },
+  { key: 'dispatch', label: 'Dispatch', sortable: true, sortValue: (d) => d.dispatchedAt },
+  { key: 'tanod', label: 'Tanod', sortable: true, sortValue: (d) => d.tanodId },
+  { key: 'status', label: 'Status', sortable: true, sortValue: (d) => d.status },
   { key: 'actions', label: 'Actions', align: 'right' },
 ];
 
@@ -250,12 +256,14 @@ function renderAssignCell(incident, eligibleTanods, onChanged) {
         tanodId: Number(select.value),
         requestId: crypto.randomUUID(),
       });
+      const tanodName = select.options[select.selectedIndex]?.textContent || 'Tanod';
+      showToast(`Dispatch assigned to ${tanodName}`, { variant: 'success' });
       onChanged();
     } catch (err) {
       assignButton.disabled = false;
       assignButton.textContent = 'Assign';
       const message = err instanceof ApiClientError ? err.message : 'Could not create the dispatch.';
-      alert(message);
+      showToast(message, { variant: 'error' });
     }
   });
   wrap.append(select, assignButton);
@@ -306,17 +314,27 @@ function renderCancelCell(dispatch, onChanged) {
   cancelButton.textContent = 'Cancel';
   cancelButton.addEventListener('click', async (event) => {
     event.stopPropagation();
-    if (!confirm(`Cancel dispatch #${dispatch.dispatchId}? The incident will return to the pending queue.`)) return;
+    // Same guarantee window.confirm() gave (an explicit yes/no awaited
+    // before proceeding), via the app's own ConfirmDialog component (§3.2).
+    const confirmed = await confirmDialog({
+      title: `Cancel dispatch #${dispatch.dispatchId}?`,
+      description: 'The incident will return to the pending queue.',
+      confirmLabel: 'Cancel dispatch',
+      cancelLabel: 'Keep it',
+      danger: true,
+    });
+    if (!confirmed) return;
     cancelButton.disabled = true;
     cancelButton.textContent = 'Cancelling…';
     try {
       await cancelDispatch(dispatch.dispatchId);
+      showToast(`Dispatch #${dispatch.dispatchId} cancelled`, { variant: 'info' });
       onChanged();
     } catch (err) {
       cancelButton.disabled = false;
       cancelButton.textContent = 'Cancel';
       const message = err instanceof ApiClientError ? err.message : 'Could not cancel the dispatch.';
-      alert(message);
+      showToast(message, { variant: 'error' });
     }
   });
   wrap.appendChild(cancelButton);

@@ -1,0 +1,46 @@
+/**
+ * ConfirmDialog.css — co-located with ConfirmDialog.js. Semi-transparent
+ * blurred backdrop, centered card, danger variant gets a red accent
+ * border matching button.danger's existing color language.
+ */
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  z-index: 400;
+  animation: confirm-backdrop-enter .15s ease-out;
+}
+@keyframes confirm-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.confirm-dialog {
+  background: var(--color-white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-floating);
+  padding: var(--spacing-xl);
+  max-width: 26rem;
+  width: 100%;
+  animation: confirm-dialog-enter .2s ease-out;
+}
+@keyframes confirm-dialog-enter {
+  from { opacity: 0; transform: scale(0.96) translateY(0.5rem); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.confirm-dialog--danger { border-top: 3px solid var(--color-critical); }
+
+.confirm-dialog h3 { margin-bottom: var(--spacing-sm); color: var(--color-text-primary); }
+.confirm-dialog__description { color: var(--color-text-secondary); font-size: var(--font-size-sm); line-height: 1.5; }
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
