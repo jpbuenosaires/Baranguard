@@ -15,8 +15,19 @@
  * content to scroll inside its own box rather than push the page into a
  * horizontal scroll.
  *
+ * Column sorting (§3.3 of the UI/UX review) is CLIENT-SIDE ONLY, sorting
+ * the `rows` array already handed to this component — deliberately not
+ * wired to any API `page`/`limit`/`sort` param, since that would need
+ * per-endpoint verification this pass didn't do (some list endpoints
+ * paginate, not all are confirmed to). A column opts in with `sortable:
+ * true` plus a `sortValue(row)` accessor — required per sortable column
+ * rather than defaulting to `row[key]`, because this codebase's column
+ * `key`s (e.g. `'reported'`) frequently don't match the underlying row
+ * property name (`createdAt`) the way `renderCell`'s own switch already
+ * demonstrates.
+ *
  * @param {{
- *   columns: Array<{key:string, label:string, align?:'left'|'right', width?:string}>,
+ *   columns: Array<{key:string, label:string, align?:'left'|'right', width?:string, sortable?:boolean, sortValue?:(row:object)=>(string|number)}>,
  *   rows: Array<object>,
  *   renderCell: (row:object, columnKey:string) => (string|Node),
  *   rowKey: (row:object) => string|number,
@@ -40,51 +51,105 @@ export function DataTable({ columns, rows, renderCell, rowKey, onRowClick, selec
     table.appendChild(cap);
   }
 
+  // { key: string|null, direction: 'asc'|'desc' } — null key means
+  // "whatever order `rows` was given in," the default/unsorted state.
+  let sort = { key: null, direction: 'asc' };
+  const headerButtons = {};
+
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
   for (const col of columns) {
     const th = document.createElement('th');
     th.scope = 'col';
-    th.textContent = col.label;
     if (col.align === 'right') th.classList.add('is-right');
     if (col.width) th.style.width = col.width;
+
+    if (col.sortable && col.sortValue) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'data-table__sort-button';
+      button.innerHTML = `<span>${col.label}</span><span class="data-table__sort-icon" aria-hidden="true"></span>`;
+      button.addEventListener('click', () => {
+        sort = sort.key === col.key
+          ? { key: col.key, direction: sort.direction === 'asc' ? 'desc' : 'asc' }
+          : { key: col.key, direction: 'asc' };
+        renderBody();
+        syncSortIndicators();
+      });
+      headerButtons[col.key] = button;
+      th.appendChild(button);
+    } else {
+      th.textContent = col.label;
+    }
     headRow.appendChild(th);
   }
   thead.appendChild(headRow);
 
-  const tbody = document.createElement('tbody');
-  for (const row of rows) {
-    const tr = document.createElement('tr');
-    const key = rowKey(row);
-    if (selectedKey !== null && key === selectedKey) tr.classList.add('is-selected');
-
-    if (onRowClick) {
-      tr.classList.add('is-clickable');
-      // Keyboard-operable: a clickable row needs a real focus stop and
-      // Enter/Space activation, not just a mouse handler (§8 a11y).
-      tr.tabIndex = 0;
-      tr.setAttribute('role', 'button');
-      tr.addEventListener('click', () => onRowClick(row));
-      tr.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onRowClick(row);
-        }
-      });
+  function syncSortIndicators() {
+    for (const [key, button] of Object.entries(headerButtons)) {
+      const icon = button.querySelector('.data-table__sort-icon');
+      const active = sort.key === key;
+      button.setAttribute('aria-sort', active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+      icon.textContent = active ? (sort.direction === 'asc' ? '▲' : '▼') : '';
     }
-
-    for (const col of columns) {
-      const td = document.createElement('td');
-      if (col.align === 'right') td.classList.add('is-right');
-      const cell = renderCell(row, col.key);
-      if (cell instanceof Node) td.appendChild(cell);
-      else td.innerHTML = cell ?? '';
-      tr.appendChild(td);
-    }
-    tbody.appendChild(tr);
   }
+  syncSortIndicators();
 
+  const tbody = document.createElement('tbody');
   table.append(thead, tbody);
   wrapper.appendChild(table);
+
+  function sortedRows() {
+    if (!sort.key) return rows;
+    const column = columns.find((c) => c.key === sort.key);
+    if (!column?.sortValue) return rows;
+    const dir = sort.direction === 'asc' ? 1 : -1;
+    // Slice, not sort-in-place — `rows` is the caller's own array, and
+    // mutating it out from under them (especially between reloads) would
+    // be a surprising side effect of just clicking a header.
+    return [...rows].sort((a, b) => {
+      const av = column.sortValue(a);
+      const bv = column.sortValue(b);
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }
+
+  function renderBody() {
+    tbody.innerHTML = '';
+    for (const row of sortedRows()) {
+      const tr = document.createElement('tr');
+      const key = rowKey(row);
+      if (selectedKey !== null && key === selectedKey) tr.classList.add('is-selected');
+
+      if (onRowClick) {
+        tr.classList.add('is-clickable');
+        // Keyboard-operable: a clickable row needs a real focus stop and
+        // Enter/Space activation, not just a mouse handler (§8 a11y).
+        tr.tabIndex = 0;
+        tr.setAttribute('role', 'button');
+        tr.addEventListener('click', () => onRowClick(row));
+        tr.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onRowClick(row);
+          }
+        });
+      }
+
+      for (const col of columns) {
+        const td = document.createElement('td');
+        if (col.align === 'right') td.classList.add('is-right');
+        const cell = renderCell(row, col.key);
+        if (cell instanceof Node) td.appendChild(cell);
+        else td.innerHTML = cell ?? '';
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+  renderBody();
+
   return wrapper;
 }

@@ -13,6 +13,24 @@
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-md);
 }
+/* Stagger the 4 KPI cards' entry instead of all appearing at once —
+   scoped to .kpi-grid specifically (not every .card everywhere) so this
+   doesn't compound with .page-content's own fade-in on every other card
+   in the app. nth-child delays cap at the 4th; a 5th card (none exist
+   today) would just inherit the 4th's delay rather than needing a new
+   rule. */
+.kpi-grid .card {
+  opacity: 0;
+  animation: kpi-card-enter .35s ease-out forwards;
+}
+.kpi-grid .card:nth-child(1) { animation-delay: 0ms; }
+.kpi-grid .card:nth-child(2) { animation-delay: 60ms; }
+.kpi-grid .card:nth-child(3) { animation-delay: 120ms; }
+.kpi-grid .card:nth-child(n+4) { animation-delay: 180ms; }
+@keyframes kpi-card-enter {
+  from { opacity: 0; transform: translateY(0.75rem) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 .kpi-card__header { margin-bottom: var(--spacing-sm); }
 .kpi-card__label { margin-bottom: var(--spacing-sm); }
 .kpi-card__value { font-size: var(--font-size-3xl); font-weight: 700; }

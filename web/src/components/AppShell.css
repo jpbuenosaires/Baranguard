@@ -13,7 +13,9 @@
 .sidebar {
   width: 16rem;
   flex-shrink: 0;
-  background: var(--color-navy);
+  /* Vertical gradient instead of flat navy — subtle depth cue, same
+     principle as .card's gradient sheen in base.css. */
+  background: linear-gradient(180deg, var(--color-navy) 0%, #162D58 100%);
   color: var(--color-white);
   display: flex;
   flex-direction: column;
@@ -134,6 +136,9 @@
   color: var(--color-white);
   background: var(--color-primary);
   font-weight: 600;
+  /* Soft glow on the active item — reads clearly against the sidebar's
+     own navy gradient without being loud enough to compete with it. */
+  box-shadow: 0 0 1.25rem rgba(29, 78, 216, 0.35);
 }
 
 .main-column {
@@ -246,6 +251,16 @@
   min-height: 0;
   overflow: auto;
   padding: var(--spacing-md);
+  /* Cross-fade on every page navigation. main.js's boot() calls
+     root.innerHTML='' and rebuilds from scratch on each navigate(), so
+     AppShell() runs fresh and this element is a genuinely new DOM node
+     every time — no manual "replay the animation" trigger needed, unlike
+     a framework where the same node might persist across a route change. */
+  animation: page-content-enter .25s ease-out;
+}
+@keyframes page-content-enter {
+  from { opacity: 0; transform: translateY(0.5rem); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Filter bar as its own full-bleed white band directly under the page

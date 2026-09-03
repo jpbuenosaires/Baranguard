@@ -44,10 +44,25 @@ export function DonutChart({ rows }) {
   }
   ring.style.background = `conic-gradient(${stops.join(', ')})`;
 
+  const holeTotal = document.createElement('span');
+  holeTotal.className = 'donut-chart__total';
+  holeTotal.textContent = String(total);
+  const holeLabel = document.createElement('span');
+  holeLabel.className = 'donut-chart__total-label';
+  holeLabel.textContent = 'total';
   const hole = document.createElement('div');
   hole.className = 'donut-chart__hole';
-  hole.innerHTML = `<span class="donut-chart__total">${total}</span><span class="donut-chart__total-label">total</span>`;
+  hole.append(holeTotal, holeLabel);
   ring.appendChild(hole);
+  // Restores the total view — shared by every legend item's mouseleave
+  // and by the ring's own mouseleave (covers a fast mouse pass that skips
+  // a discrete legend-item boundary).
+  const showTotal = () => {
+    ring.classList.remove('has-highlight');
+    holeTotal.textContent = String(total);
+    holeLabel.textContent = 'total';
+  };
+  ring.addEventListener('mouseleave', showTotal);
 
   const legend = document.createElement('div');
   legend.className = 'donut-chart__legend';
@@ -57,6 +72,20 @@ export function DonutChart({ rows }) {
     const item = document.createElement('div');
     item.className = 'donut-chart__legend-item';
     item.innerHTML = `<span class="donut-chart__swatch" style="background:${row.color}"></span><span class="donut-chart__legend-label">${row.label}</span><span class="donut-chart__legend-value">${row.count} (${pct}%)</span>`;
+    // §4.5: hovering a legend item dims the rest of the ring (a filter on
+    // the whole conic-gradient — slicing out just the other segments
+    // would need per-segment DOM elements this component doesn't have)
+    // and swaps the center hole to that category's own count/%.
+    item.addEventListener('mouseenter', () => {
+      ring.classList.add('has-highlight');
+      holeTotal.textContent = String(row.count);
+      holeLabel.textContent = `${row.label} (${pct}%)`;
+      item.classList.add('is-active');
+    });
+    item.addEventListener('mouseleave', () => {
+      item.classList.remove('is-active');
+      showTotal();
+    });
     legend.appendChild(item);
   }
 

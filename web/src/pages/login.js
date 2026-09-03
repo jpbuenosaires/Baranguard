@@ -20,10 +20,16 @@
  *
  * W1 isn't its own checked box in Sprint 1's "Today's cut" menu — only
  * the auth backend was. This remains minimal on the functional side (no
- * "forgot password", no "remember me" — dead-end affordances that do
- * nothing would themselves be a demo/prototype tell) even though the
- * visual side now matches the mockup. Logged as a scope note in
- * DEVLOG.md.
+ * "forgot password" — a dead-end affordance that does nothing would
+ * itself be a demo/prototype tell) even though the visual side now
+ * matches the mockup. Logged as a scope note in DEVLOG.md.
+ *
+ * "Remember me" (added in the UI/UX polish pass) persists ONLY the
+ * username in localStorage, never the password — the same boundary
+ * every browser's own native "remember password" feature respects, and
+ * consistent with this codebase's session token itself living in
+ * sessionStorage, not localStorage (apiClient.js's own resolved
+ * decision), i.e. nothing auth-sensitive gets the longer-lived storage.
  *
  * kebab-case filename per §4 (pages/routes convention).
  */
@@ -36,6 +42,8 @@ const HERO_FEATURES = [
   { icon: icons.lock, title: 'Role-Based Access', desc: 'Separate permissions for Admin, Punong Barangay, and Tanod.' },
   { icon: icons.alertCircle, title: 'Live Emergency Tracking', desc: 'Real-time Tanod GPS and SOS alerts on the dispatch map.' },
 ];
+
+const REMEMBERED_USERNAME_KEY = 'baranguard.rememberedUsername';
 
 /**
  * @param {HTMLElement} root
@@ -110,11 +118,16 @@ export function renderLoginPage(root, onSuccess) {
   usernameInput.placeholder = 'Username';
   usernameInput.autocomplete = 'username';
   usernameInput.required = true;
+  let rememberedUsername = '';
+  try { rememberedUsername = localStorage.getItem(REMEMBERED_USERNAME_KEY) || ''; } catch { /* private mode — just start blank */ }
+  if (rememberedUsername) usernameInput.value = rememberedUsername;
 
   const passwordLabel = document.createElement('label');
   passwordLabel.className = 'sr-only';
   passwordLabel.htmlFor = 'login-password';
   passwordLabel.textContent = 'Password';
+  const passwordField = document.createElement('div');
+  passwordField.className = 'login-password-field';
   const passwordInput = document.createElement('input');
   passwordInput.id = 'login-password';
   passwordInput.type = 'password';
@@ -122,13 +135,36 @@ export function renderLoginPage(root, onSuccess) {
   passwordInput.placeholder = 'Password';
   passwordInput.autocomplete = 'current-password';
   passwordInput.required = true;
+  const passwordToggle = document.createElement('button');
+  passwordToggle.type = 'button';
+  passwordToggle.className = 'login-password-field__toggle';
+  passwordToggle.innerHTML = icons.eye(18);
+  passwordToggle.setAttribute('aria-label', 'Show password');
+  passwordToggle.setAttribute('aria-pressed', 'false');
+  passwordToggle.addEventListener('click', () => {
+    const showing = passwordInput.type === 'text';
+    passwordInput.type = showing ? 'password' : 'text';
+    passwordToggle.innerHTML = showing ? icons.eye(18) : icons.eyeOff(18);
+    passwordToggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    passwordToggle.setAttribute('aria-pressed', showing ? 'false' : 'true');
+  });
+  passwordField.append(passwordInput, passwordToggle);
+
+  const rememberRow = document.createElement('label');
+  rememberRow.className = 'login-remember';
+  const rememberCheckbox = document.createElement('input');
+  rememberCheckbox.type = 'checkbox';
+  rememberCheckbox.checked = Boolean(rememberedUsername);
+  const rememberText = document.createElement('span');
+  rememberText.textContent = 'Remember my username';
+  rememberRow.append(rememberCheckbox, rememberText);
 
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
   submitButton.textContent = 'Sign in';
 
-  form.append(errorBox, usernameLabel, usernameInput, passwordLabel, passwordInput, submitButton);
+  form.append(errorBox, usernameLabel, usernameInput, passwordLabel, passwordField, rememberRow, submitButton);
   card.append(mobileBrand, brand, form);
   formPanel.appendChild(card);
   screen.append(hero, formPanel);
@@ -147,10 +183,14 @@ export function renderLoginPage(root, onSuccess) {
     }
 
     submitButton.disabled = true;
-    submitButton.textContent = 'Signing in…';
+    submitButton.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span>Signing in…</span>`;
 
     try {
       const user = await login(username, password);
+      try {
+        if (rememberCheckbox.checked) localStorage.setItem(REMEMBERED_USERNAME_KEY, username);
+        else localStorage.removeItem(REMEMBERED_USERNAME_KEY);
+      } catch { /* private mode — the preference just won't persist */ }
       onSuccess(user);
     } catch (err) {
       // §9 W1: generic message regardless of the actual failure reason —
@@ -165,6 +205,11 @@ export function renderLoginPage(root, onSuccess) {
       }
       errorBox.hidden = false;
       passwordInput.value = '';
+      // Shake the whole card, not just the error box — a stronger, more
+      // immediate "that didn't work" cue than the text appearing alone.
+      card.classList.remove('is-shaking'); // restart if a fast double-submit re-triggers it
+      void card.offsetWidth; // force reflow so removing+re-adding the class actually replays the animation
+      card.classList.add('is-shaking');
     } finally {
       submitButton.disabled = false;
       submitButton.textContent = 'Sign in';

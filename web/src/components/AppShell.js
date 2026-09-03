@@ -86,6 +86,15 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const el = document.createElement('div');
   el.className = 'app-shell';
 
+  // §6.1: skip-navigation link — off-screen until Tab-focused, first
+  // focusable element on every authenticated page. Targets #page-main
+  // below via a real anchor jump (no JS needed for the focus move itself).
+  const skipLink = document.createElement('a');
+  skipLink.className = 'skip-link';
+  skipLink.href = '#page-main';
+  skipLink.textContent = 'Skip to main content';
+  el.appendChild(skipLink);
+
   const sidebar = document.createElement('div');
   sidebar.className = 'sidebar' + (readSidebarCollapsed() ? ' is-collapsed' : '');
 
@@ -276,6 +285,11 @@ export function AppShell(user, activePage, navigate, onLogout) {
 
   const content = document.createElement('div');
   content.className = 'page-content';
+  content.id = 'page-main';
+  // tabindex="-1": not in the normal Tab order, but DOES become a valid
+  // focus target for the skip-link's anchor jump — the standard pattern
+  // for a skip link whose destination isn't itself a natural focus stop.
+  content.tabIndex = -1;
 
   mainColumn.append(topbar, header, content);
   el.append(sidebar, mainColumn);

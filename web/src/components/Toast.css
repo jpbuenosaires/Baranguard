@@ -1,0 +1,73 @@
+/**
+ * Toast.css — co-located with Toast.js. Fixed top-right stack, slide-in
+ * from the right, tinted-background pattern matching this app's existing
+ * status-pill treatment (base.css) rather than a solid-fill badge.
+ */
+
+.toast-container {
+  position: fixed;
+  top: var(--spacing-lg);
+  right: var(--spacing-lg);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  max-width: 22rem;
+  /* The container itself never intercepts clicks meant for the page
+     underneath — only individual .toast elements (positioned normally
+     within this flex column) do. */
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-floating);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  animation: toast-enter .25s ease-out;
+}
+.toast--leaving { animation: toast-leave .2s ease-in forwards; }
+
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateX(1.5rem); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-leave {
+  from { opacity: 1; transform: translateX(0); max-height: 6rem; margin-bottom: 0; }
+  to { opacity: 0; transform: translateX(1.5rem); max-height: 0; margin-bottom: calc(-1 * var(--spacing-sm)); }
+}
+
+.toast__icon { flex-shrink: 0; margin-top: 0.0625rem; }
+.toast__message { flex: 1; color: var(--color-text-primary); line-height: 1.4; }
+.toast__close {
+  min-height: 0;
+  padding: 0.125rem;
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.toast__close:hover { background: var(--color-bg); color: var(--color-text-secondary); }
+
+.toast--success .toast__icon { color: var(--color-success); }
+.toast--error .toast__icon { color: var(--color-critical); }
+.toast--warning .toast__icon { color: var(--color-warning); }
+.toast--info .toast__icon { color: var(--color-info); }
+/* Left border echoes the variant color, same visual language as
+   .status-pill--critical's accent border. */
+.toast--success { border-left: 3px solid var(--color-success); }
+.toast--error { border-left: 3px solid var(--color-critical); }
+.toast--warning { border-left: 3px solid var(--color-warning); }
+.toast--info { border-left: 3px solid var(--color-info); }
+
+@media (max-width: 480px) {
+  .toast-container { top: var(--spacing-sm); right: var(--spacing-sm); left: var(--spacing-sm); max-width: none; }
+}
