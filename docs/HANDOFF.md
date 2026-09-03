@@ -29,9 +29,13 @@ update this file at the end of a session, don't let it go stale for long.
 - **Sprint 5 (the AI pipeline) is committed and pushed** (`d808bfa`), and
   the earlier `web/` UI-polish work too (`c46e2c3` — Toast, ConfirmDialog,
   sortable DataTable).
-- **Uncommitted right now: all of Sprint 6** — `BlotterController`,
-  `services/pdf/`, migration 0004, `verify-sprint6.sh`, the W7/W8 screens,
-  `RegexRedactor`, the evaluation-dataset guide, and the doc updates.
+- **All of Sprint 6 is committed and pushed** to `origin/main` (`4f13dd1`).
+  The working tree is clean apart from two scratch PNGs.
+- **First thing on the next machine: apply migration 0004** to the real
+  `baranguard` database (`mysql -u root baranguard <
+  backend/migrations/0004_blotter_revision.sql`). Confirmed NOT applied
+  there — `blotter_revision` does not exist, and every blotter amendment
+  path depends on it.
 - The two `mobile/.scratch-screenshot*.png` files are scratch junk and
   should just be deleted.
 - Everything from the earlier "Sprint 2 remaining items" session (backend
