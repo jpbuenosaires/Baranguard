@@ -82,3 +82,20 @@
 }
 /* Row action cluster (view / edit / delete icon buttons). */
 .data-table__actions { display: flex; align-items: center; gap: var(--spacing-xs); justify-content: flex-end; }
+
+/* Visual cue that a DataTable row opens a detail screen. Paired with
+   `.is-clickable` above, which supplies the cursor and hover state. Added
+   after real use showed that a clickable row with no affordance reads as
+   static — W7/W8 have no sidebar entry, so the row IS the only way in. */
+.row-open-hint {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-secondary);
+  opacity: 0.55;
+  transition: opacity .15s ease, color .15s ease;
+}
+.data-table tbody tr.is-clickable:hover .row-open-hint,
+.data-table tbody tr.is-clickable:focus-visible .row-open-hint {
+  opacity: 1;
+  color: var(--color-primary);
+}

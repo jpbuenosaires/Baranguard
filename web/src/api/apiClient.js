@@ -633,3 +633,235 @@ export async function getSystemHealth() {
     backupLastSuccess: json.backup_last_success, restoreTestAt: json.restore_test_at,
   };
 }
+
+// --- AI redaction review (§6 "AI processing", W8) ---------------------------
+
+/**
+ * GET /incidents/:id — the only endpoint that returns `raw_narrative`, and
+ * only to a Secretary (§6/§3: the Secretary is the statutory records
+ * custodian under RA 7160 §394(c), which is why Admin gets less here).
+ * `rawNarrative` is simply absent from the response for every other role,
+ * so callers must treat it as optional rather than assuming a string.
+ */
+export async function getIncident(incidentId) {
+  const json = await request('GET', `/incidents/${incidentId}`, { auth: true });
+  return {
+    incidentId: json.incident_id,
+    barangayId: json.barangay_id,
+    reportedBy: json.reported_by,
+    incidentType: json.incident_type, // enum value, unconverted
+    priority: json.priority,          // enum value, unconverted
+    status: json.status,              // enum value, unconverted
+    source: json.source,
+    latitude: json.latitude,
+    longitude: json.longitude,
+    createdAt: json.created_at,
+    syncedAt: json.synced_at,
+    rawNarrative: json.raw_narrative ?? null,
+    redactedNarrative: json.redacted_narrative,
+    redactionApprovedAt: json.redaction_approved_at,
+    redactionApprovedBy: json.redaction_approved_by,
+    // Dispatch stages for W7's §9-mandated timeline. They live here rather
+    // than on GET /dispatch because that endpoint is Admin/PB/Tanod only
+    // and W7 is a Secretary screen — see IncidentsController::show().
+    dispatchedAt: json.dispatched_at ?? null,
+    arrivedAt: json.arrived_at ?? null,
+    hasActiveDispatch: json.has_active_dispatch === true,
+  };
+}
+
+/** Shared shape for the ai_processing_log draft row (§6 GET /incidents/:id/ai-draft). */
+function mapAiDraft(json) {
+  return {
+    logId: json.log_id,
+    incidentId: json.incident_id,
+    pipelineRunId: json.pipeline_run_id,
+    taskType: json.task_type,          // enum value, unconverted
+    modelVersion: json.model_version,  // the REAL self-hosted model name (§8)
+    draftRedactedNarrative: json.draft_redacted_narrative,
+    draftSummary: json.draft_summary,
+    draftSummaryStale: json.draft_summary_stale,
+    draftVersion: json.draft_version,
+    status: json.status,               // enum value, unconverted
+    errorCode: json.error_code ?? null,
+  };
+}
+
+/**
+ * GET /incidents/:id/ai-draft — Secretary only. Returns null when no
+ * pipeline has ever been run for this incident (the server answers 404),
+ * which is an ordinary empty state for W8, not an error.
+ */
+export async function getAiDraft(incidentId) {
+  try {
+    const json = await request('GET', `/incidents/${incidentId}/ai-draft`, { auth: true });
+    return mapAiDraft(json);
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/**
+ * POST /incidents/:id/redact — queues a redaction run. Returns
+ * `status:"queued"`; the draft appears once the worker processes it, so
+ * callers poll getAiDraft() rather than expecting content back here.
+ */
+export async function requestRedaction(incidentId) {
+  const json = await request('POST', `/incidents/${incidentId}/redact`, { auth: true });
+  return { incidentId: json.incident_id, pipelineRunId: json.pipeline_run_id, status: json.status };
+}
+
+/**
+ * POST /incidents/:id/ai-draft/regenerate-summary — saves the Secretary's
+ * edited narrative and queues a summary regeneration. `draftVersion` must
+ * be the exact current version (§2 Rule 23); a stale value gets 409 and
+ * the caller must reload.
+ */
+export async function regenerateSummary(incidentId, { draftRedactedNarrative, draftVersion }) {
+  const json = await request('POST', `/incidents/${incidentId}/ai-draft/regenerate-summary`, {
+    body: { draft_redacted_narrative: draftRedactedNarrative, draft_version: draftVersion },
+    auth: true,
+  });
+  return mapAiDraft(json);
+}
+
+/**
+ * POST /incidents/:id/ai-draft/approve — the ONLY call that commits
+ * `incident.redacted_narrative` (§2 Rule 3). Requires exact version match
+ * AND exact text equality with the current draft; anything else is 409.
+ */
+export async function approveAiDraft(incidentId, { approvedNarrative, draftVersion }) {
+  const json = await request('POST', `/incidents/${incidentId}/ai-draft/approve`, {
+    body: { approved_narrative: approvedNarrative, draft_version: draftVersion },
+    auth: true,
+  });
+  return {
+    incidentId: json.incident_id,
+    redactionApprovedAt: json.redaction_approved_at,
+    approvedBy: json.approved_by,
+  };
+}
+
+/**
+ * POST /incidents/:id/ai-draft/translate — post-approval only.
+ * `languageValidated` is false for Bikol until a real evaluation run says
+ * otherwise (§2 Rule 16) — surface it, don't hide it.
+ */
+export async function translateAiDraft(incidentId, targetLanguage) {
+  const json = await request('POST', `/incidents/${incidentId}/ai-draft/translate`, {
+    body: { target_language: targetLanguage },
+    auth: true,
+  });
+  return {
+    logId: json.log_id,
+    translatedText: json.translated_text,
+    sourceLanguage: json.source_language,
+    targetLanguage: json.target_language,
+    status: json.status,
+    languageValidated: json.language_validated,
+  };
+}
+
+// --- Blotter finalization / amendment (§6 "Blotter", W7) --------------------
+
+/** POST /incidents/:id/finalize — Secretary only; requires an approved redaction. */
+export async function finalizeBlotter(incidentId, narrativeSummary) {
+  const json = await request('POST', `/incidents/${incidentId}/finalize`, {
+    body: { narrative_summary: narrativeSummary },
+    auth: true,
+  });
+  return { blotterId: json.blotter_id, finalizedAt: json.finalized_at, revisionNo: json.revision_no };
+}
+
+/**
+ * POST /incidents/:id/blotter/amend — Secretary only; requires a finalized
+ * record. The superseded text is preserved server-side in
+ * `blotter_revision`, never discarded (§6).
+ */
+export async function amendBlotter(incidentId, { narrativeSummary, reason }) {
+  const json = await request('POST', `/incidents/${incidentId}/blotter/amend`, {
+    body: { narrative_summary: narrativeSummary, reason },
+    auth: true,
+  });
+  return { blotterId: json.blotter_id, revisionNo: json.revision_no, amendedAt: json.amended_at };
+}
+
+/**
+ * GET /incidents/:id/blotter — §6's tenant-scoped convenience lookup.
+ * Returns null when the incident has no blotter record yet (404), which is
+ * the normal state for most incidents, not an error.
+ */
+export async function getBlotterForIncident(incidentId) {
+  try {
+    const json = await request('GET', `/incidents/${incidentId}/blotter`, { auth: true });
+    return {
+      blotterId: json.blotter_id,
+      incidentId: json.incident_id,
+      narrativeSummary: json.narrative_summary,
+      recordedBy: json.recorded_by,
+      approvedBy: json.approved_by,
+      finalizedAt: json.finalized_at,
+      revisionNo: json.revision_no,
+      amendedAt: json.amended_at,
+      amendedBy: json.amended_by,
+    };
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/**
+ * POST /incidents/:id/lupon-packet — Secretary only; requires BOTH an
+ * approved redaction and a finalized blotter. Returns an API-relative
+ * `fileUrl`; the packet itself lives outside the web root and is served
+ * only through the authorized download route.
+ */
+export async function generateLuponPacket(incidentId) {
+  const json = await request('POST', `/incidents/${incidentId}/lupon-packet`, { auth: true });
+  return { fileUrl: json.file_url };
+}
+
+/**
+ * Absolute URL for a generated packet, for a download link. The download
+ * endpoint re-checks role and tenant, so this URL is not a capability —
+ * it still requires a valid session.
+ */
+export function luponPacketDownloadUrl(incidentId) {
+  return `${BASE_URL}/incidents/${incidentId}/lupon-packet/download`;
+}
+
+/**
+ * GET /incidents/:id/evidence — Secretary/Admin same barangay; Tanod only
+ * with a reporter/dispatch relationship. §6: this NEVER returns filesystem
+ * paths, so there is no `filePath` here by design — evidence bytes are a
+ * separate authorized download (Sprint 7), not a link.
+ */
+export async function getIncidentEvidence(incidentId) {
+  const json = await request('GET', `/incidents/${incidentId}/evidence`, { auth: true });
+  return json.items.map((row) => ({
+    attachmentId: row.attachment_id,
+    incidentId: row.incident_id,
+    type: row.type,              // enum value, unconverted
+    uploadedBy: row.uploaded_by,
+    uploadedAt: row.uploaded_at,
+    sha256: row.sha256,
+    byteSize: row.byte_size,
+    mimeType: row.mime_type,
+    originalFilename: row.original_filename,
+  }));
+}
+
+/**
+ * PATCH /incidents/:id/status — Admin only, and the body is exactly
+ * `{status:"resolved"}` (§6). Deliberately not a general status setter:
+ * 409 unless the incident is `dispatched` with no active dispatch left.
+ */
+export async function resolveIncident(incidentId) {
+  const json = await request('PATCH', `/incidents/${incidentId}/status`, {
+    body: { status: 'resolved' },
+    auth: true,
+  });
+  return { incidentId: json.incident_id, status: json.status };
+}

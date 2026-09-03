@@ -43,6 +43,12 @@ const COLUMNS = [
   { key: 'location', label: 'Location' },
   { key: 'date', label: 'Date' },
   { key: 'status', label: 'Status', align: 'right' },
+  // Purely a visual affordance for the row's own click handler — NOT a
+  // nested button, which would double-fire inside a clickable row. Added
+  // after real use: W7/W8 have no sidebar entry (they need an incident
+  // id), so without a visible cue nothing signals that a row opens a
+  // detail screen at all.
+  { key: 'open', label: '', width: '3rem', align: 'right' },
 ];
 
 /**
@@ -64,7 +70,7 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
-  const pageHeader = PageHeader({ title: 'Electronic Blotter', subtitle: 'Running ledger of every logged incident', icon: icons.fileText });
+  const pageHeader = PageHeader({ title: 'Electronic Blotter', subtitle: 'Running ledger of every logged incident — select an entry to open its detail, evidence and blotter record', icon: icons.fileText });
   header.appendChild(pageHeader.el);
 
   const filterPanel = document.createElement('div');
@@ -99,6 +105,14 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
   }
 
   let allItems = [];
+
+  // Rows open W7 Electronic Blotter Detail, which every role on this list
+  // can read (the finalize/amend controls inside are Secretary-only, and
+  // the server enforces that regardless of what the UI shows). W8 AI
+  // Redaction Review is reached from W7 rather than directly from here —
+  // the real workflow is review the entry, then act on its redaction.
+  const onOpenReview = (row) => navigate('blotter-detail', row.incidentId);
+
   searchInput.addEventListener('input', () => applyFilter());
 
   function applyFilter() {
@@ -117,7 +131,7 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
     if (filtered.length === 0) {
       renderEmpty(listPane, q ? 'No entries match your search.' : undefined);
     } else {
-      renderList(listPane, filtered);
+      renderList(listPane, filtered, onOpenReview);
     }
   }
 
@@ -219,12 +233,13 @@ function buildNewEntryForm(onCreated) {
   return card;
 }
 
-function renderList(container, items) {
+function renderList(container, items, onOpenReview) {
   container.innerHTML = '';
   const table = DataTable({
     columns: COLUMNS,
     rows: items,
     rowKey: (row) => row.incidentId,
+    onRowClick: onOpenReview ?? undefined,
     caption: 'Electronic blotter entries',
     renderCell: (row, key) => {
       switch (key) {
@@ -240,6 +255,13 @@ function renderList(container, items) {
             : '—';
         case 'date':
           return new Date(row.createdAt).toLocaleString();
+        case 'open': {
+          const chevron = document.createElement('span');
+          chevron.className = 'row-open-hint';
+          chevron.setAttribute('aria-hidden', 'true');
+          chevron.innerHTML = icons.eye(16);
+          return chevron;
+        }
         case 'status': {
           const pillClass = STATUS_PILL_CLASS[row.status] || 'status-pill--neutral';
           const span = document.createElement('span');

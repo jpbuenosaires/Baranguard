@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
@@ -286,6 +287,297 @@ final class IncidentsController
         }, $rows);
 
         Http::send(200, ['items' => $items]);
+    }
+
+    /**
+     * GET /incidents/:id — §6: "resource must belong to caller's
+     * barangay. Secretary receives {incident_id,barangay_id,reported_by,
+     * incident_type,raw_narrative,redacted_narrative,priority,status,
+     * source,latitude,longitude,created_at,synced_at}; Admin/PB/Tanod
+     * receive redacted allow-listed fields only, with Tanod additionally
+     * requiring reporter or assigned-dispatch relationship."
+     *
+     * **This is the only endpoint in the system that returns
+     * `raw_narrative`, and only to a Secretary.** §3 explains why the
+     * higher-privileged Admin gets less here than the Secretary does: RA
+     * 7160 §394(c) makes the Barangay Secretary the statutory custodian
+     * of barangay records, so raw-narrative access follows the legal
+     * custodian, not the system's privilege ladder. Do not "fix" that by
+     * adding admin to the raw-narrative branch.
+     *
+     * Built in Sprint 6 because W8 (AI Redaction Review) shows raw vs
+     * draft side by side and had no way to obtain the raw side.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function show(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'tanod', 'punong_barangay']);
+        if (!ctype_digit($incidentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+
+        // dispatched_at / arrived_at / has_active_dispatch are NOT in §6's
+        // listed shape for this endpoint, and are added deliberately.
+        //
+        // §9 W7 requires a timeline containing `dispatched_at` and
+        // `arrived_at`, and W7 is a SECRETARY screen — but §6's
+        // `GET /dispatch` is Admin/PB/Tanod only, so a Secretary can never
+        // read those timestamps from the dispatch endpoint (verified: it
+        // returns 403). Without this the timeline would silently render
+        // "Not yet" for stages that actually happened, which is precisely
+        // the scripted/fabricated timeline §9 forbids.
+        //
+        // The alternative — widening `GET /dispatch`'s role list — was
+        // rejected: it would hand the Secretary the whole dispatch record
+        // (assignments, route, tanod ids) to obtain two timestamps §9 says
+        // must be on screen. This is the narrower disclosure, and it is
+        // about the caller's own barangay incident. `has_active_dispatch`
+        // is derived, never a raw id, and exists so W7's Admin resolve
+        // control can reflect §6's real precondition instead of guessing.
+        $stmt = $pdo->prepare(
+            "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
+                    i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
+                    i.raw_narrative, i.redacted_narrative, i.redaction_approved_at, i.redaction_approved_by,
+                    d.dispatched_at, d.arrived_at,
+                    EXISTS (
+                        SELECT 1 FROM dispatch da
+                        WHERE da.incident_id = i.incident_id
+                          AND da.status IN ('assigned','en_route','arrived')
+                    ) AS has_active_dispatch
+             FROM incident i
+             LEFT JOIN dispatch d ON d.dispatch_id = (
+                 SELECT d2.dispatch_id FROM dispatch d2
+                 WHERE d2.incident_id = i.incident_id
+                 ORDER BY d2.dispatched_at DESC
+                 LIMIT 1
+             )
+             WHERE i.incident_id = :incident_id"
+        );
+        $stmt->execute(['incident_id' => $incidentId]);
+        $incident = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        // Tenant check before any disclosure (§2 Rule 6/30).
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+        // §6/§7: a Tanod may only read an incident they reported or were
+        // dispatched to. 404 rather than 403 — the existence of another
+        // Tanod's incident is itself information they aren't entitled to.
+        if ($identity['role'] === 'tanod') {
+            $relStmt = $pdo->prepare(
+                'SELECT 1 FROM incident i
+                 WHERE i.incident_id = :incident_id
+                   AND (i.reported_by = :user_id
+                        OR EXISTS (SELECT 1 FROM dispatch d WHERE d.incident_id = i.incident_id AND d.tanod_id = :user_id2))
+                 LIMIT 1'
+            );
+            $relStmt->execute([
+                'incident_id' => $incidentId,
+                'user_id' => $identity['user_id'],
+                'user_id2' => $identity['user_id'],
+            ]);
+            if ($relStmt->fetch(PDO::FETCH_ASSOC) === false) {
+                throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+            }
+        }
+
+        $payload = [
+            'incident_id' => (int) $incident['incident_id'],
+            'barangay_id' => (int) $incident['barangay_id'],
+            'reported_by' => $incident['reported_by'] !== null ? (int) $incident['reported_by'] : null,
+            'incident_type' => $incident['incident_type'],
+            'priority' => $incident['priority'],
+            'status' => $incident['status'],
+            'source' => $incident['source'],
+            'latitude' => $incident['latitude'] !== null ? (float) $incident['latitude'] : null,
+            'longitude' => $incident['longitude'] !== null ? (float) $incident['longitude'] : null,
+            'created_at' => $incident['created_at'],
+            'device_offline_created_at' => $incident['device_offline_created_at'],
+            'synced_at' => $incident['synced_at'],
+            // The approved redaction is readable by every role §7 allows
+            // to view an incident — approval is what makes it shareable.
+            'redacted_narrative' => $incident['redacted_narrative'],
+            'redaction_approved_at' => $incident['redaction_approved_at'],
+            'redaction_approved_by' => $incident['redaction_approved_by'] !== null
+                ? (int) $incident['redaction_approved_by']
+                : null,
+            // See the query comment above for why these three are here.
+            'dispatched_at' => $incident['dispatched_at'],
+            'arrived_at' => $incident['arrived_at'],
+            'has_active_dispatch' => (bool) $incident['has_active_dispatch'],
+        ];
+
+        // The one raw-narrative disclosure in the system. Added LAST and
+        // only for the Secretary, so the allow-listed payload above is the
+        // default and raw access is the explicit exception.
+        if ($identity['role'] === 'secretary') {
+            $payload['raw_narrative'] = $incident['raw_narrative'];
+        }
+
+        Http::send(200, $payload);
+    }
+
+    /**
+     * GET /incidents/:id/evidence — §6: "Secretary/Admin same barangay;
+     * Tanod only if `incident.reported_by = caller.user_id` OR the caller
+     * has/had a dispatch for that incident; same-barangay check applies
+     * first. **Never returns filesystem paths.**"
+     *
+     * That last rule is why `file_path` is absent from the response shape
+     * below even though it is the most obvious column on the table: a path
+     * is an invitation to fetch the file directly, and §5 keeps evidence
+     * outside the web root precisely so that cannot work. Sprint 7's
+     * download endpoint will serve bytes through an authorization check,
+     * not a path.
+     *
+     * Punong Barangay is NOT in the role list — §6 names only
+     * Secretary/Admin/Tanod for this endpoint, and PB's access elsewhere
+     * is "redacted read-only", which evidence files are not.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function evidence(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'tanod']);
+        if (!ctype_digit($incidentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+
+        $incidentStmt = $pdo->prepare('SELECT incident_id, barangay_id FROM incident WHERE incident_id = :incident_id');
+        $incidentStmt->execute(['incident_id' => $incidentId]);
+        $incident = $incidentStmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        // §6: "same-barangay check applies FIRST".
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+        if ($identity['role'] === 'tanod' && !self::tanodMayAccess($pdo, $incidentId, $identity['user_id'])) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT attachment_id, incident_id, type, uploaded_by, uploaded_at, sha256,
+                    byte_size, mime_type, original_filename
+             FROM evidence_attachment
+             WHERE incident_id = :incident_id
+             ORDER BY uploaded_at ASC'
+        );
+        $stmt->execute(['incident_id' => $incidentId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $items = array_map(static function (array $row): array {
+            return [
+                'attachment_id' => (int) $row['attachment_id'],
+                'incident_id' => (int) $row['incident_id'],
+                'type' => $row['type'],
+                'uploaded_by' => (int) $row['uploaded_by'],
+                'uploaded_at' => $row['uploaded_at'],
+                'sha256' => $row['sha256'],
+                'byte_size' => (int) $row['byte_size'],
+                'mime_type' => $row['mime_type'],
+                'original_filename' => $row['original_filename'],
+            ];
+        }, $rows);
+
+        Http::send(200, ['items' => $items]);
+    }
+
+    /**
+     * PATCH /incidents/:id/status — §6: "Admin only; resource must be
+     * same-barangay. Body is exactly {status:"resolved"}. Returns 409
+     * unless current incident is `dispatched` and has no active dispatch
+     * (assigned/en_route/arrived). A repeated resolve after the incident is
+     * already resolved returns 409 with CONFLICT rather than mutating the
+     * record a second time."
+     *
+     * "Body is exactly {status:'resolved'}" is enforced literally: this is
+     * not a general status-setter, and accepting any other target would let
+     * an Admin walk an incident backwards out of `dispatched`, which §5's
+     * state model does not allow outside dispatch cancellation.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function updateStatus(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+        if (!ctype_digit($incidentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+
+        $body = Http::jsonBody();
+        $status = $body['status'] ?? null;
+        if ($status !== 'resolved') {
+            throw new ApiError(400, 'VALIDATION_ERROR', "status must be exactly 'resolved'.");
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT incident_id, barangay_id, status FROM incident WHERE incident_id = :incident_id FOR UPDATE'
+            );
+            $stmt->execute(['incident_id' => $incidentId]);
+            $incident = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($incident === false) {
+                throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+            }
+            AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+            // Covers the repeated-resolve case too: an already-resolved
+            // incident is not `dispatched`, so it falls here with 409.
+            if ($incident['status'] !== 'dispatched') {
+                throw new ApiError(409, 'CONFLICT', 'Only a dispatched incident can be resolved.');
+            }
+
+            $activeStmt = $pdo->prepare(
+                "SELECT dispatch_id FROM dispatch
+                 WHERE incident_id = :incident_id AND status IN ('assigned','en_route','arrived')
+                 LIMIT 1"
+            );
+            $activeStmt->execute(['incident_id' => $incidentId]);
+            if ($activeStmt->fetch(PDO::FETCH_ASSOC) !== false) {
+                throw new ApiError(409, 'CONFLICT', 'This incident still has an active dispatch; complete or cancel it first.');
+            }
+
+            $updateStmt = $pdo->prepare(
+                "UPDATE incident SET status = 'resolved', updated_at = UTC_TIMESTAMP() WHERE incident_id = :incident_id"
+            );
+            $updateStmt->execute(['incident_id' => $incidentId]);
+
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_resolved', 'incident', $incidentId, [
+                'from_status' => $incident['status'],
+                'to_status' => 'resolved',
+            ]);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        Http::send(200, ['incident_id' => $incidentId, 'status' => 'resolved']);
+    }
+
+    /**
+     * §6/§7's Tanod relationship rule, in one place: a Tanod may reach an
+     * incident they reported, or one they have (or had) a dispatch for.
+     */
+    private static function tanodMayAccess(PDO $pdo, int $incidentId, int $userId): bool
+    {
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM incident i
+             WHERE i.incident_id = :incident_id
+               AND (i.reported_by = :user_id
+                    OR EXISTS (SELECT 1 FROM dispatch d WHERE d.incident_id = i.incident_id AND d.tanod_id = :user_id2))
+             LIMIT 1'
+        );
+        $stmt->execute(['incident_id' => $incidentId, 'user_id' => $userId, 'user_id2' => $userId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) !== false;
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
