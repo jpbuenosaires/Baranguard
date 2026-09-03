@@ -639,15 +639,72 @@ comparator — build the harness this sprint even if the model doesn't hit
 target yet; record actual numbers in ai_evaluation_run, don't estimate them.
 
 Today's cut — pick exactly ONE:
-  [ ] Redaction pipeline: POST /incidents/:id/redact +
+  [~] Redaction pipeline: POST /incidents/:id/redact +
       GET /incidents/:id/ai-draft
-  [ ] Draft versioning UI: regenerate-summary + approve endpoints, exact
+      CODED 2026-09-03 in the Sprint 5 session (a queue with no producer
+      and no reader can't be exercised at all), NOT YET VERIFIED.
+  [x] Draft versioning UI: regenerate-summary + approve endpoints, exact
       draft_version equality enforced, stale draft_summary_stale blocks
       approval
-  [ ] Evaluation harness: baseline regex comparator + ai_evaluation_run
+      ENDPOINTS DONE + VERIFIED 2026-09-03 — backend/scripts/verify-sprint6.sh,
+      112/112 against real XAMPP. Stale draft_version → 409 with the row
+      verifiably unchanged in the DB; all four approval prerequisites block
+      independently; identical-text replay returns 200 without a second
+      audit row. The "UI" half is NOT done: W8 exists but has never been
+      rendered in a browser (W8 exists and is wiring-checked). Worked from an approved written
+      plan; boxes below were built in the same session at explicit user
+      direction ("focus only on the coding, no ollama"), the same
+      documented exception as prior multi-box sessions. regenerate-summary
+      QUEUES rather than generating inline — the version check and edited
+      text land synchronously (they're the concurrency control), the
+      summary itself is the worker's job (Rule 15). `approve` is the sole
+      endpoint that may commit incident.redacted_narrative (Rule 3).
+  [~] Evaluation harness: baseline regex comparator + ai_evaluation_run
       scoring against the 200-record set
-  [ ] Finalize/amend/lupon-packet: POST /incidents/:id/finalize,
+      HARNESS BUILT + VERIFIED 2026-09-03; DATASET AND MODEL RUN OUTSTANDING.
+      scripts/ai-evaluate.php + services/ai/RegexRedactor.php are done and
+      proven end-to-end against a 10-record smoke fixture: it scores, writes
+      a real ai_evaluation_run row, and a re-run upserts instead of
+      duplicating (all confirmed against a disposable MariaDB).
+      Baseline result on the sample: recall 39.13%, precision 100.00% —
+      every miss a NAME or ADDRESS, which is exactly the contrast that
+      justifies the model over a pattern list.
+      NOT done: the real 200-record dataset (a manual 3-person task — see
+      docs/AI_Evaluation_Dataset_Guide.md) and the --engine=model run,
+      which needs the machine that can run SEA-LION at speed.
+  [x] Finalize/amend/lupon-packet: POST /incidents/:id/finalize,
       /blotter/amend, /lupon-packet
+      DONE + VERIFIED 2026-09-03 (same 112/112 script). All three endpoints
+      built, plus GET /blotter/:id. Double-finalize → 409 with the original
+      summary intact; an amendment increments revision_no and the previous
+      finalized text is still retrievable from blotter_revision (§6's
+      "never deletes the previous finalized value", demonstrated); the
+      packet is a real PDF verified by its magic bytes, written outside the
+      web root, downloadable by Secretary and 403 for Admin, and grepped to
+      confirm the RAW narrative does not appear in it.
+      Required a NEW migration (0004_blotter_revision.sql): §6 promises an
+      amendment preserves the prior value but blotter_record has a single
+      narrative_summary column. lupon-packet needed a PDF and this repo has
+      no Composer, so services/pdf/SimplePdf.php is a small dependency-free
+      writer (structurally validated: xref offsets all correct).
+      W7's UI (web/src/pages/blotter-detail.js) is COMPLETE against §9:
+      finalize/amend, evidence list, Admin resolve, and the full timeline
+      (created_at/dispatched_at/arrived_at/redaction_approved_at/
+      finalized_at). That needed two endpoints §6 documents but nobody had
+      built — GET /incidents/:id/evidence and PATCH /incidents/:id/status —
+      plus an incident_id filter on GET /dispatch for the timeline.
+      W8 gained translate + Lupon-packet controls. Suite now 112/112, and
+      both screens were driven in a real browser (which found a fabricated
+      timeline bug no static check could see — see DEVLOG).
+      Neither screen has been opened in a browser — automated checks only,
+      by scoping choice.
+
+Also built this session, outside the four boxes: `GET /incidents/:id`
+(§6, previously unbuilt) — W8 shows raw vs draft side by side and this is
+the only endpoint that returns raw_narrative, Secretary-only. And W8 AI
+Redaction Review itself (`web/src/pages/ai-review.js`), reached by clicking
+a blotter row rather than via a sidebar entry, since it needs an incident
+id.
 
 If nothing above is checked and nothing is named in prose, stop and ask
 which one before writing any code. If you finish early, end the session

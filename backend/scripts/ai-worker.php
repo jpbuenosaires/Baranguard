@@ -111,6 +111,15 @@ do {
     try {
         if ($taskType === 'translation') {
             runTranslationJob($pdo, $client, $job);
+        } elseif (trim((string) ($job['draft_redacted_narrative'] ?? '')) !== '') {
+            // A queued row that ALREADY has a draft narrative can only be a
+            // summary regeneration (POST .../regenerate-summary saved the
+            // Secretary's edited text and re-queued it). A fresh redaction
+            // enqueue always has this column NULL. Distinguishing on the
+            // data rather than on a flag means the summary-only path
+            // structurally cannot re-read raw_narrative or overwrite the
+            // Secretary's edits.
+            runSummaryOnlyJob($pdo, $client, $job);
         } else {
             runRedactionJob($pdo, $client, $job);
         }
@@ -207,6 +216,38 @@ function runRedactionJob(PDO $pdo, OllamaClient $client, array $job): void
         $summaryStale,
         $redactionResult['model']
     );
+}
+
+/**
+ * Regenerates ONLY the summary, from the draft the Secretary edited
+ * (POST /incidents/:id/ai-draft/regenerate-summary).
+ *
+ * Rule 16: "Generates summary only from supplied draft text." This
+ * function never touches `raw_narrative` — it works purely from the
+ * `draft_redacted_narrative` already on the row, which is what makes that
+ * rule structural here rather than merely intended. It also must not
+ * re-run redaction: doing so would silently discard the Secretary's edits.
+ *
+ * @param array<string,mixed> $job
+ */
+function runSummaryOnlyJob(PDO $pdo, OllamaClient $client, array $job): void
+{
+    $logId = (int) $job['log_id'];
+    $draftRedacted = (string) $job['draft_redacted_narrative'];
+
+    $result = $client->generate(AiPrompts::summary($draftRedacted));
+    $summary = AiPrompts::stripReasoning($result['text']);
+
+    if ($summary === '') {
+        // Leave draft_summary_stale set — approval stays blocked, which is
+        // the correct outcome for a summary that could not be produced.
+        AiJobQueue::fail($pdo, $logId, 'SUMMARY_EMPTY_AFTER_STRIP');
+        out("[job {$logId}] FAILED — empty summary after stripping reasoning output.");
+        return;
+    }
+
+    out("[job {$logId}] summary regenerated (" . mb_strlen($summary) . ' chars)');
+    AiJobQueue::completeSummary($pdo, $logId, $summary, $result['model']);
 }
 
 /**

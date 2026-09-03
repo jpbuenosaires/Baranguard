@@ -296,6 +296,72 @@ final class AiJobQueue
         ]);
     }
 
+    /**
+     * Stores the Secretary's edited draft narrative and re-queues the row
+     * for a SUMMARY-ONLY regeneration — `POST .../regenerate-summary`.
+     *
+     * §6: "Generates summary only from supplied draft text; increments
+     * draft_version; clears stale flag." The version increment and the
+     * stale flag are set HERE (synchronously, inside the caller's
+     * version-checked transaction, because they are the concurrency
+     * control); the flag is *cleared* later by completeSummary() once the
+     * new summary actually exists. Between the two, `draft_summary_stale`
+     * is true — which is correct, not a gap: the stored summary really
+     * does describe superseded text, and §6 makes that a hard block on
+     * approval for exactly that window.
+     *
+     * `status` goes back to 'queued' so the worker picks it up. The worker
+     * distinguishes this from a fresh redaction by the presence of
+     * `draft_redacted_narrative` — a summary-only run therefore never
+     * touches `raw_narrative` at all (Rule 16).
+     */
+    public static function saveEditedDraftForSummary(PDO $pdo, int $logId, string $editedNarrative): int
+    {
+        $stmt = $pdo->prepare(
+            "UPDATE ai_processing_log
+                SET draft_redacted_narrative = :narrative,
+                    draft_version = draft_version + 1,
+                    draft_summary_stale = 1,
+                    status = 'queued',
+                    error_code = NULL,
+                    processed_at = NULL
+              WHERE log_id = :log_id"
+        );
+        $stmt->execute(['narrative' => $editedNarrative, 'log_id' => $logId]);
+
+        $readBack = $pdo->prepare('SELECT draft_version FROM ai_processing_log WHERE log_id = :log_id');
+        $readBack->execute(['log_id' => $logId]);
+        return (int) $readBack->fetchColumn();
+    }
+
+    /**
+     * Records a completed summary-only regeneration: the new summary
+     * lands and `draft_summary_stale` is finally cleared, which is what
+     * unblocks approval (§6).
+     */
+    public static function completeSummary(
+        PDO $pdo,
+        int $logId,
+        string $draftSummary,
+        string $actualModelVersion
+    ): void {
+        $stmt = $pdo->prepare(
+            "UPDATE ai_processing_log
+                SET draft_summary = :summary,
+                    draft_summary_stale = 0,
+                    model_version = :model_version,
+                    status = 'completed',
+                    error_code = NULL,
+                    processed_at = UTC_TIMESTAMP()
+              WHERE log_id = :log_id"
+        );
+        $stmt->execute([
+            'summary' => $draftSummary,
+            'model_version' => $actualModelVersion,
+            'log_id' => $logId,
+        ]);
+    }
+
     public static function completeTranslation(
         PDO $pdo,
         int $logId,

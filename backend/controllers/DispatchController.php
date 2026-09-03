@@ -216,6 +216,21 @@ final class DispatchController
             $where[] = 'd.status = :status';
             $params['status'] = $status;
         }
+        // `incident_id` filter (Sprint 6 addition, not in §6's listed query
+        // params): W7's timeline needs this incident's dispatched_at and
+        // arrived_at, which §9 names as required timeline stages, and W7's
+        // Admin resolve button needs to know whether an active dispatch
+        // still exists. Filtering an already-tenant-scoped list is strictly
+        // narrower than the unfiltered call the caller could already make —
+        // it discloses nothing new.
+        $incidentIdParam = Http::query('incident_id');
+        if ($incidentIdParam !== null) {
+            if (!ctype_digit($incidentIdParam)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'incident_id must be numeric.');
+            }
+            $where[] = 'd.incident_id = :incident_id';
+            $params['incident_id'] = (int) $incidentIdParam;
+        }
         $whereSql = implode(' AND ', $where);
 
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM dispatch d JOIN incident i ON i.incident_id = d.incident_id WHERE {$whereSql}");

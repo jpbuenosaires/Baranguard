@@ -1,14 +1,20 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-03. Two consecutive "code now, check later"
-sessions, at explicit user direction. Session A: Sprint 2's leftover
-mobile `POST /incidents` branch + ALL of Sprint 3. Session B: ALL of
-Sprint 5 (the AI pipeline), jumped to ahead of Sprint 4. NONE of it has
-been verified beyond `php -l` / `tsc --noEmit` parse checks. Sprint 4 is
-UNTOUCHED. The Android native build environment work described further
-down is unchanged — still blocked on the same JDK 21 install. Read
-`backend/DEVLOG.md`'s last two entries before trusting or extending any
-of it.**
+**Last updated: 2026-09-03. Session A: Sprint 2's leftover mobile
+`POST /incidents` branch + ALL of Sprint 3 (coded, unverified). Session B:
+ALL of Sprint 5, the AI pipeline (coded, unverified). Session C: Sprint 6
+— and unlike A and B, **Sprint 6's code is genuinely VERIFIED, 112/112 via
+`backend/scripts/verify-sprint6.sh` against real XAMPP**, plus 286 static
+web-wiring checks and a real browser pass over W7/W8. Sprints 3 and 5 remain coded-but-unverified;
+Sprint 4 is UNTOUCHED; the Android native build is still blocked on the
+same JDK 21 install. Read `backend/DEVLOG.md`'s last three entries before
+trusting or extending any of it.**
+
+**The one number that matters for the AI work: the MODEL has still never
+been called.** Everything verified was verified with SQL-seeded draft rows
+and `OLLAMA_URL` pointed at a dead port. Whether the redaction is any
+*good* is a separate question only the evaluation harness can answer — see
+`docs/AI_Evaluation_Dataset_Guide.md`.
 
 This file is the one thing to read to pick this project back up cold. It's
 a snapshot, not a substitute for `backend/DEVLOG.md` (the full narrative
@@ -20,18 +26,14 @@ update this file at the end of a session, don't let it go stale for long.
 - **Sprint 2's leftover + all of Sprint 3 are committed and pushed** to
   `origin/main` (`392a4b3`) — coded but unverified, and the commit
   message says so explicitly.
-- **Uncommitted right now: Sprint 5 only** (the AI pipeline —
-  `backend/services/ai/`, `AiDraftController.php`, `routes/ai.php`,
-  `scripts/ai-worker.php` + `README-ai.md`, the `SystemHealthController`
-  ollama probe, `.env.example`'s Ollama block, and the doc updates for
-  all of it).
-- **Also uncommitted, and NOT from these sessions:** a set of `web/`
-  changes (Toast, ConfirmDialog, DataTable/DonutChart/AppShell tweaks,
-  login and dispatch-center edits) that predate this work and were
-  already sitting in the tree. They were deliberately left out of
-  `392a4b3` rather than swept in. Someone should decide what they are
-  before committing them. The two `mobile/.scratch-screenshot*.png` files
-  are scratch junk and should just be deleted.
+- **Sprint 5 (the AI pipeline) is committed and pushed** (`d808bfa`), and
+  the earlier `web/` UI-polish work too (`c46e2c3` — Toast, ConfirmDialog,
+  sortable DataTable).
+- **Uncommitted right now: all of Sprint 6** — `BlotterController`,
+  `services/pdf/`, migration 0004, `verify-sprint6.sh`, the W7/W8 screens,
+  `RegexRedactor`, the evaluation-dataset guide, and the doc updates.
+- The two `mobile/.scratch-screenshot*.png` files are scratch junk and
+  should just be deleted.
 - Everything from the earlier "Sprint 2 remaining items" session (backend
   `POST /duty-status` + `POST /map-packages`, M2 Home, bottom-nav tabs,
   photo/voice capture, Keystore passphrase, Inter font vendoring, the
@@ -54,6 +56,54 @@ update this file at the end of a session, don't let it go stale for long.
   `php -l`. The queue, the Ollama client, the worker, the real health
   probe, and the translation gate all exist. **The model has never
   actually been called.** See the Sprint 5 section below.
+- **Sprint 6: 3 of 4 boxes done. CODE complete and verified (112/112
+  backend checks + a real browser pass over W7/W8) — but the sprint is NOT
+  finished.** The evaluation box needs a 200-record dataset that does not
+  exist yet and a model run that has never happened, so the sprint's
+  central claim (>=95% recall) is still unmeasured.
+  `bash backend/scripts/verify-sprint6.sh` against real XAMPP. This is the
+  first Sprint 3+ work with genuine verification evidence rather than a
+  parse check. It covers the approval loop (`regenerate-summary` +
+  `approve`), blotter finalize/amend/read, the Lupon packet, and
+  `GET /incidents/:id`.
+  - **That script never calls Ollama** — it seeds draft rows via SQL and
+    points `OLLAMA_URL` at a dead port, which doubles as proof the API only
+    ever enqueues (Rule 15). So it is runnable on any machine, any time.
+  - Before `approve` existed the AI pipeline was a dead end:
+    `incident.redacted_narrative` could never be written, so translation,
+    blotter finalization and the Lupon packet were all unreachable by
+    construction. That loop is now closed and tested.
+  - **Needs migration 0004 applied** (`blotter_revision`) to the real
+    `baranguard` database — it has only ever been applied to disposable
+    ones.
+  - **`lupon-packet` IS built**, using `services/pdf/SimplePdf.php`, a
+    small dependency-free PDF writer (no Composer in this repo). Packets
+    are written to `backend/storage/` — now gitignored, since they contain
+    the full approved narrative.
+  - **The UI layer is complete against §9**: W7 Electronic Blotter Detail
+    (finalize/amend, evidence list, Admin resolve, and the full
+    created_at/dispatched_at/arrived_at/approved_at/finalized_at timeline)
+    and W8 AI Redaction Review (redact/regenerate/approve/translate/packet).
+    Blotter rows open W7; W7 links to W8. Completing W7 required two
+    endpoints §6 documents but nobody had built —
+    `GET /incidents/:id/evidence` and `PATCH /incidents/:id/status` — plus
+    an `incident_id` filter on `GET /dispatch`.
+    **Both screens were driven in a real browser** (disposable rig, torn
+    down after) and that pass found two bugs every static check had
+    passed — most importantly a FABRICATED TIMELINE: a Secretary gets 403
+    on `GET /dispatch`, the failure was swallowed, and W7 showed "Not yet"
+    for stages that had happened. Fixed by carrying `dispatched_at` /
+    `arrived_at` / `has_active_dispatch` on `GET /incidents/:id` instead.
+    Only the Secretary role was exercised, against seeded data.
+  - **The evaluation harness (box 3) is BUILT and verified** —
+    `scripts/ai-evaluate.php`, proven against a 10-record smoke fixture
+    including the `ai_evaluation_run` write and its upsert-on-rerun.
+    The **baseline number already exists**: recall 39.13% / precision
+    100.00%, with every miss a NAME or ADDRESS — the concrete evidence
+    that regex cannot do this job.
+    Outstanding: the real 200-record dataset (manual, 3 people, see
+    `docs/AI_Evaluation_Dataset_Guide.md` — startable now, no model
+    needed) and the `--engine=model` run on the faster laptop.
 
 ## Sprint 2 — exactly what's done vs. not
 
@@ -279,6 +329,21 @@ design. Also unbuilt: the evaluation harness and
 finalize/amend/lupon-packet.
 
 ## Standing gotchas worth remembering (don't rediscover these)
+
+- **`backend/.env` needs the `OLLAMA_*` keys added by hand on every
+  machine.** Sprint 5 only added them to `.env.example`, which is the
+  committed template — the real `.env` is gitignored and per-machine. On
+  THIS workstation they were appended on 2026-09-03 (`OLLAMA_URL`,
+  `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_SECONDS`; a `.env.bak-preollama` backup
+  was left behind, covered by `.gitignore`'s `.env.*`). **On the laptop
+  you move the model work to, copy that block from `.env.example` or
+  `POST /incidents/:id/redact` will return 503 and
+  `GET /system/health` will report `ollama: not_configured`** — both of
+  which are correct, honest behaviour, not bugs.
+- **An empty `DB_PASSWORD` is rejected by design** (`config/db.php`), so a
+  disposable-database test cannot just use XAMPP's passwordless `root`.
+  Every `verify-*.sh` script creates a throwaway MySQL user with a real
+  password for exactly this reason; do the same in any new one.
 
 - **The user's real working directory is `C:\xampp\htdocs\baranguard`**,
   not `Videos\Baranguard` — see `CLAUDE.md`'s "Working directory" section

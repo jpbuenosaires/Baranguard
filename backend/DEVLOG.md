@@ -3475,3 +3475,412 @@ concurrency behaviour, or whether the model produces usable redactions.
    didn't, and (d) `model_version` records what actually ran.
 5. Kill Ollama mid-job and confirm the row returns to `queued`, not
    `failed` — the single most important behaviour in this cut.
+
+---
+
+# DEVLOG — Sprint 6: approval loop, blotter finalization, W8 review screen
+
+## Today's cut
+
+Worked from an approved written plan (`.claude/plans/`), which split Sprint
+6 into five phases. This session built **Phase 1 (approval loop), Phase 2
+(blotter finalization), and Phase 4 (W8 screen + `GET /incidents/:id`)**.
+
+Two phases were deliberately NOT built, both at the user's explicit
+direction mid-session:
+- **Phase 0 (execute the Sprint 5 pipeline against the real model)** —
+  stopped after the first smoke test; the user is running the model on a
+  more capable laptop instead.
+- **Phase 3 (evaluation harness)** — it is evaluation work that only means
+  anything once the model can actually be run, so it belongs with that
+  same machine.
+
+Sprint 6's first menu box (`POST /incidents/:id/redact` +
+`GET /incidents/:id/ai-draft`) was already built in Sprint 5.
+
+## What Phase 0 did establish before it was stopped
+
+This is the first time any of the Sprint 5 AI code has EVER executed, so
+the little that ran is worth recording precisely:
+
+- `php scripts/ai-worker.php --status` → **worked**:
+  `Queue: 0 queued, 0 processing, 0 completed, 0 failed.` /
+  `Ollama: reachable, model 'aisingapore/Llama-SEA-LION-v3.5-8B-R' present.`
+  That single command proves env loading, the `$_ENV`/`getenv()`
+  precedence chain, DB connectivity, the queue-depth query, Ollama
+  reachability over HTTP, and model presence.
+- It also exercised `OllamaClient::isModelAvailable()`'s tag-stripping:
+  `.env` names the model without a tag, `ollama list` reports
+  `...-R:latest`. A naive string comparison would have reported the model
+  missing on a perfectly good install; the pre-tag comparison handled it.
+- `backend/.env` had no `OLLAMA_*` keys (Sprint 5 only added them to
+  `.env.example`). Appended them; a `.env.bak-preollama` backup was left
+  behind and is covered by `.gitignore`'s `.env.*`.
+- **The model itself was never invoked.** No redaction, summary, or
+  translation has been generated. `stripReasoning()`'s handling of real
+  SEA-LION `-R` output remains reasoned-from-documentation, not observed —
+  and it is the single highest-risk untested thing in the AI pipeline.
+
+## Verification actually performed this session
+
+**`backend/scripts/verify-sprint6.sh` — 112/112 checks passed against real
+XAMPP (MariaDB + PHP 8.2), zero failures** (it grew from 79 to 112 across
+this entry as W7's endpoints and the browser-found fix were added).** This is a genuine verification
+pass, not a parse check, and it covers every backend endpoint in this cut.
+
+**It runs without Ollama, on purpose.** The approval gate does not care HOW
+a draft reached `ai_processing_log` — only what the row says. So the script
+seeds completed draft rows with SQL and exercises the gates against them.
+Better still, it exports `OLLAMA_URL` pointing at a **dead port** for the
+whole run: every endpoint still behaved correctly, which is positive proof
+that the request path only ever enqueues (Rule 15) rather than calling the
+model. That makes this script runnable on any machine, forever, including
+CI.
+
+What it actually proved, beyond role/tenant gating on all five new
+endpoints:
+
+- **Optimistic concurrency really works.** A stale `draft_version` gets 409
+  AND `draft_version` in the database is verifiably unchanged afterwards —
+  checked by direct SELECT, not by trusting the response.
+- **Every approval prerequisite blocks independently**: status still
+  `queued` → 409; wrong version → 409; text not matching the stored draft →
+  409; `draft_summary_stale=true` → 409. After all four rejections,
+  `redacted_narrative` was still NULL — no partial write leaked through.
+- **The happy path commits correctly**: `redacted_narrative`,
+  `redaction_approved_by`, and `redaction_approved_at` all set, confirmed by
+  SELECT, with exactly one audit row.
+- **Idempotent replay behaves as designed**: repeating an approval with
+  identical text returns 200 and writes **no second audit row**; repeating
+  with different text is a 409.
+- **`blotter_revision` earns its migration**: after an amendment, the
+  current row holds the new text and revision 1's original text is still
+  retrievable from `blotter_revision` — §6's "never deletes the previous
+  finalized value", demonstrated rather than asserted.
+- **Double-finalize is refused and the original summary survives it.**
+- **The Lupon packet is a real PDF** (`%PDF-` magic bytes), written to
+  protected storage, downloadable by the Secretary, 403 for Admin — and
+  grepping the file confirms **the raw narrative does not appear in it**.
+- **Bikol honestly reports `language_validated:false`** while Filipino
+  reports true (Rule 16).
+
+Also executed: **migration 0004 against a live disposable MariaDB** — applies
+on top of 0001, `DESCRIBE` returns the expected seven columns, re-running is
+a no-op (`IF NOT EXISTS`), the down migration drops it cleanly, and both
+foreign keys were accepted by MariaDB 10.4.
+
+Also executed: **the PDF writer's output was structurally validated** — a
+generated packet was parsed byte-wise to confirm the `%PDF-1.4` header, the
+`%%EOF` trailer, that `startxref` points at the literal `xref` keyword, and
+that **all 8 cross-reference offsets point exactly at their `N 0 obj`
+markers** (zero mismatches). A wrong xref offset is the most common way a
+hand-written PDF fails to open, so this was the check worth automating.
+Long text correctly paginated to 2 pages.
+
+## Resolved decisions (logged, don't reopen without review)
+
+**`regenerate-summary` queues; it does not generate inline.** §6's response
+shape reads as though a finished summary comes back, but an 8B CPU model
+takes minutes and Sprint 5 made "the API never calls Ollama" structural
+(Rule 15). So the endpoint does the *concurrency-critical* work
+synchronously inside one transaction — version equality check, save the
+Secretary's edited text, increment `draft_version`, set
+`draft_summary_stale=true`, re-queue — and the worker produces the summary.
+This finally gives `draft_summary_stale` a natural producer: between the
+edit and the regeneration the stored summary genuinely does describe
+superseded text, and §6 makes that a hard block on approval for exactly
+that window.
+
+**The worker tells a summary-only run from a full redaction by the DATA,
+not a flag.** A queued row that already has a `draft_redacted_narrative`
+can only be a regeneration; a fresh redact enqueue has that column NULL.
+Chosen over adding a marker column because it makes the guarantee
+structural: the summary-only path physically cannot read `raw_narrative`
+(Rule 16) or overwrite the Secretary's edits.
+
+**Approval replays idempotently on identical text, 409s on different
+text.** A Secretary double-clicking Approve, or a retried request, would
+otherwise get a conflict for an operation that already succeeded — the
+same replay pattern `POST /dispatch` and `POST /incidents` already use. A
+repeat with *different* text is a real 409: changing an approved redaction
+is the amendment workflow's job.
+
+**Approval does NOT delete `raw_narrative`.** §11 gives a 30-day
+post-approval grace period; that deletion belongs to Sprint 7's retention
+jobs, not to the approval transaction.
+
+**Blotter amendment needed a new table (migration 0004).** §6 says an
+amendment "never deletes the previous finalized value", but
+`blotter_record` has a single `narrative_summary` column, so an amendment
+necessarily overwrites it — the prior text had nowhere to live. Rejected
+storing it in `audit_log.metadata_json`: Rule 17 allow-lists audit metadata
+to identifiers and statuses. `blotter_revision` holds each superseded
+version; `amend()` copies the current text there *before* overwriting, so
+the live row is always current and every prior version stays retrievable.
+
+**`finalize`/`amend` are Secretary-only, and Admin is deliberately
+excluded** even though Admin outranks Secretary everywhere else. §3: RA
+7160 §394(c) makes the Barangay Secretary the statutory custodian of
+barangay records. Flagged in the controller doc so a later session doesn't
+"fix" the asymmetry.
+
+**`GET /incidents/:id` is the only endpoint that returns `raw_narrative`,
+and only to a Secretary.** The allow-listed payload is built first and the
+raw field is appended last, inside a single role check — so the safe shape
+is the default and raw access is the visible exception rather than
+something to notice by its absence.
+
+**`POST /incidents/:id/lupon-packet` was NOT built.** It needs PDF
+generation and this repo has no PDF library and no Composer. Vendoring one
+(FPDF) or rendering print-styled HTML is its own scoped decision, not a
+rider on this cut. No route was registered — an honest 404 beats a route
+that 500s.
+
+**W8 has no sidebar nav entry.** It is a per-incident detail view and
+cannot render without an incident id, so a nav item would link to a broken
+screen. It is reached by clicking a row in W6 Electronic Blotter (Secretary
+only; for other roles the rows stay non-interactive rather than opening a
+screen the server would refuse), and reports `blotter` as the active nav
+item. `main.js` gained a `DETAIL_PAGES` set so such a page is never chosen
+as a role's default landing page and falls back if reached without its
+parameter.
+
+**W8 shows no confidence score at all.** §8 explicitly calls out the Figma
+mockup's fabricated 94%/95%/78-out-of-100 numbers. None is backed by an
+`ai_evaluation_run` yet, and a plausible-looking percentage would be
+fabricated data — worse than none. The model badge shows the row's real
+`model_version`, and the "generating" state polls the server's actual
+`status` rather than running a `setTimeout`.
+
+## Bug caught while writing (before it ever ran)
+
+`ai-review.js`'s first draft declared `let this_textarea` and
+`let actionRefs` *after* the function's `return` statement. Function
+declarations hoist, but `let` does not initialise until control flow
+reaches it — and control flow never does, because `return` exits first. The
+async `render()` that assigns to them would have thrown
+`ReferenceError: Cannot access 'this_textarea' before initialization` on
+every single load. Moved both declarations above the `return` and renamed
+to `draftTextarea`. Worth remembering as a category: in this codebase's
+"return a handle, then declare helpers below" page pattern, only *function*
+declarations are safe below the return — `let`/`const` are not.
+
+Also caught before running: the first draft used `.muted`,
+`.card__header`, and `.card__actions` — classes that exist in the MOBILE
+app's `theme/app.css`, not the web dashboard's `base.css`. Replaced with
+the web's real `.note` plus two new page-scoped classes.
+
+## Files
+
+**New:**
+- `backend/controllers/BlotterController.php` — `finalize()`, `amend()`,
+  `show()`.
+- `backend/routes/blotter.php`.
+- `backend/migrations/0004_blotter_revision.sql` + `.down.sql`.
+- `backend/services/ai/RegexRedactor.php` — the Phase 3 baseline
+  comparator. **Nothing references it yet**; written before Phase 3 was
+  deferred, kept because the evaluation harness will need it verbatim.
+  Remove it if the orphan bothers you.
+- `web/src/pages/ai-review.js` + `ai-review.css` — W8.
+
+**Modified:**
+- `backend/controllers/AiDraftController.php` — `regenerateSummary()`,
+  `approve()`.
+- `backend/controllers/IncidentsController.php` — `show()`.
+- `backend/services/ai/AiJobQueue.php` — `saveEditedDraftForSummary()`,
+  `completeSummary()`.
+- `backend/scripts/ai-worker.php` — `runSummaryOnlyJob()` + dispatch.
+- `backend/routes/ai.php`, `backend/routes/incidents.php`.
+- `web/src/api/apiClient.js` — 8 methods (incident detail, draft, redact,
+  regenerate, approve, translate, finalize, amend).
+- `web/src/main.js` — `ai-review` route, `DETAIL_PAGES`, parameterised
+  `navigate`.
+- `web/src/pages/blotter-list.js` — Secretary row-click into W8.
+- `web/index.html` — page stylesheet link.
+
+## Follow-up in the same session: W7, W8's post-approval controls, and a web wiring check
+
+The entry above closed with "finalize/amend are verified endpoints with no
+UI calling them" as Sprint 6's biggest gap. That is now closed too.
+
+- **W7 Electronic Blotter Detail** (`web/src/pages/blotter-detail.js`) —
+  the Secretary's finalize/amend screen, plus a real timestamp timeline
+  built only from API values (§9 W7: "never a scripted one"; a stage that
+  has not happened shows as pending rather than being invented). Finalize
+  and amend both go through `confirmDialog()` first, since neither is
+  reversible in the ordinary way.
+- **`GET /incidents/:id/blotter`** — built after all, because W7 works
+  from an incident id and `GET /blotter/:id` needs an id it does not have.
+  It stopped being unused scaffolding the moment W7 existed.
+- **W8 gained its post-approval controls** (§9 puts them there): a
+  language picker + queue-translation button that surfaces
+  `language_validated:false` for Bikol in the toast rather than hiding it,
+  and generate/download for the Lupon packet.
+- **Row-click flow corrected.** Blotter rows now open W7 for every role
+  that can read the list, and W7 links to W8 — matching the real workflow
+  (review entry -> approve redaction -> finalize -> packet). Previously
+  rows opened W8 directly and only for Secretary.
+- **`web/scripts/verify-web-wiring.mjs`** (NEW) — a static wiring check
+  for a stack with no bundler and no test runner: it resolves every
+  relative import against the target module's actual exports, and verifies
+  every literal CSS class used from JS is defined in a stylesheet
+  `index.html` actually links. **286 checks, 0 failures** across all web
+  modules. This exists because the first draft of W8 used `.muted` /
+  `.card__header` / `.card__actions` — real classes, but from the MOBILE
+  app's stylesheet, which would have rendered as unstyled text with no
+  error anywhere. `node --check` cannot see that; this can.
+  - Writing it surfaced two genuine false-positive classes that were
+    fixed rather than papered over: a computed class like
+    `` `toast--${variant}` `` leaves a dangling `toast--` literal (now
+    skipped), and `kpi-card` is a real marker class with no styles of its
+    own (allowlisted, with the reason written next to it).
+  - Honest limit, recorded in the script's own header: it does NOT catch
+    undefined identifiers. The other W8 bug — `${API_BASE_URL}` where the
+    constant is named `BASE_URL` — needs real scope analysis, i.e. a
+    linter dependency this project has not taken on.
+
+### W7 was still incomplete — finished in the same session
+
+A check of W7 against §9's actual wording (rather than against memory)
+found three gaps. §9 lists five APIs for W7 and only three were wired:
+
+- **`GET /incidents/:id/evidence`** — endpoint did not exist. Built.
+  §6's "never returns filesystem paths" is honoured by omitting
+  `file_path` from the response shape entirely rather than filtering it
+  late; the test asserts the path string cannot be found anywhere in the
+  body. Punong Barangay is deliberately NOT on the role list — §6 names
+  only Secretary/Admin/Tanod, and PB's access elsewhere is "redacted
+  read-only", which evidence files are not.
+- **`PATCH /incidents/:id/status`** — endpoint did not exist. Built,
+  Admin-only, body exactly `{status:"resolved"}` and nothing else, with
+  §6's two prerequisites enforced transactionally: the incident must be
+  `dispatched`, and no dispatch may still be active. A repeated resolve
+  falls out as 409 naturally, since an already-resolved incident is no
+  longer `dispatched`.
+- **The timeline was missing `dispatched_at` and `arrived_at`**, both
+  named explicitly in §9. Those live on the dispatch row, so
+  `GET /dispatch` gained an `incident_id` filter — narrowing an
+  already-tenant-scoped list discloses nothing the caller could not
+  already fetch unfiltered.
+
+W7 now also carries the Admin resolve control, shown only when the real
+dispatch/state prerequisites are met (§9: "Admin incident resolution is
+shown only when the dispatch/state prerequisites are met") and disabled
+with the specific reason otherwise, so it can never be a button that 409s
+on click.
+
+Verification at this point in the session: `verify-sprint6.sh` 104/104 and
+the wiring check's 287, both green on consecutive runs. (Both counts moved
+again afterwards — see the browser-pass section below for the final
+112/112 and 286.)
+
+**One flaky observation, recorded rather than hidden:** on a single run,
+the "Approval wrote an audit row" check returned an empty string instead
+of a count — an empty result implies the query itself failed, not that the
+audit row was missing. It has not reproduced across three subsequent full
+runs (104/104 each). Most likely this project's already-documented stale
+`php.exe`-bound-to-the-port issue, but that is a hypothesis, not a
+diagnosis — if it recurs, capture the mysql stderr before assuming the
+approval path is at fault.
+
+## The browser pass — and the two real bugs only it could find
+
+The user asked whether the UI actually worked, so W7/W8 were finally driven
+in a real browser against a disposable rig (own database, own API port on
+8137, a repointed copy of `web/` on 8138, throwaway Secretary/Admin
+accounts, all torn down afterwards; the real `baranguard` database was
+never touched). It immediately found two things every static check had
+passed:
+
+**1. A Secretary gets 403 on `GET /dispatch`, so W7's timeline was
+fabricated.** §6 lists that endpoint as Admin/PB/Tanod only — Secretary is
+not on it. W7 called it for the `dispatched_at`/`arrived_at` stages §9
+requires, the call 403'd, and a `.catch(() => [])` swallowed it. The
+timeline then rendered **"Not yet" for stages that had definitely
+happened** — precisely the scripted/fabricated timeline §9 forbids, and
+invisible to `php -l`, `node --check`, the wiring check, and the 104-check
+backend suite, because every one of those components was individually
+correct.
+
+Fixed by moving the two timestamps (plus a derived `has_active_dispatch`)
+onto `GET /incidents/:id`, which the Secretary may read. Widening
+`GET /dispatch`'s role list was rejected: it would hand the Secretary the
+whole dispatch record — assignments, route, tanod ids — to obtain two
+timestamps §9 says must be on screen. W7 now makes no `/dispatch` call at
+all, which also removed the swallowed-error path entirely.
+
+**2. A patch of mine silently no-oped, and my own check of it was a false
+positive.** The `getDispatches({incidentId})` edit targeted a multi-line
+form of a call that is actually written on one line, so `str.replace` did
+nothing. The verification line I printed — `"incident_id: incidentId" in s`
+→ True — matched `createDispatch`'s *body* elsewhere in the file, not the
+edit. I reported it as applied when it was not. The lesson is specific and
+worth keeping: **assert on the thing you changed, not on a substring that
+can occur elsewhere** — later patches in this session were changed to
+`assert s != before` and to re-grep the exact target.
+
+What the browser pass confirmed working, with hard assertions rather than
+a glance at a screenshot:
+
+- W7: all five §9 timeline stages populate in chronological order
+  (reported → dispatched → arrived → approved → finalized); `Evidence (2)`
+  lists real attachments; the evidence filesystem path appears **nowhere**
+  in the DOM; the amend form appears only because the blotter is finalized.
+- W8: the model badge shows the real `aisingapore/Llama-SEA-LION-v3.5-8B-R`
+  — no vendor name; **no confidence/accuracy number anywhere**; Approve is
+  disabled with the true reason ("This incident already has an approved
+  redaction"); the raw panel shows the real names while the draft textarea
+  holds `[NAME] [ADDRESS] [PHONE]`, i.e. side-by-side genuinely works.
+- Row-click into W7 works, with the new open-hint affordance rendering on
+  every row.
+
+**Browser-tool flakiness, recorded so it isn't re-diagnosed:** the pane
+navigated the app between separate `javascript_exec` calls more than once
+(landing on Settings, and on a detail screen, unprompted). The prior
+DEVLOG entry documents the same class of problem with this tool. The
+workaround that made the pass reliable was doing an entire flow —
+navigate, click, assert — inside ONE evaluation, so nothing could
+intervene mid-sequence.
+
+Suite after the fix: **`verify-sprint6.sh` 112/112** (eight new checks,
+including that a Secretary really does get 403 on `/dispatch` — the
+reason those fields live on the incident endpoint — and that a
+never-dispatched incident reports `null` rather than a fabricated time)
+and **286 wiring checks**.
+
+## NOT done — stated plainly
+
+- **Only W7 and W8 were opened, and only as a Secretary and against seeded
+  data.** No Admin or Punong Barangay browser pass, and no pass over the
+  other nine screens.
+- **Evidence files cannot be downloaded from W7.** The list is there, but
+  §6's evidence endpoint returns no path by design and no authorized
+  byte-serving endpoint exists yet (Sprint 7). W7 says so in plain text
+  rather than offering a link that would 404.
+- **Phase 3 (evaluation harness)** — deferred by decision. No dataset, no
+  scoring, no `ai_evaluation_run` row has ever been written; the ≥95%/≥90%
+  target is unmeasured. `docs/AI_Evaluation_Dataset_Guide.md` was written
+  this session so the three-person dataset build can start immediately
+  without the model.
+- **The model still has never been called.** Everything verified above was
+  verified with seeded rows and a dead Ollama port. Whether the redaction
+  is any *good* is a completely separate question that only the evaluation
+  harness can answer.
+
+## Suggested order for the follow-up session
+
+1. On the capable laptop: finish Phase 0 (queue a redaction with planted
+   PII, run the worker, confirm no `<think>` survives and the identifiers
+   are gone; then kill Ollama mid-job and confirm the row returns to
+   `queued`).
+2. Apply migration 0004 to the real database — nothing else in Sprint 6
+   works without `blotter_revision`.
+3. `verify-sprint6.sh`: role gating on all five new endpoints, stale
+   `draft_version` → 409 **with the incident row verifiably unchanged**,
+   approval blocked while `draft_summary_stale=true`, text-mismatch → 409,
+   successful approval confirmed by direct SELECT, double-finalize → 409,
+   and an amendment leaving the prior text retrievable from
+   `blotter_revision`.
+4. Browser pass on W8 as a real Secretary account.
+5. Then Phase 3's evaluation harness, which is the only thing that can
+   answer whether the redaction is actually good enough to rely on.

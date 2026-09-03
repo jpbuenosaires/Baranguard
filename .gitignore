@@ -23,6 +23,13 @@ restore/
 *.sql.enc
 *.sha256
 
+# Protected file storage — served only through authorized API endpoints,
+# never from the web root (§5), and NEVER committed. Lupon packets hold
+# the full approved incident narrative; map packages and evidence are
+# operational data, not source. Added Sprint 6 when the lupon-packet
+# endpoint started writing real PDFs here.
+/backend/storage/
+
 # Temporary files
 tmp/
 temp/

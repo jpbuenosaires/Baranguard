@@ -1,0 +1,51 @@
+/**
+ * ai-review.css — W8 AI Redaction Review's own styles.
+ *
+ * Co-located per-page stylesheet, same pattern as login.css /
+ * dispatch-center.css / gis-live-tracking.css. Built from §8's design
+ * tokens only — no hardcoded hex, spacing, or font values (§8: "Never
+ * hardcode a hex value, pixel spacing, or font name in a component file").
+ */
+
+/* Metadata row: status pill + draft version + the real model name. Wraps
+   rather than truncating — the model identifier is long
+   (`aisingapore/Llama-SEA-LION-v3.5-8B-R`) and §8 requires it be shown in
+   full, since a truncated model badge is how a vendor name sneaks in
+   unnoticed. */
+.ai-review__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.ai-review__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+/**
+ * Narrative panes (original + summary).
+ *
+ * `pre` preserves the paragraph breaks a Tanod or Secretary actually
+ * typed, but `white-space: pre-wrap` + `overflow-wrap` stop a long line
+ * from forcing the whole page into a horizontal scroll. Capped height
+ * with its own scroll so a long narrative can't push the action buttons
+ * off-screen — approval must always be reachable without hunting.
+ */
+.narrative-block {
+  margin: var(--spacing-sm) 0 0;
+  padding: var(--spacing-md);
+  max-height: 24rem;
+  overflow-y: auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
