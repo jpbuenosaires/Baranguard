@@ -47,10 +47,10 @@ Android; enabled by `androidIsEncryption: true` in `capacitor.config.ts`).
   against §5 (47 checks).
 
 Tables created so far: `incident_local`, `mobile_device_local`,
-`offline_map_package_local`. The other §5 local tables (`dispatch_local`,
-`gps_track_local`, `duty_status_local`, `evidence_attachment_local`,
-`offline_queue_local`) belong to later sprint boxes and are deliberately
-not created yet.
+`offline_map_package_local`, `evidence_attachment_local` (Sprint 2), and
+`dispatch_local`, `gps_track_local`, `offline_queue_local` (Sprint 3).
+`duty_status_local` is deliberately not created — see `localSchema.ts`'s
+file header for why.
 
 Migrations are **append-only** and applied in place — never drop and
 recreate the local store. Rule 2 makes this non-negotiable: a rebuild
@@ -69,4 +69,6 @@ would destroy field captures not yet reconciled with the server.
   `PassphraseProvider` comment in `localDatabase.ts`. It is deliberately
   *not* defaulted; a hardcoded key would make "encrypted at rest" hollow.
   Must be resolved before M1/M3 persist a real `raw_narrative`.
-- No screens yet — the scaffold's blank starter page is still in place.
+- M1/M2/M3/M4/M5/M6/M7 screens exist (see `src/pages/`) — see
+  `backend/DEVLOG.md` for exactly what's been device-verified vs. only
+  browser/code-verified vs. coded-but-untested per session.

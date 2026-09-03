@@ -14,8 +14,11 @@ import {
 import { IonReactRouter } from '@ionic/react-router';
 import { addCircle, homeOutline, listOutline, mapOutline, personOutline } from 'ionicons/icons';
 import NotBuiltYetPage from './components/NotBuiltYetPage';
+import AssignmentDetailPage from './pages/assignment-detail';
+import AssignmentsPage from './pages/assignments';
 import HomePage from './pages/home';
 import IncidentSubmittedPage from './pages/incident-submitted';
+import LiveMapPage from './pages/live-map';
 import LoginPage from './pages/login';
 import NewIncidentPage from './pages/new-incident';
 import { hasLiveSession } from './services/session';
@@ -100,35 +103,22 @@ const RequireSession: React.FC<{ children: React.ReactNode }> = ({ children }) =
  * Tanod needs dozens of times a shift for something used at most twice a
  * week. Tabs: Home / Assignments / Log Incident / Map / Profile.
  *
- * Assignments (M5), Map (M7), and Profile (M10) are Sprint 3+ scope and
- * not built this cut — their tabs route to `NotBuiltYetPage` rather than
- * being hidden, so the nav shell itself is real and complete now instead
- * of growing a tab at a time later.
+ * Assignments (M5) and Map (M7) are Sprint 3 scope, now built — see
+ * assignments.tsx/live-map.tsx. Profile (M10) is not built yet and still
+ * routes to `NotBuiltYetPage` rather than being hidden.
  */
 const TabbedShell: React.FC = () => (
   <IonTabs>
     <IonRouterOutlet>
       <Route path="/home" element={<HomePage />} />
-      <Route
-        path="/assignments"
-        element={
-          <NotBuiltYetPage
-            title="Assignments"
-            detail="M5 Assignments List is Sprint 3 scope — it reads dispatch_local, which doesn't exist on this device yet."
-          />
-        }
-      />
+      {/* M5. */}
+      <Route path="/assignments" element={<AssignmentsPage />} />
+      {/* M6 — reached by tapping a card on M5, not a tab of its own. */}
+      <Route path="/assignments/:localId" element={<AssignmentDetailPage />} />
       {/* M3. */}
       <Route path="/incidents/new" element={<NewIncidentPage />} />
-      <Route
-        path="/map"
-        element={
-          <NotBuiltYetPage
-            title="Live Map"
-            detail="M7 Live Map is Sprint 3 scope — it needs GPS broadcast and gps_track_local, neither built yet."
-          />
-        }
-      />
+      {/* M7. */}
+      <Route path="/map" element={<LiveMapPage />} />
       <Route
         path="/profile"
         element={

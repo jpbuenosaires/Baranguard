@@ -10,9 +10,8 @@ use PDO;
 
 /**
  * GPS — Master Reference §6 "GPS" section (`GET /gps/live`,
- * `GET /gps/history` only; `POST /gps` is Tanod-only mobile-broadcast
- * scope, Sprint 3, not built here), §5 `gps_track` table, §9 W4 GIS Live
- * Tracking.
+ * `GET /gps/history`, and — added this Sprint 3 cut — `POST /gps`), §5
+ * `gps_track` table, §9 W4 GIS Live Tracking / M7 Live Map.
  *
  * §6 fixes the freshness fields (`recorded_at`, `received_at`,
  * `age_seconds`, `is_stale` at >=120s) and `GET /gps/history`'s exact
@@ -24,16 +23,36 @@ use PDO;
  *     row plus freshness — as `{items:[{user_id,full_name,dispatch_id,
  *     latitude,longitude,accuracy_m,recorded_at,received_at,
  *     age_seconds,is_stale}]}`. A Tanod with no GPS row at all is simply
- *     absent from `items` (there is no "position" to show), which is the
- *     correct/expected state until Sprint 3's mobile GPS broadcast
- *     exists — this will legitimately return an empty list against real
- *     data today.
+ *     absent from `items` (there is no "position" to show).
  *   - `age_seconds`/`is_stale` are computed against `recorded_at` (the
  *     device's own capture time), not `received_at` — staleness is about
  *     how old the *position* is, not network/queue delay.
  *   - `GET /gps/history`'s date range reuses the same 366-day cap
  *     `ReportsController` already established for date-range endpoints,
  *     for consistency rather than inventing a different number.
+ *
+ * POST /gps (Sprint 3 cut): §6 — "Tanod only → {track_id,received_at}. If
+ * dispatch_id is supplied, it must belong to caller, same barangay, and be
+ * active. client_event_id required for offline/retryable writes. Server
+ * records received_at and validates coordinate ranges/accuracy bounds."
+ * The exact request body isn't spelled out beyond that prose; resolved
+ * here from §5's `gps_track` columns (logged in DEVLOG.md):
+ *   - Body: {latitude,longitude,accuracy_m,recorded_at,dispatch_id?,
+ *     client_event_id}. `recorded_at` is the device's own capture
+ *     timestamp (§5 `gps_track.recorded_at`, distinct from the
+ *     server-authoritative `received_at` — Rule 31: client timestamps are
+ *     informational and never replace server receipt time).
+ *   - `client_event_id` is always required, not just "for offline/
+ *     retryable writes" — every mobile write in this codebase already
+ *     requires one (duty status, dispatch creation, shifts), and a
+ *     broadcast-cadence endpoint like this is retried by definition.
+ *   - "Active" dispatch (for the optional `dispatch_id` check) means
+ *     status IN ('assigned','en_route','arrived') — the same "not yet
+ *     completed/cancelled" definition DispatchController already uses
+ *     elsewhere in this codebase.
+ *   - `createItem()` is `public static` so `SyncController::batch()`
+ *     (POST /sync/batch's `gps_tracks[]` items, same Sprint 3 cut) reuses
+ *     the identical validation/idempotency/insert path.
  */
 final class GpsController
 {
@@ -41,6 +60,8 @@ final class GpsController
     private const STALE_AFTER_SECONDS = 120;
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
+    private const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
+    private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function live(PDO $pdo, array $identity): void
@@ -167,6 +188,112 @@ final class GpsController
         }, $rows);
 
         Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total]);
+    }
+
+    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    public static function create(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['tanod']);
+
+        $body = Http::jsonBody();
+        $result = self::createItem($pdo, $identity, $body);
+        Http::send($result['wasCreated'] ? 201 : 200, [
+            'track_id' => $result['track_id'],
+            'received_at' => $result['received_at'],
+        ]);
+    }
+
+    /**
+     * Core GPS-broadcast logic, shared by the direct POST /gps path and
+     * `SyncController::batch()`'s `gps_tracks[]` items — see class doc.
+     *
+     * @param array<string,mixed> $item
+     * @return array{track_id:int, received_at:string, wasCreated:bool}
+     */
+    public static function createItem(PDO $pdo, array $identity, array $item): array
+    {
+        $latitude = $item['latitude'] ?? null;
+        $longitude = $item['longitude'] ?? null;
+        $accuracyM = $item['accuracy_m'] ?? null;
+        $recordedAtRaw = $item['recorded_at'] ?? null;
+        $dispatchId = $item['dispatch_id'] ?? null;
+        $clientEventId = $item['client_event_id'] ?? null;
+
+        if (!is_string($clientEventId) || !preg_match(self::UUID_PATTERN, $clientEventId)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'client_event_id must be a UUID.');
+        }
+        if (!is_numeric($latitude) || !is_numeric($longitude)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude and longitude are required.');
+        }
+        $lat = (float) $latitude;
+        $lng = (float) $longitude;
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude/longitude are out of range.');
+        }
+        if (!is_numeric($accuracyM) || (float) $accuracyM < 0) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'accuracy_m must be a non-negative number.');
+        }
+        if (!is_string($recordedAtRaw) || strtotime($recordedAtRaw) === false) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'recorded_at must be a valid timestamp.');
+        }
+        $recordedAt = gmdate('Y-m-d H:i:s', (int) strtotime($recordedAtRaw));
+
+        $dispatchIdInt = null;
+        if ($dispatchId !== null) {
+            if (!is_int($dispatchId) && !(is_string($dispatchId) && ctype_digit($dispatchId))) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'dispatch_id must be an integer.');
+            }
+            $dispatchIdInt = (int) $dispatchId;
+            // §6: "must belong to caller, same barangay, and be active."
+            $dispatchStmt = $pdo->prepare(
+                "SELECT d.dispatch_id
+                 FROM dispatch d
+                 JOIN incident i ON i.incident_id = d.incident_id
+                 WHERE d.dispatch_id = :dispatch_id AND d.tanod_id = :tanod_id
+                   AND i.barangay_id = :barangay_id
+                   AND d.status IN ('assigned','en_route','arrived')
+                 LIMIT 1"
+            );
+            $dispatchStmt->execute([
+                'dispatch_id' => $dispatchIdInt,
+                'tanod_id' => $identity['user_id'],
+                'barangay_id' => $identity['barangay_id'],
+            ]);
+            if ($dispatchStmt->fetch(PDO::FETCH_ASSOC) === false) {
+                throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'dispatch_id does not reference an active dispatch assigned to you.');
+            }
+        }
+
+        // §5 UNIQUE(user_id, client_event_id).
+        $existingStmt = $pdo->prepare(
+            'SELECT track_id, received_at FROM gps_track WHERE user_id = :user_id AND client_event_id = :client_event_id LIMIT 1'
+        );
+        $existingStmt->execute(['user_id' => $identity['user_id'], 'client_event_id' => $clientEventId]);
+        $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+        if ($existing !== false) {
+            return ['track_id' => (int) $existing['track_id'], 'received_at' => $existing['received_at'], 'wasCreated' => false];
+        }
+
+        $insertStmt = $pdo->prepare(
+            'INSERT INTO gps_track (user_id, dispatch_id, latitude, longitude, accuracy_m, recorded_at, received_at, client_event_id)
+             VALUES (:user_id, :dispatch_id, :latitude, :longitude, :accuracy_m, :recorded_at, UTC_TIMESTAMP(), :client_event_id)'
+        );
+        $insertStmt->execute([
+            'user_id' => $identity['user_id'],
+            'dispatch_id' => $dispatchIdInt,
+            'latitude' => $lat,
+            'longitude' => $lng,
+            'accuracy_m' => (float) $accuracyM,
+            'recorded_at' => $recordedAt,
+            'client_event_id' => $clientEventId,
+        ]);
+        $trackId = (int) $pdo->lastInsertId();
+
+        $readBack = $pdo->prepare('SELECT received_at FROM gps_track WHERE track_id = :track_id');
+        $readBack->execute(['track_id' => $trackId]);
+        $receivedAt = $readBack->fetchColumn();
+
+        return ['track_id' => $trackId, 'received_at' => $receivedAt, 'wasCreated' => true];
     }
 
     private static function parseDate(string $raw, \DateTimeZone $tz, string $field): \DateTimeImmutable
