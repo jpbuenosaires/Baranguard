@@ -58,6 +58,8 @@ const NAV_ITEMS = [
   { key: 'scheduler', label: 'Shift Scheduler', roles: ['admin'], icon: icons.calendar },
   { key: 'swap-requests', label: 'Swap Requests', roles: ['admin'], icon: icons.repeat },
   { key: 'fatigue', label: 'Fatigue Flags', roles: ['admin', 'punong_barangay'], icon: icons.batteryWarning },
+  // §9 W14 — Admin only, explicitly.
+  { key: 'sms-log', label: 'SMS Activity Log', roles: ['admin'], icon: icons.messageSquare },
   { key: 'settings', label: 'Settings', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.settings },
 ];
 

@@ -630,7 +630,42 @@ export async function getSystemHealth() {
   return {
     api: json.api, db: json.db, osrm: json.osrm, ollama: json.ollama,
     gsmIngestion: json.gsm_ingestion, notificationConfig: json.notification_config,
+    fcm: json.fcm, smsSemaphore: json.sms_semaphore,
     backupLastSuccess: json.backup_last_success, restoreTestAt: json.restore_test_at,
+  };
+}
+
+/**
+ * GET /sms/logs — §6, §9 W14 (Admin only, read-only). No sender_number/
+ * receiver_number field exists in the response at all — see
+ * SmsController.php's own doc for why that's not an oversight.
+ */
+export async function getSmsLogs({ messageType, direction, status, page, limit } = {}) {
+  const json = await request('GET', '/sms/logs', {
+    query: { message_type: messageType, direction, status, page, limit },
+    auth: true,
+  });
+  return {
+    items: json.items.map((row) => ({
+      logId: row.log_id,
+      reportId: row.report_id,
+      incidentId: row.incident_id,
+      dispatchId: row.dispatch_id,
+      transport: row.transport,
+      messageType: row.message_type,
+      direction: row.direction,
+      status: row.status,
+      correlationId: row.correlation_id,
+      gatewayMessageId: row.gateway_message_id,
+      modemMessageId: row.modem_message_id,
+      sentAt: row.sent_at,
+      receivedAt: row.received_at,
+      createdAt: row.created_at,
+      failureReason: row.failure_reason,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
   };
 }
 

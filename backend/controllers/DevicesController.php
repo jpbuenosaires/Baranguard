@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Sms\DeviceSecretVault;
 use PDO;
 
 /**
@@ -47,6 +48,28 @@ use PDO;
  *   - **`fcm_token` is never echoed back** in any response, and never
  *     written to audit metadata (§6 "Returns no FCM token"; Rule 17
  *     allows identifiers/statuses only).
+ *
+ * Sprint 4 addition — SMS envelope key provisioning (§6 "Internal SMS /
+ * GSM", §2 Rule 26): §6 documents no separate key-provisioning endpoint,
+ * and neither does its literal response shape for this one
+ * (`{device_id,registered:true}`), but the encrypted SMS envelope those
+ * internal handlers require is symmetric crypto — the device and server
+ * must share a raw key, and there is no other endpoint in this codebase
+ * where that key could be handed to the device. Resolved (logged, not
+ * silently invented): `register()` generates a 32-byte per-device secret
+ * ON THE DEVICE_ID'S FIRST-EVER REGISTRATION ONLY, stores it encrypted at
+ * rest (`DeviceSecretVault`, under `DEVICE_SECRET_MASTER_KEY`), and
+ * returns the RAW key ONCE in that same response as
+ * `message_encryption_key` (base64). A later re-registration of the SAME
+ * device_id (the ordinary FCM-token-refresh path above) never regenerates
+ * or re-returns it — same "provisioned once, never re-exposed" precedent
+ * as this endpoint already sets for `fcm_token`. If `DEVICE_SECRET_MASTER_KEY`
+ * is unset, this is skipped entirely (device_secret_ref stays NULL,
+ * `message_encryption_key` is omitted) — an honest "SMS envelope crypto
+ * isn't configured on this deployment" state, not a broken one; every
+ * `/internal/sms/*` inbound handler already treats a NULL
+ * `device_secret_ref` as "reject this envelope", so nothing downstream
+ * silently trusts an unprovisioned device.
  */
 final class DevicesController
 {
@@ -80,11 +103,25 @@ final class DevicesController
             throw new ApiError(400, 'VALIDATION_ERROR', 'app_version must be a string of at most 64 characters.');
         }
 
-        $ownershipStmt = $pdo->prepare('SELECT user_id FROM mobile_device WHERE device_id = :device_id LIMIT 1');
+        $ownershipStmt = $pdo->prepare('SELECT user_id, device_secret_ref FROM mobile_device WHERE device_id = :device_id LIMIT 1');
         $ownershipStmt->execute(['device_id' => $deviceId]);
-        $existingOwner = $ownershipStmt->fetchColumn();
+        $existingRow = $ownershipStmt->fetch(PDO::FETCH_ASSOC);
+        $existingOwner = $existingRow !== false ? $existingRow['user_id'] : false;
         if ($existingOwner !== false && (int) $existingOwner !== $identity['user_id']) {
             throw new ApiError(409, 'CONFLICT', 'This device cannot be registered to this account.');
+        }
+
+        // See the class doc's "SMS envelope key provisioning" note. Only
+        // generated when this device_id has no secret yet, and only ever
+        // returned in THIS response.
+        $vault = new DeviceSecretVault();
+        $needsSecretProvisioning = $vault->isConfigured()
+            && ($existingRow === false || $existingRow['device_secret_ref'] === null);
+        $rawMessageEncryptionKey = null;
+        $wrappedSecret = null;
+        if ($needsSecretProvisioning) {
+            $rawMessageEncryptionKey = DeviceSecretVault::generateRawSecret();
+            $wrappedSecret = $vault->wrap($rawMessageEncryptionKey);
         }
 
         $pdo->beginTransaction();
@@ -102,18 +139,20 @@ final class DevicesController
 
             $pdo->prepare(
                 "INSERT INTO mobile_device
-                    (device_id, user_id, platform, fcm_token, app_version, last_seen_at, is_active, created_at)
+                    (device_id, user_id, platform, fcm_token, device_secret_ref, app_version, last_seen_at, is_active, created_at)
                  VALUES
-                    (:device_id, :user_id, 'android', :fcm_token, :app_version, UTC_TIMESTAMP(), 1, UTC_TIMESTAMP())
+                    (:device_id, :user_id, 'android', :fcm_token, :device_secret_ref, :app_version, UTC_TIMESTAMP(), 1, UTC_TIMESTAMP())
                  ON DUPLICATE KEY UPDATE
                     fcm_token = VALUES(fcm_token),
                     app_version = VALUES(app_version),
                     last_seen_at = UTC_TIMESTAMP(),
-                    is_active = 1"
+                    is_active = 1,
+                    device_secret_ref = COALESCE(device_secret_ref, VALUES(device_secret_ref))"
             )->execute([
                 'device_id' => $deviceId,
                 'user_id' => $identity['user_id'],
                 'fcm_token' => $fcmToken,
+                'device_secret_ref' => $wrappedSecret,
                 'app_version' => $appVersion,
             ]);
 
@@ -129,6 +168,7 @@ final class DevicesController
                     'platform' => 'android',
                     'app_version' => $appVersion,
                     'deactivated_previous_devices' => $deactivatedCount,
+                    'message_encryption_key_provisioned' => $needsSecretProvisioning,
                 ]
             );
 
@@ -138,7 +178,15 @@ final class DevicesController
             throw $e;
         }
 
-        Http::send(200, ['device_id' => $deviceId, 'registered' => true]);
+        $response = ['device_id' => $deviceId, 'registered' => true];
+        if ($needsSecretProvisioning && $rawMessageEncryptionKey !== null) {
+            // Never logged, never re-returned on any later call — see the
+            // class doc. base64, not hex: this rides in a JSON response
+            // body next to other string fields, and base64 is ~25%
+            // shorter for the same 32 raw bytes.
+            $response['message_encryption_key'] = base64_encode($rawMessageEncryptionKey);
+        }
+        Http::send(200, $response);
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */

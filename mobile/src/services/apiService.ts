@@ -165,6 +165,15 @@ export async function logout(): Promise<void> {
 export interface DeviceRegistration {
   deviceId: string;
   registered: boolean;
+  /**
+   * §6/Rule 26 — Sprint 4 Phase 3 addition. Present ONLY on this
+   * device_id's first-ever registration; absent on every later call
+   * (ordinary FCM-token-refresh re-registration). Base64, ready to hand
+   * straight to `messageEncryptionKey.ts`'s `storeMessageEncryptionKey()`.
+   * See DevicesController.php's own doc for why the server never
+   * re-returns it once issued.
+   */
+  messageEncryptionKey?: string;
 }
 
 /**
@@ -176,16 +185,19 @@ export async function registerDevice(params: {
   fcmToken: string;
   appVersion?: string;
 }): Promise<DeviceRegistration> {
-  const json = await request<{ device_id: string; registered: boolean }>('/devices/register', {
-    method: 'POST',
-    body: {
-      device_id: params.deviceId,
-      fcm_token: params.fcmToken,
-      platform: 'android', // §5 mobile_device.platform is ENUM('android')
-      app_version: params.appVersion,
-    },
-  });
-  return { deviceId: json.device_id, registered: json.registered };
+  const json = await request<{ device_id: string; registered: boolean; message_encryption_key?: string }>(
+    '/devices/register',
+    {
+      method: 'POST',
+      body: {
+        device_id: params.deviceId,
+        fcm_token: params.fcmToken,
+        platform: 'android', // §5 mobile_device.platform is ENUM('android')
+        app_version: params.appVersion,
+      },
+    }
+  );
+  return { deviceId: json.device_id, registered: json.registered, messageEncryptionKey: json.message_encryption_key };
 }
 
 /** PATCH /devices/:id/deactivate — own device only, server-enforced. */
@@ -512,4 +524,20 @@ export async function syncBatch(params: {
     status: r.status as SyncBatchResult['status'],
     reason: r.reason,
   }));
+}
+
+// --- Notifications (§6 "Notification acknowledgment", M12) -----------------
+
+/**
+ * POST /notifications/:id/ack. §6: "Tanod only for a target notification
+ * assigned to that user ... idempotent for an already-acknowledged
+ * target." M12's overlay calls this on Acknowledge; a second tap (or a
+ * retry after a flaky connection) is safe.
+ */
+export async function acknowledgeNotification(notificationId: number): Promise<{ acknowledgedAt: string }> {
+  const json = await request<{ success: boolean; notification_id: number; acknowledged_at: string }>(
+    `/notifications/${notificationId}/ack`,
+    { method: 'POST', body: {} }
+  );
+  return { acknowledgedAt: json.acknowledged_at };
 }

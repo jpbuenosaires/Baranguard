@@ -5,10 +5,35 @@
 ALL of Sprint 5, the AI pipeline (coded, unverified). Session C: Sprint 6
 — and unlike A and B, **Sprint 6's code is genuinely VERIFIED, 112/112 via
 `backend/scripts/verify-sprint6.sh` against real XAMPP**, plus 286 static
-web-wiring checks and a real browser pass over W7/W8. Sprints 3 and 5 remain coded-but-unverified;
-Sprint 4 is UNTOUCHED; the Android native build is still blocked on the
-same JDK 21 install. Read `backend/DEVLOG.md`'s last three entries before
-trusting or extending any of it.**
+web-wiring checks and a real browser pass over W7/W8. Session D: Sprint 4
+Phase 1 (notification model, Tanod SOS, acknowledgment) — VERIFIED, 48/48
+via `backend/scripts/verify-sprint4.sh`, committed and pushed (`8599f09`).
+Session E: Sprint 4 Phases 2-5 — THIS CLOSES SPRINT 4. FCM/SMS transport,
+Rule 12's fallback ladder, the ack-timeout worker, device secret
+provisioning, AES-256-GCM SMS envelope crypto, the internal-only
+`/internal/sms/*` router, W14, and M12/M13 (mobile). **The backend half
+(Phases 2-3) is genuinely VERIFIED — 321 checks passing across FIVE
+suites, zero failures** (this session's own new 68 +
+`verify-sprint4.sh`'s 48 + `verify-sprint6.sh`'s 112 +
+`verify-devices-map-packages.sh`'s 53 + `verify-duty-status-map-upload.sh`'s
+40), plus 300 static web-wiring checks and a real browser pass over the
+new W14 screen. **The mobile half (Phase 5, M12/M13) is coded but
+UNVERIFIED** — same standing Android SDK/JDK 21 blocker as every mobile
+cut since Sprint 3. Sprints 3 and 5 remain coded-but-unverified. Read
+`backend/DEVLOG.md`'s newest entry (Sprint 4 Phases 2-5) before trusting
+or extending any of it — it is long, and the "Two 'no live credentials,
+verify it anyway' notes" section near the top explains exactly why the
+backend numbers above are trustworthy despite having no real FCM/Semaphore
+account.
+
+**Housekeeping done this session (2026-09-03, follow-up pass):** migrations
+0004 (`blotter_revision`), 0005 (`sms_envelope_replay`), and 0006
+(`sms_log.barangay_id`) have all been applied to the real local
+`baranguard` database — confirmed via `DESCRIBE`/`SHOW TABLES`. Blotter
+finalize/amend and the full SMS/notification pipeline are now unblocked on
+this machine. The two scratch PNGs under `mobile/` were deleted earlier
+this session. Working tree is otherwise the uncommitted Phase 2-5 changes
+described below.
 
 **The one number that matters for the AI work: the MODEL has still never
 been called.** Everything verified was verified with SQL-seeded draft rows
@@ -30,14 +55,21 @@ update this file at the end of a session, don't let it go stale for long.
   the earlier `web/` UI-polish work too (`c46e2c3` — Toast, ConfirmDialog,
   sortable DataTable).
 - **All of Sprint 6 is committed and pushed** to `origin/main` (`4f13dd1`).
-  The working tree is clean apart from two scratch PNGs.
-- **First thing on the next machine: apply migration 0004** to the real
-  `baranguard` database (`mysql -u root baranguard <
-  backend/migrations/0004_blotter_revision.sql`). Confirmed NOT applied
-  there — `blotter_revision` does not exist, and every blotter amendment
-  path depends on it.
-- The two `mobile/.scratch-screenshot*.png` files are scratch junk and
-  should just be deleted.
+- **Sprint 4 Phase 1 is committed and pushed** to `origin/main`
+  (`8599f09`) — notification model, `POST /tanod-sos` +
+  acknowledge/resolve, `POST /notifications/:id/ack`, dispatch-triggered
+  notifications, `/sync/batch`'s `sos[]`. Verified 48/48 real-XAMPP, and
+  `verify-sprint6.sh` re-confirmed still passing 112/112 alongside it.
+  **Nothing is actually delivered to anyone yet** — no FCM/SMS attempt is
+  made, `notification_delivery` is never written. Phases 2-5 are next for
+  Sprint 4 (see the dedicated section below).
+- **Migration 0004 (`blotter_revision`) is now applied** to the real
+  local `baranguard` database (done this session, confirmed via
+  `DESCRIBE`). If you're on a DIFFERENT machine/DB than this one, you
+  still need to run it there:
+  `mysql -u root baranguard < backend/migrations/0004_blotter_revision.sql`.
+- The two `mobile/.scratch-screenshot*.png` files have been deleted.
+  Working tree is clean.
 - Everything from the earlier "Sprint 2 remaining items" session (backend
   `POST /duty-status` + `POST /map-packages`, M2 Home, bottom-nav tabs,
   photo/voice capture, Keystore passphrase, Inter font vendoring, the
@@ -51,16 +83,32 @@ update this file at the end of a session, don't let it go stale for long.
   environment" below, unchanged this session.
 - **Sprint 3: all five "Today's cut" boxes were CODED, none verified.**
   See the dedicated section below before treating any of it as done.
-- **Sprint 4: Phase 1 done and VERIFIED (48/48); Phases 2-5 outstanding.**
-  The notification model, Tanod SOS (raise/acknowledge/resolve),
-  `POST /notifications/:id/ack`, dispatch-triggered notifications and
-  `/sync/batch`'s `sos[]` all work — `backend/scripts/verify-sprint4.sh`.
-  **But nothing is actually delivered to anyone yet**: no FCM or SMS
-  attempt is made, `notification_delivery` is never written, and a Tanod's
-  phone does not buzz. Rule 12's fallback ladder (Phase 2), the inbound
-  `/sms/*` handlers + encrypted envelope (Phase 3), W14 (Phase 4) and
-  M12/M13 (Phase 5) remain unbuilt. M2's SOS button in the mobile app is
-  still disabled even though the endpoint now exists.
+- **Sprint 4: ALL FIVE PHASES DONE. Sprint 4 is closed.** Phase 1
+  (notification model/SOS/ack) was VERIFIED 48/48 in the prior session.
+  Phases 2-5 (this session) add real FCM/Semaphore transport clients, the
+  full Rule 12 fallback ladder, the 60s ack-timeout worker, device secret
+  provisioning, real AES-256-GCM SMS envelope crypto, the internal-only
+  `/internal/sms/*` router (6 endpoints), W14, and mobile M12/M13.
+  **Backend (Phases 2-3) is genuinely VERIFIED — 68/68 new checks
+  (`backend/scripts/verify-sprint4-phase2-3.sh`) plus 48/48 + 112/112 +
+  53/53 + 40/40 on every pre-existing suite re-run to confirm zero
+  regression = 321/321 total, real XAMPP.** No live FCM/Semaphore
+  credentials exist on this machine, but see DEVLOG's "no live
+  credentials, verify it anyway" notes for why that doesn't mean
+  untested — the FCM-not-configured/Semaphore-not-configured code paths
+  ARE Rule 12's real logic, exercised for real. **A Tanod's phone still
+  does not physically buzz** — that specific last hop (a real Firebase
+  project + a funded Semaphore account) is the one thing genuinely
+  outside this environment's reach. **W14 (web) is real and
+  browser-verified.** **M12/M13 (mobile) are coded but UNVERIFIED** — same
+  Android SDK/JDK 21 blocker as everything mobile since Sprint 3, PLUS a
+  new second prerequisite for full device testing: a real Firebase
+  project. M2's SOS button in the mobile app is STILL disabled — wiring
+  the mobile UI to the now-fully-built SOS/notification backend was not
+  part of this cut either; that's a distinct, still-open follow-up.
+  Two deliberate scope trims, both logged in DEVLOG: GSM-modem OUTBOUND
+  sending, and on-device SMS sending (Android SmsManager) — neither has
+  hardware/credentials to build against here.
 - **Sprint 5 (AI pipeline): all four boxes CODED, none verified** beyond
   `php -l`. The queue, the Ollama client, the worker, the real health
   probe, and the translation gate all exist. **The model has never
@@ -407,10 +455,15 @@ finalize/amend/lupon-packet.
 - **Three stray empty untracked files in the repo root** (`cls`, `git`,
   `main)`) — leftovers from an old mis-pasted command, not part of any
   build. Harmless; just don't `git add -A`/`git add .` and sweep them in.
-- **`mobile/package.json` now lists `@capacitor/geolocation` but `npm
-  install` was never run for it this session** — `tsc` will fail on
-  `src/services/geolocation.ts`'s import until that runs. Run
-  `npm install` before doing anything else in `mobile/`.
+- **`mobile/package.json` now lists `@capacitor/geolocation` AND (as of
+  this session) `@capacitor/push-notifications`, but `npm install` was
+  never run for either** — `tsc` will fail on `src/services/geolocation.ts`
+  and `src/services/deviceIdentity.ts`/`criticalAlertStore.ts`'s imports
+  until that runs. Run `npm install` before doing anything else in
+  `mobile/`. After that, `npx cap sync android` and a manual
+  `POST_NOTIFICATIONS` permission add to `AndroidManifest.xml` (Android
+  13+) are both still needed before push notifications can work on a
+  device — see backend/DEVLOG.md's Sprint 4 Phases 2-5 entry.
 
 ## Git / attribution convention
 

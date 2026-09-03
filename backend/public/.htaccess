@@ -8,6 +8,14 @@
 RewriteEngine On
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
+# Internal-only surface (§6 "Internal SMS / GSM") — a SEPARATE front
+# controller from index.php, checked FIRST so it never falls through to
+# the normal /api/v1 router. See public/internal.php's own doc for why
+# this is a structural separation, not just routing convention.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^internal/ internal.php [QSA,L]
+
 # Rewrite every request that isn't a real file/dir to the front controller.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

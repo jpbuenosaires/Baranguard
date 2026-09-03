@@ -11,8 +11,15 @@
  */
 
 import { Preferences } from '@capacitor/preferences';
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
 
 const DEVICE_ID_KEY = 'baranguard.deviceId';
+/** 8s is generous for a registration round-trip against Google's servers
+ *  but short enough that a Tanod is never made to wait on it — see
+ *  runPostLoginSetup() in login.tsx, which already treats this whole step
+ *  as best-effort and non-fatal. */
+const FCM_REGISTRATION_TIMEOUT_MS = 8000;
 
 /** Matches DevicesController::DEVICE_ID_PATTERN (8-64 of [A-Za-z0-9._:-]). */
 function generateDeviceId(): string {
@@ -34,24 +41,72 @@ export async function getDeviceId(): Promise<string> {
 
 /**
  * The device's FCM registration token, or null when push messaging is not
- * set up.
+ * available/permitted/reachable.
  *
- * DELIBERATELY RETURNS NULL FOR NOW. FCM registration is Sprint 4 work
- * (§10 "Resiliency & Connectivity — FCM registration/critical
- * notifications (S4)"), but `POST /devices/register` requires a
- * `fcm_token` and §5's `mobile_device.fcm_token` is NOT NULL — so device
- * registration genuinely cannot complete honestly until Sprint 4 lands.
+ * REAL IMPLEMENTATION as of Sprint 4 Phase 5 (M12 Critical Alert Overlay
+ * cannot exist without this) — the null-returning stub this function used
+ * to be is exactly what `runPostLoginSetup()` in login.tsx already treats
+ * as a legitimate, non-fatal outcome: no token still means "don't
+ * register", never "send a placeholder" (see that function's own doc,
+ * unchanged by this).
  *
- * The alternative — sending a placeholder string — would write a row that
- * Sprint 4's notification path would later try to push to, producing
- * silent delivery failures for a Tanod the system believes is reachable.
- * §8 forbids exactly that kind of real-looking-but-fake state, and §12's
- * notification model depends on "no active FCM registration" being a
- * truthful signal that routes straight to SMS.
+ * NEVER THROWS. Every failure mode — permission denied, no Google Play
+ * services, running on the web platform, a registration that never fires
+ * within the timeout — resolves to `null` rather than rejecting, because
+ * this sits on the login path and §2 Rule 2's offline-first guarantee
+ * means a Tanod must be able to sign in and start capturing regardless of
+ * whether push messaging is available on this particular device.
  *
- * Sprint 4 replaces this body with the real @capacitor/push-notifications
- * token; nothing else in the calling code has to change.
+ * NOT DEVICE-VERIFIED, stated plainly: this compiles and type-checks
+ * against `@capacitor/push-notifications`' documented Android API but has
+ * never executed on a real device — no Android SDK/emulator is available
+ * in this environment (see DEVLOG.md), and even once that's resolved, a
+ * REAL Firebase project + `google-services.json` is a SEPARATE prerequisite
+ * this workstation does not have either (the backend side of this same
+ * gap is `FCM_SERVICE_ACCOUNT_PATH` in backend/.env.example, also unset).
  */
 export async function getFcmToken(): Promise<string | null> {
-  return null;
+  if (Capacitor.getPlatform() !== 'android') {
+    // The web platform's PushNotifications implementation isn't a real
+    // FCM registration and would return a value this codebase must not
+    // trust — same "don't fake it" precedent as localDatabase.ts throwing
+    // on the web platform rather than silently opening an unencrypted
+    // store.
+    return null;
+  }
+
+  try {
+    const permission = await PushNotifications.checkPermissions();
+    let granted = permission.receive === 'granted';
+    if (!granted && permission.receive !== 'denied') {
+      const requested = await PushNotifications.requestPermissions();
+      granted = requested.receive === 'granted';
+    }
+    if (!granted) {
+      return null;
+    }
+
+    return await new Promise<string | null>((resolve) => {
+      let settled = false;
+      const finish = (value: string | null) => {
+        if (settled) return;
+        settled = true;
+        registrationListener.remove();
+        errorListener.remove();
+        resolve(value);
+      };
+
+      const registrationListener = PushNotifications.addListener('registration', (token) => {
+        finish(token.value || null);
+      });
+      const errorListener = PushNotifications.addListener('registrationError', () => {
+        finish(null);
+      });
+
+      setTimeout(() => finish(null), FCM_REGISTRATION_TIMEOUT_MS);
+      PushNotifications.register().catch(() => finish(null));
+    });
+  } catch {
+    return null;
+  }
 }

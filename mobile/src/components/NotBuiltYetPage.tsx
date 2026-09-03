@@ -16,9 +16,11 @@ import { IonContent, IonHeader, IonNote, IonPage, IonTitle, IonToolbar } from '@
 interface NotBuiltYetPageProps {
   title: string;
   detail: string;
+  /** Additive — a real, working sub-section on an otherwise-unbuilt page (e.g. M12's notification diagnostics on the unbuilt Profile/M10 screen), never a second placeholder. */
+  children?: React.ReactNode;
 }
 
-const NotBuiltYetPage: React.FC<NotBuiltYetPageProps> = ({ title, detail }) => (
+const NotBuiltYetPage: React.FC<NotBuiltYetPageProps> = ({ title, detail, children }) => (
   <IonPage>
     <IonHeader>
       <IonToolbar>
@@ -29,6 +31,7 @@ const NotBuiltYetPage: React.FC<NotBuiltYetPageProps> = ({ title, detail }) => (
       <div className="app-column">
         <h2 className="app-title">{title} isn't built yet</h2>
         <IonNote className="app-note">{detail}</IonNote>
+        {children}
       </div>
     </IonContent>
   </IonPage>
