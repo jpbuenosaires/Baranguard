@@ -107,3 +107,71 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
 }
+
+/* --- Cards (M5 Assignments List, M6 Assignment Detail) ----------------- */
+/* §9 M5's own UI reference: "card per assignment (priority dot, ID,
+   priority pill, type, location, distance)". Built from tokens only, same
+   discipline as every other block in this file. */
+
+.card-list > * + * {
+  margin-top: var(--spacing-md);
+}
+
+.card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-md);
+  font: inherit;
+  color: inherit;
+}
+
+.card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.card__title {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.card__meta {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.card__meta--warning {
+  color: var(--color-warning);
+}
+
+.card__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.priority-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.priority-dot--normal {
+  background: var(--color-info);
+}
+.priority-dot--high {
+  background: var(--color-warning);
+}
+.priority-dot--critical {
+  background: var(--color-critical);
+}

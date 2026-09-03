@@ -57,6 +57,33 @@ use PDO;
  *     incident with server created_at" -- returns the same redacted shape
  *     GET /incidents already uses (no raw narrative echoed back), for one
  *     consistent incident-item contract across both endpoints.
+ *
+ * MOBILE BRANCH (Sprint 3 cut — this was Sprint 2's own deferred "mobile
+ * branch of POST /incidents" item; §6 documents the same POST /incidents
+ * body/idempotency rule for BOTH web and mobile writers, distinguished by
+ * role, not by a separate path). Resolved decisions, logged in DEVLOG.md:
+ *   - §6 fixes the mobile idempotency key as "authenticated device_id +
+ *     client_event_id" but the documented request body
+ *     ({incident_type,raw_narrative,latitude,longitude,source?,
+ *     device_offline_created_at?,client_event_id}) has no device_id field
+ *     — it must come from somewhere other than the JSON body, since the
+ *     JWT itself carries no device identity (AuthMiddleware's claims are
+ *     user/role/barangay only). Resolved the same way the web path
+ *     resolves its own idempotency key: a request header. A new
+ *     `X-Device-Id` header carries it, mirroring the existing
+ *     `Idempotency-Key` header precedent exactly. The server then
+ *     verifies that device_id actually belongs to the calling Tanod
+ *     (`mobile_device.user_id = caller`, `is_active=1`) before trusting
+ *     it as part of the idempotency key or attaching it to the new row —
+ *     this is the "authenticated" half of "authenticated device_id".
+ *   - `createMobileItem()` is `public static` (not private) specifically
+ *     so `SyncController::batch()` (POST /sync/batch, same Sprint 3 cut)
+ *     can reuse the exact same validation/idempotency/insert logic for
+ *     each `incidents[]` item — one incident-creation code path for both
+ *     entry points, not two copies that could drift.
+ *   - `source` is always written as `'app'` for this branch — §6: "client
+ *     `source` is ignored" — matching the web branch's own hardcoded
+ *     `'web'`.
  */
 final class IncidentsController
 {
@@ -70,6 +97,14 @@ final class IncidentsController
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
+
+    // §6 "radius has a server maximum" for GET /incidents/nearby — not a
+    // number the reference states, resolved here (logged in DEVLOG.md):
+    // 2km default, 5km hard cap. A barangay is a small area; 5km already
+    // spans well beyond one, so this is a safety ceiling, not a realistic
+    // default search radius.
+    private const NEARBY_DEFAULT_RADIUS_M = 2000;
+    private const NEARBY_MAX_RADIUS_M = 5000;
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
@@ -177,11 +212,98 @@ final class IncidentsController
         ]);
     }
 
+    /**
+     * GET /incidents/nearby — Tanod only (§6). Never raw narrative/contact
+     * data; distance computed with a portable Haversine SQL expression
+     * (MariaDB 10.4 has no guaranteed ST_Distance_Sphere), rounded to the
+     * nearest metre server-side rather than handed back as a float with
+     * spurious precision.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function nearby(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['tanod']);
+
+        $latParam = Http::query('latitude');
+        $lngParam = Http::query('longitude');
+        if ($latParam === null || $lngParam === null || !is_numeric($latParam) || !is_numeric($lngParam)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude and longitude are required.');
+        }
+        $lat = (float) $latParam;
+        $lng = (float) $lngParam;
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude/longitude are out of range.');
+        }
+
+        $radiusParam = Http::query('radius_m');
+        $radiusM = self::NEARBY_DEFAULT_RADIUS_M;
+        if ($radiusParam !== null) {
+            if (!ctype_digit($radiusParam)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'radius_m must be a positive integer.');
+            }
+            $radiusM = (int) $radiusParam;
+        }
+        if ($radiusM < 1 || $radiusM > self::NEARBY_MAX_RADIUS_M) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'radius_m must be between 1 and ' . self::NEARBY_MAX_RADIUS_M . '.');
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT incident_id, incident_type, priority, status, latitude, longitude, created_at,
+                    (6371000 * ACOS(
+                        LEAST(1, GREATEST(-1,
+                            COS(RADIANS(:lat)) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(:lng))
+                            + SIN(RADIANS(:lat)) * SIN(RADIANS(latitude))
+                        ))
+                    )) AS distance_m
+             FROM incident
+             WHERE barangay_id = :barangay_id
+               AND status != \'resolved\'
+               AND latitude IS NOT NULL AND longitude IS NOT NULL
+             HAVING distance_m <= :radius_m
+             ORDER BY distance_m ASC
+             LIMIT 100'
+        );
+        $stmt->bindValue(':lat', $lat);
+        $stmt->bindValue(':lng', $lng);
+        $stmt->bindValue(':barangay_id', $identity['barangay_id'], PDO::PARAM_INT);
+        $stmt->bindValue(':radius_m', $radiusM, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $items = array_map(static function (array $row) use ($now): array {
+            $createdAt = new \DateTimeImmutable($row['created_at'], new \DateTimeZone('UTC'));
+            return [
+                'incident_id' => (int) $row['incident_id'],
+                'incident_type' => $row['incident_type'],
+                'priority' => $row['priority'],
+                'status' => $row['status'],
+                'latitude' => (float) $row['latitude'],
+                'longitude' => (float) $row['longitude'],
+                'age_seconds' => $now->getTimestamp() - $createdAt->getTimestamp(),
+            ];
+        }, $rows);
+
+        Http::send(200, ['items' => $items]);
+    }
+
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'tanod']);
 
+        if ($identity['role'] === 'tanod') {
+            self::createMobile($pdo, $identity);
+            return;
+        }
+
+        self::createWeb($pdo, $identity);
+    }
+
+    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    private static function createWeb(PDO $pdo, array $identity): void
+    {
         $idempotencyKey = Http::header('Idempotency-Key');
         if ($idempotencyKey === null || !preg_match(self::UUID_PATTERN, $idempotencyKey)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'Idempotency-Key header must be a UUID.');
@@ -267,6 +389,141 @@ final class IncidentsController
         );
         $readBackStmt->execute(['incident_id' => $incidentId]);
         Http::send(201, self::mapIncident($readBackStmt->fetch(PDO::FETCH_ASSOC)));
+    }
+
+    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    private static function createMobile(PDO $pdo, array $identity): void
+    {
+        $deviceId = Http::header('X-Device-Id');
+        if ($deviceId === null) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
+        }
+
+        $body = Http::jsonBody();
+        $result = self::createMobileItem($pdo, $identity, $deviceId, $body);
+        Http::send($result['wasCreated'] ? 201 : 200, $result['incident']);
+    }
+
+    /**
+     * Core mobile incident-creation logic. `public` so
+     * `SyncController::batch()` (POST /sync/batch's `incidents[]` items)
+     * reuses the exact same validation/idempotency/insert path rather than
+     * a second copy that could drift — see class doc's "MOBILE BRANCH"
+     * note.
+     *
+     * @param array<string,mixed> $item body fields, same shape §6 documents
+     *        for POST /incidents (mobile): {incident_type,raw_narrative,
+     *        latitude,longitude,source?,device_offline_created_at?,
+     *        client_event_id}.
+     * @return array{incident: array<string,mixed>, wasCreated: bool}
+     */
+    public static function createMobileItem(PDO $pdo, array $identity, string $deviceId, array $item): array
+    {
+        self::assertDeviceOwnership($pdo, $identity, $deviceId);
+
+        $incidentType = $item['incident_type'] ?? null;
+        $rawNarrative = $item['raw_narrative'] ?? null;
+        $latitude = $item['latitude'] ?? null;
+        $longitude = $item['longitude'] ?? null;
+        $clientEventId = $item['client_event_id'] ?? null;
+        $deviceOfflineCreatedAtRaw = $item['device_offline_created_at'] ?? null;
+
+        if (!is_string($clientEventId) || !preg_match(self::UUID_PATTERN, $clientEventId)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'client_event_id must be a UUID.');
+        }
+        if (!is_string($incidentType) || !in_array($incidentType, self::INCIDENT_TYPES, true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'incident_type must be one of: ' . implode(', ', self::INCIDENT_TYPES) . '.');
+        }
+        if (!is_string($rawNarrative) || trim($rawNarrative) === '') {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'raw_narrative is required.');
+        }
+        [$latitude, $longitude] = self::validateCoordinates($latitude, $longitude);
+
+        $deviceOfflineCreatedAt = null;
+        if ($deviceOfflineCreatedAtRaw !== null) {
+            if (!is_string($deviceOfflineCreatedAtRaw) || strtotime($deviceOfflineCreatedAtRaw) === false) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'device_offline_created_at must be a valid timestamp.');
+            }
+            $deviceOfflineCreatedAt = gmdate('Y-m-d H:i:s', (int) strtotime($deviceOfflineCreatedAtRaw));
+        }
+
+        // §5 UNIQUE(device_id, client_event_id) — same replay-lookup-then-
+        // insert shape as the web path's own idempotency check above.
+        $existingStmt = $pdo->prepare(
+            'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
+                    latitude, longitude, created_at, device_offline_created_at, synced_at
+             FROM incident WHERE device_id = :device_id AND client_event_id = :client_event_id LIMIT 1'
+        );
+        $existingStmt->execute(['device_id' => $deviceId, 'client_event_id' => $clientEventId]);
+        $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+        if ($existing !== false) {
+            return ['incident' => self::mapIncident($existing), 'wasCreated' => false];
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $recheckStmt = $pdo->prepare(
+                'SELECT incident_id FROM incident WHERE device_id = :device_id AND client_event_id = :client_event_id LIMIT 1 FOR UPDATE'
+            );
+            $recheckStmt->execute(['device_id' => $deviceId, 'client_event_id' => $clientEventId]);
+            if ($recheckStmt->fetch(PDO::FETCH_ASSOC) !== false) {
+                $pdo->rollBack();
+                $existingStmt->execute(['device_id' => $deviceId, 'client_event_id' => $clientEventId]);
+                return ['incident' => self::mapIncident($existingStmt->fetch(PDO::FETCH_ASSOC)), 'wasCreated' => false];
+            }
+
+            $insertStmt = $pdo->prepare(
+                "INSERT INTO incident
+                    (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
+                     latitude, longitude, created_at, device_offline_created_at, client_event_id, updated_at)
+                 VALUES
+                    (:barangay_id, :reported_by, :device_id, :incident_type, 'normal', :raw_narrative, 'pending', 'app',
+                     :latitude, :longitude, UTC_TIMESTAMP(), :device_offline_created_at, :client_event_id, UTC_TIMESTAMP())"
+            );
+            $insertStmt->execute([
+                'barangay_id' => $identity['barangay_id'],
+                'reported_by' => $identity['user_id'],
+                'device_id' => $deviceId,
+                'incident_type' => $incidentType,
+                'raw_narrative' => $rawNarrative,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'device_offline_created_at' => $deviceOfflineCreatedAt,
+                'client_event_id' => $clientEventId,
+            ]);
+            $incidentId = (int) $pdo->lastInsertId();
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        $readBackStmt = $pdo->prepare(
+            'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
+                    latitude, longitude, created_at, device_offline_created_at, synced_at
+             FROM incident WHERE incident_id = :incident_id'
+        );
+        $readBackStmt->execute(['incident_id' => $incidentId]);
+        return ['incident' => self::mapIncident($readBackStmt->fetch(PDO::FETCH_ASSOC)), 'wasCreated' => true];
+    }
+
+    /**
+     * The "authenticated" half of "authenticated device_id + client_event_id"
+     * (§6) — a caller cannot claim an arbitrary device_id string as its own
+     * idempotency namespace without it actually being a device this Tanod
+     * registered. Same generic-422 pattern DispatchController uses for a
+     * bad tanod_id, so the error message can't be used to enumerate device
+     * ids belonging to other accounts.
+     */
+    private static function assertDeviceOwnership(PDO $pdo, array $identity, string $deviceId): void
+    {
+        $stmt = $pdo->prepare(
+            'SELECT device_id FROM mobile_device WHERE device_id = :device_id AND user_id = :user_id AND is_active = 1 LIMIT 1'
+        );
+        $stmt->execute(['device_id' => $deviceId, 'user_id' => $identity['user_id']]);
+        if ($stmt->fetch(PDO::FETCH_ASSOC) === false) {
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'Device is not registered or not active for this account.');
+        }
     }
 
     /** @param array<string,mixed> $row @return array<string,mixed> */

@@ -277,3 +277,239 @@ export async function getOwnDutyStatus(): Promise<DutyStatusEntry | null> {
   if (!latest) return null;
   return { statusId: latest.status_id, status: latest.status, channel: latest.channel, changedAt: latest.changed_at };
 }
+
+// --- Dispatch (§6, Sprint 1 web + Sprint 3 mobile: M5/M6) -------------------
+
+/** §5 dispatch.status enum. */
+export type DispatchStatus = 'assigned' | 'en_route' | 'arrived' | 'completed' | 'cancelled';
+/** §5 dispatch.route_status enum. */
+export type RouteStatus = 'available' | 'unavailable' | 'stale';
+
+export interface DispatchEntry {
+  dispatchId: number;
+  incidentId: number;
+  tanodId: number;
+  priority: string;
+  routeJson: unknown | null;
+  routeStatus: RouteStatus;
+  status: DispatchStatus;
+  /** Redacted-safe fields joined in from the incident (Sprint 3 addition — see DispatchController.php's class doc). */
+  incidentType: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  dispatchedAt: string;
+  enRouteAt: string | null;
+  arrivedAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+}
+
+function mapDispatch(json: {
+  dispatch_id: number;
+  incident_id: number;
+  tanod_id: number;
+  priority: string;
+  route_json: unknown | null;
+  route_status: RouteStatus;
+  status: DispatchStatus;
+  incident_type?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  dispatched_at: string;
+  en_route_at: string | null;
+  arrived_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+}): DispatchEntry {
+  return {
+    dispatchId: json.dispatch_id,
+    incidentId: json.incident_id,
+    tanodId: json.tanod_id,
+    priority: json.priority,
+    routeJson: json.route_json,
+    routeStatus: json.route_status,
+    status: json.status,
+    incidentType: json.incident_type ?? null,
+    latitude: json.latitude ?? null,
+    longitude: json.longitude ?? null,
+    dispatchedAt: json.dispatched_at,
+    enRouteAt: json.en_route_at,
+    arrivedAt: json.arrived_at,
+    completedAt: json.completed_at,
+    cancelledAt: json.cancelled_at,
+  };
+}
+
+/**
+ * GET /dispatch — §6: Tanod is forced server-side to their own dispatches.
+ * M5's Assignments List refreshes its `dispatch_local` cache from this.
+ */
+export async function getDispatches(params: { status?: DispatchStatus } = {}): Promise<DispatchEntry[]> {
+  const query = params.status ? `?status=${encodeURIComponent(params.status)}` : '';
+  const json = await request<{ items: Parameters<typeof mapDispatch>[0][] }>(`/dispatch${query}`);
+  return json.items.map(mapDispatch);
+}
+
+/**
+ * PATCH /dispatch/:id/status — §6 forward-only transition matrix
+ * (assigned->en_route->arrived->completed). M6 calls this immediately when
+ * online; when offline, the status change is queued locally instead (see
+ * `offlineQueueRepository.ts`) and this same endpoint is reached later via
+ * `syncBatch()`'s `dispatch_status_updates[]`.
+ */
+export async function updateDispatchStatus(
+  dispatchId: number,
+  status: 'en_route' | 'arrived' | 'completed'
+): Promise<{ dispatchId: number; status: DispatchStatus; updatedAt: string }> {
+  const json = await request<{ dispatch_id: number; status: DispatchStatus; updated_at: string }>(
+    `/dispatch/${dispatchId}/status`,
+    { method: 'PATCH', body: { status } }
+  );
+  return { dispatchId: json.dispatch_id, status: json.status, updatedAt: json.updated_at };
+}
+
+// --- GPS (§6, Sprint 3: M7 Live Map) ----------------------------------------
+
+/**
+ * POST /gps. `recordedAt` is the device's own capture time (ISO 8601) —
+ * distinct from the server's authoritative `received_at` (Rule 31).
+ */
+export async function postGps(point: {
+  latitude: number;
+  longitude: number;
+  accuracyM: number;
+  recordedAt: string;
+  dispatchId?: number | null;
+  clientEventId: string;
+}): Promise<{ trackId: number; receivedAt: string }> {
+  const json = await request<{ track_id: number; received_at: string }>('/gps', {
+    method: 'POST',
+    body: {
+      latitude: point.latitude,
+      longitude: point.longitude,
+      accuracy_m: point.accuracyM,
+      recorded_at: point.recordedAt,
+      dispatch_id: point.dispatchId ?? undefined,
+      client_event_id: point.clientEventId,
+    },
+  });
+  return { trackId: json.track_id, receivedAt: json.received_at };
+}
+
+export interface NearbyIncident {
+  incidentId: number;
+  incidentType: string;
+  priority: string;
+  status: string;
+  latitude: number;
+  longitude: number;
+  ageSeconds: number;
+}
+
+/** GET /incidents/nearby — Tanod only (§6); never raw narrative/contact data. */
+export async function getNearbyIncidents(params: {
+  latitude: number;
+  longitude: number;
+  radiusM?: number;
+}): Promise<NearbyIncident[]> {
+  const query = new URLSearchParams({
+    latitude: String(params.latitude),
+    longitude: String(params.longitude),
+  });
+  if (params.radiusM) query.set('radius_m', String(params.radiusM));
+  const json = await request<{
+    items: {
+      incident_id: number;
+      incident_type: string;
+      priority: string;
+      status: string;
+      latitude: number;
+      longitude: number;
+      age_seconds: number;
+    }[];
+  }>(`/incidents/nearby?${query.toString()}`);
+  return json.items.map((row) => ({
+    incidentId: row.incident_id,
+    incidentType: row.incident_type,
+    priority: row.priority,
+    status: row.status,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    ageSeconds: row.age_seconds,
+  }));
+}
+
+// --- Sync (§6 "Sync" section, Sprint 3) -------------------------------------
+
+/** One item's shape for POST /sync/batch's `incidents[]` array (mirrors POST /incidents mobile body). */
+export interface SyncIncidentItem {
+  incident_type: string;
+  raw_narrative: string;
+  latitude: number | null;
+  longitude: number | null;
+  device_offline_created_at?: string | null;
+  client_event_id: string;
+}
+
+/** One item's shape for `gps_tracks[]` (mirrors POST /gps body). */
+export interface SyncGpsItem {
+  latitude: number;
+  longitude: number;
+  accuracy_m: number;
+  recorded_at: string;
+  dispatch_id?: number | null;
+  client_event_id: string;
+}
+
+/** One item's shape for `duty_status_updates[]` (mirrors POST /duty-status body). */
+export interface SyncDutyStatusItem {
+  status: DutyStatus;
+  client_event_id: string;
+}
+
+/** One item's shape for `dispatch_status_updates[]` (§6: no override_reason from a sync item). */
+export interface SyncDispatchStatusItem {
+  dispatch_id: number;
+  status: 'en_route' | 'arrived' | 'completed';
+  client_event_id: string;
+}
+
+export interface SyncBatchResult {
+  clientEventId: string;
+  serverId: number | null;
+  status: 'success' | 'duplicate' | 'failed';
+  reason?: string;
+}
+
+/**
+ * POST /sync/batch. §6: "Device ownership must match authenticated Tanod" —
+ * `deviceId` must be THIS device's own id (`deviceIdentity.ts`). Every array
+ * is optional; omit or pass `[]` for anything with nothing to sync.
+ */
+export async function syncBatch(params: {
+  deviceId: string;
+  incidents?: SyncIncidentItem[];
+  gpsTracks?: SyncGpsItem[];
+  dutyStatusUpdates?: SyncDutyStatusItem[];
+  dispatchStatusUpdates?: SyncDispatchStatusItem[];
+}): Promise<SyncBatchResult[]> {
+  const json = await request<{
+    results: { client_event_id: string; server_id: number | null; status: string; reason?: string }[];
+  }>('/sync/batch', {
+    method: 'POST',
+    body: {
+      device_id: params.deviceId,
+      incidents: params.incidents ?? [],
+      gps_tracks: params.gpsTracks ?? [],
+      duty_status_updates: params.dutyStatusUpdates ?? [],
+      dispatch_status_updates: params.dispatchStatusUpdates ?? [],
+      sos: [],
+    },
+  });
+  return json.results.map((r) => ({
+    clientEventId: r.client_event_id,
+    serverId: r.server_id,
+    status: r.status as SyncBatchResult['status'],
+    reason: r.reason,
+  }));
+}

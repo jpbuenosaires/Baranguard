@@ -2715,3 +2715,497 @@ automation environment did.
 - M5/M6/M7 (Assignments/Assignment Detail/Live Map), `/sync/batch`,
   `POST /gps` — Sprint 3, untouched.
 - Every item under "NOT verified this session" above.
+
+---
+
+# DEVLOG — Sprint 2 continued: Android SDK / native build environment
+# setup (in progress — device verification not yet reached)
+
+## Today's cut
+
+Not a new feature box — this is the environment-setup prerequisite the
+Sprint 2 checklist has been waiting on since the local-schema cut: get an
+actual Android build working on this workstation so M1/M3/M4/M2 and the
+new photo/voice capture can finally be device-verified. The user installed
+Android Studio this session; this entry covers everything from `npx cap
+add android` through to the exact point where the build is blocked on a
+JDK 21 install (in progress on the user's own machine as of this entry).
+
+## Four real, non-obvious environment bugs found and fixed (each confirmed via `--stacktrace`/direct source inspection, not guessed)
+
+1. **Gradle daemon: `java.io.IOException: Unable to establish loopback
+   connection` on every single invocation, including `gradlew help`.**
+   Root-caused via `--stacktrace`, not assumed: JDK 17's `PipeImpl`
+   (used internally by `Selector.open()` for the daemon's wakeup pipe)
+   tries a Unix Domain Socket connection first
+   (`sun.nio.ch.UnixDomainSockets.connect0`), which failed with
+   `SocketException: Invalid argument: connect`. Two wrong theories were
+   tried and ruled out first (IPv6 loopback preference; forcing the legacy
+   `WindowsSelectorProvider` — the *same* `PipeImpl` code path is shared by
+   both selector providers, so switching providers changed nothing). The
+   actual cause: the Windows user profile path contains a space
+   (`C:\Users\Jayson Buenosaires\...`), and the JVM's default
+   `java.io.tmpdir` — where the AF_UNIX socket file gets created — inherits
+   that space. **Fix**: redirect `TMPDIR`/`TEMP`/`TMP` and
+   `-Djava.io.tmpdir` to a short, space-free path (`C:\gtmp`) for every
+   Gradle invocation. Confirmed by watching the failure disappear the
+   moment the redirect was correctly escaped (an earlier attempt using a
+   single backslash silently became `C:gtmp`, a different, equally
+   diagnostic failure).
+2. **`local.properties`' `sdk.dir` was malformed** by an earlier heredoc
+   write that produced escaped-backslash garbage
+   (`C\:\Users\Jayson Buenosaires\...`) — Java `.properties` files treat
+   backslash as an escape character, so this never resolved to a real
+   path. Manifested as a much later, more confusing error
+   (`SdkLocator...validateSdkPath`: "The filename, directory name, or
+   volume label syntax is incorrect") on a *specific* plugin subproject's
+   task, not obviously an SDK-path problem at all. **Fix**: rewrite using
+   the Windows 8.3 short path with forward slashes
+   (`C:/Users/JAYSON~1/AppData/Local/Android/Sdk`) — sidesteps both the
+   backslash-escaping hazard and the space-in-username hazard at once.
+3. **The same space-in-username hazard broke `sdkmanager.bat`/
+   `avdmanager.bat` outright** ("'C:\Users\Jayson' is not recognized as an
+   internal or external command") — these `.bat` wrappers don't quote
+   their own internal path variables safely. **Fix**: same short-path
+   form (`C:\Users\JAYSON~1\...`) for every SDK cmdline-tools invocation.
+   General lesson for this machine, recorded here so it isn't
+   rediscovered a third time: **verify a path-sensitive Windows tool
+   against the short-path form whenever the long form contains a space**,
+   don't assume quoting alone will save it.
+4. **Every one of the app's 6 Capacitor native plugins requires an exact
+   Java 21 toolchain** (`sourceCompatibility`/`targetCompatibility
+   JavaVersion.VERSION_21`, confirmed by grepping all 6 plugins' own
+   `android/build.gradle` files — not just Camera, all of them). Only
+   JDK 17 was installed. **Registering Android Studio's bundled JBR
+   (JDK 25) as an additional toolchain candidate did NOT work** — Gradle's
+   toolchain resolution for a `languageVersion` request is an exact
+   major-version match, not "≥ requested"; a real JDK 21 install is
+   required, there is no way around it with a newer or older JDK.
+   Confirmed empirically (not just from Gradle's docs): registering JBR 25
+   via `org.gradle.java.installations.paths` produced the identical error,
+   unchanged. **Fix in progress**: user is installing the official Temurin
+   21 `.msi` (this session's own `curl` attempts to fetch the JDK zip
+   directly were abandoned — this network sustained only ~105 KB/s on that
+   transfer, making a ~195MB download impractically slow; the user's own
+   connection is expected to do much better).
+
+## A real gap this surfaced, not yet resolved: `mobile/android/` is gitignored but now holds real fixes
+
+`.gitignore` line 39 (`mobile/android/`) predates any native customization
+existing — the original reasoning (a prior DEVLOG entry) was "nothing
+tracked is lost by adding it, since nothing in it is customized yet."
+That's no longer true: `gradle.properties` (the JDK-toolchain-selector
+workaround) and `AndroidManifest.xml` (CAMERA/RECORD_AUDIO permissions,
+added earlier this Sprint 2 cut for photo/voice capture) are both real,
+necessary, non-regeneratable-by-default fixes now living in a gitignored
+directory.
+
+**The routine case is safe**: `npx cap sync` (run often) never touches
+either file — confirmed by reading Capacitor CLI's own behavior, not
+assumed. **The risk is narrow but real**: `npx cap add android` (a rare,
+one-time operation — already run exactly once, tonight) deletes and fully
+regenerates `android/` from scratch, which would silently lose both fixes
+and force a future session to rediscover bugs #1/#2/#3 above and re-add
+the manifest permissions from zero. Flagged to the user rather than
+silently deciding either way (commit `android/` now that it holds real
+fixes, vs. keep it gitignored and accept the regeneration risk) — this
+is a real repo-convention decision, not a mechanical one.
+
+## Files changed (all currently gitignored — see gap above)
+
+- `mobile/android/gradle.properties` — added
+  `org.gradle.java.installations.paths` listing both the JDK 17 and JBR 25
+  locations (kept even though JBR 25 alone didn't resolve issue #4, since
+  registering JDK 17 there doesn't hurt and JBR 25 may still help other
+  toolchain requests below 21). The `java.io.tmpdir` fix for issue #1 is
+  NOT in this file — it has to be set via `TMPDIR`/`TEMP`/`TMP`/`JAVA_OPTS`
+  environment variables on every invocation instead, since the failure
+  happens in the wrapper's own launching JVM before `gradle.properties`
+  (which only configures the daemon it's about to spawn) is even read.
+- `mobile/android/local.properties` — corrected `sdk.dir`, see fix #2.
+- `mobile/android/app/src/main/AndroidManifest.xml` — added
+  `android.permission.CAMERA`, `android.permission.RECORD_AUDIO`, and a
+  `required="false"` camera `<uses-feature>` (so the app doesn't refuse to
+  install on a cameraless device/emulator) — both confirmed necessary by
+  reading `capacitor-voice-recorder`'s and `@capacitor/camera`'s own
+  Java/Kotlin source for their exact runtime-permission requests, not
+  assumed from the plugin names.
+
+## Also verified this session (real, static checks — not device-dependent)
+
+- **No plugin declares a `minSdkVersion` above the project's own 24** —
+  checked directly in all 6 plugins' `android/build.gradle` files; each
+  either inherits `rootProject.ext.minSdkVersion` or falls back to
+  23/24. Structural evidence that Android 7 (API 24) support isn't broken
+  at the dependency level — NOT a substitute for either Lint's `NewApi`
+  check (not yet run — needs the same blocked JDK 21) or an actual
+  low-API device/emulator run (not yet done either), both logged as
+  outstanding below.
+- `@capacitor/camera`'s required `file_paths.xml` FileProvider resource
+  exists at `android/app/src/main/res/xml/file_paths.xml` with sane
+  defaults (plugin-template-generated, untouched) — the concrete failure
+  mode if this were missing would be a runtime crash the instant a Tanod
+  taps "Add Photo," not a build-time error, so worth having actually
+  looked rather than assumed present.
+
+## Not yet done (explicitly out of this cut — this is infrastructure, not verification)
+
+- Everything Sprint 2's checklist already lists as blocked on the Android
+  SDK: SQLCipher encryption-at-rest, offline-capture-survives-kill,
+  photo/voice capture end-to-end, the Keystore passphrase migration path —
+  none of these have executed yet. This entry only gets the BUILD working;
+  the actual M1/M2/M3/M4 device run is the next session's work once the
+  JDK 21 install and the API 36 (not 34 — see decision below) emulator
+  are both ready.
+- `./gradlew lintDebug` — the static `NewApi` check that would give real
+  confidence on the minSdk=24 floor. Blocked on the same JDK 21 install.
+- An actual low-API (e.g. API 24–26) emulator/device run, for the same
+  reason a lint pass isn't a full substitute for it.
+- The `mobile/android/` gitignore-vs-commit decision above.
+
+## Resolved decision: emulator API level is 36, not 34
+
+First attempt at this (before checking the project's own config) picked
+API 34 as "a reasonable modern default" — wrong, caught before it wasted
+more than a partial background download. `mobile/android/variables.gradle`
+states `compileSdkVersion = targetSdkVersion = 36` (`minSdkVersion = 24`
+is the compatibility floor, not a test target). Android's runtime
+behavior changes (permission dialogs, background/storage restrictions)
+are gated by the emulator's actual OS build, not just what the app
+declares — testing on 34 would under-test exactly what `targetSdk=36`
+opts the app into, and a real Tanod's phone bought today runs something
+close to 36, not 34. Corrected to API 36 (Google APIs, x86_64) before the
+user started that download; the partial API 34 download was abandoned and
+cleaned up (`.temp` staging directory removed) rather than left as dead
+weight.
+
+---
+
+# DEVLOG — Sprint 2's leftover mobile POST /incidents branch, then all of
+# Sprint 3 in one session (explicit user direction: code first, test after)
+
+## Today's cut
+
+Explicit user direction, given twice: (1) finish whatever Sprint 2 left
+undone before moving on, (2) then code the WHOLE of Sprint 3 — all five
+menu boxes (M5, M6, M7, `POST /gps`, `POST /sync/batch`) — in one sitting,
+**deliberately deferring every verification step** (no `php -l`/`tsc`
+beyond a bare parse/type check, no `verify-*.sh`, no browser walkthrough,
+no device run) to a follow-up session. This is a real, acknowledged
+departure from this project's own normal "prove it, don't claim it"
+discipline — done because the user explicitly asked for it, not because
+verification stopped mattering. **Nothing below is claimed tested beyond
+what the "Static checks actually run" section says.** Sprint 3's own
+"Today's cut" boxes in `Baranguard_Sprint_Prompts.md` are deliberately
+left UNCHECKED by this entry — a checked box in that file has always meant
+real verification evidence, and this session has none to offer yet.
+
+Sprint 2's carryover: the mobile branch of `POST /incidents` (device_id +
+client_event_id idempotency), previously listed as "Not yet done" because
+the direct-POST mobile path had never been exercised — it is still
+unexercised, but the code now exists and is also reachable through
+`/sync/batch`'s `incidents[]` array, which is how this app actually
+reaches it in practice (M3 only ever saves locally; nothing calls
+`POST /incidents` directly from a screen).
+
+## Schema gap found and resolved before writing any mobile-cache code
+
+§5 defines `dispatch_local` fully (it was never actually missing, despite
+an earlier DEVLOG entry flagging "the dispatch_local cache-shape
+ambiguity... is still unresolved" — re-reading §5 line-by-line this
+session found the full column list was there all along; the "ambiguity"
+was only ever about which SPRINT it belonged to, now resolved as Sprint
+3). No schema deviation was needed for `dispatch_local`/`gps_track_local`/
+`offline_queue_local` — all three are exactly as documented.
+
+## A real, undocumented API gap found while designing the mobile screens
+
+`GET /dispatch`'s documented item shape (§6) has no `incident_type`,
+`latitude`, or `longitude` — only dispatch-table fields. Without them, M5
+Assignments List and M6 Assignment Detail have no redacted-safe way to
+show what/where a cached assignment even is (§9 M5's own UI reference
+explicitly wants "type, location" on every card). Resolved the same way
+`GET /incidents`'s own `officer_name` field was added in an earlier
+session: extended `DispatchController::index()`'s query with a plain join
+back to `incident` for these three fields only. Never `raw_narrative`, and
+both fields are already exposed to a Tanod via `GET /incidents`'s own list
+item shape — this doesn't disclose anything new, it just reaches the same
+allow-listed data from the dispatch side too.
+
+## Resolved decisions not stated in the reference (logged, don't reopen without review)
+
+**Mobile `POST /incidents` idempotency source.** §6 fixes the idempotency
+key as "authenticated device_id + client_event_id" but the documented
+request body has no `device_id` field, and the JWT itself carries no
+device identity. Resolved with a new `X-Device-Id` request header,
+mirroring the existing `Idempotency-Key` header precedent exactly. The
+server verifies that device_id actually belongs to the calling Tanod
+(`mobile_device.user_id = caller`, `is_active=1`) before trusting it —
+the "authenticated" half of "authenticated device_id". Added to
+`index.php`'s CORS `Access-Control-Allow-Headers`.
+
+**`POST /gps`'s request body** (§6 states the endpoint in prose only):
+`{latitude,longitude,accuracy_m,recorded_at,dispatch_id?,client_event_id}`.
+`client_event_id` is always required (not just "for offline/retryable
+writes" as §6's prose hedges) — every other mobile write in this codebase
+already requires one, and a broadcast-cadence endpoint is retried by
+definition. "Active" dispatch (for the optional `dispatch_id` ownership
+check) means `status IN ('assigned','en_route','arrived')`, the same
+definition `DispatchController` already uses elsewhere.
+
+**`PATCH /dispatch/:id/status`'s transition rule applies identically to
+both roles.** Re-reading §6 closely: "Allowed transitions only:
+assigned→en_route, en_route→arrived, arrived→completed" is NOT relaxed
+for Admin — an Admin acting on someone else's dispatch still only reaches
+the next matrix state, they just need an explicit `override_reason` (and
+get an audit row) because they aren't the assigned Tanod. This
+simplified what had originally looked like it needed two different
+matrices into one shared `applyStatusTransition()` used by the direct
+PATCH endpoint, M6's mobile status button (via the sync path below), and
+`SyncController`.
+
+**`POST /sync/batch`'s per-item body shapes** (§6 only says "every item
+has client_event_id"): resolved as exactly each item type's own
+single-item endpoint body — `incidents[]` = `POST /incidents` (mobile)
+body, `gps_tracks[]` = `POST /gps` body, `duty_status_updates[]` =
+`POST /duty-status` body, `dispatch_status_updates[]` =
+`{dispatch_id,status,client_event_id}` (no `override_reason` — a sync
+item is always the owning Tanod moving their own dispatch, never an Admin
+override).
+
+**"Oldest-first per device"** (§6): with no shared timestamp field across
+five differently-shaped item types, and no license to invent one outside
+each endpoint's own documented body, this is interpreted as: the five
+arrays are processed in the fixed order §6's own body lists them
+(incidents, gps_tracks, duty_status_updates, dispatch_status_updates,
+sos), and within each array, in the client-supplied order — i.e. each
+array is already "oldest-first" because that's the order a client
+naturally appends to it while queuing offline.
+
+**`offline_queue` (server) is the idempotency ledger for `/sync/batch`
+specifically**, keyed on `(device_id, client_event_id)`, independent of
+whatever dedup column the underlying business table has. This matters
+most for `dispatch_status_updates` — `dispatch` has NO client_event_id
+column at all, so without this ledger a retried sync of the same
+status-change event would attempt the identical transition twice and hit
+a real `409` on the second attempt. `incidents`/`gps_tracks`/
+`duty_status_updates` already self-dedupe via their own business-table
+UNIQUE constraints; the ledger check there is a harmless fast path that
+also correctly reports `'duplicate'` for a retried *sync call itself*,
+not only a cross-transport duplicate. `sync_metadata_json` holds only
+`{"server_id": ...}` — per §5, "server mirror never stores original raw
+payload".
+
+**`sos[]` in `/sync/batch` is explicitly unsupported this cut** —
+`POST /tanod-sos` and its notification/FCM/SMS transport are Sprint 4
+scope. Every `sos[]` item returns `status:"failed"` with an explanatory
+reason (`503 SERVICE_UNAVAILABLE` internally) rather than being silently
+dropped or half-implemented — same "don't jump the dependency chain"
+precedent `DispatchController` already set for notification creation.
+
+**Mobile local schema, Sprint 3 (migration 3): `dispatch_local`,
+`gps_track_local`, `offline_queue_local` — NOT `duty_status_local`.**
+M2's duty toggle already always calls `POST /duty-status` directly online
+(Sprint 2); nothing in this cut adds an offline duty-toggle path, so
+creating that table now would repeat the exact "empty table nothing
+reads" mistake this project's own Sprint 2 entry already flagged and
+avoided. `offline_queue_local` is used for exactly one payload type this
+cut — `dispatch_status` — because `dispatch_local` has only a single
+`last_status_event_id` slot (§5), not room for a queue of multiple
+pending offline status changes; `incident_local`/`gps_track_local`
+instead use their own existing `synced` columns directly, the same
+pattern `incident_local` already established in Sprint 2.
+
+**M6's status button advances exactly one step, always.** §9 M6: "A
+client must not locally skip states." `dispatchRepository.nextStatusFor()`
+returns the single next state or `null` at a terminal one — there is no
+UI path to request any other target, so "must not skip states" is
+enforced structurally on the client, not just left to server-side
+rejection (which still independently enforces it either way).
+
+**M6's Navigate action opens the device's own map app via a `geo:` URI**
+rather than adding a mapping SDK. This works identically whether the
+cached route is fresh or stale — a `geo:` intent lets the map app route
+live from wherever it actually is, which is the correct fallback for "new
+OSRM routing is unavailable offline" (§9 M6).
+
+**M7 Live Map ships without a rendered basemap.** Rendering real tiles
+from a downloaded MBTiles package needs a native, offline-tile-capable
+map renderer (e.g. MapLibre Native via a Capacitor plugin) — a
+materially bigger native dependency than anything else in this cut, and
+not something to add silently without the user scoping it explicitly (the
+same reasoning that kept `POST /map-packages` upload and OSRM routing out
+of earlier cuts). Rather than fake a map with a static image (a demo-tell
+§8 forbids), M7 is built as a real, fully-functional STATUS VIEW: GPS
+broadcast, real freshness, and a real nearby-incidents list — everything
+§6 actually wires up — with the rendered map surface tracked as explicit
+follow-up work below, not silently skipped.
+
+**M7's GPS broadcast is foreground-only.** Tracking starts when the
+screen mounts and stops on unmount via the stop function
+`geolocation.ts`'s `watchPosition()` returns. A background location
+service (tracking while the app is closed) needs a foreground-service
+notification, battery-optimization exemptions, and Android 10+'s separate
+background-location consent flow — none of it in this cut's scope. If
+continuous background GPS is wanted later, that's a separate, explicitly
+scoped decision.
+
+**Broadcast/nearby-refresh cadence** (not numbers §6 states for the
+mobile side): GPS broadcast throttled to at most once per 15s (same order
+of magnitude as the web dashboard's own GIS Live Tracking poll), nearby
+incidents refreshed every 30s. `STALE_AFTER_SECONDS = 120` for M7's own
+Live/Stale pill matches `GpsController`'s existing §6 threshold exactly,
+rather than inventing a second number.
+
+**`@capacitor/geolocation` added to `package.json`** — the only new
+native dependency this cut. `npm install` has NOT been run (see Static
+checks below); it joins Camera/voice-recorder/secure-storage on the list
+of native plugins added but not yet exercised through `npx cap sync` +
+a real build.
+
+## Files
+
+**Backend:**
+- `backend/controllers/IncidentsController.php` (MODIFIED) — `create()`
+  now branches web (Admin/Secretary, existing `Idempotency-Key` path,
+  renamed `createWeb()`) vs. mobile (Tanod, new `createMobile()` +
+  `createMobileItem()`); new `nearby()` for `GET /incidents/nearby`
+  (M7); `assertDeviceOwnership()` helper.
+- `backend/controllers/GpsController.php` (MODIFIED) — new `create()`
+  (`POST /gps`) + `createItem()` (the reusable core `SyncController`
+  also calls).
+- `backend/controllers/DutyStatusController.php` (MODIFIED) — `create()`'s
+  inline lookup-then-insert logic extracted into `applyToggle()`
+  (`public`), reused by `SyncController`.
+- `backend/controllers/DispatchController.php` (MODIFIED) — new
+  `updateStatus()` (`PATCH /dispatch/:id/status`) +
+  `applyStatusTransition()` (the shared core); `index()`'s SELECT extended
+  with `incident_type`/`latitude`/`longitude` (see API gap above).
+- `backend/controllers/SyncController.php` (NEW) — `POST /sync/batch`,
+  the `offline_queue`-backed reconciliation ledger described above.
+- `backend/routes/gps.php`, `incidents.php`, `dispatch.php` (MODIFIED),
+  `backend/routes/sync.php` (NEW) — route registrations for all of the
+  above.
+- `backend/public/index.php` (MODIFIED) — `X-Device-Id` added to
+  `Access-Control-Allow-Headers`.
+
+**Mobile:**
+- `mobile/src/services/db/localSchema.ts` (MODIFIED) — migration 3
+  (`dispatch_local`, `gps_track_local`, `offline_queue_local`);
+  `LOCAL_SCHEMA_VERSION` 2 → 3; new row-type interfaces.
+- `mobile/scripts/verify-local-schema.mjs` (MODIFIED) — EXPECTED-column
+  assertions and default-value checks extended for all three new tables,
+  and the v1→latest upgrade-path check extended to assert all three
+  survive an in-place upgrade. **Written, not run this session** — see
+  Static checks below.
+- `mobile/src/services/db/dispatchRepository.ts` (NEW) — `dispatch_local`
+  cache: `cacheDispatchesFromServer()` (upsert), `listActiveCachedDispatches()`,
+  `getCachedDispatch()`, `isCacheStale()`, `nextStatusFor()`,
+  `applyLocalStatusChange()`, `markStatusSynced()`.
+- `mobile/src/services/db/gpsTrackRepository.ts` (NEW) — `gps_track_local`
+  staging: `saveGpsPointLocally()`, `listUnsyncedGpsPoints()`,
+  `markGpsPointSynced()`.
+- `mobile/src/services/db/offlineQueueRepository.ts` (NEW) —
+  `offline_queue_local` for `dispatch_status` items only:
+  `enqueueDispatchStatusChange()`, `listPendingDispatchStatusUpdates()`,
+  `markQueueItemResolved()`.
+- `mobile/src/services/db/incidentRepository.ts` (MODIFIED, additive) —
+  `listUnsyncedIncidents()`, `markIncidentSynced()`,
+  `markIncidentSyncFailed()` for the sync worker below.
+- `mobile/src/services/syncService.ts` (NEW) — `runSyncPass()`: gathers
+  unsynced incidents/GPS/queued dispatch-status changes, calls
+  `apiService.syncBatch()` once, applies per-item results back to local
+  state. Nothing calls this yet (see Not yet done).
+- `mobile/src/services/geolocation.ts` (NEW) — `getCurrentPosition()`,
+  `watchPosition()` (foreground-only, see decisions above).
+- `mobile/src/services/apiService.ts` (MODIFIED, additive) —
+  `getDispatches`, `updateDispatchStatus`, `postGps`,
+  `getNearbyIncidents`, `syncBatch`, plus the `DispatchEntry`/
+  `SyncBatchResult`/etc. types backing them.
+- `mobile/src/pages/assignments.tsx` (NEW) — M5.
+- `mobile/src/pages/assignment-detail.tsx` (NEW) — M6.
+- `mobile/src/pages/live-map.tsx` (NEW) — M7 (status-view, no rendered
+  map — see decisions above).
+- `mobile/src/App.tsx` (MODIFIED) — `/assignments`, `/assignments/:localId`,
+  `/map` now route to the real pages instead of `NotBuiltYetPage`.
+- `mobile/src/theme/app.css` (MODIFIED, additive) — `.card`/`.card-list`/
+  `.priority-dot`/`.card__meta--warning` etc., built from existing §8
+  tokens only, no new hardcoded values.
+- `mobile/package.json` (MODIFIED) — `@capacitor/geolocation` dependency
+  added.
+- `mobile/README.md` (MODIFIED) — table/screen inventory corrected; it had
+  drifted out of date since the initial scaffold entry and was actively
+  misleading about "no screens yet".
+
+## Static checks actually run (the only verification this session performed)
+
+1. **`php -l` on every new/modified PHP file** (10 files) — all clean, no
+   syntax errors. This is a PARSE check only; it proves nothing about
+   correctness, authorization, or the actual SQL executing successfully.
+2. **`tsc --noEmit` across the whole mobile project** — clean except for
+   `geolocation.ts`, which fails with exactly the expected
+   `Cannot find module '@capacitor/geolocation'` (its `npm install` was
+   never run this session) plus two derived implicit-`any` errors on that
+   same missing type. Every other new/modified file in this cut —
+   `apiService.ts`, all three new repositories, `incidentRepository.ts`'s
+   additions, `syncService.ts`, `App.tsx`, and all three new pages —
+   type-checks cleanly against the project's existing dependencies. This
+   is a real signal (a type-checker catches a class of mistake `php -l`
+   cannot), but it is still not behavior verification.
+
+## NOT done this session — stated plainly, not glossed over
+
+- **No `verify-*.sh` script was run** against the new backend endpoints
+  (`POST /gps`, `PATCH /dispatch/:id/status`, `POST /sync/batch`, the
+  mobile `POST /incidents` branch, `GET /incidents/nearby`,
+  `GET /dispatch`'s extended fields). Nothing here has executed against a
+  real database. A dedicated verify script for these five endpoints
+  together is the natural next step, following the exact pattern every
+  earlier sprint's own `verify-*.sh` already established.
+- **`npm run verify.schema` was NOT run** — the migration-3 additions to
+  `localSchema.ts` and the corresponding assertions in
+  `verify-local-schema.mjs` have never executed against a real SQLite
+  engine, unlike every prior schema migration in this codebase (which
+  were always run and reported with a pass count the same session they
+  were written).
+- **`npm install` was NOT run** — `@capacitor/geolocation` exists only as
+  a `package.json` entry; nothing has resolved or installed it.
+- **No browser walkthrough** (the Playwright/Browser-tool pattern every
+  earlier sprint used for at least a smoke pass) was performed for any of
+  the three new mobile screens.
+- **No device/emulator run** — unchanged from the prior entry's "Android
+  native build environment" blockers; nothing in this cut moves that
+  forward, and everything new here (dispatch/GPS caching, the sync
+  worker, M5/M6/M7) is exactly as unverified on a real device as M1/M3/M4
+  already were.
+- **`syncService.ts` is not wired to anything yet.** No screen, timer, or
+  app-lifecycle hook calls `runSyncPass()` — it exists as a callable
+  module, not yet a running worker. M5/M7 do their own direct
+  online-or-local-fallback writes (`postGps`, `cacheDispatchesFromServer`)
+  independent of it; only `runSyncPass()` actually drains what those
+  fallbacks accumulate. Wiring a real trigger (app foreground, a timer, a
+  manual "Sync now" action) is unstarted.
+- **Nothing from this session has been committed.** It is sitting in the
+  working tree pending the user's review, consistent with how every prior
+  session's uncommitted work has been handled in this repo.
+
+## Suggested order for the follow-up verification session
+
+1. `npm install` in `mobile/` (resolves the one outstanding `tsc` gap).
+2. `npm run verify.schema` — confirm migration 3 passes for real.
+3. A new `backend/scripts/verify-sprint3.sh` against real XAMPP, covering:
+   mobile `POST /incidents` idempotency + device-ownership rejection,
+   `POST /gps` (happy path, idempotent retry, invalid/foreign
+   `dispatch_id` rejection), `PATCH /dispatch/:id/status` (Tanod own vs.
+   Admin-with-reason vs. wrong-role vs. skip-a-state rejection),
+   `POST /sync/batch` (mixed batch with a genuine duplicate and a genuine
+   failure in the same call, device-ownership mismatch rejection),
+   `GET /incidents/nearby` (radius cap, tenant isolation),
+   `GET /dispatch`'s new fields.
+4. Browser/Playwright pass for M5/M6's data flow against a disposable DB
+   (M5 and the `PATCH .../status` half of M6 don't need SQLite — only the
+   `dispatch_local` cache read/write does, which needs a device).
+5. Once the Android SDK/JDK 21 blocker from the prior entry clears: a real
+   device run exercising M5 → M6 → M7 → forced-offline status change →
+   reconnect → confirm `syncService.ts`'s `runSyncPass()` actually drains
+   the queue — plus wiring `runSyncPass()` to something that calls it.

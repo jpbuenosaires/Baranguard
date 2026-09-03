@@ -87,6 +87,49 @@ const EXPECTED = {
     last_attempt_at:       ['TEXT', 0, null, 0],
     attempts:              ['INTEGER', 1, '0', 0],
   },
+  dispatch_local: {
+    local_id:                  ['TEXT', 1, null, 1],
+    server_dispatch_id:        ['INTEGER', 0, null, 0],
+    server_incident_id:        ['INTEGER', 1, null, 0],
+    tanod_id:                  ['INTEGER', 1, null, 0],
+    priority:                  ['TEXT', 1, null, 0],
+    redacted_incident_type:    ['TEXT', 0, null, 0],
+    redacted_incident_summary: ['TEXT', 0, null, 0],
+    latitude:                  ['REAL', 0, null, 0],
+    longitude:                 ['REAL', 0, null, 0],
+    route_json:                ['TEXT', 0, null, 0],
+    route_status:              ['TEXT', 1, "'unavailable'", 0],
+    status:                    ['TEXT', 1, null, 0],
+    last_status_event_id:      ['TEXT', 0, null, 0],
+    dispatched_at:             ['TEXT', 1, null, 0],
+    en_route_at:               ['TEXT', 0, null, 0],
+    arrived_at:                ['TEXT', 0, null, 0],
+    completed_at:              ['TEXT', 0, null, 0],
+    cached_at:                 ['TEXT', 1, null, 0],
+    stale_after:               ['TEXT', 1, null, 0],
+    synced:                    ['INTEGER', 1, '0', 0],
+  },
+  gps_track_local: {
+    local_id:        ['TEXT', 1, null, 1],
+    server_track_id: ['INTEGER', 0, null, 0],
+    dispatch_id:     ['INTEGER', 0, null, 0],
+    latitude:        ['REAL', 1, null, 0],
+    longitude:       ['REAL', 1, null, 0],
+    accuracy_m:      ['REAL', 1, null, 0],
+    recorded_at:     ['TEXT', 1, null, 0],
+    client_event_id: ['TEXT', 1, null, 0],
+    synced:          ['INTEGER', 1, '0', 0],
+  },
+  offline_queue_local: {
+    queue_id:              ['INTEGER', 1, null, 1],
+    client_event_id:       ['TEXT', 1, null, 0],
+    payload_type:          ['TEXT', 1, null, 0],
+    payload_json:          ['TEXT', 1, null, 0],
+    created_offline_at:    ['TEXT', 1, null, 0],
+    sync_attempts:         ['INTEGER', 1, '0', 0],
+    last_attempt_at:       ['TEXT', 0, null, 0],
+    reconciliation_status: ['TEXT', 1, "'pending'", 0],
+  },
 };
 
 /** Applies LOCAL_MIGRATIONS exactly the way localDatabase.ts does. */
@@ -200,7 +243,39 @@ const evidence = db.prepare('SELECT synced, attempts FROM evidence_attachment_lo
 check(evidence.synced === 0, `evidence_attachment_local.synced defaults to 0 (got ${evidence.synced})`);
 check(evidence.attempts === 0, `evidence_attachment_local.attempts defaults to 0 (got ${evidence.attempts})`);
 
-// --- 6. A device already on schema v1 upgrades to v2 in place, without ----
+db.prepare(
+  `INSERT INTO dispatch_local
+     (local_id, server_incident_id, tanod_id, priority, status, dispatched_at, cached_at, stale_after)
+   VALUES ('dl-1', 501, 42, 'high', 'assigned', '2026-09-05T00:00:00Z', '2026-09-05T00:00:00Z', '2026-09-05T00:10:00Z')`
+).run();
+const dispatchRow = db.prepare('SELECT route_status, synced FROM dispatch_local WHERE local_id = ?').get('dl-1');
+check(dispatchRow.route_status === 'unavailable', `dispatch_local.route_status defaults to 'unavailable' (got '${dispatchRow.route_status}')`);
+check(dispatchRow.synced === 0, `dispatch_local.synced defaults to 0 (got ${dispatchRow.synced})`);
+
+db.prepare(
+  `INSERT INTO gps_track_local (local_id, latitude, longitude, accuracy_m, recorded_at, client_event_id)
+   VALUES ('gt-1', 12.9186, 123.6667, 8.5, '2026-09-05T00:00:00Z', 'gps-event-1')`
+).run();
+let gpsDuplicateRejected = false;
+try {
+  db.prepare(
+    `INSERT INTO gps_track_local (local_id, latitude, longitude, accuracy_m, recorded_at, client_event_id)
+     VALUES ('gt-2', 12.9186, 123.6667, 8.5, '2026-09-05T00:01:00Z', 'gps-event-1')`
+  ).run();
+} catch {
+  gpsDuplicateRejected = true;
+}
+check(gpsDuplicateRejected, 'gps_track_local.client_event_id UNIQUE actually rejects a duplicate event id');
+
+db.prepare(
+  `INSERT INTO offline_queue_local (client_event_id, payload_type, payload_json, created_offline_at)
+   VALUES ('dq-event-1', 'dispatch_status', '{"dispatch_id":501,"status":"en_route"}', '2026-09-05T00:00:00Z')`
+).run();
+const queueRow = db.prepare('SELECT reconciliation_status, sync_attempts FROM offline_queue_local WHERE client_event_id = ?').get('dq-event-1');
+check(queueRow.reconciliation_status === 'pending', `offline_queue_local.reconciliation_status defaults to 'pending' (got '${queueRow.reconciliation_status}')`);
+check(queueRow.sync_attempts === 0, `offline_queue_local.sync_attempts defaults to 0 (got ${queueRow.sync_attempts})`);
+
+// --- 6. A device already on schema v1 upgrades to latest in place, without ----
 // losing existing rows — the real-world path an already-installed app
 // takes, not just a fresh install migrating 0 -> latest in one pass.
 {
@@ -218,11 +293,13 @@ check(evidence.attempts === 0, `evidence_attachment_local.attempts defaults to 0
   check(upgradedVersion === LOCAL_SCHEMA_VERSION,
     `A device already on schema v1 upgrades to v${LOCAL_SCHEMA_VERSION} (got v${upgradedVersion})`);
   const survived = upgradeDb.prepare('SELECT COUNT(*) AS n FROM incident_local').get().n;
-  check(survived === 1, `Pre-upgrade incident_local row survives the v1->v2 migration (Rule 2)`);
-  const hasEvidenceTable = upgradeDb.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='evidence_attachment_local'"
-  ).get();
-  check(!!hasEvidenceTable, 'evidence_attachment_local exists after upgrading from v1');
+  check(survived === 1, `Pre-upgrade incident_local row survives the v1->v${LOCAL_SCHEMA_VERSION} migration (Rule 2)`);
+  for (const laterTable of ['evidence_attachment_local', 'dispatch_local', 'gps_track_local', 'offline_queue_local']) {
+    const hasTable = upgradeDb.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+    ).get(laterTable);
+    check(!!hasTable, `${laterTable} exists after upgrading from v1`);
+  }
   upgradeDb.close();
 }
 

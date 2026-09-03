@@ -30,6 +30,10 @@ use PDO;
  * returns the original row instead of erroring or creating a second
  * status change — same pattern already used by `POST /dispatch`'s
  * `request_id` and `POST /shifts`'s `request_id`.
+ *
+ * `applyToggle()` (Sprint 3 cut) is `public` so `SyncController::batch()`
+ * (POST /sync/batch's `duty_status_updates[]` items) reuses the exact same
+ * lookup-then-insert logic `create()` already used inline.
  */
 final class DutyStatusController
 {
@@ -85,6 +89,43 @@ final class DutyStatusController
             throw new ApiError(400, 'VALIDATION_ERROR', 'client_event_id must be a UUID.');
         }
 
+        $result = self::applyToggle($pdo, $identity, $status, $clientEventId);
+
+        if ($result['wasCreated']) {
+            Audit::record(
+                $pdo,
+                $identity['barangay_id'],
+                $identity['user_id'],
+                'duty_status_changed',
+                'duty_status',
+                $result['status_id'],
+                ['status' => $result['status'], 'channel' => $result['channel']]
+            );
+        }
+
+        Http::send($result['wasCreated'] ? 201 : 200, [
+            'status_id' => $result['status_id'],
+            'status' => $result['status'],
+            'channel' => $result['channel'],
+            'changed_at' => $result['changed_at'],
+        ]);
+    }
+
+    /**
+     * Core duty-status-toggle logic, shared by the direct POST /duty-status
+     * path and `SyncController::batch()`'s `duty_status_updates[]` items.
+     *
+     * @return array{status_id:int,status:string,channel:string,changed_at:string,wasCreated:bool}
+     */
+    public static function applyToggle(PDO $pdo, array $identity, string $status, mixed $clientEventId): array
+    {
+        if (!in_array($status, self::VALID_STATUSES, true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of on_duty, responding, off_duty.');
+        }
+        if (!is_string($clientEventId) || !preg_match('/^[0-9a-fA-F-]{36}$/', $clientEventId)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'client_event_id must be a UUID.');
+        }
+
         // Idempotent retry: the same (user_id, client_event_id) pair returns
         // the row already written instead of erroring on the UNIQUE
         // constraint or creating a duplicate status change.
@@ -95,12 +136,13 @@ final class DutyStatusController
         $existingStmt->execute(['user_id' => $identity['user_id'], 'client_event_id' => $clientEventId]);
         $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
         if ($existing !== false) {
-            Http::send(200, [
+            return [
                 'status_id' => (int) $existing['status_id'],
                 'status' => $existing['status'],
                 'channel' => $existing['channel'],
                 'changed_at' => $existing['changed_at'],
-            ]);
+                'wasCreated' => false,
+            ];
         }
 
         $insertStmt = $pdo->prepare(
@@ -118,22 +160,13 @@ final class DutyStatusController
         $readBack->execute(['id' => $statusId]);
         $created = $readBack->fetch(PDO::FETCH_ASSOC);
 
-        Audit::record(
-            $pdo,
-            $identity['barangay_id'],
-            $identity['user_id'],
-            'duty_status_changed',
-            'duty_status',
-            $statusId,
-            ['status' => $status, 'channel' => 'app']
-        );
-
-        Http::send(201, [
+        return [
             'status_id' => $statusId,
             'status' => $created['status'],
             'channel' => $created['channel'],
             'changed_at' => $created['changed_at'],
-        ]);
+            'wasCreated' => true,
+        ];
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */

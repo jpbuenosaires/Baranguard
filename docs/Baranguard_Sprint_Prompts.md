@@ -306,9 +306,11 @@ BACKEND — documented in §6:
       (verify-duty-status-map-upload.sh).
   [x] POST /duty-status                   DONE 2026-09-03 (M2). Idempotent
       via client_event_id, same 40/40 script.
-  [ ] Mobile branch of POST /incidents — the web path exists (Sprint 1)
+  [~] Mobile branch of POST /incidents — the web path exists (Sprint 1)
       but mobile idempotency is device_id + client_event_id, a different
-      code path that has never been exercised.
+      code path. CODED 2026-09-03 (X-Device-Id header + createMobileItem(),
+      also reused by Sprint 3's SyncController) — NOT YET VERIFIED, same
+      session/caveat as the Sprint 3 boxes below.
 
 MOBILE INFRASTRUCTURE:
   [x] apiService.ts — DONE (40dbde5); extended 2026-09-03 with
@@ -332,9 +334,11 @@ AMBIGUITIES to settle before they cause drift:
       Still fully blocked on Sprint 4's POST /tanod-sos.
 
 Suggested order for what's left: Android SDK install (unblocks every
-device-only verification above) → device run of M1/M3/M4/M2 → mobile
-POST /incidents branch → dispatch_local cache shape decision → Sprint 3
-proper (M5/M6/M7, /sync/batch, POST /gps).
+device-only verification above) → device run of M1/M3/M4/M2. The mobile
+POST /incidents branch and the dispatch_local cache-shape decision are
+both resolved — see the [~] entries above and Sprint 3's own section
+below: all of it is CODED (2026-09-03) but UNVERIFIED, not yet a device
+run.
 --------------------------------------------------------------------------
 
 Requirements: every local write gets a stable client_event_id at time of
@@ -377,13 +381,38 @@ silently presenting a stale route as current — verify the UI actually reads
 those fields rather than always showing the freshest cached row.
 
 Today's cut — pick exactly ONE:
-  [ ] M5 Assignments List (reads dispatch_local, works when API unreachable)
-  [ ] M6 Assignment Detail/Navigation — status transitions queue into
+  [~] M5 Assignments List (reads dispatch_local, works when API unreachable)
+      CODED 2026-09-03, NOT YET VERIFIED. Built alongside all four other
+      boxes below in one session at explicit user direction ("code first,
+      test after") — a deliberate exception to "pick exactly ONE",
+      confirmed by the user, same category as prior multi-box sessions.
+      See backend/DEVLOG.md's "Sprint 2's leftover mobile POST /incidents
+      branch, then all of Sprint 3 in one session" entry for exactly what
+      was and wasn't checked (php -l / tsc --noEmit only — no verify
+      script, no browser pass, no device run).
+  [~] M6 Assignment Detail/Navigation — status transitions queue into
       dispatch_status_updates[], reconcile via idempotent client event IDs
-  [ ] M7 Live Map — GPS broadcast + nearby redacted incidents
-  [ ] Server: POST /gps + GET /gps/live + GET /gps/history
-  [ ] Server: POST /sync/batch reconciliation (oldest-first per device,
+      CODED 2026-09-03, NOT YET VERIFIED — same session/caveat as M5 above.
+  [~] M7 Live Map — GPS broadcast + nearby redacted incidents
+      CODED 2026-09-03, NOT YET VERIFIED — same session/caveat as M5 above.
+      Ships without a rendered basemap (real status view only — see
+      DEVLOG for why); the map-tile rendering surface is separate,
+      unscoped follow-up work.
+  [~] Server: POST /gps + GET /gps/live + GET /gps/history
+      POST /gps CODED 2026-09-03, NOT YET VERIFIED — same session/caveat
+      as M5 above. GET /gps/live + GET /gps/history were already DONE and
+      real-XAMPP-verified in Sprint 1 (37/37) — unchanged by this cut.
+  [~] Server: POST /sync/batch reconciliation (oldest-first per device,
       locks/dedupes by event key)
+      CODED 2026-09-03, NOT YET VERIFIED — same session/caveat as M5
+      above. PATCH /dispatch/:id/status (needed by both M6 and this) was
+      also coded this same session, same caveat.
+
+None of the boxes above are checked [x] — a checked box in this file has
+always meant real verification evidence, and this session deliberately
+has none yet. Do not treat the [~] marks as "done"; treat them as "code
+exists, go verify it" per the suggested order at the end of that DEVLOG
+entry.
 
 If nothing above is checked and nothing is named in prose, stop and ask
 which one before writing any code. If you finish early, end the session

@@ -1,6 +1,15 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-03, end of the Sprint 2 "remaining items" session.**
+**Last updated: 2026-09-03. Sprint 2's leftover mobile `POST /incidents`
+branch plus ALL of Sprint 3 (M5, M6, M7, `POST /gps`, `POST /sync/batch`)
+were CODED this session at explicit user direction — "code first, test
+after". NONE of it has been verified beyond a bare `php -l`/`tsc --noEmit`
+parse/type check (see `backend/DEVLOG.md`'s latest entry for exactly what
+that means and doesn't mean). Treat everything in this section under
+"Sprint 3" as unverified until a follow-up session runs the suggested
+verification order at the bottom of that DEVLOG entry. The Android native
+build environment work described further down is UNCHANGED by this
+session — still blocked on the same JDK 21 install.**
 
 This file is the one thing to read to pick this project back up cold. It's
 a snapshot, not a substitute for `backend/DEVLOG.md` (the full narrative
@@ -9,23 +18,28 @@ update this file at the end of a session, don't let it go stale for long.
 
 ## Where things stand right now
 
-- **Working tree: NOT clean.** Everything from this session (backend
+- **Working tree: uncommitted changes from THIS session on top of the
+  clean `b9f7c7c` base** — everything described under "Sprint 3 — coded
+  this session, UNVERIFIED" below. Nothing in it has been committed yet;
+  it's pending the user's review.
+- Everything from the earlier "Sprint 2 remaining items" session (backend
   `POST /duty-status` + `POST /map-packages`, M2 Home, bottom-nav tabs,
-  photo/voice capture, Keystore passphrase, Inter font vendoring, doc
-  updates) is written and tested but **not yet committed** — pending the
-  user's go-ahead, same convention as every prior session's uncommitted
-  work.
+  photo/voice capture, Keystore passphrase, Inter font vendoring, the
+  htdocs-junction work) is **committed and pushed** to `origin/main`
+  (`b9f7c7c`), unchanged by this session.
 - **Sprint 0 + Sprint 1: fully complete**, real-XAMPP verified, committed
   and pushed. Unchanged since the last handoff.
-- **Sprint 2 (mobile): every box on the working checklist is now done
-  except what genuinely requires the Android SDK.** Both blocking
-  decisions (bottom-nav slot, photo/voice scope) are resolved. The only
-  remaining Sprint 2 items are device-only verification and one backend
-  box (mobile's `POST /incidents` branch) — see below.
+- **Sprint 2 (mobile): every code box is done, including the leftover
+  mobile `POST /incidents` branch (coded this session — see below).** What
+  remains is entirely device verification — see "Android native build
+  environment" below, unchanged this session.
+- **Sprint 3: all five "Today's cut" boxes were CODED this session, none
+  verified.** See the dedicated section below before treating any of it
+  as done.
 
 ## Sprint 2 — exactly what's done vs. not
 
-Done this session (2026-09-03, uncommitted):
+Done and committed/pushed (`b9f7c7c`):
 - **`POST /duty-status`** — Tanod-only, idempotent via `client_event_id`,
   40/40 verified against real XAMPP.
 - **`POST /map-packages`** — Admin multipart upload, two-tier MBTiles
@@ -69,11 +83,69 @@ Not done / explicitly deferred:
 - The `dispatch_local` cache-shape ambiguity (Sprint 2 vs Sprint 3) is
   still unresolved.
 
-## Hard blockers — still the same one root cause (need the user's machine, not code)
+## Android native build environment — IN PROGRESS as of this entry
 
-**No Android SDK / Android Studio installed.** `mobile/android/` was never
-added (`npx cap add android && npx cap sync` still to run). Everything
-below is blocked on this one thing:
+The Android SDK is installed and `npx cap add android && npx cap sync`
+has been run — `mobile/android/` exists. Getting an actual build to
+compile surfaced **four real, non-obvious environment bugs**, all found
+and fixed via `--stacktrace`/direct source inspection (full detail,
+exact fixes, and file-by-file changes in `backend/DEVLOG.md`'s "Android
+SDK / native build environment setup" entry — read that before touching
+any of this again):
+
+1. Gradle daemon failed on every invocation with `Unable to establish
+   loopback connection` — root cause was JDK 17's internal wakeup-pipe
+   socket breaking under the space in `C:\Users\Jayson Buenosaires\...`.
+   Fixed by redirecting `TMPDIR`/`TEMP`/`TMP`/`-Djava.io.tmpdir` to a
+   short path (`C:\gtmp`) — **must be set via environment variables on
+   every `gradlew` invocation**, it cannot live in `gradle.properties`
+   (the crash happens before that file is even read).
+2. `mobile/android/local.properties`'s `sdk.dir` was malformed by an
+   earlier bad write — fixed using the Windows short-path form
+   (`C:/Users/JAYSON~1/AppData/Local/Android/Sdk`).
+3. `sdkmanager.bat`/`avdmanager.bat` also choke on the same
+   space-in-username — always use the short-path form
+   (`C:\Users\JAYSON~1\...`) for any SDK cmdline-tools invocation.
+4. **All 6 Capacitor native plugins require an exact JDK 21 toolchain**
+   (confirmed in each plugin's own `android/build.gradle` — not just
+   Camera). A newer JDK does NOT satisfy this — tested directly:
+   registering Android Studio's bundled JBR (JDK 25) produced the
+   identical failure. **A real JDK 21 install is the only fix.**
+
+**Current status**: user is installing Temurin 21 (`.msi`, from
+adoptium.net) and creating an **API 36** (not 34 — see the resolved
+decision in DEVLOG; `variables.gradle` sets `compileSdk=targetSdk=36`,
+`minSdk=24` is a floor not a test target) emulator via Android Studio's
+Device Manager, both directly on their own machine since this
+sandbox's network sustained only ~105 KB/s on the JDK download.
+
+**A real open question surfaced by this, not yet resolved**:
+`mobile/android/` is `.gitignore`d (line 39), but now holds two real,
+non-regeneratable-by-default fixes (`gradle.properties`,
+`AndroidManifest.xml`'s CAMERA/RECORD_AUDIO permissions). `npx cap sync`
+(routine) never touches either file, so day-to-day work is safe — but
+`npx cap add android` (rare, one-time, already run once) fully
+regenerates the folder and would silently lose both. Whether to commit
+`mobile/android/` now that it holds real fixes, or keep it gitignored
+and accept that risk, is a decision for the user — flagged, not decided.
+
+**Once the JDK + emulator are ready, next steps in order**: confirm
+Gradle picks up JDK 21 → confirm `adb devices` sees the running emulator
+→ `gradlew assembleDebug` → install → walk through M1 (login) → M2 (duty
+toggle) → M3 (incident capture + Add Photo/Record Voice Note) → M4
+(confirmation) → pull the SQLite DB file off the device and confirm it
+isn't plaintext → kill the app mid-capture and confirm the record
+survives → `./gradlew lintDebug` (the `NewApi` check for the
+`minSdk=24` floor — not yet run, needs the same JDK 21) → ideally also
+a spot-check on a lower-API emulator eventually, for real minSdk=24
+confidence rather than just "no plugin declares a higher floor," which
+is the only check done so far (see DEVLOG).
+
+None of the four items below (still the actual verification goal) can
+be checked in a browser — M1 and M2 could be (and were). M3/M4/evidence
+capture fundamentally can't: `localDatabase.ts` deliberately throws on
+the web platform rather than silently opening an unencrypted store, and
+Camera/VoiceRecorder need a real device.
 1. SQLCipher encryption-at-rest — never verified.
 2. Offline-capture-survives-app-kill — never verified.
 3. Photo/voice capture — never executed (camera/mic permission flow, real
@@ -81,40 +153,46 @@ below is blocked on this one thing:
 4. The Keystore passphrase upgrade — never executed (Android Keystore
    round-trip, and the legacy-value migration path, both unexercised).
 
-None of these can be verified in a browser — M1 and M2 could be (and were,
-this session and the last), because neither touches SQLite or a native
-plugin. M3/M4/evidence capture fundamentally can't: `localDatabase.ts`
-deliberately throws on the web platform rather than silently opening an
-unencrypted store, and Camera/VoiceRecorder need a real device.
+## Sprint 3 — coded this session, UNVERIFIED (read before touching any of it)
 
-**Recommended next physical step, regardless of which Sprint-scoped box
-gets picked next: install the Android SDK, then
-`npx cap add android && npx cap sync`, then actually run M1/M2/M3/M4 and
-the new evidence-capture flow on a device/emulator** — pull the DB file to
-confirm it isn't plaintext SQLite, and confirm the Keystore-backed
-passphrase actually round-trips.
+All five "Today's cut" boxes exist as code now — `POST /gps`,
+`PATCH /dispatch/:id/status`, `POST /sync/batch`, M5 Assignments List, M6
+Assignment Detail/Navigation, M7 Live Map (plus Sprint 2's own leftover
+mobile `POST /incidents` branch) — written in one sitting at the user's
+explicit request to defer all testing until after the whole sprint was
+coded. **The only verification performed was `php -l` on every new/
+modified PHP file (clean) and `tsc --noEmit` across the mobile project
+(clean except the expected `@capacitor/geolocation` module-not-found,
+since its `npm install` was never run).** Nothing has executed against a
+real database, no local-schema migration-3 check has run, no browser
+walkthrough happened, no device run happened. Full detail — every
+resolved decision, every file touched, and the exact suggested
+verification order — is in `backend/DEVLOG.md`'s newest entry ("Sprint
+2's leftover mobile POST /incidents branch, then all of Sprint 3 in one
+session"). Read that before extending or trusting any of this, per this
+project's own standing rule about not building on a description alone.
 
-## Sprint 3 — what's next once you're ready to move on from Sprint 2
+Two things worth knowing before that verification session starts:
 
-**Two boxes are fully unblocked today, no device needed** (unchanged from
-the last handoff):
-- `POST /gps` — `GET /gps/live` and `GET /gps/history` already exist
-  (Sprint 1, 37/37 verified), so this is genuinely just the missing write
-  side.
-- `POST /sync/batch` — the natural next step after M3: incidents already
-  get a stable `client_event_id` at first save specifically so this
-  endpoint can dedupe on it.
+1. **A real, undocumented API gap was found and fixed**: `GET /dispatch`
+   didn't carry `incident_type`/`latitude`/`longitude`, which M5/M6 need
+   to show what/where a cached assignment is. Extended `DispatchController
+   ::index()`'s query to join them in (redacted-safe fields only, same
+   precedent as `GET /incidents`'s own `officer_name` addition).
+2. **M7 Live Map ships with NO rendered basemap.** It's a real,
+   fully-functional status view (GPS broadcast, freshness, nearby
+   incidents) — the actual map-tile rendering surface needs a native
+   offline-tile-capable renderer (MapLibre Native or similar) that wasn't
+   in scope to add silently this cut. Flagged as explicit follow-up work,
+   not a demo-tell gap.
 
-**The mobile boxes (M5 Assignments List, M6 Assignment Detail/Nav, M7
-Live Map) are still NOT good picks** — same Android-SDK wall, AND they
-need local tables that still don't exist: `dispatch_local`,
-`gps_track_local`, `offline_queue_local` (confirmed absent from
-`mobile/src/services/db/localSchema.ts` as of this session).
-
-**Recommendation, unchanged: `POST /sync/batch`** is the highest-value
-unblocked pick whenever the user wants to step outside Sprint 2's device
-wall again. Per this project's own "pick exactly ONE" rule, confirm with
-the user before writing code.
+**Immediate next step, in order** (also at the end of the DEVLOG entry):
+`npm install` in `mobile/` → `npm run verify.schema` → a new
+`backend/scripts/verify-sprint3.sh` against real XAMPP → a browser pass
+for M5/M6's non-device-dependent parts → once the Android SDK/JDK 21
+blocker below clears, a real device run through M5→M6→M7→offline status
+change→reconnect, and wiring `syncService.ts`'s `runSyncPass()` to an
+actual trigger (nothing calls it yet).
 
 ## Standing gotchas worth remembering (don't rediscover these)
 
@@ -171,6 +249,10 @@ the user before writing code.
 - **Three stray empty untracked files in the repo root** (`cls`, `git`,
   `main)`) — leftovers from an old mis-pasted command, not part of any
   build. Harmless; just don't `git add -A`/`git add .` and sweep them in.
+- **`mobile/package.json` now lists `@capacitor/geolocation` but `npm
+  install` was never run for it this session** — `tsc` will fail on
+  `src/services/geolocation.ts`'s import until that runs. Run
+  `npm install` before doing anything else in `mobile/`.
 
 ## Git / attribution convention
 

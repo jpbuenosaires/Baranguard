@@ -33,7 +33,7 @@ use Baranguard\Middleware\AuthMiddleware;
 $corsOrigin = baranguard_env('CORS_ALLOWED_ORIGIN') ?: '*';
 header("Access-Control-Allow-Origin: {$corsOrigin}");
 header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Device-Id');
 header('Access-Control-Expose-Headers: X-Renewed-Token');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {

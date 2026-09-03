@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
@@ -45,6 +46,13 @@ use PDO;
  *     message. Incident-not-found/wrong-barangay uses the same 404
  *     pattern as `AuthMiddleware::requireTenant()` elsewhere in this
  *     codebase.
+ *   - **`GET /dispatch`'s item shape gained `incident_type`/`latitude`/
+ *     `longitude`** (Sprint 3 cut) — §6's documented shape doesn't list
+ *     them, but M5 Assignments List / M6 Assignment Detail have no other
+ *     redacted-safe way to know what/where a cached assignment is. Same
+ *     precedent as `GET /incidents`'s own `officer_name` addition; never
+ *     raw_narrative, and these two fields are already exposed to a Tanod
+ *     via `GET /incidents`'s own list item shape.
  */
 final class DispatchController
 {
@@ -52,6 +60,18 @@ final class DispatchController
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+
+    // §6 PATCH /dispatch/:id/status: "Allowed transitions only:
+    // assigned->en_route, en_route->arrived, arrived->completed." This is
+    // the single source of truth for that matrix — M6's mobile status
+    // buttons, the direct PATCH endpoint, and SyncController's
+    // dispatch_status_updates[] items all defer to applyStatusTransition()
+    // below rather than re-deriving this table.
+    private const STATUS_TRANSITIONS = [
+        'assigned' => 'en_route',
+        'en_route' => 'arrived',
+        'arrived' => 'completed',
+    ];
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
@@ -202,9 +222,19 @@ final class DispatchController
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
+        // incident_type/latitude/longitude: §6's documented GET /dispatch
+        // item shape doesn't list these, but without them Sprint 3's M5
+        // Assignments List / M6 Assignment Detail have no redacted-safe
+        // way to show what/where a cached assignment even is — the same
+        // "necessary plumbing beyond the literal spec" precedent as
+        // GET /incidents' own officer_name addition. Never raw_narrative;
+        // incident_type/coordinates are already exposed to a Tanod via
+        // GET /incidents' own list item shape, so this adds no new
+        // disclosure, just reaches it from the dispatch side too.
         $stmt = $pdo->prepare(
             "SELECT d.dispatch_id, d.incident_id, d.tanod_id, d.priority, d.route_json, d.route_status,
-                    d.status, d.dispatched_at, d.en_route_at, d.arrived_at, d.completed_at, d.cancelled_at
+                    d.status, d.dispatched_at, d.en_route_at, d.arrived_at, d.completed_at, d.cancelled_at,
+                    i.incident_type, i.latitude, i.longitude
              FROM dispatch d
              JOIN incident i ON i.incident_id = d.incident_id
              WHERE {$whereSql}
@@ -228,6 +258,9 @@ final class DispatchController
                 'route_json' => $row['route_json'] !== null ? json_decode((string) $row['route_json'], true) : null,
                 'route_status' => $row['route_status'],
                 'status' => $row['status'],
+                'incident_type' => $row['incident_type'],
+                'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
+                'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
                 'dispatched_at' => $row['dispatched_at'],
                 'en_route_at' => $row['en_route_at'],
                 'arrived_at' => $row['arrived_at'],
@@ -312,5 +345,124 @@ final class DispatchController
             'incident_status' => 'pending',
             'cancelled_at' => $cancelledAt,
         ]);
+    }
+
+    /**
+     * PATCH /dispatch/:id/status (Sprint 3 cut) — §6: "Tanod own assigned
+     * dispatch or Admin override. Allowed transitions only:
+     * assigned->en_route, en_route->arrived, arrived->completed. Admin
+     * corrections require explicit override_reason and audit event."
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function updateStatus(PDO $pdo, array $identity, string $dispatchIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'tanod']);
+        if (!ctype_digit($dispatchIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Dispatch not found.');
+        }
+        $dispatchId = (int) $dispatchIdParam;
+
+        $body = Http::jsonBody();
+        $newStatus = $body['status'] ?? null;
+        $overrideReason = $body['override_reason'] ?? null;
+
+        $result = self::applyStatusTransition($pdo, $identity, $dispatchId, $newStatus, $overrideReason);
+        Http::send(200, $result);
+    }
+
+    /**
+     * Core status-transition logic, shared by the direct PATCH endpoint
+     * above and `SyncController::batch()`'s `dispatch_status_updates[]`
+     * items (which always call this as the owning Tanod, `$overrideReason`
+     * null — a sync item can never carry Admin override authority).
+     *
+     * §6's transition rule applies identically to both roles — the only
+     * difference is WHO may invoke it without extra authority: a Tanod may
+     * only move their OWN assigned dispatch through the matrix; an Admin
+     * may move ANY same-barangay dispatch through it too, but must supply
+     * `override_reason` (audited) since they are not the assigned party.
+     * Neither role may reach any state outside `STATUS_TRANSITIONS` from
+     * here — `cancelled` and reversing `completed` are deliberately
+     * unreachable through this endpoint (§5 Rule 28; use
+     * `PATCH /dispatch/:id/cancel` instead, which has its own tighter
+     * rules).
+     *
+     * @return array{dispatch_id:int,status:string,updated_at:string}
+     */
+    public static function applyStatusTransition(PDO $pdo, array $identity, int $dispatchId, mixed $newStatus, mixed $overrideReason): array
+    {
+        if (!is_string($newStatus) || !in_array($newStatus, ['en_route', 'arrived', 'completed'], true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of: en_route, arrived, completed.');
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT d.dispatch_id, d.tanod_id, d.status, i.barangay_id
+                 FROM dispatch d
+                 JOIN incident i ON i.incident_id = d.incident_id
+                 WHERE d.dispatch_id = :dispatch_id
+                 FOR UPDATE'
+            );
+            $stmt->execute(['dispatch_id' => $dispatchId]);
+            $dispatch = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($dispatch === false) {
+                throw new ApiError(404, 'NOT_FOUND', 'Dispatch not found.');
+            }
+            AuthMiddleware::requireTenant($identity, (int) $dispatch['barangay_id']);
+
+            $isAdmin = $identity['role'] === 'admin';
+            $isOwnTanod = $identity['role'] === 'tanod' && (int) $dispatch['tanod_id'] === $identity['user_id'];
+            if (!$isAdmin && !$isOwnTanod) {
+                throw new ApiError(403, 'FORBIDDEN', 'This role cannot perform this action.');
+            }
+
+            $currentStatus = $dispatch['status'];
+            $expectedNext = self::STATUS_TRANSITIONS[$currentStatus] ?? null;
+            if ($expectedNext === null || $newStatus !== $expectedNext) {
+                throw new ApiError(409, 'CONFLICT', "Cannot transition from {$currentStatus} to {$newStatus}.");
+            }
+
+            if ($isAdmin) {
+                // §6: "Admin corrections require explicit override_reason
+                // and audit event" — an Admin is never the assigned Tanod,
+                // so every Admin-initiated move through this endpoint
+                // needs one.
+                if (!is_string($overrideReason) || trim($overrideReason) === '') {
+                    throw new ApiError(400, 'VALIDATION_ERROR', 'override_reason is required for an Admin-initiated status change.');
+                }
+            }
+
+            $timestampColumn = [
+                'en_route' => 'en_route_at',
+                'arrived' => 'arrived_at',
+                'completed' => 'completed_at',
+            ][$newStatus];
+
+            $updateStmt = $pdo->prepare(
+                "UPDATE dispatch SET status = :status, {$timestampColumn} = UTC_TIMESTAMP() WHERE dispatch_id = :dispatch_id"
+            );
+            $updateStmt->execute(['status' => $newStatus, 'dispatch_id' => $dispatchId]);
+
+            if ($isAdmin) {
+                Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_status_override', 'dispatch', $dispatchId, [
+                    'from' => $currentStatus,
+                    'to' => $newStatus,
+                    'reason' => $overrideReason,
+                ]);
+            }
+
+            $readBack = $pdo->prepare("SELECT {$timestampColumn} FROM dispatch WHERE dispatch_id = :dispatch_id");
+            $readBack->execute(['dispatch_id' => $dispatchId]);
+            $updatedAt = $readBack->fetchColumn();
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        return ['dispatch_id' => $dispatchId, 'status' => $newStatus, 'updated_at' => $updatedAt];
     }
 }

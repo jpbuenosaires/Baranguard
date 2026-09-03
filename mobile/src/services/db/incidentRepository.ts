@@ -138,8 +138,47 @@ export function deriveSyncState(row: IncidentLocalRow): SyncState {
     // to an existing server record.
     return row.server_incident_id === null ? 'duplicate_reconciled' : 'synced';
   }
-  // Sprint 2 has no sync worker yet, so in practice every fresh capture
-  // sits here. 'queued' becomes reachable once Sprint 3's /sync/batch
-  // worker starts attempting uploads.
+  // 'queued' becomes reachable once syncService.ts has actually attempted
+  // (and not yet resolved) an upload for this row — see markIncidentSynced/
+  // markIncidentSyncFailed below, added for Sprint 3's /sync/batch worker.
   return 'saved_locally';
+}
+
+// --- Sprint 3: /sync/batch worker support -----------------------------------
+// Everything below is read/written by `syncService.ts`, never by M3/M4
+// directly — the capture screens only ever read the row back via
+// `getLocalIncident`/`deriveSyncState` above.
+
+/** Rows not yet confirmed by the server, oldest first (§5 sync invariants). */
+export async function listUnsyncedIncidents(): Promise<IncidentLocalRow[]> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    'SELECT * FROM incident_local WHERE synced = 0 ORDER BY created_offline_at ASC'
+  );
+  return (result.values ?? []) as IncidentLocalRow[];
+}
+
+/**
+ * Applies a successful (or duplicate-reconciled) sync result. `serverId`
+ * is null only in the pathological case where the server reported success
+ * without one — treated the same as a reconciled duplicate by
+ * `deriveSyncState` above, never as an error.
+ */
+export async function markIncidentSynced(clientEventId: string, serverId: number | null): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    'UPDATE incident_local SET synced = 1, server_incident_id = ?, last_sync_error = NULL WHERE client_event_id = ?',
+    [serverId, clientEventId],
+    /* transaction */ false
+  );
+}
+
+/** Records why a sync attempt failed, for M4's "needs_attention" state (deriveSyncState above). */
+export async function markIncidentSyncFailed(clientEventId: string, reason: string): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    'UPDATE incident_local SET last_sync_error = ? WHERE client_event_id = ?',
+    [reason, clientEventId],
+    /* transaction */ false
+  );
 }
