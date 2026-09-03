@@ -537,13 +537,44 @@ is in scope for the capstone timeline at all, and if so, what "scope" means
 "scope confirmation," meaning it's an open decision, not a resolved one.
 
 Today's cut — pick exactly ONE:
-  [ ] Queue infra: ai_processing_log table + job queue that survives
+  [~] Queue infra: ai_processing_log table + job queue that survives
       Ollama being unreachable
-  [ ] GET /system/health's ollama field
-  [ ] Translation scaffold: POST /incidents/:id/ai-draft/translate
+      CODED 2026-09-03, NOT YET VERIFIED. All four boxes built in one
+      session at explicit user direction ("only the coding part, later the
+      checking") — a deliberate exception to "pick exactly ONE", same
+      category as the prior multi-box sessions. The TABLE already existed
+      (Sprint 0's baseline migration, confirmed by reading it) — this cut
+      added the queue: services/ai/AiJobQueue.php + scripts/ai-worker.php.
+      The API never calls Ollama; it only enqueues, which is what makes
+      Rule 15 structural. Claiming uses a compare-and-set UPDATE, not
+      SKIP LOCKED (MariaDB 10.4). See backend/DEVLOG.md's Sprint 5 entry.
+  [~] GET /system/health's ollama field
+      CODED 2026-09-03, NOT YET VERIFIED. Upgraded from an env-var-presence
+      check to a real probe (GET /api/tags). Reachable-but-model-not-pulled
+      is reported `unhealthy`, not `healthy`.
+  [~] Translation scaffold: POST /incidents/:id/ai-draft/translate
       (Secretary-only gate + prerequisite check must be real even if the
       translation call itself is stubbed this session)
-  [ ] Voice-to-text scope decision (document the decision itself, not code)
+      CODED 2026-09-03, NOT YET VERIFIED. The gate and the
+      approved-redaction prerequisite are both real; the call itself is
+      queued rather than stubbed, so it starts working the moment Sprint
+      6's approve endpoint lands, with no change here. Response carries
+      `language_validated:false` for Bikol (Rule 16).
+  [x] Voice-to-text scope decision (document the decision itself, not code)
+      RESOLVED 2026-09-03: **OUT OF SCOPE** for the capstone. Voice
+      *capture* stays (already built, Sprint 2); *transcription* is out —
+      Android's SpeechRecognizer would send audio to Google (Rule 1),
+      server-side ASR needs a second self-hosted model SEA-LION can't
+      provide, Bikol ASR is even less validated than Bikol text, and voice
+      notes already attach as playable evidence. Full reasoning recorded in
+      §10 of the Master Reference. Checked [x] because a decision IS the
+      deliverable here — there is nothing to verify later. The user can
+      overturn it.
+
+Note: the two Sprint 6 endpoints `POST /incidents/:id/redact` and
+`GET /incidents/:id/ai-draft` were also built this session — a queue with
+no producer and no reader can't be exercised at all. `regenerate-summary`
+and `approve` were deliberately NOT pulled forward and remain Sprint 6.
 
 If nothing above is checked and nothing is named in prose, stop and ask
 which one before writing any code. If you finish early, end the session

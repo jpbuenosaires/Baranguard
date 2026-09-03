@@ -1,15 +1,14 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-03. Sprint 2's leftover mobile `POST /incidents`
-branch plus ALL of Sprint 3 (M5, M6, M7, `POST /gps`, `POST /sync/batch`)
-were CODED this session at explicit user direction — "code first, test
-after". NONE of it has been verified beyond a bare `php -l`/`tsc --noEmit`
-parse/type check (see `backend/DEVLOG.md`'s latest entry for exactly what
-that means and doesn't mean). Treat everything in this section under
-"Sprint 3" as unverified until a follow-up session runs the suggested
-verification order at the bottom of that DEVLOG entry. The Android native
-build environment work described further down is UNCHANGED by this
-session — still blocked on the same JDK 21 install.**
+**Last updated: 2026-09-03. Two consecutive "code now, check later"
+sessions, at explicit user direction. Session A: Sprint 2's leftover
+mobile `POST /incidents` branch + ALL of Sprint 3. Session B: ALL of
+Sprint 5 (the AI pipeline), jumped to ahead of Sprint 4. NONE of it has
+been verified beyond `php -l` / `tsc --noEmit` parse checks. Sprint 4 is
+UNTOUCHED. The Android native build environment work described further
+down is unchanged — still blocked on the same JDK 21 install. Read
+`backend/DEVLOG.md`'s last two entries before trusting or extending any
+of it.**
 
 This file is the one thing to read to pick this project back up cold. It's
 a snapshot, not a substitute for `backend/DEVLOG.md` (the full narrative
@@ -18,24 +17,43 @@ update this file at the end of a session, don't let it go stale for long.
 
 ## Where things stand right now
 
-- **Working tree: uncommitted changes from THIS session on top of the
-  clean `b9f7c7c` base** — everything described under "Sprint 3 — coded
-  this session, UNVERIFIED" below. Nothing in it has been committed yet;
-  it's pending the user's review.
+- **Sprint 2's leftover + all of Sprint 3 are committed and pushed** to
+  `origin/main` (`392a4b3`) — coded but unverified, and the commit
+  message says so explicitly.
+- **Uncommitted right now: Sprint 5 only** (the AI pipeline —
+  `backend/services/ai/`, `AiDraftController.php`, `routes/ai.php`,
+  `scripts/ai-worker.php` + `README-ai.md`, the `SystemHealthController`
+  ollama probe, `.env.example`'s Ollama block, and the doc updates for
+  all of it).
+- **Also uncommitted, and NOT from these sessions:** a set of `web/`
+  changes (Toast, ConfirmDialog, DataTable/DonutChart/AppShell tweaks,
+  login and dispatch-center edits) that predate this work and were
+  already sitting in the tree. They were deliberately left out of
+  `392a4b3` rather than swept in. Someone should decide what they are
+  before committing them. The two `mobile/.scratch-screenshot*.png` files
+  are scratch junk and should just be deleted.
 - Everything from the earlier "Sprint 2 remaining items" session (backend
   `POST /duty-status` + `POST /map-packages`, M2 Home, bottom-nav tabs,
   photo/voice capture, Keystore passphrase, Inter font vendoring, the
   htdocs-junction work) is **committed and pushed** to `origin/main`
-  (`b9f7c7c`), unchanged by this session.
+  (`b9f7c7c`), unchanged by these sessions.
 - **Sprint 0 + Sprint 1: fully complete**, real-XAMPP verified, committed
   and pushed. Unchanged since the last handoff.
 - **Sprint 2 (mobile): every code box is done, including the leftover
   mobile `POST /incidents` branch (coded this session — see below).** What
   remains is entirely device verification — see "Android native build
   environment" below, unchanged this session.
-- **Sprint 3: all five "Today's cut" boxes were CODED this session, none
-  verified.** See the dedicated section below before treating any of it
-  as done.
+- **Sprint 3: all five "Today's cut" boxes were CODED, none verified.**
+  See the dedicated section below before treating any of it as done.
+- **Sprint 4 (notifications/FCM/SMS/SOS): UNTOUCHED.** Deliberately
+  skipped to reach the AI work sooner. It remains a real gap — SOS, FCM
+  registration, and the GSM fallback are all still unbuilt, and
+  `/sync/batch` returns an explicit "SOS sync is not supported until
+  Sprint 4" for any `sos[]` item.
+- **Sprint 5 (AI pipeline): all four boxes CODED, none verified** beyond
+  `php -l`. The queue, the Ollama client, the worker, the real health
+  probe, and the translation gate all exist. **The model has never
+  actually been called.** See the Sprint 5 section below.
 
 ## Sprint 2 — exactly what's done vs. not
 
@@ -76,12 +94,15 @@ local schema for `incident_local`/`mobile_device_local`/
 (built, browser-rendering verified this session too, but the actual local
 SQLite write has never executed — see blockers).
 
-Not done / explicitly deferred:
-- Mobile branch of `POST /incidents` (device_id + client_event_id
-  idempotency — a different code path from the Sprint 1 web path, never
-  exercised).
-- The `dispatch_local` cache-shape ambiguity (Sprint 2 vs Sprint 3) is
-  still unresolved.
+Both of this section's former "not done" items are now resolved (in
+`392a4b3`, coded but unverified):
+- Mobile branch of `POST /incidents` — built, using a new `X-Device-Id`
+  header for the device half of the `device_id + client_event_id`
+  idempotency key.
+- The `dispatch_local` cache-shape question — resolved as Sprint 3, and
+  the table is created there (local schema migration 3). §5 had defined
+  its columns all along; the only real ambiguity was which sprint owned
+  it.
 
 ## Android native build environment — IN PROGRESS as of this entry
 
@@ -193,6 +214,69 @@ for M5/M6's non-device-dependent parts → once the Android SDK/JDK 21
 blocker below clears, a real device run through M5→M6→M7→offline status
 change→reconnect, and wiring `syncService.ts`'s `runSyncPass()` to an
 actual trigger (nothing calls it yet).
+
+## Sprint 5 — the AI pipeline, CODED this session, UNVERIFIED
+
+All four Sprint 5 boxes exist as code. Jumping here with Sprints 2–4
+outstanding is sound and shouldn't be "fixed": the AI pipeline depends
+only on Sprint 0's schema and Sprint 1's incidents — `raw_narrative` is
+its entire input. It needs nothing from the mobile app, GPS/sync, or
+notifications.
+
+**What's there:**
+- `services/ai/OllamaClient.php` — the only place this codebase talks to
+  the model. No fallback branch to a hosted provider exists (Rule 1 made
+  structural, not aspirational).
+- `services/ai/AiJobQueue.php` — the queue, which IS `ai_processing_log`
+  (already migrated back in Sprint 0; **no new migration was needed**).
+- `services/ai/AiPrompts.php` — the three prompts, versioned, plus
+  `stripReasoning()`.
+- `scripts/ai-worker.php` — the CLI worker; the only process that calls
+  the model.
+- `controllers/AiDraftController.php` + `routes/ai.php` — `POST
+  /incidents/:id/redact`, `GET /incidents/:id/ai-draft`, `POST
+  /incidents/:id/ai-draft/translate`.
+- `GET /system/health`'s `ollama` field upgraded from an env-var-presence
+  check to a real probe.
+- Voice-to-text **resolved as out of scope** (§10 of the reference has the
+  full reasoning) — the one item here that's genuinely *done*, since a
+  decision is the whole deliverable.
+
+**Three things to know before touching it:**
+
+1. **The API never calls Ollama — only the worker does.** That's what
+   makes `POST /incidents/:id/redact` behave identically whether Ollama is
+   running, stopped, or still downloading (§2 Rule 15). Don't "optimise"
+   by making the endpoint run inference inline.
+2. **The model is a reasoning variant** (`-R`), so it emits
+   `<think>…</think>`. `AiPrompts::stripReasoning()` removes that before
+   anything is persisted — a security control, not formatting: a reasoning
+   trace restates the original narrative, so keeping it would put the
+   names redaction just removed back into the draft.
+3. **Nothing has run.** `php -l` is clean; the worker has never executed,
+   and no redaction, summary, or translation has ever been generated.
+   Prompt quality is entirely unmeasured.
+
+**To try it (once the SEA-LION pull finishes):**
+```
+ollama serve
+cd backend && php scripts/ai-worker.php --status
+```
+Then set `OLLAMA_URL`/`OLLAMA_MODEL` in `backend/.env` (see
+`.env.example`), queue a redaction, and run `php scripts/ai-worker.php`.
+Full instructions in `backend/scripts/README-ai.md`; the suggested
+verification order is at the end of DEVLOG's Sprint 5 entry. The single
+most important behaviour to confirm: **kill Ollama mid-job and check the
+row returns to `queued`, not `failed`.**
+
+**Still Sprint 6, deliberately not built:**
+`POST /incidents/:id/ai-draft/regenerate-summary` and
+`POST /incidents/:id/ai-draft/approve` — the latter being the only
+endpoint allowed to commit `incident.redacted_narrative` (§2 Rule 3).
+Until it exists, nothing can set `redaction_approved_at`, so the
+translation endpoint's prerequisite check is real but unsatisfiable by
+design. Also unbuilt: the evaluation harness and
+finalize/amend/lupon-packet.
 
 ## Standing gotchas worth remembering (don't rediscover these)
 

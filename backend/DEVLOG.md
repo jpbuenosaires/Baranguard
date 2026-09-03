@@ -3209,3 +3209,269 @@ a real build.
    device run exercising M5 → M6 → M7 → forced-offline status change →
    reconnect → confirm `syncService.ts`'s `runSyncPass()` actually drains
    the queue — plus wiring `runSyncPass()` to something that calls it.
+
+---
+
+# DEVLOG — Sprint 5 (Ollama/SEA-LION setup + AI health/queue), coded ahead
+# of Sprints 2–4's outstanding verification, at the user's direction
+
+## Today's cut
+
+All four of Sprint 5's menu boxes, in one session:
+
+  - Queue infra: `ai_processing_log` + a job queue that survives Ollama
+    being unreachable
+  - `GET /system/health`'s `ollama` field
+  - Translation scaffold: `POST /incidents/:id/ai-draft/translate`
+  - Voice-to-text scope decision (documentation, not code)
+
+Plus `POST /incidents/:id/redact` and `GET /incidents/:id/ai-draft` — see
+"Scope note" below for why those two came along.
+
+**Same standing arrangement as the previous entry: coding only, checking
+deferred.** The only verification performed was `php -l` on every new and
+modified file (all clean). No verify script, no live request, no worker
+run, no model call. Sprint 5's boxes in `Baranguard_Sprint_Prompts.md`
+are marked `[~]`, not `[x]`, for exactly that reason.
+
+**Sprint ordering note:** the user asked to jump here with Sprints 2–4
+outstanding. That is sound and worth recording so a later session doesn't
+"fix" it: the AI pipeline depends only on Sprint 0's schema and Sprint 1's
+incidents (`incident.raw_narrative` is its whole input). It has no
+dependency on the mobile app (S2), GPS/sync (S3), or notifications (S4).
+Sprints 2 and 3 are coded-but-unverified (previous two entries); Sprint 4
+is untouched.
+
+## Scope note (why two Sprint 6 endpoints landed here)
+
+Sprint 5's box is "ai_processing_log table + job queue"; the endpoints
+that *produce* queue rows (`POST /incidents/:id/redact`) and *read* the
+result (`GET /incidents/:id/ai-draft`) are the first box of Sprint 6.
+Built here anyway, because a queue with no producer and no reader cannot
+be exercised at all — the box would ship as an untestable abstraction.
+Same "necessary plumbing" precedent as W2's minimal login page (Sprint 1)
+and the Ionic scaffold (Sprint 2). What was NOT pulled forward, and is
+still genuinely Sprint 6: `regenerate-summary`, and `approve` — the
+latter being the sole endpoint permitted to commit
+`incident.redacted_narrative` (§2 Rule 3), which deserves its own review
+rather than being folded into a queue cut.
+
+## What already existed (checked before writing anything)
+
+- **`ai_processing_log` and `ai_evaluation_run` were already migrated** in
+  Sprint 0's baseline schema (`0001_baseline_schema.sql` lines 397/419) —
+  confirmed by reading the migration, not by trusting DEVLOG. So Sprint
+  5's "ai_processing_log table" half was already done; only the queue was
+  missing. **No new migration was needed for any of this cut.**
+- **`GET /system/health` already had an `ollama` field**, but it was an
+  env-var-presence check (`OLLAMA_URL` set ⇒ `healthy`) — honest for a
+  sprint where nothing could talk to Ollama, but wrong now that something
+  can. Upgraded to a real probe.
+
+## Resolved decisions (logged, don't reopen without review)
+
+**The queue IS `ai_processing_log`, not a second store.** §5 already
+gives that table a `status` ENUM of exactly
+`queued|processing|completed|failed|superseded` — a state machine,
+already designed and migrated. Adding Redis/a jobs table beside it would
+create two sources of truth for "what is the current draft", and §5's own
+invariant ("one current redaction/summary pipeline row is enforced
+transactionally per incident") would then be enforceable in neither.
+
+**The API never calls Ollama. Only the worker does.** `POST
+/incidents/:id/redact` INSERTs a `queued` row and returns; nothing in any
+request path touches the model. This is what makes Rule 15's "AI jobs
+queue" structural rather than aspirational — a workstation with Ollama
+stopped, uninstalled, or still pulling accepts redaction requests
+identically and drains them whenever `backend/scripts/ai-worker.php` next
+runs. It also means no web request can ever hang for the minutes an 8B
+CPU inference legitimately takes.
+
+**Claiming a job is a compare-and-set UPDATE, not `SELECT … FOR UPDATE
+SKIP LOCKED`.** `SKIP LOCKED` is MariaDB 10.6+/MySQL 8+; §1 pins this
+deployment to MariaDB 10.4 via XAMPP. This codebase has already been
+bitten once by assuming a newer engine feature (Sprint 0's `CHECK`
+constraint trap, `ERROR 1901`). So the worker selects a candidate id, then
+runs `UPDATE … SET status='processing' WHERE log_id=? AND
+status='queued'` and treats `rowCount()===1` as winning the row — atomic
+on any engine, no lock hints needed.
+
+**`not_configured` and `unhealthy` are answered differently, everywhere.**
+§6 draws that distinction and this cut honours it in three places:
+`OLLAMA_URL`/`OLLAMA_MODEL` unset ⇒ health reports `not_configured` AND
+`POST …/redact` returns `503` (we cannot record an *intended* model when
+`ai_processing_log.model_version` is NOT NULL and no model is named —
+queueing would mean inventing one). Configured but the service is down ⇒
+health reports `unhealthy`, and redaction still queues happily, because
+that is precisely the case Rule 15 exists for.
+
+**A reachable Ollama with the model not pulled is `unhealthy`, not
+`healthy`.** Every AI job on that workstation will fail until someone runs
+`ollama pull`; a green badge there would be exactly the fabricated status
+§8 forbids. The health probe uses `GET /api/tags`, which proves service
+reachability and model presence in one cheap call.
+
+**`model_version` is written twice, deliberately.** At enqueue time it is
+the *intended* model (best available answer while a job is queued); the
+worker overwrites it with the model the server reports it actually ran.
+Rule 16 requires recording the model version of a run — the run's own
+report is the authoritative one.
+
+**Reasoning-trace stripping is a security control, not formatting.** §1
+pins the model to `Llama-SEA-LION-v3.5-8B-R` — the `-R` is the REASONING
+variant, which emits `<think>…</think>` blocks. A reasoning trace
+routinely restates the original narrative while working through it, so
+persisting it verbatim into `draft_redacted_narrative` would put the exact
+names the redaction just removed straight back into the draft, defeating
+the pipeline and violating Rule 1. `AiPrompts::stripReasoning()` runs on
+every completion before anything is persisted, and fails safe on a
+truncated/unclosed `<think>` by dropping rather than keeping.
+
+**Summary failure keeps the redaction and blocks approval.** If step 1
+succeeds and step 2 fails (Ollama dies between the two calls), the row
+completes with `draft_summary_stale=true` rather than failing outright.
+§6 makes `draft_summary_stale=false` a hard prerequisite for approval, so
+this is visible and correctable via regenerate-summary — strictly better
+than discarding a good redaction because a second call timed out. This
+also finally gives `draft_summary_stale` a reachable producer: no
+documented endpoint edits a draft *without* regenerating, so a failed
+summary step is the realistic way that flag becomes true.
+
+**A rerun starts at `draft_version = 1`.** Rule 23 ties the version to
+"every ACTIVE draft", and a new pipeline run supersedes the old draft
+entirely — continuing the superseded row's numbering would imply the new
+draft is a revision of text it never saw.
+
+**Prompts live in one versioned file with a closed placeholder
+vocabulary.** `AiPrompts::PROMPT_VERSION` exists so Sprint 6's evaluation
+harness can say *which* prompt produced a precision/recall number; a
+prompt edited inline in the worker would silently invalidate every prior
+`ai_evaluation_run` with no trace. The placeholder set
+(`[NAME] [ADDRESS] [PHONE] [EMAIL] [ID_NUMBER] [DATE_OF_BIRTH]
+[PLATE_NUMBER] [ACCOUNT]`) is closed for the same reason — Sprint 6's
+baseline regex comparator has to score the same categories the model was
+asked to produce, or the two are incomparable.
+
+**`GET .../ai-draft` returns `error_code` beyond §6's listed shape.** A
+Secretary looking at `status:"failed"` with no reason has a dead end, and
+§9's Loading/Empty/Error/Populated rule exists to prevent exactly that.
+Same precedent as `officer_name` on `GET /incidents`.
+
+**Translation responses carry `language_validated`.** Rule 16 treats Bikol
+as unvalidated pending empirical testing, and Sprint 5's own prompt says
+not to let the UI imply Bikol is production-quality. A boolean a screen
+can actually read is the only form of that warning which survives contact
+with a real UI; `en`/`fil` are true, `bcl` is false until a real
+`ai_evaluation_run` says otherwise.
+
+**Voice-to-text: OUT of scope for the capstone (§10 updated).** This was
+flagged as an open S5–6 "scope confirmation"; leaving it implicit would
+let it drift into an assumed deliverable. Voice *capture* stays (already
+built in Sprint 2 as evidence attachments); *transcription* is out, for
+four reasons recorded in full in §10 of the Master Reference: (1)
+Android's default `SpeechRecognizer` sends audio to Google, which is Rule
+1's exact prohibition; (2) server-side ASR means a second self-hosted
+model (SEA-LION is text-only) on the workstation §15 already calls a
+single point of failure; (3) Bikol ASR is even less validated than Bikol
+text, compounding two unknowns; (4) voice notes already attach as evidence
+and are playable, so transcription is a convenience on a working path, not
+an unblocker. If revisited, the only acceptable shape is self-hosted ASR
+as a second queued `task_type` on this same queue — never a cloud speech
+API. **The user can overturn this; it is recorded as resolved rather than
+left open because the sprint prompt explicitly requires a decision.**
+
+## Files
+
+**New:**
+- `backend/services/ai/OllamaClient.php` — the only place this codebase
+  talks to the model. `isConfigured()`, `listModels()`,
+  `isModelAvailable()`, `generate()`. No fallback branch exists that could
+  reach a hosted provider (Rule 1 made structural).
+- `backend/services/ai/OllamaUnavailableException.php` — "requeue the job".
+- `backend/services/ai/OllamaException.php` — "fail the job". Separate
+  files, one class each: this codebase already lost time to an
+  autoloader/one-class-per-file violation once (Sprint 1's entry).
+- `backend/services/ai/AiPrompts.php` — the three prompts, `PROMPT_VERSION`,
+  the closed placeholder set, and `stripReasoning()`.
+- `backend/services/ai/AiJobQueue.php` — `enqueueRedaction()` (with the
+  transactional supersede that enforces §5's one-current-pipeline
+  invariant), `enqueueTranslation()`, `currentDraft()`,
+  `currentDraftForUpdate()` (row-locked, ready for Sprint 6's
+  regenerate/approve), `claimNextQueuedJob()`, `rawNarrativeFor()`,
+  `completeRedaction()`, `completeTranslation()`, `fail()`, `requeue()`,
+  `requeueStaleProcessing()`, `depth()`.
+- `backend/controllers/AiDraftController.php` — `redact()`, `draft()`,
+  `translate()`.
+- `backend/routes/ai.php` — the three routes.
+- `backend/scripts/ai-worker.php` — the CLI worker. `--once`, `--max=N`,
+  `--daemon`, `--status`, `--recover`.
+- `backend/scripts/README-ai.md` — how to run Ollama + the worker, the
+  three health states, and what the pipeline actually does.
+
+**Modified:**
+- `backend/controllers/SystemHealthController.php` — `ollama` upgraded
+  from env-presence to a real probe.
+- `backend/.env.example` — `OLLAMA_URL`, `OLLAMA_MODEL`,
+  `OLLAMA_TIMEOUT_SECONDS`, with an explicit note that leaving them blank
+  is a valid honest state.
+- `docs/Baranguard_Master_Reference_FINAL .md` — §10's voice-to-text item
+  marked resolved, with the full reasoning.
+
+## Output discipline (worth stating explicitly)
+
+The worker prints identifiers, statuses, timings and character COUNTS
+only — never `raw_narrative`, a draft, a summary, or a translation. A
+worker that echoed drafts would leak into terminal scrollback, a
+redirected logfile, or a CI transcript exactly what the redaction pipeline
+exists to remove. Audit metadata follows Rule 17's allow-list the same
+way: `pipeline_run_id`, `log_id`, `target_language` — no content.
+
+## Static checks actually run (the only verification this session performed)
+
+`php -l` on all nine new/modified PHP files — all clean. That is a PARSE
+check; it proves nothing about authorization, SQL correctness, the queue's
+concurrency behaviour, or whether the model produces usable redactions.
+
+## NOT done this session — stated plainly
+
+- **No `verify-*.sh` for any of this**, and no live HTTP request against
+  `POST /incidents/:id/redact`, `GET /incidents/:id/ai-draft`,
+  `POST /incidents/:id/ai-draft/translate`, or the upgraded
+  `GET /system/health`.
+- **The worker has never been executed** — not against a real Ollama, not
+  against a stub. Every claim about claim/requeue/fail behaviour is
+  design intent, not observed behaviour.
+- **The model has never been called.** No redaction, summary, or
+  translation has been generated. Prompt quality is completely unmeasured
+  — and prompt quality is the entire deliverable of Sprint 6's evaluation
+  harness, so nothing here should be read as "the redaction works".
+  `stripReasoning()`'s handling of real SEA-LION `-R` output is
+  reasoned-from-documentation, not observed.
+- **`draft_summary_stale`'s failure path is untested**, as is the
+  Ollama-dies-mid-pipeline case that produces it.
+- **Nothing is committed.** This sits in the working tree alongside the
+  uncommitted Sprint 2/3 work from the previous session.
+
+## Suggested order for the follow-up verification session
+
+1. `php scripts/ai-worker.php --status` — cheapest possible smoke test;
+   proves env loading, DB access, and Ollama reachability in one command.
+2. `GET /system/health` as an Admin, three times: with `OLLAMA_URL`
+   unset (`not_configured`), set with Ollama stopped (`unhealthy`), and
+   set with it running and the model pulled (`healthy`).
+3. A `backend/scripts/verify-sprint5.sh` against real XAMPP: Secretary-only
+   gating on all three endpoints (Admin/Tanod/PB → 403), cross-tenant →
+   404, `redact` on a finalized-blotter incident → 409, rerun supersedes
+   the prior row (verify in the DB that exactly one non-superseded
+   pipeline row remains), `translate` without approval → 409, bad
+   `target_language` → 400, and `503` on all of it with `OLLAMA_MODEL`
+   unset.
+4. **Then the real model run** — the part nothing else substitutes for:
+   queue a redaction against a seeded incident containing deliberately
+   planted PII (names, a phone number, a house address), run the worker,
+   and read the resulting row. Check specifically that (a) no `<think>`
+   block survived into `draft_redacted_narrative`, (b) the planted
+   identifiers are gone, (c) the summary contains no identifier the draft
+   didn't, and (d) `model_version` records what actually ran.
+5. Kill Ollama mid-job and confirm the row returns to `queued`, not
+   `failed` — the single most important behaviour in this cut.

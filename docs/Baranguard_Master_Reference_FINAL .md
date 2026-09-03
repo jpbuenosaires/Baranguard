@@ -823,7 +823,42 @@ Shows sync state and only exposes the blotter summary once a finalized record ex
 
 **2. Web Command Center** — responders/incidents (S1) · live dispatch board (S1) · GIS tracking with freshness (S1/S3) · historical heatmap (S1) · statistical reports + trend + export (S1/S7) · scheduler with date/time and overlap validation (S1–2) · fatigue calculation (S1–2) · electronic blotter list/detail + amendment flow (S1/S6–7) · dispatch creation/cancel (S1/S3) · Citizen Reports Inbox + public intake (S1) · service health (S7)
 
-**3. AI & Data Privacy Core** — SLM setup and queue handling (S5) · redaction draft (S6) · summary derived only from draft (S6) · draft versioning/concurrency (S6–7) · target recall ≥95%/precision ≥90% on 200-record evaluation set (S6) · baseline regex comparator (S6) · human approval gate (S6–7) · translation after approval (S5–6) · voice-to-text scope confirmation (S5–6) · blotter finalization + amendment controls (S6–7) · Lupon packet after finalized summary (S6–7)
+**3. AI & Data Privacy Core** — SLM setup and queue handling (S5) · redaction draft (S6) · summary derived only from draft (S6) · draft versioning/concurrency (S6–7) · target recall ≥95%/precision ≥90% on 200-record evaluation set (S6) · baseline regex comparator (S6) · human approval gate (S6–7) · translation after approval (S5–6) · ~~voice-to-text scope confirmation (S5–6)~~ **RESOLVED 2026-09-03: OUT OF SCOPE — see below** · blotter finalization + amendment controls (S6–7) · Lupon packet after finalized summary (S6–7)
+
+**Voice-to-text — RESOLVED 2026-09-03 (Sprint 5): explicitly OUT of scope
+for the capstone.** This was flagged above as an open S5–6 "scope
+confirmation"; leaving it implicit any longer would let it drift into an
+assumed deliverable. Voice *capture* stays in scope and is already built
+(Sprint 2: `capacitor-voice-recorder` → `evidence_attachment_local` with
+`type='voice'`); what is out of scope is *transcription* of that audio
+into text. Four reasons, in order of weight:
+
+1. **Mobile-side transcription would break Rule 1.** Android's default
+   `SpeechRecognizer` routes audio to Google's servers. Incident audio is
+   unredacted narrative content, so that is precisely the "raw narrative
+   leaves the trusted environment" this system's first rule forbids.
+   On-device recognition avoids the network but has poor Filipino and
+   effectively no Bikol coverage.
+2. **Server-side transcription means a SECOND self-hosted model.**
+   `Llama-SEA-LION-v3.5-8B-R` is a text model and cannot transcribe
+   audio; ASR would need Whisper or equivalent running alongside it on the
+   same unified workstation that is already the documented single point of
+   failure (Rule 15). §1 budgets one model, not two.
+3. **Bikol ASR quality is unvalidated and worse-supported than Bikol
+   text.** Rule 16 already treats Bikol *text* output as unvalidated
+   pending empirical testing; layering an unvalidated transcription step
+   underneath an unvalidated translation step compounds two unknowns into
+   an unmeasurable one.
+4. **The field need is already met without it.** A Tanod who cannot type
+   one-handed at an incident records a voice note, which attaches to the
+   incident as evidence and is playable by the Secretary. Transcription
+   would be a convenience on top of a working path, not an enabler of a
+   blocked one.
+
+If this is ever revisited, the only acceptable shape is a **self-hosted
+ASR model as a second queued job type** reusing Sprint 5's existing
+`ai_processing_log` queue (`task_type` would need a new enum member) —
+never a cloud speech API, and never the platform recognizer.
 
 **4. Resiliency & Connectivity** — offline map packaging (S2) · FCM registration/critical notifications (S4) · notification logical/delivery model (S4) · GSM incident/duty/coord/SOS fallback (S4) · SMS authenticity/encryption/replay protection (S4) · local workstation health monitoring (S7) · backup/restore verification (S7)
 
