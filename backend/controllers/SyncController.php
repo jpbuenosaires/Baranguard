@@ -60,13 +60,11 @@ use PDO;
  *     metadata, never the original payload (§5: "Server mirror never
  *     stores original raw payload").
  *
- *   - **`sos[]` is explicitly unsupported this cut.** `POST /tanod-sos`
- *     and its notification/FCM/SMS transport are Sprint 4 scope — building
- *     real SOS reconciliation here would jump the same dependency chain
- *     `DispatchController` already deliberately declined to jump for
- *     notification creation. Every `sos[]` item returns
- *     `status:"failed"` with an explanatory reason rather than being
- *     silently dropped or half-implemented.
+ *   - **`sos[]` works as of Sprint 4.** It reuses
+ *     `TanodSosController::createItem()`, so a queued offline SOS lands
+ *     identically to a live one — same idempotency key, same Rule 27
+ *     fan-out — and an SOS that also arrived by SMS fallback correlates
+ *     rather than alarming twice.
  */
 final class SyncController
 {
@@ -235,8 +233,16 @@ final class SyncController
                 return [$result['dispatch_id'], true];
 
             case 'sos':
+                // Sprint 4: an SOS raised while offline reaches the server
+                // through exactly the same path as a live one, including
+                // the same (user_id, client_event_id) idempotency key — so
+                // an SOS that was ALSO delivered by SMS fallback correlates
+                // instead of raising a second alarm (§2 Rule 27).
+                $result = TanodSosController::createItem($pdo, $identity, $item);
+                return [$result['sos_id'], $result['wasCreated']];
+
             default:
-                throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'SOS sync is not supported until Sprint 4.');
+                throw new ApiError(400, 'VALIDATION_ERROR', 'Unknown sync payload type.');
         }
     }
 }

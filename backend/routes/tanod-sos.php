@@ -11,4 +11,7 @@ use Baranguard\Controllers\TanodSosController;
 
 return [
     ['GET', '#^/tanod-sos$#', [TanodSosController::class, 'index'], true],
+    ['POST', '#^/tanod-sos$#', [TanodSosController::class, 'create'], true],
+    ['PATCH', '#^/tanod-sos/(\d+)/acknowledge$#', [TanodSosController::class, 'acknowledge'], true],
+    ['PATCH', '#^/tanod-sos/(\d+)/resolve$#', [TanodSosController::class, 'resolve'], true],
 ];

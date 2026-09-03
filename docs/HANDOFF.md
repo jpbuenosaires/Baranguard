@@ -51,11 +51,16 @@ update this file at the end of a session, don't let it go stale for long.
   environment" below, unchanged this session.
 - **Sprint 3: all five "Today's cut" boxes were CODED, none verified.**
   See the dedicated section below before treating any of it as done.
-- **Sprint 4 (notifications/FCM/SMS/SOS): UNTOUCHED.** Deliberately
-  skipped to reach the AI work sooner. It remains a real gap — SOS, FCM
-  registration, and the GSM fallback are all still unbuilt, and
-  `/sync/batch` returns an explicit "SOS sync is not supported until
-  Sprint 4" for any `sos[]` item.
+- **Sprint 4: Phase 1 done and VERIFIED (48/48); Phases 2-5 outstanding.**
+  The notification model, Tanod SOS (raise/acknowledge/resolve),
+  `POST /notifications/:id/ack`, dispatch-triggered notifications and
+  `/sync/batch`'s `sos[]` all work — `backend/scripts/verify-sprint4.sh`.
+  **But nothing is actually delivered to anyone yet**: no FCM or SMS
+  attempt is made, `notification_delivery` is never written, and a Tanod's
+  phone does not buzz. Rule 12's fallback ladder (Phase 2), the inbound
+  `/sms/*` handlers + encrypted envelope (Phase 3), W14 (Phase 4) and
+  M12/M13 (Phase 5) remain unbuilt. M2's SOS button in the mobile app is
+  still disabled even though the endpoint now exists.
 - **Sprint 5 (AI pipeline): all four boxes CODED, none verified** beyond
   `php -l`. The queue, the Ollama client, the worker, the real health
   probe, and the translation gate all exist. **The model has never
