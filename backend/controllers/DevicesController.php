@@ -130,8 +130,12 @@ final class DevicesController
             // deactivated transactionally." Scoped to this user's OTHER
             // devices so a token refresh on the current device doesn't
             // deactivate the row we are about to write.
+            // `deactivated_at` (migration 0007) starts §11's 90-day
+            // device-retention clock. Without it the retention job has
+            // nothing to count from and a retired handset's
+            // `device_secret_ref` would sit in the table indefinitely.
             $deactivateStmt = $pdo->prepare(
-                'UPDATE mobile_device SET is_active = 0
+                'UPDATE mobile_device SET is_active = 0, deactivated_at = UTC_TIMESTAMP()
                  WHERE user_id = :user_id AND device_id <> :device_id AND is_active = 1'
             );
             $deactivateStmt->execute(['user_id' => $identity['user_id'], 'device_id' => $deviceId]);
@@ -147,6 +151,10 @@ final class DevicesController
                     app_version = VALUES(app_version),
                     last_seen_at = UTC_TIMESTAMP(),
                     is_active = 1,
+                    -- A device that comes back must not keep a stale
+                    -- deactivation timestamp: it is active again, so its
+                    -- §11 retention clock is not running.
+                    deactivated_at = NULL,
                     device_secret_ref = COALESCE(device_secret_ref, VALUES(device_secret_ref))"
             )->execute([
                 'device_id' => $deviceId,
@@ -209,7 +217,9 @@ final class DevicesController
 
         $wasActive = (int) $device['is_active'] === 1;
         if ($wasActive) {
-            $pdo->prepare('UPDATE mobile_device SET is_active = 0 WHERE device_id = :device_id')
+            // See register()'s own note: `deactivated_at` starts §11's
+            // 90-day retention clock for this device and its secret.
+            $pdo->prepare('UPDATE mobile_device SET is_active = 0, deactivated_at = UTC_TIMESTAMP() WHERE device_id = :device_id')
                 ->execute(['device_id' => $deviceId]);
 
             Audit::record(

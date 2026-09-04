@@ -1,5 +1,44 @@
 # Baranguard — Session Handoff
 
+**Session J (2026-09-04, latest): Sprint 7's "Retention jobs" box — DONE
+and GENUINELY VERIFIED, 66/66 via
+`backend/scripts/verify-sprint7-retention.sh` against real XAMPP.** All
+eight §11 record types are implemented in
+`backend/services/retention/RetentionService.php` and run from the CLI
+`backend/scripts/retention-job.php` (`--dry-run`, `--only=`, `--list`).
+Three things a later session must know:
+(1) **Migration 0007 was required and is already applied to the real
+local `baranguard` database** — §11 was *not implementable* against the
+0001 baseline: `incident.raw_narrative` was `TEXT NOT NULL` (nothing to
+write to mean "purged"), `incident` had no `legal_hold` even though §11
+calls legal hold the only exception, nothing recorded that a purge had
+happened, and `mobile_device` had no deactivation timestamp for the
+90-day clock. If you are on a DIFFERENT machine/DB, run
+`mysql -u root baranguard < backend/migrations/0007_retention_columns.sql`
+**before anything else — `DevicesController` now writes
+`mobile_device.deactivated_at` and will 500 without it.**
+(2) **That dependency caused a real regression this session**: three
+older verify suites build their disposable DB from 0001+0002 only and
+started failing device registration with 500s. Fixed by having each apply
+0007 (`verify-devices-map-packages.sh` 54/54, `verify-sprint4.sh`,
+`verify-sprint4-phase2-3.sh` 69/69 all green again, plus
+`verify-sprint6.sh`). Adding a column to a controller's SQL breaks every
+suite whose schema predates it — re-run the old suites, not just the new
+one.
+(3) **Nothing is scheduled.** The job is CLI-only by design (no HTTP
+endpoint, same reasoning as `ai-worker.php`); wiring it to Windows Task
+Scheduler daily is an outstanding runbook step. It is safe to re-run and
+safe to miss days. **Run `--dry-run` first on any database with real data
+in it** — retention deletion is irreversible by design. A dry run against
+the real DB today reports 0 eligible for every rule, which is correct:
+nothing on this workstation has aged past even the 90-day ceiling.
+Backups are deliberately out of scope for the job (§11/Rule 11 still
+apply to them — expiring `scripts/backup.sh` output is a separate runbook
+step, and the job prints that reminder on every run). Sprint 7's other
+four boxes (audit completeness, backup/restore drill, pen-test pass,
+W17/W20/W9-export) are **not started**. Full detail in
+`backend/DEVLOG.md`'s Sprint 7 entry.
+
 **Last updated: 2026-09-04. Session I: STOPPED MID-WORK for a conversation
 handoff — READ THIS BEFORE TOUCHING THE WEB FRONTEND.** A 9-phase
 mockup-driven UI plan was written, checked against the schema/§8 rules,
@@ -20,7 +59,11 @@ comparison chart, a composite "performance score" radar, an SMS
 compose/reply console, and W21's system-settings sections are all
 explicitly out of scope, not just deferred). One stray database,
 `baranguard_device_check`, exists locally and was flagged but not touched.
-**Nothing here is committed.**
+**UPDATE (Session J): all nine phases are now code-complete and the whole
+lot — Sessions G, H and I together — is COMMITTED AND PUSHED as
+`0b6e551`. It is still browser-UNVERIFIED; the checklist at the bottom of
+`.claude/plans/clever-wishing-hummingbird.md` is the outstanding work,
+and it is written to be worked through by the user, not re-derived.**
 
 **Session H: acted on the interface audit — all
 cross-cutting items plus the highest-value per-screen ones, and replaced
