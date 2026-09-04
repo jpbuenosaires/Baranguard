@@ -5643,3 +5643,239 @@ genuinely recurring category, not a one-off.
   only way they *can* be proven today.
 - Sprint 7's other four boxes: audit completeness, backup/restore drill,
   pen-test pass, W17/W20/W9-export. None started.
+
+---
+
+# DEVLOG — Sprint 7 completed: audit completeness, backup/restore drill,
+# incident penetration pass, W17/W20/W9 (closes Sprint 7)
+
+## Today's cut
+
+The four remaining Sprint 7 boxes, in one session at the user's explicit
+direction ("complete all the sprint 7") — the same documented multi-box
+exception as prior sessions, not a drift from the "pick exactly ONE"
+rule:
+
+  - Audit completeness (§2 Rule 17's full action list)
+  - Backup/restore drill (restore actually tested)
+  - Pen-test pass — incidents (the box's own one-resource scoping)
+  - W17 Audit Log Viewer / W20 Service Health / W9 Export button
+
+With the retention box from earlier the same day, **Sprint 7 is closed.**
+
+Unlike the earlier all-at-once sessions (Sprint 3, Sprint 5), everything
+here is genuinely verified: **446 checks passing across seven suites,
+zero failures**, all against real XAMPP.
+
+## Box: Audit completeness
+
+Rule 17 names sixteen action classes. Mapping them against the code
+found **six real gaps** — not missing plumbing, but actions that
+happened silently:
+
+  - `dispatch_created` / `dispatch_cancelled` — Rule 17 says "dispatch
+    create/override/cancel"; only *override* was audited. Assigning a
+    Tanod to an incident, and cancelling that assignment, left no trace.
+  - `shift_created` / `shift_updated` — `ShiftsController` had **no audit
+    coverage at all**, despite Rule 17 naming "shift changes" explicitly.
+  - `swap_request_resolved` — `ShiftSwapRequestsController` likewise had
+    none. An approved swap silently reassigned a shift with nothing
+    recording who decided it.
+  - `user_updated` — `UsersController` had none, against Rule 17's "user
+    changes/deactivation".
+  - `fatigue_flag_acknowledged` — not named verbatim in Rule 17, added
+    anyway: it is a safety decision an Admin makes about a specific
+    Tanod, which is what the rule's "shift changes" clause is for, and §9
+    W13 wants that record permanent.
+  - `report_exported` — new, required by §6's "request is scoped and
+    audited" for the export endpoint built in the same session.
+
+`user_updated`'s metadata records **which fields changed, never the
+values** — `contact_number` is personal data and Rule 17 allow-lists
+metadata to identifiers and statuses. The suite asserts exactly that: it
+greps the audit row for the contact number it just set and fails if it
+appears.
+
+## Box: W17 / W20 / W9 — three screens, two new endpoints
+
+**`GET /audit-log`** (new, `AuditLogController`) — Admin, own barangay,
+newest-first, §9 W17's 7-day default applied server-side as a DEFAULT not
+a cap (an Admin investigating something older passes a date range;
+capping the window would make the viewer useless for the exact
+investigation an audit log exists for). Read-only by construction: one
+method, no write routes, and the suite asserts POST/PATCH/DELETE/PUT on
+`/audit-log` are all unrouted.
+
+Rows written by system jobs carry NULL `barangay_id` and are therefore
+**not** visible to a barangay Admin. That is a deliberate consequence,
+documented rather than discovered later: those rows describe
+workstation-wide maintenance, not that barangay's operations, and
+`NULL = 1` is false in SQL rather than a leak.
+
+**`GET /reports/export`** (new, + a protected download route) — §6's
+"{file_url,format,generated_at} for approved formats; request is scoped
+and audited". CSV is the only approved format, and an unsupported one is
+a **400 naming what is supported, never a silent fallback to CSV** — a
+caller asking for XLSX and receiving CSV bytes is worse than a refusal.
+Content is exactly `GET /reports/summary`'s aggregates for the same
+range, so file and screen cannot disagree, and the file is written
+outside the web root and served through an authorized route (same
+precedent as the Lupon packet). The suite greps the exported CSV for the
+seeded raw narrative and asserts it is absent.
+
+**W20 Service Health** closed a gap it inherited: `restore_test_at` was
+honestly hardcoded `null` with a comment explaining that nothing ever
+recorded a drill. The drill script below now records one, and
+`SystemHealthController` reads the marker's own `drill_completed_at`
+line rather than the file's mtime — so copying or touching the file
+cannot make a stale drill look recent.
+
+The screen's whole design point is honesty about what is not wired up:
+`not_configured` renders **neutral with an explanation, never red and
+never green**. An OSRM that was never installed is not an outage, and
+showing it as one would train an operator to ignore the screen; showing
+it green would be the fabricated "all systems operational" §8 forbids.
+
+## Box: Backup/restore drill
+
+`backup.sh` already proved a file can be written; `restore.sh` already
+proved it can be decrypted and loaded. **Neither proved the restored data
+is the same data.** `scripts/restore-drill.sh` does: it fingerprints the
+live database per-table, restores into a throwaway `<db>_drill`,
+fingerprints that, and fails loudly if they disagree.
+
+Row counts per table, not a dump hash — a dump embeds a timestamp and its
+row order is not guaranteed stable, so comparing dumps byte-for-byte
+would produce false failures while missing the failure that matters (data
+missing after a restore).
+
+**Verified against the REAL `baranguard` database**: 26 tables, every row
+count matching, the four deterministic barangay rows identical, and 61
+foreign keys restored. 12/12.
+
+Non-destructive by construction: the live database is only ever READ, and
+there is no flag to restore over it — a real disaster recovery is a
+supervised operation, not something to make one typo away.
+
+### Three real environment findings while building it
+
+1. **The app's DB user cannot `CREATE DATABASE`** — correct
+   least-privilege, exactly as Sprint 0's DEVLOG recorded. The fix was
+   NOT to grant it more: the script now takes separate `DRILL_DB_USER`/
+   `DRILL_DB_PASSWORD` (DBA) used *only* to create/drop the drill
+   database and load the dump, while the dump itself still runs as the
+   app user — which is what a real scheduled backup runs as.
+2. **My first version sourced `.env` in a way that OVERRODE the
+   environment**, inverting the precedence `config/env.php` documents and
+   applies. It silently ignored `DB_USER=root`, which is exactly the
+   override a drill needs. Fixed to capture-then-restore preset values.
+   Worth remembering: `set -a; . .env` is the wrong default in this repo.
+3. **`restore.sh` refuses an empty `DB_PASSWORD`** by design, and XAMPP's
+   stock root has none — so the drill mints a throwaway user with a real
+   password scoped to the drill database only and drops it afterwards,
+   the same pattern every `verify-*.sh` here already uses for the same
+   reason.
+
+## Box: Pen-test pass — incidents
+
+Incidents were the right first resource: `raw_narrative` is the most
+sensitive field in the schema, and §6 gives the incident family the most
+intricate authorization in the system — eleven endpoints, four roles,
+with the Secretary deliberately holding access the higher-privileged
+Admin does not.
+
+**68/68, and it found nothing broken on the first run.** That is a real
+result, not a weak test: every check is an outside-in HTTP request with a
+real token, across four attack dimensions —
+
+  - **No token → 401** on all thirteen incident endpoints, plus a forged
+    JWT, a garbage token, and an **`alg:none` token** (the classic bypass
+    — the algorithm allow-list holds). A deactivated Admin cannot log in
+    at all.
+  - **Wrong role → 403**, including the §3 asymmetry asserted in the
+    direction that matters: **Admin is REFUSED** finalize, amend, Lupon
+    packet, redact and ai-draft. Someone "fixing" that asymmetry later
+    now breaks a test.
+  - **Cross-tenant → 404, never 403** — a 403 would confirm the incident
+    exists. Asserted on read, evidence, blotter, resolve, finalize,
+    redact and packet, plus that the list endpoint excludes it entirely
+    and a client-supplied `barangay_id` in the body is ignored.
+  - **Wrong owner (Tanod) → 404** on read/evidence/blotter, an empty
+    list, and a 422 when claiming an unregistered device id.
+
+Plus the disclosure test the whole suite exists for: `raw_narrative`
+reaches the Secretary and **no one else** — asserted individually for
+Admin, PB and the reporting Tanod — never appears in the list endpoint
+even for the Secretary, and never appears in a cross-tenant 404 body.
+Evidence responses carry no filesystem path (§6). Workflow prerequisites
+cannot be skipped by calling out of order, and after every refused call
+`redacted_narrative` is verified still NULL — no partial write leaked
+through.
+
+## Files
+
+**New:** `controllers/AuditLogController.php`, `routes/audit-log.php`,
+`scripts/restore-drill.sh`, `scripts/verify-sprint7-audit.sh`,
+`scripts/verify-sprint7-pentest-incidents.sh`,
+`web/src/pages/audit-log.js`, `web/src/pages/service-health.js`,
+`web/src/pages/service-health.css`.
+
+**Modified:** `controllers/DispatchController.php`, `ShiftsController.php`,
+`ShiftSwapRequestsController.php`, `UsersController.php`,
+`FatigueFlagsController.php` (the six audit gaps);
+`controllers/ReportsController.php` (+`export`, `exportDownload`);
+`controllers/SystemHealthController.php` (`restore_test_at` now real);
+`routes/reports.php`; `web/src/api/apiClient.js`, `main.js`,
+`components/AppShell.js`, `pages/settings.js`,
+`pages/statistical-reports.js` (Export button), `web/index.html`.
+
+## Tests performed (with evidence)
+
+`php -l` and `node --check` clean across every touched file;
+**`verify-web-wiring.mjs` 373/373**; and seven suites against real XAMPP:
+
+| Suite | Result |
+|---|---|
+| `verify-sprint7-retention.sh` | **66/66** |
+| `verify-sprint7-audit.sh` | **56/56** (20 distinct audited actions) |
+| `verify-sprint7-pentest-incidents.sh` | **68/68** |
+| `verify-sprint4.sh` | all passed |
+| `verify-sprint6.sh` | all passed (112) |
+| `verify-devices-map-packages.sh` | **54/54** |
+| `verify-scheduler-fatigue.sh` | **42/42** |
+
+Plus the restore drill itself: **12/12 against the real database.**
+
+## One test-script bug found and fixed (not an app bug)
+
+The audit suite initially failed one check: a non-Admin got 401 instead
+of 403 on `/audit-log`. The cause was the suite's own account reuse — it
+changed a password on the same account whose token a later role-gate
+check used, and **changing a password correctly revokes that user's other
+sessions** (verified back in Sprint 1). The application was right; the
+test was wrong. Fixed by giving the password-change check its own
+account, with a comment explaining why it cannot share one.
+
+## NOT done (stated plainly)
+
+- **No browser pass on W17 or W20.** Both screens are wired, lint-clean
+  and wiring-checked, and their endpoints are verified end-to-end — but
+  neither has been opened in a browser. They join the round-2 UI phases
+  on the same outstanding checklist.
+- **The real backups directory was deliberately left untouched.** The
+  drill was proven against the real database using a scratch backup
+  directory and a throwaway passphrase, because writing a backup
+  encrypted under a passphrase the user does not know into their own
+  backups folder would be a liability, not an asset. **Consequence,
+  stated rather than hidden: `GET /system/health` still reports
+  `restore_test_at: null` and W20 still shows "Never"** until the user
+  runs the drill once with their own `BACKUP_ENCRYPTION_PASSPHRASE`:
+  `BACKUP_ENCRYPTION_PASSPHRASE=... bash backend/scripts/restore-drill.sh`
+- **The pen-test covers incidents only** — that is the box's own scoping
+  ("testing every §6 endpoint in one sitting isn't a single cut").
+  Dispatch, shifts, citizen reports, SMS and map packages have had no
+  equivalent pass.
+- **Backup file expiry is still not implemented** (§11/Rule 11 —
+  unchanged from the retention entry; `backup.sh` prunes on age only).
+- W10, W18, W21 remain unbuilt; W21 is still blocked on an architecture
+  review by its own §9 note.

@@ -34,6 +34,8 @@ import { renderFatigueFlagsPage } from './pages/fatigue-flags.js';
 import { renderAiReviewPage } from './pages/ai-review.js';
 import { renderBlotterDetailPage } from './pages/blotter-detail.js';
 import { renderSmsLogPage } from './pages/sms-log.js';
+import { renderAuditLogPage } from './pages/audit-log.js';
+import { renderServiceHealthPage } from './pages/service-health.js';
 import { DEFAULT_PAGE_KEY } from './pages/settings.js';
 
 const PAGE_ROLES = {
@@ -50,6 +52,9 @@ const PAGE_ROLES = {
   fatigue: ['admin', 'punong_barangay'],
   // §9 W14 — Admin only, explicitly.
   'sms-log': ['admin'],
+  // §9 W17 and W20 — both Admin only, explicitly.
+  'audit-log': ['admin'],
+  'service-health': ['admin'],
   settings: ['admin', 'secretary', 'punong_barangay'],
   // W8 is a per-incident DETAIL view, not a destination in its own right:
   // it needs an incident id, so it has no sidebar entry and is reached by
@@ -140,6 +145,13 @@ function boot(currentPage, param) {
     renderFatigueFlagsPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'sms-log') {
     renderSmsLogPage(root, session.user, onLoggedOut, navigate);
+  } else if (page === 'audit-log') {
+    renderAuditLogPage(root, session.user, onLoggedOut, navigate);
+  } else if (page === 'service-health') {
+    // Returns a stop handle: W20 re-checks health every 30s and that
+    // interval must not outlive the page.
+    const handle = renderServiceHealthPage(root, session.user, onLoggedOut, navigate);
+    activeStop = handle?.stop ?? null;
   } else if (page === 'settings') {
     renderSettingsPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'blotter-detail') {

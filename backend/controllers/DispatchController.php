@@ -186,6 +186,19 @@ final class DispatchController
                 [$tanodId]
             );
 
+            // Rule 17 names "dispatch create/override/cancel" — override
+            // was already audited (applyStatusTransition), these two were
+            // the gap, closed in Sprint 7's audit-completeness cut.
+            // Identifiers and statuses only, never narrative (Rule 17's
+            // own allow-list).
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_created', 'dispatch', $dispatchId, [
+                'incident_id' => $incidentId,
+                'tanod_id' => $tanodId,
+                // Matches the literal the INSERT above writes; there is
+                // no self-hosted OSRM in this environment yet.
+                'route_status' => 'unavailable',
+            ]);
+
             $pdo->commit();
         } catch (\Throwable $e) {
             $pdo->rollBack();
@@ -368,6 +381,13 @@ final class DispatchController
             $readBackStmt = $pdo->prepare('SELECT cancelled_at FROM dispatch WHERE dispatch_id = :dispatch_id');
             $readBackStmt->execute(['dispatch_id' => $dispatchId]);
             $cancelledAt = $readBackStmt->fetchColumn();
+
+            // Rule 17: "dispatch create/override/cancel". See create()'s
+            // own note — this half was the other Sprint 7 audit gap.
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_cancelled', 'dispatch', $dispatchId, [
+                'incident_id' => (int) $dispatch['incident_id'],
+                'incident_status' => 'pending',
+            ]);
 
             $pdo->commit();
         } catch (\Throwable $e) {

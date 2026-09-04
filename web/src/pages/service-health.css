@@ -1,0 +1,17 @@
+/* service-health.css — W20 Service Health / Recovery. */
+
+.health-row {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.health-row:last-child {
+  border-bottom: none;
+}
+
+/* "Never" for a backup or restore drill is a real, actionable answer —
+   it reads as a warning rather than as ordinary data. */
+.health-value--warn {
+  color: var(--color-warning-text);
+  font-weight: 600;
+}

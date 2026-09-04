@@ -85,10 +85,14 @@ final class SystemHealthController
             // additive, not a breaking rename.
             'notification_config' => ($fcmStatus === 'healthy' || $smsStatus === 'healthy') ? 'healthy' : 'not_configured',
             'backup_last_success' => self::latestBackupTimestamp(),
-            // No restore-drill run has ever recorded its completion time
-            // anywhere (backend/scripts/restore.sh doesn't log one) — null
-            // is the honest answer, not a fabricated recent timestamp.
-            'restore_test_at' => null,
+            // Sprint 7's backup/restore-drill box closed the gap this
+            // field used to document: `scripts/restore-drill.sh` now
+            // records a completed, VERIFIED drill (it compares per-table
+            // row counts and FK counts against the live database, and
+            // deliberately does NOT write the marker when the comparison
+            // fails). Still null until one has actually run — an honest
+            // "never", never a fabricated recent timestamp.
+            'restore_test_at' => self::lastRestoreDrillTimestamp(),
         ]);
     }
 
@@ -144,5 +148,32 @@ final class SystemHealthController
             }
         }
         return $latestMtime !== null ? gmdate('Y-m-d\TH:i:s\Z', $latestMtime) : null;
+    }
+
+    /**
+     * Reads the completion time of the last SUCCESSFUL restore drill from
+     * the marker `scripts/restore-drill.sh` writes. The timestamp comes
+     * from the file's own recorded `drill_completed_at` line rather than
+     * its mtime, so copying or touching the file cannot silently make a
+     * stale drill look recent.
+     *
+     * Returns null when no drill has ever passed — which is a real,
+     * actionable answer (W20 renders it as "Never" and says so), not a
+     * missing value to paper over.
+     */
+    private static function lastRestoreDrillTimestamp(): ?string
+    {
+        $marker = dirname(__DIR__) . '/backups/.last-restore-drill';
+        if (!is_file($marker)) {
+            return null;
+        }
+        $contents = file_get_contents($marker);
+        if ($contents === false) {
+            return null;
+        }
+        if (preg_match('/^drill_completed_at=(\S+)$/m', $contents, $matches) !== 1) {
+            return null;
+        }
+        return $matches[1];
     }
 }

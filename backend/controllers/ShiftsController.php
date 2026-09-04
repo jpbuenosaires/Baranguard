@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Scheduling\FatigueCalculator;
@@ -109,6 +110,14 @@ final class ShiftsController
             $shiftId = (int) $pdo->lastInsertId();
 
             FatigueCalculator::recalculate($pdo, $userId, $shiftId);
+
+            // Rule 17 names "shift changes" explicitly. This controller
+            // had no audit coverage at all before Sprint 7's
+            // audit-completeness cut.
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'shift_created', 'shift_schedule', $shiftId, [
+                'user_id' => $userId,
+                'patrol_zone' => $patrolZone,
+            ]);
 
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -256,6 +265,15 @@ final class ShiftsController
             if ($newUserId !== null && $newUserId !== $oldUserId) {
                 FatigueCalculator::recalculate($pdo, $newUserId, $shiftId);
             }
+
+            // Rule 17: "shift changes". A reassignment is the audit event
+            // that actually matters here, so both sides of it are
+            // recorded — identifiers only.
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'shift_updated', 'shift_schedule', $shiftId, [
+                'from_user_id' => $oldUserId,
+                'to_user_id' => $newUserId,
+                'version' => $version + 1,
+            ]);
 
             $pdo->commit();
         } catch (\Throwable $e) {

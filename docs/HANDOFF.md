@@ -1,6 +1,53 @@
 # Baranguard — Session Handoff
 
-**Session J (2026-09-04, latest): Sprint 7's "Retention jobs" box — DONE
+**SPRINT 7 IS CLOSED (2026-09-04). All five boxes done and genuinely
+verified — 446 checks passing across seven suites against real XAMPP,
+zero failures**, plus a 12/12 restore drill against the real database and
+373/373 web wiring checks. This is the most thoroughly verified sprint in
+the project's history; unlike Sprints 3 and 5, nothing here is
+coded-but-unproven. Per-box detail below and in `backend/DEVLOG.md`'s two
+Sprint 7 entries.
+
+Four things a later session must know:
+
+1. **Migration 0007 is required and already applied to the real local
+   database.** §11's retention table was not implementable against the
+   0001 baseline (`raw_narrative` was `TEXT NOT NULL`, `incident` had no
+   `legal_hold`, no purge record, `mobile_device` had no deactivation
+   clock). On any OTHER machine, run it before anything else —
+   `DevicesController` now writes `mobile_device.deactivated_at` and
+   **will 500 without it**.
+2. **The audit pass found six real gaps, now closed**: dispatch
+   create/cancel, shift create/update, swap decisions, user changes,
+   fatigue acknowledgement, and report export. `ShiftsController` and
+   `ShiftSwapRequestsController` had **no audit coverage at all** before
+   this — an approved swap silently reassigned a shift with nothing
+   recording who decided it.
+3. **The incidents pen-test passed 68/68 with no holes found**, including
+   `alg:none` JWT rejection, cross-tenant 404s (never 403), and
+   `raw_narrative` reaching the Secretary and no one else. It covers
+   **incidents only** — that is the box's own scoping. Dispatch, shifts,
+   citizen reports and SMS have had no equivalent pass.
+4. **W20 still shows "Never" for the last restore drill, on purpose.**
+   The drill is proven (12/12 against the real database), but this
+   session ran it with a scratch backup directory rather than write a
+   backup encrypted under a passphrase you don't know into your own
+   `backend/backups/`. Run it once yourself and W20 goes live:
+   `BACKUP_ENCRYPTION_PASSPHRASE=... bash backend/scripts/restore-drill.sh`
+   (it needs DBA credentials for the throwaway database — it defaults to
+   root, and tells you so if that fails).
+
+**Still outstanding across the project:** W17 and W20 are wired and their
+endpoints verified but **neither has been opened in a browser** — they
+join the round-2 UI phases on the checklist in
+`.claude/plans/clever-wishing-hummingbird.md`. Backup FILE expiry remains
+unimplemented (§11/Rule 11). Nothing is scheduled: both
+`retention-job.php` and `restore-drill.sh` are CLI-only by design and
+wiring them to Task Scheduler is a runbook step. W10/W18/W21 unbuilt.
+
+---
+
+**Session J (2026-09-04): Sprint 7's "Retention jobs" box — DONE
 and GENUINELY VERIFIED, 66/66 via
 `backend/scripts/verify-sprint7-retention.sh` against real XAMPP.** All
 eight §11 record types are implemented in
