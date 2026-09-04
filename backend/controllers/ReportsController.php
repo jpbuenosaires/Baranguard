@@ -96,6 +96,14 @@ final class ReportsController
 
         $byType = array_fill_keys(self::INCIDENT_TYPES, 0);
         $byStatus = array_fill_keys(self::INCIDENT_STATUSES, 0);
+        // by_hour[]: incidents by Asia/Manila hour-of-day, 0-23, summed
+        // across every day in the range — Phase 9 of the mockup-driven UI
+        // round 2 (see .claude/plans/clever-wishing-hummingbird.md). §8
+        // names this the legitimate replacement for the rejected
+        // cross-barangay "Performance by Barangay" chart: a real,
+        // single-barangay time-of-day distribution, not a comparison
+        // across tenants the current model can't produce.
+        $byHour = array_fill(0, 24, 0);
 
         $trendMap = [];
         $cursor = $from;
@@ -116,16 +124,54 @@ final class ReportsController
                 $resolvedCount++;
             }
 
-            $createdAtUtc = new \DateTimeImmutable($row['created_at'], $utc);
-            $dayKey = $createdAtUtc->setTimezone($manila)->format('Y-m-d');
+            $createdAtManila = (new \DateTimeImmutable($row['created_at'], $utc))->setTimezone($manila);
+            $dayKey = $createdAtManila->format('Y-m-d');
             if (isset($trendMap[$dayKey])) {
                 $trendMap[$dayKey]++;
+            }
+            $byHour[(int) $createdAtManila->format('G')]++;
+        }
+
+        // Second trend series: incidents CLOSED OUT per day, for W2's
+        // reported-vs-resolved line chart.
+        //
+        // Bucketed on dispatch.completed_at because that is the only
+        // resolution moment this schema actually records — `incident` has
+        // no resolved_at column, and `updated_at` moves on any write, so
+        // neither can honestly answer "resolved on which day". An incident
+        // closed by the Admin resolve action without a completed dispatch
+        // therefore contributes to resolved_count (a state count) but not
+        // to this per-day series (a timing series); the two answer
+        // different questions and are not expected to reconcile.
+        $resolvedMap = array_fill_keys(array_keys($trendMap), 0);
+        $stmt = $pdo->prepare(
+            "SELECT d.completed_at
+               FROM dispatch d
+               JOIN incident i ON i.incident_id = d.incident_id
+              WHERE i.barangay_id = :barangay_id
+                AND d.status = 'completed'
+                AND d.completed_at IS NOT NULL
+                AND d.completed_at >= :range_start AND d.completed_at < :range_end"
+        );
+        $stmt->execute([
+            'barangay_id' => $barangayId,
+            'range_start' => $rangeStartUtc->format('Y-m-d H:i:s'),
+            'range_end' => $rangeEndUtc->format('Y-m-d H:i:s'),
+        ]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $completedUtc = new \DateTimeImmutable($row['completed_at'], $utc);
+            $dayKey = $completedUtc->setTimezone($manila)->format('Y-m-d');
+            if (isset($resolvedMap[$dayKey])) {
+                $resolvedMap[$dayKey]++;
             }
         }
 
         $trend = [];
         foreach ($trendMap as $date => $count) {
-            $trend[] = ['date' => $date, 'count' => $count];
+            // `count` keeps its existing meaning (incidents reported that
+            // day) so every current consumer is unaffected; `resolved` is
+            // additive, same precedent as officer_name on GET /incidents.
+            $trend[] = ['date' => $date, 'count' => $count, 'resolved' => $resolvedMap[$date]];
         }
 
         $stmt = $pdo->prepare(
@@ -143,6 +189,43 @@ final class ReportsController
         ]);
         $avgMinutesRaw = $stmt->fetchColumn();
         $avgResponseMinutes = $avgMinutesRaw !== null ? round((float) $avgMinutesRaw, 1) : null;
+
+        // response_time_trend[]: avg response minutes PER DAY, alongside
+        // the single range-level scalar above — Phase 9. Bucketed the same
+        // way as trend[]/trend[].resolved: on the incident's own
+        // created_at day, only for incidents that actually reached
+        // `arrived` (the same population avg_response_time_minutes
+        // already restricts to). A day with no arrivals has `null`, not
+        // 0 — a real zero-minute average and "no data" are different
+        // facts, same reasoning as the range-level scalar.
+        $responseTimeMap = array_fill_keys(array_keys($trendMap), []);
+        $stmt = $pdo->prepare(
+            'SELECT i.created_at, TIMESTAMPDIFF(MINUTE, i.created_at, d.arrived_at) AS minutes
+             FROM incident i
+             JOIN dispatch d ON d.incident_id = i.incident_id
+             WHERE i.barangay_id = :barangay_id
+               AND i.created_at >= :range_start AND i.created_at < :range_end
+               AND d.arrived_at IS NOT NULL'
+        );
+        $stmt->execute([
+            'barangay_id' => $barangayId,
+            'range_start' => $rangeStartUtc->format('Y-m-d H:i:s'),
+            'range_end' => $rangeEndUtc->format('Y-m-d H:i:s'),
+        ]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $createdAtUtcRow = new \DateTimeImmutable($row['created_at'], $utc);
+            $dayKey = $createdAtUtcRow->setTimezone($manila)->format('Y-m-d');
+            if (isset($responseTimeMap[$dayKey])) {
+                $responseTimeMap[$dayKey][] = (float) $row['minutes'];
+            }
+        }
+        $responseTimeTrend = [];
+        foreach ($responseTimeMap as $date => $minutesList) {
+            $responseTimeTrend[] = [
+                'date' => $date,
+                'avg_minutes' => $minutesList === [] ? null : round(array_sum($minutesList) / count($minutesList), 1),
+            ];
+        }
 
         $stmt = $pdo->prepare(
             "SELECT COUNT(DISTINCT ds.user_id) AS active_count
@@ -166,6 +249,10 @@ final class ReportsController
             'by_incident_type' => $byType,
             'by_status' => $byStatus,
             'trend' => $trend,
+            // Phase 9 additions — see the comments at each computation
+            // above for what each one means and why.
+            'by_hour' => $byHour,
+            'response_time_trend' => $responseTimeTrend,
         ]);
     }
 
@@ -256,5 +343,65 @@ final class ReportsController
             throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be in YYYY-MM-DD format.");
         }
         return $date;
+    }
+
+    /**
+     * GET /reports/nav-counts — §4.1 of the UI/UX review (sidebar badge
+     * counts). NOT in §6's original documented endpoint list — a resolved,
+     * logged addition, same precedent as `GET /barangays`/`GET /search`
+     * earlier this project: the sidebar needs a small, real count per
+     * relevant nav item (Dispatch Center's pending queue, the Citizen
+     * Reports inbox, Swap Requests, Fatigue Flags), and fetching that as
+     * FOUR separate round-trips on every single page load — every
+     * navigation, not just once — would be real, avoidable load for
+     * something that isn't time-critical. One small object instead.
+     *
+     * Admin-only: every one of the four counts feeds a nav item that is
+     * itself Admin-only (`AppShell.js`'s `NAV_ITEMS`), so a non-Admin has
+     * no use for this and no route to it either — same reasoning
+     * `GET /system/health` already uses.
+     *
+     * Tenant-scoped exactly like every other endpoint here — each count is
+     * `WHERE barangay_id = :barangay_id`, never a cross-tenant total.
+     */
+    public static function navCounts(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+        $barangayId = $identity['barangay_id'];
+
+        $pendingIncidents = (int) self::countWhere($pdo, 'incident', 'barangay_id = :b AND status = :s', ['b' => $barangayId, 's' => 'pending']);
+        $unconvertedCitizenReports = (int) self::countWhere($pdo, 'citizen_report', 'barangay_id = :b AND converted_at IS NULL', ['b' => $barangayId]);
+        // shift_swap_request has no barangay_id of its own — scoped via the
+        // shift it targets, same join every other swap-request query in
+        // this codebase already uses.
+        $pendingSwapRequests = (int) self::countWhere(
+            $pdo,
+            'shift_swap_request ssr JOIN shift_schedule sh ON sh.shift_id = ssr.shift_id',
+            'sh.barangay_id = :b AND ssr.status = :s',
+            ['b' => $barangayId, 's' => 'pending']
+        );
+        // fatigue_flag has no barangay_id of its own either — scoped via
+        // the flagged user.
+        $unacknowledgedFatigueFlags = (int) self::countWhere(
+            $pdo,
+            'fatigue_flag ff JOIN user u ON u.user_id = ff.user_id',
+            'u.barangay_id = :b AND ff.acknowledged_at IS NULL',
+            ['b' => $barangayId]
+        );
+
+        Http::send(200, [
+            'pending_incidents' => $pendingIncidents,
+            'unconverted_citizen_reports' => $unconvertedCitizenReports,
+            'pending_swap_requests' => $pendingSwapRequests,
+            'unacknowledged_fatigue_flags' => $unacknowledgedFatigueFlags,
+        ]);
+    }
+
+    /** @param array<string,mixed> $params */
+    private static function countWhere(PDO $pdo, string $from, string $where, array $params): int
+    {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$from} WHERE {$where}");
+        $stmt->execute($params);
+        return (int) $stmt->fetchColumn();
     }
 }

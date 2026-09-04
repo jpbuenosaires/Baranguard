@@ -25,10 +25,11 @@
  * that row's cells swapped for live inputs (`editingShiftId` in the
  * closure below), rather than DataTable gaining any new per-row-state
  * API of its own. Error handling on save moved from an inline error box
- * to `alert()`, matching every other DataTable-based action this session
- * (Swap Requests' Approve/Deny, Fatigue Flags' Acknowledge) for
- * consistency, rather than reinventing an inline error slot for just
- * this one screen.
+ * to `alert()` at the time, matching every other DataTable-based action
+ * that session (Swap Requests' Approve/Deny, Fatigue Flags' Acknowledge).
+ * §3.1/§3.2 of the UI/UX review later migrated all three to the shared
+ * `Toast`/`ConfirmDialog` components (already proven in Dispatch Center/
+ * AI Review/Blotter Detail) — see the save handler below.
  *
  * kebab-case filename per §4 (pages/routes convention).
  */
@@ -38,6 +39,7 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
+import { showToast } from '../components/Toast.js';
 
 const SCHEDULE_COLUMNS = [
   { key: 'tanod', label: 'Tanod' },
@@ -124,7 +126,6 @@ function buildNewShiftForm(tanods, onCreated) {
 
   const heading = document.createElement('h3');
   heading.textContent = 'New Shift';
-  heading.style.marginBottom = '16px';
 
   const form = document.createElement('form');
   form.className = 'form-stack';
@@ -316,7 +317,7 @@ function buildEditFields(shift, tanods) {
   endInput.type = 'datetime-local';
   endInput.value = toDatetimeLocal(shift.endAt);
   const timeRangeWrap = document.createElement('div');
-  timeRangeWrap.style.cssText = 'display:flex; flex-direction:column; gap:0.25rem;';
+  timeRangeWrap.className = 'stack-tight';
   timeRangeWrap.append(startInput, endInput);
 
   return { tanodSelect, zoneInput, startInput, endInput, timeRangeWrap };
@@ -345,7 +346,7 @@ function buildEditActions(shift, editFields, onSaved, onCancelEdit) {
       onSaved();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Could not save this shift.';
-      alert(message);
+      showToast(message, { variant: 'error' });
       saveButton.disabled = false;
       saveButton.textContent = 'Save';
     }
@@ -378,8 +379,7 @@ function renderLoading(container) {
   wrap.setAttribute('aria-label', 'Loading scheduler');
   for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
+    skeleton.className = 'skeleton skeleton--row';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);

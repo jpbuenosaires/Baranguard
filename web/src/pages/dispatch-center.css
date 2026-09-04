@@ -6,70 +6,63 @@
  * which is what prompted this whole pass) — kept as-is here.
  */
 
+/* audit Phase 1 — the queue used to be a fixed 26.25rem column with its own
+   `overflow-y: auto`, and every DataTable brings its own `overflow-x: auto`.
+   That produced TWO scrollbars on one table: a vertical one on the queue
+   column and a horizontal one on the table inside it.
+   Now: the column flexes (so the table has room to fit rather than
+   scrolling sideways), and the queue no longer scrolls on its own —
+   `.page-content` is the single scroll region, which is what base.css
+   already documents as the intent. The map keeps a floor so it can't be
+   squeezed to nothing on a narrow desktop. */
 .dispatch-layout {
   display: grid;
-  grid-template-columns: 26.25rem 1fr;
+  grid-template-columns: minmax(24rem, 34rem) minmax(18rem, 1fr);
   gap: var(--spacing-md);
-  height: 100%;
+  align-items: start;
   min-height: 0;
 }
 .dispatch-queue {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  overflow-y: auto;
-  min-height: 0;
+  min-width: 0;
 }
+/* Compact action button so the Assign column stays narrow. */
+.dispatch-assign-button { min-height: 2rem; padding: var(--spacing-xs) var(--spacing-sm-md); }
 .dispatch-queue__section-title {
   margin-bottom: var(--spacing-sm);
 }
-.dispatch-card {
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  background: var(--color-white);
-  box-shadow: var(--shadow-card);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  transition: box-shadow .15s ease, border-color .15s ease;
-}
-.dispatch-card:hover { box-shadow: var(--shadow-elevated); border-color: var(--color-accent); }
-.dispatch-card__header strong { display: inline-flex; align-items: center; gap: var(--spacing-sm); }
-.dispatch-card__header strong::before {
-  content: '';
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--color-success);
-  flex-shrink: 0;
-}
-.dispatch-card--high .dispatch-card__header strong::before { background: var(--color-warning); }
-.dispatch-card--critical .dispatch-card__header strong::before { background: var(--color-critical); }
-.dispatch-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.dispatch-card__meta {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-.dispatch-card__actions {
-  display: flex;
-  gap: var(--spacing-sm);
-  align-items: center;
-}
+/* Separates the Active Dispatches heading from the queue above it —
+   replaces a per-render `style.marginTop = '24px'` (audit A4). */
+.dispatch-queue__section-title--spaced { margin-top: var(--spacing-lg); }
+/* The .dispatch-card* block that used to live here (card, hover, header,
+   priority-dot ::before, meta, actions — ~35 lines) was removed in the
+   UI/UX audit pass (A17). Both queues moved to DataTable when the card
+   lists were migrated, and nothing has rendered these classes since;
+   they survived only in a code comment in dispatch-center.js. Priority is
+   now carried by a labelled pill in its own column rather than an
+   unlabelled coloured dot. */
+
+/* Fixed height and sticky rather than stretching to the queue's height:
+   now that the queue scrolls the page instead of itself, a map that grew
+   to match a 40-row queue would be unusable, and a sticky map stays in
+   view while the dispatcher scrolls the list beside it. */
 .dispatch-map-pane {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  min-height: 0;
-  position: relative;
+  height: 32rem;
+  position: sticky;
+  top: 0;
 }
 
 .sos-banner {
-  background: var(--color-critical);
+  /* -solid, not --color-critical: white text on a saturated red fill, and
+     the single most urgent element in the system. On the plain token it
+     fell to 2.77:1 in dark mode (audit A1); locked to the light value it
+     holds 4.83:1 in both themes. */
+  background: var(--color-critical-solid);
   color: var(--color-white);
   border-radius: var(--radius-lg);
   padding: var(--spacing-md);
@@ -80,7 +73,22 @@
   gap: var(--spacing-sm);
 }
 .sos-banner svg { flex-shrink: 0; }
+.sos-banner__text { flex: 1; min-width: 0; }
+.sos-banner__list { font-weight: 400; font-size: var(--font-size-sm); margin-top: 0.125rem; opacity: 0.95; }
+/* Buttons sitting ON the red fill — white outline rather than the usual
+   ghost treatment, which would be invisible here. */
+.sos-banner button {
+  background: transparent;
+  border: 1px solid var(--color-white);
+  color: var(--color-white);
+  flex-shrink: 0;
+}
+.sos-banner button:hover:not(:disabled) { background: var(--color-white); color: var(--color-critical-solid); }
+.sos-banner button:focus-visible { box-shadow: 0 0 0 2px var(--color-critical-solid), 0 0 0 4px var(--color-white); }
 
+/* audit W3: the queue stacks above the map below 1024px, and without a
+   floor the map collapses to almost nothing on the way down. */
 @media (max-width: 1024px) {
   .dispatch-layout { grid-template-columns: 1fr; }
+  .dispatch-map-pane { height: 20rem; position: static; }
 }

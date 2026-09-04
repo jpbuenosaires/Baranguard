@@ -22,7 +22,7 @@
 }
 
 .confirm-dialog {
-  background: var(--color-white);
+  background: var(--color-surface);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-floating);
   padding: var(--spacing-xl);
@@ -44,3 +44,9 @@
   gap: var(--spacing-sm);
   margin-top: var(--spacing-lg);
 }
+
+/* promptSelect()'s field — a labelled control between the description and
+   the action row. Sized to the dialog rather than the global 100% width so
+   a long Tanod name doesn't stretch the dialog. */
+.confirm-dialog__field { margin-bottom: var(--spacing-md); }
+.confirm-dialog__field select { width: 100%; }

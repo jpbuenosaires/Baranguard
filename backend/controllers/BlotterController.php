@@ -61,6 +61,99 @@ use PDO;
  */
 final class BlotterController
 {
+    private const DEFAULT_LIMIT = 25;
+    private const MAX_LIMIT = 100;
+
+    /**
+     * GET /blotter — Phase 6 of the mockup-driven UI round 2 (see
+     * .claude/plans/clever-wishing-hummingbird.md). Not in §6's original
+     * endpoint list — a resolved, logged addition, same precedent as
+     * `GET /reports/nav-counts`/`GET /notifications`: W6 Electronic
+     * Blotter's mockup lists finalized RECORDS (`blotter_record`), which
+     * `GET /incidents` cannot answer since a `blotter_record` row and an
+     * `incident` row are different things with different lifecycles —
+     * every finalized incident has exactly one blotter_record, but not
+     * every incident has one yet.
+     *
+     * Tenant-scoped via `blotter_record.barangay_id` (denormalized onto
+     * the table already — see migration 0001). Every row this endpoint
+     * lists is, by construction, already finalized: `finalize()` never
+     * inserts a row without setting `finalized_at` in the same statement,
+     * so there is no draft state to filter out here — the `finalized_at
+     * IS NOT NULL` clause documents that invariant rather than doing real
+     * filtering work.
+     *
+     * Roles: Admin/Secretary/PB, same as `showByIncident()` minus Tanod —
+     * a Tanod's only legitimate blotter access is a specific record they
+     * reported or were dispatched on (already gated in `show()`/
+     * `showByIncident()`), not a browsable ledger of every finalized case
+     * in the barangay.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function index(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'punong_barangay']);
+        $barangayId = $identity['barangay_id'];
+
+        $page = max(1, (int) (Http::query('page') ?? '1'));
+        $limit = min(self::MAX_LIMIT, max(1, (int) (Http::query('limit') ?? (string) self::DEFAULT_LIMIT)));
+        $offset = ($page - 1) * $limit;
+
+        $countStmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM blotter_record WHERE barangay_id = :barangay_id AND finalized_at IS NOT NULL'
+        );
+        $countStmt->execute(['barangay_id' => $barangayId]);
+        $total = (int) $countStmt->fetchColumn();
+
+        // officer_name: same "most recent dispatch, any status" join
+        // IncidentsController::index() already uses for the same reason —
+        // an incident that was dispatched then cancelled still meaningfully
+        // "had an officer handle it" for blotter purposes.
+        $stmt = $pdo->prepare(
+            "SELECT b.blotter_id, b.incident_id, b.recorded_by, b.approved_by, b.finalized_at,
+                    b.revision_no, b.amended_at, b.amended_by,
+                    i.incident_type, i.latitude, i.longitude,
+                    tanod.full_name AS officer_name
+             FROM blotter_record b
+             JOIN incident i ON i.incident_id = b.incident_id
+             LEFT JOIN dispatch d ON d.dispatch_id = (
+                 SELECT d2.dispatch_id FROM dispatch d2
+                 WHERE d2.incident_id = i.incident_id
+                 ORDER BY d2.dispatched_at DESC
+                 LIMIT 1
+             )
+             LEFT JOIN user tanod ON tanod.user_id = d.tanod_id
+             WHERE b.barangay_id = :barangay_id AND b.finalized_at IS NOT NULL
+             ORDER BY b.finalized_at DESC
+             LIMIT :limit OFFSET :offset"
+        );
+        $stmt->bindValue(':barangay_id', $barangayId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $items = array_map(static function (array $row): array {
+            return [
+                'blotter_id' => (int) $row['blotter_id'],
+                'incident_id' => (int) $row['incident_id'],
+                'incident_type' => $row['incident_type'],
+                'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
+                'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
+                'officer_name' => $row['officer_name'] ?? null,
+                'recorded_by' => (int) $row['recorded_by'],
+                'approved_by' => $row['approved_by'] !== null ? (int) $row['approved_by'] : null,
+                'finalized_at' => $row['finalized_at'],
+                'revision_no' => (int) $row['revision_no'],
+                'amended_at' => $row['amended_at'],
+                'amended_by' => $row['amended_by'] !== null ? (int) $row['amended_by'] : null,
+            ];
+        }, $rows);
+
+        Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total]);
+    }
+
     /**
      * POST /incidents/:id/finalize — §6: "Secretary only. Requires
      * approved redaction and same-barangay resource. Body

@@ -86,26 +86,40 @@ export async function getFcmToken(): Promise<string | null> {
       return null;
     }
 
-    return await new Promise<string | null>((resolve) => {
-      let settled = false;
-      const finish = (value: string | null) => {
-        if (settled) return;
-        settled = true;
-        registrationListener.remove();
-        errorListener.remove();
-        resolve(value);
-      };
-
-      const registrationListener = PushNotifications.addListener('registration', (token) => {
-        finish(token.value || null);
-      });
-      const errorListener = PushNotifications.addListener('registrationError', () => {
-        finish(null);
-      });
-
-      setTimeout(() => finish(null), FCM_REGISTRATION_TIMEOUT_MS);
-      PushNotifications.register().catch(() => finish(null));
+    let settled = false;
+    let resolveToken: (value: string | null) => void = () => {};
+    const tokenPromise = new Promise<string | null>((resolve) => {
+      resolveToken = resolve;
     });
+
+    // `addListener()` is itself async — it RESOLVES to a
+    // PluginListenerHandle, it does not return one directly — so both
+    // calls are awaited before `finish` can reference the handles it
+    // needs to clean them up. `finish` is declared here (not called until
+    // one of the listener callbacks or the timeout below fires, both of
+    // which happen strictly after this point) and closes over
+    // `registrationListener`/`errorListener` once they exist.
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      registrationListener.remove();
+      errorListener.remove();
+      resolveToken(value);
+    };
+
+    const [registrationListener, errorListener] = await Promise.all([
+      PushNotifications.addListener('registration', (token) => {
+        finish(token.value || null);
+      }),
+      PushNotifications.addListener('registrationError', () => {
+        finish(null);
+      }),
+    ]);
+
+    setTimeout(() => finish(null), FCM_REGISTRATION_TIMEOUT_MS);
+    PushNotifications.register().catch(() => finish(null));
+
+    return await tokenPromise;
   } catch {
     return null;
   }

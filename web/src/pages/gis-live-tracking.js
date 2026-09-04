@@ -98,15 +98,14 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       const legend = document.createElement('div');
       legend.className = 'live-map__legend';
       legend.innerHTML = `
-        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-success);"></span> On duty (live)</div>
+        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-success-solid);"></span> On duty (live)</div>
         <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-text-secondary);"></span> Stale (≥120s)</div>
-        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-critical);"></span> SOS</div>
+        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-critical-solid);"></span> SOS</div>
       `;
       mapWrapper.appendChild(legend);
 
       const roster = document.createElement('div');
-      roster.className = 'card gis-roster';
-      roster.style.marginTop = '16px';
+      roster.className = 'card gis-roster gis-page__roster';
 
       page.append(mapWrapper, roster);
       container.appendChild(page);
@@ -130,11 +129,18 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       roster.appendChild(empty);
     } else {
       for (const g of gpsItems) {
-        const row = document.createElement('div');
+        // audit W4: roster and map were unlinked — a name in the list and
+        // a dot on the map had no relationship you could act on. A real
+        // <button> rather than a click handler on a div, so it is
+        // keyboard-operable and announced as activatable.
+        const row = document.createElement('button');
+        row.type = 'button';
         row.className = 'gis-roster__row';
         const pillClass = g.isStale ? 'status-pill--neutral' : 'status-pill--success';
         const ageLabel = formatAge(g.ageSeconds);
         row.innerHTML = `<span class="avatar-row">${avatarInitials(g.fullName, 24)}${g.fullName}</span><span class="status-pill ${pillClass}">${g.isStale ? 'Stale' : 'Live'} · ${ageLabel}</span>`;
+        row.setAttribute('aria-label', `Centre map on ${g.fullName}`);
+        row.addEventListener('click', () => liveMap?.flyTo(Number(g.latitude), Number(g.longitude)));
         roster.appendChild(row);
       }
     }
@@ -160,7 +166,7 @@ function renderLoading(container) {
   mapSkeleton.className = 'skeleton gis-page__map-wrapper';
   const rosterSkeleton = document.createElement('div');
   rosterSkeleton.className = 'skeleton';
-  rosterSkeleton.style.cssText = 'height:80px; margin-top:16px; border-radius:12px;';
+  rosterSkeleton.classList.add('skeleton--roster');
   page.append(mapSkeleton, rosterSkeleton);
   container.appendChild(page);
 }

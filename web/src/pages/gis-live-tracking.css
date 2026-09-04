@@ -23,14 +23,29 @@
   flex-direction: column;
   gap: var(--spacing-sm);
 }
+/* A real <button> now (audit W4 — clicking a roster row centres the map on
+   that Tanod), so the button defaults have to be reset back to a row. */
 .gis-roster__row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: inherit;
+  font: inherit;
   font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
   transition: border-color .15s ease, background-color .15s ease;
 }
 .gis-roster__row:hover { border-color: var(--color-accent); background: var(--color-row-active-bg); }
+
+/* Roster sits below the map with a consistent gap — replaces a per-render
+   `style.marginTop = '16px'` (audit A4). */
+.gis-page__roster { margin-top: var(--spacing-md); }
+/* The heatmap's map wrapper fills its flex parent (audit A4 — was an
+   inline `style.height = '100%'`). */
+.gis-page__map-wrapper--fill { height: 100%; }

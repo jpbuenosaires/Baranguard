@@ -6,7 +6,7 @@
  */
 
 .data-table-wrap {
-  background: var(--color-white);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow-x: auto;
@@ -36,6 +36,13 @@
 
 .data-table tbody tr { border-top: 1px solid var(--color-divider); }
 .data-table tbody tr:first-child { border-top: none; }
+/* Zebra striping (§3.3 of the UI/UX review) — applies to every DataTable
+   automatically, no per-page opt-in needed. color-mix against
+   --color-bg (not a second hardcoded tint) so it derives from the current
+   theme's own tokens and needs no separate dark-mode value. Low enough
+   specificity that .is-selected/.is-clickable:hover (both carry an extra
+   class) still win, same as the pre-existing hover rule below. */
+.data-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--color-bg) 55%, transparent); }
 .data-table tbody td {
   padding: var(--spacing-sm-md) var(--spacing-md);
   color: var(--color-text-primary);
@@ -71,7 +78,43 @@
   cursor: pointer;
 }
 .data-table__sort-button:hover { color: var(--color-primary); }
-.data-table__sort-icon { font-size: 0.625rem; width: 0.625rem; display: inline-block; }
+/* Neutral ↕ at rest so a sortable column is identifiable before it has
+   been clicked (audit A12); the active column's arrow takes full weight. */
+.data-table__sort-icon { font-size: 0.625rem; width: 0.625rem; display: inline-block; opacity: 0.4; }
+.data-table__sort-icon.is-active { opacity: 1; color: var(--color-primary); }
+
+/* audit A11: the first cell of a clickable row is a real button carrying
+   the row's accessible name — the row itself stays a row, so header/cell
+   association survives. Styled to disappear into the cell: it must read
+   as the cell's own text, not as a button inside a table. */
+.data-table__row-activator {
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.data-table__row-activator:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+}
+/* Row hover/focus cues now key off the activator too, since it is what
+   actually receives keyboard focus. */
+.data-table tbody tr:has(.data-table__row-activator:focus-visible) {
+  background: var(--color-row-active-bg);
+}
+.data-table tbody tr:has(.data-table__row-activator:focus-visible) .row-open-hint {
+  opacity: 1;
+  color: var(--color-primary);
+}
 
 /* Secondary line inside a cell (e.g. a timestamp under an ID). */
 .data-table__sub {
@@ -98,4 +141,33 @@
 .data-table tbody tr.is-clickable:focus-visible .row-open-hint {
   opacity: 1;
   color: var(--color-primary);
+}
+
+/* --- Empty state + pagination (§3.3 of the UI/UX review) ---------------- */
+
+.data-table__empty {
+  text-align: center;
+  padding: var(--spacing-xl) var(--spacing-lg);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.data-table__empty-icon {
+  display: flex;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.data-table__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+.data-table__pagination-indicator {
+  font-size: var(--font-size-label);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }

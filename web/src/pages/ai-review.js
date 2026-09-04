@@ -182,8 +182,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     wrap.setAttribute('aria-label', 'Loading AI draft');
     for (let i = 0; i < 4; i++) {
       const skeleton = document.createElement('div');
-      skeleton.className = 'skeleton';
-      skeleton.style.cssText = 'height:6rem; border-radius:0.5rem;';
+      skeleton.className = 'skeleton skeleton--block';
       wrap.appendChild(skeleton);
     }
     content.appendChild(wrap);
@@ -438,9 +437,30 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     rawNote.textContent = 'Read-only. Visible to the Secretary only.';
     const rawText = document.createElement('pre');
     rawText.className = 'narrative-block';
-    // textContent, never innerHTML — this is unredacted reported text.
-    rawText.textContent = incident.rawNarrative ?? '(not available)';
-    rawCard.append(rawHeading, rawNote, rawText);
+    // Never innerHTML with the raw string — this is unredacted reported
+    // text. renderRedactionDiff builds nodes with textContent per token.
+    if (incident.rawNarrative && draft.draftRedactedNarrative) {
+      rawText.appendChild(renderRedactionDiff(incident.rawNarrative, draft.draftRedactedNarrative));
+    } else {
+      rawText.textContent = incident.rawNarrative ?? '(not available)';
+    }
+
+    // audit W8: this is the screen where a person certifies that personal
+    // information has been removed before it becomes a permanent record,
+    // and it presented two plain blocks of prose — finding what changed
+    // was a manual character-by-character read. The removed spans are now
+    // marked in the original, and a count states what to check for.
+    const summaryLine = document.createElement('p');
+    summaryLine.className = 'note redaction-summary';
+    if (incident.rawNarrative && draft.draftRedactedNarrative) {
+      const placeholders = draft.draftRedactedNarrative.match(/\[[A-Z_]+\]/g) ?? [];
+      const byKind = placeholders.reduce((acc, p) => { acc[p] = (acc[p] ?? 0) + 1; return acc; }, {});
+      const parts = Object.entries(byKind).map(([kind, n]) => `${n} ${kind.slice(1, -1).toLowerCase().replace('_', ' ')}`);
+      summaryLine.textContent = placeholders.length === 0
+        ? 'The draft contains no redaction placeholders — check that nothing identifying was missed.'
+        : `${placeholders.length} identifier${placeholders.length === 1 ? '' : 's'} removed: ${parts.join(', ')}. Highlighted below.`;
+    }
+    rawCard.append(rawHeading, rawNote, summaryLine, rawText);
 
     // Right: the editable draft.
     const draftCard = document.createElement('div');
@@ -454,7 +474,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     const textarea = document.createElement('textarea');
     textarea.id = 'ai-draft-narrative';
     textarea.rows = 16;
-    textarea.style.resize = 'vertical';
+    textarea.classList.add('textarea--resizable');
     textarea.value = draft.draftRedactedNarrative ?? '';
     textarea.disabled = draft.status === 'queued' || draft.status === 'processing';
     textarea.addEventListener('input', () => {
@@ -590,4 +610,89 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       showToast(err instanceof ApiClientError ? err.message : 'Could not approve the draft.', { variant: 'error' });
     }
   }
+}
+
+/**
+ * audit W8 — mark, in the ORIGINAL narrative, the words the draft no
+ * longer contains. That is the reviewer's actual question ("what did the
+ * model take out, and did it miss anything?"), and answering it by eye
+ * across two paragraphs is the step most likely to be rushed.
+ *
+ * A word-level longest-common-subsequence diff. No library: this runs on
+ * one incident narrative at a time — a few hundred tokens at most — so
+ * the O(n·m) table is trivially small here, and §1's stack has no bundler
+ * to pull a diff package through anyway.
+ *
+ * Returns a DocumentFragment of text nodes and <mark> elements; every
+ * piece of narrative text is set via textContent, never innerHTML, so no
+ * reported text is ever parsed as markup.
+ *
+ * @param {string} raw the original narrative
+ * @param {string} redacted the draft
+ * @returns {DocumentFragment}
+ */
+function renderRedactionDiff(raw, redacted) {
+  // Split keeping whitespace, so the original spacing survives rebuilding.
+  const rawTokens = raw.split(/(\s+)/);
+  const draftTokens = redacted.split(/(\s+)/).filter((t) => t.trim() !== '');
+
+  // LCS over non-whitespace tokens only — whitespace would otherwise
+  // dominate the match and blur the result.
+  const rawWords = rawTokens.filter((t) => t.trim() !== '');
+  const n = rawWords.length;
+  const m = draftTokens.length;
+  const lcs = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i -= 1) {
+    for (let j = m - 1; j >= 0; j -= 1) {
+      lcs[i][j] = rawWords[i] === draftTokens[j]
+        ? lcs[i + 1][j + 1] + 1
+        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  // Walk the table to decide, for each original word, whether it survived.
+  const survived = new Array(n).fill(false);
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (rawWords[i] === draftTokens[j]) {
+      survived[i] = true;
+      i += 1;
+      j += 1;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      i += 1;
+    } else {
+      j += 1;
+    }
+  }
+
+  const fragment = document.createDocumentFragment();
+  let wordIndex = 0;
+  let pendingRemoved = [];
+  const flushRemoved = () => {
+    if (pendingRemoved.length === 0) return;
+    const mark = document.createElement('mark');
+    mark.className = 'redaction-diff__removed';
+    mark.textContent = pendingRemoved.join('');
+    fragment.appendChild(mark);
+    pendingRemoved = [];
+  };
+
+  for (const token of rawTokens) {
+    if (token.trim() === '') {
+      // Whitespace joins the current run rather than breaking it, so a
+      // removed phrase highlights as one span instead of several.
+      if (pendingRemoved.length > 0) pendingRemoved.push(token);
+      else fragment.appendChild(document.createTextNode(token));
+      continue;
+    }
+    if (survived[wordIndex]) {
+      flushRemoved();
+      fragment.appendChild(document.createTextNode(token));
+    } else {
+      pendingRemoved.push(token);
+    }
+    wordIndex += 1;
+  }
+  flushRemoved();
+  return fragment;
 }

@@ -23,7 +23,7 @@
 
 import { getReportsSummary, getIncidents, getDutyStatus, getUsers, logout, ApiClientError } from '../api/apiClient.js';
 import { KpiCard } from '../components/KpiCard.js';
-import { TrendChart } from '../components/TrendChart.js';
+import { LineChart } from '../components/LineChart.js';
 import { DonutChart } from '../components/DonutChart.js';
 import { DataTable } from '../components/DataTable.js';
 import { AppShell } from '../components/AppShell.js';
@@ -106,20 +106,74 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.value = daysAgoIso(29);
-  fromInput.style.width = 'auto';
+  fromInput.classList.add('input--auto');
   const toInput = document.createElement('input');
   toInput.type = 'date';
   toInput.value = todayIso();
-  toInput.style.width = 'auto';
+  toInput.classList.add('input--auto');
   const applyButton = document.createElement('button');
   applyButton.className = 'primary';
   applyButton.textContent = 'Apply';
+
+  // audit W2: two date fields and an Apply button was the slowest possible
+  // way to ask "what happened this week". Presets cover the ranges people
+  // actually want; the explicit fields stay for everything else.
+  const presets = document.createElement('div');
+  presets.className = 'range-presets';
+  presets.setAttribute('role', 'group');
+  presets.setAttribute('aria-label', 'Quick date ranges');
+  for (const [presetLabel, days] of [['7 days', 6], ['30 days', 29], ['90 days', 89]]) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'ghost range-presets__chip';
+    chip.textContent = presetLabel;
+    chip.addEventListener('click', () => {
+      fromInput.value = daysAgoIso(days);
+      toInput.value = todayIso();
+      load(fromInput.value, toInput.value);
+    });
+    presets.appendChild(chip);
+  }
+
+  // audit W2: nothing said how fresh the figures were. A dashboard that
+  // loads once and never timestamps itself leaves a Punong Barangay
+  // unable to tell two-minute-old numbers from two-hour-old ones.
+  const freshness = document.createElement('span');
+  freshness.className = 'note dashboard-freshness';
+  freshness.setAttribute('role', 'status');
+
+  const refreshButton = document.createElement('button');
+  refreshButton.type = 'button';
+  refreshButton.className = 'ghost';
+  refreshButton.innerHTML = `<span aria-hidden="true">${icons.repeat(15)}</span><span>Refresh</span>`;
+  refreshButton.setAttribute('aria-label', 'Refresh dashboard');
+  refreshButton.addEventListener('click', () => load(fromInput.value, toInput.value));
+
+  pageHeader.actions.append(freshness, refreshButton);
+
+  // Validation before the round trip — an inverted range used to be caught
+  // only by the server, which returned a full-page error block.
+  const rangeError = document.createElement('span');
+  rangeError.className = 'app-inline-error';
+  rangeError.hidden = true;
+  rangeError.setAttribute('role', 'alert');
+  const validateRange = () => {
+    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
+    applyButton.disabled = invalid;
+    rangeError.hidden = !invalid;
+    rangeError.textContent = invalid ? 'From date must be on or before To date.' : '';
+  };
+  fromInput.addEventListener('change', validateRange);
+  toInput.addEventListener('change', validateRange);
+
   controls.append(
     Object.assign(document.createElement('span'), { className: 'label', textContent: 'From' }),
     fromInput,
     Object.assign(document.createElement('span'), { className: 'label', textContent: 'To' }),
     toInput,
-    applyButton
+    applyButton,
+    presets,
+    rangeError
   );
 
   const body = document.createElement('div');
@@ -168,6 +222,8 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
       // toInput, just set above), not the possibly-undefined dateFrom/
       // dateTo params, so this always compares against the range that
       // actually produced `summary`.
+      freshness.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
       loadDeltas(body, fromInput.value, toInput.value, summary);
       loadRecentIncidents(body);
       loadTanodsOnDuty(body, user.barangayId);
@@ -186,16 +242,16 @@ async function loadDeltas(container, dateFrom, dateTo, summary) {
   try {
     const [prevFrom, prevTo] = previousPeriodRange(dateFrom, dateTo);
     const prevSummary = await getReportsSummary({ dateFrom: prevFrom, dateTo: prevTo });
-    const totalCard = kpiGrid.children[0];
-    const resolvedCard = kpiGrid.children[1];
-    totalCard?.replaceWith(KpiCard({
-      label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue',
-      delta: summary.totalIncidents - prevSummary.totalIncidents,
-    }));
-    resolvedCard?.replaceWith(KpiCard({
-      label: 'Resolved', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green',
-      delta: summary.resolvedCount - prevSummary.resolvedCount,
-    }));
+    // audit W2: these two cards used to be REPLACED wholesale once the
+    // previous-period request landed, so both visibly blinked and
+    // re-rendered a beat after the page had settled — and any focus
+    // inside them was thrown away. KpiCard now exposes setDelta(), so the
+    // existing nodes are mutated instead.
+    // Second argument is the PRIOR value, which is what turns the delta
+    // into a percentage; a prior period of zero has no percentage, and
+    // KpiCard falls back to the raw difference in that case.
+    kpiGrid.children[0]?.setDelta?.(summary.totalIncidents - prevSummary.totalIncidents, prevSummary.totalIncidents);
+    kpiGrid.children[1]?.setDelta?.(summary.resolvedCount - prevSummary.resolvedCount, prevSummary.resolvedCount);
   } catch {
     // No previous-period data (e.g. barangay has no history before this
     // range) — the KPI cards already rendered without a delta, which is
@@ -241,12 +297,11 @@ function renderLoading(container) {
   for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'card';
-    skeleton.innerHTML = '<div class="skeleton" style="height:14px;width:60%;margin-bottom:12px;"></div><div class="skeleton" style="height:32px;width:40%;"></div>';
+    skeleton.innerHTML = '<div class="skeleton skeleton--line"></div><div class="skeleton skeleton--figure"></div>';
     grid.appendChild(skeleton);
   }
   const chartSkeleton = document.createElement('div');
-  chartSkeleton.className = 'card skeleton';
-  chartSkeleton.style.height = '176px';
+  chartSkeleton.className = 'card skeleton skeleton--chart';
   container.append(grid, chartSkeleton);
 }
 
@@ -282,14 +337,25 @@ function renderPopulated(container, summary) {
   const grid = document.createElement('div');
   grid.className = 'kpi-grid';
   grid.append(
-    KpiCard({ label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue' }),
-    KpiCard({ label: 'Resolved', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green' }),
+    // §4.4 — sparkline built from summary.trend[].count, a real per-day
+    // series that genuinely measures "incidents created," matching this
+    // KPI exactly. `Resolved` deliberately has none — see KpiCard.js's
+    // own doc for why that series doesn't describe it.
+    KpiCard({
+      label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue',
+      sparkline: summary.trend.map((day) => day.count),
+    }),
+    // Resolved going UP is unambiguously good; Total Incidents has no
+    // inherent good direction so it deliberately gets no `trend`.
+    KpiCard({ label: 'Resolved Cases', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green', trend: 'up-good' }),
     KpiCard({
       label: 'Avg. Response Time',
       value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
       emptyText: 'No arrivals yet',
       icon: icons.clock,
       accent: 'orange',
+      // Faster response is better, so a NEGATIVE delta is the good one.
+      trend: 'down-good',
     }),
     // No period-over-period delta here — this is a live current-state
     // snapshot (§9), not a range-bucketed count, so "vs previous period"
@@ -297,42 +363,89 @@ function renderPopulated(container, summary) {
     KpiCard({ label: 'Tanods On Duty', value: summary.activeTanods, icon: icons.users, accent: 'teal' })
   );
 
+  // Trend + type breakdown side by side, each in a card carrying the
+  // shared card-header (title / subtitle / corner icon) rather than a bare
+  // <h3> with an inline margin — audit A4 removed the inline pixel values
+  // from this file, and .card-header already existed in base.css for
+  // exactly this pattern.
+  const chartsGrid = document.createElement('div');
+  chartsGrid.className = 'two-col-grid dashboard-row';
+
   const trendCard = document.createElement('div');
   trendCard.className = 'card';
-  trendCard.innerHTML = '<h3 style="margin-bottom:16px;">Incident Trend</h3>';
-  trendCard.appendChild(TrendChart({ trend: summary.trend }));
+  trendCard.appendChild(cardHeader('Incident Trends', 'Reported against resolved, by day', icons.trendingUp));
+  trendCard.appendChild(LineChart({
+    points: summary.trend.map((day) => ({ label: shortDate(day.date), values: [day.count, day.resolved ?? 0] })),
+    series: [
+      { name: 'Reported', colorVar: '--chart-line-1' },
+      { name: 'Resolved', colorVar: '--chart-line-2' },
+    ],
+    caption: 'Incidents reported and resolved by day',
+  }));
+
+  chartsGrid.append(trendCard, renderIncidentTypeDonutCard(summary.byIncidentType));
 
   const breakdownGrid = document.createElement('div');
-  breakdownGrid.className = 'two-col-grid';
-  breakdownGrid.style.marginTop = '16px';
-  breakdownGrid.append(
-    renderBreakdownCard('By Status', summary.byStatus, STATUS_LABELS, STATUS_PILL_CLASS),
-    renderIncidentTypeDonutCard(summary.byIncidentType)
-  );
-
-  const activityGrid = document.createElement('div');
-  activityGrid.className = 'two-col-grid';
-  activityGrid.style.marginTop = '16px';
+  breakdownGrid.className = 'two-col-grid dashboard-row';
 
   const recentCard = document.createElement('div');
   recentCard.className = 'card';
-  recentCard.innerHTML = '<h3 style="margin-bottom:12px;">Recent Incidents</h3>';
+  recentCard.appendChild(cardHeader('Recent Incidents', 'Newest six reports', icons.fileText));
   const recentHost = document.createElement('div');
   recentHost.setAttribute('data-recent-incidents', '');
-  recentHost.innerHTML = '<div class="skeleton" style="height:8rem; border-radius:0.5rem;"></div>';
+  recentHost.appendChild(blockSkeleton());
   recentCard.appendChild(recentHost);
 
   const dutyCard = document.createElement('div');
   dutyCard.className = 'card';
-  dutyCard.innerHTML = '<h3 style="margin-bottom:12px;">Tanods On Duty</h3>';
+  dutyCard.appendChild(cardHeader('Tanods On Duty', 'Current shift roster', icons.users));
   const dutyHost = document.createElement('div');
   dutyHost.setAttribute('data-tanods-on-duty', '');
-  dutyHost.innerHTML = '<div class="skeleton" style="height:8rem; border-radius:0.5rem;"></div>';
+  dutyHost.appendChild(blockSkeleton());
   dutyCard.appendChild(dutyHost);
 
-  activityGrid.append(recentCard, dutyCard);
+  breakdownGrid.append(recentCard, dutyCard);
 
-  container.append(grid, trendCard, breakdownGrid, activityGrid);
+  const statusRow = document.createElement('div');
+  statusRow.className = 'two-col-grid dashboard-row';
+  statusRow.append(renderBreakdownCard('By Status', summary.byStatus, STATUS_LABELS, STATUS_PILL_CLASS));
+
+  container.append(grid, chartsGrid, breakdownGrid, statusRow);
+}
+
+/** Shared card title / subtitle / corner-icon header (base.css .card-header). */
+function cardHeader(title, subtitle, icon) {
+  const el = document.createElement('div');
+  el.className = 'card-header';
+  const titles = document.createElement('div');
+  const h = document.createElement('h3');
+  h.className = 'card-header__title';
+  h.className = 'card-header__title report-section-title';
+  h.textContent = title;
+  const sub = document.createElement('p');
+  sub.className = 'card-header__subtitle';
+  sub.textContent = subtitle;
+  titles.append(h, sub);
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'card-header__icon';
+  iconSpan.setAttribute('aria-hidden', 'true');
+  iconSpan.innerHTML = icon(18);
+  el.append(titles, iconSpan);
+  return el;
+}
+
+/** Panel-sized loading placeholder — replaces an inline-styled skeleton div. */
+function blockSkeleton() {
+  const el = document.createElement('div');
+  el.className = 'skeleton skeleton--block';
+  return el;
+}
+
+/** "2026-09-04" -> "Sep 4", for x-axis tick labels. */
+function shortDate(iso) {
+  const [, m, d] = iso.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[Number(m) - 1]} ${Number(d)}`;
 }
 
 function renderRecentIncidentsTable(host, items) {
@@ -378,8 +491,7 @@ function renderTanodsOnDutyList(host, roster) {
   list.className = 'stack';
   for (const tanod of roster) {
     const row = document.createElement('div');
-    row.className = 'row-between';
-    row.style.fontSize = 'var(--font-size-sm)';
+    row.className = 'row-between breakdown-row';
     const left = document.createElement('span');
     left.className = 'avatar-row';
     left.innerHTML = `${avatarInitials(tanod.fullName, 24)}${escapeHtml(tanod.fullName)}`;
@@ -395,30 +507,23 @@ function renderTanodsOnDutyList(host, roster) {
 function renderIncidentTypeDonutCard(counts) {
   const card = document.createElement('div');
   card.className = 'card';
-  const heading = document.createElement('h3');
-  heading.textContent = 'By Incident Type';
-  heading.style.marginBottom = '12px';
   const rows = Object.entries(counts).map(([key, count], i) => ({
     key, count, label: INCIDENT_TYPE_LABELS[key] || key, color: INCIDENT_TYPE_COLORS[i % INCIDENT_TYPE_COLORS.length],
   }));
-  card.append(heading, DonutChart({ rows }));
+  card.append(cardHeader('Incident Types', 'Distribution by category', icons.activity), DonutChart({ rows }));
   return card;
 }
 
 function renderBreakdownCard(title, counts, labels, pillClasses) {
   const card = document.createElement('div');
   card.className = 'card';
-  const heading = document.createElement('h3');
-  heading.textContent = title;
-  heading.style.marginBottom = '12px';
-  card.appendChild(heading);
+  card.appendChild(cardHeader(title, 'Incidents in the selected range', icons.barChart));
 
   const list = document.createElement('div');
   list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
     const row = document.createElement('div');
-    row.className = 'row-between';
-    row.style.fontSize = 'var(--font-size-sm)';
+    row.className = 'row-between breakdown-row';
     const label = document.createElement('span');
     const pillClass = pillClasses[key];
     if (pillClass) {
@@ -427,7 +532,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
       label.textContent = labels[key] || key;
     }
     const value = document.createElement('span');
-    value.style.fontWeight = '600';
+    value.className = 'breakdown-row__value';
     value.textContent = String(count);
     row.append(label, value);
     list.appendChild(row);

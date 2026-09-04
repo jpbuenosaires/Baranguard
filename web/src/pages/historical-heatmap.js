@@ -10,6 +10,7 @@
 import { getReportsHeatmap, logout, ApiClientError } from '../api/apiClient.js';
 import { HeatmapMap } from '../components/HeatmapMap.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 
 function todayIso() {
@@ -35,24 +36,31 @@ export function renderHistoricalHeatmapPage(root, user, onLoggedOut, navigate) {
     await logout();
     onLoggedOut();
   });
-  const { content } = shell;
+  const { header, content } = shell;
   root.appendChild(shell.el);
 
+  // Was a raw `<h2 style="...">` written straight into the content area —
+  // the one screen this project's own PageHeader migration missed (see
+  // DEVLOG.md). Matches every other screen now: fixed header bar above
+  // the scrolling content, no inline style, tokens carry the dark-mode
+  // retrofit automatically.
+  const pageHeader = PageHeader({ title: 'Historical Heatmap', subtitle: 'Historical incident patterns only — not a predictive or real-time view.', icon: icons.flame });
+  header.appendChild(pageHeader.el);
+
   const wrapper = document.createElement('div');
-  wrapper.className = 'flex-col';
+  wrapper.className = 'flex-col grow';
   content.appendChild(wrapper);
-  wrapper.innerHTML = `<h2 style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">${icons.flame(22)}Historical Heatmap</h2>`;
 
   const controls = document.createElement('div');
   controls.className = 'filter-bar';
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.value = daysAgoIso(29);
-  fromInput.style.width = 'auto';
+  fromInput.classList.add('input--auto');
   const toInput = document.createElement('input');
   toInput.type = 'date';
   toInput.value = todayIso();
-  toInput.style.width = 'auto';
+  toInput.classList.add('input--auto');
   const applyButton = document.createElement('button');
   applyButton.className = 'primary';
   applyButton.textContent = 'Apply';
@@ -64,15 +72,13 @@ export function renderHistoricalHeatmapPage(root, user, onLoggedOut, navigate) {
     applyButton
   );
 
-  const notice = document.createElement('p');
-  notice.className = 'note';
-  notice.style.marginBottom = 'var(--spacing-md)';
-  notice.textContent = 'Historical incident patterns only — not a predictive or real-time view.';
-
   const body = document.createElement('div');
   body.className = 'grow';
 
-  wrapper.append(controls, notice, body);
+  // The "historical only, not predictive" disclosure now lives in the
+  // PageHeader subtitle above (§9's own requirement, still met) rather
+  // than a second, duplicate note in the content area.
+  wrapper.append(controls, body);
 
   let heatmap = null;
 
@@ -102,7 +108,7 @@ export function renderHistoricalHeatmapPage(root, user, onLoggedOut, navigate) {
     container.innerHTML = '';
     const mapWrapper = document.createElement('div');
     mapWrapper.className = 'gis-page__map-wrapper';
-    mapWrapper.style.height = '100%';
+    mapWrapper.classList.add('gis-page__map-wrapper--fill');
     container.appendChild(mapWrapper);
     heatmap = HeatmapMap(mapWrapper);
     heatmap.setPoints(points);
@@ -115,7 +121,7 @@ function renderLoading(container) {
   skeleton.className = 'skeleton';
   skeleton.setAttribute('role', 'status');
   skeleton.setAttribute('aria-label', 'Loading heatmap');
-  skeleton.style.cssText = 'height:100%; border-radius:16px;';
+  skeleton.classList.add('skeleton--fill');
   container.appendChild(skeleton);
 }
 

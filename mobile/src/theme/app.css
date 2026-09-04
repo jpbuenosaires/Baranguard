@@ -94,6 +94,23 @@
 .status-pill--critical {
   background: color-mix(in srgb, var(--color-critical) 12%, transparent);
   color: var(--color-critical);
+  /* §1.4 of the UI/UX review, mirroring the web dashboard's own
+     .status-pill--critical treatment (base.css) — a stronger scan cue for
+     the one status that actually needs to jump out in a list. */
+  border-left: 3px solid var(--color-critical);
+  padding-left: calc(var(--spacing-sm) - 2px);
+}
+/* Opt-in pulse for a genuinely time-sensitive critical pill (e.g. an
+   active SOS row on M5/M6) — a class, not baked into .status-pill--critical
+   itself, so an ordinary historical "this was critical" record doesn't
+   pulse forever. Same precedent as the web dashboard's own .is-urgent. */
+.status-pill--critical.is-urgent { animation: mobile-urgent-pulse 2s ease-in-out infinite; }
+@keyframes mobile-urgent-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-critical) 35%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-critical) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-pill--critical.is-urgent { animation: none; }
 }
 .status-pill--neutral {
   background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent);
@@ -121,7 +138,11 @@
   display: block;
   width: 100%;
   text-align: left;
-  background: var(--color-white);
+  /* §1.2 of the UI/UX review, mirroring the web dashboard's own .card
+     gradient sheen (base.css) at the same visual weight — two stops of
+     the same near-white range, so it reads as depth rather than a
+     visible color change. */
+  background: linear-gradient(135deg, var(--color-white) 0%, var(--color-bg) 100%);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);

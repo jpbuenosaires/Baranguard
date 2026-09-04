@@ -26,6 +26,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  IonAlert,
   IonButton,
   IonContent,
   IonHeader,
@@ -33,6 +34,7 @@ import {
   IonPage,
   IonSpinner,
   IonTitle,
+  IonToast,
   IonToolbar,
 } from '@ionic/react';
 import { getOwnDutyStatus, logout, setDutyStatus, type DutyStatus } from '../services/apiService';
@@ -59,6 +61,16 @@ const HomePage: React.FC = () => {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [toggling, setToggling] = useState(false);
   const [dutyError, setDutyError] = useState<string | null>(null);
+  // §3.2 of the UI/UX review — sign-out had no confirmation at all before
+  // this; a mis-tap during an active shift meant re-authenticating with
+  // no warning.
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+  // §3.1 of the UI/UX review — the duty toggle previously had success
+  // feedback ONLY in the form of the status pill quietly changing; a real,
+  // transient confirmation (IonToast is the right pattern here, unlike
+  // the app's existing inline app-error notes, which stay visible on
+  // purpose for a form-validation-style error a Tanod needs to act on).
+  const [dutyToast, setDutyToast] = useState<string | null>(null);
 
   useEffect(() => {
     loadSession().then((session) => setFullName(session?.fullName ?? ''));
@@ -86,6 +98,7 @@ const HomePage: React.FC = () => {
     try {
       const entry = await setDutyStatus(next, uuid());
       setStatus(entry.status);
+      setDutyToast(entry.status === 'on_duty' ? "You're now on duty." : "You're now off duty.");
     } catch (error) {
       setDutyError(
         error instanceof ApiError && error.isOffline
@@ -163,9 +176,28 @@ const HomePage: React.FC = () => {
           would silently do nothing.
         </IonNote>
 
-        <IonButton expand="block" fill="outline" color="medium" onClick={handleSignOut} className="app-section">
+        <IonButton expand="block" fill="outline" color="medium" onClick={() => setConfirmingSignOut(true)} className="app-section">
           Sign out
         </IonButton>
+
+        <IonToast
+          isOpen={dutyToast !== null}
+          message={dutyToast ?? ''}
+          duration={3000}
+          color="success"
+          onDidDismiss={() => setDutyToast(null)}
+        />
+
+        <IonAlert
+          isOpen={confirmingSignOut}
+          onDidDismiss={() => setConfirmingSignOut(false)}
+          header="Sign out?"
+          message="You'll need to sign in again to use the app."
+          buttons={[
+            { text: 'Cancel', role: 'cancel' },
+            { text: 'Sign out', role: 'destructive', handler: handleSignOut },
+          ]}
+        />
       </IonContent>
     </IonPage>
   );

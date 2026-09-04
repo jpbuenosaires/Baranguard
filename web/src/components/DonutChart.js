@@ -71,7 +71,18 @@ export function DonutChart({ rows }) {
     const pct = Math.round((row.count / total) * 100);
     const item = document.createElement('div');
     item.className = 'donut-chart__legend-item';
-    item.innerHTML = `<span class="donut-chart__swatch" style="background:${row.color}"></span><span class="donut-chart__legend-label">${row.label}</span><span class="donut-chart__legend-value">${row.count} (${pct}%)</span>`;
+    // Dot + stacked label-over-value, matching the reference layout: the
+    // percentage is the figure people actually read off a donut, so it
+    // takes the emphasis and the category name becomes the caption above
+    // it. The raw count stays in the title (and in the data table below)
+    // rather than being dropped — a percentage alone hides how small the
+    // sample is on a quiet week.
+    item.title = `${row.label}: ${row.count} of ${total}`;
+    item.innerHTML = `<span class="donut-chart__swatch" style="background:${row.color}"></span>`
+      + `<span class="donut-chart__legend-text">`
+      + `<span class="donut-chart__legend-label">${row.label}</span>`
+      + `<span class="donut-chart__legend-value">${pct}%<span class="donut-chart__legend-count">${row.count}</span></span>`
+      + `</span>`;
     // §4.5: hovering a legend item dims the rest of the ring (a filter on
     // the whole conic-gradient — slicing out just the other segments
     // would need per-segment DOM elements this component doesn't have)

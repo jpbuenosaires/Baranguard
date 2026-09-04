@@ -152,8 +152,7 @@ function renderLoading(container) {
   wrap.setAttribute('aria-label', 'Loading citizen reports');
   for (let i = 0; i < 5; i++) {
     const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
+    skeleton.className = 'skeleton skeleton--row';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);

@@ -16,10 +16,17 @@ import { PageHeader } from '../components/PageHeader.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
+import { showToast } from '../components/Toast.js';
+
+// The project's own safety rule (FatigueCalculator.php): 56 scheduled
+// hours in a rolling 7-day window. Mirrored here only to render the bar
+// and the "N h over" figure — the flag itself is always raised
+// server-side, never inferred from this constant.
+const FATIGUE_THRESHOLD_HOURS = 56;
 
 const COLUMNS = [
   { key: 'tanod', label: 'Tanod' },
-  { key: 'hours', label: 'Hours (7-day)' },
+  { key: 'hours', label: `Hours (7-day, limit ${FATIGUE_THRESHOLD_HOURS})` },
   { key: 'flagged', label: 'Flagged' },
   { key: 'action', label: 'Status', align: 'right' },
 ];
@@ -49,6 +56,10 @@ export function renderFatigueFlagsPage(root, user, onLoggedOut, navigate) {
   const body = document.createElement('div');
   content.appendChild(body);
 
+  // audit A16: the sidebar badge would otherwise sit contradicting this
+  // screen for up to a minute after the last flag is acknowledged.
+  const onChanged = () => { load(); shell.refreshNavCounts?.(); };
+
   load();
 
   async function load() {
@@ -62,7 +73,7 @@ export function renderFatigueFlagsPage(root, user, onLoggedOut, navigate) {
       if (flagsRes.items.length === 0) {
         renderEmpty(body);
       } else {
-        renderList(body, flagsRes.items, namesById, canAcknowledge, load);
+        renderList(body, flagsRes.items, namesById, canAcknowledge, onChanged);
       }
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading fatigue flags.';
@@ -87,8 +98,34 @@ function renderList(container, flags, namesById, canAcknowledge, onChanged) {
           span.innerHTML = `${avatarInitials(name, 24)}${escapeHtml(name)}`;
           return span;
         }
-        case 'hours':
-          return `${flag.hoursWorked7Day} hrs (${flag.calculationBasis.replace('_', ' ')})`;
+        case 'hours': {
+          // audit W13: "62.50" alone means nothing without the rule it
+          // broke. Shown against the threshold with a proportional bar, so
+          // how far over someone is reads at a glance rather than asking
+          // the reader to remember the limit.
+          const hours = Number(flag.hoursWorked7Day);
+          const overBy = hours - FATIGUE_THRESHOLD_HOURS;
+          const cell = document.createElement('span');
+          cell.className = 'fatigue-hours';
+          const figure = document.createElement('span');
+          figure.className = 'fatigue-hours__figure';
+          figure.textContent = `${hours} / ${FATIGUE_THRESHOLD_HOURS} h`;
+          const bar = document.createElement('span');
+          bar.className = 'fatigue-hours__bar';
+          const fill = document.createElement('span');
+          fill.className = 'fatigue-hours__fill';
+          // Capped at 100% — the bar says "at or past the limit"; the
+          // exact overage is spelled out in the line below it.
+          fill.style.width = `${Math.min(100, (hours / FATIGUE_THRESHOLD_HOURS) * 100)}%`;
+          bar.appendChild(fill);
+          const over = document.createElement('span');
+          over.className = 'fatigue-hours__over';
+          over.textContent = overBy > 0
+            ? `${overBy.toFixed(2).replace(/\.?0+$/, '')} h over · ${flag.calculationBasis.replace('_', ' ')}`
+            : `at threshold · ${flag.calculationBasis.replace('_', ' ')}`;
+          cell.append(figure, bar, over);
+          return cell;
+        }
         case 'flagged':
           return new Date(flag.flaggedAt).toLocaleString();
         case 'action':
@@ -131,7 +168,7 @@ function renderActionCell(flag, canAcknowledge, onChanged) {
         onChanged();
       } catch (err) {
         const message = err instanceof ApiClientError ? err.message : 'Could not acknowledge this flag.';
-        alert(message);
+        showToast(message, { variant: 'error' });
         ackButton.disabled = false;
         ackButton.textContent = 'Acknowledge';
       }
@@ -156,8 +193,7 @@ function renderLoading(container) {
   wrap.setAttribute('aria-label', 'Loading fatigue flags');
   for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
+    skeleton.className = 'skeleton skeleton--row';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);

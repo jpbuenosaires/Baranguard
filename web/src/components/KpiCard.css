@@ -31,11 +31,57 @@
   from { opacity: 0; transform: translateY(0.75rem) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.kpi-card__header { margin-bottom: var(--spacing-sm); }
-.kpi-card__label { margin-bottom: var(--spacing-sm); }
-.kpi-card__value { font-size: var(--font-size-3xl); font-weight: 700; }
+/* Reference card convention: icon badge and delta share a top row, then
+   the figure, then its caption. `justify-content: space-between` puts the
+   delta hard right even when there is no icon (the header is always built,
+   so the delta has a stable slot to land in when it arrives late). */
+.kpi-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  min-height: 3rem;
+}
+.kpi-card__value {
+  font-size: var(--font-size-3xl);
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
 .kpi-card__value.empty { color: var(--color-text-secondary); font-size: var(--font-size-lg); font-weight: 500; }
-.kpi-card__delta { margin-top: var(--spacing-xs); font-size: var(--font-size-label); color: var(--color-text-tertiary); }
+/* Caption under the figure — sentence case, not the uppercase .label
+   treatment, matching the reference. */
+.kpi-card__label {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.kpi-card__delta {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Coloured by the metric's own good direction — see KpiCard.js. Neutral is
+   the default so a metric with no inherent good direction (Total Incidents)
+   never implies one. */
+.kpi-card__delta--neutral { color: var(--color-text-tertiary); }
+.kpi-card__delta--positive { color: var(--color-success-text); }
+.kpi-card__delta--negative { color: var(--color-critical); }
+
+/* §4.4 of the UI/UX review — inline sparkline under a KPI value. Fixed
+   height, full card width; the polyline itself carries no fill, only a
+   2px stroke, and stroke-width is set in user units (vector-effect below)
+   so the line reads the same weight whether the SVG is stretched wide or
+   narrow. */
+.kpi-card__sparkline { margin-top: var(--spacing-sm); height: 1.75rem; }
+.kpi-card__sparkline svg { width: 100%; height: 100%; display: block; }
+.kpi-card__sparkline-line { stroke-width: 2; vector-effect: non-scaling-stroke; }
+.kpi-card__sparkline-line--blue { stroke: var(--color-accent); }
+.kpi-card__sparkline-line--green { stroke: var(--color-success); }
+.kpi-card__sparkline-line--orange { stroke: var(--color-warning); }
+.kpi-card__sparkline-line--teal { stroke: var(--color-info); }
 
 @media (max-width: 1024px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }

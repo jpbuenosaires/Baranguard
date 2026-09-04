@@ -134,8 +134,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     wrap.setAttribute('aria-label', 'Loading blotter entry');
     for (let i = 0; i < 3; i++) {
       const skeleton = document.createElement('div');
-      skeleton.className = 'skeleton';
-      skeleton.style.cssText = 'height:6rem; border-radius:0.5rem;';
+      skeleton.className = 'skeleton skeleton--block';
       wrap.appendChild(skeleton);
     }
     content.appendChild(wrap);
@@ -156,23 +155,46 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     content.appendChild(block);
   }
 
+  /**
+   * Two columns rather than six full-width cards stacked down the page,
+   * which left the record itself narrow and the timeline stranded below
+   * the fold. `.split-panel` is the existing utility for exactly this and
+   * already collapses to one column at 1024px.
+   *
+   * Left is the record and the work done on it; right is context —
+   * when things happened, and the Admin action that isn't part of the
+   * Secretary's blotter workflow.
+   */
   function render() {
     content.innerHTML = '';
-    content.appendChild(buildOverview());
-    content.appendChild(buildTimeline());
-    content.appendChild(buildNarrative());
-    content.appendChild(buildEvidence());
+
+    const layout = document.createElement('div');
+    layout.className = 'split-panel';
+
+    const main = document.createElement('div');
+    main.className = 'stack--md blotter-detail__main';
+    const aside = document.createElement('div');
+    aside.className = 'stack--md';
+
+    main.appendChild(buildOverview());
+    main.appendChild(buildNarrative());
+    main.appendChild(buildEvidence());
+    if (isSecretary) {
+      main.appendChild(buildBlotterPanel());
+    } else if (blotter) {
+      main.appendChild(buildReadOnlyBlotter());
+    }
+
+    aside.appendChild(buildTimeline());
     // §9 W7 lists "Admin status update" among this screen's APIs — Admin
     // resolving the incident, which is a different concern from the
-    // Secretary's blotter workflow below.
+    // Secretary's blotter workflow on the left.
     if (user.role === 'admin') {
-      content.appendChild(buildAdminResolvePanel());
+      aside.appendChild(buildAdminResolvePanel());
     }
-    if (isSecretary) {
-      content.appendChild(buildBlotterPanel());
-    } else if (blotter) {
-      content.appendChild(buildReadOnlyBlotter());
-    }
+
+    layout.append(main, aside);
+    content.appendChild(layout);
   }
 
   function buildOverview() {
@@ -225,23 +247,47 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       ['Last amended', blotter ? blotter.amendedAt : null],
     ];
 
-    const list = document.createElement('div');
-    list.className = 'stack';
-    for (const [label, timestamp] of stages) {
+    const visibleStages = stages.filter(([label, timestamp]) => (
       // "Last amended" is meaningless until an amendment exists — omit it
       // rather than showing a permanently-pending row.
-      if (label === 'Last amended' && !timestamp) continue;
+      !(label === 'Last amended' && !timestamp)
+    ));
 
-      const line = document.createElement('div');
-      line.className = 'row-between';
+    const list = document.createElement('div');
+    list.className = 'timeline';
+    visibleStages.forEach(([label, timestamp], i) => {
+      const reached = Boolean(timestamp);
+      const item = document.createElement('div');
+      item.className = 'timeline__item';
+
+      const rail = document.createElement('div');
+      rail.className = 'timeline__rail';
+      const node = document.createElement('span');
+      node.className = 'timeline__node' + (reached ? ' timeline__node--done' : '');
+      rail.appendChild(node);
+      if (i < visibleStages.length - 1) {
+        const connector = document.createElement('span');
+        // A connector is "done" only once the NEXT stage has also been
+        // reached — it represents the gap between two stages, not the
+        // node it starts from.
+        const nextReached = Boolean(visibleStages[i + 1][1]);
+        connector.className = 'timeline__connector' + (reached && nextReached ? ' timeline__connector--done' : '');
+        rail.appendChild(connector);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'timeline__body';
       const name = document.createElement('span');
+      name.className = 'timeline__label' + (reached ? '' : ' timeline__label--pending');
       name.textContent = label;
       const value = document.createElement('span');
-      value.className = 'note';
-      value.textContent = timestamp ? new Date(timestamp).toLocaleString() : 'Not yet';
-      line.append(name, value);
-      list.appendChild(line);
-    }
+      value.className = 'timeline__value';
+      value.textContent = reached ? new Date(timestamp).toLocaleString() : 'Not yet';
+      body.append(name, value);
+
+      item.append(rail, body);
+      list.appendChild(item);
+    });
     card.appendChild(list);
     return card;
   }
@@ -478,7 +524,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     textarea.id = 'blotter-finalize-summary';
     textarea.rows = 6;
     textarea.required = true;
-    textarea.style.resize = 'vertical';
+    textarea.classList.add('textarea--resizable');
     // Pre-fill from the approved redaction as a starting point, since the
     // Secretary is writing a summary OF that text.
     textarea.value = incident.redactedNarrative || '';
@@ -534,7 +580,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     summaryInput.id = 'blotter-amend-summary';
     summaryInput.rows = 6;
     summaryInput.required = true;
-    summaryInput.style.resize = 'vertical';
+    summaryInput.classList.add('textarea--resizable');
     summaryInput.value = blotter.narrativeSummary;
 
     const reasonLabel = document.createElement('label');

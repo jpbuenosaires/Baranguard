@@ -4,11 +4,37 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Baranguard</title>
+  <!-- Theme bootstrap — MUST run before any stylesheet paints, which is
+       why it's inline and first, not in main.js (a module script, which
+       is deferred by spec and would run after first paint, producing a
+       visible flash of the wrong theme on every load for a user who has
+       chosen dark). Mirrors AppShell.js's own read of the same
+       localStorage key — see that file for where the value is written.
+       §1.1/§7.1 of the UI/UX review. -->
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem('baranguard.theme');
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+      } catch (e) { /* private mode / storage disabled — falls back to prefers-color-scheme */ }
+    })();
+  </script>
   <!-- Branded favicon: a navy shield, matching icons.js's own `shield`
        glyph — an inline SVG data URI so no separate binary asset/build
        step is needed, consistent with icons.js's own "no external icon
        library" approach (§1: no bundler). -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231E3A6E'%3E%3Cpath d='M12 2l8 3.5v6.5c0 5.6-3.8 9.4-8 10.7-4.2-1.3-8-5.1-8-10.7V5.5z'/%3E%3C/svg%3E">
+  <!-- §7.2 of the UI/UX review — same navy shield as the favicon above, no
+       separate binary asset (consistent with §1's "no bundler, no asset
+       pipeline" stance). Honest limitation, not hidden: an SVG apple-
+       touch-icon has patchier iOS Safari support than a PNG would, but
+       this is a locally-hosted internal admin tool, not a consumer app
+       that needs App-Store-quality home-screen icons on every platform. -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231E3A6E'%3E%3Cpath d='M12 2l8 3.5v6.5c0 5.6-3.8 9.4-8 10.7-4.2-1.3-8-5.1-8-10.7V5.5z'/%3E%3C/svg%3E">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1E3A6E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <!-- gstatic.com is where the actual .woff2 font FILES load from (the
        googleapis.com stylesheet just references them) — preconnecting
@@ -32,15 +58,21 @@
   <link rel="stylesheet" href="src/components/StatStrip.css">
   <link rel="stylesheet" href="src/components/KpiCard.css">
   <link rel="stylesheet" href="src/components/DonutChart.css">
-  <link rel="stylesheet" href="src/components/TrendChart.css">
+  <link rel="stylesheet" href="src/components/LineChart.css">
   <link rel="stylesheet" href="src/components/Avatar.css">
   <link rel="stylesheet" href="src/components/LiveMap.css">
   <link rel="stylesheet" href="src/components/Toast.css">
   <link rel="stylesheet" href="src/components/ConfirmDialog.css">
+  <link rel="stylesheet" href="src/components/Menu.css">
   <link rel="stylesheet" href="src/pages/login.css">
   <link rel="stylesheet" href="src/pages/dispatch-center.css">
   <link rel="stylesheet" href="src/pages/gis-live-tracking.css">
   <link rel="stylesheet" href="src/pages/ai-review.css">
+  <link rel="stylesheet" href="src/pages/blotter-detail.css">
+  <link rel="stylesheet" href="src/pages/incident-management.css">
+  <link rel="stylesheet" href="src/pages/blotter-list.css">
+  <link rel="stylesheet" href="src/pages/settings.css">
+  <link rel="stylesheet" href="src/components/BarChart.css">
   <!--
     MapLibre GL JS v4.7.1, vendored locally under /vendor (not loaded from
     a public CDN) — §1 names MapLibre as the stack's mapping library, and
@@ -58,7 +90,7 @@
     // htdocs subfolder — the front controller matches REQUEST_URI against
     // exactly "/api/v1", so a subfolder mount 404s. Served on its own
     // port instead: see web/README-serving.md ("Option C").
-    window.BARANGUARD_API_BASE_URL = 'http://localhost:8081/api/v1';
+    window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8081/api/v1';
   </script>
 </head>
 <body>

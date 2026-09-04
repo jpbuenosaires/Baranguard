@@ -216,8 +216,15 @@ export async function logout() {
  *   totalIncidents:number, resolvedCount:number,
  *   avgResponseTimeMinutes:?number, activeTanods:number,
  *   byIncidentType:Record<string,number>, byStatus:Record<string,number>,
- *   trend:Array<{date:string, count:number}>
+ *   trend:Array<{date:string, count:number, resolved:number}>,
+ *   byHour:number[], responseTimeTrend:Array<{date:string, avgMinutes:?number}>
  * }>}
+ * `byHour`/`responseTimeTrend` are Phase 9 (Analytics) additions — see
+ * ReportsController::summary() for exactly what each buckets.
+ * `trend[].count` is incidents REPORTED that day; `trend[].resolved` is
+ * incidents CLOSED OUT that day, bucketed on the dispatch completion time
+ * (the only resolution moment §5 records) — see ReportsController::summary
+ * for why the two series are not expected to reconcile with resolvedCount.
  */
 export async function getReportsSummary({ dateFrom, dateTo } = {}) {
   const json = await request('GET', '/reports/summary', {
@@ -233,6 +240,8 @@ export async function getReportsSummary({ dateFrom, dateTo } = {}) {
     byIncidentType: json.by_incident_type,
     byStatus: json.by_status,
     trend: json.trend,
+    byHour: json.by_hour,
+    responseTimeTrend: (json.response_time_trend || []).map((d) => ({ date: d.date, avgMinutes: d.avg_minutes })),
   };
 }
 
@@ -243,6 +252,17 @@ export async function getReportsHeatmap({ dateFrom, dateTo } = {}) {
     auth: true,
   });
   return json.items.map((row) => ({ latitude: row.latitude, longitude: row.longitude, weight: row.weight }));
+}
+
+/** GET /reports/nav-counts (§4.1 of the UI/UX review, sidebar badge counts). Admin only. */
+export async function getNavCounts() {
+  const json = await request('GET', '/reports/nav-counts', { auth: true });
+  return {
+    pendingIncidents: json.pending_incidents,
+    unconvertedCitizenReports: json.unconverted_citizen_reports,
+    pendingSwapRequests: json.pending_swap_requests,
+    unacknowledgedFatigueFlags: json.unacknowledged_fatigue_flags,
+  };
 }
 
 // --- Users (Tanod-picker name lookup only) ----------------------------------
@@ -422,7 +442,7 @@ export async function getGpsHistory({ userId, dateFrom, dateTo, page, limit }) {
   };
 }
 
-// --- Tanod SOS (read-only this sprint) --------------------------------------
+// --- Tanod SOS --------------------------------------------------------------
 
 /** @returns {Promise<Array<object>>} */
 export async function getTanodSos({ status } = {}) {
@@ -439,6 +459,40 @@ export async function getTanodSos({ status } = {}) {
     acknowledgedAt: row.acknowledged_at,
     resolvedAt: row.resolved_at,
   }));
+}
+
+/**
+ * GET /notifications — the caller's own notification targets, newest and
+ * unacknowledged first, plus the total unread count for the bell badge.
+ * Not in §6's list; see NotificationsController::index for why it exists.
+ */
+export async function getNotifications({ limit } = {}) {
+  const json = await request('GET', '/notifications', { query: { limit }, auth: true });
+  return {
+    items: json.items.map((row) => ({
+      notificationId: row.notification_id,
+      notificationType: row.notification_type, // enum value, unconverted
+      dispatchId: row.dispatch_id,
+      sosId: row.sos_id,
+      incidentId: row.incident_id,
+      createdAt: row.created_at,
+      targetedAt: row.targeted_at,
+      ackStatus: row.ack_status, // enum value, unconverted
+      acknowledgedAt: row.acknowledged_at,
+    })),
+    unreadCount: json.unread_count,
+  };
+}
+
+/**
+ * PATCH /tanod-sos/:id/acknowledge. Built in Sprint 4 but never reachable
+ * from the UI until the audit's W3 pass — the Dispatch Center banner
+ * reported an SOS and offered no way to act on it.
+ * Acknowledging deliberately does NOT clear the banner (§9 W3): the alert
+ * stays up until it is resolved.
+ */
+export async function acknowledgeTanodSos(sosId) {
+  return request('PATCH', `/tanod-sos/${sosId}/acknowledge`, { auth: true });
 }
 
 // --- Duty status (read-only this sprint: Admin's Tanod-picker source) ------
@@ -640,9 +694,9 @@ export async function getSystemHealth() {
  * receiver_number field exists in the response at all — see
  * SmsController.php's own doc for why that's not an oversight.
  */
-export async function getSmsLogs({ messageType, direction, status, page, limit } = {}) {
+export async function getSmsLogs({ messageType, direction, status, dateFrom, dateTo, page, limit } = {}) {
   const json = await request('GET', '/sms/logs', {
-    query: { message_type: messageType, direction, status, page, limit },
+    query: { message_type: messageType, direction, status, date_from: dateFrom, date_to: dateTo, page, limit },
     auth: true,
   });
   return {
@@ -820,6 +874,35 @@ export async function amendBlotter(incidentId, { narrativeSummary, reason }) {
     auth: true,
   });
   return { blotterId: json.blotter_id, revisionNo: json.revision_no, amendedAt: json.amended_at };
+}
+
+/**
+ * GET /blotter — Phase 6 of the mockup-driven UI round 2: the finalized
+ * blotter RECORDS list (W6), distinct from `getIncidents()` (every
+ * incident, any status — W3/W5/Incident Management). See
+ * BlotterController::index() for why this endpoint exists.
+ */
+export async function getBlotterList({ page, limit } = {}) {
+  const json = await request('GET', '/blotter', { query: { page, limit }, auth: true });
+  return {
+    items: json.items.map((row) => ({
+      blotterId: row.blotter_id,
+      incidentId: row.incident_id,
+      incidentType: row.incident_type,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      officerName: row.officer_name,
+      recordedBy: row.recorded_by,
+      approvedBy: row.approved_by,
+      finalizedAt: row.finalized_at,
+      revisionNo: row.revision_no,
+      amendedAt: row.amended_at,
+      amendedBy: row.amended_by,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
 }
 
 /**
