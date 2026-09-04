@@ -21,6 +21,7 @@ import { PageHeader } from '../components/PageHeader.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
+import { showToast } from '../components/Toast.js';
 
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', approved: 'status-pill--success', denied: 'status-pill--neutral' };
 
@@ -50,6 +51,10 @@ export function renderSwapRequestsPage(root, user, onLoggedOut, navigate) {
   const body = document.createElement('div');
   content.appendChild(body);
 
+  // audit A16: keep the sidebar's pending-swap badge in step with this
+  // screen instead of waiting out the 60-second poll.
+  const onChanged = () => { load(); shell.refreshNavCounts?.(); };
+
   load();
 
   async function load() {
@@ -65,7 +70,7 @@ export function renderSwapRequestsPage(root, user, onLoggedOut, navigate) {
       if (requestsRes.items.length === 0) {
         renderEmpty(body);
       } else {
-        renderList(body, requestsRes.items, shiftsById, namesById, load);
+        renderList(body, requestsRes.items, shiftsById, namesById, onChanged);
       }
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading swap requests.';
@@ -156,7 +161,7 @@ function renderActionsCell(req, onChanged) {
       onChanged();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Could not resolve this request.';
-      alert(message);
+      showToast(message, { variant: 'error' });
       approveButton.disabled = false;
       denyButton.disabled = false;
       approveButton.textContent = 'Approve';
@@ -183,8 +188,7 @@ function renderLoading(container) {
   wrap.setAttribute('aria-label', 'Loading swap requests');
   for (let i = 0; i < 4; i++) {
     const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton';
-    skeleton.style.cssText = 'height:2.75rem; border-radius:0.5rem;';
+    skeleton.className = 'skeleton skeleton--row';
     wrap.appendChild(skeleton);
   }
   container.appendChild(wrap);

@@ -37,6 +37,7 @@ final class SmsController
     private const MESSAGE_TYPES = ['incident', 'dispatch', 'priority_alert', 'coord_ping', 'confirmation', 'duty_status', 'sos'];
     private const DIRECTIONS = ['inbound', 'outbound'];
     private const STATUSES = ['queued', 'pending', 'sent', 'failed', 'refunded', 'received', 'rejected', 'deduplicated'];
+    private const MAX_RANGE_DAYS = 366;
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
@@ -73,6 +74,35 @@ final class SmsController
         if ($status !== null) {
             $where[] = 'status = :status';
             $params['status'] = $status;
+        }
+
+        // Phase 8 (mockup-driven UI round 2): date_from/date_to, same
+        // contract as GET /reports/summary (Asia/Manila calendar days,
+        // 366-day cap) — reused rather than a bespoke convention for the
+        // one other date-ranged endpoint in this codebase. Filters on
+        // COALESCE(sent_at, received_at, created_at): an outbound row's
+        // meaningful moment is when it was sent, an inbound row's is when
+        // it was received, and a row that never got that far (still
+        // queued/failed before either happened) still has created_at.
+        $dateFromRaw = Http::query('date_from');
+        $dateToRaw = Http::query('date_to');
+        if ($dateFromRaw !== null || $dateToRaw !== null) {
+            $manila = new \DateTimeZone('Asia/Manila');
+            $utc = new \DateTimeZone('UTC');
+            $today = new \DateTimeImmutable('now', $manila);
+            $to = $dateToRaw !== null ? self::parseDate($dateToRaw, $manila, 'date_to') : $today;
+            $from = $dateFromRaw !== null ? self::parseDate($dateFromRaw, $manila, 'date_from') : $to->modify('-29 days');
+            if ($from > $to) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'date_from must not be after date_to.');
+            }
+            if ($from->diff($to)->days > self::MAX_RANGE_DAYS) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'date_from/date_to range cannot exceed ' . self::MAX_RANGE_DAYS . ' days.');
+            }
+            $rangeStartUtc = $from->setTime(0, 0, 0)->setTimezone($utc);
+            $rangeEndUtc = $to->setTime(0, 0, 0)->modify('+1 day')->setTimezone($utc);
+            $where[] = 'COALESCE(sent_at, received_at, created_at) >= :range_start AND COALESCE(sent_at, received_at, created_at) < :range_end';
+            $params['range_start'] = $rangeStartUtc->format('Y-m-d H:i:s');
+            $params['range_end'] = $rangeEndUtc->format('Y-m-d H:i:s');
         }
         $whereSql = implode(' AND ', $where);
 
@@ -116,5 +146,16 @@ final class SmsController
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
         Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total]);
+    }
+
+    private static function parseDate(string $raw, \DateTimeZone $tz, string $field): \DateTimeImmutable
+    {
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw, $tz);
+        $errors = \DateTimeImmutable::getLastErrors();
+        $hasErrors = $errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0);
+        if ($date === false || $hasErrors) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be in YYYY-MM-DD format.");
+        }
+        return $date;
     }
 }

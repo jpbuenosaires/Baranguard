@@ -16,4 +16,8 @@ use Baranguard\Controllers\ReportsController;
 return [
     ['GET', '#^/reports/summary$#', [ReportsController::class, 'summary'], true],
     ['GET', '#^/reports/heatmap$#', [ReportsController::class, 'heatmap'], true],
+    // §4.1 of the UI/UX review (sidebar badge counts) — not in §6's
+    // original endpoint list, a resolved/logged addition; see
+    // ReportsController::navCounts()'s own doc.
+    ['GET', '#^/reports/nav-counts$#', [ReportsController::class, 'navCounts'], true],
 ];

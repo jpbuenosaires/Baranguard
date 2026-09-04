@@ -45,15 +45,93 @@
  * a media query, which is what broke responsiveness before.
  */
 
-html { font-size: 75%; }
+/* ⚠ THIS KNOB WAS INERT UNTIL 2026-09-04 — read before changing it.
+   `html { font-size: 75% }` never took effect. The `html, body { … }`
+   rule further down this file also sets `font-size: var(--font-size-md)`,
+   which is `1rem`; it has equal specificity and comes later, so it won.
+   And `rem` ON THE ROOT ELEMENT resolves against the browser's initial
+   16px, not against this declaration — so the root computed to 16px and
+   the whole documented scaling mechanism did nothing. Measured in a
+   browser: computed html font-size 16px, 1rem = 16px.
+   Consequence worth knowing: every size in this file has always rendered
+   at its face value (--font-size-sm = 14px, --font-size-label = 12px),
+   NOT at the 75% the comment below describes.
+   The contradiction is now fixed — `html, body` sets it on `body` only,
+   so this line genuinely controls the root. It is set to 100% precisely
+   because that is what the app has actually been rendering at all along:
+   making the knob work must not silently resize a UI nobody asked to
+   change. Turn it down if a denser console is wanted; it will now
+   actually respond. */
+html { font-size: 100%; }
+
+/**
+ * ─── THEME (light / dark) ───────────────────────────────────────────────
+ * §1.1/§7.1 of the UI/UX review. Three states, same contract Artifacts
+ * use and documented here so it isn't rediscovered per file:
+ *   - No `data-theme` attribute + OS light  -> :root's own light values.
+ *   - No `data-theme` attribute + OS dark   -> the `prefers-color-scheme`
+ *     block below.
+ *   - `data-theme="light"|"dark"` on <html> (AppShell.js's toggle sets
+ *     this, persisted in localStorage) -> that block, overriding OS.
+ * `--color-white` stays LITERALLY white in both themes on purpose — it
+ * means "text/icon sitting on a saturated brand color" (a primary
+ * button's label, an icon-badge's glyph), which does not change between
+ * themes because the saturated background it sits on doesn't either.
+ * `--color-surface` is the new, separate token for "elevated panel/card/
+ * table background" — equal to white in light mode, a dark slate in dark
+ * mode. Every existing `background: var(--color-white)` that meant
+ * "surface," not "literal white," was migrated to `--color-surface` as
+ * part of this pass (see DEVLOG for the full audit).
+ * The sidebar's own navy is already a dark surface by design in BOTH
+ * themes (§8's original spec), so `--color-navy` and the sidebar-local
+ * tokens (`--color-surface-blue`, the nav item's own white-on-navy text)
+ * are deliberately NOT re-themed — they were never light-mode colors to
+ * begin with.
+ * ─────────────────────────────────────────────────────────────────────── */
 
 :root {
   --color-navy: #1E3A6E;          --color-primary: #1D4ED8;
   --color-primary-hover: #1E40AF; --color-accent: #3B82F6;
   --color-surface-blue: #E0F2FE;
-  --color-white: #FFFFFF;         --color-bg: #F8FAFC;
+  --color-white: #FFFFFF;
+  --color-surface: #FFFFFF;       --color-bg: #F8FAFC;
   --color-border: #E2E8F0;        --color-text-primary: #0F172A;
   --color-text-secondary: #475569;
+
+  /* ─── SOLID FILLS (audit A1) ──────────────────────────────────────────
+     These carry WHITE text/glyphs on a saturated fill, so they must stay
+     dark in BOTH themes — exactly the distinction --color-white vs
+     --color-surface already draws for the other direction.
+     The plain --color-* status tokens below get LIGHTER in dark mode
+     (correct for text on a dark ground, backwards for a fill under white
+     text): before this split, the SOS banner sat at 2.77:1 in dark mode
+     and the KPI icon glyphs at 1.67:1. Locked at their light values, all
+     of these clear their thresholds in both themes — critical 4.83:1 for
+     text, the rest 5.0-6.7:1 against the 3:1 graphic threshold.
+     Use these ONLY as a background under white content; never as text. */
+  --color-critical-solid: #DC2626;
+  --color-success-solid: #15803D;
+  --color-warning-solid: #B45309;
+  --color-info-solid: #0E7490;
+  --color-accent-solid: #1D4ED8;
+
+  /* ─── TEXT-SAFE STATUS COLOURS (audit A2) ─────────────────────────────
+     The plain status tokens are tuned as FILLS. Used as text on a light
+     surface they fail AA (success 3.30:1, warning 3.19:1, info 3.68:1,
+     accent 3.68:1). These are the same hues at text weight; dark mode
+     redefines them upward, where the plain tokens already read fine. */
+  --color-success-text: #15803D;  /* 5.02:1 on white */
+  --color-info-text: #0E7490;     /* 5.36:1 on white */
+  --color-link: #1D4ED8;          /* 6.70:1 on white */
+
+  /* Status-pill label colours, per pill, against that pill's own tint —
+     a separate axis from the two above (which are text on a plain
+     surface). Success was 3.15:1 and critical 3.95:1 against their tints;
+     these are 4.79 and 6.80. See the .status-pill block below. */
+  --pill-success-text: #15803D;
+  --pill-critical-text: #991B1B;
+  --pill-info-text: #1D4ED8;
+  --pill-neutral-text: #475569;
   /* Tertiary — placeholders, timestamps, uppercase .label text, and the
      disabled-state text color, per the source's own neutral table.
      Darkened from the source's literal #94A3B8 (contrast ratio ~3.0:1 on
@@ -62,8 +140,20 @@ html { font-size: 75%; }
      source for accessibility, not a token drift. */
   --color-text-tertiary: #64748B;
   --color-disabled-bg: #CBD5E1;
+  /* audit A2: the disabled label was --color-text-tertiary on the disabled
+     fill = 3.86:1. Secondary on the same fill is 5.10:1 and still reads as
+     clearly inactive, because "disabled" is carried by the flat grey fill
+     and the not-allowed cursor, not by making the text unreadable. */
+  --color-disabled-text: #475569;
   --color-critical: #DC2626;      --color-warning: #D97706;
   --color-success: #16A34A;       --color-info: #0891B2;
+  /* §6.4: same reasoning as --color-text-tertiary above — the pending
+     pill's text was hardcoded #92400E directly in .status-pill--pending
+     because --color-warning itself only reaches ~3.2:1 against
+     --tint-warning-bg (fails WCAG AA). Promoted to a real token here so
+     dark mode can define its own readable value instead of inheriting a
+     light-mode-only hardcoded hex. */
+  --color-warning-text: #92400E;
   /* Selected/hover row tint — distinct from --color-bg. */
   --color-row-active-bg: #EFF6FF;
   --color-border-blue: #BFDBFE;
@@ -75,6 +165,7 @@ html { font-size: 75%; }
   --tint-success-bg: #F0FDF4;     --tint-critical-bg: #FEE2E2;
   --tint-warning-bg: #FEF3C7;     --tint-info-bg: #DBEAFE;
   --tint-neutral-bg: #F3F4F6;
+  --tint-success-solid: #DCFCE7;
 
   /* Categorical chart palette (DonutChart.js) — the source's documented
      7-colour sequence; slot 8 is an extra so 11 incident types don't
@@ -83,6 +174,16 @@ html { font-size: 75%; }
   --chart-cat-3: var(--color-warning); --chart-cat-4: var(--color-critical);
   --chart-cat-5: var(--color-info);    --chart-cat-6: #8B5CF6;
   --chart-cat-7: var(--color-accent);  --chart-cat-8: #DB2777;
+
+  /* Line-series colours for LineChart. Separate from the categorical
+     palette above because a line has to hold its own against the CHART
+     GROUND (plot area), not against a legend swatch — these are the
+     values that clear 3:1 there in each theme (light 5.17/5.02, dark
+     7.02/10.25 with the dark overrides below). */
+  --chart-line-1: #2563EB;   /* reported */
+  --chart-line-2: #15803D;   /* resolved */
+  --chart-grid: #E2E8F0;
+  --chart-axis-text: #64748B;
 
   /* Spacing — rem so the root scale knob applies. Values are the
      source's own scale expressed against a 16px reference:
@@ -104,6 +205,135 @@ html { font-size: 75%; }
   --shadow-card: 0 1px 2px rgba(15,23,42,.05);
   --shadow-elevated: 0 10px 15px -3px rgba(15,23,42,.10), 0 4px 6px -4px rgba(15,23,42,.10);
   --shadow-floating: 0 20px 25px -5px rgba(15,23,42,.12), 0 8px 10px -6px rgba(15,23,42,.10);
+}
+
+/* Dark palette — only the tokens that actually need a different value in
+   dark mode are redefined here (surfaces, page bg, borders, text, status
+   colors brightened for contrast on a dark ground, tints recomputed as
+   low-alpha mixes against the dark surface instead of flat light
+   pastels). Sidebar/navy tokens are deliberately absent — see the block
+   comment above. Guarded per the standard two-layer contract: system
+   preference applies unless an explicit choice overrides it. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --is-dark-theme: 1; }
+}
+:root[data-theme="dark"] { --is-dark-theme: 1; }
+
+/* The dark palette's VALUES live here, in :root, exactly once. The two
+   blocks below only REMAP --color-* onto them.
+   Why: the dark palette used to be written out twice — once in the
+   `prefers-color-scheme` block and again in `[data-theme="dark"]` — and
+   the two copies drifted the moment one was edited (the audit's contrast
+   corrections were applied to the media-query copy and silently missed
+   the toggle copy, which is precisely the bug this structure removes).
+   A colour now changes in one place and both paths follow. */
+:root {
+  --dark-surface: #1E293B;        --dark-bg: #0F172A;
+  --dark-border: #334155;         --dark-text-primary: #F1F5F9;
+  --dark-text-secondary: #94A3B8;
+  /* audit A2: was #7C8BA3 = 4.23:1 on the dark surface — failed AA for
+     placeholders, timestamps and every uppercase .label. Now 5.62:1. */
+  --dark-text-tertiary: #93A2B4;
+  --dark-disabled-bg: #334155;    --dark-disabled-text: #CBD5E1;
+  --dark-critical: #F87171;       --dark-warning: #FBBF24;
+  --dark-warning-text: #FDE68A;
+  --dark-success: #4ADE80;        --dark-info: #38BDF8;
+  /* audit A2: white-on-primary was 3.68:1 at rest and 2.54:1 on hover —
+     the hover state was LIGHTER, the wrong direction under white text.
+     Now 5.17:1 at rest, deepening to 6.70:1 on hover. */
+  --dark-primary: #2563EB;        --dark-primary-hover: #1D4ED8;
+  --dark-accent: #60A5FA;
+  /* In dark mode the plain status tokens already read well as text, so
+     the text-safe variants point straight back at them. */
+  --dark-success-text: #4ADE80;   --dark-info-text: #38BDF8;
+  --dark-link: #60A5FA;
+  --dark-row-active-bg: #1E3A5F;  --dark-border-blue: #1D4ED8;
+  --dark-divider: #263449;
+  --dark-chart-line-1: #60A5FA;   --dark-chart-line-2: #4ADE80;
+  --dark-chart-grid: #334155;     --dark-chart-axis-text: #93A2B4;
+  /* audit A2: pill text on the dark tints — info was 2.78:1, critical
+     4.07:1, neutral 4.29:1. These clear AA at 7.70 / 5.93 / 7.40. */
+  --dark-pill-info-text: #BAE6FD;
+  --dark-pill-critical-text: #FCA5A5;
+  --dark-pill-neutral-text: #CBD5E1;
+  --dark-pill-success-text: #86EFAC;
+  --dark-tint-success-bg: color-mix(in srgb, #4ADE80 18%, #1E293B);
+  --dark-tint-critical-bg: color-mix(in srgb, #F87171 18%, #1E293B);
+  --dark-tint-warning-bg: color-mix(in srgb, #FBBF24 18%, #1E293B);
+  --dark-tint-info-bg: color-mix(in srgb, #38BDF8 18%, #1E293B);
+  --dark-tint-neutral-bg: color-mix(in srgb, #94A3B8 16%, #1E293B);
+  --dark-tint-success-solid: color-mix(in srgb, #4ADE80 22%, #1E293B);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-surface: var(--dark-surface);   --color-bg: var(--dark-bg);
+    --color-border: var(--dark-border);     --color-text-primary: var(--dark-text-primary);
+    --color-text-secondary: var(--dark-text-secondary);
+    --color-text-tertiary: var(--dark-text-tertiary);
+    --color-disabled-bg: var(--dark-disabled-bg);
+    --color-disabled-text: var(--dark-disabled-text);
+    --color-critical: var(--dark-critical); --color-warning: var(--dark-warning);
+    --color-warning-text: var(--dark-warning-text);
+    --color-success: var(--dark-success);   --color-info: var(--dark-info);
+    --color-primary: var(--dark-primary);
+    --color-primary-hover: var(--dark-primary-hover);
+    --color-accent: var(--dark-accent);
+    --color-success-text: var(--dark-success-text);
+    --color-info-text: var(--dark-info-text);
+    --color-link: var(--dark-link);
+    --color-row-active-bg: var(--dark-row-active-bg);
+    --color-border-blue: var(--dark-border-blue);
+    --color-divider: var(--dark-divider);
+    --chart-line-1: var(--dark-chart-line-1);
+    --chart-line-2: var(--dark-chart-line-2);
+    --chart-grid: var(--dark-chart-grid);
+    --chart-axis-text: var(--dark-chart-axis-text);
+    --pill-info-text: var(--dark-pill-info-text);
+    --pill-critical-text: var(--dark-pill-critical-text);
+    --pill-neutral-text: var(--dark-pill-neutral-text);
+    --pill-success-text: var(--dark-pill-success-text);
+    --tint-success-bg: var(--dark-tint-success-bg);
+    --tint-critical-bg: var(--dark-tint-critical-bg);
+    --tint-warning-bg: var(--dark-tint-warning-bg);
+    --tint-info-bg: var(--dark-tint-info-bg);
+    --tint-neutral-bg: var(--dark-tint-neutral-bg);
+    --tint-success-solid: var(--dark-tint-success-solid);
+  }
+}
+:root[data-theme="dark"] {
+  --color-surface: var(--dark-surface);   --color-bg: var(--dark-bg);
+  --color-border: var(--dark-border);     --color-text-primary: var(--dark-text-primary);
+  --color-text-secondary: var(--dark-text-secondary);
+  --color-text-tertiary: var(--dark-text-tertiary);
+  --color-disabled-bg: var(--dark-disabled-bg);
+  --color-disabled-text: var(--dark-disabled-text);
+  --color-critical: var(--dark-critical); --color-warning: var(--dark-warning);
+  --color-warning-text: var(--dark-warning-text);
+  --color-success: var(--dark-success);   --color-info: var(--dark-info);
+  --color-primary: var(--dark-primary);
+  --color-primary-hover: var(--dark-primary-hover);
+  --color-accent: var(--dark-accent);
+  --color-success-text: var(--dark-success-text);
+  --color-info-text: var(--dark-info-text);
+  --color-link: var(--dark-link);
+  --color-row-active-bg: var(--dark-row-active-bg);
+  --color-border-blue: var(--dark-border-blue);
+  --color-divider: var(--dark-divider);
+  --chart-line-1: var(--dark-chart-line-1);
+  --chart-line-2: var(--dark-chart-line-2);
+  --chart-grid: var(--dark-chart-grid);
+  --chart-axis-text: var(--dark-chart-axis-text);
+  --pill-info-text: var(--dark-pill-info-text);
+  --pill-critical-text: var(--dark-pill-critical-text);
+  --pill-neutral-text: var(--dark-pill-neutral-text);
+  --pill-success-text: var(--dark-pill-success-text);
+  --tint-success-bg: var(--dark-tint-success-bg);
+  --tint-critical-bg: var(--dark-tint-critical-bg);
+  --tint-warning-bg: var(--dark-tint-warning-bg);
+  --tint-info-bg: var(--dark-tint-info-bg);
+  --tint-neutral-bg: var(--dark-tint-neutral-bg);
+  --tint-success-solid: var(--dark-tint-success-solid);
 }
 
 * { box-sizing: border-box; }
@@ -162,16 +392,24 @@ html { font-size: 75%; }
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.2);
 }
+/* All four carry a WHITE glyph (.icon-badge sets color: --color-white), so
+   they take the locked -solid fills. On the plain status tokens these sat
+   at 1.67-2.54:1 in dark mode — the glyph was very nearly invisible
+   (audit A1). On the solid fills they are 5.0-6.7:1 in both themes. */
 .icon-badge--kpi { width: 3rem; height: 3rem; border-radius: var(--radius-lg); }
-.icon-badge--kpi.accent-blue { background: var(--color-accent); }
-.icon-badge--kpi.accent-green { background: var(--color-success); }
-.icon-badge--kpi.accent-orange { background: var(--color-warning); }
-.icon-badge--kpi.accent-teal { background: var(--color-info); }
+.icon-badge--kpi.accent-blue { background: var(--color-accent-solid); }
+.icon-badge--kpi.accent-green { background: var(--color-success-solid); }
+.icon-badge--kpi.accent-orange { background: var(--color-warning-solid); }
+.icon-badge--kpi.accent-teal { background: var(--color-info-solid); }
 
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* font-size deliberately NOT set here — see the scale-knob note at the
+     top of this file. Setting it on `html` too is what silently disabled
+     that knob for the life of the project. It is applied to `body` alone,
+     immediately below. */
   /* height:100% alone only sets the box's size — it doesn't clip a taller
      child. Without this, any page whose stacked content (KPI cards +
      chart + panels) is even slightly taller than the viewport pushes
@@ -183,8 +421,8 @@ html, body {
   background: var(--color-bg);
   color: var(--color-text-primary);
   font-family: var(--font-base);
-  font-size: var(--font-size-md);
 }
+body { font-size: var(--font-size-md); }
 
 #app { height: 100%; overflow: hidden; }
 
@@ -206,13 +444,22 @@ h3 { font-size: var(--font-size-lg); font-weight: 700; }
 input, select, textarea {
   font-family: inherit;
   font-size: var(--font-size-sm);
+  /* audit A7: fields rendered 34px tall. 2.5rem against the 87.5% root is
+     40px — comfortable on the tablets these screens run on in a barangay
+     hall, and matching the button min-height so a field and the button
+     beside it line up. Excludes checkbox/radio, sized separately below. */
+  min-height: 2.5rem;
   padding: var(--spacing-sm) var(--spacing-sm-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg);
   color: var(--color-text-primary);
   width: 100%;
-  transition: border-color .15s ease, box-shadow .15s ease;
+  /* border-color/box-shadow: pre-existing focus feedback. background-
+     color/color: §7.1 theme-transition, added here rather than in the
+     blanket rule below (a second `transition` shorthand would replace
+     this one, not merge with it). */
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .2s ease, color .2s ease;
 }
 input:focus, select:focus, textarea:focus {
   outline: none;
@@ -220,6 +467,31 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 2px var(--color-primary);
 }
 input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); }
+
+/* audit A7: the native checkbox rendered 13x13 — roughly half WCAG 2.2's
+   24x24 minimum target. `accent-color` keeps the platform control (and its
+   own focus/indeterminate behaviour) rather than rebuilding it from a
+   pseudo-element, which is what usually breaks keyboard support. The
+   `width` reset is needed because the rule above sets 100% on all inputs. */
+input[type="checkbox"], input[type="radio"] {
+  width: 1.125rem;
+  height: 1.125rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+/* The label wrapping a checkbox is the real hit area — give it the full
+   24px height so the target passes even though the box itself is 18px. */
+label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 1.5rem;
+  cursor: pointer;
+}
 
 button {
   font-family: inherit;
@@ -238,7 +510,10 @@ button {
 }
 button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--color-white), 0 0 0 4px var(--color-primary);
+  /* The inner ring matches the SURFACE the element sits on (creates the
+     "gap" between element and outer ring) — --color-surface, not literal
+     white, so this reads correctly in dark mode too. */
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
 }
 button svg { flex-shrink: 0; }
 button.primary {
@@ -246,26 +521,28 @@ button.primary {
   color: var(--color-white);
 }
 button.primary:hover { background: var(--color-primary-hover); }
-button.primary:disabled { background: var(--color-border); color: var(--color-text-tertiary); cursor: not-allowed; }
+button.primary:disabled { background: var(--color-disabled-bg); color: var(--color-disabled-text); cursor: not-allowed; }
 /* Press feedback — a scale-down on actual activation, distinct from the
    existing :hover color change. Applies to every button variant (not just
    .primary) since the lack of tactile feedback was a general gap, not
    specific to one variant. Disabled buttons don't get it — nothing to
    "press" there. */
 button:active:not(:disabled) { transform: scale(0.97); }
-/* White + visible border at rest, --color-bg only on hover (per source). */
+/* Surface background + visible border at rest, --color-bg only on hover (per source). */
 button.ghost {
-  background: var(--color-white);
+  background: var(--color-surface);
   border-color: var(--color-border);
   color: var(--color-text-secondary);
 }
 button.ghost:hover { background: var(--color-bg); }
 button.danger {
-  background: var(--color-white);
+  background: var(--color-surface);
   border-color: var(--color-critical);
   color: var(--color-critical);
 }
-button.danger:hover { background: var(--color-critical); color: var(--color-white); }
+/* --color-critical-solid, not --color-critical: this is white text on a
+   saturated fill, so the fill must stay dark in dark mode (audit A1). */
+button.danger:hover { background: var(--color-critical-solid); color: var(--color-white); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* Icon-only action button (table row edit/delete) — source spec:
@@ -284,16 +561,23 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 /* --- Cards / surfaces -------------------------------------------------- */
 
 .card {
-  /* Subtle sheen instead of flat white — two stops of the same near-white
-     range (#FFFFFF -> --color-bg), so it reads as depth rather than a
-     visible color change; doesn't affect any existing background-color
-     override elsewhere since gradient and solid color aren't mixed. */
-  background: linear-gradient(135deg, var(--color-white) 0%, var(--color-bg) 100%);
+  /* Subtle sheen instead of flat surface — two stops of the same
+     near-surface range (--color-surface -> --color-bg), so it reads as
+     depth rather than a visible color change; doesn't affect any
+     existing background-color override elsewhere since gradient and
+     solid color aren't mixed. */
+  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg) 100%);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   padding: var(--spacing-lg);
-  transition: box-shadow .15s ease;
+  /* box-shadow: pre-existing hover-lift. border-color: §7.1 theme-
+     transition. `background` itself is a gradient, not a solid color —
+     gradients don't interpolate smoothly between two different stop sets
+     the way solid colors do, so a theme toggle snaps the card background
+     rather than crossfading it; acceptable given it's a two-stop near-
+     white/near-surface sheen, not a jarring color change. */
+  transition: box-shadow .15s ease, border-color .2s ease;
 }
 .card:hover { box-shadow: var(--shadow-elevated); }
 
@@ -339,6 +623,120 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
 }
+/* Named skeleton shapes, so pages stop hand-writing
+   `style="height:14px;width:60%"` on every placeholder (audit A4 — those
+   raw pixel values were among the 27 that ignored the root scale). */
+.skeleton--line { height: 0.875rem; width: 60%; margin-bottom: var(--spacing-sm-md); }
+.skeleton--figure { height: 2rem; width: 40%; }
+.skeleton--block { height: 8rem; border-radius: var(--radius-sm); }
+.skeleton--chart { height: 11rem; }
+.skeleton--row { height: 2.75rem; border-radius: var(--radius-sm); }
+
+/* Inline field-level validation message (audit W2/W15) — distinct from
+   .state-block--error, which takes over a whole panel. */
+.app-inline-error {
+  color: var(--color-critical);
+  font-size: var(--font-size-sm);
+  flex-basis: 100%;
+}
+
+/* Quick date-range chips beside the explicit From/To fields. */
+.range-presets { display: flex; gap: var(--spacing-xs); flex-wrap: wrap; }
+.range-presets__chip { padding: var(--spacing-xs) var(--spacing-sm-md); min-height: 2rem; }
+
+/* Vertical rhythm between the dashboard's stacked rows — replaces the
+   per-row `style.marginTop = '16px'` those grids used to carry. */
+.dashboard-row { margin-top: var(--spacing-md); }
+.dashboard-freshness { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Breakdown list rows (By Status, Tanods On Duty) — replaces the
+   per-row `style.fontSize` / `style.fontWeight` those loops used to set. */
+.breakdown-row { font-size: var(--font-size-sm); }
+.breakdown-row__value { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Panel heading inside a report card, where the full card-header
+   (title + subtitle + corner icon) would be more furniture than the
+   section needs. */
+.report-section-title { display: block; margin-bottom: var(--spacing-sm-md); }
+/* Opts a control out of the global `width: 100%` on inputs/selects, for
+   the cases where it should size to its content (a date field or a Tanod
+   picker sitting inline in a filter bar or a table cell). Replaces the
+   per-element `style.width = 'auto'` those sites used to set. */
+.input--auto { width: auto; }
+/* A textarea the user may drag taller, but never wider (which would break
+   the form's column). Replaces `style.resize = 'vertical'` on six fields. */
+.textarea--resizable { resize: vertical; }
+/* Tight label-over-control pairing inside a form row. */
+.stack-tight { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.row-start { justify-content: flex-start; }
+/* Skeletons that fill their container rather than taking a fixed shape. */
+.skeleton--fill { height: 100%; border-radius: var(--radius-xl); }
+.skeleton--roster { height: 5rem; margin-top: var(--spacing-md); border-radius: var(--radius-lg); }
+
+/* Single-column form screens (Settings, the public citizen report) — a
+   readable measure rather than a full-bleed row of fields. */
+.settings-column { max-width: 30rem; }
+.settings-role-line { margin-bottom: var(--spacing-md); }
+/* Inline success confirmation inside a form panel (distinct from a Toast,
+   which is transient — this one persists until the next action). */
+.inline-success {
+  background: var(--tint-success-bg);
+  color: var(--color-success-text);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-sm-md);
+  font-size: var(--font-size-sm);
+}
+.privacy-notice { line-height: 1.5; }
+
+/* Fatigue hours against the 56-hour safety threshold (W13) — the figure,
+   a proportional bar, and how far over. */
+.fatigue-hours { display: flex; flex-direction: column; gap: 0.1875rem; min-width: 8rem; }
+.fatigue-hours__figure { font-weight: 600; font-variant-numeric: tabular-nums; }
+.fatigue-hours__bar {
+  display: block;
+  height: 0.3125rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.fatigue-hours__fill { display: block; height: 100%; background: var(--color-critical-solid); }
+.fatigue-hours__over { font-size: var(--font-size-label); color: var(--color-text-tertiary); }
+
+/* Password requirement checklist (W15). Each rule ticks as it is met, so
+   the policy is visible before submitting rather than after a rejection. */
+.password-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.password-rules__item { display: flex; align-items: center; gap: var(--spacing-sm); }
+.password-rules__mark {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  flex-shrink: 0;
+  position: relative;
+}
+.password-rules__item.is-met { color: var(--color-success-text); }
+.password-rules__item.is-met .password-rules__mark {
+  background: var(--color-success-solid);
+  border-color: var(--color-success-solid);
+}
+/* The tick is drawn rather than an SVG so it inherits the mark's size. */
+.password-rules__item.is-met .password-rules__mark::after {
+  content: '';
+  position: absolute;
+  left: 0.25rem;
+  top: 0.0625rem;
+  width: 0.1875rem;
+  height: 0.4375rem;
+  border: solid var(--color-white);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
 
 /* §6.5: blanket reduced-motion coverage for every animation/transition
    added across the app this pass (page transitions, chart reveals, card
@@ -354,6 +752,25 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* §7.1: smooth color transition when the theme changes (toggle click or a
+   live OS `prefers-color-scheme` change) — applied broadly rather than
+   per-component so no future surface needs its own copy of this rule.
+   The blanket reduced-motion override immediately above already collapses
+   this to near-zero duration under that preference, so no second guard is
+   needed here.
+   DELIBERATELY excludes button/input/select/textarea/.card — each of
+   those already has its own, more specific `transition` shorthand earlier
+   in this file (press feedback, focus glow, hover shadow), and `transition`
+   is a shorthand: a second blanket declaration at equal specificity would
+   REPLACE those, not add to them, silently deleting the existing
+   animation. Each of those four was extended in place instead — search
+   this file for ".2s ease" to find where. */
+html, body, .status-pill,
+.sidebar, .topbar, .page-header, .data-table-wrap, .confirm-dialog,
+.live-map__legend {
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease;
 }
 
 /* Small inline spinner for a busy button (e.g. "Signing in…") — a plain
@@ -383,17 +800,19 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
   letter-spacing: 0.03em;
 }
 /* Text color deliberately NOT var(--color-warning) (#D97706) here — that
-   only reaches ~3.2:1 against --tint-warning-bg, failing WCAG AA. #92400E
-   (amber-800) keeps the same hue family at ~5.2:1, fixed for this pill
-   only rather than darkening --color-warning globally (which also backs
-   icon badges/KPI accents where the contrast requirement is different —
-   white text/icon on a solid orange background, not this text-on-tint
-   case). */
-.status-pill--pending { background: var(--tint-warning-bg); color: #92400E; }
-.status-pill--info { background: var(--tint-info-bg); color: var(--color-primary); }
-.status-pill--success { background: var(--tint-success-bg); color: var(--color-success); }
-.status-pill--neutral { background: var(--tint-neutral-bg); color: var(--color-text-secondary); }
-.status-pill--critical { background: var(--tint-critical-bg); color: var(--color-critical); }
+   only reaches ~3.2:1 against --tint-warning-bg, failing WCAG AA.
+   --color-warning-text (amber-800, #92400E in light mode) keeps the same
+   hue family at ~5.2:1, a dedicated token rather than darkening
+   --color-warning globally (which also backs icon badges/KPI accents
+   where the contrast requirement is different — white text/icon on a
+   solid orange background, not this text-on-tint case). Promoted from a
+   hardcoded hex to a real token (§6.4) specifically so dark mode can
+   define its own readable value instead of inheriting a light-only one. */
+.status-pill--pending { background: var(--tint-warning-bg); color: var(--color-warning-text); }
+.status-pill--info { background: var(--tint-info-bg); color: var(--pill-info-text); }
+.status-pill--success { background: var(--tint-success-bg); color: var(--pill-success-text); }
+.status-pill--neutral { background: var(--tint-neutral-bg); color: var(--pill-neutral-text); }
+.status-pill--critical { background: var(--tint-critical-bg); color: var(--pill-critical-text); }
 /* Left-border accent on critical pills specifically — a stronger visual
    scan cue for the one status that actually needs to jump out in a list
    (§8's status-pill spec doesn't call for this on the other four, and

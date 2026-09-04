@@ -110,6 +110,9 @@
 .sidebar__nav-item {
   margin: 0.125rem var(--spacing-sm);
   padding: 0.625rem var(--spacing-sm-md);
+  /* audit A7: nav rows measured ~29px. 44px is the comfortable touch
+     target, and these are the app's most-tapped controls. */
+  min-height: 2.75rem;
   border-radius: var(--radius-lg);
   font-size: var(--font-size-sm);
   font-weight: 500;
@@ -131,6 +134,48 @@
   box-shadow: 0 0 0 2px var(--color-navy), 0 0 0 4px var(--color-white);
 }
 .sidebar__nav-icon { display: flex; flex-shrink: 0; }
+
+/* §4.1 of the UI/UX review — sidebar badge counts. margin-left:auto pushes
+   it to the far right regardless of label length; hidden in the collapsed
+   icon-only rail (same rule .sidebar__nav-label already follows there) so
+   it never overlaps the icon. */
+.sidebar__nav-badge {
+  margin-left: auto;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  /* -solid, not --color-critical: white numerals on a saturated fill, so
+     the fill must not lighten in dark mode (audit A1 — was 2.77:1). */
+  background: var(--color-critical-solid);
+  color: var(--color-white);
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+/* audit A14: this used to be `display:none`, which removed the count from
+   the one state where a compact unread marker carries the most
+   information. Collapsed, the badge becomes a small pip on the icon's
+   top-right corner instead — the number itself won't fit legibly at that
+   size, but "there is something here" is the part that matters, and the
+   nav item's aria-label still carries the exact count for screen
+   readers. */
+.sidebar.is-collapsed .sidebar__nav-item { position: relative; }
+.sidebar.is-collapsed .sidebar__nav-badge {
+  position: absolute;
+  top: 0.375rem;
+  right: 0.5rem;
+  min-width: 0.625rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  padding: 0;
+  margin: 0;
+  font-size: 0;
+  line-height: 0;
+  border: 2px solid var(--color-navy);
+}
 .sidebar__nav-item:hover { background: color-mix(in srgb, var(--color-primary) 50%, transparent); color: var(--color-white); }
 .sidebar__nav-item.active {
   color: var(--color-white);
@@ -150,7 +195,7 @@
 }
 
 .topbar {
-  background: var(--color-white);
+  background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   padding: var(--spacing-md) var(--spacing-lg);
   display: flex;
@@ -179,7 +224,7 @@
   top: calc(100% + var(--spacing-xs));
   left: 0;
   right: 0;
-  background: var(--color-white);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-floating);
@@ -196,7 +241,7 @@
   padding: var(--spacing-sm) var(--spacing-md);
   border: none;
   border-radius: 0;
-  background: var(--color-white);
+  background: var(--color-surface);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   text-align: left;
@@ -222,11 +267,13 @@
 .status-badge__dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; }
 .status-badge--checking { background: var(--tint-neutral-bg); color: var(--color-text-secondary); }
 .status-badge--checking .status-badge__dot { background: var(--color-text-secondary); }
-/* #DCFCE7 here specifically, not --tint-success-bg (#F0FDF4) — the
+/* --tint-success-solid here specifically, not --tint-success-bg — the
    source documents this one topbar "system status" pill with its own,
    slightly more saturated green, distinct from status/priority pills
-   elsewhere. Not a typo; see base.css's tint-success-bg comment. */
-.status-badge--ok { background: #DCFCE7; color: var(--color-success); }
+   elsewhere. Not a typo; see base.css's tint-success-bg comment.
+   Promoted from a hardcoded #DCFCE7 to a real token (§6.4/dark-mode
+   pass) so it has a dark-mode value too instead of a fixed light hex. */
+.status-badge--ok { background: var(--tint-success-solid); color: var(--color-success); }
 /* "Live Pulse Indicator" — spec calls for animate-pulse on an online/
    active status dot specifically (not on the checking/down states). */
 .status-badge--ok .status-badge__dot { background: var(--color-success); animation: status-dot-pulse 2s ease-in-out infinite; }
@@ -267,7 +314,7 @@
    header (the reference's list-screen pattern), as opposed to the plain
    `.filter-bar` utility which sits inline within padded content. */
 .filter-panel {
-  background: var(--color-white);
+  background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   padding: var(--spacing-sm-md) var(--spacing-lg);
   display: flex;
@@ -289,13 +336,79 @@
 }
 .filter-panel select { width: auto; min-width: 9rem; }
 
-/* --- Responsive: sidebar collapses to icon rail, topbar stacks search below --- */
+/* --- Responsive -----------------------------------------------------------
+   audit A13. The old rule turned the sidebar into a permanent 4.5rem icon
+   rail below 768px, hid every label, hid the count badges, AND hid the
+   collapse toggle (it matched `.sidebar__brand > :not(:first-child)`) —
+   so a phone user got twelve unlabelled icons, no tooltips (there is no
+   hover on touch), no way to expand, and 54px of a 375px screen gone
+   permanently.
+   It is now a proper off-canvas drawer: nothing consumed when closed,
+   full labels when open, dismissed by the scrim or Escape. The drawer
+   button lives in the topbar and only exists at this breakpoint. */
+
+.topbar__menu { display: none; }
+.sidebar__scrim { display: none; }
 
 @media (max-width: 768px) {
-  .sidebar { width: 4.5rem; }
-  .sidebar__brand { justify-content: center; padding: 0 var(--spacing-sm) var(--spacing-lg); }
-  .sidebar__brand > :not(:first-child), .sidebar__nav-label { display: none; }
-  .sidebar__nav-item { justify-content: center; }
+  .topbar__menu {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-right: var(--spacing-sm);
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: 15rem;
+    transform: translateX(-100%);
+    transition: transform .22s ease;
+    box-shadow: var(--shadow-floating);
+  }
+  .sidebar.is-open { transform: translateX(0); }
+  /* The manual collapse state is a desktop affordance; inside the drawer
+     the labels must always show. */
+  .sidebar.is-collapsed { width: 15rem; }
+  .sidebar.is-collapsed .sidebar__wordmark,
+  .sidebar.is-collapsed .sidebar__nav-label,
+  .sidebar.is-collapsed .sidebar__user-text { display: block; }
+  .sidebar.is-collapsed .sidebar__brand { justify-content: flex-start; }
+  .sidebar.is-collapsed .sidebar__brand .icon-badge--brand { display: inline-flex; }
+  .sidebar.is-collapsed .sidebar__nav-item { justify-content: flex-start; position: static; }
+  .sidebar.is-collapsed .sidebar__user { justify-content: flex-start; }
+  .sidebar.is-collapsed .sidebar__nav-badge {
+    position: static; width: auto; height: 1.25rem; min-width: 1.25rem;
+    padding: 0 0.375rem; font-size: var(--font-size-label); line-height: 1.25rem;
+    border: 0; margin-left: auto;
+  }
+
+  .sidebar__scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(15, 23, 42, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .22s ease;
+  }
+  .sidebar__scrim.is-open { opacity: 1; pointer-events: auto; }
+
   .topbar { flex-wrap: wrap; }
   .topbar__search { max-width: none; order: 3; flex-basis: 100%; }
+}
+
+/* audit A15: the topbar carried theme toggle + a nowrap health badge +
+   avatar + full name + Sign out in one row, and the name had no
+   truncation (the sidebar copy does). Below 900px the name and the badge
+   text drop out — the avatar still identifies the user, and the badge
+   keeps its coloured dot and its title tooltip. */
+@media (max-width: 900px) {
+  .topbar__user-name { display: none; }
+  .status-badge__text { display: none; }
+  .status-badge { padding: var(--spacing-sm); }
+  .topbar__signout-label { display: none; }
 }

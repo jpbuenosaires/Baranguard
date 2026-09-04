@@ -20,6 +20,7 @@ import { getSession, logout } from './api/apiClient.js';
 import { renderLoginPage } from './pages/login.js';
 import { renderAdminDashboardPage } from './pages/admin-dashboard.js';
 import { renderDispatchCenterPage } from './pages/dispatch-center.js';
+import { renderIncidentManagementPage } from './pages/incident-management.js';
 import { renderGisLiveTrackingPage } from './pages/gis-live-tracking.js';
 import { renderHistoricalHeatmapPage } from './pages/historical-heatmap.js';
 import { renderBlotterListPage } from './pages/blotter-list.js';
@@ -33,10 +34,12 @@ import { renderFatigueFlagsPage } from './pages/fatigue-flags.js';
 import { renderAiReviewPage } from './pages/ai-review.js';
 import { renderBlotterDetailPage } from './pages/blotter-detail.js';
 import { renderSmsLogPage } from './pages/sms-log.js';
+import { DEFAULT_PAGE_KEY } from './pages/settings.js';
 
 const PAGE_ROLES = {
   dashboard: ['admin', 'punong_barangay'],
   dispatch: ['admin'],
+  'incident-management': ['admin', 'secretary'],
   gis: ['admin', 'punong_barangay'],
   heatmap: ['admin', 'punong_barangay'],
   blotter: ['admin', 'secretary', 'punong_barangay'],
@@ -77,15 +80,21 @@ function boot(currentPage, param) {
 
   if (!session) {
     renderLoginPage(root, () => boot());
+    document.title = 'Sign in — Baranguard';
     return;
   }
 
   const role = session.user.role;
   let page = currentPage;
   if (!page || !PAGE_ROLES[page]?.includes(role)) {
-    page = Object.keys(PAGE_ROLES).find(
-      (key) => PAGE_ROLES[key].includes(role) && !DETAIL_PAGES.has(key)
-    ) ?? null;
+    // W15 Settings > Appearance > Default landing page — a real per-user
+    // preference, honoured only when it names a page this role can
+    // actually see; otherwise falls back to the normal first-match.
+    let preferred = null;
+    try { preferred = localStorage.getItem(DEFAULT_PAGE_KEY); } catch { /* private mode */ }
+    page = (preferred && PAGE_ROLES[preferred]?.includes(role) && !DETAIL_PAGES.has(preferred))
+      ? preferred
+      : Object.keys(PAGE_ROLES).find((key) => PAGE_ROLES[key].includes(role) && !DETAIL_PAGES.has(key)) ?? null;
   }
   // A detail page reached without its parameter (e.g. a stray navigate)
   // falls back rather than rendering a broken screen.
@@ -106,7 +115,12 @@ function boot(currentPage, param) {
   if (page === 'dashboard') {
     renderAdminDashboardPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'dispatch') {
-    renderDispatchCenterPage(root, session.user, onLoggedOut, navigate);
+    // Returns a stop handle now that W3 polls its queue every 15s (audit
+    // W3) — same contract the GIS and AI Review pages already use.
+    const handle = renderDispatchCenterPage(root, session.user, onLoggedOut, navigate);
+    activeStop = handle?.stop ?? null;
+  } else if (page === 'incident-management') {
+    renderIncidentManagementPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'gis') {
     const handle = renderGisLiveTrackingPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
@@ -137,6 +151,48 @@ function boot(currentPage, param) {
     const handle = renderAiReviewPage(root, session.user, onLoggedOut, navigate, param);
     activeStop = handle?.stop ?? null;
   }
+
+  setDocumentTitle(root);
+  focusPageHeading(root);
+}
+
+/**
+ * audit A6: document.title was never touched, so every screen, every
+ * history entry and every bookmark read "Baranguard" — tab-switching
+ * between Dispatch and Blotter was guesswork and browser history was
+ * useless. Read from the heading the page just rendered rather than
+ * maintained as a second lookup table beside PAGE_ROLES, which would be
+ * one more thing to keep in sync with the PageHeader titles.
+ */
+function setDocumentTitle(root) {
+  const heading = root.querySelector('.page-header__title, h1, h2');
+  const name = heading?.textContent?.trim();
+  document.title = name ? `${name} — Baranguard` : 'Baranguard';
+}
+
+/**
+ * §6.3 of the UI/UX review: move focus to the new page's own title after
+ * every navigation, so a keyboard/screen-reader user isn't left on a DOM
+ * node `root.innerHTML = ''` (inside each render*Page call) just deleted
+ * out from under them — the same problem the skip-link's own `#page-main`
+ * target solves for the FIRST Tab press on a page, extended here to every
+ * subsequent navigation, not just the initial load.
+ *
+ * Centralized here rather than added to each of the dozen render*Page
+ * functions individually — every one of them already builds its
+ * `PageHeader` synchronously before any async data load starts (confirmed
+ * by reading several), so the title exists in the DOM by the time this
+ * runs, immediately after the dispatch above returns.
+ *
+ * `tabindex="-1"` makes an element that isn't normally focusable (a
+ * heading) a valid `.focus()` target without adding it to the Tab order —
+ * the standard pattern for a programmatic focus move, not a UI trap.
+ */
+function focusPageHeading(root) {
+  const heading = root.querySelector('.page-header__title, h1, h2');
+  if (!heading) return;
+  if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+  heading.focus({ preventScroll: true });
 }
 
 function renderUnavailable(root, user) {

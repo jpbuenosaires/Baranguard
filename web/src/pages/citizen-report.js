@@ -38,7 +38,7 @@ export function renderCitizenReportPage(root) {
 
   const card = document.createElement('div');
   card.className = 'card login-card';
-  card.style.maxWidth = '480px';
+  card.classList.add('settings-column');
 
   page.appendChild(card);
   root.appendChild(page);
@@ -46,7 +46,7 @@ export function renderCitizenReportPage(root) {
   load();
 
   async function load() {
-    card.innerHTML = '<div class="state-block" role="status" aria-label="Loading"><div class="skeleton" style="height:20px;width:60%;"></div><div class="skeleton" style="height:120px;width:100%;"></div></div>';
+    card.innerHTML = '<div class="state-block" role="status" aria-label="Loading"><div class="skeleton skeleton--line"></div><div class="skeleton skeleton--block"></div></div>';
     try {
       const barangays = await getBarangays();
       renderForm(card, barangays);
@@ -73,9 +73,9 @@ function renderForm(card, barangays) {
   const brand = document.createElement('div');
   brand.className = 'login-card__brand';
   brand.innerHTML = `
-    <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px;">
+    <div class="citizen-report__brand">
       <span class="icon-badge icon-badge--brand">${icons.megaphone(20)}</span>
-      <span style="font-weight:700; font-size:1.1rem;">BARANGUARD</span>
+      <span class="citizen-report__wordmark">BARANGUARD</span>
     </div>
     <h2>Report an Incident</h2>
     <p>Tell your barangay what's happening — no account needed</p>
@@ -112,7 +112,7 @@ function renderForm(card, barangays) {
   descriptionInput.rows = 5;
   descriptionInput.required = true;
   descriptionInput.placeholder = 'Describe what you saw or experienced, and where';
-  descriptionInput.style.resize = 'vertical';
+  descriptionInput.classList.add('textarea--resizable');
 
   const contactLabel = document.createElement('label');
   contactLabel.className = 'label';
@@ -126,7 +126,7 @@ function renderForm(card, barangays) {
   let coords = null;
   const locationRow = document.createElement('div');
   locationRow.className = 'row-between';
-  locationRow.style.justifyContent = 'flex-start';
+  locationRow.classList.add('row-start');
   const locationButton = document.createElement('button');
   locationButton.type = 'button';
   locationButton.className = 'ghost';
@@ -155,7 +155,7 @@ function renderForm(card, barangays) {
 
   const privacyNotice = document.createElement('p');
   privacyNotice.className = 'note';
-  privacyNotice.style.lineHeight = '1.5';
+  privacyNotice.classList.add('privacy-notice');
   privacyNotice.textContent = 'Your report is sent directly to your barangay for review. Only barangay officials can see the details you submit here.';
 
   const submitButton = document.createElement('button');
@@ -214,9 +214,45 @@ function renderSuccess(card, reportId) {
   const block = document.createElement('div');
   block.className = 'state-block';
   block.innerHTML = `
-    <span class="icon-badge icon-badge--kpi accent-green" style="width:56px;height:56px;">${icons.checkCircle(28)}</span>
+    <span class="icon-badge icon-badge--kpi icon-badge--success accent-green">${icons.checkCircle(28)}</span>
     <h3>Report received</h3>
-    <p>Your reference number is <strong>#${reportId}</strong>. Keep it for your records — your barangay will follow up if you provided a contact number.</p>
+    <p>Keep this reference number. It is how the barangay can find your report.</p>
   `;
+
+  // audit W19: the reference used to sit as plain text inside a sentence —
+  // the citizen's only proof they filed anything, to be transcribed by
+  // hand off a phone screen. It gets its own line and a copy button.
+  const referenceRow = document.createElement('div');
+  referenceRow.className = 'citizen-report__reference-row';
+  const reference = document.createElement('span');
+  reference.className = 'citizen-report__reference';
+  reference.textContent = `#${reportId}`;
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'ghost';
+  copyButton.textContent = 'Copy';
+  copyButton.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(`#${reportId}`);
+      copyButton.textContent = 'Copied';
+      setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
+    } catch {
+      // Clipboard access can be refused (no permission, or a non-secure
+      // origin — likely on a LAN address). Selecting the number is the
+      // fallback that always works, so say so rather than failing quietly.
+      copyButton.textContent = 'Select it above';
+    }
+  });
+  referenceRow.append(reference, copyButton);
+  block.appendChild(referenceRow);
+
+  // audit W19: the success state confirmed receipt but said nothing about
+  // what happens next — which is what stops a worried reporter filing the
+  // same thing three times.
+  const next = document.createElement('p');
+  next.className = 'note';
+  next.textContent = 'A barangay officer will review this report. There is no automatic SMS confirmation yet, so please do not submit it again — if you left a contact number, the barangay will reach you on it.';
+  block.appendChild(next);
+
   card.appendChild(block);
 }

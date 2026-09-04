@@ -28,11 +28,19 @@
 
 import { getReportsSummary, logout, ApiClientError } from '../api/apiClient.js';
 import { KpiCard } from '../components/KpiCard.js';
-import { TrendChart } from '../components/TrendChart.js';
+import { LineChart } from '../components/LineChart.js';
+import { BarChart } from '../components/BarChart.js';
 import { DonutChart } from '../components/DonutChart.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
+
+// 12-hour clock labels for the by-hour bar chart's 24 buckets.
+const HOUR_LABELS = Array.from({ length: 24 }, (_, h) => {
+  const period = h < 12 ? 'AM' : 'PM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}${period}`;
+});
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -77,7 +85,7 @@ export function renderStatisticalReportsPage(root, user, onLoggedOut, navigate) 
   const { header, content } = shell;
   root.appendChild(shell.el);
 
-  const pageHeader = PageHeader({ title: 'Statistical Reports', subtitle: 'Generate a trend, status, and response-time breakdown for a date range', icon: icons.barChart });
+  const pageHeader = PageHeader({ title: 'Analytics', subtitle: 'Generate a trend, status, and response-time breakdown for a date range', icon: icons.barChart });
   header.appendChild(pageHeader.el);
 
   const controls = document.createElement('div');
@@ -85,11 +93,11 @@ export function renderStatisticalReportsPage(root, user, onLoggedOut, navigate) 
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.value = daysAgoIso(29);
-  fromInput.style.width = 'auto';
+  fromInput.classList.add('input--auto');
   const toInput = document.createElement('input');
   toInput.type = 'date';
   toInput.value = todayIso();
-  toInput.style.width = 'auto';
+  toInput.classList.add('input--auto');
   const generateButton = document.createElement('button');
   generateButton.className = 'primary';
   generateButton.textContent = 'Generate';
@@ -136,10 +144,9 @@ function renderPrompt(container) {
 function renderLoading(container) {
   container.innerHTML = '';
   const chartSkeleton = document.createElement('div');
-  chartSkeleton.className = 'card skeleton';
+  chartSkeleton.className = 'card skeleton skeleton--chart';
   chartSkeleton.setAttribute('role', 'status');
   chartSkeleton.setAttribute('aria-label', 'Generating report');
-  chartSkeleton.style.height = '176px';
   container.appendChild(chartSkeleton);
 }
 
@@ -190,26 +197,69 @@ function renderReport(container, summary) {
 
   const trendCard = document.createElement('div');
   trendCard.className = 'card';
-  trendCard.innerHTML = '<h3 style="margin-bottom:16px;">Incident Trend</h3>';
-  trendCard.appendChild(TrendChart({ trend: summary.trend }));
+  const trendHeading = document.createElement('h3');
+  trendHeading.className = 'card-header__title report-section-title';
+  trendHeading.textContent = 'Incident Trends';
+  trendCard.appendChild(trendHeading);
+  trendCard.appendChild(LineChart({
+    points: summary.trend.map((day) => ({ label: day.date.slice(5), values: [day.count, day.resolved ?? 0] })),
+    series: [
+      { name: 'Reported', colorVar: '--chart-line-1' },
+      { name: 'Resolved', colorVar: '--chart-line-2' },
+    ],
+    caption: 'Incidents reported and resolved by day',
+  }));
 
   const breakdownGrid = document.createElement('div');
-  breakdownGrid.className = 'two-col-grid';
-  breakdownGrid.style.marginTop = '16px';
+  breakdownGrid.className = 'two-col-grid dashboard-row';
   breakdownGrid.append(
     renderBreakdownCard('By Status', summary.byStatus, STATUS_LABELS, STATUS_PILL_CLASS),
     renderIncidentTypeDonutCard(summary.byIncidentType)
   );
 
-  container.append(kpiGrid, trendCard, breakdownGrid);
+  // Phase 9 (Analytics upgrade, mockup-driven UI round 2): incidents by
+  // hour of day (§8's named legitimate replacement for the rejected
+  // cross-barangay comparison chart) and the response-time trend, both
+  // real `GET /reports/summary` series added this cut — see
+  // ReportsController::summary() for exactly what each buckets.
+  const analyticsGrid = document.createElement('div');
+  analyticsGrid.className = 'two-col-grid dashboard-row';
+
+  const byHourCard = document.createElement('div');
+  byHourCard.className = 'card';
+  const byHourHeading = document.createElement('h3');
+  byHourHeading.className = 'card-header__title report-section-title';
+  byHourHeading.textContent = 'Incidents by Hour of Day';
+  byHourCard.appendChild(byHourHeading);
+  byHourCard.appendChild(BarChart({
+    bars: summary.byHour.map((count, hour) => ({ label: HOUR_LABELS[hour], value: count })),
+    colorVar: '--chart-line-1',
+    caption: 'Incidents by hour of day (Asia/Manila)',
+  }));
+
+  const responseTimeCard = document.createElement('div');
+  responseTimeCard.className = 'card';
+  const responseTimeHeading = document.createElement('h3');
+  responseTimeHeading.className = 'card-header__title report-section-title';
+  responseTimeHeading.textContent = 'Response Time Trend';
+  responseTimeCard.appendChild(responseTimeHeading);
+  responseTimeCard.appendChild(LineChart({
+    points: summary.responseTimeTrend.map((day) => ({ label: day.date.slice(5), values: [day.avgMinutes ?? 0] })),
+    series: [{ name: 'Avg. minutes to arrival', colorVar: '--chart-line-2' }],
+    caption: 'Average response time by day',
+  }));
+
+  analyticsGrid.append(byHourCard, responseTimeCard);
+
+  container.append(kpiGrid, trendCard, breakdownGrid, analyticsGrid);
 }
 
 function renderIncidentTypeDonutCard(counts) {
   const card = document.createElement('div');
   card.className = 'card';
   const heading = document.createElement('h3');
+  heading.className = 'card-header__title report-section-title';
   heading.textContent = 'By Incident Type';
-  heading.style.marginBottom = '12px';
   const rows = Object.entries(counts).map(([key, count], i) => ({
     key, count, label: INCIDENT_TYPE_LABELS[key] || key, color: INCIDENT_TYPE_COLORS[i % INCIDENT_TYPE_COLORS.length],
   }));
@@ -221,16 +271,16 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
   const card = document.createElement('div');
   card.className = 'card';
   const heading = document.createElement('h3');
+  heading.className = 'card-header__title report-section-title';
+  heading.className = 'card-header__title report-section-title';
   heading.textContent = title;
-  heading.style.marginBottom = '12px';
   card.appendChild(heading);
 
   const list = document.createElement('div');
   list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
     const row = document.createElement('div');
-    row.className = 'row-between';
-    row.style.fontSize = 'var(--font-size-sm)';
+    row.className = 'row-between breakdown-row';
     const label = document.createElement('span');
     const pillClass = pillClasses[key];
     if (pillClass) {
@@ -239,7 +289,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
       label.textContent = labels[key] || key;
     }
     const value = document.createElement('span');
-    value.style.fontWeight = '600';
+    value.className = 'breakdown-row__value';
     value.textContent = String(count);
     row.append(label, value);
     list.appendChild(row);

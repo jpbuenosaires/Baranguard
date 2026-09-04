@@ -49,3 +49,19 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* audit W8 — the words present in the original but absent from the draft.
+   Colour alone can't carry this (§8 a11y), so the mark also gets a
+   strikethrough and an underline: the redaction reads as "removed" in
+   greyscale, on a projector, and to a colour-blind reviewer. */
+.redaction-diff__removed {
+  background: var(--tint-critical-bg);
+  color: var(--pill-critical-text);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  border-bottom: 2px solid var(--color-critical);
+  border-radius: 2px;
+  padding: 0 0.125rem;
+}
+/* The count line above the original ("4 identifiers removed: 2 name…"). */
+.redaction-summary { margin-bottom: var(--spacing-sm); }

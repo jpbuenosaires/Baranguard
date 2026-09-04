@@ -13,7 +13,7 @@
   position: absolute;
   bottom: var(--spacing-md);
   left: var(--spacing-md);
-  background: var(--color-white);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--spacing-md);
@@ -42,7 +42,10 @@
    §9 W4 requires "a stale location is not visually presented as live",
    which takes priority over the generic pulse-everything styling rule —
    pulsing a stale marker would be exactly the thing that rule forbids. */
-.live-map__marker--tanod { background: var(--color-success); animation: marker-pulse 2s ease-in-out infinite; }
+/* -solid on all three marker fills: each is a coloured disc inside a white
+   ring, so the fill is judged against WHITE and must not lighten in dark
+   mode (audit A1 — the live marker sat at 1.74:1 against its own ring). */
+.live-map__marker--tanod { background: var(--color-success-solid); animation: marker-pulse 2s ease-in-out infinite; }
 .live-map__marker--tanod.live-map__marker--stale { background: var(--color-text-secondary); animation: none; }
 @keyframes marker-pulse {
   0%, 100% { opacity: 1; }
@@ -54,7 +57,7 @@
 .live-map__marker--sos {
   width: 1.375rem;
   height: 1.375rem;
-  background: var(--color-critical);
+  background: var(--color-critical-solid);
   border-width: 4px;
   animation: sos-pulse 1.4s ease-in-out infinite;
 }
@@ -65,6 +68,30 @@
 @media (prefers-reduced-motion: reduce) {
   .live-map__marker--sos { animation: none; box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-critical) 25%, transparent); }
 }
+
+/* §4.2/§4.3 of the UI/UX review — a cluster bubble replacing 2+ Tanod
+   markers that are close together on screen at the current zoom. Same
+   visual language as the individual marker (white ring, elevated shadow)
+   but larger and carrying a count, so it reads as "more than one" at a
+   glance rather than looking like an oversized single marker. */
+.live-map__cluster {
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--color-accent-solid);
+  color: var(--color-white);
+  border: 3px solid var(--color-white);
+  box-shadow: var(--shadow-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .1s ease;
+}
+.live-map__cluster:hover { transform: scale(1.1); }
 
 @media (max-width: 480px) {
   .live-map__legend { font-size: 0.625rem; padding: var(--spacing-sm); }

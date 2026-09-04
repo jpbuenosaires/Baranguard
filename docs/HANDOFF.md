@@ -1,6 +1,79 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-03. Session A: Sprint 2's leftover mobile
+**Last updated: 2026-09-04. Session I: STOPPED MID-WORK for a conversation
+handoff — READ THIS BEFORE TOUCHING THE WEB FRONTEND.** A 9-phase
+mockup-driven UI plan was written, checked against the schema/§8 rules,
+and **approved by the user** — full plan at
+`C:\Users\Jayson Buenosaires\.claude\plans\clever-wishing-hummingbird.md`.
+Phases 1 (Dispatch queue double-scrollbar fix), 3 (avatar menu +
+notification bell, incl. a new `GET /notifications` endpoint), and 4 (KPI
+card convention) are **code-complete but never browser-verified**. Phase 2
+(Blotter Entry two-column reorg) is **half-done and currently breaks**
+`node scripts/verify-web-wiring.mjs` — `blotter-detail.js` references a
+CSS class (`blotter-detail__main`) whose stylesheet was never created.
+**Fix that first.** Phases 5-9 (Incident Management, Electronic Blotter
+rebuild, Settings restyle, SMS log filters, Analytics + new chart
+components) have **not been started at all**. Full detail, file-by-file,
+in `backend/DEVLOG.md`'s newest entry — including the constraint table of
+which mockup elements the schema/§8 rules do NOT support (a cross-barangay
+comparison chart, a composite "performance score" radar, an SMS
+compose/reply console, and W21's system-settings sections are all
+explicitly out of scope, not just deferred). One stray database,
+`baranguard_device_check`, exists locally and was flagged but not touched.
+**Nothing here is committed.**
+
+**Session H: acted on the interface audit — all
+cross-cutting items plus the highest-value per-screen ones, and replaced
+the dashboard bar chart with a two-series (reported vs resolved) line
+chart at the user's request. Three things a later session must know:
+(1) **the `html { font-size: 75% }` scale knob had never worked** —
+`html, body` set font-size again further down at equal specificity, and
+`rem` on the root resolves against the browser's initial 16px, so the app
+has always rendered at a 16px root. It is now genuinely wired and set to
+100%, which is what was rendering anyway, so nothing changed visually.
+(2) **`--color-*-solid` tokens are new and must be used for any white
+text/glyph on a saturated fill** — the plain status tokens lighten in dark
+mode, which put the SOS banner at 2.77:1 and the KPI glyphs at 1.67:1.
+(3) **the dark palette's values now live once** in `:root` as `--dark-*`;
+the `prefers-color-scheme` and `[data-theme="dark"]` blocks only remap
+onto them, because the old duplicated copies drifted the moment one was
+edited. Verified: contrast re-audit **46 pairs / 0 failures** in both
+themes (was 23 failures), web wiring **313/313**, diff-algorithm unit test
+6/6, and a live browser pass with zero console errors across all 12
+screens. Dispatch Center now polls every 15s — it previously never
+refreshed itself, so a new incident or Tanod SOS never reached the
+dispatcher. `GET /reports/summary`'s `trend[]` gained a `resolved` field
+bucketed on `dispatch.completed_at` (the only resolution timestamp §5
+records); it deliberately does not reconcile with `resolved_count`, and
+both the controller and the API client say so. **Not committed.** Full
+detail in `backend/DEVLOG.md`'s newest entry.
+
+**Session G: a user-directed UI/UX completion
+pass across web + mobile (not a Sprint Prompts box) — dark mode, DataTable
+pagination/CSV/zebra/empty-state, sidebar badge counts (new `GET
+/reports/nav-counts` endpoint), map clustering + click-to-zoom, KPI
+sparklines, a PWA manifest, and a mobile parity pass (duty-toggle toast +
+sign-out confirmation). Scoped and approved in advance via a 9-phase
+written plan. **Genuinely verified via a real browser + disposable-DB
+sweep**, not just claimed — see `backend/DEVLOG.md`'s newest entry for the
+full evidence, including two real bugs found and fixed (`GET /sms/logs`
+500'd on an under-migrated test DB — fixed by applying the missing
+migrations to that DB, not an app bug; a QA seed script's `NOW()` vs
+`UTC_TIMESTAMP()` mismatch produced a negative GPS age on-screen — fixed
+in the seed script, not an app bug) and one real pre-existing gap fixed
+along the way (`historical-heatmap.js` was the one screen an earlier
+session's "every page migrated to PageHeader" pass had missed — a raw
+`<h2 style="...">` in violation of §8, now migrated like every other
+screen; `verify-web-wiring.mjs` 300→311 checks passing). **Nothing from
+this session is committed yet** — sitting in the working tree pending the
+user's go-ahead, per this project's own standing convention. Read
+DEVLOG's entry before extending any of this pass's work — it names every
+resolved decision (the new `--color-surface` token vs. the existing
+theme-invariant `--color-white`; the hand-rolled DOM clustering instead
+of MapLibre's native `cluster:true`, and why; sparklines scoped to Total
+Incidents only, not Resolved, and why) and exactly what's still deferred.
+
+**Session A: Sprint 2's leftover mobile
 `POST /incidents` branch + ALL of Sprint 3 (coded, unverified). Session B:
 ALL of Sprint 5, the AI pipeline (coded, unverified). Session C: Sprint 6
 — and unlike A and B, **Sprint 6's code is genuinely VERIFIED, 112/112 via
@@ -13,27 +86,47 @@ Rule 12's fallback ladder, the ack-timeout worker, device secret
 provisioning, AES-256-GCM SMS envelope crypto, the internal-only
 `/internal/sms/*` router, W14, and M12/M13 (mobile). **The backend half
 (Phases 2-3) is genuinely VERIFIED — 321 checks passing across FIVE
-suites, zero failures** (this session's own new 68 +
+suites, zero failures** (that session's own new 68 +
 `verify-sprint4.sh`'s 48 + `verify-sprint6.sh`'s 112 +
 `verify-devices-map-packages.sh`'s 53 + `verify-duty-status-map-upload.sh`'s
 40), plus 300 static web-wiring checks and a real browser pass over the
-new W14 screen. **The mobile half (Phase 5, M12/M13) is coded but
-UNVERIFIED** — same standing Android SDK/JDK 21 blocker as every mobile
-cut since Sprint 3. Sprints 3 and 5 remain coded-but-unverified. Read
-`backend/DEVLOG.md`'s newest entry (Sprint 4 Phases 2-5) before trusting
-or extending any of it — it is long, and the "Two 'no live credentials,
+new W14 screen. **COMMITTED AND PUSHED** to `origin/main` (`e578561`).
+Read `backend/DEVLOG.md`'s Sprint 4 Phases 2-5 entry before trusting or
+extending any of it — it is long, and the "Two 'no live credentials,
 verify it anyway' notes" section near the top explains exactly why the
 backend numbers above are trustworthy despite having no real FCM/Semaphore
-account.
+account. Session F (same day, follow-up): **fixed the mobile build** —
+`@capacitor/geolocation` and `@capacitor/push-notifications` were declared
+in `package.json` but `npm install` had never actually been run for
+either, which is the entire reason Sprint 3's mobile code "couldn't
+compile." Now fixed (`npm install` run, one real type error found and
+fixed in `deviceIdentity.ts`, `tsc`/`eslint`/`npm run build` all clean),
+and confirmed working end-to-end with a real browser walkthrough — see
+"Mobile app now confirmed working" below and DEVLOG's "Mobile build fix"
+entry. **The mobile half of Phase 5 (M12/M13) is still UNVERIFIED ON A
+REAL DEVICE** — the fix above proves the web-preview/TypeScript layer
+works, not a native Android build; same standing Android SDK/JDK 21
+blocker as every mobile cut since Sprint 3. Sprints 3 and 5 remain
+coded-but-unverified on a device.
 
-**Housekeeping done this session (2026-09-03, follow-up pass):** migrations
+**Mobile app now confirmed working (Session F, 2026-09-03):** a full live
+browser walkthrough — real login, Home (real name/duty status), M5
+Assignments, M7 Map, Profile (M12's new notification diagnostics), M3 Log
+Incident — all render correctly with zero unexpected console errors
+against a disposable backend. `npm run verify.schema` also re-confirmed
+113/113. Full detail in DEVLOG's "Mobile build fix" entry. This was NOT
+committed as part of Session E's push — the `npm install`-driven
+`package-lock.json` change and the `deviceIdentity.ts` type fix are
+tracked separately; check `git status` before assuming they're already on
+`origin/main`.
+
+**Housekeeping done in Session E (2026-09-03, follow-up pass):** migrations
 0004 (`blotter_revision`), 0005 (`sms_envelope_replay`), and 0006
 (`sms_log.barangay_id`) have all been applied to the real local
 `baranguard` database — confirmed via `DESCRIBE`/`SHOW TABLES`. Blotter
 finalize/amend and the full SMS/notification pipeline are now unblocked on
 this machine. The two scratch PNGs under `mobile/` were deleted earlier
-this session. Working tree is otherwise the uncommitted Phase 2-5 changes
-described below.
+that session.
 
 **The one number that matters for the AI work: the MODEL has still never
 been called.** Everything verified was verified with SQL-seeded draft rows
@@ -455,15 +548,22 @@ finalize/amend/lupon-packet.
 - **Three stray empty untracked files in the repo root** (`cls`, `git`,
   `main)`) — leftovers from an old mis-pasted command, not part of any
   build. Harmless; just don't `git add -A`/`git add .` and sweep them in.
-- **`mobile/package.json` now lists `@capacitor/geolocation` AND (as of
-  this session) `@capacitor/push-notifications`, but `npm install` was
-  never run for either** — `tsc` will fail on `src/services/geolocation.ts`
-  and `src/services/deviceIdentity.ts`/`criticalAlertStore.ts`'s imports
-  until that runs. Run `npm install` before doing anything else in
-  `mobile/`. After that, `npx cap sync android` and a manual
-  `POST_NOTIFICATIONS` permission add to `AndroidManifest.xml` (Android
-  13+) are both still needed before push notifications can work on a
-  device — see backend/DEVLOG.md's Sprint 4 Phases 2-5 entry.
+- **RESOLVED this session**: `@capacitor/geolocation` and `@capacitor/
+  push-notifications` were declared in `mobile/package.json` but never
+  actually installed — that was the entire "Sprint 3 doesn't compile"
+  root cause. `npm install` has now been run in `mobile/`
+  (778 packages audited; 13 pre-existing moderate/high advisories, NOT
+  addressed — that's its own scoped `npm audit` decision). One real type
+  error surfaced once the real types existed
+  (`PushNotifications.addListener()` returns a `Promise<PluginListenerHandle>`
+  in v8, not a handle directly) and was fixed in `deviceIdentity.ts`.
+  `tsc --noEmit`, `eslint`, and `npm run build` are all clean as of this
+  commit — see backend/DEVLOG.md's "Mobile build fix" entry for the full
+  diagnosis and a real browser walkthrough (login, M5 Assignments, M7
+  Map, Profile, M3 Log Incident all confirmed rendering with zero
+  unexpected errors). `npx cap sync android` and the `POST_NOTIFICATIONS`
+  manifest permission (Android 13+) are STILL outstanding — this fix gets
+  the web-preview/TypeScript layer working, not a native Android build.
 
 ## Git / attribution convention
 

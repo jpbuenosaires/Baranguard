@@ -1,0 +1,49 @@
+/* blotter-list.css — W6 Electronic Blotter (Phase 6 rebuild). */
+
+.blotter-detail-pane {
+  min-width: 0;
+}
+
+.detail-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem var(--spacing-md, 0.75rem);
+  margin: var(--spacing-md, 0.75rem) 0;
+}
+
+.detail-fields dt {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.detail-fields dd {
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.blotter-detail-pane__actions {
+  display: flex;
+  gap: var(--spacing-sm, 0.5rem);
+  margin-top: var(--spacing-md, 0.75rem);
+}
+
+/* Print isolation: the Print button prints only the currently selected
+ * record, not the sidebar/topbar/table around it. Standard
+ * visibility-swap technique — everything is hidden, then the print area
+ * (and its descendants) are made visible again and pulled to the page
+ * origin. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .blotter-print-area,
+  .blotter-print-area * {
+    visibility: visible;
+  }
+  .blotter-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

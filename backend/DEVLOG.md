@@ -4506,3 +4506,935 @@ this screen needs to change when that happens.
 5. Browser-verify W14 for Punong Barangay/Secretary/Tanod (403 expected
    for all three) and spot-check the other 12 web screens for any
    regression from this session's `AppShell.js`/`icons.js` changes.
+
+---
+
+# DEVLOG — Mobile build fix: `npm install` was never run for two declared
+# dependencies (root cause of "Sprint 3 doesn't compile"), plus one real
+# type error, plus a full live-browser verification pass
+
+## Today's cut
+
+The user asked why the mobile app couldn't compile and to confirm it
+actually works before ending the session. Not a Sprint Prompts "Today's
+cut" box — a targeted diagnose-and-fix, plus verification.
+
+## Root cause (exactly what it looked like — nothing subtler)
+
+`@capacitor/geolocation` (added to `package.json` in the Sprint 3 session)
+and `@capacitor/push-notifications` (added in the Sprint 4 Phases 2-5
+session, this same day) were both **declared but never installed** —
+every prior DEVLOG entry that touched either one said so explicitly
+("`npm install` was NOT run"). `node_modules/@capacitor/` had no
+directory for either package. Every other declared dependency (SQLite,
+secure-storage, voice-recorder, Ionic, camera, filesystem, preferences)
+was genuinely present — confirmed by listing `node_modules/@capacitor/`
+and checking each package individually before assuming `npm install`
+alone would fix everything.
+
+## Fix
+
+1. `npm install` in `mobile/` — resolved cleanly, 2 packages added, 778
+   audited (13 pre-existing moderate/high advisories, none touched by
+   this fix, not addressed here — a separate `npm audit` pass is its own
+   scoped decision, not a silent side effect of a compile fix).
+2. That surfaced ONE real type error, invisible until the real package
+   types existed: `PushNotifications.addListener()` in
+   `@capacitor/push-notifications` v8 returns
+   `Promise<PluginListenerHandle>`, not a handle directly — this session's
+   own `deviceIdentity.ts` (written against the plugin's prose docs, not
+   its actual `.d.ts`) called `.remove()` on the unresolved Promise.
+   Fixed by awaiting both `addListener()` calls before constructing the
+   token-resolution `Promise`, with a plain `resolveToken`/`finish`
+   closure instead of the broken ref-hack the first fix attempt produced
+   (caught and corrected before running `tsc` again, not left in).
+   `criticalAlertStore.ts` calls the same API but never stored/awaited
+   the handle at all (fire-and-forget listeners for the app's whole
+   lifetime, which is what it actually wants), so it was never affected.
+
+## Tests performed (with evidence)
+
+1. **`tsc --noEmit`** — clean, zero errors, entire project.
+2. **`eslint` across all of `src/`** — clean, zero warnings.
+3. **`npm run build`** (`tsc && vite build`) — succeeds, `dist/` produced.
+   The only warnings are pre-existing Ionic/lightningcss vendor CSS
+   warnings (`host-context` pseudo-class) and a chunk-size-limit notice,
+   both unrelated to any of this session's code.
+4. **`npm run verify.schema`** — 113/113, confirming the local SQLite
+   schema layer (unaffected by this fix, but a real "does the mobile app
+   actually work" check) is still sound.
+5. **A full live browser walkthrough**, not just a build — disposable
+   database + disposable Tanod account + a throwaway PHP API server
+   (`public/dev-router.php`, port 8150) + the real Vite dev server via
+   `.claude/launch.json`:
+   - Login renders correctly (confirmed via DOM inspection after
+     re-fronting the tab — the Browser tool's own documented quirk of a
+     backgrounded tab showing a stale/blank screenshot while the DOM is
+     already correct recurred here exactly as described in an earlier
+     session's DEVLOG entry; re-selecting the tab and re-screenshotting
+     resolved it, not an application bug).
+   - A real login (`POST /auth/login` → 200) reaches Home with the
+     authenticated Tanod's real name and real duty status.
+   - **Assignments (M5)** — the actual Sprint 3 screen in question —
+     renders "No Active Assignments" correctly. Two console errors
+     appeared and are BY DESIGN: `localDatabase.ts` deliberately throws
+     on the web platform rather than opening an unencrypted SQLite store
+     (documented repeatedly in this DEVLOG), and `assignments.tsx`
+     correctly catches it and falls back to the empty state instead of
+     crashing — confirmed this is the intended behaviour, not treated as
+     a bug to fix.
+   - **Map (M7)** — the other Sprint 3 screen — renders its real
+     status-view content ("Could not read this device's location. Check
+     location permission." + "No incidents reported nearby."), no crash.
+   - **Profile** — this session's new `NotificationDiagnostics` (M12)
+     correctly reports "Push notification permission: Not available on
+     this platform" on the web platform, rather than faking a granted/
+     denied state.
+   - **Log Incident (M3)** — renders correctly, Add Photo/Record Voice
+     Note buttons intact.
+   - Network tab: every module file 200, `POST /auth/login` 200,
+     `GET /duty-status` 200, `GET /dispatch` 200 (Assignments' real data
+     source), and the one expected 404 (`GET /map-packages/1` — no
+     package published in this disposable DB, already documented as
+     non-fatal to login since Sprint 2). No 500s anywhere.
+   - All test infrastructure (disposable database, disposable app-user,
+     the throwaway PHP server, the Vite preview) was torn down after —
+     the real `baranguard` database was never touched.
+
+## Not done / still standing (unchanged by this fix)
+
+- `npx cap sync android` and the `POST_NOTIFICATIONS` manifest permission
+  (Android 13+) are still outstanding — this fix gets the WEB-PREVIEW/
+  TypeScript layer working, not a native Android build. The Android SDK/
+  JDK 21 blocker from Sprint 2 is unchanged.
+- Noticed in passing, NOT fixed here (a scope decision, not an oversight):
+  Home's SOS button copy still reads "it needs the Sprint 4 alert backend
+  (`POST /tanod-sos`)" — that backend has existed and been verified since
+  the Sprint 4 Phase 1 session. The button itself staying disabled is
+  correct and already tracked in HANDOFF.md ("M2's SOS button in the
+  mobile app is STILL disabled"); the stale WORDING is a small, separate
+  follow-up, not touched in this fix since actually wiring the button is
+  the real work that copy is honestly describing as not done.
+
+---
+
+# DEVLOG — UI/UX completion pass: dark mode, DataTable, sidebar badges,
+# map clustering, KPI sparklines, PWA manifest, mobile parity (web +
+# mobile, 9-phase approved plan)
+
+## Today's cut
+
+Not a Sprint Prompts "Today's cut" box — a user-directed UI/UX completion
+pass, scoped and approved in advance via a written 9-phase plan (the user
+was asked three explicit scoping questions first: whether to build dark
+mode at all — yes; which "bigger" web items to include — DataTable
+completion, sidebar badge counts, and map clustering/click-to-zoom, all
+three; which "small extras" — KPI sparklines and a PWA manifest, both).
+Everything below was authorized in that plan before any code was written.
+Explicitly NOT in this pass (stays deferred): Dashboard auto-refresh/
+quick-dispatch/response-time gauge/activity feed, Dispatch Center
+drag-and-drop/audio alerts/timeline/resizable pane, GIS animated
+markers/trails/geofence/search/follow mode, Scheduler calendar view,
+Citizen Report photo upload, real-time refresh indicators, keyboard
+shortcuts, breadcrumbs.
+
+Dark mode is a deliberate, explicit reversal of a decision already on
+record in this file (the mobile-side entry's "Light, not dark... there is
+no documented dark variant" note) — recorded here so a later session
+doesn't "fix" it back citing that older note.
+
+## Phase 1 — Dark mode token infrastructure
+
+`web/src/styles/base.css`'s `:root` block already held every color as a
+custom property (§8's own rule) — dark mode is a second value set for the
+same tokens, applied two ways: `@media (prefers-color-scheme: dark) {
+:root:not([data-theme="light"]) {...} }` for the system-default case, and
+`:root[data-theme="dark"] {...}` for an explicit user choice, so an
+explicit choice always wins over system preference in both directions.
+`web/index.html` gained a small inline bootstrap `<script>` in `<head>`
+(before any stylesheet) that reads `localStorage.baranguard.theme` and
+sets `data-theme` before first paint — a `<script type="module">` runs
+deferred-by-spec and would have painted the wrong theme first on every
+load for a user who'd chosen dark.
+
+**A new token, not a repurposed one.** `--color-white` already meant
+"literal white, theme-invariant" (text/icons on a saturated brand color,
+e.g. a primary button's label) — overloading it to also mean "card/panel
+background" would have made every one of those literal uses turn white-
+on-white in dark mode. Added `--color-surface` instead (`#FFFFFF` in
+light, `#1E293B` in dark) and reclassified every actual *surface*
+background across `base.css`/`AppShell.css`/`ConfirmDialog.css`/
+`Toast.css`/`PageHeader.css`/`DonutChart.css`/`dispatch-center.css`/
+`login.css` to it, leaving `--color-white` alone everywhere it was
+correctly literal (button labels, `Avatar.css`, the critical-alert
+overlay's accent). Also fixed one real pre-existing bug found while
+doing this: `.status-pill--pending` hardcoded `color: #92400E` directly —
+the one raw hex in the whole file — promoted to a `--color-warning-text`
+token so dark mode can override it like everything else. And one
+hardcoded literal in `AppShell.css`: `.status-badge--ok`'s `#DCFCE7` →
+`var(--tint-success-solid)`.
+
+**CSS `transition` clobbering, caught before it shipped.** A blanket
+`transition: background-color .2s, color .2s, border-color .2s` rule
+across every themed surface would have silently DELETED the more
+specific transitions `button`/`input`/`.card` already had (press-feedback
+transform, focus box-shadow, hover shadow) — `transition` is a shorthand,
+and a later rule wins the whole property, not just the parts it mentions.
+Caught by grepping for existing `transition:` declarations before writing
+the new rule; fixed by excluding those selectors from the blanket rule
+and extending their existing declarations in place instead. The blanket
+rule itself is wrapped in `@media (prefers-reduced-motion: no-preference)`,
+extending the same reduced-motion discipline the rest of the app already
+had rather than adding a second, separate check.
+
+**`LiveMap.js`'s MapLibre paint colors** (`#3B82F6`/`#1D4ED8`/`#E0F2FE`)
+were hardcoded JS string literals, invisible to the CSS-token retrofit
+entirely — a `themeToken(name, fallback)` helper reads the live computed
+CSS custom property value at render/theme-change time instead.
+
+Toggle: a sun/moon icon button in `AppShell.js`'s topbar
+(`localStorage.baranguard.theme`: `'light'|'dark'`, no third "system"
+value stored — omitting the key at all is what "system" means).
+
+## Phase 2 — Toast/ConfirmDialog rollout completion
+
+`scheduler.js`, `fatigue-flags.js`, `swap-requests.js` — each had exactly
+one `alert(...)` call for its own error path, replaced with
+`showToast(message, {variant:'error'})`. `dispatch-center.js`'s one
+remaining `window.confirm(...)` (cancel-dispatch) replaced with
+`ConfirmDialog`, matching the pattern the file already used elsewhere.
+Verified live in the Final sweep below — see "Cancel dispatch #1?" there.
+
+## Phase 3 — Accessibility completion
+
+`DataTable.js` gained a `role="status" aria-live="polite"` row-count
+summary (e.g. "5 rows in Electronic blotter entries.") so a screen reader
+hears the result of a filter/reload without re-navigating to it.
+`main.js` gained `focusPageHeading(root)`, called once at the end of
+`boot()`'s dispatch chain: finds `.page-header__title, h1, h2` in the
+newly-rendered page, gives it `tabindex="-1"` if it doesn't already have
+one, and focuses it — so a keyboard/screen-reader user isn't left
+attached to a DOM node `root.innerHTML = ''` just deleted. The `h1, h2`
+fallback (not just `.page-header__title`) turned out to matter for real —
+see Historical Heatmap below.
+
+## Phase 4 — DataTable completion
+
+`DataTable.js` gained optional `emptyIcon`/`emptyMessage`/`page`/
+`totalItems`/`pageSize`/`onPageChange` props (Prev/Next + a "Showing X-Y
+of Z" indicator, wired to each page's own `load()` re-fetching with a
+`page` param rather than DataTable inventing client-side pagination on
+top of an already-capped fetch) and a new exported `exportRowsToCsv
+(columns, rows, filename)` helper (RFC 4180 escaping). `DataTable.css`
+gained zebra striping via `color-mix` against `--color-bg` (so it
+respects dark mode automatically) and empty-state icon/pagination
+styling. Wired into `sms-log.js` (real server-side pagination —
+`GET /sms/logs?page=&limit=25`, the first page consumer with more than
+one page of real data) and `blotter-list.js` (CSV export).
+
+## Phase 5 — Sidebar badge counts
+
+New endpoint `GET /reports/nav-counts` (`backend/controllers/
+ReportsController.php`, Admin-only, tenant-scoped) — one round trip
+returning `{pending_incidents, unconverted_citizen_reports,
+pending_swap_requests, unacknowledged_fatigue_flags}` rather than four
+separate sidebar-driven fetches on every page load. `shift_swap_request`/
+`fatigue_flag` have no direct `barangay_id` column, so their counts join
+through `shift_schedule`. `AppShell.js`'s `NAV_ITEMS` gained an optional
+`countKey`; a small badge renders beside the icon when count > 0, fetched
+once on mount and polled every 60s (slower than GIS's 15s — count badges
+aren't time-critical), with the interval's own tick checking
+`el.isConnected` to self-stop rather than a second interval whose only
+job was clearing the first.
+
+## Phase 6 — Map clustering + click-to-zoom
+
+**Deviated from the plan's literal text.** The plan specified MapLibre's
+native GeoJSON `cluster:true` source/layer clustering; building it turned
+up that this would mean abandoning `LiveMap.js`'s existing DOM-marker
+approach entirely (CSS pulse animation, native browser tooltips, the
+staleness-pill treatment) in favor of GeoJSON-driven canvas layers — a
+materially bigger rewrite of already-tested, working code for the same
+user-facing outcome. Built a hand-rolled DOM-based screen-pixel clustering
+algorithm instead (`clusterByScreenDistance()`, `CLUSTER_RADIUS_PX=44`):
+groups markers whose projected screen positions fall within the radius,
+renders a numbered cluster marker in place of the individual ones,
+`getClusterExpansionZoom`-equivalent click-to-zoom via `flyTo`, individual
+markers keep their existing popup/tooltip/staleness behavior unchanged.
+Re-clusters on map move via `scheduleRecluster()` (debounced). This
+preserves every already-tested marker behavior while still delivering
+real clustering — verified live in the Final sweep: two Tanods seeded at
+near-identical coordinates rendered as one cluster marker reading "2",
+with the third (further away) Tanod as its own individual marker showing
+a real freshness pill.
+
+## Phase 7 — KPI sparklines
+
+**Deviated from the plan's literal text.** The plan named "Total Incidents
+AND Resolved" for sparklines; `ReportsController.php`'s `GET
+/reports/summary` only ever returns a `trend[]` series for incidents
+CREATED per day — there's no matching day-by-day series for "resolved,"
+so applying a sparkline to that card would mean drawing invented data.
+Scoped to Total Incidents only, and said so in a code comment rather than
+misapplying the trend series to a card it doesn't describe.
+`KpiCard.js` gained an optional `sparkline?: number[]` prop
+(`buildSparkline()` — a small inline SVG polyline, 0–100 normalized
+viewBox, no charting library, consistent with the existing hand-rolled
+`TrendChart`/`DonutChart` approach). `admin-dashboard.js` passes
+`summary.trend.map(d => d.count)` into both the initial and
+delta-refreshed Total Incidents card.
+
+## Phase 8 — PWA manifest + Apple touch icon
+
+`web/manifest.json` (name/short_name/icons — an inline SVG data URI
+reusing the exact same navy shield as the existing favicon, no new binary
+asset/build step — theme_color/background_color/display:standalone),
+linked from `index.html` alongside a matching `apple-touch-icon` link and
+a `theme-color` meta tag. Honest limitation noted inline: an SVG
+apple-touch-icon has patchier iOS Safari support than a PNG, acceptable
+for a locally-hosted internal admin tool, not a consumer app.
+
+## Phase 9 — Mobile UI/UX parity pass
+
+`mobile/src/theme/app.css` had zero gradients, zero animation rules, and
+zero `alert()`/`confirm()` calls anywhere in `mobile/src/` before this —
+confirmed by inspection, not assumed. Added: a card gradient sheen
+matching web's `.card` treatment at the same visual weight; a
+`.status-pill--critical` left-border accent (mirroring web's) plus an
+opt-in `.is-urgent` pulse animation (a class, not baked into the base
+critical pill, so an ordinary historical record doesn't pulse forever),
+wrapped in `prefers-reduced-motion`. `home.tsx` (M2) gained an `IonToast`
+for duty-toggle success feedback and an `IonAlert` confirmation gate on
+Sign Out — previously immediate/unguarded, now "You'll need to sign in
+again..." with Cancel/Sign out. Verified live (disposable rig, real
+Tanod account): the duty toggle produces a real `{"toastPresent":true,
+"message":"You're now on duty."}`; clicking Sign Out opens the alert
+(`{"header":"Sign out?","urlStillHome":true}`) rather than signing out
+immediately; clicking the alert's own "Sign out" button (its Cancel and
+confirm buttons render as plain `<button>`s with no accessible
+`shadowRoot`, so located via the `find` tool's text search rather than
+`alert.shadowRoot.querySelectorAll`) actually cleared the session and
+navigated to `/login`, confirmed via
+`{"alertStillOpen":false,"href":"http://localhost:5173/login",
+"hasSession":false}`. The two console errors during that pass were the
+already-documented, intentional "encrypted local store is Android-only"
+web-platform guard on `assignments.tsx` — not new bugs.
+
+**Skipped, and said so rather than silently dropped**: an `IonAlert` for
+discarding an in-progress incident draft (M3) — `new-incident.tsx` has no
+existing "leave without saving" trigger to gate (no back/cancel action
+that discards a draft exists on that screen yet), so there is nothing to
+guard; adding one would be new scope, not a UI/UX polish pass on
+something that already existed.
+
+## Final step — cross-theme, cross-platform QA sweep (real browser, real backend)
+
+Built a disposable rig (`baranguard_qa_final` database, all 6 migrations
+applied, disposable `qafinal_app` user, PHP dev server on port 8230,
+static `web/` server on port 8231 — `web/index.html`'s API base URL
+temporarily repointed and reverted after) seeded with realistic data
+across every table this pass touches: 6 users (admin/secretary/PB/3
+tanods), 2 clustered + 1 distant GPS point, 5 incidents spanning every
+status, 2 dispatches, a finalized blotter record with an approved AI
+redaction, a second incident with a completed-but-unapproved AI draft (so
+both W7/W8 states were real, not just the happy path), a pending shift
+swap request, an unacknowledged fatigue flag, 2 unconverted citizen
+reports, and 30 `sms_log` rows (enough to exercise Phase 4's real
+pagination). The session was interrupted partway through by an
+environment restart (MySQL and both disposable servers went down); on
+resume, MySQL and both servers were restarted and the disposable DB
+(which had survived on disk) was found to be missing migrations 0005/0006
+— applied, then the sweep continued rather than restarted from scratch.
+
+**Two real bugs found and fixed during this sweep, not just claimed:**
+
+1. **`GET /sms/logs` 500'd on this rig at first** — `SQLSTATE[42S22]:
+   Unknown column 'barangay_id'`. Root cause was entirely in the QA rig,
+   not the app: the disposable database was only migrated through 0004,
+   missing 0005/0006 (the migrations that add `sms_log.barangay_id`) —
+   `SmsController.php` itself is correct against the real, fully-migrated
+   schema. Applied the missing migrations and backfilled the already-
+   seeded rows' `barangay_id`; confirmed fixed via a real page-2
+   pagination round trip afterward.
+2. **A GPS marker showed "LIVE · -27648S AGO"** — a negative age.
+   Root cause was also entirely in the QA rig's seed script: it used
+   `NOW()`, and on this machine MySQL's session `NOW()` returns local
+   wall-clock time (~8h ahead of true UTC) while every other timestamp
+   this application writes and reads is naive-but-UTC (an established,
+   repeatedly-documented convention in this file). Fixed by rewriting the
+   seed script to use `UTC_TIMESTAMP()` throughout and reloading; GPS
+   freshness then computed correctly (`LIVE · 22S AGO` / `STALE · 5M
+   AGO`, correctly crossing the documented 120s threshold for the
+   distant point).
+
+**One real, pre-existing gap found and fixed, unrelated to either bug
+above:** `historical-heatmap.js` (W5) was the one screen this project's
+own earlier "every AppShell page migrated to PageHeader" pass
+(documented several entries back in this file) had missed — it still
+built its heading as a raw `<h2 style="margin-bottom:16px; display:flex;
+...">` written straight into the content area, in direct violation of
+§8's "never hardcode... in a component file" rule, and it duplicated its
+own "historical, not predictive" disclosure as a second `<p class="note">`
+right below. Migrated to the shared `PageHeader` component (title +
+subtitle carrying that same disclosure, once) matching all ten other
+already-migrated screens. `node scripts/verify-web-wiring.mjs` went from
+300 to 311 checks passing (0 failed) after this fix. This also means
+Phase 3's `focusPageHeading` now correctly targets `.page-header__title`
+on this screen instead of falling back to a bare `h2` — confirmed live:
+`{"focusedAfterNav":true, "headerBg":"rgb(30, 41, 59)"}` (the correct
+dark-mode surface token).
+
+**What the sweep actually verified, with evidence, not just claimed:**
+- **All 12 Admin-visible screens, dark mode**: an automated in-page audit
+  clicked through every sidebar nav item and scanned every visible
+  element for a "near-white background while dark mode is active"
+  anomaly (a literal leftover from the pre-retrofit codebase). Zero found
+  across all 12, both before and after the Historical Heatmap fix.
+- **The same 12 screens, explicit light mode** (inverse audit — scanning
+  for leftover near-black backgrounds): zero found.
+- **The explicit toggle itself**: clicking it twice round-trips
+  light→dark→light correctly, each click persisting to `localStorage`
+  and updating `document.documentElement`'s `data-theme` and the live
+  computed body background in the same call.
+- **The no-flash bootstrap script**: a fresh page LOAD (not a client-side
+  toggle) with `baranguard.theme=dark` already in `localStorage` renders
+  `data-theme="dark"` and the correct dark body/card colors from the
+  first paint — checked on the unauthenticated login page specifically,
+  since that's the page most likely to flash (nothing else has rendered
+  yet to hide behind).
+- **Sidebar badge counts (Phase 5), against real seeded data**: the nav
+  itself read "Dispatch Center2", "Citizen Reports2", "Swap Requests1",
+  "Fatigue Flags1" — matching the seeded 2 pending incidents, 2
+  unconverted citizen reports, 1 pending swap request, and 1
+  unacknowledged fatigue flag exactly.
+- **DataTable pagination + CSV (Phase 4), against 30 real `sms_log`
+  rows**: page 1 showed "Showing 1-25 of 30 · Page 1 of 2"; clicking Next
+  correctly showed "Showing 26-30 of 30 · Page 2 of 2" and the ARIA live
+  region updated to "5 rows in SMS activity log."; clicking Export CSV
+  produced zero console errors.
+- **Map clustering (Phase 6), against real coordinates**: two Tanods
+  seeded ~5m apart clustered into one marker reading "2"; a third,
+  ~250m away, rendered as its own marker with a correct, independent
+  freshness pill.
+- **ConfirmDialog (Phase 2), live interaction**: clicking Dispatch
+  Center's Cancel button opened a real component (not `window.confirm`)
+  reading "Cancel dispatch #1? / The incident will return to the pending
+  queue." with "Keep it" / "Cancel dispatch" buttons, correctly
+  dark-themed (red-accented destructive button, dimmed backdrop);
+  dismissed via "Keep it" without actually cancelling, to leave the rest
+  of the rig's data intact for further checks.
+- **W7 Blotter Detail and W8 AI Redaction Review, both roles, both dark
+  and light mode**: W7 on a still-pending incident correctly showed "Not
+  yet" for every timeline stage that hadn't happened yet (the exact
+  fabricated-timeline class of bug an earlier Sprint 6 session already
+  fixed once — confirmed the fix still holds); W8 showed the real raw
+  narrative beside the real AI draft, the real self-hosted model name
+  (`aisingapore/Llama-SEA-LION-v3.5-8B-R`), and no confidence/accuracy
+  number anywhere (§8's own explicit rule) — both screens' dark-mode
+  audits came back clean.
+- **Mobile Phase 9**: re-confirmed from the pre-interruption pass above
+  (this entry's own "Phase 9" section) — not re-run in this Final sweep,
+  since it already has direct, real interaction evidence of its own.
+
+All disposable infrastructure (database, app user, both PHP dev servers,
+the browser tab) was torn down after; `web/index.html`'s API base URL and
+`mobile/.env.local` were both reverted to their real values; the real
+`baranguard` database was never touched.
+
+## Not done / explicitly out of this pass
+
+- Every item the plan's own "Explicitly NOT in this round" list already
+  named (Dashboard auto-refresh, Dispatch Center drag-and-drop/audio
+  alerts, GIS animated markers/trails/geofence/search, Scheduler calendar
+  view, citizen-report photo upload, keyboard shortcuts, breadcrumbs) —
+  unchanged, still deferred.
+- M3's discard-draft `IonAlert` — see Phase 9's own note above for why.
+- No native Android device run of Phase 9's mobile additions — same
+  standing Android SDK/JDK 21 blocker as every mobile cut since Sprint 3;
+  Phase 9 was verified via the Vite web-preview build only, same
+  verification tier as the "Mobile build fix" entry immediately above
+  this one in this file.
+- Nothing from this pass has been committed yet — sitting in the working
+  tree pending the user's explicit go-ahead, per this project's own
+  standing convention.
+
+---
+
+# DEVLOG — UI/UX audit remediation: contrast tokens, the dead scale knob,
+# DataTable/AppShell accessibility, Dispatch Center polling, and the
+# reported-vs-resolved line chart
+
+## Today's cut
+
+User-directed: "do it all" against the interface audit written earlier the
+same session, plus two explicit design requests — replace the bar chart
+with a two-series line chart matching a supplied reference, and give the
+donut card the same treatment. Not a Sprint Prompts box.
+
+## The finding the audit itself got wrong
+
+**The `html { font-size: 75% }` scale knob has never worked, and the audit
+repeated its own documentation as if it had.** `html, body { … font-size:
+var(--font-size-md) }` further down `base.css` also sets font-size on the
+root, at equal specificity and later in the file, so it won — and `rem` on
+the ROOT element resolves against the browser's initial 16px, not against
+the declaration being computed. Measured live: computed `html` font-size
+16px, `1rem` = 16px.
+
+The app has therefore always rendered at a 16px root. Every figure in the
+audit's A3 ("body 12px, --font-size-sm 10.5px, .label 9px") was wrong; the
+real values have always been 16 / 14 / 12px. The earlier browser
+measurements in that same audit are consistent with this in hindsight — a
+34px input height only works out at a 14px font, not 10.5px.
+
+Fixed by removing `font-size` from the `html, body` rule (it applies to
+`body` alone now) so the knob genuinely controls the root, and setting it
+to **100%** — exactly what the app has been rendering at all along. Making
+a dormant knob live must not silently resize a UI nobody asked to change.
+The spacing-token trim that had been made on the assumption the root was
+growing was reverted for the same reason. Net visual change: none. Net
+behaviour change: the knob now actually responds if it is turned.
+
+## A1 — solid status fills inverted in dark mode (highest severity)
+
+Dark mode correctly lightens the status colours so they read as TEXT on a
+dark ground. The same tokens were also used as solid backgrounds under
+white text, where lightening is exactly backwards. Eight elements were
+affected; the SOS banner — the most urgent element in the system — sat at
+**2.77:1**, and the KPI icon glyphs at **1.67:1**.
+
+Resolved with a `--color-*-solid` set locked to the light values in both
+themes, which is the same distinction this codebase already drew once
+between `--color-white` (literal) and `--color-surface` (theme-aware).
+Applied to `.sos-banner`, `.sidebar__nav-badge`, `button.danger:hover`,
+the four `.icon-badge--kpi` accents, and LiveMap's three marker fills.
+
+## A2 — fifteen failing contrast pairs
+
+Seven in light, eight in dark, each replaced with a verified value.
+Notable: dark primary `#3B82F6` to `#2563EB` (3.68 to 5.17), and its hover
+`#60A5FA` to `#1D4ED8` — the hover state used to get LIGHTER under white
+text, the wrong direction entirely. Pill label colours were split onto
+their own `--pill-*-text` axis, since text-on-tint and text-on-surface are
+different contrast problems that were being answered with one value.
+
+**Re-audited against the shipped tokens after the change: 46 pairs, 0
+failures, both themes.**
+
+## A structural fix that fell out of making that change
+
+The dark palette was written out TWICE — once in the
+`prefers-color-scheme` block, once in `[data-theme="dark"]`. Applying the
+corrections to one copy and missing the other happened immediately and
+silently while making this very change. The values now live once, in
+`:root` as `--dark-*`, and the two blocks only remap onto them. A colour
+changes in one place and both paths follow.
+
+## Everything else from the audit
+
+- **A5 landmarks**: `<aside>` / `<header>` / `<main>` in AppShell. The app
+  had none — one `<nav>`, and otherwise all `div`.
+- **A6 `document.title`**: now "Page — Baranguard"; every screen, history
+  entry and bookmark previously read the same string.
+- **A7 targets**: checkbox 13 to 18px inside a 24px label hit area, inputs
+  `min-height: 2.5rem`, nav rows 44px.
+- **A8/A9 DataTable honesty**: sorting is suppressed while paginated (it
+  sorted one page and presented it as the whole set), and a new
+  `ExportCsvButton` states what it will actually write —
+  "Export CSV (25 of 30)" — instead of quietly emitting a partial file.
+- **A10 `aria-sort`** moved from the button onto the `th`, where ARIA
+  requires it; where it sat, nothing reported it at all.
+- **A11 row semantics**: clickable rows no longer take `role="button"`,
+  which overrode the row role and destroyed header/cell association. The
+  first cell now carries a real activator button instead.
+- **A13 mobile drawer**: below 768px the sidebar was a permanent rail of
+  twelve unlabelled icons, with the collapse toggle ALSO hidden by
+  `.sidebar__brand > :not(:first-child)` — no labels, no tooltips on
+  touch, no way out. Now an off-canvas drawer with scrim and Escape.
+- **A14**: collapsed-rail badges render as a corner pip rather than
+  `display:none`, with the count carried in the item's `aria-label`.
+- **A16**: `refreshNavCounts()` on the shell handle, called after
+  acknowledge / approve / assign, so a badge cannot contradict the screen
+  for up to 60 seconds.
+- **A17**: roughly 35 lines of dead `.dispatch-card*` CSS removed.
+- **A4**: all 27 hardcoded pixel inline styles replaced with tokens or
+  named utility classes.
+
+Per-screen: the SOS banner is actionable (names the Tanod, Acknowledge
+wired to the Sprint 4 endpoint, "Show on map", `role="alert"`); W2's KPI
+cards mutate in place instead of being replaced, which made them visibly
+blink; W2 gained range presets, a freshness stamp and client-side range
+validation; W4 roster rows centre the map; W6 states its 100-row cap
+instead of silently truncating; W13 shows hours against the 56-hour
+threshold with a proportional bar; W15 gained the password-rule checklist
+and a note that changing a password signs out other devices; W19 gained a
+copyable reference number and a "what happens next" line.
+
+## W3 — the blocking defect
+
+Dispatch Center loaded once and then only on an assign or cancel. A new
+incident, or a new **Tanod SOS**, never reached the dispatcher until they
+happened to act or navigate away and back — on the one screen whose entire
+job is watching the queue. It now polls at 15s (matching GIS), with the
+same contract: a failed background poll leaves a populated queue alone and
+simply stops advancing the timestamp.
+
+Two related fixes: the LiveMap instance is preserved across reloads (it
+was destroyed and rebuilt every time, discarding the dispatcher's pan and
+zoom — which polling would have made unusable), and the pending queue is
+ordered critical-first, then oldest-first within a priority.
+
+**Verified live:** the freshness stamp advanced 05:38:04 to 05:38:19
+without any interaction.
+
+## The charts
+
+`TrendChart` (divs, one bar per day, single series) is replaced by
+`LineChart` — inline SVG, multi-series, nice-rounded y-axis, at most six
+x labels always including first and last, an area fill under each line,
+point markers only when they will not collide, and colours read from
+`--chart-line-*` at render time so a theme change is followed rather than
+baked in. The donut legend is restyled to dot + category caption + bold
+percentage, with the raw count kept alongside (a percentage alone hides
+how small the sample is on a quiet week).
+
+**The second series needed real data, and getting it honestly was the
+interesting part.** `incident` has no `resolved_at`, and `updated_at`
+moves on any write, so neither can answer "resolved on which day".
+`GET /reports/summary`'s `trend[]` now carries `resolved`, bucketed on
+`dispatch.completed_at` — the only resolution moment §5 actually records.
+Stated in both the controller and the API client: an incident closed by
+the Admin resolve action without a completed dispatch contributes to
+`resolved_count` (a state count) but not to this series (a timing series),
+so the two are not expected to reconcile. Confirmed against real seeded
+data — 5 reported / 1 resolved-in-range against a `resolved_count` of 2,
+exactly the documented divergence.
+
+Nothing on either chart is invented, and `trend[].count` keeps its
+existing meaning, so every prior consumer is unaffected.
+
+## W8 — the redaction diff
+
+The screen where a person certifies that personal information has been
+removed presented the original and the draft as two plain blocks of prose;
+finding what changed was a manual character-by-character read. A
+word-level LCS diff now marks the removed spans inside the original, and a
+count states what to check for ("4 identifiers removed: 2 name, 1 address,
+1 phone"). No library and no model call — it runs over one narrative at a
+time. Removal is marked by strikethrough and underline as well as colour,
+so it survives greyscale and colour-blindness. Every token is written via
+`textContent`; no reported text is ever parsed as markup.
+
+Unit-tested in Node against six cases (name, address, phone, multiple
+identifiers, no-op, empty draft) — 6/6.
+
+## Tests performed (with evidence)
+
+1. `node --check` clean on every JS file; `php -l` clean on
+   `ReportsController.php`.
+2. `node scripts/verify-web-wiring.mjs` — **313 checks, 0 failed** (up
+   from 300).
+3. **Token contrast re-audit against the shipped values — 46 pairs, 0
+   failures**, both themes, WCAG 2.x relative-luminance formula. It was 23
+   failures before this pass.
+4. **Diff algorithm unit test — 6/6.**
+5. **Live browser pass** against a disposable database and disposable API,
+   with `web/` served from a scratch copy so the live setup on 8081 was
+   never repointed: login, dashboard (line chart renders two series with
+   correct axis ticks, donut legend restyled, presets, freshness stamp),
+   Dispatch Center (self-refresh proven across a real poll interval, ID
+   column, triage order, `aria-sort` present on 7 `th` elements, map
+   canvas alive), landmarks present, `document.title` correct.
+6. **All 12 screens swept in dark mode for un-themed light patches — 0
+   found. Zero console errors across the entire pass.**
+7. All disposable infrastructure torn down; `web/index.html` and
+   `mobile/.env.local` verified back at their real values; the real
+   `baranguard` database was never touched.
+
+## One bug introduced and caught during this pass
+
+Dispatch Center's `renderPopulated` clears `pageHeader.actions` on every
+render to rebuild the StatStrip, which silently removed the freshness
+stamp appended at construction time. Caught because the verification probe
+returned no value for it; re-attached inside `renderPopulated`.
+
+Also caught before running: a temporal-dead-zone reference in `KpiCard`
+(`sparklineEl` used by `applyDelta` before its `let` was reached), and a
+`shell` reference from inside a module-level function in
+`dispatch-center.js` where it is not in scope.
+
+## Not done
+
+- The audit's remaining lower-priority per-screen items: W7/W9 print
+  stylesheets, W14's date filter and `failure_reason` surfacing, W16
+  triage affordances, W11 schedule grouping, the topbar avatar dropdown.
+- Nothing from this pass has been committed.
+
+---
+
+# DEVLOG — Mockup-driven UI round 2: IN PROGRESS, session ended mid-phase
+# for a conversation handoff. Read the "Not done" section before touching
+# any of this.
+
+## Today's cut
+
+Not a Sprint Prompts box. The user supplied ten reference-design mockups
+(pending-incidents table, blotter entry, a desired topbar treatment, four
+KPI cards, Settings, SMS Monitor, three Analytics screens, plus — mid-turn
+— an Electronic Blotter list+detail mockup and an Incident Management
+mockup) and asked for nine changes together. A written 9-phase plan was
+produced, reviewed against the actual schema/endpoints/§8 rules, and
+**approved by the user** before any code was written. The approved plan
+lives at `C:\Users\Jayson Buenosaires\.claude\plans\clever-wishing-hummingbird.md`
+— **read that file first**, it is the actual scope contract for this
+work, not just planning scratch.
+
+**The session was interrupted by the user asking to hand off to a new
+conversation before the phases were finished.** This entry exists so the
+next session does not have to reconstruct scope or re-derive the
+mockup-vs-schema conflicts from scratch. Phases 1, 3, 4 are code-complete
+per their own scope (see caveats below); Phase 2 is half-done and
+currently **fails the wiring check**; Phases 5-9 have not been started at
+all.
+
+## The constraint that shapes the whole plan (read this before building anything from the mockups)
+
+Investigation before writing the plan found that several mockup elements
+show data this system does not have, and two of them the Master Reference
+has already explicitly refused:
+
+- **"Performance by Barangay" bar chart** — §8: *"a cross-barangay
+  comparison chart is architecturally impossible under the current tenant
+  model, not just unbuilt"* (Rule 8 scopes every session to one barangay).
+  **Not building this, ever, under the current tenant model.**
+- **"Overall Performance Score" radar** — §8: axes are *"arbitrary demo
+  numbers with no defined formula … never ship a chart backed by an
+  undefined number."* Two of its axes (Coverage, Incident Prevention) have
+  no §5 schema representation at all. **Not building this** without a
+  scoring-formula design pass first (§10 item 7).
+- **SMS composer / quick replies / Broadcast Alert** — §9 W14 literally:
+  *"Do not build a compose/send UI against this endpoint."* User chose to
+  keep W14 read-only and improve the existing table instead (Phase 8) —
+  **do not build a two-way console**.
+- **Settings mockup's system-wide sections** (notification rules, security
+  policy, GIS parameters, SMS gateway credentials, backups) are **W21**,
+  which the Master Reference says has *"no sprint assignment, schema, or
+  endpoints"* and warns never to store gateway credentials in a settings
+  row. User chose: adopt the mockup's rail+panel LAYOUT for W15's real
+  fields only (Profile / Password / Appearance) — **do not build the W21
+  sections**.
+
+Full table of every mockup element that needed a substitution, and what it
+was mapped to instead (real ENUM values, coordinates instead of invented
+"Brgy. Dao, Zone 1" text, no delete action since none exists, etc.), is in
+the plan file itself under "What the mockups show that the data cannot
+back" — that table is the authoritative substitution list, not this entry.
+
+Two backend extensions WERE approved and are still outstanding (Phase 9):
+`by_hour[]` and `response_time_trend[]` on `GET /reports/summary`, both
+bucketed Asia/Manila like the existing `trend[]`/`trend[].resolved`
+precedent.
+
+## What is actually done in this session
+
+### Phase 1 — Dispatch queue double-scrollbar — CODE COMPLETE, not browser-verified
+
+Root cause was two independent scroll containers: `.dispatch-queue`'s own
+`overflow-y:auto` on a height-clamped column, and every `DataTable`'s
+`.data-table-wrap { overflow-x:auto }` fighting a fixed 26.25rem column
+whose dominant width cost was a full-name `<select>` **plus** a button
+rendered inline in every pending row.
+
+Fix: the Tanod picker moved OUT of the row into a dialog.
+`ConfirmDialog.js` gained a second export, `promptSelect()`, sharing the
+existing modal shell (`openDialog()` internal helper, focus trap now
+queries live focusables instead of hardcoding two buttons) — returns
+`Promise<string|null>`. `renderAssignCell()` in `dispatch-center.js` now
+renders one compact `.dispatch-assign-button` and opens
+`promptSelect({...})` on click; the row-width cost that was forcing
+horizontal scroll is gone.
+
+Layout: `.dispatch-layout` grid changed from a fixed `26.25rem 1fr` to
+`minmax(24rem, 34rem) minmax(18rem, 1fr)`; `.dispatch-queue` no longer
+sets `overflow-y` (the queue now scrolls the PAGE, via `.page-content`,
+which is what `base.css` already documented as the intended single scroll
+region); `.dispatch-map-pane` became `height:32rem; position:sticky;
+top:0` so it doesn't stretch to match a long queue and stays in view while
+the queue scrolls beside it. The `grow`/`flex-col` classes that used to
+clamp the whole page to 100% height were removed from
+`dispatch-center.js`'s wrapper/body/container/layout elements, since
+nothing needs the page height-clamped anymore.
+
+**Files:** `web/src/components/ConfirmDialog.js` (+`.css`),
+`web/src/pages/dispatch-center.js`, `dispatch-center.css`.
+
+**Verified:** `node --check` clean, `verify-web-wiring.mjs` clean at the
+time this phase landed. **NOT verified:** no live browser pass yet — the
+plan's own verification section calls for measuring
+`scrollWidth === clientWidth` on `.data-table-wrap` and confirming the
+Assign flow completes end-to-end through the new dialog. Neither has been
+done.
+
+### Phase 3 — Avatar menu + notification bell — CODE COMPLETE, not browser-verified, backend not integration-tested
+
+New `web/src/components/Menu.js` (+`.css`) — extracted from the pattern
+the topbar's own search-results dropdown already used inline (anchored
+panel, Escape, outside-click, arrow-key roving). Two exports: `Menu()`
+returns `{el, panel, open, close, isOpen}`; `MenuItem()` builds one
+`role="menuitem"` row. Deliberately NOT a modal — no backdrop, no focus
+trap, dismissible without blocking, which is why it's a separate
+component from `ConfirmDialog`.
+
+**Backend:** `GET /notifications` added — genuinely new, not in §6.
+`NotificationsController::index()` reads the CALLER'S OWN
+`notification_target` rows (joined to `notification`, tenant + user
+double-scoped, neither half client-suppliable), returns
+`{items[], unread_count}`. No narrative text of any kind is returned by
+design (Rule 1). Same "real gap, real endpoint, same precedent as
+GET /barangays / GET /search / GET /reports/nav-counts" reasoning already
+established in this codebase. Route added to `routes/notifications.php`
+alongside the existing Tanod-only `POST /notifications/:id/ack`.
+`php -l` clean. **NOT tested against a live database** — no seed data
+exists yet for `notification`/`notification_target` in any disposable rig
+from this session, and the endpoint has never been curled.
+
+**Frontend:** `AppShell.js`'s `.topbar__user` rebuilt — the old
+avatar+name+separate-Sign-out-button became a bell (`Menu` instance,
+`GET /notifications` on open, unread-count pip, click-through to
+`blotter-detail` or `dispatch` depending on notification type) and an
+avatar-menu (`Menu` instance containing a header with name/role, a
+Settings item gated on the same role check the sidebar nav uses, the
+theme toggle relocated in as a menu item, and Sign Out as a `danger`
+`MenuItem`). `shell.logoutButton` is still exported and still the actual
+button other pages disable during sign-out — it's just a `MenuItem` now
+instead of a bare `<button class="ghost">`.
+
+**Files:** new `Menu.js`/`.css`, `AppShell.js`/`.css`,
+`backend/controllers/NotificationsController.php`,
+`backend/routes/notifications.php`, `web/src/api/apiClient.js`
+(`getNotifications()`), `web/index.html` (Menu.css link).
+
+**Verified:** `node --check` / `php -l` clean, `verify-web-wiring.mjs`
+clean at the time this phase landed. **NOT verified:** no browser pass —
+open/close on Escape and outside-click, arrow-key nav, and the bell count
+actually matching a seeded row are all still unconfirmed. No integration
+test of `GET /notifications` itself.
+
+### Phase 4 — KPI card convention — CODE COMPLETE, not browser-verified
+
+`KpiCard.js` reordered from icon→label→value→delta to the mockup's
+header-row (icon left, delta right) → value → label. `delta` is now
+percentage-based when a new `previousValue` argument is supplied (falls
+back to the raw absolute difference when the prior period was zero, since
+a percentage against zero is meaningless). New `trend` argument —
+`'up-good' | 'down-good'` — colours the delta only when the caller states
+which direction is actually good for that specific metric; omitted
+entirely, the delta stays neutral. This is a **deliberate deviation from
+the mockup**, logged in the component's own doc comment: the mockup tints
+`+12%` on Total Incidents green, but more incidents is not good news, and
+blanket green-up/red-down would encode a judgement the data doesn't
+support. `admin-dashboard.js` updated: Resolved Cases gets `trend:
+'up-good'`, Avg Response Time gets `trend: 'down-good'` (lower is
+better), Total Incidents gets no `trend` (stays neutral). `setDelta()`'s
+signature changed to `(delta, previousValue)` — both call sites in
+`loadDeltas()` updated to pass the prior period's raw value.
+
+**Files:** `KpiCard.js`/`.css`, `admin-dashboard.js`.
+
+**Verified:** `node --check` clean, `verify-web-wiring.mjs` clean.
+**NOT verified:** no browser pass confirming the visual reorder or the
+percentage math against real seeded data. `statistical-reports.js` (which
+also renders `KpiCard`s per the plan's Phase 9 scope) has **not** been
+touched yet — it still calls the old prop shape, which still works
+(no new required props) but doesn't get the reordered header/delta
+treatment until Phase 9 lands.
+
+### Phase 2 — Blotter Entry reorganised — **HALF DONE, CURRENTLY BREAKS THE WIRING CHECK**
+
+`blotter-detail.js`'s `render()` was restructured from six full-width
+`.card`s stacked vertically into the existing `.split-panel` utility
+(`1fr 20rem`, already collapses to one column at 1024px): left column
+gets Overview/Narrative/Evidence/the Secretary's finalize-amend panel,
+right column gets the Timeline and the Admin resolve panel. The function
+now wraps everything in `layout` > `main`/`aside` divs with classes
+`split-panel`, `stack--md blotter-detail__main`, `stack--md`.
+
+**`blotter-detail__main` is not defined anywhere.** The plan called for a
+new `blotter-detail.css` file (this screen has never had one — it was
+built entirely from `base.css` utilities) and it was never created, and
+never linked into `index.html`. Confirmed right now:
+
+```
+node scripts/verify-web-wiring.mjs
+[FAIL] src/pages/blotter-detail.js uses undefined CSS class(es): blotter-detail__main
+318 checks passed, 1 failed
+```
+
+**This is the very next thing to do.** `blotter-detail__main` doesn't
+strictly need any rules (it exists so the left column has a hook for
+future styling), so the minimal fix is either give it an empty/trivial
+rule in a new `blotter-detail.css` (linked in `index.html`) or drop the
+class from the `main` div if nothing ends up needing it. The original
+timeline (today's plain key/value `.row-between` rows) was also meant to
+become a real vertical rail with connector + filled/hollow stage nodes
+per the plan — **that visual change has not been started**, only the
+two-column wrapping around the existing `buildTimeline()` output.
+
+**Files touched so far:** `web/src/pages/blotter-detail.js` only.
+`blotter-detail.css` does not exist yet.
+
+## What has NOT been started at all
+
+- **Phase 2's remainder** — the CSS file, the real vertical timeline
+  visual (rail + nodes), and all verification.
+- **Phase 5 — Incident Management (new screen).** No file created. Needs
+  `GET /incidents` wired with status/priority filters + status chips
+  (counts from `by_status`) + pagination, new nav entry.
+- **Phase 6 — Electronic Blotter (W6) rebuilt as a records view + details
+  panel.** Needs a new `GET /blotter` LIST endpoint (only
+  `GET /blotter/:id` and `GET /incidents/:id/blotter` exist today) —
+  `BlotterController::index()` does not exist. No frontend work started.
+- **Phase 7 — Settings (W15) rail+panel layout.** No file changes.
+- **Phase 8 — SMS log date filter, inline failure_reason, expandable row
+  detail, stat strip.** No file changes. `SmsController.php` does not yet
+  accept `date_from`/`date_to`.
+- **Phase 9 — Analytics (W9 upgraded) + BarChart + ChartTooltip
+  components + `by_hour[]`/`response_time_trend[]` on
+  `GET /reports/summary`.** Nothing built. `statistical-reports.js` is
+  still the pre-existing screen.
+
+## Environment state at handoff
+
+- No disposable servers left listening (checked `8230/8231/8240/8241/8250/8251`
+  — all clear).
+- **A stray database `baranguard_device_check` exists** on the local
+  MySQL instance, alongside the real `baranguard` DB. It was not created
+  by anything in this documented session and its origin wasn't
+  investigated — flagged for a future cleanup pass, not dropped
+  speculatively.
+- The real `baranguard` database and `backend/.env` were not touched by
+  anything in this entry.
+- **Nothing in this entire round-2 body of work is committed.** It sits
+  in the working tree alongside the already-uncommitted round-1 UI/UX
+  audit remediation (dark mode, contrast tokens, Dispatch polling, the
+  line chart — see the DEVLOG entry immediately above this one) and the
+  older uncommitted mobile build-fix files
+  (`mobile/package-lock.json`, `mobile/src/pages/home.tsx`,
+  `mobile/src/services/deviceIdentity.ts`, `mobile/src/theme/app.css`).
+
+## Suggested order for the next session
+
+1. Fix the immediate break: create `blotter-detail.css`, link it in
+   `index.html`, re-run `verify-web-wiring.mjs` until clean.
+2. Finish Phase 2's real timeline visual, then browser-verify Phases 1-4
+   together on one disposable rig (they all touch the same nav shell and
+   dashboard) before moving on — per this project's own standing
+   discipline, don't stack more unverified phases on top of unverified
+   ones.
+3. Phases 5-9 in the plan's own order — Phase 6 depends on nothing else
+   and unblocks the biggest visible mockup (Electronic Blotter); Phase 9
+   is the largest single phase (two new chart components + a backend
+   extension) and is naturally last.
+4. Re-run the full verification section at the bottom of the plan file
+   once all nine phases are code-complete — it has not been run even
+   once yet, since no phase has reached that point.
