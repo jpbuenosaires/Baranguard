@@ -5438,3 +5438,208 @@ two-column wrapping around the existing `buildTimeline()` output.
 4. Re-run the full verification section at the bottom of the plan file
    once all nine phases are code-complete — it has not been run even
    once yet, since no phase has reached that point.
+
+---
+
+# DEVLOG — Sprint 7: Retention jobs (§11's retention table, all record types)
+
+## Today's cut
+
+Sprint 7's **"Retention jobs (§11's table, all record types)"** box — one
+box, picked and stopped at, per the sprint prompt's own rule. None of the
+other four Sprint 7 boxes (audit completeness, backup/restore drill,
+pen-test pass, W17/W20/W9-export) were started.
+
+## Four schema gaps found before any job code was written
+
+§11's retention table is not implementable against the 0001 baseline.
+Found by reading the actual DDL rather than trusting that a documented
+policy had backing columns — all four fixed in **migration 0007** (a new
+file, never editing the completed 0001, same convention as
+0003/0004/0005/0006):
+
+1. **`incident.raw_narrative` was `TEXT NOT NULL`.** The single most
+   important rule in §11 — delete raw narrative 30 days after approved
+   redaction, 90-day hard ceiling if never approved — was *literally
+   unexecutable*: there was no value the job could write that means
+   "purged". Made nullable. Writing an empty string instead was
+   rejected: it is indistinguishable from a bug that saved a blank
+   narrative.
+2. **`incident` had no `legal_hold`**, yet §11 names legal hold as "the
+   only exception" to both the raw-narrative rule and the 7-year rule.
+   `evidence_attachment` and `citizen_report` already had one; the one
+   table that matters most did not.
+3. **No way to record that a purge happened** — added
+   `raw_narrative_purged_at`, the per-record evidence Rule 17 wants from
+   a retention job, which also makes re-scans cheap.
+4. **`mobile_device` had `is_active` but no deactivation timestamp**, so
+   §11's "deleted 90 days after deactivation" had no clock to count
+   from. Added `deactivated_at`; `DevicesController` now sets it on both
+   deactivation paths and CLEARS it on re-registration (a device that
+   comes back is not on a retention clock).
+
+Backfill decision for rows already inactive at migration time:
+`deactivated_at = UTC_TIMESTAMP()`, i.e. the clock starts *now* rather
+than being back-dated. We genuinely do not know when those rows were
+deactivated, and starting now can only ever delay a deletion, never
+cause an early one.
+
+## Resolved decisions (logged; don't reopen without review)
+
+- **An incident's `legal_hold` covers its dependent case records.**
+  `blotter_record`, `blotter_revision`, `dispatch` and
+  `ai_processing_log` have no `legal_hold` of their own. A hold is placed
+  on a *case*, not a row — holding the incident while its blotter entry
+  stayed purgeable would be an obviously wrong reading of §11.
+- **Retention periods are `const`s, not env vars.** §11 says these
+  "implement directly as retention-job constants; a later change requires
+  the same architecture-review process as any other resolved decision,
+  not a runbook edit." An operator cannot quietly shorten the
+  raw-narrative ceiling by editing a config file.
+- **Legal-hold skips are counted and reported, never silent.** A run that
+  did nothing because everything was held is otherwise indistinguishable
+  from a broken job; every rule reports `purged` *and* `held`.
+- **The 7-year case purge is one transaction per incident, in dependency
+  order** — `ai_processing_log` → `blotter_revision` → `blotter_record` →
+  `evidence_attachment` → `dispatch` → `incident`, because all five are
+  `ON DELETE RESTRICT` against incident in §5. Slower than one bulk
+  DELETE, and the only way a failure part-way rolls back a whole case
+  instead of leaving half of one committed.
+- **Evidence bytes are unlinked from disk**, with the resolved path
+  asserted to stay inside `EVIDENCE_DIR` — the same containment check
+  `MapPackagesController` uses. A retention job steerable into unlinking
+  arbitrary files via a crafted `file_path` would be far worse than the
+  data it is trying to remove.
+- **One audit row per rule per run, carrying counts** (Rule 17), not one
+  per deleted record: a 7-year purge can touch thousands of rows, and
+  `audit_log` is itself on a 7-year clock. Per-record evidence for the
+  rule that most needs it already exists as `raw_narrative_purged_at`.
+  Audit rows carry NULL actor/barangay — this is the system acting on a
+  schedule, and inventing an actor would make the trail lie.
+- **`--dry-run` is a first-class mode**, so an operator can see the blast
+  radius of the first-ever run on real data before committing to it.
+- **CLI-only, no HTTP endpoint.** §6 documents none, and a web-reachable
+  "delete everything past its date" action has no upside on a LAN system
+  (Rule 7). Same reasoning that keeps `ai-worker.php` off the API.
+- **Backups are explicitly OUT of scope**, and the job says so on every
+  run. §11/Rule 11 make backups part of retention, but they are encrypted
+  files produced by `scripts/backup.sh`, not rows — expiring them is a
+  runbook step with its own restore-safety implications. A standing
+  reminder on every run beats silently implying the data is gone
+  everywhere.
+- **The offline mirror is a documented NO-OP** (`purgeOfflineQueue()`), so
+  a future session doesn't read the absence as an oversight and invent a
+  clock §11 explicitly declines to define.
+
+## Files
+
+**New:** `migrations/0007_retention_columns.sql` (+ `.down.sql`),
+`services/retention/RetentionService.php`, `scripts/retention-job.php`,
+`scripts/verify-sprint7-retention.sh`.
+
+**Modified:** `controllers/DevicesController.php` (sets/clears
+`deactivated_at`); `scripts/verify-devices-map-packages.sh`,
+`verify-sprint4.sh`, `verify-sprint4-phase2-3.sh` (each now applies 0007
+— see the regression below).
+
+## A real regression this session caused, caught and fixed
+
+Adding `deactivated_at` to `DevicesController`'s SQL broke **10 checks in
+`verify-devices-map-packages.sh`** — device registration started
+returning 500. Not a logic bug: those suites build their disposable
+database from 0001+0002 only, so the column the controller now writes did
+not exist there. Fixed by having every suite that registers a device
+apply 0007 too, the same way suites already apply 0004/0006 when they
+need them. Worth recording as a category: **adding a column to a
+controller's SQL silently breaks every verify script whose disposable
+schema predates it** — app code and test schema are two things to keep in
+step, and only re-running the older suites catches the drift.
+
+## Tests performed (with evidence)
+
+1. `php -l` clean on all three new/modified PHP files.
+2. **`backend/scripts/verify-sprint7-retention.sh` — 66/66 against real
+   XAMPP** (MariaDB 10.4.32 + PHP 8.2.12), disposable database +
+   disposable app-user + throwaway port, all torn down after.
+
+   Every §11 window is long (90 days is the shortest), so the suite seeds
+   rows with **back-dated timestamps on both sides of each boundary** and
+   asserts the job takes exactly the outside one — testing the real
+   boundary in seconds instead of waiting a year. What it proves:
+   - Migration 0007's four columns exist and `raw_narrative` is nullable,
+     asserted against `information_schema`, not assumed from the
+     migration file's intent. Re-running 0007 is a clean no-op.
+   - `--dry-run` reports `2 eligible, 1 on legal hold` and **deletes
+     nothing** (all 5 raw narratives verified intact afterwards).
+   - The 30-day grace: a 40-day-approved incident is purged
+     (`raw_narrative` NULL **and** `raw_narrative_purged_at` set); a
+     10-day-approved one is kept.
+   - The 90-day ceiling fires on an unapproved 100-day incident and
+     spares an unapproved 30-day one.
+   - **Legal hold blocked an otherwise-eligible purge** on incident,
+     citizen_report, and the 7-year cascade, each independently.
+   - Approved redactions survive the raw purge (the entire point of it).
+   - Rule 17: exactly one audit row, NULL actor/barangay, count in
+     metadata, and the row **grepped to confirm no narrative text leaked
+     into it**.
+   - Re-running any rule is a no-op.
+   - `citizen_report`: 400-day unconverted purged, 100-day kept, and a
+     **converted** report ignored the rule entirely (§11: it follows its
+     incident).
+   - `ai_processing_log`: a 400-day-old draft was **kept**, because its
+     incident's 7-year clock is the longer of the two — "whichever is
+     longer" demonstrated, not merely coded.
+   - `mobile_device`: 120-day-deactivated purged (its secret with it),
+     30-day-deactivated kept, active device untouched.
+   - `audit_log`: a 3000-day row purged, a 100-day row kept, and the
+     purge audited itself *after* the delete so it cannot catch its own
+     row.
+   - **The 7-year cascade**, seeded with all five RESTRICT dependents:
+     incident, dispatch, evidence row, blotter record, blotter revision
+     history and AI drafts all gone; **the evidence FILE confirmed
+     unlinked from disk**; an 8-year-old **legal-hold twin of the same
+     age survived**; and the converted citizen_report survived with
+     `incident_id` SET NULL, then was purged by the *next* run under its
+     own 1-year clock — §11's "converted reports follow the incident"
+     shown end to end.
+   - `DevicesController` really sets the clock: a freshly registered
+     device has NULL `deactivated_at`, the deactivate endpoint sets it,
+     and re-registering clears it — driven through the real HTTP
+     endpoints, because the 90-day rule is worthless if nothing sets that
+     column in production.
+3. **Every pre-existing suite that touches devices re-run to confirm the
+   regression above is closed:** `verify-devices-map-packages.sh`
+   **54/54**, `verify-sprint4.sh` all passed,
+   `verify-sprint4-phase2-3.sh` **69/69**, `verify-sprint6.sh` all
+   passed.
+4. **Migration 0007 applied to the REAL local `baranguard` database** —
+   all four columns confirmed present via `information_schema`,
+   `raw_narrative` confirmed nullable, and all 7 existing incidents
+   intact afterwards.
+5. **`--dry-run` executed against the real database**: runs clean,
+   correctly reports 0 eligible for every rule (nothing on this
+   workstation has aged past even the 90-day ceiling yet), and prints the
+   backup reminder.
+
+## Two test-script bugs found and fixed before the clean run (not app bugs)
+
+Both mine, both in the suite's own expectations: a miscounted survivor
+total (6 is correct — 5 in-window incidents plus the legal-hold twin, not
+5), and a case-sensitivity assertion (`Legal hold` starts a sentence in
+the real output; the check looked for lowercase). The second is the
+**third** time this repo has logged a case-sensitivity assertion bug — a
+genuinely recurring category, not a one-off.
+
+## NOT done (explicitly out of this cut)
+
+- **Backup expiry** — see the resolved decision above; out of scope for a
+  database job by design, and flagged on every run instead.
+- **No scheduled trigger is installed.** The job is a CLI script; wiring
+  it to Windows Task Scheduler (daily) is a deployment/runbook step, not
+  a code one. It is safe to run repeatedly and safe to miss days —
+  nothing is keyed to "ran yesterday".
+- **The 7-year rules have never fired on real data** and cannot for
+  years — they are proven only against back-dated fixtures, which is the
+  only way they *can* be proven today.
+- Sprint 7's other four boxes: audit completeness, backup/restore drill,
+  pen-test pass, W17/W20/W9-export. None started.

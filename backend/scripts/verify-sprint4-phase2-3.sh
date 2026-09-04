@@ -84,6 +84,10 @@ mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || {
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 applied" || fail "0001 failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" >/dev/null && pass "barangays seeded" || fail "seed failed"
+# 0007: DevicesController writes mobile_device.deactivated_at (§11's
+# 90-day device-retention clock), so any suite that registers a device
+# needs the column present.
+mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0007_retention_columns.sql" >/dev/null && pass "0007 applied" || fail "0007 failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0005_sms_envelope_replay.sql" && pass "0005 (sms_envelope_replay) applied" || fail "0005 failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0006_sms_log_barangay.sql" && pass "0006 (sms_log.barangay_id) applied" || fail "0006 failed"
 COLCOUNT=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='sms_log' AND COLUMN_NAME='barangay_id';")

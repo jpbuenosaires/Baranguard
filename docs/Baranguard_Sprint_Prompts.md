@@ -757,7 +757,31 @@ citizen_report/sms_log/ai_processing_log, 90 days on deactivated
 mobile_device — all subject to legal_hold override.
 
 Today's cut — pick exactly ONE:
-  [ ] Retention jobs (§11's table, all record types)
+  [x] Retention jobs (§11's table, all record types)
+      DONE + VERIFIED 2026-09-04 — backend/scripts/verify-sprint7-retention.sh,
+      66/66 against real XAMPP. All eight §11 record types implemented in
+      services/retention/RetentionService.php, run via the CLI
+      scripts/retention-job.php (`--dry-run`, `--only=`, `--list`).
+      Required a NEW migration (0007_retention_columns.sql): §11 was not
+      implementable against the 0001 baseline — `incident.raw_narrative`
+      was TEXT NOT NULL (so "delete the raw narrative" had no value to
+      write), `incident` had no `legal_hold` despite §11 naming legal
+      hold as the only exception, there was no way to record that a purge
+      happened, and `mobile_device` had no deactivation timestamp for the
+      90-day clock to count from. All four added; 0007 is applied to the
+      real local database.
+      Every window is tested at its BOUNDARY with back-dated fixtures
+      (in-window row kept, out-of-window row purged) rather than waiting
+      a year: the 30-day grace, the 90-day ceiling, 1-year citizen
+      report/SMS, the "whichever is longer" AI-log rule, 90-day device,
+      7-year audit, and the full 7-year case cascade across all five
+      ON DELETE RESTRICT dependents — including the evidence FILE being
+      unlinked from disk and a same-age legal-hold twin surviving intact.
+      Backups are deliberately NOT covered (documented, and the job prints
+      a reminder every run). No scheduled trigger is installed — wiring it
+      to Task Scheduler is a runbook step. See backend/DEVLOG.md's
+      Sprint 7 entry, including a real regression this cut caused in three
+      older verify suites and how it was closed.
   [ ] Audit completeness (§2 Rule 17's full action list actually produces
       audit_log rows)
   [ ] Backup/restore drill (restore is actually tested, not assumed to
