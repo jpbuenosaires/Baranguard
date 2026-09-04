@@ -26,7 +26,8 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getReportsSummary, logout, ApiClientError } from '../api/apiClient.js';
+import { getReportsSummary, exportReport, reportExportDownloadUrl, logout, ApiClientError } from '../api/apiClient.js';
+import { showToast } from '../components/Toast.js';
 import { KpiCard } from '../components/KpiCard.js';
 import { LineChart } from '../components/LineChart.js';
 import { BarChart } from '../components/BarChart.js';
@@ -112,6 +113,35 @@ export function renderStatisticalReportsPage(root, user, onLoggedOut, navigate) 
   const body = document.createElement('div');
   content.append(controls, body);
   renderPrompt(body);
+
+  // §9 W9: "Generate and Export are separate; Export calls
+  // GET /reports/export and is audited." Separate deliberately — Export
+  // writes a real file server-side and an audit_log row, so it is a
+  // distinct action, not a second rendering of what Generate produced.
+  // Sprint 7's "W9 Export button" cut.
+  const exportButton = document.createElement('button');
+  exportButton.type = 'button';
+  exportButton.className = 'ghost';
+  exportButton.innerHTML = `<span aria-hidden="true">${icons.download(16)}</span><span>Export CSV</span>`;
+  exportButton.addEventListener('click', async () => {
+    exportButton.disabled = true;
+    exportButton.textContent = 'Exporting…';
+    try {
+      await exportReport({ dateFrom: fromInput.value, dateTo: toInput.value, format: 'csv' });
+      // The file lives outside the web root, so it is fetched through the
+      // authorized download route — which re-checks role and tenant, and
+      // derives the file from the caller's own barangay. Opening it in a
+      // new tab keeps this page (and its generated report) intact.
+      window.open(reportExportDownloadUrl(), '_blank', 'noopener');
+      showToast('Export generated. This action was recorded in the audit log.', { variant: 'success' });
+    } catch (err) {
+      showToast(err instanceof ApiClientError ? err.message : 'Could not generate the export.', { variant: 'error' });
+    } finally {
+      exportButton.disabled = false;
+      exportButton.innerHTML = `<span aria-hidden="true">${icons.download(16)}</span><span>Export CSV</span>`;
+    }
+  });
+  pageHeader.actions.appendChild(exportButton);
 
   generateButton.addEventListener('click', () => load(fromInput.value, toInput.value));
 

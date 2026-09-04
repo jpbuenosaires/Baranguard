@@ -690,6 +690,55 @@ export async function getSystemHealth() {
 }
 
 /**
+ * GET /audit-log — §6, §9 W17 (Admin only, own barangay, newest-first).
+ * Defaults to the last 7 days server-side when no range is given, per
+ * W17's documented default view. `metadataJson` arrives already parsed.
+ */
+export async function getAuditLog({ action, dateFrom, dateTo, page, limit } = {}) {
+  const json = await request('GET', '/audit-log', {
+    query: { action, date_from: dateFrom, date_to: dateTo, page, limit },
+    auth: true,
+  });
+  return {
+    items: json.items.map((row) => ({
+      auditId: row.audit_id,
+      actorUserId: row.actor_user_id,
+      actorUsername: row.actor_username,
+      action: row.action,           // free-form VARCHAR, not an enum — passed through
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      metadataJson: row.metadata_json,
+      createdAt: row.created_at,
+    })),
+    page: json.page,
+    limit: json.limit,
+    total: json.total,
+  };
+}
+
+/**
+ * GET /reports/export — §6/§9 W9's Export button. Generates the file
+ * server-side and returns where to fetch it; the download is a separate
+ * authorized request (the file lives outside the web root).
+ */
+export async function exportReport({ dateFrom, dateTo, format = 'csv' } = {}) {
+  const json = await request('GET', '/reports/export', {
+    query: { date_from: dateFrom, date_to: dateTo, format },
+    auth: true,
+  });
+  return { fileUrl: json.file_url, format: json.format, generatedAt: json.generated_at };
+}
+
+/**
+ * Absolute URL for the generated export. Not a capability — the download
+ * endpoint re-checks role and tenant, and derives the file from the
+ * caller's own barangay rather than from anything in the URL.
+ */
+export function reportExportDownloadUrl() {
+  return `${BASE_URL}/reports/export/download`;
+}
+
+/**
  * GET /sms/logs — §6, §9 W14 (Admin only, read-only). No sender_number/
  * receiver_number field exists in the response at all — see
  * SmsController.php's own doc for why that's not an oversight.

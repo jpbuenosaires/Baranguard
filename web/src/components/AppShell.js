@@ -98,6 +98,9 @@ const NAV_ITEMS = [
   { key: 'fatigue', label: 'Fatigue Flags', roles: ['admin', 'punong_barangay'], icon: icons.batteryWarning, countKey: 'unacknowledgedFatigueFlags' },
   // §9 W14 — Admin only, explicitly.
   { key: 'sms-log', label: 'SMS Activity Log', roles: ['admin'], icon: icons.messageSquare },
+  // §9 W17 / W20 — Admin-only operational screens.
+  { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield },
+  { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity },
   { key: 'settings', label: 'Settings', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.settings },
 ];
 const NAV_COUNTS_POLL_MS = 60000; // Not time-critical — see ReportsController::navCounts()'s own doc.

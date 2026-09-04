@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
@@ -83,7 +84,7 @@ final class FatigueFlagsController
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
-                'SELECT ff.flag_id, u.barangay_id
+                'SELECT ff.flag_id, ff.user_id, u.barangay_id
                  FROM fatigue_flag ff JOIN user u ON u.user_id = ff.user_id
                  WHERE ff.flag_id = :flag_id
                  FOR UPDATE'
@@ -98,6 +99,16 @@ final class FatigueFlagsController
             $pdo->prepare(
                 'UPDATE fatigue_flag SET acknowledged_by = :acknowledged_by, acknowledged_at = UTC_TIMESTAMP() WHERE flag_id = :flag_id'
             )->execute(['acknowledged_by' => $identity['user_id'], 'flag_id' => $flagId]);
+
+            // Not named verbatim in Rule 17, but it is a safety decision
+            // an Admin makes about a specific Tanod ("I have seen this
+            // fatigue flag and accept it"), which is exactly the class of
+            // action the rule's "shift changes" clause exists to cover.
+            // §9 W13 also requires the record to be permanent, and an
+            // acknowledgement with no actor recorded would undercut that.
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'fatigue_flag_acknowledged', 'fatigue_flag', $flagId, [
+                'flagged_user_id' => (int) $row['user_id'],
+            ]);
 
             $pdo->commit();
         } catch (\Throwable $e) {

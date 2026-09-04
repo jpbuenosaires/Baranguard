@@ -782,13 +782,48 @@ Today's cut — pick exactly ONE:
       to Task Scheduler is a runbook step. See backend/DEVLOG.md's
       Sprint 7 entry, including a real regression this cut caused in three
       older verify suites and how it was closed.
-  [ ] Audit completeness (§2 Rule 17's full action list actually produces
+  [x] Audit completeness (§2 Rule 17's full action list actually produces
       audit_log rows)
-  [ ] Backup/restore drill (restore is actually tested, not assumed to
+      DONE + VERIFIED 2026-09-04 — verify-sprint7-audit.sh, 56/56, 20
+      distinct audited actions driven through real HTTP endpoints. Found
+      and closed SIX real gaps: dispatch create/cancel (only `override`
+      was audited), shift create/update and swap decisions (those two
+      controllers had NO audit coverage at all despite Rule 17 naming
+      them), user changes, and fatigue acknowledgement. Rule 17's
+      allow-list is enforced across the whole table: no narrative, no
+      password, no hash, no FCM token, no JWT.
+  [x] Backup/restore drill (restore is actually tested, not assumed to
       work because a backup file exists)
-  [ ] Pen-test pass — ONE resource type only (e.g. incidents, or dispatch;
+      DONE + VERIFIED 2026-09-04 — scripts/restore-drill.sh, 12/12
+      against the REAL database: 26 tables, every per-table row count
+      matching, the four barangay rows identical, 61 FKs restored. It
+      fingerprints live, restores into a throwaway <db>_drill, and
+      compares — the check `restore.sh` alone cannot make. Records the
+      drill so GET /system/health's `restore_test_at` (previously
+      hardcoded null) and W20 report it. NOTE: run it once yourself with
+      your own BACKUP_ENCRYPTION_PASSPHRASE — this session used a scratch
+      backup dir on purpose, so W20 still shows "Never" until you do.
+  [x] Pen-test pass — ONE resource type only (e.g. incidents, or dispatch;
       testing every §6 endpoint in one sitting isn't a single cut)
-  [ ] W17 Audit Log Viewer / W20 Service Health / W9 Export button
+      DONE + VERIFIED 2026-09-04 — INCIDENTS. verify-sprint7-pentest-
+      incidents.sh, 68/68, no holes found. Four dimensions: no token ->
+      401 (incl. forged, garbage and alg:none JWTs, and a deactivated
+      account); wrong role -> 403 (including asserting Admin is REFUSED
+      the Secretary-only records powers, per §3); cross-tenant -> 404
+      never 403; wrong-owner Tanod -> 404. Plus: raw_narrative reaches
+      the Secretary and no one else, never the list endpoint, never a 404
+      body; evidence carries no filesystem path; workflow prerequisites
+      can't be skipped by calling out of order. Dispatch/shifts/citizen
+      reports/SMS have had no equivalent pass yet.
+  [x] W17 Audit Log Viewer / W20 Service Health / W9 Export button
+      DONE 2026-09-04, endpoints verified, screens NOT browser-verified.
+      Two new endpoints: GET /audit-log (Admin, own barangay, 7-day
+      default, read-only by construction — no write route exists and the
+      suite asserts POST/PATCH/DELETE are unrouted) and GET
+      /reports/export (+ protected download; CSV only, an unapproved
+      format is a 400 rather than a silent fallback; audited per §6).
+      W20 made `restore_test_at` real. All three screens are wired and
+      wiring-checked (373/373) but none has been opened in a browser.
 
 W21 System Settings (§9, added in the 2026-09-02 architecture review) is
 **not** on this list and not a valid "Today's cut" pick yet — it has no

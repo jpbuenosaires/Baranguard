@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
@@ -133,6 +134,19 @@ final class UsersController
 
         $stmt = $pdo->prepare('UPDATE user SET ' . implode(', ', $sets) . ' WHERE user_id = :user_id');
         $stmt->execute($params);
+
+        // Rule 17 names "user changes/deactivation". This controller had
+        // no audit coverage at all before Sprint 7's audit-completeness
+        // cut. Metadata records WHICH fields changed, never the values:
+        // `contact_number` is personal data and Rule 17's allow-list is
+        // identifiers and statuses only.
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'user_updated', 'user', $identity['user_id'], [
+            'fields' => implode(',', array_values(array_filter([
+                $hasFullName ? 'full_name' : null,
+                $hasContactNumber ? 'contact_number' : null,
+            ]))),
+            'self_edit' => 1,
+        ]);
 
         Http::send(200, ['user_id' => $identity['user_id'], 'updated' => true]);
     }

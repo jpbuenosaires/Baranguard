@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Scheduling\FatigueCalculator;
@@ -276,6 +277,16 @@ final class ShiftSwapRequestsController
                  SET status = :status, resolved_at = UTC_TIMESTAMP(), resolved_by = :resolved_by, version = version + 1
                  WHERE request_id = :request_id"
             )->execute(['status' => $status, 'resolved_by' => $identity['user_id'], 'request_id' => $requestId]);
+
+            // Rule 17 names "swap decisions" explicitly. This controller
+            // had no audit coverage at all before Sprint 7's
+            // audit-completeness cut — an approved swap silently
+            // reassigned a shift with nothing recording who decided it.
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'swap_request_resolved', 'shift_swap_request', $requestId, [
+                'status' => $status,
+                'shift_id' => $shiftId,
+                'target_user_id' => $targetUserId,
+            ]);
 
             $pdo->commit();
         } catch (\Throwable $e) {

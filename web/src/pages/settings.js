@@ -414,4 +414,6 @@ const LANDING_OPTIONS = [
   { key: 'swap-requests', label: 'Swap Requests', roles: ['admin'] },
   { key: 'fatigue', label: 'Fatigue Flags', roles: ['admin', 'punong_barangay'] },
   { key: 'sms-log', label: 'SMS Activity Log', roles: ['admin'] },
+  { key: 'audit-log', label: 'Audit Log', roles: ['admin'] },
+  { key: 'service-health', label: 'Service Health', roles: ['admin'] },
 ];

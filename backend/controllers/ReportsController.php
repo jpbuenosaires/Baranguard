@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
@@ -395,6 +396,213 @@ final class ReportsController
             'pending_swap_requests' => $pendingSwapRequests,
             'unacknowledged_fatigue_flags' => $unacknowledgedFatigueFlags,
         ]);
+    }
+
+    /**
+     * GET /reports/export — §6: "Admin/PB own barangay → {file_url,
+     * format,generated_at} for approved formats; request is scoped and
+     * audited." §9 W9: "Generate and Export are separate; Export calls
+     * GET /reports/export and is audited."
+     *
+     * Resolved decisions (logged in DEVLOG.md):
+     *
+     *   - **CSV is the only approved format.** §6 says "for approved
+     *     formats" without listing them. CSV is the one this system can
+     *     produce honestly with no dependency: there is no Composer here,
+     *     and the hand-rolled `SimplePdf` writer built for the Lupon
+     *     packet is a fixed-layout document writer, not a report/table
+     *     renderer. An unsupported `format=` is a 400 naming what IS
+     *     supported, never a silent fallback to CSV — a caller asking for
+     *     XLSX and receiving CSV bytes is worse than an honest refusal.
+     *
+     *   - **The file is written OUTSIDE the web root and served through
+     *     an authorized download route**, exactly like the Lupon packet
+     *     and map packages. An export contains a barangay's whole
+     *     incident summary; a guessable path under the web root would
+     *     make tenant scoping decorative. `file_url` is API-relative for
+     *     the same Rule 7 reason `download_url` already is.
+     *
+     *   - **Content is exactly what `GET /reports/summary` already
+     *     returns** for the same range — the same numbers the screen
+     *     shows, not a second query that could disagree with it. No
+     *     narrative, no coordinates, no personal data: the export is the
+     *     aggregate report, and §6's own summary shape is aggregate-only.
+     *
+     *   - **The audit row is written on GENERATE, not on download**, and
+     *     records the range and format only (Rule 17's allow-list). §6
+     *     says "request is scoped and audited"; the request is the
+     *     generate call. The download route re-checks authorization
+     *     independently (Rule 30) rather than trusting that whoever holds
+     *     the URL was the one who generated it.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function export(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+
+        $format = Http::query('format') ?? 'csv';
+        if ($format !== 'csv') {
+            throw new ApiError(400, 'VALIDATION_ERROR', "format must be 'csv' (the only approved export format).");
+        }
+
+        $manila = new \DateTimeZone('Asia/Manila');
+        [$from, $to] = self::resolveDateRange(Http::query('date_from'), Http::query('date_to'), $manila);
+
+        $csv = self::buildSummaryCsv($pdo, $identity['barangay_id'], $from, $to, $manila);
+
+        $path = self::exportPath($identity['barangay_id']);
+        $directory = dirname($path);
+        if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) {
+            throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'Export storage is not writable on this workstation.');
+        }
+        if (file_put_contents($path, $csv) === false) {
+            throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'Could not write the export file.');
+        }
+
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'report_exported', 'report', null, [
+            'format' => $format,
+            'date_from' => $from->format('Y-m-d'),
+            'date_to' => $to->format('Y-m-d'),
+        ]);
+
+        Http::send(201, [
+            'file_url' => '/reports/export/download',
+            'format' => $format,
+            'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+        ]);
+    }
+
+    /**
+     * GET /reports/export/download — streams the caller's own barangay's
+     * most recently generated export.
+     *
+     * Not in §6's endpoint list, added for the same reason
+     * `GET /incidents/:id/lupon-packet/download` was: §6 promises a
+     * `file_url` while the file must not sit in the web root. Every
+     * authorization check runs again here; nothing is inherited from
+     * whoever generated the file (Rule 30).
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function exportDownload(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+
+        // Path is derived from the CALLER's own barangay, never from a
+        // parameter — there is no id to tamper with, so cross-tenant
+        // access is impossible by construction rather than by check.
+        $path = self::exportPath($identity['barangay_id']);
+        if (!is_file($path)) {
+            throw new ApiError(404, 'NOT_FOUND', 'No export has been generated for this barangay yet.');
+        }
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Length: ' . (string) filesize($path));
+        header('Content-Disposition: attachment; filename="baranguard-report-barangay-' . $identity['barangay_id'] . '.csv"');
+        readfile($path);
+        exit;
+    }
+
+    /**
+     * Reuses summary()'s own aggregates so the file and the screen can
+     * never disagree. Sections are stacked in one CSV with a blank line
+     * between them — a single flat table cannot express four differently
+     * shaped datasets, and splitting into four files would need a zip
+     * dependency this project doesn't have.
+     */
+    private static function buildSummaryCsv(
+        PDO $pdo,
+        int $barangayId,
+        \DateTimeImmutable $from,
+        \DateTimeImmutable $to,
+        \DateTimeZone $manila
+    ): string {
+        $utc = new \DateTimeZone('UTC');
+        $rangeStartUtc = $from->setTime(0, 0, 0)->setTimezone($utc)->format('Y-m-d H:i:s');
+        $rangeEndUtc = $to->setTime(0, 0, 0)->modify('+1 day')->setTimezone($utc)->format('Y-m-d H:i:s');
+
+        $stmt = $pdo->prepare(
+            'SELECT incident_type, status, created_at FROM incident
+             WHERE barangay_id = :barangay_id AND created_at >= :range_start AND created_at < :range_end'
+        );
+        $stmt->execute([
+            'barangay_id' => $barangayId,
+            'range_start' => $rangeStartUtc,
+            'range_end' => $rangeEndUtc,
+        ]);
+        $incidents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $byType = array_fill_keys(self::INCIDENT_TYPES, 0);
+        $byStatus = array_fill_keys(self::INCIDENT_STATUSES, 0);
+        $byDay = [];
+        $cursor = $from;
+        while ($cursor <= $to) {
+            $byDay[$cursor->format('Y-m-d')] = 0;
+            $cursor = $cursor->modify('+1 day');
+        }
+        foreach ($incidents as $row) {
+            if (isset($byType[$row['incident_type']])) {
+                $byType[$row['incident_type']]++;
+            }
+            if (isset($byStatus[$row['status']])) {
+                $byStatus[$row['status']]++;
+            }
+            $day = (new \DateTimeImmutable($row['created_at'], $utc))->setTimezone($manila)->format('Y-m-d');
+            if (isset($byDay[$day])) {
+                $byDay[$day]++;
+            }
+        }
+
+        $escape = static function ($value): string {
+            $text = $value === null ? '' : (string) $value;
+            return preg_match('/[",\n]/', $text) === 1 ? '"' . str_replace('"', '""', $text) . '"' : $text;
+        };
+        $line = static fn(array $cells): string => implode(',', array_map($escape, $cells));
+
+        $rows = [];
+        $rows[] = $line(['Baranguard incident report']);
+        $rows[] = $line(['Barangay ID', $barangayId]);
+        $rows[] = $line(['Range (Asia/Manila)', $from->format('Y-m-d') . ' to ' . $to->format('Y-m-d')]);
+        $rows[] = $line(['Generated (UTC)', gmdate('Y-m-d H:i:s')]);
+        $rows[] = $line(['Total incidents', count($incidents)]);
+        $rows[] = '';
+        $rows[] = $line(['Incidents by day']);
+        $rows[] = $line(['Date', 'Count']);
+        foreach ($byDay as $date => $count) {
+            $rows[] = $line([$date, $count]);
+        }
+        $rows[] = '';
+        $rows[] = $line(['Incidents by type']);
+        $rows[] = $line(['Type', 'Count']);
+        foreach ($byType as $type => $count) {
+            $rows[] = $line([$type, $count]);
+        }
+        $rows[] = '';
+        $rows[] = $line(['Incidents by status']);
+        $rows[] = $line(['Status', 'Count']);
+        foreach ($byStatus as $status => $count) {
+            $rows[] = $line([$status, $count]);
+        }
+
+        return implode("\r\n", $rows) . "\r\n";
+    }
+
+    /**
+     * One file per barangay, overwritten by each generate — an export is
+     * a transient artifact regenerated on demand, not an archive. Keeping
+     * every historical export would accumulate a barangay's whole report
+     * history outside the retention job's reach (§11/Rule 11), which is
+     * exactly the kind of shadow copy Rule 11 warns about.
+     */
+    private static function exportPath(int $barangayId): string
+    {
+        $base = baranguard_env('REPORT_EXPORT_DIR');
+        $directory = ($base !== false && trim((string) $base) !== '')
+            ? rtrim((string) $base, '/\\')
+            : dirname(__DIR__) . '/storage/report-exports';
+
+        return $directory . '/barangay-' . $barangayId . '.csv';
     }
 
     /** @param array<string,mixed> $params */
