@@ -1,16 +1,36 @@
 # Baranguard — Project Context
 
 This file auto-loads into every Claude Code session opened in this repo.
-Read the imported files below before doing anything — they are the
-source of truth for schema, API, roles, screens, and this project's own
-build discipline (pick exactly ONE "Today's cut" item per session, confirm
-architectural decisions before writing code, never invent fields/routes/
-roles not listed).
+Read the imported files below before doing anything — they carry the
+schema, API, roles, screens, and this project's own build discipline
+(pick exactly ONE "Today's cut" item per session, confirm architectural
+decisions before writing code, never invent fields/routes/roles not
+listed).
 
-@docs/Baranguard_Master_Reference_FINAL .md
-@docs/Baranguard_Sprint_Prompts.md
-@backend/DEVLOG.md
+@docs/REFERENCE.md
+@docs/SPRINTS.md
 @docs/HANDOFF.md
+@docs/REMAINING.md
+
+## Reading the archives (NOT auto-loaded — open deliberately)
+
+The four files above are compact working documents, rewritten 2026-09-04
+to stop every session paying ~103k tokens before doing any work. The
+full originals are still in the repo and are still the authority:
+
+- **`docs/Baranguard_Master_Reference_FINAL .md`** (16.8k words) — the
+  real source of truth. `REFERENCE.md` summarises it and cites section
+  numbers; open the section you need for exact wording. **If the two ever
+  disagree, this file wins** and `REFERENCE.md` should be corrected.
+- **`backend/DEVLOG.md`** (5.9k lines) — every decision and why, plus the
+  evidence behind every claim. Still append-only: **log new work here.**
+  Never read it front to back — `grep` for the feature you're touching.
+- **`docs/Baranguard_Sprint_Prompts.md`** — Sprints 0–7 verbatim with
+  their completion notes. `SPRINTS.md` carries only Sprint 8, the one
+  still open.
+
+Rule of thumb: `REFERENCE.md` tells you the constraint; the archives tell
+you why it exists and what it cost to learn.
 
 ## Working directory
 
@@ -45,12 +65,15 @@ Practical consequences:
 
 ## Current status
 
-See `docs/HANDOFF.md` — it is the up-to-date, single-page snapshot of
-where the project stands (what's done, what's blocked, what the
-recommended next step is) and is updated at the end of every session.
-`backend/DEVLOG.md` remains the full narrative history behind every
-decision; `docs/Baranguard_Sprint_Prompts.md` remains the per-sprint
-"Today's cut" menus. Treat a stale `HANDOFF.md` the same as a stale
-DEVLOG claim per this project's own rule: verify against the actual repo
-state before trusting it, and update it before ending a session that
-changed the picture it describes.
+**Sprints 0–7 are complete.** Only Sprint 8 (UAT/evaluation) is open.
+
+`docs/HANDOFF.md` is the single-page snapshot of where things stand and
+what to do next; `docs/REMAINING.md` is the full ordered list of what's
+left before Sprint 8, including the items blocked on hardware or accounts
+the user has to provide. Both are auto-loaded above.
+
+Treat a stale `HANDOFF.md` the same as a stale DEVLOG claim per this
+project's own rule: verify against the actual repo state before trusting
+it, and update it before ending a session that changed the picture it
+describes. New work still gets logged in `backend/DEVLOG.md` — it stays
+append-only, it just isn't auto-loaded any more.

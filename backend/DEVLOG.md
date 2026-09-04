@@ -5879,3 +5879,73 @@ account, with a comment explaining why it cannot share one.
   unchanged from the retention entry; `backup.sh` prunes on age only).
 - W10, W18, W21 remain unbuilt; W21 is still blocked on an architecture
   review by its own §9 note.
+
+---
+
+# DEVLOG — Documentation compaction: auto-loaded context cut by 94%
+
+## Today's cut
+
+Not a sprint box — a user-directed change to cut the token cost every
+future session pays before doing any work.
+
+## The measurement that motivated it
+
+`CLAUDE.md` auto-imported four files into every session:
+
+| File | Words |
+|---|---|
+| `Baranguard_Master_Reference_FINAL .md` | 16,829 |
+| `Baranguard_Sprint_Prompts.md` | 7,675 |
+| `backend/DEVLOG.md` | **46,619** |
+| `docs/HANDOFF.md` | 5,682 |
+| **Total** | **77,218 (~103k tokens)** |
+
+DEVLOG alone was 60% of it, and it grows monotonically — every session
+made every future session more expensive. That is the wrong shape for a
+file that is append-only by design.
+
+## What changed
+
+Four new compact working documents are auto-loaded instead (4,857 words,
+**93.7% reduction, ~96k tokens returned per session**):
+
+- **`docs/REFERENCE.md`** — the constraints that actually govern coding:
+  the non-negotiable rules, role matrix, schema/migration map, the real
+  69-endpoint index (extracted from `routes/*.php`, not from prose), the
+  design-system rules, and the environment gotchas that each cost hours
+  once. Cites § numbers into the full reference rather than restating it.
+- **`docs/SPRINTS.md`** — the standing session rules plus Sprint 8, the
+  only open sprint. Sprints 0–7's prompts are history, not context.
+- **`docs/HANDOFF.md`** — rewritten from 663 lines to 116: current state,
+  the three things most likely to bite, the recommended next step, and an
+  operational command reference.
+- **`docs/REMAINING.md`** (new) — every outstanding task before Sprint 8,
+  grouped by what blocks it (hardware/accounts the user must provide vs.
+  work a session can just do), severity-tagged, with a suggested order.
+
+## What did NOT change
+
+**Nothing was deleted.** All three originals stay in the repo and stay
+authoritative:
+
+- `Baranguard_Master_Reference_FINAL .md` remains **the** source of truth.
+  `REFERENCE.md` says so explicitly: if the two disagree, the full file
+  wins and the compact one is the thing to correct.
+- `backend/DEVLOG.md` remains append-only and still receives new entries
+  (including this one) — it is simply read on demand via `grep` rather
+  than loaded wholesale.
+- `Baranguard_Sprint_Prompts.md` keeps all of Sprints 0–7 verbatim with
+  their completion evidence.
+
+`CLAUDE.md` now carries a short "reading the archives" section so a
+future session knows the archives exist, what each is for, and that the
+compact files summarise rather than replace them. Without that pointer
+the compaction would have quietly destroyed institutional knowledge
+rather than deferring it.
+
+## Verified
+
+All four import paths resolve; all three archives intact at their
+original line counts (1141 / 949 / 5881); no stale references to the old
+auto-load set remain in `CLAUDE.md`.
