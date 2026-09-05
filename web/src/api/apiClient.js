@@ -265,7 +265,7 @@ export async function getNavCounts() {
   };
 }
 
-// --- Users (Tanod-picker name lookup only) ----------------------------------
+// --- Users (Tanod-picker lookup + W10 User Management) ----------------------
 
 /** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
 export async function getUsers({ role, page, limit } = {}) {
@@ -278,7 +278,9 @@ export async function getUsers({ role, page, limit } = {}) {
       role: row.role, // enum value, unconverted
       contactNumber: row.contact_number,
       isActive: row.is_active,
+      isSuspended: row.is_suspended,
       createdAt: row.created_at,
+      lastLoginAt: row.last_login_at,
     })),
     page: json.page,
     limit: json.limit,
@@ -286,12 +288,61 @@ export async function getUsers({ role, page, limit } = {}) {
   };
 }
 
+/**
+ * PATCH /users/:id — W10's admin-editing-another-user path. Cross-tenant
+ * or the last-active-Admin case surface as the server's real ApiClientError
+ * (404 / 409 respectively) — the caller should show that message as-is,
+ * not paraphrase it.
+ */
+export async function setUserActive(userId, isActive) {
+  const json = await request('PATCH', `/users/${userId}`, { body: { is_active: isActive }, auth: true });
+  return { userId: json.user_id, updated: json.updated, isActive: json.is_active, isSuspended: json.is_suspended };
+}
+
+/**
+ * PATCH /users/:id — the suspend/unsuspend action (2026-09-05 UX pass),
+ * independent of `setUserActive`'s deactivate/reactivate — see
+ * UsersController::updateOtherUserStatus()'s own doc for why these are
+ * two separate flags, not one three-way enum. `reason` is only sent when
+ * suspending (`isSuspended=true`); ignored otherwise.
+ */
+export async function setUserSuspended(userId, isSuspended, reason) {
+  const json = await request('PATCH', `/users/${userId}`, {
+    body: { is_suspended: isSuspended, suspended_reason: isSuspended ? (reason || null) : undefined },
+    auth: true,
+  });
+  return { userId: json.user_id, updated: json.updated, isActive: json.is_active, isSuspended: json.is_suspended };
+}
+
+/**
+ * POST /users — Admin creates a new account in their own barangay.
+ * Surfaces the server's real validation/409 message as-is (bad
+ * username shape, weak password, duplicate username) — see
+ * UsersController::create's own doc for why there's no separate
+ * idempotency token here.
+ */
+export async function createUser({ username, password, fullName, role, contactNumber }) {
+  const json = await request('POST', '/users', {
+    body: { username, password, full_name: fullName, role, contact_number: contactNumber || null },
+    auth: true,
+  });
+  return {
+    userId: json.user_id,
+    username: json.username,
+    fullName: json.full_name,
+    role: json.role,
+    contactNumber: json.contact_number,
+    isActive: json.is_active,
+  };
+}
+
 // --- Incidents (W3 Dispatch Center queue) -----------------------------------
 
 /** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
-export async function getIncidents({ status, priority, page, limit } = {}) {
+/** `q` (2026-09-05 UX pass): real server-side search — see IncidentsController::index()'s own doc for why this isn't client-side. */
+export async function getIncidents({ status, priority, q, page, limit } = {}) {
   const json = await request('GET', '/incidents', {
-    query: { status, priority, page, limit },
+    query: { status, priority, q, page, limit },
     auth: true,
   });
   return {
@@ -308,6 +359,8 @@ export async function getIncidents({ status, priority, page, limit } = {}) {
       createdAt: row.created_at,
       deviceOfflineCreatedAt: row.device_offline_created_at,
       syncedAt: row.synced_at,
+      locationDescription: row.location_description,
+      displayId: row.display_id,
       officerName: row.officer_name,
     })),
     page: json.page,
@@ -321,10 +374,30 @@ export async function getIncidents({ status, priority, page, limit } = {}) {
  * `idempotencyKey` is the required UUID (Idempotency-Key header, not a
  * body field for web writes — see IncidentsController.php) — generate one
  * per user-initiated submit and reuse only on an automatic retry.
+ *
+ * `locationDescription`/`complainantName`/`respondentName`/
+ * `complainantContactNumber` (2026-09-05 UX pass): optional, ported from
+ * the same party-field widget `finalizeBlotter`/`amendBlotter` already
+ * use — see IncidentsController::createWeb()'s own comment on why these
+ * were never wired up here before despite the columns existing since
+ * migration 0008.
  */
-export async function createIncident({ incidentType, rawNarrative, latitude, longitude, idempotencyKey }) {
+export async function createIncident({
+  incidentType, rawNarrative, latitude, longitude,
+  locationDescription, complainantName, respondentName, complainantContactNumber,
+  idempotencyKey,
+}) {
   const json = await request('POST', '/incidents', {
-    body: { incident_type: incidentType, raw_narrative: rawNarrative, latitude, longitude },
+    body: {
+      incident_type: incidentType,
+      raw_narrative: rawNarrative,
+      latitude,
+      longitude,
+      location_description: locationDescription || undefined,
+      complainant_name: complainantName || undefined,
+      respondent_name: respondentName || undefined,
+      complainant_contact_number: complainantContactNumber || undefined,
+    },
     idempotencyKey,
     auth: true,
   });
@@ -338,15 +411,37 @@ export async function createIncident({ incidentType, rawNarrative, latitude, lon
     source: json.source,
     latitude: json.latitude,
     longitude: json.longitude,
+    locationDescription: json.location_description,
+    displayId: json.display_id,
     createdAt: json.created_at,
   };
 }
 
+/**
+ * PATCH /incidents/:id/status — Admin only, body is exactly
+ * `{status:'resolved'}` (see IncidentsController::updateStatus()'s own
+ * doc — this is not a general status-setter).
+ */
+export async function updateIncidentStatus(incidentId) {
+  const json = await request('PATCH', `/incidents/${incidentId}/status`, {
+    body: { status: 'resolved' },
+    auth: true,
+  });
+  return { incidentId: json.incident_id, status: json.status };
+}
+
 // --- Dispatch (W3a/W3b) -----------------------------------------------------
 
-/** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
-export async function getDispatches({ status, page, limit } = {}) {
-  const json = await request('GET', '/dispatch', { query: { status, page, limit }, auth: true });
+/**
+ * `incidentId` (Sprint 6 backend addition, not previously wired up here):
+ * narrows to one incident's dispatch history — used by Incident
+ * Management's detail pane to resolve the assigned Tanod for a Contact
+ * button, same tenant-scoped list this endpoint already returns, just
+ * filtered narrower.
+ * @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>}
+ */
+export async function getDispatches({ status, incidentId, page, limit } = {}) {
+  const json = await request('GET', '/dispatch', { query: { status, incident_id: incidentId, page, limit }, auth: true });
   return {
     items: json.items.map(mapDispatch),
     page: json.page,
@@ -389,6 +484,7 @@ function mapDispatch(row) {
     dispatchId: row.dispatch_id,
     incidentId: row.incident_id,
     tanodId: row.tanod_id,
+    tanodName: row.tanod_name ?? null,
     priority: row.priority,
     routeJson: row.route_json,
     routeStatus: row.route_status,
@@ -738,6 +834,92 @@ export function reportExportDownloadUrl() {
   return `${BASE_URL}/reports/export/download`;
 }
 
+// --- SMS Monitor conversations/compose/broadcast (2026-09-05 UX pass) ------
+// See SmsController.php's own class doc for the deliberate rescoping this
+// represents. `GET /sms/logs` below is UNCHANGED (still no phone numbers);
+// these are new, separate endpoints built specifically for the
+// conversation view.
+
+/** @returns {Promise<Array<object>>} */
+export async function getSmsConversations() {
+  const json = await request('GET', '/sms/conversations', { auth: true });
+  return json.items.map((row) => ({
+    phoneNumber: row.phone_number,
+    displayName: row.display_name,
+    unreadCount: row.unread_count,
+    lastMessage: row.last_message ? {
+      logId: row.last_message.log_id,
+      direction: row.last_message.direction,
+      messageType: row.last_message.message_type,
+      messageBody: row.last_message.message_body,
+      status: row.last_message.status,
+      createdAt: row.last_message.created_at,
+      sentAt: row.last_message.sent_at,
+      receivedAt: row.last_message.received_at,
+    } : null,
+  }));
+}
+
+/** @returns {Promise<Array<object>>} */
+export async function getSmsConversationMessages(phoneNumber) {
+  const json = await request('GET', `/sms/conversations/${encodeURIComponent(phoneNumber)}/messages`, { auth: true });
+  return json.items.map((row) => ({
+    logId: row.log_id,
+    direction: row.direction,
+    messageType: row.message_type,
+    messageBody: row.message_body,
+    status: row.status,
+    failureReason: row.failure_reason,
+    incidentId: row.incident_id,
+    dispatchId: row.dispatch_id,
+    reportId: row.report_id,
+    createdAt: row.created_at,
+    sentAt: row.sent_at,
+    receivedAt: row.received_at,
+  }));
+}
+
+export async function markSmsThreadResolved(phoneNumber) {
+  const json = await request('PATCH', `/sms/conversations/${encodeURIComponent(phoneNumber)}/resolve`, { body: {}, auth: true });
+  return { phoneNumber: json.phone_number, resolvedCount: json.resolved_count };
+}
+
+/**
+ * POST /sms/send — exactly one of `recipientUserId`/`phoneNumber`. See
+ * SmsController::send()'s own doc for why a raw phone number is only
+ * accepted when it matches a real in-tenant contact already on file.
+ */
+export async function sendSms({ recipientUserId, phoneNumber, message, incidentId, dispatchId, reportId, idempotencyKey }) {
+  const json = await request('POST', '/sms/send', {
+    body: {
+      recipient_user_id: recipientUserId,
+      phone_number: phoneNumber,
+      message,
+      incident_id: incidentId,
+      dispatch_id: dispatchId,
+      report_id: reportId,
+    },
+    idempotencyKey,
+    auth: true,
+  });
+  return { logId: json.log_id, status: json.status, failureReason: json.failure_reason };
+}
+
+/**
+ * POST /sms/broadcast — `scope` is `'on_duty_tanods'` or `'role'` (+
+ * `role`). Always scoped to the caller's own barangay server-side — see
+ * SmsController::broadcast()'s own doc for why "All Barangays" isn't an
+ * option here.
+ */
+export async function broadcastSms({ message, scope, role, idempotencyKey }) {
+  const json = await request('POST', '/sms/broadcast', {
+    body: { message, scope, role },
+    idempotencyKey,
+    auth: true,
+  });
+  return { recipientCount: json.recipient_count, sent: json.sent, failed: json.failed };
+}
+
 /**
  * GET /sms/logs — §6, §9 W14 (Admin only, read-only). No sender_number/
  * receiver_number field exists in the response at all — see
@@ -795,10 +977,19 @@ export async function getIncident(incidentId) {
     longitude: json.longitude,
     createdAt: json.created_at,
     syncedAt: json.synced_at,
+    locationDescription: json.location_description,
+    displayId: json.display_id,
     rawNarrative: json.raw_narrative ?? null,
     redactedNarrative: json.redacted_narrative,
     redactionApprovedAt: json.redaction_approved_at,
     redactionApprovedBy: json.redaction_approved_by,
+    // Secretary-only, same as raw_narrative above (extracted directly
+    // from raw text — see IncidentsController::show()'s own comment on
+    // why these don't get redactedNarrative's broader visibility).
+    // Absent in the JSON entirely for any other role, same as raw_narrative.
+    complainantName: json.complainant_name ?? null,
+    respondentName: json.respondent_name ?? null,
+    complainantContactNumber: json.complainant_contact_number ?? null,
     // Dispatch stages for W7's §9-mandated timeline. They live here rather
     // than on GET /dispatch because that endpoint is Admin/PB/Tanod only
     // and W7 is a Secretary screen — see IncidentsController::show().
@@ -901,28 +1092,119 @@ export async function translateAiDraft(incidentId, targetLanguage) {
   };
 }
 
-// --- Blotter finalization / amendment (§6 "Blotter", W7) --------------------
+/**
+ * GET /incidents/:id/ai-draft/extraction — Electronic Blotter follow-up.
+ * Independent of the redaction draft above (own endpoint, own
+ * draft_version) — returns null on 404, an ordinary empty state (no
+ * extraction has run yet), same convention as getAiDraft().
+ */
+export async function getExtractionDraft(incidentId) {
+  try {
+    const json = await request('GET', `/incidents/${incidentId}/ai-draft/extraction`, { auth: true });
+    return {
+      logId: json.log_id,
+      incidentId: json.incident_id,
+      pipelineRunId: json.pipeline_run_id,
+      draftComplainantName: json.draft_complainant_name,
+      draftRespondentName: json.draft_respondent_name,
+      draftComplainantContactNumber: json.draft_complainant_contact_number,
+      draftVersion: json.draft_version,
+      status: json.status,
+      errorCode: json.error_code ?? null,
+    };
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) return null;
+    throw error;
+  }
+}
 
-/** POST /incidents/:id/finalize — Secretary only; requires an approved redaction. */
-export async function finalizeBlotter(incidentId, narrativeSummary) {
-  const json = await request('POST', `/incidents/${incidentId}/finalize`, {
-    body: { narrative_summary: narrativeSummary },
+/**
+ * POST /incidents/:id/ai-draft/extraction/approve — commits the
+ * Secretary's reviewed/edited complainant/respondent/contact-number onto
+ * the incident (the approved home, mirrored into blotter_record at
+ * finalize time). All three fields are optional — pass `null`/empty for
+ * one the Secretary cleared or the AI never drafted.
+ */
+export async function approveExtraction(incidentId, { complainantName, respondentName, complainantContactNumber, draftVersion }) {
+  const json = await request('POST', `/incidents/${incidentId}/ai-draft/extraction/approve`, {
+    body: {
+      complainant_name: complainantName || null,
+      respondent_name: respondentName || null,
+      complainant_contact_number: complainantContactNumber || null,
+      draft_version: draftVersion,
+    },
     auth: true,
   });
-  return { blotterId: json.blotter_id, finalizedAt: json.finalized_at, revisionNo: json.revision_no };
+  return {
+    incidentId: json.incident_id,
+    complainantName: json.complainant_name,
+    respondentName: json.respondent_name,
+    complainantContactNumber: json.complainant_contact_number,
+  };
+}
+
+// --- Blotter finalization / amendment (§6 "Blotter", W7) --------------------
+
+/**
+ * POST /incidents/:id/finalize — Secretary only; requires an approved
+ * redaction. `complainantName`/`respondentName`/`complainantContactNumber`
+ * are all optional (§ migration 0008) — omit or pass null/empty for a
+ * field the incident has none of.
+ */
+export async function finalizeBlotter(incidentId, { narrativeSummary, complainantName, respondentName, complainantContactNumber } = {}) {
+  const json = await request('POST', `/incidents/${incidentId}/finalize`, {
+    body: {
+      narrative_summary: narrativeSummary,
+      complainant_name: complainantName || null,
+      respondent_name: respondentName || null,
+      complainant_contact_number: complainantContactNumber || null,
+    },
+    auth: true,
+  });
+  return {
+    blotterId: json.blotter_id,
+    finalizedAt: json.finalized_at,
+    revisionNo: json.revision_no,
+    caseStatus: json.case_status,
+    displayId: json.display_id,
+    complainantName: json.complainant_name,
+    respondentName: json.respondent_name,
+    complainantContactNumber: json.complainant_contact_number,
+  };
 }
 
 /**
  * POST /incidents/:id/blotter/amend — Secretary only; requires a finalized
  * record. The superseded text is preserved server-side in
  * `blotter_revision`, never discarded (§6).
+ *
+ * `caseStatus` (migration 0009, 2026-09-05 UX pass): optional, FORWARD
+ * ONLY (`under_investigation`/`settled`) — see
+ * BlotterController::amend()'s own comment for why `active`/`resolved`
+ * are never accepted here.
  */
-export async function amendBlotter(incidentId, { narrativeSummary, reason }) {
-  const json = await request('POST', `/incidents/${incidentId}/blotter/amend`, {
-    body: { narrative_summary: narrativeSummary, reason },
-    auth: true,
-  });
-  return { blotterId: json.blotter_id, revisionNo: json.revision_no, amendedAt: json.amended_at };
+export async function amendBlotter(incidentId, { narrativeSummary, reason, complainantName, respondentName, complainantContactNumber, caseStatus }) {
+  const body = { narrative_summary: narrativeSummary, reason };
+  // Unlike finalize, an OMITTED key here keeps the record's current
+  // value server-side (BlotterController::parsePartyFields()) — only
+  // include a party field in the request when the caller actually means
+  // to touch it, `undefined` meaning "leave alone" and anything else
+  // (including empty string, meaning "clear it") meaning "set this".
+  if (complainantName !== undefined) body.complainant_name = complainantName || null;
+  if (respondentName !== undefined) body.respondent_name = respondentName || null;
+  if (complainantContactNumber !== undefined) body.complainant_contact_number = complainantContactNumber || null;
+  if (caseStatus) body.case_status = caseStatus;
+
+  const json = await request('POST', `/incidents/${incidentId}/blotter/amend`, { body, auth: true });
+  return {
+    blotterId: json.blotter_id,
+    revisionNo: json.revision_no,
+    amendedAt: json.amended_at,
+    caseStatus: json.case_status,
+    complainantName: json.complainant_name,
+    respondentName: json.respondent_name,
+    complainantContactNumber: json.complainant_contact_number,
+  };
 }
 
 /**
@@ -930,9 +1212,12 @@ export async function amendBlotter(incidentId, { narrativeSummary, reason }) {
  * blotter RECORDS list (W6), distinct from `getIncidents()` (every
  * incident, any status — W3/W5/Incident Management). See
  * BlotterController::index() for why this endpoint exists.
+ *
+ * `q` (2026-09-05 UX pass): real server-side search — see
+ * BlotterController::index()'s own doc for why this isn't client-side.
  */
-export async function getBlotterList({ page, limit } = {}) {
-  const json = await request('GET', '/blotter', { query: { page, limit }, auth: true });
+export async function getBlotterList({ q, page, limit } = {}) {
+  const json = await request('GET', '/blotter', { query: { q, page, limit }, auth: true });
   return {
     items: json.items.map((row) => ({
       blotterId: row.blotter_id,
@@ -940,6 +1225,7 @@ export async function getBlotterList({ page, limit } = {}) {
       incidentType: row.incident_type,
       latitude: row.latitude,
       longitude: row.longitude,
+      locationDescription: row.location_description,
       officerName: row.officer_name,
       recordedBy: row.recorded_by,
       approvedBy: row.approved_by,
@@ -947,6 +1233,11 @@ export async function getBlotterList({ page, limit } = {}) {
       revisionNo: row.revision_no,
       amendedAt: row.amended_at,
       amendedBy: row.amended_by,
+      caseStatus: row.case_status,
+      displayId: row.display_id,
+      complainantName: row.complainant_name,
+      respondentName: row.respondent_name,
+      complainantContactNumber: row.complainant_contact_number,
     })),
     page: json.page,
     limit: json.limit,
@@ -972,6 +1263,11 @@ export async function getBlotterForIncident(incidentId) {
       revisionNo: json.revision_no,
       amendedAt: json.amended_at,
       amendedBy: json.amended_by,
+      caseStatus: json.case_status,
+      displayId: json.display_id,
+      complainantName: json.complainant_name,
+      respondentName: json.respondent_name,
+      complainantContactNumber: json.complainant_contact_number,
     };
   } catch (error) {
     if (error instanceof ApiClientError && error.status === 404) return null;
@@ -1031,4 +1327,112 @@ export async function resolveIncident(incidentId) {
     auth: true,
   });
   return { incidentId: json.incident_id, status: json.status };
+}
+
+// --- Map packages (W18) ------------------------------------------------------
+
+/**
+ * GET /map-packages/:barangayId. A 404 ("no published package yet") is a
+ * normal, expected state for this screen — callers should treat it as
+ * `null`, not as an error state.
+ */
+export async function getMapPackage(barangayId) {
+  try {
+    const json = await request('GET', `/map-packages/${barangayId}`, { auth: true });
+    return {
+      version: json.version,
+      checksumSha256: json.checksum_sha256,
+      downloadUrl: json.download_url,
+      isPublished: json.is_published,
+    };
+  } catch (err) {
+    if (err instanceof ApiClientError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * POST /map-packages — multipart upload, so this can't go through the
+ * shared `request()` helper above (it always JSON-stringifies the body
+ * and sets Content-Type: application/json). Reuses the same session/
+ * sliding-token/error-shape conventions by hand instead. No
+ * Idempotency-Key: the endpoint's own UNIQUE(barangay_id, version)
+ * already gives a clean 409 on a retried upload.
+ */
+export async function uploadMapPackage(version, file) {
+  const session = readSession();
+  if (!session) {
+    throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
+  }
+
+  const formData = new FormData();
+  formData.append('version', version);
+  formData.append('file', file);
+
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/map-packages`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${session.token}` },
+      body: formData,
+    });
+  } catch {
+    throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
+  }
+
+  const renewed = response.headers.get('X-Renewed-Token');
+  if (renewed) {
+    const payload = decodeJwtPayload(renewed);
+    if (payload && typeof payload.exp === 'number') {
+      writeSession({ ...session, token: renewed, expiresAt: new Date(payload.exp * 1000).toISOString() });
+    }
+  }
+
+  let json = null;
+  const text = await response.text();
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new ApiClientError(response.status, 'INVALID_RESPONSE', 'The server returned an unreadable response.');
+    }
+  }
+
+  if (!response.ok) {
+    const errBody = json && json.error ? json.error : {};
+    if (response.status === 401) clearSession();
+    throw new ApiClientError(response.status, errBody.code || 'UNKNOWN_ERROR', errBody.message || 'Something went wrong.');
+  }
+
+  return {
+    packageId: json.package_id,
+    version: json.version,
+    checksumSha256: json.checksum_sha256,
+    isPublished: json.is_published,
+  };
+}
+
+// --- System Settings (2026-09-05 UX pass, W21) ------------------------------
+// See SettingsController.php's own class doc for exactly which keys exist
+// and why this is deliberately a small set, not the full mockup. Keys are
+// passed through as-is (dotted strings like 'general.system_name') rather
+// than mapped to camelCase fields — there's no fixed shape to map to, the
+// server is the single source of truth for which keys are valid.
+
+/** @returns {Promise<Record<string,string>>} */
+export async function getSystemSettings() {
+  const json = await request('GET', '/system-settings', { auth: true });
+  return json.settings;
+}
+
+/**
+ * @param {Record<string,string>} settings only the keys being changed —
+ *   a secret field holding its own masked placeholder back (unchanged)
+ *   is safe to include, the server treats that as "leave alone" (see
+ *   SettingsController::update()'s own doc).
+ * @returns {Promise<Record<string,string>>}
+ */
+export async function updateSystemSettings(settings) {
+  const json = await request('PATCH', '/system-settings', { body: { settings }, auth: true });
+  return json.settings;
 }
