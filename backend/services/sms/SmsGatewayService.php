@@ -6,6 +6,7 @@ namespace Baranguard\Services\Sms;
 use Baranguard\Controllers\DutyStatusController;
 use Baranguard\Controllers\GpsController;
 use Baranguard\Controllers\IncidentsController;
+use Baranguard\Controllers\SettingsController;
 use Baranguard\Controllers\TanodSosController;
 use Baranguard\Lib\Audit;
 use Baranguard\Services\Notifications\SemaphoreClient;
@@ -52,13 +53,37 @@ final class SmsGatewayService
 
     private EnvelopeCrypto $crypto;
     private DeviceSecretVault $vault;
-    private SemaphoreClient $semaphore;
+    // Null unless explicitly injected (tests only, per a full search of
+    // this codebase's own call sites) — the real, default case resolves
+    // lazily in `resolveSemaphore()` below, because that's the first
+    // point a `$pdo` is available to check `system_settings`.
+    private ?SemaphoreClient $semaphoreOverride;
 
     public function __construct(?EnvelopeCrypto $crypto = null, ?DeviceSecretVault $vault = null, ?SemaphoreClient $semaphore = null)
     {
         $this->crypto = $crypto ?? new EnvelopeCrypto();
         $this->vault = $vault ?? new DeviceSecretVault();
-        $this->semaphore = $semaphore ?? new SemaphoreClient();
+        $this->semaphoreOverride = $semaphore;
+    }
+
+    /**
+     * 2026-09-05 UX pass — Settings-first, `.env`-fallback resolution of
+     * the SMS gateway client. This is the one piece of the deliberate
+     * W21-override (migration 0012's own comment) that's actually wired
+     * into real behavior rather than just stored: a value saved via
+     * `PATCH /system-settings` genuinely changes which Semaphore
+     * account/sender name outbound SMS uses, the next call. An unset
+     * setting (empty string) falls through to `SemaphoreClient`'s own
+     * `.env` default exactly as before this pass existed.
+     */
+    private function resolveSemaphore(PDO $pdo): SemaphoreClient
+    {
+        if ($this->semaphoreOverride !== null) {
+            return $this->semaphoreOverride;
+        }
+        $apiKey = SettingsController::get($pdo, 'sms_gateway.api_key');
+        $senderName = SettingsController::get($pdo, 'sms_gateway.sender_name');
+        return new SemaphoreClient($apiKey !== '' ? $apiKey : null, $senderName !== '' ? $senderName : null);
     }
 
     // --- Inbound: /internal/sms/incident-fallback -------------------------
@@ -299,10 +324,18 @@ final class SmsGatewayService
 
     /**
      * @param string $smsLogMessageType one of sms_log's message_type enum
-     *        values ('dispatch','priority_alert','sos','confirmation').
+     *        values ('dispatch','priority_alert','sos','confirmation','manual').
      * @param ?int $barangayId see migration 0006's own doc for why this is
      *        a dedicated column rather than derived from incident/dispatch.
-     * @return array{status:'sent'|'failed',gateway_message_id?:string,failure_reason?:string}
+     * @param ?string $correlationId (2026-09-05 UX pass) — set by
+     *        `SmsController::send()`/`broadcast()` to their
+     *        Idempotency-Key, so a retry can be detected by looking this
+     *        row up directly rather than guessing "the most recent row
+     *        for this phone number" (which would race under concurrent
+     *        sends to the same number).
+     * @param ?int $reportId links a manual reply back to the citizen
+     *        report it's answering, when applicable.
+     * @return array{status:'sent'|'failed',log_id:int,gateway_message_id?:string,failure_reason?:string}
      */
     public function sendOutbound(
         PDO $pdo,
@@ -312,37 +345,46 @@ final class SmsGatewayService
         ?int $dispatchId,
         string $phoneNumber,
         string $message,
-        ?int $barangayId = null
+        ?int $barangayId = null,
+        ?string $correlationId = null,
+        ?int $reportId = null
     ): array {
-        if (!$this->semaphore->isConfigured()) {
-            $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $barangayId, $phoneNumber, 'failed', null, 'SEMAPHORE_NOT_CONFIGURED');
-            return ['status' => 'failed', 'failure_reason' => 'SEMAPHORE_NOT_CONFIGURED'];
+        $semaphore = $this->resolveSemaphore($pdo);
+
+        if (!$semaphore->isConfigured()) {
+            $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'failed', null, 'SEMAPHORE_NOT_CONFIGURED', $correlationId);
+            return ['status' => 'failed', 'log_id' => $logId, 'failure_reason' => 'SEMAPHORE_NOT_CONFIGURED'];
         }
 
         try {
-            $result = $priority ? $this->semaphore->sendPriority($phoneNumber, $message) : $this->semaphore->send($phoneNumber, $message);
-            $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $barangayId, $phoneNumber, 'sent', $result['gateway_message_id'], null);
-            return ['status' => 'sent', 'gateway_message_id' => $result['gateway_message_id']];
+            $result = $priority ? $semaphore->sendPriority($phoneNumber, $message) : $semaphore->send($phoneNumber, $message);
+            $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'sent', $result['gateway_message_id'], null, $correlationId);
+            return ['status' => 'sent', 'log_id' => $logId, 'gateway_message_id' => $result['gateway_message_id']];
         } catch (SemaphoreException $e) {
             $reason = mb_strlen($e->getMessage()) > 255 ? mb_substr($e->getMessage(), 0, 254) . '…' : $e->getMessage();
-            $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $barangayId, $phoneNumber, 'failed', null, $reason);
-            return ['status' => 'failed', 'failure_reason' => $reason];
+            $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'failed', null, $reason, $correlationId);
+            return ['status' => 'failed', 'log_id' => $logId, 'failure_reason' => $reason];
         }
     }
 
-    private function logOutbound(PDO $pdo, string $messageType, ?int $incidentId, ?int $dispatchId, ?int $barangayId, string $phone, string $status, ?string $gatewayMessageId, ?string $failureReason): void
+    private function logOutbound(PDO $pdo, string $messageType, ?int $incidentId, ?int $dispatchId, ?int $reportId, ?int $barangayId, string $phone, string $messageBody, string $status, ?string $gatewayMessageId, ?string $failureReason, ?string $correlationId = null): int
     {
+        // message_body (migration 0013, 2026-09-05 UX pass) — the actual
+        // text is now persisted for every NEW outbound send, going
+        // forward only (rows from before this migration stay NULL,
+        // never backfilled with a guess — §2 Rule 6).
         $stmt = $pdo->prepare(
             "INSERT INTO sms_log
-                (incident_id, dispatch_id, barangay_id, receiver_number, transport, message_type, direction,
-                 gateway_message_id, status, sent_at, failure_reason, created_at)
+                (incident_id, dispatch_id, report_id, barangay_id, receiver_number, transport, message_type, direction,
+                 gateway_message_id, status, sent_at, failure_reason, message_body, correlation_id, created_at)
              VALUES
-                (:incident_id, :dispatch_id, :barangay_id, :receiver_number, 'semaphore', :message_type, 'outbound',
-                 :gateway_message_id, :status, :sent_at, :failure_reason, UTC_TIMESTAMP())"
+                (:incident_id, :dispatch_id, :report_id, :barangay_id, :receiver_number, 'semaphore', :message_type, 'outbound',
+                 :gateway_message_id, :status, :sent_at, :failure_reason, :message_body, :correlation_id, UTC_TIMESTAMP())"
         );
         $stmt->execute([
             'incident_id' => $incidentId,
             'dispatch_id' => $dispatchId,
+            'report_id' => $reportId,
             'barangay_id' => $barangayId,
             'receiver_number' => $phone,
             'message_type' => $messageType,
@@ -350,6 +392,9 @@ final class SmsGatewayService
             'status' => $status,
             'sent_at' => $status === 'sent' ? gmdate('Y-m-d H:i:s') : null,
             'failure_reason' => $failureReason,
+            'message_body' => $messageBody,
+            'correlation_id' => $correlationId,
         ]);
+        return (int) $pdo->lastInsertId();
     }
 }

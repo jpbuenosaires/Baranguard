@@ -54,6 +54,15 @@ try {
     if ($path === '') {
         $path = '/';
     }
+    // 2026-09-05 UX pass: `parse_url()`'s PHP_URL_PATH does NOT
+    // URL-decode — a phone-number path segment like `+639171234567`
+    // arrives percent-encoded (`%2B639171234567`) and none of this
+    // file's route patterns (all plain digits/literals until now) had
+    // ever needed decoding to match correctly. Every existing route's
+    // pattern is unaffected (they contain no percent-encodable
+    // characters), so this only changes behavior for the new
+    // `/sms/conversations/:phone/*` routes that actually need it.
+    $path = rawurldecode($path);
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
     // Route tables: one file per resource group under backend/routes/,

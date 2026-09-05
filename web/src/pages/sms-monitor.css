@@ -1,0 +1,223 @@
+/**
+ * sms-monitor.css — co-located with sms-monitor.js (renamed from
+ * sms-log.js, 2026-09-05 UX pass). The 3-column Conversations layout;
+ * the Activity Log tab reuses `.split-panel`/`.blotter-detail-pane`
+ * (shared, defined elsewhere) unchanged.
+ */
+
+.sms-layout {
+  display: grid;
+  grid-template-columns: 18rem minmax(0, 1fr) 16rem;
+  gap: var(--spacing-md);
+  align-items: start;
+  min-height: 0;
+}
+@media (max-width: 1024px) {
+  .sms-layout { grid-template-columns: 1fr; }
+}
+
+/* --- Contact pane (left) ------------------------------------------- */
+.sms-contact-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.sms-contact-pane__search { margin: 0; }
+.sms-contact-pane__tabs { margin: 0; }
+.sms-contact-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs, 0.35rem);
+  max-height: 32rem;
+  overflow-y: auto;
+}
+.sms-contact-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--spacing-sm);
+  align-items: start;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.sms-contact-row:hover { border-color: var(--color-accent); }
+.sms-contact-row.is-selected { border-color: var(--color-primary); background: var(--color-row-active-bg); }
+.sms-contact-row__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--color-accent-solid);
+  color: var(--color-white);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+}
+.sms-contact-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.sms-contact-row__name {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 0.35rem);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+.sms-contact-row__unread-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--color-critical-solid);
+  flex-shrink: 0;
+}
+.sms-contact-row__preview {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12rem;
+}
+.sms-contact-row__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-xs, 0.35rem);
+  font-size: var(--font-size-label);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* --- Thread pane (center) -------------------------------------------- */
+.sms-thread-pane { min-width: 0; }
+.sms-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  height: 100%;
+}
+.sms-thread__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+}
+.sms-thread__messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  max-height: 24rem;
+  overflow-y: auto;
+  padding: var(--spacing-sm) 0;
+}
+.sms-bubble {
+  max-width: 75%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+}
+.sms-bubble--inbound {
+  align-self: flex-start;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+.sms-bubble--outbound {
+  align-self: flex-end;
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+.sms-bubble__text { white-space: pre-wrap; word-break: break-word; }
+.sms-bubble__meta {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-top: var(--spacing-xs, 0.35rem);
+  font-size: var(--font-size-label);
+  opacity: 0.85;
+}
+.sms-bubble__failure {
+  margin-top: var(--spacing-xs, 0.35rem);
+  font-size: var(--font-size-label);
+  color: var(--color-critical-solid);
+}
+.sms-bubble--outbound .sms-bubble__failure { color: var(--tint-success-solid, #fecaca); }
+
+.sms-compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-md);
+}
+.sms-compose__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sms-compose__counter--over { color: var(--color-critical-solid); }
+
+/* --- Live Feed pane (right) ------------------------------------------ */
+.sms-feed-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.sms-feed-pane__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 0.35rem);
+  margin: 0;
+}
+.sms-feed-pane__live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--color-success-solid);
+  animation: marker-pulse 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sms-feed-pane__live-dot { animation: none; }
+}
+.sms-live-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  max-height: 28rem;
+  overflow-y: auto;
+}
+.sms-live-feed__entry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+.sms-live-feed__entry:last-child { border-bottom: none; }
+.sms-live-feed__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  margin-top: 0.35rem;
+  flex-shrink: 0;
+  background: var(--color-text-secondary);
+}
+.sms-live-feed__dot--sent, .sms-live-feed__dot--received { background: var(--color-success-solid); }
+.sms-live-feed__dot--failed, .sms-live-feed__dot--rejected { background: var(--color-critical-solid); }
+.sms-live-feed__dot--pending, .sms-live-feed__dot--queued { background: var(--color-info-solid); }
+.sms-live-feed__text { flex: 1; }
