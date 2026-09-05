@@ -32,6 +32,8 @@
   position: sticky;
   top: 0;
   z-index: 1;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .data-table tbody tr { border-top: 1px solid var(--color-divider); }
@@ -44,19 +46,22 @@
    class) still win, same as the pre-existing hover rule below. */
 .data-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--color-bg) 55%, transparent); }
 .data-table tbody td {
-  padding: var(--spacing-sm-md) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
   color: var(--color-text-primary);
   vertical-align: middle;
 }
 
 .data-table tbody tr.is-clickable { cursor: pointer; transition: background-color .15s ease; }
-.data-table tbody tr.is-clickable:hover { background: var(--color-bg); }
+.data-table tbody tr.is-clickable:hover { background: var(--gradient-card-hover); }
 .data-table tbody tr.is-clickable:focus-visible {
   outline: none;
   background: var(--color-row-active-bg);
   box-shadow: inset 0 0 0 2px var(--color-primary);
 }
-.data-table tbody tr.is-selected { background: var(--color-row-active-bg); }
+.data-table tbody tr.is-selected {
+  background: var(--color-row-active-bg);
+  border-left: 3px solid var(--color-primary);
+}
 
 .data-table .is-right { text-align: right; }
 
@@ -82,6 +87,10 @@
    been clicked (audit A12); the active column's arrow takes full weight. */
 .data-table__sort-icon { font-size: 0.625rem; width: 0.625rem; display: inline-block; opacity: 0.4; }
 .data-table__sort-icon.is-active { opacity: 1; color: var(--color-primary); }
+
+/* Sort arrow rotation animation. */
+.data-table__sort-icon { transition: transform 0.2s ease; }
+.data-table__sort-icon.is-desc { transform: rotate(180deg); }
 
 /* audit A11: the first cell of a clickable row is a real button carrying
    the row's accessible name — the row itself stays a row, so header/cell

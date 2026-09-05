@@ -11,4 +11,10 @@
   color: var(--color-white);
   font-weight: 600;
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(29,78,216,0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.avatar:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 10px rgba(29,78,216,0.3);
 }
