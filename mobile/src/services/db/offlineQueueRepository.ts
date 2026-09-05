@@ -1,14 +1,15 @@
 /**
  * offlineQueueRepository.ts — `offline_queue_local` (§5).
  *
- * Used specifically for dispatch-status transitions made offline — see
- * `localSchema.ts`'s file header for why this is the one payload type
- * that needs a real queue rather than a `synced` column on its own
- * business table (`dispatch_local` has only a single
- * `last_status_event_id` slot, not room for multiple pending changes).
- * `incident`/`gps` sync state is read directly off `incident_local`/
- * `gps_track_local`'s own `synced` columns instead — this repository is
- * NOT a generic mirror of those.
+ * Used for payload types that need a real queue rather than a `synced`
+ * column on their own business table: dispatch-status transitions (see
+ * `localSchema.ts`'s file header for why `dispatch_local` has only a
+ * single `last_status_event_id` slot, not room for multiple pending
+ * changes) and SOS (raised offline, §2 Rule 27 — there is no
+ * `sos_local` business table at all, only this queue). `incident`/`gps`
+ * sync state is read directly off `incident_local`/`gps_track_local`'s
+ * own `synced` columns instead — this repository is NOT a generic
+ * mirror of those.
  */
 
 import { openLocalDatabase } from './localDatabase';
@@ -54,6 +55,46 @@ export async function listPendingDispatchStatusUpdates(): Promise<
     queueId: row.queue_id,
     clientEventId: row.client_event_id,
     payload: JSON.parse(row.payload_json) as DispatchStatusQueuePayload,
+  }));
+}
+
+export interface SosQueuePayload {
+  latitude: number;
+  longitude: number;
+  dispatchId?: number | null;
+}
+
+/**
+ * Stages an SOS raised while offline, keyed by the same client_event_id
+ * that would have been sent to `POST /tanod-sos` directly — §2 Rule 27's
+ * idempotency guarantee applies identically whether the item goes out
+ * live or through `/sync/batch`'s `sos[]` array.
+ */
+export async function enqueueSosItem(clientEventId: string, payload: SosQueuePayload): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    `INSERT INTO offline_queue_local (client_event_id, payload_type, payload_json, created_offline_at)
+     VALUES (?, 'sos', ?, ?)`,
+    [clientEventId, JSON.stringify(payload), new Date().toISOString()],
+    /* transaction */ false
+  );
+}
+
+/** Pending sos queue items, oldest first (§5 sync invariants). */
+export async function listPendingSosItems(): Promise<
+  { queueId: number; clientEventId: string; payload: SosQueuePayload }[]
+> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    `SELECT * FROM offline_queue_local
+     WHERE payload_type = 'sos' AND reconciliation_status = 'pending'
+     ORDER BY created_offline_at ASC`
+  );
+  const rows = (result.values ?? []) as OfflineQueueLocalRow[];
+  return rows.map((row) => ({
+    queueId: row.queue_id,
+    clientEventId: row.client_event_id,
+    payload: JSON.parse(row.payload_json) as SosQueuePayload,
   }));
 }
 

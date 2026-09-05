@@ -290,6 +290,43 @@ export async function getOwnDutyStatus(): Promise<DutyStatusEntry | null> {
   return { statusId: latest.status_id, status: latest.status, channel: latest.channel, changedAt: latest.changed_at };
 }
 
+// --- SOS (§6 `POST /tanod-sos`, §2 Rule 27) --------------------------------
+
+export interface SosResult {
+  sosId: number;
+  status: string;
+  receivedAt: string;
+}
+
+/**
+ * POST /tanod-sos. `clientEventId` is the idempotency key
+ * (UNIQUE(user_id, client_event_id) server-side) — a retry with the same
+ * id returns the original row rather than raising a second alarm, the
+ * same guarantee an SMS-fallback-correlated SOS relies on (§2 Rule 27).
+ * `latitude`/`longitude` are server-required (NOT NULL) — there is no
+ * fallback coordinate; a caller that couldn't get a location must not
+ * call this.
+ */
+export async function postSos(params: {
+  latitude: number;
+  longitude: number;
+  clientEventId: string;
+  dispatchId?: number | null;
+  fallbackChannel?: 'app' | 'sms';
+}): Promise<SosResult> {
+  const json = await request<{ sos_id: number; status: string; received_at: string }>('/tanod-sos', {
+    method: 'POST',
+    body: {
+      latitude: params.latitude,
+      longitude: params.longitude,
+      client_event_id: params.clientEventId,
+      dispatch_id: params.dispatchId ?? undefined,
+      fallback_channel: params.fallbackChannel ?? undefined,
+    },
+  });
+  return { sosId: json.sos_id, status: json.status, receivedAt: json.received_at };
+}
+
 // --- Dispatch (§6, Sprint 1 web + Sprint 3 mobile: M5/M6) -------------------
 
 /** §5 dispatch.status enum. */
@@ -486,6 +523,20 @@ export interface SyncDispatchStatusItem {
   client_event_id: string;
 }
 
+/**
+ * One item's shape for `sos[]` (mirrors POST /tanod-sos body). §6:
+ * SyncController.php passes this straight into
+ * TanodSosController::createItem() — same idempotency key, same Rule 27
+ * fan-out as a live SOS.
+ */
+export interface SyncSosItem {
+  latitude: number;
+  longitude: number;
+  dispatch_id?: number | null;
+  fallback_channel?: 'app' | 'sms';
+  client_event_id: string;
+}
+
 export interface SyncBatchResult {
   clientEventId: string;
   serverId: number | null;
@@ -504,6 +555,7 @@ export async function syncBatch(params: {
   gpsTracks?: SyncGpsItem[];
   dutyStatusUpdates?: SyncDutyStatusItem[];
   dispatchStatusUpdates?: SyncDispatchStatusItem[];
+  sosItems?: SyncSosItem[];
 }): Promise<SyncBatchResult[]> {
   const json = await request<{
     results: { client_event_id: string; server_id: number | null; status: string; reason?: string }[];
@@ -515,7 +567,7 @@ export async function syncBatch(params: {
       gps_tracks: params.gpsTracks ?? [],
       duty_status_updates: params.dutyStatusUpdates ?? [],
       dispatch_status_updates: params.dispatchStatusUpdates ?? [],
-      sos: [],
+      sos: params.sosItems ?? [],
     },
   });
   return json.results.map((r) => ({
