@@ -172,7 +172,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     layout.className = 'split-panel';
 
     const main = document.createElement('div');
-    main.className = 'stack--md blotter-detail__main';
+    main.className = 'stack--md blotter-detail__main readable-column';
     const aside = document.createElement('div');
     aside.className = 'stack--md';
 
@@ -451,10 +451,24 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     card.className = 'card';
     const heading = document.createElement('h3');
     heading.textContent = `Blotter summary (revision ${blotter.revisionNo})`;
+    card.appendChild(heading);
+    if (blotter.caseStatus) card.appendChild(buildCaseStatusPill(blotter.caseStatus));
     const body = document.createElement('pre');
     body.className = 'narrative-block';
     body.textContent = blotter.narrativeSummary;
-    card.append(heading, body);
+    card.appendChild(body);
+
+    if (blotter.complainantName || blotter.respondentName || blotter.complainantContactNumber) {
+      const partyNote = document.createElement('p');
+      partyNote.className = 'note';
+      const parts = [];
+      if (blotter.complainantName) parts.push(`Complainant: ${blotter.complainantName}`);
+      if (blotter.respondentName) parts.push(`Respondent: ${blotter.respondentName}`);
+      if (blotter.complainantContactNumber) parts.push(`Contact: ${blotter.complainantContactNumber}`);
+      partyNote.textContent = parts.join(' · ');
+      card.appendChild(partyNote);
+    }
+
     return card;
   }
 
@@ -494,6 +508,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
     // Finalized: read-only current text (§9 "read-only until an explicit
     // amendment workflow") plus the amendment form.
+    if (blotter.caseStatus) card.appendChild(buildCaseStatusPill(blotter.caseStatus));
     const revision = document.createElement('p');
     revision.className = 'note';
     revision.textContent = `Finalized as revision ${blotter.revisionNo}. Amending creates an audited revision; the previous text is preserved.`;
@@ -502,6 +517,21 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     current.textContent = blotter.narrativeSummary;
     card.append(revision, current, buildAmendForm());
     return card;
+  }
+
+  /**
+   * case_status pill (migration 0009, 2026-09-05 UX pass) — same 4 real
+   * values/colors `blotter-list.js` already uses, kept as its own tiny
+   * copy here rather than a shared export since it's 6 lines, not shared
+   * state.
+   */
+  function buildCaseStatusPill(caseStatus) {
+    const labels = { active: 'Active', under_investigation: 'Under Investigation', settled: 'Settled', resolved: 'Resolved' };
+    const classes = { active: 'status-pill--info', under_investigation: 'status-pill--pending', settled: 'status-pill--success', resolved: 'status-pill--neutral' };
+    const pill = document.createElement('span');
+    pill.className = `status-pill ${classes[caseStatus] || 'status-pill--neutral'}`;
+    pill.textContent = labels[caseStatus] || caseStatus;
+    return pill;
   }
 
   function buildFinalizeForm() {
@@ -529,12 +559,18 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     // Secretary is writing a summary OF that text.
     textarea.value = incident.redactedNarrative || '';
 
+    const { fields: partyFields, elements: partyElements } = buildPartyFields({
+      complainantName: incident.complainantName,
+      respondentName: incident.respondentName,
+      complainantContactNumber: incident.complainantContactNumber,
+    });
+
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'primary';
     submit.textContent = 'Finalize blotter entry';
 
-    form.append(label, note, textarea, submit);
+    form.append(label, note, textarea, ...partyElements, submit);
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -554,7 +590,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       submit.disabled = true;
       submit.textContent = 'Finalizing…';
       try {
-        await finalizeBlotter(incidentId, summary);
+        await finalizeBlotter(incidentId, { narrativeSummary: summary, ...partyFields() });
         showToast('Blotter entry finalized.', { variant: 'success' });
         await load();
       } catch (err) {
@@ -565,6 +601,44 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     });
 
     return form;
+  }
+
+  /**
+   * Shared Complainant/Respondent/Contact input trio (§ migration 0008) —
+   * used identically by finalize and amend. Returns a `fields()` getter
+   * (reads the live input values at submit time, not at build time) and
+   * the elements to append into the caller's own form.
+   */
+  function buildPartyFields({ complainantName, respondentName, complainantContactNumber }) {
+    const complainantLabel = document.createElement('label');
+    complainantLabel.className = 'label';
+    complainantLabel.textContent = 'Complainant name (optional)';
+    const complainantInput = document.createElement('input');
+    complainantInput.type = 'text';
+    complainantInput.value = complainantName || '';
+
+    const respondentLabel = document.createElement('label');
+    respondentLabel.className = 'label';
+    respondentLabel.textContent = 'Respondent name (optional)';
+    const respondentInput = document.createElement('input');
+    respondentInput.type = 'text';
+    respondentInput.value = respondentName || '';
+
+    const contactLabel = document.createElement('label');
+    contactLabel.className = 'label';
+    contactLabel.textContent = 'Contact number (optional)';
+    const contactInput = document.createElement('input');
+    contactInput.type = 'tel';
+    contactInput.value = complainantContactNumber || '';
+
+    return {
+      fields: () => ({
+        complainantName: complainantInput.value.trim(),
+        respondentName: respondentInput.value.trim(),
+        complainantContactNumber: contactInput.value.trim(),
+      }),
+      elements: [complainantLabel, complainantInput, respondentLabel, respondentInput, contactLabel, contactInput],
+    };
   }
 
   function buildAmendForm() {
@@ -593,12 +667,52 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     reasonInput.required = true;
     reasonInput.placeholder = 'e.g. Corrected the date of the incident';
 
+    // case_status (migration 0009, 2026-09-05 UX pass) — forward-only,
+    // matching BlotterController::amend()'s own enforcement exactly:
+    // only options STRICTLY ahead of the current status are offered, and
+    // 'resolved' never appears here at all — it's set only when the
+    // parent incident itself is resolved (IncidentsController::
+    // updateStatus()), never a Secretary's direct choice.
+    const CASE_STATUS_RANK = { active: 0, under_investigation: 1, settled: 2, resolved: 3 };
+    const CASE_STATUS_LABELS = { under_investigation: 'Under Investigation', settled: 'Settled' };
+    const currentRank = CASE_STATUS_RANK[blotter.caseStatus] ?? 0;
+    const forwardOptions = Object.keys(CASE_STATUS_LABELS).filter((key) => CASE_STATUS_RANK[key] > currentRank);
+
+    let caseStatusSelect = null;
+    let caseStatusLabel = null;
+    if (forwardOptions.length > 0) {
+      caseStatusLabel = document.createElement('label');
+      caseStatusLabel.className = 'label';
+      caseStatusLabel.htmlFor = 'blotter-amend-case-status';
+      caseStatusLabel.textContent = 'Case status (optional)';
+      caseStatusSelect = document.createElement('select');
+      caseStatusSelect.id = 'blotter-amend-case-status';
+      const keepOption = document.createElement('option');
+      keepOption.value = '';
+      keepOption.textContent = `Keep current (${blotter.caseStatus.replace('_', ' ')})`;
+      caseStatusSelect.appendChild(keepOption);
+      for (const key of forwardOptions) {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = `Move to: ${CASE_STATUS_LABELS[key]}`;
+        caseStatusSelect.appendChild(option);
+      }
+    }
+
+    const { fields: partyFields, elements: partyElements } = buildPartyFields({
+      complainantName: blotter.complainantName,
+      respondentName: blotter.respondentName,
+      complainantContactNumber: blotter.complainantContactNumber,
+    });
+
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'primary';
     submit.textContent = 'Save amendment';
 
-    form.append(summaryLabel, summaryInput, reasonLabel, reasonInput, submit);
+    form.append(summaryLabel, summaryInput, ...partyElements);
+    if (caseStatusSelect) form.append(caseStatusLabel, caseStatusSelect);
+    form.append(reasonLabel, reasonInput, submit);
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -620,7 +734,12 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       submit.disabled = true;
       submit.textContent = 'Saving…';
       try {
-        await amendBlotter(incidentId, { narrativeSummary: summary, reason });
+        await amendBlotter(incidentId, {
+          narrativeSummary: summary,
+          reason,
+          ...partyFields(),
+          caseStatus: caseStatusSelect?.value || undefined,
+        });
         showToast('Amendment saved.', { variant: 'success' });
         await load();
       } catch (err) {
