@@ -10,8 +10,8 @@
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
 }
 /* Stagger the 4 KPI cards' entry instead of all appearing at once —
    scoped to .kpi-grid specifically (not every .card everywhere) so this
@@ -82,6 +82,26 @@
 .kpi-card__sparkline-line--green { stroke: var(--color-success); }
 .kpi-card__sparkline-line--orange { stroke: var(--color-warning); }
 .kpi-card__sparkline-line--teal { stroke: var(--color-info); }
+
+/* ─── Premium polish (UI/UX improvement pass) ─────────────────────────── */
+.kpi-grid .card {
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-color: var(--glass-border);
+}
+.kpi-grid .card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-card-hover);
+}
+.kpi-card__value {
+  animation: count-up 0.4s ease-out;
+}
+.kpi-card__delta--positive {
+  text-shadow: 0 0 12px rgba(22,163,74,0.15);
+}
+.kpi-card__delta--negative {
+  text-shadow: 0 0 12px rgba(220,38,38,0.15);
+}
 
 @media (max-width: 1024px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }

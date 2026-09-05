@@ -27,11 +27,15 @@
   padding: var(--spacing-sm-md) var(--spacing-md);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-floating);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   font-size: var(--font-size-sm);
   cursor: pointer;
   animation: toast-enter .25s ease-out;
+  position: relative;
+  overflow: hidden;
 }
 .toast--leaving { animation: toast-leave .2s ease-in forwards; }
 
@@ -67,6 +71,35 @@
 .toast--error { border-left: 3px solid var(--color-critical); }
 .toast--warning { border-left: 3px solid var(--color-warning); }
 .toast--info { border-left: 3px solid var(--color-info); }
+
+/* Progress bar — shrinks from 100% to 0% over the toast's auto-dismiss
+   duration. Width is set via inline style in Toast.js. */
+.toast__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  animation: toast-progress-shrink var(--toast-duration, 4s) linear forwards;
+}
+@keyframes toast-progress-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+.toast--success .toast__progress { background: var(--color-success); }
+.toast--error .toast__progress { background: var(--color-critical); }
+.toast--warning .toast__progress { background: var(--color-warning); }
+.toast--info .toast__progress { background: var(--color-info); }
+
+/* Icon treatment — small filled circle background. */
+.toast__icon {
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+}
+.toast--success .toast__icon { background: var(--tint-success-bg); }
+.toast--error .toast__icon { background: var(--tint-critical-bg); }
+.toast--warning .toast__icon { background: var(--tint-warning-bg); }
+.toast--info .toast__icon { background: var(--tint-info-bg); }
 
 @media (max-width: 480px) {
   .toast-container { top: var(--spacing-sm); right: var(--spacing-sm); left: var(--spacing-sm); max-width: none; }

@@ -1,0 +1,14 @@
+# Disable browser caching for the hand-served JS/CSS in this no-bundler
+# app. Discovered empirically during the 2026-09-05 UX pass (see
+# .claude/plans/fancy-crafting-lark.md): with no Cache-Control header at
+# all, browsers apply RFC 7234 heuristic freshness off Last-Modified, so
+# an edited .js file can silently keep serving its PRE-edit body for
+# hours — even across a plain reload — until the heuristic window
+# expires. Since there's no build step / versioned filenames to bust
+# this the normal way, disable caching for these two extensions outright
+# rather than let every future session re-discover the same confusion.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+</IfModule>

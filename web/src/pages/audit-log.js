@@ -36,6 +36,7 @@ const ACTION_LABELS = {
   logout: 'Logout',
   password_changed: 'Password changed',
   user_updated: 'User updated',
+  user_status_changed: 'User status changed',
   dispatch_created: 'Dispatch created',
   dispatch_cancelled: 'Dispatch cancelled',
   dispatch_status_override: 'Dispatch status override',

@@ -33,9 +33,11 @@ import { renderSwapRequestsPage } from './pages/swap-requests.js';
 import { renderFatigueFlagsPage } from './pages/fatigue-flags.js';
 import { renderAiReviewPage } from './pages/ai-review.js';
 import { renderBlotterDetailPage } from './pages/blotter-detail.js';
-import { renderSmsLogPage } from './pages/sms-log.js';
+import { renderSmsMonitorPage } from './pages/sms-monitor.js';
 import { renderAuditLogPage } from './pages/audit-log.js';
 import { renderServiceHealthPage } from './pages/service-health.js';
+import { renderUserManagementPage } from './pages/user-management.js';
+import { renderMapPackagesPage } from './pages/map-packages.js';
 import { DEFAULT_PAGE_KEY } from './pages/settings.js';
 
 const PAGE_ROLES = {
@@ -55,6 +57,9 @@ const PAGE_ROLES = {
   // §9 W17 and W20 — both Admin only, explicitly.
   'audit-log': ['admin'],
   'service-health': ['admin'],
+  // §D/W10, §D/W18 — both Admin only, explicitly.
+  'user-management': ['admin'],
+  'map-packages': ['admin'],
   settings: ['admin', 'secretary', 'punong_barangay'],
   // W8 is a per-incident DETAIL view, not a destination in its own right:
   // it needs an incident id, so it has no sidebar entry and is reached by
@@ -144,9 +149,17 @@ function boot(currentPage, param) {
   } else if (page === 'fatigue') {
     renderFatigueFlagsPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'sms-log') {
-    renderSmsLogPage(root, session.user, onLoggedOut, navigate);
+    // Returns a stop handle: the Live Feed panel polls GET /sms/logs
+    // every 10s (2026-09-05 UX pass) and that interval must not outlive
+    // the page — same contract as service-health/ai-review below.
+    const handle = renderSmsMonitorPage(root, session.user, onLoggedOut, navigate);
+    activeStop = handle?.stop ?? null;
   } else if (page === 'audit-log') {
     renderAuditLogPage(root, session.user, onLoggedOut, navigate);
+  } else if (page === 'user-management') {
+    renderUserManagementPage(root, session.user, onLoggedOut, navigate);
+  } else if (page === 'map-packages') {
+    renderMapPackagesPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'service-health') {
     // Returns a stop handle: W20 re-checks health every 30s and that
     // interval must not outlive the page.

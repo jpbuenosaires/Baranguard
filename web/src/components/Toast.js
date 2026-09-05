@@ -65,7 +65,15 @@ export function showToast(message, { variant = 'info', duration = 4000 } = {}) {
   closeButton.setAttribute('aria-label', 'Dismiss notification');
   closeButton.innerHTML = icons.x(14);
 
-  toast.append(iconEl, messageEl, closeButton);
+  // Progress bar — shrinks from 100% to 0% over the dismiss duration,
+  // giving a visual countdown. Uses a CSS custom property so the animation
+  // timing matches the actual timeout. Purely decorative (aria-hidden).
+  const progressBar = document.createElement('div');
+  progressBar.className = 'toast__progress';
+  progressBar.setAttribute('aria-hidden', 'true');
+  toast.style.setProperty('--toast-duration', `${duration}ms`);
+
+  toast.append(iconEl, messageEl, closeButton, progressBar);
   host.appendChild(toast);
 
   let timeoutHandle;

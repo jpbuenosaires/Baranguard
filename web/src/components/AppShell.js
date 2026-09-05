@@ -84,24 +84,40 @@ document.addEventListener('click', (event) => {
 // (§4.1 of the UI/UX review) — Admin-only, matching that endpoint's own
 // gating, so a nav item shared with Punong Barangay (e.g. Fatigue Flags)
 // still only shows a badge for the Admin viewing it.
+//
+// `group` clusters related items under a small-caps sidebar header (the
+// 2026-09-05 sidebar redesign — 17 flat items for Admin had become hard
+// to scan). `null` means no header (Dashboard sits alone at the top, the
+// implicit "home"). A header only ever renders if at least one item in
+// that group is visible to the signed-in role — see the render loop
+// below — so Secretary/Punong Barangay still see small, sparse groups
+// rather than empty headers.
 const NAV_ITEMS = [
-  { key: 'dashboard', label: 'Dashboard', roles: ['admin', 'punong_barangay'], icon: icons.layoutDashboard },
-  { key: 'dispatch', label: 'Dispatch Center', roles: ['admin'], icon: icons.radio, countKey: 'pendingIncidents' },
-  { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'], icon: icons.alertTriangle },
-  { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'], icon: icons.map },
-  { key: 'heatmap', label: 'Historical Heatmap', roles: ['admin', 'punong_barangay'], icon: icons.flame },
-  { key: 'blotter', label: 'Electronic Blotter', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.fileText },
-  { key: 'reports', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart },
-  { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'], icon: icons.inbox, countKey: 'unconvertedCitizenReports' },
-  { key: 'scheduler', label: 'Shift Scheduler', roles: ['admin'], icon: icons.calendar },
-  { key: 'swap-requests', label: 'Swap Requests', roles: ['admin'], icon: icons.repeat, countKey: 'pendingSwapRequests' },
-  { key: 'fatigue', label: 'Fatigue Flags', roles: ['admin', 'punong_barangay'], icon: icons.batteryWarning, countKey: 'unacknowledgedFatigueFlags' },
+  { key: 'dashboard', label: 'Dashboard', roles: ['admin', 'punong_barangay'], icon: icons.layoutDashboard, group: null },
+
+  { key: 'dispatch', label: 'Dispatch Center', roles: ['admin'], icon: icons.radio, countKey: 'pendingIncidents', group: 'Operations' },
+  { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'], icon: icons.alertTriangle, group: 'Operations' },
+  { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'], icon: icons.map, group: 'Operations' },
+
+  { key: 'blotter', label: 'Electronic Blotter', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.fileText, group: 'Records & Reporting' },
+  { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'], icon: icons.inbox, countKey: 'unconvertedCitizenReports', group: 'Records & Reporting' },
+  { key: 'heatmap', label: 'Historical Heatmap', roles: ['admin', 'punong_barangay'], icon: icons.flame, group: 'Records & Reporting' },
+  { key: 'reports', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart, group: 'Records & Reporting' },
+
+  { key: 'scheduler', label: 'Shift Scheduler', roles: ['admin'], icon: icons.calendar, group: 'Personnel' },
+  { key: 'swap-requests', label: 'Swap Requests', roles: ['admin'], icon: icons.repeat, countKey: 'pendingSwapRequests', group: 'Personnel' },
+  { key: 'fatigue', label: 'Fatigue Flags', roles: ['admin', 'punong_barangay'], icon: icons.batteryWarning, countKey: 'unacknowledgedFatigueFlags', group: 'Personnel' },
+  // §D/W10 — Admin only, built as a deliberate Sprint 8 exception.
+  { key: 'user-management', label: 'User Management', roles: ['admin'], icon: icons.users, group: 'Personnel' },
+
   // §9 W14 — Admin only, explicitly.
-  { key: 'sms-log', label: 'SMS Activity Log', roles: ['admin'], icon: icons.messageSquare },
+  { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'], icon: icons.messageSquare, group: 'System' },
   // §9 W17 / W20 — Admin-only operational screens.
-  { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield },
-  { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity },
-  { key: 'settings', label: 'Settings', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.settings },
+  { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield, group: 'System' },
+  { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity, group: 'System' },
+  // §D/W18 — Admin only, built as a deliberate Sprint 8 exception.
+  { key: 'map-packages', label: 'Map Packages', roles: ['admin'], icon: icons.map, group: 'System' },
+  { key: 'settings', label: 'Settings', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.settings, group: 'System' },
 ];
 const NAV_COUNTS_POLL_MS = 60000; // Not time-critical — see ReportsController::navCounts()'s own doc.
 
@@ -176,7 +192,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
   collapseButton.className = 'sidebar__collapse';
   const syncCollapseButton = () => {
     const collapsed = sidebar.classList.contains('is-collapsed');
-    collapseButton.innerHTML = collapsed ? icons.menu(18) : icons.x(18);
+    collapseButton.innerHTML = collapsed ? icons.menu(18) : icons.chevronLeft(18);
     collapseButton.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
     collapseButton.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   };
@@ -202,7 +218,18 @@ export function AppShell(user, activePage, navigate, onLogout) {
   // comment on why a shared item like Fatigue Flags still only badges
   // for an Admin viewer).
   const countBadges = {};
+  let lastRenderedGroup = undefined; // distinct from `null` (dashboard's "no group")
   for (const item of NAV_ITEMS.filter((i) => i.roles.includes(user.role))) {
+    if (item.group !== lastRenderedGroup) {
+      lastRenderedGroup = item.group;
+      if (item.group) {
+        const groupLabel = document.createElement('div');
+        groupLabel.className = 'sidebar__nav-group-label';
+        groupLabel.setAttribute('role', 'presentation');
+        groupLabel.textContent = item.group;
+        nav.appendChild(groupLabel);
+      }
+    }
     const isActive = item.key === activePage;
     const navItem = document.createElement('button');
     navItem.type = 'button';
@@ -596,6 +623,10 @@ export function AppShell(user, activePage, navigate, onLogout) {
   // for a skip link whose destination isn't itself a natural focus stop.
   content.tabIndex = -1;
 
+  const contentContainer = document.createElement('div');
+  contentContainer.className = 'page-container';
+  content.appendChild(contentContainer);
+
   mainColumn.append(topbar, header, content);
   el.append(sidebar, scrim, mainColumn);
 
@@ -617,5 +648,5 @@ export function AppShell(user, activePage, navigate, onLogout) {
   // is otherwise only ever set once, from the `user` object AppShell was
   // constructed with, and a sessionStorage update after the fact doesn't
   // retroactively touch an already-rendered DOM text node.
-  return { el, header, content, logoutButton, setFullName: renderUserLabel, refreshNavCounts };
+  return { el, header, content: contentContainer, logoutButton, setFullName: renderUserLabel, refreshNavCounts };
 }

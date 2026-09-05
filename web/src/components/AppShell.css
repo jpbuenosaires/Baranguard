@@ -32,12 +32,13 @@
 .sidebar__brand {
   font-size: var(--font-size-md);
   font-weight: 700;
-  padding: 0 var(--spacing-sm-md) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-sm-md) var(--spacing-md);
   margin-bottom: var(--spacing-sm);
-  border-bottom: 1px solid var(--color-primary);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
   display: flex;
   align-items: center;
   gap: var(--spacing-sm-md);
+  letter-spacing: 0.04em;
 }
 .sidebar__wordmark { letter-spacing: 0.02em; flex: 1; min-width: 0; }
 .sidebar__collapse {
@@ -54,12 +55,14 @@
 /* Sidebar user footer — pinned to the bottom, above the nav's overflow. */
 .sidebar__user {
   margin-top: auto;
-  padding: var(--spacing-md) var(--spacing-sm-md) 0;
-  border-top: 1px solid var(--color-primary);
+  padding: var(--spacing-md) var(--spacing-sm-md) var(--spacing-sm);
+  border-top: 1px solid rgba(255,255,255,0.12);
   display: flex;
   align-items: center;
   gap: var(--spacing-sm-md);
   min-width: 0;
+  background: rgba(0,0,0,0.08);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 .sidebar__user-text { min-width: 0; }
 .sidebar__user-name {
@@ -127,13 +130,48 @@
   border: none;
   font-family: inherit;
   text-align: left;
-  transition: background-color .15s ease, color .15s ease;
+  transition: background-color .15s ease, color .15s ease, transform .15s ease;
 }
 .sidebar__nav-item:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-navy), 0 0 0 4px var(--color-white);
 }
 .sidebar__nav-icon { display: flex; flex-shrink: 0; }
+
+/* Sidebar section headers (2026-09-05 sidebar redesign) — groups
+   NAV_ITEMS' 17 flat Admin entries into scannable clusters. Sits
+   between .sidebar__nav-item rows as a plain sibling, not a nested
+   landmark, matching this file's existing "real but not maximal"
+   accessibility level for the nav (aria-current/aria-label already do
+   the load-bearing work; this is a visual/structural aid on top). */
+.sidebar__nav-group-label {
+  margin: var(--spacing-md) var(--spacing-sm-md) var(--spacing-xs);
+  padding: 0 var(--spacing-xs);
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-surface-blue) 65%, transparent);
+}
+/* First header sits right under Dashboard with less top margin than
+   the rest — reads as "the first section", not "a gap in the list". */
+.sidebar__nav-group-label:first-child { margin-top: var(--spacing-xs); }
+
+/* Collapsed rail: the label text can't fit an icon-only column, so it
+   collapses to a thin divider instead of disappearing outright — same
+   tone as .sidebar__brand's own divider — keeping the groups visually
+   separated even with icons alone. */
+.sidebar.is-collapsed .sidebar__nav-group-label {
+  height: 0;
+  margin: var(--spacing-sm) var(--spacing-sm-md);
+  padding: 0;
+  font-size: 0;
+  border-top: 1px solid rgba(255,255,255,0.12);
+}
+.sidebar.is-collapsed .sidebar__nav-group-label:first-child {
+  margin-top: 0;
+  border-top: none;
+}
 
 /* §4.1 of the UI/UX review — sidebar badge counts. margin-left:auto pushes
    it to the far right regardless of label length; hidden in the collapsed
@@ -176,14 +214,20 @@
   line-height: 0;
   border: 2px solid var(--color-navy);
 }
-.sidebar__nav-item:hover { background: color-mix(in srgb, var(--color-primary) 50%, transparent); color: var(--color-white); }
+.sidebar__nav-item:hover {
+  background: color-mix(in srgb, var(--color-primary) 50%, transparent);
+  color: var(--color-white);
+  transform: translateX(4px);
+  transition: background-color .15s ease, color .15s ease, transform .15s ease;
+}
 .sidebar__nav-item.active {
   color: var(--color-white);
-  background: var(--color-primary);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   font-weight: 600;
   /* Soft glow on the active item — reads clearly against the sidebar's
      own navy gradient without being loud enough to compete with it. */
   box-shadow: 0 0 1.25rem rgba(29, 78, 216, 0.35);
+  border-left: 3px solid var(--color-white);
 }
 
 .main-column {
@@ -202,6 +246,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
+  box-shadow: 0 1px 3px rgba(15,23,42,0.03);
 }
 .topbar__user {
   display: flex;
@@ -224,13 +269,16 @@
   top: calc(100% + var(--spacing-xs));
   left: 0;
   right: 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-floating);
   max-height: 20rem;
   overflow-y: auto;
   z-index: 20;
+  animation: fade-in-up 0.15s ease-out;
 }
 .topbar__search-result {
   width: 100%;
@@ -246,8 +294,12 @@
   font-size: var(--font-size-sm);
   text-align: left;
   cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.15s ease;
 }
-.topbar__search-result:hover, .topbar__search-result:focus-visible { background: var(--color-bg); }
+.topbar__search-result:hover, .topbar__search-result:focus-visible {
+  background: var(--gradient-card-hover);
+  transform: translateX(2px);
+}
 .topbar__search-empty {
   padding: var(--spacing-md);
   font-size: var(--font-size-sm);
@@ -289,7 +341,12 @@
 
 /* Empty until a page mounts a PageHeader into it; collapses to nothing
    when unused so pages that don't have one are unaffected. */
-.page-header-host { flex-shrink: 0; }
+.page-header-host {
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
 
 .topbar__user-name { font-weight: 500; color: var(--color-text-primary); }
 
@@ -297,7 +354,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--spacing-md);
+  padding: var(--spacing-lg);
   /* Cross-fade on every page navigation. main.js's boot() calls
      root.innerHTML='' and rebuilds from scratch on each navigate(), so
      AppShell() runs fresh and this element is a genuinely new DOM node
@@ -306,15 +363,15 @@
   animation: page-content-enter .25s ease-out;
 }
 @keyframes page-content-enter {
-  from { opacity: 0; transform: translateY(0.5rem); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(0.75rem) scale(0.998); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Filter bar as its own full-bleed white band directly under the page
    header (the reference's list-screen pattern), as opposed to the plain
    `.filter-bar` utility which sits inline within padded content. */
 .filter-panel {
-  background: var(--color-surface);
+  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg) 100%);
   border-bottom: 1px solid var(--color-border);
   padding: var(--spacing-sm-md) var(--spacing-lg);
   display: flex;
@@ -322,6 +379,7 @@
   gap: var(--spacing-sm-md);
   flex-wrap: wrap;
   flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.03);
 }
 .filter-panel__search { position: relative; flex: 1; min-width: 12rem; max-width: 26.25rem; }
 .filter-panel__search input { padding-left: 2.25rem; }
@@ -384,13 +442,27 @@
     padding: 0 0.375rem; font-size: var(--font-size-label); line-height: 1.25rem;
     border: 0; margin-left: auto;
   }
+  /* Same reasoning as .sidebar__nav-label just above: a desktop
+     collapse state must not bleed into the always-expanded drawer. */
+  .sidebar.is-collapsed .sidebar__nav-group-label {
+    height: auto;
+    margin: var(--spacing-md) var(--spacing-sm-md) var(--spacing-xs);
+    padding: 0 var(--spacing-xs);
+    font-size: var(--font-size-label);
+    border-top: none;
+  }
+  .sidebar.is-collapsed .sidebar__nav-group-label:first-child {
+    margin-top: var(--spacing-xs);
+  }
 
   .sidebar__scrim {
     display: block;
     position: fixed;
     inset: 0;
     z-index: 55;
-    background: rgba(15, 23, 42, 0.5);
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
     opacity: 0;
     pointer-events: none;
     transition: opacity .22s ease;

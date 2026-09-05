@@ -8,7 +8,7 @@
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -34,7 +34,10 @@
   from { opacity: 0; transform: scale(0.96) translateY(0.5rem); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
-.confirm-dialog--danger { border-top: 3px solid var(--color-critical); }
+.confirm-dialog--danger {
+  border-top: 3px solid var(--color-critical);
+  box-shadow: var(--shadow-floating), var(--glow-critical);
+}
 
 .confirm-dialog h3 { margin-bottom: var(--spacing-sm); color: var(--color-text-primary); }
 .confirm-dialog__description { color: var(--color-text-secondary); font-size: var(--font-size-sm); line-height: 1.5; }
