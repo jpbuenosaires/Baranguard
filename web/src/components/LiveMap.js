@@ -11,15 +11,23 @@
  * function.
  *
  * Resolved decisions, logged in DEVLOG.md:
- *   - **No basemap tile source.** No online/offline tile source is wired
- *     up for the web dashboard yet (that's a distinct, undocumented-for-
- *     Sprint-1 dependency — see backend/DEVLOG.md). The MapLibre style
- *     here has no raster/vector tile `source`, just a flat background
- *     color plus a GeoJSON source/layer for the barangay boundary (when
- *     available) and DOM markers for Tanods/SOS. Real basemap tiles can
- *     be added later purely by extending `sources`/`layers` in
- *     `buildStyle()` below — the marker/data layer this file owns
- *     doesn't change.
+ *   - **Basemap tiles: OpenStreetMap raster, online.** Resolved
+ *     2026-09-04, user's explicit choice over the offline-MBTiles
+ *     alternative (the `map_package`/`GET /map-packages` upload system
+ *     already exists for that path but no package has been uploaded on
+ *     this deployment yet, and the user wanted the map working now, not
+ *     after an upload step). This is a deliberate, logged deviation from
+ *     §2 Rule 7 (local-only/no-internet-assumed): the rule was written
+ *     for the field mobile app's offline capture guarantee, not the
+ *     office web dashboard, and a missing basemap is a worse operator
+ *     experience than a dashboard that needs the workstation's internet
+ *     connection to show map tiles. If this workstation ever runs
+ *     genuinely offline, the map degrades to the flat background color
+ *     below (tiles simply fail to load) — markers/GPS data still render
+ *     on top either way, since those never depended on tile source.
+ *     OSM's tile usage policy (light/moderate use, real attribution,
+ *     no bulk scraping) is respected: this is a handful of viewers on
+ *     one LAN admin console, and `AttributionControl` is enabled below.
  *   - **No barangay boundary endpoint exists yet** (`barangay.
  *     boundary_geojson` per §5 is never returned by any built §6
  *     endpoint). Falls back to a fixed default view centered on Pilar,
@@ -68,6 +76,7 @@ const CLUSTER_RADIUS_PX = 44; // Screen-pixel distance under which two Tanod mar
  * @returns {{
  *   setMarkers: (markers: Array<{userId:number, fullName:string, latitude:number, longitude:number, ageSeconds:number, isStale:boolean}>) => void,
  *   setSosMarkers: (sosItems: Array<{sosId:number, latitude:number, longitude:number, status:string}>) => void,
+ *   setIncidentMarkers: (items: Array<{incidentId:number, latitude:number, longitude:number, incidentType:string, priority:string, typeLabel?:string}>, onAssign?: (incidentId:number) => void) => void,
  *   setBoundary: (geojson: object) => void,
  *   destroy: () => void,
  * }}
@@ -83,9 +92,15 @@ export function LiveMap(container) {
     attributionControl: false,
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  // Required by OSM's tile usage policy ("you must display an
+  // OpenStreetMap attribution") — compact so it doesn't crowd the small
+  // map panes this component renders into (W3's sidebar pane vs. W4's
+  // full page).
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
   let tanodMarkers = [];
   let sosMarkers = [];
+  let incidentMarkers = [];
   let ready = false;
   const pendingBoundary = { value: null };
   let lastRawMarkers = []; // re-clustered on zoom/move — see recluster() below.
@@ -223,6 +238,59 @@ export function LiveMap(container) {
     }
   }
 
+  /**
+   * Pending-incident markers (2026-09-05 UX pass) — Dispatch Center's
+   * queue had no map presence at all before this; a dispatcher had to
+   * cross-reference the table to know where anything actually was.
+   * `onAssign(incidentId)` opens the same Tanod-picker-dialog +
+   * `POST /dispatch` flow the table's own Assign button already uses
+   * (`promptDispatchTanod` in DispatchAction.js) — this is a second
+   * entry point into that one flow, not a new one.
+   *
+   * @param {Array<{incidentId:number, latitude:number, longitude:number, incidentType:string, priority:string, typeLabel:string}>} items
+   * @param {(incidentId:number) => void} [onAssign]
+   */
+  function setIncidentMarkers(items, onAssign) {
+    incidentMarkers = clearMarkers(incidentMarkers);
+    for (const item of items) {
+      if (item.latitude == null || item.longitude == null) continue;
+
+      const el = document.createElement('div');
+      el.className = 'live-map__marker live-map__marker--incident'
+        + (item.priority === 'critical' ? ' live-map__marker--incident-critical' : '');
+      el.title = `${item.typeLabel || item.incidentType} — ${item.priority} priority`;
+
+      const popupContent = document.createElement('div');
+      popupContent.className = 'live-map__incident-popup';
+      const heading = document.createElement('div');
+      heading.className = 'live-map__incident-popup-heading';
+      heading.textContent = `#${item.incidentId} — ${item.typeLabel || item.incidentType}`;
+      const priorityPill = document.createElement('span');
+      priorityPill.className = 'status-pill' + (item.priority === 'critical' ? ' status-pill--critical' : ' status-pill--pending');
+      priorityPill.textContent = item.priority;
+      popupContent.append(heading, priorityPill);
+
+      if (onAssign) {
+        const assignButton = document.createElement('button');
+        assignButton.type = 'button';
+        assignButton.className = 'primary';
+        assignButton.textContent = 'Assign';
+        // Real DOM node + addEventListener via setDOMContent, not an
+        // inline handler string via setHTML — same reasoning as every
+        // other interactive control in this codebase.
+        assignButton.addEventListener('click', () => onAssign(item.incidentId));
+        popupContent.appendChild(assignButton);
+      }
+
+      const popup = new maplibregl.Popup({ offset: 12 }).setDOMContent(popupContent);
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([item.longitude, item.latitude])
+        .setPopup(popup)
+        .addTo(map);
+      incidentMarkers.push(marker);
+    }
+  }
+
   function setBoundary(geojson) {
     if (!ready) {
       pendingBoundary.value = geojson;
@@ -248,6 +316,7 @@ export function LiveMap(container) {
     clearTimeout(reclusterHandle);
     clearMarkers(tanodMarkers);
     clearMarkers(sosMarkers);
+    clearMarkers(incidentMarkers);
     map.remove();
   }
 
@@ -262,7 +331,7 @@ export function LiveMap(container) {
     map.flyTo({ center: [longitude, latitude], zoom, duration: 500 });
   }
 
-  return { setMarkers, setSosMarkers, setBoundary, flyTo, destroy };
+  return { setMarkers, setSosMarkers, setIncidentMarkers, setBoundary, flyTo, destroy };
 }
 
 /**
@@ -275,11 +344,12 @@ export function LiveMap(container) {
  * real dark-mode values in base.css; this just resolves them instead of
  * hardcoding the light-mode hex. Known limitation, stated rather than
  * hidden: a theme toggle happening WHILE this page is already open does
- * not repaint an already-built map — these three fills are a decorative
- * placeholder background (no real basemap tiles are wired up yet, see
- * DEVLOG), not load-bearing information, so a stale color until the next
- * page load is an acceptable gap rather than something worth a live
- * `setPaintProperty` listener for.
+ * not repaint an already-built map — the flat `background` layer is only
+ * ever visible now as the brief fallback while OSM tiles are still
+ * loading (or if they fail to load at all, e.g. no internet on this
+ * workstation), not the map's normal appearance, so a stale color until
+ * the next page load is an acceptable gap rather than something worth a
+ * live `setPaintProperty` listener for.
  */
 function themeToken(name, fallback) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -309,9 +379,26 @@ function applyBoundary(map, geojson) {
 function buildStyle() {
   return {
     version: 8,
-    sources: {},
+    sources: {
+      // Standard OSM raster tile XYZ endpoint — no API key, no build-time
+      // vendoring needed (§1: this stack has no bundler/asset pipeline
+      // for a vector style + fonts + sprites anyway, so raster over the
+      // vendored-vector-style approach some MapLibre setups use). See the
+      // "Basemap tiles" resolved decision at the top of this file for why
+      // this is online rather than the offline-MBTiles path.
+      'osm-raster': {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+      },
+    },
     layers: [
+      // Fallback color, painted first — only ever visible for the instant
+      // before tiles load, or if they never do (see the class doc above).
       { id: 'background', type: 'background', paint: { 'background-color': themeToken('--color-surface-blue', '#E0F2FE') } },
+      { id: 'osm-raster-layer', type: 'raster', source: 'osm-raster' },
     ],
   };
 }

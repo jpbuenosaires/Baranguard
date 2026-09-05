@@ -26,7 +26,7 @@
 
 import {
   getIncidents, getDispatches, getDutyStatus, getUsers, getGpsLive, getTanodSos,
-  createDispatch, cancelDispatch, acknowledgeTanodSos, logout, ApiClientError,
+  cancelDispatch, acknowledgeTanodSos, logout, ApiClientError,
 } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
@@ -35,7 +35,8 @@ import { StatStrip } from '../components/StatStrip.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
-import { confirmDialog, promptSelect } from '../components/ConfirmDialog.js';
+import { confirmDialog } from '../components/ConfirmDialog.js';
+import { promptDispatchTanod } from '../components/DispatchAction.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 const PRIORITY_LABELS = { normal: 'Normal', high: 'High', critical: 'Critical' };
@@ -187,6 +188,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     pageHeader.actions.appendChild(freshness);
     pageHeader.actions.appendChild(StatStrip({
       items: [
+        { label: 'On duty', value: eligibleTanods.length },
         { label: 'Pending', value: pendingIncidents.length },
         { label: 'Active', value: activeDispatches.length, tone: 'info' },
         { label: 'Critical', value: criticalCount, tone: criticalCount > 0 ? 'critical' : 'default' },
@@ -299,6 +301,19 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     if (!mapPane) {
       mapPane = document.createElement('div');
       mapPane.className = 'dispatch-map-pane';
+      // audit: this map had no legend while GIS Live Tracking's identical
+      // map did — same markup as gis-live-tracking.js's own legend so the
+      // two screens agree on what a marker color means. Appended once,
+      // here, since mapPane itself (unlike the rest of this function) is
+      // created once and re-attached rather than rebuilt every render.
+      const legend = document.createElement('div');
+      legend.className = 'live-map__legend';
+      legend.innerHTML = `
+        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-success-solid);"></span> On duty (live)</div>
+        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-text-secondary);"></span> Stale (≥120s)</div>
+        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-critical-solid);"></span> SOS</div>
+      `;
+      mapPane.appendChild(legend);
     }
     layout.append(queue, mapPane);
     container.appendChild(layout);
@@ -309,6 +324,27 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       ageSeconds: g.ageSeconds, isStale: g.isStale,
     })));
     liveMap.setSosMarkers(openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status })));
+    // Incident pins (2026-09-05 UX pass) — the popup's "Assign" button
+    // reuses the exact same `promptDispatchTanod` flow the table's own
+    // Assign button uses; onQueueChanged is the same refresh callback
+    // both queue tables already pass in.
+    liveMap.setIncidentMarkers(
+      pendingIncidents.map((incident) => ({
+        incidentId: incident.incidentId,
+        latitude: incident.latitude,
+        longitude: incident.longitude,
+        incidentType: incident.incidentType,
+        typeLabel: INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType,
+        priority: incident.priority,
+      })),
+      eligibleTanods.length === 0 ? undefined : async (incidentId) => {
+        const incident = pendingIncidents.find((i) => i.incidentId === incidentId);
+        if (!incident) return;
+        const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
+        const dispatched = await promptDispatchTanod({ incident, incidentTypeLabel: typeLabel, eligibleTanods });
+        if (dispatched) onQueueChanged();
+      },
+    );
   }
 
   // Same contract as W4/W8: main.js calls this before rendering the next
@@ -335,7 +371,7 @@ function renderPendingIncidentsTable(incidents, eligibleTanods, onChanged) {
     renderCell: (incident, key) => {
       switch (key) {
         case 'id':
-          return `#${incident.incidentId}`;
+          return incident.displayId || `#${incident.incidentId}`;
         case 'type':
           return INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
         case 'priority': {
@@ -383,32 +419,17 @@ function renderAssignCell(incident, eligibleTanods, onChanged) {
   assignButton.addEventListener('click', async (event) => {
     event.stopPropagation();
 
-    const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
-    const tanodId = await promptSelect({
-      title: `Assign incident #${incident.incidentId}`,
-      description: `${typeLabel} · ${PRIORITY_LABELS[incident.priority] || incident.priority} priority. The assigned Tanod is notified immediately.`,
-      label: 'On-duty Tanod',
-      options: eligibleTanods.map((t) => ({ value: t.userId, label: t.fullName })),
-      confirmLabel: 'Assign',
-    });
-    if (tanodId === null) return;
-
+    // Disabled only to block a double-click while the picker dialog is
+    // open/resolving — the dialog itself is what's actually blocking
+    // interaction, so the label stays "Assign" rather than claiming an
+    // "Assigning…" state that hasn't started until a Tanod is chosen.
     assignButton.disabled = true;
-    assignButton.textContent = 'Assigning…';
-    try {
-      await createDispatch({
-        incidentId: incident.incidentId,
-        tanodId: Number(tanodId),
-        requestId: crypto.randomUUID(),
-      });
-      const tanodName = eligibleTanods.find((t) => String(t.userId) === String(tanodId))?.fullName || 'Tanod';
-      showToast(`Dispatch assigned to ${tanodName}`, { variant: 'success' });
+    const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
+    const dispatched = await promptDispatchTanod({ incident, incidentTypeLabel: typeLabel, eligibleTanods });
+    if (dispatched) {
       onChanged();
-    } catch (err) {
+    } else {
       assignButton.disabled = false;
-      assignButton.textContent = 'Assign';
-      const message = err instanceof ApiClientError ? err.message : 'Could not create the dispatch.';
-      showToast(message, { variant: 'error' });
     }
   });
   wrap.appendChild(assignButton);
@@ -435,7 +456,10 @@ function renderActiveDispatchesTable(dispatches, onChanged) {
           return wrap;
         }
         case 'tanod':
-          return `Tanod #${dispatch.tanodId}`;
+          // tanod_name (2026-09-05 UX pass) — DispatchController::index()
+          // now joins it; falls back to the bare id only if the join ever
+          // comes back empty (e.g. a deactivated/deleted Tanod row).
+          return dispatch.tanodName || `Tanod #${dispatch.tanodId}`;
         case 'status': {
           const span = document.createElement('span');
           span.className = 'status-pill status-pill--info';
