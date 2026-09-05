@@ -82,26 +82,43 @@ Ollama only**.
 
 ---
 
-## 4. Schema map (§5 — 26 tables)
+## 4. Schema map (§5 — 27 tables)
 
 Core chain: `barangay → user → mobile_device → incident → dispatch →
 tanod_sos → notification → notification_target → notification_delivery`.
 
 **Key tables:** `incident` (raw_narrative NULLable since 0007,
-redacted_narrative, legal_hold, raw_narrative_purged_at) · `dispatch` ·
+redacted_narrative, legal_hold, raw_narrative_purged_at,
+complainant_name/respondent_name/complainant_contact_number since 0008,
+Secretary-only — see AiDraftController::approveExtraction() —
+location_description since 0010, display_id since 0014) · `dispatch` ·
 `evidence_attachment` (files outside web root, legal_hold) ·
-`blotter_record` + `blotter_revision` (0004) · `citizen_report`
-(legal_hold) · `duty_status` · `gps_track` · `shift_schedule`
-(user_id nullable since 0003) · `shift_swap_request` · `fatigue_flag` ·
-`ai_processing_log` (IS the AI job queue) · `ai_evaluation_run` ·
-`sms_log` (barangay_id since 0006) · `sms_envelope_replay` (0005) ·
-`audit_log` (write-once except retention) · `offline_queue` ·
-`auth_session` · `map_package`.
+`blotter_record` + `blotter_revision` (0004; same three party fields
+since 0008, shared with Admin/PB once finalized; case_status enum since
+0009 — active/under_investigation/settled/resolved, forward-only past
+`active`, `resolved` set only by an incident status change, never a
+manual amend; display_id since 0014) · `citizen_report` (legal_hold) ·
+`duty_status` · `gps_track` · `shift_schedule` (user_id nullable since
+0003) · `shift_swap_request` · `fatigue_flag` · `ai_processing_log` (IS
+the AI job queue; `task_type` gained `'extraction'` in 0008) ·
+`ai_evaluation_run` · `sms_log` (barangay_id since 0006;
+message_body/read_at since 0013, `message_type` gained `'manual'`) ·
+`sms_envelope_replay` (0005) · `audit_log` (write-once except
+retention) · `offline_queue` · `auth_session` · `map_package` · `user`
+(is_suspended/suspended_reason/suspended_at since 0011 — a third,
+independent axis from is_active; see §3) · `system_settings` (new
+table, 0012 — see §7's W21 note).
 
 **Migrations:** 0001 baseline · 0002 seed barangays · 0003 nullable
 shift user · 0004 blotter_revision · 0005 sms_envelope_replay · 0006
-sms_log.barangay_id · **0007 retention columns**. All applied to the real
-local DB. On a new machine, apply all seven in order.
+sms_log.barangay_id · 0007 retention columns · 0008 incident party
+fields · 0009 blotter case_status · 0010 incident location_description ·
+0011 user suspension · 0012 system_settings (§7 W21 override) · 0013 sms
+manual send · 0014 incident/blotter display_id. **0001–0007 are applied
+to the real local `baranguard` DB; 0008–0014 are NOT** — only to the
+disposable `baranguard_uiseed` DB so far (see `docs/HANDOFF.md`'s
+warning banner for the exact apply commands). On a new machine, apply
+all fourteen in order.
 
 **FK trap:** `ai_processing_log`, `evidence_attachment`, `blotter_record`
 and `dispatch` are all `ON DELETE RESTRICT` against `incident` — deleting
@@ -113,23 +130,40 @@ instead).
 
 ---
 
-## 5. Endpoints (69 live routes, all built)
+## 5. Endpoints (74 live `/api/v1` routes, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
 
 **Auth** login · logout · change-password
-**Incidents** list · show · create · nearby · evidence · status ·
-blotter · finalize · amend · lupon-packet (+download) · redact ·
-ai-draft (+approve, regenerate-summary, translate)
-**Dispatch** list · create · cancel · status
+**Incidents** list (+`q=` search since the UX overhaul) · show · create ·
+nearby · evidence · status (also flips a linked finalized blotter's
+case_status to `resolved`, non-destructive, audited) · blotter ·
+finalize · amend (+optional forward-only case_status transition) ·
+lupon-packet (+download) · redact · ai-draft (+approve,
+regenerate-summary, translate, extraction+approve — extraction is
+independent of redaction, migration 0008)
+**Dispatch** list (tanod_name joined) · create · cancel · status
 **GPS** live · history · post · `/sync/batch`
 **Scheduling** shifts (list/create/update) · swap requests · fatigue flags
 **Notifications/SOS** notifications · ack · tanod-sos (+ack/resolve)
 **Devices/Map** register · deactivate · map-packages (get/upload/download)
 **Reports** summary · heatmap · nav-counts · **export (+download)**
-**Ops** `/audit-log` · `/system/health` · `/sms/logs` · `/search` ·
-`/barangays` · `/users` · `/citizen-reports` · `/duty-status` · `/blotter`
+**Ops** `/audit-log` · `/system/health` · `/search` ·
+`/barangays` · `/users` (list gains `q=`, last_login_at, is_suspended;
+suspend/unsuspend alongside the existing is_active toggle) ·
+`/citizen-reports` · `/duty-status` · `/blotter` (list gains `q=`,
+case_status, display_id, location_description)
+**SMS** `/sms/logs` (read-only activity log, unchanged) ·
+`/sms/conversations` (+`/:phone/messages`, +`/:phone/resolve` — grouped
+by contact, Admin-only) · `/sms/send` · `/sms/broadcast` (both
+Admin-only, Idempotency-Key required, recipient always resolved to a
+real in-tenant contact server-side — never an arbitrary client-supplied
+number; broadcast scope is always the caller's own barangay, never
+cross-tenant)
+**Settings** `GET/PATCH /system-settings` (Admin-only; `sms_gateway.
+api_key`/`sms_gateway.sender_name` + three `general.*` keys only — see
+§7's W21 note for what this deliberately does NOT cover)
 **Internal only** `/internal/sms/*` (6 handlers, loopback + token gated,
 served by `public/internal.php` — structurally separate from `/api/v1`)
 
@@ -159,23 +193,45 @@ pagination) · `KpiCard` · `LineChart` · `BarChart` · `DonutChart` ·
 
 **Run `node web/scripts/verify-web-wiring.mjs` after any web change** —
 it catches imports and CSS classes that don't resolve, which no other
-check in this stack can see. Currently 373/373.
+check in this stack can see. Currently 453/453.
 
 ---
 
 ## 7. Screens (§9)
 
-**Built:** W1 login · W2 dashboard · W3 dispatch · W4 GIS · W5 heatmap ·
-W6 blotter (records view) · W7 blotter detail · W8 AI review · W9
-analytics+export · W11 scheduler · W12 swaps · W13 fatigue · W14 SMS log ·
-W15 settings · W16 citizen inbox · W17 audit log · W19 public report ·
-W20 service health · Incident Management (new).
+**Built:** W1 login · W2 dashboard · W3 dispatch (map incident markers +
+assign-from-map, migration-free) · W4 GIS · W5 heatmap · W6 blotter
+(records view, case_status pill, display_id, search, CSV export) · W7
+blotter detail (case_status transition control) · W8 AI review · W9
+analytics+export · W10 user management (create/deactivate/reactivate/
+**suspend** since 0011, StatStrip, real last-login, scoped — see §3's
+role matrix note) · W11 scheduler · W12 swaps · W13 fatigue · W14 **SMS
+Monitor** (renamed from SMS log; read-only Activity Log tab unchanged +
+new Conversations tab — compose/broadcast, see §5) · W15 settings
+(+General/SMS Gateway sections, Admin-only, since 0012 — see the W21
+note below) · W16 citizen inbox · W17 audit log · W18 map package
+management · W19 public report · W20 service health · Incident
+Management (search, Resolve action, location_description,
+complainant/respondent/contact fields on create).
 **Mobile:** M1–M7, M12, M13.
 
-**Not built:** W10 user management · W18 map package management ·
-W21 system settings (**blocked** — no schema/endpoints; needs an
-architecture review first, and gateway credentials must never live in a
-settings row).
+**W21 system settings — narrow, deliberate exception, not a full
+build-out.** The blanket "no schema/endpoints, gateway credentials must
+never live in a settings row" blocker above was true through Sprint 7.
+Migration 0012 + `SettingsController` (2026-09-05, explicit user
+authorization) override it for exactly two keys:
+`sms_gateway.api_key`/`sms_gateway.sender_name`, surfaced Admin-only via
+`GET/PATCH /system-settings` and the Settings screen's SMS Gateway
+section, masked on every read. This does **not** extend to
+`DEVICE_SECRET_MASTER_KEY`, `INTERNAL_SERVICE_TOKEN`, `JWT_SECRET`, or
+`FCM_SERVICE_ACCOUNT_PATH` — those stay in `.env`/PHP constants, never a
+DB row, and a future session must not "complete" W21 by moving them
+there without the same kind of explicit sign-off this narrow exception
+got. `system_settings` also holds three non-secret `general.*` display
+keys (system name, municipality, region). Full architecture-review-grade
+system settings (Notifications/Security/GIS/Backup sections) remain
+**not built** — no schema or endpoints exist for them, and §2 Rule 6
+forbids shipping a control that looks functional and does nothing.
 
 ---
 
@@ -224,7 +280,7 @@ settings row).
 | `verify-sprint7-audit.sh` | 56 |
 | `verify-sprint7-pentest-incidents.sh` | 68 |
 | `restore-drill.sh` | 12 (against the real DB) |
-| `verify-web-wiring.mjs` | 373 |
+| `verify-web-wiring.mjs` | 453 |
 | `mobile: verify.schema` | 113 |
 
 All use a disposable database + disposable app user + throwaway port and
@@ -237,7 +293,7 @@ never touch the real `baranguard` database.
 - **`docs/Baranguard_Master_Reference_FINAL .md`** — the authority. §5
   schema DDL, §6 per-endpoint contracts, §7 role matrix, §8 design
   system, §9 screen specs, §11 retention table.
-- **`backend/DEVLOG.md`** (5.9k lines) — every decision and why. **Don't
+- **`backend/DEVLOG.md`** (7.2k+ lines) — every decision and why. **Don't
   read it front to back.** `grep` for the feature you're touching.
 - **`docs/REMAINING.md`** — what's left before Sprint 8.
 - **`docs/HANDOFF.md`** — current state and next step.
