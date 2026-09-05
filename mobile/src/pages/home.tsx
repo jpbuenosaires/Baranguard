@@ -9,13 +9,16 @@
  * `GET /duty-status?user_id=me` on mount rather than assumed — a Tanod
  * may have last toggled from a different device.
  *
- * SOS is shown but NOT functional. §9 M2's own quick-actions grid
- * (SOS/Log Incident/Call Dispatch/Share Location) is an "acceptable
- * pattern", but `POST /tanod-sos` is Sprint-4-blocked — the Sprint 2
- * checklist's own resolved ambiguity note is explicit: "build it honestly
- * as visibly 'not wired up yet' — never as a button that looks functional
- * but silently does nothing." The button is disabled with a plain-text
- * explanation, not hidden and not clickable-but-inert.
+ * SOS raises `POST /tanod-sos` (live since Sprint 4). Tapping it opens a
+ * confirm step first — a false alarm dispatches real people, so this
+ * follows the same confirm-before-fire pattern as sign-out below, just
+ * for a materially higher-stakes action. Online-first: on success it
+ * reports sent; on a network failure it stages the event in
+ * `offline_queue_local` (§2 Rule 27's local/offline fallback path) via
+ * `enqueueSosItem` and reports queued, never claims delivery it can't
+ * back up (§2 Rule 6). Latitude/longitude are server-required — if
+ * `getCurrentPosition()` fails, SOS is not sent and the reason is shown;
+ * there is no fabricated fallback coordinate.
  *
  * No fabricated identity or stats (§9 M2's warning about the Figma
  * reference's fake "Juan Dela Cruz" / invented numbers): the greeting
@@ -37,8 +40,10 @@ import {
   IonToast,
   IonToolbar,
 } from '@ionic/react';
-import { getOwnDutyStatus, logout, setDutyStatus, type DutyStatus } from '../services/apiService';
+import { getOwnDutyStatus, logout, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
 import { ApiError } from '../services/apiService';
+import { getCurrentPosition } from '../services/geolocation';
+import { enqueueSosItem } from '../services/db/offlineQueueRepository';
 import { clearSession, loadSession } from '../services/session';
 import { uuid } from '../services/uuid';
 
@@ -71,6 +76,10 @@ const HomePage: React.FC = () => {
   // the app's existing inline app-error notes, which stay visible on
   // purpose for a form-validation-style error a Tanod needs to act on).
   const [dutyToast, setDutyToast] = useState<string | null>(null);
+  const [confirmingSos, setConfirmingSos] = useState(false);
+  const [raisingSos, setRaisingSos] = useState(false);
+  const [sosError, setSosError] = useState<string | null>(null);
+  const [sosToast, setSosToast] = useState<string | null>(null);
 
   useEffect(() => {
     loadSession().then((session) => setFullName(session?.fullName ?? ''));
@@ -109,6 +118,35 @@ const HomePage: React.FC = () => {
       );
     } finally {
       setToggling(false);
+    }
+  }
+
+  async function handleRaiseSos() {
+    setSosError(null);
+    setRaisingSos(true);
+    const clientEventId = uuid();
+    try {
+      let position;
+      try {
+        position = await getCurrentPosition();
+      } catch {
+        setSosError('Could not get your location. SOS was not sent.');
+        return;
+      }
+      const payload = { latitude: position.latitude, longitude: position.longitude };
+      try {
+        await postSos({ ...payload, clientEventId });
+        setSosToast('SOS sent — Admin dispatch has been alerted.');
+      } catch (error) {
+        if (error instanceof ApiError && error.isOffline) {
+          await enqueueSosItem(clientEventId, payload);
+          setSosToast('SOS saved — it will send as soon as the connection is back.');
+        } else {
+          setSosError(error instanceof Error ? error.message : 'Could not raise SOS.');
+        }
+      }
+    } finally {
+      setRaisingSos(false);
     }
   }
 
@@ -167,14 +205,20 @@ const HomePage: React.FC = () => {
           Log New Incident
         </IonButton>
 
-        <IonButton expand="block" fill="outline" color="medium" disabled className="app-section">
-          SOS
+        <IonButton
+          expand="block"
+          color="danger"
+          className="app-section"
+          disabled={raisingSos}
+          onClick={() => setConfirmingSos(true)}
+        >
+          {raisingSos ? <IonSpinner name="dots" /> : 'SOS'}
         </IonButton>
-        <IonNote className="app-note">
-          SOS is not wired up yet — it needs the Sprint 4 alert backend
-          (`POST /tanod-sos`). Shown disabled rather than as a button that
-          would silently do nothing.
-        </IonNote>
+        {sosError && (
+          <IonNote className="app-error" role="alert">
+            {sosError}
+          </IonNote>
+        )}
 
         <IonButton expand="block" fill="outline" color="medium" onClick={() => setConfirmingSignOut(true)} className="app-section">
           Sign out
@@ -186,6 +230,25 @@ const HomePage: React.FC = () => {
           duration={3000}
           color="success"
           onDidDismiss={() => setDutyToast(null)}
+        />
+
+        <IonToast
+          isOpen={sosToast !== null}
+          message={sosToast ?? ''}
+          duration={4000}
+          color={sosToast?.startsWith('SOS sent') ? 'success' : 'warning'}
+          onDidDismiss={() => setSosToast(null)}
+        />
+
+        <IonAlert
+          isOpen={confirmingSos}
+          onDidDismiss={() => setConfirmingSos(false)}
+          header="Raise SOS?"
+          message="This will immediately alert Admin dispatch that you need help."
+          buttons={[
+            { text: 'Cancel', role: 'cancel' },
+            { text: 'Raise SOS', role: 'destructive', handler: handleRaiseSos },
+          ]}
         />
 
         <IonAlert

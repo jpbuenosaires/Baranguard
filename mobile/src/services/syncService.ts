@@ -15,9 +15,10 @@
  * `duty_status_updates` is always sent empty: M2's duty toggle already
  * always calls `POST /duty-status` directly online (Sprint 2) — there is
  * no offline duty-toggle queue in this codebase (see localSchema.ts's file
- * header for why `duty_status_local` doesn't exist). `sos` is always
- * empty too — SOS sync is Sprint 4 scope (see SyncController.php's own
- * doc comment on the server side).
+ * header for why `duty_status_local` doesn't exist). `sos` drains
+ * `offline_queue_local`'s `'sos'` items the same way `dispatch_status`
+ * does — an SOS raised while offline queues here when the direct
+ * `POST /tanod-sos` attempt fails, and drains on the next pass.
  */
 
 import { getDeviceId } from './deviceIdentity';
@@ -27,6 +28,7 @@ import {
   type SyncDispatchStatusItem,
   type SyncGpsItem,
   type SyncIncidentItem,
+  type SyncSosItem,
 } from './apiService';
 import {
   listUnsyncedIncidents,
@@ -36,6 +38,7 @@ import {
 import { listUnsyncedGpsPoints, markGpsPointSynced } from './db/gpsTrackRepository';
 import {
   listPendingDispatchStatusUpdates,
+  listPendingSosItems,
   markQueueItemResolved,
 } from './db/offlineQueueRepository';
 import { markStatusSynced } from './db/dispatchRepository';
@@ -60,8 +63,14 @@ export async function runSyncPass(): Promise<SyncSummary> {
   const unsyncedIncidents = await listUnsyncedIncidents();
   const unsyncedGps = await listUnsyncedGpsPoints();
   const pendingDispatchStatus = await listPendingDispatchStatusUpdates();
+  const pendingSos = await listPendingSosItems();
 
-  if (unsyncedIncidents.length === 0 && unsyncedGps.length === 0 && pendingDispatchStatus.length === 0) {
+  if (
+    unsyncedIncidents.length === 0 &&
+    unsyncedGps.length === 0 &&
+    pendingDispatchStatus.length === 0 &&
+    pendingSos.length === 0
+  ) {
     return { attempted: 0, succeeded: 0, duplicates: 0, failed: 0 };
   }
 
@@ -89,11 +98,19 @@ export async function runSyncPass(): Promise<SyncSummary> {
     client_event_id: clientEventId,
   }));
 
+  const sosItems: SyncSosItem[] = pendingSos.map(({ clientEventId, payload }) => ({
+    latitude: payload.latitude,
+    longitude: payload.longitude,
+    dispatch_id: payload.dispatchId,
+    client_event_id: clientEventId,
+  }));
+
   const results = await syncBatch({
     deviceId,
     incidents: incidentItems,
     gpsTracks: gpsItems,
     dispatchStatusUpdates: dispatchStatusItems,
+    sosItems,
   });
 
   const byEventId = new Map<string, SyncBatchResult>(results.map((r) => [r.clientEventId, r]));
@@ -121,6 +138,14 @@ export async function runSyncPass(): Promise<SyncSummary> {
     if (result.status !== 'failed') {
       await markStatusSynced(payload.dispatchLocalId);
     }
+  }
+
+  for (const { queueId, clientEventId } of pendingSos) {
+    const result = byEventId.get(clientEventId);
+    if (!result) continue;
+    // No local business table to flag for SOS — the queue row itself IS
+    // the record; resolving it is the whole reconciliation.
+    await markQueueItemResolved(queueId, result.status === 'failed' ? 'failed' : result.status);
   }
 
   const succeeded = results.filter((r) => r.status === 'success').length;
