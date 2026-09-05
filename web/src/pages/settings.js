@@ -1,12 +1,22 @@
 /**
  * settings.js — W15 Settings/Account (§9), restyled in Phase 7 of the
  * mockup-driven UI round 2 (see .claude/plans/clever-wishing-hummingbird.md)
- * to the mockup's section-rail + panel layout. Only W15's REAL, already-
- * built fields moved into it: Profile, Password, Appearance. The
- * mockup's system-wide sections (notification rules, security policy, GIS
- * parameters, SMS gateway credentials, backups) are W21 — "no sprint
- * assignment, schema, or endpoints" per the Master Reference — and are
- * not built or shown here; see the plan's own substitution table.
+ * to the mockup's section-rail + panel layout. W15's REAL, already-built
+ * fields: Profile, Password, Appearance (every role sees these three).
+ *
+ * 2026-09-05 UX pass added two Admin-only sections — General and SMS
+ * Gateway — as a DELIBERATE, SMALL, user-authorized exception to W21's
+ * "no sprint assignment, schema, or endpoints" note (see
+ * `SettingsController.php`'s own class doc for the full reasoning and
+ * `backend/migrations/0012_system_settings.sql` for the override this
+ * specifically is). The mockup's OTHER system-wide sections
+ * (Notifications toggles, Security policy, GIS & Mapping, Backup & Data)
+ * are still deliberately NOT built — most of their proposed controls
+ * have no real enforcement point anywhere in this codebase, and a toggle
+ * that doesn't gate anything is exactly the "control that looks
+ * functional and does nothing" §2 Rule 6 forbids. See
+ * `backend/DEVLOG.md`'s "Full UI/UX overhaul, Phase 6-7" entry for the
+ * itemized reasoning on each dropped section.
  *
  * Resolved decision, logged in DEVLOG.md: §6 has no "GET /users/me" or
  * profile-read endpoint at all — self profile data is whatever the login
@@ -22,14 +32,21 @@
  * format" was in the mockup but deliberately NOT built — this app has no
  * shared date-formatting helper and no other screen honours a per-user
  * format, so the control would change nothing anywhere: exactly the kind
- * of decorative-does-nothing control §8 forbids. Real scope only.
+ * of decorative-does-nothing control §8 forbids. Real scope only. These
+ * are genuinely PER-USER preferences (localStorage) and are deliberately
+ * NOT moved into `system_settings` — a system-wide default theme for new
+ * users would be a distinct, separate setting from "my own current
+ * theme," and this pass doesn't conflate the two.
  *
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { updateProfile, changePassword, logout, ApiClientError } from '../api/apiClient.js';
+import {
+  updateProfile, changePassword, getSystemSettings, updateSystemSettings, logout, ApiClientError,
+} from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
+import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
 
 const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay', tanod: 'Tanod' };
@@ -37,10 +54,16 @@ const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: '
 const THEME_KEY = 'baranguard.theme';
 export const DEFAULT_PAGE_KEY = 'baranguard.defaultPage';
 
-const SECTIONS = [
+const BASE_SECTIONS = [
   { key: 'profile', label: 'Profile', icon: icons.users },
   { key: 'password', label: 'Password', icon: icons.lock },
   { key: 'appearance', label: 'Appearance', icon: icons.settings },
+];
+// Admin-only — matches SettingsController's own role gate; not shown at
+// all to Secretary/PB/Tanod rather than shown-then-403'd.
+const ADMIN_SECTIONS = [
+  { key: 'general', label: 'General', icon: icons.shield },
+  { key: 'sms-gateway', label: 'SMS Gateway', icon: icons.messageSquare },
 ];
 
 /**
@@ -60,7 +83,14 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
-  const pageHeader = PageHeader({ title: 'Settings', subtitle: 'Manage your profile, password, and display preferences', icon: icons.settings });
+  const isAdmin = user.role === 'admin';
+  const pageHeader = PageHeader({
+    title: 'Settings',
+    subtitle: isAdmin
+      ? 'Manage your profile, password, display preferences, and system configuration'
+      : 'Manage your profile, password, and display preferences',
+    icon: icons.settings,
+  });
   header.appendChild(pageHeader.el);
 
   const layout = document.createElement('div');
@@ -72,11 +102,12 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
   rail.setAttribute('aria-label', 'Settings sections');
 
   const panel = document.createElement('div');
-  panel.className = 'settings-panel';
+  panel.className = 'settings-panel settings-column';
 
+  const sections = isAdmin ? [...BASE_SECTIONS, ...ADMIN_SECTIONS] : BASE_SECTIONS;
   let activeSection = 'profile';
   const railButtons = {};
-  for (const section of SECTIONS) {
+  for (const section of sections) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'settings-rail__item';
@@ -98,11 +129,49 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
     panel.innerHTML = '';
     if (activeSection === 'profile') panel.appendChild(buildProfileCard(user, shell.setFullName));
     else if (activeSection === 'password') panel.appendChild(buildPasswordCard());
-    else panel.appendChild(buildAppearanceCard(user.role));
+    else if (activeSection === 'appearance') panel.appendChild(buildAppearanceCard(user.role));
+    else if (activeSection === 'general') {
+      panel.appendChild(buildLoadingCard('General'));
+      loadSystemSettingsInto(panel, buildGeneralCard);
+    } else if (activeSection === 'sms-gateway') {
+      panel.appendChild(buildLoadingCard('SMS Gateway'));
+      loadSystemSettingsInto(panel, buildSmsGatewayCard);
+    }
   }
   renderPanel();
 
   layout.append(rail, panel);
+}
+
+function buildLoadingCard(label) {
+  const card = document.createElement('div');
+  card.className = 'card skeleton skeleton--block';
+  card.setAttribute('role', 'status');
+  card.setAttribute('aria-label', `Loading ${label}`);
+  return card;
+}
+
+/**
+ * Both Admin-only sections share one load: `GET /system-settings` returns
+ * every known key at once (it's a small, fixed set — see
+ * SettingsController.php), so there's no reason to fetch it twice just
+ * because the rail has two admin panels.
+ */
+async function loadSystemSettingsInto(panel, buildCard) {
+  try {
+    const settings = await getSystemSettings();
+    panel.innerHTML = '';
+    panel.appendChild(buildCard(settings));
+  } catch (err) {
+    panel.innerHTML = '';
+    const block = document.createElement('div');
+    block.className = 'card state-block state-block--error';
+    block.setAttribute('role', 'alert');
+    const text = document.createElement('p');
+    text.textContent = err instanceof ApiClientError ? err.message : 'Could not load system settings.';
+    block.appendChild(text);
+    panel.appendChild(block);
+  }
 }
 
 function buildProfileCard(user, onFullNameSaved) {
@@ -398,6 +467,198 @@ function buildAppearanceCard(role) {
   return card;
 }
 
+/**
+ * General (Admin-only, 2026-09-05 UX pass) — pure organizational
+ * metadata, no behavioral claim: saving these three fields changes what
+ * this deployment calls itself, nothing else. Deliberately NOT included
+ * here (see this file's own header): Time Zone and an "Incident ID
+ * Format" field — both are hardcoded elsewhere in this codebase (§11's
+ * Asia/Manila day-bucketing rule; `IncidentsController::nextDisplayId()`'s
+ * fixed `PREFIX-YYYY-NNN` shape) and a settings field that LOOKED
+ * editable but didn't actually change either would be exactly the kind
+ * of control §2 Rule 6 forbids.
+ */
+function buildGeneralCard(settings) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const heading = document.createElement('h3');
+  heading.textContent = 'General';
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.textContent = 'How this deployment identifies itself. Purely organizational — saving these does not change any operational behavior.';
+  card.append(heading, note);
+
+  const form = document.createElement('form');
+  form.className = 'form-stack';
+  form.noValidate = true;
+
+  const errorBox = document.createElement('div');
+  errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
+  errorBox.hidden = true;
+  const successBox = document.createElement('div');
+  successBox.className = 'login-form__error';
+  successBox.setAttribute('role', 'status');
+  successBox.classList.add('inline-success');
+  successBox.hidden = true;
+
+  const nameField = settingsTextField('settings-system-name', 'System name', settings['general.system_name']);
+  const municipalityField = settingsTextField('settings-municipality', 'Municipality', settings['general.municipality']);
+  const regionField = settingsTextField('settings-region', 'Region', settings['general.region']);
+
+  const submitButton = document.createElement('button');
+  submitButton.type = 'submit';
+  submitButton.className = 'primary';
+  submitButton.textContent = 'Save changes';
+
+  form.append(
+    errorBox, successBox,
+    nameField.label, nameField.input,
+    municipalityField.label, municipalityField.input,
+    regionField.label, regionField.input,
+    submitButton,
+  );
+  card.appendChild(form);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    errorBox.hidden = true;
+    successBox.hidden = true;
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving…';
+    try {
+      await updateSystemSettings({
+        'general.system_name': nameField.input.value.trim(),
+        'general.municipality': municipalityField.input.value.trim(),
+        'general.region': regionField.input.value.trim(),
+      });
+      showToast('General settings saved.', { variant: 'success' });
+      successBox.textContent = 'Saved.';
+      successBox.hidden = false;
+    } catch (err) {
+      const message = err instanceof ApiClientError ? err.message : 'Could not save these settings.';
+      errorBox.textContent = message;
+      errorBox.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Save changes';
+    }
+  });
+
+  return card;
+}
+
+/**
+ * SMS Gateway (Admin-only, 2026-09-05 UX pass) — the one section that's
+ * genuinely wired into real behavior: `SmsGatewayService::resolveSemaphore()`
+ * reads these two values FIRST, falling back to `backend/.env`'s
+ * `SEMAPHORE_*` keys only when unset. This is the deliberate,
+ * user-authorized override of REFERENCE.md §7's "gateway credentials
+ * must never live in a settings row" note — see
+ * `backend/migrations/0012_system_settings.sql`'s own header for the
+ * full reasoning. The API key input never receives the real stored
+ * value back (masked as a bullet placeholder) — leaving it untouched on
+ * save keeps the current key; typing a new value replaces it.
+ *
+ * "Provider" is shown as fixed text, not a dropdown — Vonage/Twilio
+ * (from the original mockup) have no implementation anywhere in this
+ * codebase (`SemaphoreClient.php` is the only gateway client that
+ * exists), so offering them as selectable options would imply support
+ * that doesn't exist.
+ */
+function buildSmsGatewayCard(settings) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const heading = document.createElement('h3');
+  heading.textContent = 'SMS Gateway';
+  card.appendChild(heading);
+
+  const providerRow = document.createElement('div');
+  providerRow.className = 'row-between settings-pref-row';
+  const providerLabel = document.createElement('span');
+  providerLabel.textContent = 'Provider';
+  const providerValue = document.createElement('span');
+  providerValue.className = 'note';
+  providerValue.textContent = 'Semaphore (the only gateway this deployment implements)';
+  providerRow.append(providerLabel, providerValue);
+  card.appendChild(providerRow);
+
+  const form = document.createElement('form');
+  form.className = 'form-stack';
+  form.noValidate = true;
+
+  const errorBox = document.createElement('div');
+  errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
+  errorBox.hidden = true;
+  const successBox = document.createElement('div');
+  successBox.className = 'login-form__error';
+  successBox.setAttribute('role', 'status');
+  successBox.classList.add('inline-success');
+  successBox.hidden = true;
+
+  const senderField = settingsTextField('settings-sms-sender', 'Sender ID', settings['sms_gateway.sender_name']);
+  const apiKeyField = settingsTextField('settings-sms-api-key', 'API key', settings['sms_gateway.api_key'], 'password');
+  const apiKeyNote = document.createElement('p');
+  apiKeyNote.className = 'note';
+  apiKeyNote.textContent = settings['sms_gateway.api_key']
+    ? 'A key is already saved (masked above). Leave unchanged to keep it, or type a new one to replace it.'
+    : 'No key saved yet — outbound SMS falls back to backend/.env\'s SEMAPHORE_API_KEY, if any.';
+
+  const submitButton = document.createElement('button');
+  submitButton.type = 'submit';
+  submitButton.className = 'primary';
+  submitButton.textContent = 'Save changes';
+
+  form.append(
+    errorBox, successBox,
+    senderField.label, senderField.input,
+    apiKeyField.label, apiKeyField.input, apiKeyNote,
+    submitButton,
+  );
+  card.appendChild(form);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    errorBox.hidden = true;
+    successBox.hidden = true;
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving…';
+    try {
+      await updateSystemSettings({
+        'sms_gateway.sender_name': senderField.input.value.trim(),
+        // Sending the masked placeholder back is safe — the server
+        // treats it as "leave alone" (SettingsController::update()).
+        'sms_gateway.api_key': apiKeyField.input.value,
+      });
+      showToast('SMS Gateway settings saved.', { variant: 'success' });
+      successBox.textContent = 'Saved.';
+      successBox.hidden = false;
+    } catch (err) {
+      const message = err instanceof ApiClientError ? err.message : 'Could not save these settings.';
+      errorBox.textContent = message;
+      errorBox.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Save changes';
+    }
+  });
+
+  return card;
+}
+
+function settingsTextField(id, labelText, value, type = 'text') {
+  const label = document.createElement('label');
+  label.className = 'label';
+  label.htmlFor = id;
+  label.textContent = labelText;
+  const input = document.createElement('input');
+  input.id = id;
+  input.type = type;
+  input.value = value || '';
+  return { label, input };
+}
+
 // Mirrors main.js's PAGE_ROLES exactly (kept here rather than imported, to
 // avoid a settings.js -> main.js import cycle — main.js already imports
 // every page module, including this one).
@@ -413,7 +674,7 @@ const LANDING_OPTIONS = [
   { key: 'scheduler', label: 'Shift Scheduler', roles: ['admin'] },
   { key: 'swap-requests', label: 'Swap Requests', roles: ['admin'] },
   { key: 'fatigue', label: 'Fatigue Flags', roles: ['admin', 'punong_barangay'] },
-  { key: 'sms-log', label: 'SMS Activity Log', roles: ['admin'] },
+  { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'] },
   { key: 'audit-log', label: 'Audit Log', roles: ['admin'] },
   { key: 'service-health', label: 'Service Health', roles: ['admin'] },
 ];
