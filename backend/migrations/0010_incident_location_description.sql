@@ -1,0 +1,34 @@
+-- ============================================================
+-- 0010_incident_location_description.sql — Incident Management
+-- follow-up: a free-text location description alongside the existing
+-- lat/lng coordinates.
+--
+-- `incident.latitude`/`longitude` are the only location data today —
+-- precise for the map, but not human-readable in a table cell or a
+-- printed blotter record ("12.93997, 123.99333" tells a reader nothing
+-- a barangay resident would recognize). A reference mockup showed a
+-- free-text location line ("Purok 3, near market") alongside the type/
+-- priority header.
+--
+-- Populated two ways (see IncidentsController.php / DEVLOG.md for which
+-- is built now vs. deferred):
+--   - Manual: typed on the web "Log Incident" form (this session).
+--   - Auto: reverse-geocoded from lat/lng on the mobile app via OSM
+--     Nominatim (a separate, mobile-stack effort — NOT built by this
+--     migration or this session; the column is added now so the mobile
+--     work has somewhere to write once it exists, same as this repo's
+--     established pattern of adding a nullable column ahead of the
+--     feature that populates it, e.g. `raw_narrative` going nullable in
+--     migration 0007 ahead of AI extraction).
+--
+-- Optional everywhere: not every incident has (or needs) a location
+-- description — a report with only GPS coordinates from an offline
+-- capture is still valid.
+--
+-- New migration, not an edit to 0001 (this repo's standing convention).
+--
+-- Idempotent: every statement is guarded, so re-running is a no-op.
+-- ============================================================
+
+ALTER TABLE incident
+  ADD COLUMN IF NOT EXISTS location_description VARCHAR(255) NULL;
