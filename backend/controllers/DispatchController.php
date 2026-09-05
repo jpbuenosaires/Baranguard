@@ -281,12 +281,19 @@ final class DispatchController
         // incident_type/coordinates are already exposed to a Tanod via
         // GET /incidents' own list item shape, so this adds no new
         // disclosure, just reaches it from the dispatch side too.
+        // tanod_name (2026-09-05 UX pass): same "necessary plumbing beyond
+        // the literal spec" precedent this class doc already cites for
+        // incident_type/latitude/longitude — Dispatch Center's Active
+        // Dispatches table had no way to show a name instead of a bare
+        // "Tanod #{id}" without this.
         $stmt = $pdo->prepare(
             "SELECT d.dispatch_id, d.incident_id, d.tanod_id, d.priority, d.route_json, d.route_status,
                     d.status, d.dispatched_at, d.en_route_at, d.arrived_at, d.completed_at, d.cancelled_at,
-                    i.incident_type, i.latitude, i.longitude
+                    i.incident_type, i.latitude, i.longitude,
+                    tanod.full_name AS tanod_name
              FROM dispatch d
              JOIN incident i ON i.incident_id = d.incident_id
+             LEFT JOIN user tanod ON tanod.user_id = d.tanod_id
              WHERE {$whereSql}
              ORDER BY d.dispatched_at DESC
              LIMIT :limit OFFSET :offset"
@@ -311,6 +318,7 @@ final class DispatchController
                 'incident_type' => $row['incident_type'],
                 'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
                 'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
+                'tanod_name' => $row['tanod_name'] ?? null,
                 'dispatched_at' => $row['dispatched_at'],
                 'en_route_at' => $row['en_route_at'],
                 'arrived_at' => $row['arrived_at'],

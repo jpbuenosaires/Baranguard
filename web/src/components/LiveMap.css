@@ -13,8 +13,10 @@
   position: absolute;
   bottom: var(--spacing-md);
   left: var(--spacing-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   padding: var(--spacing-md);
   font-size: var(--font-size-label);
@@ -23,6 +25,7 @@
   flex-direction: column;
   gap: var(--spacing-sm);
   z-index: 5;
+  animation: fade-in-up 0.3s ease-out;
 }
 .live-map__legend-row { display: flex; align-items: center; gap: var(--spacing-sm); }
 .live-map__legend-dot { width: 0.75rem; height: 0.75rem; border-radius: 50%; display: inline-block; }
@@ -92,6 +95,32 @@
   transition: transform .1s ease;
 }
 .live-map__cluster:hover { transform: scale(1.1); }
+
+/* 2026-09-05 UX pass — pending-incident markers on Dispatch Center's map
+   (previously only Tanods/SOS had pins; a dispatcher had no way to see
+   WHERE the pending queue actually was without cross-referencing the
+   table). A rotated square ("diamond") rather than a circle so it's
+   never confusable with a Tanod dot or the pulsing SOS marker at a
+   glance — shape carries the distinction, not colour alone (§8
+   accessibility rule), with colour as a second signal on top of it. */
+.live-map__marker--incident {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 3px;
+  transform: rotate(45deg);
+  background: var(--color-warning-solid);
+}
+.live-map__marker--incident:hover { transform: rotate(45deg) scale(1.15); }
+.live-map__marker--incident.live-map__marker--incident-critical {
+  background: var(--color-critical-solid);
+}
+.live-map__incident-popup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 10rem;
+}
+.live-map__incident-popup-heading { font-weight: 600; }
 
 @media (max-width: 480px) {
   .live-map__legend { font-size: 0.625rem; padding: var(--spacing-sm); }

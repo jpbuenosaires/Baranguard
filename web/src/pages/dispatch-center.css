@@ -71,6 +71,8 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  animation: glow-pulse 2s ease-in-out infinite;
+  border: 1px solid rgba(220,38,38,0.3);
 }
 .sos-banner svg { flex-shrink: 0; }
 .sos-banner__text { flex: 1; min-width: 0; }
