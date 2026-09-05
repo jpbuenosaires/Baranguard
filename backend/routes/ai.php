@@ -20,4 +20,8 @@ return [
     ['POST', '#^/incidents/(\d+)/ai-draft/regenerate-summary$#', [AiDraftController::class, 'regenerateSummary'], true],
     ['POST', '#^/incidents/(\d+)/ai-draft/approve$#', [AiDraftController::class, 'approve'], true],
     ['POST', '#^/incidents/(\d+)/ai-draft/translate$#', [AiDraftController::class, 'translate'], true],
+    // Electronic Blotter follow-up (migration 0008) — independent of the
+    // redaction pipeline above, same relationship translate() already has.
+    ['GET', '#^/incidents/(\d+)/ai-draft/extraction$#', [AiDraftController::class, 'extractionDraft'], true],
+    ['POST', '#^/incidents/(\d+)/ai-draft/extraction/approve$#', [AiDraftController::class, 'approveExtraction'], true],
 ];

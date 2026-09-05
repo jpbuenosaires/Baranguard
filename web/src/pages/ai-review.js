@@ -35,9 +35,11 @@
 import {
   getIncident,
   getAiDraft,
+  getExtractionDraft,
   requestRedaction,
   regenerateSummary,
   approveAiDraft,
+  approveExtraction,
   translateAiDraft,
   generateLuponPacket,
   luponPacketDownloadUrl,
@@ -106,6 +108,8 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
   let pollTimer = null;
   let incident = null;
   let draft = null;
+  /** Independent of `draft` above — see AiJobQueue's own extraction docblock. */
+  let extractionDraft = null;
   /** Tracks whether the Secretary has edited the draft text away from what the server holds. */
   let edited = false;
   /**
@@ -124,29 +128,40 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     }
   }
 
+  function isPending(d) {
+    return d && (d.status === 'queued' || d.status === 'processing');
+  }
+
   function startPollingIfPending() {
     stopPolling();
-    if (!draft || (draft.status !== 'queued' && draft.status !== 'processing')) return;
+    if (!isPending(draft) && !isPending(extractionDraft)) return;
     pollTimer = setInterval(async () => {
       try {
-        const fresh = await getAiDraft(incidentId);
-        if (!fresh) return;
-        // Don't clobber text the Secretary is actively editing.
-        const wasPending = draft && (draft.status === 'queued' || draft.status === 'processing');
-        draft = fresh;
-        if (fresh.status !== 'queued' && fresh.status !== 'processing') {
-          stopPolling();
-          edited = false;
-          render();
-          if (wasPending) {
-            showToast(
-              fresh.status === 'completed' ? 'AI draft is ready.' : 'The AI job failed.',
-              { variant: fresh.status === 'completed' ? 'success' : 'error' }
-            );
-          }
-        } else {
-          render();
+        // Independent jobs (§ migration 0008) — refresh whichever is
+        // still pending; a settled one is left as-is by getAiDraft()/
+        // getExtractionDraft() returning null only on 404 (never happens
+        // once a job has been enqueued at all).
+        const wasPending = isPending(draft);
+        const wasExtractionPending = isPending(extractionDraft);
+
+        if (wasPending) {
+          const fresh = await getAiDraft(incidentId);
+          if (fresh) draft = fresh;
         }
+        if (wasExtractionPending) {
+          const freshExtraction = await getExtractionDraft(incidentId);
+          if (freshExtraction) extractionDraft = freshExtraction;
+        }
+
+        if (!isPending(draft) && !isPending(extractionDraft)) stopPolling();
+        if (wasPending && !isPending(draft)) {
+          edited = false;
+          showToast(
+            draft.status === 'completed' ? 'AI draft is ready.' : 'The AI job failed.',
+            { variant: draft.status === 'completed' ? 'success' : 'error' }
+          );
+        }
+        render();
       } catch {
         // A transient poll failure shouldn't blank a populated screen;
         // the next tick retries.
@@ -160,9 +175,13 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
   async function load() {
     renderLoading();
     try {
-      // The draft legitimately may not exist (404 → null); the incident
+      // The drafts legitimately may not exist (404 → null); the incident
       // must exist, so its failure is a real error.
-      [incident, draft] = await Promise.all([getIncident(incidentId), getAiDraft(incidentId)]);
+      [incident, draft, extractionDraft] = await Promise.all([
+        getIncident(incidentId),
+        getAiDraft(incidentId),
+        getExtractionDraft(incidentId),
+      ]);
       edited = false;
       render();
       startPollingIfPending();
@@ -490,9 +509,89 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     summaryText.textContent = draft.draftSummary ?? '(not generated yet)';
     draftCard.append(summaryHeading, summaryText);
 
+    draftCard.appendChild(buildExtractionSection());
+
     layout.append(rawCard, draftCard);
     draftTextarea = textarea;
     return layout;
+  }
+
+  /**
+   * Complainant/Respondent/Contact — Electronic Blotter follow-up.
+   * Independent of the redaction draft next to it (own endpoint, own
+   * draft_version, own Save action) — same relationship translation
+   * already has to redaction on this same screen. All three fields are
+   * optional; a blank input saves as null, meaning "cleared"/"none".
+   */
+  function buildExtractionSection() {
+    const wrap = document.createElement('div');
+    wrap.className = 'form-stack';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Complainant / Respondent';
+    wrap.appendChild(heading);
+
+    if (!extractionDraft) {
+      const note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = 'No extraction draft yet — it queues alongside redaction and appears here once the worker finishes.';
+      wrap.appendChild(note);
+      return wrap;
+    }
+
+    // Once ANY field has been approved at least once, prefer the
+    // approved values on `incident` over the raw draft — otherwise a
+    // Secretary who edits and saves sees their own edit "revert" to the
+    // AI's original suggestion on the next load, which looks like the
+    // save silently failed even though it didn't (the draft row itself
+    // is never rewritten by approve — only `incident` is).
+    const hasApproved = incident.complainantName != null || incident.respondentName != null || incident.complainantContactNumber != null;
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = hasApproved
+      ? 'Showing the last saved values. Edit and save again to change them.'
+      : 'AI-drafted from the original narrative. Review and edit before saving — leave a field blank if it does not apply.';
+    wrap.appendChild(note);
+
+    const pending = extractionDraft.status === 'queued' || extractionDraft.status === 'processing';
+
+    const complainantLabel = document.createElement('label');
+    complainantLabel.className = 'label';
+    complainantLabel.textContent = 'Complainant name';
+    const complainantInput = document.createElement('input');
+    complainantInput.type = 'text';
+    complainantInput.value = (hasApproved ? incident.complainantName : extractionDraft.draftComplainantName) ?? '';
+    complainantInput.disabled = pending;
+
+    const respondentLabel = document.createElement('label');
+    respondentLabel.className = 'label';
+    respondentLabel.textContent = 'Respondent name';
+    const respondentInput = document.createElement('input');
+    respondentInput.type = 'text';
+    respondentInput.value = (hasApproved ? incident.respondentName : extractionDraft.draftRespondentName) ?? '';
+    respondentInput.disabled = pending;
+
+    const contactLabel = document.createElement('label');
+    contactLabel.className = 'label';
+    contactLabel.textContent = 'Contact number';
+    const contactInput = document.createElement('input');
+    contactInput.type = 'tel';
+    contactInput.value = (hasApproved ? incident.complainantContactNumber : extractionDraft.draftComplainantContactNumber) ?? '';
+    contactInput.disabled = pending;
+
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'ghost';
+    saveButton.textContent = pending ? 'Extraction still running…' : 'Save';
+    saveButton.disabled = pending;
+    saveButton.addEventListener('click', () => runSaveExtraction(saveButton, {
+      complainantName: complainantInput.value,
+      respondentName: respondentInput.value,
+      complainantContactNumber: contactInput.value,
+    }));
+
+    wrap.append(complainantLabel, complainantInput, respondentLabel, respondentInput, contactLabel, contactInput, saveButton);
+    return wrap;
   }
 
   function buildActions() {
@@ -608,6 +707,31 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
         return;
       }
       showToast(err instanceof ApiClientError ? err.message : 'Could not approve the draft.', { variant: 'error' });
+    }
+  }
+
+  async function runSaveExtraction(button, { complainantName, respondentName, complainantContactNumber }) {
+    button.disabled = true;
+    const originalLabel = button.textContent;
+    button.textContent = 'Saving…';
+    try {
+      await approveExtraction(incidentId, {
+        complainantName,
+        respondentName,
+        complainantContactNumber,
+        draftVersion: extractionDraft.draftVersion,
+      });
+      showToast('Saved.', { variant: 'success' });
+      await load();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+      if (err instanceof ApiClientError && err.status === 409) {
+        showToast('This changed since you loaded it — reloading.', { variant: 'error' });
+        await load();
+        return;
+      }
+      showToast(err instanceof ApiClientError ? err.message : 'Could not save these fields.', { variant: 'error' });
     }
   }
 }

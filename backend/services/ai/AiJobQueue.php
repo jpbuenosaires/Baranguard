@@ -134,6 +134,116 @@ final class AiJobQueue
     }
 
     /**
+     * Queues an extraction job (complainant/respondent/contact-number —
+     * migration 0008). Independent of the redaction pipeline, same
+     * relationship `enqueueTranslation()` above already has to it: its
+     * own `task_type`, never superseded by a redaction rerun and never
+     * supersedes one. Unlike translation, though, this DOES get a
+     * current-draft/for-update pair below — the Secretary reviews and
+     * edits these fields before they're approved onto `incident`, the
+     * same review shape redaction's draft already has.
+     *
+     * @return array{log_id:int,pipeline_run_id:string,status:string}
+     */
+    public static function enqueueExtraction(PDO $pdo, int $incidentId, string $modelVersion): array
+    {
+        $pipelineRunId = self::uuid();
+
+        $stmt = $pdo->prepare(
+            "INSERT INTO ai_processing_log
+                (incident_id, pipeline_run_id, task_type, model_version, status, draft_version, created_at)
+             VALUES
+                (:incident_id, :pipeline_run_id, 'extraction', :model_version, 'queued', 1, UTC_TIMESTAMP())"
+        );
+        $stmt->execute([
+            'incident_id' => $incidentId,
+            'pipeline_run_id' => $pipelineRunId,
+            'model_version' => $modelVersion,
+        ]);
+
+        return ['log_id' => (int) $pdo->lastInsertId(), 'pipeline_run_id' => $pipelineRunId, 'status' => 'queued'];
+    }
+
+    /**
+     * The incident's current extraction draft — mirrors currentDraft()
+     * below exactly, filtered to `task_type='extraction'` instead.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function currentExtractionDraft(PDO $pdo, int $incidentId): ?array
+    {
+        $stmt = $pdo->prepare(
+            "SELECT log_id, incident_id, pipeline_run_id, task_type, model_version,
+                    draft_complainant_name, draft_respondent_name, draft_complainant_contact_number,
+                    draft_version, status, error_code, processed_at, created_at
+             FROM ai_processing_log
+             WHERE incident_id = :incident_id
+               AND task_type = 'extraction'
+               AND status <> 'superseded'
+             ORDER BY created_at DESC, log_id DESC
+             LIMIT 1"
+        );
+        $stmt->execute(['incident_id' => $incidentId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
+    }
+
+    /**
+     * Same as currentExtractionDraft() but locks the row for the
+     * approve-extraction read-modify-write — same Rule 30 pattern
+     * currentDraftForUpdate() below already applies to redaction.
+     *
+     * MUST be called inside an open transaction.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function currentExtractionDraftForUpdate(PDO $pdo, int $incidentId): ?array
+    {
+        $stmt = $pdo->prepare(
+            "SELECT log_id, incident_id, pipeline_run_id, draft_version, status
+             FROM ai_processing_log
+             WHERE incident_id = :incident_id
+               AND task_type = 'extraction'
+               AND status <> 'superseded'
+             ORDER BY created_at DESC, log_id DESC
+             LIMIT 1
+             FOR UPDATE"
+        );
+        $stmt->execute(['incident_id' => $incidentId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
+    }
+
+    /** Records a completed extraction run. */
+    public static function completeExtraction(
+        PDO $pdo,
+        int $logId,
+        ?string $complainantName,
+        ?string $respondentName,
+        ?string $contactNumber,
+        string $actualModelVersion
+    ): void {
+        $stmt = $pdo->prepare(
+            "UPDATE ai_processing_log
+                SET draft_complainant_name = :complainant_name,
+                    draft_respondent_name = :respondent_name,
+                    draft_complainant_contact_number = :contact_number,
+                    model_version = :model_version,
+                    status = 'completed',
+                    error_code = NULL,
+                    processed_at = UTC_TIMESTAMP()
+              WHERE log_id = :log_id"
+        );
+        $stmt->execute([
+            'complainant_name' => $complainantName,
+            'respondent_name' => $respondentName,
+            'contact_number' => $contactNumber,
+            'model_version' => $actualModelVersion,
+            'log_id' => $logId,
+        ]);
+    }
+
+    /**
      * The incident's CURRENT redaction/summary draft — the one
      * `GET /incidents/:id/ai-draft` returns and the one approval must
      * match. Superseded rows are excluded by definition.

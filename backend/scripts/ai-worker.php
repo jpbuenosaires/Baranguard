@@ -111,6 +111,8 @@ do {
     try {
         if ($taskType === 'translation') {
             runTranslationJob($pdo, $client, $job);
+        } elseif ($taskType === 'extraction') {
+            runExtractionJob($pdo, $client, $job);
         } elseif (trim((string) ($job['draft_redacted_narrative'] ?? '')) !== '') {
             // A queued row that ALREADY has a draft narrative can only be a
             // summary regeneration (POST .../regenerate-summary saved the
@@ -248,6 +250,68 @@ function runSummaryOnlyJob(PDO $pdo, OllamaClient $client, array $job): void
 
     out("[job {$logId}] summary regenerated (" . mb_strlen($summary) . ' chars)');
     AiJobQueue::completeSummary($pdo, $logId, $summary, $result['model']);
+}
+
+/**
+ * Electronic Blotter follow-up (migration 0008): drafts complainant/
+ * respondent/contact-number as structured fields. Independent of the
+ * redaction pipeline — reads `raw_narrative` directly, same as
+ * `runRedactionJob()` does, since these are exactly the identifiers
+ * redaction is designed to strip out of the narrative text.
+ *
+ * @param array<string,mixed> $job
+ */
+function runExtractionJob(PDO $pdo, OllamaClient $client, array $job): void
+{
+    $logId = (int) $job['log_id'];
+    $incidentId = (int) $job['incident_id'];
+
+    $raw = AiJobQueue::rawNarrativeFor($pdo, $incidentId);
+    if ($raw === null || trim($raw) === '') {
+        AiJobQueue::fail($pdo, $logId, 'INCIDENT_MISSING_RAW');
+        out("[job {$logId}] FAILED — incident {$incidentId} has no raw narrative.");
+        return;
+    }
+
+    $result = $client->generate(AiPrompts::extraction($raw));
+    $text = AiPrompts::stripReasoning($result['text']);
+
+    [$complainant, $respondent, $contact] = parseExtractionLines($text);
+
+    out("[job {$logId}] extraction produced (complainant=" . ($complainant !== null ? 'yes' : 'no')
+        . ', respondent=' . ($respondent !== null ? 'yes' : 'no')
+        . ', contact=' . ($contact !== null ? 'yes' : 'no') . ')');
+
+    AiJobQueue::completeExtraction($pdo, $logId, $complainant, $respondent, $contact, $result['model']);
+}
+
+/**
+ * Parses the three `Label: value` lines `AiPrompts::extraction()` asks
+ * for. Tolerant of case and a missing line (the model may drop a blank
+ * one instead of writing "Label:" with nothing after it) — a field the
+ * model didn't produce simply stays null, same as "not mentioned" would.
+ *
+ * @return array{0:?string,1:?string,2:?string} [complainant, respondent, contact]
+ */
+function parseExtractionLines(string $text): array
+{
+    $fields = ['complainant' => null, 'respondent' => null, 'contact' => null];
+    $labels = ['complainant' => 'complainant', 'respondent' => 'respondent', 'contact' => 'contact'];
+
+    foreach (preg_split('/\R/', $text) ?: [] as $line) {
+        if (!str_contains($line, ':')) {
+            continue;
+        }
+        [$label, $value] = array_map('trim', explode(':', $line, 2));
+        $key = strtolower($label);
+        foreach ($labels as $fieldKey => $matchLabel) {
+            if ($key === $matchLabel && $value !== '') {
+                $fields[$fieldKey] = mb_substr($value, 0, $fieldKey === 'contact' ? 32 : 255);
+            }
+        }
+    }
+
+    return [$fields['complainant'], $fields['respondent'], $fields['contact']];
 }
 
 /**

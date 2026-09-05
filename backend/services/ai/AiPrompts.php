@@ -126,6 +126,43 @@ final class AiPrompts
         PROMPT;
     }
 
+    /**
+     * Electronic Blotter follow-up: extract complainant/respondent/
+     * contact-number as structured fields, reviewed/edited by the
+     * Secretary before becoming part of the finalized record (see
+     * migration 0008). Independent of the redaction pipeline — same
+     * relationship translation already has to it — so this runs against
+     * **raw_narrative**, the same privileged input redaction() gets, not
+     * the redacted draft (which has deliberately already stripped the
+     * names this prompt needs).
+     *
+     * Not covered by `PROMPT_VERSION`: that constant tracks the
+     * redaction/summary prompt wording specifically, because that's what
+     * `ai-evaluate.php`'s dataset run measures. This prompt has its own,
+     * separate concern (structured-field extraction, not PII redaction
+     * quality) and no evaluation harness measures it yet.
+     */
+    public static function extraction(string $rawNarrative): string
+    {
+        return <<<PROMPT
+        You are a records officer for a Philippine barangay. Read the incident narrative below and identify the complainant, the respondent, and a contact number if one is mentioned.
+
+        Rules you must follow:
+        - "Complainant" is the person who reported the incident or is the aggrieved party. "Respondent" is the person the complaint is against, if any.
+        - Only use names and numbers that actually appear in the narrative. Never invent, guess, or infer a name or number that is not written there.
+        - If the narrative does not name a complainant, respondent, or contact number, leave that line blank after the colon.
+        - A narrative may have no identifiable respondent at all (for example a fire or an animal complaint) — that is expected, leave it blank.
+
+        Return EXACTLY these three lines, in this order, and nothing else — no preamble, no explanation:
+        Complainant: <name or blank>
+        Respondent: <name or blank>
+        Contact: <phone number or blank>
+
+        Narrative:
+        {$rawNarrative}
+        PROMPT;
+    }
+
     /** §6 translate body: `target_language: "en"|"fil"|"bcl"`. */
     public static function languageName(string $code): string
     {
