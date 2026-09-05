@@ -73,6 +73,7 @@
   <link rel="stylesheet" href="src/pages/blotter-list.css">
   <link rel="stylesheet" href="src/pages/settings.css">
   <link rel="stylesheet" href="src/pages/service-health.css">
+  <link rel="stylesheet" href="src/pages/sms-monitor.css">
   <link rel="stylesheet" href="src/components/BarChart.css">
   <!--
     MapLibre GL JS v4.7.1, vendored locally under /vendor (not loaded from
@@ -91,7 +92,10 @@
     // htdocs subfolder — the front controller matches REQUEST_URI against
     // exactly "/api/v1", so a subfolder mount 404s. Served on its own
     // port instead: see web/README-serving.md ("Option C").
-    window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8081/api/v1';
+    // TEMP — UI/UX preview with fake seeded data, pointed at a disposable
+    // DB/backend on port 8140. Points to the REAL API on 8081 normally;
+    // revert this one line before real use. See backend/DEVLOG.md.
+    window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8140/api/v1';
   </script>
 </head>
 <body>
