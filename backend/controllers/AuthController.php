@@ -48,7 +48,7 @@ final class AuthController
         $username = Username::normalize($usernameRaw);
 
         $stmt = $pdo->prepare(
-            "SELECT user_id, barangay_id, username, password_hash, full_name, role, is_active,
+            "SELECT user_id, barangay_id, username, password_hash, full_name, role, is_active, is_suspended,
                     failed_login_attempts, login_failure_window_started_at, locked_until
              FROM user
              WHERE username = :username
@@ -77,7 +77,11 @@ final class AuthController
             $genericDenied();
         }
         // `lupon` is DB-enum-only, never an active login role (§3, §5 note).
-        if ($user['role'] === 'lupon' || (int) $user['is_active'] !== 1) {
+        // `is_suspended` (migration 0011, 2026-09-05 UX pass) rejects the
+        // same generic way as inactive — a suspended account gives no
+        // hint distinguishing it from a wrong password, same as every
+        // other denial reason here (Rule 9).
+        if ($user['role'] === 'lupon' || (int) $user['is_active'] !== 1 || (int) $user['is_suspended'] === 1) {
             $genericDenied();
         }
         if ($isLocked || !$passwordMatches) {
