@@ -34,11 +34,8 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getUsers, getShifts, createShift, updateShift, logout, ApiClientError } from '../api/apiClient.js';
-import { AppShell } from '../components/AppShell.js';
-import { PageHeader } from '../components/PageHeader.js';
+import { getUsers, getShifts, createShift, updateShift, ApiClientError } from '../api/apiClient.js';
 import { DataTable } from '../components/DataTable.js';
-import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 
 const SCHEDULE_COLUMNS = [
@@ -48,24 +45,18 @@ const SCHEDULE_COLUMNS = [
   { key: 'actions', label: 'Actions', align: 'right' },
 ];
 
-/** @param {HTMLElement} root @param {{fullName:string, role:string}} user */
-export function renderSchedulerPage(root, user, onLoggedOut, navigate) {
-  root.innerHTML = '';
-
-  const shell = AppShell(user, 'scheduler', navigate, async () => {
-    shell.logoutButton.disabled = true;
-    await logout();
-    onLoggedOut();
-  });
-  const { header, content } = shell;
-  root.appendChild(shell.el);
-
-  const pageHeader = PageHeader({ title: 'Shift Scheduler', subtitle: 'Assign and edit Tanod patrol shifts', icon: icons.calendar });
-  header.appendChild(pageHeader.el);
-
+/**
+ * Personnel > Scheduler tab. Was the standalone W11 Shift Scheduler page
+ * (`renderSchedulerPage`) before the 2026-09-05 Personnel merge — see
+ * `pages/personnel.js` for the shared AppShell/PageHeader/tab shell.
+ *
+ * @param {HTMLElement} container tab body to render into
+ * @param {{fullName:string, role:string}} user
+ */
+export function renderSchedulerTab(container, user) {
   const layout = document.createElement('div');
   layout.className = 'split-panel';
-  content.appendChild(layout);
+  container.appendChild(layout);
 
   const listPane = document.createElement('div');
   let formPane = document.createElement('div'); // placeholder, replaced once tanods/shifts load
@@ -197,6 +188,11 @@ function buildNewShiftForm(tanods, onCreated) {
 
     if (!startInput.value || !endInput.value) {
       errorBox.textContent = 'Start and end are both required.';
+      errorBox.hidden = false;
+      return;
+    }
+    if (new Date(endInput.value) <= new Date(startInput.value)) {
+      errorBox.textContent = 'End time must be after the start time.';
       errorBox.hidden = false;
       return;
     }
@@ -333,6 +329,10 @@ function buildEditActions(shift, editFields, onSaved, onCancelEdit) {
   saveButton.textContent = 'Save';
   saveButton.addEventListener('click', async (event) => {
     event.stopPropagation();
+    if (new Date(editFields.endInput.value) <= new Date(editFields.startInput.value)) {
+      showToast('End time must be after the start time.', { variant: 'error' });
+      return;
+    }
     saveButton.disabled = true;
     saveButton.textContent = 'Saving…';
     try {

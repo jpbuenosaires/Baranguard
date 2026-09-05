@@ -1,0 +1,98 @@
+/**
+ * LineChart.css — co-located with LineChart.js. Replaces TrendChart.css's
+ * bar styling; the chart itself is inline SVG, so this file only handles
+ * the box it sits in, the legend, and the empty state.
+ */
+
+.line-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm-md);
+}
+
+.line-chart__plot {
+  position: relative;
+  width: 100%;
+  /* Fixed height rather than an aspect ratio: the surrounding dashboard
+     card is a fixed-height slot, and letting the plot grow with width
+     would make the two cards in the row disagree at wide viewports. */
+  height: 11rem;
+}
+.line-chart__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Hover tooltip — JS-positioned (see LineChart.js's capture-rect mousemove
+   handler) since it must track an arbitrary point along a continuous
+   line, not a fixed trigger element. Same glass-card treatment as
+   DonutChart's ring tooltip and Tooltip.js's InfoTip panel. */
+.line-chart__tooltip {
+  position: absolute;
+  z-index: 31;
+  transform: translate(-50%, calc(-100% - 12px));
+  min-width: 8rem;
+  padding: var(--spacing-xs) var(--spacing-sm-md);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--font-size-label);
+  color: var(--color-text-primary);
+  pointer-events: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .line-chart__tooltip { background: var(--color-surface); border-color: var(--color-border); }
+}
+.line-chart__tooltip-title {
+  font-weight: 700;
+  margin-bottom: 0.1875rem;
+  color: var(--color-text-secondary);
+}
+.line-chart__tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  white-space: nowrap;
+}
+.line-chart__tooltip-swatch { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; }
+.line-chart__tooltip-name { flex: 1; color: var(--color-text-secondary); }
+.line-chart__tooltip-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.line-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.line-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.line-chart__legend-swatch {
+  width: 0.75rem;
+  height: 0.1875rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.line-chart__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 11rem;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+/* ─── Premium polish (UI/UX improvement pass) ─────────────────────────── */
+.line-chart__svg {
+  animation: scale-in 0.5s ease-out;
+}

@@ -22,21 +22,17 @@ import { renderAdminDashboardPage } from './pages/admin-dashboard.js';
 import { renderDispatchCenterPage } from './pages/dispatch-center.js';
 import { renderIncidentManagementPage } from './pages/incident-management.js';
 import { renderGisLiveTrackingPage } from './pages/gis-live-tracking.js';
-import { renderHistoricalHeatmapPage } from './pages/historical-heatmap.js';
 import { renderBlotterListPage } from './pages/blotter-list.js';
-import { renderStatisticalReportsPage } from './pages/statistical-reports.js';
+import { renderAnalyticsPage } from './pages/analytics.js';
 import { renderSettingsPage } from './pages/settings.js';
 import { renderCitizenReportsInboxPage } from './pages/citizen-reports-inbox.js';
 import { renderCitizenReportPage } from './pages/citizen-report.js';
-import { renderSchedulerPage } from './pages/scheduler.js';
-import { renderSwapRequestsPage } from './pages/swap-requests.js';
-import { renderFatigueFlagsPage } from './pages/fatigue-flags.js';
+import { renderPersonnelPage } from './pages/personnel.js';
 import { renderAiReviewPage } from './pages/ai-review.js';
 import { renderBlotterDetailPage } from './pages/blotter-detail.js';
 import { renderSmsMonitorPage } from './pages/sms-monitor.js';
 import { renderAuditLogPage } from './pages/audit-log.js';
 import { renderServiceHealthPage } from './pages/service-health.js';
-import { renderUserManagementPage } from './pages/user-management.js';
 import { renderMapPackagesPage } from './pages/map-packages.js';
 import { DEFAULT_PAGE_KEY } from './pages/settings.js';
 
@@ -45,20 +41,23 @@ const PAGE_ROLES = {
   dispatch: ['admin'],
   'incident-management': ['admin', 'secretary'],
   gis: ['admin', 'punong_barangay'],
-  heatmap: ['admin', 'punong_barangay'],
   blotter: ['admin', 'secretary', 'punong_barangay'],
-  reports: ['admin', 'punong_barangay'],
+  // 2026-09-05 merge of W9 Statistical Reports + W5 Historical Heatmap
+  // into one tabbed screen — see pages/analytics.js. Same role pair both
+  // already had, so (unlike `personnel` below) no per-tab role gating.
+  analytics: ['admin', 'punong_barangay'],
   'citizen-inbox': ['admin', 'secretary'],
-  scheduler: ['admin'],
-  'swap-requests': ['admin'],
-  fatigue: ['admin', 'punong_barangay'],
+  // 2026-09-05 merge of W10-W13 (User Management/Scheduler/Swap Requests/
+  // Fatigue Flags) into one tabbed screen — see pages/personnel.js. Role
+  // list is the union of the four; personnel.js gates individual tabs
+  // (only Fatigue is Punong Barangay-visible) below that.
+  personnel: ['admin', 'punong_barangay'],
   // §9 W14 — Admin only, explicitly.
   'sms-log': ['admin'],
   // §9 W17 and W20 — both Admin only, explicitly.
   'audit-log': ['admin'],
   'service-health': ['admin'],
-  // §D/W10, §D/W18 — both Admin only, explicitly.
-  'user-management': ['admin'],
+  // §D/W18 — Admin only, explicitly.
   'map-packages': ['admin'],
   settings: ['admin', 'secretary', 'punong_barangay'],
   // W8 is a per-incident DETAIL view, not a destination in its own right:
@@ -134,20 +133,14 @@ function boot(currentPage, param) {
   } else if (page === 'gis') {
     const handle = renderGisLiveTrackingPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
-  } else if (page === 'heatmap') {
-    renderHistoricalHeatmapPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'blotter') {
     renderBlotterListPage(root, session.user, onLoggedOut, navigate);
-  } else if (page === 'reports') {
-    renderStatisticalReportsPage(root, session.user, onLoggedOut, navigate);
+  } else if (page === 'analytics') {
+    renderAnalyticsPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'citizen-inbox') {
     renderCitizenReportsInboxPage(root, session.user, onLoggedOut, navigate);
-  } else if (page === 'scheduler') {
-    renderSchedulerPage(root, session.user, onLoggedOut, navigate);
-  } else if (page === 'swap-requests') {
-    renderSwapRequestsPage(root, session.user, onLoggedOut, navigate);
-  } else if (page === 'fatigue') {
-    renderFatigueFlagsPage(root, session.user, onLoggedOut, navigate);
+  } else if (page === 'personnel') {
+    renderPersonnelPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'sms-log') {
     // Returns a stop handle: the Live Feed panel polls GET /sms/logs
     // every 10s (2026-09-05 UX pass) and that interval must not outlive
@@ -156,8 +149,6 @@ function boot(currentPage, param) {
     activeStop = handle?.stop ?? null;
   } else if (page === 'audit-log') {
     renderAuditLogPage(root, session.user, onLoggedOut, navigate);
-  } else if (page === 'user-management') {
-    renderUserManagementPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'map-packages') {
     renderMapPackagesPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'service-health') {

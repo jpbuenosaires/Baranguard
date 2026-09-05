@@ -131,12 +131,19 @@ export function BarChart({ bars, colorVar = '--chart-line-1', caption }) {
   plot.appendChild(svg);
   host.appendChild(plot);
 
+  // `.sr-only` goes on a wrapper div, not the `<table>` — see LineChart.js's
+  // matching fix for why a `<table>` itself ignores an explicit
+  // width/height smaller than its content (a real bug this exact pattern
+  // caused: a 24-row table rendering at ~605px instead of 1px, inflating
+  // the page's scrollable area even though it was visually clipped).
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'sr-only';
   const table = document.createElement('table');
-  table.className = 'sr-only';
   table.innerHTML = `<caption>${caption ?? 'Bar chart'}</caption>`
     + `<thead><tr><th scope="col">Label</th><th scope="col">Value</th></tr></thead>`
     + `<tbody>${bars.map((b) => `<tr><td>${b.label}</td><td>${b.value}</td></tr>`).join('')}</tbody>`;
-  host.appendChild(table);
+  tableWrap.appendChild(table);
+  host.appendChild(tableWrap);
 
   return host;
 }

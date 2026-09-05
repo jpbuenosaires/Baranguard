@@ -49,11 +49,18 @@ use PDO;
  *     transaction supplies the "transactional check" half of that
  *     documented pattern, matching DispatchController::create()'s own
  *     replay-lookup-then-insert shape.
- *   - No priority field: Section 6's POST /incidents body is exactly
- *     {incident_type,raw_narrative,latitude,longitude,source?,
- *     device_offline_created_at?,client_event_id} -- no priority key. The
- *     schema defaults it to 'normal'; this endpoint never accepts one
- *     rather than inventing an unlisted field.
+ *   - Priority (REOPENED 2026-09-05, explicit user sign-off): Section 6's
+ *     documented POST /incidents body has no priority key, and this
+ *     endpoint originally never accepted one on that basis. Web intake
+ *     had no way to flag a critical incident at creation time -- every
+ *     web-created incident was 'normal' until a separate action escalated
+ *     it after the fact. Now accepts an OPTIONAL `priority`, validated
+ *     against the same enum GET /incidents already filters on, defaulting
+ *     to 'normal' (the schema default, and the mobile branch's own
+ *     behavior, both unchanged) when omitted. Mobile's own POST /incidents
+ *     body is deliberately NOT extended by this -- §6 fixes its body
+ *     shape as mobile-authored, and this change is scoped to the web
+ *     "Log Incident" form's own gap only.
  *   - Response shape: not fixed by Section 6 beyond "creates pending
  *     incident with server created_at" -- returns the same redacted shape
  *     GET /incidents already uses (no raw narrative echoed back), for one
@@ -673,6 +680,17 @@ final class IncidentsController
         $rawNarrative = $body['raw_narrative'] ?? null;
         $latitude = $body['latitude'] ?? null;
         $longitude = $body['longitude'] ?? null;
+        // priority (2026-09-05 bug pass, reopens this class doc's earlier
+        // "no priority field" decision with explicit sign-off): optional,
+        // defaults to 'normal' exactly as the schema/insert always has --
+        // this only lets a caller override that default at intake instead
+        // of requiring a critical incident to be escalated in a second
+        // step. Validated against the same enum GET /incidents already
+        // filters on; an invalid value is 400, same as that filter.
+        $priority = $body['priority'] ?? 'normal';
+        if (!is_string($priority) || !in_array($priority, self::INCIDENT_PRIORITIES, true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'priority must be one of: ' . implode(', ', self::INCIDENT_PRIORITIES) . '.');
+        }
         // 2026-09-05 UX pass: the web "Log Incident" form pre-dated
         // migration 0008 and never gained these fields even though
         // `incident` has carried the columns since — see
@@ -735,7 +753,7 @@ final class IncidentsController
                      latitude, longitude, location_description, complainant_name, respondent_name,
                      complainant_contact_number, display_id, created_at, client_event_id, updated_at)
                  VALUES
-                    (:barangay_id, :reported_by, NULL, :incident_type, 'normal', :raw_narrative, 'pending', 'web',
+                    (:barangay_id, :reported_by, NULL, :incident_type, :priority, :raw_narrative, 'pending', 'web',
                      :latitude, :longitude, :location_description, :complainant_name, :respondent_name,
                      :complainant_contact_number, :display_id, UTC_TIMESTAMP(), :idempotency_key, UTC_TIMESTAMP())"
             );
@@ -755,6 +773,7 @@ final class IncidentsController
                         'barangay_id' => $identity['barangay_id'],
                         'reported_by' => $identity['user_id'],
                         'incident_type' => $incidentType,
+                        'priority' => $priority,
                         'raw_narrative' => $rawNarrative,
                         'latitude' => $latitude,
                         'longitude' => $longitude,

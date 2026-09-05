@@ -120,7 +120,7 @@ function renderForm(card, barangays) {
   contactLabel.textContent = 'Contact number (optional)';
   const contactInput = document.createElement('input');
   contactInput.id = 'citizen-report-contact';
-  contactInput.type = 'text';
+  contactInput.type = 'tel';
   contactInput.placeholder = 'So the barangay can follow up with you';
 
   let coords = null;

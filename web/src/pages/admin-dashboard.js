@@ -21,7 +21,7 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getReportsSummary, getIncidents, getDutyStatus, getUsers, logout, ApiClientError } from '../api/apiClient.js';
+import { getReportsSummary, getIncidents, getDutyStatus, getUsers, getTanodSos, getBarangays, logout, ApiClientError } from '../api/apiClient.js';
 import { KpiCard } from '../components/KpiCard.js';
 import { LineChart } from '../components/LineChart.js';
 import { DonutChart } from '../components/DonutChart.js';
@@ -30,6 +30,7 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
+import { InfoTip } from '../components/Tooltip.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -64,6 +65,12 @@ function daysAgoIso(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
+}
+/** Inclusive day count between two `YYYY-MM-DD` dates, e.g. 8/1-8/10 -> 10. */
+function rangeDaysBetween(fromIso, toIso) {
+  const from = new Date(`${fromIso}T00:00:00Z`);
+  const to = new Date(`${toIso}T00:00:00Z`);
+  return Math.round((to - from) / 86400000) + 1;
 }
 /**
  * The immediately-preceding period of equal length to [dateFrom, dateTo]
@@ -100,9 +107,45 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   const pageHeader = PageHeader({ title: 'Admin Dashboard', subtitle: 'Barangay-wide incident summary and activity', icon: icons.layoutDashboard });
   header.appendChild(pageHeader.el);
 
-  // Date range controls
-  const controls = document.createElement('div');
-  controls.className = 'filter-bar';
+  // 2026-09-05 UX pass: the topbar never showed which of the 4 barangays
+  // a session is scoped to. GET /barangays is public/unauthenticated
+  // (apiClient.js's own doc) and tiny (4 rows, fixed) — best-effort, own
+  // catch, never blocks the dashboard's real data.
+  getBarangays().then((rows) => {
+    const match = rows.find((b) => b.barangayId === user.barangayId);
+    if (!match) return;
+    const badge = document.createElement('span');
+    badge.className = 'dashboard-barangay-badge';
+    badge.textContent = `Brgy. ${match.name}`;
+    pageHeader.el.querySelector('.page-header__title')?.appendChild(badge);
+  }).catch(() => {
+    // Cosmetic only — the dashboard works fine without the badge.
+  });
+
+  // Date range controls — 2026-09-06 UX pass: replaced the always-visible
+  // From/To/Apply trio plus a separate row of preset chips (six controls
+  // competing for attention, two different ways to express the same
+  // range) with one dropdown. The explicit date fields only appear once
+  // "Custom range" is chosen — progressive disclosure, not gone — so the
+  // 95% case (a preset) is a single control and the escape hatch for an
+  // arbitrary range is still one click away, not removed.
+  const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
+
+  const rangeSelect = document.createElement('select');
+  rangeSelect.className = 'input--auto range-select';
+  rangeSelect.setAttribute('aria-label', 'Date range');
+  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    rangeSelect.appendChild(option);
+  }
+  rangeSelect.value = '30';
+
+  const customRow = document.createElement('div');
+  customRow.className = 'filter-bar range-picker-custom-row';
+  customRow.hidden = true;
+
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.value = daysAgoIso(29);
@@ -114,26 +157,6 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   const applyButton = document.createElement('button');
   applyButton.className = 'primary';
   applyButton.textContent = 'Apply';
-
-  // audit W2: two date fields and an Apply button was the slowest possible
-  // way to ask "what happened this week". Presets cover the ranges people
-  // actually want; the explicit fields stay for everything else.
-  const presets = document.createElement('div');
-  presets.className = 'range-presets';
-  presets.setAttribute('role', 'group');
-  presets.setAttribute('aria-label', 'Quick date ranges');
-  for (const [presetLabel, days] of [['7 days', 6], ['30 days', 29], ['90 days', 89]]) {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'ghost range-presets__chip';
-    chip.textContent = presetLabel;
-    chip.addEventListener('click', () => {
-      fromInput.value = daysAgoIso(days);
-      toInput.value = todayIso();
-      load(fromInput.value, toInput.value);
-    });
-    presets.appendChild(chip);
-  }
 
   // audit W2: nothing said how fresh the figures were. A dashboard that
   // loads once and never timestamps itself leaves a Punong Barangay
@@ -149,7 +172,10 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   refreshButton.setAttribute('aria-label', 'Refresh dashboard');
   refreshButton.addEventListener('click', () => load(fromInput.value, toInput.value));
 
-  pageHeader.actions.append(freshness, refreshButton);
+  // 2026-09-06: moved next to Refresh, in the page header, rather than its
+  // own row under it — one control that's always visible belongs beside
+  // the other "how current is this view" action, not on a separate line.
+  pageHeader.actions.append(freshness, refreshButton, rangeSelect);
 
   // Validation before the round trip — an inverted range used to be caught
   // only by the server, which returned a full-page error block.
@@ -166,25 +192,37 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   fromInput.addEventListener('change', validateRange);
   toInput.addEventListener('change', validateRange);
 
-  controls.append(
+  rangeSelect.addEventListener('change', () => {
+    if (rangeSelect.value === 'custom') {
+      customRow.hidden = false;
+      return;
+    }
+    customRow.hidden = true;
+    const daysAgo = PRESET_DAYS_AGO[rangeSelect.value];
+    fromInput.value = daysAgoIso(daysAgo);
+    toInput.value = todayIso();
+    load(fromInput.value, toInput.value);
+  });
+
+  customRow.append(
     Object.assign(document.createElement('span'), { className: 'label', textContent: 'From' }),
     fromInput,
     Object.assign(document.createElement('span'), { className: 'label', textContent: 'To' }),
     toInput,
     applyButton,
-    presets,
     rangeError
   );
-
   const body = document.createElement('div');
 
-  content.append(controls, body);
+  content.append(customRow, body);
 
   applyButton.addEventListener('click', () => load(fromInput.value, toInput.value));
   // Initial load sends NO date params, deliberately — see load()'s comment
   // below for why. fromInput/toInput start out showing a client-computed
   // guess only so the date pickers aren't empty; load() overwrites them
-  // with the server's actual range once the response comes back.
+  // with the server's actual range once the response comes back, and that
+  // same handler reconciles rangeSelect/customRow to whatever range the
+  // server actually used.
   load(undefined, undefined);
 
   async function load(dateFrom, dateTo) {
@@ -207,14 +245,31 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
         fromInput.value = summary.trend[0].date;
         toInput.value = summary.trend[summary.trend.length - 1].date;
       }
+      // Reconcile the dropdown/custom-row visibility to whatever range this
+      // load actually used — but ONLY for the true initial load (dateFrom/
+      // dateTo both undefined, meaning nobody had picked anything yet).
+      // Every other call already knows its own mode (the preset handler
+      // hides the row before calling load; Apply and Refresh fire with the
+      // row already in whatever state the user left it) — re-deriving it
+      // here from the server's returned trend[] would fight that, because
+      // the server can round the requested range by a day at a timezone
+      // boundary (see the comment above): picking "Last 7 days" then
+      // getting back 6 or 8 days of trend used to silently fall through to
+      // "no exact preset match" and re-reveal the custom row even though a
+      // preset was clearly chosen.
+      if (dateFrom === undefined && dateTo === undefined) {
+        const matchedDays = Object.keys(PRESET_DAYS_AGO).find((days) => PRESET_DAYS_AGO[days] + 1 === rangeDaysBetween(fromInput.value, toInput.value));
+        rangeSelect.value = matchedDays || 'custom';
+        customRow.hidden = rangeSelect.value !== 'custom';
+      }
 
       const isFreshDeployment = summary.totalIncidents === 0 && summary.activeTanods === 0;
       if (isFreshDeployment) {
-        renderEmpty(body);
+        renderEmpty(body, navigate, user.role);
         return;
       }
 
-      renderPopulated(body, summary);
+      renderPopulated(body, summary, navigate, user.role);
 
       // Best-effort extras: each wrapped in its own catch so a failure
       // here never blocks the KPI/trend/breakdown data above, which has
@@ -225,8 +280,9 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
       freshness.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
       loadDeltas(body, fromInput.value, toInput.value, summary);
-      loadRecentIncidents(body);
+      loadRecentIncidents(body, navigate);
       loadTanodsOnDuty(body, user.barangayId);
+      loadAttentionBanner(body, navigate, user.role, summary.byStatus.pending || 0);
     } catch (err) {
       const message = err instanceof ApiClientError
         ? err.message
@@ -234,6 +290,59 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
       renderError(body, message, () => load(dateFrom, dateTo));
     }
   }
+}
+
+/**
+ * 2026-09-05 UX pass: the dashboard used to be entirely retrospective (a
+ * date-range summary) with no "what needs my attention right now" signal
+ * — an Admin had to separately open Dispatch Center to discover a pending
+ * incident or an open Tanod SOS. `summary.byStatus.pending` is already
+ * fetched by `load()`, so only the SOS count is a new (best-effort, own
+ * catch) call — same `status !== 'resolved'` definition of "open"
+ * `dispatch-center.js`'s own SOS banner already uses, kept in sync
+ * deliberately.
+ */
+async function loadAttentionBanner(container, navigate, role, pendingCount) {
+  const host = container.querySelector('[data-attention-banner]');
+  if (!host) return;
+  let openSosCount = 0;
+  try {
+    const sosItems = await getTanodSos({});
+    openSosCount = sosItems.filter((s) => s.status !== 'resolved').length;
+  } catch {
+    // Best-effort — the banner still shows the pending-incident count below.
+  }
+
+  host.innerHTML = '';
+  if (pendingCount === 0 && openSosCount === 0) return;
+
+  const banner = document.createElement('div');
+  banner.className = `attention-banner attention-banner--${openSosCount > 0 ? 'critical' : 'warning'}`;
+  banner.setAttribute('role', openSosCount > 0 ? 'alert' : 'status');
+  banner.innerHTML = `<span aria-hidden="true">${icons.alertTriangle(22)}</span>`;
+
+  const text = document.createElement('span');
+  text.className = 'attention-banner__text';
+  const parts = [];
+  if (openSosCount > 0) parts.push(openSosCount === 1 ? '1 Tanod SOS alert' : `${openSosCount} Tanod SOS alerts`);
+  if (pendingCount > 0) parts.push(pendingCount === 1 ? '1 incident pending dispatch' : `${pendingCount} incidents pending dispatch`);
+  text.textContent = `${parts.join(' and ')} — needs attention.`;
+  banner.appendChild(text);
+
+  // Dispatch Center is Admin-only (§7) — Punong Barangay is read-only
+  // oversight and has no screen to act on this from, so it sees the same
+  // informational banner with no button rather than one that would just
+  // bounce them back to their own default page.
+  if (role === 'admin') {
+    const goButton = document.createElement('button');
+    goButton.type = 'button';
+    goButton.className = openSosCount > 0 ? 'ghost' : 'primary';
+    goButton.textContent = 'Go to Dispatch Center';
+    goButton.addEventListener('click', () => navigate('dispatch'));
+    banner.appendChild(goButton);
+  }
+
+  host.appendChild(banner);
 }
 
 async function loadDeltas(container, dateFrom, dateTo, summary) {
@@ -259,12 +368,12 @@ async function loadDeltas(container, dateFrom, dateTo, summary) {
   }
 }
 
-async function loadRecentIncidents(container) {
+async function loadRecentIncidents(container, navigate) {
   const host = container.querySelector('[data-recent-incidents]');
   if (!host) return;
   try {
     const result = await getIncidents({ limit: 6 });
-    renderRecentIncidentsTable(host, result.items);
+    renderRecentIncidentsTable(host, result.items, navigate);
   } catch {
     host.innerHTML = '<p class="note">Could not load recent incidents.</p>';
   }
@@ -305,7 +414,7 @@ function renderLoading(container) {
   container.append(grid, chartSkeleton);
 }
 
-function renderEmpty(container) {
+function renderEmpty(container, navigate, role) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block';
@@ -313,6 +422,19 @@ function renderEmpty(container) {
     <h3>No activity yet</h3>
     <p>This barangay hasn't logged any incidents or on-duty Tanods yet. Once incidents are reported and Tanods are on duty, this dashboard fills in automatically.</p>
   `;
+  // 2026-09-05 UX pass: gave a fresh deployment a first real action
+  // instead of just describing what happens "automatically" — Incident
+  // Management's create form is Admin/Secretary (§7); Punong Barangay is
+  // read-only oversight and has no create action anywhere, so it keeps
+  // the description-only empty state.
+  if (role === 'admin') {
+    const cta = document.createElement('button');
+    cta.type = 'button';
+    cta.className = 'primary';
+    cta.textContent = 'Log an Incident';
+    cta.addEventListener('click', () => navigate('incident-management'));
+    block.appendChild(cta);
+  }
   container.appendChild(block);
 }
 
@@ -331,8 +453,12 @@ function renderError(container, message, onRetry) {
   container.appendChild(block);
 }
 
-function renderPopulated(container, summary) {
+function renderPopulated(container, summary, navigate, role) {
   container.innerHTML = '';
+
+  const attentionHost = document.createElement('div');
+  attentionHost.setAttribute('data-attention-banner', '');
+  container.appendChild(attentionHost);
 
   const grid = document.createElement('div');
   grid.className = 'kpi-grid';
@@ -344,10 +470,14 @@ function renderPopulated(container, summary) {
     KpiCard({
       label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue',
       sparkline: summary.trend.map((day) => day.count),
+      description: 'Every incident reported in the selected date range, regardless of status.',
     }),
     // Resolved going UP is unambiguously good; Total Incidents has no
     // inherent good direction so it deliberately gets no `trend`.
-    KpiCard({ label: 'Resolved Cases', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green', trend: 'up-good' }),
+    KpiCard({
+      label: 'Resolved Cases', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green', trend: 'up-good',
+      description: 'Incidents in this range whose current status is Resolved.',
+    }),
     KpiCard({
       label: 'Avg. Response Time',
       value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
@@ -356,11 +486,15 @@ function renderPopulated(container, summary) {
       accent: 'orange',
       // Faster response is better, so a NEGATIVE delta is the good one.
       trend: 'down-good',
+      description: 'Average time from an incident being reported to a Tanod’s dispatch marked Arrived. Incidents with no arrival yet aren’t counted.',
     }),
     // No period-over-period delta here — this is a live current-state
     // snapshot (§9), not a range-bucketed count, so "vs previous period"
     // isn't a meaningful comparison for it.
-    KpiCard({ label: 'Tanods On Duty', value: summary.activeTanods, icon: icons.users, accent: 'teal' })
+    KpiCard({
+      label: 'Tanods On Duty', value: summary.activeTanods, icon: icons.users, accent: 'teal',
+      description: 'Tanods currently marked On Duty or Responding, right now — not scoped to the date range above.',
+    })
   );
 
   // Trend + type breakdown side by side, each in a card carrying the
@@ -373,7 +507,11 @@ function renderPopulated(container, summary) {
 
   const trendCard = document.createElement('div');
   trendCard.className = 'card';
-  trendCard.appendChild(cardHeader('Incident Trends', 'Reported against resolved, by day', icons.trendingUp));
+  trendCard.appendChild(cardHeader(
+    'Incident Trends', 'Reported against resolved, by day', icons.trendingUp,
+    'Incidents reported each day (blue) versus incidents resolved that same day (green), across the selected range.',
+    { label: 'View all reports', onClick: () => navigate('analytics') }
+  ));
   trendCard.appendChild(LineChart({
     points: summary.trend.map((day) => ({ label: shortDate(day.date), values: [day.count, day.resolved ?? 0] })),
     series: [
@@ -383,54 +521,89 @@ function renderPopulated(container, summary) {
     caption: 'Incidents reported and resolved by day',
   }));
 
-  chartsGrid.append(trendCard, renderIncidentTypeDonutCard(summary.byIncidentType));
+  chartsGrid.append(trendCard, renderIncidentTypeDonutCard(summary.byIncidentType, navigate));
 
   const breakdownGrid = document.createElement('div');
   breakdownGrid.className = 'two-col-grid dashboard-row';
 
   const recentCard = document.createElement('div');
   recentCard.className = 'card';
-  recentCard.appendChild(cardHeader('Recent Incidents', 'Newest six reports', icons.fileText));
+  recentCard.appendChild(cardHeader(
+    'Recent Incidents', 'Newest six reports', icons.fileText,
+    'The six most recently reported incidents, regardless of the date range above.',
+    { label: 'View all incidents', onClick: () => navigate('incident-management') }
+  ));
   const recentHost = document.createElement('div');
   recentHost.setAttribute('data-recent-incidents', '');
   recentHost.appendChild(blockSkeleton());
-  recentCard.appendChild(recentHost);
+  recentCard.append(recentHost);
 
   const dutyCard = document.createElement('div');
   dutyCard.className = 'card';
-  dutyCard.appendChild(cardHeader('Tanods On Duty', 'Current shift roster', icons.users));
+  dutyCard.appendChild(cardHeader(
+    'Tanods On Duty', 'Current shift roster', icons.users,
+    'Every Tanod’s current shift status, live — not scoped to the date range above.',
+    { label: 'View Personnel', onClick: () => navigate('personnel') }
+  ));
   const dutyHost = document.createElement('div');
   dutyHost.setAttribute('data-tanods-on-duty', '');
   dutyHost.appendChild(blockSkeleton());
-  dutyCard.appendChild(dutyHost);
+  dutyCard.append(dutyHost);
 
   breakdownGrid.append(recentCard, dutyCard);
 
   const statusRow = document.createElement('div');
   statusRow.className = 'two-col-grid dashboard-row';
-  statusRow.append(renderBreakdownCard('By Status', summary.byStatus, STATUS_LABELS, STATUS_PILL_CLASS));
+  statusRow.append(renderBreakdownCard('By Status', summary.byStatus, STATUS_LABELS, STATUS_PILL_CLASS, navigate));
+  // 2026-09-06 UX pass: this row's second column was always empty (a
+  // `two-col-grid` with one child) — Admin's most common next steps from
+  // the dashboard (log an incident, open dispatch, message a resident,
+  // review the blotter) had no single home; each was a sidebar hop away.
+  // Punong Barangay is read-only oversight (§3, no write action anywhere
+  // on this screen already), so it keeps the single-column status card
+  // exactly as before rather than gaining a card of actions it can't use.
+  if (role === 'admin') statusRow.append(renderQuickActionsCard(navigate));
 
   container.append(grid, chartsGrid, breakdownGrid, statusRow);
 }
 
-/** Shared card title / subtitle / corner-icon header (base.css .card-header). */
-function cardHeader(title, subtitle, icon) {
+/**
+ * Shared card title / subtitle / corner-icon header (base.css
+ * .card-header). `viewAll` (2026-09-06 UX pass), when given, replaces the
+ * purely decorative corner icon with an icon-only button that navigates to
+ * that data's full screen — the corner icon has always occupied the
+ * "top right of the card" real estate the user asked "View all" to move
+ * into, so this reuses that slot rather than adding a second control.
+ */
+function cardHeader(title, subtitle, icon, description, viewAll) {
   const el = document.createElement('div');
   el.className = 'card-header';
   const titles = document.createElement('div');
   const h = document.createElement('h3');
-  h.className = 'card-header__title';
   h.className = 'card-header__title report-section-title';
-  h.textContent = title;
+  h.append(title);
+  if (description) h.appendChild(InfoTip(description));
   const sub = document.createElement('p');
   sub.className = 'card-header__subtitle';
   sub.textContent = subtitle;
   titles.append(h, sub);
-  const iconSpan = document.createElement('span');
-  iconSpan.className = 'card-header__icon';
-  iconSpan.setAttribute('aria-hidden', 'true');
-  iconSpan.innerHTML = icon(18);
-  el.append(titles, iconSpan);
+
+  let corner;
+  if (viewAll) {
+    corner = document.createElement('button');
+    corner.type = 'button';
+    corner.className = 'card-header__icon card-header__icon--action';
+    corner.innerHTML = icons.arrowUpRight(18);
+    corner.setAttribute('aria-label', viewAll.label);
+    corner.title = viewAll.label;
+    corner.addEventListener('click', viewAll.onClick);
+  } else {
+    corner = document.createElement('span');
+    corner.className = 'card-header__icon';
+    corner.setAttribute('aria-hidden', 'true');
+    corner.innerHTML = icon(18);
+  }
+  el.append(titles, corner);
   return el;
 }
 
@@ -448,7 +621,7 @@ function shortDate(iso) {
   return `${months[Number(m) - 1]} ${Number(d)}`;
 }
 
-function renderRecentIncidentsTable(host, items) {
+function renderRecentIncidentsTable(host, items, navigate) {
   host.innerHTML = '';
   if (items.length === 0) {
     host.innerHTML = '<p class="note">No incidents logged yet.</p>';
@@ -459,6 +632,11 @@ function renderRecentIncidentsTable(host, items) {
     rows: items,
     rowKey: (row) => row.incidentId,
     caption: 'Most recent incidents',
+    // 2026-09-05 UX pass: this was the one list in the app whose rows led
+    // nowhere — every other list (Blotter, Incident Management, topbar
+    // search, notifications) already navigates to blotter-detail on
+    // click, same destination used here.
+    onRowClick: (row) => navigate('blotter-detail', row.incidentId),
     renderCell: (row, key) => {
       switch (key) {
         case 'id':
@@ -504,20 +682,64 @@ function renderTanodsOnDutyList(host, roster) {
   host.appendChild(list);
 }
 
-function renderIncidentTypeDonutCard(counts) {
+function renderIncidentTypeDonutCard(counts, navigate) {
   const card = document.createElement('div');
   card.className = 'card';
   const rows = Object.entries(counts).map(([key, count], i) => ({
     key, count, label: INCIDENT_TYPE_LABELS[key] || key, color: INCIDENT_TYPE_COLORS[i % INCIDENT_TYPE_COLORS.length],
   }));
-  card.append(cardHeader('Incident Types', 'Distribution by category', icons.activity), DonutChart({ rows }));
+  card.append(cardHeader(
+    'Incident Types', 'Distribution by category', icons.activity,
+    'How incidents in this range break down by category, out of the 11 fixed incident types.',
+    { label: 'View all reports', onClick: () => navigate('analytics') }
+  ), DonutChart({ rows }));
   return card;
 }
 
-function renderBreakdownCard(title, counts, labels, pillClasses) {
+/**
+ * Quick Actions — Admin's most common next steps from the dashboard, all
+ * to screens that already exist (§9); nothing here is a new capability,
+ * just a shortcut to ones that previously required a sidebar hop. Filled
+ * this row's previously-empty second column (see renderPopulated's own
+ * comment above the call site).
+ */
+function renderQuickActionsCard(navigate) {
   const card = document.createElement('div');
   card.className = 'card';
-  card.appendChild(cardHeader(title, 'Incidents in the selected range', icons.barChart));
+  card.appendChild(cardHeader(
+    'Quick Actions', 'Common next steps', icons.plus,
+    'Shortcuts to the most common tasks — nothing here does anything a full sidebar screen doesn’t already do.'
+  ));
+
+  const ACTIONS = [
+    { label: 'Log an Incident', icon: icons.alertTriangle, page: 'incident-management' },
+    { label: 'Dispatch Center', icon: icons.radio, page: 'dispatch' },
+    { label: 'Message a Resident', icon: icons.messageSquare, page: 'sms-log' },
+    { label: 'View Blotter', icon: icons.fileText, page: 'blotter' },
+  ];
+  const grid = document.createElement('div');
+  grid.className = 'quick-actions-grid';
+  for (const action of ACTIONS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'quick-action-tile';
+    button.innerHTML = `<span class="quick-action-tile__icon" aria-hidden="true">${action.icon(20)}</span>`
+      + `<span>${action.label}</span>`;
+    button.addEventListener('click', () => navigate(action.page));
+    grid.appendChild(button);
+  }
+  card.appendChild(grid);
+  return card;
+}
+
+function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.appendChild(cardHeader(
+    title, 'Incidents in the selected range', icons.barChart,
+    'How incidents in this range break down by pending, dispatched, or resolved.',
+    { label: 'View all reports', onClick: () => navigate('analytics') }
+  ));
 
   const list = document.createElement('div');
   list.className = 'stack';

@@ -20,8 +20,8 @@
 .timeline__item {
   position: relative;
   display: flex;
-  gap: var(--spacing-md, 0.75rem);
-  padding-bottom: var(--spacing-lg, 1rem);
+  gap: var(--spacing-md);
+  padding-bottom: var(--spacing-lg);
 }
 
 .timeline__item:last-child {
@@ -69,7 +69,7 @@
   min-width: 0;
   display: flex;
   justify-content: space-between;
-  gap: var(--spacing-sm, 0.5rem);
+  gap: var(--spacing-sm);
 }
 
 .timeline__label {

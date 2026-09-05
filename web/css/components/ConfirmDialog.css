@@ -22,7 +22,13 @@
 }
 
 .confirm-dialog {
-  background: var(--color-surface);
+  /* Glassmorphism, moderate scope — a modal is chrome, and it already
+     sits over the blurred .confirm-backdrop, so the frosted-panel look
+     reads clearly. Fallback below restores the flat surface fill. */
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-floating);
   padding: var(--spacing-xl);
@@ -53,3 +59,7 @@
    a long Tanod name doesn't stretch the dialog. */
 .confirm-dialog__field { margin-bottom: var(--spacing-md); }
 .confirm-dialog__field select { width: 100%; }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .confirm-dialog { background: var(--color-surface); border-color: var(--color-border); }
+}

@@ -41,6 +41,11 @@ const HERO_FEATURES = [
   { icon: icons.shield, title: 'Session-Based Security', desc: 'Signed-in sessions and per-barangay data isolation.' },
   { icon: icons.lock, title: 'Role-Based Access', desc: 'Separate permissions for Admin, Punong Barangay, and Tanod.' },
   { icon: icons.alertCircle, title: 'Live Emergency Tracking', desc: 'Real-time Tanod GPS and SOS alerts on the dispatch map.' },
+  // 2026-09-05 UX pass: the fourth, most distinctive real capability this
+  // system has — worded the same careful way the other three already
+  // are (what it does, not an unverifiable claim): the model drafts, a
+  // human Secretary reviews and approves before anything is finalized.
+  { icon: icons.fileText, title: 'AI-Assisted Redaction', desc: 'Draft redactions for the blotter, always reviewed and approved by a Secretary before finalizing.' },
 ];
 
 const REMEMBERED_USERNAME_KEY = 'baranguard.rememberedUsername';
@@ -60,7 +65,10 @@ export function renderLoginPage(root, onSuccess) {
   hero.innerHTML = `
     <div class="login-hero__inner">
       <div class="login-hero__brand">
-        <span class="icon-badge icon-badge--hero">${icons.shield(30)}</span>
+        <span class="login-hero__brand-mark">
+          <span class="login-hero__brand-pulse" aria-hidden="true"></span>
+          <span class="icon-badge icon-badge--hero">${icons.shield(30)}</span>
+        </span>
         <span class="login-hero__wordmark">BARANGUARD</span>
       </div>
       <h1>Barangay Emergency Response Platform</h1>
@@ -76,7 +84,7 @@ export function renderLoginPage(root, onSuccess) {
           </div>
         `).join('')}
       </div>
-      <div class="login-hero__footer">Barangay Intelligence &amp; Emergency Dispatch System</div>
+      <div class="login-hero__footer">Serving Dao, Binanuahan, Marifosque, and Banuyo</div>
     </div>
   `;
 
@@ -150,6 +158,26 @@ export function renderLoginPage(root, onSuccess) {
   });
   passwordField.append(passwordInput, passwordToggle);
 
+  // 2026-09-05 UX pass: a real, well-known login-form gap — nothing told
+  // a user their password was about to fail because Caps Lock was on.
+  // `getModifierState` reads the CURRENT key event's modifier state, not
+  // a toggled flag this code tracks itself, so it can't drift out of
+  // sync with the OS. `role="status"`/`aria-live="polite"` so a screen
+  // reader announces it without stealing focus, same pattern as the
+  // freshness timestamp on the dashboard.
+  const capsLockWarning = document.createElement('p');
+  capsLockWarning.className = 'login-capslock-warning';
+  capsLockWarning.setAttribute('role', 'status');
+  capsLockWarning.setAttribute('aria-live', 'polite');
+  capsLockWarning.textContent = 'Caps Lock is on';
+  capsLockWarning.hidden = true;
+  const updateCapsLockWarning = (event) => {
+    capsLockWarning.hidden = !event.getModifierState?.('CapsLock');
+  };
+  passwordInput.addEventListener('keydown', updateCapsLockWarning);
+  passwordInput.addEventListener('keyup', updateCapsLockWarning);
+  passwordInput.addEventListener('blur', () => { capsLockWarning.hidden = true; });
+
   const rememberRow = document.createElement('label');
   rememberRow.className = 'login-remember';
   const rememberCheckbox = document.createElement('input');
@@ -164,7 +192,7 @@ export function renderLoginPage(root, onSuccess) {
   submitButton.className = 'primary';
   submitButton.textContent = 'Sign in';
 
-  form.append(errorBox, usernameLabel, usernameInput, passwordLabel, passwordField, rememberRow, submitButton);
+  form.append(errorBox, usernameLabel, usernameInput, passwordLabel, passwordField, capsLockWarning, rememberRow, submitButton);
   card.append(mobileBrand, brand, form);
   formPanel.appendChild(card);
   screen.append(hero, formPanel);
@@ -205,6 +233,11 @@ export function renderLoginPage(root, onSuccess) {
       }
       errorBox.hidden = false;
       passwordInput.value = '';
+      // 2026-09-06 UX pass: the field was cleared but focus stayed on the
+      // (disabled, then re-enabled) submit button, so retyping needed an
+      // extra click every time — a real, easily-missed friction point on
+      // the one screen everyone hits first.
+      passwordInput.focus();
       // Shake the whole card, not just the error box — a stronger, more
       // immediate "that didn't work" cue than the text appearing alone.
       card.classList.remove('is-shaking'); // restart if a fast double-submit re-triggers it
@@ -216,5 +249,10 @@ export function renderLoginPage(root, onSuccess) {
     }
   });
 
-  usernameInput.focus();
+  // 2026-09-06 UX pass: a returning user with a remembered username had
+  // nothing left to type in that field — focus used to land there anyway,
+  // costing an extra click every visit to reach the field they actually
+  // needed.
+  if (rememberedUsername) passwordInput.focus();
+  else usernameInput.focus();
 }

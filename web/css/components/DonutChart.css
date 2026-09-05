@@ -1,0 +1,176 @@
+/**
+ * DonutChart.css — co-located with DonutChart.js (W2/W9 "By Incident
+ * Type"). Split out of base.css during the 2026-09-02 responsive/density
+ * pass. Ring shrinks and the legend drops below it on narrow screens
+ * instead of the two staying side-by-side and squeezing.
+ */
+
+.donut-chart {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+.donut-chart__empty {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-lg) 0;
+}
+.donut-chart__ring {
+  position: relative;
+  width: 8.75rem;
+  height: 8.75rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: donut-reveal .6s ease-out;
+  /* Hovering a legend item dims every OTHER segment via a radial-gradient
+     overlay pseudo-element (::after) rather than touching the ring's own
+     conic-gradient background (which DonutChart.js sets inline per
+     render) — see .donut-chart__ring.has-highlight below. */
+  transition: filter .15s ease;
+}
+@keyframes donut-reveal {
+  from { transform: rotate(-90deg) scale(0.85); opacity: 0; }
+  to { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+/* Legend-hover highlight (§4.5): dim the whole ring slightly while one
+   legend item is hovered, and boost that one segment's own swatch/label
+   via .is-active below — cheap, no per-segment DOM slicing needed since
+   the ring is one conic-gradient. */
+.donut-chart__ring.has-highlight { filter: saturate(0.5) brightness(1.05); }
+.donut-chart__hole {
+  position: absolute;
+  inset: 1.375rem;
+  background: var(--color-surface);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.donut-chart__total { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-text-primary); line-height: 1.1; }
+.donut-chart__total-label { font-size: var(--font-size-label); color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+/* 2026-09-06: legend runs two-up — the percentage/count moved into a
+   hover/focus tooltip (below), so each row only needs room for a dot and a
+   name, and two columns fit comfortably without truncating further than
+   the single-column layout already did. */
+.donut-chart__legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-xs) var(--spacing-md);
+  min-width: 15rem;
+  flex: 1;
+}
+.donut-chart__legend-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.1875rem var(--spacing-xs);
+  margin: -0.125rem calc(-1 * var(--spacing-xs));
+  cursor: pointer;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  transition: background-color .15s ease;
+}
+.donut-chart__legend-item:hover,
+.donut-chart__legend-item.is-active,
+.donut-chart__legend-item:focus-visible { background: var(--color-bg); }
+.donut-chart__legend-item:hover .donut-chart__legend-label,
+.donut-chart__legend-item.is-active .donut-chart__legend-label { font-weight: 600; }
+.donut-chart__legend-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+/* Center-hole text swaps to the hovered category's own count/% (JS-driven
+   content change) — this transition just smooths that swap instead of
+   snapping. */
+.donut-chart__total, .donut-chart__total-label { transition: opacity .1s ease; }
+.donut-chart__swatch { width: 0.625rem; height: 0.625rem; border-radius: 50%; flex-shrink: 0; }
+.donut-chart__legend-label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-label);
+  min-width: 0;
+  /* Long enum labels ("Medical Emergency") must not wrap the row into
+     three lines and break the column's rhythm. */
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Hover/focus tooltip panel — same glass-card treatment and reveal
+   mechanics as Tooltip.js's InfoTip (`.info-tip__panel`), anchored to the
+   legend row instead of an "i" trigger. */
+.donut-chart__legend-tip {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + var(--spacing-xs));
+  left: var(--spacing-sm);
+  width: max-content;
+  max-width: 12rem;
+  padding: var(--spacing-xs) var(--spacing-sm-md);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(2px);
+  transition: opacity .15s ease, transform .15s ease, visibility .15s;
+}
+.donut-chart__legend-tip-count { font-weight: 400; color: var(--color-text-tertiary); }
+.donut-chart__legend-item:hover .donut-chart__legend-tip,
+.donut-chart__legend-item.is-active .donut-chart__legend-tip,
+.donut-chart__legend-item:focus-visible .donut-chart__legend-tip {
+  opacity: 1; visibility: visible; transform: translateY(0);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .donut-chart__legend-tip { background: var(--color-surface); border-color: var(--color-border); }
+}
+
+/* Cursor-following tooltip for hovering the ring's own colored arc
+   (JS-positioned via mousemove — see DonutChart.js — unlike the legend's
+   CSS-anchored one, since the ring has no per-segment element to anchor
+   to). */
+.donut-chart__ring-tip {
+  position: absolute;
+  z-index: 31;
+  transform: translate(-50%, calc(-100% - 10px));
+  padding: var(--spacing-xs) var(--spacing-sm-md);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-floating);
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .donut-chart__ring-tip { background: var(--color-surface); border-color: var(--color-border); }
+}
+
+@media (max-width: 480px) {
+  .donut-chart__ring { width: 6.875rem; height: 6.875rem; }
+  .donut-chart__hole { inset: 1.125rem; }
+}
+@media (max-width: 360px) {
+  .donut-chart__legend { grid-template-columns: 1fr; }
+}
+
+/* ─── Premium polish (UI/UX improvement pass) ─────────────────────────── */
+.donut-chart__total {
+  animation: count-up 0.4s ease-out;
+}

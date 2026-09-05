@@ -130,7 +130,7 @@ instead).
 
 ---
 
-## 5. Endpoints (74 live `/api/v1` routes, all built)
+## 5. Endpoints (75 live `/api/v1` routes, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -152,7 +152,9 @@ independent of redaction, migration 0008)
 **Ops** `/audit-log` · `/system/health` · `/search` ·
 `/barangays` · `/users` (list gains `q=`, last_login_at, is_suspended;
 suspend/unsuspend alongside the existing is_active toggle) ·
-`/citizen-reports` · `/duty-status` · `/blotter` (list gains `q=`,
+`/citizen-reports` (+`/:id/convert` since 2026-09-05 — always speced in
+§6, never built until now; see `backend/DEVLOG.md`'s workflow-audit
+entry) · `/duty-status` · `/blotter` (list gains `q=`,
 case_status, display_id, location_description)
 **SMS** `/sms/logs` (read-only activity log, unchanged) ·
 `/sms/conversations` (+`/:phone/messages`, +`/:phone/resolve` — grouped
@@ -200,16 +202,24 @@ check in this stack can see. Currently 453/453.
 ## 7. Screens (§9)
 
 **Built:** W1 login · W2 dashboard · W3 dispatch (map incident markers +
-assign-from-map, migration-free) · W4 GIS · W5 heatmap · W6 blotter
+assign-from-map, migration-free) · W4 GIS · W6 blotter
 (records view, case_status pill, display_id, search, CSV export) · W7
-blotter detail (case_status transition control) · W8 AI review · W9
-analytics+export · W10 user management (create/deactivate/reactivate/
-**suspend** since 0011, StatStrip, real last-login, scoped — see §3's
-role matrix note) · W11 scheduler · W12 swaps · W13 fatigue · W14 **SMS
+blotter detail (case_status transition control) · W8 AI review ·
+**Analytics** (2026-09-05 merge of W5 Historical Heatmap + W9
+Statistical Reports into one tabbed screen — Reports/Heatmap — see
+`web/src/pages/analytics.js`; same role pair both already had, Admin +
+Punong Barangay read-only, so no per-tab gating unlike Personnel below.
+Reports tab: export+audited, see §5) · **Personnel** (2026-09-05 merge of W10-W13 into one
+tabbed screen — Users/Scheduler/Swap requests/Fatigue flags — see
+`web/src/pages/personnel.js`; only Fatigue is Punong Barangay-visible,
+same role split each had standalone. Users tab: create/deactivate/
+reactivate/**suspend** since 0011, StatStrip, real last-login, scoped —
+see §3's role matrix note) · W14 **SMS
 Monitor** (renamed from SMS log; read-only Activity Log tab unchanged +
 new Conversations tab — compose/broadcast, see §5) · W15 settings
 (+General/SMS Gateway sections, Admin-only, since 0012 — see the W21
-note below) · W16 citizen inbox · W17 audit log · W18 map package
+note below) · W16 citizen inbox (+Convert to Incident, +Location column,
+since 2026-09-05) · W17 audit log · W18 map package
 management · W19 public report · W20 service health · Incident
 Management (search, Resolve action, location_description,
 complainant/respondent/contact fields on create).
@@ -244,8 +254,12 @@ forbids shipping a control that looks functional and does nothing.
   silently points tests at the real database.
 - **Empty `DB_PASSWORD` is rejected by design.** Disposable-DB tests must
   mint a throwaway MySQL user with a real password.
-- **The app DB user has no `CREATE DATABASE`** (correct least-privilege).
-  Drills/tests needing it use DBA credentials, not a new grant.
+- **The app DB user has no `CREATE DATABASE`, and no `ALTER`/`CREATE
+  TABLE` either** (correct least-privilege — confirmed 2026-09-05
+  applying migrations 0008-0014 to the real DB: `baranguard_app` got
+  `ERROR 1142 ... ALTER command denied`). Migrations need DBA
+  credentials (root on this XAMPP install has no password), same as
+  drills/tests needing elevated access — not a new grant on the app user.
 - **Git-Bash `/c/...` paths break native `php.exe`** — `cygpath -m` first.
 - **Space in the Windows username breaks Gradle and SDK `.bat` tools** —
   use the short path (`C:\Users\JAYSON~1\...`), and `C:\gtmp` for

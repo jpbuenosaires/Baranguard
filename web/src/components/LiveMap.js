@@ -102,6 +102,11 @@ export function LiveMap(container) {
   let sosMarkers = [];
   let incidentMarkers = [];
   let ready = false;
+  // Bug fix (2026-09-05): setMarkers() used to re-fit bounds on every poll
+  // (every 15s in both Dispatch Center and GIS), re-centering the map even
+  // if the operator had zoomed/panned to track something specific. Now
+  // fits once, the first time there's a point to fit, and never again.
+  let hasFittedBounds = false;
   const pendingBoundary = { value: null };
   let lastRawMarkers = []; // re-clustered on zoom/move — see recluster() below.
   let reclusterHandle = null;
@@ -220,8 +225,9 @@ export function LiveMap(container) {
   function setMarkers(markers) {
     lastRawMarkers = markers;
     const { bounds, hasPoint } = renderTanodMarkers(markers);
-    if (hasPoint) {
+    if (hasPoint && !hasFittedBounds) {
       map.fitBounds(bounds, { padding: 64, maxZoom: 16, duration: 300 });
+      hasFittedBounds = true;
     }
   }
 

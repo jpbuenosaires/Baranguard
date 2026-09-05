@@ -7267,3 +7267,871 @@ own regression pass rather than reported by you.
 
 Phase 10 (final full regression pass across every phase, `HANDOFF.md`
 update) — see the next entry.
+
+# DEVLOG — Web CSS refactor: spacing audit, css/ relocation, glassmorphism
+
+User-requested pass, not a Sprint 8 item: fix an observed spacing
+inconsistency ("same design has different spacing"), move all web CSS
+out of `web/src/` into a dedicated `web/css/`, and change the visual
+direction to glassmorphism. Scope confirmed with the user up front:
+glass applied to chrome/containers only (moderate), not tables/forms/
+pills; folder layout is `web/css/{base.css,components/,pages/}`.
+
+## Spacing audit — what was actually causing the drift
+
+`base.css` already defines a full spacing scale (§8) and most of the
+~196 raw `rem` literals across the 22 stylesheets are individually
+commented micro-values tied to a specific contrast/alignment audit —
+those are correct as-is, not drift, and were left untouched. The real
+bug was a smaller set of **near-duplicate controls, each hand-tuned to
+a different one-off value instead of sharing a token** — concretely:
+
+- `.filter-chip` (incident-management.css) used `padding: 0.35rem
+  0.9rem` where `.range-presets__chip` (base.css) — the same rounded-
+  pill filter control — already used `var(--spacing-xs)
+  var(--spacing-sm-md)`. Snapped to match.
+- `.settings-rail__item` (settings.css) used `padding: 0.55rem 0.65rem`
+  and its rail used `gap: 0.15rem`, where `.sidebar__nav-item`
+  (AppShell.css) — the same "vertical nav list item" pattern — used
+  `padding: 0.625rem var(--spacing-sm-md)` and `margin: 0.125rem ...`.
+  Snapped the rail to the sidebar's own values.
+- `.health-row` (service-health.css, `padding: 0.4rem 0`) vs
+  `.settings-pref-row` (settings.css, `padding: 0.5rem 0`) — same
+  "labeled row + value, bottom-divider list" pattern in two different
+  screens. Snapped both to `var(--spacing-sm)`.
+- Several `gap: 0.1rem` one-offs (incident-management.css's
+  `.data-table__stacked`, sms-monitor.css's `.sms-contact-row__main`)
+  and a `margin-top: 0.35rem` (sms-monitor.css's
+  `.sms-live-feed__dot`) — snapped to two new tokens added to close
+  real gaps in the scale: `--spacing-3xs: 0.125rem` and
+  `--spacing-2xs: 0.375rem` (both values already appeared repeatedly as
+  unlabeled literals elsewhere, so this formalizes existing intent
+  rather than inventing new sizes).
+- A `var(--token, fallback)` pattern used across 7 files (25
+  occurrences) had **fallback values that didn't match the real token**
+  (e.g. `var(--spacing-xs, 0.35rem)` when `--spacing-xs` is actually
+  `0.25rem`; same mismatch for `--spacing-md`/`--spacing-lg`/
+  `--radius-sm`/`--radius-md`). Harmless today — `base.css` always
+  loads first so the fallback never actually applies — but it's exactly
+  the kind of copy-pasted wrong-value comment that could cause real
+  drift later, and one already had (the `.filter-chip` case above,
+  before the fix). Dropped every mismatched-or-redundant fallback down
+  to a plain `var(--token)` across `blotter-list.css`,
+  `blotter-detail.css`, `settings.css`, `incident-management.css`,
+  `gis-live-tracking.css`, `sms-monitor.css`.
+- Found and fixed one real correctness bug while in `sms-monitor.css`:
+  `.sms-bubble--outbound .sms-bubble__failure` was colored with
+  `var(--tint-success-solid, #fecaca)` — a green background-tint token
+  (with a mismatched pink fallback) used as text color for a **failed**
+  outbound message. Changed to `var(--color-critical-solid)`, matching
+  the inbound rule immediately above it.
+
+## Relocation: `web/src/{styles,components,pages}/*.css` → `web/css/`
+
+`git mv` (history preserved) to `web/css/base.css`,
+`web/css/components/*.css`, `web/css/pages/*.css`. Updated every
+`<link rel="stylesheet">` in `web/index.html` to the new paths — left
+everything else in that file untouched, including the pre-existing
+`BARANGUARD_API_BASE_URL` line still pointing at the disposable preview
+port from the earlier UI/UX-preview session (not this session's
+concern; see this file's "UI/UX preview" entries).
+`web/scripts/verify-web-wiring.mjs` needed no code change — it derives
+its stylesheet list from `index.html`'s own `<link>` tags rather than a
+hardcoded path list. Also corrected the one stale path reference in
+`docs/Baranguard_Master_Reference_FINAL .md` (§8's design-tokens
+pointer).
+
+## Glassmorphism (moderate scope)
+
+`base.css` already had `--glass-bg`/`--glass-border`/`--glass-blur`
+tokens (plus dark-mode equivalents) defined but barely used — this
+pass wires them into actual rules rather than inventing a new system:
+
+- **New surfaces converted**: `.card`/`.card--compact` (base.css),
+  `.sidebar`/`.topbar`/`.filter-panel` (AppShell.css), `.page-header`
+  (PageHeader.css), `.stat-strip__item` (StatStrip.css),
+  `.confirm-dialog` (ConfirmDialog.css).
+- **Already glass from an earlier "premium polish" pass, left as-is**:
+  `.topbar__search-results`, `.menu__panel`, `.toast`,
+  `.kpi-grid .card` (backdrop-filter/border only — background inherits
+  from `.card`), `.login-card`.
+- Added a page-level decorative background wash (`html, body`'s
+  `background`, base.css) — two low-alpha `color-mix()` radial
+  gradients using existing brand tokens (`--color-primary`,
+  `--color-accent`), `background-attachment: fixed` — so glass panels
+  have something to visibly blur against instead of a flat color.
+  `color-mix()` was already an established technique in this file (the
+  dark-mode tint tokens use it); this reuses it, not a new dependency.
+- Deliberately **untouched**: `DataTable` rows/cells, form inputs,
+  `.status-pill` fills — stay on their existing opaque
+  `--color-surface`/`--color-bg`/tint backgrounds. A comment block was
+  added next to the glass tokens in base.css recording this boundary
+  so a later session doesn't "complete" the look there without redoing
+  the contrast audit those surfaces already passed.
+- Every new glass rule ships an `@supports not (backdrop-filter:
+  blur(1px))` fallback restoring the pre-glass opaque fill/border (§2
+  Rule 6 — a blur that silently no-ops must not leave a see-through
+  surface behind). Added the same fallback to the three surfaces from
+  the earlier "premium polish" pass that didn't have one yet
+  (`.topbar__search-results`, `.menu__panel`, `.toast`,
+  `.kpi-grid .card`, `.login-card`).
+
+## Verified
+
+- `node web/scripts/verify-web-wiring.mjs`: 457/457 (was 453/453; +4
+  from the two new spacing tokens and the additional CSS class
+  references — no failures).
+- Browser pass (real XAMPP Apache on port 80, MySQL not required for
+  this check): `http://localhost/baranguard/web/` login screen
+  screenshotted in both dark and light theme (toggled via
+  `data-theme` in devtools, not persisted) — glass login card renders
+  correctly in both, text/placeholder contrast intact, no visual
+  breakage.
+- **Not verified in-browser**: the authenticated dashboard (sidebar/
+  topbar/card glass, KPI tiles, dropdowns). The disposable preview
+  backend (port 8140) from the earlier UI/UX-preview session isn't
+  running, and the real `baranguard` DB has no seeded users (migration
+  0002 only seeds barangays) — logging into the real DB to eyeball a
+  CSS change isn't a reason to touch it, per this project's own
+  standing caution around that database (see the "UI/UX preview"
+  entries above for why the disposable DB exists at all). The sidebar/
+  topbar/card rules reuse the exact same token pattern already proven
+  working in `.menu__panel`/`.toast`/`.login-card` from the earlier
+  "premium polish" pass, so risk is low, but this is a real gap, not a
+  claimed pass — the next session that has DB access should open the
+  dashboard and confirm.
+
+## Not done (this entry's scope)
+
+Full-dashboard authenticated visual verification (see above, blocked on
+DB/credentials access, not on anything this entry changed). Extending
+glass to tables/forms/pills — out of scope per the confirmed moderate-
+scope decision, not a gap.
+
+# DEVLOG — Reverted API to real backend, applied migrations 0008-0014 to real DB
+
+Immediate follow-up, same day. The user tried logging in through their
+own browser against the still-preview-pointed app and hit "Could not
+reach the Baranguard server" — `web/index.html` was still pointing
+`BARANGUARD_API_BASE_URL` at the disposable preview backend (port 8140,
+not running) from the earlier UI/UX-preview arc, despite a prior commit
+(`a60a058`) already reverting this once. Fixed the immediate error by
+pointing it back at the real vhost (`http://127.0.0.1:8081/api/v1`,
+confirmed already listening via Apache) — then the user explicitly
+asked to apply the outstanding migrations to the real DB.
+
+## Applied: migrations 0008-0014, real `baranguard` database
+
+Confirmed pre-state first (`DESCRIBE incident/blotter_record/user/
+sms_log`, `SHOW TABLES LIKE 'system_settings'`): none of the 0008-0014
+columns/tables existed, matching `docs/HANDOFF.md`'s claim.
+
+**First attempt failed**: running as `baranguard_app` (the app's own
+`.env` credentials) hit `ERROR 1142 (42000) ... ALTER command denied to
+user 'baranguard_app'@'localhost' for table 'ai_processing_log'` on
+migration 0008's very first statement — the app's least-privilege DB
+user has no `ALTER`/`CREATE TABLE` grant (only `docs/REFERENCE.md`'s
+"no `CREATE DATABASE`" was documented before this; added the `ALTER`
+gap to that same bullet). Confirmed nothing had been written yet (the
+failure was the first statement in the first file) before retrying.
+
+**Retried as `root`** (XAMPP default, no password) — all seven files
+applied cleanly in order:
+```
+0008_incident_party_fields.sql
+0009_blotter_case_status.sql
+0010_incident_location_description.sql
+0011_user_suspension.sql
+0012_system_settings.sql
+0013_sms_manual_send.sql
+0014_incident_display_id.sql
+```
+Verified post-state: `incident` now has `complainant_name`/
+`respondent_name`/`complainant_contact_number`/`location_description`/
+`display_id`; `blotter_record` has `case_status` (default `active`) and
+`display_id`; `user` has `is_suspended`/`suspended_reason`/
+`suspended_at`; `sms_log` has `message_body`/`read_at`; `system_settings`
+exists with 0 rows (expected — nothing has saved a setting through the
+UI yet, matching §7 W21's masked-on-read/empty-until-set design).
+
+Every statement in 0008-0014 is `ADD COLUMN IF NOT EXISTS`-guarded per
+each file's own header comment, so re-running any of them is a no-op —
+not exercised this entry since the run succeeded cleanly the first time
+as root, but worth knowing if a future session needs to re-apply one.
+Each migration also has a matching `.down.sql` already in the repo if a
+rollback is ever needed. `baranguard_uiseed` (the disposable preview DB)
+was not touched by this — separate database, unaffected either way.
+
+## Verified
+
+- Schema diff confirmed via direct `DESCRIBE`/`SHOW TABLES` queries
+  against the real DB (not inferred from migration file contents).
+- Did not attempt an actual login against the real DB myself — no
+  credentials for it, and the project's own standing caution is not to
+  poke the real database just to eyeball something (see the CSS-refactor
+  entry above). The user has real credentials (`admin.dao`, per their
+  own browser screenshot) and can now complete that check themselves.
+
+## Not done (this entry's scope)
+
+`docs/REFERENCE.md` §7's W21 reconciliation (`system_settings` override
+note) — unrelated to this entry, still open from the earlier overhaul.
+Dropping `baranguard_uiseed`/killing the port-8140 process — left in
+place since nobody's confirmed nobody still needs the disposable preview.
+
+# DEVLOG — Personnel: merged W10-W13 into one tabbed screen
+
+User-requested pass, not a Sprint 8 item. Earlier the same session, the
+user asked whether Historical Heatmap (W5) should merge into Incident
+Management — declined that one: different audiences (Incident
+Management is Admin/Secretary operational; Heatmap is Admin/Punong
+Barangay read-only oversight) and different intent (Heatmap is already
+grouped under Records & Reporting, bounded-historical, not live
+operational). Then asked the same question about User Management/
+Shift Scheduler/Swap Requests/Fatigue Flags (W10-W13) — this time it
+actually holds: all four already sat under the sidebar's own
+"Personnel" group, share one staffing domain, and only one of the four
+(Fatigue Flags) is Punong Barangay-visible, so the role split survives
+a merge cleanly (PB just gets a one-tab bar instead of a four-tab one,
+not degraded access to the other three). Sketched the tab layout as an
+interactive mockup (role toggle showing the PB-vs-Admin tab set) before
+building, per the user's own "sketch it first" ask — approved as-is,
+including per-tab badge counts rather than one combined sidebar badge.
+
+## What changed
+
+New `web/src/pages/personnel.js` owns the shared AppShell/PageHeader/
+`.filter-chip-row` tab shell — the exact same tab pattern
+`sms-monitor.js` already established for its Conversations/Activity Log
+tabs (reused, not reinvented). The four screens' actual logic stays in
+their own files, each converted from a full `render*Page(root, user,
+onLoggedOut, navigate)` standalone page to a `render*Tab(container,
+user, ...)` function that renders into a tab body instead of building
+its own AppShell/PageHeader:
+
+- `user-management.js`: `renderUserManagementPage` -> `renderUsersTab(container, pageHeader, user)`
+  (still takes `pageHeader` — it appends the "Add User" button to
+  `pageHeader.actions`, same as before). Its search filter panel moved
+  from the shared page header band into the tab body itself, matching
+  where `sms-monitor.js`'s Activity Log tab already puts its own filter
+  panel — the "full-bleed filter band in the header" pattern turned out
+  to be standalone-page-only, not something the tab convention actually
+  uses anywhere.
+- `scheduler.js`: `renderSchedulerPage` -> `renderSchedulerTab(container, user)`.
+- `swap-requests.js`: `renderSwapRequestsPage` -> `renderSwapRequestsTab(container, user, onCountsChanged)`.
+- `fatigue-flags.js`: `renderFatigueFlagsPage` -> `renderFatigueFlagsTab(container, user, onCountsChanged)`.
+
+Both of the last two used to call `shell.refreshNavCounts()` after an
+approve/deny/acknowledge to keep the sidebar badge in step (audit A16).
+That badge no longer exists on the sidebar (see below), so both now call
+an `onCountsChanged` callback `personnel.js` passes in instead, which
+re-fetches the same `GET /reports/nav-counts` data and updates the tab's
+own badge span.
+
+**Sidebar**: `AppShell.js`'s `NAV_ITEMS` collapsed the four separate
+entries into one `{ key: 'personnel', ... group: 'Personnel' }`, no
+`countKey` — the two badges those items used to carry
+(`pendingSwapRequests`/`unacknowledgedFatigueFlags`) moved onto the
+matching tab chip inside the page instead (fetched via the same
+Admin-only `getNavCounts()` apiClient function, called directly by
+`personnel.js` rather than through the shell). Tab visibility: Admin
+gets all four (Users/Scheduler/Swap requests/Fatigue flags); Punong
+Barangay gets only Fatigue flags — the array of tab definitions in
+`personnel.js` is built with the other three entries conditioned on
+`user.role === 'admin'` before Punong Barangay ever sees a tab bar,
+mirroring the sketch's own toggle behavior exactly.
+
+**Router**: `main.js`'s `PAGE_ROLES`/dispatch `if` chain lost the four
+`scheduler`/`swap-requests`/`fatigue`/`user-management` entries and
+gained one `personnel: ['admin', 'punong_barangay']`. `settings.js`'s
+own separate `LANDING_OPTIONS` array (a deliberate duplicate of
+`PAGE_ROLES`, per that file's own comment, to avoid an import cycle)
+got the same three-entries-to-one collapse for the "Default landing
+page" dropdown.
+
+No new CSS: `.filter-chip-row`/`.filter-chip` (tab bar) and
+`.sidebar__nav-badge` (badge pill, reused inside a tab chip instead of a
+sidebar row — its `margin-left: auto` still works since `.filter-chip`
+buttons are already `display: inline-flex` via the global `button` rule
+in `base.css`) both already existed. `docs/REFERENCE.md` §7 updated to
+describe the merged screen in place of the four separate W10-W13
+entries.
+
+## Verified
+
+- `node --check` clean on all seven touched/new files
+  (`personnel.js` + the four converted tab files + `main.js` +
+  `AppShell.js` + `settings.js`).
+- `node web/scripts/verify-web-wiring.mjs`: 442/442, 0 failures (40 JS
+  modules now, up from 39 — `personnel.js` added, no files deleted; the
+  four converted files kept their filenames, just renamed/reshaped
+  their one exported function).
+- **Not verified in-browser** — the user asked not to use the Browser
+  pane tool this session ("I will always manually check it to save
+  tokens"), so this is a static-check pass only: import/export
+  resolution, CSS class resolution, and syntax, not an actual rendered
+  screen. The user is checking manually themselves.
+
+## Not done (this entry's scope)
+
+Actual browser verification of the merged screen (both roles, all four/
+one tab, badge counts, the Add User form, shift edit-in-place) — left
+to the user per their own instruction above.
+
+# DEVLOG — Analytics: merged W5 Historical Heatmap + W9 Statistical Reports
+
+Immediate follow-up, same session, after the user confirmed the
+Personnel merge worked and asked whether anything else could merge.
+Reviewed every remaining sidebar group:
+
+- **Operations** (Dispatch/Incident Management/Live Map) — declined:
+  three different role sets pairwise (Admin-only / Admin+Secretary /
+  Admin+PB), so a merge would need three-way tab gating, not the clean
+  two-way split Personnel had.
+- **System** (SMS Monitor/Audit Log/Service Health/Map Packages) —
+  declined: all Admin-only so no role problem, but the four don't share
+  a domain the way Personnel's four did (communications log, security
+  trail, infra health, file management are four unrelated jobs sharing
+  a sidebar bucket by coincidence, not by workflow).
+- **Records & Reporting** (Heatmap/Analytics) — accepted: identical role
+  pair (Admin, Punong Barangay read-only) and identical nature (bounded
+  date-range, aggregate, no write action) — actually a cleaner case than
+  Personnel, since there's no per-tab gating needed at all.
+
+Same tab pattern as `personnel.js` (and originally `sms-monitor.js`):
+new `web/src/pages/analytics.js` owns the shared AppShell/PageHeader/
+`.filter-chip-row` shell with two tabs, Reports (default) and Heatmap.
+
+## What changed
+
+- `statistical-reports.js`: `renderStatisticalReportsPage` ->
+  `renderReportsTab(container, pageHeader, user)` — still takes
+  `pageHeader` for the Export CSV button.
+- `historical-heatmap.js`: `renderHistoricalHeatmapPage` ->
+  `renderHeatmapTab(container, user)`. One real content change, not
+  just a mechanical rename: its "historical only, not predictive"
+  disclosure (§9's own explicit requirement for this screen) used to
+  live in this page's own `PageHeader` subtitle. That subtitle is now
+  shared with the Reports tab (a generic "Reports and historical
+  patterns..." line), so the disclosure moved into the tab body itself
+  as a `.note` paragraph directly above the date-range controls — still
+  satisfies the requirement, just relocated rather than dropped.
+- `AppShell.js`: `NAV_ITEMS`' separate `heatmap`/`reports` entries
+  collapsed into one `analytics` entry (no `countKey` existed on either
+  before, so no badge-relocation question this time, unlike Personnel).
+- `main.js`: `PAGE_ROLES`/dispatch chain — same two-to-one collapse.
+- `settings.js`: `LANDING_OPTIONS` — same collapse (kept as its own
+  duplicate array per that file's existing import-cycle comment).
+- `docs/REFERENCE.md` §7 updated to describe the merged screen in place
+  of the separate W5/W9 entries.
+
+No new CSS — same `.filter-chip-row`/`.filter-chip` tab bar as
+Personnel, no badges this time.
+
+## Verified
+
+- `node --check` clean on all six touched/new files.
+- `node web/scripts/verify-web-wiring.mjs`: 440/440, 0 failures (41 JS
+  modules, up from 40 — `analytics.js` added, no files deleted).
+- **Not verified in-browser** — same reason as the Personnel entry
+  above: the user asked not to use the Browser pane this session. Static
+  checks only.
+
+## Not done (this entry's scope)
+
+Actual browser verification (both roles, both tabs, the Export CSV
+button, the heatmap's disclosure note rendering where expected) — left
+to the user.
+
+# DEVLOG — Workflow audit findings #1-3: citizen report conversion, SMS linked-id clicks, location visibility
+
+User asked for a full workflow audit ("what is missing, what doesn't
+make sense, what can be improved") after the two screen merges above.
+Cross-checked every nav route for internal consistency (PAGE_ROLES vs
+the dispatch chain vs NAV_ITEMS vs settings.js's LANDING_OPTIONS — all
+four in sync, no orphans from the two merges), traced the real
+click-paths between screens (search → detail, blotter → AI review →
+Lupon packet, incident management → blotter, dispatch → blotter — all
+already reachable, nothing dangling), and grepped the codebase's own
+"not built"/"deliberately"/"list only" self-disclosures plus the schema.
+Reported three findings; user picked all three to fix.
+
+## #1 — Citizen Report → Incident conversion (real gap, not invented)
+
+The schema always had `citizen_report.incident_id` (nullable, unique,
+used to filter the "unconverted" queue) and `converted_at`, and the
+Master Reference **always fully specified** `POST /citizen-reports/:id/
+convert` (§6: "Admin/Secretary only... creates exactly one incident with
+reported_by=NULL, links report, writes audit, and sets converted_at...
+Retry returns the already-converted incident") — it just never got
+implemented. `CitizenReportsController.php`'s and `citizen-reports-
+inbox.js`'s own header comments said "list only... unbuilt endpoint",
+which is why this wasn't already on `docs/REMAINING.md`: it read as an
+intentional scope boundary, not a gap, until the audit above actually
+checked what the spec said should exist.
+
+**Backend** (`CitizenReportsController::convert()`, new route `POST
+/citizen-reports/(\d+)/convert` in `routes/citizen-reports.php`):
+mirrors `BlotterController::finalize()`'s transaction-lock-and-check
+shape (`SELECT ... FOR UPDATE`, `AuthMiddleware::requireTenant()` for
+the 404-not-403 cross-tenant rule) and `IncidentsController::createWeb()`'s
+display_id retry-on-collision loop (`IncidentsController::nextDisplayId()`
+is `public static`, called directly — no duplicate logic). Field mapping,
+none of it invented: `description` → `raw_narrative`, `latitude`/
+`longitude` carried straight over, `contact_number` → `complainant_
+contact_number` (the reporter is the complainant here), `reported_by`
+explicitly `NULL` per spec. `incident_type` has no citizen-report
+equivalent (free text only) so it's a **required body field** — the
+reviewing Admin/Secretary picks the category; defaulting silently to
+'other' would have mis-categorized every converted report in every
+incident_type breakdown Analytics/Heatmap already key off. Idempotent
+per spec: retrying after `incident_id` is already set returns the same
+`{incident_id,citizen_report_id,converted_at}` with 200, not a 409.
+
+**Frontend** (`citizen-reports-inbox.js`): replaced the static "Unconverted"
+status pill with a "Convert to Incident" action button. Clicking it opens
+`promptSelect()` (the shared dialog `ConfirmDialog.js` already built for
+Dispatch Center's Tanod picker — reused, not a new dialog component) to
+choose `incident_type`, then calls the new `convertCitizenReport()`
+`apiClient.js` function and reloads the list; the row disappears because
+it no longer matches `status=unconverted`.
+
+**Verified against the real running backend** (disposable preview,
+port 8140 — not the real `baranguard` DB, which has no citizen reports
+to test against anyway): logged in as `sec.dao` via curl, converted a
+real seeded report (#4, a noise complaint) with `incident_type:
+disturbance`, confirmed the created incident (`INC-2026-024`) has every
+field mapped correctly (`reported_by NULL`, `raw_narrative` = the
+report's description, `complainant_contact_number` = the report's
+`contact_number`, lat/lng carried over), confirmed the retry returned
+the identical result (true idempotency, not just "no error"), confirmed
+an invalid `incident_type` 400s with the exact enum list, confirmed a
+nonexistent report_id 404s, and confirmed a cross-tenant conversion
+attempt (an `admin.binanuahan` token against a barangay-1 report) 404s
+rather than leaking the resource's existence. **Reverted the test
+conversion afterward** (`UPDATE citizen_report ... SET incident_id=NULL`,
+`DELETE FROM incident WHERE incident_id=33`, and the matching audit_log
+row) so the disposable DB's seed data is unchanged for the next session
+— same convention the earlier blotter `case_status` test entry followed.
+`php -l` clean on both backend files.
+
+## #2 — SMS Monitor's "Linked to" column was dead text
+
+Every other cross-reference in the app (topbar global search, the
+notification bell, blotter ↔ AI review) navigates somewhere when
+clicked; SMS Monitor's Activity Log showed `Incident #12 · Dispatch #7`
+as plain unclickable text. Made the incident reference a real link
+(`navigate('blotter-detail', row.incidentId)`, the same destination
+every other incident cross-reference in the app already uses) via a new
+small `button.link-button` utility in `base.css` (inline-text-styled
+button — reused `--color-link`, no new hex). Dispatch/Report references
+are **deliberately still plain text**: there is no per-dispatch or
+per-citizen-report detail screen anywhere in this app to send them to,
+so linking them would go nowhere — leaving them as text is the honest
+choice here, not an oversight this entry missed.
+
+## #3 — Citizen report location was captured but invisible in the inbox
+
+`CitizenReportsController::index()` already returned `latitude`/
+`longitude` in every response — this was a pure frontend gap, no
+backend change needed. Added a Location column to `citizen-reports-
+inbox.js` (a `mapPin` icon + "Included" when coordinates exist, "Not
+shared" otherwise, with the raw coordinates in a `title` tooltip) so a
+Secretary reviewing a report — including the moment they decide what
+`incident_type` to convert it as — can see whether a usable pin exists
+before converting, rather than that data staying invisible until (and
+unless) it happens to land on the Heatmap after conversion.
+
+## Verified
+
+- `php -l` clean on `CitizenReportsController.php` and
+  `routes/citizen-reports.php`.
+- `node --check` clean on `apiClient.js`, `citizen-reports-inbox.js`,
+  `sms-monitor.js`.
+- `node web/scripts/verify-web-wiring.mjs`: 445/445, 0 failures.
+- Backend convert endpoint verified end-to-end against the real running
+  disposable preview backend via curl (see #1 above) — this is real
+  verification, not a claim.
+- **Frontend not verified in-browser** — same reason as the two merge
+  entries above: the user asked not to use the Browser pane this
+  session. The convert dialog, the Location column, and the SMS Monitor
+  link are all static-checked only.
+
+## Not done (this entry's scope)
+
+Frontend browser verification (left to the user, per above). Extending
+this to a "convert" affordance anywhere else, or building detail screens
+for dispatch/citizen-report so their SMS Monitor references could link
+somewhere too — out of scope; not asked for, and inventing those screens
+just to make #2 more thorough would be scope creep past what was
+actually requested.
+
+# DEVLOG — Dashboard + Login UX pass: hover tooltips, attention banner, and a less-plain login page
+
+User-requested UI/UX-only pass (via the ui-ux-pro-max skill), scoped
+explicitly to W1 Login and W2 Admin Dashboard, content included but
+"UI/UX only" — no backend changes this entry, everything built on data
+the dashboard/login already had access to.
+
+## New shared component: `Tooltip.js` (`InfoTip`)
+
+User asked for "hovering to certain data in dashboard will show a small
+card [explaining] what it is." Built `web/src/components/Tooltip.js` +
+co-located `Tooltip.css`: a small `i` trigger button + an absolutely-
+positioned panel, shown via `:hover`/`:focus-within` — no JS coordinate
+math, unlike `Menu.js`'s anchored-dropdown pattern (that one exists to
+escape a `position:sticky` topbar ancestor; a KPI card's tooltip only
+ever needs to sit under its own trigger, which plain CSS already does).
+Accessible per the WAI-ARIA tooltip pattern: real `<button>` trigger,
+`aria-describedby` -> the panel's `id`, panel `role="tooltip"`, content
+hidden via `opacity`/`visibility` (stays in the a11y tree) never
+`display:none`. `KpiCard.js` gained an optional `description` prop that
+wires this in next to the label.
+
+## Admin Dashboard (`admin-dashboard.js` + new `admin-dashboard.css`)
+
+- **Tooltips** added to all 4 KPI cards (Total Incidents, Resolved
+  Cases, Avg. Response Time, Tanods On Duty) and to every chart/panel
+  header (Incident Trends, Incident Types, Recent Incidents, Tanods On
+  Duty, By Status) via `cardHeader()`'s new optional 4th `description`
+  arg — one sentence each, matching the exact server-side definition
+  already documented in this file's own comments, nothing invented.
+- **"Needs attention now" banner** (`loadAttentionBanner()`): this
+  dashboard was 100% retrospective (a date-range summary) with no signal
+  for "3 incidents pending dispatch" or "1 active SOS" right now.
+  `summary.byStatus.pending` was already fetched and unused for this;
+  the SOS count is one new best-effort call (`getTanodSos({})`, own
+  catch), filtered `status !== 'resolved'` — the exact same "open SOS"
+  definition `dispatch-center.js`'s own banner uses, kept in sync
+  deliberately rather than drifting. Critical/pulsing tone when an SOS
+  is open, calmer amber when only pending incidents exist. The "Go to
+  Dispatch Center" button is Admin-only (`role === 'admin'`) — Punong
+  Barangay is read-only oversight and has no Dispatch Center to act
+  from, so it sees the same informational text with no button rather
+  than one that would just bounce it back to its own default page.
+- **Barangay name badge**: the topbar never showed which of the 4
+  barangays a session is scoped to. `GET /barangays` is public/tiny (4
+  rows) per `apiClient.js`'s own doc — fetched best-effort, matched
+  against `user.barangayId`, rendered as a small pill next to the page
+  title.
+- **Recent Incidents rows are now clickable** (`onRowClick` ->
+  `blotter-detail`, same destination topbar search/notifications already
+  use) — this was the one list in the app whose rows led nowhere.
+- **"View all" links** added under Recent Incidents (-> Incident
+  Management) and Tanods On Duty (-> Personnel). New `viewAllLink()`
+  helper reuses the `.link-button` utility the SMS Monitor fix in the
+  previous entry already added — no new button styling needed. Also
+  added a standalone `.row-end` utility to `base.css` for this (NOT
+  paired with `.row-between` the way `.row-start` is — that pairing is
+  pre-existing, unrelated dead CSS this entry noticed but didn't touch,
+  since `.row-start` is declared before `.row-between` in file order and
+  loses the cascade; out of scope here).
+- **Empty-state CTA**: a fresh deployment's empty state used to only
+  describe what happens "automatically." Added a "Log an Incident"
+  button -> Incident Management, Admin-only (Incident Management's
+  create form is Admin/Secretary per §7; Punong Barangay has no create
+  action anywhere so keeps the description-only empty state).
+
+`navigate` had to thread through `renderPopulated()` / `loadRecentIncidents()`
+/ `renderRecentIncidentsTable()` / `renderEmpty()`, none of which
+previously needed it — mechanical, no behavior change to the paths that
+already worked.
+
+## Login (`login.js` + `login.css`)
+
+User's own framing: "before [building], search for more [improvements],
+especially... it looks plain." Ran additional style/UX searches — the
+product type (Government/Public Service) recommends Accessible & Ethical
++ Minimalism, which rules out heavier styles like Aurora UI/kinetic
+typography/parallax as a wrong fit here, not just a missed opportunity;
+"plain" turned out to have a concrete, fixable cause rather than needing
+a heavier visual style:
+
+- **`.login-form-panel` was painting an opaque `--color-bg` fill**,
+  fully hiding the body's own decorative brand-tinted wash (added in the
+  earlier glassmorphism pass) behind the entire right half of the split
+  screen — the single biggest reason that side read as flat white.
+  Changed to `background: transparent`; `.login-card` is already
+  glass-styled, so it now visibly sits on top of the wash instead of on
+  a flat fill.
+- **Decorative radar-pulse** behind the hero brand shield — CSS-only
+  expanding/fading ring, ties into the "Live Emergency Tracking" feature
+  row right below it rather than being generic decoration,
+  `prefers-reduced-motion` respected.
+- **Caps Lock warning** on the password field — a well-known, real login-
+  form gap, zero backend needed. `event.getModifierState('CapsLock')`
+  reads the actual current modifier state (can't drift out of sync the
+  way a self-tracked boolean could), shown/hidden on keydown/keyup,
+  cleared on blur.
+- **4th hero feature: AI-Assisted Redaction** — the system's most
+  distinctive real capability was the one left off the original 3
+  (session security, role-based access, live GPS/SOS). Worded the same
+  careful way this file's own header already insists on for the other
+  three: what it does (drafts, human-reviewed, human-approved), not an
+  unverifiable claim — same bar that got the Figma source's "bank-level
+  encryption"/"99.9% uptime" copy rejected originally.
+- **Footer line** changed from a third restatement of the product name
+  (wordmark + H1 already both say it) to the four real, verifiable
+  barangays this system serves — more specific, less redundant, still
+  honest.
+
+## Verified
+
+- `node --check` clean on all 4 touched/new JS files.
+- `node web/scripts/verify-web-wiring.mjs`: 453/453, 0 failures (42 JS
+  modules, up from 41 — `Tooltip.js` added).
+- **Not verified in-browser** — same standing reason as the last several
+  entries: the user asked not to use the Browser pane this session.
+  Static checks only. Worth specifically checking: the tooltip panels
+  don't clip against the viewport edge on a narrow KPI card, the
+  attention banner's two tones (critical vs. warning) render correctly
+  in both themes, and the Caps Lock warning actually toggles (hard to
+  fake without a real keyboard event).
+
+## Not done (this entry's scope)
+
+Frontend browser verification (per above). The pre-existing `.row-start`/
+`.row-between` cascade issue noticed while adding `.row-end` — flagged,
+not fixed, since it's unrelated to what was asked this entry.
+
+## 2026-09-06 — Reports PDF export + fixed a broken download auth pattern
+
+User-requested (following a UI/UX pass on the dashboard date-range control
+and an Analytics/Reports mockup review): add a real PDF export alongside
+the existing CSV one. Two of the mockup's other sections (a cross-barangay
+"Performance by Barangay" comparison, and an "Overall Performance Score"
+radar built from invented metrics like "Patrol Hours"/"Community Reports")
+were explicitly declined — the former needs a cross-tenant admin endpoint
+that doesn't exist and violates this system's single-barangay-per-session
+tenant isolation; the mockup also listed a "Caricaran" barangay that isn't
+one of the real four. The latter would be exactly the "fabricated
+statistics"/"control that looks functional and does nothing" §2 Rule 6
+forbids. Both were surfaced to the user and dropped by their own choice
+rather than silently built or silently skipped.
+
+**Reversed a resolved decision, explicitly, on request:**
+`ReportsController::export()`'s doc comment previously said "CSV is the
+only approved format... there is no Composer here, and the hand-rolled
+`SimplePdf` writer built for the Lupon packet is a fixed-layout document
+writer, not a report/table renderer." That reasoning about dependencies
+still holds — no Composer was added — but `SimplePdf`'s existing
+heading/keyValue/rule primitives turned out to be sufficient for a report
+document too (title, KPI rows, three labeled breakdown sections, a daily
+trend list), so PDF now reuses it exactly as originally built, no
+extension needed. `format=csv|pdf` on both `GET /reports/export` and
+`GET /reports/export/download`; an unsupported value is still a 400
+naming what IS supported (same principle as before, just a longer list).
+
+Refactored `buildSummaryCsv()`'s incident aggregation (by day/type/status)
+into a shared `aggregateIncidents()` used by both the CSV and new PDF
+builders, plus a new `averageResponseTimeMinutes()` matching
+`summary()`'s own avg-response-time SQL exactly (same population: incidents
+whose dispatch reached `arrived_at`) — so the PDF's "Total incidents /
+Resolved cases / Avg. response time" KPI trio can never disagree with the
+dashboard. `exportPath()` now takes the format and returns
+`barangay-{id}.{format}` — CSV and PDF are independent files per
+barangay, not one overwriting the other.
+
+**Found and fixed while wiring the PDF export's own download button:**
+the CSV export's existing download flow — `window.open(reportExportDownloadUrl(), '_blank')`
+in `statistical-reports.js`, and the structurally identical pattern in
+`ai-review.js`'s Lupon packet download link (`downloadLink.href =
+luponPacketDownloadUrl(...)`, plain `<a>`, no JS click interception) —
+cannot ever have worked. This API has no session cookie (JWT lives only
+in `sessionStorage`, apiClient.js's own header comment) and Apache/the
+browser attach no Authorization header to a plain navigation, so both
+routes would 401 on click. Fixed for the report export specifically:
+`reportExportDownloadUrl()` (a bare URL) replaced with
+`downloadReportExport({format})`, an authenticated `fetch()` returning a
+`Blob`, which the caller turns into a real download via
+`URL.createObjectURL` + a synthetic `<a download>` click — the same
+pattern `DataTable.js`'s client-side CSV export already used correctly.
+**The Lupon packet download was NOT touched** — same bug, but out of this
+session's asked scope; flagged to the user as a separate suggested fix
+rather than silently left or silently expanded into.
+
+**Verified against the disposable `baranguard_uiseed` backend (port
+8140), real HTTP round-trips:** generated + downloaded both a CSV and a
+2-page PDF (`file` confirms `PDF document, version 1.4, 2 page(s)`,
+content spot-checked — real totals/breakdowns, not placeholder text);
+confirmed `format=xlsx` still 400s; confirmed CSV bytes are unchanged
+shape after the `aggregateIncidents()` refactor.
+
+Files: `backend/controllers/ReportsController.php` (format allow-list,
+`aggregateIncidents()`/`averageResponseTimeMinutes()`/`buildSummaryPdf()`/
+`humanizeEnum()`, `exportPath()` signature), `web/src/api/apiClient.js`
+(`downloadReportExport()` replacing `reportExportDownloadUrl()`),
+`web/src/pages/statistical-reports.js` (Export CSV + Export PDF buttons
+sharing one `buildExportButton()` helper).
+
+Not done: the mockup's "Generate Official Reports" section (three
+separately-named exports — Monthly Summary/Incident Report/Tanod
+Performance) was scoped down to the one general "Export PDF" the
+mockup's own header also showed, on the reading that "build the PDF
+export" meant the format, not three new report types; the 30D/6M/1Y
+pill-style range picker and the Incident Hotspot/Performance-score visual
+restyling from the same mockup are also not done this entry — this entry
+was PDF export only.
+
+## 2026-09-06 — Fixed a real "sr-only table inflates page height" bug + Heatmap map not rendering
+
+User-reported: the Analytics > Reports tab had a huge blank scrollable area
+below its real content, and separately asked to "fix the layout of
+reports and heatmap."
+
+**Root cause #1 (Reports' blank space), verified via live DOM inspection,
+not guessed:** every chart component's accessible data-table fallback
+(`LineChart.js`/`BarChart.js`/`DonutChart.js`) applied `.sr-only` directly
+to a `<table>` element. `.sr-only` is `position:absolute; width:1px;
+height:1px; overflow:hidden; clip:rect(0,0,0,0)` — correct for ordinary
+elements, but a `<table>` in the default `table-layout:auto` algorithm
+IGNORES an explicit width/height smaller than its own content's minimum
+size (a documented, longstanding CSS table-sizing quirk). Confirmed live:
+the Response Time Trend chart's sr-only table (30 rows, one per day)
+rendered at 744.67px tall instead of 1px, and `document-relative bottom`
+of that exact element equalled `.page-content`'s `scrollHeight` (2032px)
+to the pixel — the table was invisible (correctly clipped/painted
+nowhere) but still occupied its full natural box size, which inflated the
+scrollable area of every ancestor including the whole page. This was a
+pre-existing bug in all three chart components, not something introduced
+this session — it just became dramatically more visible once Key
+Insights/cross-domain cards (this session's earlier work) made the
+Reports tab tall enough, and once a table with many rows (30-90 days)
+made "the natural size" large instead of small enough to go unnoticed.
+**Fix:** wrap the `<table>` in a plain `<div class="sr-only">` instead —
+a `<div>` has no such table-sizing quirk and correctly clips an oversized
+child via its own `overflow:hidden`. Verified before/after via
+`document.querySelector('.page-content').scrollHeight`: 2032px -> 1574px
+(now matches real content height + padding), and visually confirmed the
+scrollbar now ends right after the last real card.
+
+**Root cause #2 (Heatmap tab showing nothing), also verified live, not
+guessed:** `.gis-page__map-wrapper--fill { height: 100%; }`
+(gis-live-tracking.css) sits inside `historical-heatmap.js`'s
+`.flex-col.grow` chain, which itself sits inside AppShell.js's
+`.page-container` — a plain block div with `max-width`/`width: 100%` but
+**no height rule at all** (`auto`). A percentage `height` against an
+`auto`-height containing block computes to `auto` per spec, so the whole
+chain collapsed to its own minimal content height (~1.33px measured live
+for the map wrapper) instead of filling the viewport. The MapLibre canvas
+still rendered real pixels (confirmed via `gl.readPixels`) — it was just
+inside a box far too short to see, not a rendering/tile-loading failure.
+**Fix, scoped and additive (not touching the shared `.page-container`,
+used by every page — too large a blast radius for this fix):** added
+`min-height: 28rem` alongside the existing `height: 100%` on
+`.gis-page__map-wrapper--fill` and on `.skeleton--fill` (its loading-state
+sibling, same collapse risk, same single caller). `min-height` is a pure
+floor — it changes nothing for a case where the percentage chain resolves
+correctly, and rescues the case where it doesn't. Verified live at both
+mobile-narrow and a wide viewport: the map now renders with visible
+heatmap points and a bordered box, and the scrollbar/box sizing is
+correct.
+
+**Found in passing, NOT fixed (flagged as a separate task,
+`task_cc5bc9d6`):** GIS Live Tracking (the Dispatch Center's own Live Map
+page) also currently shows no visible map, only the roster/activity feed
+— possibly the same percentage-height root cause through a different
+selector (`.gis-page { height: 100% }` + `.gis-page__map-wrapper { flex:1
+}`, not the `--fill` variant), possibly a separate responsive-breakpoint
+issue. Out of today's asked scope (Reports/Heatmap specifically); a
+dedicated investigation task was spawned rather than silently expanding
+this entry's scope or silently leaving it undiscovered.
+
+Files: `web/src/components/LineChart.js`, `BarChart.js`, `DonutChart.js`
+(sr-only wrapper div), `web/css/pages/gis-live-tracking.css`
+(`.gis-page__map-wrapper--fill`), `web/css/base.css` (`.skeleton--fill`).
+Verified via real browser DOM/pixel inspection (Browser pane), not static
+review alone — `node --check` clean, `verify-web-wiring.mjs` 457/457.
+
+## 2026-09-06 — Fixed the Lupon packet download's identical broken-auth bug
+
+Follow-up to the same day's "Reports PDF export + fixed a broken download
+auth pattern" entry, which flagged this exact bug in `ai-review.js`'s
+"Download packet" link as a separate task rather than fixing it inline.
+
+`ai-review.js`'s Lupon packet download was a plain `<a href
+target="_blank">` pointing straight at
+`GET /incidents/:id/lupon-packet/download` (Secretary-only,
+`AuthMiddleware::requireRole`). Same root cause as the report export bug:
+this API has no session cookie (JWT lives only in `sessionStorage`,
+apiClient.js's own header comment) and a plain browser navigation cannot
+attach a custom Authorization header, so every click 401'd.
+
+Fix: `luponPacketDownloadUrl()` (a bare URL) replaced with
+`downloadLuponPacket(incidentId)` in apiClient.js — an authenticated
+`fetch()` returning a Blob, mirroring `downloadReportExport()` exactly.
+`ai-review.js`'s "Download packet" `<a>` became a `<button>` that turns
+that Blob into a real download via `URL.createObjectURL` + a synthetic
+`<a download>` click + `URL.revokeObjectURL`.
+
+**Verified against the disposable `baranguard_uiseed` backend (port
+8140) with real HTTP round-trips, both directions:**
+- No Authorization header (what the old plain-href navigation actually
+  sent) -> `401 UNAUTHORIZED`, confirming the original bug was real, not
+  theoretical.
+- With the Authorization header (what the fixed `fetch()` sends) ->
+  `200`, a genuine 1-page PDF (`file` confirms `PDF document, version
+  1.4`), correct `Content-Type: application/pdf` and
+  `Content-Disposition: attachment` headers.
+- Also confirmed the endpoint re-validates prerequisites independently of
+  file existence: requesting the download before any redaction was
+  approved correctly returned `409 CONFLICT` ("no approved redaction
+  yet"), not a stale/wrong file.
+
+To reach the happy-path test, incident 1's `redacted_narrative`/
+`redaction_approved_at` were hand-seeded directly via SQL on the
+disposable DB only (no AI worker/Ollama involved — running the real
+pipeline was out of scope for verifying a download-auth fix) and the
+generated packet was requested through the real `POST
+/incidents/:id/lupon-packet` endpoint; both the seeded columns and the
+generated `backend/storage/lupon-packets/incident-1.pdf` were reverted
+afterward — confirmed empty via `ls -la`.
+
+Files: `web/src/api/apiClient.js` (`downloadLuponPacket()` replacing
+`luponPacketDownloadUrl()`), `web/src/pages/ai-review.js` (download
+button). `node --check` clean, `verify-web-wiring.mjs` 457/457.
+
+## 2026-09-06 — GIS Live Tracking's map wasn't a copy of the Heatmap bug — different root cause, same class of fix
+
+Follow-up to the spawned investigation task from this same day's Heatmap
+fix. Confirmed live (not assumed) that GIS Live Tracking's map was
+ALSO invisible, but for a genuinely different reason:
+
+- **Heatmap's bug:** `height: 100%` failing to resolve because its
+  containing block (`.page-container`, AppShell.js, shared by every
+  page) has no explicit height (`auto`) — the whole `.flex-col` chain
+  collapsed.
+- **GIS Live Tracking's bug:** `.gis-page { height: 100% }` actually
+  DOES resolve here — measured live at a real 668px. The problem is one
+  level down: `.gis-page__map-wrapper { flex: 1; min-height: 0; }` sits
+  in a flex COLUMN alongside three auto-basis siblings (the roster
+  filter chips, the Tanod roster card, the Live Activity feed) that are
+  NOT flex-growing. Flexbox gives auto-basis siblings their full content
+  height first, then distributes only leftover space to the `flex: 1`
+  item — and those three siblings' real measured heights (39.9 + 194.9
+  + 367.3px, live-measured via `getBoundingClientRect()`) summed to
+  ~602px against `.gis-page`'s ~668px, leaving ~1px for the map. Not a
+  CSS resolution failure — a legitimate space fight the map was never
+  guaranteed to win once the roster/activity content is non-trivial
+  (a few Tanods, ten activity rows was enough).
+
+**Fix:** added `min-height: 28rem` to `.gis-page__map-wrapper` (same
+value the Heatmap fix used, for visual consistency) — a floor that
+guarantees the map a usable size regardless of how tall the roster/
+activity siblings get. If that pushes the page's total height past the
+viewport, `.page-content` already scrolls (same as every other
+content-heavy screen in this app), so nothing below the map becomes
+unreachable — verified live, scrolled to the bottom, roster and Live
+Activity both fully intact and reachable.
+
+**Verified live at two viewport widths** (not a static read): default
+(~800px-equivalent pane width) and 1600x900 — map wrapper reported
+448px (28rem) at both, canvas painted real markers/legend/zoom controls
+in both, and scrolling past the map reached an unchanged roster/activity
+feed in both. The loading-state skeleton (`historical-heatmap.js`'s
+sibling pattern doesn't apply here, but `gis-live-tracking.js`'s own
+`renderLoading()` reuses the same `.gis-page__map-wrapper` class for its
+skeleton) inherits the fix automatically — no separate change needed.
+
+Files: `web/css/pages/gis-live-tracking.css` (`.gis-page__map-wrapper`).
+`verify-web-wiring.mjs` 457/457.

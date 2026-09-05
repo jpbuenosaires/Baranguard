@@ -481,7 +481,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
     actions.className = 'blotter-detail-pane__actions';
 
     if (isAdmin) {
-      actions.appendChild(buildDispatchAction(row));
+      actions.appendChild(buildDispatchAction(row, detail.hasActiveDispatch));
       if (row.status === 'dispatched' && !detail.hasActiveDispatch) {
         actions.appendChild(buildResolveAction(row));
       }
@@ -506,9 +506,16 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
    * screens share one Tanod-picker-dialog + `POST /dispatch` flow rather
    * than growing a second copy that could drift.
    */
-  function buildDispatchAction(row) {
+  function buildDispatchAction(row, hasActiveDispatch) {
     const wrap = document.createElement('div');
     if (row.status !== 'pending') {
+      if (row.status === 'dispatched' && !hasActiveDispatch) {
+        // The Resolve action (rendered alongside this one by the caller)
+        // already covers this exact state — showing "a Tanod is already
+        // assigned" here would contradict a Resolve button sitting right
+        // next to it.
+        return wrap;
+      }
       const note = document.createElement('p');
       note.className = 'note';
       note.textContent = row.status === 'dispatched'
@@ -677,6 +684,23 @@ function buildNewEntryForm(onCreated) {
     typeSelect.appendChild(option);
   }
 
+  // Priority (2026-09-05 bug pass — reopens IncidentsController::
+  // createWeb()'s earlier "no priority field" decision with explicit
+  // sign-off, see that method's own doc). Defaults to 'normal', matching
+  // the schema default and this endpoint's own fallback when omitted.
+  const priorityLabel = document.createElement('label');
+  priorityLabel.className = 'label';
+  priorityLabel.htmlFor = 'incident-new-priority';
+  priorityLabel.textContent = 'Priority';
+  const prioritySelect = document.createElement('select');
+  prioritySelect.id = 'incident-new-priority';
+  for (const [value, label] of [['normal', 'Normal'], ['high', 'High'], ['critical', 'Critical']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    prioritySelect.appendChild(option);
+  }
+
   const narrativeLabel = document.createElement('label');
   narrativeLabel.className = 'label';
   narrativeLabel.htmlFor = 'incident-new-narrative';
@@ -729,7 +753,7 @@ function buildNewEntryForm(onCreated) {
   submitButton.textContent = 'Log Entry';
 
   form.append(
-    errorBox, typeLabel, typeSelect, narrativeLabel, narrativeInput,
+    errorBox, typeLabel, typeSelect, priorityLabel, prioritySelect, narrativeLabel, narrativeInput,
     locationLabel, locationInput,
     complainantLabel, complainantInput, respondentLabel, respondentInput, contactLabel, contactInput,
     submitButton,
@@ -752,6 +776,7 @@ function buildNewEntryForm(onCreated) {
     try {
       await createIncident({
         incidentType: typeSelect.value,
+        priority: prioritySelect.value,
         rawNarrative,
         locationDescription: locationInput.value.trim(),
         complainantName: complainantInput.value.trim(),

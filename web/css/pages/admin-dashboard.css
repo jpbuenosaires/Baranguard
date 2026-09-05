@@ -1,0 +1,130 @@
+/**
+ * admin-dashboard.css — co-located with admin-dashboard.js. Added
+ * 2026-09-05 (dashboard UX pass) for the "needs attention now" banner —
+ * everything else on this page already runs on base.css utilities plus
+ * the shared KpiCard/DonutChart/LineChart/DataTable component styles, so
+ * this file stays small.
+ */
+
+/* Same critical-fill/pulse language dispatch-center.css's own .sos-banner
+   already uses (kept in sync deliberately, not copy-drifted) — this one
+   covers BOTH "incidents pending dispatch" and "open Tanod SOS", so it
+   lives here rather than being duplicated from that file. --warning is a
+   new, calmer tone for "pending only, no SOS" — the pulsing red treatment
+   is reserved for when an SOS is actually open. */
+.attention-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--spacing-md);
+  font-weight: 600;
+}
+.attention-banner svg { flex-shrink: 0; }
+.attention-banner__text { flex: 1; min-width: 0; }
+.attention-banner__list {
+  font-weight: 400;
+  font-size: var(--font-size-sm);
+  margin-top: 0.125rem;
+  opacity: 0.95;
+}
+.attention-banner button { flex-shrink: 0; }
+
+.attention-banner--critical {
+  background: var(--color-critical-solid);
+  color: var(--color-white);
+  border: 1px solid rgba(220,38,38,0.3);
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+.attention-banner--critical button {
+  background: transparent;
+  border: 1px solid var(--color-white);
+  color: var(--color-white);
+}
+.attention-banner--critical button:hover:not(:disabled) {
+  background: var(--color-white);
+  color: var(--color-critical-solid);
+}
+.attention-banner--critical button:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-critical-solid), 0 0 0 4px var(--color-white);
+}
+@media (prefers-reduced-motion: reduce) {
+  .attention-banner--critical { animation: none; }
+}
+
+.attention-banner--warning {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-border);
+}
+
+/* Quick Actions card (2026-09-06 UX pass) — fills the By Status row's
+   previously-empty second column, Admin-only. A 2x2 tile grid rather than
+   a stacked list of buttons: these are shortcuts people scan and tap, not
+   a sequence they read top to bottom. */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+}
+.quick-action-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: var(--tint-neutral-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+}
+.quick-action-tile:hover,
+.quick-action-tile:focus-visible {
+  background: var(--color-row-active-bg);
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+.quick-action-tile__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-primary);
+}
+@media (max-width: 480px) {
+  .quick-actions-grid { grid-template-columns: 1fr; }
+}
+
+/* Date range control (2026-09-06 UX pass) — collapsed the always-visible
+   From/To/Apply trio + a separate preset-chip row into one dropdown, moved
+   into the page header's own actions row (beside Refresh — both answer
+   "how current/which window is this view"), rather than a separate row
+   under the header. The From/To/Apply fields only exist in the visible
+   flow once "Custom range" is picked. Styling (`.range-select`,
+   `.range-picker-custom-row[hidden]`) is shared — see base.css — since
+   `statistical-reports.js` uses the identical pattern. */
+
+/* Small "Barangay: Dao" pill next to the page title — the topbar never
+   showed which of the 4 tenants a session is scoped to. */
+.dashboard-barangay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem var(--spacing-sm);
+  margin-left: var(--spacing-sm);
+  border-radius: 999px;
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  vertical-align: middle;
+}

@@ -385,6 +385,7 @@ export async function getIncidents({ status, priority, q, page, limit } = {}) {
 export async function createIncident({
   incidentType, rawNarrative, latitude, longitude,
   locationDescription, complainantName, respondentName, complainantContactNumber,
+  priority,
   idempotencyKey,
 }) {
   const json = await request('POST', '/incidents', {
@@ -397,6 +398,7 @@ export async function createIncident({
       complainant_name: complainantName || undefined,
       respondent_name: respondentName || undefined,
       complainant_contact_number: complainantContactNumber || undefined,
+      priority: priority || undefined,
     },
     idempotencyKey,
     auth: true,
@@ -658,6 +660,21 @@ export async function getCitizenReports({ status, page, limit } = {}) {
   };
 }
 
+/**
+ * POST /citizen-reports/:id/convert (2026-09-05) — creates an incident
+ * from an unconverted report. `incidentType` is required (no
+ * citizen-report equivalent to infer it from); `priority` optional,
+ * defaults to 'normal' server-side. Idempotent: calling this again on an
+ * already-converted report returns the same result rather than erroring.
+ */
+export async function convertCitizenReport(reportId, { incidentType, priority } = {}) {
+  const json = await request('POST', `/citizen-reports/${reportId}/convert`, {
+    body: { incident_type: incidentType, priority },
+    auth: true,
+  });
+  return { incidentId: json.incident_id, citizenReportId: json.citizen_report_id, convertedAt: json.converted_at };
+}
+
 // --- Shifts / fatigue (W11 Scheduler, W12 Swap Requests, W13 Fatigue Flags) -
 
 function mapShift(row) {
@@ -826,12 +843,42 @@ export async function exportReport({ dateFrom, dateTo, format = 'csv' } = {}) {
 }
 
 /**
- * Absolute URL for the generated export. Not a capability — the download
- * endpoint re-checks role and tenant, and derives the file from the
- * caller's own barangay rather than from anything in the URL.
+ * GET /reports/export/download — streams the file `exportReport()` just
+ * generated. 2026-09-06: this used to be a bare URL
+ * (`reportExportDownloadUrl()`) handed to `window.open()`/an `<a href>` —
+ * which never worked, because this API is Bearer-token-only (no session
+ * cookie exists, per this file's own header comment) and a plain browser
+ * navigation cannot attach an Authorization header. Every other
+ * authenticated download in this app that actually functions (DataTable's
+ * client-side CSV export) goes through a `Blob` + `URL.createObjectURL`
+ * instead, so this does the same: an authenticated `fetch()`, then the
+ * caller turns the returned Blob into a real download. `request()` isn't
+ * reused here because it always parses the response as JSON.
  */
-export function reportExportDownloadUrl() {
-  return `${BASE_URL}/reports/export/download`;
+export async function downloadReportExport({ format = 'csv' } = {}) {
+  const session = readSession();
+  if (!session) {
+    throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
+  }
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/reports/export/download?format=${encodeURIComponent(format)}`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+  } catch {
+    throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
+  }
+  if (!response.ok) {
+    let message = 'Could not download the export.';
+    try {
+      const body = await response.json();
+      message = body?.error?.message || message;
+    } catch {
+      // Response wasn't JSON (e.g. a bare 404 from the web server) — keep the generic message.
+    }
+    throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
+  }
+  return response.blob();
 }
 
 // --- SMS Monitor conversations/compose/broadcast (2026-09-05 UX pass) ------
@@ -1287,12 +1334,44 @@ export async function generateLuponPacket(incidentId) {
 }
 
 /**
- * Absolute URL for a generated packet, for a download link. The download
- * endpoint re-checks role and tenant, so this URL is not a capability —
- * it still requires a valid session.
+ * GET /incidents/:id/lupon-packet/download — streams the packet
+ * `generateLuponPacket()` just generated. The download endpoint re-checks
+ * role and tenant, so nothing here is a capability — it still requires a
+ * valid session.
+ *
+ * 2026-09-06: this used to be `luponPacketDownloadUrl()`, a bare URL
+ * handed to a plain `<a href target="_blank">` in ai-review.js — which
+ * never worked, same root cause `downloadReportExport()`'s own doc
+ * explains: this API is Bearer-token-only (no session cookie exists), and
+ * a plain browser navigation cannot attach an Authorization header. Every
+ * click 401'd. Fixed the same way: an authenticated `fetch()` returning a
+ * Blob, which the caller turns into a real download via
+ * `URL.createObjectURL` + a synthetic `<a download>` click.
  */
-export function luponPacketDownloadUrl(incidentId) {
-  return `${BASE_URL}/incidents/${incidentId}/lupon-packet/download`;
+export async function downloadLuponPacket(incidentId) {
+  const session = readSession();
+  if (!session) {
+    throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
+  }
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/incidents/${incidentId}/lupon-packet/download`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+  } catch {
+    throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
+  }
+  if (!response.ok) {
+    let message = 'Could not download the packet.';
+    try {
+      const body = await response.json();
+      message = body?.error?.message || message;
+    } catch {
+      // Response wasn't JSON (e.g. a bare 404 from the web server) — keep the generic message.
+    }
+    throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
+  }
+  return response.blob();
 }
 
 /**

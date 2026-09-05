@@ -109,3 +109,7 @@
 @media (max-width: 768px) {
   .kpi-grid { grid-template-columns: 1fr; }
 }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .kpi-grid .card { border-color: var(--color-border); }
+}

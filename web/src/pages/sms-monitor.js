@@ -154,7 +154,7 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate) {
     if (activeTab === 'conversations') {
       renderConversationsTab(body, pageHeader, user, (timer) => { liveFeedTimer = timer; });
     } else {
-      renderActivityLogTab(body, pageHeader);
+      renderActivityLogTab(body, pageHeader, navigate);
     }
   }
   renderActiveTab();
@@ -693,7 +693,7 @@ function formatRelativeTime(isoString) {
 // own header for why it's kept verbatim).
 // ============================================================
 
-function renderActivityLogTab(container, pageHeader) {
+function renderActivityLogTab(container, pageHeader, navigate) {
   let currentPageItems = [];
   const exportButton = document.createElement('button');
   exportButton.type = 'button';
@@ -815,7 +815,7 @@ function renderActivityLogTab(container, pageHeader) {
       totalItems,
       pageSize: PAGE_SIZE,
       onPageChange,
-      renderCell: renderSmsLogCell,
+      renderCell: (row, key) => renderSmsLogCell(row, key, navigate),
     });
     listContainer.appendChild(table);
   }
@@ -893,7 +893,7 @@ function buildFilterSelect(id, srLabel, optionLabels) {
   return { fragment, select };
 }
 
-function renderSmsLogCell(row, key) {
+function renderSmsLogCell(row, key, navigate) {
   switch (key) {
     case 'id':
       return `#${row.logId}`;
@@ -917,11 +917,33 @@ function renderSmsLogCell(row, key) {
     case 'linked': {
       const span = document.createElement('span');
       span.className = 'data-table__sub';
-      const parts = [];
-      if (row.incidentId) parts.push(`Incident #${row.incidentId}`);
-      if (row.dispatchId) parts.push(`Dispatch #${row.dispatchId}`);
-      if (row.reportId) parts.push(`Report #${row.reportId}`);
-      span.textContent = parts.length ? parts.join(' · ') : '—';
+      // Incident is clickable — blotter-detail.js exists and takes an
+      // incidentId, same destination the topbar global search and the
+      // notification bell already navigate to for an incident reference
+      // (audit A16-adjacent finding: this was the one cross-reference in
+      // the app that was plain text instead). Dispatch/Report stay plain
+      // text — there's no per-dispatch or per-report detail screen to
+      // send them to, so a link would go nowhere; that's an honest gap,
+      // not one this fix invents a destination to paper over.
+      if (row.incidentId) {
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.className = 'link-button';
+        link.textContent = `Incident #${row.incidentId}`;
+        link.addEventListener('click', (event) => {
+          event.stopPropagation();
+          navigate('blotter-detail', row.incidentId);
+        });
+        span.appendChild(link);
+      }
+      const restParts = [];
+      if (row.dispatchId) restParts.push(`Dispatch #${row.dispatchId}`);
+      if (row.reportId) restParts.push(`Report #${row.reportId}`);
+      if (restParts.length) {
+        if (row.incidentId) span.append(' · ');
+        span.append(restParts.join(' · '));
+      }
+      if (!row.incidentId && restParts.length === 0) span.textContent = '—';
       return span;
     }
     case 'when': {
