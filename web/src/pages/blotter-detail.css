@@ -50,6 +50,7 @@
 .timeline__node--done {
   border-color: var(--color-primary);
   background: var(--color-primary);
+  box-shadow: 0 0 8px rgba(29,78,216,0.3);
 }
 
 .timeline__connector {
@@ -60,7 +61,7 @@
 }
 
 .timeline__connector--done {
-  background: var(--color-primary);
+  background: linear-gradient(180deg, var(--color-primary), var(--color-accent));
 }
 
 .timeline__body {

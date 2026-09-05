@@ -100,10 +100,33 @@ final class BlotterController
         $limit = min(self::MAX_LIMIT, max(1, (int) (Http::query('limit') ?? (string) self::DEFAULT_LIMIT)));
         $offset = ($page - 1) * $limit;
 
+        // `q=` (2026-09-05 UX pass) — real server-side search over the
+        // same fields the list actually displays, for the same
+        // "a client-side filter would silently miss pages 2+" reason
+        // IncidentsController::index()'s own `q=` addition documents.
+        $q = Http::query('q');
+        if ($q !== null) {
+            $q = trim($q);
+        }
+
+        $where = ['b.barangay_id = :barangay_id', 'b.finalized_at IS NOT NULL'];
+        $params = ['barangay_id' => $barangayId];
+        if ($q !== null && $q !== '') {
+            // Four distinct placeholders, not one named param reused four
+            // times — see IncidentsController::index()'s identical `q=`
+            // comment for why (PDO::ATTR_EMULATE_PREPARES=false).
+            $where[] = '(b.display_id LIKE :q_like1 OR b.complainant_name LIKE :q_like2 OR b.respondent_name LIKE :q_like3 OR i.incident_type LIKE :q_like4)';
+            $params['q_like1'] = '%' . $q . '%';
+            $params['q_like2'] = '%' . $q . '%';
+            $params['q_like3'] = '%' . $q . '%';
+            $params['q_like4'] = '%' . $q . '%';
+        }
+        $whereSql = implode(' AND ', $where);
+
         $countStmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM blotter_record WHERE barangay_id = :barangay_id AND finalized_at IS NOT NULL'
+            "SELECT COUNT(*) FROM blotter_record b JOIN incident i ON i.incident_id = b.incident_id WHERE {$whereSql}"
         );
-        $countStmt->execute(['barangay_id' => $barangayId]);
+        $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
         // officer_name: same "most recent dispatch, any status" join
@@ -112,8 +135,9 @@ final class BlotterController
         // "had an officer handle it" for blotter purposes.
         $stmt = $pdo->prepare(
             "SELECT b.blotter_id, b.incident_id, b.recorded_by, b.approved_by, b.finalized_at,
-                    b.revision_no, b.amended_at, b.amended_by,
-                    i.incident_type, i.latitude, i.longitude,
+                    b.revision_no, b.amended_at, b.amended_by, b.case_status, b.display_id,
+                    b.complainant_name, b.respondent_name, b.complainant_contact_number,
+                    i.incident_type, i.latitude, i.longitude, i.location_description,
                     tanod.full_name AS officer_name
              FROM blotter_record b
              JOIN incident i ON i.incident_id = b.incident_id
@@ -124,11 +148,13 @@ final class BlotterController
                  LIMIT 1
              )
              LEFT JOIN user tanod ON tanod.user_id = d.tanod_id
-             WHERE b.barangay_id = :barangay_id AND b.finalized_at IS NOT NULL
+             WHERE {$whereSql}
              ORDER BY b.finalized_at DESC
              LIMIT :limit OFFSET :offset"
         );
-        $stmt->bindValue(':barangay_id', $barangayId, PDO::PARAM_INT);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
@@ -141,6 +167,7 @@ final class BlotterController
                 'incident_type' => $row['incident_type'],
                 'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
                 'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
+                'location_description' => $row['location_description'] ?? null,
                 'officer_name' => $row['officer_name'] ?? null,
                 'recorded_by' => (int) $row['recorded_by'],
                 'approved_by' => $row['approved_by'] !== null ? (int) $row['approved_by'] : null,
@@ -148,6 +175,11 @@ final class BlotterController
                 'revision_no' => (int) $row['revision_no'],
                 'amended_at' => $row['amended_at'],
                 'amended_by' => $row['amended_by'] !== null ? (int) $row['amended_by'] : null,
+                'case_status' => $row['case_status'],
+                'display_id' => $row['display_id'],
+                'complainant_name' => $row['complainant_name'],
+                'respondent_name' => $row['respondent_name'],
+                'complainant_contact_number' => $row['complainant_contact_number'],
             ];
         }, $rows);
 
@@ -176,6 +208,21 @@ final class BlotterController
         if (!is_string($narrativeSummary) || trim($narrativeSummary) === '') {
             throw new ApiError(400, 'VALIDATION_ERROR', 'narrative_summary is required.');
         }
+        // Electronic Blotter follow-up (migration 0008) — all three
+        // optional (not every incident has an identifiable party, and
+        // the user specifically asked for contact number to stay
+        // optional). Explicitly submitted by the Secretary at finalize
+        // time, same "never mechanically copied from a draft" philosophy
+        // `narrative_summary` already follows — the web form pre-fills
+        // these inputs from `incident.complainant_name` etc. as a
+        // starting point, but this endpoint only ever writes what's
+        // actually in the request body. No existing blotter_record row
+        // to fall back to yet, so an omitted key is simply null here.
+        $partyFields = self::parsePartyFields($body, [
+            'complainant_name' => null,
+            'respondent_name' => null,
+            'complainant_contact_number' => null,
+        ]);
 
         $pdo->beginTransaction();
         try {
@@ -211,12 +258,41 @@ final class BlotterController
                 throw new ApiError(409, 'CONFLICT', 'This blotter record is already finalized; use the amendment endpoint to change it.');
             }
 
+            // display_id (migration 0014): BLT-YYYY-NNN, per-barangay-
+            // per-year, computed at finalize time (not creation — a draft
+            // that never gets finalized shouldn't consume a logbook
+            // number). Same bounded-retry-on-collision shape
+            // IncidentsController::createWeb() uses.
+            $displayId = null;
+            if ($existing === false || $existing['finalized_at'] === null) {
+                $attempts = 0;
+                while (true) {
+                    $candidate = IncidentsController::nextDisplayId(
+                        $pdo, (int) $incident['barangay_id'], 'BLT', 'blotter_record', 'finalized_at'
+                    );
+                    $dupStmt = $pdo->prepare('SELECT 1 FROM blotter_record WHERE display_id = :display_id LIMIT 1');
+                    $dupStmt->execute(['display_id' => $candidate]);
+                    if ($dupStmt->fetch(PDO::FETCH_ASSOC) === false) {
+                        $displayId = $candidate;
+                        break;
+                    }
+                    $attempts++;
+                    if ($attempts >= 3) {
+                        throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'Could not assign a case number; try again.');
+                    }
+                }
+            }
+
             if ($existing === false) {
                 $insertStmt = $pdo->prepare(
                     'INSERT INTO blotter_record
-                        (incident_id, barangay_id, recorded_by, approved_by, narrative_summary, finalized_at, revision_no)
+                        (incident_id, barangay_id, recorded_by, approved_by, narrative_summary,
+                         complainant_name, respondent_name, complainant_contact_number,
+                         case_status, display_id, finalized_at, revision_no)
                      VALUES
-                        (:incident_id, :barangay_id, :recorded_by, :approved_by, :narrative_summary, UTC_TIMESTAMP(), 1)'
+                        (:incident_id, :barangay_id, :recorded_by, :approved_by, :narrative_summary,
+                         :complainant_name, :respondent_name, :complainant_contact_number,
+                         \'active\', :display_id, UTC_TIMESTAMP(), 1)'
                 );
                 $insertStmt->execute([
                     'incident_id' => $incidentId,
@@ -226,6 +302,10 @@ final class BlotterController
                     'recorded_by' => $identity['user_id'],
                     'approved_by' => $identity['user_id'],
                     'narrative_summary' => $narrativeSummary,
+                    'complainant_name' => $partyFields['complainant_name'],
+                    'respondent_name' => $partyFields['respondent_name'],
+                    'complainant_contact_number' => $partyFields['complainant_contact_number'],
+                    'display_id' => $displayId,
                 ]);
                 $blotterId = (int) $pdo->lastInsertId();
             } else {
@@ -238,6 +318,11 @@ final class BlotterController
                         SET narrative_summary = :narrative_summary,
                             recorded_by = :recorded_by,
                             approved_by = :approved_by,
+                            complainant_name = :complainant_name,
+                            respondent_name = :respondent_name,
+                            complainant_contact_number = :complainant_contact_number,
+                            case_status = \'active\',
+                            display_id = :display_id,
                             finalized_at = UTC_TIMESTAMP()
                       WHERE blotter_id = :blotter_id'
                 );
@@ -245,11 +330,15 @@ final class BlotterController
                     'narrative_summary' => $narrativeSummary,
                     'recorded_by' => $identity['user_id'],
                     'approved_by' => $identity['user_id'],
+                    'complainant_name' => $partyFields['complainant_name'],
+                    'respondent_name' => $partyFields['respondent_name'],
+                    'complainant_contact_number' => $partyFields['complainant_contact_number'],
+                    'display_id' => $displayId,
                     'blotter_id' => $blotterId,
                 ]);
             }
 
-            $readBack = $pdo->prepare('SELECT finalized_at, revision_no FROM blotter_record WHERE blotter_id = :blotter_id');
+            $readBack = $pdo->prepare('SELECT finalized_at, revision_no, case_status, display_id FROM blotter_record WHERE blotter_id = :blotter_id');
             $readBack->execute(['blotter_id' => $blotterId]);
             $finalized = $readBack->fetch(PDO::FETCH_ASSOC);
 
@@ -268,6 +357,11 @@ final class BlotterController
             'blotter_id' => $blotterId,
             'finalized_at' => $finalized['finalized_at'],
             'revision_no' => (int) $finalized['revision_no'],
+            'case_status' => $finalized['case_status'],
+            'display_id' => $finalized['display_id'],
+            'complainant_name' => $partyFields['complainant_name'],
+            'respondent_name' => $partyFields['respondent_name'],
+            'complainant_contact_number' => $partyFields['complainant_contact_number'],
         ]);
     }
 
@@ -303,11 +397,23 @@ final class BlotterController
         if (!is_string($reason) || trim($reason) === '') {
             throw new ApiError(400, 'VALIDATION_ERROR', 'reason is required.');
         }
-
+        // case_status (migration 0009, 2026-09-05 UX pass): optional,
+        // Secretary-driven, FORWARD ONLY — 'under_investigation' or
+        // 'settled'. 'active' is finalize()'s own default (never re-set
+        // here) and 'resolved' is exclusively set by
+        // IncidentsController::updateStatus() when the PARENT incident is
+        // resolved (see migration 0009's own comment for why that one
+        // isn't a Secretary choice) — accepting either value here would
+        // let an amendment silently race or fight with that.
+        $requestedCaseStatus = $body['case_status'] ?? null;
+        if ($requestedCaseStatus !== null && !in_array($requestedCaseStatus, ['under_investigation', 'settled'], true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "case_status must be one of: under_investigation, settled.");
+        }
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
-                'SELECT b.blotter_id, b.barangay_id, b.narrative_summary, b.revision_no, b.finalized_at, b.amended_by
+                'SELECT b.blotter_id, b.barangay_id, b.narrative_summary, b.revision_no, b.finalized_at, b.amended_by,
+                        b.complainant_name, b.respondent_name, b.complainant_contact_number, b.case_status
                  FROM blotter_record b
                  WHERE b.incident_id = :incident_id
                  FOR UPDATE'
@@ -319,11 +425,39 @@ final class BlotterController
             }
             AuthMiddleware::requireTenant($identity, (int) $record['barangay_id']);
 
+            // Electronic Blotter follow-up (migration 0008) — same
+            // optional fields finalize() takes. An OMITTED key keeps the
+            // record's current value (this is an amend, not a blank
+            // slate); an EXPLICITLY submitted key — including an empty
+            // string, meaning "clear this field" — overwrites it. Both
+            // old and new values are versioned into blotter_revision
+            // below, exactly like narrative_summary already is.
+            $partyFields = self::parsePartyFields($body, [
+                'complainant_name' => $record['complainant_name'],
+                'respondent_name' => $record['respondent_name'],
+                'complainant_contact_number' => $record['complainant_contact_number'],
+            ]);
+
             if ($record['finalized_at'] === null) {
                 // Not finalized yet — finalize() is the right endpoint, and
                 // amending a draft record would create revision history for
                 // something that was never an official record.
                 throw new ApiError(409, 'CONFLICT', 'This blotter record is not finalized yet; finalize it first.');
+            }
+
+            // Forward-only case_status transition — see the comment above
+            // this method's validation for why 'resolved' is unreachable
+            // from here and why moving "backward" (e.g. settled ->
+            // under_investigation) isn't allowed either: a case status is
+            // meant to track real-world progress, not be toggled back and
+            // forth.
+            $newCaseStatus = $record['case_status'];
+            if ($requestedCaseStatus !== null) {
+                $rank = ['active' => 0, 'under_investigation' => 1, 'settled' => 2, 'resolved' => 3];
+                if ($rank[$requestedCaseStatus] <= $rank[$record['case_status']]) {
+                    throw new ApiError(409, 'CONFLICT', "case_status cannot move from {$record['case_status']} to {$requestedCaseStatus}.");
+                }
+                $newCaseStatus = $requestedCaseStatus;
             }
 
             $blotterId = (int) $record['blotter_id'];
@@ -333,9 +467,11 @@ final class BlotterController
             // "never deletes the previous finalized value".
             $revisionStmt = $pdo->prepare(
                 'INSERT INTO blotter_revision
-                    (blotter_id, revision_no, narrative_summary, reason, amended_by, superseded_at)
+                    (blotter_id, revision_no, narrative_summary, reason, amended_by, superseded_at,
+                     complainant_name, respondent_name, complainant_contact_number, case_status)
                  VALUES
-                    (:blotter_id, :revision_no, :narrative_summary, :reason, :amended_by, UTC_TIMESTAMP())'
+                    (:blotter_id, :revision_no, :narrative_summary, :reason, :amended_by, UTC_TIMESTAMP(),
+                     :complainant_name, :respondent_name, :complainant_contact_number, :case_status)'
             );
             $revisionStmt->execute([
                 'blotter_id' => $blotterId,
@@ -343,6 +479,10 @@ final class BlotterController
                 'narrative_summary' => (string) $record['narrative_summary'],
                 'reason' => $reason,
                 'amended_by' => $identity['user_id'],
+                'complainant_name' => $record['complainant_name'],
+                'respondent_name' => $record['respondent_name'],
+                'complainant_contact_number' => $record['complainant_contact_number'],
+                'case_status' => $record['case_status'],
             ]);
 
             $newRevision = $currentRevision + 1;
@@ -351,13 +491,21 @@ final class BlotterController
                     SET narrative_summary = :narrative_summary,
                         revision_no = :revision_no,
                         amended_at = UTC_TIMESTAMP(),
-                        amended_by = :amended_by
+                        amended_by = :amended_by,
+                        complainant_name = :complainant_name,
+                        respondent_name = :respondent_name,
+                        complainant_contact_number = :complainant_contact_number,
+                        case_status = :case_status
                   WHERE blotter_id = :blotter_id'
             );
             $updateStmt->execute([
                 'narrative_summary' => $narrativeSummary,
                 'revision_no' => $newRevision,
                 'amended_by' => $identity['user_id'],
+                'complainant_name' => $partyFields['complainant_name'],
+                'respondent_name' => $partyFields['respondent_name'],
+                'complainant_contact_number' => $partyFields['complainant_contact_number'],
+                'case_status' => $newCaseStatus,
                 'blotter_id' => $blotterId,
             ]);
 
@@ -375,6 +523,12 @@ final class BlotterController
                 'to_revision' => $newRevision,
                 'reason' => mb_substr($reason, 0, 255),
             ]);
+            if ($newCaseStatus !== $record['case_status']) {
+                Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'blotter_case_status_changed', 'blotter_record', $blotterId, [
+                    'from_case_status' => $record['case_status'],
+                    'to_case_status' => $newCaseStatus,
+                ]);
+            }
 
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -386,7 +540,47 @@ final class BlotterController
             'blotter_id' => $blotterId,
             'revision_no' => $newRevision,
             'amended_at' => $amendedAt,
+            'case_status' => $newCaseStatus,
+            'complainant_name' => $partyFields['complainant_name'],
+            'respondent_name' => $partyFields['respondent_name'],
+            'complainant_contact_number' => $partyFields['complainant_contact_number'],
         ]);
+    }
+
+    /**
+     * Parses the three optional Electronic Blotter party fields
+     * (migration 0008) shared by `finalize()`/`amend()`. An OMITTED key
+     * falls back to `$defaults[$field]` (finalize() has nothing to fall
+     * back to, so it passes all-null; amend() passes the record's
+     * current values, so leaving a field out of the request never
+     * silently erases it). An EXPLICITLY submitted key overwrites,
+     * including an empty string — trimmed and stored as NULL, meaning
+     * "the Secretary cleared this field", never as an empty string
+     * indistinguishable from "was never set" (same NULL-vs-empty-string
+     * reasoning §11 already applies to `raw_narrative`).
+     *
+     * @param array<string,mixed> $body
+     * @param array{complainant_name:?string,respondent_name:?string,complainant_contact_number:?string} $defaults
+     * @return array{complainant_name:?string,respondent_name:?string,complainant_contact_number:?string}
+     */
+    private static function parsePartyFields(array $body, array $defaults): array
+    {
+        $result = $defaults;
+        foreach (['complainant_name', 'respondent_name', 'complainant_contact_number'] as $field) {
+            if (!array_key_exists($field, $body)) {
+                continue;
+            }
+            $value = $body[$field];
+            if ($value !== null && !is_string($value)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be a string or null.");
+            }
+            $maxLength = $field === 'complainant_contact_number' ? 32 : 255;
+            if (is_string($value) && mb_strlen($value) > $maxLength) {
+                throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be at most {$maxLength} characters.");
+            }
+            $result[$field] = is_string($value) && trim($value) !== '' ? trim($value) : null;
+        }
+        return $result;
     }
 
     /**
@@ -407,7 +601,8 @@ final class BlotterController
 
         $stmt = $pdo->prepare(
             'SELECT blotter_id, incident_id, barangay_id, narrative_summary, recorded_by, approved_by,
-                    finalized_at, revision_no, amended_at, amended_by
+                    finalized_at, revision_no, amended_at, amended_by, case_status, display_id,
+                    complainant_name, respondent_name, complainant_contact_number
              FROM blotter_record WHERE blotter_id = :blotter_id'
         );
         $stmt->execute(['blotter_id' => $blotterId]);
@@ -451,6 +646,11 @@ final class BlotterController
             'revision_no' => (int) $record['revision_no'],
             'amended_at' => $record['amended_at'],
             'amended_by' => $record['amended_by'] !== null ? (int) $record['amended_by'] : null,
+            'case_status' => $record['case_status'],
+            'display_id' => $record['display_id'],
+            'complainant_name' => $record['complainant_name'],
+            'respondent_name' => $record['respondent_name'],
+            'complainant_contact_number' => $record['complainant_contact_number'],
         ]);
     }
 
@@ -505,7 +705,8 @@ final class BlotterController
 
         $stmt = $pdo->prepare(
             'SELECT blotter_id, incident_id, narrative_summary, recorded_by, approved_by,
-                    finalized_at, revision_no, amended_at, amended_by
+                    finalized_at, revision_no, amended_at, amended_by, case_status, display_id,
+                    complainant_name, respondent_name, complainant_contact_number
              FROM blotter_record WHERE incident_id = :incident_id'
         );
         $stmt->execute(['incident_id' => $incidentId]);
@@ -524,6 +725,11 @@ final class BlotterController
             'revision_no' => (int) $record['revision_no'],
             'amended_at' => $record['amended_at'],
             'amended_by' => $record['amended_by'] !== null ? (int) $record['amended_by'] : null,
+            'case_status' => $record['case_status'],
+            'display_id' => $record['display_id'],
+            'complainant_name' => $record['complainant_name'],
+            'respondent_name' => $record['respondent_name'],
+            'complainant_contact_number' => $record['complainant_contact_number'],
         ]);
     }
 
