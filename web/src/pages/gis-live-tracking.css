@@ -23,13 +23,21 @@
   flex-direction: column;
   gap: var(--spacing-sm);
 }
-/* A real <button> now (audit W4 — clicking a roster row centres the map on
-   that Tanod), so the button defaults have to be reset back to a row. */
+/* 2026-09-05 UX pass: the row itself is now a plain flex container, not a
+   <button> — it holds TWO interactive controls (centre-on-map, and an
+   Admin-only Call link), and a button can't nest another button/anchor.
+   `.gis-roster__row-main` carries the styling the whole row used to have. */
 .gis-roster__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.gis-roster__row-main {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -39,9 +47,50 @@
   font-size: var(--font-size-sm);
   text-align: left;
   cursor: pointer;
-  transition: border-color .15s ease, background-color .15s ease;
+  transition: border-color .15s ease, background-color .15s ease, transform .15s ease, box-shadow .15s ease;
 }
-.gis-roster__row:hover { border-color: var(--color-accent); background: var(--color-row-active-bg); }
+.gis-roster__row-main:hover {
+  border-color: var(--color-accent);
+  background: var(--color-row-active-bg);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
+}
+.gis-roster__call {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+/* Roster/activity filter chips reuse `.filter-chip`/`.filter-chip-row`
+   (defined in incident-management.css, loaded globally like every page
+   stylesheet in this app — see index.html). */
+.gis-page__filters {
+  margin: 0;
+}
+
+.gis-activity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.gis-activity__list {
+  gap: var(--spacing-xs, 0.35rem);
+}
+.gis-activity__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xs, 0.35rem) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+}
+.gis-activity__row:last-child {
+  border-bottom: none;
+}
 
 /* Roster sits below the map with a consistent gap — replaces a per-render
    `style.marginTop = '16px'` (audit A4). */
