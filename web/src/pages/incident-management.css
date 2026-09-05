@@ -1,18 +1,17 @@
-/* incident-management.css — Phase 5 of the mockup-driven UI round 2. */
-
-.split-panel--full {
-  grid-template-columns: 1fr;
-}
-
-.incident-form-pane {
-  min-width: 0;
-}
+/* incident-management.css — Phase 5 of the mockup-driven UI round 2,
+ * extended by the 2026-09-05 UX pass (see
+ * .claude/plans/fancy-crafting-lark.md). The right-hand pane now always
+ * shows something (placeholder/form/detail — see incident-management.js),
+ * so the single-column `.split-panel--full` toggle and its dedicated
+ * `.incident-form-pane` wrapper that this file used to define are gone;
+ * the form and the detail view share `.blotter-detail-pane` (also used by
+ * blotter-list.js, same right-column layout) instead. */
 
 .filter-chip-row {
   display: flex;
   gap: var(--spacing-sm, 0.5rem);
   flex-wrap: wrap;
-  margin-bottom: var(--spacing-sm, 0.5rem);
+  flex: 1;
 }
 
 .filter-chip {
@@ -24,10 +23,13 @@
   font-size: var(--font-size-sm, 0.875rem);
   font-weight: 500;
   cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
 .filter-chip:hover {
   border-color: var(--color-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
 }
 
 .filter-chip.is-active {

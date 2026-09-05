@@ -120,6 +120,17 @@ final class IncidentsController
         if ($priority !== null && !in_array($priority, self::INCIDENT_PRIORITIES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'priority must be one of: ' . implode(', ', self::INCIDENT_PRIORITIES) . '.');
         }
+        // `q=` (2026-09-05 UX pass): real server-side search, not a
+        // client-side filter over one loaded page — Incident Management's
+        // list is server-paginated, so a client-only filter would
+        // silently miss every match past the current page. Matches on
+        // `display_id`/`incident_type` (LIKE), plus an exact `incident_id`
+        // match when the query is purely numeric — the same two
+        // identifiers an operator would actually search by.
+        $q = Http::query('q');
+        if ($q !== null) {
+            $q = trim($q);
+        }
 
         $page = max(1, (int) (Http::query('page') ?? '1'));
         $limit = (int) (Http::query('limit') ?? (string) self::DEFAULT_LIMIT);
@@ -150,6 +161,21 @@ final class IncidentsController
             $where[] = 'i.priority = :priority';
             $params['priority'] = $priority;
         }
+        if ($q !== null && $q !== '') {
+            // Two distinct placeholders for the two LIKE matches, not one
+            // named param reused twice — this connection runs with
+            // PDO::ATTR_EMULATE_PREPARES=false (config/db.php), and MySQL's
+            // native prepared-statement protocol does not support binding
+            // the same named parameter to more than one placeholder.
+            if (ctype_digit($q)) {
+                $where[] = '(i.incident_id = :q_id OR i.display_id LIKE :q_like1 OR i.incident_type LIKE :q_like2)';
+                $params['q_id'] = (int) $q;
+            } else {
+                $where[] = '(i.display_id LIKE :q_like1 OR i.incident_type LIKE :q_like2)';
+            }
+            $params['q_like1'] = '%' . $q . '%';
+            $params['q_like2'] = '%' . $q . '%';
+        }
         $whereSql = implode(' AND ', $where);
 
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM incident i WHERE {$whereSql}");
@@ -166,6 +192,7 @@ final class IncidentsController
         $stmt = $pdo->prepare(
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
+                    i.location_description, i.display_id,
                     tanod.full_name AS officer_name
              FROM incident i
              LEFT JOIN dispatch d ON d.dispatch_id = (
@@ -201,6 +228,8 @@ final class IncidentsController
                 'created_at' => $row['created_at'],
                 'device_offline_created_at' => $row['device_offline_created_at'],
                 'synced_at' => $row['synced_at'],
+                'location_description' => $row['location_description'] ?? null,
+                'display_id' => $row['display_id'] ?? null,
                 'officer_name' => $row['officer_name'] ?? null,
             ];
         }, $rows);
@@ -339,7 +368,9 @@ final class IncidentsController
         $stmt = $pdo->prepare(
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
+                    i.location_description, i.display_id,
                     i.raw_narrative, i.redacted_narrative, i.redaction_approved_at, i.redaction_approved_by,
+                    i.complainant_name, i.respondent_name, i.complainant_contact_number,
                     d.dispatched_at, d.arrived_at,
                     EXISTS (
                         SELECT 1 FROM dispatch da
@@ -397,6 +428,8 @@ final class IncidentsController
             'created_at' => $incident['created_at'],
             'device_offline_created_at' => $incident['device_offline_created_at'],
             'synced_at' => $incident['synced_at'],
+            'location_description' => $incident['location_description'],
+            'display_id' => $incident['display_id'],
             // The approved redaction is readable by every role §7 allows
             // to view an incident — approval is what makes it shareable.
             'redacted_narrative' => $incident['redacted_narrative'],
@@ -415,6 +448,21 @@ final class IncidentsController
         // default and raw access is the explicit exception.
         if ($identity['role'] === 'secretary') {
             $payload['raw_narrative'] = $incident['raw_narrative'];
+
+            // Electronic Blotter follow-up (migration 0008): unlike
+            // redacted_narrative, these are extracted directly from RAW
+            // narrative and deliberately preserve exactly the identifiers
+            // redaction exists to strip — they get the SAME Secretary-only
+            // protection as raw_narrative itself, not the broader
+            // "approved and therefore shareable" treatment
+            // redacted_narrative gets above. `narrative_summary` on
+            // `blotter_record` has the identical lifecycle already: never
+            // staged anywhere Admin/Tanod/PB can see it until a Secretary
+            // finalizes it into the legal record — these three fields
+            // follow the same path (see BlotterController::finalize()).
+            $payload['complainant_name'] = $incident['complainant_name'];
+            $payload['respondent_name'] = $incident['respondent_name'];
+            $payload['complainant_contact_number'] = $incident['complainant_contact_number'];
         }
 
         Http::send(200, $payload);
@@ -549,6 +597,25 @@ final class IncidentsController
             );
             $updateStmt->execute(['incident_id' => $incidentId]);
 
+            // 2026-09-05 UX pass: a finalized blotter's `case_status`
+            // mirrors its parent incident's resolution rather than being
+            // set independently — see migration 0009's own comment for
+            // why this is incident-driven, never a manual Secretary
+            // choice. Only touches a record that already exists and is
+            // finalized; an incident with no blotter yet (or one still a
+            // draft) has nothing to update.
+            $blotterStmt = $pdo->prepare(
+                "UPDATE blotter_record SET case_status = 'resolved'
+                 WHERE incident_id = :incident_id AND finalized_at IS NOT NULL AND case_status != 'resolved'"
+            );
+            $blotterStmt->execute(['incident_id' => $incidentId]);
+            if ($blotterStmt->rowCount() > 0) {
+                Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'blotter_case_status_changed', 'incident', $incidentId, [
+                    'to_case_status' => 'resolved',
+                    'reason' => 'incident_resolved',
+                ]);
+            }
+
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_resolved', 'incident', $incidentId, [
                 'from_status' => $incident['status'],
                 'to_status' => 'resolved',
@@ -606,6 +673,18 @@ final class IncidentsController
         $rawNarrative = $body['raw_narrative'] ?? null;
         $latitude = $body['latitude'] ?? null;
         $longitude = $body['longitude'] ?? null;
+        // 2026-09-05 UX pass: the web "Log Incident" form pre-dated
+        // migration 0008 and never gained these fields even though
+        // `incident` has carried the columns since — see
+        // AiDraftController::approveExtraction() for the OTHER path that
+        // writes them (from AI extraction, after the fact). This lets an
+        // Admin/Secretary who already knows the parties at intake enter
+        // them immediately, as a head start a later extraction-approve
+        // can still overwrite, same as it already can for any incident.
+        $locationDescription = self::normalizeOptionalString($body['location_description'] ?? null, 255);
+        $complainantName = self::normalizeOptionalString($body['complainant_name'] ?? null, 255);
+        $respondentName = self::normalizeOptionalString($body['respondent_name'] ?? null, 255);
+        $complainantContactNumber = self::normalizeOptionalString($body['complainant_contact_number'] ?? null, 32);
 
         if (!is_string($incidentType) || !in_array($incidentType, self::INCIDENT_TYPES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'incident_type must be one of: ' . implode(', ', self::INCIDENT_TYPES) . '.');
@@ -620,7 +699,8 @@ final class IncidentsController
         // relying on the nullable UNIQUE KEY alone.
         $existingStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
-                    latitude, longitude, created_at, device_offline_created_at, synced_at
+                    latitude, longitude, created_at, device_offline_created_at, synced_at,
+                    location_description, display_id
              FROM incident
              WHERE barangay_id = :barangay_id AND device_id IS NULL AND client_event_id = :idempotency_key
              LIMIT 1'
@@ -652,20 +732,47 @@ final class IncidentsController
             $insertStmt = $pdo->prepare(
                 "INSERT INTO incident
                     (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
-                     latitude, longitude, created_at, client_event_id, updated_at)
+                     latitude, longitude, location_description, complainant_name, respondent_name,
+                     complainant_contact_number, display_id, created_at, client_event_id, updated_at)
                  VALUES
                     (:barangay_id, :reported_by, NULL, :incident_type, 'normal', :raw_narrative, 'pending', 'web',
-                     :latitude, :longitude, UTC_TIMESTAMP(), :idempotency_key, UTC_TIMESTAMP())"
+                     :latitude, :longitude, :location_description, :complainant_name, :respondent_name,
+                     :complainant_contact_number, :display_id, UTC_TIMESTAMP(), :idempotency_key, UTC_TIMESTAMP())"
             );
-            $insertStmt->execute([
-                'barangay_id' => $identity['barangay_id'],
-                'reported_by' => $identity['user_id'],
-                'incident_type' => $incidentType,
-                'raw_narrative' => $rawNarrative,
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'idempotency_key' => $idempotencyKey,
-            ]);
+            // display_id (migration 0014): computed inside this same
+            // transaction, right before the insert, so the COUNT it reads
+            // is as fresh as this DB's isolation level allows. A UNIQUE
+            // collision under concurrent same-second writes fails the
+            // insert loudly rather than silently duplicating a case
+            // number — see that migration's own comment for why a bounded
+            // retry (not a dedicated sequence table) is the accepted
+            // tradeoff here.
+            $attempts = 0;
+            while (true) {
+                $displayId = self::nextDisplayId($pdo, (int) $identity['barangay_id'], 'INC');
+                try {
+                    $insertStmt->execute([
+                        'barangay_id' => $identity['barangay_id'],
+                        'reported_by' => $identity['user_id'],
+                        'incident_type' => $incidentType,
+                        'raw_narrative' => $rawNarrative,
+                        'latitude' => $latitude,
+                        'longitude' => $longitude,
+                        'location_description' => $locationDescription,
+                        'complainant_name' => $complainantName,
+                        'respondent_name' => $respondentName,
+                        'complainant_contact_number' => $complainantContactNumber,
+                        'display_id' => $displayId,
+                        'idempotency_key' => $idempotencyKey,
+                    ]);
+                    break;
+                } catch (\PDOException $e) {
+                    $attempts++;
+                    if ($attempts >= 3 || !str_contains($e->getMessage(), 'uq_incident_display_id')) {
+                        throw $e;
+                    }
+                }
+            }
             $incidentId = (int) $pdo->lastInsertId();
 
             $pdo->commit();
@@ -676,11 +783,51 @@ final class IncidentsController
 
         $readBackStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
-                    latitude, longitude, created_at, device_offline_created_at, synced_at
+                    latitude, longitude, created_at, device_offline_created_at, synced_at,
+                    location_description, display_id
              FROM incident WHERE incident_id = :incident_id'
         );
         $readBackStmt->execute(['incident_id' => $incidentId]);
         Http::send(201, self::mapIncident($readBackStmt->fetch(PDO::FETCH_ASSOC)));
+    }
+
+    /**
+     * §5 has no dedicated sequence-per-scope table; a barangay logbook
+     * number is computed as COUNT(*)+1 scoped to barangay+year, inside
+     * the same transaction as the insert that will consume it. Shared by
+     * `createWeb()`/`createMobileItem()` (prefix `INC`) and
+     * `BlotterController::finalize()` (prefix `BLT`, table `blotter_record`)
+     * so the two numbering schemes can never drift apart. See migration
+     * 0014's own comment for the accepted concurrency tradeoff.
+     */
+    public static function nextDisplayId(PDO $pdo, int $barangayId, string $prefix, string $table = 'incident', string $dateColumn = 'created_at'): string
+    {
+        $year = (int) gmdate('Y');
+        $countStmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE barangay_id = :barangay_id AND YEAR({$dateColumn}) = :year"
+        );
+        $countStmt->execute(['barangay_id' => $barangayId, 'year' => $year]);
+        $seq = (int) $countStmt->fetchColumn() + 1;
+        return sprintf('%s-%d-%03d', $prefix, $year, $seq);
+    }
+
+    /**
+     * Trims and length-caps an optional string body field, converting
+     * blank input to `null` rather than storing an empty string — same
+     * "omitted vs. explicitly cleared" convention
+     * `BlotterController::parsePartyFields()` already established for
+     * these exact three fields at finalize/amend time.
+     */
+    private static function normalizeOptionalString(mixed $value, int $maxLength): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+        return mb_substr($trimmed, 0, $maxLength);
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
@@ -751,7 +898,8 @@ final class IncidentsController
         // insert shape as the web path's own idempotency check above.
         $existingStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
-                    latitude, longitude, created_at, device_offline_created_at, synced_at
+                    latitude, longitude, created_at, device_offline_created_at, synced_at,
+                    location_description, display_id
              FROM incident WHERE device_id = :device_id AND client_event_id = :client_event_id LIMIT 1'
         );
         $existingStmt->execute(['device_id' => $deviceId, 'client_event_id' => $clientEventId]);
@@ -775,23 +923,37 @@ final class IncidentsController
             $insertStmt = $pdo->prepare(
                 "INSERT INTO incident
                     (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
-                     latitude, longitude, created_at, device_offline_created_at, client_event_id, updated_at)
+                     latitude, longitude, display_id, created_at, device_offline_created_at, client_event_id, updated_at)
                  VALUES
                     (:barangay_id, :reported_by, :device_id, :incident_type, 'normal', :raw_narrative, 'pending', :source,
-                     :latitude, :longitude, UTC_TIMESTAMP(), :device_offline_created_at, :client_event_id, UTC_TIMESTAMP())"
+                     :latitude, :longitude, :display_id, UTC_TIMESTAMP(), :device_offline_created_at, :client_event_id, UTC_TIMESTAMP())"
             );
-            $insertStmt->execute([
-                'barangay_id' => $identity['barangay_id'],
-                'reported_by' => $identity['user_id'],
-                'device_id' => $deviceId,
-                'incident_type' => $incidentType,
-                'raw_narrative' => $rawNarrative,
-                'source' => in_array($source, ['app', 'sms', 'web'], true) ? $source : 'app',
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'device_offline_created_at' => $deviceOfflineCreatedAt,
-                'client_event_id' => $clientEventId,
-            ]);
+            // See createWeb()'s identical bounded-retry comment.
+            $attempts = 0;
+            while (true) {
+                $displayId = self::nextDisplayId($pdo, (int) $identity['barangay_id'], 'INC');
+                try {
+                    $insertStmt->execute([
+                        'barangay_id' => $identity['barangay_id'],
+                        'reported_by' => $identity['user_id'],
+                        'device_id' => $deviceId,
+                        'incident_type' => $incidentType,
+                        'raw_narrative' => $rawNarrative,
+                        'source' => in_array($source, ['app', 'sms', 'web'], true) ? $source : 'app',
+                        'latitude' => $latitude,
+                        'longitude' => $longitude,
+                        'display_id' => $displayId,
+                        'device_offline_created_at' => $deviceOfflineCreatedAt,
+                        'client_event_id' => $clientEventId,
+                    ]);
+                    break;
+                } catch (\PDOException $e) {
+                    $attempts++;
+                    if ($attempts >= 3 || !str_contains($e->getMessage(), 'uq_incident_display_id')) {
+                        throw $e;
+                    }
+                }
+            }
             $incidentId = (int) $pdo->lastInsertId();
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -801,7 +963,8 @@ final class IncidentsController
 
         $readBackStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
-                    latitude, longitude, created_at, device_offline_created_at, synced_at
+                    latitude, longitude, created_at, device_offline_created_at, synced_at,
+                    location_description, display_id
              FROM incident WHERE incident_id = :incident_id'
         );
         $readBackStmt->execute(['incident_id' => $incidentId]);
@@ -843,6 +1006,8 @@ final class IncidentsController
             'created_at' => $row['created_at'],
             'device_offline_created_at' => $row['device_offline_created_at'],
             'synced_at' => $row['synced_at'],
+            'location_description' => $row['location_description'] ?? null,
+            'display_id' => $row['display_id'] ?? null,
             // create()'s callers never join dispatch — a just-created
             // incident can't have one yet — so this is always null here,
             // same shape as index()'s items for a one-consistent contract.
