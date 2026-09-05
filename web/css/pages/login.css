@@ -11,7 +11,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(-45deg, #1E3A6E, #1D4ED8, #3B82F6, #162D58);
+  /* 2026-09-06 legibility audit: the third stop was #3B82F6 (a bright
+     mid-blue, relative luminance ~0.235) — as the animated gradient
+     drifted across it, the light `--color-white`/`--color-surface-blue`
+     text in `.login-hero` (h1, lede, feature copy, footer) dropped to
+     ~3.2-3.7:1, below AA's 4.5:1 for that non-bold body-size text. Swapped
+     for a darker blue (~0.07 luminance) that keeps every stop dark enough
+     for light text to clear 4.5:1 at any point in the animation, while
+     still reading as a distinct accent from the other three navy stops. */
+  background: linear-gradient(-45deg, #1E3A6E, #1D4ED8, #1E40AF, #162D58);
   background-size: 400% 400%;
   animation: gradient-shift 12s ease infinite;
   padding: var(--spacing-lg);
@@ -86,6 +94,17 @@
   box-shadow: 0 0 0 2px var(--color-primary), 0 0 12px rgba(59,130,246,0.2);
 }
 
+/* Caps Lock warning (2026-09-05 UX pass) — sits right under the password
+   field, same tone/weight as .login-form__error but not an error: amber,
+   not red, and no role="alert" (set in login.js) since it isn't a
+   failure, just a heads-up while typing. */
+.login-capslock-warning {
+  margin-top: calc(-1 * var(--spacing-xs));
+  color: var(--color-warning-text);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
 .login-remember {
   display: flex;
   align-items: center;
@@ -124,7 +143,15 @@
   flex-direction: column;
   justify-content: center;
   padding: var(--spacing-2xl);
-  background: linear-gradient(-45deg, #1E3A6E, #1D4ED8, #3B82F6, #162D58);
+  /* 2026-09-06 legibility audit: the third stop was #3B82F6 (a bright
+     mid-blue, relative luminance ~0.235) — as the animated gradient
+     drifted across it, the light `--color-white`/`--color-surface-blue`
+     text in `.login-hero` (h1, lede, feature copy, footer) dropped to
+     ~3.2-3.7:1, below AA's 4.5:1 for that non-bold body-size text. Swapped
+     for a darker blue (~0.07 luminance) that keeps every stop dark enough
+     for light text to clear 4.5:1 at any point in the animation, while
+     still reading as a distinct accent from the other three navy stops. */
+  background: linear-gradient(-45deg, #1E3A6E, #1D4ED8, #1E40AF, #162D58);
   background-size: 400% 400%;
   animation: gradient-shift 12s ease infinite;
   color: var(--color-white);
@@ -150,6 +177,26 @@
   margin-bottom: var(--spacing-xl);
 }
 .login-hero__wordmark { font-size: var(--font-size-lg); font-weight: 700; letter-spacing: 0.02em; }
+/* Decorative radar-pulse behind the brand shield (2026-09-05 UX pass —
+   the hero panel read as flat: headline + paragraph + a plain icon, no
+   depth). Ties into the "Live Emergency Tracking" feature below it
+   rather than being generic decoration. Purely CSS, aria-hidden, and the
+   icon itself carries zero meaning lost if the animation is disabled. */
+.login-hero__brand-mark { position: relative; display: inline-flex; }
+.login-hero__brand-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-xl);
+  border: 2px solid rgba(255,255,255,0.5);
+  animation: login-brand-pulse 2.4s ease-out infinite;
+}
+@keyframes login-brand-pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-hero__brand-pulse { animation: none; opacity: 0; }
+}
 .login-hero h1 {
   font-size: var(--font-size-xl);
   line-height: 1.25;
@@ -177,7 +224,13 @@
   align-items: center;
   justify-content: center;
   padding: var(--spacing-xl);
-  background: var(--color-bg);
+  /* Was a flat --color-bg fill, which fully hid the body's own decorative
+     brand-tinted wash (base.css) behind this half of the screen — the
+     single biggest reason this side read as plain white. Transparent
+     lets the wash show through; .login-card is already glass-styled
+     (backdrop-filter, see login.css below), so it still reads as a
+     clear, elevated card sitting on top of it. */
+  background: transparent;
   overflow: auto;
   position: relative;
 }
@@ -225,4 +278,8 @@
   justify-content: center;
   gap: var(--spacing-sm);
   margin: var(--spacing-sm) 0;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .login-card { background: var(--color-surface); border-color: var(--color-border); }
 }

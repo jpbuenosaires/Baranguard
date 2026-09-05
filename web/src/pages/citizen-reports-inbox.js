@@ -1,14 +1,25 @@
 /**
- * citizen-reports-inbox.js — W16 Citizen Reports Inbox, list only (§9):
- * "Displays contact/description only as permitted. Conversion is
- * disabled once converted and is idempotent on retries." This cut is
- * explicitly "list only" per Sprint_Prompts.md's own checklist entry —
- * `POST /citizen-reports/:id/convert` is a separate, unbuilt endpoint, so
- * there's no convert action/button here yet. Roles: Secretary, Admin
+ * citizen-reports-inbox.js — W16 Citizen Reports Inbox (§9): "Displays
+ * contact/description only as permitted. Conversion is disabled once
+ * converted and is idempotent on retries." Roles: Secretary, Admin
  * (§7 "View citizen report inbox").
  *
  * Shows the unconverted queue (`?status=unconverted`) — the actionable
  * "inbox" set, not a historical log of every report ever submitted.
+ *
+ * 2026-09-05: added the Convert action (`POST /citizen-reports/:id/
+ * convert`, built this same pass — see CitizenReportsController.php's
+ * class doc). This screen used to be genuinely list-only, a real
+ * workflow dead end: a report had no way to become an incident short of
+ * an Admin/Secretary manually re-typing everything into "Log Incident."
+ * Convert prompts for `incident_type` (no citizen-report equivalent to
+ * infer it from — the reviewer picks the closest category) via the
+ * shared `promptSelect()` dialog, then reloads the list; the row
+ * disappears because it no longer matches `status=unconverted`, same
+ * "load() after a successful action" pattern every other screen here
+ * uses. Also added a Location column — captured at intake
+ * (citizen-report.js's optional "Share my current location") but never
+ * surfaced here even though the API already returned it.
  *
  * 2026-09-02: migrated header to PageHeader and the stacked-card list to
  * the shared DataTable component (Figma-alignment pass, same as W6
@@ -19,18 +30,37 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getCitizenReports, logout, ApiClientError } from '../api/apiClient.js';
+import { getCitizenReports, convertCitizenReport, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
+import { promptSelect } from '../components/ConfirmDialog.js';
+import { showToast } from '../components/Toast.js';
+
+// Same 11-member enum as `incident.incident_type` (§5) — duplicated here
+// the same way every other JS consumer of this enum already does
+// (DonutChart, statistical-reports.js, incident-management.js).
+const INCIDENT_TYPE_OPTIONS = [
+  ['theft', 'Theft'], ['physical_injury', 'Physical Injury'], ['disturbance', 'Disturbance'],
+  ['domestic_dispute', 'Domestic Dispute'], ['vandalism', 'Vandalism'],
+  ['traffic_incident', 'Traffic Incident'], ['fire', 'Fire'],
+  ['medical_emergency', 'Medical Emergency'], ['missing_person', 'Missing Person'],
+  ['animal_complaint', 'Animal Complaint'], ['other', 'Other'],
+];
 
 const COLUMNS = [
   { key: 'id', label: 'ID', width: '4.5rem' },
   { key: 'description', label: 'Description' },
   { key: 'contact', label: 'Contact' },
+  // Location was captured at intake (citizen-report.js's optional "Share
+  // my current location") but never surfaced here, even though it's
+  // already in the API response (`getCitizenReports()` already returns
+  // latitude/longitude) — this column just renders data that already
+  // existed.
+  { key: 'location', label: 'Location', width: '6rem' },
   { key: 'date', label: 'Submitted' },
-  { key: 'status', label: 'Status', align: 'right' },
+  { key: 'actions', label: 'Actions', align: 'right' },
 ];
 
 /**
@@ -87,7 +117,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     if (filtered.length === 0) {
       renderEmpty(body, q ? 'No reports match your search.' : undefined);
     } else {
-      renderList(body, filtered);
+      renderList(body, filtered, load);
     }
   }
 
@@ -106,7 +136,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   }
 }
 
-function renderList(container, items) {
+function renderList(container, items, onConverted) {
   container.innerHTML = '';
   const table = DataTable({
     columns: COLUMNS,
@@ -128,13 +158,31 @@ function renderList(container, items) {
           span.textContent = row.contactNumber || '—';
           return span;
         }
+        case 'location': {
+          if (row.latitude === null || row.longitude === null) {
+            const span = document.createElement('span');
+            span.className = 'note';
+            span.textContent = 'Not shared';
+            return span;
+          }
+          const span = document.createElement('span');
+          span.className = 'avatar-row';
+          span.title = `${row.latitude}, ${row.longitude}`;
+          span.innerHTML = `${icons.mapPin(16)}<span>Included</span>`;
+          return span;
+        }
         case 'date':
           return new Date(row.submittedAt).toLocaleString();
-        case 'status': {
-          const span = document.createElement('span');
-          span.className = 'status-pill status-pill--pending';
-          span.textContent = 'Unconverted';
-          return span;
+        case 'actions': {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'primary';
+          button.textContent = 'Convert to Incident';
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            convertRow(row, button, onConverted);
+          });
+          return button;
         }
         default:
           return '';
@@ -142,6 +190,29 @@ function renderList(container, items) {
     },
   });
   container.appendChild(table);
+}
+
+async function convertRow(row, button, onConverted) {
+  const incidentType = await promptSelect({
+    title: 'Convert to Incident',
+    description: `Report #${row.reportId}: "${row.description}"`,
+    label: 'Incident type',
+    options: INCIDENT_TYPE_OPTIONS.map(([value, label]) => ({ value, label })),
+    confirmLabel: 'Convert',
+  });
+  if (!incidentType) return;
+
+  button.disabled = true;
+  button.textContent = 'Converting…';
+  try {
+    const result = await convertCitizenReport(row.reportId, { incidentType });
+    showToast(`Converted to Incident #${result.incidentId}.`, { variant: 'success' });
+    onConverted();
+  } catch (err) {
+    button.disabled = false;
+    button.textContent = 'Convert to Incident';
+    showToast(err instanceof ApiClientError ? err.message : 'Could not convert this report.', { variant: 'error' });
+  }
 }
 
 function renderLoading(container) {

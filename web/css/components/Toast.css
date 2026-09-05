@@ -104,3 +104,7 @@
 @media (max-width: 480px) {
   .toast-container { top: var(--spacing-sm); right: var(--spacing-sm); left: var(--spacing-sm); max-width: none; }
 }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .toast { background: var(--color-surface); border-color: var(--color-border); }
+}

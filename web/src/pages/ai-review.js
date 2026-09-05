@@ -42,7 +42,7 @@ import {
   approveExtraction,
   translateAiDraft,
   generateLuponPacket,
-  luponPacketDownloadUrl,
+  downloadLuponPacket,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -336,13 +336,40 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       }
     });
 
-    const downloadLink = document.createElement('a');
+    // 2026-09-06 fix: was a plain `<a href target="_blank">` pointing
+    // straight at the API URL — this app has no session cookie (JWT lives
+    // only in sessionStorage), so a plain browser navigation attaches no
+    // Authorization header and the download 401'd on every click. Now a
+    // real button: an authenticated fetch returns a Blob, which becomes a
+    // real download via a synthetic `<a download>` click — same pattern
+    // `downloadReportExport()`/statistical-reports.js's Export buttons
+    // already use correctly.
+    const downloadLink = document.createElement('button');
+    downloadLink.type = 'button';
     downloadLink.className = 'ghost';
-    downloadLink.textContent = 'Download packet';
-    downloadLink.href = luponPacketDownloadUrl(incidentId);
-    downloadLink.target = '_blank';
-    downloadLink.rel = 'noopener';
+    const downloadIdleLabel = 'Download packet';
+    downloadLink.textContent = downloadIdleLabel;
     downloadLink.hidden = true;
+    downloadLink.addEventListener('click', async () => {
+      downloadLink.disabled = true;
+      downloadLink.textContent = 'Downloading…';
+      try {
+        const blob = await downloadLuponPacket(incidentId);
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `lupon-packet-incident-${incidentId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        showToast(err instanceof ApiClientError ? err.message : 'Could not download the packet.', { variant: 'error' });
+      } finally {
+        downloadLink.disabled = false;
+        downloadLink.textContent = downloadIdleLabel;
+      }
+    });
 
     packetRow.append(packetButton, downloadLink);
     card.appendChild(packetRow);

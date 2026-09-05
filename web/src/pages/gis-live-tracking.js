@@ -53,10 +53,15 @@ import { avatarInitials } from '../components/Avatar.js';
 
 const POLL_INTERVAL_MS = 15000;
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
+// Labels only (2026-09-05 bug pass) — 'available' really means "on duty
+// and not currently responding," and 'dispatched' means "has an active
+// dispatch," which "Dispatched" alone doesn't convey from the Tanod's own
+// point of view. Filter keys/values are unchanged — only what the chip
+// reads as.
 const ROSTER_FILTERS = [
   { key: 'all', label: 'All' },
-  { key: 'available', label: 'Available' },
-  { key: 'dispatched', label: 'Dispatched' },
+  { key: 'available', label: 'On Duty' },
+  { key: 'dispatched', label: 'Responding' },
   { key: 'stale', label: 'Stale' },
 ];
 const DUTY_EVENT_LABEL = { on_duty: 'marked as available', responding: 'marked as responding', off_duty: 'went off duty' };

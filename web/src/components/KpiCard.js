@@ -36,11 +36,15 @@
  *   isn't what that series measures) — so only Total Incidents gets one,
  *   never a sparkline built from data that doesn't actually match the
  *   number it's attached to.
+ *   `description` (optional, 2026-09-05): a one-sentence definition shown
+ *   in a small hover/focus card next to the label — see `Tooltip.js`.
  * @returns {HTMLElement}
  */
+import { InfoTip } from './Tooltip.js';
+
 export function KpiCard({
   label, value, emptyText = '—', icon, accent,
-  delta, previousValue, trend, deltaLabel = 'vs previous period', sparkline,
+  delta, previousValue, trend, deltaLabel = 'vs previous period', sparkline, description,
 }) {
   const el = document.createElement('div');
   el.className = 'card kpi-card';
@@ -67,7 +71,12 @@ export function KpiCard({
 
   const labelEl = document.createElement('div');
   labelEl.className = 'kpi-card__label';
-  labelEl.textContent = label;
+  labelEl.append(label);
+  // 2026-09-05 dashboard UX pass: a one-sentence definition of what this
+  // figure actually counts, shown on hover/focus — "Avg. Response Time"
+  // or "Resolved Cases" isn't self-explanatory without knowing the exact
+  // server-side definition behind it.
+  if (description) labelEl.appendChild(InfoTip(description));
 
   // Value above label, per the reference — the figure is what the eye
   // should land on first, the label is its caption.

@@ -121,3 +121,7 @@
    distinction survives greyscale. */
 .notification-item--unread { border-left: 3px solid var(--color-primary); }
 .notification-item--unread .menu__item-text > span:first-child { font-weight: 600; }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .menu__panel { background: var(--color-surface); border-color: var(--color-border); }
+}

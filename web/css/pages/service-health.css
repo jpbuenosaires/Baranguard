@@ -1,7 +1,10 @@
 /* service-health.css — W20 Service Health / Recovery. */
 
+/* Same padding as settings.css's .settings-pref-row — the same kind of
+   "labeled row + value, bottom-divider list" pattern, previously hand-
+   tuned to a different one-off value (0.4rem) for no documented reason. */
 .health-row {
-  padding: 0.4rem 0;
+  padding: var(--spacing-sm) 0;
   border-bottom: 1px solid var(--color-divider);
 }
 

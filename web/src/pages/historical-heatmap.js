@@ -7,11 +7,8 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getReportsHeatmap, logout, ApiClientError } from '../api/apiClient.js';
+import { getReportsHeatmap, ApiClientError } from '../api/apiClient.js';
 import { HeatmapMap } from '../components/HeatmapMap.js';
-import { AppShell } from '../components/AppShell.js';
-import { PageHeader } from '../components/PageHeader.js';
-import { icons } from '../components/icons.js';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -23,33 +20,31 @@ function daysAgoIso(n) {
 }
 
 /**
- * @param {HTMLElement} root
+ * Personnel > Heatmap tab. Was the standalone W5 Historical Heatmap page
+ * (`renderHistoricalHeatmapPage`) before the 2026-09-05 Analytics merge
+ * — see `pages/analytics.js` for the shared AppShell/PageHeader/tab
+ * shell. Merged with W9 Statistical Reports because both share the
+ * exact same role pair (Admin, Punong Barangay read-only) and the same
+ * bounded-historical, no-write nature — unlike the Incident Management
+ * merge this project's own DEVLOG explicitly declined for this same
+ * screen, where the roles and live-vs-historical intent didn't match.
+ *
+ * @param {HTMLElement} container tab body to render into
  * @param {{fullName:string, role:string}} user
- * @param {() => void} onLoggedOut
- * @param {(page: string) => void} navigate
  */
-export function renderHistoricalHeatmapPage(root, user, onLoggedOut, navigate) {
-  root.innerHTML = '';
-
-  const shell = AppShell(user, 'heatmap', navigate, async () => {
-    shell.logoutButton.disabled = true;
-    await logout();
-    onLoggedOut();
-  });
-  const { header, content } = shell;
-  root.appendChild(shell.el);
-
-  // Was a raw `<h2 style="...">` written straight into the content area —
-  // the one screen this project's own PageHeader migration missed (see
-  // DEVLOG.md). Matches every other screen now: fixed header bar above
-  // the scrolling content, no inline style, tokens carry the dark-mode
-  // retrofit automatically.
-  const pageHeader = PageHeader({ title: 'Historical Heatmap', subtitle: 'Historical incident patterns only — not a predictive or real-time view.', icon: icons.flame });
-  header.appendChild(pageHeader.el);
-
+export function renderHeatmapTab(container, user) {
   const wrapper = document.createElement('div');
   wrapper.className = 'flex-col grow';
-  content.appendChild(wrapper);
+  container.appendChild(wrapper);
+
+  // §9's own requirement ("explicit non-predictive label") — used to live
+  // in this screen's own PageHeader subtitle; that subtitle is now shared
+  // with the Reports tab (see analytics.js), so the disclosure moved here
+  // instead, right above the controls it qualifies.
+  const disclosure = document.createElement('p');
+  disclosure.className = 'note';
+  disclosure.textContent = 'Historical incident patterns only — not a predictive or real-time view.';
+  wrapper.appendChild(disclosure);
 
   const controls = document.createElement('div');
   controls.className = 'filter-bar';

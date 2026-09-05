@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Pdf\SimplePdf;
 use PDO;
 
 /**
@@ -406,14 +407,19 @@ final class ReportsController
      *
      * Resolved decisions (logged in DEVLOG.md):
      *
-     *   - **CSV is the only approved format.** §6 says "for approved
-     *     formats" without listing them. CSV is the one this system can
-     *     produce honestly with no dependency: there is no Composer here,
-     *     and the hand-rolled `SimplePdf` writer built for the Lupon
-     *     packet is a fixed-layout document writer, not a report/table
-     *     renderer. An unsupported `format=` is a 400 naming what IS
-     *     supported, never a silent fallback to CSV — a caller asking for
-     *     XLSX and receiving CSV bytes is worse than an honest refusal.
+     *   - **CSV and PDF are the two approved formats.** §6 says "for
+     *     approved formats" without listing them. CSV remains the
+     *     dependency-free default; PDF was added 2026-09-06 on explicit
+     *     user request, reusing `SimplePdf` — the same hand-rolled,
+     *     dependency-free writer §6's Lupon packet endpoint already
+     *     built (there is still no Composer here, so this is the same
+     *     one-column, no-images, no-embedded-fonts writer, not a
+     *     general report/table renderer — see that class's own doc).
+     *     Both formats render the exact same aggregates (below), so
+     *     neither can drift from the other. An unsupported `format=` is
+     *     still a 400 naming what IS supported, never a silent fallback —
+     *     a caller asking for XLSX and receiving CSV bytes is worse than
+     *     an honest refusal.
      *
      *   - **The file is written OUTSIDE the web root and served through
      *     an authorized download route**, exactly like the Lupon packet
@@ -442,21 +448,23 @@ final class ReportsController
         AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
 
         $format = Http::query('format') ?? 'csv';
-        if ($format !== 'csv') {
-            throw new ApiError(400, 'VALIDATION_ERROR', "format must be 'csv' (the only approved export format).");
+        if (!in_array($format, ['csv', 'pdf'], true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "format must be 'csv' or 'pdf'.");
         }
 
         $manila = new \DateTimeZone('Asia/Manila');
         [$from, $to] = self::resolveDateRange(Http::query('date_from'), Http::query('date_to'), $manila);
 
-        $csv = self::buildSummaryCsv($pdo, $identity['barangay_id'], $from, $to, $manila);
+        $content = $format === 'pdf'
+            ? self::buildSummaryPdf($pdo, $identity['barangay_id'], $from, $to, $manila)
+            : self::buildSummaryCsv($pdo, $identity['barangay_id'], $from, $to, $manila);
 
-        $path = self::exportPath($identity['barangay_id']);
+        $path = self::exportPath($identity['barangay_id'], $format);
         $directory = dirname($path);
         if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) {
             throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'Export storage is not writable on this workstation.');
         }
-        if (file_put_contents($path, $csv) === false) {
+        if (file_put_contents($path, $content) === false) {
             throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'Could not write the export file.');
         }
 
@@ -489,35 +497,45 @@ final class ReportsController
     {
         AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
 
-        // Path is derived from the CALLER's own barangay, never from a
-        // parameter — there is no id to tamper with, so cross-tenant
-        // access is impossible by construction rather than by check.
-        $path = self::exportPath($identity['barangay_id']);
+        // `format` here only SELECTS WHICH already-generated file to
+        // stream back (csv or pdf) — it never changes what gets read from
+        // disk beyond that filename suffix, and the path is still derived
+        // entirely from the CALLER's own barangay (never a parameter), so
+        // cross-tenant access stays impossible by construction, not by
+        // check.
+        $format = Http::query('format') ?? 'csv';
+        if (!in_array($format, ['csv', 'pdf'], true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "format must be 'csv' or 'pdf'.");
+        }
+
+        $path = self::exportPath($identity['barangay_id'], $format);
         if (!is_file($path)) {
             throw new ApiError(404, 'NOT_FOUND', 'No export has been generated for this barangay yet.');
         }
 
-        header('Content-Type: text/csv; charset=utf-8');
+        $contentType = $format === 'pdf' ? 'application/pdf' : 'text/csv; charset=utf-8';
+        header('Content-Type: ' . $contentType);
         header('Content-Length: ' . (string) filesize($path));
-        header('Content-Disposition: attachment; filename="baranguard-report-barangay-' . $identity['barangay_id'] . '.csv"');
+        header('Content-Disposition: attachment; filename="baranguard-report-barangay-' . $identity['barangay_id'] . '.' . $format . '"');
         readfile($path);
         exit;
     }
 
     /**
-     * Reuses summary()'s own aggregates so the file and the screen can
-     * never disagree. Sections are stacked in one CSV with a blank line
-     * between them — a single flat table cannot express four differently
-     * shaped datasets, and splitting into four files would need a zip
-     * dependency this project doesn't have.
+     * Shared by buildSummaryCsv()/buildSummaryPdf() — one query, the same
+     * counting rules `GET /reports/summary` uses (every enum member
+     * present at 0, every calendar day in range present at 0), so neither
+     * export format can silently drift from the other or from the screen.
+     *
+     * @return array{total:int, byDay:array<string,int>, byType:array<string,int>, byStatus:array<string,int>}
      */
-    private static function buildSummaryCsv(
+    private static function aggregateIncidents(
         PDO $pdo,
         int $barangayId,
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         \DateTimeZone $manila
-    ): string {
+    ): array {
         $utc = new \DateTimeZone('UTC');
         $rangeStartUtc = $from->setTime(0, 0, 0)->setTimezone($utc)->format('Y-m-d H:i:s');
         $rangeEndUtc = $to->setTime(0, 0, 0)->modify('+1 day')->setTimezone($utc)->format('Y-m-d H:i:s');
@@ -554,6 +572,63 @@ final class ReportsController
             }
         }
 
+        return ['total' => count($incidents), 'byDay' => $byDay, 'byType' => $byType, 'byStatus' => $byStatus];
+    }
+
+    /**
+     * Same population and definition `GET /reports/summary`'s
+     * `avg_response_time_minutes` uses (§6 summary() above): incidents in
+     * range whose dispatch actually reached `arrived_at`. A fresh,
+     * independent query rather than a call into summary() — that method
+     * writes its own HTTP response and isn't structured to hand back a
+     * value — but it is intentionally the exact same SQL shape, so the
+     * export can never disagree with the screen it's exporting.
+     */
+    private static function averageResponseTimeMinutes(
+        PDO $pdo,
+        int $barangayId,
+        \DateTimeImmutable $from,
+        \DateTimeImmutable $to,
+        \DateTimeZone $manila
+    ): ?float {
+        $utc = new \DateTimeZone('UTC');
+        $rangeStartUtc = $from->setTime(0, 0, 0)->setTimezone($utc)->format('Y-m-d H:i:s');
+        $rangeEndUtc = $to->setTime(0, 0, 0)->modify('+1 day')->setTimezone($utc)->format('Y-m-d H:i:s');
+
+        $stmt = $pdo->prepare(
+            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.arrived_at)) AS avg_minutes
+             FROM incident i
+             JOIN dispatch d ON d.incident_id = i.incident_id
+             WHERE i.barangay_id = :barangay_id
+               AND i.created_at >= :range_start AND i.created_at < :range_end
+               AND d.arrived_at IS NOT NULL'
+        );
+        $stmt->execute([
+            'barangay_id' => $barangayId,
+            'range_start' => $rangeStartUtc,
+            'range_end' => $rangeEndUtc,
+        ]);
+        $raw = $stmt->fetchColumn();
+        return $raw !== null ? round((float) $raw, 1) : null;
+    }
+
+    /**
+     * Reuses summary()'s own aggregates so the file and the screen can
+     * never disagree. Sections are stacked in one CSV with a blank line
+     * between them — a single flat table cannot express four differently
+     * shaped datasets, and splitting into four files would need a zip
+     * dependency this project doesn't have.
+     */
+    private static function buildSummaryCsv(
+        PDO $pdo,
+        int $barangayId,
+        \DateTimeImmutable $from,
+        \DateTimeImmutable $to,
+        \DateTimeZone $manila
+    ): string {
+        ['total' => $total, 'byDay' => $byDay, 'byType' => $byType, 'byStatus' => $byStatus]
+            = self::aggregateIncidents($pdo, $barangayId, $from, $to, $manila);
+
         $escape = static function ($value): string {
             $text = $value === null ? '' : (string) $value;
             return preg_match('/[",\n]/', $text) === 1 ? '"' . str_replace('"', '""', $text) . '"' : $text;
@@ -565,7 +640,7 @@ final class ReportsController
         $rows[] = $line(['Barangay ID', $barangayId]);
         $rows[] = $line(['Range (Asia/Manila)', $from->format('Y-m-d') . ' to ' . $to->format('Y-m-d')]);
         $rows[] = $line(['Generated (UTC)', gmdate('Y-m-d H:i:s')]);
-        $rows[] = $line(['Total incidents', count($incidents)]);
+        $rows[] = $line(['Total incidents', $total]);
         $rows[] = '';
         $rows[] = $line(['Incidents by day']);
         $rows[] = $line(['Date', 'Count']);
@@ -589,20 +664,81 @@ final class ReportsController
     }
 
     /**
+     * PDF sibling of buildSummaryCsv() — same aggregates, same "exactly
+     * what the summary already returns" content rule, rendered as a
+     * document instead of a spreadsheet via `SimplePdf` (the same
+     * dependency-free writer §6's Lupon packet endpoint already uses —
+     * see that class's own doc for why this project hand-rolls PDF bytes
+     * instead of vendoring a library). 2026-09-06: this format was added
+     * on explicit user request, reversing export()'s prior "CSV is the
+     * only approved format" decision — see that method's doc comment and
+     * DEVLOG.md for the full reasoning either way.
+     */
+    private static function buildSummaryPdf(
+        PDO $pdo,
+        int $barangayId,
+        \DateTimeImmutable $from,
+        \DateTimeImmutable $to,
+        \DateTimeZone $manila
+    ): string {
+        ['total' => $total, 'byDay' => $byDay, 'byType' => $byType, 'byStatus' => $byStatus]
+            = self::aggregateIncidents($pdo, $barangayId, $from, $to, $manila);
+        $avgResponseMinutes = self::averageResponseTimeMinutes($pdo, $barangayId, $from, $to, $manila);
+
+        $rangeLabel = $from->format('Y-m-d') . ' to ' . $to->format('Y-m-d');
+        $pdf = SimplePdf::create('Baranguard Incident Report')
+            ->heading('Baranguard Incident Report')
+            ->keyValue('Barangay ID', (string) $barangayId)
+            ->keyValue('Range (Asia/Manila)', $rangeLabel)
+            ->keyValue('Generated (UTC)', gmdate('Y-m-d H:i:s'))
+            ->spacer()
+            ->keyValue('Total incidents', (string) $total)
+            ->keyValue('Resolved cases', (string) $byStatus['resolved'])
+            ->keyValue('Avg. response time', $avgResponseMinutes !== null ? "{$avgResponseMinutes} min" : 'No arrivals in range')
+            ->rule()
+            ->heading('Incidents by Type', 12.0);
+        foreach ($byType as $type => $count) {
+            $pdf->keyValue(self::humanizeEnum($type), (string) $count);
+        }
+        $pdf->rule()->heading('Incidents by Status', 12.0);
+        foreach ($byStatus as $status => $count) {
+            $pdf->keyValue(self::humanizeEnum($status), (string) $count);
+        }
+        $pdf->rule()->heading('Daily Trend', 12.0);
+        foreach ($byDay as $date => $count) {
+            $pdf->keyValue($date, (string) $count);
+        }
+
+        return $pdf->render();
+    }
+
+    /** 'physical_injury' -> 'Physical injury' — for the PDF's human-readable labels only; the CSV keeps raw enum values. */
+    private static function humanizeEnum(string $value): string
+    {
+        return ucfirst(str_replace('_', ' ', $value));
+    }
+
+    /**
      * One file per barangay, overwritten by each generate — an export is
      * a transient artifact regenerated on demand, not an archive. Keeping
      * every historical export would accumulate a barangay's whole report
      * history outside the retention job's reach (§11/Rule 11), which is
      * exactly the kind of shadow copy Rule 11 warns about.
      */
-    private static function exportPath(int $barangayId): string
+    private static function exportPath(int $barangayId, string $format): string
     {
         $base = baranguard_env('REPORT_EXPORT_DIR');
         $directory = ($base !== false && trim((string) $base) !== '')
             ? rtrim((string) $base, '/\\')
             : dirname(__DIR__) . '/storage/report-exports';
 
-        return $directory . '/barangay-' . $barangayId . '.csv';
+        // One file per barangay PER FORMAT — csv and pdf are independent
+        // artifacts now (a Punong Barangay generating a PDF must not
+        // clobber an Admin's just-generated CSV, or vice versa), each
+        // still following the same "overwritten by each generate, not an
+        // archive" rule the original one-file-per-barangay comment above
+        // this method described.
+        return $directory . '/barangay-' . $barangayId . '.' . $format;
     }
 
     /** @param array<string,mixed> $params */

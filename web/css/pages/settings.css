@@ -3,7 +3,7 @@
 .settings-layout {
   display: grid;
   grid-template-columns: 14rem 1fr;
-  gap: var(--spacing-md, 0.75rem);
+  gap: var(--spacing-md);
   align-items: start;
 }
 
@@ -16,23 +16,30 @@
 .settings-rail {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  /* Same tight list-gap as .sidebar__nav-item's own margin in
+     AppShell.css — this rail is the same kind of "vertical nav list"
+     component and was previously hand-tuned to a different value
+     (0.15rem) for no documented reason. */
+  gap: var(--spacing-3xs);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 0.5rem);
-  padding: var(--spacing-sm, 0.5rem);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
 }
 
 .settings-rail__item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--spacing-sm);
   border: none;
   background: none;
   color: var(--color-text-secondary);
-  padding: 0.55rem 0.65rem;
-  border-radius: var(--radius-sm, 0.375rem);
-  font-size: var(--font-size-sm, 0.875rem);
+  /* Same padding as .sidebar__nav-item — another same-kind-of-nav-item
+     control previously hand-tuned to a different one-off value
+     (0.55rem 0.65rem). */
+  padding: 0.625rem var(--spacing-sm-md);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
@@ -64,7 +71,7 @@
 }
 
 .settings-pref-row {
-  padding: 0.5rem 0;
+  padding: var(--spacing-sm) 0;
   border-bottom: 1px solid var(--color-divider);
 }
 

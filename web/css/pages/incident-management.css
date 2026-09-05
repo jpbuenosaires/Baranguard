@@ -9,7 +9,7 @@
 
 .filter-chip-row {
   display: flex;
-  gap: var(--spacing-sm, 0.5rem);
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
   flex: 1;
 }
@@ -19,8 +19,11 @@
   background: var(--color-surface);
   color: var(--color-text-secondary);
   border-radius: 999px;
-  padding: 0.35rem 0.9rem;
-  font-size: var(--font-size-sm, 0.875rem);
+  /* Same chip padding as base.css's .range-presets__chip — same kind of
+     control (a rounded filter pill), previously hand-tuned to a different
+     one-off value (0.35rem 0.9rem) for no documented reason. */
+  padding: var(--spacing-xs) var(--spacing-sm-md);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
   transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
@@ -41,7 +44,7 @@
 .data-table__stacked {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: var(--spacing-3xs);
 }
 
 .data-table__stacked-primary {

@@ -7,8 +7,8 @@
 .detail-fields {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.35rem var(--spacing-md, 0.75rem);
-  margin: var(--spacing-md, 0.75rem) 0;
+  gap: var(--spacing-2xs) var(--spacing-md);
+  margin: var(--spacing-md) 0;
   padding: var(--spacing-md);
   background: var(--color-bg);
   border-radius: var(--radius-lg);
@@ -17,7 +17,7 @@
 
 .detail-fields dt {
   color: var(--color-text-tertiary);
-  font-size: var(--font-size-sm, 0.875rem);
+  font-size: var(--font-size-sm);
 }
 
 .detail-fields dd {
@@ -27,8 +27,8 @@
 
 .blotter-detail-pane__actions {
   display: flex;
-  gap: var(--spacing-sm, 0.5rem);
-  margin-top: var(--spacing-md, 0.75rem);
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
 }
 
 /* Print isolation: the Print button prints only the currently selected

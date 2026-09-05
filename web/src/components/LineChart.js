@@ -134,8 +134,10 @@ export function LineChart({ points, series, caption }) {
   });
 
   // --- series -------------------------------------------------------------
+  const seriesCoords = []; // seriesCoords[si][i] = [cx, cy], kept for the hover crosshair below
   series.forEach((s, si) => {
     const coords = points.map((p, i) => [x(i), y(p.values[si] ?? 0)]);
+    seriesCoords.push(coords);
 
     // Soft area under the line, then the line itself. The fill is what
     // makes two overlapping series readable where they nearly coincide.
@@ -161,7 +163,10 @@ export function LineChart({ points, series, caption }) {
     svg.appendChild(path);
 
     // Point markers, but only when they won't collapse into a solid bar —
-    // a 30-day range at this width has no room for 30 dots.
+    // a 30-day range at this width has no room for 30 dots. The hover
+    // crosshair below (added 2026-09-06) covers every range regardless of
+    // this density limit — these are the always-visible dots, not the
+    // only way to read a value off the line.
     if (points.length <= 14) {
       coords.forEach(([cx, cy], i) => {
         const dot = document.createElementNS(svgNS, 'circle');
@@ -171,17 +176,105 @@ export function LineChart({ points, series, caption }) {
         dot.setAttribute('fill', 'var(--color-surface)');
         dot.setAttribute('stroke', colors[si]);
         dot.setAttribute('stroke-width', '2');
-        const title = document.createElementNS(svgNS, 'title');
-        title.textContent = `${points[i].label} — ${s.name}: ${points[i].values[si] ?? 0}`;
-        dot.appendChild(title);
         svg.appendChild(dot);
       });
     }
   });
 
+  // --- hover crosshair + tooltip -------------------------------------------
+  // 2026-09-06 UX pass: point markers (above) only render up to 14 points,
+  // so a 30/90-day range — the dashboard's own default — had no hover
+  // affordance at all. This works at any density: a transparent capture
+  // rect spanning the whole plot picks the nearest data index by x
+  // position, regardless of how many discrete dots are actually drawn.
+  const crosshair = document.createElementNS(svgNS, 'line');
+  crosshair.setAttribute('y1', String(PAD.top));
+  crosshair.setAttribute('y2', String(PAD.top + plotH));
+  crosshair.setAttribute('stroke', gridColor);
+  crosshair.setAttribute('stroke-width', '1');
+  crosshair.setAttribute('vector-effect', 'non-scaling-stroke');
+  crosshair.style.opacity = '0';
+  svg.appendChild(crosshair);
+
+  const hoverDots = series.map((s, si) => {
+    const dot = document.createElementNS(svgNS, 'circle');
+    dot.setAttribute('r', '4.5');
+    dot.setAttribute('fill', colors[si]);
+    dot.setAttribute('stroke', 'var(--color-surface)');
+    dot.setAttribute('stroke-width', '2');
+    dot.style.opacity = '0';
+    svg.appendChild(dot);
+    return dot;
+  });
+
   const plot = document.createElement('div');
   plot.className = 'line-chart__plot';
   plot.appendChild(svg);
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'line-chart__tooltip';
+  tooltip.hidden = true;
+  plot.appendChild(tooltip);
+
+  const capture = document.createElementNS(svgNS, 'rect');
+  capture.setAttribute('x', String(PAD.left));
+  capture.setAttribute('y', '0');
+  capture.setAttribute('width', String(Math.max(0, plotW)));
+  capture.setAttribute('height', String(VIEW_H));
+  capture.setAttribute('fill', 'transparent');
+  capture.style.cursor = 'crosshair';
+  svg.appendChild(capture);
+
+  const hideHover = () => {
+    crosshair.style.opacity = '0';
+    tooltip.hidden = true;
+    for (const dot of hoverDots) dot.style.opacity = '0';
+  };
+  capture.addEventListener('mousemove', (event) => {
+    const svgRect = svg.getBoundingClientRect();
+    if (svgRect.width === 0) return;
+    const scale = VIEW_W / svgRect.width;
+    const localX = (event.clientX - svgRect.left) * scale;
+    const i = Math.min(points.length - 1, Math.max(0, Math.round((localX - PAD.left) / (stepX || 1))));
+
+    crosshair.setAttribute('x1', String(x(i)));
+    crosshair.setAttribute('x2', String(x(i)));
+    crosshair.style.opacity = '1';
+
+    let topY = Infinity;
+    hoverDots.forEach((dot, si) => {
+      const [cx, cy] = seriesCoords[si][i];
+      dot.setAttribute('cx', String(cx));
+      dot.setAttribute('cy', String(cy));
+      dot.style.opacity = '1';
+      topY = Math.min(topY, cy);
+    });
+
+    tooltip.innerHTML = `<div class="line-chart__tooltip-title">${points[i].label}</div>`
+      + series.map((s, si) => (
+        `<div class="line-chart__tooltip-row">`
+        + `<span class="line-chart__tooltip-swatch" style="background:${colors[si]}"></span>`
+        + `<span class="line-chart__tooltip-name">${s.name}</span>`
+        + `<span class="line-chart__tooltip-value">${points[i].values[si] ?? 0}</span>`
+        + `</div>`
+      )).join('');
+    tooltip.hidden = false;
+
+    // Position in the plot's own pixel space (not SVG viewBox units) — the
+    // reverse of the scale applied above — then clamp so the panel never
+    // hangs off either edge of the card.
+    const pxX = x(i) / scale;
+    const scaleY = VIEW_H / svgRect.height;
+    const pxY = topY / scaleY;
+    tooltip.style.left = `${pxX}px`;
+    tooltip.style.top = `${pxY}px`;
+    const tipRect = tooltip.getBoundingClientRect();
+    const plotRect = plot.getBoundingClientRect();
+    if (tipRect.left < plotRect.left) tooltip.style.left = `${pxX + (plotRect.left - tipRect.left)}px`;
+    if (tipRect.right > plotRect.right) tooltip.style.left = `${pxX - (tipRect.right - plotRect.right)}px`;
+  });
+  capture.addEventListener('mouseleave', hideHover);
+
   host.appendChild(plot);
 
   // --- legend -------------------------------------------------------------
@@ -203,15 +296,29 @@ export function LineChart({ points, series, caption }) {
   // --- accessible equivalent ----------------------------------------------
   // Same pattern the old TrendChart and DonutChart already use: the
   // visual chart is aria-hidden and a real data table carries the numbers.
+  //
+  // 2026-09-06 fix: `.sr-only` (position:absolute, width/height:1px) went
+  // on a WRAPPER div, not the `<table>` itself. A `<table>` in the default
+  // `table-layout: auto` algorithm ignores an explicit width/height
+  // smaller than its content's minimum size — the table still lays out at
+  // its full natural size (confirmed: 744px tall for a 30-row range) even
+  // though `clip`/`overflow` make it invisible, and that full natural size
+  // was inflating `.page-content`'s scrollable area, showing as a huge
+  // blank space below the real content. A plain `<div>` has no such
+  // table-sizing quirk and correctly clips an oversized child via its own
+  // `overflow: hidden`, so wrapping fixes it without changing what a
+  // screen reader announces.
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'sr-only';
   const table = document.createElement('table');
-  table.className = 'sr-only';
   const head = series.map((s) => `<th scope="col">${s.name}</th>`).join('');
   const body = points.map((p) => (
     `<tr><td>${p.label}</td>${p.values.map((v) => `<td>${v}</td>`).join('')}</tr>`
   )).join('');
   table.innerHTML = `<caption>${caption ?? 'Trend'}</caption>`
     + `<thead><tr><th scope="col">Date</th>${head}</tr></thead><tbody>${body}</tbody>`;
-  host.appendChild(table);
+  tableWrap.appendChild(table);
+  host.appendChild(tableWrap);
 
   return host;
 }

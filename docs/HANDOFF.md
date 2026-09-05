@@ -1,25 +1,157 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-05 (full UI/UX overhaul session).** Read this to
-pick the project up cold. The full narrative history lives in
+**Last updated: 2026-09-05 (Dashboard + Login UX pass: hover tooltips,
+"needs attention" banner, less-plain login page — layered on top of the
+workflow-audit fixes, the Analytics/Personnel merges, the web CSS
+refactor, and the full UI/UX overhaul session, all below).** Read this
+to pick the project up cold. The full narrative history lives in
 `backend/DEVLOG.md` (7.2k+ lines — `grep` it, don't read it). What's
-left is in `docs/REMAINING.md`.
+left is in
+`docs/REMAINING.md`.
 
-## ⚠️ Migrations now go up to 0014 — NONE of 0008-0014 are applied to the real `baranguard` DB
+## ⚠️ Dashboard + Login UX pass (hover tooltips, attention banner, less-plain login)
 
-Only `baranguard_uiseed` (the disposable preview DB on port 8140) has
-0001-0014 applied. The real workstation DB still only has 0001-0007.
-Before pointing this app back at the real API (see the next section),
-apply 0008-0014 in order:
+User-requested, UI/UX-only, scoped to W1 Login and W2 Admin Dashboard.
+New shared component `web/src/components/Tooltip.js` (`InfoTip`) — a
+CSS-only hover/focus tooltip card, no JS positioning — now annotates
+every KPI card and chart/panel header on the dashboard with a one-
+sentence definition of what it actually measures. Dashboard also gained
+a "needs attention now" banner (pending-incident + open-SOS count, links
+to Dispatch Center for Admin), a barangay-name badge next to the page
+title, clickable Recent Incidents rows (previously a dead end), "View
+all" links, and an empty-state CTA. Login: fixed `.login-form-panel`
+painting an opaque fill that hid the body's own decorative wash (the
+real cause of it reading "plain"), added a Caps Lock warning, a 4th hero
+feature (AI-Assisted Redaction — the system's most distinctive real
+capability, previously omitted), and swapped the footer's redundant
+tagline for the 4 real barangay names. Full detail:
+`backend/DEVLOG.md`'s "Dashboard + Login UX pass" entry.
+**Not yet verified in-browser** (static checks only — `verify-web-wiring.mjs`
+453/453, `node --check` clean) — the user asked not to use the Browser
+pane this session. Worth specifically checking: tooltip panels don't
+clip at a viewport edge, the attention banner's critical-vs-warning
+tones render correctly in both themes, and the Caps Lock warning
+actually toggles.
+
+## ⚠️ New endpoint: `POST /citizen-reports/:id/convert` — was always speced, never built until now
+
+A user-requested workflow audit found that Citizen Reports had **no way
+to become an Incident** — a real dead end, not a known/tracked gap (it
+wasn't in `docs/REMAINING.md`). The Master Reference always fully
+specified this endpoint (§6) and the schema always had
+`citizen_report.incident_id`/`converted_at` — it just never got
+implemented, and the "list only" comments in `CitizenReportsController.php`/
+`citizen-reports-inbox.js` read as an intentional boundary rather than a
+gap until the audit actually checked the spec. Built now: **75 live
+routes** (was 74). `incident_type` has no citizen-report equivalent, so
+converting requires the Admin/Secretary to pick one via a dialog — not
+defaulted silently. **Verified end-to-end against the real running
+disposable preview backend via curl** (happy path, idempotent retry,
+validation error, 404, cross-tenant 404 — then reverted the test data).
+Full detail: `backend/DEVLOG.md`'s "Workflow audit findings #1-3" entry.
+
+Same entry also fixed two smaller findings from the same audit: SMS
+Monitor's "Linked to" column had a dead, unclickable incident reference
+(now links to Blotter Detail, same destination every other incident
+cross-reference in the app uses); and the Citizen Reports Inbox never
+surfaced captured GPS coordinates even though the API already returned
+them (added a Location column).
+
+**Not yet verified in-browser** (frontend only — the backend endpoint
+itself was curl-verified for real): the Convert dialog, the Location
+column, and the SMS Monitor link are static-checked only
+(`verify-web-wiring.mjs` 445/445, `node --check` clean). The user asked
+not to use the Browser pane this session — open the Citizen Reports
+Inbox and try converting a real report, and check the SMS Monitor link,
+before assuming they render correctly.
+
+## ⚠️ Two more screen merges this session: "Personnel" and "Analytics"
+
+Same tabbed-screen pattern applied twice, both user-requested (not
+Sprint 8 items):
+
+- **Personnel** — the four separate W10-W13 sidebar entries (User
+  Management/Shift Scheduler/Swap Requests/Fatigue Flags) are gone;
+  `AppShell.js`'s `NAV_ITEMS` now has one `personnel` entry, rendering
+  into `web/src/pages/personnel.js`'s own tab bar. Admin sees all four
+  tabs; Punong Barangay sees only Fatigue flags, same role split each
+  screen always had standalone. The two sidebar badges those items used
+  to carry (`pendingSwapRequests`/`unacknowledgedFatigueFlags`) now live
+  on the matching tab chip instead. **User-confirmed working** in their
+  own browser check.
+- **Analytics** — W5 Historical Heatmap + W9 Statistical Reports merged
+  into `web/src/pages/analytics.js` (Reports/Heatmap tabs). Same role
+  pair both already had (Admin, Punong Barangay read-only), so no
+  per-tab gating needed, unlike Personnel. One real content change, not
+  just a rename: Heatmap's "historical only, not predictive" disclosure
+  (a real §9 requirement) moved from its old standalone `PageHeader`
+  subtitle into a `.note` paragraph in the tab body, since the subtitle
+  is now shared with Reports. **Not yet verified in-browser** — static
+  checks only (`verify-web-wiring.mjs` 440/440, `node --check` on every
+  touched file); the user asked not to use the Browser pane this
+  session, so open the Analytics screen yourself before assuming it
+  renders correctly, and specifically confirm the disclosure note shows
+  above the Heatmap tab's date controls.
+
+Two merges considered and declined, with reasoning logged in
+`backend/DEVLOG.md`'s two merge entries: Incident Management + Heatmap
+(different roles/intent), and the "System" group screens (SMS Monitor/
+Audit Log/Service Health/Map Packages — all Admin-only but no shared
+domain, would make a kitchen-sink page).
+
+## ⚠️ Web CSS moved: `web/src/{styles,components,pages}/*.css` → `web/css/`
+
+If you're looking for `AppShell.css`, `base.css`, etc. under `web/src/`,
+they're gone — a user-requested pass moved every stylesheet into a
+dedicated `web/css/` folder (`web/css/base.css`,
+`web/css/components/*.css`, `web/css/pages/*.css`), `git mv`'d so
+history is intact, with `web/index.html`'s `<link>` tags updated to
+match. Same session also fixed a real spacing-inconsistency bug (several
+near-duplicate controls — e.g. the sidebar nav item vs the Settings rail
+item — were each hand-tuned to a different one-off padding instead of
+sharing a token) and turned on the glassmorphism token system that
+`base.css` already had defined but barely used (moderate scope: chrome/
+containers only — sidebar, topbar, cards, KPI tiles, modals, dropdowns,
+toasts, login hero — never tables/forms/status pills). Full detail:
+`backend/DEVLOG.md`'s "Web CSS refactor" entry (the one right after this
+file's last update before this).
+**Not yet verified**: the authenticated dashboard's sidebar/topbar/card
+glass — at the time this pass was done, the disposable preview backend
+wasn't running and the real DB had no seeded users, so it was verified
+by code review + a login-page browser pass only. Since then, the same
+session pointed the app back at the real API and applied migrations
+0008-0014 (see the banners above), so a real login is now possible —
+open the dashboard and eyeball it before assuming the glass rendering
+is correct.
+
+## ✅ RESOLVED 2026-09-05: migrations 0008-0014 are now applied to the real `baranguard` DB
+
+Both `baranguard_uiseed` (the disposable preview DB) and the real
+workstation `baranguard` DB now have 0001-0014 applied — verified by
+`DESCRIBE`ing `incident`/`blotter_record`/`user`/`sms_log` and confirming
+`system_settings` exists (0 rows, as expected — nothing has saved a
+setting through the UI yet). **Gotcha hit along the way**: the app's own
+`baranguard_app` DB user has no `ALTER`/`CREATE TABLE` privilege
+(`ERROR 1142`) — migrations had to run as `root` (no password on this
+XAMPP install), same DBA-credentials pattern the restore drill already
+uses. Now recorded in `docs/REFERENCE.md` §8. The exact commands used
+(for the next machine that needs this):
 ```bash
-mysql baranguard < backend/migrations/0008_incident_party_fields.sql
-mysql baranguard < backend/migrations/0009_blotter_case_status.sql
-mysql baranguard < backend/migrations/0010_incident_location_description.sql
-mysql baranguard < backend/migrations/0011_user_suspension.sql
-mysql baranguard < backend/migrations/0012_system_settings.sql
-mysql baranguard < backend/migrations/0013_sms_manual_send.sql
-mysql baranguard < backend/migrations/0014_incident_display_id.sql
+mysql -uroot baranguard < backend/migrations/0008_incident_party_fields.sql
+mysql -uroot baranguard < backend/migrations/0009_blotter_case_status.sql
+mysql -uroot baranguard < backend/migrations/0010_incident_location_description.sql
+mysql -uroot baranguard < backend/migrations/0011_user_suspension.sql
+mysql -uroot baranguard < backend/migrations/0012_system_settings.sql
+mysql -uroot baranguard < backend/migrations/0013_sms_manual_send.sql
+mysql -uroot baranguard < backend/migrations/0014_incident_display_id.sql
 ```
+Every statement in these files is `ADD COLUMN IF NOT EXISTS`-guarded, so
+re-running any of them is a safe no-op — confirmed by the first attempt
+(as `baranguard_app`) failing on migration 0008's very first statement,
+i.e. before anything was written, so the retry as `root` started clean.
+Each migration also has a matching `.down.sql` if a rollback is ever
+needed.
+
 **0012 (`system_settings`) is a deliberate, user-authorized override**
 of `docs/REFERENCE.md` §7's W21 blocker ("no schema/endpoints for system
 settings; gateway credentials must never live in a settings row") —
@@ -45,39 +177,21 @@ originally asked for.
 
 ---
 
-## ⚠️ ACTIVE RIGHT NOW: the web app is pointed at fake data, not the real API
+## ✅ RESOLVED 2026-09-05: web app reverted to the real API, migrations now applied
 
-`web/index.html:94` currently reads
-`window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8140/api/v1'` —
-**not** the real vhost (`http://127.0.0.1:8081/api/v1`). This is a
-deliberate, temporary state: the user asked to preview the UI with a
-week of realistic data, and asking to apply fake records to the real
-`baranguard` database was declined (§2 Rule 6 — no fabricated data) in
-favor of a disposable database + backend instead. Real `baranguard` was
-never touched.
-
-**If you're picking this up and the port is still 8140**: either the
-user is still previewing (leave it alone), or it was left on by
-mistake. To fully revert: change that one line back to `8081`, drop the
-disposable `baranguard_uiseed` database, and kill whatever's listening
-on port 8140 (`netstat -ano | grep 8140` → `taskkill //F //PID <pid>`).
-Full details: `backend/DEVLOG.md`'s "UI/UX preview" entry (near the end).
-
-**2026-09-05 update:** XAMPP MySQL had stopped (unrelated to this
-preview — it just wasn't running), which also silently killed the
-port-8140 PHP process since it depends on the DB. Restarted MySQL, and
-relaunched `php -S 127.0.0.1:8140 -t backend/public` with
-`DB_NAME=baranguard_uiseed DB_USER=uiseed_app` env overrides (still not
-touching `backend/.env`). The original `uiseed_app` password from the
-first session wasn't recorded anywhere reachable, so it was reset via
-root — a throwaway credential on a throwaway DB, no impact on the real
-`baranguard_app` user. Verified: `baranguard_uiseed` still has all its
-seeded rows (12 users, 30 incidents), login as `admin.dao` /
-`DevSeed#2026` returns 200, and the dashboard renders with seeded data
-in-browser. **If MySQL or the port-8140 process isn't running when you
-pick this up again**, that's just an environment restart, not data
-loss — same revert/restart steps apply, and the uiseed_app password may
-need resetting again the same way.
+`web/index.html` again reads
+`window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8081/api/v1'` — the
+real vhost, not the disposable preview backend. The UI/UX-preview
+arc that used a fake week of data on a disposable `baranguard_uiseed`
+DB (port 8140) is over; that disposable DB may still exist on this
+workstation but the app no longer points at it. Real `baranguard` was
+never touched by the preview itself, and now has migrations 0008-0014
+applied for real (see the banner above) — so logging in against it
+exercises the actual production schema, not seeded fake data.
+**If `baranguard_uiseed` and its port-8140 PHP process are still
+lingering and nobody needs them anymore**, they're safe to drop/kill;
+full history of how that preview was set up is in `backend/DEVLOG.md`'s
+"UI/UX preview" entries, kept for context, not as a live instruction.
 
 ---
 
@@ -103,10 +217,10 @@ editing it further.
 Sprint 7 closed on 2026-09-04 with the most thorough verification in the
 project's history: **446 checks across seven suites against real XAMPP,
 zero failures**, plus a 12/12 restore drill against the real database.
-Web wiring is now **453/453** (was 373/373 at Sprint 7 close; climbed
-through 411 → 429 → 439 → 443 → 453 across the sessions since, each
-step logged in `backend/DEVLOG.md` — the highest number is always the
-current one, earlier counts are superseded, not regressions).
+Web wiring is now **457/457** (was 373/373 at Sprint 7 close; climbed
+through 411 → 429 → 439 → 443 → 453 → 457 across the sessions since,
+each step logged in `backend/DEVLOG.md` — the highest number is always
+the current one, earlier counts are superseded, not regressions).
 **Migrations now go up to `0014`** — see the warning banner above; only
 the disposable `baranguard_uiseed` DB has all of them applied.
 

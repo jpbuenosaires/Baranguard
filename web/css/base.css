@@ -188,6 +188,7 @@ html { font-size: 100%; }
   /* Spacing — rem so the root scale knob applies. Values are the
      source's own scale expressed against a 16px reference:
      0.25=4px, 0.5=8px, 0.75=12px(gap-3), 1=16px, 1.5=24px, 2=32px, 3=48px. */
+  --spacing-3xs: 0.125rem; --spacing-2xs: 0.375rem;
   --spacing-xs: 0.25rem;  --spacing-sm: 0.5rem;  --spacing-sm-md: 0.75rem;
   --spacing-md: 1rem;     --spacing-lg: 1.5rem;  --spacing-xl: 2rem;
   --spacing-2xl: 3rem;
@@ -207,6 +208,16 @@ html { font-size: 100%; }
   --shadow-floating: 0 20px 25px -5px rgba(15,23,42,.12), 0 8px 10px -6px rgba(15,23,42,.10);
 
   /* ─── PREMIUM POLISH LAYER (UI/UX improvement pass) ─────────────────── */
+  /* Glassmorphism pass (2026-09-05): these three tokens existed before but
+     were barely wired up. Scope is deliberately MODERATE — chrome/
+     containers only (sidebar, topbar, .card, KpiCard, ConfirmDialog, Menu,
+     Toast, login hero). DataTable rows/cells, form inputs, and
+     .status-pill fills stay on the plain --color-surface/--color-bg/tint
+     backgrounds they already use — those carry small, dense, audited-
+     contrast text (§2 Rule 6/6.4 in the working reference), and a blurred
+     translucent background under that text is a real legibility risk on
+     an operational console. Do not "complete" the look by extending glass
+     there without redoing that contrast audit first. */
   --glass-bg: rgba(255,255,255,0.72);
   --glass-border: rgba(255,255,255,0.18);
   --glass-blur: 12px;
@@ -435,7 +446,16 @@ html, body {
      scrollbars" bug as the earlier sidebar fix, at the document level
      instead. .page-content is the one intended scroll region. */
   overflow: hidden;
-  background: var(--color-bg);
+  /* Soft brand-tinted wash, fixed to the viewport (not scrolled content),
+     so glass panels have something to visibly blur against instead of a
+     flat color — the two blobs are low-alpha mixes of tokens already in
+     use elsewhere (color-mix is the same technique the dark tint tokens
+     above use), never a new hardcoded hex. */
+  background:
+    radial-gradient(1200px 800px at 12% -10%, color-mix(in srgb, var(--color-primary) 10%, transparent), transparent 60%),
+    radial-gradient(1000px 700px at 100% 5%, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 60%),
+    var(--color-bg);
+  background-attachment: fixed;
   color: var(--color-text-primary);
   font-family: var(--font-base);
 }
@@ -583,6 +603,24 @@ button.danger {
 button.danger:hover { background: var(--color-critical-solid); color: var(--color-white); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 
+/* A button that reads as inline text — a cross-reference sitting inside
+   a table cell's own text flow (e.g. SMS Monitor's "Linked to" column),
+   where a full bordered/padded button variant would be too heavy next
+   to plain text like "· Dispatch #7". */
+button.link-button {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--color-link);
+  text-decoration: underline;
+  font: inherit;
+  font-weight: 500;
+}
+button.link-button:hover { color: var(--color-primary-hover); }
+
 /* Icon-only action button (table row edit/delete) — source spec:
    p-1.5 with a tinted hover per action type. */
 button.icon-btn {
@@ -599,27 +637,34 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 /* --- Cards / surfaces -------------------------------------------------- */
 
 .card {
-  /* Subtle sheen instead of flat surface — two stops of the same
-     near-surface range (--color-surface -> --color-bg), so it reads as
-     depth rather than a visible color change; doesn't affect any
-     existing background-color override elsewhere since gradient and
-     solid color aren't mixed. */
-  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg) 100%);
-  border: 1px solid var(--color-border);
+  /* Glassmorphism (moderate scope — see the token comment above):
+     translucent fill + backdrop blur over the page's brand-tinted wash,
+     with a light hairline border for the "edge catching light" cue.
+     The @supports block right below swaps this for the old opaque
+     gradient sheen on a browser that can't blur, so the card never goes
+     see-through without also being frosted. */
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   padding: var(--spacing-lg);
   /* box-shadow: pre-existing hover-lift. border-color: §7.1 theme-
-     transition. `background` itself is a gradient, not a solid color —
-     gradients don't interpolate smoothly between two different stop sets
-     the way solid colors do, so a theme toggle snaps the card background
-     rather than crossfading it; acceptable given it's a two-stop near-
-     white/near-surface sheen, not a jarring color change. */
-  transition: box-shadow .15s ease, border-color .2s ease, transform .2s ease;
+     transition. */
+  transition: box-shadow .15s ease, border-color .2s ease, transform .2s ease, background-color .2s ease;
 }
 .card:hover {
   box-shadow: var(--shadow-card-hover);
   transform: translateY(-2px);
+}
+/* §2 Rule 6: a blur that silently no-ops must not leave a see-through
+   card behind — fall back to the pre-glass opaque sheen instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card {
+    background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg) 100%);
+    border-color: var(--color-border);
+  }
 }
 
 /* Tighter padding for dense list rows; dashboards keep the roomier default. */
@@ -637,6 +682,24 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 .card-header__title { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-text-primary); }
 .card-header__subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-top: 0.125rem; }
 .card-header__icon { color: var(--color-primary); flex-shrink: 0; }
+/* Icon-only "View all" variant (2026-09-06 UX pass) — same slot, but a
+   real button rather than a decorative span, since it navigates. */
+.card-header__icon--action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.card-header__icon--action:hover,
+.card-header__icon--action:focus-visible { background: var(--color-row-active-bg); color: var(--color-primary-strong, var(--color-primary)); }
 
 .state-block {
   text-align: center;
@@ -681,10 +744,6 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
   flex-basis: 100%;
 }
 
-/* Quick date-range chips beside the explicit From/To fields. */
-.range-presets { display: flex; gap: var(--spacing-xs); flex-wrap: wrap; }
-.range-presets__chip { padding: var(--spacing-xs) var(--spacing-sm-md); min-height: 2rem; }
-
 /* Vertical rhythm between the dashboard's stacked rows — replaces the
    per-row `style.marginTop = '16px'` those grids used to carry. */
 .dashboard-row { margin-top: var(--spacing-md); }
@@ -708,8 +767,12 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 /* Tight label-over-control pairing inside a form row. */
 .stack-tight { display: flex; flex-direction: column; gap: var(--spacing-xs); }
 .row-start { justify-content: flex-start; }
-/* Skeletons that fill their container rather than taking a fixed shape. */
-.skeleton--fill { height: 100%; border-radius: var(--radius-xl); }
+/* Skeletons that fill their container rather than taking a fixed shape.
+   `min-height` floor for the same reason `.gis-page__map-wrapper--fill`
+   has one (gis-live-tracking.css) — `height: 100%` alone collapses when
+   an ancestor's height is `auto` (only user today: the Heatmap tab's
+   loading state). */
+.skeleton--fill { height: 100%; min-height: 28rem; border-radius: var(--radius-xl); }
 .skeleton--roster { height: 5rem; margin-top: var(--spacing-md); border-radius: var(--radius-lg); }
 
 /* Single-column form screens (Settings, the public citizen report) — a
@@ -932,7 +995,24 @@ html, body, .status-pill,
   margin-bottom: var(--spacing-lg);
 }
 
+/* Shared by every page-level "date range" dropdown + progressive-
+   disclosure custom-range row (admin-dashboard.js, statistical-reports.js)
+   — 2026-09-06 UX pass. `.range-picker-custom-row` also carries
+   `.filter-bar` for its own flex/gap/wrap; that class's own unconditional
+   `display: flex` is an AUTHOR rule, which beats the browser's default
+   `[hidden] { display: none }` (a UA-stylesheet rule) regardless of
+   selector specificity — so toggling `.hidden` on an element with a
+   `display`-setting class does nothing without this override. */
+.range-select { min-width: 10rem; }
+.range-picker-custom-row[hidden] { display: none; }
+
 .row-between { display: flex; justify-content: space-between; align-items: center; gap: var(--spacing-sm); }
+/* Standalone, not a `.row-between` modifier — a self-contained flex row
+   for a single right-aligned element (e.g. a "View all →" link under a
+   summary panel), unlike `.row-start` above which is meant to pair with
+   `.row-between` but is declared earlier in this file, so it loses that
+   pairing's cascade (pre-existing, not this rule's concern). */
+.row-end { display: flex; justify-content: flex-end; align-items: center; gap: var(--spacing-sm); }
 .avatar-row { display: flex; align-items: center; gap: var(--spacing-sm); }
 .note { text-transform: none; font-weight: 400; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 

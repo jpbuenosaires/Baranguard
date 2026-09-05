@@ -29,9 +29,7 @@
  * kebab-case filename per §4.
  */
 
-import { getUsers, setUserActive, setUserSuspended, createUser, logout, ApiClientError } from '../api/apiClient.js';
-import { AppShell } from '../components/AppShell.js';
-import { PageHeader } from '../components/PageHeader.js';
+import { getUsers, setUserActive, setUserSuspended, createUser, ApiClientError } from '../api/apiClient.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { DataTable } from '../components/DataTable.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
@@ -66,29 +64,16 @@ const COLUMNS = [
 ];
 
 /**
- * @param {HTMLElement} root
+ * Personnel > Users tab. Was the standalone W10 User Management page
+ * (`renderUserManagementPage`) before the 2026-09-05 Personnel merge —
+ * see `pages/personnel.js` for the shared AppShell/PageHeader/tab shell
+ * this now renders into.
+ *
+ * @param {HTMLElement} container tab body to render into
+ * @param {ReturnType<import('../components/PageHeader.js').PageHeader>} pageHeader shared page header (for the Add User action)
  * @param {{userId:number, fullName:string, role:string}} user
- * @param {() => void} onLoggedOut
- * @param {(page: string, param?: any) => void} navigate
  */
-export function renderUserManagementPage(root, user, onLoggedOut, navigate) {
-  root.innerHTML = '';
-
-  const shell = AppShell(user, 'user-management', navigate, async () => {
-    shell.logoutButton.disabled = true;
-    await logout();
-    onLoggedOut();
-  });
-  const { header, content } = shell;
-  root.appendChild(shell.el);
-
-  const pageHeader = PageHeader({
-    title: 'User Management',
-    subtitle: 'Create, deactivate, suspend, or reactivate accounts in your own barangay',
-    icon: icons.users,
-  });
-  header.appendChild(pageHeader.el);
-
+export function renderUsersTab(container, pageHeader, user) {
   let showForm = false;
   const formHost = document.createElement('div');
   const newButton = document.createElement('button');
@@ -119,13 +104,13 @@ export function renderUserManagementPage(root, user, onLoggedOut, navigate) {
   searchInput.addEventListener('input', () => renderList(currentTotal));
   searchWrap.append(searchIcon, searchLabel, searchInput);
   filterPanel.appendChild(searchWrap);
-  header.appendChild(filterPanel);
+  container.appendChild(filterPanel);
 
   const statStripHost = document.createElement('div');
-  content.appendChild(statStripHost);
+  container.appendChild(statStripHost);
 
   const body = document.createElement('div');
-  content.append(formHost, body);
+  container.append(formHost, body);
 
   function renderFormPane() {
     formHost.innerHTML = '';

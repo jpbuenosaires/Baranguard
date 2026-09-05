@@ -10,13 +10,11 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getFatigueFlags, getUsers, acknowledgeFatigueFlag, logout, ApiClientError } from '../api/apiClient.js';
-import { AppShell } from '../components/AppShell.js';
-import { PageHeader } from '../components/PageHeader.js';
+import { getFatigueFlags, getUsers, acknowledgeFatigueFlag, ApiClientError } from '../api/apiClient.js';
 import { DataTable } from '../components/DataTable.js';
-import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
+import { confirmDialog } from '../components/ConfirmDialog.js';
 
 // The project's own safety rule (FatigueCalculator.php): 56 scheduled
 // hours in a rolling 7-day window. Mirrored here only to render the bar
@@ -31,10 +29,19 @@ const COLUMNS = [
   { key: 'action', label: 'Status', align: 'right' },
 ];
 
-/** @param {HTMLElement} root @param {{fullName:string, role:string}} user */
-export function renderFatigueFlagsPage(root, user, onLoggedOut, navigate) {
-  root.innerHTML = '';
-
+/**
+ * Personnel > Fatigue flags tab. Was the standalone W13 Fatigue Flags
+ * page (`renderFatigueFlagsPage`) before the 2026-09-05 Personnel merge —
+ * see `pages/personnel.js` for the shared AppShell/PageHeader/tab shell.
+ * This is the one tab Punong Barangay can see (read-only) — the other
+ * three (Users/Scheduler/Swap requests) are Admin-only, gated in
+ * `personnel.js` itself before this ever renders.
+ *
+ * @param {HTMLElement} container tab body to render into
+ * @param {{fullName:string, role:string}} user
+ * @param {() => void} [onCountsChanged] re-fetches this tab's own badge count after an acknowledge
+ */
+export function renderFatigueFlagsTab(container, user, onCountsChanged) {
   // GET /users is Admin-only server-side (UsersController.php) — a PB
   // session (this screen's read-only role) would 403 on it, so only ask
   // for it as Admin; PB falls back to "Tanod #id" labels instead of a
@@ -42,23 +49,12 @@ export function renderFatigueFlagsPage(root, user, onLoggedOut, navigate) {
   const canAcknowledge = user.role === 'admin';
   const canLookUpNames = user.role === 'admin';
 
-  const shell = AppShell(user, 'fatigue', navigate, async () => {
-    shell.logoutButton.disabled = true;
-    await logout();
-    onLoggedOut();
-  });
-  const { header, content } = shell;
-  root.appendChild(shell.el);
-
-  const pageHeader = PageHeader({ title: 'Fatigue Flags', subtitle: 'Tanods scheduled over the safe 7-day hours threshold', icon: icons.batteryWarning });
-  header.appendChild(pageHeader.el);
-
   const body = document.createElement('div');
-  content.appendChild(body);
+  container.appendChild(body);
 
-  // audit A16: the sidebar badge would otherwise sit contradicting this
-  // screen for up to a minute after the last flag is acknowledged.
-  const onChanged = () => { load(); shell.refreshNavCounts?.(); };
+  // audit A16: the tab's own badge count would otherwise sit contradicting
+  // this screen for up to a minute after the last flag is acknowledged.
+  const onChanged = () => { load(); onCountsChanged?.(); };
 
   load();
 
@@ -129,7 +125,7 @@ function renderList(container, flags, namesById, canAcknowledge, onChanged) {
         case 'flagged':
           return new Date(flag.flaggedAt).toLocaleString();
         case 'action':
-          return renderActionCell(flag, canAcknowledge, onChanged);
+          return renderActionCell(flag, name, canAcknowledge, onChanged);
         default:
           return '';
       }
@@ -138,7 +134,7 @@ function renderList(container, flags, namesById, canAcknowledge, onChanged) {
   container.appendChild(table);
 }
 
-function renderActionCell(flag, canAcknowledge, onChanged) {
+function renderActionCell(flag, name, canAcknowledge, onChanged) {
   const wrap = document.createElement('span');
   wrap.className = 'data-table__actions';
 
@@ -161,6 +157,13 @@ function renderActionCell(flag, canAcknowledge, onChanged) {
     ackButton.textContent = 'Acknowledge';
     ackButton.addEventListener('click', async (event) => {
       event.stopPropagation();
+      const confirmed = await confirmDialog({
+        title: 'Acknowledge this fatigue flag?',
+        description: `Confirms ${name} has been reviewed for a scheduled-hours overage. This never deletes or hides the flag from the historical record.`,
+        confirmLabel: 'Acknowledge',
+        cancelLabel: 'Cancel',
+      });
+      if (!confirmed) return;
       ackButton.disabled = true;
       ackButton.textContent = 'Acknowledging…';
       try {

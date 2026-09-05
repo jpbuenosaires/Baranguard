@@ -15,13 +15,11 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getShiftSwapRequests, getShifts, getUsers, resolveShiftSwapRequest, logout, ApiClientError } from '../api/apiClient.js';
-import { AppShell } from '../components/AppShell.js';
-import { PageHeader } from '../components/PageHeader.js';
+import { getShiftSwapRequests, getShifts, getUsers, resolveShiftSwapRequest, ApiClientError } from '../api/apiClient.js';
 import { DataTable } from '../components/DataTable.js';
-import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
+import { confirmDialog } from '../components/ConfirmDialog.js';
 
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', approved: 'status-pill--success', denied: 'status-pill--neutral' };
 
@@ -33,27 +31,24 @@ const COLUMNS = [
   { key: 'actions', label: 'Actions', align: 'right' },
 ];
 
-/** @param {HTMLElement} root @param {{fullName:string, role:string}} user */
-export function renderSwapRequestsPage(root, user, onLoggedOut, navigate) {
-  root.innerHTML = '';
-
-  const shell = AppShell(user, 'swap-requests', navigate, async () => {
-    shell.logoutButton.disabled = true;
-    await logout();
-    onLoggedOut();
-  });
-  const { header, content } = shell;
-  root.appendChild(shell.el);
-
-  const pageHeader = PageHeader({ title: 'Shift Swap Requests', subtitle: 'Review and resolve Tanod-submitted swap requests', icon: icons.repeat });
-  header.appendChild(pageHeader.el);
-
+/**
+ * Personnel > Swap requests tab. Was the standalone W12 Shift Swap
+ * Requests page (`renderSwapRequestsPage`) before the 2026-09-05
+ * Personnel merge — see `pages/personnel.js` for the shared AppShell/
+ * PageHeader/tab shell, and for the badge-count refresh this used to get
+ * from `shell.refreshNavCounts`.
+ *
+ * @param {HTMLElement} container tab body to render into
+ * @param {{fullName:string, role:string}} user
+ * @param {() => void} [onCountsChanged] re-fetches this tab's own badge count after an approve/deny
+ */
+export function renderSwapRequestsTab(container, user, onCountsChanged) {
   const body = document.createElement('div');
-  content.appendChild(body);
+  container.appendChild(body);
 
-  // audit A16: keep the sidebar's pending-swap badge in step with this
-  // screen instead of waiting out the 60-second poll.
-  const onChanged = () => { load(); shell.refreshNavCounts?.(); };
+  // audit A16: keep the tab's own badge count in step with this screen
+  // instead of waiting out the 60-second poll.
+  const onChanged = () => { load(); onCountsChanged?.(); };
 
   load();
 
@@ -131,7 +126,7 @@ function renderList(container, requests, shiftsById, namesById, onChanged) {
           return wrap;
         }
         case 'actions':
-          return req.status === 'pending' ? renderActionsCell(req, onChanged) : '';
+          return req.status === 'pending' ? renderActionsCell(req, requesterName, shift, onChanged) : '';
         default:
           return '';
       }
@@ -140,7 +135,7 @@ function renderList(container, requests, shiftsById, namesById, onChanged) {
   container.appendChild(table);
 }
 
-function renderActionsCell(req, onChanged) {
+function renderActionsCell(req, requesterName, shift, onChanged) {
   const wrap = document.createElement('span');
   wrap.className = 'data-table__actions';
 
@@ -151,8 +146,20 @@ function renderActionsCell(req, onChanged) {
   denyButton.className = 'danger';
   denyButton.textContent = 'Deny';
 
+  const shiftDescription = shift
+    ? `${new Date(shift.startAt).toLocaleString()} – ${new Date(shift.endAt).toLocaleString()}`
+    : `Shift #${req.shiftId}`;
+
   const resolve = async (status, button, event) => {
     event.stopPropagation();
+    const confirmed = await confirmDialog({
+      title: status === 'approved' ? 'Approve this swap request?' : 'Deny this swap request?',
+      description: `${requesterName} — ${shiftDescription}`,
+      confirmLabel: status === 'approved' ? 'Approve' : 'Deny',
+      cancelLabel: 'Cancel',
+      danger: status === 'denied',
+    });
+    if (!confirmed) return;
     approveButton.disabled = true;
     denyButton.disabled = true;
     button.textContent = status === 'approved' ? 'Approving…' : 'Denying…';

@@ -101,14 +101,18 @@ const NAV_ITEMS = [
 
   { key: 'blotter', label: 'Electronic Blotter', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.fileText, group: 'Records & Reporting' },
   { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'], icon: icons.inbox, countKey: 'unconvertedCitizenReports', group: 'Records & Reporting' },
-  { key: 'heatmap', label: 'Historical Heatmap', roles: ['admin', 'punong_barangay'], icon: icons.flame, group: 'Records & Reporting' },
-  { key: 'reports', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart, group: 'Records & Reporting' },
+  // 2026-09-05 merge of Historical Heatmap + Analytics (W5 + W9) into one
+  // tabbed screen — see pages/analytics.js. Same role pair both already
+  // had, so no per-tab gating needed there (unlike Personnel below).
+  { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart, group: 'Records & Reporting' },
 
-  { key: 'scheduler', label: 'Shift Scheduler', roles: ['admin'], icon: icons.calendar, group: 'Personnel' },
-  { key: 'swap-requests', label: 'Swap Requests', roles: ['admin'], icon: icons.repeat, countKey: 'pendingSwapRequests', group: 'Personnel' },
-  { key: 'fatigue', label: 'Fatigue Flags', roles: ['admin', 'punong_barangay'], icon: icons.batteryWarning, countKey: 'unacknowledgedFatigueFlags', group: 'Personnel' },
-  // §D/W10 — Admin only, built as a deliberate Sprint 8 exception.
-  { key: 'user-management', label: 'User Management', roles: ['admin'], icon: icons.users, group: 'Personnel' },
+  // 2026-09-05 merge of what used to be four separate nav items (Shift
+  // Scheduler/Swap Requests/Fatigue Flags/User Management) into one
+  // tabbed screen — see pages/personnel.js. No countKey here: the two
+  // badges those used to carry (pendingSwapRequests/
+  // unacknowledgedFatigueFlags) moved onto the matching tab chip inside
+  // the page itself instead of the sidebar.
+  { key: 'personnel', label: 'Personnel', roles: ['admin', 'punong_barangay'], icon: icons.users, group: 'Personnel' },
 
   // §9 W14 — Admin only, explicitly.
   { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'], icon: icons.messageSquare, group: 'System' },
@@ -468,9 +472,17 @@ export function AppShell(user, activePage, navigate, onLogout) {
     statusBadge.innerHTML = '<span class="status-badge__dot"></span><span class="status-badge__text">Checking…</span>';
     topbarUser.appendChild(statusBadge);
     getSystemHealth().then((health) => {
-      const operational = health.api === 'healthy' && health.db === 'healthy';
-      statusBadge.className = 'status-badge status-badge--' + (operational ? 'ok' : 'down');
-      statusBadge.querySelector('.status-badge__text').textContent = operational ? 'All Systems Operational' : 'Database Unavailable';
+      const coreDown = health.api !== 'healthy' || health.db !== 'healthy';
+      // `not_configured` stays neutral (§2 Rule 6 — a dependency nobody has
+      // set up yet is not a failure state), so only a real live-probe
+      // failure ('unhealthy') triggers the amber "AI Unavailable" state —
+      // otherwise every session on a workstation that has never configured
+      // Ollama would show a false alarm.
+      const aiDown = health.ollama === 'unhealthy';
+      const state = coreDown ? 'down' : aiDown ? 'warn' : 'ok';
+      const text = coreDown ? 'Database Unavailable' : aiDown ? 'AI Unavailable' : 'All Systems Operational';
+      statusBadge.className = 'status-badge status-badge--' + state;
+      statusBadge.querySelector('.status-badge__text').textContent = text;
       statusBadge.title = `API: ${health.api} · DB: ${health.db} · OSRM: ${health.osrm} · Ollama: ${health.ollama} · GSM: ${health.gsmIngestion} · Notifications: ${health.notificationConfig}`;
     }).catch(() => {
       statusBadge.className = 'status-badge status-badge--down';

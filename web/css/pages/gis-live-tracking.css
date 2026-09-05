@@ -12,7 +12,24 @@
 }
 .gis-page__map-wrapper {
   flex: 1;
-  min-height: 0;
+  /* 2026-09-06 fix: was `min-height: 0`, which let the map starve to
+     nearly nothing whenever its flex siblings (filter chips, roster,
+     Live Activity feed — all auto-basis, not flex-growing) already claim
+     the whole of `.gis-page`'s own height. Flexbox gives auto-basis
+     siblings their full content height FIRST, then distributes only
+     whatever's left to a `flex: 1` item — verified live: with a roster of
+     a few Tanods and 10 activity rows, those three siblings alone summed
+     to ~602px against a ~668px `.gis-page`, leaving ~1px for the map
+     (confirmed via `getBoundingClientRect()`, not guessed). This isn't
+     the same bug the Heatmap tab had (a `height: 100%` chain failing
+     against `.page-container`'s undefined height — `.gis-page` itself
+     DOES get a real height here) — it's the map losing a space fight it
+     was never guaranteed to win. A real min-height guarantees it a usable
+     size regardless of how tall the roster/activity content gets; if
+     that pushes the page's total height past the viewport, `.page-content`
+     already scrolls (same as every other content-heavy page in this app),
+     so nothing below the map becomes unreachable. */
+  min-height: 28rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -78,13 +95,13 @@
   gap: var(--spacing-sm);
 }
 .gis-activity__list {
-  gap: var(--spacing-xs, 0.35rem);
+  gap: var(--spacing-xs);
 }
 .gis-activity__row {
   display: flex;
   justify-content: space-between;
   gap: var(--spacing-md);
-  padding: var(--spacing-xs, 0.35rem) 0;
+  padding: var(--spacing-xs) 0;
   border-bottom: 1px solid var(--color-border);
   font-size: var(--font-size-sm);
 }
@@ -96,5 +113,18 @@
    `style.marginTop = '16px'` (audit A4). */
 .gis-page__roster { margin-top: var(--spacing-md); }
 /* The heatmap's map wrapper fills its flex parent (audit A4 — was an
-   inline `style.height = '100%'`). */
-.gis-page__map-wrapper--fill { height: 100%; }
+   inline `style.height = '100%'`).
+   2026-09-06 fix: `height: 100%` alone silently collapsed to ~0 — its
+   containing block chain (`.page-container` in AppShell.js, common to
+   every page) never has an explicit height, only `width`/`max-width`, so
+   this percentage had nothing to resolve against and computed to `auto`
+   (per spec, a percentage height against an indefinite-height containing
+   block is treated as `auto`), same for the `.flex-col`/`.grow` ancestors
+   this wrapper sits inside (historical-heatmap.js). The whole chain
+   quietly collapsed to a ~1px sliver, hiding the map entirely — real
+   canvas pixels rendered, just inside a box far too short to see. A
+   `min-height` floor sidesteps that fragile ancestor-percentage chain
+   without touching `.page-container` (shared by every page in the app —
+   too large a blast radius to change here) or requiring that fix to be
+   correct everywhere first. */
+.gis-page__map-wrapper--fill { height: 100%; min-height: 28rem; }

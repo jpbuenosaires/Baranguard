@@ -464,7 +464,7 @@ dashboard. Trust, reliability, security, government professionalism.
 Never playful, never cluttered, never "student project" looking — but
 still scannable in under 2 seconds during an active incident.
 
-**Design tokens** (`/web/src/styles/base.css`):
+**Design tokens** (`/web/css/base.css`):
 ```css
 :root {
   --color-navy: #1E3A6E;          --color-primary: #1D4ED8;
