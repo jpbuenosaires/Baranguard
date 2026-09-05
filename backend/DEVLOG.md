@@ -5949,3 +5949,1321 @@ rather than deferring it.
 All four import paths resolve; all three archives intact at their
 original line counts (1141 / 949 / 5881); no stale references to the old
 auto-load set remain in `CLAUDE.md`.
+
+---
+
+# DEVLOG — Live Map basemap: wired real OSM tiles
+
+## What changed
+
+`web/src/components/LiveMap.js`'s MapLibre style had no raster/vector
+tile source since Sprint 1 — a flat background color only, documented as
+a deliberate, deferred gap. User saw the empty blue GIS Live Tracking
+pane and asked for a real map; given a choice between online OSM tiles
+(fast) and offline MBTiles served from the existing upload system (more
+work, matches §2 Rule 7's local-only stance, needs a package uploaded
+first), the user chose online OSM tiles.
+
+Added a standard `tile.openstreetmap.org` raster XYZ source + layer to
+`buildStyle()`, and a compact `AttributionControl` (required by OSM's
+tile usage policy). No new dependency — MapLibre GL JS is already
+vendored (§1); this is a config change, nothing to install.
+
+**Logged as a deliberate Rule 7 deviation**, not silently: the rule was
+written for the field mobile app's offline guarantee, not the office web
+dashboard, and a missing basemap was judged worse than a dashboard that
+needs internet for tiles specifically. If the workstation is offline,
+tiles simply fail to load and the flat background color shows instead —
+markers/GPS data are unaffected either way, since they never depended on
+the tile source.
+
+## Verified
+
+- `node --check` clean; `verify-web-wiring.mjs` 373/373 (no CSS/JS
+  wiring changed).
+- Tile server reachability confirmed from this machine: `curl` against a
+  real tile URL returns `200`, `image/png`, and
+  `Access-Control-Allow-Origin: *` — the CORS header MapLibre's WebGL
+  texture loading requires; without it tiles would fetch but silently
+  fail to render.
+- **Not verified in-browser against the real login** — no test
+  credentials for the real seeded admin account are available to this
+  session, and guessing/brute-forcing one is out of bounds. User should
+  refresh GIS Live Tracking (or Dispatch Center's map pane) to confirm.
+
+---
+
+# DEVLOG — REMAINING.md §C/§D: backup legal-hold expiry, SOS wiring, W10/W18
+
+## Deliberate scope exception
+
+User explicitly asked to build several `docs/REMAINING.md` items in one
+session: §C's real gaps (C1 backup expiry, C3 SOS button) and §D's
+unbuilt screens (W10, W18), plus C4's tractable half. This is a
+multi-box, new-feature session against Sprint 8's "verification, not
+new features" framing — the standing-rules exception `docs/SPRINTS.md`
+rule 2 explicitly allows when the user asks for it. Scope was narrowed
+via explicit user decisions before writing code: **W21 skipped**
+(blocked pending its own architecture review — no schema/endpoints
+exist, per §9's own gate), **C2 skipped** (Task Scheduler wiring is a
+system-settings change outside what this session can execute), **3 of
+4 C4 items deferred** (native SMS send, native full-screen SOS
+activity, MapLibre basemap — all need a real Android device, already
+tracked as blocked under REMAINING.md item A1), and **W10 scoped to
+is_active + session revocation only** (no role editing, no user
+creation).
+
+## C1 — Backup file expiry now respects legal_hold
+
+`backend/scripts/backup.sh` pruned `*.sql.enc` files by filesystem
+`mtime` alone — no legal-hold awareness, a gap the script's own header
+and `RetentionService.php`'s docblock both named explicitly (backup
+expiry is deliberately NOT that class's job). Since each backup is one
+full-DB dump, the fix is file-level: before deleting an aged-out backup,
+compute the earliest `created_at`/`uploaded_at` among rows *currently*
+under `legal_hold` across `incident`, `citizen_report`,
+`evidence_attachment` (the only three tables with the column), and
+refuse to prune any backup timestamped on/after that floor. If the hold
+query itself fails for any reason, the script now **fails closed** —
+skips pruning entirely for that run rather than risking deleting a
+held record's only backup by assuming "no hold."
+
+**Verified** against a disposable DB + scratch backup directory (never
+the real `baranguard` DB or `backend/backups/`): (1) a backup at/after
+an active hold's floor survives past `BACKUP_RETENTION_DAYS`, older
+ones prune normally; (2) clearing the hold lets normal age-based
+pruning resume on the next run; (3) breaking the hold query (dropped
+table, simulating a real failure) leaves every file untouched —
+fail-closed confirmed, not just asserted.
+
+## C3 — Mobile SOS button wired end-to-end
+
+`POST /tanod-sos` has existed since Sprint 4; M2's button was a
+hard-disabled stub with stale copy claiming the endpoint didn't exist.
+Wired following the two patterns already proven elsewhere in this
+codebase: `apiService.postSos()` (same shape as `setDutyStatus`),
+`offlineQueueRepository.enqueueSosItem`/`listPendingSosItems` (mirrors
+the `dispatch_status` queue functions — `'sos'` was already a valid
+`OfflineQueuePayloadType`, just unused), and `syncService.runSyncPass()`
+now drains it into `/sync/batch`'s `sos[]` array (server-side support
+existed since Sprint 4 and was previously always sent empty).
+`home.tsx`'s SOS button is now a real `color="danger"` action gated by
+an `IonAlert` confirm (a false alarm dispatches real people) —
+online-first via `postSos`, falling back to `enqueueSosItem` on
+`ApiError.isOffline`. Latitude/longitude are server-required with no
+fabricated fallback: a `getCurrentPosition()` failure blocks the send
+and says so.
+
+**Verified**: `npx tsc --noEmit` compiles clean across all four changed
+files. **Not device-verified** — no Android hardware/emulator available
+this session (same limitation as every other mobile feature in this
+project, tracked under REMAINING.md item A1). Also unresolved from
+before this session: nothing calls `runSyncPass()` automatically yet
+(no timer/foreground hook), so a queued-offline SOS drains on whatever
+next sync trigger exists — not solved here, out of this session's
+requested scope.
+
+## C4 (tractable half) — manifest permission + cap sync
+
+Added `POST_NOTIFICATIONS` (Android 13+) to
+`mobile/android/app/src/main/AndroidManifest.xml`, then ran
+`npx cap sync android` (pure Capacitor-CLI, no JDK/emulator needed) —
+registered `@capacitor/geolocation` and `@capacitor/push-notifications`
+into the native project (6 → 8 plugins), which also lets Capacitor
+auto-inject `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` on the next
+real build. Confirmed `gradle.properties`' hand-fixed JDK toolchain
+paths survived the sync untouched. Did **not** run `npx cap add
+android` (would destroy those fixes). The three device-dependent C4
+items (native SMS send, native full-screen SOS activity, MapLibre
+basemap) are deferred per the user's explicit decision — no code
+changes for those.
+
+## D/W10 — User Management (deactivate/reactivate + session revocation)
+
+`UsersController::update()` was self-edit-only; extended with a second
+path for an Admin editing a **different**, same-barangay user, scoped to
+`is_active` alone (no role changes, no user creation — out of this
+cut's scope per the user's decision). Cross-tenant/nonexistent target is
+404, never 403 (Rule 2). Deactivating revokes every active
+`auth_session` row for that user (same statement `AuthController`
+already uses for password-change revocation). Added a "last active
+Admin" count-guard for defense-in-depth, but **testing proved it is
+structurally unreachable via the live API**: the caller must themselves
+be an active Admin to reach this code at all, and self-deactivation is
+independently blocked by the self-edit path never accepting
+`is_active` — so an admin can never be the one whose action would zero
+out a barangay's admin count. Documented honestly in the controller's
+own comment rather than left implying the 409 is a normal operational
+path. New web screen `web/src/pages/user-management.js` follows
+`audit-log.js`'s structure + `dispatch-center.js`'s `confirmDialog`
+pattern; nav/routing added to `AppShell.js`/`main.js` (Admin-only).
+
+**Verified**: a 19-check ad hoc script against a disposable DB +
+throwaway `php -S` port (non-admin blocked 403, happy-path deactivate
++ audit row + session revocation confirmed via direct `auth_session`
+query, cross-tenant 404, malformed body 400, reactivation + re-login
+confirmed) — all 19 passed. Also browser-verified live: deactivate,
+reactivate, confirm-dialog copy, toast messages, "(you)" self-row
+guard, and `verify-web-wiring.mjs` (407/407, up from 373).
+
+## D/W18 — Map Package Management
+
+Both endpoints (`GET`/`POST /map-packages`) already existed and needed
+no backend change — purely a new web screen. Upload is multipart, so
+`apiClient.js` gained a dedicated `uploadMapPackage()` that can't reuse
+the shared JSON `request()` helper; it hand-replicates the same
+session/sliding-token/error-shape handling. New screen
+`web/src/pages/map-packages.js` shows the published version/checksum or
+an honest empty state (404 is not an error here), with an upload form
+that surfaces the server's real validation message verbatim (bad
+version pattern, non-MBTiles, duplicate-version 409, oversize) rather
+than a paraphrase. Scope is metadata + upload only, matching §9 — no
+client call to the Tanod-only `/download` route.
+
+**Verified** end-to-end in-browser against a disposable DB + disposable
+backend on a throwaway port (never the real `baranguard` DB): empty
+state renders correctly; an invalid file surfaces the server's real
+"File could not be opened as a SQLite/MBTiles database" message; a real
+minimal valid MBTiles file uploads successfully and the metadata view
+updates with the actual returned checksum. `verify-web-wiring.mjs`
+green throughout. `web/index.html`'s `BARANGUARD_API_BASE_URL` was
+temporarily repointed at the disposable backend for this test and
+reverted immediately after (confirmed via `git diff` showing no residual
+change) — the real backend vhost and `baranguard` database were never
+touched.
+
+## Verified (suite-level)
+
+- `node web/scripts/verify-web-wiring.mjs`: 407/407 (was 373/373).
+- `npx tsc --noEmit` (mobile): clean.
+- `php -l` on `UsersController.php` and `backup.sh`'s bash syntax: clean.
+- All disposable DBs/users/ports/scratch files torn down; nothing
+  written to the real `baranguard` database, `backend/backups/`, or
+  `backend/.env` this session.
+
+## Not done / still open
+
+W21 (blocked, needs its own architecture-review session), C2 (Task
+Scheduler wiring — a system-settings change, left as a documented
+manual runbook step, no wrapper scripts written either per the user's
+choice), and 3 of 4 C4 items (native SMS send, native full-screen SOS
+activity, MapLibre basemap — all blocked on REMAINING.md item A1's
+Android device/emulator work).
+
+---
+
+# DEVLOG — W10 follow-up: user creation (POST /users)
+
+## What changed
+
+User asked how to add a new account, was told the honest answer (no
+create endpoint or UI exists yet — direct SQL insert is the only path
+today), then asked for the real feature. Added `UsersController::create()`
+(`POST /users`, Admin-only, scoped to the admin's own barangay) and an
+"Add User" form on the User Management screen.
+
+**Design decisions, made without stopping to ask** (small, well-bounded
+follow-up in an area just built this session):
+- **Admin sets the initial password directly** (validated by the same
+  `PasswordPolicy::validate()` `change-password` already uses) — no
+  forced-first-login-change flow, since no such column/mechanism exists
+  in `user` and inventing one is a schema change out of proportion to
+  this ask.
+- **No Idempotency-Key/request_id token.** `username` is globally
+  UNIQUE, so a genuine retry and a real conflict are indistinguishable
+  and both correctly return 409 — the same coarser pattern
+  `MapPackagesController::create` already uses for its own natural key,
+  rather than adding a new column to `user` for a low-frequency admin
+  action.
+- **Reused the existing `Username` service** (`normalize()`/`isValid()`)
+  instead of inventing a new pattern — it already existed
+  (`backend/services/auth/Username.php`) but was only used by login,
+  never by anything that creates a username.
+- **`lupon` excluded from creatable roles.** §3: Lupon has no system
+  account at all. `CREATABLE_ROLES` is a new, separate constant from the
+  existing `ROLES` (which still includes `lupon` as a harmless `GET
+  /users?role=` filter value).
+- **No `username`/`full_name`/`contact_number` in the `user_created`
+  audit metadata** — same conservative Rule 17 call `update()`'s own
+  audit already makes; only `role` is recorded, the new user_id is
+  already the entity_id.
+
+## Verified
+
+- 17/17 ad hoc checks against a disposable DB + throwaway `php -S` port:
+  non-admin blocked (403), every validation rule (short/malformed
+  username, weak password, empty full_name, `role=lupon`, unknown role),
+  duplicate username → 409 (including a case-only duplicate, proving
+  normalization runs before the uniqueness check), happy path (correct
+  barangay, `is_active=1`, one `user_created` audit row with no
+  username/contact_number leaked), and the new account can actually log
+  in with the password the admin set.
+- Browser-verified live against a disposable backend: the "Add User"
+  button/form render correctly (role dropdown has no Lupon option), a
+  real create succeeds and the table/toast update, and a duplicate-
+  username attempt surfaces the server's exact "That username is
+  already taken." message without losing the form's entered data.
+- `node web/scripts/verify-web-wiring.mjs`: 408/408.
+- `php -l` on `UsersController.php`/`routes/users.php`: clean.
+- All disposable DBs/users/ports torn down; `web/index.html`'s temporary
+  API base URL override reverted (confirmed via `git diff` showing no
+  residual change) — real `baranguard` database and backend vhost never
+  touched.
+
+---
+
+# DEVLOG — UI/UX preview: fake week of data on a disposable DB
+
+## ⚠️ ACTIVE RIGHT NOW — `web/index.html` does NOT point at the real API
+
+User asked to generate a week of fake records and apply them to the
+real `baranguard` database "to see the UI/UX," reverting later.
+**Declined the real-DB part outright** — this is a direct hit on §2
+Rule 6 ("no demo/prototype tells... no fabricated statistics"), and
+concretely risky beyond just being against the rules: fake rows would
+sit in `audit_log` (write-once except the retention job — no clean
+"revert"), and anything actually wired to Ollama/FCM/Semaphore against
+the real DB could process fake incidents as if genuine.
+
+**Did the safe equivalent instead**, matching what the user actually
+needed (a populated UI to click through): a completely separate,
+throwaway database seeded with a realistic week of data, and a
+one-line temporary edit to `web/index.html` pointing the web dashboard
+at a disposable backend serving it. The real `baranguard` database was
+never touched.
+
+**Current live state** (as of 2026-09-05, still active until the user
+says done or a session reverts it):
+- `web/index.html:94` reads
+  `window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8140/api/v1'`
+  instead of the real vhost, `http://127.0.0.1:8081/api/v1`. **This is
+  the only file changed** — revert that one line to restore normal
+  operation.
+- A disposable MySQL database `baranguard_uiseed` (app user
+  `uiseed_app`) exists locally, all 7 migrations applied.
+- A `php -S 127.0.0.1:8140 -t backend/public` process is running in the
+  background, pointed at `baranguard_uiseed` (not `backend/.env`, not
+  the real DB).
+- **Any session picking this up cold**: if `web/index.html` still shows
+  port 8140, either the user is still previewing (leave it), or it was
+  left on by mistake (revert to 8081, drop `baranguard_uiseed`, kill
+  the port-8140 PHP process — `netstat -ano | grep 8140` then
+  `taskkill //F //PID <pid>`).
+
+## What was seeded
+
+Scratch script (not committed — lived in the session's scratchpad, not
+this repo) applied all 7 migrations to `baranguard_uiseed`, then
+inserted, across all 4 barangays and the trailing 7 days: 12 users (1
+admin/secretary/PB + 3 tanods in Dao, 1 admin + 1-2 tanods each
+elsewhere; all password `DevSeed#2026`), 6 mobile devices, 30 incidents
+across the full type/priority/status range, 22 dispatches (including a
+few cancelled), 12 finalized blotter records, 4 citizen reports, 84
+duty_status toggles + 168 GPS points, 42 shifts, 1 unacknowledged
+fatigue flag, 17 SMS log rows (`barangay_id` set explicitly —
+`SmsController::index` tenant-filters on it, a NULL would have made
+seeded rows invisible on the SMS Activity Log screen), and a light
+`login_success` audit trail.
+
+## Verified
+
+Seed script ran clean against the disposable DB (row counts printed and
+matched expectations); `admin.dao` login against the disposable backend
+returned 200. Did not do a full click-through of every screen — that's
+the user's own task, this just makes the data available to look at.
+
+## Not done
+
+No commit, no permanent seed script added to the repo (this was a
+one-off local exploration aid, not a reusable fixture — if a real
+"seed dev data" script is wanted later, that's a separate, explicit
+ask). Nothing here touches `docs/REMAINING.md`'s actual task list —
+this isn't project progress, it's a temporary viewing aid.
+
+## Doc pass while updating HANDOFF for the above
+
+Asked to "check the docs, update it." While adding the active-preview
+warning to `docs/HANDOFF.md`, cross-checked `docs/REFERENCE.md` §5's
+"69 live routes" claim against the actual route tables (counted
+`'(GET|POST|PATCH|PUT|DELETE)'` occurrences across `backend/routes/*.php`
+directly, rather than trusting the old number) and found it was already
+stale independent of this session's `POST /users` addition — the real
+count is **65** `/api/v1` routes (`backend/routes-internal/sms.php`'s 6
+handlers are separate, as the surrounding text already said). Corrected
+to "65 live `/api/v1` routes" rather than propagating a guess. Also
+bumped `docs/HANDOFF.md`'s web-wiring count to 408/408 (was still
+showing 407/407 from before the user-creation form).
+
+---
+
+# DEVLOG — Sidebar redesign: grouped nav sections
+
+## What changed
+
+Admin's sidebar had grown to 17 flat `NAV_ITEMS` entries (most recently
++2 from this session's own W10/W18 work) — user flagged it as
+"overpacked" and asked for a redesign, planned via `EnterPlanMode` and
+approved before any code changed.
+
+`web/src/components/AppShell.js`: each `NAV_ITEMS` entry gained a
+`group` field (`'Operations'`, `'Records & Reporting'`, `'Personnel'`,
+`'System'`, or `null` for Dashboard, which stays first/ungrouped as the
+implicit home). Items were reordered into contiguous clusters — most
+were already near their new group-mates; `user-management` moved from
+next to `service-health` into `Personnel`, the only real jump. The
+render loop now inserts a `.sidebar__nav-group-label` div whenever the
+group changes, but only for a role that actually has a visible item in
+that group (falls out naturally from iterating the already-role-
+filtered list) — confirmed empirically: Secretary shows only
+Operations/Records & Reporting/System (no empty "Personnel" header),
+Punong Barangay shows all 4.
+
+`web/src/components/AppShell.css`: new `.sidebar__nav-group-label`
+(small-caps, muted, matching `.sidebar__user-role`'s existing token
+use). In the manually-collapsed icon-only rail, the label collapses to
+a thin `border-top` divider instead of disappearing — groups stay
+visually separated with icons alone. The existing `@media
+(max-width:768px)` block (which already un-hides `.sidebar__nav-label`
+when the mobile drawer is open, even if desktop `.is-collapsed` was
+left on) got the same override for the new group label, so a stale
+desktop-collapsed flag can't leak a divider-only, unlabeled group
+header into the always-expanded mobile drawer.
+
+**Rejected alternatives** (logged per the plan's own reasoning):
+collapsible/accordion groups (extra state + a11y work not justified for
+17 items) and an overflow "More" menu (trades "too many visible items"
+for "some items hidden behind an extra click" — worse, not better).
+
+## Verified
+
+- `node --check` clean; `verify-web-wiring.mjs` 408/408 (unchanged
+  count — the new class resolves against a class already covered).
+- Browser-verified against the session's existing disposable
+  fake-data preview backend (port 8140, see the "UI/UX preview" DEVLOG
+  entry above) as all three web roles:
+  - **Admin**: accessibility tree confirms all 4 groups render in the
+    planned order with the planned membership; existing nav-count
+    badges (Dispatch Center, Citizen Reports, Fatigue Flags) still
+    populate correctly from the seeded data.
+  - **Secretary**: only 3 groups render (Personnel entirely absent, not
+    an empty header) — confirmed via DOM query, not just eyeballing.
+  - **Punong Barangay**: all 4 groups render, one item each in
+    Operations/Personnel, more in the others.
+  - Collapsed rail: `getComputedStyle` on each group label confirmed
+    `font-size:0`, near-zero height, and the intended `border-top`
+    divider — not just "looks right" in a screenshot.
+  - Mobile drawer with a stale desktop `is-collapsed` flag: confirmed
+    via `getComputedStyle` that the override correctly restores
+    `font-size:12px`/auto height/no border, matching the always-
+    expanded drawer's other labels.
+- One console error observed during PB testing (`GET /users?role=tanod`
+  → 403) — pre-existing, unrelated: `admin-dashboard.js`'s Tanod-picker
+  lookup hits an Admin-only endpoint regardless of viewer role and the
+  page already handles the failure gracefully (renders fine either
+  way). Not touched; out of scope for this change.
+- Coordination: re-read both files immediately before editing (per the
+  plan's own note about concurrent Antigravity edits) — both were
+  unchanged since my last read, no collision this time.
+
+---
+
+# DEVLOG — Electronic Blotter: AI-drafted Complainant/Respondent/Contact
+
+## What prompted this
+
+User shared a reference mockup for the Electronic Blotter screen. Most
+of it already existed (the real screen already does list+side-panel
+with the same columns). Three things didn't map to reality and got
+resolved via direct clarification before any code changed:
+Complainant/Respondent/Contact don't exist in the schema (user wanted
+them AI-drafted from the narrative, Secretary-reviewed, contact number
+optional — landed as a full migration + pipeline feature, not a UI
+tweak); a delete icon was explicitly declined (7-year legal retention,
+`ON DELETE RESTRICT` everywhere); and "+New Entry"/"Export"/"AI
+Assistant" header buttons were dropped after review — none map to a
+real capability on this specific screen, and adding a create-entry
+button here would contradict this screen's own already-decided
+architecture (blotter records are created only by finalizing an
+incident, never directly here).
+
+## Design
+
+New migration `0008_incident_party_fields.sql` (+`.down.sql`):
+`ai_processing_log` gains a fourth `task_type` value, `'extraction'`
+(independent of redaction — same relationship `'translation'` already
+has: own rows, never superseded by a redaction rerun and vice versa)
+plus three nullable draft columns; `incident` gains three nullable
+APPROVED columns (structurally parallel to `redacted_narrative`);
+`blotter_record` and `blotter_revision` gain the same three columns —
+the finalized/versioned values, explicitly submitted by the Secretary
+at finalize/amend time, never auto-copied from a draft (same philosophy
+`narrative_summary` already follows).
+
+Backend: `AiPrompts::extraction()` (new prompt, runs against
+**raw_narrative** — deliberately, since these are exactly the
+identifiers redaction strips out) · `AiJobQueue::enqueueExtraction/
+currentExtractionDraft/currentExtractionDraftForUpdate/completeExtraction`
+(mirror the translation/redaction methods exactly) · `ai-worker.php`
+gets a fourth dispatch branch + `runExtractionJob()` + a small
+`parseExtractionLines()` parser for the model's three labeled lines ·
+`AiDraftController::redact()` now also calls `enqueueExtraction()` —
+one Secretary action starts both pipelines, matching the user's own
+"automatically" · two new endpoints,
+`GET/POST .../ai-draft/extraction(/approve)`, reusing the exact
+`FOR UPDATE` + `draft_version` 409-check pattern from `approve()`/
+`regenerateSummary()` verbatim · `BlotterController::finalize()`/
+`amend()` take the same three fields, all optional.
+
+**Real bug caught during implementation, not after**: my first draft of
+`amend()`'s party-field handling treated all three fields as
+always-optional-and-independently-set, the same as `finalize()`. That's
+wrong for amend specifically — an omitted key would have silently
+NULLed out a previously-approved value on every amendment, since amend
+edits an EXISTING record rather than creating one. Fixed with an
+`array_key_exists()` merge (omitted key keeps the record's current
+value; an explicit key — including empty string, meaning "clear it" —
+overwrites), same discipline `UsersController::update()`'s self-edit
+path already uses. Caught by the ad hoc verification script (below),
+not by inspection — worth noting because it's exactly the kind of gap
+that "looks obviously right" in isolation.
+
+**Second design correction, also caught before shipping**: my first pass
+at `IncidentsController::show()` put the three party fields alongside
+`redacted_narrative` — visible to every role §7 allows to view an
+incident (Admin/Tanod/PB too). That's backwards: `redacted_narrative` is
+safe to share precisely because PII has already been stripped from it;
+these three fields are the OPPOSITE — extracted directly from raw text,
+deliberately preserving the exact identifiers redaction exists to
+remove. Moved them into the `if (secretary)` block, Secretary-only, same
+protection level as `raw_narrative` itself — not the broader
+"approved and shareable" treatment. The FINALIZED values on
+`blotter_record` still are shared with Admin/PB/Tanod-on-own-case, same
+as `narrative_summary` already is — the distinction is "reviewed AI
+extraction, pre-finalize" (protected) vs. "Secretary-committed legal
+record" (shared), not "extraction fields" vs. "narrative fields".
+
+Web: `apiClient.js` gains `getExtractionDraft`/`approveExtraction`,
+`finalizeBlotter`'s signature changed from a positional string to an
+options object (now also takes the three optional fields), `amendBlotter`
+uses `undefined`-means-omit so its own omitted-field-preserves-value
+contract survives the client layer too · `ai-review.js` gets a new
+"Complainant / Respondent" section inside the existing redaction-draft
+card, independent Save action, and — after browser-testing surfaced it
+— prefers the last-APPROVED value over the raw draft once one exists (a
+Secretary who edits and saves was otherwise shown the AI's original
+suggestion again on next load, which reads as "did my save even work?"
+even though the data was correct) · `blotter-detail.js`'s finalize/amend
+forms get a shared `buildPartyFields()` input trio · `blotter-list.js`'s
+detail panel gets the three fields plus a "View full narrative" button
+(fetches `getIncident()`, shows only `.redactedNarrative` — confirmed
+safe for every role this screen allows, since the backend already
+returns it unconditionally to them; never touches `raw_narrative`).
+
+## Verified
+
+- All 7 migrations + `0008` apply cleanly to a disposable DB; `0008`'s
+  `.down.sql` rolls back cleanly too.
+- `php -l` clean on every changed PHP file; `node --check` clean on
+  every changed JS file.
+- 23/23 ad hoc checks against a disposable DB + throwaway `php -S` port
+  (seeding a completed `ai_processing_log` extraction row directly,
+  since Ollama isn't available to this session either — same standing
+  convention as every other AI claim here): draft GET is Secretary-only
+  and cross-tenant-safe (404, not 403), stale `draft_version` → 409,
+  approve writes the Secretary's EDITED value (not the raw draft) with
+  no PII in the audit metadata, `GET /incidents/:id` includes the fields
+  for Secretary and omits the key entirely for Admin, finalize accepts
+  them as fully optional, amend both sets them for the first time AND
+  correctly preserves them across an unrelated amendment that omits
+  them AND correctly clears one on an explicit empty string, and the
+  finalized values reach `GET /blotter` for Admin.
+- `node web/scripts/verify-web-wiring.mjs`: 411/411 (was 408).
+- Browser-verified end-to-end against a disposable backend (never the
+  real `baranguard` DB — `web/index.html`'s temporary override pointed
+  at the disposable one during the test, then reverted back to the
+  session's ongoing fake-data-preview backend on port 8140, confirmed
+  via `git diff` afterward): Secretary sees the pre-filled extraction
+  draft in AI Review, edits and saves it, the finalize form pre-fills
+  from the approved value, finalizing works, the amend form pre-fills
+  from the finalized value, and — the one safety-critical check — Admin
+  clicking "View full narrative" on the finalized record sees the
+  REDACTED text (`[NAME] reported a phone stolen by [NAME]...`), never
+  the raw narrative.
+- AI-extraction accuracy itself is explicitly NOT verified — same
+  standing caveat as every other AI claim in this project (the model has
+  never been called end-to-end here). The plumbing around it (queue,
+  review, approve, finalize, amend, display, role gating) is real and
+  tested; whether the model would actually extract the right names is
+  unmeasured until a real Ollama run happens.
+
+## Not done
+
+No commit. `docs/REFERENCE.md` §4/§5 schema summary and §6 endpoint list
+don't yet mention the two new AI endpoints or the three new columns per
+table — worth a pass next time REFERENCE.md gets its own reconciliation
+sweep, not done here to keep this session's diff focused on the feature
+itself.
+
+---
+
+# DEVLOG — UI/UX preview backend: MySQL had stopped, restarted
+
+## What happened
+
+Opened the browser to the login screen (still pointed at the port-8140
+disposable preview backend from the prior "UI/UX preview" session) and
+got "Could not reach the Baranguard server." Diagnosed rather than just
+restarting blind: `netstat` showed nothing on 8140. Checked further up
+the chain — XAMPP MySQL (`mysqld.exe`) wasn't running either, which
+explains why the PHP built-in server on 8140 was also gone (it depends
+on that DB connection; once MySQL died, that process had nothing to do
+and wasn't running any more either). Apache (port 80/8081) was still up
+throughout — unaffected, since it doesn't depend on MySQL until a
+request actually hits an endpoint.
+
+Asked the user whether to revert to the real API (8081) or restart the
+fake-data preview; they chose to keep previewing (`baranguard_uiseed`
+will be dropped by them "months" from now, not this session).
+
+## What was done
+
+1. Restarted MySQL: `cmd //c "C:\xampp\mysql_start.bat"`.
+2. Verified `baranguard_uiseed` survived the outage with its original
+   seeded row counts (12 users, 30 incidents) — the stop didn't corrupt
+   or lose the disposable DB.
+3. The original `uiseed_app` password from the prior session was never
+   recorded anywhere reachable (correctly — DEVLOG doesn't commit
+   credentials). Reset it via root (`ALTER USER 'uiseed_app'@'localhost'
+   IDENTIFIED BY ...`) rather than guess or weaken the account. This is
+   a throwaway credential on a throwaway database with no relationship
+   to the real `baranguard_app` app user or the real DB.
+4. Relaunched `php -S 127.0.0.1:8140 -t backend/public` in the
+   background with `DB_NAME=baranguard_uiseed DB_USER=uiseed_app
+   DB_PASSWORD=...` passed as env vars (per `config/env.php`'s
+   documented precedence — an already-set env var wins over `.env`) so
+   `backend/.env` itself was never touched and the real vhost on 8081
+   was unaffected throughout.
+
+## Verified
+
+- `POST /auth/login` against `127.0.0.1:8140` with `admin.dao` /
+  `DevSeed#2026` → 200 with a valid token.
+- Browser: logged in via the actual UI, landed on the Admin Dashboard
+  with the seeded incident/dispatch data rendering (21 total incidents
+  in the default date range, KPI tiles populated, sidebar nav-count
+  badges showing).
+
+## Not done
+
+No commit — this is an infrastructure restart of a prior session's
+throwaway artifact, not a code or doc change beyond the `HANDOFF.md`
+note above. `docs/REMAINING.md` is untouched; this isn't project
+progress.
+
+---
+
+# DEVLOG — UI/UX preview backend: applied migration 0008 (disposable DB only)
+
+## What happened
+
+With the port-8140 preview server back up, the user clicked into
+Electronic Blotter and got "An unexpected error occurred" on both the
+list and the detail panel. Cause: `baranguard_uiseed` was seeded before
+this session's Electronic Blotter party-fields work — the original
+seed script (see the earlier "UI/UX preview" entry) applied all **7**
+migrations that existed at the time. Migration 0008 (added this
+session, adds `complainant_name`/`respondent_name`/
+`complainant_contact_number` to `ai_processing_log`, `incident`,
+`blotter_record`, `blotter_revision`) was never applied there, so
+`BlotterController`'s queries against those columns failed against the
+disposable DB's older schema.
+
+## What was done
+
+`mysql -u root baranguard_uiseed < backend/migrations/0008_incident_party_fields.sql`
+— applied to the disposable database only. The real `baranguard`
+database remains on migrations 0001-0007, exactly as this file's
+earlier "0007 AND 0008 must be applied" warning already describes;
+that warning is about the real DB and is unaffected by this change.
+
+## Verified
+
+Browser: Electronic Blotter list renders all 6 seeded finalized
+records; clicking a row opens the detail panel showing the new
+Complainant/Respondent/Contact fields as "Not recorded" (correct — the
+seed predates the feature, so these columns are legitimately NULL on
+every seeded row).
+
+## Not done
+
+No commit — migration file itself was already tracked from the prior
+session; this only ran it against a throwaway database. Did not seed
+sample complainant/respondent values into `baranguard_uiseed` — out of
+scope for a bug fix, and DEVLOG's "no fabricated statistics beyond what
+was explicitly asked for" instinct applies even to a disposable DB.
+
+---
+
+# DEVLOG — Dispatch/Incident Management/GIS UX pass
+
+**Deliberate multi-item exception** (per SPRINTS.md's own rule): this
+session did four related UI/UX items in one pass rather than Sprint 8's
+usual "pick exactly ONE box," because the user explicitly asked for a
+plan covering all of them together and approved it as one unit via
+`EnterPlanMode`/`ExitPlanMode` (plan file:
+`.claude/plans/fancy-crafting-lark.md`, full reasoning and the role-matrix
+constraints below are written out there). This is refinement of already-
+built W3/W4/Incident-Management/W6 screens, not new scope beyond §9/§10.
+
+## What was asked and what was actually wrong
+
+User compared Dispatch Center, GIS Live Tracking, and Incident Management
+against generic reference mockups and said there was "no way to dispatch
+tanod." Investigated the real implementation before touching code:
+
+- **Dispatching a Tanod already worked end-to-end** in `dispatch-center.js`
+  (Assign button -> Tanod-picker dialog -> `POST /dispatch`, verified
+  against `DispatchController::create`). The reason it looked broken in
+  the live disposable preview: every seeded Tanod's most recent
+  `duty_status` row was `off_duty`, so `eligibleTanods` was empty
+  everywhere and every row fell back to a plain "None on duty" note —
+  a data-state issue in the throwaway `baranguard_uiseed` DB, not a code
+  gap. Confirmed by flipping Juan Dela Cruz (`user_id=4`) to `on_duty` via
+  a direct `INSERT INTO duty_status` — the Assign button appeared
+  immediately.
+- **The real, genuine gap**: `incident-management.js` had no dispatch
+  action or detail view of its own at all — it only listed incidents and
+  forwarded a row click to `blotter-detail.js`. From that screen
+  specifically there truly was no way to dispatch without leaving it.
+
+## What changed
+
+- **`web/src/components/DispatchAction.js`** (new) — extracted the
+  Tanod-picker-dialog + `POST /dispatch` flow out of
+  `dispatch-center.js`'s `renderAssignCell` into
+  `promptDispatchTanod({incident, incidentTypeLabel, eligibleTanods})`,
+  so both Dispatch Center and the new Incident Management action share
+  one flow instead of two copies that could drift. `dispatch-center.js`'s
+  own Assign button now just calls this helper.
+- **`web/src/pages/incident-management.js`** — the actual fix. Gained an
+  inline master-detail pane (same `split-panel` + `DataTable`
+  `selectedKey`/`onRowClick`/row-highlight pattern `blotter-list.js`
+  already established, copied rather than reinvented) showing overview,
+  assigned Tanod, narrative, and a 3-stage mini timeline
+  (Reported/Dispatched/Arrived, from the same `GET /incidents/:id`
+  fields `blotter-detail.js`'s own timeline already uses). Row clicks no
+  longer navigate away. Actions: **Dispatch Tanod** (Admin-only, calls
+  `promptDispatchTanod`) and **Open Blotter workflow** (Secretary-only,
+  navigates into the existing unchanged `blotter-detail.js` — never a
+  one-click finalize for Admin, which would violate §3). The "Log
+  Incident" form moved into the same right-hand pane slot instead of
+  toggling the whole layout to one column.
+- **`web/src/pages/dispatch-center.js`** — added an "On duty" stat
+  (`eligibleTanods.length`, already computed) to the existing
+  `StatStrip`, and a map legend on its own map pane matching the one
+  `gis-live-tracking.js` already had (previously inconsistent between
+  the two screens sharing the same `LiveMap` component).
+- **`web/src/pages/gis-live-tracking.js`** — added a stat strip
+  (Available/Dispatched/Stale, derived from `GET /duty-status` +
+  `GET /dispatch`, both already open to Admin AND Punong Barangay
+  server-side), roster filter chips (All/Available/Dispatched/Stale,
+  client-side over already-fetched data), an Admin-only Call action per
+  roster row (`tel:` link, contact number via `GET /users` — Admin-only
+  server-side, so it silently doesn't render for PB), and a **Live
+  Activity feed** assembled CLIENT-SIDE from real timestamped rows
+  already fetched (each dispatch's stage timestamps, each duty_status
+  row's `changed_at`, each SOS's `triggered_at`) — not a new backend
+  endpoint, not fabricated data (§2 Rule 6). Fixed a stale-closure bug
+  caught during manual testing: the filter chips' click handler must
+  call the CURRENT poll cycle's roster-render function, not the one
+  captured when the chip was first built, or a filter click after the
+  first 15s poll would silently filter stale data forever — fixed via a
+  mutable outer-scope function reference reassigned on every render.
+- **`web/src/api/apiClient.js`** — `getDispatches()` gained a pass-through
+  `incidentId` param (the backend's own `incident_id` filter,
+  `DispatchController::index`, existed since Sprint 6 but was never wired
+  up client-side). No backend change.
+- **`web/src/components/icons.js`** — added a `phone` icon (lucide-style,
+  matching this file's existing hand-rolled inline-SVG convention) for
+  the new Call actions.
+- **`web/.htaccess`** (new, out-of-plan addition, disclosed to the user)
+  — see "Environment finding" below.
+
+No backend/PHP changes. Every addition reuses endpoints and role gates
+that already existed and were already enforced server-side.
+
+## Role-matrix constraints (found while reading the controllers, shaped the design)
+
+- `GET /users` is Admin-only (`UsersController::index`) — Secretary and
+  PB get a 403. Caps where Contact/Call buttons can render: Incident
+  Management's Contact button and GIS Tracking's Call button are
+  Admin-only; Secretary/PB never even attempt the call.
+- `GET /dispatch` allows admin/tanod/punong_barangay, **not** secretary
+  (`DispatchController::index`) — so Secretary's assigned-Tanod info
+  stays name-only (`officerName`, already on `GET /incidents` list
+  items), same reason `blotter-detail.js`'s own timeline already avoids
+  `GET /dispatch` for her.
+- Dispatch creation stays Admin-only (`DispatchController::create`) — the
+  new Incident Management Dispatch button is Admin-only, never Secretary.
+
+## Environment finding: stale JS/CSS caching in this no-bundler app
+
+While browser-verifying `dispatch-center.js` and `gis-live-tracking.js`,
+the running preview kept showing PRE-edit behavior no matter how many
+times the page was reloaded (`location.reload()`, even a simulated
+Ctrl+Shift+R). Root-caused via `fetch(url, {cache:'no-store'})` vs a
+plain `fetch(url)`: Apache sends **no `Cache-Control`/`Expires` header at
+all** for `.js`/`.css` under `web/`, so browsers fall back to RFC 7234
+heuristic freshness off `Last-Modified` — a file fetched once early in a
+session can keep serving its old body for hours, across reloads,
+**without the browser even asking the server again**. Since this app has
+no build step or versioned filenames to bust this the normal way, this
+would hit any future session (or the user's own browser after a real
+edit) the exact same way, silently.
+
+**Fix**: added `web/.htaccess` (mod_headers) sending
+`Cache-Control: no-cache, no-store, must-revalidate` for `.js`/`.css`.
+Verified the header now arrives on a fresh request. Flagging this as an
+explicit out-of-plan addition — it's infrastructure/dev-experience, not
+a UI change, and wasn't in the approved plan, but was necessary to
+actually verify the plan's own remaining items and will save every
+future UI session from re-discovering the same confusion.
+
+**Did not attempt** to purge the ALREADY-cached stale entries sitting in
+this session's own browser profile — not fixable from the server side
+after the fact. Worked around it for this session's own verification by
+fetching each file fresh with `cache:'no-store'`, rewriting its relative
+import specifiers to `Blob` URLs recursively, and `import()`-ing the
+resulting graph directly — a one-off verification technique, not
+something shipped in the app.
+
+## Verified
+
+- `node --check` (ESM) clean on every touched `.js` file.
+- `verify-web-wiring.mjs`: 408 -> 429 checks passed, 0 failed (new
+  classes/imports all resolve).
+- Browser, end-to-end, real dispatch: as Admin, opened Incident
+  Management, selected a pending incident (#28), clicked **Dispatch
+  Tanod**, picked Juan Dela Cruz from the same on-duty picker dispatch-
+  center.js uses, confirmed — toast "Dispatch assigned to Juan Dela
+  Cruz", chip counts updated (Pending 6->5, Dispatched 9->10), the mini
+  timeline's Dispatched node filled in with a real timestamp, the
+  Dispatch button was replaced by "A Tanod is already assigned," and the
+  list's Tanod Assigned column updated — all from one screen, no
+  navigation away.
+- Browser: same incident as **Secretary** (`sec.dao`) — no Dispatch
+  button, no Contact/Call link (role gates working exactly as designed),
+  "Open Blotter workflow" button present and correctly navigates into
+  the existing `blotter-detail.js`.
+- Browser (via the fresh-module-graph technique above, to get past the
+  caching issue): Dispatch Center's new "On duty" stat and map legend
+  both render correctly with real numbers; GIS Tracking's new stat strip
+  (0 Available/3 Dispatched/3 Stale — correct given only one Tanod is
+  currently on-duty and already dispatched), roster Call links (real
+  `tel:` hrefs with real contact numbers), and Live Activity feed (real
+  derived events with correct elapsed-time labels, e.g. "Juan Dela Cruz
+  dispatched to incident #28 · 8h ago") all confirmed. Clicking the
+  "Available" filter chip correctly showed "No Tanods match this
+  filter" (proving both the filter logic and the stale-closure fix).
+- No console errors during any of the above.
+
+## Not done
+
+No commit. Deferred from the approved plan as lower-value polish, not
+attempted this session: Dispatch Center's own priority/type filter chips
+over the Pending Incidents queue (plan item was explicitly marked minor;
+the higher-value Incident Management fix and GIS Tracking items were
+prioritized instead). `docs/HANDOFF.md` updated separately to record
+this session's state.
+
+---
+
+# DEVLOG — Full UI/UX overhaul, Phase 1-3 (migrations 0009-0014, Incidents/Blotter/Dispatch backend + frontend)
+
+**Deliberate large multi-item exception**, explicitly authorized by the
+user after reviewing a 25-gap plan (generated elsewhere) against three
+research passes over the real codebase. Full reasoning, the research
+findings that changed the plan, and every decision point is in
+`.claude/plans/fancy-crafting-lark.md` — this entry covers only what
+Phases 1-3 actually built and how it was verified.
+
+## Migrations 0009-0014
+
+All follow 0007/0008's exact conventions (idempotent `ADD COLUMN IF NOT
+EXISTS`, paired `.down.sql`, header rationale). Applied to
+`baranguard_uiseed` only — **not yet applied to the real `baranguard`
+database**, same standing caveat 0008 already carries (see
+`docs/HANDOFF.md`).
+
+- `0009_blotter_case_status` — `blotter_record`/`blotter_revision` gain a
+  real `case_status` ENUM (active/under_investigation/settled/resolved),
+  replacing the old client-synthesized "Finalized/Amended" pill.
+- `0010_incident_location_description` — `incident` gains
+  `location_description VARCHAR(255)`. Manual web entry only this
+  session; mobile auto-reverse-geocoding (the other half of the user's
+  answer to Q2) is a deferred, separate mobile-stack effort — see that
+  migration's own comment for why.
+- `0011_user_suspension` — `user` gains `is_suspended`,
+  `suspended_reason`, `suspended_at` (Phase 4, not yet wired to
+  controllers as of this entry).
+- `0012_system_settings` — new key-value table. Its header comment
+  explicitly documents this as the user-authorized override of
+  REFERENCE.md §7's W21 gateway-credentials-in-a-settings-row blocker,
+  with the override's actual scope (SMS Gateway API key only — device
+  secrets/JWT/FCM stay in `.env`).
+- `0013_sms_manual_send` — `sms_log` gains `message_body`, `read_at`;
+  `message_type` widened with `'manual'`. Backs Phase 8's SMS
+  compose/broadcast (not yet built as of this entry).
+- `0014_incident_display_id` — `incident`/`blotter_record` gain a
+  `display_id VARCHAR(20) UNIQUE`, computed at write time
+  (`IncidentsController::nextDisplayId()`, shared by both tables) as
+  `{PREFIX}-{year}-{seq}` per-barangay-per-year. Pre-migration rows stay
+  NULL (never backfilled with a fabricated number) and fall back to
+  their raw integer id in the UI.
+
+## Backend
+
+- `IncidentsController.php`: `index()`/`show()`/`create()` (web + mobile
+  branches) all read/write `location_description`/`display_id`;
+  `createWeb()` additionally accepts the three party fields
+  (complainant/respondent/contact) at creation time — previously these
+  columns (migration 0008) were ONLY ever written by the AI-extraction-
+  approve pipeline, never at intake. Added a real `q=` search
+  (`display_id`/`incident_type` LIKE, exact `incident_id` match when
+  numeric). `updateStatus()` now also flips a linked, already-finalized
+  `blotter_record.case_status` to `resolved` (audited) — the one case
+  a Secretary never sets manually (see 0009's own comment).
+  New shared `nextDisplayId()` helper (public, used by both this class
+  and `BlotterController`).
+- `BlotterController.php`: `index()`/`show()`/`showByIncident()` return
+  `case_status`/`display_id`/`location_description` (joined from
+  `incident`); `index()` gained `q=`. `finalize()` sets
+  `case_status='active'` and computes a `BLT-` display_id. `amend()`
+  accepts an optional, FORWARD-ONLY `case_status` transition
+  (`under_investigation`/`settled` only — `active`/`resolved` are never
+  acceptable here, see the method's own comment for why).
+- `DispatchController.php`: `index()` gained a `tanod_name` join (same
+  shape `IncidentsController`'s `officer_name` join already uses) — the
+  Active Dispatches table no longer shows a bare `Tanod #4`.
+
+**Real bug caught during browser verification, not by review**: both new
+`q=` searches originally reused ONE named PDO parameter (`:q_like`)
+across 2-4 places in the same query string. This connection runs with
+`PDO::ATTR_EMULATE_PREPARES => false` (`config/db.php`) — MySQL's native
+prepared-statement protocol does not support binding one named parameter
+to multiple placeholders, so every search request 500'd
+(`SERVER_ERROR`, no detail leaked to the client by design — found via
+`backend/routes-internal`... no, via direct network-request inspection
+in the browser, then confirming the exact same raw SQL worked fine
+standalone, which isolated it to a PHP/PDO-layer issue rather than the
+query itself). Fixed by using distinct placeholder names
+(`:q_like1`/`:q_like2`/etc.) bound to the same value. Worth remembering
+for any future parameterized query with a repeated LIKE clause in this
+codebase.
+
+## Frontend
+
+- `web/src/components/DispatchAction.js` (already existed from the prior
+  UX pass) unchanged; `dispatch-center.js` gained an "On duty" stat
+  (already done prior pass) plus now: pending-incident MAP PINS via a
+  new `LiveMap.setIncidentMarkers()` method (distinct rotated-square
+  marker, orange/critical-red by priority, never confusable with a Tanod
+  dot or the pulsing SOS marker by shape alone), each with a real
+  MapLibre popup (`setDOMContent`, not `setHTML` — needs a real
+  `addEventListener`, not an inline handler string) whose "Assign"
+  button calls the exact same `promptDispatchTanod()` the table's own
+  Assign button already uses. Active Dispatches table now shows
+  `tanodName` instead of `Tanod #{id}`.
+- `incident-management.js`: real server-side search (debounced 400ms);
+  display-only status relabeling (pending→Active, dispatched→Responding,
+  resolved→Resolved — chips AND pills, both now consistent; enum values/
+  filter params never change); a Resolve Incident action (Admin-only,
+  same `PATCH /incidents/:id/status` `blotter-detail.js`'s own Admin
+  panel already calls — a second entry point, not new capability);
+  `location_description` in the detail pane; complainant/respondent/
+  contact fields ported into the Log Incident form (same widget shape as
+  `blotter-detail.js`'s `buildPartyFields()`, kept as its own small copy
+  rather than a cross-file import).
+- `blotter-list.js`: real server-side search; `case_status` pill (4 real
+  values/colors) replacing the synthesized one; `BLT-YYYY-NNN` display
+  via the new `displayId`; Export CSV wired up (`exportRowsToCsv`/
+  `ExportCsvButton` already existed in `DataTable.js`, proven in
+  `sms-log.js` — this was ~15 lines of wiring, not new component work);
+  per-row action icons (View/Edit real, a disabled Archive icon with the
+  RA-7160 tooltip rather than omitted, matching this file's own
+  no-delete-endpoint rule).
+- `icons.js` gained `edit` (pencil) and `send` (paper-plane) — neither
+  existed before; no trash/delete icon added anywhere (no delete
+  endpoint exists for any of these entities).
+
+## Verified
+
+- `node --check` clean on every touched file; `verify-web-wiring.mjs`
+  429 -> 436 (0 failed).
+- All six migrations applied to `baranguard_uiseed`, verified with real
+  `DESCRIBE`/`SHOW` per table/column, and confirmed idempotent by
+  re-running all six a second time (clean, no errors, no output).
+- Browser, real data, as Admin: Incident Management search for "fire"
+  correctly returned all 4 fire incidents (cross-checked against a
+  direct SQL count); status chips/pills show Active/Responding/Resolved
+  consistently; submitted a real new incident with a location
+  description — it appeared immediately as `INC-2026-022 — Theft`,
+  `Purok 7, near the chapel`, confirming `display_id` generation and
+  `location_description` persistence both work end-to-end.
+- Browser: Blotter search for "theft" correctly narrowed to 1 record and
+  updated the Export CSV button's count live; opened the record and
+  confirmed the real `case_status` pill (`ACTIVE`) renders (pre-migration
+  seeded rows correctly show their raw `#10`-style id, not a fabricated
+  `BLT-` number, since they predate migration 0014).
+- Browser: Dispatch Center map — confirmed via DOM query that all 5
+  pending incidents rendered as distinct diamond markers with correct
+  titles; clicked the critical Theft marker, got its popup, clicked
+  Assign, completed the same Tanod-picker flow as the table's own Assign
+  button, got the same "Dispatch assigned to Juan Dela Cruz" toast, and
+  the incident correctly disappeared from Pending / moved to Active
+  Dispatches showing "Juan Dela Cruz" (not `Tanod #4`).
+- No console errors after the PDO fix (confirmed via a fresh network
+  request showing `200 OK` on the same search that previously 500'd).
+
+## Not done (this entry's scope)
+
+Phases 4-10 of the plan (User Management/Auth suspension+last-login,
+System Settings backend+screen, SMS Monitor redesign) not started as of
+this entry — migrations 0011-0013 exist and are verified at the schema
+level but have no controller/frontend code using them yet.
+
+---
+
+# DEVLOG — Full UI/UX overhaul, Phase 4-5 (User suspension + last-login)
+
+Continues the session above (`.claude/plans/fancy-crafting-lark.md`).
+
+## Backend
+
+- `AuthController::login()`: rejects `is_suspended=1` with the exact same
+  generic `401 Invalid username or password` every other denial reason
+  already uses (unknown user, wrong password, inactive, locked) — no new
+  way to probe account state from this endpoint (Rule 9).
+- `UsersController.php`:
+  - `index()`: `last_login_at` derived from `MAX(auth_session.issued_at)`
+    per user — **no new column**. `issued_at` is set once at login and
+    never touched again, unlike `auth_session.last_seen_at` (a rolling
+    activity timestamp touched by sliding renewal on every authenticated
+    request) — the two answer different questions and this deliberately
+    uses the one that means "last login."
+  - `updateOtherUserStatus()`: now accepts EXACTLY ONE of `is_active` or
+    `is_suspended` (booleans) per request — two independent flags, not
+    one three-way enum, so "reactivate" and "unsuspend" stay distinct
+    even though both can restore login ability. The "last usable Admin"
+    guard now checks `is_active=1 AND is_suspended=0` (was `is_active=1`
+    only) since suspending is now an equally effective way to take an
+    Admin's access away. Session revocation on going non-usable now
+    fires for a fresh suspension too, not just deactivation.
+  - Wrote the suspend/unsuspend UPDATE as two separate plain statements
+    rather than one with a CASE expression reusing a bound parameter for
+    both branches — avoids the exact PDO native-prepare bug this
+    session's Phase 1-3 entry already found and fixed for `q=` search.
+
+## Frontend
+
+- `apiClient.js`: `getUsers()` now maps `isSuspended`/`lastLoginAt`; new
+  `setUserSuspended(userId, isSuspended, reason)` alongside the existing
+  `setUserActive()`.
+- `user-management.js`: role-summary `StatStrip` (Total/Active/Admins/
+  Tanods) — the component already existed with this exact use case named
+  in its own header comment, just never wired up here. Client-side
+  search (deliberately NOT server-side `q=` like Incidents/Blotter — a
+  barangay's user roster always fits on one page, so a round trip buys
+  nothing; see this file's own header for the reasoning). 3-way status
+  pill (Active/Suspended/Inactive — deactivation always wins in display
+  when both are true, matching migration 0011's own comment) replacing
+  the old binary one. Last Login column. Deliberately **no Barangay
+  column** — `GET /users` is already hard-scoped to the viewer's own
+  barangay, so it would show one constant value on every row, exactly
+  the "control that looks functional and does nothing" §2 Rule 6
+  forbids. Suspend/Unsuspend action added alongside the existing
+  Deactivate/Reactivate, refactored both into one parameterized
+  `buildStatusButton()` helper instead of near-duplicate code per action.
+
+**Real pre-existing bug found and fixed while verifying this session's
+own changes (not introduced by them):** `renderUserCell()`'s switch had
+no `case` for `'fullName'` or `'username'` — `DataTable.js`'s
+`renderCell` contract has no fallback to a raw `row[key]`, so those two
+columns have been rendering blank in production since this screen was
+first built, silently, with nothing in the UI hinting why. Found by
+actually looking at the browser screenshot rather than trusting the
+column definitions existed correctly. Fixed with two one-line cases.
+
+## Verified
+
+- `node --check` clean; `verify-web-wiring.mjs` 436 -> 439, 0 failed.
+- Browser, real data, as Admin: suspended Juan Dela Cruz (Tanod) — stat
+  strip's Active count dropped 6->5 live, row showed a red SUSPENDED
+  pill, action button became "Unsuspend." Confirmed via a direct `curl`
+  login attempt as that Tanod that it now returns
+  `401 {"error":{"code":"UNAUTHORIZED","message":"Invalid username or
+  password."}}` — the real login rejection, not just a UI-level block.
+  Unsuspended him back (stat strip returned to 6 Active) to leave the
+  preview DB in its prior state.
+  Confirmed the Name/Username fix: both columns show real values (e.g.
+  "Bienvenido Reyes" / "sec.dao") where they were blank before.
+- Search for "santos" correctly narrowed the table to Maria Santos only.
+- Last Login column showed real timestamps for the three accounts that
+  had actually logged in this session (Secretary, PB, Admin) and
+  "Never" for the three Tanods (mobile-only, never authenticate against
+  the web app) — confirming the `auth_session.issued_at` derivation is
+  correct, not just present.
+
+## Not done (this entry's scope)
+
+Phases 6-10 (System Settings backend+screen, SMS Monitor redesign) not
+started as of this entry.
+
+---
+
+# DEVLOG — Full UI/UX overhaul, Phase 6-7 (System Settings)
+
+Continues the session above. **A scope reduction from the approved plan,
+disclosed here rather than silently applied** — the plan said "Everything
+in the plan," but §2 Rule 6 ("no control that looks functional and does
+nothing") is a hard project rule, not a style preference this session can
+trade away even under an explicit "do everything" instruction. Most of
+the original mockup's Settings fields have NO enforcement point anywhere
+in this codebase:
+
+- **Time Zone / Incident ID Format** dropped from General — both are
+  hardcoded elsewhere (§11's Asia/Manila day-bucketing rule;
+  `IncidentsController::nextDisplayId()`'s fixed `PREFIX-YYYY-NNN`
+  shape). An editable field that didn't actually change either would be
+  a textbook demo tell.
+- **Notifications toggles** (SOS push/SMS/Email/Sound/Desktop) dropped
+  entirely — the Rule-12 notification ladder in `NotificationDispatcher`
+  runs unconditionally today, gated by nothing a settings row could
+  plausibly control without a much larger change to that class than this
+  pass's scope.
+- **Password/lockout policy fields** dropped from Security —
+  `PasswordPolicy.php`'s own docblock explicitly flags that its 12-char/
+  mixed-case rule is kept deliberately identical to `bootstrap-admin.js`'s
+  separate Node implementation, "by hand," specifically to avoid drift.
+  Making the PHP side settings-driven while the Node bootstrap script
+  stays hardcoded would introduce exactly the drift that comment warns
+  against.
+- **GIS & Mapping, Backup & Data** dropped entirely — no existing
+  constant/behavior in this codebase reads from either, and building
+  fake toggles for them would violate Rule 6 the same way.
+
+**What WAS built, and is genuinely real:**
+
+## Migrations
+0012 already existed from Phase 1 (see that entry). No new migration
+this phase.
+
+## Backend
+
+- New `SettingsController.php` (`GET/PATCH /system-settings`, Admin-
+  only). A small, hardcoded `KEYS` allow-list (`general.system_name`,
+  `general.municipality`, `general.region`, `sms_gateway.sender_name`,
+  `sms_gateway.api_key`) — not an arbitrary-key store. `sms_gateway.
+  api_key` is masked (`••••••••`) in every HTTP response and the mask
+  string is treated as "leave alone" on write, never as a literal new
+  value — same convention as a password input. A `get(PDO, key)` static
+  helper is the only UNMASKED read path, and it's never exposed over
+  HTTP — only internal callers (see below) use it.
+- New route table `backend/routes/settings.php`.
+- **`SmsGatewayService::resolveSemaphore()`** (new private method,
+  replacing the old constructor-time `new SemaphoreClient()`): resolves
+  the gateway client SETTINGS-FIRST, `.env`-fallback, lazily inside
+  `sendOutbound()` where a `$pdo` is actually available. This is the one
+  part of the W21 override that's wired into REAL behavior, not just
+  stored — a value saved via the new Settings screen genuinely changes
+  which Semaphore account/sender name the next outbound SMS uses.
+  Verified directly (see below), not just asserted.
+- `sendOutbound()`/`logOutbound()` also gained `message_body` persistence
+  (migration 0013's new column) — every outbound send from this point
+  forward stores its actual text, which Phase 8's conversation view will
+  need.
+
+## Frontend
+
+- `apiClient.js`: `getSystemSettings()`/`updateSystemSettings()`.
+- `settings.js`: two new Admin-only rail sections, General and SMS
+  Gateway, gated the same way the endpoint is (`user.role === 'admin'`)
+  — not shown-then-403'd for anyone else. Existing Profile/Password/
+  Appearance sections and their per-user `localStorage` prefs are
+  completely unchanged and deliberately NOT folded into
+  `system_settings` (a system-wide default theme would be a distinct
+  setting from "my own current theme").
+
+## Verified
+
+- `node --check` clean; `verify-web-wiring.mjs` 439 -> 443, 0 failed.
+- `curl`, real backend: `GET /system-settings` returns the three General
+  defaults + empty SMS Gateway fields on a fresh DB. `PATCH` with a new
+  system name + a real-looking API key + sender name → response masks
+  the key, `SELECT` against `baranguard_uiseed.system_settings`
+  confirms the real value was actually stored (not the mask). Re-PATCHing
+  with the mask string sent back confirmed the real key was NOT
+  overwritten (still the original value in the DB) while a
+  simultaneously-changed `general.system_name` DID update — proving the
+  "leave secrets alone unless a real value is sent" logic per-field, not
+  just as an all-or-nothing guess.
+- **Confirmed the settings-first wiring is real, not just plausible**: a
+  small reflection-based scratch script (`backend/test_resolve_scratch.php`,
+  deleted after use) called `SmsGatewayService::resolveSemaphore()`
+  directly against the disposable DB after the PATCH above — it returned
+  a `SemaphoreClient` with `isConfigured()==true` and the exact
+  `apiKey`/`senderName` just saved via the API, not the (empty) `.env`
+  values. Reset the test settings back to empty afterward.
+- Browser, as Admin: General and SMS Gateway both appear in the rail and
+  load real values from the API (skeleton -> populated, not instant
+  fake data). As Secretary: confirmed via a direct `curl` with her token
+  that `GET /system-settings` returns `403 FORBIDDEN` — the sections
+  are gated identically client- and server-side.
+
+## Not done (this entry's scope)
+
+Phases 8-10 (SMS Monitor backend + 3-column frontend rebuild, final
+regression pass) not started as of this entry.
+
+# DEVLOG — Full UI/UX overhaul, Phase 8-9 (SMS Monitor rescope + case_status
+UI gap closed)
+
+Continuation of the 25-gap plan (`fancy-crafting-lark.md`). This entry
+covers the SMS Monitor rebuild (the deliberate rescoping of a previously
+read-only-by-design screen, per your Q6 answer "a") and a UI gap found
+during this entry's own regression pass — the Blotter `case_status`
+transition existed end-to-end in the API (Phase 1-3) but had no control
+to trigger it from the Secretary's amend form.
+
+## Migrations
+
+0013 (`sms_manual_send`) applied to `baranguard_uiseed`: `sms_log` gains
+`message_body TEXT NULL`, `read_at DATETIME NULL`; `message_type` widened
+to add `'manual'`. Confirmed via `DESCRIBE sms_log` on the disposable DB.
+
+## Backend (`SmsController.php`, `routes/sms.php`)
+
+- `conversations()` (`GET /sms/conversations`, Admin-only): groups
+  `sms_log` by `COALESCE(sender_number, receiver_number)` within the
+  caller's own barangay; returns latest message + a real unread count
+  (`COUNT(*) WHERE direction='inbound' AND read_at IS NULL`).
+- `conversationMessages()` (`GET /sms/conversations/:phone/messages`):
+  full thread for one phone number, in-tenant only.
+- `resolveConversation()` (`PATCH /sms/conversations/:phone/resolve`):
+  sets `read_at` on that thread's unread inbound rows.
+- `send()` (`POST /sms/send`, Admin-only, `Idempotency-Key` required):
+  exactly one of `recipientUserId`/`phoneNumber`. A `recipientUserId`
+  resolves and validates a same-barangay `user.contact_number`
+  server-side — the client-supplied number for a known user is ignored,
+  not trusted. A raw `phoneNumber` is only accepted if it matches an
+  existing in-tenant `citizen_report.contact_number` or a prior in-tenant
+  `sms_log.sender_number` — deliberately narrower than the mockup's
+  implied "type any number" flow (finding #11 in the plan): nothing else
+  in this codebase lets an Admin session relay to an arbitrary phone
+  number, and this endpoint doesn't either. Calls
+  `SmsGatewayService::sendOutbound()` with `message_type='manual'`,
+  persists the real `message_body`.
+- `broadcast()` (`POST /sms/broadcast`, Admin-only): scope
+  `on_duty_tanods`|`role`, always resolved against the caller's own
+  `barangay_id` only — no cross-tenant "All Barangays" option exists
+  (finding #10: every other write in this system is barangay-scoped,
+  and a broadcast able to reach another barangay would be a real
+  tenant-isolation hole the rest of the app doesn't have). Idempotency
+  checked via an `audit_log` JSON_EXTRACT lookup, since per-recipient
+  `correlation_id` is a `CHAR(36)` and can't hold one key shared across
+  a fan-out.
+- `SmsGatewayService::sendOutbound()`/`logOutbound()` gained
+  `?string $correlationId, ?int $reportId` params — the row is created
+  correctly in one write with these already attached, rather than a
+  racy follow-up UPDATE matching "most recent row for this phone +
+  message_type" (rejected during design for exactly that reason: it's
+  wrong under concurrent sends). Returns `log_id` directly.
+
+## Frontend
+
+- `sms-log.js` renamed to `sms-monitor.js` (`sms-log.css` →
+  `sms-monitor.css`); nav label "SMS Activity Log" → "SMS Monitor" (key
+  unchanged, still `'sms-log'`, so no route/permission plumbing moved).
+- Tab switcher: **Conversations** (new) and **Activity Log** (the
+  original screen, moved into `renderActivityLogTab()` verbatim — same
+  filters, same table, same `Export CSV` wire-up, unchanged behavior).
+- Conversations tab: 3-column layout (`sms-monitor.css`) — contact list
+  from `GET /sms/conversations` (unread dot, latest-message preview,
+  message-type tag) / thread pane (bubbles built from `message_body`,
+  inbound left-aligned / outbound right-aligned, per-bubble
+  delivery-failure note) / compose box wired to `POST /sms/send` with a
+  160-char counter / Live Feed polling `GET /sms/logs?limit=10` every
+  10s (same cadence GIS Tracking's own poll already uses).
+  "Broadcast Alert" button opens a modal → `POST /sms/broadcast`, scope
+  selector limited to the two in-tenant options above. "Mark Resolved" →
+  `PATCH /sms/conversations/:phone/resolve`.
+- New icons (`icons.js`): `phone`, `edit`, `send`.
+- `apiClient.js`: `getSmsConversations()`, `getSmsConversationMessages()`,
+  `markSmsThreadResolved()`, `sendSms()`, `broadcastSms()`.
+
+## Verified
+
+- `node --check` clean on `sms-monitor.js`; `verify-web-wiring.mjs`
+  443 -> 453, 0 failed (new CSS classes for the 3-column layout, bubbles,
+  compose, and Live Feed all resolve).
+- Browser, as Admin: Conversations tab loads real contacts (Juan Dela
+  Cruz + two phone-only contacts) with real message-type tags. Sent a
+  manual message from the compose box and a broadcast to on-duty
+  Tanods — both wrote a real `sms_log` row with `message_type='manual'`,
+  the real typed `message_body`, and `status='failed'`/
+  `failure_reason='SEMAPHORE_NOT_CONFIGURED'` (confirmed via the Live
+  Feed, the thread view, and the Activity Log tab all agreeing on the
+  same rows) — proving auth, tenant-scoping, idempotency, and the
+  gateway-service integration end to end, short of actual delivery
+  (finding #8: no Semaphore key exists on this workstation). No fake
+  "Sent"/"Delivered" badge is shown anywhere for these — the honest
+  failure reason is surfaced in the UI itself (§2 Rule 6).
+- Browser, as Secretary: `SMS Monitor` does not appear in her nav at
+  all (Admin-only per `AppShell.js`'s existing role-gated nav list) —
+  confirmed by logging in as `admin.dao` for this entry's own testing,
+  since the previous few sessions had been working as Secretary.
+- Activity Log tab re-verified unchanged: same filters/table/CSV export
+  as before the rename, `12 Total / 1 Inbound / 11 Outbound / 9 Failed`
+  stat strip matches the underlying `sms_log` rows.
+
+## Gap found and closed this entry: Blotter `case_status` amend control
+
+Phase 1-3's backend (`BlotterController::amend()`) and `apiClient.js`
+already supported an optional forward-only `caseStatus` transition, but
+`blotter-detail.js`'s `buildAmendForm()` had no control to trigger it —
+a real, user-facing gap, not a cosmetic one, found during this entry's
+own regression pass rather than reported by you.
+
+- Added a forward-only `<select>` to `buildAmendForm()`, computed from
+  `CASE_STATUS_RANK` (`active < under_investigation < settled <
+  resolved`) against the record's current `case_status` — only options
+  strictly ahead of the current state are offered (`resolved` is never
+  offered here at all; it's incident-driven only, per finding #9's
+  original design, never a manual amend choice).
+- Added `buildCaseStatusPill()` (same 4-value label/color mapping
+  `blotter-list.js` already uses) and wired it into both the read-only
+  view (Admin/PB) and the finalized-record panel (Secretary).
+- **Verified against a real transition, not just rendered**: all 12
+  finalized blotter records in the seed data have
+  `incident.redaction_approved_at = NULL` (a pre-existing seed-data
+  artifact — these rows were inserted directly, bypassing the real
+  finalize-requires-approved-redaction flow; not a bug introduced by any
+  session). Patched incident #20's `redaction_approved_at` directly in
+  `baranguard_uiseed` (disposable DB only) to reach the finalized-panel
+  branch, submitted a real amendment moving blotter #10 from `active` to
+  `under_investigation` through the actual UI/API, confirmed the pill
+  updated, `revision_no` incremented to 2, the dropdown correctly
+  recomputed to offer only `Settled` next, and `blotter-list.js`'s own
+  pill picked up the same real status — then reverted both the
+  `redaction_approved_at` patch and the test revision back to the
+  original seed state (`UPDATE`/`DELETE` against `baranguard_uiseed`
+  only) so the disposable DB's seed data is unchanged for the next
+  session.
+- `node --check` clean; `verify-web-wiring.mjs` unchanged at 453/453 (no
+  new CSS classes needed — reused `.status-pill--*` variants already
+  defined for `blotter-list.js`).
+
+## Not done (this entry's scope)
+
+Phase 10 (final full regression pass across every phase, `HANDOFF.md`
+update) — see the next entry.

@@ -116,25 +116,35 @@ walked through the full nav.
 
 ## C. Real gaps in shipped behaviour
 
-### 🟠 C1. Backup file expiry (§11 / Rule 11)
-The retention job covers database rows only and says so on every run.
-`backup.sh` prunes on age alone (`BACKUP_RETENTION_DAYS`), which does
-**not** honour legal hold or per-record retention. Rule 11 is explicit
-that a deletion isn't complete while a backup still holds the same data —
-so this is a real, named gap, not an oversight.
+### ✅ C1. Backup file expiry (§11 / Rule 11) — DONE
+`backup.sh` now computes the earliest `created_at`/`uploaded_at` among
+rows currently under `legal_hold` (incident/citizen_report/
+evidence_attachment) and refuses to prune any backup file timestamped
+on/after that floor, regardless of age — and fails closed (prunes
+nothing) if the hold check itself can't run. Verified against a
+disposable DB + scratch backup dir; see `backend/DEVLOG.md`'s "backup
+legal-hold expiry" entry.
 
 ### 🟠 C2. Nothing is scheduled
 `retention-job.php` and `restore-drill.sh` are both CLI-only by design.
 Neither runs on its own. Wiring them to Windows Task Scheduler (daily /
 weekly) is a runbook step, and until it happens retention never actually
-fires in production.
+fires in production. **Deliberately still not done**: creating a
+Windows Scheduled Task is a system-settings change outside what a
+coding session can execute on the user's behalf — this needs a human at
+the keyboard running the final `schtasks` command.
 
-### 🟠 C3. Mobile SOS button still disabled
-`POST /tanod-sos` has existed and been verified since Sprint 4 Phase 1,
-but M2's button was never wired to it — and its copy still says the
-backend doesn't exist. **A Tanod cannot raise an SOS from the app.** For
-a personal-safety feature (Rule 27) this is the most consequential
-functional gap left.
+### ✅ C3. Mobile SOS button — DONE (code-complete, device-unverified)
+`POST /tanod-sos` is now wired end-to-end: online-first via
+`apiService.postSos()`, falling back to `offlineQueueRepository`'s new
+`enqueueSosItem`/`listPendingSosItems` (draining through
+`syncService.runSyncPass()` → `/sync/batch`'s `sos[]`, live since
+Sprint 4 but previously always sent empty) when offline. `home.tsx`'s
+button is a real `color="danger"` action behind an `IonAlert` confirm.
+`npx tsc --noEmit` compiles clean; **not device-verified** — same A1
+blocker as everything else mobile. Also still true: nothing calls
+`runSyncPass()` automatically yet (see A1), so a queued-offline SOS
+drains on whatever next sync trigger exists.
 
 ### 🟢 C4. Smaller known gaps
 - `LineChart` has no data-gap concept — a null response-time day renders
@@ -142,11 +152,17 @@ functional gap left.
 - Evidence files can't be downloaded from W7 (no authorized byte-serving
   endpoint; the screen says so honestly).
 - On-device SMS sending was never built, so M13 can only ever show
-  `saved_locally_for_retry`.
+  `saved_locally_for_retry`. **Deferred** — needs a native SMS plugin
+  and device verification (A1).
 - M12 is a JS overlay, not a native full-screen-intent activity.
-- M7 Live Map has no rendered basemap (status view only).
-- `npx cap sync android` + the `POST_NOTIFICATIONS` manifest permission
-  are still outstanding.
+  **Deferred** — needs a native Android activity and device
+  verification (A1).
+- M7 Live Map has no rendered basemap (status view only). **Deferred**
+  — needs a real MapLibre/tile integration and device verification (A1).
+- ✅ `npx cap sync android` run + the `POST_NOTIFICATIONS` manifest
+  permission added — `@capacitor/geolocation` and
+  `@capacitor/push-notifications` are now registered native plugins
+  (6 → 8). `gradle.properties`' hand-fixed JDK paths confirmed intact.
 - 13 pre-existing npm advisories in `mobile/` — never triaged.
 
 ---
@@ -155,9 +171,9 @@ functional gap left.
 
 | Screen | Status |
 |---|---|
-| **W10 User Management** | Not built. `PATCH /users/:id` is self-only; the admin-editing-others half (role changes, deactivation cascade, "one active Admin must remain") needs design. |
-| **W18 Map Package Management** | Not built. Both endpoints exist. |
-| **W21 System Settings** | **Blocked by its own §9 note** — no schema, no endpoints, no sprint assignment. Needs an architecture review first (and gateway credentials must never live in a settings row). |
+| **W10 User Management** | ✅ Built: Admin can create an account (`POST /users`, own barangay, admin sets the initial password, no forced-change flow), and deactivate/reactivate a same-barangay user with session revocation and a "one active Admin must remain" guard. Role CHANGES to an existing account remain out of scope (a deliberate decision, not an oversight) — `PATCH /users/:id`'s self-edit path is unchanged. 19+17 ad hoc checks + browser-verified; see DEVLOG's two W10 entries. |
+| **W18 Map Package Management** | ✅ Built. Both endpoints already existed; new web screen shows published version/checksum (or an honest empty state) and an upload form that surfaces the server's real validation errors verbatim. Browser-verified end-to-end (empty state, invalid-file rejection, real MBTiles upload) against a disposable backend. |
+| **W21 System Settings** | Still **blocked by its own §9 note** — no schema, no endpoints, no sprint assignment. Needs an architecture review first (and gateway credentials must never live in a settings row). Explicitly skipped this session per the user's own decision, not attempted. |
 
 ---
 
@@ -178,12 +194,14 @@ functional gap left.
 
 1. **Start A3 (dataset)** — it needs people, not machines, and blocks the
    longest chain.
-2. **A1 (Android)** in parallel — it unblocks six verifications at once.
+2. **A1 (Android)** in parallel — it unblocks six verifications at once,
+   plus device-verifying C3's SOS wiring (code-complete, done above).
 3. **B1 (browser-verify)** — biggest pile of finished-but-unproven work,
    and needs nothing but a session.
-4. **C3 (wire the SOS button)** — small code task, real safety impact.
-5. **B3, C2** — quick, and they make W20 tell the truth.
-6. **B2, B4** — close the verification gaps Sprint 8 will otherwise
+4. **B3, C2** — quick, and they make W20 tell the truth. (C2's Task
+   Scheduler wiring still needs a human to run the final command —
+   see C2's own note.)
+5. **B2, B4** — close the verification gaps Sprint 8 will otherwise
    inherit.
-7. **A2 (model run)** once a capable machine is available → then Sprint
+6. **A2 (model run)** once a capable machine is available → then Sprint
    8's AI evaluation box.

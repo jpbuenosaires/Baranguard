@@ -41,6 +41,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.history/
 
 # Capacitor generated builds
 mobile/android/
