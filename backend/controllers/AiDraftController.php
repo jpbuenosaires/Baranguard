@@ -116,6 +116,13 @@ final class AiDraftController
 
         $job = AiJobQueue::enqueueRedaction($pdo, $incidentId, $client->model());
 
+        // Electronic Blotter follow-up (migration 0008): one Secretary
+        // action starts both pipelines — the user's own description of
+        // this feature was "automatically", not a second manual trigger.
+        // Independent of redaction (own task_type, own rows), so a
+        // failure here never blocks or is blocked by the redaction job.
+        AiJobQueue::enqueueExtraction($pdo, $incidentId, $client->model());
+
         // Rule 17 audit metadata is allow-listed: identifiers/statuses
         // only. Never the narrative, never any draft text.
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'ai_redaction_queued', 'incident', $incidentId, [
@@ -161,6 +168,141 @@ final class AiDraftController
             'status' => $draft['status'],
             // Beyond §6's listed shape — see class doc.
             'error_code' => $draft['error_code'],
+        ]);
+    }
+
+    /**
+     * GET /incidents/:id/ai-draft/extraction — Electronic Blotter
+     * follow-up (migration 0008). Secretary only, same barangay, mirrors
+     * `draft()` above exactly but for the extraction pipeline.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function extractionDraft(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['secretary']);
+        $incident = self::loadIncident($pdo, $identity, $incidentIdParam);
+
+        $draft = AiJobQueue::currentExtractionDraft($pdo, (int) $incident['incident_id']);
+        if ($draft === null) {
+            throw new ApiError(404, 'NOT_FOUND', 'No extraction draft exists for this incident yet.');
+        }
+
+        Http::send(200, [
+            'log_id' => (int) $draft['log_id'],
+            'incident_id' => (int) $draft['incident_id'],
+            'pipeline_run_id' => $draft['pipeline_run_id'],
+            'draft_complainant_name' => $draft['draft_complainant_name'],
+            'draft_respondent_name' => $draft['draft_respondent_name'],
+            'draft_complainant_contact_number' => $draft['draft_complainant_contact_number'],
+            'draft_version' => (int) $draft['draft_version'],
+            'status' => $draft['status'],
+            'error_code' => $draft['error_code'],
+        ]);
+    }
+
+    /**
+     * POST /incidents/:id/ai-draft/extraction/approve — Electronic
+     * Blotter follow-up (migration 0008). Secretary reviews/edits the
+     * AI-drafted complainant/respondent/contact-number and commits
+     * whatever they submit onto `incident` — the approved home,
+     * structurally parallel to `redacted_narrative`. All three fields
+     * are optional (not every incident has an identifiable party, and
+     * the user specifically asked for contact number to stay optional).
+     *
+     * Same `FOR UPDATE` + `draft_version` optimistic-concurrency pattern
+     * as `approve()`/`regenerateSummary()` above, reused verbatim —
+     * deliberately NOT a new pattern.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function approveExtraction(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['secretary']);
+        if (!ctype_digit($incidentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+
+        $body = Http::jsonBody();
+        $draftVersionRaw = $body['draft_version'] ?? null;
+        if (!is_int($draftVersionRaw) && !(is_string($draftVersionRaw) && ctype_digit($draftVersionRaw))) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'draft_version is required.');
+        }
+        $draftVersion = (int) $draftVersionRaw;
+
+        $fields = [];
+        foreach (['complainant_name', 'respondent_name', 'complainant_contact_number'] as $field) {
+            $value = $body[$field] ?? null;
+            if ($value !== null && !is_string($value)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be a string or null.");
+            }
+            $maxLength = $field === 'complainant_contact_number' ? 32 : 255;
+            if (is_string($value) && mb_strlen($value) > $maxLength) {
+                throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be at most {$maxLength} characters.");
+            }
+            // Empty string means "the Secretary cleared this field" — store
+            // as NULL, not as an empty string indistinguishable from "AI
+            // never drafted anything here" (same reasoning §11 already
+            // uses for raw_narrative's own NULL-vs-empty-string decision).
+            $fields[$field] = is_string($value) && trim($value) !== '' ? trim($value) : null;
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $incidentStmt = $pdo->prepare(
+                'SELECT incident_id, barangay_id FROM incident WHERE incident_id = :incident_id FOR UPDATE'
+            );
+            $incidentStmt->execute(['incident_id' => $incidentId]);
+            $incident = $incidentStmt->fetch(PDO::FETCH_ASSOC);
+            if ($incident === false) {
+                throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+            }
+            AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+            $draft = AiJobQueue::currentExtractionDraftForUpdate($pdo, $incidentId);
+            if ($draft === null) {
+                throw new ApiError(404, 'NOT_FOUND', 'No extraction draft exists for this incident yet.');
+            }
+            if ((int) $draft['draft_version'] !== $draftVersion) {
+                throw new ApiError(409, 'CONFLICT', 'This draft has changed since it was loaded; reload and try again.');
+            }
+
+            $updateStmt = $pdo->prepare(
+                'UPDATE incident
+                    SET complainant_name = :complainant_name,
+                        respondent_name = :respondent_name,
+                        complainant_contact_number = :complainant_contact_number,
+                        updated_at = UTC_TIMESTAMP()
+                  WHERE incident_id = :incident_id'
+            );
+            $updateStmt->execute([
+                'complainant_name' => $fields['complainant_name'],
+                'respondent_name' => $fields['respondent_name'],
+                'complainant_contact_number' => $fields['complainant_contact_number'],
+                'incident_id' => $incidentId,
+            ]);
+
+            // Rule 17 allow-list: identifiers and statuses only — the
+            // actual names/number never go into audit metadata, same
+            // conservative call every other party-data-adjacent audit
+            // entry in this codebase already makes.
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_extraction_approved', 'incident', $incidentId, [
+                'log_id' => (int) $draft['log_id'],
+                'draft_version' => $draftVersion,
+            ]);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        Http::send(200, [
+            'incident_id' => $incidentId,
+            'complainant_name' => $fields['complainant_name'],
+            'respondent_name' => $fields['respondent_name'],
+            'complainant_contact_number' => $fields['complainant_contact_number'],
         ]);
     }
 
