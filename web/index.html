@@ -92,10 +92,7 @@
     // htdocs subfolder — the front controller matches REQUEST_URI against
     // exactly "/api/v1", so a subfolder mount 404s. Served on its own
     // port instead: see web/README-serving.md ("Option C").
-    // TEMP — UI/UX preview with fake seeded data, pointed at a disposable
-    // DB/backend on port 8140. Points to the REAL API on 8081 normally;
-    // revert this one line before real use. See backend/DEVLOG.md.
-    window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8140/api/v1';
+    window.BARANGUARD_API_BASE_URL = 'http://127.0.0.1:8081/api/v1';
   </script>
 </head>
 <body>
