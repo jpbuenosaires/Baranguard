@@ -39,7 +39,7 @@
 .page-header__subtitle {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
-  margin-top: 0.125rem;
+  margin-top: var(--spacing-3xs);
 }
 .page-header__actions {
   display: flex;
@@ -95,11 +95,11 @@
 .filter-chip-row {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--spacing-xs);
   background: rgba(15, 23, 42, 0.06);
   border: 1px solid var(--color-border);
   border-radius: 9999px;
-  padding: 4px;
+  padding: var(--spacing-xs);
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
@@ -128,7 +128,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-2xs);
   white-space: nowrap;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
@@ -169,10 +169,10 @@
 
 /* Badge styling inside tab chips */
 .filter-chip .sidebar__nav-badge {
-  margin-left: 2px;
+  margin-left: var(--spacing-3xs);
   min-width: 1.125rem;
   height: 1.125rem;
-  padding: 0 0.35rem;
+  padding: 0 var(--spacing-2xs);
   font-size: var(--font-size-label);
   font-weight: 700;
   border-radius: 9999px;

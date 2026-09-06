@@ -52,7 +52,7 @@
 .toast__message { flex: 1; color: var(--color-text-primary); line-height: 1.4; }
 .toast__close {
   min-height: 0;
-  padding: 0.125rem;
+  padding: var(--spacing-3xs);
   background: transparent;
   border: none;
   color: var(--color-text-tertiary);
@@ -93,7 +93,7 @@
 
 /* Icon treatment — small filled circle background. */
 .toast__icon {
-  padding: 0.25rem;
+  padding: var(--spacing-xs);
   border-radius: var(--radius-sm);
 }
 .toast--success .toast__icon { background: var(--tint-success-bg); }

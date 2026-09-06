@@ -200,6 +200,22 @@ html { font-size: 100%; }
   --spacing-xs: 0.25rem;  --spacing-sm: 0.5rem;  --spacing-sm-md: 0.75rem;
   --spacing-md: 1rem;     --spacing-lg: 1.5rem;  --spacing-xl: 2rem;
   --spacing-2xl: 3rem;
+  /* 2026-09-06 UI/UX audit: 20px is a real step this app converged on by
+     itself — 16 card/modal-header rules across five stylesheets had each
+     hand-written 1.25rem for the same job. It sits between md(16) and
+     lg(24), which the 8px rhythm skips. Added because the usage already
+     existed, not to widen the scale on principle. */
+  --spacing-md-lg: 1.25rem;
+
+  /* Semantic container padding. The audit found SIX near-identical
+     paddings on card/panel/banner containers — 0.75/0.875/1/1.125rem
+     vertical against 1/1.125/1.25rem horizontal, 30 rules across a grid
+     of values nobody could have chosen deliberately. That variance is
+     what made some screens read as roomier than others. Two steps now,
+     and every card-like container picks one. Max movement for any rule
+     that changed: 2px. */
+  --pad-panel: var(--spacing-sm-md) var(--spacing-md);
+  --pad-panel-lg: var(--spacing-md) var(--spacing-md-lg);
 
   --font-base: "Inter", system-ui, -apple-system, sans-serif;
   /* text-xs(12) / sm(14) / base(16) / lg(18, card titles) /
@@ -800,7 +816,7 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
   margin-bottom: var(--spacing-md);
 }
 .card-header__title { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-text-primary); }
-.card-header__subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-top: 0.125rem; }
+.card-header__subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-top: var(--spacing-3xs); }
 .card-header__icon { color: var(--color-primary); flex-shrink: 0; }
 /* Icon-only "View all" variant (2026-09-06 UX pass) — same slot, but a
    real button rather than a decorative span, since it navigates. */
@@ -1060,7 +1076,7 @@ html, body, .status-pill,
   width: 0.375rem;
   height: 0.375rem;
   border-radius: 50%;
-  margin-right: 0.25rem;
+  margin-right: var(--spacing-xs);
   background: currentColor;
   flex-shrink: 0;
 }

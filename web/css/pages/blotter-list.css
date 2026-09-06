@@ -38,12 +38,12 @@
 .btn-blotter-export {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--spacing-sm);
   background: var(--color-surface);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
   border-radius: 9999px;
-  padding: 8px 18px;
+  padding: var(--spacing-sm) 18px;
   font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
@@ -60,12 +60,12 @@
 .btn-blotter-new {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--spacing-sm);
   background: var(--color-primary);
   color: var(--color-white);
   border: none;
   border-radius: 9999px;
-  padding: 8px 18px;
+  padding: var(--spacing-sm) 18px;
   font-size: var(--font-size-sm);
   font-weight: 600;
   cursor: pointer;
@@ -139,7 +139,7 @@
 .blotter-filters-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-2xs);
   height: var(--control-height);
   padding: 0 14px;
   border: 1px solid var(--color-border);
@@ -164,7 +164,7 @@
   /* 2026-09-06 UI/UX audit: was 34px, sitting in the same flex row as a
      38px search input and a 38px Filters button — a visible 4px mismatch. */
   height: var(--control-height);
-  padding: 0 2rem 0 10px;
+  padding: 0 var(--spacing-xl) 0 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background-color: var(--color-bg);
@@ -234,14 +234,14 @@
   color: var(--color-text-primary);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   margin: 0;
 }
 
 .blotter-table-count-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 10px;
+  padding: var(--spacing-3xs) 10px;
   border-radius: 9999px;
   font-size: var(--font-size-label);
   font-weight: 700;
@@ -275,7 +275,7 @@
   top: 0;
   z-index: 2;
   background: var(--color-bg);
-  padding: 11px 16px;
+  padding: 11px var(--spacing-md);
   font-size: var(--font-size-label);
   font-weight: 700;
   color: var(--color-text-secondary);
@@ -310,7 +310,7 @@
 }
 
 .blotter-table tbody td {
-  padding: 13px 16px;
+  padding: 13px var(--spacing-md);
   vertical-align: middle;
   color: var(--color-text-primary);
 }
@@ -319,7 +319,7 @@
 .blotter-id-cell {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-2xs);
   font-weight: 700;
   color: var(--color-primary);
   font-size: 0.8125rem;
@@ -336,7 +336,7 @@
 .blotter-datetime-cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--spacing-3xs);
   white-space: nowrap;
 }
 
@@ -370,8 +370,8 @@
 .blotter-status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px 4px 8px;
+  gap: var(--spacing-2xs);
+  padding: var(--spacing-xs) 10px var(--spacing-xs) var(--spacing-sm);
   border-radius: 9999px;
   font-size: var(--font-size-label);
   font-weight: 600;
@@ -419,7 +419,7 @@
 .blotter-officer-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
 }
 
@@ -449,7 +449,7 @@
 .blotter-actions-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-2xs);
   justify-content: flex-end;
 }
 
@@ -518,7 +518,7 @@
 .blotter-pagination-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-2xs);
 }
 
 .blotter-page-btn {
@@ -664,8 +664,8 @@
 .blotter-view-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: var(--spacing-xs);
+  padding: 10px var(--spacing-sm-md);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -710,7 +710,7 @@
 .blotter-form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--spacing-2xs);
 }
 
 .blotter-form-group.full-width {
@@ -727,7 +727,7 @@
 .blotter-form-select,
 .blotter-form-textarea {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--spacing-sm) var(--spacing-sm-md);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-surface);

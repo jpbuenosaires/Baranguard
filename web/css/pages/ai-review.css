@@ -66,7 +66,7 @@
   text-decoration-thickness: 1px;
   border-bottom: 2px solid var(--color-critical);
   border-radius: 2px;
-  padding: 0 0.125rem;
+  padding: 0 var(--spacing-3xs);
 }
 /* The count line above the original ("4 identifiers removed: 2 name…"). */
 .redaction-summary { margin-bottom: var(--spacing-sm); }
