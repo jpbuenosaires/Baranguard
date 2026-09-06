@@ -1474,8 +1474,185 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
 // Activity Log Tab (Preserved + Tokenized Alignment)
 // ============================================================
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysAgoIso(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+function buildDateRangePicker(initialRange = '30', onRangeChange) {
+  const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
+  let currentRange = initialRange;
+  let customFrom = daysAgoIso(29);
+  let customTo = todayIso();
+  let previousValue = initialRange;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'date-range-picker-wrapper';
+
+  const select = document.createElement('select');
+  select.className = 'input--auto range-select sms-log-filter-select';
+  select.setAttribute('aria-label', 'Date range');
+
+  const options = [
+    ['7', 'Last 7 days'],
+    ['30', 'Last 30 days'],
+    ['90', 'Last 90 days'],
+    ['all', 'All time'],
+    ['custom', 'Custom range...'],
+  ];
+
+  options.forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    select.appendChild(opt);
+  });
+  select.value = initialRange;
+
+  // Popover dialog
+  const popover = document.createElement('div');
+  popover.className = 'date-range-popover';
+  popover.hidden = true;
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', 'Custom date range');
+
+  const title = document.createElement('div');
+  title.className = 'date-range-popover__title';
+  title.textContent = 'Custom Date Range';
+
+  const grid = document.createElement('div');
+  grid.className = 'date-range-popover__grid';
+
+  const fromField = document.createElement('div');
+  fromField.className = 'date-range-popover__field';
+  const fromLabel = document.createElement('label');
+  fromLabel.className = 'date-range-popover__label';
+  fromLabel.textContent = 'From';
+  const fromInput = document.createElement('input');
+  fromInput.type = 'date';
+  fromInput.className = 'date-range-popover__input';
+  fromInput.value = customFrom;
+  fromField.append(fromLabel, fromInput);
+
+  const toField = document.createElement('div');
+  toField.className = 'date-range-popover__field';
+  const toLabel = document.createElement('label');
+  toLabel.className = 'date-range-popover__label';
+  toLabel.textContent = 'To';
+  const toInput = document.createElement('input');
+  toInput.type = 'date';
+  toInput.className = 'date-range-popover__input';
+  toInput.value = customTo;
+  toField.append(toLabel, toInput);
+
+  grid.append(fromField, toField);
+
+  const errorEl = document.createElement('span');
+  errorEl.className = 'app-inline-error';
+  errorEl.style.cssText = 'color: var(--color-critical); font-size: 0.75rem; font-weight: 500;';
+  errorEl.hidden = true;
+  errorEl.setAttribute('role', 'alert');
+
+  const actions = document.createElement('div');
+  actions.className = 'date-range-popover__actions';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'ghost';
+  cancelBtn.textContent = 'Cancel';
+
+  const applyBtn = document.createElement('button');
+  applyBtn.type = 'button';
+  applyBtn.className = 'primary';
+  applyBtn.textContent = 'Apply Range';
+
+  actions.append(cancelBtn, applyBtn);
+  popover.append(title, grid, errorEl, actions);
+  wrapper.append(select, popover);
+
+  const validate = () => {
+    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
+    applyBtn.disabled = invalid;
+    errorEl.hidden = !invalid;
+    errorEl.textContent = invalid ? 'From date must be on or before To date.' : '';
+  };
+  fromInput.addEventListener('change', validate);
+  toInput.addEventListener('change', validate);
+
+  const openPopover = () => {
+    popover.hidden = false;
+    validate();
+    fromInput.focus();
+  };
+
+  const closePopover = (restorePrevious = false) => {
+    popover.hidden = true;
+    errorEl.hidden = true;
+    if (restorePrevious) {
+      select.value = previousValue;
+    }
+  };
+
+  cancelBtn.addEventListener('click', () => closePopover(true));
+
+  applyBtn.addEventListener('click', () => {
+    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
+    customFrom = fromInput.value;
+    customTo = toInput.value;
+    currentRange = 'custom';
+    previousValue = 'custom';
+    closePopover();
+    onRangeChange({ dateFrom: customFrom, dateTo: customTo, range: 'custom' });
+  });
+
+  select.addEventListener('change', () => {
+    if (select.value === 'custom') {
+      openPopover();
+    } else {
+      closePopover();
+      currentRange = select.value;
+      previousValue = select.value;
+      if (select.value === 'all') {
+        onRangeChange({ dateFrom: undefined, dateTo: undefined, range: 'all' });
+      } else {
+        const days = PRESET_DAYS_AGO[select.value] ?? 29;
+        onRangeChange({ dateFrom: daysAgoIso(days), dateTo: todayIso(), range: select.value });
+      }
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!popover.hidden && !wrapper.contains(e.target)) {
+      closePopover(true);
+    }
+  });
+
+  return {
+    wrapper,
+    select,
+    getDateRange: () => {
+      if (currentRange === 'all') return { dateFrom: undefined, dateTo: undefined };
+      if (currentRange === 'custom') return { dateFrom: customFrom, dateTo: customTo };
+      const days = PRESET_DAYS_AGO[currentRange] ?? 29;
+      return { dateFrom: daysAgoIso(days), dateTo: todayIso() };
+    },
+    reset: (val = '30') => {
+      currentRange = val;
+      previousValue = val;
+      select.value = val;
+      closePopover();
+    },
+  };
+}
+
 function renderActivityLogTab(container, pageHeader, navigate) {
   let currentPageItems = [];
+  container.className = 'sms-log-page-container';
 
   const exportButton = document.createElement('button');
   exportButton.type = 'button';
@@ -1485,35 +1662,39 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   pageHeader.actions.appendChild(exportButton);
 
   const statStripHost = document.createElement('div');
+  statStripHost.className = 'sms-log-stat-strip';
   container.appendChild(statStripHost);
 
   const filterPanel = document.createElement('div');
-  filterPanel.className = 'filter-panel';
+  filterPanel.className = 'sms-log-filter-panel';
 
   const typeSelect = buildFilterSelect('sms-log-type', 'Message type', ['All types', ...MESSAGE_TYPES]);
   const directionSelect = buildFilterSelect('sms-log-direction', 'Direction', ['Both directions', ...DIRECTIONS]);
   const statusSelect = buildFilterSelect('sms-log-status', 'Status', ['All statuses', ...STATUSES]);
 
-  const fromLabel = document.createElement('label');
-  fromLabel.className = 'sr-only';
-  fromLabel.htmlFor = 'sms-log-from';
-  fromLabel.textContent = 'From date';
-  const fromInput = document.createElement('input');
-  fromInput.id = 'sms-log-from';
-  fromInput.type = 'date';
+  const dateRangePicker = buildDateRangePicker('30', () => {
+    currentPage = 1;
+    load();
+    refreshStats();
+  });
 
-  const toLabel = document.createElement('label');
-  toLabel.className = 'sr-only';
-  toLabel.htmlFor = 'sms-log-to';
-  toLabel.textContent = 'To date';
-  const toInput = document.createElement('input');
-  toInput.id = 'sms-log-to';
-  toInput.type = 'date';
+  const col1 = document.createElement('div');
+  col1.className = 'sms-log-filter-col';
+  col1.append(typeSelect.fragment);
 
-  filterPanel.append(
-    typeSelect.fragment, directionSelect.fragment, statusSelect.fragment,
-    fromLabel, fromInput, toLabel, toInput
-  );
+  const col2 = document.createElement('div');
+  col2.className = 'sms-log-filter-col';
+  col2.append(directionSelect.fragment);
+
+  const col3 = document.createElement('div');
+  col3.className = 'sms-log-filter-col';
+  col3.append(statusSelect.fragment);
+
+  const col4 = document.createElement('div');
+  col4.className = 'sms-log-filter-col';
+  col4.append(dateRangePicker.wrapper);
+
+  filterPanel.append(col1, col2, col3, col4);
   container.appendChild(filterPanel);
 
   const layout = document.createElement('div');
@@ -1529,7 +1710,7 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   renderDetailPlaceholder(detailPane);
 
   let currentPage = 1;
-  [typeSelect.select, directionSelect.select, statusSelect.select, fromInput, toInput].forEach((el) => {
+  [typeSelect.select, directionSelect.select, statusSelect.select].forEach((el) => {
     el.addEventListener('change', () => {
       currentPage = 1;
       load();
@@ -1541,12 +1722,13 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   refreshStats();
 
   function activeFilters() {
+    const range = dateRangePicker.getDateRange();
     return {
       messageType: typeSelect.select.value || undefined,
       direction: directionSelect.select.value || undefined,
       status: statusSelect.select.value || undefined,
-      dateFrom: fromInput.value || undefined,
-      dateTo: toInput.value || undefined,
+      dateFrom: range.dateFrom,
+      dateTo: range.dateTo,
     };
   }
 
@@ -1562,10 +1744,50 @@ function renderActivityLogTab(container, pageHeader, navigate) {
       statStripHost.innerHTML = '';
       statStripHost.appendChild(StatStrip({
         items: [
-          { label: 'Total', value: total.total },
-          { label: 'Inbound', value: inbound.total, tone: 'info' },
-          { label: 'Outbound', value: outbound.total, tone: 'info' },
-          { label: 'Failed', value: failed.total, tone: failed.total > 0 ? 'critical' : 'default' },
+          {
+            label: 'Total',
+            value: total.total,
+            onClick: () => {
+              directionSelect.select.value = '';
+              statusSelect.select.value = '';
+              currentPage = 1;
+              load();
+              refreshStats();
+            },
+          },
+          {
+            label: 'Inbound',
+            value: inbound.total,
+            tone: 'info',
+            onClick: () => {
+              directionSelect.select.value = 'inbound';
+              currentPage = 1;
+              load();
+              refreshStats();
+            },
+          },
+          {
+            label: 'Outbound',
+            value: outbound.total,
+            tone: 'info',
+            onClick: () => {
+              directionSelect.select.value = 'outbound';
+              currentPage = 1;
+              load();
+              refreshStats();
+            },
+          },
+          {
+            label: 'Failed',
+            value: failed.total,
+            tone: failed.total > 0 ? 'critical' : 'default',
+            onClick: () => {
+              statusSelect.select.value = 'failed';
+              currentPage = 1;
+              load();
+              refreshStats();
+            },
+          },
         ],
       }));
     } catch {}
@@ -1597,6 +1819,10 @@ function renderActivityLogTab(container, pageHeader, navigate) {
       selectedKey: selectedLogId,
       onRowClick: (row) => {
         selectedLogId = row.logId;
+        table.querySelectorAll('tbody tr').forEach((tr) => {
+          const act = tr.querySelector('.data-table__row-activator');
+          tr.classList.toggle('is-selected', Boolean(act && act.textContent.includes(String(row.logId))));
+        });
         renderRowDetail(detailPane, row, navigate);
       },
       caption: 'SMS activity log',
@@ -1613,65 +1839,127 @@ function renderActivityLogTab(container, pageHeader, navigate) {
 }
 
 function renderDetailPlaceholder(pane) {
-  pane.innerHTML = '';
-  const card = document.createElement('div');
-  card.className = 'card state-block';
-  card.innerHTML = '<h3>Select a message</h3><p>Choose a row to see its correlation and gateway identifiers.</p>';
-  pane.appendChild(card);
+  pane.innerHTML = `
+    <div class="sms-detail-card sms-detail-card--empty">
+      <div class="sms-detail-empty-icon">
+        ${icons.messageSquare(28)}
+      </div>
+      <h3 class="sms-detail-empty-title">Select a message</h3>
+      <p class="sms-detail-empty-desc">Choose any row on the left to inspect correlation tokens, delivery routing, and linked records.</p>
+    </div>
+  `;
 }
 
 function renderRowDetail(pane, row, navigate) {
   pane.innerHTML = '';
   const card = document.createElement('div');
-  card.className = 'card';
-  const heading = document.createElement('h3');
-  heading.textContent = `Message #${row.logId}`;
-  card.appendChild(heading);
+  card.className = 'sms-detail-card';
+
+  const header = document.createElement('div');
+  header.className = 'sms-detail-header';
+
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'sms-detail-title-wrap';
+
+  const title = document.createElement('h3');
+  title.className = 'sms-detail-title';
+  title.textContent = `Message #${row.logId}`;
+
+  const dirBadge = document.createElement('span');
+  const isInbound = row.direction === 'inbound';
+  dirBadge.className = `sms-detail-dir-badge sms-detail-dir-badge--${row.direction}`;
+  dirBadge.innerHTML = `<span aria-hidden="true">${isInbound ? icons.arrowDownLeft(12) : icons.arrowUpRight(12)}</span><span>${isInbound ? 'Inbound' : 'Outbound'}</span>`;
+
+  titleWrap.append(title, dirBadge);
+
+  const statusPill = document.createElement('span');
+  const cls = STATUS_PILL_CLASS[row.status] || 'status-pill--neutral';
+  statusPill.className = `status-pill ${cls}`;
+  statusPill.textContent = row.status.toUpperCase();
+
+  header.append(titleWrap, statusPill);
+  card.appendChild(header);
+
+  if (row.messageBody) {
+    const bodyBox = document.createElement('div');
+    bodyBox.className = 'sms-detail-body-box';
+    bodyBox.textContent = row.messageBody;
+    card.appendChild(bodyBox);
+  }
+
+  if (row.failureReason) {
+    const failBox = document.createElement('div');
+    failBox.className = 'sms-detail-failure-box';
+    failBox.innerHTML = `
+      <div class="sms-detail-failure-head">
+        <span class="sms-detail-failure-icon">⚠️</span>
+        <strong>Delivery Failure</strong>
+      </div>
+      <div class="sms-detail-failure-text">${row.failureReason}</div>
+    `;
+    card.appendChild(failBox);
+  }
 
   const fields = document.createElement('dl');
-  fields.className = 'detail-fields';
-  const addField = (label, value) => {
-    if (value === null || value === undefined) return;
+  fields.className = 'sms-detail-grid';
+
+  const addField = (label, value, isCopyable = false) => {
+    if (value === null || value === undefined || value === '') return;
     const dt = document.createElement('dt');
+    dt.className = 'sms-detail-dt';
     dt.textContent = label;
+
     const dd = document.createElement('dd');
-    dd.textContent = String(value);
+
+    const valSpan = document.createElement('span');
+    valSpan.className = isCopyable ? 'sms-detail-code' : 'sms-detail-val';
+    valSpan.textContent = String(value);
+    dd.appendChild(valSpan);
+
+    if (isCopyable) {
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'sms-detail-copy-btn';
+      copyBtn.title = `Copy ${label}`;
+      copyBtn.innerHTML = icons.copy(12);
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(String(value));
+        showToast(`Copied ${label}`, { variant: 'info' });
+      });
+      dd.appendChild(copyBtn);
+    }
+
     fields.append(dt, dd);
   };
 
-  addField('Correlation ID', row.correlationId);
-  addField('Gateway message ID', row.gatewayMessageId);
-  addField('Modem message ID', row.modemMessageId);
+  addField('Transport', row.transport === 'gsm_modem' ? 'GSM Modem' : 'Semaphore');
+  addField('Message Type', row.messageType ? row.messageType.replace(/_/g, ' ') : null);
+  if (row.phoneNumber) addField('Phone Number', row.phoneNumber, true);
+  addField('Correlation ID', row.correlationId, true);
+  addField('Gateway Msg ID', row.gatewayMessageId, true);
+  addField('Modem Msg ID', row.modemMessageId, true);
   addField('Incident', row.incidentId ? `#${row.incidentId}` : null);
   addField('Dispatch', row.dispatchId ? `#${row.dispatchId}` : null);
-  addField('Citizen report', row.reportId ? `#${row.reportId}` : null);
-  addField('Sent', row.sentAt ? new Date(row.sentAt).toLocaleString() : null);
-  addField('Received', row.receivedAt ? new Date(row.receivedAt).toLocaleString() : null);
-  addField('Logged', new Date(row.createdAt).toLocaleString());
+  addField('Citizen Report', row.reportId ? `#${row.reportId}` : null);
+  addField('Sent At', row.sentAt ? new Date(row.sentAt).toLocaleString() : null);
+  addField('Received At', row.receivedAt ? new Date(row.receivedAt).toLocaleString() : null);
+  addField('Logged At', new Date(row.createdAt).toLocaleString());
 
-  if (fields.children.length === 0) {
+  if (fields.children.length === 0 && !row.messageBody && !row.failureReason) {
     const none = document.createElement('p');
     none.className = 'note';
-    none.textContent = 'No correlation or gateway identifiers recorded for this message.';
+    none.textContent = 'No additional metadata recorded for this message.';
     card.appendChild(none);
   } else {
     card.appendChild(fields);
   }
 
-  if (row.failureReason) {
-    const failure = document.createElement('p');
-    failure.className = 'note';
-    failure.style.color = 'var(--color-critical)';
-    failure.textContent = `Failure reason: ${row.failureReason}`;
-    card.appendChild(failure);
-  }
-
   if (row.incidentId) {
     const jumpBtn = document.createElement('button');
     jumpBtn.type = 'button';
-    jumpBtn.className = 'primary';
-    jumpBtn.style.marginTop = 'var(--spacing-md)';
-    jumpBtn.innerHTML = `<span aria-hidden="true">${icons.fileText(14)}</span><span>Open Incident #${row.incidentId}</span>`;
+    jumpBtn.className = 'primary sms-detail-action-btn';
+    jumpBtn.innerHTML = `<span aria-hidden="true">${icons.fileText(14)}</span><span>Open Blotter Incident #${row.incidentId}</span>`;
     jumpBtn.addEventListener('click', () => navigate('blotter-detail', row.incidentId));
     card.appendChild(jumpBtn);
   }
@@ -1687,6 +1975,7 @@ function buildFilterSelect(id, srLabel, optionLabels) {
   label.textContent = srLabel;
   const select = document.createElement('select');
   select.id = id;
+  select.className = 'input--auto sms-log-filter-select';
   optionLabels.forEach((text, i) => {
     const option = document.createElement('option');
     option.value = i === 0 ? '' : text;
