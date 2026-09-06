@@ -34,7 +34,7 @@
 .attention-banner--critical {
   background: var(--color-critical-solid);
   color: var(--color-white);
-  border: 1px solid rgba(220,38,38,0.3);
+  border: 1px solid color-mix(in srgb, var(--color-critical) 30%, transparent);
   animation: glow-pulse 2s ease-in-out infinite;
 }
 .attention-banner--critical button {
@@ -339,13 +339,13 @@
 }
 .breakdown-progress-fill--pending,
 .breakdown-progress-fill--under_investigation {
-  background: var(--color-warning, #f59e0b);
+  background: var(--color-warning);
 }
 .breakdown-progress-fill--dispatched,
 .breakdown-progress-fill--active {
-  background: var(--color-info, #3b82f6);
+  background: var(--color-info, var(--color-accent));
 }
 .breakdown-progress-fill--resolved,
 .breakdown-progress-fill--settled {
-  background: var(--color-success, #10b981);
+  background: var(--color-success, var(--color-success-solid));
 }

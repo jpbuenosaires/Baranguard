@@ -11,7 +11,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 2026-09-06 legibility audit: the third stop was #3B82F6 (a bright
+  /* 2026-09-06 legibility audit: the third stop was var(--color-accent) (a bright
      mid-blue, relative luminance ~0.235) — as the animated gradient
      drifted across it, the light `--color-white`/`--color-surface-blue`
      text in `.login-hero` (h1, lede, feature copy, footer) dropped to
@@ -19,7 +19,7 @@
      for a darker blue (~0.07 luminance) that keeps every stop dark enough
      for light text to clear 4.5:1 at any point in the animation, while
      still reading as a distinct accent from the other three navy stops. */
-  background: linear-gradient(-45deg, #1E3A6E, #1D4ED8, #1E40AF, #162D58);
+  background: linear-gradient(-45deg, var(--color-navy), var(--color-primary), var(--color-primary-hover), #162D58);
   background-size: 400% 400%;
   animation: gradient-shift 12s ease infinite;
   padding: var(--spacing-lg);
@@ -32,8 +32,8 @@
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(circle at 25% 25%, rgba(255,255,255,0.03) 1px, transparent 1px),
-    radial-gradient(circle at 75% 75%, rgba(255,255,255,0.03) 1px, transparent 1px);
+    radial-gradient(circle at 25% 25%, color-mix(in srgb, var(--color-white) 3%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 75% 75%, color-mix(in srgb, var(--color-white) 3%, transparent) 1px, transparent 1px);
   background-size: 3rem 3rem;
   background-position: 0 0, 1.5rem 1.5rem;
   pointer-events: none;
@@ -42,7 +42,7 @@
   width: 100%;
   max-width: 25rem;
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-floating), 0 0 40px rgba(59,130,246,0.1);
+  box-shadow: var(--shadow-floating), 0 0 40px color-mix(in srgb, var(--color-accent) 10%, transparent);
   padding: var(--spacing-xl);
   background: var(--glass-bg);
   backdrop-filter: blur(20px);
@@ -91,7 +91,7 @@
 
 /* Brighter focus glow on login page inputs to stand out against gradient bg. */
 .login-card input:focus {
-  box-shadow: 0 0 0 2px var(--color-primary), 0 0 12px rgba(59,130,246,0.2);
+  box-shadow: 0 0 0 2px var(--color-primary), 0 0 12px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 
 /* Caps Lock warning (2026-09-05 UX pass) — sits right under the password
@@ -125,7 +125,7 @@
    animation on its own). */
 .login-card.is-shaking {
   animation: login-card-shake .4s ease-in-out;
-  box-shadow: var(--shadow-floating), 0 0 30px rgba(220,38,38,0.25);
+  box-shadow: var(--shadow-floating), 0 0 30px color-mix(in srgb, var(--color-critical) 25%, transparent);
 }
 @keyframes login-card-shake {
   0%, 100% { transform: translateX(0); }
@@ -143,7 +143,7 @@
   flex-direction: column;
   justify-content: center;
   padding: var(--spacing-2xl);
-  /* 2026-09-06 legibility audit: the third stop was #3B82F6 (a bright
+  /* 2026-09-06 legibility audit: the third stop was var(--color-accent) (a bright
      mid-blue, relative luminance ~0.235) — as the animated gradient
      drifted across it, the light `--color-white`/`--color-surface-blue`
      text in `.login-hero` (h1, lede, feature copy, footer) dropped to
@@ -151,7 +151,7 @@
      for a darker blue (~0.07 luminance) that keeps every stop dark enough
      for light text to clear 4.5:1 at any point in the animation, while
      still reading as a distinct accent from the other three navy stops. */
-  background: linear-gradient(-45deg, #1E3A6E, #1D4ED8, #1E40AF, #162D58);
+  background: linear-gradient(-45deg, var(--color-navy), var(--color-primary), var(--color-primary-hover), #162D58);
   background-size: 400% 400%;
   animation: gradient-shift 12s ease infinite;
   color: var(--color-white);
@@ -163,8 +163,8 @@
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(circle at 25% 25%, rgba(255,255,255,0.03) 1px, transparent 1px),
-    radial-gradient(circle at 75% 75%, rgba(255,255,255,0.03) 1px, transparent 1px);
+    radial-gradient(circle at 25% 25%, color-mix(in srgb, var(--color-white) 3%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 75% 75%, color-mix(in srgb, var(--color-white) 3%, transparent) 1px, transparent 1px);
   background-size: 3rem 3rem;
   background-position: 0 0, 1.5rem 1.5rem;
   pointer-events: none;
@@ -187,7 +187,7 @@
   position: absolute;
   inset: 0;
   border-radius: var(--radius-xl);
-  border: 2px solid rgba(255,255,255,0.5);
+  border: 2px solid color-mix(in srgb, var(--color-white) 50%, transparent);
   animation: login-brand-pulse 2.4s ease-out infinite;
 }
 @keyframes login-brand-pulse {
@@ -214,7 +214,7 @@
 .login-hero__footer {
   margin-top: var(--spacing-2xl);
   padding-top: var(--spacing-lg);
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  border-top: 1px solid color-mix(in srgb, var(--color-white) 20%, transparent);
   color: var(--color-surface-blue);
   font-size: var(--font-size-sm);
 }

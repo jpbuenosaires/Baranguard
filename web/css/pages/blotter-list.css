@@ -69,14 +69,14 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-primary) 30%, transparent);
   transition: all 0.15s ease;
 }
 
 .btn-blotter-new:hover {
   background: var(--color-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.4);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
 
 /* --- Single-Line Filter Bar (framed inside a surface card, tight top spacing) --- */
@@ -129,7 +129,7 @@
 
 .blotter-search-input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 
 .blotter-search-input::placeholder {
@@ -243,15 +243,15 @@
   border-radius: 9999px;
   font-size: var(--font-size-label);
   font-weight: 700;
-  background: rgba(37, 99, 235, 0.1);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   color: var(--color-primary);
-  border: 1px solid rgba(37, 99, 235, 0.18);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 [data-theme="dark"] .blotter-table-count-badge {
-  background: rgba(37, 99, 235, 0.2);
-  color: #93c5fd;
-  border-color: rgba(37, 99, 235, 0.28);
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 
 .blotter-table-scroll {
@@ -285,8 +285,8 @@
 }
 
 [data-theme="dark"] .blotter-table thead th {
-  background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
+  background: color-mix(in srgb, var(--color-white) 3%, transparent);
+  color: var(--color-text-secondary);
 }
 
 .blotter-table tbody tr {
@@ -300,11 +300,11 @@
 }
 
 .blotter-table tbody tr:hover {
-  background-color: #f8fafc;
+  background-color: var(--color-bg);
 }
 
 [data-theme="dark"] .blotter-table tbody tr:hover {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: color-mix(in srgb, var(--color-white) 3%, transparent);
 }
 
 .blotter-table tbody td {
@@ -319,7 +319,7 @@
   align-items: center;
   gap: 6px;
   font-weight: 700;
-  color: #2563eb;
+  color: var(--color-primary);
   font-size: 0.8125rem;
   font-family: var(--font-mono, monospace);
   letter-spacing: 0.02em;
@@ -327,7 +327,7 @@
 }
 
 [data-theme="dark"] .blotter-id-cell {
-  color: #93c5fd;
+  color: var(--color-accent);
 }
 
 
@@ -346,7 +346,7 @@
 
 .blotter-time {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   line-height: 1.2;
 }
 
@@ -428,8 +428,8 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--chart-cat-6) 100%);
+  color: var(--color-white);
   font-size: 0.5625rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -763,7 +763,7 @@
   }
 }
 
-/* Retention notice dialog. Was inline #fef2f2/#fecaca/#991b1b, which made it
+/* Retention notice dialog. Was inline var(--tint-critical-bg)/#fecaca/var(--pill-critical-text), which made it
    a light-mode-only red panel; tokens give it the same warning read in both
    themes. */
 .blotter-retention-notice {

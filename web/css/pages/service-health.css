@@ -41,22 +41,22 @@
   height: 7px;
   border-radius: 50%;
   background-color: var(--color-success);
-  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 70%, transparent);
   animation: healthPulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 @keyframes healthPulse {
   0% {
     transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 70%, transparent);
   }
   70% {
     transform: scale(1);
-    box-shadow: 0 0 0 6px rgba(22, 163, 74, 0);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-success) 0%, transparent);
   }
   100% {
     transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 0%, transparent);
   }
 }
 
@@ -126,7 +126,7 @@
 }
 
 .health-hero-banner--nominal .health-hero-banner__icon {
-  color: var(--color-success-text, #15803D);
+  color: var(--color-success-text);
 }
 
 .health-hero-banner--alert .health-hero-banner__icon {
@@ -166,13 +166,13 @@
 
 .health-hero-banner--nominal .health-hero-banner__badge {
   background: color-mix(in srgb, var(--color-success) 16%, transparent);
-  color: var(--color-success-text, #15803D);
+  color: var(--color-success-text);
   border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
 }
 
 .health-hero-banner--alert .health-hero-banner__badge {
   background: color-mix(in srgb, var(--color-critical) 16%, transparent);
-  color: var(--pill-critical-text, #991B1B);
+  color: var(--pill-critical-text);
   border: 1px solid color-mix(in srgb, var(--color-critical) 30%, transparent);
 }
 
@@ -237,7 +237,7 @@
 }
 
 .health-stat-card__value--primary { color: var(--color-primary); }
-.health-stat-card__value--success { color: var(--color-success-text, #15803D); }
+.health-stat-card__value--success { color: var(--color-success-text); }
 .health-stat-card__value--critical { color: var(--color-critical); }
 .health-stat-card__value--neutral { color: var(--color-text-secondary); }
 
@@ -421,7 +421,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  color: var(--color-link, #1D4ED8);
+  color: var(--color-link, var(--color-primary));
   font-weight: 600;
 }
 
@@ -501,7 +501,7 @@
 }
 
 .health-dr-value--warn {
-  color: var(--color-warning-solid, #B45309);
+  color: var(--color-warning-solid, var(--color-warning-text));
 }
 
 .health-dr-note {

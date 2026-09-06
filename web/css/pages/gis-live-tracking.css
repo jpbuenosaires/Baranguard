@@ -66,14 +66,14 @@
 .gis-sidebar__title {
   font-size: 1.375rem;
   font-weight: 700;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary);
   margin: 0;
   line-height: 1.25;
 }
 
 .gis-sidebar__subtitle {
   font-size: 0.8125rem;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
   margin: 0;
 }
 
@@ -103,7 +103,7 @@
 }
 
 .gis-mini-stat.is-active {
-  box-shadow: 0 0 0 2px var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 2px var(--color-primary);
 }
 
 .gis-mini-stat--available {
@@ -155,17 +155,17 @@
   padding: 0.5rem 0.875rem;
   border-radius: var(--radius-md, 8px);
   background: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--color-text-secondary, #475569);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .gis-filter-bar:hover {
-  border-color: var(--color-primary, #2563eb);
-  color: var(--color-text-primary, #0f172a);
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
 }
 
 .gis-filter-bar__left {
@@ -177,14 +177,14 @@
 .gis-filter-bar__badge {
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--color-text-tertiary, #64748b);
+  color: var(--color-text-tertiary);
 }
 
 /* Personnel list section header */
 .gis-personnel-header {
   font-size: 0.75rem;
   font-weight: 700;
-  color: var(--color-text-tertiary, #64748b);
+  color: var(--color-text-tertiary);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   margin-top: 0.25rem;
@@ -208,17 +208,17 @@
   background: transparent;
 }
 .gis-personnel-list::-webkit-scrollbar-thumb {
-  background: var(--color-border, #cbd5e1);
+  background: var(--color-border, var(--color-disabled-bg));
   border-radius: 9999px;
 }
 .gis-personnel-list::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-secondary, #94a3b8);
+  background: var(--color-text-secondary);
 }
 
 /* Modern Field Personnel Card */
 .gis-personnel-card {
   background: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg, 12px);
   padding: 0.875rem 1rem;
   display: flex;
@@ -231,14 +231,14 @@
 }
 
 .gis-personnel-card:hover {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
   transform: translateY(-1px);
 }
 
 .gis-personnel-card.is-selected {
-  border-color: var(--color-primary, #2563eb);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
   background: var(--tint-info-bg, #f0f7ff);
 }
 
@@ -257,20 +257,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: var(--color-white);
   flex-shrink: 0;
 }
 
 .gis-personnel-card__avatar--available {
-  background: #10b981;
+  background: var(--color-success-solid);
 }
 
 .gis-personnel-card__avatar--dispatched {
-  background: #2563eb;
+  background: var(--color-primary);
 }
 
 .gis-personnel-card__avatar--stale {
-  background: #64748b;
+  background: var(--color-text-tertiary);
 }
 
 .gis-personnel-card__info {
@@ -283,13 +283,13 @@
 .gis-personnel-card__name {
   font-size: 0.875rem;
   font-weight: 700;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary);
   line-height: 1.2;
 }
 
 .gis-personnel-card__tag {
   font-size: 0.6875rem;
-  color: var(--color-text-tertiary, #64748b);
+  color: var(--color-text-tertiary);
   font-weight: 500;
 }
 
@@ -298,12 +298,12 @@
   align-items: center;
   gap: 0.25rem;
   font-size: 0.75rem;
-  color: var(--color-text-secondary, #475569);
+  color: var(--color-text-secondary);
   margin-top: 0.125rem;
 }
 
 .gis-personnel-card__location svg {
-  color: var(--color-text-tertiary, #94a3b8);
+  color: var(--color-text-tertiary, var(--color-text-secondary));
   flex-shrink: 0;
 }
 
@@ -356,7 +356,7 @@
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
   background: transparent;
   border: 1px solid transparent;
   transition: all 0.15s ease;
@@ -365,9 +365,9 @@
 }
 
 .gis-personnel-card__phone-btn:hover {
-  background: var(--color-bg, #f8fafc);
-  border-color: var(--color-border, #cbd5e1);
-  color: var(--color-primary, #2563eb);
+  background: var(--color-bg);
+  border-color: var(--color-border, var(--color-disabled-bg));
+  color: var(--color-primary);
   transform: scale(1.08);
 }
 
@@ -393,7 +393,7 @@
   justify-content: space-between;
   padding: 0.875rem 1.25rem;
   background: var(--color-surface, #ffffff);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  border-bottom: 1px solid var(--color-border);
   z-index: 10;
   gap: 1rem;
 }
@@ -408,13 +408,13 @@
 .gis-map-header__title {
   font-size: 1.0625rem;
   font-weight: 700;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .gis-map-header__subtitle {
   font-size: 0.8125rem;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
   margin: 0;
 }
 
@@ -458,13 +458,13 @@
   border: none;
   cursor: pointer;
   transition: all 0.15s ease;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 25%, transparent);
 }
 
 .gis-map-primary-btn:hover {
   background: var(--color-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--color-primary) 35%, transparent);
 }
 
 /* Map Viewport */
@@ -567,7 +567,7 @@
 
 .gis-floating-activity__dot--critical {
   background: var(--color-critical);
-  box-shadow: 0 0 6px rgba(220, 38, 38, 0.5);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-critical) 50%, transparent);
 }
 
 .gis-floating-activity__dot--neutral {

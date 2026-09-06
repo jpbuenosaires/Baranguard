@@ -75,7 +75,7 @@
 
 .personnel-tab-badge {
   background: var(--color-critical);
-  color: #ffffff;
+  color: var(--color-white);
   font-size: 0.6875rem;
   font-weight: 700;
   padding: 0.1rem 0.45rem;
@@ -254,9 +254,9 @@
 }
 
 .user-role-badge--admin {
-  background: color-mix(in srgb, #8b5cf6 15%, transparent);
-  color: #7c3aed;
-  border: 1px solid color-mix(in srgb, #8b5cf6 30%, transparent);
+  background: color-mix(in srgb, var(--chart-cat-6) 15%, transparent);
+  color: var(--chart-cat-6);
+  border: 1px solid color-mix(in srgb, var(--chart-cat-6) 30%, transparent);
 }
 
 .user-role-badge--secretary {
@@ -266,9 +266,9 @@
 }
 
 .user-role-badge--tanod {
-  background: color-mix(in srgb, #0ea5e9 15%, transparent);
-  color: #0284c7;
-  border: 1px solid color-mix(in srgb, #0ea5e9 30%, transparent);
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info-text);
+  border: 1px solid color-mix(in srgb, var(--color-info) 30%, transparent);
 }
 
 .user-role-badge--punong_barangay {
@@ -311,7 +311,7 @@
 .user-action-btn--primary {
   background: var(--color-primary);
   border-color: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-white);
 }
 
 .user-action-btn--primary:hover {
@@ -663,7 +663,7 @@
 }
 
 .fatigue-meter-hours.is-moderate { color: var(--color-warning-text); }
-.fatigue-meter-hours.is-high { color: #f97316; }
+.fatigue-meter-hours.is-high { color: color-mix(in srgb, var(--color-warning) 50%, var(--color-critical)); }
 .fatigue-meter-hours.is-severe { color: var(--color-critical); }
 
 .fatigue-meter-tier {
@@ -689,15 +689,15 @@
 }
 
 .fatigue-meter-fill.is-moderate {
-  background: linear-gradient(90deg, #eab308 0%, #f59e0b 100%);
+  background: var(--color-warning);
 }
 
 .fatigue-meter-fill.is-high {
-  background: linear-gradient(90deg, #f97316 0%, #ea580c 100%);
+  background: color-mix(in srgb, var(--color-warning) 50%, var(--color-critical));
 }
 
 .fatigue-meter-fill.is-severe {
-  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  background: linear-gradient(90deg, var(--color-critical) 0%, var(--color-critical) 100%);
   animation: severe-glow 2s infinite;
 }
 

@@ -49,17 +49,17 @@
 }
 
 .live-map__marker--tanod {
-  background: var(--color-success-solid, #15803d);
+  background: var(--color-success-solid, var(--color-success-text));
   animation: marker-pulse 2s ease-in-out infinite;
 }
 .live-map__marker--available {
-  background: var(--color-success-solid, #10b981);
+  background: var(--color-success-solid);
 }
 .live-map__marker--dispatched {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
 }
 .live-map__marker--tanod.live-map__marker--stale {
-  background: var(--color-text-secondary, #64748b);
+  background: var(--color-text-secondary, var(--color-text-tertiary));
   animation: none;
 }
 @keyframes marker-pulse {
@@ -72,7 +72,7 @@
 .live-map__marker--sos {
   width: 2.125rem;
   height: 2.125rem;
-  background: var(--color-critical-solid, #dc2626);
+  background: var(--color-critical-solid, var(--color-critical));
   border-width: 3px;
   animation: sos-pulse 1.4s ease-in-out infinite;
 }
