@@ -130,7 +130,7 @@
   display: block;
   font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
-  margin-top: 0.125rem;
+  margin-top: var(--spacing-3xs);
 }
 /* Row action cluster (view / edit / delete icon buttons). */
 .data-table__actions { display: flex; align-items: center; gap: var(--spacing-xs); justify-content: flex-end; }

@@ -62,7 +62,7 @@
   color: var(--color-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  margin-top: 0.25rem;
+  margin-top: var(--spacing-xs);
 }
 /* Legend runs two-up with neatly left-aligned swatch and label, plus right-aligned count and pct */
 .donut-chart__legend {
@@ -84,7 +84,7 @@
   background: none;
   border: none;
   border-radius: var(--radius-md);
-  padding: 0.3125rem 0.5rem;
+  padding: var(--spacing-2xs) var(--spacing-sm);
   margin: 0;
   cursor: pointer;
   min-height: auto;
@@ -131,7 +131,7 @@
 .donut-chart__legend-value {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.25rem;
+  gap: var(--spacing-xs);
   margin-left: auto;
   flex-shrink: 0;
 }

@@ -209,7 +209,7 @@
 }
 .login-hero__features { display: flex; flex-direction: column; gap: var(--spacing-lg); }
 .login-hero__feature { display: flex; align-items: flex-start; gap: var(--spacing-md); }
-.login-hero__feature h3 { font-size: var(--font-size-md); margin-bottom: 0.125rem; }
+.login-hero__feature h3 { font-size: var(--font-size-md); margin-bottom: var(--spacing-3xs); }
 .login-hero__feature p { color: var(--color-surface-blue); font-size: var(--font-size-sm); }
 .login-hero__footer {
   margin-top: var(--spacing-2xl);

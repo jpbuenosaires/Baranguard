@@ -30,12 +30,12 @@
 .sidebar__brand {
   font-size: var(--font-size-md);
   font-weight: 700;
-  padding: 0.375rem 0.875rem 0.625rem;
-  margin-bottom: 0.25rem;
+  padding: var(--spacing-2xs) 0.875rem 0.625rem;
+  margin-bottom: var(--spacing-xs);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--spacing-sm-md);
 }
 
 .sidebar__brand .icon-badge--brand {
@@ -79,8 +79,8 @@
 
 /* Sidebar user footer — pinned to the bottom card */
 .sidebar__user {
-  margin: 0.5rem 0.625rem 0.125rem;
-  padding: 0.5rem 0.625rem;
+  margin: var(--spacing-sm) 0.625rem var(--spacing-3xs);
+  padding: var(--spacing-sm) 0.625rem;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.625rem;
@@ -147,17 +147,17 @@
 .sidebar.is-collapsed .sidebar__nav-label,
 .sidebar.is-collapsed .sidebar__user-text,
 .sidebar.is-collapsed .sidebar__user-action { display: none; }
-.sidebar.is-collapsed .sidebar__brand { justify-content: center; padding: 0.5rem; }
+.sidebar.is-collapsed .sidebar__brand { justify-content: center; padding: var(--spacing-sm); }
 .sidebar.is-collapsed .sidebar__brand .icon-badge--brand { display: none; }
 .sidebar.is-collapsed .sidebar__nav-item {
   width: calc(100% - 1rem);
-  margin: 0.125rem 0.5rem;
+  margin: var(--spacing-3xs) var(--spacing-sm);
   justify-content: center;
-  padding: 0.5rem;
+  padding: var(--spacing-sm);
 }
 .sidebar.is-collapsed .sidebar__user {
-  margin: 0.5rem 0.5rem 0.125rem;
-  padding: 0.5rem;
+  margin: var(--spacing-sm) var(--spacing-sm) var(--spacing-3xs);
+  padding: var(--spacing-sm);
   justify-content: center;
   background: transparent;
   border-color: transparent;
@@ -171,7 +171,7 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0.25rem 0;
+  padding: var(--spacing-xs) 0;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
@@ -191,10 +191,10 @@
 }
 
 .sidebar__nav-item {
-  margin: 0.125rem 0.625rem;
+  margin: var(--spacing-3xs) 0.625rem;
   width: calc(100% - 1.25rem);
   box-sizing: border-box;
-  padding: 0.4375rem 0.75rem;
+  padding: 0.4375rem var(--spacing-sm-md);
   min-height: 2.375rem;
   border-radius: 0.5rem;
   font-size: 0.84375rem;
@@ -204,7 +204,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 0.75rem;
+  gap: var(--spacing-sm-md);
   background: transparent;
   border: none;
   font-family: inherit;
@@ -246,8 +246,8 @@
 
 /* Sidebar section headers */
 .sidebar__nav-group-label {
-  margin: 0.75rem 0.875rem 0.25rem;
-  padding: 0 0.5rem;
+  margin: var(--spacing-sm-md) 0.875rem var(--spacing-xs);
+  padding: 0 var(--spacing-sm);
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -261,7 +261,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 .sidebar__nav-group-label:first-child {
-  margin-top: 0.25rem;
+  margin-top: var(--spacing-xs);
 }
 
 /* Collapsed rail section dividers */
@@ -282,7 +282,7 @@
   margin-left: auto;
   min-width: 1.25rem;
   height: 1.25rem;
-  padding: 0 0.4rem;
+  padding: 0 var(--spacing-2xs);
   border-radius: 999px;
   background: #EF4444;
   color: #FFFFFF;
@@ -555,7 +555,7 @@
   .sidebar.is-collapsed .sidebar__user { justify-content: flex-start; }
   .sidebar.is-collapsed .sidebar__nav-badge {
     position: static; width: auto; height: 1.25rem; min-width: 1.25rem;
-    padding: 0 0.375rem; font-size: var(--font-size-label); line-height: 1.25rem;
+    padding: 0 var(--spacing-2xs); font-size: var(--font-size-label); line-height: 1.25rem;
     border: 0; margin-left: auto;
   }
   /* Same reasoning as .sidebar__nav-label just above: a desktop
