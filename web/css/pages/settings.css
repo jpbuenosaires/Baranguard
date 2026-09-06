@@ -300,40 +300,10 @@
   flex-wrap: wrap;
 }
 
-.settings-role-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: var(--spacing-3xs) var(--spacing-sm);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  border-radius: 999px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
 
-.settings-role-pill--admin {
-  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
-}
 
-.settings-role-pill--pb {
-  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
-  color: var(--color-warning-solid, var(--color-warning-text));
-  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
-}
 
-.settings-role-pill--secretary {
-  background: color-mix(in srgb, var(--color-info) 16%, transparent);
-  color: var(--color-info-text);
-  border: 1px solid color-mix(in srgb, var(--color-info) 30%, transparent);
-}
 
-.settings-role-pill--tanod {
-  background: color-mix(in srgb, var(--color-success) 16%, transparent);
-  color: var(--color-success-text);
-  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
-}
 
 .settings-user-id-chip {
   font-size: var(--font-size-xs, 0.75rem);
@@ -360,7 +330,12 @@
 }
 
 .settings-security-notice__icon {
-  color: var(--color-warning-solid, var(--color-warning-text));
+  /* 2026-09-06 UI/UX audit: was --color-warning-solid, which the working
+     reference §6 defines as a saturated FILL for white text and which
+     stays dark in dark mode. Measured on the warning tint in dark mode it
+     gave 4.18:1 — below AA's 4.5:1 for this 12px bold text.
+     --color-warning-text gives 16.84:1. */
+  color: var(--color-warning-text);
   flex-shrink: 0;
   margin-top: var(--spacing-3xs);
 }

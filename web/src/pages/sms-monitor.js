@@ -188,22 +188,22 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   tabBar.className = 'page-tabs-bar';
 
   const tabRow = document.createElement('div');
-  tabRow.className = 'sms-tabs-row';
+  tabRow.className = 'page-tabs';
 
   const conversationsTabBtn = document.createElement('button');
   conversationsTabBtn.type = 'button';
-  conversationsTabBtn.className = 'sms-tab-btn is-active';
+  conversationsTabBtn.className = 'page-tab is-active';
   conversationsTabBtn.innerHTML = `
-    <span class="sms-tab-btn__icon" aria-hidden="true">${icons.messageSquare(16)}</span>
+    <span class="page-tab__icon" aria-hidden="true">${icons.messageSquare(16)}</span>
     <span>Conversations</span>
-    <span class="sms-tab-badge" id="sms-unread-tab-badge" style="display:none;">0</span>
+    <span class="page-tab__badge" id="sms-unread-tab-badge" style="display:none;">0</span>
   `;
 
   const activityTabBtn = document.createElement('button');
   activityTabBtn.type = 'button';
-  activityTabBtn.className = 'sms-tab-btn';
+  activityTabBtn.className = 'page-tab';
   activityTabBtn.innerHTML = `
-    <span class="sms-tab-btn__icon" aria-hidden="true">${icons.fileText(16)}</span>
+    <span class="page-tab__icon" aria-hidden="true">${icons.fileText(16)}</span>
     <span>Activity Log</span>
   `;
 
@@ -448,7 +448,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
     const searchInput = document.createElement('input');
     searchInput.type = 'search';
     searchInput.className = 'sms-search-input';
-    searchInput.placeholder = 'Search messages...';
+    searchInput.placeholder = 'Search messages…';
 
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';

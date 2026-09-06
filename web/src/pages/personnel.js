@@ -2,7 +2,7 @@
  * personnel.js — Personnel (2026-09-05 UX pass): merges the four
  * standalone W10-W13 screens (User Management, Shift Scheduler, Swap
  * Requests, Fatigue Flags) into one tabbed screen, the same
- * shared-AppShell/PageHeader/`.filter-chip-row` tab pattern
+ * shared-AppShell/PageHeader/`.page-tabs` tab pattern
  * `sms-monitor.js` already established for Conversations/Activity Log.
  *
  * Why: all four already lived under the same sidebar "Personnel" group
@@ -77,18 +77,18 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   tabBar.className = 'page-tabs-bar';
 
   const tabRow = document.createElement('div');
-  tabRow.className = 'personnel-tabs-row';
+  tabRow.className = 'page-tabs';
   const tabButtons = {};
   const badgeSlots = {};
 
   for (const tab of TABS) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'personnel-tab-btn';
+    btn.className = 'page-tab';
 
     if (tab.icon) {
       const iconSpan = document.createElement('span');
-      iconSpan.className = 'personnel-tab-btn__icon';
+      iconSpan.className = 'page-tab__icon';
       iconSpan.setAttribute('aria-hidden', 'true');
       iconSpan.innerHTML = tab.icon(16);
       btn.appendChild(iconSpan);
@@ -100,7 +100,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
 
     if (tab.badgeKey) {
       const badge = document.createElement('span');
-      badge.className = 'personnel-tab-badge';
+      badge.className = 'page-tab__badge';
       badge.hidden = true;
       btn.appendChild(badge);
       badgeSlots[tab.badgeKey] = badge;

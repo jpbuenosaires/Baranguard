@@ -453,7 +453,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     for (const chip of CATEGORY_CHIPS) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `queue-filter-chip${activeCategory === chip.key ? ' is-active' : ''}`;
+      btn.className = `filter-chip${activeCategory === chip.key ? ' is-active' : ''}`;
       btn.textContent = chip.label;
       btn.addEventListener('click', () => {
         activeCategory = chip.key;

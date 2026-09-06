@@ -224,14 +224,14 @@ function buildProfileCard(user, onFullNameSaved) {
   badgesRow.className = 'settings-identity-badges';
 
   const roleClassMap = {
-    admin: 'settings-role-pill--admin',
-    punong_barangay: 'settings-role-pill--pb',
-    secretary: 'settings-role-pill--secretary',
-    tanod: 'settings-role-pill--tanod',
+    admin: 'role-badge--admin',
+    punong_barangay: 'role-badge--punong_barangay',
+    secretary: 'role-badge--secretary',
+    tanod: 'role-badge--tanod',
   };
 
   const rolePill = document.createElement('span');
-  rolePill.className = `settings-role-pill ${roleClassMap[user.role] || 'settings-role-pill--admin'}`;
+  rolePill.className = `role-badge ${roleClassMap[user.role] || 'role-badge--admin'}`;
   rolePill.textContent = ROLE_LABELS[user.role] || user.role;
 
   const idChip = document.createElement('span');
@@ -709,7 +709,7 @@ function buildGeneralCard(settings) {
       <div class="settings-brand-hero__title">${settings['general.system_name'] || 'BARANGUARD'}</div>
       <div class="settings-brand-hero__sub">${settings['general.municipality'] || 'Pilar, Sorsogon'} • ${settings['general.region'] || 'Region V (Bicol)'}</div>
     </div>
-    <span class="settings-role-pill settings-role-pill--admin">DEPLOYMENT TENANT</span>
+    <span class="role-badge role-badge--admin">DEPLOYMENT TENANT</span>
   `;
   bodyEl.appendChild(brandHero);
 

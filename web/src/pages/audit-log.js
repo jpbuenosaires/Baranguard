@@ -266,7 +266,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
 
   // 2. Interactive StatStrip Host
   const statStripHost = document.createElement('div');
-  statStripHost.className = 'audit-stat-strip';
+  statStripHost.className = 'stat-card-grid';
   pageContainer.appendChild(statStripHost);
 
   // 3. Full-Width 4-Column Filter Toolbar
@@ -485,15 +485,15 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     statCardsData.forEach((stat) => {
       const card = document.createElement('button');
       card.type = 'button';
-      card.className = `audit-stat-card ${activeFilterCategory === stat.id ? 'is-active' : ''}`;
+      card.className = `stat-card ${activeFilterCategory === stat.id ? 'is-active' : ''}`;
       card.setAttribute('aria-label', `Filter by ${stat.label}`);
 
       const val = document.createElement('span');
-      val.className = `audit-stat-card__value audit-stat-card__value--${stat.tone}`;
+      val.className = `stat-card__value stat-card__value--${stat.tone}`;
       val.textContent = String(stat.value);
 
       const lbl = document.createElement('span');
-      lbl.className = 'audit-stat-card__label';
+      lbl.className = 'stat-card__label';
       lbl.textContent = stat.label;
 
       card.append(val, lbl);

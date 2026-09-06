@@ -242,7 +242,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   const searchInput = document.createElement('input');
   searchInput.type = 'search';
   searchInput.className = 'incident-search-input';
-  searchInput.placeholder = 'Search incidents...';
+  searchInput.placeholder = 'Search incidents…';
 
   let searchDebounce = null;
   searchInput.addEventListener('input', () => {
@@ -708,7 +708,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     locCard.className = 'incident-info-box';
     const locLabel = document.createElement('span');
     locLabel.className = 'incident-info-box__label';
-    locLabel.textContent = 'LOCATION';
+    locLabel.textContent = 'Location';
     const locVal = document.createElement('span');
     locVal.className = 'incident-info-box__val';
     locVal.innerHTML = `${icons.mapPin(15)} <span>${bName}</span>`;
@@ -722,7 +722,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     repCard.className = 'incident-info-box';
     const repLabel = document.createElement('span');
     repLabel.className = 'incident-info-box__label';
-    repLabel.textContent = 'REPORTED';
+    repLabel.textContent = 'Reported';
     const repVal = document.createElement('span');
     repVal.className = 'incident-info-box__val';
     repVal.innerHTML = `${icons.clock(15)} <span>${formatDateTime(row.createdAt)}</span>`;
@@ -740,7 +740,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     tanodCard.className = 'incident-tanod-card';
     const tanodLabel = document.createElement('span');
     tanodLabel.className = 'incident-info-box__label';
-    tanodLabel.textContent = 'ASSIGNED TANOD';
+    tanodLabel.textContent = 'Assigned Tanod';
 
     const tanodContent = document.createElement('div');
     tanodContent.className = 'incident-tanod-card__content';
@@ -814,7 +814,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     descCard.className = 'incident-desc-card';
     const descLabel = document.createElement('span');
     descLabel.className = 'incident-info-box__label';
-    descLabel.textContent = 'DESCRIPTION';
+    descLabel.textContent = 'Description';
     const descBody = document.createElement('p');
     descBody.className = 'incident-desc-body';
     descBody.textContent = detail.redactedNarrative || detail.rawNarrative || 'Caller reported an incident in the designated purok area. Investigation in progress.';
@@ -905,7 +905,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     timelineSection.className = 'incident-timeline-section';
     const tlLabel = document.createElement('span');
     tlLabel.className = 'incident-info-box__label';
-    tlLabel.textContent = 'TIMELINE';
+    tlLabel.textContent = 'Timeline';
     timelineSection.appendChild(tlLabel);
 
     const timelineList = document.createElement('div');
@@ -975,7 +975,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     headerRow.className = 'incident-detail-header';
     const formTitle = document.createElement('h2');
     formTitle.className = 'incident-form-title';
-    formTitle.textContent = 'Log New Incident';
+    formTitle.textContent = 'Log an Incident';
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'btn-incident-close';
@@ -1065,7 +1065,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const submitBtn = document.createElement('button');
     submitBtn.type = 'submit';
     submitBtn.className = 'incident-form-submit';
-    submitBtn.textContent = 'Log Incident';
+    submitBtn.textContent = 'Log an Incident';
 
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
@@ -1100,7 +1100,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         await load();
       } catch (err) {
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Log Incident';
+        submitBtn.textContent = 'Log an Incident';
         showToast(err instanceof ApiClientError ? err.message : 'Could not create incident.', { variant: 'error' });
       }
     });

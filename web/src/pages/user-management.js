@@ -530,7 +530,7 @@ function renderUserCell(row, key, viewer, reload) {
 
     case 'role': {
       const badge = document.createElement('span');
-      badge.className = `user-role-badge user-role-badge--${row.role}`;
+      badge.className = `role-badge role-badge--${row.role}`;
       badge.textContent = ROLE_LABELS[row.role] || row.role;
       return badge;
     }

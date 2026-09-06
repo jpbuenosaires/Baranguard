@@ -187,66 +187,13 @@
    3. Interactive Health StatStrip
    ========================================================================== */
 
-.health-stat-strip {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--spacing-sm, 0.75rem);
-  width: 100%;
-}
 
-.health-stat-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: var(--pad-panel);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 0.5rem);
-  box-shadow: var(--shadow-card);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
-  text-align: left;
-}
 
-.health-stat-card:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
-  box-shadow: var(--shadow-elevated);
-  transform: translateY(-1px);
-}
 
-.health-stat-card:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
 
-.health-stat-card.is-active {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary) 8%);
-  box-shadow: 0 0 0 1.5px var(--color-primary);
-}
 
-.health-stat-card__value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-}
 
-.health-stat-card__value--primary { color: var(--color-primary); }
-.health-stat-card__value--success { color: var(--color-success-text); }
-.health-stat-card__value--critical { color: var(--color-critical); }
-.health-stat-card__value--neutral { color: var(--color-text-secondary); }
 
-.health-stat-card__label {
-  font-size: var(--font-size-xs, 0.75rem);
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  margin-top: var(--spacing-xs);
-}
 
 /* ==========================================================================
    4. Categorized Subsystem Cards & Domains
@@ -501,7 +448,12 @@
 }
 
 .health-dr-value--warn {
-  color: var(--color-warning-solid, var(--color-warning-text));
+  /* 2026-09-06 UI/UX audit: was --color-warning-solid, which the working
+     reference §6 defines as a saturated FILL for white text and which
+     stays dark in dark mode. Measured on the warning tint in dark mode it
+     gave 4.18:1 — below AA's 4.5:1 for this 12px bold text.
+     --color-warning-text gives 16.84:1. */
+  color: var(--color-warning-text);
 }
 
 .health-dr-note {
@@ -731,9 +683,6 @@
    ========================================================================== */
 
 @media (max-width: 992px) {
-  .health-stat-strip {
-    grid-template-columns: repeat(2, 1fr);
-  }
 
   .health-services-grid {
     grid-template-columns: 1fr;
@@ -745,9 +694,6 @@
 }
 
 @media (max-width: 600px) {
-  .health-stat-strip {
-    grid-template-columns: 1fr;
-  }
 
   .health-modal-grid {
     grid-template-columns: 1fr;

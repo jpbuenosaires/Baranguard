@@ -177,7 +177,7 @@ export function renderSchedulerTab(container, user) {
   statusOptions.forEach((opt) => {
     const chip = document.createElement('button');
     chip.type = 'button';
-    chip.className = `personnel-filter-chip ${selectedStatus === opt.id ? 'is-active' : ''}`;
+    chip.className = `filter-chip ${selectedStatus === opt.id ? 'is-active' : ''}`;
     chip.textContent = opt.label;
     chip.addEventListener('click', () => {
       selectedStatus = opt.id;
