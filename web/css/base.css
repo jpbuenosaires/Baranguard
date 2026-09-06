@@ -221,6 +221,27 @@ html { font-size: 100%; }
   --font-mono: "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Consolas,
                "Liberation Mono", Menlo, monospace;
 
+  /* Interactive control heights. 2026-09-06 UI/UX audit.
+     Page stylesheets carried 20+ `height` overrides for filter-row
+     controls in five different values (36px/38px/2.25rem/2.375rem/34px),
+     in a mix of px and rem. Measured in the browser, almost none of them
+     rendered: the `min-height` on input/select/button below wins over a
+     smaller `height`, so everything was already 40px EXCEPT the handful
+     of selectors that also set min-height — Incident Management's filter
+     row and Citizen Reports' search box, which sat at 38px while the
+     select beside that search box sat at 40px.
+
+     So the fix is to make the declarations say what the app already does,
+     not to resurrect a dense tier nobody was seeing. Two tiers:
+       --control-height            every text control and button
+       --control-height-prominent  the detail-pane CTAs (Dispatch /
+                                   Resolve / Create Blotter / Convert to
+                                   Incident), four selectors across two
+                                   files that had each independently
+                                   landed on 42px and DO render at it. */
+  --control-height: 2.5rem;
+  --control-height-prominent: 2.625rem;
+
   /* radius: sm 8 / md 10 / lg 12 / xl 16 against the 16px reference. */
   --radius-sm: 0.5rem; --radius-md: 0.625rem; --radius-lg: 0.75rem; --radius-xl: 1rem;
 
@@ -574,7 +595,7 @@ input, select, textarea {
      40px — comfortable on the tablets these screens run on in a barangay
      hall, and matching the button min-height so a field and the button
      beside it line up. Excludes checkbox/radio, sized separately below. */
-  min-height: 2.5rem;
+  min-height: var(--control-height);
   padding: var(--spacing-sm) var(--spacing-sm-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -652,7 +673,7 @@ button {
   border-radius: var(--radius-lg);
   border: 1px solid transparent;
   cursor: pointer;
-  min-height: 2.5rem;
+  min-height: var(--control-height);
   display: inline-flex;
   align-items: center;
   justify-content: center;
