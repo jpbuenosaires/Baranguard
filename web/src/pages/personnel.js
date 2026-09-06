@@ -42,8 +42,9 @@ import { renderFatigueFlagsTab } from './fatigue-flags.js';
  * @param {{userId:number, fullName:string, role:string}} user
  * @param {() => void} onLoggedOut
  * @param {(page: string, param?: any) => void} navigate
+ * @param {string} [param] optional initial tab to display
  */
-export function renderPersonnelPage(root, user, onLoggedOut, navigate) {
+export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   root.innerHTML = '';
 
   const shell = AppShell(user, 'personnel', navigate, async () => {
@@ -56,7 +57,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate) {
 
   const pageHeader = PageHeader({
     title: 'Personnel',
-    subtitle: 'Accounts, scheduling, swap requests, and fatigue in one place',
+    subtitle: 'Accounts, scheduling, swap requests, and fatigue safety in one place',
     icon: icons.users,
   });
   header.appendChild(pageHeader.el);
@@ -66,31 +67,45 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate) {
   // Admin sees all four; Punong Barangay (read-only oversight) sees only
   // the one tab it was ever allowed to see as a standalone page.
   const TABS = [
-    isAdmin && { key: 'users', label: 'Users' },
-    isAdmin && { key: 'scheduler', label: 'Scheduler' },
-    isAdmin && { key: 'swaps', label: 'Swap requests', badgeKey: 'pendingSwapRequests' },
-    { key: 'fatigue', label: 'Fatigue flags', badgeKey: 'unacknowledgedFatigueFlags' },
+    isAdmin && { key: 'users', label: 'Users', icon: icons.users },
+    isAdmin && { key: 'scheduler', label: 'Scheduler', icon: icons.calendar },
+    isAdmin && { key: 'swaps', label: 'Swap requests', icon: icons.repeat, badgeKey: 'pendingSwapRequests' },
+    { key: 'fatigue', label: 'Fatigue flags', icon: icons.batteryWarning, badgeKey: 'unacknowledgedFatigueFlags' },
   ].filter(Boolean);
 
   const tabBar = document.createElement('div');
   tabBar.className = 'page-tabs-bar';
 
   const tabRow = document.createElement('div');
-  tabRow.className = 'filter-chip-row';
+  tabRow.className = 'personnel-tabs-row';
   const tabButtons = {};
   const badgeSlots = {};
+
   for (const tab of TABS) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'filter-chip';
-    btn.textContent = tab.label;
+    btn.className = 'personnel-tab-btn';
+
+    if (tab.icon) {
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'personnel-tab-btn__icon';
+      iconSpan.setAttribute('aria-hidden', 'true');
+      iconSpan.innerHTML = tab.icon(16);
+      btn.appendChild(iconSpan);
+    }
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = tab.label;
+    btn.appendChild(labelSpan);
+
     if (tab.badgeKey) {
       const badge = document.createElement('span');
-      badge.className = 'sidebar__nav-badge';
+      badge.className = 'personnel-tab-badge';
       badge.hidden = true;
       btn.appendChild(badge);
       badgeSlots[tab.badgeKey] = badge;
     }
+
     btn.addEventListener('click', () => setActiveTab(tab.key));
     tabButtons[tab.key] = btn;
     tabRow.appendChild(btn);
@@ -99,15 +114,21 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate) {
   header.appendChild(tabBar);
 
   const body = document.createElement('div');
+  body.className = 'personnel-container';
   content.appendChild(body);
 
-  let activeTab = TABS[0].key;
+  // Initialize with requested tab if valid, or first available tab
+  const validTabKeys = TABS.map((t) => t.key);
+  let activeTab = param && validTabKeys.includes(param) ? param : TABS[0].key;
 
   function syncTabButtons() {
-    for (const [key, btn] of Object.entries(tabButtons)) btn.classList.toggle('is-active', key === activeTab);
+    for (const [key, btn] of Object.entries(tabButtons)) {
+      btn.classList.toggle('is-active', key === activeTab);
+    }
   }
 
   function setActiveTab(key) {
+    if (activeTab === key) return;
     activeTab = key;
     syncTabButtons();
     renderActiveTab();
@@ -116,6 +137,12 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate) {
   function renderActiveTab() {
     pageHeader.actions.innerHTML = '';
     body.innerHTML = '';
+
+    // Re-trigger CSS animation
+    body.style.animation = 'none';
+    void body.offsetHeight; // trigger reflow
+    body.style.animation = '';
+
     if (activeTab === 'users') {
       renderUsersTab(body, pageHeader, user);
     } else if (activeTab === 'scheduler') {
