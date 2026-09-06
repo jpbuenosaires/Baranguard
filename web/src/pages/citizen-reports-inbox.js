@@ -2,7 +2,7 @@
  * citizen-reports-inbox.js — Citizen Reports Inbox (§9 W16)
  * Redesigned operational console with viewport-locked master-detail split layout,
  * live status filtering, full narrative inspection pane, MapLibre mini-map pin preview,
- * and comprehensive triage workflow (Category + Priority selection).
+ * and pinned triage action footer (Category + Priority selection).
  *
  * Roles: Secretary, Admin (§7 "View citizen report inbox").
  */
@@ -87,6 +87,10 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   });
   const { header, content } = shell;
   content.classList.add('citizen-inbox-content');
+  const pageContentEl = shell.el.querySelector('.page-content');
+  if (pageContentEl) {
+    pageContentEl.classList.add('citizen-inbox-content');
+  }
   root.appendChild(shell.el);
 
   // Modern PageHeader with counter pills in actions slot
@@ -292,6 +296,10 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     tableWrap.querySelectorAll('.data-table tbody tr').forEach((tr) => {
       tr.classList.toggle('is-selected', tr.dataset.reportId === String(report.reportId));
     });
+
+    if (window.innerWidth <= 1024) {
+      detailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }
 
   function closeDetailPane() {
@@ -313,7 +321,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
     const isConverted = Boolean(report.incidentId);
 
-    // Header
+    // 1. STICKY HEADER
     const detailHeader = document.createElement('div');
     detailHeader.className = 'citizen-detail-header';
 
@@ -341,7 +349,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     detailHeader.append(headerLeft, closeBtn);
     pane.appendChild(detailHeader);
 
-    // Scrollable Body
+    // 2. SCROLLABLE BODY (Only narrative, contact, and map scroll)
     const body = document.createElement('div');
     body.className = 'citizen-detail-body';
 
@@ -375,15 +383,27 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     const narrativeCard = document.createElement('div');
     narrativeCard.className = 'citizen-narrative-card';
 
+    const narrativeHeader = document.createElement('div');
+    narrativeHeader.style.display = 'flex';
+    narrativeHeader.style.alignItems = 'center';
+    narrativeHeader.style.justifyContent = 'space-between';
+
     const narrativeTitle = document.createElement('h4');
     narrativeTitle.className = 'citizen-narrative-card__title';
     narrativeTitle.innerHTML = `${icons.megaphone(16)} Citizen Narrative`;
+
+    const wordCount = (report.description || '').trim().split(/\s+/).filter(Boolean).length;
+    const countBadge = document.createElement('span');
+    countBadge.className = 'citizen-detail-meta-label';
+    countBadge.textContent = `${wordCount} words`;
+
+    narrativeHeader.append(narrativeTitle, countBadge);
 
     const narrativeText = document.createElement('p');
     narrativeText.className = 'citizen-narrative-card__text';
     narrativeText.textContent = report.description || 'No description provided.';
 
-    narrativeCard.append(narrativeTitle, narrativeText);
+    narrativeCard.append(narrativeHeader, narrativeText);
     body.appendChild(narrativeCard);
 
     // Reporter Contact Card
@@ -435,9 +455,21 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     const locTitle = document.createElement('span');
     locTitle.innerHTML = `${icons.mapPin(15)} Geolocation Context`;
 
-    locationHeader.appendChild(locTitle);
+    const locActions = document.createElement('div');
+    locActions.style.display = 'flex';
+    locActions.style.alignItems = 'center';
+    locActions.style.gap = 'var(--spacing-xs)';
+
+    let mapVisible = true;
 
     if (hasCoords) {
+      const toggleMapBtn = document.createElement('button');
+      toggleMapBtn.type = 'button';
+      toggleMapBtn.className = 'ghost';
+      toggleMapBtn.style.padding = '0.2rem 0.5rem';
+      toggleMapBtn.style.fontSize = '0.75rem';
+      toggleMapBtn.textContent = 'Hide Map';
+
       const gmapsLink = document.createElement('a');
       gmapsLink.href = `https://www.google.com/maps?q=${report.latitude},${report.longitude}`;
       gmapsLink.target = '_blank';
@@ -445,17 +477,25 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       gmapsLink.className = 'ghost';
       gmapsLink.style.padding = '0.2rem 0.5rem';
       gmapsLink.style.fontSize = '0.75rem';
-      gmapsLink.innerHTML = `${icons.externalLink(12)} Open Maps`;
-      locationHeader.appendChild(gmapsLink);
-    }
+      gmapsLink.innerHTML = `${icons.externalLink(12)} Google Maps`;
 
-    locationCard.appendChild(locationHeader);
+      locActions.append(toggleMapBtn, gmapsLink);
+      locationHeader.append(locTitle, locActions);
+      locationCard.appendChild(locationHeader);
 
-    if (hasCoords) {
       const mapContainer = document.createElement('div');
       mapContainer.className = 'citizen-mini-map';
       locationCard.appendChild(mapContainer);
       body.appendChild(locationCard);
+
+      toggleMapBtn.addEventListener('click', () => {
+        mapVisible = !mapVisible;
+        mapContainer.style.display = mapVisible ? 'block' : 'none';
+        toggleMapBtn.textContent = mapVisible ? 'Hide Map' : 'Show Map';
+        if (mapVisible && currentMiniMap) {
+          currentMiniMap.resize();
+        }
+      });
 
       // Initialize MapLibre Mini Map asynchronously
       setTimeout(() => {
@@ -491,14 +531,14 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
           pinEl.style.display = 'flex';
           pinEl.style.alignItems = 'center';
           pinEl.style.justifyContent = 'center';
-          pinEl.style.width = '2rem';
-          pinEl.style.height = '2rem';
+          pinEl.style.width = '1.875rem';
+          pinEl.style.height = '1.875rem';
           pinEl.style.borderRadius = '50%';
           pinEl.style.background = 'var(--color-critical)';
           pinEl.style.color = '#ffffff';
           pinEl.style.boxShadow = '0 3px 10px rgba(0,0,0,0.35)';
           pinEl.style.border = '2px solid #ffffff';
-          pinEl.innerHTML = icons.mapPin(16);
+          pinEl.innerHTML = icons.mapPin(15);
 
           new window.maplibregl.Marker({ element: pinEl })
             .setLngLat([report.longitude, report.latitude])
@@ -509,6 +549,9 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
         }
       }, 50);
     } else {
+      locationHeader.appendChild(locTitle);
+      locationCard.appendChild(locationHeader);
+
       const emptyLoc = document.createElement('div');
       emptyLoc.style.padding = 'var(--spacing-md)';
       emptyLoc.style.color = 'var(--color-text-secondary)';
@@ -528,7 +571,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
       const bannerTitle = document.createElement('div');
       bannerTitle.className = 'citizen-converted-banner__title';
-      bannerTitle.innerHTML = `${icons.checkCircle(18)} Official Incident Created`;
+      bannerTitle.innerHTML = `${icons.checkCircle(16)} Official Incident Created`;
 
       const bannerDesc = document.createElement('div');
       bannerDesc.className = 'citizen-converted-banner__desc';
@@ -539,8 +582,10 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       const viewIncidentBtn = document.createElement('button');
       viewIncidentBtn.type = 'button';
       viewIncidentBtn.className = 'primary';
+      viewIncidentBtn.style.padding = '0.5rem 1rem';
+      viewIncidentBtn.style.fontSize = 'var(--font-size-sm)';
       viewIncidentBtn.style.whiteSpace = 'nowrap';
-      viewIncidentBtn.textContent = 'View in Incident Management';
+      viewIncidentBtn.textContent = 'View in Incident Management →';
       viewIncidentBtn.addEventListener('click', () => {
         navigate('incident-management', report.incidentId);
       });
@@ -562,10 +607,17 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       const form = document.createElement('form');
       form.className = 'citizen-triage-form';
 
+      // Responsive controls row grouping Category & Priority
+      const controlsRow = document.createElement('div');
+      controlsRow.className = 'citizen-triage-controls-row';
+
       // Incident Type Selector
+      const typeField = document.createElement('div');
+      typeField.className = 'citizen-triage-field citizen-triage-field--select';
+
       const typeLabel = document.createElement('label');
-      typeLabel.className = 'sr-only';
       typeLabel.htmlFor = 'triage-incident-type';
+      typeLabel.className = 'citizen-detail-meta-label';
       typeLabel.textContent = 'Incident Category';
 
       const typeSelect = document.createElement('select');
@@ -578,16 +630,16 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
         if (val === 'disturbance') opt.selected = true;
         typeSelect.appendChild(opt);
       });
+      typeField.append(typeLabel, typeSelect);
 
       // Priority Selector Pills
       let selectedPriority = 'normal';
-
-      const priorityWrap = document.createElement('div');
-      priorityWrap.className = 'citizen-triage-row';
+      const priorityField = document.createElement('div');
+      priorityField.className = 'citizen-triage-field citizen-triage-field--priority';
 
       const priorityLabel = document.createElement('span');
       priorityLabel.className = 'citizen-detail-meta-label';
-      priorityLabel.textContent = 'Priority:';
+      priorityLabel.textContent = 'Priority';
 
       const priorityPills = document.createElement('div');
       priorityPills.className = 'citizen-priority-pills';
@@ -605,8 +657,9 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
         });
         priorityPills.appendChild(pill);
       });
+      priorityField.append(priorityLabel, priorityPills);
 
-      priorityWrap.append(priorityLabel, priorityPills);
+      controlsRow.append(typeField, priorityField);
 
       // Convert Button
       const submitBtn = document.createElement('button');
@@ -614,7 +667,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       submitBtn.className = 'btn-convert-incident';
       submitBtn.innerHTML = `⚡ Convert to Official Incident`;
 
-      form.append(typeLabel, typeSelect, priorityWrap, submitBtn);
+      form.append(controlsRow, submitBtn);
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
