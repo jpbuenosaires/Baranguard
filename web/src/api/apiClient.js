@@ -136,7 +136,7 @@ async function request(method, path, { query, body, auth = true, idempotencyKey 
   const text = await response.text();
   if (text) {
     try {
-      json = JSON.parse(text);
+      json = JSON.parse(text, reviveUtcTimestamps);
     } catch {
       throw new ApiClientError(response.status, 'INVALID_RESPONSE', 'The server returned an unreadable response.');
     }
@@ -153,6 +153,47 @@ async function request(method, path, { query, body, auth = true, idempotencyKey 
   }
 
   return json ?? {};
+}
+
+/**
+ * Bare `YYYY-MM-DD HH:MM:SS` — no `T`, no `Z`, no offset. This is what
+ * PHP's default DATETIME serialization produces, and it is what most of
+ * this API returns (`created_at`, `triggered_at`, `dispatched_at`, ...).
+ * A handful of fields are already correct ISO-with-Z, e.g. login's
+ * `expires_at`, so the API is inconsistent rather than uniformly wrong.
+ */
+const BARE_SQL_DATETIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+
+/**
+ * JSON.parse reviver that tags bare SQL datetimes as UTC.
+ *
+ * 2026-09-06: found while seeding demo data — every relative time in the
+ * app was exactly one UTC offset wrong (8 hours, in Asia/Manila). The
+ * GIS Live Activity feed showed an SOS raised 6 minutes ago as "8h ago".
+ *
+ * Cause: the database stores UTC (working reference §2 rule 11) and the
+ * API returns it as `2026-09-06 13:41:20` with NO timezone designator.
+ * `new Date('2026-09-06 13:41:20')` then parses it as LOCAL time, so on
+ * a UTC+8 workstation the value silently moves 8 hours into the past.
+ * Anything computing an age or a relative label client-side inherited
+ * that error — 85 `new Date()` call sites across 12 files.
+ *
+ * Fixed here, at the two points every response passes through, rather
+ * than at those 85 sites: `... 13:41:20` becomes `...T13:41:20Z`, which
+ * `new Date()` parses as the UTC instant it always was. Values that
+ * already carry a `Z`/offset are untouched, as are date-only strings
+ * (`YYYY-MM-DD`), which the date-range inputs rely on staying literal.
+ *
+ * Server-side serialization was left alone on purpose: changing the
+ * shape of every datetime the API emits would also change what the
+ * mobile client and every verify script parse, which is a bigger
+ * decision than this bug requires.
+ */
+function reviveUtcTimestamps(key, value) {
+  if (typeof value === 'string' && BARE_SQL_DATETIME.test(value)) {
+    return value.replace(' ', 'T') + 'Z';
+  }
+  return value;
 }
 
 function decodeJwtPayload(token) {
@@ -1540,7 +1581,7 @@ export async function uploadMapPackage(version, file) {
   const text = await response.text();
   if (text) {
     try {
-      json = JSON.parse(text);
+      json = JSON.parse(text, reviveUtcTimestamps);
     } catch {
       throw new ApiClientError(response.status, 'INVALID_RESPONSE', 'The server returned an unreadable response.');
     }
