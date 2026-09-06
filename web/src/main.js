@@ -129,7 +129,11 @@ function boot(currentPage, param) {
     const handle = renderDispatchCenterPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
   } else if (page === 'incident-management') {
-    renderIncidentManagementPage(root, session.user, onLoggedOut, navigate);
+    // param is an optional incidentId (e.g. from Citizen Reports Inbox's
+    // "View in Incident Management" after a conversion) - undefined for the
+    // normal nav-menu entry, same optional-vs-required split DETAIL_PAGES
+    // already draws for ai-review/blotter-detail.
+    renderIncidentManagementPage(root, session.user, onLoggedOut, navigate, param);
   } else if (page === 'gis') {
     const handle = renderGisLiveTrackingPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
@@ -233,8 +237,13 @@ function renderUnavailable(root, user) {
   root.appendChild(page);
 }
 
-if (window.location.hash.startsWith('#/citizen-report')) {
-  renderCitizenReportPage(document.getElementById('app'));
-} else {
-  boot();
+function checkRoute() {
+  if (window.location.hash.startsWith('#/citizen-report')) {
+    renderCitizenReportPage(document.getElementById('app'));
+  } else {
+    boot();
+  }
 }
+
+window.addEventListener('hashchange', checkRoute);
+checkRoute();
