@@ -8627,3 +8627,47 @@ undeclared-binding sweep, CSS braces balanced. Every `apiClient.js` call
 signature in the touched files checked against the real function
 signatures (no repeat of the `sendSms`-parameter-name class of bug). No
 browser pass — same deferral as every round today.
+
+---
+
+## 2026-09-06 (7) — Settings, Service Health, Map Packages: the same 3 bug classes, again
+
+User asked to check another round of uncommitted edits (Settings, Service
+Health, Map Packages redesigns). All three repeated bug classes found in
+entry (6)'s Audit Log pass — same generation process, evidently:
+
+1. **`.secondary` instead of `.ghost`** — `service-health.js`'s runbook
+   Copy button. Same nonexistent class, same fix.
+2. **Native `alert()` instead of `showToast()`** — two more occurrences,
+   both in `service-health.js` (command-copy-failed, runbook-copy-failed).
+3. **Invented `--shadow-sm`/`-md`/`-lg`/`-xl` token names** — this time
+   across all three files (`service-health.css`, `settings.css`,
+   `map-packages.css`), with the exact same fallback value strings as
+   `audit-log.css`'s version last round, confirming these all come from
+   the same template/pattern. 13 occurrences total, all remapped to the
+   real `--shadow-card`/`-elevated`/`-floating` tokens by checking each
+   rule's actual visual weight rather than guessing from name similarity.
+
+Also checked, all clean:
+- Every `updateSystemSettings()` call in `settings.js` against §7 W21's
+  narrow exception — both send exactly the allowed keys
+  (`general.*`/`sms_gateway.*`), nothing beyond scope.
+- `updateProfile`/`changePassword`/`uploadMapPackage`/`getMapPackage`
+  call sites all match `apiClient.js`'s real signatures.
+- `getMapPackage()`'s 404-to-null conversion is handled honestly as
+  "None Active" rather than an error state or a fabricated version.
+- Role gates unchanged (`service-health`/`map-packages` admin-only,
+  `settings` open to admin/secretary/punong_barangay, its System
+  Configuration rail admin-only within that).
+- No `SEEDED_`/fabricated-fallback patterns anywhere in the three files.
+
+Verified: `node --input-type=module --check` (every changed file + a full
+`web/src` sweep), `verify-web-wiring.mjs` 485/485, undeclared-binding
+sweep, CSS braces balanced. No browser pass — same deferral as every
+round today.
+
+**Worth noting for whoever generates the next batch of these screens:**
+the shadow-token mistake has now repeated across two separate check
+rounds and four files. If this keeps recurring, it may be worth adding a
+`--shadow-sm|md|lg|xl` grep to `verify-web-wiring.mjs` itself so it's
+caught automatically instead of by manual review each time.
