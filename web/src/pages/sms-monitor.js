@@ -117,6 +117,9 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate) {
   });
   header.appendChild(pageHeader.el);
 
+  const tabBar = document.createElement('div');
+  tabBar.className = 'page-tabs-bar';
+
   const tabRow = document.createElement('div');
   tabRow.className = 'filter-chip-row';
   const conversationsTabButton = document.createElement('button');
@@ -128,7 +131,8 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate) {
   activityTabButton.className = 'filter-chip';
   activityTabButton.textContent = 'Activity Log';
   tabRow.append(conversationsTabButton, activityTabButton);
-  header.appendChild(tabRow);
+  tabBar.appendChild(tabRow);
+  header.appendChild(tabBar);
 
   const body = document.createElement('div');
   content.appendChild(body);
