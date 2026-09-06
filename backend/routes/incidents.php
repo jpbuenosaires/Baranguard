@@ -17,6 +17,7 @@ return [
     ['GET', '#^/incidents/(\d+)$#', [IncidentsController::class, 'show'], true],
     ['GET', '#^/incidents/(\d+)/evidence$#', [IncidentsController::class, 'evidence'], true],
     ['PATCH', '#^/incidents/(\d+)/status$#', [IncidentsController::class, 'updateStatus'], true],
+    ['PATCH', '#^/incidents/(\d+)$#', [IncidentsController::class, 'update'], true],
     ['GET', '#^/incidents$#', [IncidentsController::class, 'index'], true],
     ['POST', '#^/incidents$#', [IncidentsController::class, 'create'], true],
 ];

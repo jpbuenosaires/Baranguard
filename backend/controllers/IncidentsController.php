@@ -97,12 +97,13 @@ final class IncidentsController
 {
     private const INCIDENT_STATUSES = ['pending', 'dispatched', 'resolved'];
     private const INCIDENT_PRIORITIES = ['normal', 'high', 'critical'];
-    private const INCIDENT_TYPES = [
+    /** Public so BlotterController's walk-in entry validates against ONE list, not a drifting copy. */
+    public const INCIDENT_TYPES = [
         'theft', 'physical_injury', 'disturbance', 'domestic_dispute',
         'vandalism', 'traffic_incident', 'fire', 'medical_emergency',
         'missing_person', 'animal_complaint', 'other',
     ];
-    private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+    public const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
 
@@ -543,98 +544,124 @@ final class IncidentsController
     }
 
     /**
-     * PATCH /incidents/:id/status — §6: "Admin only; resource must be
-     * same-barangay. Body is exactly {status:"resolved"}. Returns 409
-     * unless current incident is `dispatched` and has no active dispatch
-     * (assigned/en_route/arrived). A repeated resolve after the incident is
-     * already resolved returns 409 with CONFLICT rather than mutating the
-     * record a second time."
+     * PATCH /incidents/:id - correct operational fields captured wrong at
+     * intake (a mistyped priority, a missing landmark). NOT a narrative
+     * editor, deliberately:
      *
-     * "Body is exactly {status:'resolved'}" is enforced literally: this is
-     * not a general status-setter, and accepting any other target would let
-     * an Admin walk an incident backwards out of `dispatched`, which §5's
-     * state model does not allow outside dispatch cancellation.
+     *   - **`raw_narrative` and `redacted_narrative` are not writable
+     *     here, by any role.** Rule 4 makes
+     *     `POST /incidents/:id/ai-draft/approve` the ONLY writer of
+     *     `redacted_narrative`. An earlier draft of this endpoint
+     *     (2026-09-06, caught in review before it ever ran against real
+     *     data) copied raw straight into redacted, which would have
+     *     published unredacted PII to every role that can read an
+     *     incident. It also round-tripped through a form pre-filled from
+     *     `rawNarrative || redactedNarrative` - and since an Admin never
+     *     receives `rawNarrative` (see show()), an Admin save would have
+     *     overwritten the raw statutory record with its own redacted
+     *     version, irreversibly. Narrative correction stays on the AI
+     *     pipeline; the legal record stays on blotter amend, which has a
+     *     `blotter_revision` trail this endpoint does not.
+     *
+     *   - **`complainant_name` is Secretary-only**, same as show()'s own
+     *     rule for it: migration 0008's party fields are extracted from
+     *     RAW narrative and preserve exactly the identifiers redaction
+     *     exists to strip, so they carry raw_narrative's protection, not
+     *     redacted_narrative's. An Admin may correct priority, type and
+     *     location; only a Secretary may touch the party name.
+     *
+     * Audit metadata records WHICH fields changed, never their values -
+     * Rule 8 allow-lists audit metadata to identifiers and statuses, and
+     * `complainant_name`/`location_description` are personal data.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
-    public static function updateStatus(PDO $pdo, array $identity, string $incidentIdParam): void
+    public static function update(PDO $pdo, array $identity, string $incidentIdParam): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         if (!ctype_digit($incidentIdParam)) {
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }
         $incidentId = (int) $incidentIdParam;
 
+        $idempotencyKey = Http::header('Idempotency-Key');
+        if ($idempotencyKey === null || !preg_match(self::UUID_PATTERN, $idempotencyKey)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Idempotency-Key header must be a UUID.');
+        }
+
         $body = Http::jsonBody();
-        $status = $body['status'] ?? null;
-        if ($status !== 'resolved') {
-            throw new ApiError(400, 'VALIDATION_ERROR', "status must be exactly 'resolved'.");
+
+        $stmt = $pdo->prepare('SELECT incident_id, barangay_id FROM incident WHERE incident_id = :id');
+        $stmt->execute(['id' => $incidentId]);
+        $incident = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        // Cross-tenant is 404, never 403 (Rule 2) - requireTenant() is the
+        // shared implementation of that.
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+        $updates = [];
+        $params = ['id' => $incidentId];
+        $changedFields = [];
+
+        if (array_key_exists('priority', $body)) {
+            if (!is_string($body['priority']) || !in_array($body['priority'], self::INCIDENT_PRIORITIES, true)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'priority must be one of: ' . implode(', ', self::INCIDENT_PRIORITIES) . '.');
+            }
+            $updates[] = 'priority = :priority';
+            $params['priority'] = $body['priority'];
+            $changedFields[] = 'priority';
         }
 
-        $pdo->beginTransaction();
-        try {
-            $stmt = $pdo->prepare(
-                'SELECT incident_id, barangay_id, status FROM incident WHERE incident_id = :incident_id FOR UPDATE'
-            );
-            $stmt->execute(['incident_id' => $incidentId]);
-            $incident = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($incident === false) {
-                throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        if (array_key_exists('incident_type', $body)) {
+            if (!is_string($body['incident_type']) || !in_array($body['incident_type'], self::INCIDENT_TYPES, true)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'incident_type must be one of: ' . implode(', ', self::INCIDENT_TYPES) . '.');
             }
-            AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
-
-            // Covers the repeated-resolve case too: an already-resolved
-            // incident is not `dispatched`, so it falls here with 409.
-            if ($incident['status'] !== 'dispatched') {
-                throw new ApiError(409, 'CONFLICT', 'Only a dispatched incident can be resolved.');
-            }
-
-            $activeStmt = $pdo->prepare(
-                "SELECT dispatch_id FROM dispatch
-                 WHERE incident_id = :incident_id AND status IN ('assigned','en_route','arrived')
-                 LIMIT 1"
-            );
-            $activeStmt->execute(['incident_id' => $incidentId]);
-            if ($activeStmt->fetch(PDO::FETCH_ASSOC) !== false) {
-                throw new ApiError(409, 'CONFLICT', 'This incident still has an active dispatch; complete or cancel it first.');
-            }
-
-            $updateStmt = $pdo->prepare(
-                "UPDATE incident SET status = 'resolved', updated_at = UTC_TIMESTAMP() WHERE incident_id = :incident_id"
-            );
-            $updateStmt->execute(['incident_id' => $incidentId]);
-
-            // 2026-09-05 UX pass: a finalized blotter's `case_status`
-            // mirrors its parent incident's resolution rather than being
-            // set independently — see migration 0009's own comment for
-            // why this is incident-driven, never a manual Secretary
-            // choice. Only touches a record that already exists and is
-            // finalized; an incident with no blotter yet (or one still a
-            // draft) has nothing to update.
-            $blotterStmt = $pdo->prepare(
-                "UPDATE blotter_record SET case_status = 'resolved'
-                 WHERE incident_id = :incident_id AND finalized_at IS NOT NULL AND case_status != 'resolved'"
-            );
-            $blotterStmt->execute(['incident_id' => $incidentId]);
-            if ($blotterStmt->rowCount() > 0) {
-                Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'blotter_case_status_changed', 'incident', $incidentId, [
-                    'to_case_status' => 'resolved',
-                    'reason' => 'incident_resolved',
-                ]);
-            }
-
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_resolved', 'incident', $incidentId, [
-                'from_status' => $incident['status'],
-                'to_status' => 'resolved',
-            ]);
-
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            $pdo->rollBack();
-            throw $e;
+            $updates[] = 'incident_type = :incident_type';
+            $params['incident_type'] = $body['incident_type'];
+            $changedFields[] = 'incident_type';
         }
 
-        Http::send(200, ['incident_id' => $incidentId, 'status' => 'resolved']);
+        if (array_key_exists('location_description', $body)) {
+            $updates[] = 'location_description = :location_description';
+            $params['location_description'] = self::normalizeOptionalString($body['location_description'], 255);
+            $changedFields[] = 'location_description';
+        }
+
+        if (array_key_exists('complainant_name', $body)) {
+            if ($identity['role'] !== 'secretary') {
+                throw new ApiError(403, 'FORBIDDEN', 'Only a Secretary may change the complainant name.');
+            }
+            $updates[] = 'complainant_name = :complainant_name';
+            $params['complainant_name'] = self::normalizeOptionalString($body['complainant_name'], 255);
+            $changedFields[] = 'complainant_name';
+        }
+
+        // Explicit, so a client that still sends a narrative is told why
+        // rather than having it silently dropped.
+        if (array_key_exists('raw_narrative', $body) || array_key_exists('redacted_narrative', $body)) {
+            throw new ApiError(
+                400,
+                'VALIDATION_ERROR',
+                'Narrative text cannot be edited here. Use the AI redaction pipeline for the incident narrative, or blotter amend for the legal record.'
+            );
+        }
+
+        if ($updates === []) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'No editable fields were supplied.');
+        }
+
+        $updates[] = 'updated_at = UTC_TIMESTAMP()';
+        $updateStmt = $pdo->prepare('UPDATE incident SET ' . implode(', ', $updates) . ' WHERE incident_id = :id');
+        $updateStmt->execute($params);
+
+        // Field NAMES only - never the submitted values (Rule 8).
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_updated', 'incident', $incidentId, [
+            'fields' => $changedFields,
+        ]);
+
+        Http::send(200, ['incident_id' => $incidentId, 'updated' => true, 'fields' => $changedFields]);
     }
 
     /**
