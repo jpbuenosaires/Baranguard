@@ -127,7 +127,7 @@
 
 .personnel-search-input {
   width: 100%;
-  height: 2.25rem;
+  height: var(--control-height);
   padding-left: 2.25rem;
   padding-right: 0.75rem;
   border: 1px solid var(--color-border);
@@ -175,7 +175,7 @@
 
 /* Filter Selects (Role & Status Dropdowns) */
 .personnel-filter-select {
-  height: 2.25rem;
+  height: var(--control-height);
   padding: 0 2.25rem 0 0.875rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
@@ -431,7 +431,7 @@
 
 .personnel-form-input,
 .personnel-form-select {
-  height: 2.375rem;
+  height: var(--control-height);
   padding: 0 0.75rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);

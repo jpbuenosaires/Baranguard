@@ -102,8 +102,8 @@
 
 .citizen-search-input {
   width: 100%;
-  height: 2.375rem;
-  min-height: 2.375rem;
+  height: var(--control-height);
+  min-height: var(--control-height);
   padding-left: 2.25rem;
   padding-right: 0.75rem;
   border: 1px solid var(--color-border);
@@ -122,8 +122,8 @@
 }
 
 .citizen-status-select {
-  height: 2.375rem;
-  min-height: 2.375rem;
+  height: var(--control-height);
+  min-height: var(--control-height);
   padding: 0 2rem 0 0.75rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -533,7 +533,7 @@
 
 .citizen-triage-select {
   width: 100%;
-  height: 2.375rem;
+  height: var(--control-height);
   padding: 0 0.75rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -602,7 +602,7 @@
   gap: 0.375rem;
   transition: background 0.15s, transform 0.1s;
   box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 25%, transparent);
-  min-height: 2.625rem;
+  min-height: var(--control-height-prominent);
   margin-top: 0.25rem;
   flex-shrink: 0;
 }

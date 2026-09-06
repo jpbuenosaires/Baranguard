@@ -163,7 +163,7 @@
   gap: var(--spacing-xs);
 }
 .export-btn-group button {
-  min-height: 2.25rem;
+  min-height: var(--control-height);
   padding: 0.25rem var(--spacing-sm);
   display: inline-flex;
   align-items: center;
