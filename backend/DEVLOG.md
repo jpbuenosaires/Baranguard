@@ -8313,3 +8313,74 @@ new SQL paths executed against the real `baranguard` schema in rolled-back
 transactions. **Neither endpoint has been called over HTTP and no screen has
 been opened in a browser** — the user chose to defer that. Treat both as
 unproven end-to-end.
+
+---
+
+## 2026-09-06 (3) — Screen audit: removed the fabricated-AI features
+
+User asked whether anything on the reworked screens should be omitted. Yes.
+The same Antigravity pass had added two sparkles-branded "AI" features that
+call no model at all (this project's SEA-LION has still never been called)
+and make no API request whatsoever.
+
+**Removed entirely, user-approved:**
+
+1. **Blotter list → "AI Case Assistant & Compliance Advisor".** Its "Case
+   Pattern Intelligence" tab displayed `24 Active`, `84.6%` resolution rate,
+   and "Top Hotspot: Purok 3 & Market Area ... weekend evenings (18:00 -
+   22:00)" — all hardcoded string literals, under a "Blotter Caseload
+   Analytics" badge. Straight §2 Rule 6 ("no fabricated statistics"), and the
+   single most damaging thing that could have been in the app at UAT.
+2. **Blotter Detail → "Lupon Tagapamayapa Legal Advisor".** Branded an AI
+   "Conciliation Analyzer"; actually one boolean (`isDirectPolice` = type is
+   fire or medical_emergency). For everything else it stated categorically
+   that "Court or PNP filing is barred without prior Lupon proceedings" —
+   false under RA 7160 §408(c) for grave physical injuries, larger theft, and
+   parties in different LGUs. The blotter-list version modelled some of those
+   exemptions; this one modelled none.
+3. **Per-row "AI-assisted redaction record" badge** (blotter-list, found
+   during the same sweep, not in the original report). Its condition was
+   `row.revisionNo >= 1 || (index % 2 === 0)` — `revision_no` is 1 on every
+   finalized record, so this stamped a fabricated AI-provenance claim on
+   EVERY row of a legal ledger, with the comment "for high visual fidelity".
+
+10 orphaned CSS rules and the now-unused `sparkles`/`trash` icons went with
+them.
+
+**Also fixed, all user-selected:**
+
+- **The printable blotter sheet named the wrong LGU** — "Province of Sorsogon
+  · City of Sorsogon", on a page carrying Punong Barangay signature lines.
+  This deployment serves four barangays in the **Municipality of Pilar**
+  (§1). Corrected. It stays a constant rather than reading
+  `system_settings`' `general.*` keys because `GET /system-settings` is
+  Admin-only and the Secretary is the one printing.
+- **Print sheet vs. Lupon packet.** A browser print writes no audit row,
+  while `GET /incidents/:id/lupon-packet` is the Secretary-only, audited,
+  server-generated document. The modal, its button and the printed page now
+  all say "working copy"/"unaudited", with the printed footer naming the
+  Lupon Packet as the official artefact.
+- **Trash icon on the retention notice.** The dialog exists to explain that a
+  finalized entry can NEVER be deleted, so a trash can promised the exact
+  opposite of what it does. Now a shield, titled "Retention policy", and its
+  inline `#fef2f2`/`#fecaca`/`#991b1b` moved to tokens (it was a
+  light-mode-only red panel).
+- **"RA 10173 Privacy Verified" badge** → "Redaction approved", with a title
+  attribute saying it records a Secretary approval, not a certification of
+  statutory compliance. What actually happened is what it now claims.
+- **Hardcoded colors → tokens.** 96 across the three page files, now 0 in the
+  app UI. The ~40 remaining in blotter-detail are all inside
+  `#printable-blotter-sheet` and are deliberately left fixed dark-on-white:
+  that div is paper, and must not follow dark mode. The chrome AROUND it was
+  dark-theme-only (`#f8fafc` text on a theme-aware glass card) and would have
+  been illegible in light mode — that is now tokenized.
+
+**Reviewed and deliberately left alone:** "View Raw Intake" is correctly
+gated (`isSecretary && incident.rawNarrative`, and the server only ever sends
+`rawNarrative` to a Secretary) — the one legitimate raw disclosure, working
+as designed. `buildLegalGuide()`'s static RA 7160 notice is a general
+statement, not a per-case determination, and is not branded AI.
+
+Verification: `node --check` clean, wiring 450/450, undeclared-binding sweep
+clean, CSS braces balanced after removing 10 rules. **Still no browser pass**
+— verification remains deferred by the user.

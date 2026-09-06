@@ -1390,19 +1390,19 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
           <h4 class="incident-help-title">Operational Status Stages</h4>
           <div class="incident-help-list">
             <div class="incident-help-item">
-              <span style="font-weight: 600; color: #ef4444;">Active</span>
+              <span style="font-weight: 600; color: var(--color-critical);">Active</span>
               <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Reported incident pending on-duty Tanod dispatch</span>
             </div>
             <div class="incident-help-item">
-              <span style="font-weight: 600; color: #ea580c;">Responding</span>
+              <span style="font-weight: 600; color: var(--color-warning);">Responding</span>
               <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Peacekeeping unit dispatched and en route or on scene</span>
             </div>
             <div class="incident-help-item">
-              <span style="font-weight: 600; color: #16a34a;">Resolved</span>
+              <span style="font-weight: 600; color: var(--color-success);">Resolved</span>
               <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Incident neutralized and officially resolved by Admin</span>
             </div>
             <div class="incident-help-item">
-              <span style="font-weight: 600; color: #64748b;">Closed</span>
+              <span style="font-weight: 600; color: var(--color-text-secondary);">Closed</span>
               <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Formal blotter documentation completed</span>
             </div>
           </div>
