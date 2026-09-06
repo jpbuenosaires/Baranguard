@@ -616,7 +616,20 @@
   background: #dc2626;
 }
 
-/* Skeletons */
+/* Shared map wrapper — still used by the Analytics screen's Heatmap tab
+   (`historical-heatmap.js`), which never adopted this page's own
+   `.gis-map-card`/`.gis-map-viewport` shell. The 2026-09-06 GIS redesign
+   dropped this base rule while leaving the `--fill` modifier behind,
+   which left the Heatmap's map container with no size, no positioning
+   context and no clipping — MapLibre needs all three. */
+.gis-page__map-wrapper {
+  flex: 1;
+  min-height: 28rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+}
 .gis-page__map-wrapper--fill { height: 100%; min-height: 28rem; }
 
 /* Dark mode adjustments */
