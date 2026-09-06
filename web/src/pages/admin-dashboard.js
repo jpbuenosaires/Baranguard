@@ -131,36 +131,148 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   // arbitrary range is still one click away, not removed.
   const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
 
+  const rangeWrapper = document.createElement('div');
+  rangeWrapper.className = 'date-range-picker-wrapper';
+
   const rangeSelect = document.createElement('select');
   rangeSelect.className = 'input--auto range-select';
   rangeSelect.setAttribute('aria-label', 'Date range');
-  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range']]) {
+  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range...']]) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
     rangeSelect.appendChild(option);
   }
   rangeSelect.value = '30';
+  let previousSelectValue = '30';
 
-  const customRow = document.createElement('div');
-  customRow.className = 'filter-bar range-picker-custom-row';
-  customRow.hidden = true;
+  // Anchored popover card for Custom date range — appears directly beneath
+  // the selector in the header, with zero layout shift to the dashboard below.
+  const popover = document.createElement('div');
+  popover.className = 'date-range-popover';
+  popover.hidden = true;
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', 'Custom date range');
 
+  const popoverTitle = document.createElement('div');
+  popoverTitle.className = 'date-range-popover__title';
+  popoverTitle.textContent = 'Custom Date Range';
+
+  const gridFields = document.createElement('div');
+  gridFields.className = 'date-range-popover__grid';
+
+  const fromField = document.createElement('div');
+  fromField.className = 'date-range-popover__field';
+  const fromLabel = document.createElement('label');
+  fromLabel.className = 'date-range-popover__label';
+  fromLabel.textContent = 'From';
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
+  fromInput.className = 'date-range-popover__input';
   fromInput.value = daysAgoIso(29);
-  fromInput.classList.add('input--auto');
+  fromField.append(fromLabel, fromInput);
+
+  const toField = document.createElement('div');
+  toField.className = 'date-range-popover__field';
+  const toLabel = document.createElement('label');
+  toLabel.className = 'date-range-popover__label';
+  toLabel.textContent = 'To';
   const toInput = document.createElement('input');
   toInput.type = 'date';
+  toInput.className = 'date-range-popover__input';
   toInput.value = todayIso();
-  toInput.classList.add('input--auto');
-  const applyButton = document.createElement('button');
-  applyButton.className = 'primary';
-  applyButton.textContent = 'Apply';
+  toField.append(toLabel, toInput);
 
-  // audit W2: nothing said how fresh the figures were. A dashboard that
-  // loads once and never timestamps itself leaves a Punong Barangay
-  // unable to tell two-minute-old numbers from two-hour-old ones.
+  gridFields.append(fromField, toField);
+
+  const rangeError = document.createElement('span');
+  rangeError.className = 'app-inline-error';
+  rangeError.hidden = true;
+  rangeError.setAttribute('role', 'alert');
+
+  const actions = document.createElement('div');
+  actions.className = 'date-range-popover__actions';
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'ghost';
+  cancelButton.textContent = 'Cancel';
+
+  const applyButton = document.createElement('button');
+  applyButton.type = 'button';
+  applyButton.className = 'primary';
+  applyButton.textContent = 'Apply Range';
+
+  actions.append(cancelButton, applyButton);
+  popover.append(popoverTitle, gridFields, rangeError, actions);
+  rangeWrapper.append(rangeSelect, popover);
+
+  const validateRange = () => {
+    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
+    applyButton.disabled = invalid;
+    rangeError.hidden = !invalid;
+    rangeError.textContent = invalid ? 'From date must be on or before To date.' : '';
+  };
+  fromInput.addEventListener('change', validateRange);
+  toInput.addEventListener('change', validateRange);
+
+  const openPopover = () => {
+    popover.hidden = false;
+    validateRange();
+    fromInput.focus();
+  };
+
+  const closePopover = (restorePrevious = false) => {
+    popover.hidden = true;
+    rangeError.hidden = true;
+    if (restorePrevious) {
+      rangeSelect.value = previousSelectValue;
+    }
+  };
+
+  cancelButton.addEventListener('click', () => {
+    closePopover(true);
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!popover.hidden && !rangeWrapper.contains(e.target)) {
+      closePopover(true);
+    }
+  });
+
+  // Close on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !popover.hidden) {
+      closePopover(true);
+    }
+  });
+
+  applyButton.addEventListener('click', () => {
+    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
+    previousSelectValue = 'custom';
+    const customOption = rangeSelect.querySelector('option[value="custom"]');
+    if (customOption) {
+      customOption.textContent = `Custom (${shortDate(fromInput.value)} – ${shortDate(toInput.value)})`;
+    }
+    rangeSelect.value = 'custom';
+    closePopover(false);
+    load(fromInput.value, toInput.value);
+  });
+
+  rangeSelect.addEventListener('change', () => {
+    if (rangeSelect.value === 'custom') {
+      openPopover();
+      return;
+    }
+    closePopover(false);
+    previousSelectValue = rangeSelect.value;
+    const daysAgo = PRESET_DAYS_AGO[rangeSelect.value];
+    fromInput.value = daysAgoIso(daysAgo);
+    toInput.value = todayIso();
+    load(fromInput.value, toInput.value);
+  });
+
   const freshness = document.createElement('span');
   freshness.className = 'note dashboard-freshness';
   freshness.setAttribute('role', 'status');
@@ -172,95 +284,42 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   refreshButton.setAttribute('aria-label', 'Refresh dashboard');
   refreshButton.addEventListener('click', () => load(fromInput.value, toInput.value));
 
-  // 2026-09-06: moved next to Refresh, in the page header, rather than its
-  // own row under it — one control that's always visible belongs beside
-  // the other "how current is this view" action, not on a separate line.
-  pageHeader.actions.append(freshness, refreshButton, rangeSelect);
+  pageHeader.actions.append(freshness, refreshButton, rangeWrapper);
 
-  // Validation before the round trip — an inverted range used to be caught
-  // only by the server, which returned a full-page error block.
-  const rangeError = document.createElement('span');
-  rangeError.className = 'app-inline-error';
-  rangeError.hidden = true;
-  rangeError.setAttribute('role', 'alert');
-  const validateRange = () => {
-    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
-    applyButton.disabled = invalid;
-    rangeError.hidden = !invalid;
-    rangeError.textContent = invalid ? 'From date must be on or before To date.' : '';
-  };
-  fromInput.addEventListener('change', validateRange);
-  toInput.addEventListener('change', validateRange);
-
-  rangeSelect.addEventListener('change', () => {
-    if (rangeSelect.value === 'custom') {
-      customRow.hidden = false;
-      return;
-    }
-    customRow.hidden = true;
-    const daysAgo = PRESET_DAYS_AGO[rangeSelect.value];
-    fromInput.value = daysAgoIso(daysAgo);
-    toInput.value = todayIso();
-    load(fromInput.value, toInput.value);
-  });
-
-  customRow.append(
-    Object.assign(document.createElement('span'), { className: 'label', textContent: 'From' }),
-    fromInput,
-    Object.assign(document.createElement('span'), { className: 'label', textContent: 'To' }),
-    toInput,
-    applyButton,
-    rangeError
-  );
   const body = document.createElement('div');
+  body.className = 'dashboard-body';
+  content.append(body);
 
-  content.append(customRow, body);
-
-  applyButton.addEventListener('click', () => load(fromInput.value, toInput.value));
-  // Initial load sends NO date params, deliberately — see load()'s comment
-  // below for why. fromInput/toInput start out showing a client-computed
-  // guess only so the date pickers aren't empty; load() overwrites them
-  // with the server's actual range once the response comes back, and that
-  // same handler reconciles rangeSelect/customRow to whatever range the
-  // server actually used.
   load(undefined, undefined);
 
   async function load(dateFrom, dateTo) {
-    renderLoading(body);
+    const isInitial = body.children.length === 0;
+    if (isInitial) {
+      renderLoading(body);
+    } else {
+      body.classList.add('is-reloading');
+    }
+    refreshButton.disabled = true;
+    refreshButton.classList.add('is-spinning');
+
     try {
       const summary = await getReportsSummary({ dateFrom, dateTo });
 
-      // The date inputs show a *guess* at the default range, computed in
-      // the browser's local timezone (todayIso()/daysAgoIso() above) —
-      // that can disagree with the server's Asia/Manila-based default by
-      // a day at the boundary. Explicitly sending that guessed range on
-      // first load would make the client, not the server, define "the
-      // last 30 days" — silently wrong by a day whenever the two
-      // timezones' calendar days don't line up. So the initial load omits
-      // date_from/date_to entirely and lets the server's real default
-      // win; once summary.trend comes back, the inputs are corrected to
-      // reflect the range the server actually used, so a later manual
-      // Apply starts from truth, not from the initial guess.
       if (summary.trend && summary.trend.length > 0) {
         fromInput.value = summary.trend[0].date;
         toInput.value = summary.trend[summary.trend.length - 1].date;
       }
-      // Reconcile the dropdown/custom-row visibility to whatever range this
-      // load actually used — but ONLY for the true initial load (dateFrom/
-      // dateTo both undefined, meaning nobody had picked anything yet).
-      // Every other call already knows its own mode (the preset handler
-      // hides the row before calling load; Apply and Refresh fire with the
-      // row already in whatever state the user left it) — re-deriving it
-      // here from the server's returned trend[] would fight that, because
-      // the server can round the requested range by a day at a timezone
-      // boundary (see the comment above): picking "Last 7 days" then
-      // getting back 6 or 8 days of trend used to silently fall through to
-      // "no exact preset match" and re-reveal the custom row even though a
-      // preset was clearly chosen.
+
       if (dateFrom === undefined && dateTo === undefined) {
         const matchedDays = Object.keys(PRESET_DAYS_AGO).find((days) => PRESET_DAYS_AGO[days] + 1 === rangeDaysBetween(fromInput.value, toInput.value));
         rangeSelect.value = matchedDays || 'custom';
-        customRow.hidden = rangeSelect.value !== 'custom';
+        previousSelectValue = rangeSelect.value;
+        if (rangeSelect.value === 'custom') {
+          const customOption = rangeSelect.querySelector('option[value="custom"]');
+          if (customOption) {
+            customOption.textContent = `Custom (${shortDate(fromInput.value)} – ${shortDate(toInput.value)})`;
+          }
+        }
       }
 
       const isFreshDeployment = summary.totalIncidents === 0 && summary.activeTanods === 0;
@@ -271,12 +330,6 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
 
       renderPopulated(body, summary, navigate, user.role);
 
-      // Best-effort extras: each wrapped in its own catch so a failure
-      // here never blocks the KPI/trend/breakdown data above, which has
-      // already rendered. Uses the server-corrected range (fromInput/
-      // toInput, just set above), not the possibly-undefined dateFrom/
-      // dateTo params, so this always compares against the range that
-      // actually produced `summary`.
       freshness.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
       loadDeltas(body, fromInput.value, toInput.value, summary);
@@ -288,6 +341,10 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
         ? err.message
         : 'Something went wrong loading the dashboard.';
       renderError(body, message, () => load(dateFrom, dateTo));
+    } finally {
+      body.classList.remove('is-reloading');
+      refreshButton.disabled = false;
+      refreshButton.classList.remove('is-spinning');
     }
   }
 }
@@ -666,7 +723,7 @@ function renderTanodsOnDutyList(host, roster) {
     return;
   }
   const list = document.createElement('div');
-  list.className = 'stack';
+  list.className = 'stack tanods-roster-scroll';
   for (const tanod of roster) {
     const row = document.createElement('div');
     row.className = 'row-between breakdown-row';

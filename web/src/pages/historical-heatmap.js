@@ -19,6 +19,13 @@ function daysAgoIso(n) {
   return d.toISOString().slice(0, 10);
 }
 
+function shortDate(iso) {
+  if (!iso) return '';
+  const [, m, d] = iso.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[Number(m) - 1]} ${Number(d)}`;
+}
+
 /**
  * Personnel > Heatmap tab. Was the standalone W5 Historical Heatmap page
  * (`renderHistoricalHeatmapPage`) before the 2026-09-05 Analytics merge
@@ -30,50 +37,159 @@ function daysAgoIso(n) {
  * screen, where the roles and live-vs-historical intent didn't match.
  *
  * @param {HTMLElement} container tab body to render into
+ * @param {ReturnType<import('../components/PageHeader.js').PageHeader>} pageHeader
  * @param {{fullName:string, role:string}} user
  */
-export function renderHeatmapTab(container, user) {
+export function renderHeatmapTab(container, pageHeader, user) {
+  const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
+
+  const fromInput = document.createElement('input');
+  fromInput.type = 'date';
+  fromInput.value = daysAgoIso(29);
+  fromInput.className = 'date-range-popover__input';
+
+  const toInput = document.createElement('input');
+  toInput.type = 'date';
+  toInput.value = todayIso();
+  toInput.className = 'date-range-popover__input';
+
+  const rangeWrapper = document.createElement('div');
+  rangeWrapper.className = 'date-range-picker-wrapper';
+
+  const rangeSelect = document.createElement('select');
+  rangeSelect.className = 'input--auto range-select';
+  rangeSelect.setAttribute('aria-label', 'Date range');
+  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range...']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    rangeSelect.appendChild(option);
+  }
+  rangeSelect.value = '30';
+  let previousSelectValue = '30';
+
+  const popover = document.createElement('div');
+  popover.className = 'date-range-popover';
+  popover.hidden = true;
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', 'Custom date range');
+
+  const popoverTitle = document.createElement('div');
+  popoverTitle.className = 'date-range-popover__title';
+  popoverTitle.textContent = 'Custom Date Range';
+
+  const gridFields = document.createElement('div');
+  gridFields.className = 'date-range-popover__grid';
+
+  const fromField = document.createElement('div');
+  fromField.className = 'date-range-popover__field';
+  const fromLabel = document.createElement('label');
+  fromLabel.className = 'date-range-popover__label';
+  fromLabel.textContent = 'From';
+  fromField.append(fromLabel, fromInput);
+
+  const toField = document.createElement('div');
+  toField.className = 'date-range-popover__field';
+  const toLabel = document.createElement('label');
+  toLabel.className = 'date-range-popover__label';
+  toLabel.textContent = 'To';
+  toField.append(toLabel, toInput);
+
+  gridFields.append(fromField, toField);
+
+  const rangeError = document.createElement('span');
+  rangeError.className = 'app-inline-error';
+  rangeError.hidden = true;
+  rangeError.setAttribute('role', 'alert');
+
+  const actions = document.createElement('div');
+  actions.className = 'date-range-popover__actions';
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'ghost';
+  cancelButton.textContent = 'Cancel';
+
+  const applyButton = document.createElement('button');
+  applyButton.type = 'button';
+  applyButton.className = 'primary';
+  applyButton.textContent = 'Apply Range';
+
+  actions.append(cancelButton, applyButton);
+  popover.append(popoverTitle, gridFields, rangeError, actions);
+  rangeWrapper.append(rangeSelect, popover);
+
+  const validateRange = () => {
+    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
+    applyButton.disabled = invalid;
+    rangeError.hidden = !invalid;
+    rangeError.textContent = invalid ? 'From date must be on or before To date.' : '';
+  };
+  fromInput.addEventListener('change', validateRange);
+  toInput.addEventListener('change', validateRange);
+
+  const openPopover = () => {
+    popover.hidden = false;
+    validateRange();
+    fromInput.focus();
+  };
+
+  const closePopover = (restorePrevious = false) => {
+    popover.hidden = true;
+    rangeError.hidden = true;
+    if (restorePrevious) {
+      rangeSelect.value = previousSelectValue;
+    }
+  };
+
+  cancelButton.addEventListener('click', () => closePopover(true));
+  document.addEventListener('click', (e) => {
+    if (!popover.hidden && !rangeWrapper.contains(e.target)) closePopover(true);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !popover.hidden) closePopover(true);
+  });
+
+  applyButton.addEventListener('click', () => {
+    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
+    previousSelectValue = 'custom';
+    const customOption = rangeSelect.querySelector('option[value="custom"]');
+    if (customOption) {
+      customOption.textContent = `Custom (${shortDate(fromInput.value)} – ${shortDate(toInput.value)})`;
+    }
+    rangeSelect.value = 'custom';
+    closePopover(false);
+    load(fromInput.value, toInput.value);
+  });
+
+  rangeSelect.addEventListener('change', () => {
+    if (rangeSelect.value === 'custom') {
+      openPopover();
+      return;
+    }
+    closePopover(false);
+    previousSelectValue = rangeSelect.value;
+    fromInput.value = daysAgoIso(PRESET_DAYS_AGO[rangeSelect.value]);
+    toInput.value = todayIso();
+    load(fromInput.value, toInput.value);
+  });
+
+  if (pageHeader && pageHeader.actions) {
+    pageHeader.actions.appendChild(rangeWrapper);
+  }
+
   const wrapper = document.createElement('div');
   wrapper.className = 'flex-col grow';
   container.appendChild(wrapper);
 
-  // §9's own requirement ("explicit non-predictive label") — used to live
-  // in this screen's own PageHeader subtitle; that subtitle is now shared
-  // with the Reports tab (see analytics.js), so the disclosure moved here
-  // instead, right above the controls it qualifies.
   const disclosure = document.createElement('p');
   disclosure.className = 'note';
   disclosure.textContent = 'Historical incident patterns only — not a predictive or real-time view.';
   wrapper.appendChild(disclosure);
 
-  const controls = document.createElement('div');
-  controls.className = 'filter-bar';
-  const fromInput = document.createElement('input');
-  fromInput.type = 'date';
-  fromInput.value = daysAgoIso(29);
-  fromInput.classList.add('input--auto');
-  const toInput = document.createElement('input');
-  toInput.type = 'date';
-  toInput.value = todayIso();
-  toInput.classList.add('input--auto');
-  const applyButton = document.createElement('button');
-  applyButton.className = 'primary';
-  applyButton.textContent = 'Apply';
-  controls.append(
-    Object.assign(document.createElement('span'), { className: 'label', textContent: 'From' }),
-    fromInput,
-    Object.assign(document.createElement('span'), { className: 'label', textContent: 'To' }),
-    toInput,
-    applyButton
-  );
-
   const body = document.createElement('div');
   body.className = 'grow';
-
-  // The "historical only, not predictive" disclosure now lives in the
-  // PageHeader subtitle above (§9's own requirement, still met) rather
-  // than a second, duplicate note in the content area.
-  wrapper.append(controls, body);
+  wrapper.appendChild(body);
 
   let heatmap = null;
 

@@ -178,12 +178,15 @@ export function LiveMap(container) {
       if (group.length === 1) {
         const item = group[0].item;
         const el = document.createElement('div');
-        el.className = 'live-map__marker live-map__marker--tanod' + (item.isStale ? ' live-map__marker--stale' : '');
-        el.title = `${item.fullName} — ${formatAge(item.ageSeconds)}${item.isStale ? ' (stale)' : ''}`;
+        const isDispatched = item.status === 'dispatched' || item.isDispatched;
+        const markerTypeClass = isDispatched ? ' live-map__marker--dispatched' : ' live-map__marker--available';
+        el.className = 'live-map__marker live-map__marker--tanod' + markerTypeClass + (item.isStale ? ' live-map__marker--stale' : '');
+        el.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+        el.title = `${item.fullName} — ${isDispatched ? 'Dispatched' : 'Available'} · ${formatAge(item.ageSeconds)}${item.isStale ? ' (stale)' : ''}`;
         // §4.3 — a real popup on click (not just the hover-only `title`
         // tooltip above, which a touch/keyboard user can't reach at all).
         const popup = new maplibregl.Popup({ offset: 12, closeButton: false })
-          .setText(`${item.fullName} — ${formatAge(item.ageSeconds)}${item.isStale ? ' (stale)' : ''}`);
+          .setText(`${item.fullName} (${isDispatched ? 'Dispatched' : 'Available'}) — ${formatAge(item.ageSeconds)}${item.isStale ? ' (stale)' : ''}`);
         // `.setPopup()` wires MapLibre's own built-in click-to-toggle
         // behavior — no separate click listener needed.
         const marker = new maplibregl.Marker({ element: el })
@@ -236,13 +239,16 @@ export function LiveMap(container) {
     for (const item of sosItems) {
       const el = document.createElement('div');
       el.className = 'live-map__marker live-map__marker--sos';
-      el.title = `SOS — ${item.status}`;
+      el.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`;
+      el.title = `SOS Alert — ${item.status || 'Active'}`;
       const marker = new maplibregl.Marker({ element: el })
         .setLngLat([item.longitude, item.latitude])
         .addTo(map);
       sosMarkers.push(marker);
     }
   }
+
+  let incidentMarkersById = new Map();
 
   /**
    * Pending-incident markers (2026-09-05 UX pass) — Dispatch Center's
@@ -258,6 +264,7 @@ export function LiveMap(container) {
    */
   function setIncidentMarkers(items, onAssign) {
     incidentMarkers = clearMarkers(incidentMarkers);
+    incidentMarkersById.clear();
     for (const item of items) {
       if (item.latitude == null || item.longitude == null) continue;
 
@@ -294,6 +301,7 @@ export function LiveMap(container) {
         .setPopup(popup)
         .addTo(map);
       incidentMarkers.push(marker);
+      incidentMarkersById.set(item.incidentId, marker);
     }
   }
 
@@ -323,6 +331,7 @@ export function LiveMap(container) {
     clearMarkers(tanodMarkers);
     clearMarkers(sosMarkers);
     clearMarkers(incidentMarkers);
+    incidentMarkersById.clear();
     map.remove();
   }
 
@@ -334,10 +343,65 @@ export function LiveMap(container) {
    */
   function flyTo(latitude, longitude, zoom = 17) {
     if (destroyed) return;
-    map.flyTo({ center: [longitude, latitude], zoom, duration: 500 });
+    map.flyTo({ center: [longitude, latitude], zoom, duration: 600 });
   }
 
-  return { setMarkers, setSosMarkers, setIncidentMarkers, setBoundary, flyTo, destroy };
+  /**
+   * Focus and open popup for an incident on the map by its ID.
+   * Returns true if the incident marker exists and was highlighted.
+   */
+  function highlightIncident(incidentId) {
+    if (destroyed) return false;
+    const marker = incidentMarkersById.get(incidentId);
+    if (!marker) return false;
+    const lngLat = marker.getLngLat();
+    map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: 17, duration: 600 });
+    try {
+      const popup = marker.getPopup();
+      if (popup && !popup.isOpen()) {
+        marker.togglePopup();
+      }
+    } catch {}
+    return true;
+  }
+
+  /**
+   * Fit map viewport to encompass all current Tanods, SOS alerts, and incidents.
+   */
+  function fitAll() {
+    if (destroyed) return;
+    const bounds = new maplibregl.LngLatBounds();
+    let count = 0;
+    for (const m of lastRawMarkers) {
+      if (m.latitude != null && m.longitude != null) {
+        bounds.extend([m.longitude, m.latitude]);
+        count++;
+      }
+    }
+    for (const m of sosMarkers) {
+      bounds.extend(m.getLngLat());
+      count++;
+    }
+    for (const m of incidentMarkers) {
+      bounds.extend(m.getLngLat());
+      count++;
+    }
+    if (count > 0) {
+      map.fitBounds(bounds, { padding: 48, maxZoom: 16, duration: 600 });
+    } else {
+      map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: 600 });
+    }
+  }
+
+  function zoomIn() {
+    if (!destroyed) map.zoomIn();
+  }
+
+  function zoomOut() {
+    if (!destroyed) map.zoomOut();
+  }
+
+  return { setMarkers, setSosMarkers, setIncidentMarkers, setBoundary, flyTo, highlightIncident, fitAll, resize, zoomIn, zoomOut, destroy };
 }
 
 /**

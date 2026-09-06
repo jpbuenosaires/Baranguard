@@ -30,49 +30,82 @@ import {
 } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
-import { PageHeader } from '../components/PageHeader.js';
-import { StatStrip } from '../components/StatStrip.js';
-import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
-const PRIORITY_LABELS = { normal: 'Normal', high: 'High', critical: 'Critical' };
-const PRIORITY_PILL_CLASS = { normal: 'status-pill--neutral', high: 'status-pill--pending', critical: 'status-pill--critical' };
+
 const INCIDENT_TYPE_LABELS = {
-  theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
-  domestic_dispute: 'Domestic Dispute', vandalism: 'Vandalism',
-  traffic_incident: 'Traffic Incident', fire: 'Fire',
-  medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
-  animal_complaint: 'Animal Complaint', other: 'Other',
+  theft: 'Theft Incident',
+  physical_injury: 'Physical Injury',
+  disturbance: 'Disturbance Emergency',
+  domestic_dispute: 'Domestic Dispute',
+  vandalism: 'Vandalism Report',
+  traffic_incident: 'Traffic Incident',
+  fire: 'Fire Emergency',
+  medical_emergency: 'Medical Emergency',
+  missing_person: 'Missing Person',
+  animal_complaint: 'Animal Complaint',
+  other: 'General Incident',
+  sos: 'SOS Emergency',
 };
 
-// §3.3: column sorting wired here as the concrete first example — see
-// DataTable.js's own doc comment for why sortValue is required per column
-// rather than defaulted from the row.
-const PRIORITY_RANK = { normal: 0, high: 1, critical: 2 };
-const PENDING_COLUMNS = [
-  // audit W3: the ID used to be folded into the "Reported" cell as
-  // "#12 · 9/3/2026, 4:13:43 PM", so the one value dispatchers say aloud
-  // on the radio couldn't be scanned down a column. It gets its own.
-  { key: 'id', label: 'ID', width: '4.5rem', sortable: true, sortValue: (i) => i.incidentId },
-  { key: 'type', label: 'Type', sortable: true, sortValue: (i) => INCIDENT_TYPE_LABELS[i.incidentType] || i.incidentType },
-  { key: 'priority', label: 'Priority', sortable: true, sortValue: (i) => PRIORITY_RANK[i.priority] ?? -1 },
-  { key: 'reported', label: 'Reported', sortable: true, sortValue: (i) => i.createdAt },
-  { key: 'assign', label: 'Assign', align: 'right' },
+const CATEGORY_CHIPS = [
+  { key: 'all', label: 'All' },
+  { key: 'sos', label: 'SOS' },
+  { key: 'fire', label: 'Fire' },
+  { key: 'medical', label: 'Medical' },
+  { key: 'disturbance', label: 'Disturbance' },
 ];
-const ACTIVE_COLUMNS = [
-  { key: 'dispatch', label: 'Dispatch', sortable: true, sortValue: (d) => d.dispatchedAt },
-  { key: 'tanod', label: 'Tanod', sortable: true, sortValue: (d) => d.tanodId },
-  { key: 'status', label: 'Status', sortable: true, sortValue: (d) => d.status },
-  { key: 'actions', label: 'Actions', align: 'right' },
-];
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatElapsed(timestamp) {
+  if (!timestamp) return 'Just now';
+  const diffMs = Date.now() - new Date(timestamp).getTime();
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}d ago`;
+}
+
+function formatIncidentCode(incident) {
+  if (incident.displayId) return incident.displayId;
+  const num = String(incident.incidentId || 0).padStart(3, '0');
+  return `INC-${num}`;
+}
+
+function getIncidentIcon(type, priority) {
+  if (type === 'fire') return icons.flame(16);
+  if (type === 'medical_emergency') return icons.activity(16);
+  if (priority === 'critical' || type === 'sos') return icons.alertTriangle(16);
+  if (type === 'disturbance' || type === 'physical_injury') return icons.alertCircle(16);
+  return icons.alertTriangle(16);
+}
+
+function getIncidentColorBullet(type, priority, status) {
+  if (priority === 'critical' || type === 'sos') return 'queue-bullet--red';
+  if (priority === 'high' || type === 'fire' || type === 'medical_emergency') return 'queue-bullet--orange';
+  if (status === 'dispatched') return 'queue-bullet--blue';
+  return 'queue-bullet--green';
+}
 
 /**
  * @param {HTMLElement} root
- * @param {{fullName:string, role:string, barangayId:number}} user
+ * @param {{fullName:string, role:string, barangayId:number, barangayName?:string}} user
  * @param {() => void} onLoggedOut
  * @param {(page: string) => void} navigate
  */
@@ -87,40 +120,38 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   });
   const { header, content } = shell;
   root.appendChild(shell.el);
-
-  const pageHeader = PageHeader({ title: 'Dispatch Center', subtitle: 'Assign on-duty Tanods and track active responses', icon: icons.radio });
-  header.appendChild(pageHeader.el);
+  header.innerHTML = '';
+  header.style.display = 'none';
 
   const wrapper = document.createElement('div');
   wrapper.className = 'flex-col';
   content.appendChild(wrapper);
+
   const body = document.createElement('div');
-  body.className = '';
   wrapper.appendChild(body);
 
   let liveMap = null;
-  let mapPane = null;
+  let layoutEl = null;
+  let priorityAlertEl = null;
+  let alertTextEl = null;
+  let alertBtnEl = null;
+  let kpiCardEl = null;
+  let queueListEl = null;
+  let chipsContainerEl = null;
+  let mapCardEl = null;
+  let mapViewportEl = null;
   let pollTimer = null;
 
-  // audit W3 (blocking): this screen used to load once and then only on an
-  // assign/cancel. A new incident — or a new Tanod SOS — never reached the
-  // dispatcher until they happened to act or navigate away and back. The
-  // one screen whose entire job is watching the queue was the only
-  // operational screen not refreshing itself.
-  // Cadence matches GIS Live Tracking's existing 15s, and follows the same
-  // contract: a background poll that fails must not blank a queue that is
-  // already on screen.
-  const POLL_INTERVAL_MS = 15000;
+  // Filter state
+  let searchQuery = '';
+  let activeCategory = 'all';
+  let latestData = null;
 
-  const freshness = document.createElement('span');
-  freshness.className = 'note dashboard-freshness';
-  freshness.setAttribute('role', 'status');
+  const POLL_INTERVAL_MS = 15000;
 
   load(true);
   pollTimer = setInterval(() => load(false), POLL_INTERVAL_MS);
 
-  // audit A16: assigning or cancelling changes the pending count the
-  // sidebar badges, which would otherwise stay wrong for up to a minute.
   const onQueueChanged = () => { load(false); shell.refreshNavCounts?.(); };
 
   function stopPolling() {
@@ -131,7 +162,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   }
 
   async function load(showLoadingState) {
-    if (showLoadingState) renderLoading(body);
+    if (showLoadingState && !layoutEl) renderLoading(body);
     try {
       const [incidentsRes, dispatchesRes, dutyStatuses, usersRes, sosItems, gpsItems] = await Promise.all([
         getIncidents({ status: 'pending', limit: 100 }),
@@ -145,189 +176,258 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const onDutyUserIds = new Set(dutyStatuses.filter((d) => d.status === 'on_duty').map((d) => d.userId));
       const eligibleTanods = usersRes.items.filter((u) => u.isActive && onDutyUserIds.has(u.userId));
       const activeDispatches = dispatchesRes.items.filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status));
-      // §9: SOS stays visible until resolved, not just while "active".
       const openSos = sosItems.filter((s) => s.status !== 'resolved');
-
-      // Names for the SOS banner come from the tanod list this page
-      // already fetches — GET /tanod-sos returns user_id only, and
-      // resolving it client-side avoids adding a field to that endpoint
-      // for one label (the same join admin-dashboard.js already does for
-      // its duty roster).
       const tanodNames = new Map(usersRes.items.map((u) => [u.userId, u.fullName]));
 
-      renderPopulated(body, {
+      latestData = {
         pendingIncidents: incidentsRes.items,
         activeDispatches,
         eligibleTanods,
         openSos: openSos.map((s) => ({ ...s, fullName: tanodNames.get(s.userId) })),
         gpsItems,
         tanodNames,
-      });
-      freshness.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+      };
+
+      renderPopulated(body, latestData);
     } catch (err) {
-      // A failed BACKGROUND poll leaves the queue that is already on
-      // screen alone — replacing a working queue with an error block
-      // because one refresh missed would be worse than showing data 15
-      // seconds stale, and the timestamp above stops updating, which is
-      // the honest signal that something is wrong.
       if (!showLoadingState) return;
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading the Dispatch Center.';
       renderError(body, message, () => load(true));
     }
   }
 
-  function renderPopulated(container, { pendingIncidents, activeDispatches, eligibleTanods, openSos, gpsItems, tanodNames }) {
-    container.innerHTML = '';
-    container.className = '';
+  function renderPopulated(container, data) {
+    const { pendingIncidents, activeDispatches, eligibleTanods, openSos, gpsItems } = data;
 
-    const criticalCount = pendingIncidents.filter((i) => i.priority === 'critical').length;
-    // This wipes the actions slot on every render, so the freshness stamp
-    // must be re-attached HERE rather than once at construction —
-    // otherwise the first render silently removes it.
-    pageHeader.actions.innerHTML = '';
-    pageHeader.actions.appendChild(freshness);
-    pageHeader.actions.appendChild(StatStrip({
-      items: [
-        { label: 'On duty', value: eligibleTanods.length },
-        { label: 'Pending', value: pendingIncidents.length },
-        { label: 'Active', value: activeDispatches.length, tone: 'info' },
-        { label: 'Critical', value: criticalCount, tone: criticalCount > 0 ? 'critical' : 'default' },
-        { label: 'SOS', value: openSos.length, tone: openSos.length > 0 ? 'critical' : 'default' },
-      ],
-    }));
+    // Initialize layout skeleton once
+    if (!layoutEl) {
+      container.innerHTML = '';
 
-    if (openSos.length > 0) {
-      // audit W3: the banner reported a count and nothing else — not which
-      // Tanod, not where, and no acknowledge control, although
-      // POST /tanod-sos/:id/acknowledge has existed since Sprint 4. It
-      // also had no role=alert, so it appeared silently for a
-      // screen-reader user.
-      const banner = document.createElement('div');
-      banner.className = 'sos-banner';
-      banner.setAttribute('role', 'alert');
+      // 1. Top Red Priority Alert Banner
+      priorityAlertEl = document.createElement('div');
+      priorityAlertEl.className = 'dispatch-priority-alert';
+      priorityAlertEl.style.display = 'none';
 
-      const icon = document.createElement('span');
-      icon.setAttribute('aria-hidden', 'true');
-      icon.innerHTML = icons.alertTriangle(20);
+      const alertLeft = document.createElement('div');
+      alertLeft.className = 'dispatch-priority-alert__left';
+      alertLeft.innerHTML = icons.alertTriangle(20);
+      alertTextEl = document.createElement('span');
+      alertLeft.appendChild(alertTextEl);
 
-      const text = document.createElement('div');
-      text.className = 'sos-banner__text';
-      const headline = document.createElement('div');
-      headline.textContent = openSos.length === 1
-        ? '1 Tanod SOS requires attention.'
-        : `${openSos.length} Tanod SOS alerts require attention.`;
-      const names = document.createElement('div');
-      names.className = 'sos-banner__list';
-      names.textContent = openSos
-        .map((s) => `${s.fullName ?? `Tanod #${s.userId}`}${s.status === 'acknowledged' ? ' (acknowledged)' : ''}`)
-        .join(' · ');
-      text.append(headline, names);
-      banner.append(icon, text);
+      alertBtnEl = document.createElement('button');
+      alertBtnEl.type = 'button';
+      alertBtnEl.className = 'dispatch-priority-alert__btn';
+      alertBtnEl.textContent = 'Dispatch Now';
 
-      // Centring the map on the alert is the dispatcher's actual first
-      // move, and it needs no new endpoint — the coordinates are already
-      // in the SOS rows this page fetched.
-      const located = openSos.filter((s) => s.latitude != null && s.longitude != null);
-      if (located.length > 0) {
-        const showButton = document.createElement('button');
-        showButton.type = 'button';
-        showButton.textContent = 'Show on map';
-        // `liveMap` is resolved at CLICK time, not here: the banner is
-        // built before the map pane further down this same function, so
-        // testing it now would drop the button on every first render.
-        showButton.addEventListener('click', () => {
-          liveMap?.flyTo(Number(located[0].latitude), Number(located[0].longitude));
-        });
-        banner.appendChild(showButton);
-      }
+      priorityAlertEl.append(alertLeft, alertBtnEl);
+      container.appendChild(priorityAlertEl);
 
-      const unacknowledged = openSos.filter((s) => s.status !== 'acknowledged');
-      if (unacknowledged.length > 0) {
-        const ackButton = document.createElement('button');
-        ackButton.type = 'button';
-        ackButton.textContent = unacknowledged.length === 1 ? 'Acknowledge' : `Acknowledge all (${unacknowledged.length})`;
-        ackButton.addEventListener('click', async () => {
-          ackButton.disabled = true;
-          ackButton.textContent = 'Acknowledging…';
-          try {
-            await Promise.all(unacknowledged.map((s) => acknowledgeTanodSos(s.sosId)));
-            showToast('SOS acknowledged. The alert stays visible until it is resolved.', { variant: 'success' });
-            load(false);
-          } catch (err) {
-            ackButton.disabled = false;
-            ackButton.textContent = 'Acknowledge';
-            showToast(err instanceof ApiClientError ? err.message : 'Could not acknowledge the SOS.', { variant: 'error' });
-          }
-        });
-        banner.appendChild(ackButton);
-      }
+      // 2. Header Bar with Title & 3-KPI Card
+      const headerBar = document.createElement('div');
+      headerBar.className = 'dispatch-header-bar';
 
-      container.appendChild(banner);
-    }
+      const infoCol = document.createElement('div');
+      infoCol.className = 'dispatch-header-bar__info';
+      const title = document.createElement('h1');
+      title.className = 'dispatch-header-bar__title';
+      title.textContent = 'Dispatch Center';
+      const subtitle = document.createElement('p');
+      subtitle.className = 'dispatch-header-bar__subtitle';
+      const bName = user.barangayName ? `Brgy. ${user.barangayName}, ` : '';
+      subtitle.textContent = `${bName}Pilar, Sorsogon Emergency Operations`;
+      infoCol.append(title, subtitle);
 
-    const layout = document.createElement('div');
-    layout.className = 'dispatch-layout';
+      kpiCardEl = document.createElement('div');
+      kpiCardEl.className = 'dispatch-kpi-card';
 
-    const queue = document.createElement('div');
-    queue.className = 'dispatch-queue';
+      headerBar.append(infoCol, kpiCardEl);
+      container.appendChild(headerBar);
 
-    const pendingTitle = document.createElement('h3');
-    pendingTitle.className = 'dispatch-queue__section-title';
-    pendingTitle.textContent = `Pending Incidents (${pendingIncidents.length})`;
-    queue.appendChild(pendingTitle);
+      // 3. Main Split Grid (Queue + Live Map)
+      layoutEl = document.createElement('div');
+      layoutEl.className = 'dispatch-layout';
 
-    if (pendingIncidents.length === 0) {
-      queue.appendChild(emptyNote('No pending incidents right now.'));
-    } else {
-      queue.appendChild(renderPendingIncidentsTable(pendingIncidents, eligibleTanods, onQueueChanged));
-    }
+      // Left Column: Emergency Queue
+      const queueCol = document.createElement('div');
+      queueCol.className = 'dispatch-queue-column';
 
-    const activeTitle = document.createElement('h3');
-    activeTitle.className = 'dispatch-queue__section-title dispatch-queue__section-title--spaced';
-      activeTitle.textContent = `Active Dispatches (${activeDispatches.length})`;
-    queue.appendChild(activeTitle);
+      const queueCard = document.createElement('div');
+      queueCard.className = 'dispatch-queue-card';
 
-    if (activeDispatches.length === 0) {
-      queue.appendChild(emptyNote('No active dispatches right now.'));
-    } else {
-      queue.appendChild(renderActiveDispatchesTable(activeDispatches, onQueueChanged));
-    }
+      const queueHeader = document.createElement('div');
+      queueHeader.className = 'dispatch-queue-card__header';
 
-    // audit W3: the map used to be destroyed and rebuilt on every reload,
-    // so any pan or zoom the dispatcher had set up was thrown away on
-    // every assign, every cancel — and now, every 15-second poll, which
-    // would have made the screen unusable. The pane element is created
-    // once and re-attached; only the markers are updated.
-    if (!mapPane) {
-      mapPane = document.createElement('div');
-      mapPane.className = 'dispatch-map-pane';
-      // audit: this map had no legend while GIS Live Tracking's identical
-      // map did — same markup as gis-live-tracking.js's own legend so the
-      // two screens agree on what a marker color means. Appended once,
-      // here, since mapPane itself (unlike the rest of this function) is
-      // created once and re-attached rather than rebuilt every render.
-      const legend = document.createElement('div');
-      legend.className = 'live-map__legend';
-      legend.innerHTML = `
-        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-success-solid);"></span> On duty (live)</div>
-        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-text-secondary);"></span> Stale (≥120s)</div>
-        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-critical-solid);"></span> SOS</div>
+      const titleRow = document.createElement('div');
+      titleRow.className = 'dispatch-queue-card__title-row';
+      const queueTitle = document.createElement('h2');
+      queueTitle.className = 'dispatch-queue-card__title';
+      queueTitle.textContent = 'Emergency Queue';
+
+      const filterIconBtn = document.createElement('button');
+      filterIconBtn.type = 'button';
+      filterIconBtn.className = 'dispatch-queue-card__filter-icon';
+      filterIconBtn.title = 'Filter queue';
+      filterIconBtn.innerHTML = icons.filter(18);
+
+      const searchBox = document.createElement('div');
+      searchBox.className = 'dispatch-queue-search-inline';
+      searchBox.style.display = 'none';
+      searchBox.style.marginTop = '0.5rem';
+      const searchInputEl = document.createElement('input');
+      searchInputEl.type = 'text';
+      searchInputEl.placeholder = 'Search by ID, type, tanod, or location…';
+      searchInputEl.value = searchQuery;
+      searchInputEl.style.width = '100%';
+      searchInputEl.style.padding = '0.375rem 0.625rem';
+      searchInputEl.style.fontSize = '0.8125rem';
+      searchInputEl.style.border = '1px solid var(--color-border, #e2e8f0)';
+      searchInputEl.style.borderRadius = '6px';
+      searchInputEl.style.outline = 'none';
+      searchInputEl.style.background = 'var(--color-bg, #f8fafc)';
+      searchInputEl.addEventListener('input', (e) => {
+        searchQuery = e.target.value.toLowerCase().trim();
+        updateQueueView();
+      });
+      searchBox.appendChild(searchInputEl);
+
+      filterIconBtn.addEventListener('click', () => {
+        const isHidden = searchBox.style.display === 'none';
+        searchBox.style.display = isHidden ? 'block' : 'none';
+        if (isHidden) searchInputEl.focus();
+      });
+
+      titleRow.append(queueTitle, filterIconBtn);
+
+      chipsContainerEl = document.createElement('div');
+      chipsContainerEl.className = 'dispatch-filter-chips';
+
+      queueHeader.append(titleRow, searchBox, chipsContainerEl);
+
+      queueListEl = document.createElement('div');
+      queueListEl.className = 'dispatch-queue-card__list';
+
+      queueCard.append(queueHeader, queueListEl);
+
+      const newEmergencyBtn = document.createElement('button');
+      newEmergencyBtn.type = 'button';
+      newEmergencyBtn.className = 'btn-new-emergency';
+      newEmergencyBtn.innerHTML = `${icons.bell(18)} <span>New Emergency Report</span>`;
+      newEmergencyBtn.addEventListener('click', () => {
+        navigate('incidents');
+      });
+
+      queueCol.append(queueCard, newEmergencyBtn);
+
+      // Right Column: Live Map Container
+      const mapCol = document.createElement('div');
+      mapCol.className = 'dispatch-map-column';
+
+      mapCardEl = document.createElement('div');
+      mapCardEl.className = 'dispatch-map-container';
+
+      const mapHeader = document.createElement('div');
+      mapHeader.className = 'dispatch-map-header';
+
+      const mapTitle = document.createElement('h3');
+      mapTitle.className = 'dispatch-map-header__title';
+      mapTitle.textContent = `Live Map - ${bName || ''}Pilar, Sorsogon`;
+
+      const mapActions = document.createElement('div');
+      mapActions.className = 'dispatch-map-header__actions';
+
+      const recenterBtn = document.createElement('button');
+      recenterBtn.type = 'button';
+      recenterBtn.className = 'btn-recenter';
+      recenterBtn.innerHTML = `${icons.mapPin(14)} <span>Recenter</span>`;
+      recenterBtn.addEventListener('click', () => {
+        liveMap?.fitAll();
+      });
+
+      const fullscreenBtn = document.createElement('button');
+      fullscreenBtn.type = 'button';
+      fullscreenBtn.className = 'btn-fullscreen';
+      fullscreenBtn.innerHTML = `<span>Full Screen</span>`;
+      fullscreenBtn.addEventListener('click', () => {
+        const isFull = mapCardEl.classList.toggle('is-fullscreen');
+        fullscreenBtn.innerHTML = `<span>${isFull ? 'Exit Full Screen' : 'Full Screen'}</span>`;
+        liveMap?.resize();
+      });
+
+      mapActions.append(recenterBtn, fullscreenBtn);
+      mapHeader.append(mapTitle, mapActions);
+
+      mapViewportEl = document.createElement('div');
+      mapViewportEl.className = 'dispatch-map-viewport';
+
+      const legendCard = document.createElement('div');
+      legendCard.className = 'dispatch-map-legend-card';
+      legendCard.innerHTML = `
+        <div class="legend-title">Legend</div>
+        <div class="legend-item"><span class="legend-dot legend-dot--green"></span> Available Tanod</div>
+        <div class="legend-item"><span class="legend-dot legend-dot--blue"></span> Dispatched</div>
+        <div class="legend-item"><span class="legend-dot legend-dot--red"></span> Emergency</div>
       `;
-      mapPane.appendChild(legend);
-    }
-    layout.append(queue, mapPane);
-    container.appendChild(layout);
+      mapViewportEl.appendChild(legendCard);
 
-    if (!liveMap) liveMap = LiveMap(mapPane);
+      mapCardEl.append(mapHeader, mapViewportEl);
+      mapCol.appendChild(mapCardEl);
+
+      layoutEl.append(queueCol, mapCol);
+      container.appendChild(layoutEl);
+
+      liveMap = LiveMap(mapViewportEl);
+    }
+
+    // Update Priority Alert Banner
+    const urgentSos = openSos.find((s) => s.status !== 'resolved');
+    const urgentCritical = pendingIncidents.find((i) => i.priority === 'critical');
+
+    if (urgentSos) {
+      priorityAlertEl.style.display = 'flex';
+      const tanodLabel = urgentSos.fullName || `Tanod #${urgentSos.userId}`;
+      alertTextEl.textContent = `PRIORITY ALERT: SOS Emergency for ${tanodLabel} - Requires immediate dispatch`;
+      alertBtnEl.onclick = () => {
+        if (urgentSos.latitude != null && urgentSos.longitude != null) {
+          liveMap?.flyTo(Number(urgentSos.latitude), Number(urgentSos.longitude), 18);
+        } else {
+          liveMap?.fitAll();
+        }
+      };
+    } else if (urgentCritical) {
+      priorityAlertEl.style.display = 'flex';
+      const typeLabel = INCIDENT_TYPE_LABELS[urgentCritical.incidentType] || urgentCritical.incidentType;
+      const locLabel = urgentCritical.locationDescription || urgentCritical.location_description || 'Barangay Area';
+      alertTextEl.textContent = `PRIORITY ALERT: ${typeLabel} in ${locLabel} - Requires immediate dispatch`;
+      alertBtnEl.onclick = async () => {
+        await promptDispatchTanod({ incident: urgentCritical, incidentTypeLabel: typeLabel, eligibleTanods });
+        onQueueChanged();
+      };
+    } else {
+      priorityAlertEl.style.display = 'none';
+    }
+
+    // Update 3-KPI Card
+    kpiCardEl.innerHTML = `
+      <div class="dispatch-kpi-col">
+        <div class="dispatch-kpi-val dispatch-kpi-val--online">${eligibleTanods.length}</div>
+        <div class="dispatch-kpi-label">Online</div>
+      </div>
+      <div class="dispatch-kpi-col">
+        <div class="dispatch-kpi-val dispatch-kpi-val--dispatched">${activeDispatches.length}</div>
+        <div class="dispatch-kpi-label">Dispatched</div>
+      </div>
+      <div class="dispatch-kpi-col">
+        <div class="dispatch-kpi-val dispatch-kpi-val--pending">${pendingIncidents.length}</div>
+        <div class="dispatch-kpi-label">Pending</div>
+      </div>
+    `;
+
+    // Update LiveMap Pins
     liveMap.setMarkers(gpsItems.map((g) => ({
       userId: g.userId, fullName: g.fullName, latitude: g.latitude, longitude: g.longitude,
       ageSeconds: g.ageSeconds, isStale: g.isStale,
     })));
     liveMap.setSosMarkers(openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status })));
-    // Incident pins (2026-09-05 UX pass) — the popup's "Assign" button
-    // reuses the exact same `promptDispatchTanod` flow the table's own
-    // Assign button uses; onQueueChanged is the same refresh callback
-    // both queue tables already pass in.
     liveMap.setIncidentMarkers(
       pendingIncidents.map((incident) => ({
         incidentId: incident.incidentId,
@@ -345,208 +445,253 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         if (dispatched) onQueueChanged();
       },
     );
+
+    // Update Queue Cards view
+    updateQueueView();
   }
 
-  // Same contract as W4/W8: main.js calls this before rendering the next
-  // page, so the poll and the map never outlive the screen that owns them.
-  return { stop: stopPolling };
-}
+  function updateQueueView() {
+    if (!latestData || !chipsContainerEl || !queueListEl) return;
+    const { pendingIncidents, activeDispatches, eligibleTanods, gpsItems } = latestData;
 
-function renderPendingIncidentsTable(incidents, eligibleTanods, onChanged) {
-  // audit W3: the queue arrived newest-first, so a critical incident could
-  // sit below routine ones and was distinguishable only by a pill colour.
-  // Triage order is the queue's whole purpose: critical first, then by
-  // age within a priority (oldest first — the one waiting longest goes
-  // out next).
-  const triaged = [...incidents].sort((a, b) => {
-    const byPriority = (PRIORITY_RANK[b.priority] ?? -1) - (PRIORITY_RANK[a.priority] ?? -1);
-    if (byPriority !== 0) return byPriority;
-    return new Date(a.createdAt) - new Date(b.createdAt);
-  });
-  return DataTable({
-    columns: PENDING_COLUMNS,
-    rows: triaged,
-    rowKey: (row) => row.incidentId,
-    caption: 'Pending incidents',
-    renderCell: (incident, key) => {
-      switch (key) {
-        case 'id':
-          return incident.displayId || `#${incident.incidentId}`;
-        case 'type':
-          return INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
-        case 'priority': {
-          const span = document.createElement('span');
-          span.className = `status-pill ${PRIORITY_PILL_CLASS[incident.priority] || 'status-pill--neutral'}`;
-          span.textContent = PRIORITY_LABELS[incident.priority] || incident.priority;
-          return span;
-        }
-        case 'reported':
-          return new Date(incident.createdAt).toLocaleString();
-        case 'assign':
-          return renderAssignCell(incident, eligibleTanods, onChanged);
-        default:
-          return '';
-      }
-    },
-  });
-}
-
-/**
- * The Tanod picker used to live INSIDE this cell as a full-width <select>
- * of every eligible Tanod's full name, plus a button, in every row — about
- * 300px of intrinsic width per row inside a 420px column. That is what
- * forced the queue table into permanent horizontal scroll (audit Phase 1).
- * The row now carries one compact button and the choice happens in a
- * dialog, so the table fits its column at every desktop width.
- */
-function renderAssignCell(incident, eligibleTanods, onChanged) {
-  const wrap = document.createElement('span');
-  wrap.className = 'data-table__actions';
-
-  if (eligibleTanods.length === 0) {
-    const note = document.createElement('span');
-    note.className = 'note';
-    note.textContent = 'None on duty';
-    note.title = 'No on-duty Tanods are available to assign right now.';
-    wrap.appendChild(note);
-    return wrap;
-  }
-
-  const assignButton = document.createElement('button');
-  assignButton.className = 'primary dispatch-assign-button';
-  assignButton.type = 'button';
-  assignButton.textContent = 'Assign';
-  assignButton.addEventListener('click', async (event) => {
-    event.stopPropagation();
-
-    // Disabled only to block a double-click while the picker dialog is
-    // open/resolving — the dialog itself is what's actually blocking
-    // interaction, so the label stays "Assign" rather than claiming an
-    // "Assigning…" state that hasn't started until a Tanod is chosen.
-    assignButton.disabled = true;
-    const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
-    const dispatched = await promptDispatchTanod({ incident, incidentTypeLabel: typeLabel, eligibleTanods });
-    if (dispatched) {
-      onChanged();
-    } else {
-      assignButton.disabled = false;
+    // Render filter chips
+    chipsContainerEl.innerHTML = '';
+    for (const chip of CATEGORY_CHIPS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `queue-filter-chip${activeCategory === chip.key ? ' is-active' : ''}`;
+      btn.textContent = chip.label;
+      btn.addEventListener('click', () => {
+        activeCategory = chip.key;
+        updateQueueView();
+      });
+      chipsContainerEl.appendChild(btn);
     }
-  });
-  wrap.appendChild(assignButton);
-  return wrap;
-}
 
-function renderActiveDispatchesTable(dispatches, onChanged) {
-  return DataTable({
-    columns: ACTIVE_COLUMNS,
-    rows: dispatches,
-    rowKey: (row) => row.dispatchId,
-    caption: 'Active dispatches',
-    renderCell: (dispatch, key) => {
-      switch (key) {
-        case 'dispatch': {
-          const wrap = document.createElement('div');
-          const main = document.createElement('div');
-          main.textContent = `#${dispatch.dispatchId} · Incident #${dispatch.incidentId}`;
-          const sub = document.createElement('div');
-          sub.className = 'data-table__sub';
-          sub.textContent = `Since ${new Date(dispatch.dispatchedAt).toLocaleString()}`
-            + (dispatch.routeStatus === 'unavailable' ? ' · Route unavailable' : '');
-          wrap.append(main, sub);
-          return wrap;
-        }
-        case 'tanod':
-          // tanod_name (2026-09-05 UX pass) — DispatchController::index()
-          // now joins it; falls back to the bare id only if the join ever
-          // comes back empty (e.g. a deactivated/deleted Tanod row).
-          return dispatch.tanodName || `Tanod #${dispatch.tanodId}`;
-        case 'status': {
-          const span = document.createElement('span');
-          span.className = 'status-pill status-pill--info';
-          span.textContent = dispatch.status.replace('_', ' ');
-          return span;
-        }
-        case 'actions':
-          return renderCancelCell(dispatch, onChanged);
-        default:
-          return '';
-      }
-    },
-  });
-}
+    // Normalize and assemble combined queue items
+    const items = [
+      ...pendingIncidents.map((i) => ({ ...i, itemStatus: 'pending' })),
+      ...activeDispatches.map((d) => ({ ...d, itemStatus: 'dispatched' })),
+    ];
 
-function renderCancelCell(dispatch, onChanged) {
-  const wrap = document.createElement('span');
-  wrap.className = 'data-table__actions';
-  const cancelButton = document.createElement('button');
-  cancelButton.className = 'danger';
-  cancelButton.textContent = 'Cancel';
-  cancelButton.addEventListener('click', async (event) => {
-    event.stopPropagation();
-    // Same guarantee window.confirm() gave (an explicit yes/no awaited
-    // before proceeding), via the app's own ConfirmDialog component (§3.2).
-    const confirmed = await confirmDialog({
-      title: `Cancel dispatch #${dispatch.dispatchId}?`,
-      description: 'The incident will return to the pending queue.',
-      confirmLabel: 'Cancel dispatch',
-      cancelLabel: 'Keep it',
-      danger: true,
+    // Filter by Category
+    const categoryFiltered = items.filter((item) => {
+      if (activeCategory === 'all') return true;
+      if (activeCategory === 'sos') return item.priority === 'critical' || item.incidentType === 'sos';
+      if (activeCategory === 'fire') return item.incidentType === 'fire';
+      if (activeCategory === 'medical') return item.incidentType === 'medical_emergency';
+      if (activeCategory === 'disturbance') return item.incidentType === 'disturbance';
+      return true;
     });
-    if (!confirmed) return;
-    cancelButton.disabled = true;
-    cancelButton.textContent = 'Cancelling…';
-    try {
-      await cancelDispatch(dispatch.dispatchId);
-      showToast(`Dispatch #${dispatch.dispatchId} cancelled`, { variant: 'info' });
-      onChanged();
-    } catch (err) {
-      cancelButton.disabled = false;
-      cancelButton.textContent = 'Cancel';
-      const message = err instanceof ApiClientError ? err.message : 'Could not cancel the dispatch.';
-      showToast(message, { variant: 'error' });
+
+    // Filter by Search Query
+    const searchFiltered = categoryFiltered.filter((item) => {
+      if (!searchQuery) return true;
+      const idStr = String(item.displayId || item.incidentId || item.dispatchId || '').toLowerCase();
+      const typeStr = (INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType || '').toLowerCase();
+      const locStr = (item.locationDescription || item.location_description || '').toLowerCase();
+      const tanodStr = (item.tanodName || '').toLowerCase();
+      return idStr.includes(searchQuery) || typeStr.includes(searchQuery) || locStr.includes(searchQuery) || tanodStr.includes(searchQuery);
+    });
+
+    // Sort: Pending first (critical > high > normal), then Dispatched
+    const sorted = searchFiltered.sort((a, b) => {
+      if (a.itemStatus === 'pending' && b.itemStatus !== 'pending') return -1;
+      if (a.itemStatus !== 'pending' && b.itemStatus === 'pending') return 1;
+      if (a.itemStatus === 'pending' && b.itemStatus === 'pending') {
+        const pRank = { critical: 2, high: 1, normal: 0 };
+        const prDiff = (pRank[b.priority] || 0) - (pRank[a.priority] || 0);
+        if (prDiff !== 0) return prDiff;
+        return new Date(a.createdAt) - new Date(b.createdAt);
+      }
+      return new Date(b.dispatchedAt) - new Date(a.dispatchedAt);
+    });
+
+    // Render cards list
+    queueListEl.innerHTML = '';
+    if (sorted.length === 0) {
+      const isFiltered = searchQuery || activeCategory !== 'all';
+      const emptyCard = document.createElement('div');
+      emptyCard.className = 'dispatch-empty-card';
+      emptyCard.innerHTML = `
+        <div class="dispatch-empty-card__icon">${icons.checkCircle(24)}</div>
+        <div class="dispatch-empty-card__title">${isFiltered ? 'No matching emergency calls' : 'All caught up!'}</div>
+        <div class="dispatch-empty-card__desc">${isFiltered ? 'No incidents match the active category or search query.' : 'There are no active or pending incidents in the dispatch queue.'}</div>
+      `;
+      queueListEl.appendChild(emptyCard);
+      return;
     }
-  });
-  wrap.appendChild(cancelButton);
-  return wrap;
-}
 
-function emptyNote(text) {
-  const note = document.createElement('p');
-  note.className = 'note';
-  note.textContent = text;
-  return note;
-}
+    for (const item of sorted) {
+      const card = document.createElement('div');
+      card.className = `queue-incident-card${item.priority === 'critical' ? ' is-critical' : ''}`;
 
-function renderLoading(container) {
-  container.innerHTML = '';
-  const layout = document.createElement('div');
-  layout.className = 'dispatch-layout';
-  layout.setAttribute('role', 'status');
-  layout.setAttribute('aria-label', 'Loading dispatch center');
-  const queue = document.createElement('div');
-  queue.className = 'dispatch-queue';
-  for (let i = 0; i < 3; i++) {
-    const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton skeleton--row';
-    queue.appendChild(skeleton);
+      // Card Header: • INC-XXX + Status Badge
+      const cardHeader = document.createElement('div');
+      cardHeader.className = 'queue-incident-card__header';
+
+      const idGroup = document.createElement('div');
+      idGroup.className = 'queue-incident-card__id';
+      const bullet = document.createElement('span');
+      bullet.className = `queue-bullet ${getIncidentColorBullet(item.incidentType, item.priority, item.itemStatus)}`;
+      const idText = document.createElement('span');
+      idText.textContent = formatIncidentCode(item);
+      idGroup.append(bullet, idText);
+
+      const badge = document.createElement('span');
+      badge.className = `queue-badge ${item.itemStatus === 'pending' ? 'queue-badge--pending' : 'queue-badge--dispatched'}`;
+      badge.textContent = item.itemStatus === 'pending' ? 'PENDING' : 'DISPATCHED';
+
+      cardHeader.append(idGroup, badge);
+
+      // Card Title: Warning Icon + Emergency Title
+      const titleRow = document.createElement('div');
+      titleRow.className = 'queue-incident-card__title';
+      titleRow.innerHTML = `${getIncidentIcon(item.incidentType, item.priority)} <span>${escapeHtml(INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType || 'Emergency')}</span>`;
+
+      // Location
+      const locRow = document.createElement('div');
+      locRow.className = 'queue-incident-card__meta';
+      const locText = item.locationDescription || item.location_description || (item.latitude && item.longitude ? `${Number(item.latitude).toFixed(4)}, ${Number(item.longitude).toFixed(4)}` : 'Location pinned on map');
+      locRow.innerHTML = `${icons.mapPin(13)} <span>${escapeHtml(locText)}</span>`;
+
+      // Elapsed Time
+      const timeRow = document.createElement('div');
+      timeRow.className = 'queue-incident-card__time';
+      const timestamp = item.itemStatus === 'pending' ? item.createdAt : item.dispatchedAt;
+      timeRow.innerHTML = `${icons.clock(13)} <span>${formatElapsed(timestamp)}</span>`;
+
+      // Card Action
+      if (item.itemStatus === 'pending') {
+        const dispatchBtn = document.createElement('button');
+        dispatchBtn.className = 'queue-incident-card__dispatch-btn';
+        dispatchBtn.type = 'button';
+        dispatchBtn.textContent = 'Dispatch Tanod';
+        dispatchBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          dispatchBtn.disabled = true;
+          const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
+          const dispatched = await promptDispatchTanod({ incident: item, incidentTypeLabel: typeLabel, eligibleTanods });
+          if (dispatched) {
+            onQueueChanged();
+          } else {
+            dispatchBtn.disabled = false;
+          }
+        });
+        card.append(cardHeader, titleRow, locRow, timeRow, dispatchBtn);
+      } else {
+        // Dispatched item
+        const dispatchedInfo = document.createElement('div');
+        dispatchedInfo.className = 'queue-incident-card__dispatched-info';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'queue-incident-card__dispatched-name';
+        nameSpan.textContent = `Assigned: ${item.tanodName || `Tanod #${item.tanodId}`}`;
+
+        const actionsGroup = document.createElement('div');
+        actionsGroup.style.display = 'flex';
+        actionsGroup.style.alignItems = 'center';
+        actionsGroup.style.gap = '0.375rem';
+
+        const tanodGps = gpsItems.find((g) => g.userId === item.tanodId);
+        if (tanodGps && tanodGps.latitude != null && tanodGps.longitude != null) {
+          const locateBtn = document.createElement('button');
+          locateBtn.type = 'button';
+          locateBtn.className = 'queue-incident-card__locate-btn';
+          locateBtn.innerHTML = `${icons.mapPin(11)} Locate`;
+          locateBtn.title = 'Focus on Tanod on live map';
+          locateBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 17);
+          });
+          actionsGroup.appendChild(locateBtn);
+        }
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'queue-incident-card__cancel-btn';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.title = 'Cancel this dispatch';
+        cancelBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const confirmed = await confirmDialog({
+            title: `Cancel dispatch #${item.dispatchId}?`,
+            description: 'The incident will return to the pending queue.',
+            confirmLabel: 'Cancel dispatch',
+            cancelLabel: 'Keep it',
+            danger: true,
+          });
+          if (!confirmed) return;
+          try {
+            await cancelDispatch(item.dispatchId);
+            showToast(`Dispatch #${item.dispatchId} cancelled`, { variant: 'info' });
+            onQueueChanged();
+          } catch (err) {
+            showToast(err instanceof ApiClientError ? err.message : 'Could not cancel dispatch.', { variant: 'error' });
+          }
+        });
+        actionsGroup.appendChild(cancelBtn);
+
+        dispatchedInfo.append(nameSpan, actionsGroup);
+        card.append(cardHeader, titleRow, locRow, timeRow, dispatchedInfo);
+      }
+
+      // Card Click: Focus on Map
+      card.addEventListener('click', () => {
+        if (item.itemStatus === 'pending') {
+          if (item.latitude != null && item.longitude != null) {
+            const found = liveMap?.highlightIncident(item.incidentId);
+            if (!found) {
+              liveMap?.flyTo(Number(item.latitude), Number(item.longitude), 17);
+            }
+          }
+        } else {
+          const tanodGps = gpsItems.find((g) => g.userId === item.tanodId);
+          if (tanodGps && tanodGps.latitude != null && tanodGps.longitude != null) {
+            liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 17);
+          }
+        }
+      });
+
+      queueListEl.appendChild(card);
+    }
   }
-  const mapSkeleton = document.createElement('div');
-  mapSkeleton.className = 'skeleton dispatch-map-pane';
-  layout.append(queue, mapSkeleton);
-  container.appendChild(layout);
-}
 
-function renderError(container, message, onRetry) {
-  container.innerHTML = '';
-  const block = document.createElement('div');
-  block.className = 'card state-block state-block--error';
-  block.setAttribute('role', 'alert');
-  const text = document.createElement('p');
-  text.textContent = message;
-  const retryButton = document.createElement('button');
-  retryButton.className = 'primary';
-  retryButton.textContent = 'Retry';
-  retryButton.addEventListener('click', onRetry);
-  block.append(text, retryButton);
-  container.appendChild(block);
+  function renderLoading(container) {
+    container.innerHTML = '';
+    const layout = document.createElement('div');
+    layout.className = 'dispatch-layout';
+    layout.setAttribute('role', 'status');
+    layout.setAttribute('aria-label', 'Loading dispatch center');
+    const queue = document.createElement('div');
+    queue.className = 'dispatch-queue-column';
+    for (let i = 0; i < 3; i++) {
+      const skeleton = document.createElement('div');
+      skeleton.className = 'skeleton skeleton--row';
+      skeleton.style.height = '7rem';
+      skeleton.style.borderRadius = '12px';
+      queue.appendChild(skeleton);
+    }
+    const mapSkeleton = document.createElement('div');
+    mapSkeleton.className = 'skeleton dispatch-map-container';
+    layout.append(queue, mapSkeleton);
+    container.appendChild(layout);
+  }
+
+  function renderError(container, message, onRetry) {
+    container.innerHTML = '';
+    const block = document.createElement('div');
+    block.className = 'card state-block state-block--error';
+    block.setAttribute('role', 'alert');
+    const text = document.createElement('p');
+    text.textContent = message;
+    const retryButton = document.createElement('button');
+    retryButton.className = 'primary';
+    retryButton.textContent = 'Retry';
+    retryButton.addEventListener('click', onRetry);
+    block.append(text, retryButton);
+    container.appendChild(block);
+  }
+
+  return { stop: stopPolling };
 }

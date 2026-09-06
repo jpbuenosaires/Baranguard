@@ -31,42 +31,54 @@
 .live-map__legend-dot { width: 0.75rem; height: 0.75rem; border-radius: 50%; display: inline-block; }
 
 .live-map__marker {
-  width: 1rem;
-  height: 1rem;
+  width: 1.875rem;
+  height: 1.875rem;
   border-radius: 50%;
-  border: 3px solid var(--color-white);
-  box-shadow: var(--shadow-elevated);
+  border: 2.5px solid var(--color-white);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
   cursor: pointer;
-  transition: transform .1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-white);
+  transition: transform .15s ease, box-shadow .15s ease;
 }
-.live-map__marker:hover { transform: scale(1.15); }
-/* "GIS map pins... use animate-pulse to signal live positions" — applied
-   only to a genuinely fresh marker, deliberately NOT to a stale one:
-   §9 W4 requires "a stale location is not visually presented as live",
-   which takes priority over the generic pulse-everything styling rule —
-   pulsing a stale marker would be exactly the thing that rule forbids. */
-/* -solid on all three marker fills: each is a coloured disc inside a white
-   ring, so the fill is judged against WHITE and must not lighten in dark
-   mode (audit A1 — the live marker sat at 1.74:1 against its own ring). */
-.live-map__marker--tanod { background: var(--color-success-solid); animation: marker-pulse 2s ease-in-out infinite; }
-.live-map__marker--tanod.live-map__marker--stale { background: var(--color-text-secondary); animation: none; }
+.live-map__marker:hover {
+  transform: scale(1.18);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+}
+
+.live-map__marker--tanod {
+  background: var(--color-success-solid, #15803d);
+  animation: marker-pulse 2s ease-in-out infinite;
+}
+.live-map__marker--available {
+  background: #10b981;
+}
+.live-map__marker--dispatched {
+  background: #2563eb;
+}
+.live-map__marker--tanod.live-map__marker--stale {
+  background: var(--color-text-secondary, #64748b);
+  animation: none;
+}
 @keyframes marker-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.88; transform: scale(1.05); }
 }
 @media (prefers-reduced-motion: reduce) {
   .live-map__marker--tanod { animation: none; }
 }
 .live-map__marker--sos {
-  width: 1.375rem;
-  height: 1.375rem;
-  background: var(--color-critical-solid);
-  border-width: 4px;
+  width: 2.125rem;
+  height: 2.125rem;
+  background: var(--color-critical-solid, #dc2626);
+  border-width: 3px;
   animation: sos-pulse 1.4s ease-in-out infinite;
 }
 @keyframes sos-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-critical) 45%, transparent); }
-  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-critical) 0%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-critical) 55%, transparent); }
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-critical) 0%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
   .live-map__marker--sos { animation: none; box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-critical) 25%, transparent); }

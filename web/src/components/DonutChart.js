@@ -49,32 +49,38 @@ export function DonutChart({ rows }) {
     stops.push(`${row.color} ${startFrac * 100}% ${endFrac * 100}%`);
     segments.push({ row, startFrac, endFrac });
   }
-  ring.style.background = `conic-gradient(${stops.join(', ')})`;
+  const defaultGradient = `conic-gradient(${stops.join(', ')})`;
+  ring.style.background = defaultGradient;
+
+  // Highlights a specific category's segment while softly muting the rest
+  const highlightSegment = (targetRow) => {
+    if (!targetRow) {
+      ring.style.background = defaultGradient;
+      return;
+    }
+    const highlightedStops = segments.map((seg) => {
+      const isTarget = seg.row.key === targetRow.key;
+      const color = isTarget ? seg.row.color : `color-mix(in srgb, ${seg.row.color} 30%, transparent)`;
+      return `${color} ${seg.startFrac * 100}% ${seg.endFrac * 100}%`;
+    });
+    ring.style.background = `conic-gradient(${highlightedStops.join(', ')})`;
+  };
 
   const holeTotal = document.createElement('span');
   holeTotal.className = 'donut-chart__total';
   holeTotal.textContent = String(total);
   const holeLabel = document.createElement('span');
   holeLabel.className = 'donut-chart__total-label';
-  holeLabel.textContent = 'total';
+  holeLabel.textContent = 'Total';
   const hole = document.createElement('div');
   hole.className = 'donut-chart__hole';
   hole.append(holeTotal, holeLabel);
   ring.appendChild(hole);
-  // Restores the total view — shared by every legend item's mouseleave
-  // and by the ring's own mouseleave (covers a fast mouse pass that skips
-  // a discrete legend-item boundary).
-  const showTotal = () => {
-    ring.classList.remove('has-highlight');
-    holeTotal.textContent = String(total);
-    holeLabel.textContent = 'total';
-  };
-  ring.addEventListener('mouseleave', showTotal);
 
   // Single floating tooltip, moved/relabelled per hovered segment rather
   // than one per row — the ring itself has no per-segment DOM (one
   // conic-gradient), so its own mousemove handler below needs a tooltip it
-  // can reposition freely, unlike the legend items' CSS-anchored ones.
+  // can reposition freely.
   const ringTip = document.createElement('div');
   ringTip.className = 'donut-chart__ring-tip';
   ringTip.hidden = true;
@@ -86,35 +92,25 @@ export function DonutChart({ rows }) {
   for (const row of rows) {
     if (row.count === 0) continue;
     const pct = Math.round((row.count / total) * 100);
-    // A real <button>, not a <div> — the tooltip panel below is only
-    // reachable by keyboard (Tab + :focus-within) if the trigger is
-    // focusable, same reasoning as Tooltip.js's InfoTip trigger.
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'donut-chart__legend-item';
-    // Label only, per the 2026-09-06 UX pass — the percentage and raw
-    // count moved into the hover/focus tooltip panel (below) so a quiet
-    // week's small numbers don't visually compete with the category name,
-    // and so this list can run two-up without each row needing room for a
-    // figure as well as a label.
+    item.setAttribute('aria-label', `${row.label}: ${row.count} (${pct}%)`);
+    item.title = `${row.label}: ${pct}% (${row.count} of ${total})`;
     item.innerHTML = `<span class="donut-chart__swatch" style="background:${row.color}"></span>`
       + `<span class="donut-chart__legend-label">${row.label}</span>`
-      + `<span class="donut-chart__legend-tip" role="tooltip">${pct}% <span class="donut-chart__legend-tip-count">(${row.count} of ${total})</span></span>`;
-    // §4.5: hovering/focusing a legend item dims the rest of the ring (a
-    // filter on the whole conic-gradient — slicing out just the other
-    // segments would need per-segment DOM elements this component
-    // doesn't have) and swaps the center hole to that category's own
-    // count/%. Keyboard focus gets the identical behavior via
-    // focus/blur, not just mouseenter/mouseleave.
+      + `<span class="donut-chart__legend-value">`
+      + `<span class="donut-chart__legend-count">${row.count}</span>`
+      + `<span class="donut-chart__legend-pct">${pct}%</span>`
+      + `</span>`;
+
     const activate = () => {
-      ring.classList.add('has-highlight');
-      holeTotal.textContent = String(row.count);
-      holeLabel.textContent = `${row.label} (${pct}%)`;
       item.classList.add('is-active');
+      highlightSegment(row);
     };
     const deactivate = () => {
       item.classList.remove('is-active');
-      showTotal();
+      highlightSegment(null);
     };
     item.addEventListener('mouseenter', activate);
     item.addEventListener('mouseleave', deactivate);
@@ -124,13 +120,10 @@ export function DonutChart({ rows }) {
     legendItemByKey.set(row.key, item);
   }
 
-  // Hovering the ring's colored arc itself (not just its legend row) shows
-  // the same percentage/count, following the cursor — added 2026-09-06 so
-  // "hover the graph" works on the visual the user is actually pointing at,
-  // not only the list beside it. Angle math: conic-gradient's 0% starts at
-  // 12 o'clock and winds clockwise, so `atan2(dx, -dy)` (not the usual
-  // `atan2(dy, dx)`) gives that same 0..2π convention directly.
-  const HOLE_RADIUS_RATIO = 0.68; // matches .donut-chart__hole's CSS inset, both breakpoints
+  // Hovering the ring's colored arc shows the category name, percentage,
+  // and count following the cursor, highlights the matching slice, and
+  // indicates the row in the legend.
+  const HOLE_RADIUS_RATIO = 0.68; // matches .donut-chart__hole's CSS inset
   ring.addEventListener('mousemove', (event) => {
     const rect = ring.getBoundingClientRect();
     const radius = rect.width / 2;
@@ -139,12 +132,16 @@ export function DonutChart({ rows }) {
     const distFrac = Math.sqrt(dx * dx + dy * dy) / radius;
     if (distFrac < HOLE_RADIUS_RATIO || distFrac > 1) {
       ringTip.hidden = true;
+      highlightSegment(null);
+      for (const el of legendItemByKey.values()) el.classList.remove('is-active');
       return;
     }
     const angleFrac = (Math.atan2(dx, -dy) / (2 * Math.PI) + 1) % 1;
     const hit = segments.find((s) => angleFrac >= s.startFrac && angleFrac < s.endFrac);
     if (!hit) {
       ringTip.hidden = true;
+      highlightSegment(null);
+      for (const el of legendItemByKey.values()) el.classList.remove('is-active');
       return;
     }
     const pct = Math.round((hit.row.count / total) * 100);
@@ -153,12 +150,11 @@ export function DonutChart({ rows }) {
     ringTip.style.top = `${event.clientY - rect.top}px`;
     ringTip.hidden = false;
     for (const [key, el] of legendItemByKey) el.classList.toggle('is-active', key === hit.row.key);
-    ring.classList.add('has-highlight');
-    holeTotal.textContent = String(hit.row.count);
-    holeLabel.textContent = `${hit.row.label} (${pct}%)`;
+    highlightSegment(hit.row);
   });
   ring.addEventListener('mouseleave', () => {
     ringTip.hidden = true;
+    highlightSegment(null);
     for (const el of legendItemByKey.values()) el.classList.remove('is-active');
   });
 

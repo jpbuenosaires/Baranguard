@@ -29,7 +29,7 @@
 
 const VIEW_W = 720;
 const VIEW_H = 240;
-const PAD = { top: 14, right: 14, bottom: 30, left: 38 };
+const PAD = { top: 14, right: 14, bottom: 36, left: 42 };
 
 function readToken(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -89,6 +89,8 @@ export function LineChart({ points, series, caption }) {
 
   // --- horizontal gridlines + y ticks -------------------------------------
   const TICKS = 4;
+  const yAxis = document.createElement('div');
+  yAxis.className = 'line-chart__y-axis';
   for (let t = 0; t <= TICKS; t += 1) {
     const value = (yMax / TICKS) * t;
     const yy = y(value);
@@ -99,38 +101,39 @@ export function LineChart({ points, series, caption }) {
     line.setAttribute('y2', String(yy));
     line.setAttribute('stroke', gridColor);
     line.setAttribute('stroke-width', '1');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
     if (t > 0) line.setAttribute('stroke-dasharray', '3 4');
     svg.appendChild(line);
 
-    const text = document.createElementNS(svgNS, 'text');
-    text.setAttribute('x', String(PAD.left - 8));
-    text.setAttribute('y', String(yy + 4));
-    text.setAttribute('text-anchor', 'end');
-    text.setAttribute('font-size', '11');
-    text.setAttribute('fill', axisColor);
-    text.textContent = String(Math.round(value));
-    svg.appendChild(text);
+    const yLabel = document.createElement('span');
+    yLabel.className = 'line-chart__y-label';
+    yLabel.style.top = `${(yy / VIEW_H) * 100}%`;
+    yLabel.textContent = String(Math.round(value));
+    yAxis.appendChild(yLabel);
   }
 
-  // --- x tick labels ------------------------------------------------------
-  // Every label on a 30-day range would collide, so at most 6 are drawn —
-  // always including the first and last, which are the two a reader
-  // actually uses to orient the range.
+  // --- x tick labels (rendered in HTML to avoid non-uniform SVG stretching) -
   const maxLabels = 6;
   const labelStep = Math.max(1, Math.ceil(points.length / maxLabels));
+  const xAxis = document.createElement('div');
+  xAxis.className = 'line-chart__x-axis';
   points.forEach((p, i) => {
     const isEdge = i === 0 || i === points.length - 1;
     if (!isEdge && i % labelStep !== 0) return;
     // Skip a regular tick that would sit on top of the final label.
     if (!isEdge && points.length - 1 - i < labelStep / 2) return;
-    const text = document.createElementNS(svgNS, 'text');
-    text.setAttribute('x', String(x(i)));
-    text.setAttribute('y', String(VIEW_H - PAD.bottom + 18));
-    text.setAttribute('text-anchor', i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle');
-    text.setAttribute('font-size', '11');
-    text.setAttribute('fill', axisColor);
-    text.textContent = p.label;
-    svg.appendChild(text);
+    const xLabel = document.createElement('span');
+    xLabel.className = 'line-chart__x-label';
+    xLabel.style.left = `${(x(i) / VIEW_W) * 100}%`;
+    if (i === 0) {
+      xLabel.style.transform = 'translateX(0)';
+    } else if (i === points.length - 1) {
+      xLabel.style.transform = 'translateX(-100%)';
+    } else {
+      xLabel.style.transform = 'translateX(-50%)';
+    }
+    xLabel.textContent = p.label;
+    xAxis.appendChild(xLabel);
   });
 
   // --- series -------------------------------------------------------------
@@ -197,19 +200,15 @@ export function LineChart({ points, series, caption }) {
   svg.appendChild(crosshair);
 
   const hoverDots = series.map((s, si) => {
-    const dot = document.createElementNS(svgNS, 'circle');
-    dot.setAttribute('r', '4.5');
-    dot.setAttribute('fill', colors[si]);
-    dot.setAttribute('stroke', 'var(--color-surface)');
-    dot.setAttribute('stroke-width', '2');
-    dot.style.opacity = '0';
-    svg.appendChild(dot);
+    const dot = document.createElement('div');
+    dot.className = 'line-chart__hover-dot';
+    dot.style.background = colors[si];
     return dot;
   });
 
   const plot = document.createElement('div');
   plot.className = 'line-chart__plot';
-  plot.appendChild(svg);
+  plot.append(svg, yAxis, xAxis, ...hoverDots);
 
   const tooltip = document.createElement('div');
   tooltip.className = 'line-chart__tooltip';
@@ -234,6 +233,7 @@ export function LineChart({ points, series, caption }) {
     const svgRect = svg.getBoundingClientRect();
     if (svgRect.width === 0) return;
     const scale = VIEW_W / svgRect.width;
+    const scaleY = VIEW_H / svgRect.height;
     const localX = (event.clientX - svgRect.left) * scale;
     const i = Math.min(points.length - 1, Math.max(0, Math.round((localX - PAD.left) / (stepX || 1))));
 
@@ -241,11 +241,13 @@ export function LineChart({ points, series, caption }) {
     crosshair.setAttribute('x2', String(x(i)));
     crosshair.style.opacity = '1';
 
+    const pxX = x(i) / scale;
     let topY = Infinity;
     hoverDots.forEach((dot, si) => {
       const [cx, cy] = seriesCoords[si][i];
-      dot.setAttribute('cx', String(cx));
-      dot.setAttribute('cy', String(cy));
+      const pxY = cy / scaleY;
+      dot.style.left = `${pxX}px`;
+      dot.style.top = `${pxY}px`;
       dot.style.opacity = '1';
       topY = Math.min(topY, cy);
     });
@@ -263,11 +265,8 @@ export function LineChart({ points, series, caption }) {
     // Position in the plot's own pixel space (not SVG viewBox units) — the
     // reverse of the scale applied above — then clamp so the panel never
     // hangs off either edge of the card.
-    const pxX = x(i) / scale;
-    const scaleY = VIEW_H / svgRect.height;
-    const pxY = topY / scaleY;
     tooltip.style.left = `${pxX}px`;
-    tooltip.style.top = `${pxY}px`;
+    tooltip.style.top = `${topY / scaleY}px`;
     const tipRect = tooltip.getBoundingClientRect();
     const plotRect = plot.getBoundingClientRect();
     if (tipRect.left < plotRect.left) tooltip.style.left = `${pxX + (plotRect.left - tipRect.left)}px`;

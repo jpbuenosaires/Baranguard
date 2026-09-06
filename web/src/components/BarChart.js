@@ -24,7 +24,7 @@
 
 const VIEW_W = 720;
 const VIEW_H = 220;
-const PAD = { top: 14, right: 10, bottom: 26, left: 34 };
+const PAD = { top: 14, right: 10, bottom: 32, left: 34 };
 
 function readToken(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -72,6 +72,8 @@ export function BarChart({ bars, colorVar = '--chart-line-1', caption }) {
   svg.setAttribute('aria-hidden', 'true');
 
   const TICKS = 4;
+  const yAxis = document.createElement('div');
+  yAxis.className = 'bar-chart__y-axis';
   for (let t = 0; t <= TICKS; t += 1) {
     const value = (yMax / TICKS) * t;
     const yy = y(value);
@@ -82,22 +84,22 @@ export function BarChart({ bars, colorVar = '--chart-line-1', caption }) {
     line.setAttribute('y2', String(yy));
     line.setAttribute('stroke', gridColor);
     line.setAttribute('stroke-width', '1');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
     if (t > 0) line.setAttribute('stroke-dasharray', '3 4');
     svg.appendChild(line);
 
-    const text = document.createElementNS(svgNS, 'text');
-    text.setAttribute('x', String(PAD.left - 8));
-    text.setAttribute('y', String(yy + 4));
-    text.setAttribute('text-anchor', 'end');
-    text.setAttribute('font-size', '11');
-    text.setAttribute('fill', axisColor);
-    text.textContent = String(Math.round(value));
-    svg.appendChild(text);
+    const yLabel = document.createElement('span');
+    yLabel.className = 'bar-chart__y-label';
+    yLabel.style.top = `${(yy / VIEW_H) * 100}%`;
+    yLabel.textContent = String(Math.round(value));
+    yAxis.appendChild(yLabel);
   }
 
   // At most 8 x-axis labels — 24 hourly bars all labelled would collide.
   const maxLabels = 8;
   const labelStep = Math.max(1, Math.ceil(bars.length / maxLabels));
+  const xAxis = document.createElement('div');
+  xAxis.className = 'bar-chart__x-axis';
 
   bars.forEach((bar, i) => {
     const cx = PAD.left + i * slot + slot / 2;
@@ -115,20 +117,17 @@ export function BarChart({ bars, colorVar = '--chart-line-1', caption }) {
     svg.appendChild(rect);
 
     if (i % labelStep === 0 || i === bars.length - 1) {
-      const text = document.createElementNS(svgNS, 'text');
-      text.setAttribute('x', String(cx));
-      text.setAttribute('y', String(VIEW_H - PAD.bottom + 16));
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('font-size', '10');
-      text.setAttribute('fill', axisColor);
-      text.textContent = bar.label;
-      svg.appendChild(text);
+      const xLabel = document.createElement('span');
+      xLabel.className = 'bar-chart__x-label';
+      xLabel.style.left = `${(cx / VIEW_W) * 100}%`;
+      xLabel.textContent = bar.label;
+      xAxis.appendChild(xLabel);
     }
   });
 
   const plot = document.createElement('div');
   plot.className = 'bar-chart__plot';
-  plot.appendChild(svg);
+  plot.append(svg, yAxis, xAxis);
   host.appendChild(plot);
 
   // `.sr-only` goes on a wrapper div, not the `<table>` — see LineChart.js's
