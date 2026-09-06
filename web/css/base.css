@@ -156,6 +156,14 @@ html { font-size: 100%; }
   --color-warning-text: #78350F;
   /* Selected/hover row tint — distinct from --color-bg. */
   --color-row-active-bg: #EFF6FF;
+  /* 2026-09-06 UI/UX audit: both were referenced but never defined.
+     Aliased onto tokens that already carry a correct dark remap rather
+     than introducing two new colours, which would need a fresh contrast
+     audit this pass cannot run. --color-surface-hover backs
+     .gis-floating-activity__item:hover; --color-primary-strong backs
+     .card-header__icon--action:focus-visible. */
+  --color-surface-hover: var(--color-row-active-bg);
+  --color-primary-strong: var(--color-primary-hover);
   --color-border-blue: #BFDBFE;
   --color-divider: #F1F5F9;
 
@@ -199,6 +207,19 @@ html { font-size: 100%; }
   --font-size-label: 0.75rem; --font-size-sm: 0.875rem; --font-size-md: 1rem;
   --font-size-lg: 1.125rem;   --font-size-xl: 1.25rem;  --font-size-2xl: 1.5rem;
   --font-size-3xl: 1.875rem;
+  /* Alias of --font-size-label. 2026-09-06 UI/UX audit: 50 declarations
+     across 8 page stylesheets already referenced --font-size-xs; it had
+     never been defined, so 43 fell back to a literal and 7 (which carried
+     no fallback) dropped entirely and rendered at the inherited 16px.
+     Defined here rather than rewritten at every call site — "xs" is the
+     name the rest of the scale implies, and --font-size-label predates it. */
+  --font-size-xs: var(--font-size-label);
+
+  /* Monospace stack for IDs, hashes, coordinates and JSON payloads —
+     referenced by audit-log, blotter-detail/list, map-packages and
+     service-health, none of which had a definition to resolve against. */
+  --font-mono: "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Consolas,
+               "Liberation Mono", Menlo, monospace;
 
   /* radius: sm 8 / md 10 / lg 12 / xl 16 against the 16px reference. */
   --radius-sm: 0.5rem; --radius-md: 0.625rem; --radius-lg: 0.75rem; --radius-xl: 1rem;
@@ -206,6 +227,12 @@ html { font-size: 100%; }
   --shadow-card: 0 1px 2px rgba(15,23,42,.05);
   --shadow-elevated: 0 10px 15px -3px rgba(15,23,42,.10), 0 4px 6px -4px rgba(15,23,42,.10);
   --shadow-floating: 0 20px 25px -5px rgba(15,23,42,.12), 0 8px 10px -6px rgba(15,23,42,.10);
+  /* Aliases the audit found in use but undefined. --shadow-modal was
+     silently producing NO shadow on .personnel-modal and .sms-modal;
+     --shadow-sm the same on .insight-tile:hover. Both map onto the
+     existing scale rather than introducing new shadow values. */
+  --shadow-sm: var(--shadow-card);
+  --shadow-modal: var(--shadow-floating);
 
   /* ─── PREMIUM POLISH LAYER (UI/UX improvement pass) ─────────────────── */
   /* Glassmorphism pass (2026-09-05): these three tokens existed before but
@@ -568,6 +595,17 @@ select {
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   padding-right: 2.5rem;
+}
+/* 2026-09-06 UI/UX audit: the chevron above is a data-URI, so its stroke
+   is a literal hex that no token can reach — and there was no dark-mode
+   counterpart, leaving a #64748B arrow on the #1E293B dark surface for
+   every stock select in the app. Three page stylesheets had each patched
+   their OWN selects locally; this covers the rest (Analytics and Dashboard
+   date ranges, Settings, Citizen Reports status, Incident filter, Map
+   Packages, Scheduler, Swap Requests, AI Review) in one place. Colour is
+   --dark-text-secondary (#94A3B8) expressed as %23-escaped hex. */
+[data-theme="dark"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 input:hover:not(:focus):not(:disabled),
 select:hover:not(:focus):not(:disabled),
