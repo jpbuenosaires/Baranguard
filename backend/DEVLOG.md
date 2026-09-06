@@ -8770,3 +8770,196 @@ everywhere after the fix). **No browser pass** — a color-token change is
 exactly the kind of thing that most needs visual confirmation and least
 got it this round; worth opening a few of these screens in both themes
 before trusting the result fully.
+
+---
+
+## 2026-09-06 — Full UI/UX consistency audit (user-requested), 5 commits
+
+**Deliberate multi-box session**, logged as an exception to SPRINTS.md's
+"one Today's cut item" rule: the user explicitly asked for a full audit
+("run a full audit ... everything in ui and ux") and then for all five
+proposed tiers to be applied. Not Sprint 8 work.
+
+The prompt named three symptoms: UI entities used incohesively (the
+"7 days / 30 days / 90 days / custom range" dropdown given as the
+example), inconsistent margins/spacing ("some feels it is more spacious
+than the others"), and text alignment. The audit found all three, plus a
+set of runtime bugs the inconsistency was hiding.
+
+Commits: `4739b58` (P0) · `6477c1a` (DateRangePicker) · `45db370`
+(control heights) · `13ee0fa` (spacing) · `0312023` (component
+consolidation + contrast).
+
+### What was actually broken, not merely inconsistent
+
+1. **28 page-level dark-mode rules never fired for a user on system
+   dark.** `index.html` only stamped `data-theme` on an *explicit* stored
+   choice. `base.css` copes (its dark block is
+   `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) }`)
+   but every page stylesheet writes `[data-theme="dark"] .x` with **zero**
+   `prefers-color-scheme` blocks outside base.css. A first-time visitor on
+   an OS-dark machine got dark tokens with light component overrides still
+   applied — all six `sms-tag-pill` colours, blotter table headers, the
+   GIS panels floating over the dark map. Fixed at the source: the
+   bootstrap now stamps a *resolved* theme and follows the OS until a
+   preference is stored, so no page rule needs a duplicated media-query
+   twin. **If you add a page-level dark rule, `[data-theme="dark"]` is now
+   sufficient — that is a guarantee this commit created, don't undo it.**
+
+2. **Six CSS custom properties referenced but never defined**;
+   10 references had no fallback and dropped entirely — seven elements
+   rendering at the inherited 16px instead of 12px, and
+   `.personnel-modal`/`.sms-modal`/`.insight-tile:hover` getting no
+   shadow. `--toast-duration` is NOT one of them: `Toast.js:74` sets it
+   per-toast, which is correct.
+
+3. **`base.css`'s global `select` chevron** is a data-URI with a literal
+   `#64748B` and had no dark counterpart. Three pages had each patched
+   their own selects locally; every other select in the app kept a
+   dark-slate arrow on the dark surface.
+
+4. **The `.date-range-popover*` CSS existed three times**, all globally
+   scoped, in `admin-dashboard.css`, `audit-log.css` and
+   `sms-monitor.css`. None was page-scoped, so link order decided the
+   winner — `audit-log.css` is last, so **Audit Log's copy was silently
+   styling all five screens** and the other two copies never rendered.
+   `sms-monitor.css` additionally set `.date-range-picker-wrapper select
+   { width: 100% !important }`, leaking onto every other screen's picker.
+
+### The date-range picker (the user's own example)
+
+Five screens had copy-pasted ~120 lines each and drifted in every visible
+dimension: option sets (three lacked "All time"), default (30 vs 7),
+ellipsis (`...` vs `…`), field labels (From/To vs From Date/To Date),
+popover title, one option labelled "Last 7 days (Default)", and Audit Log
+swapping the shared select styling for a bespoke wrapper + JS chevron.
+Now `web/src/components/DateRangePicker.js` +
+`css/components/DateRangePicker.css`. Net −415 lines.
+
+Four bugs fixed by consolidating:
+
+- **Listener leak (all five copies).** Each registered `document` click
+  and keydown listeners inside the page render function and never removed
+  them; `main.js` rebuilds `#app` on every navigate, so they accumulated
+  one pair per navigation for the life of the tab. Now one pair at module
+  scope pointed at the mounted instance — the same idiom `AppShell.js`
+  uses for its search widget.
+- **UTC "today" (all five copies).** `new Date().toISOString().slice(0,10)`
+  is a UTC date; between 00:00 and 08:00 Asia/Manila that is *yesterday*,
+  so for eight hours a day the presets requested a window ending a day
+  early. Now computed against a fixed +08:00, per §2 rule 11 and matching
+  `AuditLogController`'s own Asia/Manila handling.
+- **Double fetch (Heatmap).** Its Apply button had two click listeners —
+  one in the picker block, one added again 40 lines later.
+- The popover's From/To `<label>`s had no `for`.
+
+**Preserved on purpose:** Audit Log's "All time" still resolves to a real
+7-year bound rather than sending no dates. `GET /audit-log` has no
+unbounded mode — omitting `date_from` makes the controller default to its
+own short window (`AuditLogController.php:92`), not "everything" — and 7
+years is exactly `RetentionService::AUDIT_LOG_DAYS`, so the label is
+honest. SMS Monitor's "All time" genuinely sends no bounds, correctly for
+its endpoint.
+
+### Control heights — where measuring changed the answer
+
+The audit reported 22 page-level height overrides in five values and,
+from reading the CSS alone, called out "Blotter List's filter row is
+misaligned by 4px" (38px search beside a 34px select).
+
+**Measuring it in the browser proved that finding wrong.** `base.css`'s
+`min-height: 2.5rem` on every input/select/button wins over a smaller
+`height`, so almost none of those overrides ever rendered — the app was
+already uniformly 40px, and the Blotter row was 40/40, not 38/34. The
+genuine divergence was narrower and elsewhere: Incident Management and
+Citizen Reports also set `min-height`, so they really were 38px, and on
+Citizen Reports a 38px search sat beside a 40px select in the same row.
+
+So the fix makes the declarations say what the app already does rather
+than resurrecting a dense tier nobody was seeing: `--control-height`
+(2.5rem) and `--control-height-prominent` (2.625rem, the four detail-pane
+CTAs that had each independently landed on 42px). **A four-tier version
+of this token set was written and then deleted once measured** — worth
+remembering the next time a CSS reading looks conclusive.
+
+### Spacing
+
+643 raw spacing declarations vs 237 tokenized, 111 in px inside a
+rem-based scale → 116 raw vs 747 tokenized. Only the provably safe tiers
+were swept: 463 pixel-identical conversions (literals equal to a token,
+exact px equivalents) and 114 sub-pixel snaps (≤1.2px: 0.35/0.4rem →
+0.375rem, etc.).
+
+**Card padding was the actual cause of "more spacious than the others"**
+— six near-identical paddings over 30 rules in 8 stylesheets. Collapsed
+to `--pad-panel` (12/16px) and `--pad-panel-lg` (16/20px); max movement
+2px. One scale step added, `--spacing-md-lg` (1.25rem/20px), because 16
+card/modal-header rules across five stylesheets had each hand-written it
+for the same job — codifying a convergence, not widening the scale.
+
+**Deliberately NOT swept (116 declarations):** `0.625rem`(10px),
+`0.875rem`(14px), `1.125rem`(18px) and px twins. Forcing these onto the
+8px rhythm is a 2-4px visible change at ~100 sites — a design decision,
+not a cleanup. **Still open; see HANDOFF.**
+
+### Component consolidation
+
+Tab bars 3→1 (`.page-tabs`/`.page-tab`; PageHeader.css `!important`
+15→3), filter chips 4→1, stat cards 3→1, role badges 2→1. Role badges had
+been showing *different colours for the same role* depending on screen
+(Admin chart-cat-6 vs primary; Tanod info vs success).
+
+`.sms-filter-chip` was deliberately left out of the chip merge: despite
+the name it is a segmented control in a shared track, i.e. the
+`.page-tabs` pattern, not a standalone chip.
+
+### Contrast — and a correction to how it was measured
+
+An intermediate probe in this session parsed `color(srgb …)` components
+(0-1) as though they were 0-255, producing wrong numbers that were quoted
+mid-session. Re-measured with a parser handling both formats *and*
+compositing translucent backgrounds over their real ancestors, in both
+themes, on real page loads. Five genuine failures, all fixed:
+
+- `.page-tab.is-active` used `--color-primary` (a fill colour, dark in
+  dark mode) on `--color-surface`: **2.83:1 → 5.75**. Inherited, so it was
+  already wrong on Personnel and SMS Monitor before the merge.
+- `.role-badge--admin`, same mistake: 4.05 → 6.56.
+- Role badge tints 15/16% → 8%: the `--color-*-text` tokens are specced
+  against **white**, and a 16% tint ate the margin.
+- `--color-warning-solid` used as a *text* colour in four places though
+  §6 defines `*-solid` as a fill for white text → `--color-warning-text`.
+- `--color-success-text` was `#15803D`, **annotated "5.02:1 on white" but
+  actually 4.54:1** — the weakest of the family. Darkened to `#166534`
+  (5.94:1); its other 11 uses improve too. *The annotation in base.css was
+  wrong, not just optimistic — treat the other ratio comments there as
+  unverified until measured.*
+
+Final: every sampled surface clears AA in both themes. Light min 4.67,
+dark min 5.17.
+
+### Copy
+
+Five labels were uppercase in the JS string *and* uppercased again by CSS
+(double-encoded; read letter-by-letter by some screen readers). One action
+had three labels ("Log an Incident" / "Log New Incident" / "Log
+Incident"), finalize had two. Search placeholders: 3 used `...`, 7 used
+`…`; all 10 now use `…`.
+
+### Verification
+
+`verify-web-wiring.mjs` **497/497, 0 failed** (it caught 4 missed call
+sites during the migration — it earns its keep on renames). Every page
+and component parses under `node --input-type=module --check`. Braces
+balanced across all 31 stylesheets; all 33 sheets parse in-browser, 1869
+rules, none empty.
+
+**Browser-verified this session** (unlike the several passes before it):
+theme resolution in both directions on real loads, the DateRangePicker
+driven end to end (presets, All time, custom validation, apply, reconcile,
+Escape, outside-click, and a 5-navigation leak check), control heights
+across 17 controls on 7 screens, 12 spacing values and 16 card paddings
+against expected px, and the contrast sweep above. **Still not verified:**
+anything behind authentication — logging in needs a password this session
+did not have — so the audited screens were exercised by constructing their
+markup against the live stylesheets, not by opening the real screens.

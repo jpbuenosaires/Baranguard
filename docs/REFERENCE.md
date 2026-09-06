@@ -233,7 +233,36 @@ Error-with-retry / Populated.
 Shared components: `AppShell` · `PageHeader` · `DataTable` (+ CSV export,
 pagination) · `KpiCard` · `LineChart` · `BarChart` · `DonutChart` ·
 `LiveMap` · `Menu` · `Toast` · `ConfirmDialog` (+`promptSelect`) ·
-`StatStrip` · `Avatar` · `icons`.
+`StatStrip` · `Avatar` · `DateRangePicker` · `icons`.
+
+**Shared CSS entities — use these, do not re-roll them** (2026-09-06 UI/UX
+audit; each of these previously existed 2-4 times under different page
+prefixes and had drifted):
+
+| Entity | Classes | Where |
+|---|---|---|
+| Tab bar | `.page-tabs` / `.page-tab` (+`__icon`, `__badge`) | `PageHeader.css` |
+| Filter chip | `.filter-chips` / `.filter-chip` (+`__count`) | `base.css` |
+| Stat card grid | `.stat-card-grid` / `.stat-card` (+`__value`, `__label`) | `base.css` |
+| Role badge | `.role-badge--{admin,secretary,punong_barangay,tanod}` | `base.css` |
+| Date range | `DateRangePicker()` | `components/DateRangePicker.js` |
+
+**Sizing/spacing tokens added by the same audit:** `--control-height`
+(2.5rem, every text control and button) · `--control-height-prominent`
+(2.625rem, detail-pane CTAs) · `--pad-panel` / `--pad-panel-lg` (the only
+two card/panel paddings) · `--spacing-md-lg` (1.25rem).
+
+**Dark mode:** `index.html` now stamps a *resolved* `data-theme` on every
+load and follows the OS until the user stores a preference, so a page-level
+`[data-theme="dark"] .x` rule is sufficient and needs no
+`prefers-color-scheme` twin. Before 2026-09-06 it was not, and 28 page
+rules silently never fired for system-dark users.
+
+**`--color-*-solid` is a FILL for white text, never a text colour** — it
+stays dark in dark mode. For coloured text use `--color-*-text`, and
+`--color-link` (not `--color-primary`) for primary-coloured text. The
+`*-text` tokens are specced against white, so putting them on a tint eats
+their margin: keep badge tints at 8%.
 
 **Run `node web/scripts/verify-web-wiring.mjs` after any web change** —
 it catches imports and CSS classes that don't resolve, which no other

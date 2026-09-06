@@ -1,13 +1,94 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-06 (a real crash reached the user's browser
-despite every static check reporting clean — the check itself was using
-the wrong JS parse mode. Found and fixed, along with the most severe data
-fabrication found in this project so far. See the banner directly below;
-everything under it is prior-session context).** Read this to pick the
+**Last updated: 2026-09-06 (a full UI/UX consistency audit was run and
+all five of its tiers applied — five commits, and unlike the several
+passes before it this one was actually verified in a browser. It found
+four classes of real runtime bug behind the untidiness. See the banner
+directly below; everything under it is prior-session context).** Read this to pick the
 project up cold. The full narrative history lives in `backend/DEVLOG.md`
-(7.8k+ lines — `grep` it, don't read it). What's left is in
+(9k+ lines — `grep` it, don't read it). What's left is in
 `docs/REMAINING.md`.
+
+## ⚠️ 2026-09-06 (6): full UI/UX consistency audit applied — 5 commits, and this one WAS browser-verified
+
+User-requested audit of "how ux entities are used ... the css use the
+margin, and all spacing ... the alignment of text, everything in ui and
+ux", then a request to apply all five proposed tiers. A deliberate
+multi-box session (logged as an exception in `backend/DEVLOG.md`). Not
+Sprint 8 work.
+
+`main` is at **`0312023`**. Commits: `4739b58` (P0 runtime bugs) ·
+`6477c1a` (DateRangePicker) · `45db370` (control heights) · `13ee0fa`
+(spacing) · `0312023` (component consolidation + contrast).
+
+**The audit found real bugs, not just untidiness.** The four worst:
+
+1. **28 page-level dark-mode rules never fired for a system-dark user.**
+   `index.html` only stamped `data-theme` on an explicit stored choice;
+   page stylesheets only ever write `[data-theme="dark"] .x` and have zero
+   `prefers-color-scheme` blocks. Result: dark tokens with light component
+   overrides — unreadable SMS tag pills, light blotter table headers,
+   light GIS panels over the dark map. **Fixed at the source: the
+   bootstrap now stamps a resolved theme, so `[data-theme="dark"]` alone
+   is now sufficient in page CSS. Don't undo that.**
+2. **The date-range popover CSS existed three times, all globally scoped**
+   — `audit-log.css` loads last, so Audit Log's copy was silently styling
+   the Dashboard, both Analytics tabs and SMS Monitor. The other two
+   copies never rendered at all.
+3. **Six CSS custom properties were referenced but never defined**; 10
+   references had no fallback, so seven elements rendered at 16px instead
+   of 12px and two modals had no shadow.
+4. **Five WCAG AA contrast failures**, including `--color-success-text`
+   being annotated "5.02:1 on white" in `base.css` when it actually
+   measured 4.54:1. **Treat the other ratio comments in `base.css` as
+   unverified until measured.**
+
+**New shared entities — use them, don't re-roll them** (each previously
+existed 2-4 times under different page prefixes): `.page-tabs`/`.page-tab`
+· `.filter-chips`/`.filter-chip` · `.stat-card-grid`/`.stat-card` ·
+`.role-badge--*` · `DateRangePicker()`. New tokens: `--control-height`,
+`--control-height-prominent`, `--pad-panel`, `--pad-panel-lg`,
+`--spacing-md-lg`. All recorded in `docs/REFERENCE.md` §6.
+
+**Two things worth internalising from how this went:**
+
+- **Reading CSS is not measuring it.** The audit's "Blotter List filter
+  row is misaligned by 4px" finding was *wrong*: `base.css`'s
+  `min-height: 2.5rem` overrides a smaller `height`, so nearly all 22 page
+  height overrides never rendered and the row was 40/40. A four-tier
+  height token set was written and then deleted once measured.
+- **A contrast probe that mis-parses `color(srgb …)`** (0-1 components
+  read as 0-255) produced several wrong numbers mid-session before being
+  caught. If you measure contrast here, handle both `rgb()` and
+  `color(srgb)`, and composite translucent backgrounds over their real
+  ancestors.
+
+### Open decision left deliberately unapplied
+
+**116 spacing declarations still use off-scale intermediates** —
+`0.625rem`(10px), `0.875rem`(14px), `1.125rem`(18px) and px twins.
+Tokenising them means either forcing a 2-4px visible change at ~100 sites
+or adding three more scale steps. That is a design decision, not a
+cleanup, so it was reported rather than applied. Everything provably safe
+(577 declarations) was swept; raw spacing went 643 → 116.
+
+### What was and was not verified
+
+**Browser-verified against the live app** (`localhost/baranguard/web`):
+theme resolution both directions on real loads; the DateRangePicker driven
+end to end including a 5-navigation listener-leak check; 17 controls
+across 7 screens all computing to 40px; 12 spacing values and 16 card
+paddings against expected px; a full contrast sweep in both themes.
+`verify-web-wiring.mjs` **497/497**.
+
+**NOT verified: anything behind authentication.** Logging in needs a
+password this session did not have, so audited screens were exercised by
+constructing their markup against the live stylesheets rather than by
+opening the real screens. **Open Personnel, SMS Monitor, Analytics, Audit
+Log, Service Health, Map Packages and Citizen Reports and look at them** —
+the tab bars, chips, stat cards and role badges on those seven screens all
+changed appearance, and Analytics' tab bar changed shape (pill →
+segmented) more than the others.
 
 ## ⚠️ 2026-09-06 (5): `node --check` has a blind spot — use `--input-type=module`
 
