@@ -114,11 +114,12 @@ shift user · 0004 blotter_revision · 0005 sms_envelope_replay · 0006
 sms_log.barangay_id · 0007 retention columns · 0008 incident party
 fields · 0009 blotter case_status · 0010 incident location_description ·
 0011 user suspension · 0012 system_settings (§7 W21 override) · 0013 sms
-manual send · 0014 incident/blotter display_id. **0001–0007 are applied
-to the real local `baranguard` DB; 0008–0014 are NOT** — only to the
-disposable `baranguard_uiseed` DB so far (see `docs/HANDOFF.md`'s
-warning banner for the exact apply commands). On a new machine, apply
-all fourteen in order.
+manual send · 0014 incident/blotter display_id. **All fourteen are
+applied to the real local `baranguard` DB** (0008–0014 on 2026-09-05 —
+this paragraph said otherwise until 2026-09-06; see `docs/HANDOFF.md`'s
+resolved banner). On a new machine, apply all fourteen in order — as
+DBA/root, **not** as `baranguard_app`, which has no `ALTER`/`CREATE
+TABLE` (see §8).
 
 **FK trap:** `ai_processing_log`, `evidence_attachment`, `blotter_record`
 and `dispatch` are all `ON DELETE RESTRICT` against `incident` — deleting

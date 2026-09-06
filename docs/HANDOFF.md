@@ -1,13 +1,88 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-05 (Dashboard + Login UX pass: hover tooltips,
-"needs attention" banner, less-plain login page — layered on top of the
-workflow-audit fixes, the Analytics/Personnel merges, the web CSS
-refactor, and the full UI/UX overhaul session, all below).** Read this
-to pick the project up cold. The full narrative history lives in
-`backend/DEVLOG.md` (7.2k+ lines — `grep` it, don't read it). What's
+**Last updated: 2026-09-06 (Antigravity UI/UX pass reviewed: fixed the
+crash that made Dispatch Center unopenable, fixed the slow live map, and
+committed + pushed the entire multi-session UI/UX arc — see the banner
+directly below. Everything under it is prior-session context).** Read
+this to pick the project up cold. The full narrative history lives in
+`backend/DEVLOG.md` (7.4k+ lines — `grep` it, don't read it). What's
 left is in
 `docs/REMAINING.md`.
+
+## ✅ RESOLVED 2026-09-06: the whole UI/UX arc is committed and pushed
+
+`main` is at **`540033f`**, pushed to `origin`. The "substantial
+uncommitted changes" warning that sat in this file for several sessions
+is gone — the working tree is clean apart from some untracked design-doc
+artifacts at the repo root (`Baranguard_System_Design_Document.docx/
+.pdf`, four `diagram_*.png`, `scratch_diagrams.py`), deliberately left
+untracked pending a decision on whether generated binaries belong in the
+repo.
+
+Five commits, grouped by what each actually does:
+
+| Commit | What |
+|---|---|
+| `a5da41f` | `[Reports]` backend PDF export rebuilt as a real layout engine — `SimplePdf` gains `banner()`, `tableHeader()`/`tableRow()`, `kpiGrid()`, `signatureBlock()`, pagination |
+| `1d3cb24` | `[UI/UX]` the Antigravity visual pass (Dispatch Center, GIS, Analytics, dashboard, charts) |
+| `61c1e93` | `[Fix]` the Dispatch Center crash + three broken CSS classes |
+| `e2f8086` | `[Perf]` vendor bundle caching — the slow live map |
+| `540033f` | `[Docs]` DEVLOG entry for the fix session |
+
+`1d3cb24` and `61c1e93` were deliberately kept separate (the pass's own
+edits were temporarily reverse-applied to isolate them), so `1d3cb24` is
+genuinely the broken state and `61c1e93` genuinely the repair. **Don't
+bisect onto `1d3cb24` and conclude the app is broken** — it is, by
+design, for exactly one commit.
+
+### ⚠️ The crash, because the same mistake is easy to repeat here
+
+`LiveMap()` returned an **undeclared `resize`** in its object literal.
+Object shorthand against an undeclared binding is a `ReferenceError`
+thrown the moment the factory is called, which took down **both**
+Dispatch Center and GIS Live Tracking, since they share the component.
+
+The part worth remembering: **neither of this project's web checks can
+see this class of bug.** `node --check` only parses (it is a runtime
+error, not a syntax error) and `verify-web-wiring.mjs` resolves imports
+and CSS classes, not bindings. Both were green on a page that threw on
+open. If a screen is dead but every check passes, look for an undeclared
+identifier before looking anywhere else — and open the browser console,
+which said so immediately.
+
+### The slow live map was `web/.htaccess`, not the map
+
+See that section further down — it now has a `web/vendor/.htaccess`
+override. Measured while diagnosing, so nobody re-investigates the wrong
+layer: the backend is **not** implicated (`/api/v1/barangays` answers in
+17-74 ms against real XAMPP, and Dispatch Center's six startup calls run
+in one `Promise.all`), and OSM tiles are 146-285 ms each.
+
+### Two things found and deliberately NOT changed — design calls, still open
+
+Both are in `1d3cb24`, both were raised with the user rather than
+silently "fixed":
+
+1. **`backdrop-filter: blur(8px)` panels composited over the WebGL map
+   canvas** (GIS floating activity feed + floating legend, Dispatch
+   legend, `LiveMap.css`'s own legend). Blur over a live canvas forces a
+   composited readback while the map pans — the most likely remaining
+   cause of sluggish map *interaction*, which is a different problem
+   from the load time fixed above.
+2. **`marker-pulse` now animates `transform: scale()`** as well as
+   opacity. Because the animation owns `transform`, the
+   `.live-map__marker:hover { transform: scale(1.18) }` rule sitting
+   directly above it can no longer take effect on any Tanod marker.
+
+### Still not verified in-browser
+
+The crash fix was proven at the component level — `LiveMap.js` imported
+in the live page context, constructed against a detached container, all
+five new methods called, no throw. **The authenticated Dispatch Center
+and GIS screens themselves were never opened** (logging in requires
+entering a password, which that session did not do). Open both, plus
+Analytics > Heatmap (whose `.gis-page__map-wrapper` base rule was
+restored in `61c1e93`), before trusting them.
 
 ## ⚠️ Dashboard + Login UX pass (hover tooltips, attention banner, less-plain login)
 
@@ -165,15 +240,28 @@ flag it as an open reference/implementation mismatch.
 
 ---
 
-## ⚠️ `web/.htaccess` now exists — disables JS/CSS caching
+## ⚠️ `web/.htaccess` disables JS/CSS/HTML caching — but NOT under `web/vendor/`
 
-Added this session (see DEVLOG's "Dispatch/Incident Management/GIS UX
+Added 2026-09-05 (see DEVLOG's "Dispatch/Incident Management/GIS UX
 pass" entry) after this app's total lack of `Cache-Control` headers made
 edited `.js`/`.css` files silently keep serving pre-edit content for
 hours in-browser, surviving even a reload. If you ever want normal
 caching back for a real deployment, this is the file to reconsider —
 it's a dev-experience fix, not something the plan that added it
 originally asked for.
+
+**2026-09-06: `web/vendor/.htaccess` now overrides it back to
+`public, max-age=604800` for the vendored bundles only.** The parent rule
+was never scoped, so it also covered the pinned vendor drop —
+`maplibre-gl.js` (~803 KB) and `maplibre-gl.css` (~64 KB) were
+re-downloaded and re-parsed on **every page load and every in-app
+navigation**, which was a large part of why the live map felt slow to
+appear. Nothing in `web/vendor/` is ever hand-edited between sessions, so
+the no-store rule bought nothing there. Verified with `curl -D-`: vendor
+returns the cache header while `src/*.js` and `index.html` still return
+`no-store`. **If you ever re-vendor MapLibre, bump the version in
+`web/index.html`'s `<script src>` or clear the browser cache** — that
+folder is now genuinely cached for a week.
 
 ---
 
@@ -197,32 +285,42 @@ full history of how that preview was set up is in `backend/DEVLOG.md`'s
 
 ## Where things stand
 
-**Sprints 0–7 are complete and pushed** (`main`, latest `95c27ec`).
-Working tree currently has substantial uncommitted changes — nothing
-from this multi-session UI/UX arc has been committed yet. In
-chronological order: a Live Map real-tiles wiring pass, a W10 follow-up
-adding user creation, the temporary `web/index.html` fake-data-preview
-override (see above), a sidebar redesign, the Electronic Blotter
-party-fields feature (migration 0008), a Dispatch Center/Incident
-Management/GIS Live Tracking UX pass (inline detail+dispatch pane,
-dispatch-from-map), and — this session's main body — a **25-gap full
-UI/UX overhaul** covering Incident Management, Dispatch Center,
-Electronic Blotter, SMS Monitor, User Management, and Settings
-(migrations 0009-0014; see `backend/DEVLOG.md`'s "Full UI/UX overhaul,
-Phase 1-3/4-5/6-7/8-9" entries for the complete per-phase detail). Note:
-the user is also concurrently editing web UI files via a separate tool
-(Antigravity) in some sessions — re-check a file's current state before
-editing it further.
+**Sprints 0–7 are complete and pushed** (`main`, latest `540033f`). The
+entire multi-session UI/UX arc is now committed — see the resolved
+banner at the top of this file for the five-commit breakdown. In
+chronological order that arc was: a Live Map real-tiles wiring pass, a
+W10 follow-up adding user creation, a temporary `web/index.html`
+fake-data-preview override (since reverted), a sidebar redesign, the
+Electronic Blotter party-fields feature (migration 0008), a Dispatch
+Center/Incident Management/GIS Live Tracking UX pass (inline
+detail+dispatch pane, dispatch-from-map), a **25-gap full UI/UX
+overhaul** covering Incident Management, Dispatch Center, Electronic
+Blotter, SMS Monitor, User Management, and Settings (migrations
+0009-0014; see `backend/DEVLOG.md`'s "Full UI/UX overhaul, Phase
+1-3/4-5/6-7/8-9" entries), a Dashboard + Login UX pass, and finally an
+externally-authored (Antigravity) visual pass over Dispatch Center, GIS
+and Analytics plus its follow-up fixes.
+
+**The user edits web UI files through a separate tool (Antigravity)
+between sessions.** Re-check a file's current state before editing it
+further, and don't assume this file describes it. That pass is also
+where the 2026-09-06 crash came from — worth reading the top banner's
+crash note before reviewing any Antigravity output.
 
 Sprint 7 closed on 2026-09-04 with the most thorough verification in the
 project's history: **446 checks across seven suites against real XAMPP,
 zero failures**, plus a 12/12 restore drill against the real database.
-Web wiring is now **457/457** (was 373/373 at Sprint 7 close; climbed
-through 411 → 429 → 439 → 443 → 453 → 457 across the sessions since,
-each step logged in `backend/DEVLOG.md` — the highest number is always
-the current one, earlier counts are superseded, not regressions).
-**Migrations now go up to `0014`** — see the warning banner above; only
-the disposable `baranguard_uiseed` DB has all of them applied.
+Web wiring is **447/447** as of 2026-09-06. Note the total moves in
+**both** directions as screens are added and merged — it read 373 at
+Sprint 7 close, climbed 411 → 429 → 439 → 443 → 453 → 457, then dropped
+to 447 when the Antigravity pass replaced whole blocks of markup. The
+number that matters is **failures, which must be 0** — a lower total is
+not a regression, and this file's count is only accurate on the day it
+was written. Run it yourself:
+`node web/scripts/verify-web-wiring.mjs`.
+
+**Migrations go up to `0014` and all fourteen are applied to the real
+`baranguard` DB** (2026-09-05 — see the resolved banner below).
 
 ### What's new this session (25-gap overhaul), by screen
 
@@ -291,14 +389,17 @@ stack, device-unverified, out of scope for a web-only session).
 
 ## The three things most likely to bite you
 
-1. **Migrations 0007 through 0014 must all be applied before this
-   session's features will work against the real DB.** None of 0008-0014
-   have touched the real `baranguard` database — only `baranguard_uiseed`.
-   `DevicesController` 500s without 0007 alone. The full 25-gap overhaul
-   (case_status, location_description, user suspension, system_settings,
-   sms manual send, display_id) will 500 or silently no-op against the
-   real DB until 0008-0014 are applied in order — see the warning banner
-   at the top of this file for the exact commands.
+1. **A dead web screen with every check passing means an undeclared
+   identifier — not a CSS problem.** This bit hard on 2026-09-06:
+   Dispatch Center would not open at all, and both `node --check` and
+   `verify-web-wiring.mjs` were green, because neither resolves bindings.
+   The cause was a one-word omission in `LiveMap.js` (see the top
+   banner). The browser console names it instantly; nothing else in this
+   stack will. Applies double to externally-authored passes.
+
+   *(Migrations are no longer on this list — all fourteen are applied to
+   the real `baranguard` DB as of 2026-09-05. On a NEW machine you still
+   apply 0001-0014 in order, as DBA/root, not as `baranguard_app`.)*
 
 2. **The model has never been called.** Every AI claim is verified
    against SQL-seeded rows and a deliberately dead Ollama port. Whether
@@ -307,7 +408,7 @@ stack, device-unverified, out of scope for a web-only session).
    machine that can run SEA-LION. `backend/.env` also needs the
    `OLLAMA_*` keys added by hand on any new machine.
 
-3. **SOS is now wired (this session) but still device-unverified.** M2's
+3. **SOS is wired (since 2026-09-04) but still device-unverified.** M2's
    button calls `POST /tanod-sos` online-first and falls back to the
    offline queue on a network failure, draining via `/sync/batch` — code
    compiles clean (`tsc --noEmit`) but has never run on a real device or
@@ -317,24 +418,35 @@ stack, device-unverified, out of scope for a web-only session).
 
 ## Recommended next step
 
-1. **Commit this session's work** (nothing from the entire UI/UX arc is
-   committed yet — see "Where things stand" above) — or explicitly
-   decide to keep iterating uncommitted first. Review `git status`/`git
-   diff` before doing so; this session touched a large number of files
-   across backend and frontend.
-2. **Apply migrations 0008-0014 to the real `baranguard` DB** (see the
-   warning banner at the top) once ready to point the app back at the
-   real API — required before any of this session's features work
-   outside the disposable preview.
-3. **Reconcile `docs/REFERENCE.md` §7's W21 blocker** with migration
-   0012's deliberate override (system_settings now exists, narrowly for
-   SMS Gateway credentials) — the reference doc hasn't been edited to
-   reflect this yet.
+1. **Open the app and actually look at the screens the last three
+   sessions changed** — this is the single highest-value next step,
+   because a large amount of UI has now shipped that no human or browser
+   has confirmed renders. Log in and check, at minimum: **Dispatch
+   Center** and **GIS Live Tracking** (both were crashing until
+   `61c1e93`), **Analytics > Heatmap** (its map wrapper rule was
+   restored in the same commit), the Dashboard tooltips / attention
+   banner, the Citizen Reports **Convert to Incident** dialog, and the
+   authenticated sidebar/topbar glassmorphism. Anything broken here is
+   cheap to fix now and expensive to discover during UAT.
+2. **Decide the two open design calls** from the top banner: the
+   `backdrop-filter` blur panels over the map canvas, and `marker-pulse`
+   owning `transform` so marker hover no longer works. Both are
+   one-liners once decided.
+3. **Decide what to do with the untracked design-doc artifacts** at the
+   repo root (`Baranguard_System_Design_Document.docx/.pdf`, four
+   `diagram_*.png`, `scratch_diagrams.py`) — commit them under `docs/`,
+   or gitignore them. They have sat untracked across sessions.
 4. Independently and in parallel: **the 200-record AI evaluation
-   dataset** (needs people, not machines, blocks the longest chain in
+   dataset** (needs people, not machines — blocks the longest chain in
    the project), and **mobile auto reverse-geocoding** for
-   `location_description` (deferred this session — needs a real Android
-   device, see `docs/REMAINING.md`).
+   `location_description` (needs a real Android device, see
+   `docs/REMAINING.md`).
+5. Then **Sprint 8** proper — pick exactly one box from `docs/SPRINTS.md`.
+
+*(Previously listed here and now done: committing the UI/UX arc,
+applying migrations 0008-0014 to the real DB, and reconciling
+`REFERENCE.md` §7's W21 blocker — §7 now carries the override note, and
+§4's "0008–0014 are NOT applied" line was corrected 2026-09-06.)*
 
 Full ordered list with reasoning: **`docs/REMAINING.md`**.
 
