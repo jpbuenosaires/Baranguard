@@ -1,0 +1,18 @@
+# Re-enable normal browser caching for the vendored third-party bundles,
+# overriding web/.htaccess's blanket `no-store` on *.js / *.css.
+#
+# That parent rule exists because this app has no build step and no
+# versioned filenames, so an edited source file could silently keep
+# serving its pre-edit body (see web/.htaccess's own comment). Nothing in
+# THIS folder is ever hand-edited between sessions — it is a pinned
+# vendor drop — so the rule bought nothing here and cost a full
+# re-download + re-parse of maplibre-gl.js (~803 KB) and
+# maplibre-gl.css (~64 KB) on every page load AND every in-app
+# navigation, which is a large part of why the live map felt slow to
+# appear. Bump the version in web/index.html's <script src> (or just
+# clear the browser cache) if this folder is ever re-vendored.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+</IfModule>
