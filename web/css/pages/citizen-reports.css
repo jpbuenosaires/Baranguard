@@ -8,42 +8,51 @@
    1. Internal Console Viewport Lock & Master-Detail Layout
    ========================================================================== */
 
+/* Allow page to scroll naturally, ending cleanly at the bottom edge of the card */
 .page-content:has(.citizen-inbox-layout),
 .page-content.citizen-inbox-content {
-  overflow: hidden !important;
-  display: flex;
-  flex-direction: column;
-  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-sm-md) !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
   height: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  display: block;
+  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-md) !important;
   box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
 }
 
+.page-content:has(.citizen-inbox-layout) .page-container,
+.page-content.citizen-inbox-content .page-container,
 .citizen-inbox-container {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
+  width: 100%;
+  min-height: min-content;
+  height: auto;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   max-width: 100%;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
 }
 
 /* Master-Detail Split Grid (Full width at first; shrinks when report selected) */
 .citizen-inbox-layout {
   flex: 1;
   min-height: 0;
-  height: 100%;
+  height: auto;
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--spacing-md);
-  align-items: stretch;
-  overflow: hidden;
+  align-items: start;
+  overflow: visible;
   width: 100%;
   transition: grid-template-columns 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .citizen-inbox-layout.has-detail {
-  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.95fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(380px, 0.95fr);
 }
 
 /* Left Panel: Table & Filters Card */
@@ -57,9 +66,11 @@
   flex-direction: column;
   gap: var(--spacing-sm);
   min-width: 0;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
+  height: auto;
+  overflow: visible;
+  position: sticky;
+  top: 0;
+  align-self: start;
 }
 
 /* Filter Bar */
@@ -264,9 +275,9 @@
   box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  height: 100%;
-  min-height: 0;
+  overflow: visible;
+  height: auto;
+  margin-bottom: 0;
   animation: detail-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -283,6 +294,7 @@
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .citizen-detail-header__left {
@@ -316,14 +328,13 @@
   color: var(--color-text-primary);
 }
 
-/* Scrollable Detail Body */
+/* Detail Body */
 .citizen-detail-body {
-  flex: 1;
-  overflow-y: auto;
   padding: var(--spacing-md);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  overflow: visible;
 }
 
 /* Metadata Strip */
@@ -448,9 +459,12 @@
 
 .citizen-mini-map {
   width: 100%;
-  height: 10rem;
+  height: 12.5rem;
+  min-height: 12.5rem;
   position: relative;
   background: var(--color-surface);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  flex-shrink: 0;
 }
 
 /* Triage Conversion Action Card */
@@ -463,6 +477,7 @@
   flex-direction: column;
   gap: var(--spacing-sm);
   box-shadow: var(--shadow-card);
+  margin-bottom: 0;
 }
 
 .citizen-triage-card__title {
@@ -484,8 +499,30 @@
 .citizen-triage-form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-sm-md);
   margin-top: 0.25rem;
+}
+
+.citizen-triage-controls-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.citizen-triage-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.citizen-triage-field--select {
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+
+.citizen-triage-field--priority {
+  flex: 0 0 auto;
 }
 
 .citizen-triage-row {
@@ -495,8 +532,8 @@
 }
 
 .citizen-triage-select {
-  flex: 1;
-  height: 2.25rem;
+  width: 100%;
+  height: 2.375rem;
   padding: 0 0.75rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -506,6 +543,7 @@
   font-size: var(--font-size-sm);
   font-weight: 500;
   outline: none;
+  transition: border-color 0.15s;
 }
 
 .citizen-triage-select:focus {
@@ -516,10 +554,11 @@
   display: flex;
   align-items: center;
   gap: 0.375rem;
+  height: 2.375rem;
 }
 
 .citizen-priority-pill {
-  padding: 0.25rem 0.625rem;
+  padding: 0.35rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 700;
   border-radius: var(--radius-sm);
@@ -553,7 +592,7 @@
   color: var(--color-white);
   border: none;
   border-radius: var(--radius-sm);
-  padding: 0.625rem 1rem;
+  padding: 0.75rem 1.25rem;
   font-weight: 700;
   font-size: var(--font-size-sm);
   cursor: pointer;
@@ -563,6 +602,9 @@
   gap: 0.375rem;
   transition: background 0.15s, transform 0.1s;
   box-shadow: 0 2px 6px rgba(29, 78, 216, 0.25);
+  min-height: 2.625rem;
+  margin-top: 0.25rem;
+  flex-shrink: 0;
 }
 
 .btn-convert-incident:hover:not(:disabled) {
@@ -598,8 +640,50 @@
 }
 
 .citizen-converted-banner__desc {
-  font-size: 0.8125rem;
+  margin: 0;
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+}
+
+/* Custom Slim Scrollbars for Table and Detail Body */
+.citizen-detail-body {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-text-secondary) 25%, transparent) transparent;
+}
+
+.citizen-detail-body::-webkit-scrollbar,
+.citizen-table-wrap .data-table-wrap::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.citizen-detail-body::-webkit-scrollbar-track,
+.citizen-table-wrap .data-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.citizen-detail-body::-webkit-scrollbar-thumb,
+.citizen-table-wrap .data-table-wrap::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-secondary) 25%, transparent);
+  border-radius: 9999px;
+}
+
+.citizen-detail-body::-webkit-scrollbar-thumb:hover,
+.citizen-table-wrap .data-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-text-secondary) 45%, transparent);
+}
+
+/* Visual Accent for Narrative Block */
+.citizen-narrative-card {
+  border-left: 3px solid var(--color-primary);
+}
+
+/* Responsive Table Column Optimization when Detail Pane is Open */
+.citizen-inbox-layout.has-detail .data-table th:nth-child(4),
+.citizen-inbox-layout.has-detail .data-table td:nth-child(4),
+.citizen-inbox-layout.has-detail .data-table th:nth-child(7),
+.citizen-inbox-layout.has-detail .data-table td:nth-child(7) {
+  display: none;
 }
 
 
@@ -613,9 +697,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: var(--spacing-lg) var(--spacing-md);
+  justify-content: flex-start;
+  padding: var(--spacing-xl) var(--spacing-md);
   box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .citizen-portal-card {
@@ -630,12 +715,17 @@
   flex-direction: column;
   gap: var(--spacing-lg);
   box-sizing: border-box;
+  margin: auto 0;
 }
 
 @media (max-width: 640px) {
+  .citizen-portal-page {
+    padding: var(--spacing-md) var(--spacing-sm);
+  }
   .citizen-portal-card {
     padding: var(--spacing-lg) var(--spacing-md);
     border-radius: var(--radius-lg);
+    margin: 0;
   }
 }
 
