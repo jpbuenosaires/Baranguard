@@ -144,12 +144,13 @@ function boot(currentPage, param) {
   } else if (page === 'citizen-inbox') {
     renderCitizenReportsInboxPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'personnel') {
-    renderPersonnelPage(root, session.user, onLoggedOut, navigate);
+    renderPersonnelPage(root, session.user, onLoggedOut, navigate, param);
   } else if (page === 'sms-log') {
     // Returns a stop handle: the Live Feed panel polls GET /sms/logs
     // every 10s (2026-09-05 UX pass) and that interval must not outlive
     // the page — same contract as service-health/ai-review below.
-    const handle = renderSmsMonitorPage(root, session.user, onLoggedOut, navigate);
+    // param can be an optional target phoneNumber or 'activity-log'.
+    const handle = renderSmsMonitorPage(root, session.user, onLoggedOut, navigate, param);
     activeStop = handle?.stop ?? null;
   } else if (page === 'audit-log') {
     renderAuditLogPage(root, session.user, onLoggedOut, navigate);
