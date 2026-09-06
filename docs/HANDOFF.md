@@ -1,13 +1,68 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-06 (a THIRD Antigravity pass this same day,
-rebuilding Citizen Reports Inbox + the public intake form — reviewed and
-fixed before commit, same as the two before it. See the banner directly
-below; everything under it is prior-session context).** Read this to
-pick the project up cold. The full narrative history lives in
-`backend/DEVLOG.md` (7.6k+ lines — `grep` it, don't read it). What's
-left is in
+**Last updated: 2026-09-06 (a real crash reached the user's browser
+despite every static check reporting clean — the check itself was using
+the wrong JS parse mode. Found and fixed, along with the most severe data
+fabrication found in this project so far. See the banner directly below;
+everything under it is prior-session context).** Read this to pick the
+project up cold. The full narrative history lives in `backend/DEVLOG.md`
+(7.8k+ lines — `grep` it, don't read it). What's left is in
 `docs/REMAINING.md`.
+
+## ⚠️ 2026-09-06 (5): `node --check` has a blind spot — use `--input-type=module`
+
+**The user hand-edited SMS Monitor and hit a real crash in the browser**
+that three earlier passes of `node --check` this same day all missed:
+`Uncaught SyntaxError: Identifier 'formatSmartTime' has already been
+declared`. `sms-monitor.js` had declared that function twice at module
+scope. `node --check` on a bare `.js` file parses it as a classic
+sloppy-mode script, which silently allows duplicate top-level
+declarations (last one wins, no error) — but every page here loads as
+`<script type="module">` in `web/index.html`, and ES modules are strict
+about exactly this: a duplicate top-level binding is a hard `SyntaxError`
+at parse time, before any code runs.
+
+**From now on, check JS syntax in this project with:**
+```bash
+node --input-type=module --check < path/to/file.js
+```
+Plain `node --check path/to/file.js` is not sufficient — it will report
+clean on a file the browser cannot even parse. A full `web/src` sweep with
+the corrected command found this was the only occurrence; nothing else in
+the tree has this problem as of this writing.
+
+**While tracing why the duplicate existed, found the worst data
+fabrication in this project's history so far** — worse than the
+AI-features findings from earlier the same day, because these fired on
+*ordinary* states (an empty result, a zero count), not obscure edges:
+
+- `SEEDED_CONVERSATIONS`/`SEEDED_LIVE_FEED`: fabricated named citizens,
+  phone numbers, and realistic Tagalog complaint text, silently shown
+  in place of the real conversation list and Live Feed whenever the real
+  API returned empty *or* failed — an empty result being the completely
+  normal state for any barangay before its first SMS exchange. Removed;
+  the honest empty state (`renderContactList()`'s own "No SMS
+  conversations recorded.") was already there, unused.
+- The stat strip: `.total || 7/4/3/1` — silently replaced any real zero
+  count with an invented number. Fixed to `?? 0`.
+- `getContactLocation()` fabricated a per-conversation barangay label
+  for **every real contact, unconditionally** — the real API never
+  returns a location field at all (every conversation a caller sees is
+  already scoped to their own barangay server-side), so it always fell
+  through to a phone-number hash that assigned one of four hardcoded
+  names, one of which (**"Brgy. Poblacion"**) is not even one of this
+  deployment's real four barangays. This was not a rare fallback — it
+  was the *guaranteed* behavior for every real SMS conversation ever
+  shown on this screen. Removed entirely.
+
+Full detail, including the two `verify-web-wiring.mjs` failures fixed in
+the same pass and the routing/Personnel-suite changes reviewed alongside
+it: `backend/DEVLOG.md`'s "User-edited SMS Monitor" entry.
+
+**Still no browser pass beyond what the user's own report surfaced** —
+which is itself the point: this is the round that proves the deferral has
+a real cost. A hard crash reached production-adjacent code because every
+available static check was silently checking the wrong thing.
 
 ## ⚠️ 2026-09-06 (4): Citizen Reports rebuilt — a routing gap and two more fabricated identities found and fixed
 

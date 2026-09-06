@@ -8467,3 +8467,106 @@ Verification: `php -l` clean, `node --check` clean across every touched
 file, `verify-web-wiring.mjs` 455/455, an undeclared-binding sweep (the
 exact class of bug that took down Dispatch Center two sessions ago) clean,
 CSS braces balanced. **No browser pass** - not requested this round either.
+
+---
+
+## 2026-09-06 (5) — User-edited SMS Monitor: a real crash caught by the browser, then a fabrication problem worse than any found so far
+
+The user hand-edited several files (SMS Monitor, the whole Personnel suite,
+Citizen Reports) and asked for the standard check pass. Ran it, reported
+clean... and the user immediately hit `Uncaught SyntaxError: Identifier
+'formatSmartTime' has already been declared` in the actual browser.
+
+### The verification blind spot, found the hard way
+
+`sms-monitor.js` declared `function formatSmartTime(...)` twice at module
+top level (lines 146 and 1805, two different implementations — one used at
+one call site, the other completely dead code). **`node --check` on a bare
+`.js` file does not catch this.** Node treats a file with no `"type":
+"module"` context as a classic script when run through `--check`, and
+sloppy-mode scripts silently allow duplicate top-level function
+declarations (last one wins). But `web/index.html` loads every page module
+as `<script type="module">`, and ES modules are lexically strict about
+this: a duplicate top-level binding in the same module scope is a hard
+`SyntaxError`, thrown at parse time, before a single line executes. Every
+`node --check` run this whole session — including three earlier passes
+today that all reported "syntax clean" — was checking the WRONG parse mode
+for this exact class of bug.
+
+**Fix, both for this file and for how this project verifies JS from now
+on:** `node --input-type=module --check < file.js` parses the file the way
+the browser actually will. Removed the dead duplicate (kept the one with a
+real call site), then re-swept the ENTIRE `web/src` tree with the corrected
+check — clean, this was the only occurrence anywhere in the app. **Use
+`--input-type=module` for every future JS syntax check in this project;
+plain `node --check` on these files is not sufficient.**
+
+### While tracing why a duplicate function existed: three more severe fabrication findings, worse than any prior round
+
+Investigating the surrounding code (the Conversations tab this file
+redesigned) turned up data fabrication considerably more serious than the
+AI-features/hardcoded-identity findings from earlier today, because these
+activate on ORDINARY, LIKELY real-world states rather than obscure edges:
+
+1. **`SEEDED_CONVERSATIONS` / `SEEDED_LIVE_FEED`** — two arrays of entirely
+   fabricated data: named individuals ("Juan dela Cruz", "Maria Santos",
+   "Pedro Reyes"), fake phone numbers, and realistic Tagalog citizen-
+   complaint/incident/dispatch message text — silently substituted for the
+   real conversation list and Live Feed **whenever the real API returned
+   empty OR the fetch failed**. Not a rare edge case: an empty result is
+   the ordinary state for any barangay before its first SMS exchange, and
+   both branches fired unconditionally, with the fabricated data visually
+   indistinguishable from genuine correspondence in the SMS Monitor's own
+   operational Live Feed. `renderContactList()` already had a correct,
+   honest empty state ("No SMS conversations recorded.") sitting right
+   there unused — the fabrication was pure surplus, not a design need.
+2. **The stat strip fabricated non-zero fallback numbers**: `totalToday.total
+   || 7`, `inboundToday.total || 4`, `outboundToday.total || 3`,
+   `unreadTotal || 1`. `.total` is a real count where 0 is a legitimate,
+   common value (a quiet day is real data) — `||` silently replaced any
+   genuine zero with an invented number. Exactly the same shape as the
+   "24 Active / 84.6%" finding removed earlier today, in a different
+   screen.
+3. **`getContactLocation()` fabricated a per-conversation barangay label
+   for every real contact, unconditionally.** Checked against the real
+   API (`SmsController::conversations()`): it scopes every row to the
+   caller's OWN `barangay_id` server-side, and `getSmsConversations()`
+   never returns a `location` field at all. So the `if (convo.location)`
+   early return NEVER fires on real data, and every single real
+   conversation fell through name/text keyword-matching tuned to the
+   fake seed contacts, and finally to a **phone-number hash assigning one
+   of four hardcoded barangay names** — one of which, "Brgy. Poblacion",
+   is not even a real barangay this deployment serves (the real four are
+   Dao/Binanuahan/Marifosque/Banuyo, §1). This was not a fallback for an
+   unlikely case — it was the GUARANTEED behavior for every real SMS
+   conversation in production, fabricating which barangay a contact
+   belongs to in a system where barangay-scoped routing is a core rule.
+   Removed the function and both render call sites entirely; there is no
+   honest per-conversation location to show (every visible conversation
+   already belongs to the viewer's own barangay), so the label is gone
+   rather than replaced with something that looks real but isn't.
+4. Cleaned `getContactTagInfo()`'s `name.includes('juan dela cruz')` /
+   `'maria santos'` / `'pedro reyes'` / `'dispatch'` / `'baranguard')`
+   clauses — tuned to the removed fake contacts, and since these are
+   common real Filipino names, left in place they risked mis-tagging an
+   actual citizen by coincidence. The real classification signals
+   (`messageType`, a fixed server enum, and message-body keywords) are
+   untouched and sufficient on their own.
+
+### Also fixed, smaller
+
+- `verify-web-wiring.mjs`: 2 failures — `citizen-converted-banner__desc`
+  (a rule simply never written, sibling rules `__info`/`__title` existed)
+  and two mismatches in the user-edited `sms-monitor.js`
+  (`sms-segment-counter`, and `blotter-detail-pane` — a copy-paste leftover
+  class name for what is actually this file's own Activity Log detail
+  pane, renamed to `sms-detail-pane`). 473/475 → 475/475.
+
+Verification this round: `node --input-type=module --check` (the corrected
+method) across every changed file AND a full `web/src` sweep, `node
+--check` (kept as a secondary check), `verify-web-wiring.mjs` 475/475, the
+undeclared-binding sweep, CSS braces balanced. **No browser pass beyond
+what the user's own report surfaced** — same deferral as every round today,
+though this round is proof of exactly why that deferral is a real gap: a
+hard crash reached the user's browser that every static check available
+missed, because the check itself was using the wrong parse mode.
