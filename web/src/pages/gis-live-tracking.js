@@ -46,6 +46,7 @@ import {
 } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 
 const POLL_INTERVAL_MS = 15000;
@@ -85,16 +86,26 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
-  // Avoid duplicate search bar by clearing the shell header
-  header.innerHTML = '';
-  header.style.display = 'none';
+  // Lock outer page scrolling so only internal roster/map are interactive
+  content.classList.add('gis-page-container');
+  if (content.parentElement) {
+    content.parentElement.classList.add('page-content--no-scroll');
+  }
+
+  // Standard Page Header
+  const pageHeader = PageHeader({
+    title: 'Live Tracking',
+    subtitle: 'Real-time GPS tracking and Tanod responder deployment',
+    icon: icons.map,
+  });
+  header.appendChild(pageHeader.el);
 
   const wrapper = document.createElement('div');
-  wrapper.className = 'flex-col grow';
+  wrapper.className = 'gis-page-wrapper';
   content.appendChild(wrapper);
 
   const body = document.createElement('div');
-  body.className = 'grow';
+  body.className = 'gis-page-body';
   wrapper.appendChild(body);
 
   let liveMap = null;
@@ -164,14 +175,6 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       // ── LEFT COLUMN: Personnel & Status Panel ──
       const sidebar = document.createElement('aside');
       sidebar.className = 'gis-sidebar';
-
-      const sidebarHeader = document.createElement('div');
-      sidebarHeader.className = 'gis-sidebar__header';
-      sidebarHeader.innerHTML = `
-        <h2 class="gis-sidebar__title">Live Tracking</h2>
-        <div class="gis-sidebar__subtitle">Pilar, Sorsogon</div>
-      `;
-      sidebar.appendChild(sidebarHeader);
 
       // 3 Mini Status Cards
       statCardsEl = document.createElement('div');

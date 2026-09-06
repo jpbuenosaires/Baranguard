@@ -30,6 +30,7 @@ import {
 } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
@@ -120,14 +121,28 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   });
   const { header, content } = shell;
   root.appendChild(shell.el);
-  header.innerHTML = '';
-  header.style.display = 'none';
+
+  // Lock outer page scrolling so only internal lists/map are scrollable
+  content.classList.add('dispatch-page-container');
+  if (content.parentElement) {
+    content.parentElement.classList.add('page-content--no-scroll');
+  }
+
+  // Standard Page Header
+  const bName = user.barangayName ? `Brgy. ${user.barangayName}, ` : '';
+  const pageHeader = PageHeader({
+    title: 'Dispatch Center',
+    subtitle: `${bName}Pilar, Sorsogon Emergency Operations`,
+    icon: icons.radio,
+  });
+  header.appendChild(pageHeader.el);
 
   const wrapper = document.createElement('div');
-  wrapper.className = 'flex-col';
+  wrapper.className = 'dispatch-page-wrapper';
   content.appendChild(wrapper);
 
   const body = document.createElement('div');
+  body.className = 'dispatch-page-body';
   wrapper.appendChild(body);
 
   let liveMap = null;
@@ -222,26 +237,12 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       priorityAlertEl.append(alertLeft, alertBtnEl);
       container.appendChild(priorityAlertEl);
 
-      // 2. Header Bar with Title & 3-KPI Card
-      const headerBar = document.createElement('div');
-      headerBar.className = 'dispatch-header-bar';
-
-      const infoCol = document.createElement('div');
-      infoCol.className = 'dispatch-header-bar__info';
-      const title = document.createElement('h1');
-      title.className = 'dispatch-header-bar__title';
-      title.textContent = 'Dispatch Center';
-      const subtitle = document.createElement('p');
-      subtitle.className = 'dispatch-header-bar__subtitle';
-      const bName = user.barangayName ? `Brgy. ${user.barangayName}, ` : '';
-      subtitle.textContent = `${bName}Pilar, Sorsogon Emergency Operations`;
-      infoCol.append(title, subtitle);
-
-      kpiCardEl = document.createElement('div');
-      kpiCardEl.className = 'dispatch-kpi-card';
-
-      headerBar.append(infoCol, kpiCardEl);
-      container.appendChild(headerBar);
+      // 2. 3-KPI Card in PageHeader Actions
+      if (!kpiCardEl) {
+        kpiCardEl = document.createElement('div');
+        kpiCardEl.className = 'dispatch-kpi-card';
+        pageHeader.actions.appendChild(kpiCardEl);
+      }
 
       // 3. Main Split Grid (Queue + Live Map)
       layoutEl = document.createElement('div');
