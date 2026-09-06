@@ -1,13 +1,60 @@
 # Baranguard — Session Handoff
 
-**Last updated: 2026-09-06 (Antigravity UI/UX pass reviewed: fixed the
-crash that made Dispatch Center unopenable, fixed the slow live map, and
-committed + pushed the entire multi-session UI/UX arc — see the banner
-directly below. Everything under it is prior-session context).** Read
-this to pick the project up cold. The full narrative history lives in
-`backend/DEVLOG.md` (7.4k+ lines — `grep` it, don't read it). What's
+**Last updated: 2026-09-06 (a THIRD Antigravity pass this same day,
+rebuilding Citizen Reports Inbox + the public intake form — reviewed and
+fixed before commit, same as the two before it. See the banner directly
+below; everything under it is prior-session context).** Read this to
+pick the project up cold. The full narrative history lives in
+`backend/DEVLOG.md` (7.6k+ lines — `grep` it, don't read it). What's
 left is in
 `docs/REMAINING.md`.
+
+## ⚠️ 2026-09-06 (4): Citizen Reports rebuilt — a routing gap and two more fabricated identities found and fixed
+
+The Citizen Reports Inbox is now a full master-detail console (search,
+All/Pending/Converted tabs, full narrative, a GPS mini-map, and a
+Category+Priority triage form wired to `POST /citizen-reports/:id/
+convert`'s existing `priority` param). The public form gained an
+emergency banner, quick-topic chips, a character counter, and a
+digital-ticket success receipt. Both screens were planned in a separate
+design-review turn first (three gaps caught there: no reverse-geocoding
+without sign-off, LiveMap reuse vs. a hand-rolled map, and a routing
+change the plan itself never covered), then built by Antigravity, then
+reviewed here before committing — same process as entries (2) and (3)
+below.
+
+**Scope crept beyond the plan** into Dispatch Center, GIS Live Tracking,
+Incident Management and Blotter List (all four adopted the shared
+`PageHeader` component). Reviewed on the same terms since two of them
+shipped real bugs:
+
+- **"Contact Assigned Tanod → Send SMS" was completely broken** —
+  wrong parameter name (`recipient` instead of `phoneNumber`) and a
+  missing required `Idempotency-Key`. Every send would have 400'd.
+- **"View in Incident Management" called a page key that doesn't
+  exist** (`'incidents'` instead of `'incident-management'`) — would
+  have silently landed on some other screen. Fixed, and the deep-link
+  the design review asked for is now actually wired: `main.js` forwards
+  an optional incident id to Incident Management, which opens straight
+  to that incident's detail pane.
+- **Two more fabricated identities**, pre-existing but caught while in
+  these files — the exact same class of thing the AI-feature review
+  found last time: a missing officer defaulted to `'PO1 Reyes'` on the
+  Blotter ledger, a missing Tanod phone number defaulted to
+  `'0917-555-0192'` and was used for an actual Direct Call/SMS. Both now
+  show an honest "not recorded"/"no contact on file" instead.
+
+**Left alone, on purpose, after asking the user:** the report detail
+pane's mini-map hand-rolls its own `maplibregl.Map` instead of reusing
+the shared `LiveMap` component — against `LiveMap.js`'s own documented
+"does not get a second implementation" rule. It works correctly (real
+cleanup, no crash risk), so this is architecture debt, not a bug — flagged
+for whoever eventually gives `LiveMap` a single-point-preview mode.
+
+Full detail: `backend/DEVLOG.md`'s "Citizen Reports UI/UX pass" entry.
+**No browser pass** — static verification only (`php -l`, `node --check`,
+wiring 455/455, an undeclared-binding sweep, balanced CSS braces), same
+deferral as the two passes before it this session.
 
 ## ⚠️ 2026-09-06 (2): two NEW endpoints exist — `POST /blotter`, `PATCH /incidents/:id`
 
