@@ -92,6 +92,12 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
+  // Lock outer page scrolling so only the ledger table is scrollable
+  content.classList.add('blotter-page-container');
+  if (content.parentElement) {
+    content.parentElement.classList.add('page-content--no-scroll');
+  }
+
   // --- Page Header & Actions ---
   const pageHeader = PageHeader({
     title: 'Electronic Blotter',
@@ -227,6 +233,21 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
   function renderTable(items, total) {
     tableCard.innerHTML = '';
 
+    // --- Table Card Header: Title + Entry Count ---
+    const cardHeader = document.createElement('div');
+    cardHeader.className = 'blotter-table-card-header';
+    const cardTitle = document.createElement('h3');
+    cardTitle.className = 'blotter-table-card-title';
+    cardTitle.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+      Blotter Ledger
+    `;
+    const countBadge = document.createElement('span');
+    countBadge.className = 'blotter-table-count-badge';
+    countBadge.textContent = `${total} ${total === 1 ? 'Entry' : 'Entries'}`;
+    cardHeader.append(cardTitle, countBadge);
+    tableCard.appendChild(cardHeader);
+
     const scrollWrap = document.createElement('div');
     scrollWrap.className = 'blotter-table-scroll';
 
@@ -321,10 +342,23 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
         tdStatus.appendChild(statusPill);
         tr.appendChild(tdStatus);
 
-        // 6. OFFICER
+        // 6. OFFICER (with monogram avatar)
         const tdOfficer = document.createElement('td');
         tdOfficer.className = 'blotter-officer-cell';
-        tdOfficer.textContent = row.officerName || 'PO1 Reyes';
+        const officerName = row.officerName || 'Not recorded';
+        const initials = officerName
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((w) => w[0])
+          .join('');
+        const officerAvatar = document.createElement('span');
+        officerAvatar.className = 'blotter-officer-avatar';
+        officerAvatar.textContent = initials.toUpperCase();
+        const officerNameSpan = document.createElement('span');
+        officerNameSpan.className = 'blotter-officer-name';
+        officerNameSpan.textContent = officerName;
+        tdOfficer.append(officerAvatar, officerNameSpan);
         tr.appendChild(tdOfficer);
 
         // 7. ACTIONS (Eye, Edit, Trash)
@@ -514,7 +548,7 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
         </div>
         <div class="blotter-view-item">
           <span class="blotter-view-label">Assigned Officer / Tanod</span>
-          <span class="blotter-view-value">${row.officerName || 'PO1 Reyes'}</span>
+          <span class="blotter-view-value">${row.officerName || 'Not recorded'}</span>
         </div>
         <div class="blotter-view-item">
           <span class="blotter-view-label">Complainant</span>
