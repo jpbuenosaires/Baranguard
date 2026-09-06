@@ -714,7 +714,8 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     const track = document.createElement('div');
     track.className = 'breakdown-progress-track';
     const fill = document.createElement('div');
-    fill.className = `breakdown-progress-fill ${pillClass ? `breakdown-progress-fill--${key}` : ''}`;
+    fill.className = 'breakdown-progress-fill';
+    if (pillClass) fill.classList.add(`breakdown-progress-fill--${key}`);
     fill.style.width = `${pct}%`;
     track.appendChild(fill);
 

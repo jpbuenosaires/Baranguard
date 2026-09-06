@@ -401,6 +401,16 @@ export function LiveMap(container) {
     if (!destroyed) map.zoomOut();
   }
 
+  /**
+   * Re-measure the canvas after the container's own size changes (the
+   * Dispatch Center collapses/expands its queue pane around the map).
+   * MapLibre only auto-resizes against the *window*, so a container-only
+   * change leaves the canvas at its old size until this is called.
+   */
+  function resize() {
+    if (!destroyed) map.resize();
+  }
+
   return { setMarkers, setSosMarkers, setIncidentMarkers, setBoundary, flyTo, highlightIncident, fitAll, resize, zoomIn, zoomOut, destroy };
 }
 

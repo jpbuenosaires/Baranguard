@@ -272,18 +272,11 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const searchBox = document.createElement('div');
       searchBox.className = 'dispatch-queue-search-inline';
       searchBox.style.display = 'none';
-      searchBox.style.marginTop = '0.5rem';
       const searchInputEl = document.createElement('input');
       searchInputEl.type = 'text';
+      searchInputEl.className = 'dispatch-queue-search-inline__input';
       searchInputEl.placeholder = 'Search by ID, type, tanod, or location…';
       searchInputEl.value = searchQuery;
-      searchInputEl.style.width = '100%';
-      searchInputEl.style.padding = '0.375rem 0.625rem';
-      searchInputEl.style.fontSize = '0.8125rem';
-      searchInputEl.style.border = '1px solid var(--color-border, #e2e8f0)';
-      searchInputEl.style.borderRadius = '6px';
-      searchInputEl.style.outline = 'none';
-      searchInputEl.style.background = 'var(--color-bg, #f8fafc)';
       searchInputEl.addEventListener('input', (e) => {
         searchQuery = e.target.value.toLowerCase().trim();
         updateQueueView();
