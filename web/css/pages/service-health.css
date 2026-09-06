@@ -1,32 +1,760 @@
-/* service-health.css — W20 Service Health / Recovery. */
+/**
+ * service-health.css — W20 Service Health & Recovery Diagnostics
+ * Fully tokenized with Baranguard Design System, dark mode compatibility,
+ * and responsive multi-column layouts.
+ */
 
-/* Same padding as settings.css's .settings-pref-row — the same kind of
-   "labeled row + value, bottom-divider list" pattern, previously hand-
-   tuned to a different one-off value (0.4rem) for no documented reason. */
-.health-row {
-  padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--color-divider);
+/* ==========================================================================
+   1. Page Container & Telemetry Header
+   ========================================================================== */
+
+.health-page-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md, 1rem);
+  width: 100%;
 }
 
-.health-row:last-child {
-  border-bottom: none;
+.health-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
 }
 
-/* "Never" for a backup or restore drill is a real, actionable answer —
-   it reads as a warning rather than as ordinary data. */
-.health-value--warn {
-  color: var(--color-warning-text);
+.health-telemetry-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.625rem;
+  background: color-mix(in srgb, var(--color-surface) 90%, var(--color-primary) 10%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, var(--color-primary) 20%);
+  border-radius: 999px;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-primary);
+  user-select: none;
+}
+
+.health-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--color-success);
+  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+  animation: healthPulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes healthPulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(22, 163, 74, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+  }
+}
+
+.health-freshness-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  border-radius: var(--radius-md, 0.5rem);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.health-refresh-btn.is-refreshing svg {
+  animation: healthSpin 0.75s linear infinite;
+}
+
+@keyframes healthSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   2. Operational Status Hero Banner
+   ========================================================================== */
+
+.health-hero-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.125rem 1.25rem;
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-card);
+  transition: all 0.2s ease;
+}
+
+.health-hero-banner--nominal {
+  background: color-mix(in srgb, var(--color-surface) 93%, var(--color-success) 7%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, var(--color-success) 30%);
+  border-left: 5px solid var(--color-success);
+}
+
+.health-hero-banner--alert {
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-critical) 8%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 60%, var(--color-critical) 40%);
+  border-left: 5px solid var(--color-critical);
+}
+
+.health-hero-banner__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.health-hero-banner--nominal .health-hero-banner__icon {
+  color: var(--color-success-text, #15803D);
+}
+
+.health-hero-banner--alert .health-hero-banner__icon {
+  color: var(--color-critical);
+}
+
+.health-hero-banner__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.health-hero-banner__header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.health-hero-banner__title {
+  margin: 0;
+  font-size: var(--font-size-md, 1rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.health-hero-banner__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm, 0.25rem);
+}
+
+.health-hero-banner--nominal .health-hero-banner__badge {
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success-text, #15803D);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
+}
+
+.health-hero-banner--alert .health-hero-banner__badge {
+  background: color-mix(in srgb, var(--color-critical) 16%, transparent);
+  color: var(--pill-critical-text, #991B1B);
+  border: 1px solid color-mix(in srgb, var(--color-critical) 30%, transparent);
+}
+
+.health-hero-banner__text {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+/* ==========================================================================
+   3. Interactive Health StatStrip
+   ========================================================================== */
+
+.health-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-sm, 0.75rem);
+  width: 100%;
+}
+
+.health-stat-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.875rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  text-align: left;
+}
+
+.health-stat-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+.health-stat-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.health-stat-card.is-active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary) 8%);
+  box-shadow: 0 0 0 1.5px var(--color-primary);
+}
+
+.health-stat-card__value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.health-stat-card__value--primary { color: var(--color-primary); }
+.health-stat-card__value--success { color: var(--color-success-text, #15803D); }
+.health-stat-card__value--critical { color: var(--color-critical); }
+.health-stat-card__value--neutral { color: var(--color-text-secondary); }
+
+.health-stat-card__label {
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-top: 0.25rem;
+}
+
+/* ==========================================================================
+   4. Categorized Subsystem Cards & Domains
+   ========================================================================== */
+
+.health-domains-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.health-domain-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.health-domain-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.health-domain-header__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.health-domain-header__icon {
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.health-domain-header__count {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+
+.health-services-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.health-service-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem 1.125rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+  text-align: left;
+}
+
+.health-service-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+.health-service-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.health-service-card--healthy {
+  border-left: 3px solid var(--color-success);
+}
+
+.health-service-card--unhealthy {
+  border-left: 3px solid var(--color-critical);
+  background: color-mix(in srgb, var(--color-surface) 96%, var(--color-critical) 4%);
+}
+
+.health-service-card--not_configured {
+  border-left: 3px solid var(--color-border);
+}
+
+.health-service-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.health-service-card__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.health-service-card__icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.health-service-card__name-block {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.health-service-card__name {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.health-service-card__domain {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.health-service-card__desc {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin: 0 0 0.875rem 0;
+  flex-grow: 1;
+}
+
+.health-service-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  font-size: 0.6875rem;
+}
+
+.health-service-card__probe {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono, monospace);
+}
+
+.health-service-card__action-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-link, #1D4ED8);
   font-weight: 600;
 }
 
-/* --- Premium polish (UI/UX improvement pass) --- */
-.health-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: background-color 0.15s ease;
+/* ==========================================================================
+   5. Disaster Recovery & Continuity Hub
+   ========================================================================== */
+
+.health-dr-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm, 0.75rem);
+  width: 100%;
 }
-.health-row:hover {
-  background: var(--gradient-card-hover);
-  border-radius: var(--radius-sm);
+
+.health-dr-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.125rem 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-card);
+  gap: 0.875rem;
+}
+
+.health-dr-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.health-dr-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.health-dr-card__badge {
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm, 0.25rem);
+  text-transform: uppercase;
+}
+
+.health-dr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.health-dr-label {
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.health-dr-value-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.health-dr-value {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-dr-value--warn {
+  color: var(--color-warning-solid, #B45309);
+}
+
+.health-dr-note {
+  font-size: var(--font-size-xs, 0.75rem);
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.health-terminal-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  color: var(--color-text-primary);
+}
+
+.health-terminal-code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-btn-terminal-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 0.25rem);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.health-btn-terminal-copy:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* ==========================================================================
+   6. Diagnostic & Troubleshooting Modal
+   ========================================================================== */
+
+.health-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md, 1rem);
+}
+
+.health-modal-card {
+  width: 100%;
+  max-width: 620px;
+  max-height: 90vh;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-floating);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: healthModalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes healthModalEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.health-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 95%, var(--color-primary) 5%);
+}
+
+.health-modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.health-modal-title {
+  font-size: var(--font-size-md, 1rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.health-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.health-modal-close:hover {
+  background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
+  color: var(--color-text-primary);
+}
+
+.health-modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+}
+
+.health-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.health-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.health-modal-label {
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-tertiary);
+}
+
+.health-modal-val {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.health-modal-code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  background: var(--color-bg);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radius-sm, 0.25rem);
+  border: 1px solid var(--color-border);
+  color: var(--color-primary);
+  display: inline-block;
+  width: fit-content;
+}
+
+.health-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.health-modal-section-title {
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-tertiary);
+}
+
+.health-modal-impact-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.health-modal-runbook {
+  margin: 0;
+  padding: 0.875rem 1rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.health-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+/* ==========================================================================
+   7. Responsive Breakpoints
+   ========================================================================== */
+
+@media (max-width: 992px) {
+  .health-stat-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .health-services-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .health-dr-section {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .health-stat-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .health-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .health-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
