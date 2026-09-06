@@ -1,0 +1,673 @@
+/**
+ * personnel.css — Personnel Console (Users, Scheduler, Swap Requests, Fatigue Flags)
+ * Tokenized with dark mode compatibility, high density, and smooth transitions.
+ */
+
+/* ==========================================================================
+   1. Personnel Layout & Tab Transitions
+   ========================================================================== */
+
+.personnel-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  animation: personnel-tab-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes personnel-tab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tab Bar with Icon Chips */
+.personnel-tabs-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--color-surface) 90%, var(--color-border));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.personnel-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.875rem;
+  border-radius: calc(var(--radius-md) - 2px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.personnel-tab-btn:hover {
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
+}
+
+.personnel-tab-btn.is-active {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+.personnel-tab-btn__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+.personnel-tab-badge {
+  background: var(--color-critical);
+  color: #ffffff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+/* Filter Bar for Personnel Tabs */
+.personnel-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.personnel-filter-bar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1 1 300px;
+}
+
+.personnel-filter-bar__right {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.personnel-search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 24rem;
+  min-width: 180px;
+}
+
+.personnel-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.personnel-search-input {
+  width: 100%;
+  height: 2.25rem;
+  padding-left: 2.25rem;
+  padding-right: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.personnel-search-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+/* Filter Chips (Role & Status) */
+.personnel-filter-chip {
+  padding: 0.3125rem 0.625rem;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.personnel-filter-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.personnel-filter-chip.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+
+/* ==========================================================================
+   2. Users Tab Styles
+   ========================================================================== */
+
+/* User Name Cell with Avatar & Username */
+.user-identity-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-identity-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.user-identity-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.user-identity-username {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Role Badges */
+.user-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.user-role-badge--admin {
+  background: color-mix(in srgb, #8b5cf6 15%, transparent);
+  color: #7c3aed;
+  border: 1px solid color-mix(in srgb, #8b5cf6 30%, transparent);
+}
+
+.user-role-badge--secretary {
+  background: var(--tint-info-bg);
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+.user-role-badge--tanod {
+  background: color-mix(in srgb, #0ea5e9 15%, transparent);
+  color: #0284c7;
+  border: 1px solid color-mix(in srgb, #0ea5e9 30%, transparent);
+}
+
+.user-role-badge--punong_barangay {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+
+/* User Action Buttons in Row */
+.user-actions-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.user-action-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.user-action-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
+}
+
+.user-action-btn--danger:hover {
+  background: var(--tint-critical-bg);
+  color: var(--color-critical);
+  border-color: var(--color-critical);
+}
+
+.user-action-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.user-action-btn--primary:hover {
+  background: var(--color-primary-hover);
+}
+
+/* Floating Modal Dialog (Add User & Edit Shift) */
+.personnel-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--spacing-md);
+  animation: personnel-modal-fade 0.18s ease-out;
+}
+
+@keyframes personnel-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.personnel-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  width: 100%;
+  max-width: 32rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: personnel-modal-slide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes personnel-modal-slide {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.personnel-modal__header {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface);
+}
+
+.personnel-modal__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.personnel-modal__close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.personnel-modal__close:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.personnel-modal__body {
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.personnel-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-md);
+}
+
+.personnel-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.personnel-form-field--full {
+  grid-column: 1 / -1;
+}
+
+.personnel-form-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.personnel-form-input,
+.personnel-form-select {
+  height: 2.375rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.personnel-form-input:focus,
+.personnel-form-select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.personnel-form-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.personnel-modal__footer {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* ==========================================================================
+   3. Scheduler Tab Styles
+   ========================================================================== */
+
+/* Shift Status Pills */
+.shift-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shift-status-pill--active {
+  background: var(--tint-success-bg);
+  color: var(--pill-success-text);
+  border: 1px solid var(--color-success);
+}
+
+.shift-status-pill--active::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success-solid);
+  animation: shift-pulse 1.8s infinite;
+}
+
+@keyframes shift-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.shift-status-pill--upcoming {
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+  border: 1px solid var(--color-primary);
+}
+
+.shift-status-pill--completed {
+  background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border);
+}
+
+/* Patrol Zone Tag */
+.shift-zone-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.shift-time-range-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.shift-time-dates {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.shift-time-duration {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* Shift Presets in Creation Form */
+.shift-presets-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.shift-presets-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.shift-presets-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.375rem;
+}
+
+.shift-preset-btn {
+  padding: 0.4rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.shift-preset-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.shift-preset-btn small {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+}
+
+/* ==========================================================================
+   4. Swap Requests Tab Styles
+   ========================================================================== */
+
+/* Visual Swap Flow Cell */
+.swap-flow-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.swap-party {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.swap-arrow {
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+}
+
+.swap-target--open {
+  color: var(--color-warning-text);
+  background: var(--tint-warning-bg);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.swap-reason-box {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  background: var(--color-bg);
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--color-primary);
+  max-width: 22rem;
+}
+
+/* ==========================================================================
+   5. Fatigue Flags Tab Styles
+   ========================================================================== */
+
+/* Tiered Fatigue Risk Progress Bar */
+.fatigue-meter-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 14rem;
+}
+
+.fatigue-meter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+}
+
+.fatigue-meter-hours {
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.fatigue-meter-hours.is-moderate { color: var(--color-warning-text); }
+.fatigue-meter-hours.is-high { color: #f97316; }
+.fatigue-meter-hours.is-severe { color: var(--color-critical); }
+
+.fatigue-meter-tier {
+  font-weight: 700;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fatigue-meter-track {
+  width: 100%;
+  height: 0.5rem;
+  background: var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.fatigue-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.fatigue-meter-fill.is-moderate {
+  background: linear-gradient(90deg, #eab308 0%, #f59e0b 100%);
+}
+
+.fatigue-meter-fill.is-high {
+  background: linear-gradient(90deg, #f97316 0%, #ea580c 100%);
+}
+
+.fatigue-meter-fill.is-severe {
+  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  animation: severe-glow 2s infinite;
+}
+
+@keyframes severe-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+.fatigue-meter-over {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
