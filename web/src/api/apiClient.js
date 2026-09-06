@@ -432,6 +432,36 @@ export async function updateIncidentStatus(incidentId) {
   return { incidentId: json.incident_id, status: json.status };
 }
 
+/**
+ * PATCH /incidents/:id — corrects operational fields captured wrong at
+ * intake. Admin may send priority/incidentType/locationDescription;
+ * complainantName is Secretary-only (the server enforces that — it carries
+ * raw_narrative's protection, not redacted_narrative's).
+ *
+ * **There is deliberately no narrative parameter.** The server rejects
+ * `raw_narrative`/`redacted_narrative` on this endpoint outright — see
+ * IncidentsController::update()'s class doc. Narrative correction goes
+ * through the AI redaction pipeline; the legal record goes through blotter
+ * amend, which keeps a revision trail.
+ *
+ * `idempotencyKey` is the required UUID (Idempotency-Key header) — same
+ * contract as createIncident: generate one per user-initiated submit and
+ * reuse only on an automatic retry.
+ */
+export async function updateIncident(incidentId, fields = {}) {
+  const body = {};
+  if (fields.priority !== undefined) body.priority = fields.priority;
+  if (fields.incidentType !== undefined) body.incident_type = fields.incidentType;
+  if (fields.locationDescription !== undefined) body.location_description = fields.locationDescription;
+  if (fields.complainantName !== undefined) body.complainant_name = fields.complainantName;
+  const json = await request('PATCH', `/incidents/${incidentId}`, {
+    body,
+    auth: true,
+    idempotencyKey: fields.idempotencyKey,
+  });
+  return { incidentId: json.incident_id, updated: json.updated, fields: json.fields };
+}
+
 // --- Dispatch (W3a/W3b) -----------------------------------------------------
 
 /**
@@ -1263,8 +1293,8 @@ export async function amendBlotter(incidentId, { narrativeSummary, reason, compl
  * `q` (2026-09-05 UX pass): real server-side search — see
  * BlotterController::index()'s own doc for why this isn't client-side.
  */
-export async function getBlotterList({ q, page, limit } = {}) {
-  const json = await request('GET', '/blotter', { query: { q, page, limit }, auth: true });
+export async function getBlotterList({ q, status, page, limit } = {}) {
+  const json = await request('GET', '/blotter', { query: { q, status, page, limit }, auth: true });
   return {
     items: json.items.map((row) => ({
       blotterId: row.blotter_id,
@@ -1289,6 +1319,45 @@ export async function getBlotterList({ q, page, limit } = {}) {
     page: json.page,
     limit: json.limit,
     total: json.total,
+  };
+}
+
+/**
+ * POST /blotter — a walk-in blotter entry: a complaint brought to the
+ * barangay hall in person, written straight into the ledger. Secretary
+ * only (§3 — a row created here is born finalized, which is exactly the
+ * capability Admin is denied on finalize/amend).
+ *
+ * **`case_status` is deliberately not a parameter.** Every entry starts
+ * `active`, same as finalize() — §5 makes case_status forward-only past
+ * `active`, so letting the creator pick one would skip the transitions
+ * those rules exist to order. Move it on afterwards through blotter amend.
+ *
+ * `idempotencyKey` is the required UUID (Idempotency-Key header): a
+ * double-submit returns the original ledger entry rather than issuing a
+ * second case number for the same complaint.
+ */
+export async function createBlotterRecord(data) {
+  const body = {
+    incident_type: data.incidentType,
+    narrative_summary: data.narrativeSummary,
+    location_description: data.locationDescription,
+    complainant_name: data.complainantName,
+    respondent_name: data.respondentName,
+    complainant_contact_number: data.complainantContactNumber,
+  };
+  const json = await request('POST', '/blotter', {
+    body,
+    auth: true,
+    idempotencyKey: data.idempotencyKey,
+  });
+  return {
+    blotterId: json.blotter_id,
+    incidentId: json.incident_id,
+    displayId: json.display_id,
+    incidentDisplayId: json.incident_display_id,
+    caseStatus: json.case_status,
+    revisionNo: json.revision_no,
   };
 }
 
