@@ -88,9 +88,14 @@ export function renderUsersTab(container, pageHeader, viewer) {
   searchWrap.append(searchIcon, searchInput);
   filterLeft.appendChild(searchWrap);
 
-  // Right: Role & Status filter chips
+  // Right: Role & Status filter dropdowns
   const filterRight = document.createElement('div');
   filterRight.className = 'personnel-filter-bar__right';
+
+  const roleSelect = document.createElement('select');
+  roleSelect.id = 'user-mgmt-role-select';
+  roleSelect.className = 'personnel-filter-select input--auto';
+  roleSelect.setAttribute('aria-label', 'Filter by Role');
 
   const roleFilters = [
     { id: 'all', label: 'All Roles' },
@@ -100,26 +105,23 @@ export function renderUsersTab(container, pageHeader, viewer) {
     { id: 'punong_barangay', label: 'Punong Brgy' },
   ];
 
-  const roleChipBtns = [];
   roleFilters.forEach((rf) => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = `personnel-filter-chip ${selectedRole === rf.id ? 'is-active' : ''}`;
-    chip.textContent = rf.label;
-    chip.addEventListener('click', () => {
-      selectedRole = rf.id;
-      roleChipBtns.forEach((b) => b.classList.remove('is-active'));
-      chip.classList.add('is-active');
-      renderFilteredList();
-    });
-    roleChipBtns.push(chip);
-    filterRight.appendChild(chip);
+    const opt = document.createElement('option');
+    opt.value = rf.id;
+    opt.textContent = rf.label;
+    roleSelect.appendChild(opt);
+  });
+  roleSelect.value = selectedRole;
+
+  roleSelect.addEventListener('change', () => {
+    selectedRole = roleSelect.value;
+    renderFilteredList();
   });
 
-  // Status divider / separator
-  const statusDivider = document.createElement('span');
-  statusDivider.style.cssText = 'width: 1px; height: 16px; background: var(--color-border); margin: 0 4px;';
-  filterRight.appendChild(statusDivider);
+  const statusSelect = document.createElement('select');
+  statusSelect.id = 'user-mgmt-status-select';
+  statusSelect.className = 'personnel-filter-select input--auto';
+  statusSelect.setAttribute('aria-label', 'Filter by Status');
 
   const statusFilters = [
     { id: 'all', label: 'All Status' },
@@ -128,22 +130,20 @@ export function renderUsersTab(container, pageHeader, viewer) {
     { id: 'inactive', label: 'Inactive' },
   ];
 
-  const statusChipBtns = [];
   statusFilters.forEach((sf) => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = `personnel-filter-chip ${selectedStatus === sf.id ? 'is-active' : ''}`;
-    chip.textContent = sf.label;
-    chip.addEventListener('click', () => {
-      selectedStatus = sf.id;
-      statusChipBtns.forEach((b) => b.classList.remove('is-active'));
-      chip.classList.add('is-active');
-      renderFilteredList();
-    });
-    statusChipBtns.push(chip);
-    filterRight.appendChild(chip);
+    const opt = document.createElement('option');
+    opt.value = sf.id;
+    opt.textContent = sf.label;
+    statusSelect.appendChild(opt);
+  });
+  statusSelect.value = selectedStatus;
+
+  statusSelect.addEventListener('change', () => {
+    selectedStatus = statusSelect.value;
+    renderFilteredList();
   });
 
+  filterRight.append(roleSelect, statusSelect);
   filterBar.append(filterLeft, filterRight);
   container.appendChild(filterBar);
 
@@ -197,8 +197,8 @@ export function renderUsersTab(container, pageHeader, viewer) {
       statCards[0].addEventListener('click', () => {
         selectedRole = 'all';
         selectedStatus = 'all';
-        roleChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
-        statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
+        roleSelect.value = 'all';
+        statusSelect.value = 'all';
         renderFilteredList();
       });
     }
@@ -207,7 +207,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
       statCards[1].title = 'Filter: Active Only';
       statCards[1].addEventListener('click', () => {
         selectedStatus = 'active';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Active'));
+        statusSelect.value = 'active';
         renderFilteredList();
       });
     }
@@ -216,7 +216,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
       statCards[2].title = 'Filter: Admins Only';
       statCards[2].addEventListener('click', () => {
         selectedRole = 'admin';
-        roleChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Admins'));
+        roleSelect.value = 'admin';
         renderFilteredList();
       });
     }
@@ -225,7 +225,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
       statCards[3].title = 'Filter: Tanods Only';
       statCards[3].addEventListener('click', () => {
         selectedRole = 'tanod';
-        roleChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Tanods'));
+        roleSelect.value = 'tanod';
         renderFilteredList();
       });
     }
