@@ -167,8 +167,8 @@ final class CitizenReportsController
         AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
 
         $status = Http::query('status');
-        if ($status !== null && $status !== 'unconverted') {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'status must be "unconverted" when provided.');
+        if ($status !== null && !in_array($status, ['unconverted', 'converted', 'all'], true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'status must be "unconverted", "converted", or "all" when provided.');
         }
 
         $page = max(1, (int) (Http::query('page') ?? '1'));
@@ -179,6 +179,8 @@ final class CitizenReportsController
         $params = ['barangay_id' => $identity['barangay_id']];
         if ($status === 'unconverted') {
             $where[] = 'incident_id IS NULL';
+        } elseif ($status === 'converted') {
+            $where[] = 'incident_id IS NOT NULL';
         }
         $whereSql = implode(' AND ', $where);
 
