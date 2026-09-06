@@ -287,6 +287,9 @@ html { font-size: 100%; }
   --dark-tint-success-solid: color-mix(in srgb, #4ADE80 22%, #1E293B);
   --dark-glass-bg: rgba(30,42,56,0.65);
   --dark-glass-border: rgba(255,255,255,0.08);
+  --dark-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --dark-shadow-elevated: 0 10px 20px -3px rgba(0, 0, 0, 0.45), 0 4px 8px -4px rgba(0, 0, 0, 0.4);
+  --dark-shadow-floating: 0 20px 30px -5px rgba(0, 0, 0, 0.6), 0 8px 12px -6px rgba(0, 0, 0, 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -325,6 +328,9 @@ html { font-size: 100%; }
     --tint-success-solid: var(--dark-tint-success-solid);
     --glass-bg: var(--dark-glass-bg);
     --glass-border: var(--dark-glass-border);
+    --shadow-card: var(--dark-shadow-card);
+    --shadow-elevated: var(--dark-shadow-elevated);
+    --shadow-floating: var(--dark-shadow-floating);
   }
 }
 :root[data-theme="dark"] {
@@ -362,9 +368,64 @@ html { font-size: 100%; }
   --tint-success-solid: var(--dark-tint-success-solid);
   --glass-bg: var(--dark-glass-bg);
   --glass-border: var(--dark-glass-border);
+  --shadow-card: var(--dark-shadow-card);
+  --shadow-elevated: var(--dark-shadow-elevated);
+  --shadow-floating: var(--dark-shadow-floating);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* Universal sleek scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+
+/* Dark-mode styling for MapLibre / Mapbox map controls */
+[data-theme="dark"] .maplibregl-ctrl-group,
+[data-theme="dark"] .mapboxgl-ctrl-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+[data-theme="dark"] .maplibregl-ctrl-group button,
+[data-theme="dark"] .mapboxgl-ctrl-group button {
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+[data-theme="dark"] .maplibregl-ctrl-group button:last-child,
+[data-theme="dark"] .mapboxgl-ctrl-group button:last-child {
+  border-bottom: none;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-group button:hover,
+[data-theme="dark"] .mapboxgl-ctrl-group button:hover {
+  background-color: var(--color-bg);
+}
+
+[data-theme="dark"] .maplibregl-ctrl-icon,
+[data-theme="dark"] .mapboxgl-ctrl-icon {
+  filter: invert(1) brightness(1.8);
+}
 
 /* Visually hidden but still reachable by screen readers. */
 .sr-only {

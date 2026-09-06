@@ -18,7 +18,7 @@
   gap: var(--spacing-md);
   flex-wrap: wrap;
   flex-shrink: 0;
-  box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+  box-shadow: var(--shadow-card);
 }
 .page-header__titles { min-width: 0; }
 .page-header__title {
@@ -142,29 +142,29 @@
 }
 
 [data-theme="dark"] .filter-chip:hover {
-  color: #ffffff !important;
+  color: var(--color-white) !important;
   background: rgba(255, 255, 255, 0.08) !important;
 }
 
 .filter-chip:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px #2563eb !important;
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary) !important;
 }
 
 /* Active Segmented Tab Item */
 .filter-chip.is-active {
-  background: #2563eb !important;
-  border-color: #2563eb !important;
-  color: #ffffff !important;
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--color-white) !important;
   font-weight: 600 !important;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+  box-shadow: var(--shadow-card-hover) !important;
 }
 
 [data-theme="dark"] .filter-chip.is-active {
-  background: #2563eb !important;
-  border-color: #2563eb !important;
-  color: #ffffff !important;
-  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.5) !important;
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--color-white) !important;
+  box-shadow: var(--glow-primary) !important;
 }
 
 /* Badge styling inside tab chips */
@@ -173,16 +173,16 @@
   min-width: 1.125rem;
   height: 1.125rem;
   padding: 0 0.35rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   border-radius: 9999px;
-  background: #ef4444;
-  color: #ffffff;
+  background: var(--color-critical);
+  color: var(--color-white);
 }
 
 .filter-chip.is-active .sidebar__nav-badge {
   background: rgba(255, 255, 255, 0.28);
-  color: #ffffff;
+  color: var(--color-white);
   box-shadow: none;
   border: 1px solid rgba(255, 255, 255, 0.3);
 }

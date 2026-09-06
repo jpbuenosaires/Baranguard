@@ -53,10 +53,10 @@
   animation: marker-pulse 2s ease-in-out infinite;
 }
 .live-map__marker--available {
-  background: #10b981;
+  background: var(--color-success-solid, #10b981);
 }
 .live-map__marker--dispatched {
-  background: #2563eb;
+  background: var(--color-primary, #2563eb);
 }
 .live-map__marker--tanod.live-map__marker--stale {
   background: var(--color-text-secondary, #64748b);
