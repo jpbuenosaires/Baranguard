@@ -288,7 +288,7 @@ html { font-size: 100%; }
      an operational console. Do not "complete" the look by extending glass
      there without redoing that contrast audit first. */
   --glass-bg: rgba(255,255,255,0.72);
-  --glass-border: rgba(255,255,255,0.18);
+  --glass-border: var(--color-border);
   --glass-blur: 12px;
   --gradient-hero: linear-gradient(135deg, #1E3A6E 0%, #1D4ED8 50%, #3B82F6 100%);
   --gradient-card-hover: linear-gradient(135deg, rgba(59,130,246,0.04), rgba(29,78,216,0.02));
@@ -620,7 +620,7 @@ input, select, textarea {
   padding: var(--spacing-sm) var(--spacing-sm-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--color-bg);
+  background-color: var(--color-bg);
   color: var(--color-text-primary);
   width: 100%;
   /* border-color/box-shadow: pre-existing focus feedback. background-
@@ -648,6 +648,8 @@ select {
    --dark-text-secondary (#94A3B8) expressed as %23-escaped hex. */
 [data-theme="dark"] select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
 }
 input:hover:not(:focus):not(:disabled),
 select:hover:not(:focus):not(:disabled),

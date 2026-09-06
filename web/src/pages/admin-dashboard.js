@@ -210,9 +210,20 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
   const host = container.querySelector('[data-attention-banner]');
   if (!host) return;
   let openSosCount = 0;
+  let hasCriticalOrHighPending = false;
+  let criticalCount = 0;
+
   try {
-    const sosItems = await getTanodSos({});
-    openSosCount = sosItems.filter((s) => s.status !== 'resolved').length;
+    const [sosItems, pendingRes] = await Promise.all([
+      getTanodSos({}).catch(() => []),
+      pendingCount > 0 ? getIncidents({ status: 'pending', limit: 100 }).catch(() => null) : Promise.resolve(null),
+    ]);
+    openSosCount = (sosItems || []).filter((s) => s.status !== 'resolved').length;
+    if (pendingRes && Array.isArray(pendingRes.items)) {
+      const urgentItems = pendingRes.items.filter((i) => i.priority === 'critical' || i.priority === 'high' || i.incidentType === 'sos');
+      criticalCount = urgentItems.length;
+      hasCriticalOrHighPending = criticalCount > 0;
+    }
   } catch {
     // Best-effort — the banner still shows the pending-incident count below.
   }
@@ -220,9 +231,10 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
   host.innerHTML = '';
   if (pendingCount === 0 && openSosCount === 0) return;
 
+  const isCritical = openSosCount > 0 || hasCriticalOrHighPending;
   const banner = document.createElement('div');
-  banner.className = `attention-banner attention-banner--${openSosCount > 0 ? 'critical' : 'warning'}`;
-  banner.setAttribute('role', openSosCount > 0 ? 'alert' : 'status');
+  banner.className = `attention-banner attention-banner--${isCritical ? 'critical' : 'warning'}`;
+  banner.setAttribute('role', isCritical ? 'alert' : 'status');
   banner.innerHTML = `<span aria-hidden="true">${icons.alertTriangle(22)}</span>`;
 
   const text = document.createElement('span');
@@ -240,7 +252,7 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
   if (role === 'admin') {
     const goButton = document.createElement('button');
     goButton.type = 'button';
-    goButton.className = openSosCount > 0 ? 'ghost' : 'primary';
+    goButton.className = 'attention-banner__btn';
     goButton.textContent = 'Go to Dispatch Center';
     goButton.addEventListener('click', () => navigate('dispatch'));
     banner.appendChild(goButton);

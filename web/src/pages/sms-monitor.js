@@ -294,16 +294,11 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   broadcastBtn.addEventListener('click', () => openBroadcastModal());
 
   actionsWrap.append(newMsgBtn, broadcastBtn);
-  pageHeader.actions.appendChild(actionsWrap);
 
-  const statStripHost = document.createElement('div');
-  statStripHost.className = 'sms-stats-inline-wrap';
-  const titlesBlock = pageHeader.el.querySelector('.page-header__titles');
-  if (titlesBlock) {
-    titlesBlock.appendChild(statStripHost);
-  } else {
-    container.appendChild(statStripHost);
-  }
+  // Segmented KPI Card (Option 1 - mounted inside pageHeader.actions alongside action buttons)
+  const kpiCard = document.createElement('div');
+  kpiCard.className = 'sms-kpi-card';
+  pageHeader.actions.append(kpiCard, actionsWrap);
 
   const layout = document.createElement('div');
   layout.className = 'sms-layout';
@@ -364,24 +359,26 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
       const outVal = outboundToday.total ?? 0;
       const unreadVal = unreadTotal;
 
-      statStripHost.innerHTML = `
-        <div class="sms-stats-inline">
-          <span class="sms-stat-inline-item ${contactFilter === 'all' ? 'is-active' : ''}" data-filter="all" title="Show all messages">
-            <strong class="sms-stat-num sms-stat-num--total">${totalVal}</strong> Total Today
-          </span>
-          <span class="sms-stat-inline-item ${contactFilter === 'inbound' ? 'is-active' : ''}" data-filter="inbound" title="Filter incoming messages">
-            <strong class="sms-stat-num sms-stat-num--inbound">${inVal}</strong> Incoming
-          </span>
-          <span class="sms-stat-inline-item ${contactFilter === 'outbound' ? 'is-active' : ''}" data-filter="outbound" title="Filter outgoing messages">
-            <strong class="sms-stat-num sms-stat-num--outbound">${outVal}</strong> Outgoing
-          </span>
-          <span class="sms-stat-inline-item ${contactFilter === 'unread' ? 'is-active' : ''}" data-filter="unread" title="Filter unread messages">
-            <strong class="sms-stat-num sms-stat-num--unread">${unreadVal}</strong> Unread
-          </span>
-        </div>
+      kpiCard.innerHTML = `
+        <button type="button" class="sms-kpi-col ${contactFilter === 'all' ? 'is-active' : ''}" data-filter="all" title="Show all messages">
+          <span class="sms-kpi-val sms-kpi-val--total">${totalVal}</span>
+          <span class="sms-kpi-label">Total Today</span>
+        </button>
+        <button type="button" class="sms-kpi-col ${contactFilter === 'inbound' ? 'is-active' : ''}" data-filter="inbound" title="Filter incoming messages">
+          <span class="sms-kpi-val sms-kpi-val--inbound">${inVal}</span>
+          <span class="sms-kpi-label">Incoming</span>
+        </button>
+        <button type="button" class="sms-kpi-col ${contactFilter === 'outbound' ? 'is-active' : ''}" data-filter="outbound" title="Filter outgoing messages">
+          <span class="sms-kpi-val sms-kpi-val--outbound">${outVal}</span>
+          <span class="sms-kpi-label">Outgoing</span>
+        </button>
+        <button type="button" class="sms-kpi-col ${contactFilter === 'unread' ? 'is-active' : ''}" data-filter="unread" title="Filter unread messages">
+          <span class="sms-kpi-val sms-kpi-val--unread">${unreadVal}</span>
+          <span class="sms-kpi-label">Unread</span>
+        </button>
       `;
 
-      statStripHost.querySelectorAll('.sms-stat-inline-item').forEach((item) => {
+      kpiCard.querySelectorAll('.sms-kpi-col').forEach((item) => {
         item.addEventListener('click', () => {
           contactFilter = item.dataset.filter;
           updateFilterChipActive();
@@ -395,7 +392,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   }
 
   function updateStatStripActive() {
-    statStripHost.querySelectorAll('.sms-stat-inline-item').forEach((item) => {
+    kpiCard.querySelectorAll('.sms-kpi-col').forEach((item) => {
       item.classList.toggle('is-active', item.dataset.filter === contactFilter);
     });
   }
