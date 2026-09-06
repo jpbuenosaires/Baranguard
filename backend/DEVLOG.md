@@ -8671,3 +8671,102 @@ the shadow-token mistake has now repeated across two separate check
 rounds and four files. If this keeps recurring, it may be worth adding a
 `--shadow-sm|md|lg|xl` grep to `verify-web-wiring.mjs` itself so it's
 caught automatically instead of by manual review each time.
+
+---
+
+## 2026-09-06 (8) — Full color-tokenization pass: ~490 raw colors across 14 pages + LiveMap
+
+User asked for pages that don't use tokens to be brought in line so the
+app "feels cohesive." Surveyed every page CSS file for raw hex/rgba
+before starting:
+
+incident-management.css 102, blotter-detail.css 101, sms-monitor.css 99,
+gis-live-tracking.css 44, blotter-list.css 22, dispatch-center.css 20,
+login.css 19, personnel.css 17, service-health.css 11, audit-log.css 10,
+settings.css 7, citizen-reports.css 4, admin-dashboard.css 4,
+map-packages.css 3, ai-review.css 1. User chose all 14, in one pass.
+
+**The real problem was worse than "missing var()."** The same blue
+appeared as both `#2563eb` and `#1d4ed8` in a single file — meaning
+pages weren't just skipping the token system, some were using a visibly
+different shade than the real `--color-primary` for what's supposed to
+be one consistent brand color. This is the actual "doesn't feel
+cohesive" the user was pointing at.
+
+### Method
+
+Built a hex→token mapping from base.css's real token values (checked,
+not guessed), plus an rgba(R,G,B,alpha)→`color-mix(in srgb, var(--token)
+alpha%, transparent)` pass for translucent overlays whose base RGB
+matched a real token. Applied file by file, verifying brace balance and
+grepping remaining raw colors after each. Two hex values turned out to
+mean DIFFERENT things depending on the CSS property they sat in
+(`#cbd5e1` = `--color-disabled-bg` as a fill/border, but sometimes
+hand-picked as light TEXT elsewhere; same for `#e2e8f0` /
+`--color-border`) — handled property-aware after the first blind
+substitution introduced exactly that mistake once (caught and fixed, see
+below).
+
+### Real bugs found, not just cosmetic renaming
+
+1. **`.case-hero__title` (blotter-detail.css) had `color: var(--color-bg)`**
+   — background color used as text color, nearly invisible against the
+   card behind it. Was a hardcoded hex that happened to equal
+   `--color-bg` exactly. Fixed to `--color-text-primary`.
+2. **`.timeline__value` — same bug, same root cause** (`#cbd5e1` really
+   is `--color-disabled-bg`'s value, but this was TEXT not a fill).
+   Fixed to `--color-text-tertiary`, and made the substitution
+   property-aware so it can't recur.
+3. **A whole family of active-UI cards were permanently dark** —
+   `.party-card`/`.evidence-item`/`.legal-notice-card`/`.doc-blockquote`
+   in blotter-detail.css used `rgba(15,23,42,X)` backgrounds with
+   white-tinted `color-mix` borders that only make sense against a dark
+   backdrop. Real dossier UI, not a print preview — in light mode these
+   would render as jarring near-black islands inside an otherwise light
+   page. Converted to `var(--tint-neutral-bg)` + `var(--color-border)`,
+   the same "subtly different card" pairing every other neutral card in
+   this app already uses.
+4. **`incident-management.css` had 4 hand-rolled `[data-theme="dark"]`
+   override blocks that became fully redundant** once their light-mode
+   rules were tokenized (`.incident-priority-pill--*`, `.incident-row-eye`,
+   `.data-table tr.is-selected`, `.btn-incident-edit`) — the underlying
+   tokens already provide the dark-mode value automatically. Deleted all
+   four rather than leave dead duplication behind.
+5. **`sms-monitor.css`'s inbound/outbound direction badges would have
+   become visually identical** if outbound's near-duplicate light indigo
+   had been mapped to the same info-blue token as inbound. Gave outbound
+   a deliberately different neutral/gray token pairing instead of
+   collapsing a real distinction.
+6. **38 self-referential `var(--token, var(--token))` fallbacks** were
+   introduced by the substitution itself (a hex fallback converted to
+   the same token name as its own primary reference — harmless but
+   pointless). Swept and fixed repo-wide.
+
+### Deliberately left alone
+
+- `blotter-detail.css`'s `@media print` block — real paper output
+  forcing pure black ink is correct, matching the earlier session's
+  decision on the printable blotter sheet mock.
+- `AppShell.css`'s sidebar navy/white — base.css's own header comment
+  already documents this as intentionally NOT re-themed, same reasoning
+  as `--color-navy` (never a light-mode color to begin with).
+- `login.css`'s hero gradient darkest stop (`#162D58`, no matching
+  token) — kept as the fixed brand color it's clearly meant to be; its
+  lighter stop (`#1E3A6E`) was swapped for the real `var(--color-navy)`
+  since that's an exact match.
+- A handful of `[data-theme="dark"]`-gated slate tints in
+  `gis-live-tracking.css`/`dispatch-center.css` (floating widget dark
+  styling) — correctly gated behind the dark selector already, not
+  bleeding into light mode, so not the same bug as finding #3 above.
+- Achromatic `rgba(0,0,0,X)` box-shadows and the established
+  `rgba(15,23,42,0.4-0.65)` modal-backdrop convention (matches
+  ConfirmDialog's own precedent) — both acceptable, pre-existing
+  patterns.
+
+Verification: `verify-web-wiring.mjs` 485/485 (unaffected — no JS
+touched this pass), brace balance checked on all 14 files + LiveMap.css,
+a repo-wide sweep for the self-referential fallback bug (clean
+everywhere after the fix). **No browser pass** — a color-token change is
+exactly the kind of thing that most needs visual confirmation and least
+got it this round; worth opening a few of these screens in both themes
+before trusting the result fully.
