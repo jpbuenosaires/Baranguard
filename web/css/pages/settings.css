@@ -1,80 +1,594 @@
-/* settings.css — W15 Settings, Phase 7 rail + panel layout. */
+/**
+ * settings.css — W15 Settings & Account + W21 System Configuration
+ * Tokenized with Baranguard Design System, dark mode compatibility,
+ * and responsive rail + panel layouts.
+ */
+
+/* ==========================================================================
+   1. Layout & Multi-Tier Settings Rail
+   ========================================================================== */
 
 .settings-layout {
   display: grid;
-  grid-template-columns: 14rem 1fr;
-  gap: var(--spacing-md);
+  grid-template-columns: 16.5rem 1fr;
+  gap: var(--spacing-md, 1rem);
   align-items: start;
-}
-
-@media (max-width: 768px) {
-  .settings-layout {
-    grid-template-columns: 1fr;
-  }
+  width: 100%;
 }
 
 .settings-rail {
   display: flex;
   flex-direction: column;
-  /* Same tight list-gap as .sidebar__nav-item's own margin in
-     AppShell.css — this rail is the same kind of "vertical nav list"
-     component and was previously hand-tuned to a different value
-     (0.15rem) for no documented reason. */
-  gap: var(--spacing-3xs);
+  gap: 0.25rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm);
+  border-radius: var(--radius-lg, 0.75rem);
+  padding: 0.75rem;
+  box-shadow: var(--shadow-card);
+}
+
+.settings-rail__header {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  padding: 0.625rem 0.75rem 0.25rem 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.settings-rail__header:first-child {
+  margin-top: 0;
+  padding-top: 0.25rem;
 }
 
 .settings-rail__item {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  border: none;
-  background: none;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 0.5rem);
+  background: transparent;
   color: var(--color-text-secondary);
-  /* Same padding as .sidebar__nav-item — another same-kind-of-nav-item
-     control previously hand-tuned to a different one-off value
-     (0.55rem 0.65rem). */
-  padding: 0.625rem var(--spacing-sm-md);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  transition: all 0.15s ease;
   text-align: left;
+  user-select: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .settings-rail__item:hover {
   background: var(--color-bg);
-  transform: translateX(2px);
+  color: var(--color-text-primary);
 }
 
 .settings-rail__item.is-active {
-  background: var(--color-row-active-bg);
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary) 8%);
   color: var(--color-primary);
   border-left: 3px solid var(--color-primary);
-  font-weight: 600;
+  border-color: color-mix(in srgb, var(--color-border) 80%, var(--color-primary) 20%);
+  border-left-color: var(--color-primary);
 }
 
 .settings-rail__icon {
-  display: inline-flex;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
-.settings-panel {
+.settings-rail__item.is-active .settings-rail__icon {
+  color: var(--color-primary);
+}
+
+.settings-rail__text-wrap {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
-.settings-role-line {
-  margin-top: -0.25rem;
+.settings-rail__title {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.25;
 }
 
-.settings-pref-row {
-  padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--color-divider);
+.settings-rail__item.is-active .settings-rail__title {
+  color: var(--color-primary);
 }
 
-.settings-pref-row:last-of-type {
-  border-bottom: none;
+.settings-rail__desc {
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+  margin-top: 0.125rem;
+  line-height: 1.3;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md, 1rem);
+  min-width: 0;
+}
+
+/* ==========================================================================
+   2. Card Structure & Form Components
+   ========================================================================== */
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.settings-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.125rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 97%, var(--color-primary) 3%);
+}
+
+.settings-card__title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.settings-card__icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-primary);
+}
+
+.settings-card__title {
+  margin: 0;
+  font-size: var(--font-size-md, 1rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.settings-card__subtitle {
+  margin: 0.2rem 0 0 0;
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-secondary);
+}
+
+.settings-card__body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.settings-label {
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.settings-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.settings-input-icon {
+  position: absolute;
+  left: 0.75rem;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.settings-input {
+  width: 100%;
+  height: 2.375rem;
+  padding: 0 0.75rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-primary);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settings-input--with-icon {
+  padding-left: 2.35rem;
+}
+
+.settings-input--with-toggle {
+  padding-right: 2.5rem;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.settings-pwd-toggle {
+  position: absolute;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 0.25rem);
+  transition: color 0.15s ease;
+}
+
+.settings-pwd-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+.settings-help-text {
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   3. Profile Identity Hero Card
+   ========================================================================== */
+
+.settings-profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 1.125rem;
+  padding: 1rem 1.125rem;
+  background: color-mix(in srgb, var(--color-surface) 94%, var(--color-primary) 6%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, var(--color-primary) 20%);
+  border-radius: var(--radius-md, 0.5rem);
+}
+
+.settings-avatar-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-identity-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.settings-identity-name {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.settings-identity-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.settings-role-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.settings-role-pill--admin {
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+.settings-role-pill--pb {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning-solid, #B45309);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+
+.settings-role-pill--secretary {
+  background: color-mix(in srgb, var(--color-info) 16%, transparent);
+  color: var(--color-info-text, #0E7490);
+  border: 1px solid color-mix(in srgb, var(--color-info) 30%, transparent);
+}
+
+.settings-role-pill--tanod {
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success-text, #15803D);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
+}
+
+.settings-user-id-chip {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, monospace);
+}
+
+/* ==========================================================================
+   4. Password Checklist & Security Notice
+   ========================================================================== */
+
+.settings-security-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--color-surface) 94%, var(--color-warning) 6%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, var(--color-warning) 20%);
+  border-radius: var(--radius-md, 0.5rem);
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.settings-security-notice__icon {
+  color: var(--color-warning-solid, #B45309);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.settings-rules-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+}
+
+.settings-rules-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 0.125rem;
+}
+
+.settings-rules-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.375rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-rule-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease;
+}
+
+.settings-rule-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-border);
+  transition: color 0.15s ease;
+}
+
+.settings-rule-item.is-met {
+  color: var(--color-success-text, #15803D);
+  font-weight: 600;
+}
+
+.settings-rule-item.is-met .settings-rule-mark {
+  color: var(--color-success-text, #15803D);
+}
+
+/* ==========================================================================
+   5. Visual Theme Selector Cards
+   ========================================================================== */
+
+.settings-theme-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.875rem;
+}
+
+.settings-theme-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.125rem;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-lg, 0.75rem);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  gap: 0.625rem;
+  position: relative;
+  text-align: left;
+}
+
+.settings-theme-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 60%, var(--color-border));
+  box-shadow: var(--shadow-elevated);
+}
+
+.settings-theme-card.is-active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-surface) 94%, var(--color-primary) 6%);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.settings-theme-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-theme-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-primary);
+}
+
+.settings-theme-card__indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  color: transparent;
+  transition: all 0.15s ease;
+}
+
+.settings-theme-card.is-active .settings-theme-card__indicator {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.settings-theme-card__title {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.settings-theme-card__desc {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* ==========================================================================
+   6. System Config (General & SMS Gateway)
+   ========================================================================== */
+
+.settings-brand-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: color-mix(in srgb, var(--color-surface) 93%, var(--color-primary) 7%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, var(--color-primary) 20%);
+  border-radius: var(--radius-md, 0.5rem);
+}
+
+.settings-brand-hero__title {
+  font-size: var(--font-size-md, 1rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.settings-brand-hero__sub {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-secondary);
+}
+
+.settings-gateway-status-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1.125rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+}
+
+.settings-sender-preview-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.625rem;
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  border-radius: var(--radius-sm, 0.25rem);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-primary);
+  width: fit-content;
+}
+
+/* ==========================================================================
+   7. Responsive Breakpoints
+   ========================================================================== */
+
+@media (max-width: 840px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .settings-rail__header {
+    display: none;
+  }
+
+  .settings-rail__desc {
+    display: none;
+  }
+
+  .settings-rail__item {
+    width: auto;
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .settings-theme-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-rules-list {
+    grid-template-columns: 1fr;
+  }
 }

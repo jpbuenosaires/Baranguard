@@ -1,44 +1,16 @@
 /**
- * settings.js — W15 Settings/Account (§9), restyled in Phase 7 of the
- * mockup-driven UI round 2 (see .claude/plans/clever-wishing-hummingbird.md)
- * to the mockup's section-rail + panel layout. W15's REAL, already-built
- * fields: Profile, Password, Appearance (every role sees these three).
+ * settings.js — W15 Settings/Account & W21 System Configuration
  *
- * 2026-09-05 UX pass added two Admin-only sections — General and SMS
- * Gateway — as a DELIBERATE, SMALL, user-authorized exception to W21's
- * "no sprint assignment, schema, or endpoints" note (see
- * `SettingsController.php`'s own class doc for the full reasoning and
- * `backend/migrations/0012_system_settings.sql` for the override this
- * specifically is). The mockup's OTHER system-wide sections
- * (Notifications toggles, Security policy, GIS & Mapping, Backup & Data)
- * are still deliberately NOT built — most of their proposed controls
- * have no real enforcement point anywhere in this codebase, and a toggle
- * that doesn't gate anything is exactly the "control that looks
- * functional and does nothing" §2 Rule 6 forbids. See
- * `backend/DEVLOG.md`'s "Full UI/UX overhaul, Phase 6-7" entry for the
- * itemized reasoning on each dropped section.
+ * Fully overhauled with:
+ * - Baranguard Design Tokens & light/dark theme contrast compliance
+ * - Categorized Multi-Tier Settings Rail (Account Settings vs System Configuration)
+ * - User Identity Hero Card with initials avatar and role badge
+ * - Enhanced Password Security with eye show/hide toggles & real-time policy checklist
+ * - Visual Interactive Theme Selector Cards (Light & Dark mode)
+ * - Municipal Deployment Branding editor
+ * - SMS Gateway Telemetry with live sender preview and API key reveal toggle
  *
- * Resolved decision, logged in DEVLOG.md: §6 has no "GET /users/me" or
- * profile-read endpoint at all — self profile data is whatever the login
- * response already put in the session (`full_name`, `role`; no
- * `username`/`contact_number`). So this page can prefill and display
- * `full_name`, but the contact-number field is a blind "type a new value
- * to change it, leave blank to keep the current one" input.
- *
- * Appearance section: the theme toggle moves HERE (the topbar toggle
- * stays too — both control the same `localStorage` value, same precedent
- * as any duplicate control reading shared state) plus a real "Default
- * landing page" preference that `main.js`'s `boot()` actually reads. "Date
- * format" was in the mockup but deliberately NOT built — this app has no
- * shared date-formatting helper and no other screen honours a per-user
- * format, so the control would change nothing anywhere: exactly the kind
- * of decorative-does-nothing control §8 forbids. Real scope only. These
- * are genuinely PER-USER preferences (localStorage) and are deliberately
- * NOT moved into `system_settings` — a system-wide default theme for new
- * users would be a distinct, separate setting from "my own current
- * theme," and this pass doesn't conflate the two.
- *
- * kebab-case filename per §4 (pages/routes convention).
+ * kebab-case filename per §4.
  */
 
 import {
@@ -46,24 +18,29 @@ import {
 } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
+import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
 
-const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay', tanod: 'Tanod' };
+const ROLE_LABELS = {
+  admin: 'Admin',
+  secretary: 'Secretary',
+  punong_barangay: 'Punong Barangay',
+  tanod: 'Tanod',
+};
 
 const THEME_KEY = 'baranguard.theme';
 export const DEFAULT_PAGE_KEY = 'baranguard.defaultPage';
 
-const BASE_SECTIONS = [
-  { key: 'profile', label: 'Profile', icon: icons.users },
-  { key: 'password', label: 'Password', icon: icons.lock },
-  { key: 'appearance', label: 'Appearance', icon: icons.settings },
+const ACCOUNT_SECTIONS = [
+  { key: 'profile', label: 'Profile', subLabel: 'Personal details & contact info', icon: icons.users },
+  { key: 'password', label: 'Password', subLabel: 'Security & authentication', icon: icons.lock },
+  { key: 'appearance', label: 'Appearance', subLabel: 'Theme & landing screen', icon: icons.sun },
 ];
-// Admin-only — matches SettingsController's own role gate; not shown at
-// all to Secretary/PB/Tanod rather than shown-then-403'd.
-const ADMIN_SECTIONS = [
-  { key: 'general', label: 'General', icon: icons.shield },
-  { key: 'sms-gateway', label: 'SMS Gateway', icon: icons.messageSquare },
+
+const SYSTEM_SECTIONS = [
+  { key: 'general', label: 'General', subLabel: 'Municipal & jurisdiction branding', icon: icons.shield },
+  { key: 'sms-gateway', label: 'SMS Gateway', subLabel: 'Semaphore integration & credentials', icon: icons.messageSquare },
 ];
 
 /**
@@ -87,8 +64,8 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
   const pageHeader = PageHeader({
     title: 'Settings',
     subtitle: isAdmin
-      ? 'Manage your profile, password, display preferences, and system configuration'
-      : 'Manage your profile, password, and display preferences',
+      ? 'Manage personal profile, display preferences, and municipal system configuration'
+      : 'Manage your personal profile, security credentials, and display preferences',
     icon: icons.settings,
   });
   header.appendChild(pageHeader.el);
@@ -97,40 +74,76 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
   layout.className = 'settings-layout';
   content.appendChild(layout);
 
+  // Settings Rail Navigation
   const rail = document.createElement('nav');
   rail.className = 'settings-rail';
-  rail.setAttribute('aria-label', 'Settings sections');
+  rail.setAttribute('aria-label', 'Settings navigation');
 
   const panel = document.createElement('div');
-  panel.className = 'settings-panel settings-column';
+  panel.className = 'settings-panel';
 
-  const sections = isAdmin ? [...BASE_SECTIONS, ...ADMIN_SECTIONS] : BASE_SECTIONS;
   let activeSection = 'profile';
   const railButtons = {};
-  for (const section of sections) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'settings-rail__item';
-    button.innerHTML = `<span class="settings-rail__icon" aria-hidden="true">${section.icon(18)}</span><span>${section.label}</span>`;
-    button.addEventListener('click', () => { activeSection = section.key; renderPanel(); syncRail(); });
-    railButtons[section.key] = button;
-    rail.appendChild(button);
+
+  function appendRailSection(title, items) {
+    const headerEl = document.createElement('div');
+    headerEl.className = 'settings-rail__header';
+    headerEl.textContent = title;
+    rail.appendChild(headerEl);
+
+    items.forEach((section) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'settings-rail__item';
+      button.innerHTML = `
+        <span class="settings-rail__icon" aria-hidden="true">${section.icon(18)}</span>
+        <div class="settings-rail__text-wrap">
+          <span class="settings-rail__title">${section.label}</span>
+          <span class="settings-rail__desc">${section.subLabel}</span>
+        </div>
+      `;
+
+      button.addEventListener('click', () => {
+        activeSection = section.key;
+        renderPanel();
+        syncRail();
+      });
+
+      railButtons[section.key] = button;
+      rail.appendChild(button);
+    });
   }
+
+  appendRailSection('Account Settings', ACCOUNT_SECTIONS);
+  if (isAdmin) {
+    appendRailSection('System Configuration', SYSTEM_SECTIONS);
+  }
+
   function syncRail() {
     for (const [key, button] of Object.entries(railButtons)) {
       const active = key === activeSection;
       button.classList.toggle('is-active', active);
-      if (active) button.setAttribute('aria-current', 'true'); else button.removeAttribute('aria-current');
+      if (active) {
+        button.setAttribute('aria-current', 'true');
+      } else {
+        button.removeAttribute('aria-current');
+      }
     }
   }
   syncRail();
 
   function renderPanel() {
     panel.innerHTML = '';
-    if (activeSection === 'profile') panel.appendChild(buildProfileCard(user, shell.setFullName));
-    else if (activeSection === 'password') panel.appendChild(buildPasswordCard());
-    else if (activeSection === 'appearance') panel.appendChild(buildAppearanceCard(user.role));
-    else if (activeSection === 'general') {
+    if (activeSection === 'profile') {
+      panel.appendChild(buildProfileCard(user, (newName) => {
+        user.fullName = newName;
+        shell.setFullName(newName);
+      }));
+    } else if (activeSection === 'password') {
+      panel.appendChild(buildPasswordCard());
+    } else if (activeSection === 'appearance') {
+      panel.appendChild(buildAppearanceCard(user.role));
+    } else if (activeSection === 'general') {
       panel.appendChild(buildLoadingCard('General'));
       loadSystemSettingsInto(panel, buildGeneralCard);
     } else if (activeSection === 'sms-gateway') {
@@ -145,18 +158,12 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
 
 function buildLoadingCard(label) {
   const card = document.createElement('div');
-  card.className = 'card skeleton skeleton--block';
+  card.className = 'settings-card skeleton skeleton--block';
   card.setAttribute('role', 'status');
   card.setAttribute('aria-label', `Loading ${label}`);
   return card;
 }
 
-/**
- * Both Admin-only sections share one load: `GET /system-settings` returns
- * every known key at once (it's a small, fixed set — see
- * SettingsController.php), so there's no reason to fetch it twice just
- * because the rail has two admin panels.
- */
 async function loadSystemSettingsInto(panel, buildCard) {
   try {
     const settings = await getSystemSettings();
@@ -165,7 +172,7 @@ async function loadSystemSettingsInto(panel, buildCard) {
   } catch (err) {
     panel.innerHTML = '';
     const block = document.createElement('div');
-    block.className = 'card state-block state-block--error';
+    block.className = 'settings-card state-block state-block--error';
     block.setAttribute('role', 'alert');
     const text = document.createElement('p');
     text.textContent = err instanceof ApiClientError ? err.message : 'Could not load system settings.';
@@ -174,222 +181,165 @@ async function loadSystemSettingsInto(panel, buildCard) {
   }
 }
 
+/**
+ * 1. Profile Card with Identity Hero
+ */
 function buildProfileCard(user, onFullNameSaved) {
   const card = document.createElement('div');
-  card.className = 'card';
+  card.className = 'settings-card';
 
-  const heading = document.createElement('h3');
-  heading.textContent = 'Profile';
+  // Header
+  const headerEl = document.createElement('div');
+  headerEl.className = 'settings-card__header';
+  headerEl.innerHTML = `
+    <div class="settings-card__title-wrap">
+      <span class="settings-card__icon">${icons.users(20)}</span>
+      <div>
+        <h3 class="settings-card__title">Personal Profile</h3>
+        <p class="settings-card__subtitle">Your operator identity and contact details</p>
+      </div>
+    </div>
+  `;
+  card.appendChild(headerEl);
 
-  const roleLine = document.createElement('p');
-  roleLine.className = 'note';
-  roleLine.classList.add('settings-role-line');
-  roleLine.textContent = `Role: ${ROLE_LABELS[user.role] || user.role}`;
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'settings-card__body';
 
+  // Identity Hero Block
+  const hero = document.createElement('div');
+  hero.className = 'settings-profile-hero';
+
+  const avatarWrap = document.createElement('div');
+  avatarWrap.className = 'settings-avatar-wrap';
+  avatarWrap.innerHTML = avatarInitials(user.fullName, 52);
+
+  const identityBlock = document.createElement('div');
+  identityBlock.className = 'settings-identity-block';
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'settings-identity-name';
+  nameEl.textContent = user.fullName;
+
+  const badgesRow = document.createElement('div');
+  badgesRow.className = 'settings-identity-badges';
+
+  const roleClassMap = {
+    admin: 'settings-role-pill--admin',
+    punong_barangay: 'settings-role-pill--pb',
+    secretary: 'settings-role-pill--secretary',
+    tanod: 'settings-role-pill--tanod',
+  };
+
+  const rolePill = document.createElement('span');
+  rolePill.className = `settings-role-pill ${roleClassMap[user.role] || 'settings-role-pill--admin'}`;
+  rolePill.textContent = ROLE_LABELS[user.role] || user.role;
+
+  const idChip = document.createElement('span');
+  idChip.className = 'settings-user-id-chip';
+  idChip.textContent = `User #${user.userId}`;
+
+  badgesRow.append(rolePill, idChip);
+  identityBlock.append(nameEl, badgesRow);
+  hero.append(avatarWrap, identityBlock);
+
+  bodyEl.appendChild(hero);
+
+  // Form
   const form = document.createElement('form');
-  form.className = 'form-stack';
+  form.className = 'settings-form';
   form.noValidate = true;
 
-  const errorBox = document.createElement('div');
-  errorBox.className = 'login-form__error';
-  errorBox.setAttribute('role', 'alert');
-  errorBox.hidden = true;
-  const successBox = document.createElement('div');
-  successBox.className = 'login-form__error';
-  successBox.setAttribute('role', 'status');
-  successBox.classList.add('inline-success');
-  successBox.hidden = true;
-
+  // Full Name Field
+  const nameField = document.createElement('div');
+  nameField.className = 'settings-field';
   const nameLabel = document.createElement('label');
-  nameLabel.className = 'label';
+  nameLabel.className = 'settings-label';
   nameLabel.htmlFor = 'settings-fullname';
-  nameLabel.textContent = 'Full name';
+  nameLabel.textContent = 'Full Name';
+
+  const nameInputWrap = document.createElement('div');
+  nameInputWrap.className = 'settings-input-wrap';
+  const nameIcon = document.createElement('span');
+  nameIcon.className = 'settings-input-icon';
+  nameIcon.innerHTML = icons.users(16);
+
   const nameInput = document.createElement('input');
   nameInput.id = 'settings-fullname';
   nameInput.type = 'text';
+  nameInput.className = 'settings-input settings-input--with-icon';
   nameInput.value = user.fullName;
   nameInput.required = true;
 
+  nameInputWrap.append(nameIcon, nameInput);
+  nameField.append(nameLabel, nameInputWrap);
+
+  // Contact Number Field
+  const contactField = document.createElement('div');
+  contactField.className = 'settings-field';
   const contactLabel = document.createElement('label');
-  contactLabel.className = 'label';
+  contactLabel.className = 'settings-label';
   contactLabel.htmlFor = 'settings-contact';
-  contactLabel.textContent = 'Contact number';
+  contactLabel.textContent = 'Contact Number';
+
+  const contactInputWrap = document.createElement('div');
+  contactInputWrap.className = 'settings-input-wrap';
+  const contactIcon = document.createElement('span');
+  contactIcon.className = 'settings-input-icon';
+  contactIcon.innerHTML = icons.phone(16);
+
   const contactInput = document.createElement('input');
   contactInput.id = 'settings-contact';
   contactInput.type = 'text';
-  contactInput.placeholder = 'Enter a new number to update it — leave blank to keep the current one';
+  contactInput.className = 'settings-input settings-input--with-icon';
+  contactInput.placeholder = 'e.g. 0917 123 4567';
 
-  const saveButton = document.createElement('button');
-  saveButton.type = 'submit';
-  saveButton.className = 'primary';
-  saveButton.textContent = 'Save changes';
+  const contactHelp = document.createElement('span');
+  contactHelp.className = 'settings-help-text';
+  contactHelp.textContent = 'Enter a new mobile number to update it. Leave blank to preserve your current number.';
 
-  form.append(errorBox, successBox, nameLabel, nameInput, contactLabel, contactInput, saveButton);
-  card.append(heading, roleLine, form);
+  contactInputWrap.append(contactIcon, contactInput);
+  contactField.append(contactLabel, contactInputWrap, contactHelp);
 
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    errorBox.hidden = true;
-    successBox.hidden = true;
+  // Submit Button
+  const submitButton = document.createElement('button');
+  submitButton.type = 'submit';
+  submitButton.className = 'primary';
+  submitButton.style.cssText = 'width: fit-content; min-width: 140px; margin-top: 0.25rem;';
+  submitButton.textContent = 'Save Changes';
 
+  form.append(nameField, contactField, submitButton);
+  bodyEl.appendChild(form);
+  card.appendChild(bodyEl);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
     const fullName = nameInput.value.trim();
     if (!fullName) {
-      errorBox.textContent = 'Full name cannot be empty.';
-      errorBox.hidden = false;
+      showToast('Full name cannot be empty.', { variant: 'error' });
+      nameInput.focus();
       return;
     }
 
-    saveButton.disabled = true;
-    saveButton.textContent = 'Saving…';
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving…';
+
     try {
       await updateProfile(user.userId, {
         fullName,
         contactNumber: contactInput.value.trim() ? contactInput.value.trim() : undefined,
       });
+
       contactInput.value = '';
+      nameEl.textContent = fullName;
+      avatarWrap.innerHTML = avatarInitials(fullName, 52);
       onFullNameSaved(fullName);
-      successBox.textContent = 'Profile updated.';
-      successBox.hidden = false;
+      showToast('Profile updated successfully.', { variant: 'success' });
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Could not save your profile.';
-      errorBox.textContent = message;
-      errorBox.hidden = false;
-    } finally {
-      saveButton.disabled = false;
-      saveButton.textContent = 'Save changes';
-    }
-  });
-
-  return card;
-}
-
-function buildPasswordCard() {
-  const card = document.createElement('div');
-  card.className = 'card';
-
-  const heading = document.createElement('h3');
-  heading.textContent = 'Change Password';
-
-  const form = document.createElement('form');
-  form.className = 'form-stack';
-  form.noValidate = true;
-
-  const errorBox = document.createElement('div');
-  errorBox.className = 'login-form__error';
-  errorBox.setAttribute('role', 'alert');
-  errorBox.hidden = true;
-  const successBox = document.createElement('div');
-  successBox.className = 'login-form__error';
-  successBox.setAttribute('role', 'status');
-  successBox.classList.add('inline-success');
-  successBox.hidden = true;
-
-  const currentLabel = document.createElement('label');
-  currentLabel.className = 'sr-only';
-  currentLabel.htmlFor = 'settings-current-password';
-  currentLabel.textContent = 'Current password';
-  const currentInput = document.createElement('input');
-  currentInput.id = 'settings-current-password';
-  currentInput.type = 'password';
-  currentInput.placeholder = 'Current password';
-  currentInput.autocomplete = 'current-password';
-  currentInput.required = true;
-
-  const newLabel = document.createElement('label');
-  newLabel.className = 'sr-only';
-  newLabel.htmlFor = 'settings-new-password';
-  newLabel.textContent = 'New password (min. 12 characters, upper/lower/digit)';
-  const newInput = document.createElement('input');
-  newInput.id = 'settings-new-password';
-  newInput.type = 'password';
-  newInput.placeholder = 'New password (min. 12 characters, upper/lower/digit)';
-  newInput.autocomplete = 'new-password';
-  newInput.required = true;
-
-  const confirmLabel = document.createElement('label');
-  confirmLabel.className = 'sr-only';
-  confirmLabel.htmlFor = 'settings-confirm-password';
-  confirmLabel.textContent = 'Confirm new password';
-  const confirmInput = document.createElement('input');
-  confirmInput.id = 'settings-confirm-password';
-  confirmInput.type = 'password';
-  confirmInput.placeholder = 'Confirm new password';
-  confirmInput.autocomplete = 'new-password';
-  confirmInput.required = true;
-
-  // audit W15: the policy was enforced on both client and server but never
-  // stated — the user discovered it by being rejected. Each rule ticks as
-  // it is met, so the requirement is visible before submitting.
-  const RULES = [
-    { text: 'At least 12 characters', test: (v) => v.length >= 12 },
-    { text: 'An uppercase letter', test: (v) => /[A-Z]/.test(v) },
-    { text: 'A lowercase letter', test: (v) => /[a-z]/.test(v) },
-    { text: 'A number', test: (v) => /\d/.test(v) },
-  ];
-  const rulesList = document.createElement('ul');
-  rulesList.className = 'password-rules';
-  rulesList.id = 'settings-password-rules';
-  const ruleItems = RULES.map((rule) => {
-    const li = document.createElement('li');
-    li.className = 'password-rules__item';
-    const mark = document.createElement('span');
-    mark.className = 'password-rules__mark';
-    mark.setAttribute('aria-hidden', 'true');
-    const label = document.createElement('span');
-    label.textContent = rule.text;
-    li.append(mark, label);
-    rulesList.appendChild(li);
-    return { rule, li };
-  });
-  newInput.setAttribute('aria-describedby', 'settings-password-rules');
-  newInput.addEventListener('input', () => {
-    for (const { rule, li } of ruleItems) {
-      li.classList.toggle('is-met', rule.test(newInput.value));
-    }
-  });
-
-  // audit W15: changing a password revokes this user's OTHER sessions
-  // (server-side, verified back in Sprint 1) and the UI never said so.
-  const sessionNotice = document.createElement('p');
-  sessionNotice.className = 'note';
-  sessionNotice.textContent = 'Changing your password signs you out on any other device. This one stays signed in.';
-
-  const submitButton = document.createElement('button');
-  submitButton.type = 'submit';
-  submitButton.className = 'primary';
-  submitButton.textContent = 'Update password';
-
-  form.append(errorBox, successBox, currentLabel, currentInput, newLabel, newInput, rulesList, confirmLabel, confirmInput, sessionNotice, submitButton);
-  card.appendChild(heading);
-  card.appendChild(form);
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    errorBox.hidden = true;
-    successBox.hidden = true;
-
-    if (newInput.value !== confirmInput.value) {
-      errorBox.textContent = 'New password and confirmation do not match.';
-      errorBox.hidden = false;
-      return;
-    }
-
-    submitButton.disabled = true;
-    submitButton.textContent = 'Updating…';
-    try {
-      await changePassword(currentInput.value, newInput.value);
-      currentInput.value = '';
-      newInput.value = '';
-      confirmInput.value = '';
-      successBox.textContent = 'Password updated. Your other signed-in sessions have been signed out.';
-      successBox.hidden = false;
-    } catch (err) {
-      const message = err instanceof ApiClientError ? err.message : 'Could not update your password.';
-      errorBox.textContent = message;
-      errorBox.hidden = false;
+      showToast(message, { variant: 'error' });
     } finally {
       submitButton.disabled = false;
-      submitButton.textContent = 'Update password';
+      submitButton.textContent = 'Save Changes';
     }
   });
 
@@ -397,151 +347,438 @@ function buildPasswordCard() {
 }
 
 /**
- * Appearance — theme (real, shared with the topbar toggle) and Default
- * landing page (real — `main.js`'s `boot()` reads `DEFAULT_PAGE_KEY` and
- * only honours a value that's actually a page the caller's role can see,
- * falling back to the normal first-match otherwise).
+ * 2. Password Card with Visibility Toggles & Real-Time Policy Checklist
+ */
+function buildPasswordCard() {
+  const card = document.createElement('div');
+  card.className = 'settings-card';
+
+  // Header
+  const headerEl = document.createElement('div');
+  headerEl.className = 'settings-card__header';
+  headerEl.innerHTML = `
+    <div class="settings-card__title-wrap">
+      <span class="settings-card__icon">${icons.lock(20)}</span>
+      <div>
+        <h3 class="settings-card__title">Security & Password</h3>
+        <p class="settings-card__subtitle">Update your account authentication credentials</p>
+      </div>
+    </div>
+  `;
+  card.appendChild(headerEl);
+
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'settings-card__body';
+
+  // Security Notice Banner
+  const securityNotice = document.createElement('div');
+  securityNotice.className = 'settings-security-notice';
+  securityNotice.innerHTML = `
+    <span class="settings-security-notice__icon">${icons.alertTriangle(18)}</span>
+    <span>
+      <strong>Session Revocation Security Policy:</strong> Changing your password will automatically terminate and sign out
+      all other active sessions across mobile devices and workstations. Your current browser will remain securely logged in.
+    </span>
+  `;
+  bodyEl.appendChild(securityNotice);
+
+  const form = document.createElement('form');
+  form.className = 'settings-form';
+  form.noValidate = true;
+
+  function buildPasswordField(id, labelText, placeholder) {
+    const field = document.createElement('div');
+    field.className = 'settings-field';
+
+    const label = document.createElement('label');
+    label.className = 'settings-label';
+    label.htmlFor = id;
+    label.textContent = labelText;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'settings-input-wrap';
+
+    const input = document.createElement('input');
+    input.id = id;
+    input.type = 'password';
+    input.className = 'settings-input settings-input--with-toggle';
+    input.placeholder = placeholder;
+    input.autocomplete = id === 'settings-current-password' ? 'current-password' : 'new-password';
+    input.required = true;
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'settings-pwd-toggle';
+    toggle.setAttribute('aria-label', `Toggle ${labelText} visibility`);
+    toggle.innerHTML = icons.eye(16);
+
+    let isVisible = false;
+    toggle.addEventListener('click', () => {
+      isVisible = !isVisible;
+      input.type = isVisible ? 'text' : 'password';
+      toggle.innerHTML = isVisible ? icons.eyeOff(16) : icons.eye(16);
+    });
+
+    wrap.append(input, toggle);
+    field.append(label, wrap);
+    return { field, input };
+  }
+
+  const currentField = buildPasswordField('settings-current-password', 'Current Password', 'Enter current password');
+  const newField = buildPasswordField('settings-new-password', 'New Password', 'Enter at least 12 characters');
+  const confirmField = buildPasswordField('settings-confirm-password', 'Confirm New Password', 'Re-enter new password');
+
+  // Policy Checklist Box
+  const rulesBox = document.createElement('div');
+  rulesBox.className = 'settings-rules-box';
+
+  const rulesTitle = document.createElement('span');
+  rulesTitle.className = 'settings-rules-title';
+  rulesTitle.textContent = 'Password Complexity Requirements:';
+
+  const rulesList = document.createElement('ul');
+  rulesList.className = 'settings-rules-list';
+
+  const RULES = [
+    { text: 'At least 12 characters', test: (v) => v.length >= 12 },
+    { text: 'An uppercase letter (A-Z)', test: (v) => /[A-Z]/.test(v) },
+    { text: 'A lowercase letter (a-z)', test: (v) => /[a-z]/.test(v) },
+    { text: 'A numeric digit (0-9)', test: (v) => /\d/.test(v) },
+  ];
+
+  const ruleElements = RULES.map((rule) => {
+    const li = document.createElement('li');
+    li.className = 'settings-rule-item';
+
+    const mark = document.createElement('span');
+    mark.className = 'settings-rule-mark';
+    mark.innerHTML = icons.alertCircle(14);
+
+    const lbl = document.createElement('span');
+    lbl.textContent = rule.text;
+
+    li.append(mark, lbl);
+    rulesList.appendChild(li);
+    return { rule, li, mark };
+  });
+
+  rulesBox.append(rulesTitle, rulesList);
+
+  newField.input.addEventListener('input', () => {
+    const val = newField.input.value;
+    ruleElements.forEach(({ rule, li, mark }) => {
+      const isMet = rule.test(val);
+      li.classList.toggle('is-met', isMet);
+      mark.innerHTML = isMet ? icons.checkCircle(14) : icons.alertCircle(14);
+    });
+  });
+
+  const submitButton = document.createElement('button');
+  submitButton.type = 'submit';
+  submitButton.className = 'primary';
+  submitButton.style.cssText = 'width: fit-content; min-width: 150px; margin-top: 0.5rem;';
+  submitButton.textContent = 'Update Password';
+
+  form.append(currentField.field, newField.field, rulesBox, confirmField.field, submitButton);
+  bodyEl.appendChild(form);
+  card.appendChild(bodyEl);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    if (!currentField.input.value) {
+      showToast('Please enter your current password.', { variant: 'error' });
+      currentField.input.focus();
+      return;
+    }
+
+    const allRulesMet = RULES.every((r) => r.test(newField.input.value));
+    if (!allRulesMet) {
+      showToast('New password does not satisfy all complexity requirements.', { variant: 'error' });
+      newField.input.focus();
+      return;
+    }
+
+    if (newField.input.value !== confirmField.input.value) {
+      showToast('New password and confirmation do not match.', { variant: 'error' });
+      confirmField.input.focus();
+      return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = 'Updating…';
+
+    try {
+      await changePassword(currentField.input.value, newField.input.value);
+      currentField.input.value = '';
+      newField.input.value = '';
+      confirmField.input.value = '';
+
+      ruleElements.forEach(({ li, mark }) => {
+        li.classList.remove('is-met');
+        mark.innerHTML = icons.alertCircle(14);
+      });
+
+      showToast('Password updated. Other signed-in sessions have been revoked.', { variant: 'success' });
+    } catch (err) {
+      const message = err instanceof ApiClientError ? err.message : 'Could not update your password.';
+      showToast(message, { variant: 'error' });
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Update Password';
+    }
+  });
+
+  return card;
+}
+
+/**
+ * 3. Appearance Card with Visual Theme Selector
  */
 function buildAppearanceCard(role) {
   const card = document.createElement('div');
-  card.className = 'card';
-  const heading = document.createElement('h3');
-  heading.textContent = 'Appearance';
-  card.appendChild(heading);
+  card.className = 'settings-card';
 
-  const themeRow = document.createElement('div');
-  themeRow.className = 'row-between settings-pref-row';
+  // Header
+  const headerEl = document.createElement('div');
+  headerEl.className = 'settings-card__header';
+  headerEl.innerHTML = `
+    <div class="settings-card__title-wrap">
+      <span class="settings-card__icon">${icons.sun(20)}</span>
+      <div>
+        <h3 class="settings-card__title">Display & Appearance</h3>
+        <p class="settings-card__subtitle">Theme preferences and workstation default landing view</p>
+      </div>
+    </div>
+  `;
+  card.appendChild(headerEl);
+
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'settings-card__body';
+
+  // Section 1: Visual Theme Selector Cards
+  const themeSection = document.createElement('div');
+  themeSection.className = 'settings-field';
+
   const themeLabel = document.createElement('span');
-  themeLabel.textContent = 'Theme';
-  const themeToggle = document.createElement('button');
-  themeToggle.type = 'button';
-  themeToggle.className = 'ghost';
+  themeLabel.className = 'settings-label';
+  themeLabel.textContent = 'Interface Color Theme';
+
+  const themeGrid = document.createElement('div');
+  themeGrid.className = 'settings-theme-grid';
+
   const isDark = () => {
     const attr = document.documentElement.getAttribute('data-theme');
     if (attr === 'dark') return true;
     if (attr === 'light') return false;
     return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   };
-  const syncThemeButton = () => { themeToggle.textContent = isDark() ? 'Switch to light' : 'Switch to dark'; };
-  syncThemeButton();
-  themeToggle.addEventListener('click', () => {
-    const next = isDark() ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode */ }
-    syncThemeButton();
-  });
-  themeRow.append(themeLabel, themeToggle);
 
-  const landingRow = document.createElement('div');
-  landingRow.className = 'row-between settings-pref-row';
+  // Light Card
+  const lightCard = document.createElement('div');
+  lightCard.className = 'settings-theme-card';
+  lightCard.setAttribute('role', 'button');
+  lightCard.setAttribute('tabindex', '0');
+  lightCard.innerHTML = `
+    <div class="settings-theme-card__top">
+      <div class="settings-theme-card__icon">${icons.sun(20)}</div>
+      <span class="settings-theme-card__indicator" aria-hidden="true">${icons.checkCircle(12)}</span>
+    </div>
+    <h4 class="settings-theme-card__title">Light Mode</h4>
+    <p class="settings-theme-card__desc">Clean, high-contrast operational console tuned for daylight shift environments.</p>
+  `;
+
+  // Dark Card
+  const darkCard = document.createElement('div');
+  darkCard.className = 'settings-theme-card';
+  darkCard.setAttribute('role', 'button');
+  darkCard.setAttribute('tabindex', '0');
+  darkCard.innerHTML = `
+    <div class="settings-theme-card__top">
+      <div class="settings-theme-card__icon">${icons.moon(20)}</div>
+      <span class="settings-theme-card__indicator" aria-hidden="true">${icons.checkCircle(12)}</span>
+    </div>
+    <h4 class="settings-theme-card__title">Dark Mode</h4>
+    <p class="settings-theme-card__desc">Reduces glare and blue-light strain for nighttime dispatch operations.</p>
+  `;
+
+  const syncThemeCards = () => {
+    const dark = isDark();
+    lightCard.classList.toggle('is-active', !dark);
+    darkCard.classList.toggle('is-active', dark);
+  };
+
+  const applyTheme = (mode) => {
+    document.documentElement.setAttribute('data-theme', mode);
+    try {
+      localStorage.setItem(THEME_KEY, mode);
+    } catch { /* Private mode */ }
+    syncThemeCards();
+    showToast(`Theme switched to ${mode} mode.`, { variant: 'info' });
+  };
+
+  lightCard.addEventListener('click', () => applyTheme('light'));
+  darkCard.addEventListener('click', () => applyTheme('dark'));
+
+  syncThemeCards();
+  themeGrid.append(lightCard, darkCard);
+  themeSection.append(themeLabel, themeGrid);
+
+  // Section 2: Default Landing Screen
+  const landingSection = document.createElement('div');
+  landingSection.className = 'settings-field';
+  landingSection.style.marginTop = '0.5rem';
+
   const landingLabel = document.createElement('label');
+  landingLabel.className = 'settings-label';
   landingLabel.htmlFor = 'settings-default-page';
-  landingLabel.textContent = 'Default landing page';
+  landingLabel.textContent = 'Default Login Landing Screen';
+
   const landingSelect = document.createElement('select');
   landingSelect.id = 'settings-default-page';
-  const optionForRole = LANDING_OPTIONS.filter((o) => o.roles.includes(role));
-  const auto = document.createElement('option');
-  auto.value = '';
-  auto.textContent = 'Automatic (first available screen)';
-  landingSelect.appendChild(auto);
-  for (const opt of optionForRole) {
+  landingSelect.className = 'settings-input';
+
+  const autoOpt = document.createElement('option');
+  autoOpt.value = '';
+  autoOpt.textContent = 'Automatic (First available operational view)';
+  landingSelect.appendChild(autoOpt);
+
+  const eligibleScreens = LANDING_OPTIONS.filter((opt) => opt.roles.includes(role));
+  eligibleScreens.forEach((opt) => {
     const el = document.createElement('option');
     el.value = opt.key;
     el.textContent = opt.label;
     landingSelect.appendChild(el);
-  }
-  try { landingSelect.value = localStorage.getItem(DEFAULT_PAGE_KEY) || ''; } catch { /* private mode */ }
+  });
+
+  try {
+    landingSelect.value = localStorage.getItem(DEFAULT_PAGE_KEY) || '';
+  } catch { /* private mode */ }
+
   landingSelect.addEventListener('change', () => {
     try {
-      if (landingSelect.value) localStorage.setItem(DEFAULT_PAGE_KEY, landingSelect.value);
-      else localStorage.removeItem(DEFAULT_PAGE_KEY);
-    } catch { /* private mode — preference just won't persist */ }
+      if (landingSelect.value) {
+        localStorage.setItem(DEFAULT_PAGE_KEY, landingSelect.value);
+      } else {
+        localStorage.removeItem(DEFAULT_PAGE_KEY);
+      }
+      showToast('Default landing page preference saved.', { variant: 'success' });
+    } catch { /* private mode */ }
   });
-  landingRow.append(landingLabel, landingSelect);
 
-  const note = document.createElement('p');
-  note.className = 'note';
-  note.textContent = 'Applies the next time you sign in.';
+  const landingHelp = document.createElement('span');
+  landingHelp.className = 'settings-help-text';
+  landingHelp.textContent = 'Determines which operational screen opens immediately after authentication.';
 
-  card.append(themeRow, landingRow, note);
+  landingSection.append(landingLabel, landingSelect, landingHelp);
+
+  bodyEl.append(themeSection, landingSection);
+  card.appendChild(bodyEl);
   return card;
 }
 
 /**
- * General (Admin-only, 2026-09-05 UX pass) — pure organizational
- * metadata, no behavioral claim: saving these three fields changes what
- * this deployment calls itself, nothing else. Deliberately NOT included
- * here (see this file's own header): Time Zone and an "Incident ID
- * Format" field — both are hardcoded elsewhere in this codebase (§11's
- * Asia/Manila day-bucketing rule; `IncidentsController::nextDisplayId()`'s
- * fixed `PREFIX-YYYY-NNN` shape) and a settings field that LOOKED
- * editable but didn't actually change either would be exactly the kind
- * of control §2 Rule 6 forbids.
+ * 4. General Deployment Card (Admin Only)
  */
 function buildGeneralCard(settings) {
   const card = document.createElement('div');
-  card.className = 'card';
-  const heading = document.createElement('h3');
-  heading.textContent = 'General';
-  const note = document.createElement('p');
-  note.className = 'note';
-  note.textContent = 'How this deployment identifies itself. Purely organizational — saving these does not change any operational behavior.';
-  card.append(heading, note);
+  card.className = 'settings-card';
+
+  // Header
+  const headerEl = document.createElement('div');
+  headerEl.className = 'settings-card__header';
+  headerEl.innerHTML = `
+    <div class="settings-card__title-wrap">
+      <span class="settings-card__icon">${icons.shield(20)}</span>
+      <div>
+        <h3 class="settings-card__title">General System Configuration</h3>
+        <p class="settings-card__subtitle">Municipal jurisdiction and deployment branding metadata</p>
+      </div>
+    </div>
+  `;
+  card.appendChild(headerEl);
+
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'settings-card__body';
+
+  // Brand Hero Box
+  const brandHero = document.createElement('div');
+  brandHero.className = 'settings-brand-hero';
+  brandHero.innerHTML = `
+    <div>
+      <div class="settings-brand-hero__title">${settings['general.system_name'] || 'BARANGUARD'}</div>
+      <div class="settings-brand-hero__sub">${settings['general.municipality'] || 'Pilar, Sorsogon'} • ${settings['general.region'] || 'Region V (Bicol)'}</div>
+    </div>
+    <span class="settings-role-pill settings-role-pill--admin">DEPLOYMENT TENANT</span>
+  `;
+  bodyEl.appendChild(brandHero);
 
   const form = document.createElement('form');
-  form.className = 'form-stack';
+  form.className = 'settings-form';
   form.noValidate = true;
 
-  const errorBox = document.createElement('div');
-  errorBox.className = 'login-form__error';
-  errorBox.setAttribute('role', 'alert');
-  errorBox.hidden = true;
-  const successBox = document.createElement('div');
-  successBox.className = 'login-form__error';
-  successBox.setAttribute('role', 'status');
-  successBox.classList.add('inline-success');
-  successBox.hidden = true;
+  function buildInputGroup(id, labelText, value, iconFn) {
+    const field = document.createElement('div');
+    field.className = 'settings-field';
 
-  const nameField = settingsTextField('settings-system-name', 'System name', settings['general.system_name']);
-  const municipalityField = settingsTextField('settings-municipality', 'Municipality', settings['general.municipality']);
-  const regionField = settingsTextField('settings-region', 'Region', settings['general.region']);
+    const label = document.createElement('label');
+    label.className = 'settings-label';
+    label.htmlFor = id;
+    label.textContent = labelText;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'settings-input-wrap';
+
+    const icon = document.createElement('span');
+    icon.className = 'settings-input-icon';
+    icon.innerHTML = iconFn(16);
+
+    const input = document.createElement('input');
+    input.id = id;
+    input.type = 'text';
+    input.className = 'settings-input settings-input--with-icon';
+    input.value = value || '';
+
+    wrap.append(icon, input);
+    field.append(label, wrap);
+    return { field, input };
+  }
+
+  const nameField = buildInputGroup('settings-system-name', 'System Title', settings['general.system_name'], icons.layoutDashboard);
+  const munField = buildInputGroup('settings-municipality', 'Municipality / City', settings['general.municipality'], icons.mapPin);
+  const regField = buildInputGroup('settings-region', 'Region / Province', settings['general.region'], icons.compass);
 
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
-  submitButton.textContent = 'Save changes';
+  submitButton.style.cssText = 'width: fit-content; min-width: 140px; margin-top: 0.25rem;';
+  submitButton.textContent = 'Save General Settings';
 
-  form.append(
-    errorBox, successBox,
-    nameField.label, nameField.input,
-    municipalityField.label, municipalityField.input,
-    regionField.label, regionField.input,
-    submitButton,
-  );
-  card.appendChild(form);
+  form.append(nameField.field, munField.field, regField.field, submitButton);
+  bodyEl.appendChild(form);
+  card.appendChild(bodyEl);
 
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    errorBox.hidden = true;
-    successBox.hidden = true;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
     submitButton.disabled = true;
     submitButton.textContent = 'Saving…';
+
     try {
       await updateSystemSettings({
         'general.system_name': nameField.input.value.trim(),
-        'general.municipality': municipalityField.input.value.trim(),
-        'general.region': regionField.input.value.trim(),
+        'general.municipality': munField.input.value.trim(),
+        'general.region': regField.input.value.trim(),
       });
-      showToast('General settings saved.', { variant: 'success' });
-      successBox.textContent = 'Saved.';
-      successBox.hidden = false;
+
+      brandHero.querySelector('.settings-brand-hero__title').textContent = nameField.input.value.trim() || 'BARANGUARD';
+      brandHero.querySelector('.settings-brand-hero__sub').textContent = `${munField.input.value.trim()} • ${regField.input.value.trim()}`;
+      showToast('General system configuration saved.', { variant: 'success' });
     } catch (err) {
-      const message = err instanceof ApiClientError ? err.message : 'Could not save these settings.';
-      errorBox.textContent = message;
-      errorBox.hidden = false;
+      const message = err instanceof ApiClientError ? err.message : 'Could not save general settings.';
+      showToast(message, { variant: 'error' });
     } finally {
       submitButton.disabled = false;
-      submitButton.textContent = 'Save changes';
+      submitButton.textContent = 'Save General Settings';
     }
   });
 
@@ -549,119 +786,150 @@ function buildGeneralCard(settings) {
 }
 
 /**
- * SMS Gateway (Admin-only, 2026-09-05 UX pass) — the one section that's
- * genuinely wired into real behavior: `SmsGatewayService::resolveSemaphore()`
- * reads these two values FIRST, falling back to `backend/.env`'s
- * `SEMAPHORE_*` keys only when unset. This is the deliberate,
- * user-authorized override of REFERENCE.md §7's "gateway credentials
- * must never live in a settings row" note — see
- * `backend/migrations/0012_system_settings.sql`'s own header for the
- * full reasoning. The API key input never receives the real stored
- * value back (masked as a bullet placeholder) — leaving it untouched on
- * save keeps the current key; typing a new value replaces it.
- *
- * "Provider" is shown as fixed text, not a dropdown — Vonage/Twilio
- * (from the original mockup) have no implementation anywhere in this
- * codebase (`SemaphoreClient.php` is the only gateway client that
- * exists), so offering them as selectable options would imply support
- * that doesn't exist.
+ * 5. SMS Gateway Card (Admin Only)
  */
 function buildSmsGatewayCard(settings) {
   const card = document.createElement('div');
-  card.className = 'card';
-  const heading = document.createElement('h3');
-  heading.textContent = 'SMS Gateway';
-  card.appendChild(heading);
+  card.className = 'settings-card';
 
-  const providerRow = document.createElement('div');
-  providerRow.className = 'row-between settings-pref-row';
-  const providerLabel = document.createElement('span');
-  providerLabel.textContent = 'Provider';
-  const providerValue = document.createElement('span');
-  providerValue.className = 'note';
-  providerValue.textContent = 'Semaphore (the only gateway this deployment implements)';
-  providerRow.append(providerLabel, providerValue);
-  card.appendChild(providerRow);
+  // Header
+  const headerEl = document.createElement('div');
+  headerEl.className = 'settings-card__header';
+  headerEl.innerHTML = `
+    <div class="settings-card__title-wrap">
+      <span class="settings-card__icon">${icons.messageSquare(20)}</span>
+      <div>
+        <h3 class="settings-card__title">SMS Gateway Integration</h3>
+        <p class="settings-card__subtitle">Semaphore SMS broadcast provider credentials and Sender ID</p>
+      </div>
+    </div>
+  `;
+  card.appendChild(headerEl);
+
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'settings-card__body';
+
+  // Provider Status Box
+  const providerBox = document.createElement('div');
+  providerBox.className = 'settings-gateway-status-box';
+  providerBox.innerHTML = `
+    <div style="display:flex; align-items:center; gap:0.625rem;">
+      <span style="color:var(--color-primary);">${icons.radio(18)}</span>
+      <div>
+        <div style="font-size:var(--font-size-sm); font-weight:700; color:var(--color-text-primary);">Semaphore SMS Gateway</div>
+        <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">Direct cellular carrier route for Philippine mobile networks</div>
+      </div>
+    </div>
+    <span class="status-pill ${settings['sms_gateway.api_key'] ? 'status-pill--success' : 'status-pill--neutral'}">
+      ${settings['sms_gateway.api_key'] ? 'API KEY CONFIGURED' : 'USING .ENV FALLBACK'}
+    </span>
+  `;
+  bodyEl.appendChild(providerBox);
 
   const form = document.createElement('form');
-  form.className = 'form-stack';
+  form.className = 'settings-form';
   form.noValidate = true;
 
-  const errorBox = document.createElement('div');
-  errorBox.className = 'login-form__error';
-  errorBox.setAttribute('role', 'alert');
-  errorBox.hidden = true;
-  const successBox = document.createElement('div');
-  successBox.className = 'login-form__error';
-  successBox.setAttribute('role', 'status');
-  successBox.classList.add('inline-success');
-  successBox.hidden = true;
+  // Sender Name
+  const senderField = document.createElement('div');
+  senderField.className = 'settings-field';
+  const senderLabel = document.createElement('label');
+  senderLabel.className = 'settings-label';
+  senderLabel.htmlFor = 'settings-sms-sender';
+  senderLabel.textContent = 'Registered Sender ID';
 
-  const senderField = settingsTextField('settings-sms-sender', 'Sender ID', settings['sms_gateway.sender_name']);
-  const apiKeyField = settingsTextField('settings-sms-api-key', 'API key', settings['sms_gateway.api_key'], 'password');
-  const apiKeyNote = document.createElement('p');
-  apiKeyNote.className = 'note';
+  const senderInput = document.createElement('input');
+  senderInput.id = 'settings-sms-sender';
+  senderInput.type = 'text';
+  senderInput.className = 'settings-input';
+  senderInput.placeholder = 'e.g. BARANGUARD (must match registered Semaphore sender)';
+  senderInput.value = settings['sms_gateway.sender_name'] || '';
+
+  const previewChip = document.createElement('div');
+  previewChip.className = 'settings-sender-preview-chip';
+  const updatePreview = () => {
+    previewChip.innerHTML = `${icons.phone(12)}<span>Citizen phone preview: <strong>${senderInput.value.trim() || 'SEMAPHORE'}</strong></span>`;
+  };
+  updatePreview();
+  senderInput.addEventListener('input', updatePreview);
+
+  senderField.append(senderLabel, senderInput, previewChip);
+
+  // API Key
+  const apiKeyField = document.createElement('div');
+  apiKeyField.className = 'settings-field';
+  const apiKeyLabel = document.createElement('label');
+  apiKeyLabel.className = 'settings-label';
+  apiKeyLabel.htmlFor = 'settings-sms-api-key';
+  apiKeyLabel.textContent = 'Semaphore API Key (Secret)';
+
+  const apiKeyWrap = document.createElement('div');
+  apiKeyWrap.className = 'settings-input-wrap';
+
+  const apiKeyInput = document.createElement('input');
+  apiKeyInput.id = 'settings-sms-api-key';
+  apiKeyInput.type = 'password';
+  apiKeyInput.className = 'settings-input settings-input--with-toggle';
+  apiKeyInput.placeholder = '••••••••';
+  apiKeyInput.value = settings['sms_gateway.api_key'] || '';
+
+  const apiKeyToggle = document.createElement('button');
+  apiKeyToggle.type = 'button';
+  apiKeyToggle.className = 'settings-pwd-toggle';
+  apiKeyToggle.setAttribute('aria-label', 'Toggle API key visibility');
+  apiKeyToggle.innerHTML = icons.eye(16);
+
+  let isKeyVisible = false;
+  apiKeyToggle.addEventListener('click', () => {
+    isKeyVisible = !isKeyVisible;
+    apiKeyInput.type = isKeyVisible ? 'text' : 'password';
+    apiKeyToggle.innerHTML = isKeyVisible ? icons.eyeOff(16) : icons.eye(16);
+  });
+
+  apiKeyWrap.append(apiKeyInput, apiKeyToggle);
+
+  const apiKeyNote = document.createElement('span');
+  apiKeyNote.className = 'settings-help-text';
   apiKeyNote.textContent = settings['sms_gateway.api_key']
-    ? 'A key is already saved (masked above). Leave unchanged to keep it, or type a new one to replace it.'
-    : 'No key saved yet — outbound SMS falls back to backend/.env\'s SEMAPHORE_API_KEY, if any.';
+    ? 'A key is currently active (masked above). Leave unchanged to preserve it, or enter a new API key to replace it.'
+    : 'No key is saved in system settings. Outbound SMS relies on SEMAPHORE_API_KEY in backend/.env, if configured.';
+
+  apiKeyField.append(apiKeyLabel, apiKeyWrap, apiKeyNote);
 
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
-  submitButton.textContent = 'Save changes';
+  submitButton.style.cssText = 'width: fit-content; min-width: 140px; margin-top: 0.25rem;';
+  submitButton.textContent = 'Save Gateway Settings';
 
-  form.append(
-    errorBox, successBox,
-    senderField.label, senderField.input,
-    apiKeyField.label, apiKeyField.input, apiKeyNote,
-    submitButton,
-  );
-  card.appendChild(form);
+  form.append(senderField, apiKeyField, submitButton);
+  bodyEl.appendChild(form);
+  card.appendChild(bodyEl);
 
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    errorBox.hidden = true;
-    successBox.hidden = true;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
     submitButton.disabled = true;
     submitButton.textContent = 'Saving…';
+
     try {
       await updateSystemSettings({
-        'sms_gateway.sender_name': senderField.input.value.trim(),
-        // Sending the masked placeholder back is safe — the server
-        // treats it as "leave alone" (SettingsController::update()).
-        'sms_gateway.api_key': apiKeyField.input.value,
+        'sms_gateway.sender_name': senderInput.value.trim(),
+        'sms_gateway.api_key': apiKeyInput.value,
       });
-      showToast('SMS Gateway settings saved.', { variant: 'success' });
-      successBox.textContent = 'Saved.';
-      successBox.hidden = false;
+
+      showToast('SMS Gateway settings saved successfully.', { variant: 'success' });
     } catch (err) {
-      const message = err instanceof ApiClientError ? err.message : 'Could not save these settings.';
-      errorBox.textContent = message;
-      errorBox.hidden = false;
+      const message = err instanceof ApiClientError ? err.message : 'Could not save SMS Gateway settings.';
+      showToast(message, { variant: 'error' });
     } finally {
       submitButton.disabled = false;
-      submitButton.textContent = 'Save changes';
+      submitButton.textContent = 'Save Gateway Settings';
     }
   });
 
   return card;
 }
 
-function settingsTextField(id, labelText, value, type = 'text') {
-  const label = document.createElement('label');
-  label.className = 'label';
-  label.htmlFor = id;
-  label.textContent = labelText;
-  const input = document.createElement('input');
-  input.id = id;
-  input.type = type;
-  input.value = value || '';
-  return { label, input };
-}
-
-// Mirrors main.js's PAGE_ROLES exactly (kept here rather than imported, to
-// avoid a settings.js -> main.js import cycle — main.js already imports
-// every page module, including this one).
 const LANDING_OPTIONS = [
   { key: 'dashboard', label: 'Dashboard', roles: ['admin', 'punong_barangay'] },
   { key: 'dispatch', label: 'Dispatch Center', roles: ['admin'] },
@@ -674,4 +942,5 @@ const LANDING_OPTIONS = [
   { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'] },
   { key: 'audit-log', label: 'Audit Log', roles: ['admin'] },
   { key: 'service-health', label: 'Service Health', roles: ['admin'] },
+  { key: 'map-packages', label: 'Map Packages', roles: ['admin'] },
 ];
