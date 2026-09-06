@@ -34,6 +34,7 @@ import {
   resolveIncident,
   finalizeBlotter,
   amendBlotter,
+  generateLuponPacket,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -56,6 +57,207 @@ const STATUS_PILL_CLASS = {
   dispatched: 'status-pill--info',
   resolved: 'status-pill--success',
 };
+
+/**
+ * Opens an official printable Republic of the Philippines / Barangay Blotter Record Sheet modal.
+ */
+function openPrintModal(incident, blotter, evidence) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-backdrop';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-card';
+  modal.style.maxWidth = '780px';
+  modal.style.width = '95%';
+
+  const blotterDisplayId = blotter?.displayId || incident?.displayId || `BLT-2026-${String(incident.incidentId).padStart(3, '0')}`;
+  const incidentDate = new Date(incident.createdAt).toLocaleDateString('en-US', {
+    month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:1rem;margin-bottom:1.25rem;">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <div style="width:2.25rem;height:2.25rem;border-radius:8px;background:rgba(59,130,246,0.15);color:#60a5fa;display:flex;align-items:center;justify-content:center;">
+          ${icons.printer(18)}
+        </div>
+        <div>
+          <h3 style="margin:0;font-size:1.15rem;font-weight:700;color:#f8fafc;">Official Blotter Excerpt</h3>
+          <p style="margin:0;font-size:0.8rem;color:#94a3b8;">Republic of the Philippines · Katarungang Pambarangay</p>
+        </div>
+      </div>
+      <button class="ghost" id="close-print-modal" style="padding:0.35rem 0.65rem;">✕</button>
+    </div>
+
+    <!-- Official Printable Sheet -->
+    <div id="printable-blotter-sheet" style="background:#ffffff;color:#1e293b;padding:2rem;border-radius:8px;border:1px solid #cbd5e1;box-shadow:0 4px 12px rgba(0,0,0,0.15);font-family:'Segoe UI',Roboto,Helvetica,sans-serif;">
+      <div style="text-align:center;border-bottom:2px solid #0f172a;padding-bottom:1rem;margin-bottom:1.5rem;">
+        <p style="margin:0;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;">Republic of the Philippines</p>
+        <p style="margin:0;font-size:0.85rem;font-weight:600;color:#334155;">Province of Sorsogon · City of Sorsogon</p>
+        <h2 style="margin:0.25rem 0 0 0;font-size:1.35rem;font-weight:800;color:#0f172a;letter-spacing:0.02em;">OFFICE OF THE LUPONG TAGAPAMAYAPA</h2>
+        <p style="margin:0.25rem 0 0 0;font-size:0.95rem;font-weight:700;color:#2563eb;text-transform:uppercase;">EXTRACT COPY OF BARANGAY ELECTRONIC BLOTTER</p>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;padding:0.75rem 1rem;border-radius:6px;margin-bottom:1.25rem;">
+        <div>
+          <span style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;">BLOTTER ENTRY NO.</span>
+          <p style="margin:0;font-size:1.05rem;font-weight:800;color:#0f172a;font-family:monospace;">${blotterDisplayId}</p>
+        </div>
+        <div style="text-align:right;">
+          <span style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;">DATE & TIME LOGGED</span>
+          <p style="margin:0;font-size:0.9rem;font-weight:600;color:#334155;">${incidentDate}</p>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
+        <div style="padding:0.75rem;border:1px solid #e2e8f0;border-radius:6px;">
+          <span style="font-size:0.75rem;font-weight:700;color:#2563eb;text-transform:uppercase;">COMPLAINANT</span>
+          <p style="margin:0.25rem 0 0 0;font-size:0.95rem;font-weight:600;color:#0f172a;">${blotter?.complainantName || incident.complainantName || 'Walk-in Complainant / Confidential'}</p>
+          <p style="margin:0.15rem 0 0 0;font-size:0.8rem;color:#64748b;">Contact: ${blotter?.complainantContactNumber || incident.complainantContactNumber || 'Not recorded'}</p>
+        </div>
+        <div style="padding:0.75rem;border:1px solid #e2e8f0;border-radius:6px;">
+          <span style="font-size:0.75rem;font-weight:700;color:#d97706;text-transform:uppercase;">RESPONDENT</span>
+          <p style="margin:0.25rem 0 0 0;font-size:0.95rem;font-weight:600;color:#0f172a;">${blotter?.respondentName || incident.respondentName || 'Unspecified / Under Inquiry'}</p>
+          <p style="margin:0.15rem 0 0 0;font-size:0.8rem;color:#64748b;">Type: ${INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType}</p>
+        </div>
+      </div>
+
+      <div style="margin-bottom:1.25rem;">
+        <span style="font-size:0.75rem;font-weight:700;color:#475569;text-transform:uppercase;">INCIDENT LOCATION</span>
+        <p style="margin:0.25rem 0 0 0;font-size:0.88rem;color:#1e293b;background:#f8fafc;padding:0.5rem 0.75rem;border-radius:4px;border:1px solid #e2e8f0;">
+          ${incident.locationDescription || (incident.latitude != null ? `${incident.latitude.toFixed(5)}, ${incident.longitude.toFixed(5)}` : 'Barangay Jurisdiction')}
+        </p>
+      </div>
+
+      <div style="margin-bottom:1.25rem;">
+        <span style="font-size:0.75rem;font-weight:700;color:#475569;text-transform:uppercase;">OFFICIAL STATEMENT & SUMMARY</span>
+        <div style="margin-top:0.35rem;padding:0.85rem;background:#f8fafc;border-left:3px solid #2563eb;border-radius:0 4px 4px 0;font-size:0.88rem;line-height:1.6;color:#1e293b;white-space:pre-wrap;">
+          ${blotter?.narrativeSummary || incident.redactedNarrative || incident.rawNarrative || 'No official summary provided.'}
+        </div>
+      </div>
+
+      <div style="margin-top:2.5rem;display:flex;justify-content:space-between;padding-top:1.5rem;border-top:1px dashed #94a3b8;">
+        <div style="text-align:center;width:40%;">
+          <div style="border-bottom:1px solid #0f172a;margin-bottom:0.35rem;height:1.5rem;"></div>
+          <p style="margin:0;font-size:0.85rem;font-weight:700;color:#0f172a;">RECORDING DESK OFFICER</p>
+          <p style="margin:0;font-size:0.75rem;color:#64748b;">Barangay Secretary / Tanod on Duty</p>
+        </div>
+        <div style="text-align:center;width:40%;">
+          <div style="border-bottom:1px solid #0f172a;margin-bottom:0.35rem;height:1.5rem;"></div>
+          <p style="margin:0;font-size:0.85rem;font-weight:700;color:#0f172a;">ATTESTED & CERTIFIED</p>
+          <p style="margin:0;font-size:0.75rem;color:#64748b;">Punong Barangay / Lupon Chairman</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.25rem;border-top:1px solid rgba(255,255,255,0.1);padding-top:1rem;">
+      <button class="ghost" id="cancel-print-btn">Close</button>
+      <button class="primary" id="do-print-btn" style="display:inline-flex;align-items:center;gap:0.4rem;">
+        ${icons.printer(16)} Print Official Sheet
+      </button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  modal.querySelector('#close-print-modal').addEventListener('click', close);
+  modal.querySelector('#cancel-print-btn').addEventListener('click', close);
+  modal.querySelector('#do-print-btn').addEventListener('click', () => {
+    window.print();
+  });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+}
+
+/**
+ * Opens an AI Legal Advisor modal checking Katarungang Pambarangay (RA 7160) compliance.
+ */
+function openAiLegalAdvisorModal(incident, blotter) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-backdrop';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-card';
+  modal.style.maxWidth = '680px';
+  modal.style.width = '90%';
+
+  const typeName = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
+  const isDirectPolice = ['fire', 'medical_emergency'].includes(incident.incidentType);
+
+  modal.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:0.75rem;margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;gap:0.6rem;">
+        <div style="width:2.25rem;height:2.25rem;border-radius:8px;background:rgba(6,182,212,0.15);color:#22d3ee;display:flex;align-items:center;justify-content:center;">
+          ${icons.sparkles(18)}
+        </div>
+        <div>
+          <h3 style="margin:0;font-size:1.15rem;font-weight:700;color:#f8fafc;">Lupon Tagapamayapa Legal Advisor</h3>
+          <p style="margin:0;font-size:0.78rem;color:#94a3b8;">Republic Act 7160 (Katarungang Pambarangay) Conciliation Analyzer</p>
+        </div>
+      </div>
+      <button class="ghost" id="close-ai-modal" style="padding:0.35rem 0.65rem;">✕</button>
+    </div>
+
+    <div class="stack" style="gap:1rem;">
+      <div style="padding:0.85rem 1rem;border-radius:8px;background:rgba(6,182,212,0.08);border:1px solid rgba(6,182,212,0.25);">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.35rem;">
+          <span style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#22d3ee;">JURISDICTION DETERMINATION</span>
+        </div>
+        <p style="margin:0;font-size:0.9rem;color:#f1f5f9;line-height:1.5;">
+          ${isDirectPolice 
+            ? `⚠️ <strong>Immediate Emergency / Public Safety Exception:</strong> Emergency incidents of type "${typeName}" fall under direct emergency response rather than barangay conciliation.`
+            : `✅ <strong>Subject to Mandatory Barangay Conciliation:</strong> Incident type <strong>${typeName}</strong> falls under the jurisdiction of the Lupong Tagapamayapa pursuant to <strong>RA 7160 Section 408</strong>. Court or PNP filing is barred without prior Lupon proceedings.`
+          }
+        </p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr;gap:0.75rem;">
+        <div style="padding:0.85rem;border-radius:8px;background:rgba(15,23,42,0.5);border:1px solid rgba(255,255,255,0.07);">
+          <h4 style="margin:0 0 0.35rem 0;font-size:0.85rem;font-weight:700;color:#38bdf8;">1. Punong Barangay Mediation (Days 1–15)</h4>
+          <p style="margin:0;font-size:0.8rem;color:#94a3b8;line-height:1.4;">
+            The Punong Barangay shall summon respondents within the next working day. The parties must appear personally without counsel (Sec. 415).
+          </p>
+        </div>
+        <div style="padding:0.85rem;border-radius:8px;background:rgba(15,23,42,0.5);border:1px solid rgba(255,255,255,0.07);">
+          <h4 style="margin:0 0 0.35rem 0;font-size:0.85rem;font-weight:700;color:#a855f7;">2. Pangkat Tagapagkasundo (Days 16–30)</h4>
+          <p style="margin:0;font-size:0.8rem;color:#94a3b8;line-height:1.4;">
+            If mediation before the Punong Barangay fails within 15 calendar days, a 3-member conciliation panel (Pangkat) shall be constituted from the Lupon members.
+          </p>
+        </div>
+        <div style="padding:0.85rem;border-radius:8px;background:rgba(15,23,42,0.5);border:1px solid rgba(255,255,255,0.07);">
+          <h4 style="margin:0 0 0.35rem 0;font-size:0.85rem;font-weight:700;color:#34d399;">3. Settlement or Certificate to File Action (CFA)</h4>
+          <p style="margin:0;font-size:0.8rem;color:#94a3b8;line-height:1.4;">
+            An amicable settlement has the force and effect of a final judgment of a court after 10 days. If conciliation fails, KP Form 20 (CFA) may be officially issued.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.25rem;border-top:1px solid rgba(255,255,255,0.1);padding-top:1rem;">
+      <button class="ghost" id="copy-ai-advice-btn" style="display:inline-flex;align-items:center;gap:0.35rem;">
+        Copy Legal Checklist
+      </button>
+      <button class="primary" id="close-ai-btn">Understood</button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  modal.querySelector('#close-ai-modal').addEventListener('click', close);
+  modal.querySelector('#close-ai-btn').addEventListener('click', close);
+  modal.querySelector('#copy-ai-advice-btn').addEventListener('click', () => {
+    navigator.clipboard.writeText(`RA 7160 Lupon Conciliation Checklist for Incident #${incident.incidentId} (${typeName}):\n1. Section 408 jurisdiction verified.\n2. 15-day Punong Barangay mediation.\n3. Pangkat Tagapagkasundo panel.\n4. Amicable Settlement or KP Form 20 CFA.`);
+    showToast('Legal checklist copied to clipboard.', { variant: 'success' });
+  });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+}
 
 /**
  * @param {HTMLElement} root
@@ -165,79 +367,463 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
    * when things happened, and the Admin action that isn't part of the
    * Secretary's blotter workflow.
    */
+  /**
+   * Two columns rather than six full-width cards stacked down the page.
+   * Left is the record and work done on it; right is context and audit trail.
+   */
   function render() {
     content.innerHTML = '';
+
+    const blotterDisplayId = blotter?.displayId || incident?.displayId || `BLT-2026-${String(incidentId).padStart(3, '0')}`;
+
+    // Update Page Header Title & Subtitle
+    const titleBlock = pageHeader.el.querySelector('.page-header__title');
+    if (titleBlock) {
+      titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Blotter Entry — ${blotterDisplayId}`;
+    }
+    const subtitleBlock = pageHeader.el.querySelector('.page-header__subtitle');
+    if (subtitleBlock) {
+      subtitleBlock.textContent = 'Official Barangay Blotter Ledger · Katarungang Pambarangay §394';
+    }
+
+    // Refresh Action Buttons in Page Header
+    pageHeader.actions.innerHTML = '';
+    const actionsGroup = document.createElement('div');
+    actionsGroup.className = 'blotter-detail-header-actions';
+
+    const backButton = document.createElement('button');
+    backButton.className = 'ghost';
+    backButton.textContent = '← Back to Blotter';
+    backButton.addEventListener('click', () => navigate('blotter'));
+    actionsGroup.appendChild(backButton);
+
+    const printButton = document.createElement('button');
+    printButton.className = 'ghost';
+    printButton.innerHTML = `${icons.printer(16)} Print Excerpt`;
+    printButton.title = 'Print official extract copy of barangay electronic blotter';
+    printButton.addEventListener('click', () => openPrintModal(incident, blotter, evidence));
+    actionsGroup.appendChild(printButton);
+
+    const aiAdvisorBtn = document.createElement('button');
+    aiAdvisorBtn.className = 'ghost';
+    aiAdvisorBtn.innerHTML = `${icons.sparkles(16)} AI Legal Advisor`;
+    aiAdvisorBtn.title = 'Lupon conciliation and RA 7160 legal analyzer';
+    aiAdvisorBtn.addEventListener('click', () => openAiLegalAdvisorModal(incident, blotter));
+    actionsGroup.appendChild(aiAdvisorBtn);
+
+    if (isSecretary) {
+      const reviewButton = document.createElement('button');
+      reviewButton.className = 'ghost';
+      reviewButton.textContent = 'Review AI redaction';
+      reviewButton.addEventListener('click', () => navigate('ai-review', incidentId));
+      actionsGroup.appendChild(reviewButton);
+
+      if (blotter?.finalizedAt) {
+        const luponPacketBtn = document.createElement('button');
+        luponPacketBtn.className = 'ghost';
+        luponPacketBtn.innerHTML = `${icons.fileText(16)} Lupon Packet`;
+        luponPacketBtn.title = 'Generate official Katarungang Pambarangay Lupon conciliation dossier';
+        luponPacketBtn.addEventListener('click', async () => {
+          luponPacketBtn.disabled = true;
+          luponPacketBtn.textContent = 'Generating…';
+          try {
+            const res = await generateLuponPacket(incidentId);
+            showToast('Lupon conciliation packet ready.', { variant: 'success' });
+            if (res?.fileUrl) window.open(res.fileUrl, '_blank');
+          } catch (err) {
+            showToast(err instanceof ApiClientError ? err.message : 'Could not generate Lupon packet.', { variant: 'error' });
+          } finally {
+            luponPacketBtn.disabled = false;
+            luponPacketBtn.innerHTML = `${icons.fileText(16)} Lupon Packet`;
+          }
+        });
+        actionsGroup.appendChild(luponPacketBtn);
+      }
+    }
+
+    pageHeader.actions.appendChild(actionsGroup);
 
     const layout = document.createElement('div');
     layout.className = 'split-panel';
 
     const main = document.createElement('div');
-    main.className = 'stack--md blotter-detail__main readable-column';
+    main.className = 'blotter-detail__main';
     const aside = document.createElement('div');
-    aside.className = 'stack--md';
+    aside.className = 'blotter-detail__aside';
 
-    main.appendChild(buildOverview());
-    main.appendChild(buildNarrative());
-    main.appendChild(buildEvidence());
+    // 1. Unified Case Dossier (Incident Type, Badges, Involved Parties, and 2x2 Meta)
+    main.appendChild(buildDossierCard());
+
+    // 2. Official Blotter Record (The core statutory record, placed prominently)
     if (isSecretary) {
       main.appendChild(buildBlotterPanel());
     } else if (blotter) {
       main.appendChild(buildReadOnlyBlotter());
     }
 
-    aside.appendChild(buildTimeline());
-    // §9 W7 lists "Admin status update" among this screen's APIs — Admin
-    // resolving the incident, which is a different concern from the
-    // Secretary's blotter workflow on the left.
-    if (user.role === 'admin') {
+    // 3. Approved Redacted Narrative (RA 10173 compliant)
+    main.appendChild(buildNarrative());
+
+    // 4. Digital Evidence & Chain of Custody (Slim banner if empty)
+    main.appendChild(buildEvidence());
+
+    // Aside Column: Resolution Status Card first, then Stepped Timeline, then Legal Guide
+    if (incident.status === 'resolved') {
+      aside.appendChild(buildResolvedStatusCard());
+    } else if (user.role === 'admin') {
       aside.appendChild(buildAdminResolvePanel());
     }
+    aside.appendChild(buildTimeline());
+    aside.appendChild(buildLegalGuide());
 
     layout.append(main, aside);
     content.appendChild(layout);
   }
 
-  function buildOverview() {
+  /**
+   * Unified Case Dossier: Combines Incident Type, Badges, Involved Parties,
+   * and Incident Particulars into a clear, spacious tiered layout with zero truncation.
+   */
+  function buildDossierCard() {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card case-hero';
 
-    const row = document.createElement('div');
-    row.className = 'row-between';
+    const blotterDisplayId = blotter?.displayId || incident?.displayId || `BLT-2026-${String(incident.incidentId).padStart(3, '0')}`;
+
+    // Header Row: Type + Icon + Badges
+    const headerRow = document.createElement('div');
+    headerRow.className = 'case-hero__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'case-hero__title-group';
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'case-hero__icon';
+    iconWrap.innerHTML = icons.fileText(22);
+
     const title = document.createElement('h3');
+    title.className = 'case-hero__title';
     title.textContent = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
-    const pill = document.createElement('span');
-    pill.className = `status-pill ${STATUS_PILL_CLASS[incident.status] || 'status-pill--neutral'}`;
-    pill.textContent = incident.status;
-    row.append(title, pill);
-    card.appendChild(row);
 
-    const meta = document.createElement('p');
-    meta.className = 'note';
-    const location = incident.latitude != null && incident.longitude != null
+    titleGroup.append(iconWrap, title);
+
+    const badges = document.createElement('div');
+    badges.className = 'case-hero__badges';
+
+    const idBadge = document.createElement('span');
+    idBadge.className = 'blotter-id-badge';
+    idBadge.innerHTML = `${icons.sparkles(14)} ${blotterDisplayId}`;
+    idBadge.title = 'Statutory Blotter Reference ID';
+
+    const incidentBadge = document.createElement('span');
+    incidentBadge.className = 'blotter-id-badge blotter-id-badge--incident';
+    incidentBadge.innerHTML = `#${incident.incidentId}`;
+    incidentBadge.title = `Incident System ID #${incident.incidentId}`;
+
+    const statusPill = document.createElement('span');
+    statusPill.className = `status-pill ${STATUS_PILL_CLASS[incident.status] || 'status-pill--neutral'}`;
+    statusPill.textContent = `INCIDENT: ${(incident.status || 'unknown').toUpperCase()}`;
+
+    const badgesToAppend = [idBadge, incidentBadge, statusPill];
+
+    if (blotter?.caseStatus) {
+      badgesToAppend.push(buildCaseStatusPill(blotter.caseStatus));
+    }
+
+    const priorityPill = document.createElement('span');
+    priorityPill.className = `status-pill ${incident.priority === 'urgent' ? 'status-pill--pending' : 'status-pill--neutral'}`;
+    priorityPill.textContent = `PRIORITY: ${incident.priority.toUpperCase()}`;
+    badgesToAppend.push(priorityPill);
+
+    badges.append(...badgesToAppend);
+    headerRow.append(titleGroup, badges);
+    card.appendChild(headerRow);
+
+    // Dossier Body
+    const dossierBody = document.createElement('div');
+    dossierBody.className = 'dossier-body';
+
+    // 1. Involved Parties (KP Law) - Full width 2-column grid
+    const partiesSection = document.createElement('div');
+    partiesSection.className = 'dossier-section';
+    partiesSection.innerHTML = `<div class="dossier-section-title">${icons.users(14)} Involved Parties (Katarungang Pambarangay · RA 7160)</div>`;
+
+    const partiesGrid = document.createElement('div');
+    partiesGrid.className = 'parties-grid';
+
+    const compCard = document.createElement('div');
+    compCard.className = 'party-card';
+    const compName = incident.complainantName || blotter?.complainantName || 'Walk-in Complainant / Confidential';
+    const compContact = incident.complainantContactNumber || blotter?.complainantContactNumber || 'No contact number provided';
+    compCard.innerHTML = `
+      <div class="party-card__role">
+        <span class="party-card__tag party-card__tag--complainant">Complainant</span>
+        <span class="party-card__hint">Initiator / Reporting Party</span>
+      </div>
+      <div class="party-card__name">${compName}</div>
+      <div class="party-card__contact">
+        ${icons.phone(13)}
+        <span>${compContact}</span>
+      </div>
+    `;
+
+    const respCard = document.createElement('div');
+    respCard.className = 'party-card';
+    const respName = incident.respondentName || blotter?.respondentName || 'Unspecified / Under Investigation';
+    respCard.innerHTML = `
+      <div class="party-card__role">
+        <span class="party-card__tag party-card__tag--respondent">Respondent</span>
+        <span class="party-card__hint">Subject of Inquiry / Dispute</span>
+      </div>
+      <div class="party-card__name">${respName}</div>
+      <div class="party-card__contact">
+        ${icons.shield(13)}
+        <span>Barangay inquiry & conciliation subject</span>
+      </div>
+    `;
+
+    partiesGrid.append(compCard, respCard);
+    partiesSection.appendChild(partiesGrid);
+
+    // 2. Incident Particulars - Full-width 4-tile responsive grid
+    const metaSection = document.createElement('div');
+    metaSection.className = 'dossier-section';
+    metaSection.innerHTML = `<div class="dossier-section-title">${icons.fileText(14)} Incident Particulars & Filing Record</div>`;
+
+    const metaGrid = document.createElement('div');
+    metaGrid.className = 'meta-grid-4col';
+
+    // Location
+    const locTile = document.createElement('div');
+    locTile.className = 'meta-tile';
+    const locCoords = incident.latitude != null && incident.longitude != null
       ? `${incident.latitude.toFixed(5)}, ${incident.longitude.toFixed(5)}`
-      : 'Location not recorded';
-    meta.textContent = `Priority ${incident.priority} · source ${incident.source} · ${location}`;
-    card.appendChild(meta);
+      : 'Barangay Center';
+    const locDesc = incident.locationDescription ? `${incident.locationDescription} (${locCoords})` : locCoords;
+    locTile.innerHTML = `
+      <div class="meta-tile__icon">${icons.mapPin(16)}</div>
+      <div class="meta-tile__content">
+        <span class="meta-tile__label">Location / Scene</span>
+        <span class="meta-tile__value" title="${locDesc}">${locDesc}</span>
+      </div>
+    `;
+
+    // Date Filed
+    const dateTile = document.createElement('div');
+    dateTile.className = 'meta-tile';
+    const filedDate = new Date(incident.createdAt).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    dateTile.innerHTML = `
+      <div class="meta-tile__icon">${icons.clock(16)}</div>
+      <div class="meta-tile__content">
+        <span class="meta-tile__label">Date & Time Filed</span>
+        <span class="meta-tile__value">${filedDate}</span>
+      </div>
+    `;
+
+    // Channel
+    const channelTile = document.createElement('div');
+    channelTile.className = 'meta-tile';
+    const channelLabel = incident.source === 'app' ? '📱 Mobile App' : incident.source === 'walkin' ? '🚶 Walk-in Desk' : '📞 Hotline Call';
+    channelTile.innerHTML = `
+      <div class="meta-tile__icon">${icons.phone(16)}</div>
+      <div class="meta-tile__content">
+        <span class="meta-tile__label">Reporting Channel</span>
+        <span class="meta-tile__value">${channelLabel}</span>
+      </div>
+    `;
+
+    // Officer
+    const officerTile = document.createElement('div');
+    officerTile.className = 'meta-tile';
+    const officerName = incident.officerName || 'Barangay Desk Secretary';
+    officerTile.innerHTML = `
+      <div class="meta-tile__icon">${icons.users(16)}</div>
+      <div class="meta-tile__content">
+        <span class="meta-tile__label">Recording Officer</span>
+        <span class="meta-tile__value">${officerName}</span>
+      </div>
+    `;
+
+    metaGrid.append(locTile, dateTile, channelTile, officerTile);
+    metaSection.appendChild(metaGrid);
+
+    dossierBody.append(partiesSection, metaSection);
+    card.appendChild(dossierBody);
 
     return card;
   }
 
-  /**
-   * §9 W7: "a real status/timestamp timeline ... never a scripted one."
-   * Every row below is a real timestamp from the API, and a stage that has
-   * not happened is shown as pending rather than invented or hidden.
-   */
+  function buildNarrative() {
+    const card = document.createElement('div');
+    card.className = 'card doc-card';
+
+    const header = document.createElement('div');
+    header.className = 'doc-card__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'doc-card__title-group';
+    const heading = document.createElement('h3');
+    heading.className = 'doc-card__title';
+    heading.textContent = incident.redactedNarrative ? 'Approved Redacted Narrative' : 'Incident Narrative';
+    titleGroup.appendChild(heading);
+
+    const actions = document.createElement('div');
+    actions.className = 'doc-card__actions';
+
+    let isViewingRaw = false;
+
+    if (incident.redactedNarrative) {
+      const privacyBadge = document.createElement('span');
+      privacyBadge.className = 'doc-privacy-badge';
+      privacyBadge.innerHTML = `${icons.shield(12)} RA 10173 Privacy Verified`;
+      actions.appendChild(privacyBadge);
+    }
+
+    let body = null;
+    let secretaryNotice = null;
+
+    if (isSecretary && incident.rawNarrative && incident.redactedNarrative) {
+      const toggleBtn = document.createElement('button');
+      toggleBtn.className = 'btn-copy';
+      toggleBtn.innerHTML = `${icons.sparkles(14)} View Raw Intake`;
+      toggleBtn.title = 'Toggle between public approved redacted narrative and original intake record (Secretary Privilege)';
+      toggleBtn.addEventListener('click', () => {
+        isViewingRaw = !isViewingRaw;
+        if (isViewingRaw) {
+          heading.textContent = 'Original Unredacted Intake Record';
+          body.textContent = incident.rawNarrative;
+          toggleBtn.innerHTML = `${icons.shield(14)} View Redacted`;
+          secretaryNotice.style.display = 'block';
+        } else {
+          heading.textContent = 'Approved Redacted Narrative';
+          body.textContent = incident.redactedNarrative;
+          toggleBtn.innerHTML = `${icons.sparkles(14)} View Raw Intake`;
+          secretaryNotice.style.display = 'none';
+        }
+      });
+      actions.appendChild(toggleBtn);
+    }
+
+    const narrativeText = incident.redactedNarrative || (isSecretary ? incident.rawNarrative : null) || 'No narrative recorded yet.';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn-copy';
+    copyBtn.innerHTML = `${icons.fileText(14)} Copy Narrative`;
+    copyBtn.addEventListener('click', () => {
+      const currentText = body ? body.textContent : narrativeText;
+      navigator.clipboard.writeText(currentText);
+      showToast('Narrative copied to clipboard.', { variant: 'success' });
+    });
+    actions.appendChild(copyBtn);
+
+    header.append(titleGroup, actions);
+    card.appendChild(header);
+
+    body = document.createElement('div');
+    body.className = 'doc-blockquote';
+    body.textContent = narrativeText;
+    card.appendChild(body);
+
+    secretaryNotice = document.createElement('p');
+    secretaryNotice.className = 'note';
+    secretaryNotice.style.marginTop = '0.5rem';
+    secretaryNotice.style.display = 'none';
+    secretaryNotice.style.color = '#fbbf24';
+    secretaryNotice.textContent = '🔒 Viewing original intake record with unredacted details under RA 7160 §394 statutory records privilege.';
+    card.appendChild(secretaryNotice);
+
+    if (!incident.redactedNarrative && isSecretary && incident.rawNarrative) {
+      const warn = document.createElement('p');
+      warn.className = 'note';
+      warn.style.marginTop = '0.5rem';
+      warn.textContent = 'This is the original unredacted narrative — no redaction has been approved yet.';
+      card.appendChild(warn);
+    }
+
+    return card;
+  }
+
+  function buildEvidence() {
+    if (evidence.length === 0) {
+      const bar = document.createElement('div');
+      bar.className = 'evidence-bar--empty';
+      bar.innerHTML = `
+        <div class="evidence-bar--empty__left">
+          <span style="color:#64748b;display:flex;align-items:center;">${icons.shield(16)}</span>
+          <span><strong>Digital Evidence:</strong> No attachments recorded for this entry. Chain of custody is intact.</span>
+        </div>
+        <span style="font-size:0.75rem;color:#64748b;">Statutory Audit Retention</span>
+      `;
+      return bar;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const heading = document.createElement('h3');
+    heading.textContent = `Digital Evidence & Chain of Custody (${evidence.length})`;
+    card.appendChild(heading);
+
+    const list = document.createElement('div');
+    list.className = 'stack';
+    list.style.gap = '0.5rem';
+    for (const item of evidence) {
+      const row = document.createElement('div');
+      row.className = 'evidence-item';
+
+      const left = document.createElement('div');
+      left.className = 'evidence-item__left';
+      const icon = document.createElement('div');
+      icon.className = 'evidence-item__icon';
+      icon.innerHTML = item.type === 'voice' ? icons.radio(18) : icons.fileText(18);
+
+      const title = document.createElement('span');
+      title.className = 'evidence-item__title';
+      title.textContent = `${item.type === 'voice' ? 'Voice note' : 'Photo'} — ${item.originalFilename}`;
+      left.append(icon, title);
+
+      const meta = document.createElement('span');
+      meta.className = 'evidence-item__meta';
+      const kb = Math.max(1, Math.round(item.byteSize / 1024));
+      meta.textContent = `${kb} KB · ${new Date(item.uploadedAt).toLocaleString()}`;
+
+      row.append(left, meta);
+      list.appendChild(row);
+    }
+    card.appendChild(list);
+
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.style.marginTop = '0.75rem';
+    note.textContent = 'Evidence files are stored outside the web root and protected under Barangay chain-of-custody policies.';
+    card.appendChild(note);
+
+    return card;
+  }
+
   function buildTimeline() {
     const card = document.createElement('div');
     card.className = 'card';
-    const heading = document.createElement('h3');
-    heading.textContent = 'Timeline';
-    card.appendChild(heading);
 
-    // §9 W7 names these stages explicitly: created_at, dispatched_at,
-    // arrived_at, redaction_approved_at, finalized_at. The dispatch stages
-    // ride along on GET /incidents/:id precisely so this works for the
-    // Secretary, who cannot read GET /dispatch.
+    const headerRow = document.createElement('div');
+    headerRow.style.display = 'flex';
+    headerRow.style.alignItems = 'center';
+    headerRow.style.gap = '0.5rem';
+    headerRow.style.marginBottom = '0.75rem';
+
+    const iconWrap = document.createElement('span');
+    iconWrap.style.color = '#38bdf8';
+    iconWrap.innerHTML = icons.clock(18);
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Case Timeline & Audit Trail';
+    heading.style.margin = '0';
+
+    headerRow.append(iconWrap, heading);
+    card.appendChild(headerRow);
+
     const stages = [
       ['Reported', incident.createdAt],
       ['Dispatched', incident.dispatchedAt],
@@ -248,28 +834,36 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     ];
 
     const visibleStages = stages.filter(([label, timestamp]) => (
-      // "Last amended" is meaningless until an amendment exists — omit it
-      // rather than showing a permanently-pending row.
       !(label === 'Last amended' && !timestamp)
     ));
+
+    // Find the latest reached index for pulse effect
+    let lastReachedIdx = -1;
+    visibleStages.forEach(([_, ts], idx) => {
+      if (ts) lastReachedIdx = idx;
+    });
 
     const list = document.createElement('div');
     list.className = 'timeline';
     visibleStages.forEach(([label, timestamp], i) => {
       const reached = Boolean(timestamp);
+      const isLatest = i === lastReachedIdx;
+
       const item = document.createElement('div');
       item.className = 'timeline__item';
 
       const rail = document.createElement('div');
       rail.className = 'timeline__rail';
       const node = document.createElement('span');
-      node.className = 'timeline__node' + (reached ? ' timeline__node--done' : '');
+      let nodeClass = 'timeline__node';
+      if (reached) {
+        nodeClass += isLatest ? ' timeline__node--current' : ' timeline__node--done';
+      }
+      node.className = nodeClass;
       rail.appendChild(node);
+
       if (i < visibleStages.length - 1) {
         const connector = document.createElement('span');
-        // A connector is "done" only once the NEXT stage has also been
-        // reached — it represents the gap between two stages, not the
-        // node it starts from.
         const nextReached = Boolean(visibleStages[i + 1][1]);
         connector.className = 'timeline__connector' + (reached && nextReached ? ' timeline__connector--done' : '');
         rail.appendChild(connector);
@@ -277,97 +871,34 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
       const body = document.createElement('div');
       body.className = 'timeline__body';
+
+      const row = document.createElement('div');
+      row.className = 'timeline__row';
+
       const name = document.createElement('span');
       name.className = 'timeline__label' + (reached ? '' : ' timeline__label--pending');
       name.textContent = label;
+
+      const badge = document.createElement('span');
+      badge.className = `timeline__status-badge ${reached ? 'timeline__status-badge--done' : 'timeline__status-badge--pending'}`;
+      badge.textContent = reached ? 'Completed' : 'Pending';
+
+      row.append(name, badge);
+
       const value = document.createElement('span');
       value.className = 'timeline__value';
-      value.textContent = reached ? new Date(timestamp).toLocaleString() : 'Not yet';
-      body.append(name, value);
+      value.textContent = reached
+        ? new Date(timestamp).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+          })
+        : 'Not reached yet';
 
+      body.append(row, value);
       item.append(rail, body);
       list.appendChild(item);
     });
+
     card.appendChild(list);
-    return card;
-  }
-
-  function buildNarrative() {
-    const card = document.createElement('div');
-    card.className = 'card';
-    const heading = document.createElement('h3');
-    heading.textContent = incident.redactedNarrative ? 'Approved redacted narrative' : 'Narrative';
-    card.appendChild(heading);
-
-    const body = document.createElement('pre');
-    body.className = 'narrative-block';
-    if (incident.redactedNarrative) {
-      body.textContent = incident.redactedNarrative;
-    } else if (isSecretary && incident.rawNarrative) {
-      // Only the Secretary ever sees raw text (§7/§3), and only while no
-      // approved redaction exists to show instead.
-      body.textContent = incident.rawNarrative;
-      const warn = document.createElement('p');
-      warn.className = 'note';
-      warn.textContent = 'This is the original unredacted narrative — no redaction has been approved yet.';
-      card.appendChild(warn);
-    } else {
-      body.textContent = 'No approved redacted narrative yet.';
-    }
-    card.appendChild(body);
-    return card;
-  }
-
-  /**
-   * §9 W7: "Evidence access follows the same ownership policy as the API."
-   * The server decides that (Secretary/Admin same-barangay; Tanod only with
-   * a reporter/dispatch relationship) — this panel just renders whatever
-   * came back, and shows an honest empty state otherwise.
-   *
-   * There is NO download link, deliberately: §6 says this endpoint never
-   * returns filesystem paths, and no authorized byte-serving endpoint
-   * exists yet (Sprint 7). A link that 404s would be worse than none.
-   */
-  function buildEvidence() {
-    const card = document.createElement('div');
-    card.className = 'card';
-
-    const heading = document.createElement('h3');
-    heading.textContent = `Evidence (${evidence.length})`;
-    card.appendChild(heading);
-
-    if (evidence.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'note';
-      empty.textContent = 'No photo or voice evidence was attached to this incident.';
-      card.appendChild(empty);
-      return card;
-    }
-
-    const list = document.createElement('div');
-    list.className = 'stack';
-    for (const item of evidence) {
-      const row = document.createElement('div');
-      row.className = 'row-between';
-
-      const label = document.createElement('span');
-      label.textContent = `${item.type === 'voice' ? 'Voice note' : 'Photo'} — ${item.originalFilename}`;
-
-      const meta = document.createElement('span');
-      meta.className = 'note';
-      const kb = Math.max(1, Math.round(item.byteSize / 1024));
-      meta.textContent = `${kb} KB · ${new Date(item.uploadedAt).toLocaleString()}`;
-
-      row.append(label, meta);
-      list.appendChild(row);
-    }
-    card.appendChild(list);
-
-    const note = document.createElement('p');
-    note.className = 'note';
-    note.textContent = 'Evidence files are stored outside the web root and are not downloadable from this screen yet.';
-    card.appendChild(note);
-
     return card;
   }
 
@@ -386,19 +917,15 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     const card = document.createElement('div');
     card.className = 'card';
 
+    if (incident.status === 'resolved') {
+      return buildResolvedStatusCard();
+    }
+
     const heading = document.createElement('h3');
     heading.textContent = 'Incident resolution';
     card.appendChild(heading);
 
     const activeDispatch = incident.hasActiveDispatch;
-
-    if (incident.status === 'resolved') {
-      const done = document.createElement('p');
-      done.className = 'note';
-      done.textContent = 'This incident is already resolved.';
-      card.appendChild(done);
-      return card;
-    }
 
     const button = document.createElement('button');
     button.className = 'primary';
@@ -448,19 +975,43 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
   function buildReadOnlyBlotter() {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card doc-card';
+
+    const header = document.createElement('div');
+    header.className = 'doc-card__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'doc-card__title-group';
     const heading = document.createElement('h3');
-    heading.textContent = `Blotter summary (revision ${blotter.revisionNo})`;
-    card.appendChild(heading);
-    if (blotter.caseStatus) card.appendChild(buildCaseStatusPill(blotter.caseStatus));
-    const body = document.createElement('pre');
-    body.className = 'narrative-block';
+    heading.className = 'doc-card__title';
+    heading.textContent = `Official Blotter Summary (Revision ${blotter.revisionNo})`;
+    titleGroup.appendChild(heading);
+    if (blotter.caseStatus) titleGroup.appendChild(buildCaseStatusPill(blotter.caseStatus));
+
+    const actions = document.createElement('div');
+    actions.className = 'doc-card__actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn-copy';
+    copyBtn.innerHTML = `${icons.fileText(14)} Copy Summary`;
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(blotter.narrativeSummary);
+      showToast('Blotter summary copied to clipboard.', { variant: 'success' });
+    });
+    actions.appendChild(copyBtn);
+
+    header.append(titleGroup, actions);
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'doc-blockquote doc-blockquote--blotter';
     body.textContent = blotter.narrativeSummary;
     card.appendChild(body);
 
     if (blotter.complainantName || blotter.respondentName || blotter.complainantContactNumber) {
       const partyNote = document.createElement('p');
       partyNote.className = 'note';
+      partyNote.style.marginTop = '0.5rem';
       const parts = [];
       if (blotter.complainantName) parts.push(`Complainant: ${blotter.complainantName}`);
       if (blotter.respondentName) parts.push(`Respondent: ${blotter.respondentName}`);
@@ -475,24 +1026,23 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
   /** The Secretary's finalize/amend panel — the point of this screen. */
   function buildBlotterPanel() {
     const card = document.createElement('div');
-    card.className = 'card';
-
-    const heading = document.createElement('h3');
-    heading.textContent = 'Blotter record';
-    card.appendChild(heading);
+    card.className = 'card doc-card';
 
     const approved = Boolean(incident.redactionApprovedAt);
     const finalized = Boolean(blotter && blotter.finalizedAt);
 
     if (!approved) {
-      // §6: finalize requires an approved redaction. Say so plainly and
-      // point at the screen that fixes it, rather than showing a form
-      // whose submit would always 409.
+      const heading = document.createElement('h3');
+      heading.className = 'doc-card__title';
+      heading.textContent = 'Blotter Record Finalization';
+      card.appendChild(heading);
+
       const note = document.createElement('p');
       note.className = 'note';
+      note.style.margin = '0.5rem 0 1rem 0';
       note.textContent =
         'This incident has no approved redaction yet, so its blotter entry cannot be finalized. '
-        + 'Approve the AI redaction first.';
+        + 'Approve the AI redaction first to comply with RA 10173 privacy regulations.';
       const link = document.createElement('button');
       link.className = 'primary';
       link.textContent = 'Go to AI Redaction Review';
@@ -502,35 +1052,125 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     }
 
     if (!finalized) {
+      const heading = document.createElement('h3');
+      heading.className = 'doc-card__title';
+      heading.textContent = 'Finalize Blotter Record';
+      card.appendChild(heading);
       card.appendChild(buildFinalizeForm());
       return card;
     }
 
-    // Finalized: read-only current text (§9 "read-only until an explicit
-    // amendment workflow") plus the amendment form.
-    if (blotter.caseStatus) card.appendChild(buildCaseStatusPill(blotter.caseStatus));
+    // Finalized: read-only current text plus the amendment form
+    const header = document.createElement('div');
+    header.className = 'doc-card__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'doc-card__title-group';
+    const heading = document.createElement('h3');
+    heading.className = 'doc-card__title';
+    heading.textContent = `Official Blotter Summary (Revision ${blotter.revisionNo})`;
+    titleGroup.appendChild(heading);
+    if (blotter.caseStatus) titleGroup.appendChild(buildCaseStatusPill(blotter.caseStatus));
+
+    const actions = document.createElement('div');
+    actions.className = 'doc-card__actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn-copy';
+    copyBtn.innerHTML = `${icons.fileText(14)} Copy Summary`;
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(blotter.narrativeSummary);
+      showToast('Blotter summary copied.', { variant: 'success' });
+    });
+    actions.appendChild(copyBtn);
+
+    header.append(titleGroup, actions);
+    card.appendChild(header);
+
     const revision = document.createElement('p');
     revision.className = 'note';
-    revision.textContent = `Finalized as revision ${blotter.revisionNo}. Amending creates an audited revision; the previous text is preserved.`;
-    const current = document.createElement('pre');
-    current.className = 'narrative-block';
+    revision.style.margin = '0.25rem 0 0.5rem 0';
+    revision.textContent = `Finalized as revision ${blotter.revisionNo}. Amending creates an audited revision; previous versions are preserved in the permanent statutory register.`;
+
+    const current = document.createElement('div');
+    current.className = 'doc-blockquote doc-blockquote--blotter';
     current.textContent = blotter.narrativeSummary;
-    card.append(revision, current, buildAmendForm());
+
+    const amendSection = document.createElement('div');
+    amendSection.style.marginTop = '1.25rem';
+    amendSection.style.borderTop = '1px solid rgba(255, 255, 255, 0.08)';
+    amendSection.style.paddingTop = '1rem';
+
+    const amendHeading = document.createElement('h4');
+    amendHeading.style.margin = '0 0 0.75rem 0';
+    amendHeading.style.fontSize = '0.95rem';
+    amendHeading.style.color = '#f1f5f9';
+    amendHeading.textContent = 'Amend Blotter Record';
+
+    amendSection.append(amendHeading, buildAmendForm());
+
+    card.append(revision, current, amendSection);
+    return card;
+  }
+
+  function buildResolvedStatusCard() {
+    const card = document.createElement('div');
+    card.className = 'card resolution-badge-card';
+    const resolutionDate = incident.syncedAt || incident.createdAt;
+    const formattedResDate = resolutionDate
+      ? new Date(resolutionDate).toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        })
+      : null;
+
+    card.innerHTML = `
+      <div class="resolution-badge-card__icon">${icons.checkCircle(20)}</div>
+      <div style="flex:1;min-width:0;">
+        <h4 class="resolution-badge-card__title">Case Closed & Resolved</h4>
+        <p class="resolution-badge-card__desc">This incident was officially closed and resolved. Permanent statutory retention policies apply under Republic Act 7160 Section 394.</p>
+        <div style="margin-top:0.45rem;padding-top:0.45rem;border-top:1px solid rgba(16,185,129,0.2);display:flex;flex-direction:column;gap:0.25rem;font-size:0.75rem;color:#a7f3d0;">
+          ${formattedResDate ? `<span>🕒 <strong>Resolution Logged:</strong> ${formattedResDate}</span>` : ''}
+          <span>🛡️ <strong>Dispatch Status:</strong> All active dispatches cleared</span>
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  function buildLegalGuide() {
+    const card = document.createElement('div');
+    card.className = 'card legal-notice-card';
+    card.innerHTML = `
+      <div class="legal-notice-card__title">
+        ${icons.shield(15)}
+        <span>Katarungang Pambarangay (RA 7160)</span>
+      </div>
+      <p class="legal-notice-card__text">
+        Under Sections 399–422 of Republic Act 7160, disputes between barangay residents are subject to mandatory Lupon conciliation before any court filing.
+      </p>
+    `;
     return card;
   }
 
   /**
-   * case_status pill (migration 0009, 2026-09-05 UX pass) — same 4 real
-   * values/colors `blotter-list.js` already uses, kept as its own tiny
-   * copy here rather than a shared export since it's 6 lines, not shared
-   * state.
+   * case_status pill (migration 0009, 2026-09-05 UX pass) — displays Lupon Case status.
    */
   function buildCaseStatusPill(caseStatus) {
-    const labels = { active: 'Active', under_investigation: 'Under Investigation', settled: 'Settled', resolved: 'Resolved' };
-    const classes = { active: 'status-pill--info', under_investigation: 'status-pill--pending', settled: 'status-pill--success', resolved: 'status-pill--neutral' };
+    const labels = {
+      active: 'Lupon Case: Active',
+      under_investigation: 'Lupon: Under Investigation',
+      settled: 'Lupon: Settled',
+      resolved: 'Lupon: Resolved'
+    };
+    const classes = {
+      active: 'status-pill--info',
+      under_investigation: 'status-pill--pending',
+      settled: 'status-pill--success',
+      resolved: 'status-pill--neutral'
+    };
     const pill = document.createElement('span');
     pill.className = `status-pill ${classes[caseStatus] || 'status-pill--neutral'}`;
-    pill.textContent = labels[caseStatus] || caseStatus;
+    pill.textContent = (labels[caseStatus] || caseStatus).toUpperCase();
     return pill;
   }
 

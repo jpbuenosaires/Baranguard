@@ -72,6 +72,9 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate) {
     { key: 'fatigue', label: 'Fatigue flags', badgeKey: 'unacknowledgedFatigueFlags' },
   ].filter(Boolean);
 
+  const tabBar = document.createElement('div');
+  tabBar.className = 'page-tabs-bar';
+
   const tabRow = document.createElement('div');
   tabRow.className = 'filter-chip-row';
   const tabButtons = {};
@@ -92,7 +95,8 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate) {
     tabButtons[tab.key] = btn;
     tabRow.appendChild(btn);
   }
-  header.appendChild(tabRow);
+  tabBar.appendChild(tabRow);
+  header.appendChild(tabBar);
 
   const body = document.createElement('div');
   content.appendChild(body);
