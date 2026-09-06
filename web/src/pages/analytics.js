@@ -1,7 +1,7 @@
 /**
  * analytics.js — Analytics (2026-09-05 UX pass): merges W9 Statistical
  * Reports and W5 Historical Heatmap into one tabbed screen, the same
- * shared-AppShell/PageHeader/`.filter-chip-row` tab pattern
+ * shared-AppShell/PageHeader/`.page-tabs` tab pattern
  * `sms-monitor.js`/`personnel.js` already use.
  *
  * Why these two specifically: both are Admin/Punong Barangay (read-only)
@@ -61,12 +61,12 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
   tabBar.className = 'page-tabs-bar';
 
   const tabRow = document.createElement('div');
-  tabRow.className = 'filter-chip-row';
+  tabRow.className = 'page-tabs';
   const tabButtons = {};
   for (const tab of TABS) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'filter-chip';
+    btn.className = 'page-tab';
     btn.textContent = tab.label;
     btn.addEventListener('click', () => setActiveTab(tab.key));
     tabButtons[tab.key] = btn;

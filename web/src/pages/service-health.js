@@ -358,7 +358,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     // 2. Interactive Health StatStrip (Clickable Filters)
     const statStrip = document.createElement('div');
-    statStrip.className = 'health-stat-strip';
+    statStrip.className = 'stat-card-grid';
 
     const statItems = [
       {
@@ -394,15 +394,15 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     statItems.forEach((item) => {
       const card = document.createElement('button');
       card.type = 'button';
-      card.className = `health-stat-card ${activeFilter === item.id ? 'is-active' : ''}`;
+      card.className = `stat-card ${activeFilter === item.id ? 'is-active' : ''}`;
       card.setAttribute('aria-label', `Filter by ${item.label}`);
 
       const val = document.createElement('span');
-      val.className = `health-stat-card__value health-stat-card__value--${item.tone}`;
+      val.className = `stat-card__value stat-card__value--${item.tone}`;
       val.innerHTML = `${item.icon}<span>${item.value}</span>`;
 
       const lbl = document.createElement('span');
-      lbl.className = 'health-stat-card__label';
+      lbl.className = 'stat-card__label';
       lbl.textContent = item.label;
 
       card.append(val, lbl);

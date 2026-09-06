@@ -120,7 +120,12 @@ html { font-size: 100%; }
      surface they fail AA (success 3.30:1, warning 3.19:1, info 3.68:1,
      accent 3.68:1). These are the same hues at text weight; dark mode
      redefines them upward, where the plain tokens already read fine. */
-  --color-success-text: #15803D;  /* 5.02:1 on white */
+  /* 2026-09-06 UI/UX audit: was #15803D, annotated 5.02:1 but measuring
+     4.54:1 on white — the weakest member of this family, and thin enough
+     that any tinted background behind it (the new .role-badge--tanod,
+     4.40:1) drops under AA. Darkened one step to green-800. Raising a
+     token only ever adds contrast, so every other site improves too. */
+  --color-success-text: #166534;  /* 5.94:1 on white */
   --color-info-text: #0E7490;     /* 5.36:1 on white */
   --color-link: #1D4ED8;          /* 6.70:1 on white */
 
@@ -1060,6 +1065,231 @@ html, body, .status-pill,
 @keyframes btn-spin { to { transform: rotate(360deg); } }
 
 /* --- Status pills ------------------------------------------------------- */
+
+/* ==========================================================================
+   Role badge — ONE definition for "what role is this user".
+
+   2026-09-06 UI/UX audit: Personnel's .user-role-badge and Settings'
+   .settings-role-pill rendered the SAME fact two ways — a 12px 600-weight
+   rounded rectangle vs an 11px 700-weight uppercase pill — and, worse,
+   with different colours per role. Admin was chart-cat-6 on Personnel and
+   primary on Settings; Secretary primary vs info; Tanod info vs success.
+   The same person's role changed colour depending on which screen you
+   were looking at.
+
+   One shape (pill + uppercase, matching .status-pill's existing
+   convention in this file) and one colour per role, each distinct and
+   each on a text-safe token:
+     admin -> primary · secretary -> info · punong_barangay -> warning ·
+     tanod -> success
+   Modifiers use the API's own role values (§3), so
+   .role-badge--punong_barangay, never the old ad-hoc "--pb".
+   ========================================================================== */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-3xs) var(--spacing-sm);
+  min-height: 0;
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+/* Tints are 8%, not the 15/16% the two originals used. The --color-*-text
+   tokens are specced against WHITE (base.css annotates --color-info-text
+   as "5.36:1 on white"); putting them on a 16% tint ate that margin and
+   dropped Secretary to 4.25:1 and Tanod to 4.03:1 in LIGHT mode — under
+   AA for 12px bold text. Measured, 8% is the point where both clear 4.5
+   in light while dark mode also improves, since a weaker tint moves the
+   background away from the text in both directions. The 30% border keeps
+   the badge legible as a shape. */
+.role-badge--admin {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  /* --color-link, not --color-primary: primary is a FILL colour and stays
+     dark in dark mode, where it measured 4.05:1 on this tint — below AA.
+     --color-link is the text-safe member of the same family (6.70:1 on
+     white, brightened to #60A5FA in dark). */
+  color: var(--color-link);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+.role-badge--secretary {
+  background: color-mix(in srgb, var(--color-info) 8%, transparent);
+  color: var(--color-info-text);
+  border: 1px solid color-mix(in srgb, var(--color-info) 30%, transparent);
+}
+.role-badge--punong_barangay {
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  /* --color-warning-TEXT, not --color-warning-solid: the working
+     reference §6 defines *-solid as a saturated FILL for white text, and
+     it stays dark in dark mode. Settings' old .settings-role-pill--pb
+     used -solid and so rendered dark amber text on a dark tint;
+     Personnel's badge had it right. Keeping the correct one. */
+  color: var(--color-warning-text);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+.role-badge--tanod {
+  background: color-mix(in srgb, var(--color-success) 8%, transparent);
+  color: var(--color-success-text);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
+}
+
+/* ==========================================================================
+   Stat card grid — ONE definition for the 4-up count row.
+
+   2026-09-06 UI/UX audit: Audit Log, Service Health and Map Packages each
+   had their own near-identical copy (.audit-stat-*, .health-stat-*,
+   .map-pkg-stat-*), and the copies had drifted where nobody would notice
+   them side by side but everybody notices them screen to screen:
+
+     - value size          1.5rem on two, 1.25rem on Map Packages
+     - active focus ring   1px on Audit Log, 1.5px on Service Health
+     - hover/active states  Map Packages had neither
+     - transition          `all` on one, an explicit property list on another
+     - tone variants       three different subsets of primary/info/warning/
+                           success/critical/neutral
+
+   The union of the tone variants is defined here so no screen loses one.
+   This is distinct from the StatStrip COMPONENT (big number + inline
+   label, no card) — that one stays as it is; this is the bordered
+   4-column grid.
+   ========================================================================== */
+.stat-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-sm-md);
+  width: 100%;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--pad-panel);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  user-select: none;
+  text-align: left;
+}
+.stat-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+.stat-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.stat-card.is-active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary) 8%);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.stat-card__value {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+.stat-card__value--primary  { color: var(--color-primary); }
+.stat-card__value--info     { color: var(--color-info-text); }
+.stat-card__value--warning  { color: var(--color-warning-text); }
+.stat-card__value--success  { color: var(--color-success-text); }
+.stat-card__value--critical { color: var(--color-critical); }
+.stat-card__value--neutral  { color: var(--color-text-secondary); }
+
+.stat-card__label {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 992px) {
+  .stat-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .stat-card-grid { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   Filter chip — ONE definition for the standalone "All / Pending /
+   Converted" style filters.
+
+   2026-09-06 UI/UX audit: three screens each had their own. Citizen
+   Reports and Personnel were the SAME design drifted apart (padding
+   0.375/0.75rem vs 0.375/0.625rem, gap 0.375 vs 0.25rem); Dispatch
+   Center's .queue-filter-chip was the same affordance drawn as a pill
+   with a different type size. All three already agreed on the active
+   state — primary fill, primary border, white text — which is the
+   giveaway that they were meant to be one thing.
+
+   NOT merged, on purpose: .sms-filter-chip. Despite the name it is a
+   segmented control (flex:1, borderless, sitting inside a shared track),
+   which is the .page-tabs pattern, not this one.
+   ========================================================================== */
+/* Row container for the chips above. */
+.filter-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  flex-wrap: wrap;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: var(--spacing-2xs) var(--spacing-sm-md);
+  /* A chip is not a form control; it opts out of the base button height. */
+  min-height: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.filter-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-surface);
+}
+.filter-chip:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.filter-chip.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+.filter-chip__count {
+  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+  padding: var(--spacing-3xs) var(--spacing-2xs);
+  border-radius: 999px;
+  font-size: var(--font-size-label);
+  font-weight: 700;
+}
+.filter-chip.is-active .filter-chip__count {
+  background: color-mix(in srgb, var(--color-white) 25%, transparent);
+  color: var(--color-white);
+}
 
 .status-pill {
   display: inline-block;

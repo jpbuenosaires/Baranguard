@@ -1123,7 +1123,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'primary';
-    submit.textContent = 'Finalize blotter entry';
+    submit.textContent = 'Finalize Blotter Record';
 
     form.append(label, note, textarea, ...partyElements, submit);
 
@@ -1150,7 +1150,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
         await load();
       } catch (err) {
         submit.disabled = false;
-        submit.textContent = 'Finalize blotter entry';
+        submit.textContent = 'Finalize Blotter Record';
         showToast(err instanceof ApiClientError ? err.message : 'Could not finalize the entry.', { variant: 'error' });
       }
     });

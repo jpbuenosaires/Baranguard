@@ -149,7 +149,7 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
   const searchInput = document.createElement('input');
   searchInput.type = 'search';
   searchInput.className = 'blotter-search-input';
-  searchInput.placeholder = 'Search blotter entries by ID, type, location, or complainant...';
+  searchInput.placeholder = 'Search by ID, type, location, or complainant…';
   searchInput.addEventListener('input', () => {
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => {

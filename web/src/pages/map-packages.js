@@ -117,7 +117,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
   // 2. StatStrip Host
   const statStripHost = document.createElement('div');
-  statStripHost.className = 'map-pkg-stat-strip';
+  statStripHost.className = 'stat-card-grid';
   pageContainer.appendChild(statStripHost);
 
   // 3. Main 2-Column Operations Grid
@@ -216,14 +216,14 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
     statItems.forEach((item) => {
       const card = document.createElement('div');
-      card.className = 'map-pkg-stat-card';
+      card.className = 'stat-card';
 
       const val = document.createElement('span');
-      val.className = `map-pkg-stat-card__value map-pkg-stat-card__value--${item.tone}`;
+      val.className = `stat-card__value stat-card__value--${item.tone}`;
       val.innerHTML = `${item.icon}<span>${item.value}</span>`;
 
       const lbl = document.createElement('span');
-      lbl.className = 'map-pkg-stat-card__label';
+      lbl.className = 'stat-card__label';
       lbl.textContent = item.label;
 
       card.append(val, lbl);

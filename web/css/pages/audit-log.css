@@ -76,64 +76,13 @@
    2. Interactive StatStrip Quick Filters
    ========================================================================== */
 
-.audit-stat-strip {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--spacing-sm, 0.75rem);
-  width: 100%;
-}
 
-.audit-stat-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: var(--pad-panel);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 0.5rem);
-  box-shadow: var(--shadow-card);
-  cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-  user-select: none;
-  text-align: left;
-}
 
-.audit-stat-card:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
-  box-shadow: var(--shadow-elevated);
-  transform: translateY(-1px);
-}
 
-.audit-stat-card:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
 
-.audit-stat-card.is-active {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary) 8%);
-  box-shadow: 0 0 0 1px var(--color-primary);
-}
 
-.audit-stat-card__value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-  color: var(--color-text-primary);
-  font-variant-numeric: tabular-nums;
-}
 
-.audit-stat-card__value--primary { color: var(--color-primary); }
-.audit-stat-card__value--info { color: var(--color-info-text); }
-.audit-stat-card__value--warning { color: var(--color-warning-solid, var(--color-warning-text)); }
-.audit-stat-card__value--success { color: var(--color-success-text); }
 
-.audit-stat-card__label {
-  font-size: var(--font-size-xs, 0.75rem);
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  margin-top: var(--spacing-xs);
-}
 
 /* ==========================================================================
    3. 4-Column Full-Width Filter Toolbar
@@ -350,7 +299,12 @@
 
 .audit-action-pill--warning {
   background: color-mix(in srgb, var(--color-warning) 16%, var(--color-surface));
-  color: var(--color-warning-solid, var(--color-warning-text));
+  /* 2026-09-06 UI/UX audit: was --color-warning-solid, which the working
+     reference §6 defines as a saturated FILL for white text and which
+     stays dark in dark mode. Measured on the warning tint in dark mode it
+     gave 4.18:1 — below AA's 4.5:1 for this 12px bold text.
+     --color-warning-text gives 16.84:1. */
+  color: var(--color-warning-text);
   border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
 
@@ -588,9 +542,6 @@
    ========================================================================== */
 
 @media (max-width: 992px) {
-  .audit-stat-strip {
-    grid-template-columns: repeat(2, 1fr);
-  }
 
   .audit-filter-panel {
     grid-template-columns: repeat(2, 1fr);
@@ -598,9 +549,6 @@
 }
 
 @media (max-width: 560px) {
-  .audit-stat-strip {
-    grid-template-columns: 1fr;
-  }
 
   .audit-filter-panel {
     grid-template-columns: 1fr;

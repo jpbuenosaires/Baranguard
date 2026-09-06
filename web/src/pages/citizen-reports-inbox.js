@@ -154,7 +154,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
   // Status Filter Chips
   const filterChips = document.createElement('div');
-  filterChips.className = 'citizen-filter-chips';
+  filterChips.className = 'filter-chips';
 
   const statusChips = [
     { key: 'all', label: 'All', countId: 'chip-count-all' },
@@ -167,13 +167,13 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   statusChips.forEach(({ key, label, countId }) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = `citizen-filter-chip ${key === currentStatusFilter ? 'is-active' : ''}`;
+    btn.className = `filter-chip ${key === currentStatusFilter ? 'is-active' : ''}`;
     btn.dataset.status = key;
-    btn.innerHTML = `${label} <span class="citizen-filter-chip__count" id="${countId}">0</span>`;
+    btn.innerHTML = `${label} <span class="filter-chip__count" id="${countId}">0</span>`;
     btn.addEventListener('click', () => {
       if (currentStatusFilter === key) return;
       currentStatusFilter = key;
-      filterChips.querySelectorAll('.citizen-filter-chip').forEach((c) => c.classList.remove('is-active'));
+      filterChips.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('is-active'));
       btn.classList.add('is-active');
       applyFilter();
     });

@@ -143,51 +143,11 @@
 }
 
 /* Status Filter Tabs / Chips */
-.citizen-filter-chips {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-}
 
-.citizen-filter-chip {
-  padding: var(--spacing-2xs) var(--spacing-sm-md);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-}
 
-.citizen-filter-chip:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
 
-.citizen-filter-chip.is-active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--color-white);
-}
 
-.citizen-filter-chip__count {
-  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
-  padding: var(--spacing-3xs) var(--spacing-2xs);
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
 
-.citizen-filter-chip.is-active .citizen-filter-chip__count {
-  background: color-mix(in srgb, var(--color-white) 25%, transparent);
-  color: var(--color-white);
-}
 
 /* Table Container (Internally Scrollable with Sticky Header) */
 .citizen-table-wrap {
