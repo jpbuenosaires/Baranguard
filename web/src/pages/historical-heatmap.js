@@ -9,22 +9,7 @@
 
 import { getReportsHeatmap, ApiClientError } from '../api/apiClient.js';
 import { HeatmapMap } from '../components/HeatmapMap.js';
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-function daysAgoIso(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-function shortDate(iso) {
-  if (!iso) return '';
-  const [, m, d] = iso.split('-');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[Number(m) - 1]} ${Number(d)}`;
-}
+import { DateRangePicker } from '../components/DateRangePicker.js';
 
 /**
  * Personnel > Heatmap tab. Was the standalone W5 Historical Heatmap page
@@ -41,141 +26,18 @@ function shortDate(iso) {
  * @param {{fullName:string, role:string}} user
  */
 export function renderHeatmapTab(container, pageHeader, user) {
-  const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
-
-  const fromInput = document.createElement('input');
-  fromInput.type = 'date';
-  fromInput.value = daysAgoIso(29);
-  fromInput.className = 'date-range-popover__input';
-
-  const toInput = document.createElement('input');
-  toInput.type = 'date';
-  toInput.value = todayIso();
-  toInput.className = 'date-range-popover__input';
-
-  const rangeWrapper = document.createElement('div');
-  rangeWrapper.className = 'date-range-picker-wrapper';
-
-  const rangeSelect = document.createElement('select');
-  rangeSelect.className = 'input--auto range-select';
-  rangeSelect.setAttribute('aria-label', 'Date range');
-  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range...']]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    rangeSelect.appendChild(option);
-  }
-  rangeSelect.value = '30';
-  let previousSelectValue = '30';
-
-  const popover = document.createElement('div');
-  popover.className = 'date-range-popover';
-  popover.hidden = true;
-  popover.setAttribute('role', 'dialog');
-  popover.setAttribute('aria-label', 'Custom date range');
-
-  const popoverTitle = document.createElement('div');
-  popoverTitle.className = 'date-range-popover__title';
-  popoverTitle.textContent = 'Custom Date Range';
-
-  const gridFields = document.createElement('div');
-  gridFields.className = 'date-range-popover__grid';
-
-  const fromField = document.createElement('div');
-  fromField.className = 'date-range-popover__field';
-  const fromLabel = document.createElement('label');
-  fromLabel.className = 'date-range-popover__label';
-  fromLabel.textContent = 'From';
-  fromField.append(fromLabel, fromInput);
-
-  const toField = document.createElement('div');
-  toField.className = 'date-range-popover__field';
-  const toLabel = document.createElement('label');
-  toLabel.className = 'date-range-popover__label';
-  toLabel.textContent = 'To';
-  toField.append(toLabel, toInput);
-
-  gridFields.append(fromField, toField);
-
-  const rangeError = document.createElement('span');
-  rangeError.className = 'app-inline-error';
-  rangeError.hidden = true;
-  rangeError.setAttribute('role', 'alert');
-
-  const actions = document.createElement('div');
-  actions.className = 'date-range-popover__actions';
-
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'ghost';
-  cancelButton.textContent = 'Cancel';
-
-  const applyButton = document.createElement('button');
-  applyButton.type = 'button';
-  applyButton.className = 'primary';
-  applyButton.textContent = 'Apply Range';
-
-  actions.append(cancelButton, applyButton);
-  popover.append(popoverTitle, gridFields, rangeError, actions);
-  rangeWrapper.append(rangeSelect, popover);
-
-  const validateRange = () => {
-    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
-    applyButton.disabled = invalid;
-    rangeError.hidden = !invalid;
-    rangeError.textContent = invalid ? 'From date must be on or before To date.' : '';
-  };
-  fromInput.addEventListener('change', validateRange);
-  toInput.addEventListener('change', validateRange);
-
-  const openPopover = () => {
-    popover.hidden = false;
-    validateRange();
-    fromInput.focus();
-  };
-
-  const closePopover = (restorePrevious = false) => {
-    popover.hidden = true;
-    rangeError.hidden = true;
-    if (restorePrevious) {
-      rangeSelect.value = previousSelectValue;
-    }
-  };
-
-  cancelButton.addEventListener('click', () => closePopover(true));
-  document.addEventListener('click', (e) => {
-    if (!popover.hidden && !rangeWrapper.contains(e.target)) closePopover(true);
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !popover.hidden) closePopover(true);
-  });
-
-  applyButton.addEventListener('click', () => {
-    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
-    previousSelectValue = 'custom';
-    const customOption = rangeSelect.querySelector('option[value="custom"]');
-    if (customOption) {
-      customOption.textContent = `Custom (${shortDate(fromInput.value)} – ${shortDate(toInput.value)})`;
-    }
-    rangeSelect.value = 'custom';
-    closePopover(false);
-    load(fromInput.value, toInput.value);
-  });
-
-  rangeSelect.addEventListener('change', () => {
-    if (rangeSelect.value === 'custom') {
-      openPopover();
-      return;
-    }
-    closePopover(false);
-    previousSelectValue = rangeSelect.value;
-    fromInput.value = daysAgoIso(PRESET_DAYS_AGO[rangeSelect.value]);
-    toInput.value = todayIso();
-    load(fromInput.value, toInput.value);
+  // 2026-09-06 UI/UX audit: was a copy of the Admin Dashboard's ~120-line
+  // picker. Now the shared component — which also removes a real bug this
+  // copy carried: the Apply button had TWO click listeners (one here, one
+  // added again further down), so every custom range fired load() twice.
+  const rangePicker = DateRangePicker({
+    value: '30',
+    ariaLabel: 'Date range',
+    onChange: ({ from, to }) => load(from, to),
   });
 
   if (pageHeader && pageHeader.actions) {
-    pageHeader.actions.appendChild(rangeWrapper);
+    pageHeader.actions.appendChild(rangePicker.el);
   }
 
   const wrapper = document.createElement('div');
@@ -193,8 +55,8 @@ export function renderHeatmapTab(container, pageHeader, user) {
 
   let heatmap = null;
 
-  applyButton.addEventListener('click', () => load(fromInput.value, toInput.value));
-  load(fromInput.value, toInput.value);
+  const initial = rangePicker.getState();
+  load(initial.from, initial.to);
 
   async function load(dateFrom, dateTo) {
     renderLoading(body);

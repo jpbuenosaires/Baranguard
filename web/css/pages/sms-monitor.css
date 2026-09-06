@@ -1295,8 +1295,7 @@
 }
 
 .sms-log-filter-panel select,
-.sms-log-filter-select,
-.date-range-picker-wrapper select {
+.sms-log-filter-select {
   width: 100% !important;
   height: 2.5rem;
   padding: 0 2.25rem 0 0.875rem;
@@ -1320,115 +1319,21 @@
 }
 
 [data-theme="dark"] .sms-log-filter-panel select,
-[data-theme="dark"] .sms-log-filter-select,
-[data-theme="dark"] .date-range-picker-wrapper select {
+[data-theme="dark"] .sms-log-filter-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 .sms-log-filter-panel select:hover,
-.sms-log-filter-select:hover,
-.date-range-picker-wrapper select:hover {
+.sms-log-filter-select:hover {
   border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
 }
 
 .sms-log-filter-panel select:focus,
-.sms-log-filter-select:focus,
-.date-range-picker-wrapper select:focus {
+.sms-log-filter-select:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
-/* Anchored Date Range Popover */
-.date-range-picker-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.date-range-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 100;
-  width: 19rem;
-  padding: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  animation: sms-popover-in 0.15s ease-out;
-}
-
-@keyframes sms-popover-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.date-range-popover[hidden] {
-  display: none;
-}
-
-.date-range-popover__title {
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.date-range-popover__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.625rem;
-}
-
-.date-range-popover__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.date-range-popover__label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.date-range-popover__input {
-  width: 100%;
-  height: 2.125rem;
-  padding: 0 0.5rem;
-  font-size: 0.8125rem;
-  border-radius: 6px;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-text-primary);
-  font-family: inherit;
-  box-sizing: border-box;
-  outline: none;
-}
-
-.date-range-popover__input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 15%, transparent);
-}
-
-.date-range-popover__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-}
-
-.date-range-popover__actions button {
-  height: 2rem;
-  padding: 0 0.75rem;
-  font-size: 0.8125rem;
-  border-radius: 6px;
-}
 
 /* Detail Pane (Right Column of Split Panel) */
 .sms-detail-pane {

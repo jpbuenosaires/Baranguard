@@ -29,6 +29,7 @@ import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { icons } from '../components/icons.js';
+import { DateRangePicker } from '../components/DateRangePicker.js';
 import { avatarInitials } from '../components/Avatar.js';
 
 const PAGE_SIZE = 25;
@@ -1474,178 +1475,32 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
 // Activity Log Tab (Preserved + Tokenized Alignment)
 // ============================================================
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysAgoIso(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
+/**
+ * Thin adapter over the shared DateRangePicker component.
+ *
+ * 2026-09-06 UI/UX audit: this file used to hand-roll the whole control
+ * (~130 lines), as four other screens also did. The shared component owns
+ * it now; this wrapper only preserves the {wrapper, getDateRange, reset}
+ * shape the Activity Log tab's call sites already expect, and translates
+ * the component's {from, to} into the {dateFrom, dateTo} the SMS log's
+ * query builder uses. "All time" maps to undefined/undefined, which is
+ * this screen's way of sending no date bounds at all.
+ */
 function buildDateRangePicker(initialRange = '30', onRangeChange) {
-  const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
-  let currentRange = initialRange;
-  let customFrom = daysAgoIso(29);
-  let customTo = todayIso();
-  let previousValue = initialRange;
-
-  const wrapper = document.createElement('div');
-  wrapper.className = 'date-range-picker-wrapper';
-
-  const select = document.createElement('select');
-  select.className = 'input--auto range-select sms-log-filter-select';
-  select.setAttribute('aria-label', 'Date range');
-
-  const options = [
-    ['7', 'Last 7 days'],
-    ['30', 'Last 30 days'],
-    ['90', 'Last 90 days'],
-    ['all', 'All time'],
-    ['custom', 'Custom range...'],
-  ];
-
-  options.forEach(([val, label]) => {
-    const opt = document.createElement('option');
-    opt.value = val;
-    opt.textContent = label;
-    select.appendChild(opt);
-  });
-  select.value = initialRange;
-
-  // Popover dialog
-  const popover = document.createElement('div');
-  popover.className = 'date-range-popover';
-  popover.hidden = true;
-  popover.setAttribute('role', 'dialog');
-  popover.setAttribute('aria-label', 'Custom date range');
-
-  const title = document.createElement('div');
-  title.className = 'date-range-popover__title';
-  title.textContent = 'Custom Date Range';
-
-  const grid = document.createElement('div');
-  grid.className = 'date-range-popover__grid';
-
-  const fromField = document.createElement('div');
-  fromField.className = 'date-range-popover__field';
-  const fromLabel = document.createElement('label');
-  fromLabel.className = 'date-range-popover__label';
-  fromLabel.textContent = 'From';
-  const fromInput = document.createElement('input');
-  fromInput.type = 'date';
-  fromInput.className = 'date-range-popover__input';
-  fromInput.value = customFrom;
-  fromField.append(fromLabel, fromInput);
-
-  const toField = document.createElement('div');
-  toField.className = 'date-range-popover__field';
-  const toLabel = document.createElement('label');
-  toLabel.className = 'date-range-popover__label';
-  toLabel.textContent = 'To';
-  const toInput = document.createElement('input');
-  toInput.type = 'date';
-  toInput.className = 'date-range-popover__input';
-  toInput.value = customTo;
-  toField.append(toLabel, toInput);
-
-  grid.append(fromField, toField);
-
-  const errorEl = document.createElement('span');
-  errorEl.className = 'app-inline-error';
-  errorEl.style.cssText = 'color: var(--color-critical); font-size: 0.75rem; font-weight: 500;';
-  errorEl.hidden = true;
-  errorEl.setAttribute('role', 'alert');
-
-  const actions = document.createElement('div');
-  actions.className = 'date-range-popover__actions';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'ghost';
-  cancelBtn.textContent = 'Cancel';
-
-  const applyBtn = document.createElement('button');
-  applyBtn.type = 'button';
-  applyBtn.className = 'primary';
-  applyBtn.textContent = 'Apply Range';
-
-  actions.append(cancelBtn, applyBtn);
-  popover.append(title, grid, errorEl, actions);
-  wrapper.append(select, popover);
-
-  const validate = () => {
-    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
-    applyBtn.disabled = invalid;
-    errorEl.hidden = !invalid;
-    errorEl.textContent = invalid ? 'From date must be on or before To date.' : '';
-  };
-  fromInput.addEventListener('change', validate);
-  toInput.addEventListener('change', validate);
-
-  const openPopover = () => {
-    popover.hidden = false;
-    validate();
-    fromInput.focus();
-  };
-
-  const closePopover = (restorePrevious = false) => {
-    popover.hidden = true;
-    errorEl.hidden = true;
-    if (restorePrevious) {
-      select.value = previousValue;
-    }
-  };
-
-  cancelBtn.addEventListener('click', () => closePopover(true));
-
-  applyBtn.addEventListener('click', () => {
-    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
-    customFrom = fromInput.value;
-    customTo = toInput.value;
-    currentRange = 'custom';
-    previousValue = 'custom';
-    closePopover();
-    onRangeChange({ dateFrom: customFrom, dateTo: customTo, range: 'custom' });
-  });
-
-  select.addEventListener('change', () => {
-    if (select.value === 'custom') {
-      openPopover();
-    } else {
-      closePopover();
-      currentRange = select.value;
-      previousValue = select.value;
-      if (select.value === 'all') {
-        onRangeChange({ dateFrom: undefined, dateTo: undefined, range: 'all' });
-      } else {
-        const days = PRESET_DAYS_AGO[select.value] ?? 29;
-        onRangeChange({ dateFrom: daysAgoIso(days), dateTo: todayIso(), range: select.value });
-      }
-    }
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!popover.hidden && !wrapper.contains(e.target)) {
-      closePopover(true);
-    }
+  const picker = DateRangePicker({
+    value: initialRange,
+    allowAllTime: true,
+    ariaLabel: 'Date range',
+    selectClassName: 'sms-log-filter-select',
+    onChange: ({ mode, from, to }) =>
+      onRangeChange({ dateFrom: from ?? undefined, dateTo: to ?? undefined, range: mode }),
   });
 
   return {
-    wrapper,
-    select,
+    wrapper: picker.el,
     getDateRange: () => {
-      if (currentRange === 'all') return { dateFrom: undefined, dateTo: undefined };
-      if (currentRange === 'custom') return { dateFrom: customFrom, dateTo: customTo };
-      const days = PRESET_DAYS_AGO[currentRange] ?? 29;
-      return { dateFrom: daysAgoIso(days), dateTo: todayIso() };
-    },
-    reset: (val = '30') => {
-      currentRange = val;
-      previousValue = val;
-      select.value = val;
-      closePopover();
+      const { from, to } = picker.getState();
+      return { dateFrom: from ?? undefined, dateTo: to ?? undefined };
     },
   };
 }

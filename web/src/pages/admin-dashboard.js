@@ -23,6 +23,7 @@
 
 import { getReportsSummary, getIncidents, getDutyStatus, getUsers, getTanodSos, getBarangays, logout, ApiClientError } from '../api/apiClient.js';
 import { KpiCard } from '../components/KpiCard.js';
+import { DateRangePicker } from '../components/DateRangePicker.js';
 import { LineChart } from '../components/LineChart.js';
 import { DonutChart } from '../components/DonutChart.js';
 import { DataTable } from '../components/DataTable.js';
@@ -58,20 +59,6 @@ const RECENT_INCIDENTS_COLUMNS = [
   { key: 'date', label: 'Date', align: 'right' },
 ];
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-function daysAgoIso(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-/** Inclusive day count between two `YYYY-MM-DD` dates, e.g. 8/1-8/10 -> 10. */
-function rangeDaysBetween(fromIso, toIso) {
-  const from = new Date(`${fromIso}T00:00:00Z`);
-  const to = new Date(`${toIso}T00:00:00Z`);
-  return Math.round((to - from) / 86400000) + 1;
-}
 /**
  * The immediately-preceding period of equal length to [dateFrom, dateTo]
  * (both inclusive `YYYY-MM-DD`), e.g. 8/1-8/10 (10 days) -> 7/22-7/31.
@@ -122,155 +109,15 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
     // Cosmetic only — the dashboard works fine without the badge.
   });
 
-  // Date range controls — 2026-09-06 UX pass: replaced the always-visible
-  // From/To/Apply trio plus a separate row of preset chips (six controls
-  // competing for attention, two different ways to express the same
-  // range) with one dropdown. The explicit date fields only appear once
-  // "Custom range" is chosen — progressive disclosure, not gone — so the
-  // 95% case (a preset) is a single control and the escape hatch for an
-  // arbitrary range is still one click away, not removed.
-  const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
-
-  const rangeWrapper = document.createElement('div');
-  rangeWrapper.className = 'date-range-picker-wrapper';
-
-  const rangeSelect = document.createElement('select');
-  rangeSelect.className = 'input--auto range-select';
-  rangeSelect.setAttribute('aria-label', 'Date range');
-  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range...']]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    rangeSelect.appendChild(option);
-  }
-  rangeSelect.value = '30';
-  let previousSelectValue = '30';
-
-  // Anchored popover card for Custom date range — appears directly beneath
-  // the selector in the header, with zero layout shift to the dashboard below.
-  const popover = document.createElement('div');
-  popover.className = 'date-range-popover';
-  popover.hidden = true;
-  popover.setAttribute('role', 'dialog');
-  popover.setAttribute('aria-label', 'Custom date range');
-
-  const popoverTitle = document.createElement('div');
-  popoverTitle.className = 'date-range-popover__title';
-  popoverTitle.textContent = 'Custom Date Range';
-
-  const gridFields = document.createElement('div');
-  gridFields.className = 'date-range-popover__grid';
-
-  const fromField = document.createElement('div');
-  fromField.className = 'date-range-popover__field';
-  const fromLabel = document.createElement('label');
-  fromLabel.className = 'date-range-popover__label';
-  fromLabel.textContent = 'From';
-  const fromInput = document.createElement('input');
-  fromInput.type = 'date';
-  fromInput.className = 'date-range-popover__input';
-  fromInput.value = daysAgoIso(29);
-  fromField.append(fromLabel, fromInput);
-
-  const toField = document.createElement('div');
-  toField.className = 'date-range-popover__field';
-  const toLabel = document.createElement('label');
-  toLabel.className = 'date-range-popover__label';
-  toLabel.textContent = 'To';
-  const toInput = document.createElement('input');
-  toInput.type = 'date';
-  toInput.className = 'date-range-popover__input';
-  toInput.value = todayIso();
-  toField.append(toLabel, toInput);
-
-  gridFields.append(fromField, toField);
-
-  const rangeError = document.createElement('span');
-  rangeError.className = 'app-inline-error';
-  rangeError.hidden = true;
-  rangeError.setAttribute('role', 'alert');
-
-  const actions = document.createElement('div');
-  actions.className = 'date-range-popover__actions';
-
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'ghost';
-  cancelButton.textContent = 'Cancel';
-
-  const applyButton = document.createElement('button');
-  applyButton.type = 'button';
-  applyButton.className = 'primary';
-  applyButton.textContent = 'Apply Range';
-
-  actions.append(cancelButton, applyButton);
-  popover.append(popoverTitle, gridFields, rangeError, actions);
-  rangeWrapper.append(rangeSelect, popover);
-
-  const validateRange = () => {
-    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
-    applyButton.disabled = invalid;
-    rangeError.hidden = !invalid;
-    rangeError.textContent = invalid ? 'From date must be on or before To date.' : '';
-  };
-  fromInput.addEventListener('change', validateRange);
-  toInput.addEventListener('change', validateRange);
-
-  const openPopover = () => {
-    popover.hidden = false;
-    validateRange();
-    fromInput.focus();
-  };
-
-  const closePopover = (restorePrevious = false) => {
-    popover.hidden = true;
-    rangeError.hidden = true;
-    if (restorePrevious) {
-      rangeSelect.value = previousSelectValue;
-    }
-  };
-
-  cancelButton.addEventListener('click', () => {
-    closePopover(true);
-  });
-
-  // Close on outside click
-  document.addEventListener('click', (e) => {
-    if (!popover.hidden && !rangeWrapper.contains(e.target)) {
-      closePopover(true);
-    }
-  });
-
-  // Close on Escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !popover.hidden) {
-      closePopover(true);
-    }
-  });
-
-  applyButton.addEventListener('click', () => {
-    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
-    previousSelectValue = 'custom';
-    const customOption = rangeSelect.querySelector('option[value="custom"]');
-    if (customOption) {
-      customOption.textContent = `Custom (${shortDate(fromInput.value)} – ${shortDate(toInput.value)})`;
-    }
-    rangeSelect.value = 'custom';
-    closePopover(false);
-    load(fromInput.value, toInput.value);
-  });
-
-  rangeSelect.addEventListener('change', () => {
-    if (rangeSelect.value === 'custom') {
-      openPopover();
-      return;
-    }
-    closePopover(false);
-    previousSelectValue = rangeSelect.value;
-    const daysAgo = PRESET_DAYS_AGO[rangeSelect.value];
-    fromInput.value = daysAgoIso(daysAgo);
-    toInput.value = todayIso();
-    load(fromInput.value, toInput.value);
+  // Date range control. 2026-09-06 UI/UX audit: this screen used to build
+  // its own ~120-line picker; four other screens had copy-pasted the same
+  // block and drifted. It is now the shared DateRangePicker component —
+  // see that file for what the copies disagreed about and the two bugs
+  // (leaked document listeners, UTC "today") the consolidation fixed.
+  const rangePicker = DateRangePicker({
+    value: '30',
+    ariaLabel: 'Date range',
+    onChange: ({ from, to }) => load(from, to),
   });
 
   const freshness = document.createElement('span');
@@ -282,9 +129,12 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   refreshButton.className = 'ghost';
   refreshButton.innerHTML = `<span aria-hidden="true">${icons.repeat(15)}</span><span>Refresh</span>`;
   refreshButton.setAttribute('aria-label', 'Refresh dashboard');
-  refreshButton.addEventListener('click', () => load(fromInput.value, toInput.value));
+  refreshButton.addEventListener('click', () => {
+    const { from, to } = rangePicker.getState();
+    load(from, to);
+  });
 
-  pageHeader.actions.append(freshness, refreshButton, rangeWrapper);
+  pageHeader.actions.append(freshness, refreshButton, rangePicker.el);
 
   const body = document.createElement('div');
   body.className = 'dashboard-body';
@@ -306,19 +156,15 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
       const summary = await getReportsSummary({ dateFrom, dateTo });
 
       if (summary.trend && summary.trend.length > 0) {
-        fromInput.value = summary.trend[0].date;
-        toInput.value = summary.trend[summary.trend.length - 1].date;
-      }
-
-      if (dateFrom === undefined && dateTo === undefined) {
-        const matchedDays = Object.keys(PRESET_DAYS_AGO).find((days) => PRESET_DAYS_AGO[days] + 1 === rangeDaysBetween(fromInput.value, toInput.value));
-        rangeSelect.value = matchedDays || 'custom';
-        previousSelectValue = rangeSelect.value;
-        if (rangeSelect.value === 'custom') {
-          const customOption = rangeSelect.querySelector('option[value="custom"]');
-          if (customOption) {
-            customOption.textContent = `Custom (${shortDate(fromInput.value)} – ${shortDate(toInput.value)})`;
-          }
+        const trendFrom = summary.trend[0].date;
+        const trendTo = summary.trend[summary.trend.length - 1].date;
+        // Only the first, deliberately unbounded load lets the SERVER pick
+        // the window, so only that one re-points the select at whatever
+        // came back. A user-chosen range must not be silently relabelled.
+        if (dateFrom === undefined && dateTo === undefined) {
+          rangePicker.reconcile(trendFrom, trendTo);
+        } else {
+          rangePicker.setDates(trendFrom, trendTo);
         }
       }
 
@@ -332,7 +178,8 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
 
       freshness.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-      loadDeltas(body, fromInput.value, toInput.value, summary);
+      const committed = rangePicker.getState();
+      loadDeltas(body, committed.from, committed.to, summary);
       loadRecentIncidents(body, navigate);
       loadTanodsOnDuty(body, user.barangayId);
       loadAttentionBanner(body, navigate, user.role, summary.byStatus.pending || 0);

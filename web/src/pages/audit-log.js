@@ -34,6 +34,7 @@ import { DataTable } from '../components/DataTable.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
+import { DateRangePicker } from '../components/DateRangePicker.js';
 
 const PAGE_SIZE = 25;
 
@@ -342,105 +343,45 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   actionChevron.innerHTML = icons.chevronDown(14);
   actionWrapper.append(actionSelect, actionChevron);
 
-  // Col 4: Date Range Picker with Anchored Popover
-  let currentRangeMode = '7'; // Default: Last 7 days
-  let customFromVal = getPastDateISO(7);
-  let customToVal = getTodayISO();
-  let activeDateFrom = customFromVal;
-  let activeDateTo = customToVal;
+  // Col 4: Date range. 2026-09-06 UI/UX audit — this screen used to build
+  // its own picker, the most divergent of the five copies in the app: it
+  // labelled its default option "Last 7 days (Default)", used "From Date"/
+  // "To Date" where the others used "From"/"To", titled the popover
+  // "Select Custom Date Range", used a typographic ellipsis where the
+  // others used three dots, and swapped the shared select styling for a
+  // bespoke wrapper plus a JS-injected chevron. All of that is now the
+  // shared component.
+  //
+  // "All time" is kept (SMS Monitor is the only other screen with it) and
+  // still resolves to a REAL bound, because GET /audit-log has no
+  // unbounded mode — omitting date_from makes the controller default to
+  // its own short window, not "everything". The bound is the audit
+  // retention horizon (RetentionService::AUDIT_LOG_DAYS, 7 years), so
+  // nothing older can exist and the label is honest rather than
+  // decorative.
+  const ALL_TIME_DAYS = 365 * 7;
 
-  const datePickerWrapper = document.createElement('div');
-  datePickerWrapper.className = 'audit-date-picker-wrapper';
+  let activeDateFrom = getPastDateISO(7);
+  let activeDateTo = getTodayISO();
 
-  const dateSelectWrapper = document.createElement('div');
-  dateSelectWrapper.className = 'audit-select-wrapper';
-
-  const dateSelect = document.createElement('select');
-  dateSelect.id = 'audit-date-range';
-  dateSelect.setAttribute('aria-label', 'Filter by date range');
-
-  const dateRangeOptions = [
-    ['7', 'Last 7 days (Default)'],
-    ['30', 'Last 30 days'],
-    ['90', 'Last 90 days'],
-    ['all', 'All time'],
-    ['custom', 'Custom range…'],
-  ];
-
-  dateRangeOptions.forEach(([val, label]) => {
-    const opt = document.createElement('option');
-    opt.value = val;
-    opt.textContent = label;
-    dateSelect.appendChild(opt);
+  const rangePicker = DateRangePicker({
+    value: '7',
+    allowAllTime: true,
+    ariaLabel: 'Filter by date range',
+    onChange: ({ mode, from, to }) => {
+      if (mode === 'all') {
+        activeDateFrom = getPastDateISO(ALL_TIME_DAYS);
+        activeDateTo = getTodayISO();
+      } else {
+        activeDateFrom = from;
+        activeDateTo = to;
+      }
+      currentPage = 1;
+      load();
+    },
   });
-  dateSelect.value = '7';
 
-  const dateChevron = document.createElement('span');
-  dateChevron.className = 'audit-select-chevron';
-  dateChevron.innerHTML = icons.chevronDown(14);
-  dateSelectWrapper.append(dateSelect, dateChevron);
-
-  // Date Popover Dialog
-  const popover = document.createElement('div');
-  popover.className = 'date-range-popover';
-  popover.hidden = true;
-  popover.setAttribute('role', 'dialog');
-  popover.setAttribute('aria-label', 'Custom date range dialog');
-
-  const popoverTitle = document.createElement('div');
-  popoverTitle.className = 'date-range-popover__title';
-  popoverTitle.textContent = 'Select Custom Date Range';
-
-  const popoverGrid = document.createElement('div');
-  popoverGrid.className = 'date-range-popover__grid';
-
-  const fromField = document.createElement('div');
-  fromField.className = 'date-range-popover__field';
-  const fromLabel = document.createElement('label');
-  fromLabel.className = 'date-range-popover__label';
-  fromLabel.textContent = 'From Date';
-  const fromInput = document.createElement('input');
-  fromInput.type = 'date';
-  fromInput.className = 'date-range-popover__input';
-  fromInput.value = customFromVal;
-  fromField.append(fromLabel, fromInput);
-
-  const toField = document.createElement('div');
-  toField.className = 'date-range-popover__field';
-  const toLabel = document.createElement('label');
-  toLabel.className = 'date-range-popover__label';
-  toLabel.textContent = 'To Date';
-  const toInput = document.createElement('input');
-  toInput.type = 'date';
-  toInput.className = 'date-range-popover__input';
-  toInput.value = customToVal;
-  toField.append(toLabel, toInput);
-
-  popoverGrid.append(fromField, toField);
-
-  const errorEl = document.createElement('div');
-  errorEl.className = 'date-range-popover__error';
-  errorEl.style.cssText = 'color: var(--color-critical); font-size: 0.75rem; font-weight: 500;';
-  errorEl.hidden = true;
-
-  const popoverActions = document.createElement('div');
-  popoverActions.className = 'date-range-popover__actions';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'ghost';
-  cancelBtn.textContent = 'Cancel';
-
-  const applyBtn = document.createElement('button');
-  applyBtn.type = 'button';
-  applyBtn.className = 'primary';
-  applyBtn.textContent = 'Apply Range';
-
-  popoverActions.append(cancelBtn, applyBtn);
-  popover.append(popoverTitle, popoverGrid, errorEl, popoverActions);
-  datePickerWrapper.append(dateSelectWrapper, popover);
-
-  filterPanel.append(searchField, categoryWrapper, actionWrapper, datePickerWrapper);
+  filterPanel.append(searchField, categoryWrapper, actionWrapper, rangePicker.el);
   pageContainer.appendChild(filterPanel);
 
   // 4. Data Table Container
@@ -456,72 +397,6 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   let totalAuditItems = 0;
   let activeFilterCategory = '';
   let searchQuery = '';
-
-  // Date Popover logic
-  const validateDates = () => {
-    const isInvalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
-    applyBtn.disabled = isInvalid;
-    errorEl.hidden = !isInvalid;
-    errorEl.textContent = isInvalid ? 'From date cannot be after To date.' : '';
-  };
-  fromInput.addEventListener('change', validateDates);
-  toInput.addEventListener('change', validateDates);
-
-  const closePopover = (restorePrevious = false) => {
-    popover.hidden = true;
-    errorEl.hidden = true;
-    if (restorePrevious) {
-      dateSelect.value = currentRangeMode;
-    }
-  };
-
-  cancelBtn.addEventListener('click', () => closePopover(true));
-
-  applyBtn.addEventListener('click', () => {
-    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
-    customFromVal = fromInput.value;
-    customToVal = toInput.value;
-    activeDateFrom = customFromVal;
-    activeDateTo = customToVal;
-    currentRangeMode = 'custom';
-    closePopover();
-    currentPage = 1;
-    load();
-  });
-
-  // Close popover when clicking outside
-  document.addEventListener('click', (e) => {
-    if (!popover.hidden && !datePickerWrapper.contains(e.target)) {
-      closePopover(true);
-    }
-  });
-
-  dateSelect.addEventListener('change', () => {
-    const val = dateSelect.value;
-    if (val === 'custom') {
-      popover.hidden = false;
-      validateDates();
-      fromInput.focus();
-    } else {
-      closePopover();
-      currentRangeMode = val;
-      if (val === '7') {
-        activeDateFrom = getPastDateISO(7);
-        activeDateTo = getTodayISO();
-      } else if (val === '30') {
-        activeDateFrom = getPastDateISO(30);
-        activeDateTo = getTodayISO();
-      } else if (val === '90') {
-        activeDateFrom = getPastDateISO(90);
-        activeDateTo = getTodayISO();
-      } else if (val === 'all') {
-        activeDateFrom = getPastDateISO(365 * 7);
-        activeDateTo = getTodayISO();
-      }
-      currentPage = 1;
-      load();
-    }
-  });
 
   // Category & Action change handlers
   categorySelect.addEventListener('change', () => {
