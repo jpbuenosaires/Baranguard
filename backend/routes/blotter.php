@@ -14,6 +14,7 @@ use Baranguard\Controllers\BlotterController;
 
 return [
     ['GET', '#^/blotter$#', [BlotterController::class, 'index'], true],
+    ['POST', '#^/blotter$#', [BlotterController::class, 'createEntry'], true],
     ['GET', '#^/incidents/(\d+)/blotter$#', [BlotterController::class, 'showByIncident'], true],
     ['POST', '#^/incidents/(\d+)/finalize$#', [BlotterController::class, 'finalize'], true],
     ['POST', '#^/incidents/(\d+)/blotter/amend$#', [BlotterController::class, 'amend'], true],

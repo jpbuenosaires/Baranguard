@@ -109,17 +109,25 @@ final class BlotterController
             $q = trim($q);
         }
 
+        $status = Http::query('status');
+        if ($status !== null) {
+            $status = trim($status);
+        }
+
         $where = ['b.barangay_id = :barangay_id', 'b.finalized_at IS NOT NULL'];
         $params = ['barangay_id' => $barangayId];
+        if ($status !== null && $status !== '') {
+            $where[] = 'b.case_status = :status';
+            $params['status'] = $status;
+        }
         if ($q !== null && $q !== '') {
-            // Four distinct placeholders, not one named param reused four
-            // times — see IncidentsController::index()'s identical `q=`
-            // comment for why (PDO::ATTR_EMULATE_PREPARES=false).
-            $where[] = '(b.display_id LIKE :q_like1 OR b.complainant_name LIKE :q_like2 OR b.respondent_name LIKE :q_like3 OR i.incident_type LIKE :q_like4)';
+            // Distinct placeholders for search fields
+            $where[] = '(b.display_id LIKE :q_like1 OR b.complainant_name LIKE :q_like2 OR b.respondent_name LIKE :q_like3 OR i.incident_type LIKE :q_like4 OR i.location_description LIKE :q_like5)';
             $params['q_like1'] = '%' . $q . '%';
             $params['q_like2'] = '%' . $q . '%';
             $params['q_like3'] = '%' . $q . '%';
             $params['q_like4'] = '%' . $q . '%';
+            $params['q_like5'] = '%' . $q . '%';
         }
         $whereSql = implode(' AND ', $where);
 
@@ -184,6 +192,283 @@ final class BlotterController
         }, $rows);
 
         Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total]);
+    }
+
+    /**
+     * POST /blotter - a walk-in blotter entry: a complaint brought to the
+     * barangay hall in person and written straight into the ledger, with
+     * no prior mobile/web incident report and no dispatch.
+     *
+     * Rebuilt 2026-09-06. The first version of this endpoint could never
+     * execute (it INSERTed a column `narrative` that does not exist - the
+     * column is `raw_narrative` - and called a nonexistent `Audit::log()`),
+     * so nothing below is a behaviour change against anything that ever
+     * ran. Resolved decisions:
+     *
+     *   - **Secretary only.** Section 3 gives the Secretary the blotter
+     *     and denies the Admin `finalize`/`amend`; a row created here is
+     *     born finalized, so letting an Admin call it would be the same
+     *     capability by another route. `finalize()` and `amend()` below
+     *     are already `['secretary']` - this matches them rather than
+     *     opening a side door.
+     *
+     *   - **The parent `incident` row is structurally required**, not a
+     *     convenience: `blotter_record.incident_id` is NOT NULL UNIQUE
+     *     (section 5). It is created here, in the same transaction.
+     *
+     *   - **`redacted_narrative` is left NULL.** Rule 4 makes the AI
+     *     approve step its only writer. The Secretary's own text goes to
+     *     `raw_narrative` (it IS the raw report) and to
+     *     `blotter_record.narrative_summary`, which is the field already
+     *     designed to be the shareable legal record once finalized. The
+     *     first version copied the text into `redacted_narrative`, which
+     *     would have published un-redacted walk-in text to every role.
+     *
+     *   - **`case_status` always starts `'active'`**, never client-chosen
+     *     - identical to `finalize()`. Section 5 makes case_status
+     *     forward-only past `active`, and `resolved` reachable only via an
+     *     incident status change, so accepting it at creation would let a
+     *     caller skip straight past states the transition rules exist to
+     *     order.
+     *
+     *   - **`incident.status` is `'resolved'` and `source` is `'web'`.**
+     *     The status enum is only (pending|dispatched|resolved) and a
+     *     walk-in needs no dispatch, so `pending` would inject a phantom
+     *     emergency into the Dispatch Center queue - the worse of the two.
+     *     CONSEQUENCE, stated because it is real and not obvious: walk-in
+     *     entries therefore count as resolved incidents in dashboard and
+     *     analytics totals. Response-time metrics are unaffected (they
+     *     need a dispatch row, which a walk-in never has). If walk-ins
+     *     should be countable separately, that is a new `incident.status`
+     *     or `source` enum value and therefore a migration plus an
+     *     architecture note - deliberately not slipped in here.
+     *
+     *   - **`Idempotency-Key` required** (Rule 3), replayed on
+     *     `incident.client_event_id` exactly as
+     *     `IncidentsController::createWeb()` does, so a double-submit
+     *     returns the original ledger entry instead of writing a second
+     *     case number for the same complaint.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function createEntry(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['secretary']);
+        $barangayId = (int) $identity['barangay_id'];
+
+        $idempotencyKey = Http::header('Idempotency-Key');
+        if ($idempotencyKey === null || !preg_match(IncidentsController::UUID_PATTERN, $idempotencyKey)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Idempotency-Key header must be a UUID.');
+        }
+
+        $body = Http::jsonBody();
+
+        $narrativeSummary = $body['narrative_summary'] ?? null;
+        if (!is_string($narrativeSummary) || trim($narrativeSummary) === '') {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'narrative_summary is required.');
+        }
+        $narrativeSummary = trim($narrativeSummary);
+
+        $incidentType = $body['incident_type'] ?? null;
+        if (!is_string($incidentType) || !in_array($incidentType, IncidentsController::INCIDENT_TYPES, true)) {
+            throw new ApiError(
+                400,
+                'VALIDATION_ERROR',
+                'incident_type must be one of: ' . implode(', ', IncidentsController::INCIDENT_TYPES) . '.'
+            );
+        }
+
+        // Same optional-party-field convention finalize()/amend() use.
+        // All-null defaults, exactly like finalize(): a walk-in has no
+        // prior record to fall back to.
+        $partyFields = self::parsePartyFields($body, [
+            'complainant_name' => null,
+            'respondent_name' => null,
+            'complainant_contact_number' => null,
+        ]);
+        $locationDescription = null;
+        if (isset($body['location_description']) && is_string($body['location_description'])) {
+            $trimmed = trim($body['location_description']);
+            $locationDescription = $trimmed === '' ? null : mb_substr($trimmed, 0, 255);
+        }
+
+        // Idempotent replay: same key shape as createWeb(), so a retried
+        // submit returns the entry it already made.
+        $replay = self::findWalkInByKey($pdo, $barangayId, $idempotencyKey);
+        if ($replay !== null) {
+            Http::send(200, $replay);
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $recheck = $pdo->prepare(
+                'SELECT incident_id FROM incident
+                  WHERE barangay_id = :barangay_id AND device_id IS NULL AND client_event_id = :key
+                  LIMIT 1 FOR UPDATE'
+            );
+            $recheck->execute(['barangay_id' => $barangayId, 'key' => $idempotencyKey]);
+            if ($recheck->fetch(PDO::FETCH_ASSOC) !== false) {
+                $pdo->rollBack();
+                Http::send(200, self::findWalkInByKey($pdo, $barangayId, $idempotencyKey) ?? []);
+            }
+
+            $incStmt = $pdo->prepare(
+                'INSERT INTO incident
+                    (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative,
+                     redacted_narrative, status, source, location_description,
+                     complainant_name, respondent_name, complainant_contact_number,
+                     client_event_id, created_at, updated_at)
+                 VALUES
+                    (:barangay_id, :reported_by, NULL, :incident_type, :priority, :raw_narrative,
+                     NULL, :status, :source, :location_description,
+                     :complainant_name, :respondent_name, :complainant_contact_number,
+                     :client_event_id, UTC_TIMESTAMP(), UTC_TIMESTAMP())'
+            );
+            $incStmt->execute([
+                'barangay_id' => $barangayId,
+                'reported_by' => $identity['user_id'],
+                'incident_type' => $incidentType,
+                'priority' => 'normal',
+                'raw_narrative' => $narrativeSummary,
+                'status' => 'resolved',
+                'source' => 'web',
+                'location_description' => $locationDescription,
+                'complainant_name' => $partyFields['complainant_name'],
+                'respondent_name' => $partyFields['respondent_name'],
+                'complainant_contact_number' => $partyFields['complainant_contact_number'],
+                'client_event_id' => $idempotencyKey,
+            ]);
+            $incidentId = (int) $pdo->lastInsertId();
+
+            $incidentDisplayId = self::assignDisplayId(
+                $pdo,
+                $barangayId,
+                'INC',
+                'incident',
+                'created_at',
+                'UPDATE incident SET display_id = :display_id WHERE incident_id = :row_id',
+                $incidentId
+            );
+            $blotterDisplayId = null;
+
+            $blotterStmt = $pdo->prepare(
+                'INSERT INTO blotter_record
+                    (incident_id, barangay_id, recorded_by, approved_by, narrative_summary,
+                     complainant_name, respondent_name, complainant_contact_number,
+                     case_status, display_id, finalized_at, revision_no)
+                 VALUES
+                    (:incident_id, :barangay_id, :recorded_by, :approved_by, :narrative_summary,
+                     :complainant_name, :respondent_name, :complainant_contact_number,
+                     \'active\', NULL, UTC_TIMESTAMP(), 1)'
+            );
+            $blotterStmt->execute([
+                'incident_id' => $incidentId,
+                'barangay_id' => $barangayId,
+                'recorded_by' => $identity['user_id'],
+                'approved_by' => $identity['user_id'],
+                'narrative_summary' => $narrativeSummary,
+                'complainant_name' => $partyFields['complainant_name'],
+                'respondent_name' => $partyFields['respondent_name'],
+                'complainant_contact_number' => $partyFields['complainant_contact_number'],
+            ]);
+            $blotterId = (int) $pdo->lastInsertId();
+
+            $blotterDisplayId = self::assignDisplayId(
+                $pdo,
+                $barangayId,
+                'BLT',
+                'blotter_record',
+                'finalized_at',
+                'UPDATE blotter_record SET display_id = :display_id WHERE blotter_id = :row_id',
+                $blotterId
+            );
+
+            // Identifiers only (Rule 8) - never the narrative or a party name.
+            Audit::record($pdo, $barangayId, $identity['user_id'], 'blotter_walk_in_created', 'blotter_record', $blotterId, [
+                'incident_id' => $incidentId,
+                'display_id' => $blotterDisplayId,
+                'case_status' => 'active',
+            ]);
+
+            $pdo->commit();
+
+            Http::send(201, [
+                'blotter_id' => $blotterId,
+                'incident_id' => $incidentId,
+                'display_id' => $blotterDisplayId,
+                'incident_display_id' => $incidentDisplayId,
+                'case_status' => 'active',
+                'revision_no' => 1,
+            ]);
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Returns the ledger entry a previous call with this Idempotency-Key
+     * already created, or null. Shaped exactly like createEntry()'s own
+     * 201 body so a replay is indistinguishable from the original.
+     *
+     * @return array<string,mixed>|null
+     */
+    private static function findWalkInByKey(PDO $pdo, int $barangayId, string $key): ?array
+    {
+        $stmt = $pdo->prepare(
+            'SELECT b.blotter_id, b.incident_id, b.display_id, b.case_status, b.revision_no,
+                    i.display_id AS incident_display_id
+               FROM incident i
+               JOIN blotter_record b ON b.incident_id = i.incident_id
+              WHERE i.barangay_id = :barangay_id AND i.device_id IS NULL AND i.client_event_id = :key
+              LIMIT 1'
+        );
+        $stmt->execute(['barangay_id' => $barangayId, 'key' => $key]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+        return [
+            'blotter_id' => (int) $row['blotter_id'],
+            'incident_id' => (int) $row['incident_id'],
+            'display_id' => $row['display_id'],
+            'incident_display_id' => $row['incident_display_id'],
+            'case_status' => $row['case_status'],
+            'revision_no' => (int) $row['revision_no'],
+        ];
+    }
+
+    /**
+     * Assigns a display_id after the row exists, retrying on collision -
+     * `nextDisplayId()` counts rows for the year, so two concurrent
+     * creates can compute the same candidate. Same 3-attempt shape
+     * `finalize()` already uses; returns null rather than failing the
+     * whole entry, matching migration 0014's "existing rows keep showing
+     * #N" tolerance for a missing display_id.
+     */
+    private static function assignDisplayId(
+        PDO $pdo,
+        int $barangayId,
+        string $prefix,
+        string $table,
+        string $dateColumn,
+        string $updateSql,
+        int $rowId
+    ): ?string {
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $candidate = IncidentsController::nextDisplayId($pdo, $barangayId, $prefix, $table, $dateColumn);
+            $dup = $pdo->prepare("SELECT 1 FROM {$table} WHERE display_id = :display_id LIMIT 1");
+            $dup->execute(['display_id' => $candidate]);
+            if ($dup->fetch(PDO::FETCH_ASSOC) !== false) {
+                continue;
+            }
+            $upd = $pdo->prepare($updateSql);
+            $upd->execute(['display_id' => $candidate, 'row_id' => $rowId]);
+            return $candidate;
+        }
+        return null;
     }
 
     /**
