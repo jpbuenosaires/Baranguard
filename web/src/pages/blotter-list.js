@@ -102,15 +102,7 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
   const headerActions = document.createElement('div');
   headerActions.className = 'blotter-header-actions';
 
-  // 1. AI Assistant Button
-  const aiAssistantBtn = document.createElement('button');
-  aiAssistantBtn.type = 'button';
-  aiAssistantBtn.className = 'btn-blotter-ai';
-  aiAssistantBtn.innerHTML = `${icons.sparkles(16)} <span>AI Assistant</span>`;
-  aiAssistantBtn.addEventListener('click', () => showAiAssistantModal());
-  headerActions.appendChild(aiAssistantBtn);
-
-  // 2. Export Button
+  // Export Button
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
   exportBtn.className = 'btn-blotter-export';
@@ -262,7 +254,7 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
       emptyTd.colSpan = headers.length;
       emptyTd.style.textAlign = 'center';
       emptyTd.style.padding = '48px 24px';
-      emptyTd.style.color = '#94a3b8';
+      emptyTd.style.color = 'var(--color-text-tertiary)';
       emptyTd.innerHTML = `
         <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
           <span>${icons.fileText(36)}</span>
@@ -281,7 +273,7 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
           }
         });
 
-        // 1. BLOTTER ID (with AI sparkle icon)
+        // 1. BLOTTER ID
         const tdId = document.createElement('td');
         const idWrap = document.createElement('div');
         idWrap.className = 'blotter-id-cell';
@@ -289,14 +281,6 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
         idText.textContent = row.displayId || `BLT-2026-${String(row.blotterId).padStart(3, '0')}`;
         idWrap.appendChild(idText);
 
-        // Show AI sparkle badge on every odd or AI-assisted record for high visual fidelity
-        if (row.revisionNo >= 1 || (index % 2 === 0)) {
-          const sparkle = document.createElement('span');
-          sparkle.className = 'blotter-ai-sparkle';
-          sparkle.title = 'AI-assisted redaction record';
-          sparkle.innerHTML = icons.sparkles(14);
-          idWrap.appendChild(sparkle);
-        }
         tdId.appendChild(idWrap);
         tr.appendChild(tdId);
 
@@ -372,17 +356,20 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
         });
         actWrap.appendChild(editBtn);
 
-        // Delete button
-        const delBtn = document.createElement('button');
-        delBtn.type = 'button';
-        delBtn.className = 'blotter-action-btn blotter-action-btn--delete';
-        delBtn.title = 'Delete / Retention policy';
-        delBtn.innerHTML = icons.trash(16);
-        delBtn.addEventListener('click', (e) => {
+        // Retention policy notice. Deliberately NOT a trash icon: this
+        // dialog exists to explain that a finalized blotter entry can
+        // never be deleted, so a delete affordance promised the exact
+        // opposite of what the control does.
+        const retentionBtn = document.createElement('button');
+        retentionBtn.type = 'button';
+        retentionBtn.className = 'blotter-action-btn blotter-action-btn--retention';
+        retentionBtn.title = 'Retention policy';
+        retentionBtn.innerHTML = icons.shield(16);
+        retentionBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           showDeleteNoticeModal(row);
         });
-        actWrap.appendChild(delBtn);
+        actWrap.appendChild(retentionBtn);
 
         tdActions.appendChild(actWrap);
         tr.appendChild(tdActions);
@@ -588,160 +575,6 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
     document.body.appendChild(overlay);
   }
 
-  // --- Modal 2: AI Assistant & KP Advisor ---
-  function showAiAssistantModal() {
-    closeModal();
-
-    const overlay = document.createElement('div');
-    overlay.className = 'blotter-modal-overlay';
-    activeModalEl = overlay;
-
-    const card = document.createElement('div');
-    card.className = 'blotter-modal-card';
-
-    const headerEl = document.createElement('div');
-    headerEl.className = 'blotter-modal-header';
-    const titleEl = document.createElement('h3');
-    titleEl.className = 'blotter-modal-title';
-    titleEl.innerHTML = `${icons.sparkles(18)} <span>AI Case Assistant & Compliance Advisor</span>`;
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'blotter-modal-close';
-    closeBtn.innerHTML = icons.x(18);
-    closeBtn.addEventListener('click', closeModal);
-    headerEl.append(titleEl, closeBtn);
-
-    const bodyEl = document.createElement('div');
-    bodyEl.className = 'blotter-modal-body';
-
-    // Tabs
-    const tabsRow = document.createElement('div');
-    tabsRow.className = 'blotter-ai-tabs';
-    const tabKp = document.createElement('button');
-    tabKp.className = 'blotter-ai-tab is-active';
-    tabKp.textContent = 'Katarungang Pambarangay (RA 7160)';
-    const tabPattern = document.createElement('button');
-    tabPattern.className = 'blotter-ai-tab';
-    tabPattern.textContent = 'Case Pattern Intelligence';
-    tabsRow.append(tabKp, tabPattern);
-
-    const contentArea = document.createElement('div');
-    contentArea.style.display = 'flex';
-    contentArea.style.flexDirection = 'column';
-    contentArea.style.gap = '12px';
-
-    function renderKpTab() {
-      contentArea.innerHTML = `
-        <div class="blotter-ai-card">
-          <div class="blotter-ai-badge-header">Legal Assessment Engine</div>
-          <p style="margin:0; font-size:0.84375rem; color:var(--color-text-secondary);">
-            Determines whether a dispute requires mandatory conciliation before the Lupong Tagapamayapa (issuance of Certificate to File Action) or is exempt under Section 408 of Republic Act No. 7160.
-          </p>
-          <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
-            <label style="font-size:0.8125rem; font-weight:600;">Dispute Classification:</label>
-            <select id="kp-dispute-select" class="blotter-form-select">
-              <option value="boundary">Boundary / Property Line Dispute</option>
-              <option value="debt">Collection of Debt / Small Claims</option>
-              <option value="verbal">Verbal Dispute / Slander / Oral Defamation</option>
-              <option value="injury_light">Physical Injuries (less than 9 days medical attendance)</option>
-              <option value="injury_grave">Grave Physical Injuries / Homicide</option>
-              <option value="theft_minor">Theft under ₱5,000 / Petty Theft</option>
-              <option value="theft_major">Qualified Theft / Robbery with Force</option>
-            </select>
-
-            <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
-              <input type="checkbox" id="kp-same-lgu" checked style="width:16px; height:16px;">
-              <label for="kp-same-lgu" style="font-size:0.8125rem; color:var(--color-text-primary);">Both parties reside in the same city/municipality</label>
-            </div>
-          </div>
-          <div id="kp-result-box" style="margin-top:10px; padding:12px; border-radius:8px; background:#dcfce7; border:1px solid #86efac; color:#15803d; font-size:0.84375rem; line-height:1.4;">
-            <strong>✅ Subject to Mandatory Lupon Conciliation</strong><br>
-            Under RA 7160, Section 408, this matter must undergo conciliation before the Barangay Captain / Pangkat ng Tagapagkasundo before any court action may be instituted.
-          </div>
-        </div>
-      `;
-
-      const select = contentArea.querySelector('#kp-dispute-select');
-      const sameLgu = contentArea.querySelector('#kp-same-lgu');
-      const resultBox = contentArea.querySelector('#kp-result-box');
-
-      function updateKpResult() {
-        const val = select.value;
-        const isSame = sameLgu.checked;
-        if (!isSame || val === 'injury_grave' || val === 'theft_major') {
-          resultBox.style.background = '#fee2e2';
-          resultBox.style.borderColor = '#fca5a5';
-          resultBox.style.color = '#b91c1c';
-          resultBox.innerHTML = `
-            <strong>⚠️ Exempt from Barangay Conciliation</strong><br>
-            Under Section 408(c) of the Local Government Code, offenses punishable by imprisonment exceeding 1 year or where parties reside in different LGUs are exempt. Direct parties to the Philippine National Police or Prosecutor's Office.
-          `;
-        } else {
-          resultBox.style.background = '#dcfce7';
-          resultBox.style.borderColor = '#86efac';
-          resultBox.style.color = '#15803d';
-          resultBox.innerHTML = `
-            <strong>✅ Subject to Mandatory Lupon Conciliation</strong><br>
-            Under RA 7160, Section 408, this matter must undergo conciliation before the Barangay Captain / Pangkat ng Tagapagkasundo before any court action may be instituted.
-          `;
-        }
-      }
-
-      select.addEventListener('change', updateKpResult);
-      sameLgu.addEventListener('change', updateKpResult);
-    }
-
-    function renderPatternTab() {
-      contentArea.innerHTML = `
-        <div class="blotter-ai-card">
-          <div class="blotter-ai-badge-header">Blotter Caseload Analytics</div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:4px;">
-            <div style="padding:10px; background:var(--color-surface); border-radius:8px; border:1px solid var(--color-border);">
-              <div style="font-size:0.75rem; color:#64748b;">Active Cases</div>
-              <div style="font-size:1.25rem; font-weight:700; color:#2563eb;">24 Active</div>
-            </div>
-            <div style="padding:10px; background:var(--color-surface); border-radius:8px; border:1px solid var(--color-border);">
-              <div style="font-size:0.75rem; color:#64748b;">Resolution Rate</div>
-              <div style="font-size:1.25rem; font-weight:700; color:#16a34a;">84.6%</div>
-            </div>
-          </div>
-          <p style="margin:6px 0 0; font-size:0.8125rem; line-height:1.4; color:var(--color-text-secondary);">
-            <strong>Top Hotspot:</strong> Purok 3 & Market Area report the highest frequency of physical injuries and verbal disputes during weekend evenings (18:00 - 22:00).
-          </p>
-        </div>
-      `;
-    }
-
-    tabKp.addEventListener('click', () => {
-      tabKp.classList.add('is-active');
-      tabPattern.classList.remove('is-active');
-      renderKpTab();
-    });
-
-    tabPattern.addEventListener('click', () => {
-      tabPattern.classList.add('is-active');
-      tabKp.classList.remove('is-active');
-      renderPatternTab();
-    });
-
-    renderKpTab();
-
-    bodyEl.append(tabsRow, contentArea);
-
-    const footerEl = document.createElement('div');
-    footerEl.className = 'blotter-modal-footer';
-    const doneBtn = document.createElement('button');
-    doneBtn.type = 'button';
-    doneBtn.className = 'btn-blotter-new';
-    doneBtn.textContent = 'Close Assistant';
-    doneBtn.addEventListener('click', closeModal);
-    footerEl.appendChild(doneBtn);
-
-    card.append(headerEl, bodyEl, footerEl);
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-  }
-
   // --- Modal 3: New Blotter Entry ---
   function showNewEntryModal() {
     closeModal();
@@ -878,8 +711,7 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
     headerEl.className = 'blotter-modal-header';
     const titleEl = document.createElement('h3');
     titleEl.className = 'blotter-modal-title';
-    titleEl.style.color = '#dc2626';
-    titleEl.innerHTML = `${icons.alertTriangle(18)} <span>Legal Record Retention Policy</span>`;
+    titleEl.innerHTML = `${icons.shield(18)} <span>Legal Record Retention Policy</span>`;
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'blotter-modal-close';
@@ -890,13 +722,13 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
     const bodyEl = document.createElement('div');
     bodyEl.className = 'blotter-modal-body';
     bodyEl.innerHTML = `
-      <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:16px; color:#991b1b; font-size:0.875rem; line-height:1.5;">
-        <p style="margin:0 0 8px; font-weight:700;">Republic Act No. 7160 (Local Government Code of 1991):</p>
+      <div class="blotter-retention-notice">
+        <p class="blotter-retention-notice__law">Republic Act No. 7160 (Local Government Code of 1991):</p>
         <p style="margin:0;">
           Under Section 394(c), the Barangay Secretary is the statutory custodian of all official barangay records. Finalized electronic blotter entries (such as <strong>${row.displayId || '#' + row.blotterId}</strong>) constitute permanent legal public records and cannot be permanently deleted.
         </p>
       </div>
-      <p style="margin:0; font-size:0.84375rem; color:var(--color-text-secondary);">
+      <p class="blotter-retention-notice__followup">
         If this record requires legal correction, amendments must be documented via the <strong>Amend Entry</strong> workflow to maintain judicial audit integrity.
       </p>
     `;

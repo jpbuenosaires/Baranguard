@@ -13,27 +13,7 @@
   flex-wrap: wrap;
 }
 
-.btn-blotter-ai {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: #2563eb;
-  color: #ffffff;
-  border: none;
-  border-radius: 9999px;
-  padding: 8px 18px;
-  font-size: 0.84375rem;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
-  transition: all 0.15s ease;
-}
 
-.btn-blotter-ai:hover {
-  background: #1d4ed8;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.4);
-}
 
 .btn-blotter-export {
   display: inline-flex;
@@ -242,17 +222,7 @@
   white-space: nowrap;
 }
 
-.blotter-ai-sparkle {
-  color: #0284c7;
-  display: inline-flex;
-  align-items: center;
-  cursor: help;
-  transition: transform 0.15s ease;
-}
 
-.blotter-ai-sparkle:hover {
-  transform: scale(1.2);
-}
 
 .blotter-datetime-cell {
   display: flex;
@@ -391,14 +361,14 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-.blotter-action-btn--delete {
+.blotter-action-btn--retention {
   color: #ef4444;
 }
-.blotter-action-btn--delete:hover {
+.blotter-action-btn--retention:hover {
   background: #fee2e2;
   transform: scale(1.1);
 }
-[data-theme="dark"] .blotter-action-btn--delete:hover {
+[data-theme="dark"] .blotter-action-btn--retention:hover {
   background: rgba(239, 68, 68, 0.2);
 }
 
@@ -561,55 +531,11 @@
 }
 
 /* AI Assistant Modal specific tabs & widgets */
-.blotter-ai-tabs {
-  display: flex;
-  gap: 6px;
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: 12px;
-  margin-bottom: 6px;
-}
 
-.blotter-ai-tab {
-  padding: 6px 14px;
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
 
-.blotter-ai-tab.is-active {
-  background: #eff6ff;
-  color: #2563eb;
-  border-color: #bfdbfe;
-}
 
-[data-theme="dark"] .blotter-ai-tab.is-active {
-  background: rgba(37, 99, 235, 0.2);
-  color: #60a5fa;
-  border-color: rgba(37, 99, 235, 0.4);
-}
 
-.blotter-ai-card {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
 
-.blotter-ai-badge-header {
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #2563eb;
-}
 
 /* Detail View Sheet Layout */
 .blotter-view-grid {
@@ -714,4 +640,28 @@
     top: 0 !important;
     width: 100% !important;
   }
+}
+
+/* Retention notice dialog. Was inline #fef2f2/#fecaca/#991b1b, which made it
+   a light-mode-only red panel; tokens give it the same warning read in both
+   themes. */
+.blotter-retention-notice {
+  background: var(--tint-warning-bg, var(--color-bg));
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.blotter-retention-notice__law {
+  margin: 0 0 var(--spacing-xs);
+  font-weight: 700;
+}
+
+.blotter-retention-notice__followup {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
