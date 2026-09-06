@@ -1056,3 +1056,60 @@ html, body, .status-pill,
   .two-col-grid { grid-template-columns: 1fr; }
   .filter-bar { margin-bottom: var(--spacing-md); }
 }
+
+/* Definition-list detail block, shared by Service Health and SMS Monitor.
+   Restored 2026-09-06: the Antigravity pass deleted it from
+   pages/blotter-list.css, breaking two screens it never touched. Lives in
+   base.css now because no single page owns it. */
+.detail-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--spacing-2xs) var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background: var(--color-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.detail-fields dt {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.detail-fields dd {
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+/* Generic modal shell used by Blotter Detail's own dialogs. Matches
+   ConfirmDialog's backdrop/card language deliberately — a second modal
+   look would read as a different system — but stays separate because
+   these carry arbitrary page content rather than ConfirmDialog's fixed
+   title/description/actions shape. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  z-index: 400;
+}
+
+.modal-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-floating);
+  padding: var(--spacing-xl);
+  width: 100%;
+  max-width: 34rem;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+}

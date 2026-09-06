@@ -180,3 +180,19 @@
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
+
+/* Two-line cell (primary value above a muted secondary). Restored
+   2026-09-06: the Antigravity pass deleted this rule from
+   pages/incident-management.css, which silently broke Audit Log, Service
+   Health and SMS Monitor — three screens that pass never touched. Moved
+   here, next to the component whose markup actually uses it, so a future
+   page-level restyle can't take it out again. */
+.data-table__stacked {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+}
+
+.data-table__stacked-primary {
+  font-weight: 500;
+}
