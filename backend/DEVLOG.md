@@ -8216,3 +8216,100 @@ Not verified: the authenticated Dispatch Center and GIS screens
 themselves. Logging in means entering a password, which this session does
 not do — the crash fix was proven at the component level instead, as
 described above.
+
+---
+
+## 2026-09-06 (2) — Review of the second Antigravity pass: two new endpoints, reworked before landing
+
+The user brought a second externally-authored (Antigravity) UI/UX pass and
+asked for a business-rules review BEFORE committing. Good call — the pass
+added two endpoints that were never in §6, and between them they broke the
+project's #1 rule. Nothing here was a behaviour change against anything that
+had ever run: **`POST /blotter` could not execute at all** (verified against
+the real DB: `ERROR 1054 Unknown column 'narrative'` — the column is
+`raw_narrative`; it also called a nonexistent `Audit::log()`, only
+`Audit::record()` exists).
+
+### What was found
+
+1. **`PATCH /incidents/:id` copied `raw_narrative` straight into
+   `redacted_narrative`.** §2 Rule 4 makes `ai-draft/approve` the only
+   writer of that field, and `redacted_narrative` is the field that IS
+   shared with Admin/PB/Tanod — so this published unredacted PII to every
+   role.
+2. **The same form destroyed the raw record when an Admin used it.** It
+   pre-filled from `detail.rawNarrative || detail.redactedNarrative`; an
+   Admin never receives `rawNarrative` (correctly gated in `show()`), so it
+   pre-filled with the REDACTED text and saving wrote that back over
+   `raw_narrative`. Irreversible loss of the statutory record.
+3. **Role-matrix breaches.** `PATCH` let Admin write `raw_narrative`;
+   `POST /blotter` let Admin create a record born finalized
+   (`finalized_at`, `revision_no 1`, `approved_by` = self), which is exactly
+   the capability §3 denies Admin on `finalize`/`amend` — the existing
+   methods are correctly `['secretary']`.
+4. **Audit metadata carried personal data** (`complainant_name`,
+   `location_description` values) — §2 Rule 8 allow-lists it to identifiers
+   and statuses. Notably `raw_narrative` WAS correctly reduced to
+   `'updated'`, so the rule was known and applied inconsistently.
+5. **Walk-in entries fabricated a `status='resolved'` incident**, silently
+   inflating resolved counts in every dashboard/analytics total.
+6. **No `Idempotency-Key`** on either write (§2 Rule 3) — a double-submit
+   would create two blotter records and two incidents.
+7. **Four shared CSS classes deleted or undefined**, breaking three screens
+   the pass never touched (`.data-table__stacked` → Audit Log, Service
+   Health, SMS Monitor; `.detail-fields` → Service Health, SMS Monitor;
+   `.modal-backdrop`/`.modal-card` → Blotter Detail, never defined).
+8. **Five `showToast(msg, 'error')` calls** passed a string where the
+   signature takes `{variant}`, so every error on the Blotter screen
+   rendered as a neutral info toast and lost its `role="alert"`.
+
+Clean in the same pass, retained untouched: the blotter `status=` filter and
+widening search to `location_description` (parameterized, tenant-scoped,
+follows the existing `q=` pattern), and no fabricated data or demo tells
+anywhere.
+
+### What was decided (user chose, from an explicit options list)
+
+**`PATCH /incidents/:id` — keep the safe fields, drop narrative editing.**
+Now: `priority` / `incident_type` / `location_description` for Admin and
+Secretary; `complainant_name` **Secretary-only** (migration 0008's party
+fields are extracted from RAW narrative and preserve exactly the identifiers
+redaction strips, so they carry raw_narrative's protection, not
+redacted_narrative's — same rule `show()` already applies). Sending
+`raw_narrative`/`redacted_narrative` is now an explicit 400 rather than a
+silent drop. `Idempotency-Key` required. Audit records field NAMES only. The
+Edit button is role-gated in the UI (it had no gate at all, so Punong
+Barangay — read-only per §3 — was being shown it), and the narrative
+textarea is replaced by a note naming the two real correction paths.
+
+**`POST /blotter` — rebuilt properly.** Secretary-only. Real columns
+(verified by running both INSERTs against the real DB inside a rolled-back
+transaction). `redacted_narrative` left NULL — the Secretary's text goes to
+`raw_narrative` and to `blotter_record.narrative_summary`, the field already
+designed to be the shareable legal record. `case_status` always starts
+`'active'`, never client-chosen, identical to `finalize()`.
+`Idempotency-Key` required and replayed on `incident.client_event_id`,
+exactly as `createWeb()` does. Audit metadata is identifiers only.
+
+**Disclosed, not silently kept:** the walk-in incident still gets
+`status='resolved'`. The enum is only (pending|dispatched|resolved) and
+`pending` would inject a phantom emergency into the Dispatch Center queue —
+the worse of the two. **Consequence: walk-in entries count as resolved
+incidents in dashboard/analytics totals.** Response-time metrics are
+unaffected (they need a dispatch row, which a walk-in never has). A distinct
+state means a new enum value, i.e. migration 0015 plus an architecture note
+— deliberately not slipped in here.
+
+Also: `IncidentsController::INCIDENT_TYPES` and `UUID_PATTERN` made public so
+the walk-in path validates against ONE list rather than a drifting copy.
+`.data-table__stacked` moved to `components/DataTable.css` and
+`.detail-fields` to `base.css` — next to what uses them, so a future
+page-level restyle can't delete them again.
+
+**Verification: static only, by explicit user deferral.** `php -l` clean,
+`node --check` clean, wiring 450/450, undeclared-binding sweep clean (the
+class of bug that killed Dispatch Center in the previous session), and both
+new SQL paths executed against the real `baranguard` schema in rolled-back
+transactions. **Neither endpoint has been called over HTTP and no screen has
+been opened in a browser** — the user chose to defer that. Treat both as
+unproven end-to-end.
