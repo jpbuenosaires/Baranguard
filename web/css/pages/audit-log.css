@@ -124,9 +124,9 @@
 }
 
 .audit-stat-card__value--primary { color: var(--color-primary); }
-.audit-stat-card__value--info { color: var(--color-info-text, #0E7490); }
-.audit-stat-card__value--warning { color: var(--color-warning-solid, #B45309); }
-.audit-stat-card__value--success { color: var(--color-success-text, #15803D); }
+.audit-stat-card__value--info { color: var(--color-info-text); }
+.audit-stat-card__value--warning { color: var(--color-warning-solid, var(--color-warning-text)); }
+.audit-stat-card__value--success { color: var(--color-success-text); }
 
 .audit-stat-card__label {
   font-size: var(--font-size-xs, 0.75rem);
@@ -415,25 +415,25 @@
 
 .audit-action-pill--success {
   background: color-mix(in srgb, var(--color-success) 14%, var(--color-surface));
-  color: var(--pill-success-text, #15803D);
+  color: var(--pill-success-text, var(--color-success-text));
   border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
 }
 
 .audit-action-pill--critical {
   background: color-mix(in srgb, var(--color-critical) 14%, var(--color-surface));
-  color: var(--pill-critical-text, #991B1B);
+  color: var(--pill-critical-text);
   border: 1px solid color-mix(in srgb, var(--color-critical) 30%, transparent);
 }
 
 .audit-action-pill--info {
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  color: var(--pill-info-text, #1D4ED8);
+  color: var(--pill-info-text, var(--color-primary));
   border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 
 .audit-action-pill--warning {
   background: color-mix(in srgb, var(--color-warning) 16%, var(--color-surface));
-  color: var(--color-warning-solid, #B45309);
+  color: var(--color-warning-solid, var(--color-warning-text));
   border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
 
@@ -460,7 +460,7 @@
 }
 
 .audit-entity-chip--interactive {
-  color: var(--color-link, #1D4ED8);
+  color: var(--color-link, var(--color-primary));
   cursor: pointer;
   transition: all 0.12s ease;
 }

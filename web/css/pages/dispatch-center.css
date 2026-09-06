@@ -44,8 +44,8 @@
 
 /* Priority Alert Banner */
 .dispatch-priority-alert {
-  background: linear-gradient(90deg, #dc2626 0%, #b91c1c 100%);
-  color: #ffffff;
+  background: linear-gradient(90deg, var(--color-critical) 0%, color-mix(in srgb, var(--color-critical) 80%, black) 100%);
+  color: var(--color-white);
   padding: 0.6875rem 1.25rem;
   border-radius: var(--radius-lg, 12px);
   display: flex;
@@ -53,7 +53,7 @@
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 0.875rem;
-  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.25);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-critical) 25%, transparent);
   animation: glow-pulse 2s ease-in-out infinite;
 }
 
@@ -156,7 +156,7 @@
 
 .dispatch-queue-card__header {
   padding: 1rem 1.125rem 0.75rem;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  border-bottom: 1px solid var(--color-border);
   background: var(--color-surface, #ffffff);
 }
 
@@ -169,14 +169,14 @@
 .dispatch-queue-card__title {
   font-size: 1.0625rem;
   font-weight: 700;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .dispatch-queue-card__filter-icon {
   background: transparent;
   border: none;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
   cursor: pointer;
   padding: 0.25rem;
   display: flex;
@@ -187,8 +187,8 @@
 }
 
 .dispatch-queue-card__filter-icon:hover {
-  background: var(--color-bg, #f1f5f9);
-  color: var(--color-text-primary, #0f172a);
+  background: var(--color-bg, var(--color-divider));
+  color: var(--color-text-primary);
 }
 
 /* Queue search, revealed by the filter icon above */
@@ -456,13 +456,13 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.28);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-critical) 28%, transparent);
   transition: all 0.15s;
 }
 
 .btn-new-emergency:hover {
   filter: brightness(0.92);
-  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.38);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--color-critical) 38%, transparent);
   transform: translateY(-1px);
 }
 
@@ -631,7 +631,7 @@
   justify-content: center;
   text-align: center;
   padding: 2.5rem 1.25rem;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
   gap: 0.5rem;
 }
 
@@ -639,17 +639,17 @@
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 9999px;
-  background: var(--color-bg, #f1f5f9);
+  background: var(--color-bg, var(--color-divider));
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
 }
 
 .dispatch-empty-card__title {
   font-size: 0.9375rem;
   font-weight: 700;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary);
 }
 
 .dispatch-empty-card__desc {

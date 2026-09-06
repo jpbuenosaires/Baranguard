@@ -319,19 +319,19 @@
 
 .settings-role-pill--pb {
   background: color-mix(in srgb, var(--color-warning) 16%, transparent);
-  color: var(--color-warning-solid, #B45309);
+  color: var(--color-warning-solid, var(--color-warning-text));
   border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
 
 .settings-role-pill--secretary {
   background: color-mix(in srgb, var(--color-info) 16%, transparent);
-  color: var(--color-info-text, #0E7490);
+  color: var(--color-info-text);
   border: 1px solid color-mix(in srgb, var(--color-info) 30%, transparent);
 }
 
 .settings-role-pill--tanod {
   background: color-mix(in srgb, var(--color-success) 16%, transparent);
-  color: var(--color-success-text, #15803D);
+  color: var(--color-success-text);
   border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
 }
 
@@ -360,7 +360,7 @@
 }
 
 .settings-security-notice__icon {
-  color: var(--color-warning-solid, #B45309);
+  color: var(--color-warning-solid, var(--color-warning-text));
   flex-shrink: 0;
   margin-top: 1px;
 }
@@ -411,12 +411,12 @@
 }
 
 .settings-rule-item.is-met {
-  color: var(--color-success-text, #15803D);
+  color: var(--color-success-text);
   font-weight: 600;
 }
 
 .settings-rule-item.is-met .settings-rule-mark {
-  color: var(--color-success-text, #15803D);
+  color: var(--color-success-text);
 }
 
 /* ==========================================================================
@@ -488,7 +488,7 @@
 .settings-theme-card.is-active .settings-theme-card__indicator {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-white);
 }
 
 .settings-theme-card__title {

@@ -111,8 +111,8 @@
 }
 
 .map-pkg-stat-card__value--primary { color: var(--color-primary); }
-.map-pkg-stat-card__value--success { color: var(--color-success-text, #15803D); }
-.map-pkg-stat-card__value--info { color: var(--color-info-text, #0E7490); }
+.map-pkg-stat-card__value--success { color: var(--color-success-text); }
+.map-pkg-stat-card__value--info { color: var(--color-info-text); }
 .map-pkg-stat-card__value--neutral { color: var(--color-text-secondary); }
 
 .map-pkg-stat-card__label {
@@ -329,7 +329,7 @@
 }
 
 .map-pkg-btn-text:hover {
-  color: var(--color-primary-hover, #1E40AF);
+  color: var(--color-primary-hover);
 }
 
 .map-pkg-input {
