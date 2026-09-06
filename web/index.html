@@ -13,12 +13,51 @@
        §1.1/§7.1 of the UI/UX review. -->
   <script>
     (function () {
+      // 2026-09-06 UI/UX audit fix. This block used to set data-theme ONLY
+      // when localStorage held an explicit choice, leaving the attribute
+      // absent for anyone who had never touched the toggle. base.css copes
+      // with that (its dark block is `@media (prefers-color-scheme: dark)
+      // { :root:not([data-theme="light"]) }`), but the 28 dark-mode rules
+      // in the PAGE stylesheets are all written as `[data-theme="dark"] .x`
+      // with no media-query twin — so a first-time visitor on an OS-dark
+      // machine got dark tokens with light-mode component overrides still
+      // applied: unreadable SMS tag pills, light blotter table headers,
+      // light GIS panels floating over the dark map, dark-on-dark select
+      // chevrons.
+      //
+      // Fixed by always stamping a RESOLVED theme, so `[data-theme="dark"]`
+      // is a complete description of the current state and page CSS needs
+      // no duplicated media-query copy of every rule. Neither the toggle
+      // (AppShell.js) nor Settings offers a third "system" state, so this
+      // matches what the UI already presents. The attribute is still only
+      // *persisted* on an explicit choice — an unstored resolve keeps
+      // tracking the OS, including live changes (listener below).
       try {
-        var theme = localStorage.getItem('baranguard.theme');
-        if (theme === 'light' || theme === 'dark') {
-          document.documentElement.setAttribute('data-theme', theme);
+        var stored = localStorage.getItem('baranguard.theme');
+        var explicit = stored === 'light' || stored === 'dark';
+        var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+        document.documentElement.setAttribute(
+          'data-theme',
+          explicit ? stored : (mq && mq.matches ? 'dark' : 'light')
+        );
+        if (!explicit && mq && mq.addEventListener) {
+          mq.addEventListener('change', function (e) {
+            // Stop following the OS the moment a real preference is stored.
+            var now = null;
+            try { now = localStorage.getItem('baranguard.theme'); } catch (err) { /* ignore */ }
+            if (now === 'light' || now === 'dark') return;
+            document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+          });
         }
-      } catch (e) { /* private mode / storage disabled — falls back to prefers-color-scheme */ }
+      } catch (e) {
+        /* private mode / storage disabled — fall back to the OS preference
+           directly rather than leaving the attribute unset, which is the
+           exact state that stranded the page-level rules. */
+        try {
+          var m = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+          document.documentElement.setAttribute('data-theme', m && m.matches ? 'dark' : 'light');
+        } catch (e2) { document.documentElement.setAttribute('data-theme', 'light'); }
+      }
     })();
   </script>
   <!-- Branded favicon: a navy shield, matching icons.js's own `shield`

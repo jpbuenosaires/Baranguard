@@ -42,10 +42,12 @@ const SEARCH_DEBOUNCE_MS = 300;
 // cycle — a single icon button can't cleanly expose a third state without a
 // dropdown, and once a Tanod/Admin has clicked it once they have expressed
 // a real preference that should stick, not silently fall back to "system"
-// again. No stored preference at all (first-ever load) still means
-// "system" — index.html's own bootstrap script only sets data-theme when a
-// stored value exists, so base.css's `prefers-color-scheme` block is what
-// governs a user who has never touched the toggle.
+// again. No stored preference at all (first-ever load) still follows the
+// OS: since the 2026-09-06 UI/UX audit, index.html's bootstrap always
+// stamps a RESOLVED data-theme (and keeps following the OS until a value
+// is actually stored), so `[data-theme]` is always present and page-level
+// `[data-theme="dark"]` rules apply in every dark state. Only an explicit
+// click here writes localStorage, which is what stops the OS-following.
 const THEME_KEY = 'baranguard.theme';
 function readStoredTheme() {
   try { return localStorage.getItem(THEME_KEY); } catch { return null; }

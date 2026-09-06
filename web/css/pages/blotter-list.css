@@ -161,7 +161,9 @@
 }
 
 .blotter-status-select {
-  height: 34px;
+  /* 2026-09-06 UI/UX audit: was 34px, sitting in the same flex row as a
+     38px search input and a 38px Filters button — a visible 4px mismatch. */
+  height: 38px;
   padding: 0 2rem 0 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
