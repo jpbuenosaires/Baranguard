@@ -17,65 +17,88 @@
 
 
 /* ==========================================================================
-   2. Inline Header Stats Summary
+   2. Segmented KPI Card in Header Actions
    ========================================================================== */
 
-.sms-stats-inline-wrap {
-  margin-top: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm-md);
-}
-
-.sms-stats-inline {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-lg);
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-  flex-wrap: wrap;
-}
-
-.sms-stat-inline-item {
+.sms-kpi-card {
   display: inline-flex;
-  align-items: baseline;
-  gap: var(--spacing-2xs);
-  cursor: pointer;
-  padding: var(--spacing-xs) var(--spacing-sm);
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-2xs) var(--spacing-xs);
+}
+
+.sms-kpi-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs) 1.125rem;
+  background: transparent;
+  border: none;
   border-radius: var(--radius-sm);
+  cursor: pointer;
   transition: background 0.15s ease, transform 0.1s ease;
+  font-family: inherit;
+  color: inherit;
   user-select: none;
 }
 
-.sms-stat-inline-item:hover {
-  background: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+.sms-kpi-col:not(:last-child) {
+  border-right: 1px solid var(--color-border);
+}
+
+.sms-kpi-col:hover {
+  background: var(--color-bg);
   transform: translateY(-1px);
 }
 
-.sms-stat-inline-item.is-active {
-  font-weight: 600;
-  color: var(--color-text-primary);
-  background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
+.sms-kpi-col.is-active {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
 }
 
-.sms-stat-num {
-  font-size: 1.125rem;
-  font-weight: 700;
-  line-height: 1;
+.sms-kpi-val {
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.1;
 }
 
-.sms-stat-num--total {
+.sms-kpi-val--total {
   color: var(--color-primary);
 }
 
-.sms-stat-num--inbound {
+.sms-kpi-val--inbound {
   color: var(--color-success);
 }
 
-.sms-stat-num--outbound {
+.sms-kpi-val--outbound {
   color: var(--color-warning);
 }
 
-.sms-stat-num--unread {
+.sms-kpi-val--unread {
   color: var(--color-critical);
+}
+
+.sms-kpi-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-3xs);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .sms-kpi-card {
+    width: 100%;
+    justify-content: space-around;
+  }
+  .sms-kpi-col {
+    padding: var(--spacing-xs) 0.5rem;
+    flex: 1;
+  }
 }
 
 /* ==========================================================================

@@ -44,7 +44,7 @@
 
 /* Priority Alert Banner */
 .dispatch-priority-alert {
-  background: linear-gradient(90deg, var(--color-critical) 0%, color-mix(in srgb, var(--color-critical) 80%, black) 100%);
+  background: linear-gradient(90deg, var(--color-critical-solid) 0%, color-mix(in srgb, var(--color-critical-solid) 80%, black) 100%);
   color: var(--color-white);
   padding: 0.6875rem 1.25rem;
   border-radius: var(--radius-lg, 12px);
@@ -53,7 +53,7 @@
   justify-content: space-between;
   gap: var(--spacing-md);
   margin-bottom: 0.875rem;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-critical) 25%, transparent);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-critical-solid) 30%, transparent);
   animation: glow-pulse 2s ease-in-out infinite;
 }
 

@@ -29,26 +29,49 @@
   margin-top: var(--spacing-3xs);
   opacity: 0.95;
 }
-.attention-banner button { flex-shrink: 0; }
+.attention-banner button,
+.attention-banner .attention-banner__btn {
+  flex-shrink: 0;
+}
 
 .attention-banner--critical {
-  background: var(--color-critical-solid);
+  background: linear-gradient(90deg, var(--color-critical-solid) 0%, color-mix(in srgb, var(--color-critical-solid) 80%, black) 100%);
   color: var(--color-white);
-  border: 1px solid color-mix(in srgb, var(--color-critical) 30%, transparent);
+  border: none;
+  border-radius: var(--radius-lg, 12px);
+  padding: 0.6875rem 1.25rem;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-critical-solid) 30%, transparent);
   animation: glow-pulse 2s ease-in-out infinite;
 }
-.attention-banner--critical button {
-  background: transparent;
-  border: 1px solid var(--color-white);
-  color: var(--color-white);
-}
-.attention-banner--critical button:hover:not(:disabled) {
+
+.attention-banner--critical button,
+.attention-banner--critical .attention-banner__btn {
   background: var(--color-white);
   color: var(--color-critical-solid);
+  border: none;
+  border-radius: 9999px;
+  padding: var(--spacing-2xs) 1.125rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-.attention-banner--critical button:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-critical-solid), 0 0 0 4px var(--color-white);
+
+.attention-banner--critical button:hover:not(:disabled),
+.attention-banner--critical .attention-banner__btn:hover:not(:disabled) {
+  background: var(--tint-critical-bg);
+  color: var(--color-critical-solid);
+  transform: translateY(-1px);
 }
+
+.attention-banner--critical button:focus-visible,
+.attention-banner--critical .attention-banner__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-white), 0 0 0 4px var(--color-critical-solid);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .attention-banner--critical { animation: none; }
 }
@@ -56,7 +79,46 @@
 .attention-banner--warning {
   background: var(--tint-warning-bg);
   color: var(--color-warning-text);
-  border: 1px solid var(--color-border);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, var(--color-border));
+}
+
+[data-theme="dark"] .attention-banner--warning {
+  background: rgba(251, 191, 36, 0.12);
+  color: #FDE68A;
+  border-color: rgba(251, 191, 36, 0.28);
+}
+
+.attention-banner--warning button,
+.attention-banner--warning .attention-banner__btn {
+  background: var(--color-white);
+  color: var(--color-warning-text);
+  border: none;
+  border-radius: 9999px;
+  padding: var(--spacing-2xs) 1.125rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+}
+
+.attention-banner--warning button:hover:not(:disabled),
+.attention-banner--warning .attention-banner__btn:hover:not(:disabled) {
+  background: var(--tint-warning-bg);
+  transform: translateY(-1px);
+}
+
+[data-theme="dark"] .attention-banner--warning button,
+[data-theme="dark"] .attention-banner--warning .attention-banner__btn {
+  background: rgba(251, 191, 36, 0.22);
+  color: #FEF3C7;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+[data-theme="dark"] .attention-banner--warning button:hover:not(:disabled),
+[data-theme="dark"] .attention-banner--warning .attention-banner__btn:hover:not(:disabled) {
+  background: rgba(251, 191, 36, 0.35);
 }
 
 /* Quick Actions card (2026-09-06 UX pass) — fills the By Status row's
