@@ -8135,3 +8135,84 @@ skeleton) inherits the fix automatically — no separate change needed.
 
 Files: `web/css/pages/gis-live-tracking.css` (`.gis-page__map-wrapper`).
 `verify-web-wiring.mjs` 457/457.
+
+---
+
+## 2026-09-06 — Fixing the Antigravity UI/UX pass (Dispatch Center crash + slow map)
+
+User reported two symptoms after editing CSS/JS through Antigravity:
+Dispatch Center would not open at all, and the live map took a long time
+to appear. Neither was a CSS problem.
+
+**Root cause of the Dispatch Center crash — `LiveMap.js` returned an
+undeclared `resize`.** The pass added `highlightIncident`, `fitAll`,
+`zoomIn`, `zoomOut` and a `resize` entry to `LiveMap()`'s returned object
+literal, but never declared `resize` itself. Object shorthand against an
+undeclared binding is a `ReferenceError` thrown the moment `LiveMap()`
+is called — which took down both Dispatch Center (`dispatch-center.js`
+calls it from the Full Screen button) and GIS Live Tracking, since both
+instantiate the same component. `node --check` cannot see this (it is a
+runtime error, not a syntax error), and `verify-web-wiring.mjs` does not
+check binding resolution, which is why both passed while the page was
+dead. Fixed by adding the missing `function resize() { map.resize(); }`
+— MapLibre only auto-resizes against the *window*, so a container-only
+size change (the Full Screen toggle) genuinely needs it.
+Verified for real in-browser: imported `LiveMap.js` in the live page
+context, constructed it against a detached container, and called all
+five new methods — constructed clean, `resize` is a function, no throw.
+
+**Swept for the same class of bug** across all 13 changed JS files with a
+throwaway script that flags shorthand properties in `return {...}` with
+no declaration in the file. `resize` was the only one.
+
+**`verify-web-wiring.mjs` was 446/3 failing; now 447/447.** Three real
+findings, all from the same pass:
+- `.gis-page__map-wrapper` — the GIS redesign renamed its own map shell
+  to `.gis-map-card`/`.gis-map-viewport` and deleted the old base rule,
+  but left the `--fill` modifier behind. `historical-heatmap.js` (the
+  Analytics screen's Heatmap tab) never adopted the new names, so its
+  map container lost its size, positioning context and clipping — all
+  three of which MapLibre needs. Base rule restored in
+  `gis-live-tracking.css` with a comment saying who still depends on it.
+- `.dispatch-queue-search-inline` — the queue search box was styled with
+  seven inline `style.*` assignments carrying hardcoded hex fallbacks
+  (`#e2e8f0`, `#f8fafc`), a §6 tokens-only violation. Moved to a real
+  rule in `dispatch-center.css` using `--color-*`/`--spacing-*`/
+  `--radius-*` tokens; inline styles dropped (the `display` toggle stays,
+  it is behavior).
+- `statistical-reports.js`'s nested template literal in a `className`
+  assignment. The classes it produced do exist; the nesting just defeated
+  the verifier's parser. Rewritten as `className` + `classList.add()`.
+
+**Root cause of the slow map — `web/.htaccess`'s blanket `no-store` was
+also hitting `web/vendor/`.** That rule (added 2026-09-05, see this log's
+UX-pass entry) disables caching for every `.js`/`.css` under `web/`
+because this app has no build step and no versioned filenames. It was
+never scoped, so it also covered the pinned vendor drop —
+`maplibre-gl.js` (803 KB) plus `maplibre-gl.css` (64 KB) re-downloaded
+and re-parsed on every page load *and* every in-app navigation. Added
+`web/vendor/.htaccess` re-enabling `public, max-age=604800` for that
+folder only; verified with `curl -D-` that vendor now returns the cache
+header while `src/*.js` and `index.html` still return `no-store`.
+
+**Measured, not assumed, while looking for the slowdown:** the backend
+is not implicated — `/api/v1/barangays` answers in 17-74 ms against real
+XAMPP, and Dispatch Center's six startup calls run in one `Promise.all`.
+OSM tiles are 146-285 ms each from this workstation.
+
+**Two things found and deliberately NOT changed** (design calls, not
+defects — raised with the user instead):
+- The pass put `backdrop-filter: blur(8px)` panels on top of the WebGL
+  map canvas (GIS floating activity feed and legend, Dispatch legend,
+  `LiveMap.css`'s own legend). Blur over a live canvas forces a
+  composited readback while the map pans, and is the most likely
+  remaining cause of sluggish *interaction* (distinct from load).
+- `marker-pulse` was changed from opacity-only to also animating
+  `transform: scale()`. Because the animation now owns `transform`, the
+  `.live-map__marker:hover { transform: scale(1.18) }` rule sitting right
+  above it can no longer take effect on any Tanod marker.
+
+Not verified: the authenticated Dispatch Center and GIS screens
+themselves. Logging in means entering a password, which this session does
+not do — the crash fix was proven at the component level instead, as
+described above.
