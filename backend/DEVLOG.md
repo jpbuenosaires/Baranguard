@@ -8384,3 +8384,86 @@ statement, not a per-case determination, and is not branded AI.
 Verification: `node --check` clean, wiring 450/450, undeclared-binding sweep
 clean, CSS braces balanced after removing 10 rules. **Still no browser pass**
 — verification remains deferred by the user.
+
+---
+
+## 2026-09-06 (4) — Citizen Reports UI/UX pass: reviewed and fixed before commit
+
+User asked for the plan behind this pass to be reviewed before implementing
+(a separate design-review turn caught three real gaps: no reverse-geocoding
+dependency without sign-off, LiveMap reuse vs. a hand-rolled map, and the
+main.js routing change the plan's own "Component 3" never mentioned - all
+three resolved with the user before build). The user then ran the resolved
+plan through Antigravity and asked for the same check-and-fix pass this
+session has now done twice before.
+
+**Scope crept beyond the citizen-reports plan.** Dispatch Center, GIS Live
+Tracking, Incident Management and Blotter List were also touched (PageHeader
+adoption, layout changes) - not requested by the plan, but reviewed on the
+same terms as the rest, since two of them shipped real bugs (below).
+
+### Bugs found and fixed (would have shipped broken)
+
+1. **wiring: 454/455, now 455/455.** citizen-reports-inbox.js invented
+   `pill`/`pill--warning`/`pill--info`/`pill--success` instead of this app's
+   existing `status-pill`/`status-pill--pending` convention - 5 unstyled
+   badges. Renamed to match.
+2. **"Contact Assigned Tanod -> Send SMS" (incident-management.js) was
+   completely broken**, unrelated to the citizen-reports plan but in a file
+   this pass touched: `sendSms({ recipient: phoneStr, ... })` -
+   `sendSms()` takes `phoneNumber`, and `Idempotency-Key` was dropped
+   entirely. `SmsController::send()` requires the header and exactly one of
+   `recipient_user_id`/`phone_number` server-side, so every click would 400.
+   Restored the correct call.
+3. **"View in Incident Management" called `navigate('incidents')`** - not a
+   real page key (`'incident-management'` is). Would have silently landed on
+   some other default page instead of the incident. Fixed, and actually
+   wired the deep link: `main.js` now forwards an optional 5th param to
+   `renderIncidentManagementPage`, which opens straight to that incident's
+   detail pane via `selectIncident({ incidentId })` - independent of the
+   list's own filter/pagination state, so it works regardless of what page
+   the table happens to be on. This was the exact gap flagged in the design
+   review before the plan went to Antigravity; the plan's own routing change
+   never materialized, so it was added here.
+4. **Two more fabricated identities, same class as an earlier session's
+   AI-feature findings**, pre-existing but sitting in files this pass
+   touched:
+   - `blotter-list.js` defaulted a missing officer join to the hardcoded
+     `'PO1 Reyes'` - a fake named, ranked person shown on a legal ledger.
+     Now "Not recorded", matching the neighboring complainant/respondent
+     fields.
+   - `incident-management.js`'s Contact modal defaulted a missing Tanod
+     phone number to `'0917-555-0192'` and used it for the actual Direct
+     Call `tel:` link and Direct SMS. Now shows "No contact number on file"
+     and hides both actions when there is nothing real to contact.
+5. **citizen-report.js's new success screen dropped a real operational
+   warning** when it added a 3-step "what happens next" timeline: the old
+   copy told citizens not to resubmit (the API rate-limits at 3 submissions
+   per 15 minutes) and that they'd be contacted on their number if given.
+   Restored alongside the new timeline rather than choosing one over the
+   other.
+
+### Reviewed and left alone, on purpose
+
+- **The report detail pane's mini-map hand-rolls its own `maplibregl.Map`/
+  `Marker`** instead of reusing the shared `LiveMap` component, which
+  `LiveMap.js`'s own class doc says explicitly should never get a second
+  implementation. Asked the user directly: left as-is for now. It works
+  (`destroyMiniMap()` runs on unmount, on `closeDetailPane()`, and before
+  every re-render - no stacking instances, no leak), and giving `LiveMap` a
+  single-point-preview mode is real scope, not a bug fix. **Worth doing
+  eventually** so a future map change doesn't have to be made twice.
+
+### What was genuinely good this round
+
+No hardcoded colors of consequence (3 total across all touched JS, all
+decorative marker styling), no fabricated statistics, `destroyMiniMap()`'s
+cleanup discipline is solid, the triage conversion flow (category +
+priority together) matches the server contract exactly, and the address-hint/
+map-reuse/routing decisions from the design-review turn were correctly
+followed for two of three (map reuse was the one left open, resolved above).
+
+Verification: `php -l` clean, `node --check` clean across every touched
+file, `verify-web-wiring.mjs` 455/455, an undeclared-binding sweep (the
+exact class of bug that took down Dispatch Center two sessions ago) clean,
+CSS braces balanced. **No browser pass** - not requested this round either.

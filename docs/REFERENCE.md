@@ -172,7 +172,8 @@ extraction+approve — extraction is independent of redaction, migration
 suspend/unsuspend alongside the existing is_active toggle) ·
 `/citizen-reports` (+`/:id/convert` since 2026-09-05 — always speced in
 §6, never built until now; see `backend/DEVLOG.md`'s workflow-audit
-entry) · `/duty-status` · `/blotter` (list gains `q=`, `status=`,
+entry; list `status=` gains `converted`/`all` since 2026-09-06, was
+`unconverted`-only) · `/duty-status` · `/blotter` (list gains `q=`, `status=`,
 case_status, display_id, location_description) · **`POST /blotter`**
 (walk-in entry, 2026-09-06)
 
