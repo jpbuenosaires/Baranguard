@@ -9,6 +9,54 @@ this to pick the project up cold. The full narrative history lives in
 left is in
 `docs/REMAINING.md`.
 
+## ⚠️ 2026-09-06 (2): two NEW endpoints exist — `POST /blotter`, `PATCH /incidents/:id`
+
+**77 live routes now, not 75.** Both came from a second Antigravity pass,
+both were reviewed against the business rules before landing, and both
+were reworked first — the originals broke §2 Rule 4 (raw narrative copied
+straight into `redacted_narrative`, publishing unredacted PII to every
+role) and §3 (Admin creating a born-finalized blotter record). Full
+finding list and reasoning: `backend/DEVLOG.md`'s "Review of the second
+Antigravity pass" entry.
+
+What they are now:
+
+- **`PATCH /incidents/:id`** — corrects operational fields captured wrong
+  at intake. `priority`/`incident_type`/`location_description` for Admin
+  and Secretary; `complainant_name` **Secretary-only**. Sending
+  `raw_narrative` or `redacted_narrative` is an explicit 400 — narrative
+  correction stays on the AI pipeline, the legal record stays on blotter
+  amend. `Idempotency-Key` required.
+- **`POST /blotter`** — walk-in entry (a complaint brought to the hall in
+  person). **Secretary only.** Creates the parent `incident` (structurally
+  required: `blotter_record.incident_id` is NOT NULL UNIQUE) plus a
+  finalized `blotter_record` in one transaction. `redacted_narrative` left
+  NULL; `case_status` always starts `active`; `Idempotency-Key` required
+  and replayed on `incident.client_event_id`.
+
+**⚠️ Known, disclosed consequence — decide if you want it changed.** A
+walk-in creates its incident with `status='resolved'`, so **walk-in
+entries count as resolved incidents in dashboard and analytics totals.**
+The status enum is only (pending|dispatched|resolved) and `pending` would
+put a phantom emergency in the Dispatch Center queue, so this was the
+lesser evil. Response-time metrics are unaffected (they need a dispatch
+row; a walk-in never has one). Giving walk-ins their own state means a new
+enum value → migration 0015 + an architecture note, deliberately not
+slipped in.
+
+**Neither endpoint has been called over HTTP, and no screen was opened in
+a browser** — the user deferred verification. Static checks all pass
+(`php -l`, `node --check`, wiring 450/450, undeclared-binding sweep) and
+both new SQL paths were executed against the real `baranguard` schema
+inside rolled-back transactions, so the columns are proven to exist — but
+treat the endpoints as unproven end-to-end until someone actually files a
+walk-in entry and edits an incident.
+
+**`docs/REFERENCE.md` §5's route list still says 75 and does not describe
+either endpoint.** Reconcile that before Sprint 8 sign-off.
+
+---
+
 ## ✅ RESOLVED 2026-09-06: the whole UI/UX arc is committed and pushed
 
 `main` is at **`540033f`**, pushed to `origin`. The "substantial
