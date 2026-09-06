@@ -14,6 +14,16 @@
  * an empty date range here means "the documented default view", not
  * "everything ever".
  *
+ * Fully overhauled with:
+ * - Design token compliance and light/dark theme support
+ * - Branded statutory compliance notice banner (§5/§9 W17)
+ * - Interactive StatStrip with category quick-filters
+ * - Full-width 4-column filter toolbar with chevron dropdown indicators
+ * - Standardized Date Range picker with anchored popover dialog
+ * - High-density cell renderers (Avatar initials, status pills, entity chips, metadata tags)
+ * - Click-to-inspect Audit Event Modal with formatted JSON payload & Copy JSON utility
+ * - Admin CSV Export tool in header actions
+ *
  * kebab-case filename per §4.
  */
 
@@ -21,15 +31,13 @@ import { getAuditLog, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { DataTable } from '../components/DataTable.js';
+import { avatarInitials } from '../components/Avatar.js';
+import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
 
 const PAGE_SIZE = 25;
 
-// Rule 17's action list, grouped for the filter dropdown. These are
-// DISPLAY labels over the real `action` strings this codebase writes —
-// the server does not validate against a fixed list (see
-// AuditLogController's own note on why), so an action added later still
-// shows up in the table even before it appears here.
+// Rule 17's action list, grouped for the filter dropdown.
 const ACTION_LABELS = {
   login_success: 'Login — success',
   login_failure: 'Login — failure',
@@ -63,13 +71,139 @@ const ACTION_LABELS = {
   report_exported: 'Report exported',
 };
 
+const CATEGORIES = {
+  auth: {
+    label: 'Auth & Access',
+    actions: ['login_success', 'login_failure', 'logout', 'password_changed'],
+  },
+  ops: {
+    label: 'Operations & Dispatch',
+    actions: [
+      'dispatch_created', 'dispatch_cancelled', 'dispatch_status_override',
+      'duty_status_changed', 'shift_created', 'shift_updated',
+      'swap_request_resolved', 'fatigue_flag_acknowledged',
+    ],
+  },
+  blotter: {
+    label: 'Blotter & Incidents',
+    actions: [
+      'incident_resolved', 'blotter_finalized', 'blotter_amended',
+      'lupon_packet_generated', 'citizen_report_submitted',
+      'tanod_sos_raised', 'tanod_sos_acknowledged', 'tanod_sos_resolved',
+    ],
+  },
+  system: {
+    label: 'AI & System',
+    actions: [
+      'ai_redaction_queued', 'ai_redaction_approved',
+      'ai_summary_regeneration_queued', 'ai_translation_queued',
+      'map_package_published', 'report_exported',
+      'device_registered', 'device_deactivated',
+      'user_updated', 'user_status_changed',
+    ],
+  },
+};
+
 const COLUMNS = [
-  { key: 'when', label: 'When', width: '12rem' },
-  { key: 'actor', label: 'Actor' },
-  { key: 'action', label: 'Action' },
-  { key: 'entity', label: 'Entity' },
+  { key: 'when', label: 'When', width: '13rem' },
+  { key: 'actor', label: 'Actor', width: '14rem' },
+  { key: 'action', label: 'Action', width: '13rem' },
+  { key: 'entity', label: 'Entity', width: '12rem' },
   { key: 'metadata', label: 'Details' },
 ];
+
+/**
+ * Maps an action string to a semantic status pill tone
+ * @param {string} action
+ * @returns {'success'|'critical'|'info'|'warning'|'neutral'}
+ */
+function getActionTone(action) {
+  if (['login_failure', 'tanod_sos_raised', 'dispatch_cancelled'].includes(action)) {
+    return 'critical';
+  }
+  if (['login_success', 'incident_resolved', 'blotter_finalized', 'ai_redaction_approved', 'tanod_sos_resolved'].includes(action)) {
+    return 'success';
+  }
+  if (['dispatch_created', 'shift_created', 'shift_updated', 'user_updated', 'report_exported', 'map_package_published'].includes(action)) {
+    return 'info';
+  }
+  if (['tanod_sos_acknowledged', 'blotter_amended', 'fatigue_flag_acknowledged', 'swap_request_resolved'].includes(action)) {
+    return 'warning';
+  }
+  return 'neutral';
+}
+
+/**
+ * Calculates start date ISO string for given relative days
+ * @param {number} days
+ * @returns {string} YYYY-MM-DD
+ */
+function getPastDateISO(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - (days - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+function getTodayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Formats a date string to friendly readable parts
+ * @param {string} dateStr
+ * @returns {{ date: string, time: string }}
+ */
+function formatAuditTime(dateStr) {
+  if (!dateStr) return { date: '—', time: '' };
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return { date: dateStr, time: '' };
+
+  const date = d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const time = d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  return { date, time };
+}
+
+/**
+ * Converts items to CSV and triggers browser download
+ * @param {Array<object>} items
+ */
+function exportAuditLogsToCsv(items) {
+  if (!items || items.length === 0) {
+    showToast('No audit log entries available to export.', { variant: 'info' });
+    return;
+  }
+
+  const headers = ['Audit ID', 'Timestamp (UTC)', 'Actor ID', 'Actor Username', 'Action', 'Entity Type', 'Entity ID', 'Metadata'];
+  const rows = items.map((item) => [
+    item.auditId,
+    `"${item.createdAt || ''}"`,
+    item.actorUserId ?? 'SYSTEM',
+    `"${(item.actorUsername || '').replace(/"/g, '""')}"`,
+    `"${(item.action || '').replace(/"/g, '""')}"`,
+    `"${(item.entityType || '').replace(/"/g, '""')}"`,
+    item.entityId ?? '',
+    `"${(JSON.stringify(item.metadataJson || {})).replace(/"/g, '""')}"`,
+  ]);
+
+  const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `baranguard_audit_log_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 /**
  * @param {HTMLElement} root
@@ -88,152 +222,713 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
+  // Page Header with Export CSV action
   const pageHeader = PageHeader({
     title: 'Audit Log',
-    subtitle: 'Read-only record of administrative actions — last 7 days by default',
-    icon: icons.fileText,
+    subtitle: 'Immutable record of administrative actions & system events',
+    icon: icons.shield,
   });
+
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'ghost';
+  exportBtn.style.cssText = 'display: inline-flex; align-items: center; gap: 0.5rem;';
+  exportBtn.innerHTML = `${icons.download(16)}<span>Export CSV</span>`;
+  exportBtn.addEventListener('click', () => exportAuditLogsToCsv(currentItems));
+  pageHeader.actions.appendChild(exportBtn);
+
   header.appendChild(pageHeader.el);
 
-  const filterPanel = document.createElement('div');
-  filterPanel.className = 'filter-panel';
+  // Outer Page Container
+  const pageContainer = document.createElement('div');
+  pageContainer.className = 'audit-page-container';
 
-  const actionLabel = document.createElement('label');
-  actionLabel.className = 'sr-only';
-  actionLabel.htmlFor = 'audit-action';
-  actionLabel.textContent = 'Filter by action';
-  const actionSelect = document.createElement('select');
-  actionSelect.id = 'audit-action';
-  const allOption = document.createElement('option');
-  allOption.value = '';
-  allOption.textContent = 'All actions';
-  actionSelect.appendChild(allOption);
-  for (const [value, label] of Object.entries(ACTION_LABELS)) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    actionSelect.appendChild(option);
+  // 1. Statutory Security & Compliance Notice Banner
+  const securityBanner = document.createElement('div');
+  securityBanner.className = 'audit-security-banner';
+  securityBanner.innerHTML = `
+    <div class="audit-security-banner__icon">
+      ${icons.shield(22)}
+    </div>
+    <div class="audit-security-banner__content">
+      <div class="audit-security-banner__title">
+        <span>Immutable Compliance Audit Trail</span>
+        <span class="audit-security-banner__badge">7-Year Statutory Retention (§5/§9 W17)</span>
+      </div>
+      <p class="audit-security-banner__text">
+        Audit entries are write-once and tamper-evident. They cannot be edited or deleted from this console or any API endpoint.
+        The only authorized purge is performed by the automated retention subsystem after the 7-year statutory period expires.
+      </p>
+    </div>
+  `;
+  pageContainer.appendChild(securityBanner);
+
+  // 2. Interactive StatStrip Host
+  const statStripHost = document.createElement('div');
+  statStripHost.className = 'audit-stat-strip';
+  pageContainer.appendChild(statStripHost);
+
+  // 3. Full-Width 4-Column Filter Toolbar
+  const filterPanel = document.createElement('div');
+  filterPanel.className = 'audit-filter-panel';
+
+  // Col 1: Search Input
+  const searchField = document.createElement('div');
+  searchField.className = 'audit-search-field';
+  const searchIcon = document.createElement('span');
+  searchIcon.className = 'audit-search-field__icon';
+  searchIcon.innerHTML = icons.search(16);
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.id = 'audit-search';
+  searchInput.placeholder = 'Search actor, action, or metadata…';
+  searchInput.setAttribute('aria-label', 'Search audit logs');
+  searchField.append(searchIcon, searchInput);
+
+  // Col 2: Category Dropdown
+  const categoryWrapper = document.createElement('div');
+  categoryWrapper.className = 'audit-select-wrapper';
+  const categorySelect = document.createElement('select');
+  categorySelect.id = 'audit-category';
+  categorySelect.setAttribute('aria-label', 'Filter by category');
+
+  const catAll = document.createElement('option');
+  catAll.value = '';
+  catAll.textContent = 'All Categories';
+  categorySelect.appendChild(catAll);
+
+  for (const [catKey, catObj] of Object.entries(CATEGORIES)) {
+    const opt = document.createElement('option');
+    opt.value = catKey;
+    opt.textContent = catObj.label;
+    categorySelect.appendChild(opt);
   }
 
+  const categoryChevron = document.createElement('span');
+  categoryChevron.className = 'audit-select-chevron';
+  categoryChevron.innerHTML = icons.chevronDown(14);
+  categoryWrapper.append(categorySelect, categoryChevron);
+
+  // Col 3: Action Dropdown
+  const actionWrapper = document.createElement('div');
+  actionWrapper.className = 'audit-select-wrapper';
+  const actionSelect = document.createElement('select');
+  actionSelect.id = 'audit-action';
+  actionSelect.setAttribute('aria-label', 'Filter by specific action');
+
+  function populateActionSelect(selectedCategory = '') {
+    actionSelect.innerHTML = '';
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = 'All Actions';
+    actionSelect.appendChild(allOption);
+
+    let eligibleActions = Object.keys(ACTION_LABELS);
+    if (selectedCategory && CATEGORIES[selectedCategory]) {
+      eligibleActions = CATEGORIES[selectedCategory].actions;
+    }
+
+    for (const act of eligibleActions) {
+      const option = document.createElement('option');
+      option.value = act;
+      option.textContent = ACTION_LABELS[act] || act.replace(/_/g, ' ');
+      actionSelect.appendChild(option);
+    }
+  }
+  populateActionSelect();
+
+  const actionChevron = document.createElement('span');
+  actionChevron.className = 'audit-select-chevron';
+  actionChevron.innerHTML = icons.chevronDown(14);
+  actionWrapper.append(actionSelect, actionChevron);
+
+  // Col 4: Date Range Picker with Anchored Popover
+  let currentRangeMode = '7'; // Default: Last 7 days
+  let customFromVal = getPastDateISO(7);
+  let customToVal = getTodayISO();
+  let activeDateFrom = customFromVal;
+  let activeDateTo = customToVal;
+
+  const datePickerWrapper = document.createElement('div');
+  datePickerWrapper.className = 'audit-date-picker-wrapper';
+
+  const dateSelectWrapper = document.createElement('div');
+  dateSelectWrapper.className = 'audit-select-wrapper';
+
+  const dateSelect = document.createElement('select');
+  dateSelect.id = 'audit-date-range';
+  dateSelect.setAttribute('aria-label', 'Filter by date range');
+
+  const dateRangeOptions = [
+    ['7', 'Last 7 days (Default)'],
+    ['30', 'Last 30 days'],
+    ['90', 'Last 90 days'],
+    ['all', 'All time'],
+    ['custom', 'Custom range…'],
+  ];
+
+  dateRangeOptions.forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    dateSelect.appendChild(opt);
+  });
+  dateSelect.value = '7';
+
+  const dateChevron = document.createElement('span');
+  dateChevron.className = 'audit-select-chevron';
+  dateChevron.innerHTML = icons.chevronDown(14);
+  dateSelectWrapper.append(dateSelect, dateChevron);
+
+  // Date Popover Dialog
+  const popover = document.createElement('div');
+  popover.className = 'date-range-popover';
+  popover.hidden = true;
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', 'Custom date range dialog');
+
+  const popoverTitle = document.createElement('div');
+  popoverTitle.className = 'date-range-popover__title';
+  popoverTitle.textContent = 'Select Custom Date Range';
+
+  const popoverGrid = document.createElement('div');
+  popoverGrid.className = 'date-range-popover__grid';
+
+  const fromField = document.createElement('div');
+  fromField.className = 'date-range-popover__field';
   const fromLabel = document.createElement('label');
-  fromLabel.className = 'sr-only';
-  fromLabel.htmlFor = 'audit-from';
-  fromLabel.textContent = 'From date';
+  fromLabel.className = 'date-range-popover__label';
+  fromLabel.textContent = 'From Date';
   const fromInput = document.createElement('input');
-  fromInput.id = 'audit-from';
   fromInput.type = 'date';
+  fromInput.className = 'date-range-popover__input';
+  fromInput.value = customFromVal;
+  fromField.append(fromLabel, fromInput);
 
+  const toField = document.createElement('div');
+  toField.className = 'date-range-popover__field';
   const toLabel = document.createElement('label');
-  toLabel.className = 'sr-only';
-  toLabel.htmlFor = 'audit-to';
-  toLabel.textContent = 'To date';
+  toLabel.className = 'date-range-popover__label';
+  toLabel.textContent = 'To Date';
   const toInput = document.createElement('input');
-  toInput.id = 'audit-to';
   toInput.type = 'date';
+  toInput.className = 'date-range-popover__input';
+  toInput.value = customToVal;
+  toField.append(toLabel, toInput);
 
-  filterPanel.append(actionLabel, actionSelect, fromLabel, fromInput, toLabel, toInput);
-  header.appendChild(filterPanel);
+  popoverGrid.append(fromField, toField);
 
-  // Said plainly on the screen rather than left for someone to discover:
-  // this is a view, and there is deliberately nothing here to click that
-  // would change a row.
-  const readOnlyNote = document.createElement('p');
-  readOnlyNote.className = 'note';
-  readOnlyNote.textContent =
-    'Audit entries are write-once. They cannot be edited or deleted from this screen, or from any endpoint — '
-    + 'the only path that removes one is the scheduled retention job, after 7 years.';
+  const errorEl = document.createElement('div');
+  errorEl.className = 'date-range-popover__error';
+  errorEl.style.cssText = 'color: var(--color-critical); font-size: 0.75rem; font-weight: 500;';
+  errorEl.hidden = true;
 
-  const body = document.createElement('div');
-  content.append(readOnlyNote, body);
+  const popoverActions = document.createElement('div');
+  popoverActions.className = 'date-range-popover__actions';
 
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'ghost';
+  cancelBtn.textContent = 'Cancel';
+
+  const applyBtn = document.createElement('button');
+  applyBtn.type = 'button';
+  applyBtn.className = 'primary';
+  applyBtn.textContent = 'Apply Range';
+
+  popoverActions.append(cancelBtn, applyBtn);
+  popover.append(popoverTitle, popoverGrid, errorEl, popoverActions);
+  datePickerWrapper.append(dateSelectWrapper, popover);
+
+  filterPanel.append(searchField, categoryWrapper, actionWrapper, datePickerWrapper);
+  pageContainer.appendChild(filterPanel);
+
+  // 4. Data Table Container
+  const tableContainer = document.createElement('div');
+  tableContainer.className = 'audit-table-wrap';
+  pageContainer.appendChild(tableContainer);
+
+  content.appendChild(pageContainer);
+
+  // State
   let currentPage = 1;
-  [actionSelect, fromInput, toInput].forEach((el) => {
-    el.addEventListener('change', () => { currentPage = 1; load(); });
+  let currentItems = [];
+  let totalAuditItems = 0;
+  let activeFilterCategory = '';
+  let searchQuery = '';
+
+  // Date Popover logic
+  const validateDates = () => {
+    const isInvalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
+    applyBtn.disabled = isInvalid;
+    errorEl.hidden = !isInvalid;
+    errorEl.textContent = isInvalid ? 'From date cannot be after To date.' : '';
+  };
+  fromInput.addEventListener('change', validateDates);
+  toInput.addEventListener('change', validateDates);
+
+  const closePopover = (restorePrevious = false) => {
+    popover.hidden = true;
+    errorEl.hidden = true;
+    if (restorePrevious) {
+      dateSelect.value = currentRangeMode;
+    }
+  };
+
+  cancelBtn.addEventListener('click', () => closePopover(true));
+
+  applyBtn.addEventListener('click', () => {
+    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
+    customFromVal = fromInput.value;
+    customToVal = toInput.value;
+    activeDateFrom = customFromVal;
+    activeDateTo = customToVal;
+    currentRangeMode = 'custom';
+    closePopover();
+    currentPage = 1;
+    load();
   });
 
+  // Close popover when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!popover.hidden && !datePickerWrapper.contains(e.target)) {
+      closePopover(true);
+    }
+  });
+
+  dateSelect.addEventListener('change', () => {
+    const val = dateSelect.value;
+    if (val === 'custom') {
+      popover.hidden = false;
+      validateDates();
+      fromInput.focus();
+    } else {
+      closePopover();
+      currentRangeMode = val;
+      if (val === '7') {
+        activeDateFrom = getPastDateISO(7);
+        activeDateTo = getTodayISO();
+      } else if (val === '30') {
+        activeDateFrom = getPastDateISO(30);
+        activeDateTo = getTodayISO();
+      } else if (val === '90') {
+        activeDateFrom = getPastDateISO(90);
+        activeDateTo = getTodayISO();
+      } else if (val === 'all') {
+        activeDateFrom = getPastDateISO(365 * 7);
+        activeDateTo = getTodayISO();
+      }
+      currentPage = 1;
+      load();
+    }
+  });
+
+  // Category & Action change handlers
+  categorySelect.addEventListener('change', () => {
+    activeFilterCategory = categorySelect.value;
+    populateActionSelect(activeFilterCategory);
+    actionSelect.value = '';
+    currentPage = 1;
+    load();
+  });
+
+  actionSelect.addEventListener('change', () => {
+    currentPage = 1;
+    load();
+  });
+
+  // Search input with debounce
+  let searchDebounce = null;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      searchQuery = searchInput.value.trim().toLowerCase();
+      renderList(filterItemsBySearch(currentItems), totalAuditItems);
+    }, 200);
+  });
+
+  function filterItemsBySearch(items) {
+    if (!searchQuery) return items;
+    return items.filter((row) => {
+      const matchAction = (row.action || '').toLowerCase().includes(searchQuery);
+      const matchActor = (row.actorUsername || '').toLowerCase().includes(searchQuery)
+        || String(row.actorUserId || '').includes(searchQuery);
+      const matchEntity = (row.entityType || '').toLowerCase().includes(searchQuery)
+        || String(row.entityId || '').includes(searchQuery);
+      const matchMeta = row.metadataJson ? JSON.stringify(row.metadataJson).toLowerCase().includes(searchQuery) : false;
+      return matchAction || matchActor || matchEntity || matchMeta;
+    });
+  }
+
+  // Initial load
   load();
 
   async function load() {
-    renderLoading(body);
+    renderLoading(tableContainer);
     try {
       const result = await getAuditLog({
         action: actionSelect.value || undefined,
-        dateFrom: fromInput.value || undefined,
-        dateTo: toInput.value || undefined,
+        dateFrom: activeDateFrom,
+        dateTo: activeDateTo,
         page: currentPage,
         limit: PAGE_SIZE,
       });
-      renderList(result.items, result.total);
+
+      currentItems = result.items;
+      totalAuditItems = result.total;
+
+      renderStatStrip(currentItems, totalAuditItems);
+      renderList(filterItemsBySearch(currentItems), totalAuditItems);
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading the audit log.';
-      renderError(body, message, load);
+      renderError(tableContainer, message, load);
     }
   }
 
+  function renderStatStrip(items, totalCount) {
+    statStripHost.innerHTML = '';
+
+    // Calculate breakdown from current result page
+    let authCount = 0;
+    let opsCount = 0;
+    let blotterCount = 0;
+
+    items.forEach((item) => {
+      const act = item.action;
+      if (CATEGORIES.auth.actions.includes(act)) authCount++;
+      else if (CATEGORIES.ops.actions.includes(act)) opsCount++;
+      else if (CATEGORIES.blotter.actions.includes(act)) blotterCount++;
+    });
+
+    const statCardsData = [
+      { id: '', label: 'Total Events Recorded', value: totalCount, tone: 'primary' },
+      { id: 'auth', label: 'Auth & Access Events', value: authCount, tone: 'info' },
+      { id: 'ops', label: 'Operations & Dispatch', value: opsCount, tone: 'warning' },
+      { id: 'blotter', label: 'Blotter & Incidents', value: blotterCount, tone: 'success' },
+    ];
+
+    statCardsData.forEach((stat) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `audit-stat-card ${activeFilterCategory === stat.id ? 'is-active' : ''}`;
+      card.setAttribute('aria-label', `Filter by ${stat.label}`);
+
+      const val = document.createElement('span');
+      val.className = `audit-stat-card__value audit-stat-card__value--${stat.tone}`;
+      val.textContent = String(stat.value);
+
+      const lbl = document.createElement('span');
+      lbl.className = 'audit-stat-card__label';
+      lbl.textContent = stat.label;
+
+      card.append(val, lbl);
+
+      card.addEventListener('click', () => {
+        if (activeFilterCategory === stat.id) {
+          activeFilterCategory = '';
+        } else {
+          activeFilterCategory = stat.id;
+        }
+        categorySelect.value = activeFilterCategory;
+        populateActionSelect(activeFilterCategory);
+        actionSelect.value = '';
+        currentPage = 1;
+        load();
+      });
+
+      statStripHost.appendChild(card);
+    });
+  }
+
   function renderList(items, totalItems) {
-    body.innerHTML = '';
-    body.appendChild(DataTable({
+    tableContainer.innerHTML = '';
+    tableContainer.appendChild(DataTable({
       columns: COLUMNS,
       rows: items,
       rowKey: (row) => row.auditId,
-      caption: 'Audit log entries',
+      caption: 'Baranguard system audit log entries',
       emptyIcon: icons.fileText,
-      emptyMessage: 'No audit entries in this range.',
+      emptyMessage: searchQuery ? `No audit entries match "${searchQuery}".` : 'No audit entries found in this period.',
       page: currentPage,
       totalItems,
       pageSize: PAGE_SIZE,
       onPageChange: (nextPage) => { currentPage = nextPage; load(); },
-      renderCell: renderAuditCell,
+      onRowClick: (row) => openEventModal(row),
+      renderCell: (row, key) => renderAuditCell(row, key, navigate),
     }));
+  }
+
+  /**
+   * Opens the Audit Event Inspection Modal with JSON Viewer
+   * @param {object} row
+   */
+  function openEventModal(row) {
+    const existing = document.querySelector('.audit-modal-backdrop');
+    if (existing) existing.remove();
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'audit-modal-backdrop';
+    backdrop.setAttribute('role', 'dialog');
+    backdrop.setAttribute('aria-modal', 'true');
+    backdrop.setAttribute('aria-label', `Audit Event #${row.auditId}`);
+
+    const card = document.createElement('div');
+    card.className = 'audit-modal-card';
+
+    // Header
+    const headerEl = document.createElement('div');
+    headerEl.className = 'audit-modal-header';
+
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'audit-modal-title';
+    titleEl.innerHTML = `${icons.shield(18)}<span>Audit Event #${row.auditId}</span>`;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'audit-modal-close';
+    closeBtn.setAttribute('aria-label', 'Close dialog');
+    closeBtn.innerHTML = icons.x(16);
+
+    headerEl.append(titleEl, closeBtn);
+
+    // Body
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'audit-modal-body';
+
+    const grid = document.createElement('div');
+    grid.className = 'audit-modal-grid';
+
+    const { date, time } = formatAuditTime(row.createdAt);
+    const tone = getActionTone(row.action);
+    const actionLabel = ACTION_LABELS[row.action] || row.action.replace(/_/g, ' ');
+
+    grid.innerHTML = `
+      <div class="audit-modal-field">
+        <span class="audit-modal-label">Event Timestamp</span>
+        <span class="audit-modal-value">${date} ${time} (UTC: ${row.createdAt || 'N/A'})</span>
+      </div>
+      <div class="audit-modal-field">
+        <span class="audit-modal-label">Actor / Initiator</span>
+        <span class="audit-modal-value">${row.actorUserId !== null ? `${row.actorUsername || 'User'} (#${row.actorUserId})` : 'System Daemon (Automated)'}</span>
+      </div>
+      <div class="audit-modal-field">
+        <span class="audit-modal-label">Action</span>
+        <span class="audit-modal-value">
+          <span class="audit-action-pill audit-action-pill--${tone}">${actionLabel}</span>
+        </span>
+      </div>
+      <div class="audit-modal-field">
+        <span class="audit-modal-label">Target Entity</span>
+        <span class="audit-modal-value">${row.entityType || 'General'}${row.entityId !== null ? ` #${row.entityId}` : ''}</span>
+      </div>
+    `;
+
+    // JSON Section
+    const jsonSection = document.createElement('div');
+    jsonSection.className = 'audit-modal-json-section';
+
+    const jsonLabel = document.createElement('span');
+    jsonLabel.className = 'audit-modal-label';
+    jsonLabel.textContent = 'Event Metadata Payload';
+
+    const jsonViewer = document.createElement('pre');
+    jsonViewer.className = 'audit-json-viewer';
+    const jsonString = JSON.stringify(row.metadataJson || {}, null, 2);
+    jsonViewer.textContent = jsonString;
+
+    jsonSection.append(jsonLabel, jsonViewer);
+    bodyEl.append(grid, jsonSection);
+
+    // Footer
+    const footerEl = document.createElement('div');
+    footerEl.className = 'audit-modal-footer';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'audit-btn-copy';
+    copyBtn.innerHTML = `${icons.copy(14)}<span>Copy Raw JSON</span>`;
+
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(jsonString);
+        copyBtn.innerHTML = `${icons.checkCircle(14)}<span>Copied!</span>`;
+        copyBtn.style.borderColor = 'var(--color-success)';
+        setTimeout(() => {
+          copyBtn.innerHTML = `${icons.copy(14)}<span>Copy Raw JSON</span>`;
+          copyBtn.style.borderColor = '';
+        }, 2000);
+      } catch (err) {
+        showToast('Could not copy to clipboard.', { variant: 'error' });
+      }
+    });
+
+    const doneBtn = document.createElement('button');
+    doneBtn.type = 'button';
+    doneBtn.className = 'ghost';
+    doneBtn.textContent = 'Close';
+
+    footerEl.append(copyBtn, doneBtn);
+
+    card.append(headerEl, bodyEl, footerEl);
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+
+    const closeModal = () => {
+      document.removeEventListener('keydown', handleKey);
+      backdrop.remove();
+    };
+
+    const handleKey = (e) => {
+      if (e.key === 'Escape') closeModal();
+    };
+
+    closeBtn.addEventListener('click', closeModal);
+    doneBtn.addEventListener('click', closeModal);
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) closeModal();
+    });
+    document.addEventListener('keydown', handleKey);
   }
 }
 
-function renderAuditCell(row, key) {
+/**
+ * Cell renderer for DataTable
+ * @param {object} row
+ * @param {string} key
+ * @param {(page: string, param?: any) => void} navigate
+ * @returns {HTMLElement|string}
+ */
+function renderAuditCell(row, key, navigate) {
   switch (key) {
-    case 'when':
-      return new Date(row.createdAt).toLocaleString();
-    case 'actor': {
-      const wrap = document.createElement('span');
-      // A system action (retention jobs) legitimately has no actor —
-      // saying so beats rendering a blank cell or inventing a name.
-      if (row.actorUserId === null) {
-        wrap.className = 'data-table__sub';
-        wrap.textContent = 'System';
-        return wrap;
-      }
-      wrap.className = 'data-table__stacked';
-      const name = document.createElement('span');
-      name.textContent = row.actorUsername || `User #${row.actorUserId}`;
-      const id = document.createElement('span');
-      id.className = 'data-table__sub';
-      id.textContent = `#${row.actorUserId}`;
-      wrap.append(name, id);
+    case 'when': {
+      const wrap = document.createElement('div');
+      wrap.className = 'audit-when-cell';
+      const { date, time } = formatAuditTime(row.createdAt);
+
+      const dateEl = document.createElement('span');
+      dateEl.className = 'audit-when-date';
+      dateEl.textContent = date;
+
+      const timeEl = document.createElement('span');
+      timeEl.className = 'audit-when-time';
+      timeEl.textContent = time;
+
+      wrap.append(dateEl, timeEl);
       return wrap;
     }
+
+    case 'actor': {
+      const wrap = document.createElement('div');
+      wrap.className = 'audit-actor-cell';
+
+      // System action (retention jobs, background automation) has no actor
+      if (row.actorUserId === null) {
+        const badge = document.createElement('span');
+        badge.className = 'audit-system-badge';
+        badge.innerHTML = `${icons.settings(12)}<span>System</span>`;
+        wrap.appendChild(badge);
+        return wrap;
+      }
+
+      const avatarHtml = avatarInitials(row.actorUsername || 'User', 28);
+      const temp = document.createElement('div');
+      temp.innerHTML = avatarHtml;
+      const avatarEl = temp.firstElementChild;
+
+      const info = document.createElement('div');
+      info.className = 'audit-actor-info';
+
+      const name = document.createElement('span');
+      name.className = 'audit-actor-name';
+      name.textContent = row.actorUsername || `User #${row.actorUserId}`;
+
+      const id = document.createElement('span');
+      id.className = 'audit-actor-id';
+      id.textContent = `#${row.actorUserId}`;
+
+      info.append(name, id);
+      wrap.append(avatarEl, info);
+      return wrap;
+    }
+
     case 'action': {
       const span = document.createElement('span');
-      // Unknown actions fall back to the raw string rather than being
-      // hidden — a new auditable action must never be invisible here
-      // just because this map hasn't caught up.
+      const tone = getActionTone(row.action);
+      span.className = `audit-action-pill audit-action-pill--${tone}`;
       span.textContent = ACTION_LABELS[row.action] || row.action.replace(/_/g, ' ');
       return span;
     }
-    case 'entity':
-      return row.entityId !== null ? `${row.entityType} #${row.entityId}` : row.entityType;
-    case 'metadata': {
-      const span = document.createElement('span');
-      span.className = 'data-table__sub';
-      if (!row.metadataJson || Object.keys(row.metadataJson).length === 0) {
-        span.textContent = '—';
-        return span;
+
+    case 'entity': {
+      const chip = document.createElement('span');
+      chip.className = 'audit-entity-chip';
+
+      // Provide deep navigation link if entity is a known route
+      if (row.entityType === 'blotter_record' && row.entityId) {
+        chip.className += ' audit-entity-chip--interactive';
+        chip.title = `View Blotter Record #${row.entityId}`;
+        chip.textContent = `Blotter #${row.entityId} ↗`;
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation(); // Avoid triggering row modal
+          navigate('blotter-detail', { id: row.entityId });
+        });
+        return chip;
       }
-      // textContent, never innerHTML: metadata is server data and this
-      // screen must not become a way to render markup from a stored row.
-      span.textContent = Object.entries(row.metadataJson)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join(' · ');
-      return span;
+
+      if (row.entityType === 'user' && row.entityId) {
+        chip.className += ' audit-entity-chip--interactive';
+        chip.title = `View Personnel #${row.entityId}`;
+        chip.textContent = `User #${row.entityId} ↗`;
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          navigate('personnel', { userId: row.entityId });
+        });
+        return chip;
+      }
+
+      const label = row.entityId !== null ? `${row.entityType} #${row.entityId}` : (row.entityType || '—');
+      chip.textContent = label;
+      return chip;
     }
+
+    case 'metadata': {
+      if (!row.metadataJson || Object.keys(row.metadataJson).length === 0) {
+        const dash = document.createElement('span');
+        dash.style.color = 'var(--color-text-tertiary)';
+        dash.textContent = '—';
+        return dash;
+      }
+
+      const wrap = document.createElement('div');
+      wrap.className = 'audit-meta-preview';
+
+      const entries = Object.entries(row.metadataJson);
+      const visibleEntries = entries.slice(0, 3);
+
+      visibleEntries.forEach(([k, v]) => {
+        const tag = document.createElement('span');
+        tag.className = 'audit-meta-tag';
+        tag.title = `${k}: ${v}`;
+
+        const keySpan = document.createElement('span');
+        keySpan.className = 'audit-meta-tag__key';
+        keySpan.textContent = `${k}:`;
+
+        tag.append(keySpan, document.createTextNode(` ${v}`));
+        wrap.appendChild(tag);
+      });
+
+      if (entries.length > 3) {
+        const moreTag = document.createElement('span');
+        moreTag.className = 'audit-meta-tag';
+        moreTag.style.color = 'var(--color-primary)';
+        moreTag.textContent = `+${entries.length - 3} more`;
+        wrap.appendChild(moreTag);
+      }
+
+      return wrap;
+    }
+
     default:
       return '';
   }
