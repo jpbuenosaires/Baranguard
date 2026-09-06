@@ -1,130 +1,671 @@
 /**
- * gis-live-tracking.css — co-located with gis-live-tracking.js (W4).
- * Split out of base.css during the 2026-09-02 responsive/density pass.
+ * gis-live-tracking.css — GIS Live Tracking Console
+ * Layout matching reference design media_1788658826709.png:
+ * - Side-by-side tactical split: Left personnel & status column, Right live map & overlays
+ * - 3 Mini Status cards (Available, Dispatched, Active)
+ * - Map Filters row with count badge
+ * - Field Personnel Cards: Avatar, Name, ID badge, Location pin, Status pill, Incident badge, Phone call action
+ * - GIS Map header bar with layer/zoom controls and primary 'My Location' button
+ * - Floating Live Activity Feed widget (top right)
+ * - Floating Map Legend widget (bottom left)
  */
 
-.gis-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  height: 100%;
-  min-height: 0;
-}
-.gis-page__map-wrapper {
-  flex: 1;
-  /* 2026-09-06 fix: was `min-height: 0`, which let the map starve to
-     nearly nothing whenever its flex siblings (filter chips, roster,
-     Live Activity feed — all auto-basis, not flex-growing) already claim
-     the whole of `.gis-page`'s own height. Flexbox gives auto-basis
-     siblings their full content height FIRST, then distributes only
-     whatever's left to a `flex: 1` item — verified live: with a roster of
-     a few Tanods and 10 activity rows, those three siblings alone summed
-     to ~602px against a ~668px `.gis-page`, leaving ~1px for the map
-     (confirmed via `getBoundingClientRect()`, not guessed). This isn't
-     the same bug the Heatmap tab had (a `height: 100%` chain failing
-     against `.page-container`'s undefined height — `.gis-page` itself
-     DOES get a real height here) — it's the map losing a space fight it
-     was never guaranteed to win. A real min-height guarantees it a usable
-     size regardless of how tall the roster/activity content gets; if
-     that pushes the page's total height past the viewport, `.page-content`
-     already scrolls (same as every other content-heavy page in this app),
-     so nothing below the map becomes unreachable. */
-  min-height: 28rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  position: relative;
-}
-.gis-roster {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-/* 2026-09-05 UX pass: the row itself is now a plain flex container, not a
-   <button> — it holds TWO interactive controls (centre-on-map, and an
-   Admin-only Call link), and a button can't nest another button/anchor.
-   `.gis-roster__row-main` carries the styling the whole row used to have. */
-.gis-roster__row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-.gis-roster__row-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: inherit;
-  font: inherit;
-  font-size: var(--font-size-sm);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color .15s ease, background-color .15s ease, transform .15s ease, box-shadow .15s ease;
-}
-.gis-roster__row-main:hover {
-  border-color: var(--color-accent);
-  background: var(--color-row-active-bg);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-card);
-}
-.gis-roster__call {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  flex-shrink: 0;
+/* Main GIS split layout */
+.gis-layout {
+  display: grid;
+  grid-template-columns: minmax(21rem, 25rem) minmax(30rem, 1fr);
+  gap: 1.25rem;
+  height: calc(100vh - 7.5rem);
+  min-height: 38rem;
+  align-items: stretch;
+  margin-top: 0.25rem;
 }
 
-/* Roster/activity filter chips reuse `.filter-chip`/`.filter-chip-row`
-   (defined in incident-management.css, loaded globally like every page
-   stylesheet in this app — see index.html). */
-.gis-page__filters {
+/* ─── Left Column: Personnel & Status Panel ─── */
+.gis-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 0.875rem;
+}
+
+.gis-sidebar__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.gis-sidebar__title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+  margin: 0;
+  line-height: 1.25;
+}
+
+.gis-sidebar__subtitle {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary, #64748b);
   margin: 0;
 }
 
-.gis-activity {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-.gis-activity__list {
-  gap: var(--spacing-xs);
-}
-.gis-activity__row {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: var(--spacing-xs) 0;
-  border-bottom: 1px solid var(--color-border);
-  font-size: var(--font-size-sm);
-}
-.gis-activity__row:last-child {
-  border-bottom: none;
+/* 3 Mini Status Cards Row */
+.gis-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.625rem;
 }
 
-/* Roster sits below the map with a consistent gap — replaces a per-render
-   `style.marginTop = '16px'` (audit A4). */
-.gis-page__roster { margin-top: var(--spacing-md); }
-/* The heatmap's map wrapper fills its flex parent (audit A4 — was an
-   inline `style.height = '100%'`).
-   2026-09-06 fix: `height: 100%` alone silently collapsed to ~0 — its
-   containing block chain (`.page-container` in AppShell.js, common to
-   every page) never has an explicit height, only `width`/`max-width`, so
-   this percentage had nothing to resolve against and computed to `auto`
-   (per spec, a percentage height against an indefinite-height containing
-   block is treated as `auto`), same for the `.flex-col`/`.grow` ancestors
-   this wrapper sits inside (historical-heatmap.js). The whole chain
-   quietly collapsed to a ~1px sliver, hiding the map entirely — real
-   canvas pixels rendered, just inside a box far too short to see. A
-   `min-height` floor sidesteps that fragile ancestor-percentage chain
-   without touching `.page-container` (shared by every page in the app —
-   too large a blast radius to change here) or requiring that fix to be
-   correct everywhere first. */
+.gis-mini-stat {
+  border-radius: var(--radius-lg, 12px);
+  padding: 0.625rem 0.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  transition: transform .15s ease, box-shadow .15s ease;
+  cursor: pointer;
+}
+
+.gis-mini-stat:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.gis-mini-stat.is-active {
+  box-shadow: 0 0 0 2px var(--color-primary, #2563eb);
+}
+
+.gis-mini-stat--available {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+.gis-mini-stat--available .gis-mini-stat__value {
+  color: #059669;
+}
+
+.gis-mini-stat--dispatched {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+.gis-mini-stat--dispatched .gis-mini-stat__value {
+  color: #2563eb;
+}
+
+.gis-mini-stat--active {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+.gis-mini-stat--active .gis-mini-stat__value {
+  color: #dc2626;
+}
+
+.gis-mini-stat__value {
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.gis-mini-stat__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  margin-top: 0.125rem;
+}
+
+/* Map Filters bar */
+.gis-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.875rem;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-secondary, #475569);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gis-filter-bar:hover {
+  border-color: var(--color-primary, #2563eb);
+  color: var(--color-text-primary, #0f172a);
+}
+
+.gis-filter-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gis-filter-bar__badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-tertiary, #64748b);
+}
+
+/* Personnel list section header */
+.gis-personnel-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-tertiary, #64748b);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-top: 0.25rem;
+}
+
+/* Scrollable Personnel list */
+.gis-personnel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-right: 0.25rem;
+}
+
+.gis-personnel-list::-webkit-scrollbar {
+  width: 5px;
+}
+.gis-personnel-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.gis-personnel-list::-webkit-scrollbar-thumb {
+  background: var(--color-border, #cbd5e1);
+  border-radius: 9999px;
+}
+.gis-personnel-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary, #94a3b8);
+}
+
+/* Modern Field Personnel Card */
+.gis-personnel-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  padding: 0.875rem 1rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.gis-personnel-card:hover {
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.gis-personnel-card.is-selected {
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+  background: var(--tint-info-bg, #f0f7ff);
+}
+
+.gis-personnel-card__left {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.gis-personnel-card__avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.gis-personnel-card__avatar--available {
+  background: #10b981;
+}
+
+.gis-personnel-card__avatar--dispatched {
+  background: #2563eb;
+}
+
+.gis-personnel-card__avatar--stale {
+  background: #64748b;
+}
+
+.gis-personnel-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.gis-personnel-card__name {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+  line-height: 1.2;
+}
+
+.gis-personnel-card__tag {
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary, #64748b);
+  font-weight: 500;
+}
+
+.gis-personnel-card__location {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #475569);
+  margin-top: 0.125rem;
+}
+
+.gis-personnel-card__location svg {
+  color: var(--color-text-tertiary, #94a3b8);
+  flex-shrink: 0;
+}
+
+.gis-personnel-card__pills {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.gis-personnel-card__status-pill {
+  font-size: 0.625rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gis-personnel-card__status-pill--available {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.gis-personnel-card__status-pill--dispatched {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.gis-personnel-card__status-pill--stale {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.gis-personnel-card__incident-pill {
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: #f8fafc;
+  border: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-text-secondary, #475569);
+}
+
+.gis-personnel-card__phone-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: var(--color-text-secondary, #64748b);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.gis-personnel-card__phone-btn:hover {
+  background: var(--color-bg, #f8fafc);
+  border-color: var(--color-border, #cbd5e1);
+  color: var(--color-primary, #2563eb);
+  transform: scale(1.08);
+}
+
+
+/* ─── Right Column: GIS Map & Overlays ─── */
+.gis-map-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-xl, 16px);
+  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  position: relative;
+}
+
+/* Map Header Bar */
+.gis-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1.25rem;
+  background: var(--color-surface, #ffffff);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  z-index: 10;
+  gap: 1rem;
+}
+
+.gis-map-header__title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.gis-map-header__title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+  margin: 0;
+}
+
+.gis-map-header__subtitle {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary, #64748b);
+  margin: 0;
+}
+
+.gis-map-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gis-map-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #cbd5e1);
+  color: var(--color-text-secondary, #475569);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.gis-map-tool-btn:hover {
+  background: var(--color-bg, #f1f5f9);
+  color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+}
+
+.gis-map-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: var(--radius-md, 8px);
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.gis-map-primary-btn:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
+}
+
+/* Map Viewport */
+.gis-map-viewport {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Floating Live Activity Feed Widget (Top Right) */
+.gis-floating-activity {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 19rem;
+  max-height: calc(100% - 2rem);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  border-radius: var(--radius-xl, 14px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.gis-floating-activity__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.gis-floating-activity__header svg {
+  color: #2563eb;
+}
+
+.gis-floating-activity__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  overflow-y: auto;
+  max-height: 22rem;
+}
+
+.gis-floating-activity__list::-webkit-scrollbar {
+  width: 4px;
+}
+.gis-floating-activity__list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.gis-floating-activity__item {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 0.5rem 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border: 1px solid #f1f5f9;
+  transition: background 0.15s ease;
+}
+
+.gis-floating-activity__item:hover {
+  background: #f1f5f9;
+}
+
+.gis-floating-activity__text-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.gis-floating-activity__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  margin-top: 0.25rem;
+  flex-shrink: 0;
+}
+
+.gis-floating-activity__dot--info {
+  background: #2563eb;
+}
+
+.gis-floating-activity__dot--success {
+  background: #10b981;
+}
+
+.gis-floating-activity__dot--critical {
+  background: #dc2626;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.5);
+}
+
+.gis-floating-activity__dot--neutral {
+  background: #64748b;
+}
+
+.gis-floating-activity__desc {
+  font-size: 0.75rem;
+  color: var(--color-text-primary, #1e293b);
+  line-height: 1.35;
+  font-weight: 500;
+}
+
+.gis-floating-activity__time {
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary, #64748b);
+  padding-left: 1rem;
+}
+
+/* Floating Map Legend Widget (Bottom Left) */
+.gis-floating-legend {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  border-radius: var(--radius-lg, 12px);
+  padding: 0.75rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  z-index: 15;
+  min-width: 11rem;
+}
+
+.gis-floating-legend__title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary, #64748b);
+  margin-bottom: 0.125rem;
+}
+
+.gis-floating-legend__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-primary, #1e293b);
+}
+
+.gis-floating-legend__dot {
+  width: 0.6875rem;
+  height: 0.6875rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.gis-floating-legend__dot--available {
+  background: #10b981;
+}
+
+.gis-floating-legend__dot--dispatched {
+  background: #2563eb;
+}
+
+.gis-floating-legend__dot--emergency {
+  background: #dc2626;
+}
+
+/* Skeletons */
 .gis-page__map-wrapper--fill { height: 100%; min-height: 28rem; }
+
+/* Dark mode adjustments */
+[data-theme="dark"] .gis-mini-stat--available {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+[data-theme="dark"] .gis-mini-stat--dispatched {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.3);
+  color: #60a5fa;
+}
+[data-theme="dark"] .gis-mini-stat--active {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #f87171;
+}
+[data-theme="dark"] .gis-floating-activity,
+[data-theme="dark"] .gis-floating-legend {
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(51, 65, 85, 0.85);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+[data-theme="dark"] .gis-floating-activity__item {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(51, 65, 85, 0.5);
+}
+[data-theme="dark"] .gis-floating-activity__item:hover {
+  background: rgba(30, 41, 59, 0.95);
+}
+[data-theme="dark"] .gis-map-header {
+  background: var(--color-surface, #0f172a);
+}
+
+/* Responsive layout adjustments */
+@media (max-width: 1024px) {
+  .gis-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .gis-sidebar {
+    max-height: 32rem;
+  }
+  .gis-map-card {
+    height: 32rem;
+  }
+  .gis-floating-activity {
+    width: 16rem;
+  }
+}
+

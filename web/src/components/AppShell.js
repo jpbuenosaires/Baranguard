@@ -198,6 +198,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
     const collapsed = sidebar.classList.contains('is-collapsed');
     collapseButton.innerHTML = collapsed ? icons.menu(18) : icons.chevronLeft(18);
     collapseButton.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+    collapseButton.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
     collapseButton.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   };
   syncCollapseButton();
@@ -314,7 +315,19 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const sidebarUserText = document.createElement('div');
   sidebarUserText.className = 'sidebar__user-text';
   sidebarUserText.append(sidebarUserName, sidebarUserRole);
-  sidebarUser.append(sidebarAvatar, sidebarUserText);
+
+  const sidebarLogout = document.createElement('button');
+  sidebarLogout.type = 'button';
+  sidebarLogout.className = 'sidebar__user-action';
+  sidebarLogout.title = 'Sign out';
+  sidebarLogout.setAttribute('aria-label', 'Sign out');
+  sidebarLogout.innerHTML = icons.logOut(16);
+  sidebarLogout.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onLogout();
+  });
+
+  sidebarUser.append(sidebarAvatar, sidebarUserText, sidebarLogout);
 
   sidebar.append(brand, nav, sidebarUser);
 

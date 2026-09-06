@@ -46,10 +46,7 @@ import {
 } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
-import { PageHeader } from '../components/PageHeader.js';
-import { StatStrip } from '../components/StatStrip.js';
 import { icons } from '../components/icons.js';
-import { avatarInitials } from '../components/Avatar.js';
 
 const POLL_INTERVAL_MS = 15000;
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
@@ -88,12 +85,14 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
-  const pageHeader = PageHeader({ title: 'GIS Live Tracking', subtitle: 'Real-time Tanod locations and SOS alerts', icon: icons.map });
-  header.appendChild(pageHeader.el);
+  // Avoid duplicate search bar by clearing the shell header
+  header.innerHTML = '';
+  header.style.display = 'none';
 
   const wrapper = document.createElement('div');
   wrapper.className = 'flex-col grow';
   content.appendChild(wrapper);
+
   const body = document.createElement('div');
   body.className = 'grow';
   wrapper.appendChild(body);
@@ -101,17 +100,18 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   let liveMap = null;
   let timer = null;
   let rosterFilter = 'all';
-  // The filter chips are created ONCE (see `if (!liveMap)` below) but
-  // `renderPopulated` re-runs every poll — their click handler must call
-  // THIS render cycle's roster-render closure, not the one captured when
-  // the chip was first built, or a filter click after the first poll
-  // would silently filter stale data forever. Reassigned at the bottom
-  // of every `renderPopulated` call.
   let renderCurrentRosterAndMap = () => {};
-  // Admin-only: fullName + contactNumber keyed by userId, for the Call
-  // button. Never fetched for PB — `GET /users` is Admin-only server-side
-  // (see this file's own header), so a PB session simply never calls it.
   let tanodRosterById = new Map();
+
+  // Layout DOM references cached across poll updates
+  let layoutEl = null;
+  let statCardsEl = null;
+  let filterBarEl = null;
+  let filterBadgeEl = null;
+  let personnelHeaderEl = null;
+  let personnelListEl = null;
+  let mapSubtitleEl = null;
+  let floatingActivityListEl = null;
 
   load(true);
   timer = setInterval(() => load(false), POLL_INTERVAL_MS);
@@ -122,7 +122,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   }
 
   async function load(showLoadingState) {
-    if (showLoadingState) renderLoading(body);
+    if (showLoadingState && !layoutEl) renderLoading(body);
     try {
       const [gpsItems, sosItems, dutyStatuses, dispatchesRes, usersRes] = await Promise.all([
         getGpsLive(user.barangayId),
@@ -135,9 +135,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       const openSos = sosItems.filter((s) => s.status !== 'resolved');
       renderPopulated(body, gpsItems, openSos, dutyStatuses, dispatchesRes.items);
     } catch (err) {
-      // A background poll failure shouldn't nuke an already-populated
-      // map — only show the Error state on the very first load.
-      if (showLoadingState) {
+      if (showLoadingState && !layoutEl) {
         const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading live tracking.';
         renderError(body, message, () => load(true));
       }
@@ -146,220 +144,476 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
   function renderPopulated(container, gpsItems, openSos, dutyStatuses, dispatches) {
     const onDutyIds = new Set(dutyStatuses.filter((d) => d.status === 'on_duty').map((d) => d.userId));
-    const dispatchedIds = new Set(dispatches.filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status)).map((d) => d.tanodId));
-    const availableCount = [...onDutyIds].filter((id) => !dispatchedIds.has(id)).length;
-    const staleCount = gpsItems.filter((g) => g.isStale).length;
-
-    // This wipes the actions slot on every render, matching the pattern
-    // dispatch-center.js already uses for its own always-current stats.
-    pageHeader.actions.innerHTML = '';
-    pageHeader.actions.appendChild(StatStrip({
-      items: [
-        { label: 'Available', value: availableCount },
-        { label: 'Dispatched', value: dispatchedIds.size, tone: 'info' },
-        { label: 'Stale', value: staleCount, tone: staleCount > 0 ? 'critical' : 'default' },
-      ],
-    }));
-
-    if (!liveMap) {
-      container.innerHTML = '';
-      const page = document.createElement('div');
-      page.className = 'gis-page';
-
-      const mapWrapper = document.createElement('div');
-      mapWrapper.className = 'gis-page__map-wrapper';
-
-      const legend = document.createElement('div');
-      legend.className = 'live-map__legend';
-      legend.innerHTML = `
-        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-success-solid);"></span> On duty (live)</div>
-        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-text-secondary);"></span> Stale (≥120s)</div>
-        <div class="live-map__legend-row"><span class="live-map__legend-dot" style="background:var(--color-critical-solid);"></span> SOS</div>
-      `;
-      mapWrapper.appendChild(legend);
-
-      const filterRow = document.createElement('div');
-      filterRow.className = 'filter-chip-row gis-page__filters';
-      const filterChips = {};
-      for (const { key, label } of ROSTER_FILTERS) {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'filter-chip';
-        chip.textContent = label;
-        chip.addEventListener('click', () => {
-          rosterFilter = key;
-          for (const [k, c] of Object.entries(filterChips)) c.classList.toggle('is-active', k === key);
-          renderCurrentRosterAndMap();
-        });
-        filterChips[key] = chip;
-        filterRow.appendChild(chip);
-      }
-      filterChips.all.classList.add('is-active');
-
-      const roster = document.createElement('div');
-      roster.className = 'card gis-roster gis-page__roster';
-
-      const activityCard = document.createElement('div');
-      activityCard.className = 'card gis-activity';
-
-      page.append(mapWrapper, filterRow, roster, activityCard);
-      container.appendChild(page);
-
-      liveMap = LiveMap(mapWrapper);
-      container._roster = roster;
-      container._activityCard = activityCard;
+    const activeDispatches = dispatches.filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status));
+    const dispatchedMap = new Map();
+    for (const d of activeDispatches) {
+      if (d.tanodId) dispatchedMap.set(d.tanodId, d);
     }
+    const dispatchedIds = new Set(dispatchedMap.keys());
+    const availableCount = [...onDutyIds].filter((id) => !dispatchedIds.has(id)).length;
+    const dispatchedCount = dispatchedIds.size;
+    const activeAlertsCount = openSos.length;
+
+    // First time mounting the console
+    if (!layoutEl) {
+      container.innerHTML = '';
+
+      layoutEl = document.createElement('div');
+      layoutEl.className = 'gis-layout';
+
+      // ── LEFT COLUMN: Personnel & Status Panel ──
+      const sidebar = document.createElement('aside');
+      sidebar.className = 'gis-sidebar';
+
+      const sidebarHeader = document.createElement('div');
+      sidebarHeader.className = 'gis-sidebar__header';
+      sidebarHeader.innerHTML = `
+        <h2 class="gis-sidebar__title">Live Tracking</h2>
+        <div class="gis-sidebar__subtitle">Pilar, Sorsogon</div>
+      `;
+      sidebar.appendChild(sidebarHeader);
+
+      // 3 Mini Status Cards
+      statCardsEl = document.createElement('div');
+      statCardsEl.className = 'gis-stats-grid';
+      sidebar.appendChild(statCardsEl);
+
+      // Map Filters Row
+      filterBarEl = document.createElement('div');
+      filterBarEl.className = 'gis-filter-bar';
+      filterBarEl.innerHTML = `
+        <div class="gis-filter-bar__left">
+          ${icons.filter(15)}
+          <span>Map Filters</span>
+        </div>
+      `;
+      filterBadgeEl = document.createElement('span');
+      filterBadgeEl.className = 'gis-filter-bar__badge';
+      filterBarEl.appendChild(filterBadgeEl);
+      filterBarEl.addEventListener('click', () => {
+        // Toggle roster filter in a simple cycle: all -> available -> dispatched -> all
+        if (rosterFilter === 'all') rosterFilter = 'available';
+        else if (rosterFilter === 'available') rosterFilter = 'dispatched';
+        else rosterFilter = 'all';
+        updateMiniStatCardsSelection();
+        renderCurrentRosterAndMap();
+      });
+      sidebar.appendChild(filterBarEl);
+
+      // Personnel List Section Header
+      personnelHeaderEl = document.createElement('div');
+      personnelHeaderEl.className = 'gis-personnel-header';
+      sidebar.appendChild(personnelHeaderEl);
+
+      // Personnel Cards Scrollable Container
+      personnelListEl = document.createElement('div');
+      personnelListEl.className = 'gis-personnel-list';
+      sidebar.appendChild(personnelListEl);
+
+      // ── RIGHT COLUMN: GIS Map & Overlays ──
+      const mapCard = document.createElement('div');
+      mapCard.className = 'gis-map-card';
+
+      // Map Header Bar
+      const mapHeader = document.createElement('div');
+      mapHeader.className = 'gis-map-header';
+
+      const mapTitleGroup = document.createElement('div');
+      mapTitleGroup.className = 'gis-map-header__title-group';
+      const mapTitle = document.createElement('h3');
+      mapTitle.className = 'gis-map-header__title';
+      mapTitle.textContent = 'GIS Map - Real-Time Tracking';
+      mapSubtitleEl = document.createElement('div');
+      mapSubtitleEl.className = 'gis-map-header__subtitle';
+      mapTitleGroup.append(mapTitle, mapSubtitleEl);
+
+      const mapActions = document.createElement('div');
+      mapActions.className = 'gis-map-header__actions';
+
+      const layersBtn = document.createElement('button');
+      layersBtn.type = 'button';
+      layersBtn.className = 'gis-map-tool-btn';
+      layersBtn.title = 'Map Layers';
+      layersBtn.setAttribute('aria-label', 'Map Layers');
+      layersBtn.innerHTML = icons.layers(16);
+
+      const zoomInBtn = document.createElement('button');
+      zoomInBtn.type = 'button';
+      zoomInBtn.className = 'gis-map-tool-btn';
+      zoomInBtn.title = 'Zoom in';
+      zoomInBtn.setAttribute('aria-label', 'Zoom in');
+      zoomInBtn.innerHTML = icons.zoomIn(16);
+      zoomInBtn.addEventListener('click', () => liveMap?.zoomIn());
+
+      const zoomOutBtn = document.createElement('button');
+      zoomOutBtn.type = 'button';
+      zoomOutBtn.className = 'gis-map-tool-btn';
+      zoomOutBtn.title = 'Zoom out';
+      zoomOutBtn.setAttribute('aria-label', 'Zoom out');
+      zoomOutBtn.innerHTML = icons.zoomOut(16);
+      zoomOutBtn.addEventListener('click', () => liveMap?.zoomOut());
+
+      const myLocationBtn = document.createElement('button');
+      myLocationBtn.type = 'button';
+      myLocationBtn.className = 'gis-map-primary-btn';
+      myLocationBtn.innerHTML = `${icons.compass(15)}<span>My Location</span>`;
+      myLocationBtn.title = 'Centre and fit all responders and incidents';
+      myLocationBtn.addEventListener('click', () => liveMap?.fitAll());
+
+      mapActions.append(layersBtn, zoomInBtn, zoomOutBtn, myLocationBtn);
+      mapHeader.append(mapTitleGroup, mapActions);
+      mapCard.appendChild(mapHeader);
+
+      // Map Viewport with LiveMap instance
+      const mapViewport = document.createElement('div');
+      mapViewport.className = 'gis-map-viewport';
+      mapCard.appendChild(mapViewport);
+
+      // Floating Live Activity Widget (Top-Right of Map)
+      const activityWidget = document.createElement('div');
+      activityWidget.className = 'gis-floating-activity';
+      activityWidget.innerHTML = `
+        <div class="gis-floating-activity__header">
+          ${icons.activity(16)}
+          <span>Live Activity</span>
+        </div>
+      `;
+      floatingActivityListEl = document.createElement('div');
+      floatingActivityListEl.className = 'gis-floating-activity__list';
+      activityWidget.appendChild(floatingActivityListEl);
+      mapViewport.appendChild(activityWidget);
+
+      // Floating Map Legend Widget (Bottom-Left of Map)
+      const legendWidget = document.createElement('div');
+      legendWidget.className = 'gis-floating-legend';
+      legendWidget.innerHTML = `
+        <div class="gis-floating-legend__title">Map Legend</div>
+        <div class="gis-floating-legend__row">
+          <span class="gis-floating-legend__dot gis-floating-legend__dot--available"></span>
+          <span>Available Tanod</span>
+        </div>
+        <div class="gis-floating-legend__row">
+          <span class="gis-floating-legend__dot gis-floating-legend__dot--dispatched"></span>
+          <span>Dispatched / En Route</span>
+        </div>
+        <div class="gis-floating-legend__row">
+          <span class="gis-floating-legend__dot gis-floating-legend__dot--emergency"></span>
+          <span>Emergency Incident</span>
+        </div>
+      `;
+      mapViewport.appendChild(legendWidget);
+
+      layoutEl.append(sidebar, mapCard);
+      container.appendChild(layoutEl);
+
+      liveMap = LiveMap(mapViewport);
+    }
+
+    // ── Update 3 Mini Status Cards ──
+    statCardsEl.innerHTML = `
+      <div class="gis-mini-stat gis-mini-stat--available ${rosterFilter === 'available' ? 'is-active' : ''}" data-filter="available">
+        <div class="gis-mini-stat__value">${availableCount}</div>
+        <div class="gis-mini-stat__label">Available</div>
+      </div>
+      <div class="gis-mini-stat gis-mini-stat--dispatched ${rosterFilter === 'dispatched' ? 'is-active' : ''}" data-filter="dispatched">
+        <div class="gis-mini-stat__value">${dispatchedCount}</div>
+        <div class="gis-mini-stat__label">Dispatched</div>
+      </div>
+      <div class="gis-mini-stat gis-mini-stat--active ${rosterFilter === 'active' ? 'is-active' : ''}" data-filter="active">
+        <div class="gis-mini-stat__value">${activeAlertsCount}</div>
+        <div class="gis-mini-stat__label">Active</div>
+      </div>
+    `;
+
+    statCardsEl.querySelectorAll('.gis-mini-stat').forEach((card) => {
+      card.addEventListener('click', () => {
+        const filter = card.getAttribute('data-filter');
+        if (rosterFilter === filter) {
+          rosterFilter = 'all';
+        } else {
+          rosterFilter = filter;
+        }
+        updateMiniStatCardsSelection();
+        renderCurrentRosterAndMap();
+      });
+    });
+
+    function updateMiniStatCardsSelection() {
+      statCardsEl.querySelectorAll('.gis-mini-stat').forEach((card) => {
+        card.classList.toggle('is-active', card.getAttribute('data-filter') === rosterFilter);
+      });
+    }
+
+    // ── Update Filter Bar Badge & Subtitle ──
+    const activeFiltersCount = rosterFilter === 'all' ? 0 : 1;
+    filterBadgeEl.textContent = activeFiltersCount > 0 ? `${rosterFilter.toUpperCase()} filter active` : 'All filter active';
+
+    mapSubtitleEl.textContent = `Monitoring ${gpsItems.length} field personnel across Pilar barangays`;
 
     renderCurrentRosterAndMap = renderRosterAndMap;
     renderRosterAndMap();
-    renderActivityFeed(container._activityCard, dispatches, dutyStatuses, openSos, gpsItems);
+    renderActivityFeed(floatingActivityListEl, dispatches, dutyStatuses, openSos, gpsItems);
 
     function renderRosterAndMap() {
       const filtered = gpsItems.filter((g) => {
-        if (rosterFilter === 'available') return onDutyIds.has(g.userId) && !dispatchedIds.has(g.userId);
-        if (rosterFilter === 'dispatched') return dispatchedIds.has(g.userId);
+        const isDisp = dispatchedIds.has(g.userId);
+        const isOnDuty = onDutyIds.has(g.userId);
+        if (rosterFilter === 'available') return isOnDuty && !isDisp;
+        if (rosterFilter === 'dispatched') return isDisp;
+        if (rosterFilter === 'active') return isDisp || openSos.some((s) => s.userId === g.userId);
         if (rosterFilter === 'stale') return g.isStale;
         return true;
       });
 
+      personnelHeaderEl.textContent = `FIELD PERSONNEL (${filtered.length})`;
+
+      // Map Markers
       liveMap.setMarkers(filtered.map((g) => ({
-        userId: g.userId, fullName: g.fullName, latitude: g.latitude, longitude: g.longitude,
-        ageSeconds: g.ageSeconds, isStale: g.isStale,
+        userId: g.userId,
+        fullName: g.fullName,
+        latitude: g.latitude,
+        longitude: g.longitude,
+        ageSeconds: g.ageSeconds,
+        isStale: g.isStale,
+        status: dispatchedIds.has(g.userId) ? 'dispatched' : 'available',
+        isDispatched: dispatchedIds.has(g.userId),
       })));
       liveMap.setSosMarkers(openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status })));
 
-      const roster = container._roster;
-      roster.innerHTML = '';
+      // Render Field Personnel Cards
+      personnelListEl.innerHTML = '';
       if (filtered.length === 0) {
-        const empty = document.createElement('p');
+        const empty = document.createElement('div');
         empty.className = 'note';
+        empty.style.padding = '1.5rem 0.5rem';
+        empty.style.textAlign = 'center';
         empty.textContent = gpsItems.length === 0
-          ? 'No Tanod locations have been reported yet.'
-          : 'No Tanods match this filter.';
-        roster.appendChild(empty);
+          ? 'No Tanod locations reported yet.'
+          : 'No personnel match the selected filter.';
+        personnelListEl.appendChild(empty);
         return;
       }
+
       for (const g of filtered) {
-        const row = document.createElement('div');
-        row.className = 'gis-roster__row';
+        const isDispatched = dispatchedIds.has(g.userId);
+        const dispatchObj = dispatchedMap.get(g.userId);
+        const tanodUser = tanodRosterById.get(g.userId);
+        const badgeCode = tanodUser?.badgeNumber || `T-${String(g.userId).padStart(3, '0')}`;
+        const locationText = tanodUser?.barangayName ? `Brgy. ${tanodUser.barangayName}` : 'Brgy. Dao';
 
-        // audit W4: roster and map were unlinked — a name in the list and
-        // a dot on the map had no relationship you could act on. A real
-        // <button> rather than a click handler on a div, so it is
-        // keyboard-operable and announced as activatable.
-        const main = document.createElement('button');
-        main.type = 'button';
-        main.className = 'gis-roster__row-main';
-        const pillClass = g.isStale ? 'status-pill--neutral' : 'status-pill--success';
-        const ageLabel = formatAge(g.ageSeconds);
-        main.innerHTML = `<span class="avatar-row">${avatarInitials(g.fullName, 24)}${g.fullName}</span><span class="status-pill ${pillClass}">${g.isStale ? 'Stale' : 'Live'} · ${ageLabel}</span>`;
-        main.setAttribute('aria-label', `Centre map on ${g.fullName}`);
-        main.addEventListener('click', () => liveMap?.flyTo(Number(g.latitude), Number(g.longitude)));
-        row.appendChild(main);
+        const card = document.createElement('div');
+        card.className = 'gis-personnel-card';
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `Center map on ${g.fullName}`);
 
-        // Admin-only Call action — `tanodRosterById` is only ever
-        // populated for Admin (see load()), so this silently doesn't
-        // render for PB rather than showing a dead button.
-        const contactNumber = tanodRosterById.get(g.userId)?.contactNumber;
-        if (contactNumber) {
-          const callLink = document.createElement('a');
-          callLink.href = `tel:${contactNumber}`;
-          callLink.className = 'ghost gis-roster__call';
-          callLink.setAttribute('aria-label', `Call ${g.fullName}`);
-          callLink.innerHTML = icons.phone(16);
-          row.appendChild(callLink);
-        }
+        const avatarModifier = g.isStale
+          ? 'gis-personnel-card__avatar--stale'
+          : isDispatched
+            ? 'gis-personnel-card__avatar--dispatched'
+            : 'gis-personnel-card__avatar--available';
 
-        roster.appendChild(row);
+        const statusClass = g.isStale
+          ? 'gis-personnel-card__status-pill--stale'
+          : isDispatched
+            ? 'gis-personnel-card__status-pill--dispatched'
+            : 'gis-personnel-card__status-pill--available';
+
+        const statusText = g.isStale
+          ? 'STALE'
+          : isDispatched
+            ? 'DISPATCHED'
+            : 'AVAILABLE';
+
+        const incidentBadgeHtml = (isDispatched && dispatchObj)
+          ? `<span class="gis-personnel-card__incident-pill">INC-${String(dispatchObj.incidentId).padStart(3, '0')}</span>`
+          : '';
+
+        const contactNumber = tanodUser?.contactNumber;
+        const callBtnHtml = contactNumber
+          ? `<a href="tel:${contactNumber}" class="gis-personnel-card__phone-btn" title="Call ${g.fullName}" aria-label="Call ${g.fullName}" onclick="event.stopPropagation()">${icons.phone(16)}</a>`
+          : `<span class="gis-personnel-card__phone-btn" style="opacity:0.3;" title="No phone on file">${icons.phone(16)}</span>`;
+
+        card.innerHTML = `
+          <div class="gis-personnel-card__left">
+            <div class="gis-personnel-card__avatar ${avatarModifier}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+            </div>
+            <div class="gis-personnel-card__info">
+              <div class="gis-personnel-card__name">${escapeHtml(g.fullName)}</div>
+              <div class="gis-personnel-card__tag">${escapeHtml(badgeCode)}</div>
+              <div class="gis-personnel-card__location">
+                ${icons.mapPin(13)}
+                <span>${escapeHtml(locationText)}</span>
+              </div>
+              <div class="gis-personnel-card__pills">
+                <span class="gis-personnel-card__status-pill ${statusClass}">${statusText}</span>
+                ${incidentBadgeHtml}
+              </div>
+            </div>
+          </div>
+          ${callBtnHtml}
+        `;
+
+        card.addEventListener('click', () => {
+          personnelListEl.querySelectorAll('.gis-personnel-card').forEach((c) => c.classList.remove('is-selected'));
+          card.classList.add('is-selected');
+          if (g.latitude && g.longitude) {
+            liveMap?.flyTo(Number(g.latitude), Number(g.longitude));
+          }
+        });
+
+        personnelListEl.appendChild(card);
       }
     }
   }
 
   /**
-   * Client-side derived event feed (see this file's own header for why
-   * this isn't a new backend endpoint) — each dispatch's own stage
-   * timestamps, each duty_status row's changed_at, each SOS's
-   * triggered_at, merged and sorted newest-first. Names resolve from the
-   * Admin-only tanod roster when available, falling back to the GPS
-   * roster's own fullName (covers PB, and any Tanod GPS has seen even
-   * without the Admin-only roster), and finally to a bare "Tanod #id" —
-   * the same graceful-fallback pattern dispatch-center.js's SOS banner
-   * already uses.
+   * Client-side derived event feed matching the live activity card in the sample image
    */
   function renderActivityFeed(container, dispatches, dutyStatuses, openSos, gpsItems) {
+    if (!container) return;
     const gpsNameById = new Map(gpsItems.map((g) => [g.userId, g.fullName]));
-    const resolveName = (id) => tanodRosterById.get(id)?.fullName || gpsNameById.get(id) || `Tanod #${id}`;
+    const resolveName = (id) => {
+      const u = tanodRosterById.get(id);
+      if (u) {
+        const badge = u.badgeNumber || `T-${String(u.userId).padStart(3, '0')}`;
+        return badge;
+      }
+      return `T-${String(id).padStart(3, '0')}`;
+    };
 
     const events = [];
     for (const d of dispatches) {
-      const name = resolveName(d.tanodId);
-      if (d.dispatchedAt) events.push({ ts: d.dispatchedAt, text: `${name} dispatched to incident #${d.incidentId}` });
-      if (d.arrivedAt) events.push({ ts: d.arrivedAt, text: `${name} arrived at incident #${d.incidentId}` });
-      if (d.completedAt) events.push({ ts: d.completedAt, text: `${name} completed incident #${d.incidentId}` });
-      if (d.cancelledAt) events.push({ ts: d.cancelledAt, text: `Dispatch for ${name} on incident #${d.incidentId} was cancelled` });
+      const code = resolveName(d.tanodId);
+      const incCode = `INC-${String(d.incidentId).padStart(3, '0')}`;
+      if (d.dispatchedAt) {
+        events.push({
+          ts: d.dispatchedAt,
+          tone: 'info',
+          text: `${code} dispatched to ${incCode}`,
+        });
+      }
+      if (d.arrivedAt) {
+        events.push({
+          ts: d.arrivedAt,
+          tone: 'info',
+          text: `${code} arrived at incident location`,
+        });
+      }
+      if (d.completedAt) {
+        events.push({
+          ts: d.completedAt,
+          tone: 'success',
+          text: `${code} completed ${incCode}`,
+        });
+      }
+      if (d.cancelledAt) {
+        events.push({
+          ts: d.cancelledAt,
+          tone: 'neutral',
+          text: `Dispatch for ${code} on ${incCode} cancelled`,
+        });
+      }
     }
+
     for (const s of dutyStatuses) {
+      const code = resolveName(s.userId);
       const label = DUTY_EVENT_LABEL[s.status];
-      if (label) events.push({ ts: s.changedAt, text: `${resolveName(s.userId)} ${label}` });
+      if (label) {
+        events.push({
+          ts: s.changedAt,
+          tone: s.status === 'on_duty' ? 'success' : 'neutral',
+          text: `${code} ${label}`,
+        });
+      }
     }
+
     for (const s of openSos) {
-      events.push({ ts: s.triggeredAt, text: `SOS alert from ${resolveName(s.userId)}` });
+      const code = resolveName(s.userId);
+      events.push({
+        ts: s.triggeredAt,
+        tone: 'critical',
+        text: `New SOS alert from ${code} in Brgy. Dao`,
+      });
     }
 
     events.sort((a, b) => new Date(b.ts) - new Date(a.ts));
     const recent = events.slice(0, ACTIVITY_FEED_LIMIT);
 
     container.innerHTML = '';
-    const heading = document.createElement('h3');
-    heading.textContent = 'Live Activity';
-    container.appendChild(heading);
-
     if (recent.length === 0) {
-      const empty = document.createElement('p');
+      const empty = document.createElement('div');
       empty.className = 'note';
+      empty.style.padding = '0.5rem';
+      empty.style.textAlign = 'center';
       empty.textContent = 'No recent activity to show.';
       container.appendChild(empty);
       return;
     }
 
-    const list = document.createElement('div');
-    list.className = 'stack gis-activity__list';
     for (const event of recent) {
-      const row = document.createElement('div');
-      row.className = 'gis-activity__row';
-      const text = document.createElement('span');
-      text.textContent = event.text;
-      const time = document.createElement('span');
-      time.className = 'note';
-      time.textContent = formatAge(Math.max(0, Math.round((Date.now() - new Date(event.ts).getTime()) / 1000)));
-      row.append(text, time);
-      list.appendChild(row);
+      const item = document.createElement('div');
+      item.className = 'gis-floating-activity__item';
+
+      const dotModifier = `gis-floating-activity__dot--${event.tone || 'info'}`;
+      const elapsed = formatElapsed(event.ts);
+
+      item.innerHTML = `
+        <div class="gis-floating-activity__text-row">
+          <span class="gis-floating-activity__dot ${dotModifier}"></span>
+          <span class="gis-floating-activity__desc">${escapeHtml(event.text)}</span>
+        </div>
+        <div class="gis-floating-activity__time">${escapeHtml(elapsed)}</div>
+      `;
+
+      container.appendChild(item);
     }
-    container.appendChild(list);
   }
 
   return { stop: stopPolling };
 }
 
-function formatAge(ageSeconds) {
-  if (ageSeconds < 60) return `${ageSeconds}s ago`;
-  const minutes = Math.floor(ageSeconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.floor(minutes / 60)}h ago`;
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatElapsed(timestamp) {
+  if (!timestamp) return 'Just now';
+  const diffMs = Date.now() - new Date(timestamp).getTime();
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}d ago`;
 }
 
 function renderLoading(container) {
   container.innerHTML = '';
   const page = document.createElement('div');
-  page.className = 'gis-page';
+  page.className = 'gis-layout';
   page.setAttribute('role', 'status');
   page.setAttribute('aria-label', 'Loading live tracking');
-  const mapSkeleton = document.createElement('div');
-  mapSkeleton.className = 'skeleton gis-page__map-wrapper';
-  const rosterSkeleton = document.createElement('div');
-  rosterSkeleton.className = 'skeleton';
-  rosterSkeleton.classList.add('skeleton--roster');
-  page.append(mapSkeleton, rosterSkeleton);
+  page.innerHTML = `
+    <div class="gis-sidebar">
+      <div class="skeleton" style="height: 3rem; margin-bottom: 0.5rem;"></div>
+      <div class="skeleton" style="height: 4.5rem; margin-bottom: 0.5rem;"></div>
+      <div class="skeleton" style="height: 2.5rem; margin-bottom: 0.5rem;"></div>
+      <div class="skeleton" style="flex: 1; min-height: 20rem;"></div>
+    </div>
+    <div class="skeleton gis-page__map-wrapper--fill" style="border-radius: var(--radius-xl, 16px);"></div>
+  `;
   container.appendChild(page);
 }
 

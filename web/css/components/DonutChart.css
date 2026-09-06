@@ -37,7 +37,6 @@
    legend item is hovered, and boost that one segment's own swatch/label
    via .is-active below — cheap, no per-segment DOM slicing needed since
    the ring is one conic-gradient. */
-.donut-chart__ring.has-highlight { filter: saturate(0.5) brightness(1.05); }
 .donut-chart__hole {
   position: absolute;
   inset: 1.375rem;
@@ -47,17 +46,29 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
 }
-.donut-chart__total { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-text-primary); line-height: 1.1; }
-.donut-chart__total-label { font-size: var(--font-size-label); color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
-/* 2026-09-06: legend runs two-up — the percentage/count moved into a
-   hover/focus tooltip (below), so each row only needs room for a dot and a
-   name, and two columns fit comfortably without truncating further than
-   the single-column layout already did. */
+.donut-chart__total {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.donut-chart__total-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 0.25rem;
+}
+/* Legend runs two-up with neatly left-aligned swatch and label, plus right-aligned count and pct */
 .donut-chart__legend {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--spacing-xs) var(--spacing-md);
+  gap: 0.25rem var(--spacing-md);
   min-width: 15rem;
   flex: 1;
 }
@@ -65,82 +76,78 @@
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--spacing-sm);
   font: inherit;
   font-size: var(--font-size-sm);
   color: inherit;
   background: none;
   border: none;
-  border-radius: var(--radius-sm);
-  padding: 0.1875rem var(--spacing-xs);
-  margin: -0.125rem calc(-1 * var(--spacing-xs));
+  border-radius: var(--radius-md);
+  padding: 0.3125rem 0.5rem;
+  margin: 0;
   cursor: pointer;
+  min-height: auto;
   min-width: 0;
   width: 100%;
   text-align: left;
-  transition: background-color .15s ease;
+  transition: background-color .15s ease, opacity .15s ease;
 }
 .donut-chart__legend-item:hover,
 .donut-chart__legend-item.is-active,
-.donut-chart__legend-item:focus-visible { background: var(--color-bg); }
+.donut-chart__legend-item:focus-visible {
+  background: var(--tint-neutral-bg, var(--color-bg));
+}
 .donut-chart__legend-item:hover .donut-chart__legend-label,
-.donut-chart__legend-item.is-active .donut-chart__legend-label { font-weight: 600; }
-.donut-chart__legend-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
-/* Center-hole text swaps to the hovered category's own count/% (JS-driven
-   content change) — this transition just smooths that swap instead of
-   snapping. */
-.donut-chart__total, .donut-chart__total-label { transition: opacity .1s ease; }
-.donut-chart__swatch { width: 0.625rem; height: 0.625rem; border-radius: 50%; flex-shrink: 0; }
+.donut-chart__legend-item.is-active .donut-chart__legend-label {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.donut-chart__legend-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.donut-chart__swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: transform .15s ease;
+}
+.donut-chart__legend-item:hover .donut-chart__swatch,
+.donut-chart__legend-item.is-active .donut-chart__swatch {
+  transform: scale(1.25);
+}
 .donut-chart__legend-label {
   color: var(--color-text-secondary);
   font-size: var(--font-size-label);
+  flex: 1;
   min-width: 0;
-  /* Long enum labels ("Medical Emergency") must not wrap the row into
-     three lines and break the column's rhythm. */
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
-/* Hover/focus tooltip panel — same glass-card treatment and reveal
-   mechanics as Tooltip.js's InfoTip (`.info-tip__panel`), anchored to the
-   legend row instead of an "i" trigger. */
-.donut-chart__legend-tip {
-  position: absolute;
-  z-index: 30;
-  bottom: calc(100% + var(--spacing-xs));
-  left: var(--spacing-sm);
-  width: max-content;
-  max-width: 12rem;
-  padding: var(--spacing-xs) var(--spacing-sm-md);
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-floating);
-  font-size: var(--font-size-label);
-  font-weight: 700;
-  color: var(--color-text-primary);
   text-align: left;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(2px);
-  transition: opacity .15s ease, transform .15s ease, visibility .15s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.donut-chart__legend-tip-count { font-weight: 400; color: var(--color-text-tertiary); }
-.donut-chart__legend-item:hover .donut-chart__legend-tip,
-.donut-chart__legend-item.is-active .donut-chart__legend-tip,
-.donut-chart__legend-item:focus-visible .donut-chart__legend-tip {
-  opacity: 1; visibility: visible; transform: translateY(0);
+.donut-chart__legend-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-left: auto;
+  flex-shrink: 0;
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .donut-chart__legend-tip { background: var(--color-surface); border-color: var(--color-border); }
+.donut-chart__legend-count {
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+.donut-chart__legend-pct {
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Cursor-following tooltip for hovering the ring's own colored arc
-   (JS-positioned via mousemove — see DonutChart.js — unlike the legend's
-   CSS-anchored one, since the ring has no per-segment element to anchor
-   to). */
+/* Cursor-following tooltip for hovering the ring's own colored arc */
 .donut-chart__ring-tip {
   position: absolute;
   z-index: 31;

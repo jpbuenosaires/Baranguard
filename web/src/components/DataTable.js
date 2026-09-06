@@ -46,6 +46,7 @@
  *   rows: Array<object>,
  *   renderCell: (row:object, columnKey:string) => (string|Node),
  *   rowKey: (row:object) => string|number,
+ *   rowClass?: (row:object) => string|undefined,
  *   onRowClick?: (row:object) => void,
  *   selectedKey?: string|number|null,
  *   caption?: string,
@@ -56,7 +57,7 @@
  * @returns {HTMLElement}
  */
 export function DataTable({
-  columns, rows, renderCell, rowKey, onRowClick, selectedKey = null, caption,
+  columns, rows, renderCell, rowKey, rowClass, onRowClick, selectedKey = null, caption,
   emptyIcon, emptyMessage,
   page, totalItems, pageSize, onPageChange,
 }) {
@@ -197,6 +198,12 @@ export function DataTable({
       const tr = document.createElement('tr');
       const key = rowKey(row);
       if (selectedKey !== null && key === selectedKey) tr.classList.add('is-selected');
+      if (rowClass) {
+        const customClass = rowClass(row);
+        if (customClass) {
+          customClass.split(' ').filter(Boolean).forEach((cls) => tr.classList.add(cls));
+        }
+      }
 
       // audit A11: this used to set role="button" + tabindex on the <tr>
       // itself, which overrides the row role — the cells stop being

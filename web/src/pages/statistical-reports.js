@@ -33,6 +33,7 @@ import { LineChart } from '../components/LineChart.js';
 import { BarChart } from '../components/BarChart.js';
 import { DonutChart } from '../components/DonutChart.js';
 import { StatStrip } from '../components/StatStrip.js';
+import { InfoTip } from '../components/Tooltip.js';
 import { icons } from '../components/icons.js';
 
 // 12-hour clock labels for the by-hour bar chart's 24 buckets.
@@ -80,9 +81,49 @@ function daysAgoIso(n) {
 }
 /** "2026-09-04" -> "Sep 4", for the Key Insights card. */
 function shortDate(iso) {
+  if (!iso) return '';
   const [, m, d] = iso.split('-');
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[Number(m) - 1]} ${Number(d)}`;
+}
+
+/** 14 -> "2:00 PM – 3:00 PM" */
+function formatHourRange(h) {
+  const startPeriod = h < 12 ? 'AM' : 'PM';
+  const startH = h % 12 === 0 ? 12 : h % 12;
+  const nextH = (h + 1) % 24;
+  const endPeriod = nextH < 12 ? 'AM' : 'PM';
+  const endH = nextH % 12 === 0 ? 12 : nextH % 12;
+  return `${startH}:00 ${startPeriod} – ${endH}:00 ${endPeriod}`;
+}
+
+function cardHeader(title, subtitle, icon, description) {
+  const el = document.createElement('div');
+  el.className = 'card-header';
+  const titles = document.createElement('div');
+  const h = document.createElement('h3');
+  h.className = 'card-header__title report-section-title';
+  h.append(title);
+  if (description) h.appendChild(InfoTip(description));
+  if (subtitle) {
+    const sub = document.createElement('p');
+    sub.className = 'card-header__subtitle';
+    sub.textContent = subtitle;
+    titles.append(h, sub);
+  } else {
+    titles.append(h);
+  }
+
+  if (icon) {
+    const corner = document.createElement('span');
+    corner.className = 'card-header__icon';
+    corner.setAttribute('aria-hidden', 'true');
+    corner.innerHTML = icon(18);
+    el.append(titles, corner);
+  } else {
+    el.append(titles);
+  }
+  return el;
 }
 
 /**
@@ -108,78 +149,144 @@ export function renderReportsTab(container, pageHeader, user) {
   // so there's no equivalent of that file's post-load reconciliation step.
   const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
 
+  const rangeWrapper = document.createElement('div');
+  rangeWrapper.className = 'date-range-picker-wrapper';
+
   const rangeSelect = document.createElement('select');
   rangeSelect.className = 'input--auto range-select';
   rangeSelect.setAttribute('aria-label', 'Date range');
-  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range']]) {
+  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range...']]) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
     rangeSelect.appendChild(option);
   }
   rangeSelect.value = '30';
+  let previousSelectValue = '30';
 
+  const popover = document.createElement('div');
+  popover.className = 'date-range-popover';
+  popover.hidden = true;
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', 'Custom date range');
+
+  const popoverTitle = document.createElement('div');
+  popoverTitle.className = 'date-range-popover__title';
+  popoverTitle.textContent = 'Custom Date Range';
+
+  const gridFields = document.createElement('div');
+  gridFields.className = 'date-range-popover__grid';
+
+  const fromField = document.createElement('div');
+  fromField.className = 'date-range-popover__field';
+  const fromLabel = document.createElement('label');
+  fromLabel.className = 'date-range-popover__label';
+  fromLabel.textContent = 'From';
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
+  fromInput.className = 'date-range-popover__input';
   fromInput.value = daysAgoIso(29);
-  fromInput.classList.add('input--auto');
+  fromField.append(fromLabel, fromInput);
+
+  const toField = document.createElement('div');
+  toField.className = 'date-range-popover__field';
+  const toLabel = document.createElement('label');
+  toLabel.className = 'date-range-popover__label';
+  toLabel.textContent = 'To';
   const toInput = document.createElement('input');
   toInput.type = 'date';
+  toInput.className = 'date-range-popover__input';
   toInput.value = todayIso();
-  toInput.classList.add('input--auto');
-  const generateButton = document.createElement('button');
-  generateButton.className = 'primary';
-  generateButton.textContent = 'Generate';
+  toField.append(toLabel, toInput);
 
-  const customRow = document.createElement('div');
-  customRow.className = 'filter-bar range-picker-custom-row';
-  customRow.hidden = true;
-  customRow.append(
-    Object.assign(document.createElement('span'), { className: 'label', textContent: 'From' }),
-    fromInput,
-    Object.assign(document.createElement('span'), { className: 'label', textContent: 'To' }),
-    toInput,
-    generateButton
-  );
+  gridFields.append(fromField, toField);
+
+  const rangeError = document.createElement('span');
+  rangeError.className = 'app-inline-error';
+  rangeError.hidden = true;
+  rangeError.setAttribute('role', 'alert');
+
+  const actions = document.createElement('div');
+  actions.className = 'date-range-popover__actions';
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'ghost';
+  cancelButton.textContent = 'Cancel';
+
+  const applyButton = document.createElement('button');
+  applyButton.type = 'button';
+  applyButton.className = 'primary';
+  applyButton.textContent = 'Apply Range';
+
+  actions.append(cancelButton, applyButton);
+  popover.append(popoverTitle, gridFields, rangeError, actions);
+  rangeWrapper.append(rangeSelect, popover);
+
+  const validateRange = () => {
+    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
+    applyButton.disabled = invalid;
+    rangeError.hidden = !invalid;
+    rangeError.textContent = invalid ? 'From date must be on or before To date.' : '';
+  };
+  fromInput.addEventListener('change', validateRange);
+  toInput.addEventListener('change', validateRange);
+
+  const openPopover = () => {
+    popover.hidden = false;
+    validateRange();
+    fromInput.focus();
+  };
+
+  const closePopover = (restorePrevious = false) => {
+    popover.hidden = true;
+    rangeError.hidden = true;
+    if (restorePrevious) {
+      rangeSelect.value = previousSelectValue;
+    }
+  };
+
+  cancelButton.addEventListener('click', () => closePopover(true));
+  document.addEventListener('click', (e) => {
+    if (!popover.hidden && !rangeWrapper.contains(e.target)) closePopover(true);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !popover.hidden) closePopover(true);
+  });
+
+  applyButton.addEventListener('click', () => {
+    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
+    previousSelectValue = 'custom';
+    const customOption = rangeSelect.querySelector('option[value="custom"]');
+    if (customOption) {
+      customOption.textContent = `Custom (${shortDate(fromInput.value)} – ${shortDate(toInput.value)})`;
+    }
+    rangeSelect.value = 'custom';
+    closePopover(false);
+    load(fromInput.value, toInput.value);
+  });
 
   rangeSelect.addEventListener('change', () => {
     if (rangeSelect.value === 'custom') {
-      customRow.hidden = false;
+      openPopover();
       return;
     }
-    customRow.hidden = true;
+    closePopover(false);
+    previousSelectValue = rangeSelect.value;
     fromInput.value = daysAgoIso(PRESET_DAYS_AGO[rangeSelect.value]);
     toInput.value = todayIso();
     load(fromInput.value, toInput.value);
   });
 
-  pageHeader.actions.appendChild(rangeSelect);
-
-  const body = document.createElement('div');
-  container.append(customRow, body);
-
-  // §9 W9: "Generate and Export are separate; Export calls
-  // GET /reports/export and is audited." Separate deliberately — Export
-  // writes a real file server-side and an audit_log row, so it is a
-  // distinct action, not a second rendering of what Generate produced.
-  // Sprint 7's "W9 Export button" cut. PDF added 2026-09-06 alongside the
-  // original CSV button — same generate-then-download flow, just a second
-  // format (see ReportsController::export()'s doc for that decision).
-  //
-  // The download itself (2026-09-06 fix) is a real authenticated fetch
-  // producing a Blob, not `window.open()`/an `<a href>` on the API URL —
-  // this app has no session cookie, only a Bearer token, and a plain
-  // browser navigation cannot attach one. `window.open()`/a plain href
-  // here would 401 every time; see `downloadReportExport()`'s own doc.
-  function buildExportButton(format, label) {
+  function buildExportButton(format, label, iconSvg) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'ghost';
-    const idleLabel = `<span aria-hidden="true">${icons.download(16)}</span><span>${label}</span>`;
-    button.innerHTML = idleLabel;
+    const idleHtml = `<span aria-hidden="true">${iconSvg}</span><span>${label}</span>`;
+    button.innerHTML = idleHtml;
     button.addEventListener('click', async () => {
       button.disabled = true;
-      button.textContent = 'Exporting…';
+      button.innerHTML = `<span class="is-spinning" aria-hidden="true">${icons.repeat(14)}</span><span>Exporting…</span>`;
       try {
         await exportReport({ dateFrom: fromInput.value, dateTo: toInput.value, format });
         const blob = await downloadReportExport({ format });
@@ -196,45 +303,44 @@ export function renderReportsTab(container, pageHeader, user) {
         showToast(err instanceof ApiClientError ? err.message : 'Could not generate the export.', { variant: 'error' });
       } finally {
         button.disabled = false;
-        button.innerHTML = idleLabel;
+        button.innerHTML = idleHtml;
       }
     });
     return button;
   }
-  pageHeader.actions.append(buildExportButton('csv', 'Export CSV'), buildExportButton('pdf', 'Export PDF'));
 
-  generateButton.addEventListener('click', () => load(fromInput.value, toInput.value));
-  // 2026-09-06: this used to be "Generate only, no auto-load" (see this
-  // file's header comment) — landing on the tab showed a bare "Choose a
-  // date range" prompt with no charts until Generate was clicked. That
-  // was a deliberate original decision, but it reads as "the graphs are
-  // missing" now that the dashboard auto-loads its own charts and the
-  // reference mockup this tab is being aligned to shows charts populated
-  // immediately. Generate/the date fields still work exactly the same
-  // way for switching to a different range.
+  const exportGroup = document.createElement('div');
+  exportGroup.className = 'export-btn-group';
+  exportGroup.append(
+    buildExportButton('csv', 'Export CSV', icons.download(16)),
+    buildExportButton('pdf', 'Export PDF', icons.fileText(16))
+  );
+
+  pageHeader.actions.append(rangeWrapper, exportGroup);
+
+  const body = document.createElement('div');
+  body.className = 'dashboard-body';
+  container.append(body);
+
   load(fromInput.value, toInput.value);
 
   async function load(dateFrom, dateTo) {
-    renderLoading(body);
-    generateButton.disabled = true;
+    const isInitial = body.children.length === 0;
+    if (isInitial) {
+      renderLoading(body);
+    } else {
+      body.classList.add('is-reloading');
+    }
     try {
       const summary = await getReportsSummary({ dateFrom, dateTo });
       renderReport(body, summary, user.role);
-      // Best-effort extras (2026-09-06) — each wrapped in its own catch so
-      // a failure never blocks the main report, which has already
-      // rendered. Both are ALL-TIME snapshots, not scoped to the chosen
-      // range: neither `GET /blotter` nor `GET /citizen-reports` accepts a
-      // date filter (unlike `GET /reports/summary`), and inventing one
-      // wasn't in scope here — same "live snapshot, not range-bucketed"
-      // precedent admin-dashboard.js's own Tanods On Duty card already
-      // uses, just labelled honestly rather than silently implied.
       loadCaseStatusBreakdown(body);
       if (user.role === 'admin') loadCitizenReportsConversion(body);
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong generating the report.';
       renderError(body, message, () => load(dateFrom, dateTo));
     } finally {
-      generateButton.disabled = false;
+      body.classList.remove('is-reloading');
     }
   }
 }
@@ -279,7 +385,7 @@ function renderReport(container, summary, role) {
   }
 
   const kpiGrid = document.createElement('div');
-  kpiGrid.className = 'kpi-grid';
+  kpiGrid.className = 'kpi-grid dashboard-row';
   kpiGrid.append(
     KpiCard({ label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue' }),
     KpiCard({ label: 'Resolved', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green' }),
@@ -293,43 +399,79 @@ function renderReport(container, summary, role) {
     KpiCard({ label: 'Active Tanods', value: summary.activeTanods, icon: icons.users, accent: 'teal' })
   );
 
-  // Key Insights (2026-09-06) — three highlights derived entirely from
-  // `summary` fields this screen already fetches (trend/byIncidentType/
-  // byHour), so unlike the cross-domain row below, these ARE scoped to
-  // the selected range, no extra request needed. Placed right after the
-  // KPI row so the range's headline facts read before the charts that
-  // back them up.
   const insightsCard = document.createElement('div');
-  insightsCard.className = 'card';
-  const insightsHeading = document.createElement('h3');
-  insightsHeading.className = 'card-header__title report-section-title';
-  insightsHeading.textContent = 'Key Insights';
-  insightsCard.appendChild(insightsHeading);
-  const busiestDay = summary.trend.reduce((best, day) => (day.count > best.count ? day : best), summary.trend[0]);
+  insightsCard.className = 'card dashboard-row';
+  insightsCard.appendChild(cardHeader(
+    'Key Insights',
+    'Headline patterns derived from this date range',
+    icons.activity
+  ));
+  const busiestDay = summary.trend && summary.trend.length > 0
+    ? summary.trend.reduce((best, day) => (day.count > best.count ? day : best), summary.trend[0])
+    : { date: todayIso(), count: 0 };
   const topType = Object.entries(summary.byIncidentType).reduce(
     (best, [key, count]) => (count > best.count ? { key, count } : best),
-    { key: null, count: -1 }
+    { key: null, count: 0 }
   );
-  let peakHour = { hour: 0, count: -1 };
+  let peakHour = { hour: 0, count: 0 };
   summary.byHour.forEach((count, hour) => {
     if (count > peakHour.count) peakHour = { hour, count };
   });
-  insightsCard.appendChild(StatStrip({
-    items: [
-      { label: 'Busiest Day', value: shortDate(busiestDay.date) },
-      { label: 'Most Common Type', value: INCIDENT_TYPE_LABELS[topType.key] || topType.key },
-      { label: 'Peak Hour', value: HOUR_LABELS[peakHour.hour] },
-    ],
-  }));
+
+  const topTypePct = summary.totalIncidents > 0 && topType.count > 0
+    ? Math.round((topType.count / summary.totalIncidents) * 100)
+    : 0;
+
+  const insightsGrid = document.createElement('div');
+  insightsGrid.className = 'insights-grid';
+
+  const busiestTile = document.createElement('div');
+  busiestTile.className = 'insight-tile';
+  busiestTile.innerHTML = `
+    <div class="insight-tile__header">
+      <span aria-hidden="true">${icons.calendar(16)}</span>
+      <span>Busiest Day</span>
+    </div>
+    <div class="insight-tile__value">${busiestDay.count > 0 ? shortDate(busiestDay.date) : 'None'}</div>
+    <div class="insight-tile__badge">${busiestDay.count > 0 ? `${busiestDay.count} ${busiestDay.count === 1 ? 'incident' : 'incidents'} logged` : 'No incidents recorded'}</div>
+  `;
+
+  const typeLabel = topType.count > 0 ? (INCIDENT_TYPE_LABELS[topType.key] || topType.key) : 'None';
+  const typeTile = document.createElement('div');
+  typeTile.className = 'insight-tile';
+  typeTile.innerHTML = `
+    <div class="insight-tile__header">
+      <span aria-hidden="true">${icons.alertTriangle(16)}</span>
+      <span>Most Common Type</span>
+    </div>
+    <div class="insight-tile__value">${typeLabel}</div>
+    <div class="insight-tile__badge">${topType.count > 0 ? `${topType.count} cases (${topTypePct}% of total)` : 'No cases recorded'}</div>
+  `;
+
+  const peakHourTile = document.createElement('div');
+  peakHourTile.className = 'insight-tile';
+  peakHourTile.innerHTML = `
+    <div class="insight-tile__header">
+      <span aria-hidden="true">${icons.clock(16)}</span>
+      <span>Peak Reporting Hour</span>
+    </div>
+    <div class="insight-tile__value">${peakHour.count > 0 ? formatHourRange(peakHour.hour) : 'None'}</div>
+    <div class="insight-tile__badge">${peakHour.count > 0 ? `${peakHour.count} ${peakHour.count === 1 ? 'incident' : 'incidents'} recorded` : 'No activity detected'}</div>
+  `;
+
+  insightsGrid.append(busiestTile, typeTile, peakHourTile);
+  insightsCard.appendChild(insightsGrid);
 
   const trendCard = document.createElement('div');
-  trendCard.className = 'card';
-  const trendHeading = document.createElement('h3');
-  trendHeading.className = 'card-header__title report-section-title';
-  trendHeading.textContent = 'Incident Trends';
-  trendCard.appendChild(trendHeading);
+  trendCard.className = 'card dashboard-row';
+  trendCard.appendChild(cardHeader(
+    'Incident Trends',
+    'Reported against resolved, by day',
+    icons.trendingUp,
+    'Total reported incidents versus resolved cases for each day across the selected range.'
+  ));
   trendCard.appendChild(LineChart({
-    points: summary.trend.map((day) => ({ label: day.date.slice(5), values: [day.count, day.resolved ?? 0] })),
+    points: summary.trend.map((day) => ({ label: shortDate(day.date), values: [day.count, day.resolved ?? 0] })),
     series: [
       { name: 'Reported', colorVar: '--chart-line-1' },
       { name: 'Resolved', colorVar: '--chart-line-2' },
@@ -344,60 +486,50 @@ function renderReport(container, summary, role) {
     renderIncidentTypeDonutCard(summary.byIncidentType)
   );
 
-  // Cross-domain breakdowns (2026-09-06) — Blotter case status and (Admin
-  // only — Punong Barangay has no access to GET /citizen-reports, §3 role
-  // matrix) Citizen Reports conversion. Both load asynchronously below
-  // (loadCaseStatusBreakdown/loadCitizenReportsConversion) since they're
-  // separate requests from `summary`, same "render the main report now,
-  // fill in extras as they arrive" pattern admin-dashboard.js uses for
-  // Recent Incidents/Tanods On Duty.
   const crossDomainGrid = document.createElement('div');
   crossDomainGrid.className = 'two-col-grid dashboard-row';
 
   const caseStatusCard = document.createElement('div');
   caseStatusCard.className = 'card';
-  const caseStatusHeading = document.createElement('h3');
-  caseStatusHeading.className = 'card-header__title report-section-title';
-  caseStatusHeading.textContent = 'Blotter Case Status';
-  const caseStatusSubtitle = document.createElement('p');
-  caseStatusSubtitle.className = 'card-header__subtitle';
-  caseStatusSubtitle.textContent = 'All finalized blotter entries, all time — not scoped to the range above';
+  caseStatusCard.appendChild(cardHeader(
+    'Blotter Case Status',
+    'All finalized blotter entries, all time',
+    icons.fileText,
+    'Cumulative status of all finalized blotter entries to date — not scoped to the date range above.'
+  ));
   const caseStatusHost = document.createElement('div');
   caseStatusHost.setAttribute('data-case-status-host', '');
   caseStatusHost.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton skeleton--block' }));
-  caseStatusCard.append(caseStatusHeading, caseStatusSubtitle, caseStatusHost);
+  caseStatusCard.append(caseStatusHost);
   crossDomainGrid.appendChild(caseStatusCard);
 
   if (role === 'admin') {
     const citizenCard = document.createElement('div');
     citizenCard.className = 'card';
-    const citizenHeading = document.createElement('h3');
-    citizenHeading.className = 'card-header__title report-section-title';
-    citizenHeading.textContent = 'Citizen Reports';
-    const citizenSubtitle = document.createElement('p');
-    citizenSubtitle.className = 'card-header__subtitle';
-    citizenSubtitle.textContent = 'All submitted reports, all time — not scoped to the range above';
+    citizenCard.appendChild(cardHeader(
+      'Citizen Reports',
+      'All submitted reports, all time',
+      icons.messageSquare,
+      'Conversion tracking from citizen submissions into blotter records — not scoped to the date range above.'
+    ));
     const citizenHost = document.createElement('div');
     citizenHost.setAttribute('data-citizen-conversion-host', '');
     citizenHost.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton skeleton--block' }));
-    citizenCard.append(citizenHeading, citizenSubtitle, citizenHost);
+    citizenCard.append(citizenHost);
     crossDomainGrid.appendChild(citizenCard);
   }
 
-  // Phase 9 (Analytics upgrade, mockup-driven UI round 2): incidents by
-  // hour of day (§8's named legitimate replacement for the rejected
-  // cross-barangay comparison chart) and the response-time trend, both
-  // real `GET /reports/summary` series added this cut — see
-  // ReportsController::summary() for exactly what each buckets.
   const analyticsGrid = document.createElement('div');
   analyticsGrid.className = 'two-col-grid dashboard-row';
 
   const byHourCard = document.createElement('div');
   byHourCard.className = 'card';
-  const byHourHeading = document.createElement('h3');
-  byHourHeading.className = 'card-header__title report-section-title';
-  byHourHeading.textContent = 'Incidents by Hour of Day';
-  byHourCard.appendChild(byHourHeading);
+  byHourCard.appendChild(cardHeader(
+    'Incidents by Hour of Day',
+    'Distribution across 24 hours (Asia/Manila)',
+    icons.clock,
+    'Hourly frequency of reported incidents.'
+  ));
   byHourCard.appendChild(BarChart({
     bars: summary.byHour.map((count, hour) => ({ label: HOUR_LABELS[hour], value: count })),
     colorVar: '--chart-line-1',
@@ -406,12 +538,14 @@ function renderReport(container, summary, role) {
 
   const responseTimeCard = document.createElement('div');
   responseTimeCard.className = 'card';
-  const responseTimeHeading = document.createElement('h3');
-  responseTimeHeading.className = 'card-header__title report-section-title';
-  responseTimeHeading.textContent = 'Response Time Trend';
-  responseTimeCard.appendChild(responseTimeHeading);
+  responseTimeCard.appendChild(cardHeader(
+    'Response Time Trend',
+    'Average minutes to arrival by day',
+    icons.activity,
+    'Average response time from dispatch to arrival on scene.'
+  ));
   responseTimeCard.appendChild(LineChart({
-    points: summary.responseTimeTrend.map((day) => ({ label: day.date.slice(5), values: [day.avgMinutes ?? 0] })),
+    points: summary.responseTimeTrend.map((day) => ({ label: shortDate(day.date), values: [day.avgMinutes ?? 0] })),
     series: [{ name: 'Avg. minutes to arrival', colorVar: '--chart-line-2' }],
     caption: 'Average response time by day',
   }));
@@ -466,15 +600,28 @@ function renderCaseStatusList(host, counts) {
   const list = document.createElement('div');
   list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    const item = document.createElement('div');
+    item.className = 'breakdown-item';
+
     const row = document.createElement('div');
     row.className = 'row-between breakdown-row';
     const label = document.createElement('span');
     label.innerHTML = `<span class="status-pill ${CASE_STATUS_PILL_CLASS[key]}">${CASE_STATUS_LABELS[key]}</span>`;
     const value = document.createElement('span');
     value.className = 'breakdown-row__value';
-    value.textContent = String(count);
+    value.innerHTML = `<strong>${count}</strong> <span class="breakdown-row__pct">(${pct}%)</span>`;
     row.append(label, value);
-    list.appendChild(row);
+
+    const track = document.createElement('div');
+    track.className = 'breakdown-progress-track';
+    const fill = document.createElement('div');
+    fill.className = `breakdown-progress-fill breakdown-progress-fill--${key}`;
+    fill.style.width = `${pct}%`;
+    track.appendChild(fill);
+
+    item.append(row, track);
+    list.appendChild(item);
   }
   host.appendChild(list);
 }
@@ -522,28 +669,34 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
 function renderIncidentTypeDonutCard(counts) {
   const card = document.createElement('div');
   card.className = 'card';
-  const heading = document.createElement('h3');
-  heading.className = 'card-header__title report-section-title';
-  heading.textContent = 'By Incident Type';
   const rows = Object.entries(counts).map(([key, count], i) => ({
     key, count, label: INCIDENT_TYPE_LABELS[key] || key, color: INCIDENT_TYPE_COLORS[i % INCIDENT_TYPE_COLORS.length],
   }));
-  card.append(heading, DonutChart({ rows }));
+  card.append(
+    cardHeader('By Incident Type', 'Distribution by category', icons.activity, 'Breakdown of incidents across categories for this date range.'),
+    DonutChart({ rows })
+  );
   return card;
 }
 
 function renderBreakdownCard(title, counts, labels, pillClasses) {
   const card = document.createElement('div');
   card.className = 'card';
-  const heading = document.createElement('h3');
-  heading.className = 'card-header__title report-section-title';
-  heading.className = 'card-header__title report-section-title';
-  heading.textContent = title;
-  card.appendChild(heading);
+  card.appendChild(cardHeader(
+    title,
+    'Breakdown by resolution stage',
+    icons.barChart,
+    'Distribution of incidents across pending, dispatched, and resolved stages.'
+  ));
 
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const list = document.createElement('div');
   list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    const item = document.createElement('div');
+    item.className = 'breakdown-item';
+
     const row = document.createElement('div');
     row.className = 'row-between breakdown-row';
     const label = document.createElement('span');
@@ -555,9 +708,18 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     }
     const value = document.createElement('span');
     value.className = 'breakdown-row__value';
-    value.textContent = String(count);
+    value.innerHTML = `<strong>${count}</strong> <span class="breakdown-row__pct">(${pct}%)</span>`;
     row.append(label, value);
-    list.appendChild(row);
+
+    const track = document.createElement('div');
+    track.className = 'breakdown-progress-track';
+    const fill = document.createElement('div');
+    fill.className = `breakdown-progress-fill ${pillClass ? `breakdown-progress-fill--${key}` : ''}`;
+    fill.style.width = `${pct}%`;
+    track.appendChild(fill);
+
+    item.append(row, track);
+    list.appendChild(item);
   }
   card.appendChild(list);
   return card;

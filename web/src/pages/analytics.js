@@ -57,6 +57,9 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
   });
   header.appendChild(pageHeader.el);
 
+  const tabBar = document.createElement('div');
+  tabBar.className = 'page-tabs-bar';
+
   const tabRow = document.createElement('div');
   tabRow.className = 'filter-chip-row';
   const tabButtons = {};
@@ -69,7 +72,8 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
     tabButtons[tab.key] = btn;
     tabRow.appendChild(btn);
   }
-  header.appendChild(tabRow);
+  tabBar.appendChild(tabRow);
+  header.appendChild(tabBar);
 
   const body = document.createElement('div');
   content.appendChild(body);
@@ -92,7 +96,7 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
     if (activeTab === 'reports') {
       renderReportsTab(body, pageHeader, user);
     } else if (activeTab === 'heatmap') {
-      renderHeatmapTab(body, user);
+      renderHeatmapTab(body, pageHeader, user);
     }
   }
 
