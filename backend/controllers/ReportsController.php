@@ -456,7 +456,7 @@ final class ReportsController
         [$from, $to] = self::resolveDateRange(Http::query('date_from'), Http::query('date_to'), $manila);
 
         $content = $format === 'pdf'
-            ? self::buildSummaryPdf($pdo, $identity['barangay_id'], $from, $to, $manila)
+            ? self::buildSummaryPdf($pdo, $identity, $from, $to, $manila)
             : self::buildSummaryCsv($pdo, $identity['barangay_id'], $from, $to, $manila);
 
         $path = self::exportPath($identity['barangay_id'], $format);
@@ -488,8 +488,9 @@ final class ReportsController
      * Not in §6's endpoint list, added for the same reason
      * `GET /incidents/:id/lupon-packet/download` was: §6 promises a
      * `file_url` while the file must not sit in the web root. Every
-     * authorization check runs again here; nothing is inherited from
-     * whoever generated the file (Rule 30).
+     * download re-checks that the caller is logged in and belongs to
+     * this barangay (Rule 30) rather than trusting the requestor just
+     * holds the URL.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -527,7 +528,7 @@ final class ReportsController
      * present at 0, every calendar day in range present at 0), so neither
      * export format can silently drift from the other or from the screen.
      *
-     * @return array{total:int, byDay:array<string,int>, byType:array<string,int>, byStatus:array<string,int>}
+     * @return array{total:int, byDay:array<string,int>, byType:array<string,int>, byStatus:array<string,int>, byHour:array<int,int>}
      */
     private static function aggregateIncidents(
         PDO $pdo,
@@ -559,6 +560,7 @@ final class ReportsController
             $byDay[$cursor->format('Y-m-d')] = 0;
             $cursor = $cursor->modify('+1 day');
         }
+        $byHour = array_fill(0, 24, 0);
         foreach ($incidents as $row) {
             if (isset($byType[$row['incident_type']])) {
                 $byType[$row['incident_type']]++;
@@ -566,13 +568,18 @@ final class ReportsController
             if (isset($byStatus[$row['status']])) {
                 $byStatus[$row['status']]++;
             }
-            $day = (new \DateTimeImmutable($row['created_at'], $utc))->setTimezone($manila)->format('Y-m-d');
+            $dtManila = (new \DateTimeImmutable($row['created_at'], $utc))->setTimezone($manila);
+            $day = $dtManila->format('Y-m-d');
             if (isset($byDay[$day])) {
                 $byDay[$day]++;
             }
+            $hour = (int) $dtManila->format('G');
+            if (isset($byHour[$hour])) {
+                $byHour[$hour]++;
+            }
         }
 
-        return ['total' => count($incidents), 'byDay' => $byDay, 'byType' => $byType, 'byStatus' => $byStatus];
+        return ['total' => count($incidents), 'byDay' => $byDay, 'byType' => $byType, 'byStatus' => $byStatus, 'byHour' => $byHour];
     }
 
     /**
@@ -600,7 +607,8 @@ final class ReportsController
              FROM incident i
              JOIN dispatch d ON d.incident_id = i.incident_id
              WHERE i.barangay_id = :barangay_id
-               AND i.created_at >= :range_start AND i.created_at < :range_end
+               AND i.created_at >= :range_start
+               AND i.created_at < :range_end
                AND d.arrived_at IS NOT NULL'
         );
         $stmt->execute([
@@ -664,52 +672,212 @@ final class ReportsController
     }
 
     /**
-     * PDF sibling of buildSummaryCsv() — same aggregates, same "exactly
-     * what the summary already returns" content rule, rendered as a
-     * document instead of a spreadsheet via `SimplePdf` (the same
-     * dependency-free writer §6's Lupon packet endpoint already uses —
-     * see that class's own doc for why this project hand-rolls PDF bytes
-     * instead of vendoring a library). 2026-09-06: this format was added
-     * on explicit user request, reversing export()'s prior "CSV is the
-     * only approved format" decision — see that method's doc comment and
-     * DEVLOG.md for the full reasoning either way.
+     * PDF sibling of buildSummaryCsv() — rendered as an executive Philippine
+     * Barangay Statistical & Incident Summary Report via `SimplePdf`.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
     private static function buildSummaryPdf(
         PDO $pdo,
-        int $barangayId,
+        array $identity,
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         \DateTimeZone $manila
     ): string {
-        ['total' => $total, 'byDay' => $byDay, 'byType' => $byType, 'byStatus' => $byStatus]
+        $barangayId = (int) $identity['barangay_id'];
+
+        ['total' => $total, 'byDay' => $byDay, 'byType' => $byType, 'byStatus' => $byStatus, 'byHour' => $byHour]
             = self::aggregateIncidents($pdo, $barangayId, $from, $to, $manila);
         $avgResponseMinutes = self::averageResponseTimeMinutes($pdo, $barangayId, $from, $to, $manila);
 
-        $rangeLabel = $from->format('Y-m-d') . ' to ' . $to->format('Y-m-d');
-        $pdf = SimplePdf::create('Baranguard Incident Report')
-            ->heading('Baranguard Incident Report')
-            ->keyValue('Barangay ID', (string) $barangayId)
-            ->keyValue('Range (Asia/Manila)', $rangeLabel)
-            ->keyValue('Generated (UTC)', gmdate('Y-m-d H:i:s'))
-            ->spacer()
-            ->keyValue('Total incidents', (string) $total)
-            ->keyValue('Resolved cases', (string) $byStatus['resolved'])
-            ->keyValue('Avg. response time', $avgResponseMinutes !== null ? "{$avgResponseMinutes} min" : 'No arrivals in range')
-            ->rule()
-            ->heading('Incidents by Type', 12.0);
-        foreach ($byType as $type => $count) {
-            $pdf->keyValue(self::humanizeEnum($type), (string) $count);
-        }
-        $pdf->rule()->heading('Incidents by Status', 12.0);
-        foreach ($byStatus as $status => $count) {
-            $pdf->keyValue(self::humanizeEnum($status), (string) $count);
-        }
-        $pdf->rule()->heading('Daily Trend', 12.0);
-        foreach ($byDay as $date => $count) {
-            $pdf->keyValue($date, (string) $count);
+        // Fetch Barangay information (name, municipality, province)
+        $brgyStmt = $pdo->prepare('SELECT name, municipality, province FROM barangay WHERE barangay_id = :bid LIMIT 1');
+        $brgyStmt->execute([':bid' => $barangayId]);
+        $brgy = $brgyStmt->fetch(PDO::FETCH_ASSOC) ?: [
+            'name' => 'Barangay #' . $barangayId,
+            'municipality' => 'Municipality',
+            'province' => 'Province',
+        ];
+        $barangayName = (string) ($brgy['name'] ?? ('Barangay #' . $barangayId));
+        $municipality = (string) ($brgy['municipality'] ?? 'Municipality');
+        $province = (string) ($brgy['province'] ?? 'Province');
+
+        // Fetch Desk Officer / Generator Name and Role
+        $genStmt = $pdo->prepare('SELECT full_name, role FROM user WHERE user_id = :uid LIMIT 1');
+        $genStmt->execute([':uid' => $identity['user_id']]);
+        $genRow = $genStmt->fetch(PDO::FETCH_ASSOC);
+        $generatorName = !empty($genRow['full_name']) ? (string) $genRow['full_name'] : 'Desk Officer';
+        $generatorRole = self::humanizeRole((string) ($genRow['role'] ?? $identity['role']));
+
+        // Fetch Punong Barangay (Captain) for attestation
+        $pbStmt = $pdo->prepare(
+            "SELECT full_name FROM user WHERE barangay_id = :bid AND role = 'punong_barangay' AND is_active = 1 LIMIT 1"
+        );
+        $pbStmt->execute([':bid' => $barangayId]);
+        $pbRow = $pbStmt->fetch(PDO::FETCH_ASSOC);
+        $pbName = !empty($pbRow['full_name']) ? (string) $pbRow['full_name'] : 'HON. PUNONG BARANGAY';
+
+        // Count Active Tanod Peacekeeping Force
+        $tanodStmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM user WHERE barangay_id = :bid AND role = 'tanod' AND is_active = 1"
+        );
+        $tanodStmt->execute([':bid' => $barangayId]);
+        $activeTanods = (int) $tanodStmt->fetchColumn();
+
+        // Calculate resolution rate
+        $resolvedCount = (int) ($byStatus['resolved'] ?? 0);
+        $resolutionRate = $total > 0 ? round(($resolvedCount / $total) * 100, 1) : 0.0;
+
+        // Busiest Day
+        $busiestDate = 'N/A';
+        $busiestCount = 0;
+        foreach ($byDay as $d => $c) {
+            if ($c > $busiestCount) {
+                $busiestCount = $c;
+                $busiestDate = $d;
+            }
         }
 
+        // Top Incident Type
+        $sortedTypes = $byType;
+        arsort($sortedTypes);
+        $topType = array_key_first($sortedTypes) ?? 'None';
+        $topCount = reset($sortedTypes) ?: 0;
+        $topShare = $total > 0 ? round(($topCount / $total) * 100, 1) : 0.0;
+
+        // Peak Hour
+        arsort($byHour);
+        $peakHour = array_key_first($byHour) ?? 0;
+        $peakHourCount = reset($byHour) ?: 0;
+        $peakHourStr = $peakHourCount > 0
+            ? sprintf('%02d:00 - %02d:00 (%d %s)', $peakHour, ($peakHour + 1) % 24, $peakHourCount, $peakHourCount === 1 ? 'incident' : 'incidents')
+            : 'No incidents recorded';
+
+        // Pending and In-Progress Load
+        $activeLoad = (int) ($byStatus['pending'] ?? 0)
+            + (int) ($byStatus['investigating'] ?? 0)
+            + (int) ($byStatus['dispatched'] ?? 0);
+
+        $nowManila = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))
+            ->setTimezone($manila)
+            ->format('d M Y, g:i A');
+        $rangeLabel = $from->format('d M Y') . ' to ' . $to->format('d M Y') . ' (Asia/Manila)';
+
+        $pdf = SimplePdf::create("Baranguard Statistical Report - Barangay {$barangayName}")
+            // 1. Official Republic Header
+            ->center('REPUBLIC OF THE PHILIPPINES', 8.5, false, [0.35, 0.40, 0.48], 11.0)
+            ->center('PROVINCE OF ' . strtoupper($province), 8.5, false, [0.35, 0.40, 0.48], 11.0)
+            ->center('MUNICIPALITY OF ' . strtoupper($municipality), 8.5, false, [0.35, 0.40, 0.48], 11.0)
+            ->center('BARANGAY ' . strtoupper($barangayName), 11.0, true, [0.10, 0.16, 0.28], 15.0)
+            ->center('OFFICE OF THE LUPONG TAGAPAMAYAPA & BARANGAY PEACEKEEPING ACTION TEAM', 7.5, true, [0.22, 0.32, 0.50], 12.0)
+            ->rule(1.5, [0.12, 0.23, 0.43], 6.0)
+            ->rule(0.5, [0.70, 0.75, 0.82], 8.0)
+
+            // 2. Title Banner
+            ->banner('INCIDENT & PEACEKEEPING OPERATIONS STATISTICAL REPORT', 9.5, [0.12, 0.23, 0.43], [1.0, 1.0, 1.0], 20.0, 24.0)
+
+            // 3. Report Metadata
+            ->keyValue('Reporting Coverage', $rangeLabel)
+            ->keyValue('Prepared By', "{$generatorName} ({$generatorRole})")
+            ->keyValue('Report Generated', "{$nowManila} (Ref: BRGY-{$barangayId}-RPT)")
+            ->spacer(6.0)
+
+            // 4. Executive KPI Grid (4 Metrics)
+            ->kpiGrid([
+                [
+                    'label' => 'Total Incidents',
+                    'value' => (string) $total,
+                    'sub' => 'Logged during coverage',
+                ],
+                [
+                    'label' => 'Resolution Rate',
+                    'value' => $resolutionRate . '%',
+                    'sub' => "{$resolvedCount} of {$total} resolved",
+                ],
+                [
+                    'label' => 'Avg Response Time',
+                    'value' => $avgResponseMinutes !== null ? "{$avgResponseMinutes} min" : 'N/A',
+                    'sub' => 'Dispatch to arrival',
+                ],
+                [
+                    'label' => 'Tanod Force',
+                    'value' => (string) $activeTanods,
+                    'sub' => 'Active peacekeeping unit',
+                ],
+            ], 48.0)
+            ->spacer(8.0)
+
+            // 5. Operational Highlights
+            ->subheading('OPERATIONAL HIGHLIGHTS & PATTERNS', 10.0)
+            ->keyValue('Leading Incident Category', self::humanizeEnum($topType) . " ({$topCount} cases, {$topShare}% of total)")
+            ->keyValue('Peak Incident Hours', $peakHourStr)
+            ->keyValue('Highest Activity Date', $busiestCount > 0 ? "{$busiestDate} ({$busiestCount} cases logged)" : 'Evenly distributed / No incidents')
+            ->keyValue('Active Caseload Requiring Action', "{$activeLoad} ongoing cases (Pending/Dispatched/Investigating)")
+            ->spacer(8.0)
+
+            // 6. Section 1: Classification of Incidents Table
+            ->subheading('1. CLASSIFICATION OF REPORTED INCIDENTS', 10.0)
+            ->tableHeader(['Incident Classification / Type', 'Recorded Cases', 'Percentage Share'], [0.55, 0.22, 0.23], ['left', 'right', 'right'], 8.5, 18.0);
+
+        foreach ($byType as $type => $count) {
+            $shareStr = $total > 0 ? sprintf('%.1f%%', ($count / $total) * 100) : '0.0%';
+            $pdf->tableRow([self::humanizeEnum($type), (string) $count, $shareStr], [0.55, 0.22, 0.23], ['left', 'right', 'right']);
+        }
+        $pdf->tableRow(['TOTAL INCIDENTS RECORDED', (string) $total, '100.0%'], [0.55, 0.22, 0.23], ['left', 'right', 'right'], true, true)
+            ->spacer(10.0)
+
+            // 7. Section 2: Case Disposition & Status Breakdown Table
+            ->subheading('2. CASE DISPOSITION & RESOLUTION BREAKDOWN', 10.0)
+            ->tableHeader(['Case Disposition / Status', 'Case Count', 'Resolution Share'], [0.55, 0.22, 0.23], ['left', 'right', 'right'], 8.5, 18.0);
+
+        foreach ($byStatus as $status => $count) {
+            $statusShareStr = $total > 0 ? sprintf('%.1f%%', ($count / $total) * 100) : '0.0%';
+            $pdf->tableRow([self::humanizeEnum($status), (string) $count, $statusShareStr], [0.55, 0.22, 0.23], ['left', 'right', 'right']);
+        }
+        $pdf->tableRow(['TOTAL CASES PROCESSED', (string) $total, '100.0%'], [0.55, 0.22, 0.23], ['left', 'right', 'right'], true, true)
+            ->spacer(10.0)
+
+            // 8. Section 3: Daily Activity Flow Table
+            ->subheading('3. DAILY INCIDENT FLOW', 10.0)
+            ->tableHeader(['Date (YYYY-MM-DD)', 'Day of Week', 'Daily Cases', 'Cumulative Cases'], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right'], 8.5, 18.0);
+
+        $cumCount = 0;
+        foreach ($byDay as $date => $count) {
+            $cumCount += $count;
+            $dayOfWeek = (new \DateTimeImmutable($date))->format('l');
+            $pdf->tableRow([$date, $dayOfWeek, (string) $count, (string) $cumCount], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right']);
+        }
+        $pdf->tableRow(['PERIOD TOTAL', '-', (string) $total, (string) $total], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right'], true, true)
+            ->spacer(12.0)
+
+            // 9. Attestation & Dual Sign-Off Block
+            ->paragraph(
+                'OFFICIAL ATTESTATION: I hereby certify under oath that the statistics, incident counts, and operational performance indicators set forth in this summary report are faithfully compiled from official records logged within the Baranguard Incident Management System for the stated period.',
+                7.8
+            )
+            ->spacer(10.0)
+            ->signatureBlock(
+                'PREPARED BY (DESK OFFICER):',
+                $generatorName,
+                $generatorRole,
+                'ATTESTED & APPROVED BY:',
+                $pbName,
+                'PUNONG BARANGAY',
+                58.0
+            );
+
         return $pdf->render();
+    }
+
+    /** Human-readable display label for user roles. */
+    private static function humanizeRole(string $role): string
+    {
+        return match ($role) {
+            'punong_barangay' => 'Punong Barangay',
+            'admin' => 'Barangay Administrator / Desk Officer',
+            'tanod' => 'Barangay Tanod Officer',
+            default => ucfirst(str_replace('_', ' ', $role)),
+        };
     }
 
     /** 'physical_injury' -> 'Physical injury' — for the PDF's human-readable labels only; the CSV keeps raw enum values. */
