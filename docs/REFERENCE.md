@@ -131,19 +131,36 @@ instead).
 
 ---
 
-## 5. Endpoints (75 live `/api/v1` routes, all built)
+## 5. Endpoints (77 live `/api/v1` routes, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
 
 **Auth** login · logout · change-password
 **Incidents** list (+`q=` search since the UX overhaul) · show · create ·
-nearby · evidence · status (also flips a linked finalized blotter's
-case_status to `resolved`, non-destructive, audited) · blotter ·
-finalize · amend (+optional forward-only case_status transition) ·
-lupon-packet (+download) · redact · ai-draft (+approve,
-regenerate-summary, translate, extraction+approve — extraction is
-independent of redaction, migration 0008)
+**update** (`PATCH /incidents/:id`, 2026-09-06) · nearby · evidence ·
+status (also flips a linked finalized blotter's case_status to
+`resolved`, non-destructive, audited) · blotter · finalize · amend
+(+optional forward-only case_status transition) · lupon-packet
+(+download) · redact · ai-draft (+approve, regenerate-summary, translate,
+extraction+approve — extraction is independent of redaction, migration
+0008)
+
+> **`PATCH /incidents/:id` is an operational-correction endpoint, NOT a
+> narrative editor.** Admin+Secretary may set `priority`,
+> `incident_type`, `location_description`; `complainant_name` is
+> **Secretary-only** (migration 0008's party fields are extracted from
+> RAW narrative and preserve exactly the identifiers redaction strips, so
+> they carry `raw_narrative`'s protection — the same rule
+> `IncidentsController::show()` applies). Sending `raw_narrative` or
+> `redacted_narrative` is a hard 400: Rule 4 keeps
+> `ai-draft/approve` the only writer of `redacted_narrative`, and the
+> legal record is corrected through blotter amend, which has a
+> `blotter_revision` trail this endpoint does not.
+> `Idempotency-Key` required. Audit metadata records changed field
+> **names**, never values (Rule 8). See `backend/DEVLOG.md`'s "Review of
+> the second Antigravity pass" for what the first draft of this endpoint
+> did and why it never shipped.
 **Dispatch** list (tanod_name joined) · create · cancel · status
 **GPS** live · history · post · `/sync/batch`
 **Scheduling** shifts (list/create/update) · swap requests · fatigue flags
@@ -155,8 +172,31 @@ independent of redaction, migration 0008)
 suspend/unsuspend alongside the existing is_active toggle) ·
 `/citizen-reports` (+`/:id/convert` since 2026-09-05 — always speced in
 §6, never built until now; see `backend/DEVLOG.md`'s workflow-audit
-entry) · `/duty-status` · `/blotter` (list gains `q=`,
-case_status, display_id, location_description)
+entry) · `/duty-status` · `/blotter` (list gains `q=`, `status=`,
+case_status, display_id, location_description) · **`POST /blotter`**
+(walk-in entry, 2026-09-06)
+
+> **`POST /blotter` — walk-in entry, Secretary-only.** A complaint brought
+> to the barangay hall in person, with no prior incident report and no
+> dispatch. Creates the parent `incident` (structurally required —
+> `blotter_record.incident_id` is NOT NULL UNIQUE) plus a finalized
+> `blotter_record`, in one transaction. **Admin is excluded even though
+> Admin can read the ledger**: the row is born finalized, which is exactly
+> the capability §3 denies Admin on `finalize`/`amend`.
+> `redacted_narrative` is left NULL (Rule 4); the Secretary's text goes to
+> `raw_narrative` and `blotter_record.narrative_summary`.
+> `case_status` always starts `active`, never client-chosen (§5 makes it
+> forward-only past `active`). `Idempotency-Key` required, replayed on
+> `incident.client_event_id` exactly as `POST /incidents` does.
+>
+> **Known consequence:** the parent incident is created with
+> `status='resolved'` — the enum is only (pending|dispatched|resolved) and
+> `pending` would inject a phantom emergency into the Dispatch Center
+> queue. **Walk-in entries therefore count as resolved incidents in
+> dashboard and analytics totals.** Response-time metrics are unaffected
+> (they need a dispatch row, which a walk-in never has). Giving walk-ins
+> their own state means a new enum value → a migration plus an
+> architecture review, deliberately not slipped in.
 **SMS** `/sms/logs` (read-only activity log, unchanged) ·
 `/sms/conversations` (+`/:phone/messages`, +`/:phone/resolve` — grouped
 by contact, Admin-only) · `/sms/send` · `/sms/broadcast` (both
