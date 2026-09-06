@@ -13,6 +13,7 @@ import {
   logout, ApiClientError,
 } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
+import { PageHeader } from '../components/PageHeader.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
@@ -109,7 +110,13 @@ function formatRelativeTime(isoStart, isoEnd) {
  * @param {() => void} onLoggedOut
  * @param {(page: string, param?: any) => void} navigate
  */
-export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) {
+/**
+ * @param {number} [initialIncidentId] optional deep link, e.g. from Citizen
+ *   Reports Inbox's "View in Incident Management" after a conversion —
+ *   opens straight to that incident's detail pane rather than the default
+ *   full-width list view. Passed through by main.js as the route param.
+ */
+export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, initialIncidentId) {
   root.innerHTML = '';
 
   const isAdmin = user.role === 'admin';
@@ -135,9 +142,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
   const { header, content } = shell;
   root.appendChild(shell.el);
 
-  // Hide the default page header to give full visual fidelity to the in-page operational header
-  header.style.display = 'none';
-
   // Mark containers to lock outer page scrolling so only the table is scrollable
   content.classList.add('incident-page-container');
   if (content.parentElement) {
@@ -160,77 +164,32 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
   let eligibleTanods = [];
   let tanodRosterById = new Map();
 
-  // --- Top Section: Title & Actions ---
-  const topHeader = document.createElement('div');
-  topHeader.className = 'incident-header-top';
-
-  const titleBlock = document.createElement('div');
-  titleBlock.className = 'incident-title-block';
-  const title = document.createElement('h1');
-  title.className = 'incident-page-title';
-  title.textContent = 'Incident Management';
-  const subtitle = document.createElement('p');
-  subtitle.className = 'incident-page-subtitle';
-  subtitle.textContent = 'Track and manage all reported incidents';
-  titleBlock.append(title, subtitle);
-  topHeader.appendChild(titleBlock);
+  // --- Standard Tokenized Page Header ---
+  const pageHeader = PageHeader({
+    title: 'Incident Management',
+    subtitle: 'Track and manage all reported incidents',
+    icon: icons.alertTriangle,
+  });
 
   if (canCreate) {
     const newIncidentBtn = document.createElement('button');
     newIncidentBtn.type = 'button';
-    newIncidentBtn.className = 'btn-new-incident';
+    newIncidentBtn.className = 'btn-blotter-new';
     newIncidentBtn.innerHTML = `${icons.plus(16)} <span>New Incident</span>`;
     newIncidentBtn.addEventListener('click', () => {
       if (activeViewMode === 'new') {
-        activeViewMode = 'detail';
+        closeDetailPane();
       } else {
         activeViewMode = 'new';
         selectedIncidentId = null;
+        layout.classList.add('has-detail');
         highlightSelectedRow();
+        renderRightPane();
       }
-      renderRightPane();
     });
-    topHeader.appendChild(newIncidentBtn);
+    pageHeader.actions.appendChild(newIncidentBtn);
   }
-
-  // --- Segmented Status Counters Strip ---
-  const counterStrip = document.createElement('div');
-  counterStrip.className = 'incident-counter-strip';
-
-  const counterPills = {
-    active: createCounterPill('Active', 'incident-counter-pill--active', 'pending'),
-    responding: createCounterPill('Responding', 'incident-counter-pill--responding', 'dispatched'),
-    resolved: createCounterPill('Resolved', 'incident-counter-pill--resolved', 'resolved'),
-    closed: createCounterPill('Closed', 'incident-counter-pill--closed', 'resolved'),
-  };
-
-  function createCounterPill(label, variantClass, statusCode) {
-    const pill = document.createElement('button');
-    pill.type = 'button';
-    pill.className = `incident-counter-pill ${variantClass}`;
-    pill.innerHTML = `<span class="incident-counter-count">0</span> ${label}`;
-    pill.addEventListener('click', () => {
-      if (statusFilter === statusCode) {
-        statusFilter = undefined;
-        statusSelect.value = '';
-      } else {
-        statusFilter = statusCode;
-        statusSelect.value = statusCode;
-      }
-      currentPage = 1;
-      syncCounterPillHighlight();
-      load();
-    });
-    counterStrip.appendChild(pill);
-    return pill;
-  }
-
-  function syncCounterPillHighlight() {
-    counterPills.active.classList.toggle('is-active-filter', statusFilter === 'pending');
-    counterPills.responding.classList.toggle('is-active-filter', statusFilter === 'dispatched');
-    counterPills.resolved.classList.toggle('is-active-filter', statusFilter === 'resolved' && statusSelect.value !== 'closed');
-    counterPills.closed.classList.toggle('is-active-filter', statusSelect.value === 'closed');
-  }
+  header.appendChild(pageHeader.el);
 
   // --- Mobile View Toggle Bar (Responsive Screens) ---
   const mobileToggleBar = document.createElement('div');
@@ -243,15 +202,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
   btnDetails.type = 'button';
   btnDetails.className = 'incident-mobile-toggle-btn';
   btnDetails.textContent = 'Incident Details';
+  mobileToggleBar.append(btnList, btnDetails);
+  content.appendChild(mobileToggleBar);
 
-  // Layout will be declared next, so attach handlers referencing layout
-  // --- Sticky Top Header & Status Counters Wrap ---
-  const headerStickyWrap = document.createElement('div');
-  headerStickyWrap.className = 'incident-header-sticky-container';
-  headerStickyWrap.append(topHeader, counterStrip, mobileToggleBar);
-  content.appendChild(headerStickyWrap);
-
-  // --- Main Split Layout ---
+  // --- Main Responsive Split Layout (Full width at first; shrinks when incident selected) ---
   const layout = document.createElement('div');
   layout.className = 'incident-layout mobile-view-list';
   content.appendChild(layout);
@@ -317,7 +271,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
     statusSelect.value = '';
     statusFilter = undefined;
     currentPage = 1;
-    syncCounterPillHighlight();
     load();
   });
   filterBar.appendChild(funnelBtn);
@@ -371,7 +324,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
       statusFilter = val || undefined;
     }
     currentPage = 1;
-    syncCounterPillHighlight();
     load();
   });
   filterBar.appendChild(statusSelect);
@@ -400,6 +352,17 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
   // --- Initial Data Preloading ---
   initReferenceData();
 
+  // Deep link: open straight to the requested incident. Independent of
+  // load()'s own list-matching logic (which only opens a row already
+  // present in the CURRENT filtered/paginated page) so this works
+  // regardless of what page/filter the list happens to be on —
+  // selectIncident() only needs an incidentId, it re-fetches the detail
+  // itself via getIncident().
+  if (initialIncidentId != null) {
+    activeViewMode = 'detail';
+    selectIncident({ incidentId: initialIncidentId });
+  }
+
   async function initReferenceData() {
     try {
       const bRes = await getBarangays();
@@ -415,7 +378,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
       loadTanodRoster();
     }
 
-    refreshCounterCounts();
     load();
   }
 
@@ -433,22 +395,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
     }
   }
 
-  async function refreshCounterCounts() {
-    try {
-      const [pending, dispatched, resolved] = await Promise.all([
-        getIncidents({ status: 'pending', limit: 1 }),
-        getIncidents({ status: 'dispatched', limit: 1 }),
-        getIncidents({ status: 'resolved', limit: 1 }),
-      ]);
-      counterPills.active.innerHTML = `<span class="incident-counter-count">${pending.total}</span> Active`;
-      counterPills.responding.innerHTML = `<span class="incident-counter-count">${dispatched.total}</span> Responding`;
-      counterPills.resolved.innerHTML = `<span class="incident-counter-count">${resolved.total}</span> Resolved`;
-      counterPills.closed.innerHTML = `<span class="incident-counter-count">${Math.min(1, resolved.total)}</span> Closed`;
-    } catch {
-      // Keep defaults
-    }
-  }
-
   // --- Load Incidents List ---
   async function load() {
     renderLoading(tableContainer);
@@ -463,22 +409,22 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
       lastItems = result.items;
       renderTable(result.items, result.total);
 
-      // Auto-select first item if none selected and in detail mode
+      // Only maintain detail pane if an incident is currently selected or user is adding new
       if (activeViewMode === 'detail') {
         if (selectedIncidentId != null) {
           const matching = lastItems.find((r) => r.incidentId === selectedIncidentId);
           if (matching) {
             selectIncident(matching);
-          } else if (lastItems.length > 0) {
-            selectIncident(lastItems[0]);
           } else {
-            renderPlaceholder();
+            closeDetailPane();
           }
-        } else if (lastItems.length > 0) {
-          selectIncident(lastItems[0]);
         } else {
-          renderPlaceholder();
+          // At first, table covers entire width!
+          closeDetailPane();
         }
+      } else if (activeViewMode === 'new') {
+        layout.classList.add('has-detail');
+        renderNewIncidentForm();
       }
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Could not load incidents.';
@@ -494,9 +440,13 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
       rowKey: (row) => row.incidentId,
       selectedKey: selectedIncidentId,
       onRowClick: (row) => {
+        if (selectedIncidentId === row.incidentId && activeViewMode === 'detail' && layout.classList.contains('has-detail')) {
+          closeDetailPane();
+          return;
+        }
         activeViewMode = 'detail';
         selectIncident(row);
-        if (window.innerWidth <= 900) {
+        if (window.innerWidth <= 1024) {
           btnDetails.click();
         }
       },
@@ -585,9 +535,13 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
         eyeBtn.innerHTML = icons.eye(16);
         eyeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (selectedIncidentId === row.incidentId && activeViewMode === 'detail' && layout.classList.contains('has-detail')) {
+            closeDetailPane();
+            return;
+          }
           activeViewMode = 'detail';
           selectIncident(row);
-          if (window.innerWidth <= 900) {
+          if (window.innerWidth <= 1024) {
             btnDetails.click();
           }
         });
@@ -608,9 +562,23 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
     if (idx > -1 && rows[idx]) rows[idx].classList.add('is-selected');
   }
 
+  function closeDetailPane() {
+    selectedIncidentId = null;
+    currentDetail = null;
+    activeViewMode = 'detail';
+    layout.classList.remove('has-detail');
+    rightPanel.innerHTML = '';
+    highlightSelectedRow();
+    if (window.innerWidth <= 1024) {
+      btnList.click();
+    }
+  }
+
   // --- Select Incident & Load Details ---
   async function selectIncident(row) {
     selectedIncidentId = row.incidentId;
+    activeViewMode = 'detail';
+    layout.classList.add('has-detail');
     highlightSelectedRow();
 
     rightPanel.innerHTML = '';
@@ -644,16 +612,18 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
 
   function renderRightPane() {
     if (activeViewMode === 'new') {
+      layout.classList.add('has-detail');
       renderNewIncidentForm();
     } else if (activeViewMode === 'edit' && currentDetail) {
+      layout.classList.add('has-detail');
       const row = lastItems.find((r) => r.incidentId === currentDetail.incidentId) || currentDetail;
       renderEditIncidentForm(row, currentDetail);
     } else if (selectedIncidentId != null) {
       const row = lastItems.find((r) => r.incidentId === selectedIncidentId);
       if (row) selectIncident(row);
-      else renderPlaceholder();
+      else closeDetailPane();
     } else {
-      renderPlaceholder();
+      closeDetailPane();
     }
   }
 
@@ -705,11 +675,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
     closeBtn.className = 'btn-incident-close';
     closeBtn.setAttribute('aria-label', 'Close incident view');
     closeBtn.innerHTML = icons.x(16);
-    closeBtn.addEventListener('click', () => {
-      selectedIncidentId = null;
-      highlightSelectedRow();
-      renderPlaceholder();
-    });
+    closeBtn.addEventListener('click', closeDetailPane);
 
     // editBtn is null for a read-only role; append() would otherwise
     // insert the literal string "null" as a text node.
@@ -1105,10 +1071,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
     cancelBtn.type = 'button';
     cancelBtn.className = 'incident-form-cancel';
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', () => {
-      activeViewMode = 'detail';
-      renderRightPane();
-    });
+    cancelBtn.addEventListener('click', closeDetailPane);
 
     formActions.append(submitBtn, cancelBtn);
 
@@ -1135,7 +1098,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
         showToast('Incident logged successfully.', { variant: 'success' });
         activeViewMode = 'detail';
         await load();
-        refreshCounterCounts();
       } catch (err) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Log Incident';
@@ -1254,7 +1216,11 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
     cancelBtn.textContent = 'Cancel';
     cancelBtn.addEventListener('click', () => {
       activeViewMode = 'detail';
-      renderRightPane();
+      if (selectedIncidentId) {
+        renderRightPane();
+      } else {
+        closeDetailPane();
+      }
     });
 
     formActions.append(submitBtn, cancelBtn);
@@ -1293,7 +1259,11 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
     overlay.className = 'incident-modal-overlay';
     activeModalEl = overlay;
 
-    const phoneStr = contactNumber || '0917-555-0192';
+    // No fabricated fallback number — a Tanod with no contact number on
+    // file gets an honest empty state, not a placeholder phone number
+    // presented as if it were real (Rule 6: no hardcoded identities).
+    const hasContact = Boolean(contactNumber);
+    const phoneStr = contactNumber || '';
 
     overlay.innerHTML = `
       <div class="incident-modal-box">
@@ -1305,9 +1275,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
           <div class="incident-tanod-avatar" style="width: 40px; height: 40px;">${icons.users(20)}</div>
           <div>
             <div style="font-weight: 600; font-size: 0.9375rem; color: var(--color-text-primary);">${officerName}</div>
-            <div style="font-size: 0.8125rem; color: var(--color-text-secondary);">Phone: ${phoneStr}</div>
+            <div style="font-size: 0.8125rem; color: var(--color-text-secondary);">${hasContact ? `Phone: ${phoneStr}` : 'No contact number on file'}</div>
           </div>
         </div>
+        ${hasContact ? `
         <div class="incident-contact-options">
           <a href="tel:${phoneStr.replace(/[^0-9+]/g, '')}" class="incident-contact-btn">
             ${icons.phone(22)}
@@ -1318,6 +1289,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
             <span>Send SMS Alert</span>
           </button>
         </div>
+        ` : `
+        <p class="note" style="margin: 0.5rem 0 0;">Ask this Tanod's supervisor for an alternate contact, or update their profile in User Management.</p>
+        `}
+        ${hasContact ? `
         <div class="sms-compose-section" style="display: none; flex-direction: column; gap: 8px; margin-top: 8px;">
           <label class="incident-form-label">SMS Message Content</label>
           <textarea class="incident-form-textarea sms-text-input" rows="3">[Baranguard] Alert regarding Incident ${incidentCode}: Immediate status update requested.</textarea>
@@ -1326,6 +1301,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
             <button type="button" class="btn-action-dispatch btn-sms-send" style="height: 38px; padding: 0 16px; flex: 0 0 auto;">Send SMS</button>
           </div>
         </div>
+        ` : ''}
       </div>
     `;
 
@@ -1334,40 +1310,44 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
       if (e.target === overlay) closeActiveModal();
     });
 
-    const smsSection = overlay.querySelector('.sms-compose-section');
-    overlay.querySelector('.btn-sms-option').addEventListener('click', () => {
-      smsSection.style.display = 'flex';
-      overlay.querySelector('.sms-text-input').focus();
-    });
+    // The SMS compose section (and its trigger) only exists in the markup
+    // when hasContact is true — nothing to wire up otherwise.
+    if (hasContact) {
+      const smsSection = overlay.querySelector('.sms-compose-section');
+      overlay.querySelector('.btn-sms-option').addEventListener('click', () => {
+        smsSection.style.display = 'flex';
+        overlay.querySelector('.sms-text-input').focus();
+      });
 
-    overlay.querySelector('.btn-sms-cancel').addEventListener('click', () => {
-      smsSection.style.display = 'none';
-    });
+      overlay.querySelector('.btn-sms-cancel').addEventListener('click', () => {
+        smsSection.style.display = 'none';
+      });
 
-    overlay.querySelector('.btn-sms-send').addEventListener('click', async () => {
-      const msg = overlay.querySelector('.sms-text-input').value.trim();
-      if (!msg) {
-        showToast('Please enter an SMS message.', { variant: 'error' });
-        return;
-      }
-      const sendBtn = overlay.querySelector('.btn-sms-send');
-      sendBtn.disabled = true;
-      sendBtn.textContent = 'Sending...';
-      try {
-        await sendSms({
-          phoneNumber: phoneStr.replace(/[^0-9+]/g, ''),
-          message: msg,
-          incidentId,
-          idempotencyKey: crypto.randomUUID(),
-        });
-        showToast(`SMS alert dispatched to ${officerName}.`, { variant: 'success' });
-        closeActiveModal();
-      } catch (err) {
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send SMS';
-        showToast(err instanceof ApiClientError ? err.message : 'Could not send SMS.', { variant: 'error' });
-      }
-    });
+      overlay.querySelector('.btn-sms-send').addEventListener('click', async () => {
+        const msg = overlay.querySelector('.sms-text-input').value.trim();
+        if (!msg) {
+          showToast('Please enter an SMS message.', { variant: 'error' });
+          return;
+        }
+        const sendBtn = overlay.querySelector('.btn-sms-send');
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Sending...';
+        try {
+          await sendSms({
+            phoneNumber: phoneStr.replace(/[^0-9+]/g, ''),
+            message: msg,
+            incidentId,
+            idempotencyKey: crypto.randomUUID(),
+          });
+          showToast(`SMS dispatch alert sent to ${officerName}.`, { variant: 'success' });
+          closeActiveModal();
+        } catch (err) {
+          sendBtn.disabled = false;
+          sendBtn.textContent = 'Send SMS';
+          showToast(err instanceof ApiClientError ? err.message : 'Could not send SMS alert.', { variant: 'error' });
+        }
+      });
+    }
 
     document.body.appendChild(overlay);
   }
@@ -1459,29 +1439,16 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate) 
       }
     } else if (e.key === 'Escape') {
       closeActiveModal();
-      if (activeViewMode !== 'detail') {
-        activeViewMode = 'detail';
-        renderRightPane();
-      } else if (selectedIncidentId != null) {
-        selectedIncidentId = null;
-        highlightSelectedRow();
-        renderPlaceholder();
+      if (activeViewMode !== 'detail' || selectedIncidentId != null || layout.classList.contains('has-detail')) {
+        closeDetailPane();
       }
     }
   }
   window.addEventListener('keydown', handleKeyDown);
 
-  // --- Placeholder State ---
+  // --- Placeholder / Closed State (Collapses to full-width table) ---
   function renderPlaceholder() {
-    rightPanel.innerHTML = '';
-    const card = document.createElement('div');
-    card.className = 'incident-placeholder-card';
-    card.innerHTML = `
-      <div class="incident-placeholder-icon">${icons.fileText(36)}</div>
-      <h3 class="incident-placeholder-title">Select an Incident</h3>
-      <p class="incident-placeholder-text">Choose a record from the list to view full details, assigned Tanod, and dispatch controls.</p>
-    `;
-    rightPanel.appendChild(card);
+    closeDetailPane();
   }
 
   function renderDetailError(message, row) {
