@@ -8570,3 +8570,60 @@ what the user's own report surfaced** — same deferral as every round today,
 though this round is proof of exactly why that deferral is a real gap: a
 hard crash reached the user's browser that every static check available
 missed, because the check itself was using the wrong parse mode.
+
+---
+
+## 2026-09-06 (6) — Checked further uncommitted edits: 2 wiring failures, a stale invented shadow-token set, an alert() regression
+
+User asked to check the latest round of uncommitted edits (SMS Monitor's
+new date-range picker, User Management's chip-to-dropdown refactor, and a
+substantial new Audit Log redesign with its own audit-log.css). Ran the
+corrected verification method from entry (5) first, given last round's
+lesson: `node --input-type=module --check` across every changed file and
+a full `web/src` sweep — clean, no repeat of the duplicate-declaration
+bug.
+
+Wiring: 477/1 -> 480/0 after two fixes in the new `audit-log.js`/
+`audit-log.css`:
+
+- `exportBtn`/`doneBtn` used `.secondary`, a class that doesn't exist
+  anywhere in this app. The real, established convention for a
+  secondary-style button (used by every cancel/close/export button this
+  session has touched) is `.ghost`. Renamed both.
+- `.date-range-popover__error` had no rule at all — its five sibling
+  `__title`/`__grid`/`__field`/`__label`/`__input`/`__actions` rules all
+  existed, `__error` was simply never written. Added.
+
+Also found while reading the new CSS, not caught by any check:
+**`audit-log.css` invented four shadow token names —
+`--shadow-sm`/`-md`/`-lg`/`-xl` — that don't exist anywhere in
+`base.css`.** Real dark-mode-aware shadow tokens exist
+(`--shadow-card`/`-elevated`/`-floating`, given real dark variants in an
+earlier commit today), so every `var(--shadow-sm, <hardcoded fallback>)`
+in this file was silently, permanently stuck on its light-mode-only
+fallback — the CSS is valid and the fallback renders fine, so nothing
+*fails*, but these six shadows would never have picked up proper
+dark-mode treatment. Remapped each to the real tier matching its actual
+visual weight (checked context per occurrence, not just name similarity):
+sm→card (resting card shadows), md/lg→elevated (hover state, popover),
+xl→floating (modal, matching how `ConfirmDialog.css` already treats its
+own modal).
+
+**Two native `alert()` calls** (CSV-export-empty, copy-to-clipboard-
+failed) — every other screen this session has touched uses `showToast()`;
+a blocking browser `alert()` is a jarring, inconsistent regression from
+that pattern. Replaced both.
+
+Reviewed and deliberately left alone: Audit Log's search box and CSV
+export both only operate on the current 25-row page (`GET /audit-log` has
+no `q=` param, and `currentItems` is exactly the last-fetched page) — this
+is not something this pass introduced. Checked `blotter-list.js`'s own
+`handleExport()`: it does the identical thing. Pre-existing, established
+pattern across this app, not a fresh bug.
+
+Verified: `node --input-type=module --check` (every changed file + a full
+`web/src` sweep), `node --check`, `verify-web-wiring.mjs` 480/480, the
+undeclared-binding sweep, CSS braces balanced. Every `apiClient.js` call
+signature in the touched files checked against the real function
+signatures (no repeat of the `sendSms`-parameter-name class of bug). No
+browser pass — same deferral as every round today.
