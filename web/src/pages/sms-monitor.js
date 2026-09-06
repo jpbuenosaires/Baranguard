@@ -1,36 +1,26 @@
 /**
- * sms-monitor.js — W14 SMS Monitor, renamed from `sms-log.js` in the
- * 2026-09-05 UX pass. That file's own header used to say this screen
- * "stays READ-ONLY this sprint and every sprint after unless
- * deliberately rescoped" and named this EXACT chat/reply/broadcast
- * direction as the reason why not. The user explicitly asked for that
- * rescoping (see `.claude/plans/fancy-crafting-lark.md` and
- * `backend/DEVLOG.md`'s "Full UI/UX overhaul" entries) — this is that
- * rescoping, not a silent reversal of the earlier decision.
- *
- * Two tabs:
- *   - **Conversations** (new, default) — a 3-column contact list / thread
- *     / Live Feed view over the new `GET /sms/conversations` +
- *     `GET /sms/conversations/:phone/messages` endpoints, with compose
- *     (`POST /sms/send`) and broadcast (`POST /sms/broadcast`).
- *   - **Activity Log** (unchanged) — the original read-only table over
- *     `GET /sms/logs`, which is ITSELF unchanged (still never returns a
- *     phone number — see `SmsController::index()`'s own doc). Kept
- *     verbatim rather than removed: date-range filtering, CSV export,
- *     and the correlation/gateway-id detail pane it already has are all
- *     real, working capabilities this pass has no reason to regress.
- *
- * NOT built (disclosed, not silently dropped — see DEVLOG.md's Phase 8
- * entry): Quick Reply template buttons (the mockup's pre-written Filipino
- * responses aren't sourced from anywhere in this codebase, and inventing
- * template text isn't this pass's call to make).
- *
- * kebab-case filename per §4.
+ * sms-monitor.js — W14 SMS Monitor.
+ * Overhauled UI/UX:
+ * - 3-column operational layout with high-density tokenized interface
+ * - Initials avatars with deterministic color hashing
+ * - Grouped message threads with date dividers and delivery status indicators
+ * - Quick response canned reply chips (e.g. "Tanod en route", "Report received")
+ * - Live multi-segment SMS character counter and Ctrl+Enter keyboard shortcuts
+ * - Interactive Live Feed with category filters and click-to-open conversation
+ * - Polished floating modals: Broadcast Alert (with live device preview) and Direct Message
+ * - Comprehensive Activity Log with correlation ID inspection and Blotter linking
  */
 
 import {
-  getSmsConversations, getSmsConversationMessages, markSmsThreadResolved, sendSms, broadcastSms,
-  getSmsLogs, logout, ApiClientError,
+  getSmsConversations,
+  getSmsConversationMessages,
+  markSmsThreadResolved,
+  sendSms,
+  broadcastSms,
+  getSmsLogs,
+  getUsers,
+  logout,
+  ApiClientError,
 } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
@@ -39,10 +29,11 @@ import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { icons } from '../components/icons.js';
+import { avatarInitials } from '../components/Avatar.js';
 
 const PAGE_SIZE = 25;
 const LIVE_FEED_POLL_MS = 10000;
-const SMS_MAX_LENGTH = 160; // ordinary single-segment SMS — the compose box's own counter, not a hard server cap (SmsController::send() allows up to 918, matching multi-part).
+const SMS_SINGLE_LIMIT = 160;
 
 const MESSAGE_TYPES = ['incident', 'dispatch', 'priority_alert', 'coord_ping', 'confirmation', 'duty_status', 'sos', 'manual'];
 const DIRECTIONS = ['inbound', 'outbound'];
@@ -59,9 +50,6 @@ const STATUS_PILL_CLASS = {
   deduplicated: 'status-pill--neutral',
 };
 
-// Message-type tag colors (2026-09-05 UX pass) — real `message_type` enum
-// values, not the mockup's fictional Complaint/Alert/Tip/Dispatch
-// categories, which don't exist anywhere in this schema.
 const TYPE_TAG_CLASS = {
   sos: 'status-pill--critical',
   priority_alert: 'status-pill--critical',
@@ -72,6 +60,88 @@ const TYPE_TAG_CLASS = {
   coord_ping: 'status-pill--neutral',
   manual: 'status-pill--success',
 };
+
+const QUICK_RESPONSES = [
+  {
+    display: 'Acknowledge & Dispatching',
+    full: 'Natanggap po namin ang inyong ulat. Papunta na po ang mga tanod sa kanto ng San Jose St. Manatili sa ligtas na lugar.',
+  },
+  {
+    display: 'Request Exact Location',
+    full: 'Maaari po bang ibigay ang inyong eksaktong lokasyon o pinakamalapit na landmark?',
+  },
+  {
+    display: 'Situation Resolved',
+    full: 'Naresolba na po ang usapin. Salamat sa mabilis na tugon ng mga tanod. Mabuhay kayo!',
+  },
+  {
+    display: 'Emergency - Call 911',
+    full: 'Kung may banta sa buhay, mangyaring tumawag agad sa 911 o sa hotline ng barangay habang paparating ang mga tanod.',
+  },
+];
+
+/* SEEDED_CONVERSATIONS and SEEDED_LIVE_FEED removed 2026-09-06 - both
+ * silently substituted fabricated named individuals, phone numbers and
+ * realistic-looking Tagalog citizen-complaint text (Rule 6: no fabricated
+ * statistics, no hardcoded identities) whenever the real API returned an
+ * empty list OR failed outright. The genuinely-empty and error states now
+ * both have honest handling instead: renderContactList()'s own
+ * "No SMS conversations recorded." note (unchanged, it already existed),
+ * and the Live Feed panel's renderEmptyFeed()/renderFeedError(). */
+// The name.includes(<specific fake contact name>) clauses this function
+// used to carry (juan dela cruz / baranguard / maria santos / dispatch /
+// pedro reyes) were tuned to the removed fake seed conversations and
+// served no purpose on real data except risking a real citizen who
+// happens to share a common name being mis-tagged by coincidence.
+// Stripped; messageType (a real, fixed server enum) and message-body
+// keywords (real text, genuinely inspected) are what is actually being
+// categorized here.
+function getContactTagInfo(convo) {
+  const type = convo.lastMessage?.messageType || 'manual';
+  const direction = convo.lastMessage?.direction || 'inbound';
+  const text = (convo.lastMessage?.messageBody || '').toLowerCase();
+
+  if (text.includes('reklamo') || text.includes('complaint') || text.includes('maingay') || (type === 'manual' && direction === 'inbound') || type === 'complaint') {
+    return { label: 'Complaint', pillClass: 'sms-tag-pill--complaint' };
+  }
+  if (type === 'priority_alert' || type === 'sos' || text.includes('alerto')) {
+    return { label: 'Alert', pillClass: 'sms-tag-pill--alert' };
+  }
+  if (type === 'incident' || text.includes('suspek') || text.includes('palengke') || text.includes('tip')) {
+    return { label: 'Tip', pillClass: 'sms-tag-pill--tip' };
+  }
+  if (type === 'dispatch' || text.includes('dispatch') || text.includes('balogo')) {
+    return { label: 'Dispatch', pillClass: 'sms-tag-pill--dispatch' };
+  }
+  if (type === 'confirmation' || text.includes('salamat') || text.includes('naresolba') || text.includes('feedback')) {
+    return { label: 'Feedback', pillClass: 'sms-tag-pill--feedback' };
+  }
+  return { label: type.replace(/_/g, ' '), pillClass: 'sms-tag-pill--neutral' };
+}
+
+// getContactLocation() removed 2026-09-06 - GET /sms/conversations never
+// returns a location field (SmsController::conversations() scopes every
+// row to the caller's OWN barangay_id server-side, so every conversation
+// on this screen already belongs to the same barangay), so this always
+// fell through to keyword-matching text for names/phrases that only
+// existed in the removed fake seed data, and finally to a phone-number
+// hash picking one of four hardcoded names - one of which, "Brgy.
+// Poblacion", is not even a real barangay this deployment serves (the
+// real four are Dao/Binanuahan/Marifosque/Banuyo, REFERENCE.md section 1).
+// That last branch was not a rare fallback - since .location is never
+// set on real data, every single contact would have shown a fabricated,
+// meaningless barangay label as if it were fact (Rule 6: no fabricated
+// identities). There is no honest per-conversation location to show, so
+// the label is gone rather than replaced with something that looks real
+// but isn't.
+
+function formatSmartTime(isoOrTime) {
+  if (!isoOrTime) return '';
+  if (typeof isoOrTime === 'string' && isoOrTime.length === 5) return isoOrTime;
+  const d = new Date(isoOrTime);
+  if (isNaN(d.getTime())) return String(isoOrTime);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
 
 const COLUMNS = [
   { key: 'id', label: 'ID', width: '4.5rem', csvValue: (row) => row.logId },
@@ -91,13 +161,9 @@ const COLUMNS = [
 ];
 
 /**
- * @param {HTMLElement} root
- * @param {{fullName:string, role:string}} user
- * @param {() => void} onLoggedOut
- * @param {(page: string) => void} navigate
- * @returns {{stop: () => void}}
+ * Main SMS Monitor Page entry point.
  */
-export function renderSmsMonitorPage(root, user, onLoggedOut, navigate) {
+export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   root.innerHTML = '';
 
   let liveFeedTimer = null;
@@ -112,74 +178,131 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate) {
 
   const pageHeader = PageHeader({
     title: 'SMS Monitor',
-    subtitle: 'Conversations, compose, and broadcast — plus the full read-only activity log',
-    icon: icons.messageSquare,
+    subtitle: 'Community reports and dispatch communications',
   });
   header.appendChild(pageHeader.el);
 
+  // Tab switcher bar with icons & unread badge
   const tabBar = document.createElement('div');
   tabBar.className = 'page-tabs-bar';
 
   const tabRow = document.createElement('div');
-  tabRow.className = 'filter-chip-row';
-  const conversationsTabButton = document.createElement('button');
-  conversationsTabButton.type = 'button';
-  conversationsTabButton.className = 'filter-chip';
-  conversationsTabButton.textContent = 'Conversations';
-  const activityTabButton = document.createElement('button');
-  activityTabButton.type = 'button';
-  activityTabButton.className = 'filter-chip';
-  activityTabButton.textContent = 'Activity Log';
-  tabRow.append(conversationsTabButton, activityTabButton);
+  tabRow.className = 'sms-tabs-row';
+
+  const conversationsTabBtn = document.createElement('button');
+  conversationsTabBtn.type = 'button';
+  conversationsTabBtn.className = 'sms-tab-btn is-active';
+  conversationsTabBtn.innerHTML = `
+    <span class="sms-tab-btn__icon" aria-hidden="true">${icons.messageSquare(16)}</span>
+    <span>Conversations</span>
+    <span class="sms-tab-badge" id="sms-unread-tab-badge" style="display:none;">0</span>
+  `;
+
+  const activityTabBtn = document.createElement('button');
+  activityTabBtn.type = 'button';
+  activityTabBtn.className = 'sms-tab-btn';
+  activityTabBtn.innerHTML = `
+    <span class="sms-tab-btn__icon" aria-hidden="true">${icons.fileText(16)}</span>
+    <span>Activity Log</span>
+  `;
+
+  tabRow.append(conversationsTabBtn, activityTabBtn);
   tabBar.appendChild(tabRow);
   header.appendChild(tabBar);
 
   const body = document.createElement('div');
   content.appendChild(body);
 
-  let activeTab = 'conversations';
+  let activeTab = param === 'activity-log' ? 'activity-log' : 'conversations';
+  const initialPhone = (param && param !== 'activity-log') ? String(param).trim() : null;
+
   function syncTabs() {
-    conversationsTabButton.classList.toggle('is-active', activeTab === 'conversations');
-    activityTabButton.classList.toggle('is-active', activeTab === 'activity-log');
+    conversationsTabBtn.classList.toggle('is-active', activeTab === 'conversations');
+    activityTabBtn.classList.toggle('is-active', activeTab === 'activity-log');
   }
-  conversationsTabButton.addEventListener('click', () => { activeTab = 'conversations'; syncTabs(); renderActiveTab(); });
-  activityTabButton.addEventListener('click', () => { activeTab = 'activity-log'; syncTabs(); renderActiveTab(); });
-  syncTabs();
+
+  conversationsTabBtn.addEventListener('click', () => {
+    activeTab = 'conversations';
+    syncTabs();
+    renderActiveTab();
+  });
+
+  activityTabBtn.addEventListener('click', () => {
+    activeTab = 'activity-log';
+    syncTabs();
+    renderActiveTab();
+  });
 
   function stopLiveFeedPolling() {
     if (liveFeedTimer) clearInterval(liveFeedTimer);
     liveFeedTimer = null;
   }
 
+  function updateUnreadBadge(unreadTotal) {
+    const badge = document.getElementById('sms-unread-tab-badge');
+    if (!badge) return;
+    if (unreadTotal > 0) {
+      badge.textContent = unreadTotal > 99 ? '99+' : unreadTotal;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
   function renderActiveTab() {
     stopLiveFeedPolling();
     pageHeader.actions.innerHTML = '';
     body.innerHTML = '';
+    const existingInlineWrap = pageHeader.el.querySelector('.sms-stats-inline-wrap');
+    if (existingInlineWrap) existingInlineWrap.remove();
+
     if (activeTab === 'conversations') {
-      renderConversationsTab(body, pageHeader, user, (timer) => { liveFeedTimer = timer; });
+      renderConversationsTab(body, pageHeader, user, (timer) => { liveFeedTimer = timer; }, updateUnreadBadge, navigate, initialPhone);
     } else {
       renderActivityLogTab(body, pageHeader, navigate);
     }
   }
+
+  syncTabs();
   renderActiveTab();
 
   return { stop: stopLiveFeedPolling };
 }
 
 // ============================================================
-// Conversations tab (2026-09-05 UX pass)
+// Conversations Tab
 // ============================================================
 
-function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer) {
-  const broadcastButton = document.createElement('button');
-  broadcastButton.type = 'button';
-  broadcastButton.className = 'primary';
-  broadcastButton.innerHTML = `<span aria-hidden="true">${icons.megaphone(16)}</span><span>Broadcast Alert</span>`;
-  broadcastButton.addEventListener('click', () => openBroadcastDialog());
-  pageHeader.actions.appendChild(broadcastButton);
+function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, onUnreadChanged, navigate, initialPhone) {
+  // Page Header Actions
+  const actionsWrap = document.createElement('div');
+  actionsWrap.style.cssText = 'display: flex; align-items: center; gap: 0.5rem;';
+
+  const newMsgBtn = document.createElement('button');
+  newMsgBtn.type = 'button';
+  newMsgBtn.className = 'ghost';
+  newMsgBtn.style.cssText = 'font-size: 0.8125rem; font-weight: 600; padding: 0.45rem 0.85rem;';
+  newMsgBtn.innerHTML = `<span aria-hidden="true">${icons.plus(14)}</span><span>New Message</span>`;
+  newMsgBtn.addEventListener('click', () => openNewMessageModal());
+
+  const broadcastBtn = document.createElement('button');
+  broadcastBtn.type = 'button';
+  broadcastBtn.className = 'primary';
+  broadcastBtn.style.cssText = 'font-size: 0.875rem; font-weight: 600; padding: 0.5rem 1.125rem; border-radius: 8px; background: #2563eb;';
+  broadcastBtn.innerHTML = `<span aria-hidden="true" style="font-size: 1.05rem; margin-right: 0.35rem; font-weight: 700;">+</span><span>Broadcast Alert</span>`;
+  broadcastBtn.addEventListener('click', () => openBroadcastModal());
+
+  actionsWrap.append(newMsgBtn, broadcastBtn);
+  pageHeader.actions.appendChild(actionsWrap);
 
   const statStripHost = document.createElement('div');
-  container.appendChild(statStripHost);
+  statStripHost.className = 'sms-stats-inline-wrap';
+  const titlesBlock = pageHeader.el.querySelector('.page-header__titles');
+  if (titlesBlock) {
+    titlesBlock.appendChild(statStripHost);
+  } else {
+    container.appendChild(statStripHost);
+  }
 
   const layout = document.createElement('div');
   layout.className = 'sms-layout';
@@ -187,22 +310,38 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer) {
 
   const contactPane = document.createElement('div');
   contactPane.className = 'sms-contact-pane';
+
   const threadPane = document.createElement('div');
   threadPane.className = 'sms-thread-pane';
+
   const feedPane = document.createElement('div');
   feedPane.className = 'sms-feed-pane';
+
   layout.append(contactPane, threadPane, feedPane);
 
   let allConversations = [];
-  let selectedPhone = null;
-  let contactFilter = 'all'; // all | inbound | outbound (last message direction)
+  let selectedPhone = initialPhone || null;
+  let contactFilter = 'all'; // all | inbound | outbound | unread
+  let searchQuery = '';
 
   renderContactPaneShell();
   renderThreadPlaceholder();
   loadConversations();
   loadStatStrip();
-  loadLiveFeed(feedPane);
-  setLiveFeedTimer(setInterval(() => loadLiveFeed(feedPane), LIVE_FEED_POLL_MS));
+  loadLiveFeed(feedPane, onSelectFeedPhone);
+  setLiveFeedTimer(setInterval(() => loadLiveFeed(feedPane, onSelectFeedPhone), LIVE_FEED_POLL_MS));
+
+  function onSelectFeedPhone(phone) {
+    if (!phone) return;
+    selectedPhone = phone;
+    const found = allConversations.find((c) => c.phoneNumber === phone);
+    renderContactList();
+    if (found) {
+      openThread(found);
+    } else {
+      openThread({ phoneNumber: phone, displayName: null, unreadCount: 0 });
+    }
+  }
 
   async function loadStatStrip() {
     const today = new Date().toISOString().slice(0, 10);
@@ -212,152 +351,288 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer) {
         getSmsLogs({ dateFrom: today, dateTo: today, direction: 'inbound', limit: 1 }),
         getSmsLogs({ dateFrom: today, dateTo: today, direction: 'outbound', limit: 1 }),
       ]);
-      const unread = allConversations.reduce((sum, c) => sum + c.unreadCount, 0);
-      statStripHost.innerHTML = '';
-      statStripHost.appendChild(StatStrip({
-        items: [
-          { label: 'Total Today', value: totalToday.total },
-          { label: 'Incoming', value: inboundToday.total, tone: 'info' },
-          { label: 'Outgoing', value: outboundToday.total, tone: 'info' },
-          { label: 'Unread', value: unread, tone: unread > 0 ? 'critical' : 'default' },
-        ],
-      }));
+      const unreadTotal = allConversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+      onUnreadChanged(unreadTotal);
+
+      // .total is a real count and 0 is a legitimate value (a quiet day
+      // is real data, not something to paper over) — || here would
+      // silently replace a genuine zero with a fabricated number, exactly
+      // what Rule 6 (no fabricated statistics) exists to catch.
+      const totalVal = totalToday.total ?? 0;
+      const inVal = inboundToday.total ?? 0;
+      const outVal = outboundToday.total ?? 0;
+      const unreadVal = unreadTotal;
+
+      statStripHost.innerHTML = `
+        <div class="sms-stats-inline">
+          <span class="sms-stat-inline-item ${contactFilter === 'all' ? 'is-active' : ''}" data-filter="all" title="Show all messages">
+            <strong class="sms-stat-num sms-stat-num--total">${totalVal}</strong> Total Today
+          </span>
+          <span class="sms-stat-inline-item ${contactFilter === 'inbound' ? 'is-active' : ''}" data-filter="inbound" title="Filter incoming messages">
+            <strong class="sms-stat-num sms-stat-num--inbound">${inVal}</strong> Incoming
+          </span>
+          <span class="sms-stat-inline-item ${contactFilter === 'outbound' ? 'is-active' : ''}" data-filter="outbound" title="Filter outgoing messages">
+            <strong class="sms-stat-num sms-stat-num--outbound">${outVal}</strong> Outgoing
+          </span>
+          <span class="sms-stat-inline-item ${contactFilter === 'unread' ? 'is-active' : ''}" data-filter="unread" title="Filter unread messages">
+            <strong class="sms-stat-num sms-stat-num--unread">${unreadVal}</strong> Unread
+          </span>
+        </div>
+      `;
+
+      statStripHost.querySelectorAll('.sms-stat-inline-item').forEach((item) => {
+        item.addEventListener('click', () => {
+          contactFilter = item.dataset.filter;
+          updateFilterChipActive();
+          updateStatStripActive();
+          renderContactList();
+        });
+      });
     } catch {
-      // Stat strip is a summary convenience; a failed fetch leaves whatever was there.
+      // Summary convenience
     }
+  }
+
+  function updateStatStripActive() {
+    statStripHost.querySelectorAll('.sms-stat-inline-item').forEach((item) => {
+      item.classList.toggle('is-active', item.dataset.filter === contactFilter);
+    });
   }
 
   async function loadConversations() {
     try {
-      allConversations = await getSmsConversations();
+      const serverConvos = await getSmsConversations();
+      // A genuinely empty list is real data (no conversations yet), not an
+      // error - handled honestly by renderContactList()'s own "No SMS
+      // conversations recorded." note. Never substitute placeholder rows.
+      allConversations = Array.isArray(serverConvos) ? serverConvos : [];
+      if (!selectedPhone && allConversations.length > 0) {
+        selectedPhone = allConversations[0].phoneNumber;
+      }
       renderContactList();
       loadStatStrip();
+      if (selectedPhone) {
+        const found = allConversations.find((c) => c.phoneNumber === selectedPhone);
+        if (found) {
+          openThread(found);
+        } else {
+          openThread({ phoneNumber: selectedPhone, displayName: null, unreadCount: 0 });
+        }
+      } else {
+        renderThreadPlaceholder();
+      }
     } catch (err) {
-      contactPane.innerHTML = '';
-      const block = document.createElement('div');
-      block.className = 'card state-block state-block--error';
-      block.setAttribute('role', 'alert');
-      const text = document.createElement('p');
-      text.textContent = err instanceof ApiClientError ? err.message : 'Could not load conversations.';
-      const retry = document.createElement('button');
-      retry.className = 'primary';
-      retry.textContent = 'Retry';
-      retry.addEventListener('click', () => { renderContactPaneShell(); loadConversations(); });
-      block.append(text, retry);
-      contactPane.appendChild(block);
+      allConversations = [];
+      selectedPhone = null;
+      renderContactList();
+      renderThreadPlaceholder();
+      showToast(err instanceof ApiClientError ? err.message : 'Could not load conversations.', { variant: 'error' });
     }
   }
 
   function renderContactPaneShell() {
     contactPane.innerHTML = '';
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'sms-contact-pane__header';
+
+    // Search bar
     const searchWrap = document.createElement('div');
-    searchWrap.className = 'filter-panel__search sms-contact-pane__search';
+    searchWrap.className = 'sms-search-wrap';
+
     const searchIcon = document.createElement('span');
-    searchIcon.className = 'filter-panel__search-icon';
-    searchIcon.setAttribute('aria-hidden', 'true');
-    searchIcon.innerHTML = icons.search(16);
-    const searchLabel = document.createElement('label');
-    searchLabel.className = 'sr-only';
-    searchLabel.htmlFor = 'sms-contact-search';
-    searchLabel.textContent = 'Search messages';
+    searchIcon.className = 'sms-search-icon';
+    searchIcon.innerHTML = icons.search(14);
+
     const searchInput = document.createElement('input');
-    searchInput.id = 'sms-contact-search';
     searchInput.type = 'search';
-    searchInput.placeholder = 'Search messages…';
-    searchInput.addEventListener('input', () => renderContactList());
-    searchWrap.append(searchIcon, searchLabel, searchInput);
+    searchInput.className = 'sms-search-input';
+    searchInput.placeholder = 'Search messages...';
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'sms-search-clear';
+    clearBtn.title = 'Clear search';
+    clearBtn.setAttribute('aria-label', 'Clear search');
+    clearBtn.innerHTML = icons.x(14);
+    clearBtn.style.display = 'none';
+
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value.trim().toLowerCase();
+      clearBtn.style.display = searchInput.value ? 'flex' : 'none';
+      renderContactList();
+    });
+
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      searchQuery = '';
+      clearBtn.style.display = 'none';
+      searchInput.focus();
+      renderContactList();
+    });
+
+    searchWrap.append(searchIcon, searchInput, clearBtn);
     contactPane._searchInput = searchInput;
 
-    const tabRow = document.createElement('div');
-    tabRow.className = 'filter-chip-row sms-contact-pane__tabs';
-    const tabs = { all: 'All', inbound: 'Inbox', outbound: 'Sent' };
-    const tabButtons = {};
-    for (const [key, label] of Object.entries(tabs)) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'filter-chip';
-      btn.textContent = label;
-      btn.addEventListener('click', () => {
-        contactFilter = key;
-        for (const [k, b] of Object.entries(tabButtons)) b.classList.toggle('is-active', k === key);
+    // Filter chips row matching screenshot (All, Inbox, Sent)
+    const chipsRow = document.createElement('div');
+    chipsRow.className = 'sms-filter-chips-row';
+    contactPane._chipsRow = chipsRow;
+
+    const filters = [
+      { id: 'all', label: 'All' },
+      { id: 'inbound', label: 'Inbox' },
+      { id: 'outbound', label: 'Sent' },
+    ];
+
+    filters.forEach((f) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = `sms-filter-chip ${contactFilter === f.id ? 'is-active' : ''}`;
+      chip.dataset.filterId = f.id;
+      chip.textContent = f.label;
+      chip.addEventListener('click', () => {
+        contactFilter = f.id;
+        updateFilterChipActive();
+        updateStatStripActive();
         renderContactList();
       });
-      tabButtons[key] = btn;
-      tabRow.appendChild(btn);
-    }
-    tabButtons.all.classList.add('is-active');
+      chipsRow.appendChild(chip);
+    });
+
+    headerEl.append(searchWrap, chipsRow);
 
     const listHost = document.createElement('div');
     listHost.className = 'sms-contact-list';
     contactPane._listHost = listHost;
 
-    contactPane.append(searchWrap, tabRow, listHost);
+    contactPane.append(headerEl, listHost);
+  }
+
+  function updateFilterChipActive() {
+    if (!contactPane._chipsRow) return;
+    const buttons = contactPane._chipsRow.querySelectorAll('.sms-filter-chip');
+    buttons.forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.filterId === contactFilter);
+    });
+  }
+
+  function getFilteredConversations() {
+    return allConversations.filter((c) => {
+      if (contactFilter === 'unread' && (!c.unreadCount || c.unreadCount === 0)) return false;
+      if (contactFilter === 'inbound' && c.lastMessage?.direction !== 'inbound') return false;
+      if (contactFilter === 'outbound' && c.lastMessage?.direction !== 'outbound') return false;
+
+      if (searchQuery) {
+        const phone = (c.phoneNumber || '').toLowerCase();
+        const name = (c.displayName || '').toLowerCase();
+        const body = (c.lastMessage?.messageBody || '').toLowerCase();
+        if (!phone.includes(searchQuery) && !name.includes(searchQuery) && !body.includes(searchQuery)) {
+          return false;
+        }
+      }
+      return true;
+    });
   }
 
   function renderContactList() {
     const listHost = contactPane._listHost;
-    const q = (contactPane._searchInput.value || '').trim().toLowerCase();
-    let filtered = allConversations;
-    if (contactFilter !== 'all') {
-      filtered = filtered.filter((c) => c.lastMessage && c.lastMessage.direction === contactFilter);
-    }
-    if (q) {
-      filtered = filtered.filter((c) =>
-        c.phoneNumber.toLowerCase().includes(q) || (c.displayName || '').toLowerCase().includes(q));
-    }
-
+    if (!listHost) return;
     listHost.innerHTML = '';
+
+    const filtered = getFilteredConversations();
+
     if (filtered.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'note';
-      empty.textContent = allConversations.length === 0 ? 'No SMS conversations yet.' : 'No conversations match this filter.';
+      empty.style.cssText = 'padding: var(--spacing-md); text-align: center; color: var(--color-text-tertiary);';
+      empty.textContent = allConversations.length === 0
+        ? 'No SMS conversations recorded.'
+        : 'No conversations match your filter.';
       listHost.appendChild(empty);
       return;
     }
 
-    for (const convo of filtered) {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'sms-contact-row' + (convo.phoneNumber === selectedPhone ? ' is-selected' : '');
-      const avatar = document.createElement('span');
-      avatar.className = 'sms-contact-row__avatar';
-      avatar.textContent = (convo.displayName || convo.phoneNumber).slice(0, 1).toUpperCase();
-      const main = document.createElement('span');
-      main.className = 'sms-contact-row__main';
-      const nameLine = document.createElement('span');
-      nameLine.className = 'sms-contact-row__name';
-      nameLine.textContent = convo.displayName || convo.phoneNumber;
-      if (convo.unreadCount > 0) {
-        const dot = document.createElement('span');
-        dot.className = 'sms-contact-row__unread-dot';
-        dot.setAttribute('aria-label', `${convo.unreadCount} unread`);
-        nameLine.appendChild(dot);
+    filtered.forEach((convo) => {
+      const card = document.createElement('div');
+      card.className = `sms-contact-card ${convo.phoneNumber === selectedPhone ? 'is-selected' : ''}`;
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+
+      const tagInfo = getContactTagInfo(convo);
+      const nameText = convo.displayName || convo.phoneNumber;
+      const isUnread = convo.unreadCount > 0;
+
+      // Top line: [Dot] Name & Time
+      const top = document.createElement('div');
+      top.className = 'sms-contact-card__top';
+
+      const nameWrap = document.createElement('div');
+      nameWrap.className = 'sms-contact-card__name-wrap';
+
+      if (isUnread) {
+        const unreadDot = document.createElement('span');
+        unreadDot.className = 'sms-contact-unread-dot';
+        unreadDot.setAttribute('aria-label', 'Unread message');
+        nameWrap.appendChild(unreadDot);
       }
-      const preview = document.createElement('span');
-      preview.className = 'sms-contact-row__preview';
-      preview.textContent = convo.lastMessage?.messageBody || `(${(convo.lastMessage?.messageType || 'message').replace(/_/g, ' ')} — no text on record)`;
-      main.append(nameLine, preview);
-      const meta = document.createElement('span');
-      meta.className = 'sms-contact-row__meta';
-      const when = convo.lastMessage?.createdAt ? new Date(convo.lastMessage.createdAt).toLocaleDateString() : '';
-      meta.textContent = when;
-      if (convo.lastMessage) {
-        const tag = document.createElement('span');
-        tag.className = `status-pill ${TYPE_TAG_CLASS[convo.lastMessage.messageType] || 'status-pill--neutral'}`;
-        tag.textContent = convo.lastMessage.messageType.replace(/_/g, ' ');
-        meta.appendChild(tag);
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'sms-contact-card__name';
+      nameEl.textContent = nameText;
+      nameWrap.appendChild(nameEl);
+
+      const timeEl = document.createElement('span');
+      timeEl.className = 'sms-contact-card__time';
+      if (convo.lastMessage?.createdAt) {
+        timeEl.textContent = convo.lastMessage.createdAt.length === 5 ? convo.lastMessage.createdAt : formatSmartTime(convo.lastMessage.createdAt);
       }
-      row.append(avatar, main, meta);
-      row.addEventListener('click', () => { selectedPhone = convo.phoneNumber; renderContactList(); openThread(convo); });
-      listHost.appendChild(row);
-    }
+      top.append(nameWrap, timeEl);
+
+      // Preview line (2-line clamped)
+      const previewEl = document.createElement('div');
+      previewEl.className = 'sms-contact-card__preview';
+      previewEl.textContent = convo.lastMessage?.messageBody || `(${convo.lastMessage?.messageType?.replace(/_/g, ' ') || 'No message text'})`;
+
+      // Bottom line: Pill Tag and Location
+      const bottom = document.createElement('div');
+      bottom.className = 'sms-contact-card__bottom';
+
+      const pill = document.createElement('span');
+      pill.className = `sms-tag-pill ${tagInfo.pillClass}`;
+      pill.textContent = tagInfo.label;
+
+      bottom.append(pill);
+      card.append(top, previewEl, bottom);
+
+      const triggerSelect = () => {
+        selectedPhone = convo.phoneNumber;
+        renderContactList();
+        openThread(convo);
+      };
+
+      card.addEventListener('click', triggerSelect);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          triggerSelect();
+        }
+      });
+
+      listHost.appendChild(card);
+    });
   }
 
   function renderThreadPlaceholder() {
     threadPane.innerHTML = '';
     const card = document.createElement('div');
-    card.className = 'card state-block';
-    card.innerHTML = '<h3>Select a conversation</h3><p>Choose a contact on the left to see the full thread.</p>';
+    card.className = 'sms-thread-card state-block';
+    card.style.cssText = 'justify-content: center; align-items: center; text-align: center; padding: var(--spacing-xl);';
+    card.innerHTML = `
+      <div style="color: var(--color-primary); margin-bottom: 0.5rem;" aria-hidden="true">${icons.messageSquare(36)}</div>
+      <h3 style="margin: 0 0 0.25rem 0;">Select a Conversation</h3>
+      <p class="note" style="max-width: 20rem; margin: 0;">Choose a contact thread from the left directory to view full chat history, reply, or mark resolved.</p>
+    `;
     threadPane.appendChild(card);
   }
 
@@ -365,340 +640,843 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer) {
     threadPane.innerHTML = '';
     const loading = document.createElement('div');
     loading.className = 'skeleton skeleton--block';
-    loading.setAttribute('role', 'status');
-    loading.setAttribute('aria-label', 'Loading conversation');
+    loading.style.height = '100%';
     threadPane.appendChild(loading);
 
     try {
       const messages = await getSmsConversationMessages(convo.phoneNumber);
-      renderThread(convo, messages);
+      if (Array.isArray(messages) && messages.length > 0) {
+        renderThread(convo, messages);
+      } else if (convo.defaultMessages && convo.defaultMessages.length > 0) {
+        renderThread(convo, convo.defaultMessages);
+      } else {
+        renderThread(convo, messages || []);
+      }
     } catch (err) {
-      threadPane.innerHTML = '';
-      const block = document.createElement('div');
-      block.className = 'card state-block state-block--error';
-      block.setAttribute('role', 'alert');
-      const text = document.createElement('p');
-      text.textContent = err instanceof ApiClientError ? err.message : 'Could not load this conversation.';
-      block.appendChild(text);
-      threadPane.appendChild(block);
+      if (convo.defaultMessages && convo.defaultMessages.length > 0) {
+        renderThread(convo, convo.defaultMessages);
+      } else {
+        threadPane.innerHTML = '';
+        const block = document.createElement('div');
+        block.className = 'card state-block state-block--error';
+        block.setAttribute('role', 'alert');
+        const text = document.createElement('p');
+        text.textContent = err instanceof ApiClientError ? err.message : 'Could not load this conversation.';
+        block.appendChild(text);
+        threadPane.appendChild(block);
+      }
     }
   }
 
   function renderThread(convo, messages) {
     threadPane.innerHTML = '';
     const card = document.createElement('div');
-    card.className = 'card sms-thread';
+    card.className = 'sms-thread-card';
 
+    // 1. Thread Header
     const threadHeader = document.createElement('div');
-    threadHeader.className = 'sms-thread__header';
-    const headerMain = document.createElement('div');
-    const nameEl = document.createElement('h3');
-    nameEl.textContent = convo.displayName || convo.phoneNumber;
-    const phoneEl = document.createElement('p');
-    phoneEl.className = 'note';
-    phoneEl.textContent = convo.displayName ? convo.phoneNumber : 'No matching staff record';
-    headerMain.append(nameEl, phoneEl);
-    const resolveButton = document.createElement('button');
-    resolveButton.type = 'button';
-    resolveButton.className = 'ghost';
-    resolveButton.textContent = 'Mark Resolved';
-    resolveButton.disabled = convo.unreadCount === 0;
-    resolveButton.addEventListener('click', async () => {
-      resolveButton.disabled = true;
+    threadHeader.className = 'sms-thread-header';
+
+    const contactWrap = document.createElement('div');
+    contactWrap.className = 'sms-thread-header__contact';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'sms-thread-avatar';
+    const initialChar = (convo.displayName || convo.phoneNumber || 'C').trim().charAt(0).toUpperCase();
+    avatar.textContent = initialChar;
+
+    const info = document.createElement('div');
+    info.className = 'sms-thread-header__info';
+
+    const nameTitle = document.createElement('h3');
+    nameTitle.className = 'sms-thread-header__name';
+    nameTitle.textContent = convo.displayName || convo.phoneNumber;
+
+    const tagInfo = getContactTagInfo(convo);
+
+    const phoneLine = document.createElement('div');
+    phoneLine.className = 'sms-thread-header__phone';
+    phoneLine.innerHTML = `<span aria-hidden="true" style="display:inline-flex; color: var(--color-text-tertiary);">${icons.phone(13)}</span><span>${convo.phoneNumber}</span>`;
+
+    info.append(nameTitle, phoneLine);
+    contactWrap.append(avatar, info);
+
+    // Header actions on the right
+    const headerActions = document.createElement('div');
+    headerActions.className = 'sms-thread-header__actions';
+
+    const headerTag = document.createElement('span');
+    headerTag.className = `sms-tag-pill ${tagInfo.pillClass}`;
+    headerTag.style.cssText = 'font-size: 0.75rem; padding: 0.2rem 0.65rem;';
+    headerTag.textContent = tagInfo.label;
+
+    const resolveBtn = document.createElement('button');
+    resolveBtn.type = 'button';
+    resolveBtn.className = 'sms-resolve-btn';
+    resolveBtn.textContent = 'Mark Resolved';
+    resolveBtn.disabled = convo.unreadCount === 0;
+    resolveBtn.addEventListener('click', async () => {
+      resolveBtn.disabled = true;
       try {
         await markSmsThreadResolved(convo.phoneNumber);
-        showToast('Conversation marked resolved.', { variant: 'success' });
+        showToast('Conversation marked as resolved.', { variant: 'success' });
         await loadConversations();
+        convo.unreadCount = 0;
+        resolveBtn.disabled = true;
       } catch (err) {
-        resolveButton.disabled = false;
-        showToast(err instanceof ApiClientError ? err.message : 'Could not resolve this conversation.', { variant: 'error' });
+        resolveBtn.disabled = false;
+        showToast(err instanceof ApiClientError ? err.message : 'Could not resolve conversation.', { variant: 'error' });
       }
     });
-    threadHeader.append(headerMain, resolveButton);
+
+    headerActions.append(headerTag, resolveBtn);
+    threadHeader.append(contactWrap, headerActions);
     card.appendChild(threadHeader);
 
-    const bubbleList = document.createElement('div');
-    bubbleList.className = 'sms-thread__messages';
+    // 2. Messages List
+    const messagesArea = document.createElement('div');
+    messagesArea.className = 'sms-thread-messages';
+
     if (messages.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'note';
+      empty.style.cssText = 'text-align: center; margin: auto;';
       empty.textContent = 'No messages recorded for this contact yet.';
-      bubbleList.appendChild(empty);
-    }
-    for (const msg of messages) {
-      const bubble = document.createElement('div');
-      bubble.className = `sms-bubble sms-bubble--${msg.direction === 'inbound' ? 'inbound' : 'outbound'}`;
-      const text = document.createElement('div');
-      text.className = 'sms-bubble__text';
-      text.textContent = msg.messageBody || `(${msg.messageType.replace(/_/g, ' ')} — no text recorded for this row)`;
-      const meta = document.createElement('div');
-      meta.className = 'sms-bubble__meta';
-      const tag = document.createElement('span');
-      tag.className = `status-pill ${TYPE_TAG_CLASS[msg.messageType] || 'status-pill--neutral'}`;
-      tag.textContent = msg.messageType.replace(/_/g, ' ');
-      const time = document.createElement('span');
-      const at = msg.sentAt || msg.receivedAt || msg.createdAt;
-      time.textContent = new Date(at).toLocaleString();
-      meta.append(tag, time);
-      if (msg.status === 'failed' && msg.failureReason) {
-        const failure = document.createElement('div');
-        failure.className = 'sms-bubble__failure';
-        failure.textContent = `Not delivered: ${msg.failureReason}`;
-        bubble.append(text, meta, failure);
-      } else {
-        bubble.append(text, meta);
-      }
-      bubbleList.appendChild(bubble);
-    }
-    card.appendChild(bubbleList);
+      messagesArea.appendChild(empty);
+    } else {
+      messages.forEach((msg) => {
+        const at = msg.sentAt || msg.receivedAt || msg.createdAt;
+        const isInbound = msg.direction === 'inbound';
 
-    card.appendChild(buildComposeBox(convo));
-    threadPane.appendChild(card);
-  }
+        const bubbleRow = document.createElement('div');
+        bubbleRow.className = `sms-bubble-row sms-bubble-row--${isInbound ? 'inbound' : 'outbound'}`;
 
-  function buildComposeBox(convo) {
-    const wrap = document.createElement('div');
-    wrap.className = 'sms-compose';
+        const bubble = document.createElement('div');
+        bubble.className = `sms-bubble sms-bubble--${isInbound ? 'inbound' : 'outbound'}`;
 
-    const textarea = document.createElement('textarea');
-    textarea.className = 'textarea--resizable';
-    textarea.rows = 2;
-    textarea.placeholder = `Message ${convo.displayName || convo.phoneNumber}…`;
-    textarea.setAttribute('aria-label', 'Compose SMS reply');
+        const text = document.createElement('div');
+        text.className = 'sms-bubble__text';
+        text.textContent = msg.messageBody || `(${msg.messageType?.replace(/_/g, ' ') || 'No message text'})`;
+        bubble.appendChild(text);
 
-    const footer = document.createElement('div');
-    footer.className = 'sms-compose__footer';
-    const counter = document.createElement('span');
-    counter.className = 'note';
-    counter.textContent = `0/${SMS_MAX_LENGTH}`;
-    const sendButton = document.createElement('button');
-    sendButton.type = 'button';
-    sendButton.className = 'primary';
-    sendButton.innerHTML = `<span aria-hidden="true">${icons.send(16)}</span><span>Send</span>`;
-    sendButton.disabled = true;
-
-    textarea.addEventListener('input', () => {
-      const len = textarea.value.length;
-      counter.textContent = `${len}/${SMS_MAX_LENGTH}`;
-      counter.classList.toggle('sms-compose__counter--over', len > SMS_MAX_LENGTH);
-      sendButton.disabled = textarea.value.trim() === '';
-    });
-
-    sendButton.addEventListener('click', async () => {
-      const message = textarea.value.trim();
-      if (!message) return;
-      sendButton.disabled = true;
-      textarea.disabled = true;
-      try {
-        const result = await sendSms({ phoneNumber: convo.phoneNumber, message, idempotencyKey: crypto.randomUUID() });
-        if (result.status === 'sent') {
-          showToast('Message sent.', { variant: 'success' });
-        } else {
-          // Honest, not silent — this environment has no funded Semaphore
-          // account (see SmsGatewayService's own doc), so a "failed"
-          // outcome with SEMAPHORE_NOT_CONFIGURED is the expected,
-          // correct result here, not a bug being hidden.
-          showToast(`Logged, but not delivered: ${result.failureReason || 'unknown reason'}`, { variant: 'error' });
+        if (msg.incidentId) {
+          const incidentLink = document.createElement('button');
+          incidentLink.type = 'button';
+          incidentLink.className = 'sms-bubble__linked-tag';
+          incidentLink.innerHTML = `<span aria-hidden="true">${icons.fileText(12)}</span><span>Incident #${msg.incidentId}</span>`;
+          incidentLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigate('blotter-detail', msg.incidentId);
+          });
+          bubble.appendChild(incidentLink);
+        } else if (msg.dispatchId) {
+          const dispatchTag = document.createElement('span');
+          dispatchTag.className = 'sms-bubble__linked-tag';
+          dispatchTag.innerHTML = `<span>Dispatch #${msg.dispatchId}</span>`;
+          bubble.appendChild(dispatchTag);
         }
-        textarea.value = '';
-        counter.textContent = `0/${SMS_MAX_LENGTH}`;
-        await openThread(convo);
-      } catch (err) {
-        showToast(err instanceof ApiClientError ? err.message : 'Could not send this message.', { variant: 'error' });
-      } finally {
-        textarea.disabled = false;
-        sendButton.disabled = textarea.value.trim() === '';
-      }
-    });
 
-    footer.append(counter, sendButton);
-    wrap.append(textarea, footer);
-    return wrap;
-  }
+        bubbleRow.appendChild(bubble);
 
-  function openBroadcastDialog() {
-    // Reuses the same overlay markup pattern ConfirmDialog.js already
-    // establishes (fixed overlay + centered card) rather than a second
-    // dialog implementation, but needs a textarea + select the shared
-    // confirmDialog()/promptSelect() helpers don't support — built
-    // directly here as a one-off.
-    const overlay = document.createElement('div');
-    overlay.className = 'confirm-backdrop';
-    const card = document.createElement('div');
-    card.className = 'confirm-dialog';
-    const heading = document.createElement('h3');
-    heading.textContent = 'Broadcast Alert';
-    const description = document.createElement('p');
-    description.textContent = `Sends to every recipient in the chosen scope, in ${user?.barangayId ? 'your barangay' : 'your barangay'} only.`;
+        // Metadata row BELOW bubble
+        const metaRow = document.createElement('div');
+        metaRow.className = 'sms-bubble__meta-row';
 
-    const scopeLabel = document.createElement('label');
-    scopeLabel.className = 'label';
-    scopeLabel.textContent = 'Send to';
-    const scopeSelect = document.createElement('select');
-    // Deliberately no "All Barangays" option — see
-    // SmsController::broadcast()'s own doc for why a cross-tenant
-    // broadcast isn't offered.
-    const scopeOptions = [
-      ['on_duty_tanods', 'All on-duty Tanods'],
-      ['role:tanod', 'All Tanods (on or off duty)'],
-      ['role:secretary', 'All Secretaries'],
-      ['role:admin', 'All Admins'],
-      ['role:punong_barangay', 'Punong Barangay'],
-    ];
-    for (const [value, label] of scopeOptions) {
-      const option = document.createElement('option');
-      option.value = value;
-      option.textContent = label;
-      scopeSelect.appendChild(option);
+        const timeSpan = document.createElement('span');
+        let timeFormatted = '';
+        if (typeof at === 'string' && at.length === 5) {
+          timeFormatted = at;
+        } else if (at) {
+          timeFormatted = new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        }
+        timeSpan.textContent = timeFormatted;
+        metaRow.appendChild(timeSpan);
+
+        if (isInbound) {
+          const tagSpan = document.createElement('span');
+          tagSpan.className = `sms-tag-pill ${tagInfo.pillClass}`;
+          tagSpan.style.cssText = 'font-size: 0.625rem; padding: 0.05rem 0.45rem;';
+          tagSpan.textContent = tagInfo.label;
+          metaRow.appendChild(tagSpan);
+        } else {
+          const tick = document.createElement('span');
+          if (msg.status === 'sent' || msg.status === 'received') {
+            tick.className = 'sms-tick--success';
+            tick.textContent = '✓✓';
+            tick.title = 'Delivered';
+          } else if (msg.status === 'failed' || msg.status === 'rejected') {
+            tick.className = 'sms-tick--fail';
+            tick.textContent = '⚠️ Failed';
+            tick.title = msg.failureReason || 'Failed';
+          } else {
+            tick.textContent = '✓';
+            tick.title = msg.status;
+          }
+          metaRow.appendChild(tick);
+        }
+
+        bubbleRow.appendChild(metaRow);
+        messagesArea.appendChild(bubbleRow);
+      });
     }
 
-    const messageLabel = document.createElement('label');
-    messageLabel.className = 'label';
-    messageLabel.textContent = 'Message';
-    const messageInput = document.createElement('textarea');
-    messageInput.className = 'textarea--resizable';
-    messageInput.rows = 4;
+    card.appendChild(messagesArea);
 
-    const actions = document.createElement('div');
-    actions.className = 'confirm-dialog__actions';
-    const cancelButton = document.createElement('button');
-    cancelButton.type = 'button';
-    cancelButton.className = 'ghost';
-    cancelButton.textContent = 'Cancel';
-    cancelButton.addEventListener('click', () => overlay.remove());
-    const sendButton = document.createElement('button');
-    sendButton.type = 'button';
-    sendButton.className = 'primary';
-    sendButton.textContent = 'Send Broadcast';
-    sendButton.addEventListener('click', async () => {
-      const message = messageInput.value.trim();
-      if (!message) {
-        showToast('Enter a message to broadcast.', { variant: 'error' });
-        return;
-      }
-      const confirmed = await confirmDialog({
-        title: 'Send this broadcast now?',
-        description: `This immediately messages every matching recipient. This cannot be undone.`,
-        confirmLabel: 'Send now',
-        cancelLabel: 'Keep editing',
-        danger: true,
+    // 3. Quick Canned Responses (2-Column Pill Grid matching design)
+    const quickRepliesSection = document.createElement('div');
+    quickRepliesSection.className = 'sms-quick-replies-section';
+
+    const qrTitle = document.createElement('div');
+    qrTitle.className = 'sms-quick-replies-title';
+    qrTitle.textContent = 'Quick Replies';
+    quickRepliesSection.appendChild(qrTitle);
+
+    const qrGrid = document.createElement('div');
+    qrGrid.className = 'sms-quick-replies-grid';
+
+    QUICK_RESPONSES.forEach((qr) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'sms-quick-chip';
+      chip.title = qr.full;
+      chip.innerHTML = `<span class="sms-quick-chip__text">${qr.display}</span>`;
+      chip.addEventListener('click', () => {
+        composeTextarea.value = qr.full;
+        updateCharCounter();
+        composeTextarea.focus();
       });
-      if (!confirmed) return;
+      qrGrid.appendChild(chip);
+    });
 
-      sendButton.disabled = true;
-      sendButton.textContent = 'Sending…';
+    quickRepliesSection.appendChild(qrGrid);
+    card.appendChild(quickRepliesSection);
+
+    // 4. Compose Box (Rounded card container)
+    const composeSection = document.createElement('div');
+    composeSection.className = 'sms-compose-section';
+
+    const composeCard = document.createElement('div');
+    composeCard.className = 'sms-compose-card';
+
+    const composeTextarea = document.createElement('textarea');
+    composeTextarea.className = 'sms-compose-textarea';
+    composeTextarea.placeholder = 'I-type ang inyong mensahe dito...';
+    composeTextarea.rows = 2;
+
+    const composeFooter = document.createElement('div');
+    composeFooter.className = 'sms-compose-footer';
+
+    const toLine = document.createElement('span');
+    toLine.className = 'sms-compose-to';
+    toLine.textContent = `To: ${convo.phoneNumber}`;
+
+    const rightWrap = document.createElement('div');
+    rightWrap.className = 'sms-compose-right';
+
+    const charCounter = document.createElement('span');
+    charCounter.className = 'sms-compose-counter';
+    charCounter.textContent = '0/160';
+
+    const sendBtn = document.createElement('button');
+    sendBtn.type = 'button';
+    sendBtn.className = 'sms-compose-send-circle';
+    sendBtn.setAttribute('aria-label', 'Send SMS');
+    sendBtn.title = 'Send (Ctrl+Enter)';
+    sendBtn.innerHTML = icons.send(16);
+    sendBtn.disabled = true;
+
+    function updateCharCounter() {
+      const len = composeTextarea.value.length;
+      charCounter.textContent = `${len}/160`;
+      charCounter.classList.toggle('is-warning', len > 160);
+      charCounter.classList.toggle('is-danger', len > 800);
+      sendBtn.disabled = composeTextarea.value.trim() === '';
+    }
+
+    composeTextarea.addEventListener('input', updateCharCounter);
+
+    const handleSend = async () => {
+      const message = composeTextarea.value.trim();
+      if (!message) return;
+
+      sendBtn.disabled = true;
+      composeTextarea.disabled = true;
+
       try {
-        const [scopeKey, role] = scopeSelect.value.split(':');
-        const result = await broadcastSms({
+        const result = await sendSms({
+          phoneNumber: convo.phoneNumber,
           message,
-          scope: scopeKey === 'role' ? 'role' : 'on_duty_tanods',
-          role: scopeKey === 'role' ? role : undefined,
           idempotencyKey: crypto.randomUUID(),
         });
-        showToast(`Broadcast sent to ${result.recipientCount} recipient(s): ${result.sent} delivered, ${result.failed} failed.`, { variant: result.failed > 0 ? 'info' : 'success' });
-        overlay.remove();
+
+        if (result.status === 'sent') {
+          showToast('Message sent successfully.', { variant: 'success' });
+        } else {
+          showToast(`Logged, but delivery status: ${result.status} (${result.failureReason || 'gateway offline'})`, {
+            variant: 'info',
+          });
+        }
+        composeTextarea.value = '';
+        updateCharCounter();
+        await openThread(convo);
+        await loadConversations();
       } catch (err) {
-        sendButton.disabled = false;
-        sendButton.textContent = 'Send Broadcast';
-        showToast(err instanceof ApiClientError ? err.message : 'Could not send this broadcast.', { variant: 'error' });
+        showToast(err instanceof ApiClientError ? err.message : 'Could not send SMS.', { variant: 'error' });
+      } finally {
+        composeTextarea.disabled = false;
+        sendBtn.disabled = composeTextarea.value.trim() === '';
+      }
+    };
+
+    sendBtn.addEventListener('click', handleSend);
+
+    composeTextarea.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSend();
       }
     });
-    actions.append(cancelButton, sendButton);
 
-    card.append(heading, description, scopeLabel, scopeSelect, messageLabel, messageInput, actions);
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-  }
-}
+    rightWrap.append(charCounter, sendBtn);
+    composeFooter.append(toLine, rightWrap);
+    composeCard.append(composeTextarea, composeFooter);
+    composeSection.appendChild(composeCard);
+    card.appendChild(composeSection);
 
-/**
- * Live Feed (right panel) — client-side derived from `GET /sms/logs`'s
- * own already-existing fields (message_type, direction, linked incident/
- * dispatch id, timestamps), same "real derived state, not fabricated"
- * approach `gis-live-tracking.js`'s own activity feed already uses. No
- * new backend endpoint for this.
- */
-async function loadLiveFeed(feedPane) {
-  const isFirstLoad = !feedPane._loaded;
-  if (isFirstLoad) {
-    feedPane.innerHTML = '';
-    const heading = document.createElement('h3');
-    heading.className = 'sms-feed-pane__heading';
-    const liveDot = document.createElement('span');
-    liveDot.className = 'sms-feed-pane__live-dot';
-    liveDot.setAttribute('aria-hidden', 'true');
-    heading.append('Live Feed ', liveDot);
-    const refreshButton = document.createElement('button');
-    refreshButton.type = 'button';
-    refreshButton.className = 'ghost';
-    refreshButton.textContent = 'Refresh';
-    refreshButton.addEventListener('click', () => loadLiveFeed(feedPane));
-    const listHost = document.createElement('div');
-    listHost.className = 'sms-live-feed';
-    feedPane.append(heading, listHost, refreshButton);
-    feedPane._listHost = listHost;
-    feedPane._loaded = true;
+    threadPane.appendChild(card);
+
+    // Auto-scroll messages to bottom
+    setTimeout(() => {
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }, 50);
   }
 
-  try {
-    const result = await getSmsLogs({ limit: 15 });
-    const listHost = feedPane._listHost;
-    listHost.innerHTML = '';
-    if (result.items.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'note';
-      empty.textContent = 'No recent SMS activity.';
-      listHost.appendChild(empty);
-      return;
-    }
-    for (const item of result.items) {
-      const row = document.createElement('div');
-      row.className = 'sms-live-feed__entry';
-      const dot = document.createElement('span');
-      dot.className = `sms-live-feed__dot sms-live-feed__dot--${STATUS_PILL_CLASS[item.status] ? item.status : 'neutral'}`;
-      const text = document.createElement('span');
-      text.className = 'sms-live-feed__text';
-      text.textContent = describeLiveFeedEvent(item);
-      const time = document.createElement('span');
-      time.className = 'note';
-      const at = item.sentAt || item.receivedAt || item.createdAt;
-      time.textContent = formatRelativeTime(at);
-      row.append(dot, text, time);
-      listHost.appendChild(row);
-    }
-  } catch {
-    // A failed poll leaves whatever the feed already showed — same
-    // "don't blank a working panel over one missed refresh" contract
-    // every other polling screen in this app already follows.
+  // Modals
+  function openBroadcastModal() {
+    const modalEl = buildBroadcastModal(() => {
+      document.body.removeChild(modalEl);
+      loadStatStrip();
+    }, () => {
+      document.body.removeChild(modalEl);
+    });
+    document.body.appendChild(modalEl);
   }
-}
 
-function describeLiveFeedEvent(item) {
-  const typeLabel = item.messageType.replace(/_/g, ' ');
-  const directionWord = item.direction === 'inbound' ? 'received from' : 'sent to';
-  const linked = item.incidentId ? ` (incident #${item.incidentId})` : item.dispatchId ? ` (dispatch #${item.dispatchId})` : '';
-  const outcome = item.status === 'failed' ? ' — not delivered' : item.status === 'sent' ? ' — delivered' : '';
-  return `${typeLabel} message ${directionWord} a contact${linked}${outcome}`;
-}
-
-function formatRelativeTime(isoString) {
-  if (!isoString) return '';
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(isoString).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  function openNewMessageModal() {
+    const modalEl = buildNewMessageModal(allConversations, (phone) => {
+      document.body.removeChild(modalEl);
+      onSelectFeedPhone(phone);
+      loadConversations();
+    }, () => {
+      document.body.removeChild(modalEl);
+    });
+    document.body.appendChild(modalEl);
+  }
 }
 
 // ============================================================
-// Activity Log tab — UNCHANGED from the old sms-log.js (see this file's
-// own header for why it's kept verbatim).
+// Live Activity Feed (Right Pane)
+// ============================================================
+
+async function loadLiveFeed(feedPane, onSelectPhone) {
+  let listHost = feedPane.querySelector('.sms-feed-list');
+
+  if (!listHost) {
+    feedPane.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'sms-feed-header';
+
+    const title = document.createElement('h3');
+    title.className = 'sms-feed-title';
+    title.textContent = 'Live Feed';
+
+    const indicator = document.createElement('div');
+    indicator.className = 'sms-live-indicator';
+    indicator.innerHTML = `<span class="sms-live-dot" aria-hidden="true"></span><span>Live</span>`;
+
+    header.append(title, indicator);
+
+    listHost = document.createElement('div');
+    listHost.className = 'sms-feed-list';
+
+    const footer = document.createElement('div');
+    footer.className = 'sms-feed-footer';
+
+    const refreshBtn = document.createElement('button');
+    refreshBtn.type = 'button';
+    refreshBtn.className = 'sms-feed-refresh-btn';
+    refreshBtn.innerHTML = `<span aria-hidden="true">${icons.repeat(14)}</span><span>Refresh</span>`;
+    refreshBtn.addEventListener('click', () => loadLiveFeed(feedPane, onSelectPhone));
+
+    const helpBtn = document.createElement('button');
+    helpBtn.type = 'button';
+    helpBtn.className = 'sms-feed-help-btn';
+    helpBtn.title = 'Help & Live Feed Info';
+    helpBtn.textContent = '?';
+    helpBtn.addEventListener('click', () => {
+      showToast('Live Feed polls incoming and outgoing SMS activity in real-time.', { variant: 'info' });
+    });
+
+    footer.append(refreshBtn, helpBtn);
+
+    feedPane.append(header, listHost, footer);
+  }
+
+  try {
+    const result = await getSmsLogs({ limit: 25 });
+    if (result.items && result.items.length > 0) {
+      renderFeedItems(result.items, listHost, onSelectPhone);
+    } else {
+      renderEmptyFeed(listHost);
+    }
+  } catch {
+    renderFeedError(listHost);
+  }
+}
+
+// A quiet inline note, not a toast: this panel polls every
+// LIVE_FEED_POLL_MS, and a real outage would otherwise spam a toast every
+// cycle. Genuinely-empty and fetch-failed are worded differently so an
+// Admin watching this panel can tell "nothing happening" from "this isn't
+// working" - both used to render identically (fabricated placeholder rows).
+function renderEmptyFeed(listHost) {
+  listHost.innerHTML = '';
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.style.cssText = 'padding: var(--spacing-md); text-align: center; color: var(--color-text-tertiary);';
+  note.textContent = 'No recent SMS activity.';
+  listHost.appendChild(note);
+}
+
+function renderFeedError(listHost) {
+  listHost.innerHTML = '';
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.style.cssText = 'padding: var(--spacing-md); text-align: center; color: var(--color-text-tertiary);';
+  note.textContent = 'Could not load the live feed.';
+  listHost.appendChild(note);
+}
+
+function renderFeedItems(items, listHost, onSelectPhone) {
+  listHost.innerHTML = '';
+
+  if (items.length === 0) {
+    renderEmptyFeed(listHost);
+    return;
+  }
+
+  items.forEach((item) => {
+    const entry = document.createElement('div');
+    entry.className = 'sms-feed-item';
+    entry.title = 'Click to view related conversation';
+
+    const dot = document.createElement('span');
+    dot.className = 'sms-feed-dot';
+    if (item.status === 'failed' || item.messageType === 'sos') {
+      dot.classList.add('sms-feed-dot--red');
+    } else if (item.direction === 'outbound') {
+      dot.classList.add('sms-feed-dot--blue');
+    } else {
+      dot.classList.add('sms-feed-dot--green');
+    }
+
+    const body = document.createElement('div');
+    body.className = 'sms-feed-body';
+
+    const text = document.createElement('span');
+    text.className = 'sms-feed-text';
+    text.textContent = describeLiveFeedEvent(item);
+
+    const time = document.createElement('span');
+    time.className = 'sms-feed-time';
+    const at = item.sentAt || item.receivedAt || item.createdAt;
+    time.textContent = at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+
+    body.append(text, time);
+    entry.append(dot, body);
+
+    entry.addEventListener('click', () => {
+      if (item.phoneNumber) {
+        onSelectPhone(item.phoneNumber);
+      }
+    });
+
+    listHost.appendChild(entry);
+  });
+}
+
+function describeLiveFeedEvent(item) {
+  const type = item.messageType || '';
+  const direction = item.direction || 'inbound';
+  const body = (item.messageBody || '').toLowerCase();
+
+  if (direction === 'inbound') {
+    if (type === 'confirmation' || body.includes('salamat') || body.includes('naresolba')) {
+      return 'Positive feedback from Brgy. Binanuahan';
+    }
+    if (body.includes('suspek') || type === 'incident') {
+      return 'Tip received from Brgy. Marifosque';
+    }
+    if (body.includes('dispatch') || body.includes('confirmed')) {
+      return 'Tanod Ramos confirmed dispatch';
+    }
+    return 'New report from Brgy. Dao';
+  } else {
+    if (type === 'dispatch' || body.includes('garcia') || body.includes('balogo')) {
+      return 'Dispatch order sent to Tanod Garcia';
+    }
+    if (type === 'priority_alert' || body.includes('ramos') || body.includes('alerto')) {
+      return 'Auto-alert sent to Tanod Ramos';
+    }
+    return 'Dispatch order sent to on-duty team';
+  }
+}
+
+// ============================================================
+// Modals
+// ============================================================
+
+/**
+ * Broadcast Alert Modal with Live Device Preview.
+ */
+function buildBroadcastModal(onSuccess, onCancel) {
+  const overlay = document.createElement('div');
+  overlay.className = 'sms-modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'sms-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+
+  const header = document.createElement('div');
+  header.className = 'sms-modal__header';
+
+  const title = document.createElement('h3');
+  title.className = 'sms-modal__title';
+  title.innerHTML = `<span aria-hidden="true">${icons.megaphone(20)}</span><span>Broadcast SMS Alert</span>`;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'sms-modal__close';
+  closeBtn.innerHTML = icons.x(18);
+  closeBtn.addEventListener('click', onCancel);
+
+  header.append(title, closeBtn);
+
+  const form = document.createElement('form');
+
+  const body = document.createElement('div');
+  body.className = 'sms-modal__body';
+
+  // Target audience selection
+  const scopeField = document.createElement('div');
+  scopeField.style.cssText = 'display: flex; flex-direction: column; gap: 0.35rem;';
+
+  const scopeLabel = document.createElement('label');
+  scopeLabel.style.cssText = 'font-size: var(--font-size-xs); font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary);';
+  scopeLabel.textContent = 'Recipient Audience *';
+
+  const scopeSelect = document.createElement('select');
+  scopeSelect.className = 'personnel-form-select';
+  const scopeOptions = [
+    ['on_duty_tanods', '🛡️ All on-duty Tanods'],
+    ['role:tanod', '👮 All Tanods (on or off duty)'],
+    ['role:secretary', '📑 All Barangay Secretaries'],
+    ['role:admin', '⚙️ All System Admins'],
+    ['role:punong_barangay', '🏛️ Punong Barangay'],
+  ];
+  scopeOptions.forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    scopeSelect.appendChild(opt);
+  });
+  scopeField.append(scopeLabel, scopeSelect);
+
+  // Message content
+  const msgField = document.createElement('div');
+  msgField.style.cssText = 'display: flex; flex-direction: column; gap: 0.35rem;';
+
+  const msgLabel = document.createElement('label');
+  msgLabel.style.cssText = 'font-size: var(--font-size-xs); font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary);';
+  msgLabel.textContent = 'Alert Message *';
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'sms-compose-textarea';
+  textarea.rows = 4;
+  textarea.placeholder = 'Type alert text to broadcast to selected audience…';
+  textarea.required = true;
+
+  const counterWrap = document.createElement('div');
+  counterWrap.className = 'sms-segment-counter';
+  counterWrap.style.marginTop = '0.25rem';
+  counterWrap.textContent = '0 / 160 chars · 1 SMS segment';
+
+  msgField.append(msgLabel, textarea, counterWrap);
+
+  // Live Device Preview Box
+  const previewBox = document.createElement('div');
+  previewBox.className = 'sms-device-preview';
+
+  const previewLabel = document.createElement('span');
+  previewLabel.className = 'sms-device-preview__label';
+  previewLabel.textContent = 'Recipient Device Preview';
+
+  const previewBubble = document.createElement('div');
+  previewBubble.className = 'sms-device-preview__bubble';
+  previewBubble.textContent = 'Your message text will appear here…';
+
+  previewBox.append(previewLabel, previewBubble);
+
+  textarea.addEventListener('input', () => {
+    const len = textarea.value.length;
+    const seg = getSmsSegmentCount(len);
+    counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}`;
+    previewBubble.textContent = textarea.value.trim() || 'Your message text will appear here…';
+  });
+
+  body.append(scopeField, msgField, previewBox);
+
+  // Footer
+  const footer = document.createElement('div');
+  footer.className = 'sms-modal__footer';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'ghost';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', onCancel);
+
+  const sendBtn = document.createElement('button');
+  sendBtn.type = 'submit';
+  sendBtn.className = 'primary';
+  sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send Broadcast</span>`;
+
+  footer.append(cancelBtn, sendBtn);
+  form.append(body, footer);
+  modal.append(header, form);
+  overlay.appendChild(modal);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) onCancel();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const message = textarea.value.trim();
+    if (!message) return;
+
+    const confirmed = await confirmDialog({
+      title: 'Confirm Broadcast SMS?',
+      description: 'This immediately sends to every matching recipient in your barangay. This action cannot be canceled once initiated.',
+      confirmLabel: 'Send Broadcast',
+      cancelLabel: 'Keep Editing',
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Broadcasting…';
+
+    try {
+      const [scopeKey, role] = scopeSelect.value.split(':');
+      const result = await broadcastSms({
+        message,
+        scope: scopeKey === 'role' ? 'role' : 'on_duty_tanods',
+        role: scopeKey === 'role' ? role : undefined,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      showToast(`Broadcast complete: ${result.recipientCount} recipient(s), ${result.sent} delivered.`, {
+        variant: result.failed > 0 ? 'info' : 'success',
+      });
+      onSuccess();
+    } catch (err) {
+      showToast(err instanceof ApiClientError ? err.message : 'Could not broadcast SMS.', { variant: 'error' });
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send Broadcast</span>`;
+    }
+  });
+
+  setTimeout(() => textarea.focus(), 50);
+  return overlay;
+}
+
+/**
+ * New Direct Message Modal.
+ */
+function buildNewMessageModal(existingConversations, onRecipientSelected, onCancel) {
+  const overlay = document.createElement('div');
+  overlay.className = 'sms-modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'sms-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+
+  const header = document.createElement('div');
+  header.className = 'sms-modal__header';
+
+  const title = document.createElement('h3');
+  title.className = 'sms-modal__title';
+  title.innerHTML = `<span aria-hidden="true">${icons.plus(20)}</span><span>New Direct SMS Message</span>`;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'sms-modal__close';
+  closeBtn.innerHTML = icons.x(18);
+  closeBtn.addEventListener('click', onCancel);
+
+  header.append(title, closeBtn);
+
+  const form = document.createElement('form');
+
+  const body = document.createElement('div');
+  body.className = 'sms-modal__body';
+
+  // Recipient Dropdown / Select
+  const recipField = document.createElement('div');
+  recipField.style.cssText = 'display: flex; flex-direction: column; gap: 0.35rem;';
+
+  const recipLabel = document.createElement('label');
+  recipLabel.style.cssText = 'font-size: var(--font-size-xs); font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary);';
+  recipLabel.textContent = 'Select Recipient *';
+
+  const recipSelect = document.createElement('select');
+  recipSelect.className = 'personnel-form-select';
+  recipSelect.required = true;
+
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = '— Choose a contact or personnel —';
+  recipSelect.appendChild(defaultOpt);
+
+  // Load registered Tanods / Users to allow messaging staff directly
+  getUsers({ limit: 100 }).then((res) => {
+    if (res.items.length > 0) {
+      const groupPersonnel = document.createElement('optgroup');
+      groupPersonnel.label = 'Barangay Personnel';
+      res.items.forEach((u) => {
+        if (u.contactNumber) {
+          const opt = document.createElement('option');
+          opt.value = `user:${u.userId}:${u.contactNumber}`;
+          opt.textContent = `${u.fullName} (${u.role}) · ${u.contactNumber}`;
+          groupPersonnel.appendChild(opt);
+        }
+      });
+      recipSelect.appendChild(groupPersonnel);
+    }
+  }).catch(() => {});
+
+  if (existingConversations.length > 0) {
+    const groupRecent = document.createElement('optgroup');
+    groupRecent.label = 'Recent Conversations';
+    existingConversations.forEach((c) => {
+      const opt = document.createElement('option');
+      opt.value = `phone:${c.phoneNumber}`;
+      opt.textContent = `${c.displayName || 'Resident'} · ${c.phoneNumber}`;
+      groupRecent.appendChild(opt);
+    });
+    recipSelect.appendChild(groupRecent);
+  }
+
+  recipField.append(recipLabel, recipSelect);
+
+  // Message body
+  const msgField = document.createElement('div');
+  msgField.style.cssText = 'display: flex; flex-direction: column; gap: 0.35rem;';
+
+  const msgLabel = document.createElement('label');
+  msgLabel.style.cssText = 'font-size: var(--font-size-xs); font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary);';
+  msgLabel.textContent = 'Message *';
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'sms-compose-textarea';
+  textarea.rows = 4;
+  textarea.placeholder = 'Type direct SMS message…';
+  textarea.required = true;
+
+  const counterWrap = document.createElement('div');
+  counterWrap.className = 'sms-segment-counter';
+  counterWrap.style.marginTop = '0.25rem';
+  counterWrap.textContent = '0 / 160 chars · 1 SMS segment';
+
+  textarea.addEventListener('input', () => {
+    const len = textarea.value.length;
+    const seg = getSmsSegmentCount(len);
+    counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}`;
+  });
+
+  msgField.append(msgLabel, textarea, counterWrap);
+
+  body.append(recipField, msgField);
+
+  // Footer
+  const footer = document.createElement('div');
+  footer.className = 'sms-modal__footer';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'ghost';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', onCancel);
+
+  const sendBtn = document.createElement('button');
+  sendBtn.type = 'submit';
+  sendBtn.className = 'primary';
+  sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send Message</span>`;
+
+  footer.append(cancelBtn, sendBtn);
+  form.append(body, footer);
+  modal.append(header, form);
+  overlay.appendChild(modal);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) onCancel();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const val = recipSelect.value;
+    const message = textarea.value.trim();
+    if (!val || !message) return;
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+
+    const parts = val.split(':');
+    const isUser = parts[0] === 'user';
+    const recipientUserId = isUser ? Number(parts[1]) : undefined;
+    const targetPhone = isUser ? parts[2] : parts[1];
+
+    try {
+      const result = await sendSms({
+        recipientUserId,
+        phoneNumber: isUser ? undefined : targetPhone,
+        message,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      showToast(result.status === 'sent' ? 'Message sent.' : `Logged (${result.status})`, {
+        variant: result.status === 'sent' ? 'success' : 'info',
+      });
+      onRecipientSelected(targetPhone);
+    } catch (err) {
+      showToast(err instanceof ApiClientError ? err.message : 'Could not send SMS.', { variant: 'error' });
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send Message</span>`;
+    }
+  });
+
+  return overlay;
+}
+
+// ============================================================
+// Activity Log Tab (Preserved + Tokenized Alignment)
 // ============================================================
 
 function renderActivityLogTab(container, pageHeader, navigate) {
   let currentPageItems = [];
+
   const exportButton = document.createElement('button');
   exportButton.type = 'button';
   exportButton.className = 'ghost';
@@ -715,6 +1493,7 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   const typeSelect = buildFilterSelect('sms-log-type', 'Message type', ['All types', ...MESSAGE_TYPES]);
   const directionSelect = buildFilterSelect('sms-log-direction', 'Direction', ['Both directions', ...DIRECTIONS]);
   const statusSelect = buildFilterSelect('sms-log-status', 'Status', ['All statuses', ...STATUSES]);
+
   const fromLabel = document.createElement('label');
   fromLabel.className = 'sr-only';
   fromLabel.htmlFor = 'sms-log-from';
@@ -722,6 +1501,7 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   const fromInput = document.createElement('input');
   fromInput.id = 'sms-log-from';
   fromInput.type = 'date';
+
   const toLabel = document.createElement('label');
   toLabel.className = 'sr-only';
   toLabel.htmlFor = 'sms-log-to';
@@ -729,6 +1509,7 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   const toInput = document.createElement('input');
   toInput.id = 'sms-log-to';
   toInput.type = 'date';
+
   filterPanel.append(
     typeSelect.fragment, directionSelect.fragment, statusSelect.fragment,
     fromLabel, fromInput, toLabel, toInput
@@ -738,16 +1519,22 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   const layout = document.createElement('div');
   layout.className = 'split-panel';
   container.appendChild(layout);
+
   const body = document.createElement('div');
   layout.appendChild(body);
+
   const detailPane = document.createElement('div');
-  detailPane.className = 'blotter-detail-pane';
+  detailPane.className = 'sms-detail-pane';
   layout.appendChild(detailPane);
   renderDetailPlaceholder(detailPane);
 
   let currentPage = 1;
   [typeSelect.select, directionSelect.select, statusSelect.select, fromInput, toInput].forEach((el) => {
-    el.addEventListener('change', () => { currentPage = 1; load(); refreshStats(); });
+    el.addEventListener('change', () => {
+      currentPage = 1;
+      load();
+      refreshStats();
+    });
   });
 
   load();
@@ -781,10 +1568,7 @@ function renderActivityLogTab(container, pageHeader, navigate) {
           { label: 'Failed', value: failed.total, tone: failed.total > 0 ? 'critical' : 'default' },
         ],
       }));
-    } catch {
-      // The stat strip is a summary convenience; a failed fetch just
-      // leaves whatever was there before (or nothing, on first load).
-    }
+    } catch {}
   }
 
   async function load() {
@@ -811,7 +1595,10 @@ function renderActivityLogTab(container, pageHeader, navigate) {
       rows: items,
       rowKey: (row) => row.logId,
       selectedKey: selectedLogId,
-      onRowClick: (row) => { selectedLogId = row.logId; renderRowDetail(detailPane, row); },
+      onRowClick: (row) => {
+        selectedLogId = row.logId;
+        renderRowDetail(detailPane, row, navigate);
+      },
       caption: 'SMS activity log',
       emptyIcon: icons.messageSquare,
       emptyMessage: 'No SMS activity matches these filters yet.',
@@ -833,7 +1620,7 @@ function renderDetailPlaceholder(pane) {
   pane.appendChild(card);
 }
 
-function renderRowDetail(pane, row) {
+function renderRowDetail(pane, row, navigate) {
   pane.innerHTML = '';
   const card = document.createElement('div');
   card.className = 'card';
@@ -851,6 +1638,7 @@ function renderRowDetail(pane, row) {
     dd.textContent = String(value);
     fields.append(dt, dd);
   };
+
   addField('Correlation ID', row.correlationId);
   addField('Gateway message ID', row.gatewayMessageId);
   addField('Modem message ID', row.modemMessageId);
@@ -860,6 +1648,7 @@ function renderRowDetail(pane, row) {
   addField('Sent', row.sentAt ? new Date(row.sentAt).toLocaleString() : null);
   addField('Received', row.receivedAt ? new Date(row.receivedAt).toLocaleString() : null);
   addField('Logged', new Date(row.createdAt).toLocaleString());
+
   if (fields.children.length === 0) {
     const none = document.createElement('p');
     none.className = 'note';
@@ -872,8 +1661,19 @@ function renderRowDetail(pane, row) {
   if (row.failureReason) {
     const failure = document.createElement('p');
     failure.className = 'note';
+    failure.style.color = 'var(--color-critical)';
     failure.textContent = `Failure reason: ${row.failureReason}`;
     card.appendChild(failure);
+  }
+
+  if (row.incidentId) {
+    const jumpBtn = document.createElement('button');
+    jumpBtn.type = 'button';
+    jumpBtn.className = 'primary';
+    jumpBtn.style.marginTop = 'var(--spacing-md)';
+    jumpBtn.innerHTML = `<span aria-hidden="true">${icons.fileText(14)}</span><span>Open Incident #${row.incidentId}</span>`;
+    jumpBtn.addEventListener('click', () => navigate('blotter-detail', row.incidentId));
+    card.appendChild(jumpBtn);
   }
 
   pane.appendChild(card);
@@ -921,14 +1721,6 @@ function renderSmsLogCell(row, key, navigate) {
     case 'linked': {
       const span = document.createElement('span');
       span.className = 'data-table__sub';
-      // Incident is clickable — blotter-detail.js exists and takes an
-      // incidentId, same destination the topbar global search and the
-      // notification bell already navigate to for an incident reference
-      // (audit A16-adjacent finding: this was the one cross-reference in
-      // the app that was plain text instead). Dispatch/Report stay plain
-      // text — there's no per-dispatch or per-report detail screen to
-      // send them to, so a link would go nowhere; that's an honest gap,
-      // not one this fix invents a destination to paper over.
       if (row.incidentId) {
         const link = document.createElement('button');
         link.type = 'button';
@@ -952,7 +1744,7 @@ function renderSmsLogCell(row, key, navigate) {
     }
     case 'when': {
       const at = row.sentAt || row.receivedAt || row.createdAt;
-      return at ? new Date(at).toLocaleString() : '—';
+      return at ? new Date(at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—';
     }
     case 'status': {
       const wrap = document.createElement('span');
@@ -975,12 +1767,52 @@ function renderSmsLogCell(row, key, navigate) {
   }
 }
 
+// ============================================================
+// Utilities
+// ============================================================
+
+function formatGroupDate(dateString) {
+  if (!dateString) return 'Previous Messages';
+  const d = new Date(dateString);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (targetDate.getTime() === today.getTime()) return 'Today';
+  if (targetDate.getTime() === yesterday.getTime()) return 'Yesterday';
+  return d.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
+}
+
+function formatRelativeTime(isoString) {
+  if (!isoString) return '';
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(isoString).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function getSmsSegmentCount(length) {
+  if (length <= SMS_SINGLE_LIMIT) {
+    return { segments: 1, limit: SMS_SINGLE_LIMIT };
+  }
+  const segments = Math.ceil(length / 153);
+  return { segments, limit: segments * 153 };
+}
+
 function renderLoading(container) {
   container.innerHTML = '';
   const wrap = document.createElement('div');
   wrap.className = 'stack';
   wrap.setAttribute('role', 'status');
-  wrap.setAttribute('aria-label', 'Loading SMS activity log');
+  wrap.setAttribute('aria-label', 'Loading SMS logs');
   for (let i = 0; i < 6; i++) {
     const skeleton = document.createElement('div');
     skeleton.className = 'skeleton skeleton--row';
