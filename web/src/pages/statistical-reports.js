@@ -35,6 +35,7 @@ import { DonutChart } from '../components/DonutChart.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { InfoTip } from '../components/Tooltip.js';
 import { icons } from '../components/icons.js';
+import { DateRangePicker, manilaTodayIso } from '../components/DateRangePicker.js';
 
 // 12-hour clock labels for the by-hour bar chart's 24 buckets.
 const HOUR_LABELS = Array.from({ length: 24 }, (_, h) => {
@@ -71,21 +72,6 @@ const CASE_STATUS_PILL_CLASS = {
   settled: 'status-pill--success', resolved: 'status-pill--neutral',
 };
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-function daysAgoIso(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-/** "2026-09-04" -> "Sep 4", for the Key Insights card. */
-function shortDate(iso) {
-  if (!iso) return '';
-  const [, m, d] = iso.split('-');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[Number(m) - 1]} ${Number(d)}`;
-}
 
 /** 14 -> "2:00 PM – 3:00 PM" */
 function formatHourRange(h) {
@@ -137,145 +123,24 @@ function cardHeader(title, subtitle, icon, description) {
  * @param {ReturnType<import('../components/PageHeader.js').PageHeader>} pageHeader shared page header (for the Export CSV action)
  * @param {{fullName:string, role:string}} user
  */
+/** "2026-09-04" -> "Sep 4", for chart tick labels. */
+function shortDate(iso) {
+  if (!iso) return '';
+  const [, m, d] = iso.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[Number(m) - 1]} ${Number(d)}`;
+}
+
 export function renderReportsTab(container, pageHeader, user) {
-  // 2026-09-06 UX pass: same dropdown + progressive-disclosure pattern as
-  // the Admin Dashboard's date range control (admin-dashboard.js), moved
-  // into the page header's own actions row rather than a From/To/Generate
-  // row under the header — one control visible by default (a preset),
-  // with the explicit date fields only appearing once "Custom range" is
-  // picked. Unlike the dashboard, nothing here ever corrects fromInput/
-  // toInput after a fetch (this screen has no "server default range" to
-  // reconcile against — every load is an explicit, client-chosen range),
-  // so there's no equivalent of that file's post-load reconciliation step.
-  const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
-
-  const rangeWrapper = document.createElement('div');
-  rangeWrapper.className = 'date-range-picker-wrapper';
-
-  const rangeSelect = document.createElement('select');
-  rangeSelect.className = 'input--auto range-select';
-  rangeSelect.setAttribute('aria-label', 'Date range');
-  for (const [value, label] of [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['custom', 'Custom range...']]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    rangeSelect.appendChild(option);
-  }
-  rangeSelect.value = '30';
-  let previousSelectValue = '30';
-
-  const popover = document.createElement('div');
-  popover.className = 'date-range-popover';
-  popover.hidden = true;
-  popover.setAttribute('role', 'dialog');
-  popover.setAttribute('aria-label', 'Custom date range');
-
-  const popoverTitle = document.createElement('div');
-  popoverTitle.className = 'date-range-popover__title';
-  popoverTitle.textContent = 'Custom Date Range';
-
-  const gridFields = document.createElement('div');
-  gridFields.className = 'date-range-popover__grid';
-
-  const fromField = document.createElement('div');
-  fromField.className = 'date-range-popover__field';
-  const fromLabel = document.createElement('label');
-  fromLabel.className = 'date-range-popover__label';
-  fromLabel.textContent = 'From';
-  const fromInput = document.createElement('input');
-  fromInput.type = 'date';
-  fromInput.className = 'date-range-popover__input';
-  fromInput.value = daysAgoIso(29);
-  fromField.append(fromLabel, fromInput);
-
-  const toField = document.createElement('div');
-  toField.className = 'date-range-popover__field';
-  const toLabel = document.createElement('label');
-  toLabel.className = 'date-range-popover__label';
-  toLabel.textContent = 'To';
-  const toInput = document.createElement('input');
-  toInput.type = 'date';
-  toInput.className = 'date-range-popover__input';
-  toInput.value = todayIso();
-  toField.append(toLabel, toInput);
-
-  gridFields.append(fromField, toField);
-
-  const rangeError = document.createElement('span');
-  rangeError.className = 'app-inline-error';
-  rangeError.hidden = true;
-  rangeError.setAttribute('role', 'alert');
-
-  const actions = document.createElement('div');
-  actions.className = 'date-range-popover__actions';
-
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'ghost';
-  cancelButton.textContent = 'Cancel';
-
-  const applyButton = document.createElement('button');
-  applyButton.type = 'button';
-  applyButton.className = 'primary';
-  applyButton.textContent = 'Apply Range';
-
-  actions.append(cancelButton, applyButton);
-  popover.append(popoverTitle, gridFields, rangeError, actions);
-  rangeWrapper.append(rangeSelect, popover);
-
-  const validateRange = () => {
-    const invalid = Boolean(fromInput.value && toInput.value && fromInput.value > toInput.value);
-    applyButton.disabled = invalid;
-    rangeError.hidden = !invalid;
-    rangeError.textContent = invalid ? 'From date must be on or before To date.' : '';
-  };
-  fromInput.addEventListener('change', validateRange);
-  toInput.addEventListener('change', validateRange);
-
-  const openPopover = () => {
-    popover.hidden = false;
-    validateRange();
-    fromInput.focus();
-  };
-
-  const closePopover = (restorePrevious = false) => {
-    popover.hidden = true;
-    rangeError.hidden = true;
-    if (restorePrevious) {
-      rangeSelect.value = previousSelectValue;
-    }
-  };
-
-  cancelButton.addEventListener('click', () => closePopover(true));
-  document.addEventListener('click', (e) => {
-    if (!popover.hidden && !rangeWrapper.contains(e.target)) closePopover(true);
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !popover.hidden) closePopover(true);
-  });
-
-  applyButton.addEventListener('click', () => {
-    if (fromInput.value && toInput.value && fromInput.value > toInput.value) return;
-    previousSelectValue = 'custom';
-    const customOption = rangeSelect.querySelector('option[value="custom"]');
-    if (customOption) {
-      customOption.textContent = `Custom (${shortDate(fromInput.value)} – ${shortDate(toInput.value)})`;
-    }
-    rangeSelect.value = 'custom';
-    closePopover(false);
-    load(fromInput.value, toInput.value);
-  });
-
-  rangeSelect.addEventListener('change', () => {
-    if (rangeSelect.value === 'custom') {
-      openPopover();
-      return;
-    }
-    closePopover(false);
-    previousSelectValue = rangeSelect.value;
-    fromInput.value = daysAgoIso(PRESET_DAYS_AGO[rangeSelect.value]);
-    toInput.value = todayIso();
-    load(fromInput.value, toInput.value);
+  // 2026-09-06 UI/UX audit: was a copy of the Admin Dashboard's ~120-line
+  // picker (one of five that had drifted apart). Now the shared component.
+  // Unlike the dashboard this screen has no "server default range" to
+  // reconcile against — every load is an explicit, client-chosen range —
+  // so it never calls reconcile()/setDates().
+  const rangePicker = DateRangePicker({
+    value: '30',
+    ariaLabel: 'Date range',
+    onChange: ({ from, to }) => load(from, to),
   });
 
   function buildExportButton(format, label, iconSvg) {
@@ -288,7 +153,8 @@ export function renderReportsTab(container, pageHeader, user) {
       button.disabled = true;
       button.innerHTML = `<span class="is-spinning" aria-hidden="true">${icons.repeat(14)}</span><span>Exporting…</span>`;
       try {
-        await exportReport({ dateFrom: fromInput.value, dateTo: toInput.value, format });
+        const range = rangePicker.getState();
+        await exportReport({ dateFrom: range.from, dateTo: range.to, format });
         const blob = await downloadReportExport({ format });
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -316,13 +182,14 @@ export function renderReportsTab(container, pageHeader, user) {
     buildExportButton('pdf', 'Export PDF', icons.fileText(16))
   );
 
-  pageHeader.actions.append(rangeWrapper, exportGroup);
+  pageHeader.actions.append(rangePicker.el, exportGroup);
 
   const body = document.createElement('div');
   body.className = 'dashboard-body';
   container.append(body);
 
-  load(fromInput.value, toInput.value);
+  const initialRange = rangePicker.getState();
+  load(initialRange.from, initialRange.to);
 
   async function load(dateFrom, dateTo) {
     const isInitial = body.children.length === 0;
@@ -408,7 +275,7 @@ function renderReport(container, summary, role) {
   ));
   const busiestDay = summary.trend && summary.trend.length > 0
     ? summary.trend.reduce((best, day) => (day.count > best.count ? day : best), summary.trend[0])
-    : { date: todayIso(), count: 0 };
+    : { date: manilaTodayIso(), count: 0 };
   const topType = Object.entries(summary.byIncidentType).reduce(
     (best, [key, count]) => (count > best.count ? { key, count } : best),
     { key: null, count: 0 }

@@ -1,0 +1,133 @@
+/**
+ * DateRangePicker.css — co-located with DateRangePicker.js.
+ *
+ * 2026-09-06 UI/UX audit: these classes previously existed THREE times,
+ * fully duplicated and all globally scoped, in admin-dashboard.css,
+ * audit-log.css and sms-monitor.css. Because none of them was scoped to
+ * its own page, CSS link order decided the winner for every screen — and
+ * audit-log.css is last in index.html, so Audit Log's copy was silently
+ * styling the Dashboard, both Analytics tabs and SMS Monitor too. The
+ * three copies had drifted (different radii, one used a hardcoded 12px
+ * and a hardcoded box-shadow instead of the tokens), so the drift was
+ * invisible: only the last-loaded values ever rendered.
+ *
+ * This is the single definition. The Admin Dashboard copy was taken as
+ * canonical — it was the only one on the glassmorphism token system that
+ * the rest of the app's floating chrome (Menu, ConfirmDialog, Toast)
+ * already uses.
+ */
+
+.date-range-picker-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.date-range-popover {
+  position: absolute;
+  top: calc(100% + var(--spacing-xs));
+  right: 0;
+  z-index: 50;
+  width: 19rem;
+  padding: var(--spacing-md);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-floating);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  animation: popover-slide-in 0.15s ease-out;
+}
+
+@keyframes popover-slide-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.date-range-popover[hidden] {
+  display: none;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .date-range-popover {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+}
+
+.date-range-popover__title {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-3xs);
+}
+
+.date-range-popover__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+}
+
+.date-range-popover__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.date-range-popover__label {
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.date-range-popover__input {
+  width: 100%;
+  padding: var(--spacing-2xs) var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-sizing: border-box;
+}
+
+.date-range-popover__input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.date-range-popover__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+
+/* The popover's own Cancel/Apply pair sits below the app-wide 2.5rem
+   control height on purpose — it is a compact secondary surface, not a
+   page-level action row. */
+.date-range-popover__actions button {
+  min-height: 2rem;
+  padding: var(--spacing-xs) var(--spacing-sm-md);
+  font-size: var(--font-size-sm);
+}
+
+/* Narrow viewports: the 19rem card can overhang the right edge when the
+   control sits in a page header's actions row, so pin it to the wrapper's
+   left instead. The right/left flip and its 992px breakpoint are ported
+   from audit-log.css, which was the only one of the three copies to have
+   it — and, since that file loaded last, the only reason the other four
+   screens got any responsive behaviour at all. The width clamp is new:
+   flipping to `left: 0` alone still overhangs once the viewport is
+   narrower than the card. */
+@media (max-width: 992px) {
+  .date-range-popover {
+    right: auto;
+    left: 0;
+    width: min(19rem, calc(100vw - 2 * var(--spacing-lg)));
+  }
+}
