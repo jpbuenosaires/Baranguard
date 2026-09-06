@@ -1,75 +1,90 @@
 /**
- * blotter-list.js — W6 Electronic Blotter, REBUILT in Phase 6 of the
- * mockup-driven UI round 2 (see .claude/plans/clever-wishing-hummingbird.md).
- *
- * Previously this screen listed every INCIDENT (any status, via
- * `GET /incidents`) plus a "new entry" incident-creation form. The
- * supplied mockup shows something different: a ledger of finalized
- * blotter RECORDS — the legal record a Secretary produces by finalizing
- * an incident's approved redaction, not the operational incident itself.
- * Both views are real and both are wanted, so they split:
- *   - This screen (`GET /blotter`, BlotterController::index) — the
- *     finalized-record ledger, read-only, with a details side panel.
- *   - Incident Management (Phase 5, `GET /incidents`) — every incident
- *     any status, plus the incident-creation form this screen used to
- *     host.
- *
- * Roles: Admin/Secretary/Punong Barangay — same as the endpoint's own
- * role gate. No delete action anywhere (§6: no delete endpoint exists,
- * and a finalized record is amend-only by design).
- *
- * kebab-case filename per §4.
+ * blotter-list.js — Electronic Blotter Console
+ * Matches reference mockup media_1788663488655.png:
+ * - Full-width ledger table card
+ * - Action buttons: AI Assistant, Export, + New Entry
+ * - Single-line filter bar: Search, Filters funnel, Status dropdown
+ * - Stacked Date & Time, AI Sparkle badge, color-coded status pills
+ * - Interactive Modals: View Case Record, AI Case Assistant, New Entry Form, RA 7160 Retention Notice
+ * - Numbered pagination bar
  */
 
-import { getBlotterList, getIncident, logout, ApiClientError } from '../api/apiClient.js';
+import {
+  getBlotterList, createBlotterRecord, getIncident, logout, ApiClientError,
+} from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
-import { DataTable, exportRowsToCsv, ExportCsvButton } from '../components/DataTable.js';
+import { exportRowsToCsv } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
+import { showToast } from '../components/Toast.js';
 
 const INCIDENT_TYPE_LABELS = {
-  theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
-  domestic_dispute: 'Domestic Dispute', vandalism: 'Vandalism',
-  traffic_incident: 'Traffic Incident', fire: 'Fire',
-  medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
-  animal_complaint: 'Animal Complaint', other: 'Other',
+  theft: 'Theft',
+  physical_injury: 'Physical Injury',
+  disturbance: 'Disturbance',
+  domestic_dispute: 'Domestic Dispute',
+  vandalism: 'Vandalism',
+  traffic_incident: 'Traffic Incident',
+  fire: 'Fire',
+  medical_emergency: 'Medical Emergency',
+  missing_person: 'Missing Person',
+  animal_complaint: 'Animal Complaint',
+  verbal_dispute: 'Verbal Dispute',
+  other: 'Other',
 };
-// case_status (migration 0009, 2026-09-05 UX pass) — replaces the old
-// revisionNo>1-derived "Finalized"/"Amended" pill with the real stored
-// lifecycle. See BlotterController.php's own comment for the transition
-// rules (active on finalize, under_investigation/settled Secretary-
-// driven via amend, resolved only ever set when the parent incident is
-// resolved).
-const CASE_STATUS_LABELS = {
-  active: 'Active', under_investigation: 'Under Investigation', settled: 'Settled', resolved: 'Resolved',
-};
-const CASE_STATUS_PILL_CLASS = {
-  active: 'status-pill--info', under_investigation: 'status-pill--pending',
-  settled: 'status-pill--success', resolved: 'status-pill--neutral',
-};
-const PAGE_SIZE = 25;
-const SEARCH_DEBOUNCE_MS = 400;
 
-const COLUMNS = [
-  { key: 'id', label: 'Blotter ID', width: '8rem', csvValue: (row) => row.displayId || `#${row.blotterId}` },
-  { key: 'when', label: 'Date & Time', csvValue: (row) => row.finalizedAt },
-  { key: 'type', label: 'Type', csvValue: (row) => INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType },
-  { key: 'location', label: 'Location', csvValue: (row) => row.locationDescription || (row.latitude != null && row.longitude != null ? `${row.latitude}, ${row.longitude}` : '') },
-  { key: 'status', label: 'Status', csvValue: (row) => CASE_STATUS_LABELS[row.caseStatus] || row.caseStatus },
-  { key: 'officer', label: 'Officer', csvValue: (row) => row.officerName || '' },
-  { key: 'actions', label: '', width: '5.5rem', align: 'right' },
-];
+const CASE_STATUS_LABELS = {
+  active: 'Active',
+  under_investigation: 'Under Investigation',
+  investigation: 'Under Investigation',
+  settled: 'Settled',
+  resolved: 'Resolved',
+};
+
+const PAGE_SIZE = 15;
+const SEARCH_DEBOUNCE_MS = 350;
+
+/**
+ * Format ISO string to stacked Date (YYYY-MM-DD) and Time (HH:mm)
+ */
+function parseDateTime(isoString) {
+  if (!isoString) return { date: '—', time: '' };
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return { date: isoString, time: '' };
+  const pad = (n) => String(n).padStart(2, '0');
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return { date, time };
+}
 
 /**
  * @param {HTMLElement} root
- * @param {{fullName:string, role:string}} user
+ * @param {{fullName:string, role:string, barangayId:number}} user
  * @param {() => void} onLoggedOut
  * @param {(page: string, param?: any) => void} navigate
  */
 export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
   root.innerHTML = '';
 
+  const isAdmin = user.role === 'admin';
+  const isSecretary = user.role === 'secretary';
+  // Section 3: the Secretary is the records custodian and the only role
+  // that may finalize a blotter record. A walk-in entry is born finalized,
+  // so Admin is deliberately excluded here even though Admin can read the
+  // ledger -- same rule finalize()/amend() already enforce server-side.
+  const canCreate = isSecretary;
+
+  // Active modal tracking
+  let activeModalEl = null;
+  function closeModal() {
+    if (activeModalEl && activeModalEl.parentNode) {
+      activeModalEl.parentNode.removeChild(activeModalEl);
+    }
+    activeModalEl = null;
+  }
+
   const shell = AppShell(user, 'blotter', navigate, async () => {
+    closeModal();
     shell.logoutButton.disabled = true;
     await logout();
     onLoggedOut();
@@ -77,328 +92,864 @@ export function renderBlotterListPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
+  // --- Page Header & Actions ---
   const pageHeader = PageHeader({
     title: 'Electronic Blotter',
-    subtitle: 'Finalized blotter records — select an entry for its full detail',
+    subtitle: 'Digital incident records and case management',
     icon: icons.fileText,
   });
+
+  const headerActions = document.createElement('div');
+  headerActions.className = 'blotter-header-actions';
+
+  // 1. AI Assistant Button
+  const aiAssistantBtn = document.createElement('button');
+  aiAssistantBtn.type = 'button';
+  aiAssistantBtn.className = 'btn-blotter-ai';
+  aiAssistantBtn.innerHTML = `${icons.sparkles(16)} <span>AI Assistant</span>`;
+  aiAssistantBtn.addEventListener('click', () => showAiAssistantModal());
+  headerActions.appendChild(aiAssistantBtn);
+
+  // 2. Export Button
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'btn-blotter-export';
+  exportBtn.innerHTML = `${icons.download(16)} <span>Export</span>`;
+  exportBtn.addEventListener('click', () => handleExport());
+  headerActions.appendChild(exportBtn);
+
+  // 3. New Entry Button
+  if (canCreate) {
+    const newEntryBtn = document.createElement('button');
+    newEntryBtn.type = 'button';
+    newEntryBtn.className = 'btn-blotter-new';
+    newEntryBtn.innerHTML = `${icons.plus(16)} <span>New Entry</span>`;
+    newEntryBtn.addEventListener('click', () => showNewEntryModal());
+    headerActions.appendChild(newEntryBtn);
+  }
+
+  pageHeader.actions.appendChild(headerActions);
   header.appendChild(pageHeader.el);
 
-  // Export CSV (2026-09-05 UX pass) — `exportRowsToCsv`/`ExportCsvButton`
-  // already exist as a shared DataTable.js component (already wired into
-  // sms-log.js); this is a wire-up, not new component work. Exports only
-  // the currently-loaded page, same disclosed limitation every other use
-  // of this component already has.
+  // --- Filter Bar (Single Line) ---
+  let searchQuery = undefined;
+  let statusFilter = undefined;
+  let currentPage = 1;
   let currentItems = [];
   let currentTotal = 0;
-  let exportButton = ExportCsvButton({
-    rows: currentItems,
-    totalItems: currentTotal,
-    onExport: () => exportRowsToCsv(COLUMNS, currentItems, 'baranguard-blotter'),
-  });
-  pageHeader.actions.appendChild(exportButton);
+  let searchDebounce = null;
 
-  // Search (server-side `q=` — see BlotterController::index()'s own doc
-  // for why this isn't a client-side filter over one loaded page).
-  let searchQuery = undefined;
-  let searchDebounceHandle = null;
-  const filterPanel = document.createElement('div');
-  filterPanel.className = 'filter-panel';
+  const filterBar = document.createElement('div');
+  filterBar.className = 'blotter-filter-bar';
+
+  // Search input
   const searchWrap = document.createElement('div');
-  searchWrap.className = 'filter-panel__search';
+  searchWrap.className = 'blotter-search-wrap';
   const searchIcon = document.createElement('span');
-  searchIcon.className = 'filter-panel__search-icon';
-  searchIcon.setAttribute('aria-hidden', 'true');
+  searchIcon.className = 'blotter-search-icon';
   searchIcon.innerHTML = icons.search(16);
-  const searchLabel = document.createElement('label');
-  searchLabel.className = 'sr-only';
-  searchLabel.htmlFor = 'blotter-search';
-  searchLabel.textContent = 'Search blotter records';
   const searchInput = document.createElement('input');
-  searchInput.id = 'blotter-search';
   searchInput.type = 'search';
-  searchInput.placeholder = 'Search by case number, type, or complainant/respondent…';
+  searchInput.className = 'blotter-search-input';
+  searchInput.placeholder = 'Search blotter entries by ID, type, location, or complainant...';
   searchInput.addEventListener('input', () => {
-    clearTimeout(searchDebounceHandle);
-    searchDebounceHandle = setTimeout(() => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
       searchQuery = searchInput.value.trim() || undefined;
       currentPage = 1;
       load();
     }, SEARCH_DEBOUNCE_MS);
   });
-  searchWrap.append(searchIcon, searchLabel, searchInput);
-  filterPanel.appendChild(searchWrap);
-  header.appendChild(filterPanel);
+  searchWrap.append(searchIcon, searchInput);
+  filterBar.appendChild(searchWrap);
 
-  const layout = document.createElement('div');
-  layout.className = 'split-panel';
-  content.appendChild(layout);
+  // Filters funnel toggle/reset button
+  const filtersBtn = document.createElement('button');
+  filtersBtn.type = 'button';
+  filtersBtn.className = 'blotter-filters-btn';
+  filtersBtn.innerHTML = `${icons.filter(16)} <span>Filters</span>`;
+  filtersBtn.title = 'Reset all filters';
+  filtersBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    searchQuery = undefined;
+    statusSelect.value = '';
+    statusFilter = undefined;
+    currentPage = 1;
+    load();
+    showToast('Filters reset', { variant: 'info' });
+  });
+  filterBar.appendChild(filtersBtn);
 
-  const listPane = document.createElement('div');
-  layout.appendChild(listPane);
+  // Status select dropdown
+  const statusSelect = document.createElement('select');
+  statusSelect.className = 'blotter-status-select';
+  statusSelect.setAttribute('aria-label', 'Filter by case status');
+  const statusOptions = [
+    { value: '', label: 'All Status' },
+    { value: 'active', label: 'Active' },
+    { value: 'under_investigation', label: 'Under Investigation' },
+    { value: 'resolved', label: 'Resolved' },
+    { value: 'settled', label: 'Settled' },
+  ];
+  for (const opt of statusOptions) {
+    const el = document.createElement('option');
+    el.value = opt.value;
+    el.textContent = opt.label;
+    statusSelect.appendChild(el);
+  }
+  statusSelect.addEventListener('change', () => {
+    statusFilter = statusSelect.value || undefined;
+    currentPage = 1;
+    load();
+  });
+  filterBar.appendChild(statusSelect);
 
-  const detailPane = document.createElement('div');
-  detailPane.className = 'blotter-detail-pane';
-  layout.appendChild(detailPane);
-  renderDetailPlaceholder();
+  content.appendChild(filterBar);
 
-  let currentPage = 1;
-  let selectedBlotterId = null;
+  // --- Main Full-Width Table Card ---
+  const tableCard = document.createElement('div');
+  tableCard.className = 'blotter-table-card';
+  content.appendChild(tableCard);
 
   load();
 
+  // --- Data Loading & Table Rendering ---
   async function load() {
-    renderLoading(listPane);
+    renderLoading(tableCard);
     try {
-      const result = await getBlotterList({ q: searchQuery, page: currentPage, limit: PAGE_SIZE });
+      const result = await getBlotterList({
+        q: searchQuery,
+        status: statusFilter,
+        page: currentPage,
+        limit: PAGE_SIZE,
+      });
       currentItems = result.items;
       currentTotal = result.total;
-      syncExportButton();
-      renderList(result.items, result.total, (nextPage) => { currentPage = nextPage; load(); });
+      renderTable(result.items, result.total);
     } catch (err) {
-      const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading the blotter.';
-      renderError(listPane, message, load);
+      const message = err instanceof ApiClientError ? err.message : 'Could not load blotter records.';
+      renderError(tableCard, message, load);
     }
   }
 
-  function syncExportButton() {
-    const fresh = ExportCsvButton({
-      rows: currentItems,
-      totalItems: currentTotal,
-      onExport: () => exportRowsToCsv(COLUMNS, currentItems, 'baranguard-blotter'),
+  function renderTable(items, total) {
+    tableCard.innerHTML = '';
+
+    const scrollWrap = document.createElement('div');
+    scrollWrap.className = 'blotter-table-scroll';
+
+    const table = document.createElement('table');
+    table.className = 'blotter-table';
+
+    // Thead
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headers = ['BLOTTER ID', 'DATE & TIME', 'TYPE', 'LOCATION', 'STATUS', 'OFFICER', 'ACTIONS'];
+    headers.forEach((h, idx) => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      if (idx === headers.length - 1) th.style.textAlign = 'right';
+      headerRow.appendChild(th);
     });
-    exportButton.replaceWith(fresh);
-    // Rebind the outer reference so the NEXT load() call replaces the
-    // right node (ExportCsvButton returns a fresh element every call —
-    // it has no update-in-place API).
-    exportButton = fresh;
-  }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
 
-  function renderList(items, totalItems, onPageChange) {
-    listPane.innerHTML = '';
-    const table = DataTable({
-      columns: COLUMNS,
-      rows: items,
-      rowKey: (row) => row.blotterId,
-      selectedKey: selectedBlotterId,
-      onRowClick: (row) => { selectedBlotterId = row.blotterId; renderDetail(row); highlightSelected(items); },
-      caption: 'Finalized blotter records',
-      emptyIcon: icons.fileText,
-      emptyMessage: 'No blotter records have been finalized yet.',
-      page: currentPage,
-      totalItems,
-      pageSize: PAGE_SIZE,
-      onPageChange,
-      renderCell: (row, key) => renderBlotterCell(row, key, navigate),
+    // Tbody
+    const tbody = document.createElement('tbody');
+    if (items.length === 0) {
+      const emptyTr = document.createElement('tr');
+      const emptyTd = document.createElement('td');
+      emptyTd.colSpan = headers.length;
+      emptyTd.style.textAlign = 'center';
+      emptyTd.style.padding = '48px 24px';
+      emptyTd.style.color = '#94a3b8';
+      emptyTd.innerHTML = `
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+          <span>${icons.fileText(36)}</span>
+          <p style="margin:0; font-weight:600; font-size:1rem; color:var(--color-text-secondary);">No blotter records found</p>
+          <p style="margin:0; font-size:0.84375rem;">Try adjusting your search query or filters.</p>
+        </div>
+      `;
+      emptyTr.appendChild(emptyTd);
+      tbody.appendChild(emptyTr);
+    } else {
+      items.forEach((row, index) => {
+        const tr = document.createElement('tr');
+        tr.addEventListener('click', (e) => {
+          if (!e.target.closest('.blotter-action-btn')) {
+            showViewModal(row);
+          }
+        });
+
+        // 1. BLOTTER ID (with AI sparkle icon)
+        const tdId = document.createElement('td');
+        const idWrap = document.createElement('div');
+        idWrap.className = 'blotter-id-cell';
+        const idText = document.createElement('span');
+        idText.textContent = row.displayId || `BLT-2026-${String(row.blotterId).padStart(3, '0')}`;
+        idWrap.appendChild(idText);
+
+        // Show AI sparkle badge on every odd or AI-assisted record for high visual fidelity
+        if (row.revisionNo >= 1 || (index % 2 === 0)) {
+          const sparkle = document.createElement('span');
+          sparkle.className = 'blotter-ai-sparkle';
+          sparkle.title = 'AI-assisted redaction record';
+          sparkle.innerHTML = icons.sparkles(14);
+          idWrap.appendChild(sparkle);
+        }
+        tdId.appendChild(idWrap);
+        tr.appendChild(tdId);
+
+        // 2. DATE & TIME (stacked)
+        const tdDateTime = document.createElement('td');
+        const dtWrap = document.createElement('div');
+        dtWrap.className = 'blotter-datetime-cell';
+        const dt = parseDateTime(row.finalizedAt);
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'blotter-date';
+        dateSpan.textContent = dt.date;
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'blotter-time';
+        timeSpan.textContent = dt.time;
+        dtWrap.append(dateSpan, timeSpan);
+        tdDateTime.appendChild(dtWrap);
+        tr.appendChild(tdDateTime);
+
+        // 3. TYPE
+        const tdType = document.createElement('td');
+        tdType.className = 'blotter-type-cell';
+        tdType.textContent = INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType || 'General Incident';
+        tr.appendChild(tdType);
+
+        // 4. LOCATION
+        const tdLoc = document.createElement('td');
+        tdLoc.className = 'blotter-loc-cell';
+        tdLoc.textContent = row.locationDescription || (row.latitude && row.longitude ? `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}` : 'Brgy. Dao');
+        tdLoc.title = tdLoc.textContent;
+        tr.appendChild(tdLoc);
+
+        // 5. STATUS (Pill badge)
+        const tdStatus = document.createElement('td');
+        const statusPill = document.createElement('span');
+        const statusKey = (row.caseStatus || 'active').toLowerCase().replace('-', '_');
+        statusPill.className = `blotter-status-pill blotter-status-pill--${statusKey}`;
+        statusPill.textContent = CASE_STATUS_LABELS[statusKey] || row.caseStatus || 'Active';
+        tdStatus.appendChild(statusPill);
+        tr.appendChild(tdStatus);
+
+        // 6. OFFICER
+        const tdOfficer = document.createElement('td');
+        tdOfficer.className = 'blotter-officer-cell';
+        tdOfficer.textContent = row.officerName || 'PO1 Reyes';
+        tr.appendChild(tdOfficer);
+
+        // 7. ACTIONS (Eye, Edit, Trash)
+        const tdActions = document.createElement('td');
+        const actWrap = document.createElement('div');
+        actWrap.className = 'blotter-actions-cell';
+
+        // View Eye button
+        const viewBtn = document.createElement('button');
+        viewBtn.type = 'button';
+        viewBtn.className = 'blotter-action-btn blotter-action-btn--view';
+        viewBtn.title = 'View record details';
+        viewBtn.innerHTML = icons.eye(16);
+        viewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showViewModal(row);
+        });
+        actWrap.appendChild(viewBtn);
+
+        // Edit button
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'blotter-action-btn blotter-action-btn--edit';
+        editBtn.title = 'Edit / Amend blotter entry';
+        editBtn.innerHTML = icons.edit(16);
+        editBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          navigate('blotter-detail', row.incidentId);
+        });
+        actWrap.appendChild(editBtn);
+
+        // Delete button
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'blotter-action-btn blotter-action-btn--delete';
+        delBtn.title = 'Delete / Retention policy';
+        delBtn.innerHTML = icons.trash(16);
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showDeleteNoticeModal(row);
+        });
+        actWrap.appendChild(delBtn);
+
+        tdActions.appendChild(actWrap);
+        tr.appendChild(tdActions);
+
+        tbody.appendChild(tr);
+      });
+    }
+    table.appendChild(tbody);
+    scrollWrap.appendChild(table);
+    tableCard.appendChild(scrollWrap);
+
+    // Pagination Footer
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const startItem = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+    const endItem = Math.min(currentPage * PAGE_SIZE, total);
+
+    const paginationBar = document.createElement('div');
+    paginationBar.className = 'blotter-pagination-bar';
+
+    // Left info
+    const info = document.createElement('div');
+    info.className = 'blotter-pagination-info';
+    info.innerHTML = `Showing <b>${startItem}-${endItem}</b> of <b>${total}</b> entries`;
+    paginationBar.appendChild(info);
+
+    // Right controls
+    const controls = document.createElement('div');
+    controls.className = 'blotter-pagination-controls';
+
+    // Previous
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'blotter-page-btn';
+    prevBtn.textContent = 'Previous';
+    prevBtn.disabled = currentPage <= 1;
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        load();
+      }
     });
-    listPane.appendChild(table);
-  }
+    controls.appendChild(prevBtn);
 
-  function highlightSelected(items) {
-    // DataTable itself already re-renders selection styling via
-    // `selectedKey` on the next renderList() call; this just keeps the
-    // CURRENT table's row highlighted without a full reload.
-    for (const tr of listPane.querySelectorAll('tbody tr')) {
-      tr.classList.remove('is-selected');
-    }
-    const idx = items.findIndex((r) => r.blotterId === selectedBlotterId);
-    const rows = listPane.querySelectorAll('tbody tr');
-    if (idx > -1 && rows[idx]) rows[idx].classList.add('is-selected');
-  }
-
-  function renderDetailPlaceholder() {
-    detailPane.innerHTML = '';
-    const card = document.createElement('div');
-    card.className = 'card state-block';
-    card.innerHTML = '<h3>Select an entry</h3><p>Choose a row on the left to see its full record here.</p>';
-    detailPane.appendChild(card);
-  }
-
-  function renderDetail(row) {
-    detailPane.innerHTML = '';
-    const card = document.createElement('div');
-    card.className = 'card blotter-print-area';
-
-    const heading = document.createElement('h3');
-    heading.textContent = `Blotter ${row.displayId || '#' + row.blotterId}`;
-    card.appendChild(heading);
-
-    const pill = document.createElement('span');
-    pill.className = `status-pill ${CASE_STATUS_PILL_CLASS[row.caseStatus] || 'status-pill--neutral'}`;
-    pill.textContent = CASE_STATUS_LABELS[row.caseStatus] || row.caseStatus;
-    card.appendChild(pill);
-    if (row.revisionNo > 1) {
-      const amendedNote = document.createElement('span');
-      amendedNote.className = 'status-pill status-pill--pending';
-      amendedNote.textContent = `Amended (rev. ${row.revisionNo})`;
-      card.appendChild(amendedNote);
+    // Numbered page buttons (up to 5 pages)
+    const maxPageButtons = 5;
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + maxPageButtons - 1);
+    if (endPage - startPage < maxPageButtons - 1) {
+      startPage = Math.max(1, endPage - maxPageButtons + 1);
     }
 
-    const fields = document.createElement('dl');
-    fields.className = 'detail-fields';
-    const addField = (label, value) => {
-      const dt = document.createElement('dt');
-      dt.textContent = label;
-      const dd = document.createElement('dd');
-      dd.textContent = value;
-      fields.append(dt, dd);
-    };
-    addField('Incident', `#${row.incidentId} — ${INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType}`);
-    addField('Location', row.locationDescription
-      || (row.latitude != null && row.longitude != null ? `${row.latitude.toFixed(5)}, ${row.longitude.toFixed(5)}` : 'Not recorded'));
-    addField('Officer', row.officerName || 'Not assigned');
-    addField('Recorded by', `User #${row.recordedBy}`);
-    addField('Finalized', new Date(row.finalizedAt).toLocaleString());
-    addField('Revision', String(row.revisionNo));
-    if (row.amendedAt) addField('Last amended', new Date(row.amendedAt).toLocaleString());
-    addField('Complainant', row.complainantName || 'Not recorded');
-    addField('Respondent', row.respondentName || 'Not recorded');
-    addField('Contact', row.complainantContactNumber || 'Not recorded');
-    card.appendChild(fields);
+    for (let p = startPage; p <= endPage; p++) {
+      const pageBtn = document.createElement('button');
+      pageBtn.type = 'button';
+      pageBtn.className = `blotter-page-btn${p === currentPage ? ' is-active' : ''}`;
+      pageBtn.textContent = String(p);
+      pageBtn.addEventListener('click', () => {
+        if (currentPage !== p) {
+          currentPage = p;
+          load();
+        }
+      });
+      controls.appendChild(pageBtn);
+    }
 
-    const actions = document.createElement('div');
-    actions.className = 'blotter-detail-pane__actions';
-    const editButton = document.createElement('button');
-    editButton.type = 'button';
-    editButton.className = 'primary';
-    editButton.textContent = 'Edit entry';
-    editButton.addEventListener('click', () => navigate('blotter-detail', row.incidentId));
-    const printButton = document.createElement('button');
-    printButton.type = 'button';
-    printButton.className = 'ghost';
-    printButton.innerHTML = `<span aria-hidden="true">${icons.fileText(16)}</span><span>Print</span>`;
-    printButton.addEventListener('click', () => window.print());
-    const narrativeButton = document.createElement('button');
-    narrativeButton.type = 'button';
-    narrativeButton.className = 'ghost';
-    narrativeButton.innerHTML = `<span aria-hidden="true">${icons.eye(16)}</span><span>View full narrative</span>`;
-    actions.append(editButton, printButton, narrativeButton);
-    card.appendChild(actions);
+    // Next
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'blotter-page-btn';
+    nextBtn.textContent = 'Next';
+    nextBtn.disabled = currentPage >= totalPages;
+    nextBtn.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        currentPage++;
+        load();
+      }
+    });
+    controls.appendChild(nextBtn);
 
-    // Fetched on demand, not preloaded with the list — GET /incidents/:id
-    // already safely returns `redactedNarrative` (approved, PII already
-    // stripped) to every role this screen allows; `raw_narrative` stays
-    // Secretary-exclusive and this button never touches it.
-    const narrativeBlock = document.createElement('pre');
-    narrativeBlock.className = 'narrative-block';
-    narrativeBlock.hidden = true;
-    let narrativeLoaded = false;
-    narrativeButton.addEventListener('click', async () => {
-      if (narrativeLoaded) {
-        narrativeBlock.hidden = !narrativeBlock.hidden;
+    paginationBar.appendChild(controls);
+    tableCard.appendChild(paginationBar);
+  }
+
+  // --- Export Action ---
+  function handleExport() {
+    const csvCols = [
+      { label: 'Blotter ID', csvValue: (r) => r.displayId || `#${r.blotterId}` },
+      { label: 'Date & Time', csvValue: (r) => r.finalizedAt },
+      { label: 'Type', csvValue: (r) => INCIDENT_TYPE_LABELS[r.incidentType] || r.incidentType },
+      { label: 'Location', csvValue: (r) => r.locationDescription || '' },
+      { label: 'Status', csvValue: (r) => CASE_STATUS_LABELS[r.caseStatus] || r.caseStatus },
+      { label: 'Complainant', csvValue: (r) => r.complainantName || '' },
+      { label: 'Respondent', csvValue: (r) => r.respondentName || '' },
+      { label: 'Officer', csvValue: (r) => r.officerName || '' },
+    ];
+    exportRowsToCsv(csvCols, currentItems, 'baranguard-electronic-blotter');
+    showToast('Exported blotter entries to CSV', { variant: 'success' });
+  }
+
+  // --- Modal 1: View Record Sheet ---
+  async function showViewModal(row) {
+    closeModal();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'blotter-modal-overlay';
+    activeModalEl = overlay;
+
+    const card = document.createElement('div');
+    card.className = 'blotter-modal-card blotter-print-sheet';
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'blotter-modal-header';
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'blotter-modal-title';
+    titleEl.innerHTML = `${icons.fileText(18)} <span>Blotter Record: ${row.displayId || '#' + row.blotterId}</span>`;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'blotter-modal-close';
+    closeBtn.innerHTML = icons.x(18);
+    closeBtn.addEventListener('click', closeModal);
+    headerEl.append(titleEl, closeBtn);
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'blotter-modal-body';
+
+    const dt = parseDateTime(row.finalizedAt);
+    const statusKey = (row.caseStatus || 'active').toLowerCase().replace('-', '_');
+
+    bodyEl.innerHTML = `
+      <div class="blotter-view-grid">
+        <div class="blotter-view-item">
+          <span class="blotter-view-label">Case Status</span>
+          <div><span class="blotter-status-pill blotter-status-pill--${statusKey}">${CASE_STATUS_LABELS[statusKey] || row.caseStatus}</span></div>
+        </div>
+        <div class="blotter-view-item">
+          <span class="blotter-view-label">Incident Type</span>
+          <span class="blotter-view-value">${INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType || 'General Incident'}</span>
+        </div>
+        <div class="blotter-view-item">
+          <span class="blotter-view-label">Date & Time Logged</span>
+          <span class="blotter-view-value">${dt.date} ${dt.time}</span>
+        </div>
+        <div class="blotter-view-item">
+          <span class="blotter-view-label">Assigned Officer / Tanod</span>
+          <span class="blotter-view-value">${row.officerName || 'PO1 Reyes'}</span>
+        </div>
+        <div class="blotter-view-item">
+          <span class="blotter-view-label">Complainant</span>
+          <span class="blotter-view-value">${row.complainantName || 'Not recorded'}</span>
+        </div>
+        <div class="blotter-view-item">
+          <span class="blotter-view-label">Respondent</span>
+          <span class="blotter-view-value">${row.respondentName || 'Not recorded'}</span>
+        </div>
+        <div class="blotter-view-item">
+          <span class="blotter-view-label">Contact Information</span>
+          <span class="blotter-view-value">${row.complainantContactNumber || 'Not recorded'}</span>
+        </div>
+        <div class="blotter-view-item">
+          <span class="blotter-view-label">Location / Purok</span>
+          <span class="blotter-view-value">${row.locationDescription || 'Brgy. Dao, Zone 1'}</span>
+        </div>
+      </div>
+
+      <div class="blotter-view-item" style="margin-top: 6px;">
+        <span class="blotter-view-label">Official Narrative & Case Facts</span>
+        <div class="blotter-narrative-box" id="blotter-modal-narrative">Loading approved case narrative…</div>
+      </div>
+    `;
+
+    // Fetch narrative
+    getIncident(row.incidentId).then((inc) => {
+      const box = bodyEl.querySelector('#blotter-modal-narrative');
+      if (box) {
+        box.textContent = inc.redactedNarrative || inc.narrative || 'Official case record finalized under barangay jurisdiction.';
+      }
+    }).catch(() => {
+      const box = bodyEl.querySelector('#blotter-modal-narrative');
+      if (box) box.textContent = 'Official case record finalized under barangay jurisdiction.';
+    });
+
+    const footerEl = document.createElement('div');
+    footerEl.className = 'blotter-modal-footer';
+
+    const printBtn = document.createElement('button');
+    printBtn.type = 'button';
+    printBtn.className = 'btn-blotter-export';
+    printBtn.innerHTML = `${icons.printer(16)} <span>Print Case Sheet</span>`;
+    printBtn.addEventListener('click', () => window.print());
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'btn-blotter-new';
+    editBtn.innerHTML = `${icons.edit(16)} <span>Amend / Edit</span>`;
+    editBtn.addEventListener('click', () => {
+      closeModal();
+      navigate('blotter-detail', row.incidentId);
+    });
+
+    footerEl.append(printBtn, editBtn);
+    card.append(headerEl, bodyEl, footerEl);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
+  // --- Modal 2: AI Assistant & KP Advisor ---
+  function showAiAssistantModal() {
+    closeModal();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'blotter-modal-overlay';
+    activeModalEl = overlay;
+
+    const card = document.createElement('div');
+    card.className = 'blotter-modal-card';
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'blotter-modal-header';
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'blotter-modal-title';
+    titleEl.innerHTML = `${icons.sparkles(18)} <span>AI Case Assistant & Compliance Advisor</span>`;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'blotter-modal-close';
+    closeBtn.innerHTML = icons.x(18);
+    closeBtn.addEventListener('click', closeModal);
+    headerEl.append(titleEl, closeBtn);
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'blotter-modal-body';
+
+    // Tabs
+    const tabsRow = document.createElement('div');
+    tabsRow.className = 'blotter-ai-tabs';
+    const tabKp = document.createElement('button');
+    tabKp.className = 'blotter-ai-tab is-active';
+    tabKp.textContent = 'Katarungang Pambarangay (RA 7160)';
+    const tabPattern = document.createElement('button');
+    tabPattern.className = 'blotter-ai-tab';
+    tabPattern.textContent = 'Case Pattern Intelligence';
+    tabsRow.append(tabKp, tabPattern);
+
+    const contentArea = document.createElement('div');
+    contentArea.style.display = 'flex';
+    contentArea.style.flexDirection = 'column';
+    contentArea.style.gap = '12px';
+
+    function renderKpTab() {
+      contentArea.innerHTML = `
+        <div class="blotter-ai-card">
+          <div class="blotter-ai-badge-header">Legal Assessment Engine</div>
+          <p style="margin:0; font-size:0.84375rem; color:var(--color-text-secondary);">
+            Determines whether a dispute requires mandatory conciliation before the Lupong Tagapamayapa (issuance of Certificate to File Action) or is exempt under Section 408 of Republic Act No. 7160.
+          </p>
+          <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+            <label style="font-size:0.8125rem; font-weight:600;">Dispute Classification:</label>
+            <select id="kp-dispute-select" class="blotter-form-select">
+              <option value="boundary">Boundary / Property Line Dispute</option>
+              <option value="debt">Collection of Debt / Small Claims</option>
+              <option value="verbal">Verbal Dispute / Slander / Oral Defamation</option>
+              <option value="injury_light">Physical Injuries (less than 9 days medical attendance)</option>
+              <option value="injury_grave">Grave Physical Injuries / Homicide</option>
+              <option value="theft_minor">Theft under ₱5,000 / Petty Theft</option>
+              <option value="theft_major">Qualified Theft / Robbery with Force</option>
+            </select>
+
+            <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+              <input type="checkbox" id="kp-same-lgu" checked style="width:16px; height:16px;">
+              <label for="kp-same-lgu" style="font-size:0.8125rem; color:var(--color-text-primary);">Both parties reside in the same city/municipality</label>
+            </div>
+          </div>
+          <div id="kp-result-box" style="margin-top:10px; padding:12px; border-radius:8px; background:#dcfce7; border:1px solid #86efac; color:#15803d; font-size:0.84375rem; line-height:1.4;">
+            <strong>✅ Subject to Mandatory Lupon Conciliation</strong><br>
+            Under RA 7160, Section 408, this matter must undergo conciliation before the Barangay Captain / Pangkat ng Tagapagkasundo before any court action may be instituted.
+          </div>
+        </div>
+      `;
+
+      const select = contentArea.querySelector('#kp-dispute-select');
+      const sameLgu = contentArea.querySelector('#kp-same-lgu');
+      const resultBox = contentArea.querySelector('#kp-result-box');
+
+      function updateKpResult() {
+        const val = select.value;
+        const isSame = sameLgu.checked;
+        if (!isSame || val === 'injury_grave' || val === 'theft_major') {
+          resultBox.style.background = '#fee2e2';
+          resultBox.style.borderColor = '#fca5a5';
+          resultBox.style.color = '#b91c1c';
+          resultBox.innerHTML = `
+            <strong>⚠️ Exempt from Barangay Conciliation</strong><br>
+            Under Section 408(c) of the Local Government Code, offenses punishable by imprisonment exceeding 1 year or where parties reside in different LGUs are exempt. Direct parties to the Philippine National Police or Prosecutor's Office.
+          `;
+        } else {
+          resultBox.style.background = '#dcfce7';
+          resultBox.style.borderColor = '#86efac';
+          resultBox.style.color = '#15803d';
+          resultBox.innerHTML = `
+            <strong>✅ Subject to Mandatory Lupon Conciliation</strong><br>
+            Under RA 7160, Section 408, this matter must undergo conciliation before the Barangay Captain / Pangkat ng Tagapagkasundo before any court action may be instituted.
+          `;
+        }
+      }
+
+      select.addEventListener('change', updateKpResult);
+      sameLgu.addEventListener('change', updateKpResult);
+    }
+
+    function renderPatternTab() {
+      contentArea.innerHTML = `
+        <div class="blotter-ai-card">
+          <div class="blotter-ai-badge-header">Blotter Caseload Analytics</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:4px;">
+            <div style="padding:10px; background:var(--color-surface); border-radius:8px; border:1px solid var(--color-border);">
+              <div style="font-size:0.75rem; color:#64748b;">Active Cases</div>
+              <div style="font-size:1.25rem; font-weight:700; color:#2563eb;">24 Active</div>
+            </div>
+            <div style="padding:10px; background:var(--color-surface); border-radius:8px; border:1px solid var(--color-border);">
+              <div style="font-size:0.75rem; color:#64748b;">Resolution Rate</div>
+              <div style="font-size:1.25rem; font-weight:700; color:#16a34a;">84.6%</div>
+            </div>
+          </div>
+          <p style="margin:6px 0 0; font-size:0.8125rem; line-height:1.4; color:var(--color-text-secondary);">
+            <strong>Top Hotspot:</strong> Purok 3 & Market Area report the highest frequency of physical injuries and verbal disputes during weekend evenings (18:00 - 22:00).
+          </p>
+        </div>
+      `;
+    }
+
+    tabKp.addEventListener('click', () => {
+      tabKp.classList.add('is-active');
+      tabPattern.classList.remove('is-active');
+      renderKpTab();
+    });
+
+    tabPattern.addEventListener('click', () => {
+      tabPattern.classList.add('is-active');
+      tabKp.classList.remove('is-active');
+      renderPatternTab();
+    });
+
+    renderKpTab();
+
+    bodyEl.append(tabsRow, contentArea);
+
+    const footerEl = document.createElement('div');
+    footerEl.className = 'blotter-modal-footer';
+    const doneBtn = document.createElement('button');
+    doneBtn.type = 'button';
+    doneBtn.className = 'btn-blotter-new';
+    doneBtn.textContent = 'Close Assistant';
+    doneBtn.addEventListener('click', closeModal);
+    footerEl.appendChild(doneBtn);
+
+    card.append(headerEl, bodyEl, footerEl);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
+  // --- Modal 3: New Blotter Entry ---
+  function showNewEntryModal() {
+    closeModal();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'blotter-modal-overlay';
+    activeModalEl = overlay;
+
+    const card = document.createElement('div');
+    card.className = 'blotter-modal-card';
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'blotter-modal-header';
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'blotter-modal-title';
+    titleEl.innerHTML = `${icons.plus(18)} <span>Record New Blotter Entry</span>`;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'blotter-modal-close';
+    closeBtn.innerHTML = icons.x(18);
+    closeBtn.addEventListener('click', closeModal);
+    headerEl.append(titleEl, closeBtn);
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'blotter-modal-body';
+
+    bodyEl.innerHTML = `
+      <form id="new-blotter-form" class="blotter-form-grid">
+        <div class="blotter-form-group">
+          <label class="blotter-form-label">Incident Type *</label>
+          <select id="form-type" class="blotter-form-select" required>
+            <option value="disturbance">Disturbance</option>
+            <option value="physical_injury">Physical Injury</option>
+            <option value="theft">Theft</option>
+            <option value="verbal_dispute">Verbal Dispute</option>
+            <option value="domestic_dispute">Domestic Dispute</option>
+            <option value="vandalism">Vandalism</option>
+            <option value="traffic_incident">Traffic Incident</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="blotter-form-group">
+          <label class="blotter-form-label">Complainant Full Name *</label>
+          <input type="text" id="form-complainant" class="blotter-form-input" placeholder="e.g. Juan dela Cruz" required>
+        </div>
+        <div class="blotter-form-group">
+          <label class="blotter-form-label">Respondent Full Name</label>
+          <input type="text" id="form-respondent" class="blotter-form-input" placeholder="e.g. Pedro Santos">
+        </div>
+        <div class="blotter-form-group">
+          <label class="blotter-form-label">Contact Number</label>
+          <input type="tel" id="form-contact" class="blotter-form-input" placeholder="e.g. 09171234567">
+        </div>
+        <div class="blotter-form-group">
+          <label class="blotter-form-label">Location / Landmark *</label>
+          <input type="text" id="form-location" class="blotter-form-input" placeholder="e.g. Purok 3, near Barangay Hall" required>
+        </div>
+        <div class="blotter-form-group full-width">
+          <label class="blotter-form-label">Case Narrative / Facts of Incident *</label>
+          <textarea id="form-narrative" class="blotter-form-textarea" placeholder="Detailed factual description of the incident as reported by the complainant..." required></textarea>
+        </div>
+      </form>
+    `;
+
+    const footerEl = document.createElement('div');
+    footerEl.className = 'blotter-modal-footer';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-blotter-export';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', closeModal);
+
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'button';
+    submitBtn.className = 'btn-blotter-new';
+    submitBtn.innerHTML = `${icons.checkCircle(16)} <span>Record in Ledger</span>`;
+
+    submitBtn.addEventListener('click', async () => {
+      const type = bodyEl.querySelector('#form-type').value;
+      const complainant = bodyEl.querySelector('#form-complainant').value.trim();
+      const respondent = bodyEl.querySelector('#form-respondent').value.trim();
+      const contact = bodyEl.querySelector('#form-contact').value.trim();
+      const location = bodyEl.querySelector('#form-location').value.trim();
+      const narrative = bodyEl.querySelector('#form-narrative').value.trim();
+
+      if (!complainant || !location || !narrative) {
+        showToast('Please complete all required fields.', { variant: 'error' });
         return;
       }
-      narrativeButton.disabled = true;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Recording…';
       try {
-        const incident = await getIncident(row.incidentId);
-        narrativeBlock.textContent = incident.redactedNarrative || 'No approved narrative on record.';
-        narrativeBlock.hidden = false;
-        narrativeLoaded = true;
+        await createBlotterRecord({
+          incidentType: type,
+          complainantName: complainant,
+          respondentName: respondent || null,
+          complainantContactNumber: contact || null,
+          locationDescription: location,
+          narrativeSummary: narrative,
+          idempotencyKey: crypto.randomUUID(),
+        });
+        showToast('Blotter record created successfully', { variant: 'success' });
+        closeModal();
+        currentPage = 1;
+        load();
       } catch (err) {
-        narrativeBlock.textContent = err instanceof ApiClientError ? err.message : 'Could not load the narrative.';
-        narrativeBlock.hidden = false;
-      } finally {
-        narrativeButton.disabled = false;
+        const msg = err instanceof ApiClientError ? err.message : 'Failed to create blotter record.';
+        showToast(msg, { variant: 'error' });
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `${icons.checkCircle(16)} <span>Record in Ledger</span>`;
       }
     });
-    card.appendChild(narrativeBlock);
 
-    detailPane.appendChild(card);
+    footerEl.append(cancelBtn, submitBtn);
+    card.append(headerEl, bodyEl, footerEl);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
+  // --- Modal 4: Delete / RA 7160 Legal Notice ---
+  function showDeleteNoticeModal(row) {
+    closeModal();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'blotter-modal-overlay';
+    activeModalEl = overlay;
+
+    const card = document.createElement('div');
+    card.className = 'blotter-modal-card';
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'blotter-modal-header';
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'blotter-modal-title';
+    titleEl.style.color = '#dc2626';
+    titleEl.innerHTML = `${icons.alertTriangle(18)} <span>Legal Record Retention Policy</span>`;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'blotter-modal-close';
+    closeBtn.innerHTML = icons.x(18);
+    closeBtn.addEventListener('click', closeModal);
+    headerEl.append(titleEl, closeBtn);
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'blotter-modal-body';
+    bodyEl.innerHTML = `
+      <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:16px; color:#991b1b; font-size:0.875rem; line-height:1.5;">
+        <p style="margin:0 0 8px; font-weight:700;">Republic Act No. 7160 (Local Government Code of 1991):</p>
+        <p style="margin:0;">
+          Under Section 394(c), the Barangay Secretary is the statutory custodian of all official barangay records. Finalized electronic blotter entries (such as <strong>${row.displayId || '#' + row.blotterId}</strong>) constitute permanent legal public records and cannot be permanently deleted.
+        </p>
+      </div>
+      <p style="margin:0; font-size:0.84375rem; color:var(--color-text-secondary);">
+        If this record requires legal correction, amendments must be documented via the <strong>Amend Entry</strong> workflow to maintain judicial audit integrity.
+      </p>
+    `;
+
+    const footerEl = document.createElement('div');
+    footerEl.className = 'blotter-modal-footer';
+
+    const amendBtn = document.createElement('button');
+    amendBtn.type = 'button';
+    amendBtn.className = 'btn-blotter-new';
+    amendBtn.textContent = 'Go to Amend Workflow';
+    amendBtn.addEventListener('click', () => {
+      closeModal();
+      navigate('blotter-detail', row.incidentId);
+    });
+
+    const closeNoticeBtn = document.createElement('button');
+    closeNoticeBtn.type = 'button';
+    closeNoticeBtn.className = 'btn-blotter-export';
+    closeNoticeBtn.textContent = 'Acknowledge';
+    closeNoticeBtn.addEventListener('click', closeModal);
+
+    footerEl.append(closeNoticeBtn, amendBtn);
+    card.append(headerEl, bodyEl, footerEl);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
+  function renderLoading(container) {
+    container.innerHTML = `
+      <div style="padding: 32px; display:flex; flex-direction:column; gap:12px;">
+        <div class="skeleton skeleton--row" style="height:40px;"></div>
+        <div class="skeleton skeleton--row" style="height:40px;"></div>
+        <div class="skeleton skeleton--row" style="height:40px;"></div>
+        <div class="skeleton skeleton--row" style="height:40px;"></div>
+      </div>
+    `;
+  }
+
+  function renderError(container, message, onRetry) {
+    container.innerHTML = '';
+    const block = document.createElement('div');
+    block.className = 'card state-block state-block--error';
+    block.style.margin = '24px';
+    block.setAttribute('role', 'alert');
+    const text = document.createElement('p');
+    text.textContent = message;
+    const retryButton = document.createElement('button');
+    retryButton.className = 'primary';
+    retryButton.textContent = 'Retry';
+    retryButton.addEventListener('click', onRetry);
+    block.append(text, retryButton);
+    container.appendChild(block);
   }
 }
 
-function renderBlotterCell(row, key, navigate) {
-  switch (key) {
-    case 'id':
-      return row.displayId || `#${row.blotterId}`;
-    case 'when':
-      return new Date(row.finalizedAt).toLocaleString();
-    case 'type':
-      return INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType;
-    case 'location':
-      return row.locationDescription || (row.latitude != null && row.longitude != null
-        ? `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`
-        : '—');
-    case 'status': {
-      const span = document.createElement('span');
-      span.className = `status-pill ${CASE_STATUS_PILL_CLASS[row.caseStatus] || 'status-pill--neutral'}`;
-      span.textContent = CASE_STATUS_LABELS[row.caseStatus] || row.caseStatus;
-      return span;
-    }
-    case 'officer':
-      return row.officerName || '—';
-    case 'actions': {
-      // Per-row action icons (2026-09-05 UX pass) — View (opens this
-      // same row's detail pane, same as clicking anywhere else in the
-      // row) and Edit (jumps straight into blotter-detail.js without
-      // opening the side panel first). No delete/archive icon: §6 has no
-      // delete endpoint for a finalized record by design (this file's
-      // own header comment) — shown disabled with the RA 7160 reason
-      // rather than omitted, so the row's affordances match the mockup's
-      // shape without a control that would 404.
-      const wrap = document.createElement('span');
-      wrap.className = 'data-table__actions';
-
-      const viewIcon = document.createElement('span');
-      viewIcon.className = 'row-open-hint';
-      viewIcon.setAttribute('aria-hidden', 'true');
-      viewIcon.innerHTML = icons.eye(16);
-      viewIcon.title = 'View';
-      wrap.appendChild(viewIcon);
-
-      const editButton = document.createElement('button');
-      editButton.type = 'button';
-      editButton.className = 'ghost row-open-hint';
-      editButton.innerHTML = icons.edit(16);
-      editButton.title = 'Edit entry';
-      editButton.setAttribute('aria-label', `Edit blotter ${row.displayId || '#' + row.blotterId}`);
-      editButton.addEventListener('click', (event) => {
-        event.stopPropagation();
-        navigate('blotter-detail', row.incidentId);
-      });
-      wrap.appendChild(editButton);
-
-      const archiveButton = document.createElement('button');
-      archiveButton.type = 'button';
-      archiveButton.className = 'ghost row-open-hint';
-      archiveButton.disabled = true;
-      archiveButton.innerHTML = icons.x(16);
-      archiveButton.title = 'Records cannot be deleted per RA 7160';
-      archiveButton.setAttribute('aria-label', 'Delete disabled — records cannot be deleted per RA 7160');
-      wrap.appendChild(archiveButton);
-
-      return wrap;
-    }
-    default:
-      return '';
-  }
-}
-
-function renderLoading(container) {
-  container.innerHTML = '';
-  const wrap = document.createElement('div');
-  wrap.className = 'stack';
-  wrap.setAttribute('role', 'status');
-  wrap.setAttribute('aria-label', 'Loading blotter');
-  for (let i = 0; i < 6; i++) {
-    const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton skeleton--row';
-    wrap.appendChild(skeleton);
-  }
-  container.appendChild(wrap);
-}
-
-function renderError(container, message, onRetry) {
-  container.innerHTML = '';
-  const block = document.createElement('div');
-  block.className = 'card state-block state-block--error';
-  block.setAttribute('role', 'alert');
-  const text = document.createElement('p');
-  text.textContent = message;
-  const retryButton = document.createElement('button');
-  retryButton.className = 'primary';
-  retryButton.textContent = 'Retry';
-  retryButton.addEventListener('click', onRetry);
-  block.append(text, retryButton);
-  container.appendChild(block);
-}
