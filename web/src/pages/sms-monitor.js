@@ -19,6 +19,7 @@ import {
   broadcastSms,
   getSmsLogs,
   getUsers,
+  queueSmsCompose,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -28,6 +29,7 @@ import { DataTable, exportRowsToCsv } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
+import { AiToolPanel } from '../components/AiToolPanel.js';
 import { icons } from '../components/icons.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
 import { avatarInitials } from '../components/Avatar.js';
@@ -168,9 +170,10 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   root.innerHTML = '';
 
   let liveFeedTimer = null;
+  let composerStop = null;
   const shell = AppShell(user, 'sms-log', navigate, async () => {
     shell.logoutButton.disabled = true;
-    stopLiveFeedPolling();
+    stopAllPolling();
     await logout();
     onLoggedOut();
   });
@@ -239,6 +242,21 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
     liveFeedTimer = null;
   }
 
+  /**
+   * The AI composer panel lives in the Conversations tab's feed pane and
+   * polls its own job. Switching tabs wipes `body`, which does NOT clear
+   * that interval — so it is torn down alongside the feed timer.
+   */
+  function stopComposerPanel() {
+    if (composerStop) composerStop();
+    composerStop = null;
+  }
+
+  function stopAllPolling() {
+    stopLiveFeedPolling();
+    stopComposerPanel();
+  }
+
   function updateUnreadBadge(unreadTotal) {
     const badge = document.getElementById('sms-unread-tab-badge');
     if (!badge) return;
@@ -251,14 +269,19 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   }
 
   function renderActiveTab() {
-    stopLiveFeedPolling();
+    stopAllPolling();
     pageHeader.actions.innerHTML = '';
     body.innerHTML = '';
     const existingInlineWrap = pageHeader.el.querySelector('.sms-stats-inline-wrap');
     if (existingInlineWrap) existingInlineWrap.remove();
 
     if (activeTab === 'conversations') {
-      renderConversationsTab(body, pageHeader, user, (timer) => { liveFeedTimer = timer; }, updateUnreadBadge, navigate, initialPhone);
+      renderConversationsTab(
+        body, pageHeader, user,
+        (timer) => { liveFeedTimer = timer; },
+        updateUnreadBadge, navigate, initialPhone,
+        (fn) => { composerStop = fn; },
+      );
     } else {
       renderActivityLogTab(body, pageHeader, navigate);
     }
@@ -267,14 +290,14 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   syncTabs();
   renderActiveTab();
 
-  return { stop: stopLiveFeedPolling };
+  return { stop: stopAllPolling };
 }
 
 // ============================================================
 // Conversations Tab
 // ============================================================
 
-function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, onUnreadChanged, navigate, initialPhone) {
+function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, onUnreadChanged, navigate, initialPhone, registerComposerStop) {
   // Page Header Actions
   const actionsWrap = document.createElement('div');
   actionsWrap.style.cssText = 'display: flex; align-items: center; gap: 0.5rem;';
@@ -320,12 +343,57 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   let contactFilter = 'all'; // all | inbound | outbound | unread
   let searchQuery = '';
 
+  // Set by renderThread() while a conversation is open, cleared by
+  // renderThreadPlaceholder(). The AI composer's "Use this draft" writes
+  // into it — the same closure-reference move the quick-reply chips
+  // already make, rather than a document.querySelector.
+  let composeTextareaRef = null;
+
   renderContactPaneShell();
   renderThreadPlaceholder();
   loadConversations();
   loadStatStrip();
   loadLiveFeed(feedPane, onSelectFeedPhone);
   setLiveFeedTimer(setInterval(() => loadLiveFeed(feedPane, onSelectFeedPhone), LIVE_FEED_POLL_MS));
+
+  // AI SMS Composer — above the live feed in the right-hand pane.
+  //
+  // Mounted AFTER the first loadLiveFeed() call on purpose: that call
+  // wipes feedPane to build its skeleton, but only while `.sms-feed-list`
+  // is absent, so later polls leave this panel alone.
+  //
+  // The panel drafts text and nothing else — it has no send button by
+  // design. Sending stays on the existing audited path, where the
+  // recipient is resolved server-side and never taken from client input.
+  const composerPanel = AiToolPanel({
+    collapsible: true,
+    startCollapsed: true,
+    tool: {
+      label: 'AI Message Composer',
+      hint: 'Describe the situation and get a short Filipino/Taglish advisory to edit and send. This tool never reads incident narratives.',
+      input: 'text',
+      inputLabel: 'What do you need to tell residents?',
+      placeholder: 'e.g. baha sa Purok 3, iwasan ang daan',
+      maxLength: 2000,
+      emptyText: 'Describe a situation above to get a draft advisory.',
+      run: (value) => queueSmsCompose(value),
+    },
+    footerActions: [{
+      label: 'Use this draft',
+      onClick: (output) => {
+        if (!composeTextareaRef) {
+          showToast('Open a conversation first, then use the draft.', { variant: 'error' });
+          return;
+        }
+        composeTextareaRef.value = output;
+        composeTextareaRef.dispatchEvent(new Event('input', { bubbles: true }));
+        composeTextareaRef.focus();
+        showToast('Draft moved to the message box — review it before sending.', { variant: 'success' });
+      },
+    }],
+  });
+  feedPane.insertBefore(composerPanel.el, feedPane.firstChild);
+  if (registerComposerStop) registerComposerStop(composerPanel.stop);
 
   function onSelectFeedPhone(phone) {
     if (!phone) return;
@@ -622,6 +690,8 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   }
 
   function renderThreadPlaceholder() {
+    // No thread open means no compose box for a draft to land in.
+    composeTextareaRef = null;
     threadPane.innerHTML = '';
     const card = document.createElement('div');
     card.className = 'sms-thread-card state-block';
@@ -860,6 +930,8 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
     composeTextarea.className = 'sms-compose-textarea';
     composeTextarea.placeholder = 'I-type ang inyong mensahe dito...';
     composeTextarea.rows = 2;
+    // Where the AI composer's "Use this draft" delivers to.
+    composeTextareaRef = composeTextarea;
 
     const composeFooter = document.createElement('div');
     composeFooter.className = 'sms-compose-footer';

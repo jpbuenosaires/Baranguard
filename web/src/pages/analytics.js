@@ -27,10 +27,15 @@ import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { renderReportsTab } from './statistical-reports.js';
 import { renderHeatmapTab } from './historical-heatmap.js';
+import { renderThreatAnalysisTab } from './threat-analysis.js';
 
 const TABS = [
   { key: 'reports', label: 'Reports' },
   { key: 'heatmap', label: 'Heatmap' },
+  // Threat Analyzer (2026-09-10). Same aggregate-history, no-write,
+  // Admin+PB shape as the other two, which is why it belongs on this
+  // screen rather than on an "AI" one — see threat-analysis.js.
+  { key: 'threat', label: 'Threat Analyzer' },
 ];
 
 /**
@@ -44,6 +49,7 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
 
   const shell = AppShell(user, 'analytics', navigate, async () => {
     shell.logoutButton.disabled = true;
+    stopActiveTab();
     await logout();
     onLoggedOut();
   });
@@ -90,16 +96,30 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
     renderActiveTab();
   }
 
+  // The Threat Analyzer tab polls a queued AI job. Switching tabs wipes
+  // `body`, which does not clear that interval — so it is stopped on
+  // every tab change and again when the page is left.
+  let activeTabStop = null;
+  function stopActiveTab() {
+    if (activeTabStop) activeTabStop();
+    activeTabStop = null;
+  }
+
   function renderActiveTab() {
+    stopActiveTab();
     pageHeader.actions.innerHTML = '';
     body.innerHTML = '';
     if (activeTab === 'reports') {
       renderReportsTab(body, pageHeader, user);
     } else if (activeTab === 'heatmap') {
       renderHeatmapTab(body, pageHeader, user);
+    } else if (activeTab === 'threat') {
+      activeTabStop = renderThreatAnalysisTab(body, pageHeader, user)?.stop ?? null;
     }
   }
 
   syncTabButtons();
   renderActiveTab();
+
+  return { stop: stopActiveTab };
 }

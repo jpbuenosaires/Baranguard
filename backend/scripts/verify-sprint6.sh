@@ -97,13 +97,24 @@ trap cleanup EXIT
 step "0. Connectivity"
 mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || { fail "Could not connect"; exit 1; }
 
-step "1. Disposable schema (INCLUDING migration 0004) + accounts"
+step "1. Disposable schema (FULL migration chain) + accounts"
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 baseline applied" || fail "0001 apply failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "0002 barangays seeded" || fail "0002 seed failed"
-# Sprint 6's own migration — blotter amendment history has nowhere to live
-# without it, so a missing 0004 must fail loudly here rather than at runtime.
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0004_blotter_revision.sql" && pass "0004 blotter_revision applied" || fail "0004 apply failed"
+# APPLY THE WHOLE CHAIN, not just Sprint 6's own three.
+#
+# This script used to apply 0001/0002/0004 only, which was correct when it
+# was written and silently stopped being correct on 2026-09-05: migration
+# 0011 added `user.is_suspended`, and AuthController::login() selects it.
+# Every login in this suite has 500'd since — the suite could not reach a
+# single assertion, while §9 still listed it as 112 green. Pinning a
+# verification suite to a partial schema means it expires the next time a
+# migration touches a table it logs in through; the full chain does not.
+for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_user 0004_blotter_revision \
+         0005_sms_envelope_replay 0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
+         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension 0012_system_settings \
+         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools; do
+  mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
+done
+pass "Migrations 0001-0015 applied"
 expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='blotter_revision';")" "1" "blotter_revision table exists"
 
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"

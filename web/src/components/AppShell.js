@@ -101,12 +101,25 @@ const NAV_ITEMS = [
   { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'], icon: icons.alertTriangle, group: 'Operations' },
   { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'], icon: icons.map, group: 'Operations' },
 
-  { key: 'blotter', label: 'Electronic Blotter', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.fileText, group: 'Records & Reporting' },
+  // W6 Electronic Blotter (the records LIST) was removed 2026-09-10. DILG
+  // BIMSS is mandated for all barangays and its KPIS module already is the
+  // Katarungang Pambarangay case database, so shipping a competing ledger
+  // duplicated the system Baranguard is required to complement rather than
+  // replace. The per-incident detail view survives as 'blotter-detail' —
+  // it is the app's only incident detail screen — reached from Incident
+  // Management, the dashboard, search and notifications.
   { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'], icon: icons.inbox, countKey: 'unconvertedCitizenReports', group: 'Records & Reporting' },
   // 2026-09-05 merge of Historical Heatmap + Analytics (W5 + W9) into one
   // tabbed screen — see pages/analytics.js. Same role pair both already
   // had, so no per-tab gating needed there (unlike Personnel below).
   { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart, group: 'Records & Reporting' },
+  // There is deliberately NO "AI Tools" entry. The four local-model
+  // assistants (migration 0015) live inside the screens where their work
+  // happens — Classifier in Incident Management, Blotter Assistant in
+  // incident detail, SMS Composer in SMS Monitor, Threat Analyzer as an
+  // Analytics tab — via components/AiToolPanel.js. A standalone AI screen
+  // shipped and was dissolved the same day (2026-09-10): an operator is
+  // mid-task and wants help with that task, not a detour to an AI menu.
 
   // 2026-09-05 merge of what used to be four separate nav items (Shift
   // Scheduler/Swap Requests/Fatigue Flags/User Management) into one
@@ -440,9 +453,8 @@ export function AppShell(user, activePage, navigate, onLogout) {
       row.addEventListener('click', () => {
         searchResults.hidden = true;
         searchInput.value = '';
-        // Was navigate('blotter') for every result — searching for an
-        // incident by ID and clicking it dumped you on the unfiltered
-        // list rather than that incident. blotter-detail takes the id.
+        // blotter-detail takes the id and is the app's only per-incident
+        // detail view, so a search result opens the incident itself.
         navigate('blotter-detail', item.incidentId);
       });
       searchResults.appendChild(row);

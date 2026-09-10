@@ -10,7 +10,7 @@
 import {
   getIncidents, createIncident, getIncident, updateIncident, getUsers,
   getDutyStatus, getDispatches, updateIncidentStatus, getBarangays, sendSms,
-  logout, ApiClientError,
+  queueIncidentClassification, logout, ApiClientError,
 } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
@@ -19,6 +19,7 @@ import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
+import { AiToolPanel } from '../components/AiToolPanel.js';
 
 const INCIDENT_TYPE_LABELS = {
   sos: 'SOS / Emergency',
@@ -159,6 +160,24 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   let currentOfficerContact = null;
   let activeViewMode = 'detail'; // 'detail', 'new', 'edit'
 
+  /**
+   * The AI Classifier panel currently mounted in the detail pane, and the
+   * suggestion the operator asked to apply.
+   *
+   * `stopClassifier()` MUST run before any `rightPanel.innerHTML = ''`.
+   * Wiping the DOM does not clear the panel's poll interval, and this
+   * pane is rebuilt on every row click — so forgetting it leaks one timer
+   * per incident the operator looks at.
+   *
+   * Declared up here with the rest of the page state, NOT next to
+   * stopClassifier(): `let` is not hoisted, and the page's return
+   * statement sits at the bottom of a long function, so a declaration
+   * further down would leave these in the temporal dead zone for every
+   * caller that runs before it.
+   */
+  let classifierPanel = null;
+  let pendingClassification = null;
+
   // Cached Lookups
   const barangayNameById = new Map();
   let eligibleTanods = [];
@@ -174,7 +193,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   if (canCreate) {
     const newIncidentBtn = document.createElement('button');
     newIncidentBtn.type = 'button';
-    newIncidentBtn.className = 'btn-blotter-new';
+    newIncidentBtn.className = 'btn-new-incident';
     newIncidentBtn.innerHTML = `${icons.plus(16)} <span>New Incident</span>`;
     newIncidentBtn.addEventListener('click', () => {
       if (activeViewMode === 'new') {
@@ -562,7 +581,15 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     if (idx > -1 && rows[idx]) rows[idx].classList.add('is-selected');
   }
 
+  function stopClassifier() {
+    if (classifierPanel) {
+      classifierPanel.stop();
+      classifierPanel = null;
+    }
+  }
+
   function closeDetailPane() {
+    stopClassifier();
     selectedIncidentId = null;
     currentDetail = null;
     activeViewMode = 'detail';
@@ -576,6 +603,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
   // --- Select Incident & Load Details ---
   async function selectIncident(row) {
+    stopClassifier();
     selectedIncidentId = row.incidentId;
     activeViewMode = 'detail';
     layout.classList.add('has-detail');
@@ -611,6 +639,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   }
 
   function renderRightPane() {
+    stopClassifier();
     if (activeViewMode === 'new') {
       layout.classList.add('has-detail');
       renderNewIncidentForm();
@@ -698,6 +727,38 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     badgesRow.append(prioBadge, statBadge);
     rightPanel.appendChild(badgesRow);
+
+    // 2b. AI Classifier — directly under the badges it comments on.
+    //
+    // Collapsed by default: this pane is already dense, and the tool is
+    // an aid for the cases where intake got the type or priority wrong,
+    // not something to read on every incident. Admin and Secretary both
+    // reach this screen and both may run the classifier, so there is no
+    // extra gate here — the server enforces its own regardless.
+    classifierPanel = AiToolPanel({
+      collapsible: true,
+      startCollapsed: true,
+      tool: {
+        label: 'AI Classifier',
+        hint: 'Suggests a type and priority from the approved redacted narrative. The incident needs an approved redaction first.',
+        input: 'none',
+        emptyText: 'Run the classifier to get a suggested type and priority for this incident.',
+        run: () => queueIncidentClassification(row.incidentId),
+      },
+      footerActions: [{
+        label: 'Apply in Edit',
+        onClick: (output) => {
+          pendingClassification = parseClassification(output);
+          if (!pendingClassification) {
+            showToast('Could not read a type and priority from that answer.', { variant: 'error' });
+            return;
+          }
+          activeViewMode = 'edit';
+          renderRightPane();
+        },
+      }],
+    });
+    rightPanel.appendChild(classifierPanel.el);
 
     // 3. Two-Column Info Grid
     const infoGrid = document.createElement('div');
@@ -1110,6 +1171,33 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   }
 
   // --- Render Edit Incident Form ---
+  /**
+   * Reads the `Type:` / `Priority:` lines AiPrompts::classification() asks
+   * the model for. Tolerant of case and of a missing/extra line, and
+   * validates both values against the enums rather than trusting them —
+   * a model that answers "Type: arson" must not put an invalid value into
+   * a select, and `PATCH /incidents/:id` would reject it anyway.
+   *
+   * @returns {{incidentType:string, priority:string}|null}
+   */
+  function parseClassification(output) {
+    const types = Object.keys(INCIDENT_TYPE_LABELS);
+    const priorities = ['normal', 'high', 'critical'];
+    let incidentType = null;
+    let priority = null;
+
+    for (const line of String(output).split(/\r?\n/)) {
+      const [rawLabel, ...rest] = line.split(':');
+      if (rest.length === 0) continue;
+      const label = rawLabel.trim().toLowerCase();
+      const val = rest.join(':').trim().toLowerCase();
+      if (label === 'type' && types.includes(val)) incidentType = val;
+      if (label === 'priority' && priorities.includes(val)) priority = val;
+    }
+
+    return incidentType || priority ? { incidentType, priority } : null;
+  }
+
   function renderEditIncidentForm(row, detail) {
     rightPanel.innerHTML = '';
 
@@ -1135,6 +1223,33 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const form = document.createElement('form');
     form.className = 'form-stack';
 
+    // A pending AI Classifier suggestion, if the operator pressed "Apply
+    // in Edit". Consumed once — reopening the form later should show the
+    // record's own values, not a stale suggestion.
+    const suggestion = pendingClassification;
+    pendingClassification = null;
+
+    // Incident Type. `PATCH /incidents/:id` has always accepted
+    // `incident_type` (Admin + Secretary) but this form never exposed it,
+    // so a mis-typed intake could only be corrected through the database.
+    // Added 2026-09-10 with the AI Classifier, whose main output is a type
+    // suggestion that would otherwise have nowhere to land.
+    const gType = document.createElement('div');
+    gType.className = 'incident-form-group';
+    const lType = document.createElement('label');
+    lType.className = 'incident-form-label';
+    lType.textContent = 'Incident Type';
+    const selType = document.createElement('select');
+    selType.className = 'incident-form-select';
+    for (const [v, l] of Object.entries(INCIDENT_TYPE_LABELS)) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = l;
+      if (v === (suggestion?.incidentType || detail.incidentType || row.incidentType)) opt.selected = true;
+      selType.appendChild(opt);
+    }
+    gType.append(lType, selType);
+
     // Priority
     const gPrio = document.createElement('div');
     gPrio.className = 'incident-form-group';
@@ -1147,7 +1262,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       const opt = document.createElement('option');
       opt.value = v;
       opt.textContent = l;
-      if (v === row.priority) opt.selected = true;
+      if (v === (suggestion?.priority || row.priority)) opt.selected = true;
       selPrio.appendChild(opt);
     }
     gPrio.append(lPrio, selPrio);
@@ -1225,13 +1340,14 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     formActions.append(submitBtn, cancelBtn);
 
-    form.append(gPrio, gLoc, gComp, gNarr, formActions);
+    form.append(gType, gPrio, gLoc, gComp, gNarr, formActions);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       submitBtn.disabled = true;
       submitBtn.textContent = 'Saving...';
       try {
         const patch = {
+          incidentType: selType.value,
           priority: selPrio.value,
           locationDescription: inLoc.value.trim(),
           idempotencyKey: crypto.randomUUID(),
@@ -1494,4 +1610,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     block.append(text, retryButton);
     container.appendChild(block);
   }
+
+  // Last statement in the function, deliberately: everything above it —
+  // including the window keydown listener — must actually run. The AI
+  // Classifier panel polls, and main.js calls this on the next
+  // navigation so that interval cannot outlive the page.
+  return { stop: stopClassifier };
 }

@@ -35,6 +35,7 @@ import {
   finalizeBlotter,
   amendBlotter,
   generateLuponPacket,
+  queueBlotterAssist,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -43,6 +44,7 @@ import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
+import { AiToolPanel } from '../components/AiToolPanel.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -191,7 +193,17 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
   const isSecretary = user.role === 'secretary';
 
-  const shell = AppShell(user, 'blotter', navigate, async () => {
+  // The standalone blotter records list (W6) was removed 2026-09-10 —
+  // DILG BIMSS's KPIS module is the mandated Katarungang Pambarangay
+  // ledger, so Baranguard no longer ships a competing one. This screen
+  // stays (it is the app's only per-incident detail view) and now returns
+  // to whichever list the signed-in role actually has: Punong Barangay
+  // reaches incidents from the dashboard, everyone else from Incident
+  // Management.
+  const listPage = user.role === 'punong_barangay' ? 'dashboard' : 'incident-management';
+  const listLabel = listPage === 'dashboard' ? 'Dashboard' : 'Incidents';
+
+  const shell = AppShell(user, listPage, navigate, async () => {
     shell.logoutButton.disabled = true;
     await logout();
     onLoggedOut();
@@ -208,8 +220,8 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
   const backButton = document.createElement('button');
   backButton.className = 'ghost';
-  backButton.textContent = '← Back to Blotter';
-  backButton.addEventListener('click', () => navigate('blotter'));
+  backButton.textContent = `← Back to ${listLabel}`;
+  backButton.addEventListener('click', () => navigate(listPage));
   pageHeader.actions.appendChild(backButton);
 
   if (isSecretary) {
@@ -224,7 +236,22 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
   let blotter = null;
   let evidence = [];
 
+  // render() rebuilds `content` wholesale and runs several times per
+  // visit, so the assistant panel is remounted each time. Wiping the DOM
+  // does not clear its poll interval — stop the previous one first.
+  let assistantPanel = null;
+  function stopAssistant() {
+    if (assistantPanel) {
+      assistantPanel.stop();
+      assistantPanel = null;
+    }
+  }
+
   load();
+
+  // The AI Blotter Assistant polls; main.js calls this on the next
+  // navigation so the interval cannot outlive the page.
+  return { stop: stopAssistant };
 
   async function load() {
     renderLoading();
@@ -292,6 +319,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
    * Left is the record and work done on it; right is context and audit trail.
    */
   function render() {
+    stopAssistant();
     content.innerHTML = '';
 
     const blotterDisplayId = blotter?.displayId || incident?.displayId || `BLT-2026-${String(incidentId).padStart(3, '0')}`;
@@ -313,8 +341,8 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
     const backButton = document.createElement('button');
     backButton.className = 'ghost';
-    backButton.textContent = '← Back to Blotter';
-    backButton.addEventListener('click', () => navigate('blotter'));
+    backButton.textContent = `← Back to ${listLabel}`;
+    backButton.addEventListener('click', () => navigate(listPage));
     actionsGroup.appendChild(backButton);
 
     const printButton = document.createElement('button');
@@ -371,6 +399,25 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     // 2. Official Blotter Record (The core statutory record, placed prominently)
     if (isSecretary) {
       main.appendChild(buildBlotterPanel());
+
+      // 2b. AI Blotter Assistant — Secretary only, because it reads
+      // `raw_narrative` and §2 Rule 1 makes the Secretary its only
+      // reader. It drafts text to TRANSCRIBE INTO DILG BIMSS/KPIS, which
+      // is the mandated Katarungang Pambarangay ledger — this panel does
+      // not write anything into Baranguard's own record. Collapsed by
+      // default; it is a handoff step, not part of reading the case.
+      assistantPanel = AiToolPanel({
+        collapsible: true,
+        startCollapsed: true,
+        tool: {
+          label: 'AI Blotter Assistant',
+          hint: 'Drafts a formal case entry from this incident, redacted, for you to transcribe into DILG BIMSS (KPIS). Nothing here is saved to Baranguard — copy the draft when it is ready.',
+          input: 'none',
+          emptyText: 'Generate a draft entry for BIMSS/KPIS transcription.',
+          run: () => queueBlotterAssist(incidentId),
+        },
+      });
+      main.appendChild(assistantPanel.el);
     } else if (blotter) {
       main.appendChild(buildReadOnlyBlotter());
     }

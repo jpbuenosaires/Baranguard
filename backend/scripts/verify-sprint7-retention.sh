@@ -83,11 +83,20 @@ step "0. Schema + migrations"
 # --------------------------------------------------------------------------
 mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || { fail "Could not connect"; exit 1; }
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 applied" || fail "0001 failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" >/dev/null && pass "barangays seeded" || fail "seed failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0004_blotter_revision.sql" >/dev/null && pass "0004 applied" || fail "0004 failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0006_sms_log_barangay.sql" >/dev/null && pass "0006 applied" || fail "0006 failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0007_retention_columns.sql" && pass "0007 applied" || fail "0007 failed"
+# FULL CHAIN, not this sprint's subset. Applying only 0001/0002/0004/
+# 0006/0007 was correct when written and silently stopped being correct on
+# 2026-09-05: migration 0011 added `user.is_suspended`, which
+# AuthController::login() selects, so every login here 500'd from then on
+# and the suite could not reach its own assertions. A suite pinned to a
+# partial schema expires the next time a migration touches a table it logs
+# in through.
+for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_user 0004_blotter_revision \
+         0005_sms_envelope_replay 0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
+         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension 0012_system_settings \
+         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools; do
+  mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
+done
+pass "Migrations 0001-0015 applied"
 
 # The four schema gaps 0007 exists to close — asserted against
 # information_schema, not assumed from the migration file's intent.

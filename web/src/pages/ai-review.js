@@ -19,9 +19,9 @@
  *
  * WHY THIS SCREEN HAS NO SIDEBAR ENTRY: W8 is a per-incident detail view
  * and cannot render without an incident id, so a nav item would be a link
- * to a broken screen. It is reached by clicking a row in W6 Electronic
- * Blotter (Secretary only), and reports 'blotter' as the active nav item
- * so the shell stays coherent.
+ * to a broken screen. It is reached from incident detail's "Review AI
+ * redaction" button (Secretary only), and reports 'incident-management'
+ * as the active nav item so the shell stays coherent.
  *
  * The pipeline is asynchronous by design (§2 Rule 15 — the API never calls
  * Ollama, only the worker does), so redaction and summary regeneration
@@ -80,7 +80,11 @@ const INCIDENT_TYPE_LABELS = {
 export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId) {
   root.innerHTML = '';
 
-  const shell = AppShell(user, 'blotter', navigate, async () => {
+  // W6's blotter list was removed 2026-09-10 (DILG BIMSS/KPIS owns the
+  // case ledger). This screen is only ever opened from incident detail's
+  // "Review AI redaction" button, so it reports that flow's nav item and
+  // goes back to the incident it came from rather than to a list.
+  const shell = AppShell(user, 'incident-management', navigate, async () => {
     shell.logoutButton.disabled = true;
     stopPolling();
     await logout();
@@ -98,10 +102,10 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
   const backButton = document.createElement('button');
   backButton.className = 'ghost';
-  backButton.textContent = '← Back to Blotter';
+  backButton.textContent = '← Back to Incident';
   backButton.addEventListener('click', () => {
     stopPolling();
-    navigate('blotter');
+    navigate('blotter-detail', incidentId);
   });
   pageHeader.actions.appendChild(backButton);
 
