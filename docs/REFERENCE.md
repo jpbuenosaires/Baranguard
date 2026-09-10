@@ -157,11 +157,10 @@ fields · 0009 blotter case_status · 0010 incident location_description ·
 0011 user suspension · 0012 system_settings (§7 W21 override) · 0013 sms
 manual send · 0014 incident/blotter display_id · **0015 ai_tools**
 (nullable incident_id + tenant/requester/tool columns + four task types;
-verified up, down and idempotent against real MariaDB 10.4 —
-**not yet applied to the real `baranguard` DB**). **0001-0014 are
-applied to the real local `baranguard` DB** (0008–0014 on 2026-09-05 —
-this paragraph said otherwise until 2026-09-06; see `docs/HANDOFF.md`'s
-resolved banner). On a new machine, apply all fourteen in order — as
+verified up, down and idempotent against a disposable MariaDB 10.4 first).
+**All fifteen are applied to the real local `baranguard` DB** (0008–0014
+on 2026-09-05, 0015 on 2026-09-10). On a new machine, apply all fifteen
+in order — as
 DBA/root, **not** as `baranguard_app`, which has no `ALTER`/`CREATE
 TABLE` (see §8).
 
