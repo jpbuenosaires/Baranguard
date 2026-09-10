@@ -71,10 +71,11 @@ evidence upload (F4), `PATCH /incidents/:id` idempotency (F5) and
   of migrations. All four exited at setup without reaching one assertion,
   while `REFERENCE.md` §9 listed them green. All now apply 0001-0015.
 
-**Migration 0015 is NOT yet applied to the real `baranguard` DB.** It is
-verified up, down and idempotent against a disposable MariaDB 10.4, but
-every AI panel will 500 against the real database until someone applies
-it as DBA (`baranguard_app` has no `ALTER`).
+**Migration 0015 is applied to the real `baranguard` DB** (2026-09-10, as
+root — verified up/down/idempotent on a disposable DB first). All fifteen
+migrations are now live. Today's work is committed as `f1d87a4`; the
+pre-existing GIS/LiveMap styling changes, `eval-kit/`, and the design-doc
+artifacts remain uncommitted and were deliberately left out of it.
 
 **`eval-kit/` still needs capable hardware.** Unchanged: Ollama is
 installed here and the model is pulled, but a real `generate()` has never
@@ -103,9 +104,6 @@ the pipeline.
 
 ## Recommended next step
 
-0. **Apply migration 0015 to the real `baranguard` DB** as DBA — every
-   AI panel 500s against the real database until you do. It is verified
-   up/down/idempotent; `baranguard_app` has no `ALTER`.
 1. **`REMAINING.md` §F1-F4 first** — the API base URL, the XSS sweep,
    and the evidence-upload scope decision. Nothing else can be trusted
    as "verified against production" until F1 is settled. (F1 also blocks
