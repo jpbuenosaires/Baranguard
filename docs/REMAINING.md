@@ -6,6 +6,130 @@ between here and a UAT sign-off, ordered by what blocks what.
 **Legend:** 🔴 blocks Sprint 8 · 🟠 needed for a credible UAT ·
 🟢 polish / nice-to-have
 
+**2026-09-07:** a full bug / logic / business-rule audit added section
+**F** below. F comes first — it is the only section containing defects
+in *shipped, believed-correct* behaviour rather than unfinished work.
+Evidence for every item is in `docs/AUDIT_2026-09-07.md`.
+
+**2026-09-10:** the DILG BIMSS session closed **F7** and **F9's first
+bullet** by removing `POST /blotter`, and fixed two defects that were not
+on any list:
+
+- **`IncidentsController::updateStatus()` did not exist**, though
+  `routes/incidents.php:19` routed to it and the web client called it
+  twice — a live 500, and the reason `blotter_record.case_status` was
+  never set to `resolved`. Written and now covered by `verify-sprint6.sh`.
+- **Every verify suite that logs in had been broken since 2026-09-05**
+  (migration 0011's `user.is_suspended` vs. each suite's partial
+  migration subset). All four exited at setup without reaching an
+  assertion while §9 listed them green. Fixed; see `REFERENCE.md` §9's
+  warning box.
+
+**F1-F4 remain open and still gate Sprint 8.**
+
+---
+
+## F. Audit remediation (2026-09-07) — gates Sprint 8
+
+### 🔴 F1. The API is published to the public internet
+`web/index.html:142`, uncommitted, points at a Cloudflare quick tunnel
+(`https://wheels-howto-obvious-describing.trycloudflare.com/api/v1`) on a
+system §1 defines as LAN-only, no cloud. `backend/.env` sets no
+`CORS_ALLOWED_ORIGIN`, so the API answers `*`.
+
+Second-order effect worth its own line: it **defeats the citizen-report
+rate limit**. `CitizenReportsController::submit()` throttles on
+`REMOTE_ADDR`, which behind a tunnel is the same local address for every
+submitter — so all citizens share one bucket and one spammer locks out
+the barangay.
+
+Committed `HEAD` is also wrong, just less dangerously: `8140`, the
+disposable `baranguard_uiseed` preview DB. **Decide the intended value
+and set it.** Nothing else in this file can be verified honestly until
+this is settled — a browser pass against preview data proves nothing.
+
+### 🔴 F2. Stored XSS reaches the Secretary session from an anonymous attacker
+`POST /citizen-reports` is unauthenticated and stores `description`
+(≤2000 chars) verbatim → convert copies it to `incident.raw_narrative` →
+`web/src/pages/blotter-detail.js:135` renders it unescaped inside
+`modal.innerHTML` → the token is in `sessionStorage`. The Secretary is
+the only role that can read every `raw_narrative` in the barangay, so
+this is a §2 Rule 1 exfiltration path with no authentication in front of
+it. `contact_number` (≤32 chars — enough) does the same at
+`citizen-reports-inbox.js:421` and needs no conversion step.
+
+### 🔴 F3. ~40 further unescaped `innerHTML` interpolations
+Across 12 page modules. Only `admin-dashboard.js`, `dispatch-center.js`
+and `gis-live-tracking.js` define an `escapeHtml` helper, and none of
+the three applies it at every site. The ones taking non-Admin input:
+`blotter-detail.js:472,487,517,555` · `blotter-list.js:535` ·
+`incident-management.js:1268` (including into `href="tel:${...}"`) ·
+`sms-monitor.js:697,1745` · `map-packages.js:300`. Full table in the
+audit. The fix is one shared helper, not 45 individual judgement calls.
+
+### 🔴 F4. Evidence attachment upload does not exist server-side
+Not "device-unverified" — **unbuilt**. No `POST /incidents/:id/evidence`
+route, no `INSERT INTO evidence_attachment` anywhere in `backend/`, and
+`/sync/batch` has no evidence channel (it accepts `incidents`,
+`gps_tracks`, `duty_status_updates`, `dispatch_status_updates`, `sos`).
+Mobile writes to a local `evidence_attachment_local` table that nothing
+ever ships.
+
+Consequences: `GET /incidents/:id/evidence` is permanently empty in
+production, and `RetentionService`'s evidence purge,
+`evidence_attachment.legal_hold` and §11's evidence retention window all
+govern a table that cannot be populated. This is a scope decision, not a
+bug fix — build the endpoint plus the sync channel, or write down that
+evidence is out of scope and correct §11.
+
+*(This supersedes C4's "evidence files can't be downloaded from W7" and
+A1's framing of photo/voice capture as merely device-unverified.)*
+
+### 🟠 F5. `PATCH /incidents/:id` idempotency is theatre
+The endpoint requires and UUID-validates `Idempotency-Key`, then never
+stores or replays it. §2 Rule 3: "a retry must return the original row."
+Every sibling write does this for real. A double-submit currently writes
+a duplicate `incident_updated` audit row.
+
+### 🟠 F6. `is_suspended` is not checked on authenticated requests
+`AuthMiddleware::authenticate()` rejects on `is_active` as documented
+defense-in-depth but has no equivalent line for migration 0011's
+independent `is_suspended` axis. Unreachable today (login checks it, and
+the suspend endpoint revokes sessions transactionally), so this is an
+asymmetry to close, not a live hole — but it is an omission, not a
+decision.
+
+### ✅ F7. Walk-in blotter shows unredacted intake text to Admin and PB — CLOSED BY REMOVAL (2026-09-10)
+`POST /blotter` no longer exists. It was removed because DILG BIMSS's
+KPIS module already *is* the mandated Katarungang Pambarangay case
+database and Baranguard must complement BIMSS rather than duplicate it
+(§1) — the PII carve-out this item asked for became moot rather than
+being written. `raw_narrative` now reaches a non-Secretary through no
+path at all.
+
+### 🟠 F8. `avg_response_time_minutes` double-counts multi-dispatch incidents
+`AVG(TIMESTAMPDIFF(...))` over `incident JOIN dispatch` with no de-dup,
+in both `ReportsController::summary()` and the export path. An incident
+with two arrived dispatches is weighted twice; §6 defines the metric per
+incident. **Settle this before picking Sprint 8's response-time box** —
+otherwise that box reports a wrong number as a measured one.
+
+### 🟢 F9. Smaller, contained
+- ~~`POST /blotter` can answer `200 []`~~ **✅ closed by removal
+  2026-09-10** — the endpoint is gone (see F7).
+- ~~Enter double-toggles the GIS Live Activity collapse panel~~ **✅ not
+  reproducible (2026-09-10).** Read while extracting `AiToolPanel`: the
+  header's bubble-phase `keydown` handler calls `preventDefault()`, which
+  cancels the inner button's native Enter/Space activation before it
+  dispatches `click`, so only one toggle runs. The entry was theoretical.
+  The nesting (a `<button>` inside a `role="button"` header with its own
+  keydown handler) is still fragile; `AiToolPanel` deliberately uses the
+  simpler structure — the toggle button is the only interactive element —
+  and the GIS panel could be brought in line when next touched.
+- `SmsController::broadcast()` resolves idempotency with
+  `JSON_EXTRACT` over unindexed `audit_log` — a growing full scan, and
+  it makes an append-only record load-bearing for write correctness.
+
 ---
 
 ## A. Blocked on hardware or accounts you have to provide
@@ -34,30 +158,70 @@ no app-foreground hook. Wiring a trigger is a small code task that only
 makes sense to verify on a device.
 
 ### 🔴 A2. Run the AI model end-to-end (blocks the AI evaluation box)
-**Blocked on:** a machine that can run SEA-LION at usable speed.
-**The model has still never been called.** Everything AI-related is
-verified against SQL-seeded rows and a dead Ollama port.
+**Blocked on:** a machine that can run SEA-LION at usable speed. **This
+workstation is confirmed NOT to be that machine** (see below) — the
+"blocked on a machine" framing is now measured, not assumed.
 
-Must confirm on the capable machine:
+**Updated 2026-09-07: Ollama is installed, running, and has the model
+pulled on this workstation** (`ollama.exe`/`ollama app.exe` listening on
+`127.0.0.1:11434`; `aisingapore/Llama-SEA-LION-v3.5-8B-R:latest`, 4.9GB
+Q4_K_M, confirmed present via a real `/api/tags` response) — corrects the
+older "dead Ollama port" framing below. **A real `generate()` call was
+made for the first time in this project's history, while building
+`eval-kit/`** (see DEVLOG's "Friend-runnable AI evaluation kit" entry).
+It did **not** complete: `Operation timed out after 300001 milliseconds
+with 0 bytes received` on a single record. `OllamaUnavailableException`
+handling worked exactly as designed (clean message, no crash), so that
+part of the pipeline is now proven, not just reasoned-about — but no
+redaction has ever actually finished. This workstation's CPU is
+apparently not fast enough to complete even one generation within the
+300s default timeout, which is real evidence for why a more capable
+machine matters here, not just an assumption.
+
+**A concrete path now exists:** `eval-kit/` (new top-level folder, see
+DEVLOG) is a small (316K), self-contained package — a friend with
+possibly-faster hardware runs it via one `.bat` double-click, entirely
+locally (no DB, no project secrets leave this workstation), and sends
+back a results file. It paces itself (20-record batches, 2-minute rests)
+and checkpoints so a multi-hour run survives being closed and resumed.
+
+Must still confirm, once a run actually completes somewhere:
 - No `<think>` block survives into `draft_redacted_narrative`
   (`stripReasoning()` is reasoned-from-docs, never observed)
 - Planted PII is actually removed
 - **Kill Ollama mid-job → the row returns to `queued`, not `failed`**
-  (the single most important untested behaviour in the pipeline)
+  (the single most important untested behaviour in the pipeline — note
+  this is about the real `ai-worker.php` queue path, a separate question
+  from `eval-kit/`'s own dry-run evaluation harness)
 - `model_version` records what really ran
 
 Remember: `backend/.env` needs the `OLLAMA_*` keys added by hand on any
-new machine (they're only in `.env.example`).
+new machine (they're only in `.env.example`) — confirmed still true; this
+workstation's own `backend/.env` state was not touched by this session's
+`eval-kit/` work, which uses its own separate, minimal `.env`.
 
-### 🔴 A3. The 200-record evaluation dataset
-**Blocked on:** ~3 people doing manual labelling —
-`docs/AI_Evaluation_Dataset_Guide.md` has the method. **Startable right
-now, no model needed.** Until it exists, Sprint 6's headline claim
-(recall ≥95% / precision ≥90%) is unmeasured.
+### ✅ A3. The 200-record evaluation dataset — DONE (generated, not hand-authored)
+**Was blocked on:** ~3 people doing manual labelling per
+`docs/AI_Evaluation_Dataset_Guide.md`. **Resolved differently, by explicit
+user decision (2026-09-07):** the dataset is generated instead of
+hand-authored — `backend/scripts/generate-eval-dataset.php` (template +
+pool synthesis) produced `backend/fixtures/redaction-eval-v1.json`, 200
+records, self-validated (every entity/must-keep string checked verbatim)
+and sanity-checked against the baseline engine (see DEVLOG for the full
+coverage breakdown and the two real generator bugs found and fixed along
+the way).
 
-Baseline already established: the regex comparator scores **39.13%
-recall / 100% precision** on a 10-record smoke fixture, with every miss a
-NAME or ADDRESS — the concrete argument for the model over a pattern list.
+**This is a real methodology deviation from the guide, disclosed in the
+dataset's own `generation_method` field** — not independently authored by
+three human labelers. Recommended before quoting results in the capstone:
+a human spot-check pass, especially the ~60-record Bikol subset, where
+the generating model's own fluency is weaker than Tagalog/English.
+
+Baseline already established, now against the real 200 (not just the
+10-record smoke fixture): the regex comparator scores **32.71% recall /
+100% precision**, misses concentrated in NAME/ADDRESS — same shape as the
+10-record fixture's 39.13%/100%, now with real sample size behind it —
+the concrete argument for the model over a pattern list.
 
 ### 🟠 A4. Real FCM + Semaphore credentials
 A Firebase project (`google-services.json` + `FCM_SERVICE_ACCOUNT_PATH`)
@@ -149,8 +313,10 @@ drains on whatever next sync trigger exists.
 ### 🟢 C4. Smaller known gaps
 - `LineChart` has no data-gap concept — a null response-time day renders
   as 0 on Analytics.
-- Evidence files can't be downloaded from W7 (no authorized byte-serving
-  endpoint; the screen says so honestly).
+- ~~Evidence files can't be downloaded from W7~~ **Understated —
+  promoted to F4.** They can't be *uploaded* either; nothing in
+  `backend/` ever writes `evidence_attachment`. Downloading was never
+  the binding constraint.
 - On-device SMS sending was never built, so M13 can only ever show
   `saved_locally_for_retry`. **Deferred** — needs a native SMS plugin
   and device verification (A1).
@@ -173,7 +339,7 @@ drains on whatever next sync trigger exists.
 |---|---|
 | **W10 User Management** | ✅ Built: Admin can create an account (`POST /users`, own barangay, admin sets the initial password, no forced-change flow), and deactivate/reactivate a same-barangay user with session revocation and a "one active Admin must remain" guard. Role CHANGES to an existing account remain out of scope (a deliberate decision, not an oversight) — `PATCH /users/:id`'s self-edit path is unchanged. 19+17 ad hoc checks + browser-verified; see DEVLOG's two W10 entries. |
 | **W18 Map Package Management** | ✅ Built. Both endpoints already existed; new web screen shows published version/checksum (or an honest empty state) and an upload form that surfaces the server's real validation errors verbatim. Browser-verified end-to-end (empty state, invalid-file rejection, real MBTiles upload) against a disposable backend. |
-| **W21 System Settings** | Still **blocked by its own §9 note** — no schema, no endpoints, no sprint assignment. Needs an architecture review first (and gateway credentials must never live in a settings row). Explicitly skipped this session per the user's own decision, not attempted. |
+| **W21 System Settings** | ⚠️ **This row was stale — corrected 2026-09-07.** It is no longer true that there is "no schema, no endpoints". Migration 0012 (`system_settings`) plus `SettingsController` and `GET/PATCH /system-settings` shipped 2026-09-05 under explicit user authorization, surfaced Admin-only as the Settings screen's General + SMS Gateway sections. The override is **narrow**: `sms_gateway.api_key`/`sms_gateway.sender_name` and three non-secret `general.*` display keys, masked on read. It does **not** extend to `DEVICE_SECRET_MASTER_KEY`, `INTERNAL_SERVICE_TOKEN`, `JWT_SECRET` or `FCM_SERVICE_ACCOUNT_PATH` — those stay in `.env`, and a future session must not "complete" W21 by moving them without the same explicit sign-off. Full-scope settings (Notifications/Security/GIS/Backup) remain unbuilt, with no schema or endpoints, and §2 Rule 6 forbids shipping controls for them that do nothing. See `docs/REFERENCE.md` §7's W21 note. |
 
 ---
 
@@ -181,8 +347,14 @@ drains on whatever next sync trigger exists.
 
 - 🟢 A stray `baranguard_device_check` database exists locally — flagged,
   never investigated, safe to drop after a look.
-- 🟢 Three empty untracked files in the repo root (`cls`, `git`, `main)`)
-  from an old mis-paste. Don't let `git add -A` sweep them in.
+- ✅ The three empty untracked files in the repo root (`cls`, `git`,
+  `main)`) are **gone** — confirmed 2026-09-07, nothing to do.
+- 🟢 Seven untracked design-doc artifacts sit in the repo root instead
+  and have done for several sessions:
+  `Baranguard_System_Design_Document.docx`/`.pdf`, four `diagram_*.png`,
+  and `scratch_diagrams.py`. Commit them under `docs/`, or gitignore
+  them — but decide, rather than letting them keep riding along
+  untracked where `git add -A` could sweep them in.
 - 🟢 `mobile/android/` is gitignored but now holds real, non-regeneratable
   fixes (`gradle.properties`, manifest permissions). `npx cap sync` is
   safe; `npx cap add android` would destroy them. Decide whether to
@@ -190,10 +362,93 @@ drains on whatever next sync trigger exists.
 
 ---
 
+## G. Recommended enhancements (2026-09-07 — not required for Sprint 8)
+
+Not blockers. Kept here rather than in a separate file so there's one
+list of outstanding work. None of A2/A3/A6 below need re-doing — those
+three were pure doc/wording fixes and are already applied in the Master
+Reference itself.
+
+### G1-G4. Logic-gap fixes — target rule already written, code/schema not yet built
+
+Each of these has its correct, intended behavior already spelled out in
+`docs/Baranguard_Master_Reference_FINAL .md` (marked "not yet built"
+inline) — implementing means matching code/schema to a rule that already
+exists, not inventing one.
+
+- 🟢 **G1 — SOS third fallback tier.** App and SMS fallback (Rule 27)
+  both terminate on the same workstation Rule 15 already calls a single
+  point of failure — neither survives a total outage. Fix: mobile app
+  sends a native-device SMS (own SIM, no gateway) to a configured backup
+  contact with GPS coords, only when both other paths are confirmed
+  unreachable. Needs: a mobile-side native SMS call + a configured
+  contact number, no backend change.
+- 🟢 **G2 — `sms_log.legal_hold` column.** Retention currently purges SMS
+  logs on a flat 1-year clock regardless of a hold on the linked
+  incident/dispatch. Fix: new migration adding `legal_hold BOOLEAN`
+  (mirrors `incident`/`citizen_report`/`evidence_attachment`), inherited
+  from the linked record; retention job checks it.
+- 🟢 **G3 — `mobile_device` retention should scrub, not delete.** Deleting
+  the row 90 days after deactivation cascades `ON DELETE SET NULL` onto
+  `incident.device_id`, silently erasing device provenance from 7-year
+  legal records. Fix: `RetentionService` clears `fcm_token`/
+  `device_secret_ref` in place and keeps the row — the same pattern
+  already used for `raw_narrative` itself.
+- 🟠 **G4 — `incident.source = 'web_walkin'` discriminator.** Cheaper than
+  a new `status` enum value (already rejected once for cost): lets
+  reports/dashboards exclude walk-in incidents from response-time and
+  pending-queue metrics with a `WHERE` clause instead of by accident.
+  **Touches F8** (`avg_response_time_minutes` double-count fix) — do
+  both in the same pass if either is picked up.
+
+### New feature candidates (2026-09-07 brainstorm, curated subset)
+
+Each is 🟢 unless noted. One-line rationale kept; full discussion was in
+that session's chat, not duplicated here.
+
+**Dispatch/incident**
+- Nearest-available-Tanod ranking on the dispatch picker — decision support only, reuses existing GPS + duty data.
+- Stale-pending escalation for undispatched high/critical incidents — closes the one gap where only SOS currently escalates urgency.
+- Backup/second responder on critical incidents — reopens the "one active dispatch per incident" resolved decision; warranted for fire/medical, real barangay practice.
+
+**AI/oversight**
+- Redaction diff view (highlight exactly what was removed) — near-free, pure UI over data already stored.
+- Evidence-access audit — log every *view/download* of `evidence_attachment`, not just upload; closes a real gap in Rule 17's audited-action list.
+- Lupon packet verification hash/QR — small addition, real integrity value for a document that leaves the system into a non-auditable paper context.
+
+**Resilience**
+- Health-check history, not just current snapshot — cheap, directly serves Rule 15's own stated risk.
+- Backup-staleness warning in W20 — trivial once health history exists; turns a timestamp into something actionable.
+
+**Communication**
+- Closing-the-loop SMS to the citizen reporter ("received"/"resolved") — cheap, reuses the existing outbound pipeline and the contact number already collected for this purpose.
+- Two-way SMS console — already named in the Master Reference §10 out-of-scope list; real value given the population's phone mix.
+- Barangay-wide advisory broadcast (flood/curfew) — high real-world LGU utility; needs a proper opt-in subscriber list, not a reuse of every number ever seen in `sms_log` — otherwise a Data Privacy Act consent problem.
+
+**Civic/oversight**
+- Periodic PB digest — cheap, reuses the PDF engine already built for the Lupon packet; fits how a PB (vs. Admin) would actually consume this system.
+- Aggregated public transparency report — cheap, real civic-tech value; must stay strictly aggregate, no incident-level or fine-grained map detail.
+
+**Mobile**
+- Client-side photo compression before evidence upload — build into the same work that builds the upload endpoint at all (**F4**), not as a separate later feature.
+
+---
+
 ## Suggested order
 
-1. **Start A3 (dataset)** — it needs people, not machines, and blocks the
-   longest chain.
+**0. Section F first** — F1 (settle the API base URL), then F2/F3 (the
+XSS sweep), then a decision on F4 (evidence upload: build or descope).
+F1 in particular gates step 3 below: browser-verifying screens that are
+pointed at seeded preview data over a public tunnel proves nothing about
+production. F8 needs settling before Sprint 8's response-time box.
+
+*(The rest of the order is unchanged. A3 is now ✅ done — see its own
+entry — and A2 has a concrete path via `eval-kit/` that a friend can run
+in parallel with everything below; nobody needs to wait on it.)*
+
+1. ~~Start A3 (dataset)~~ **Done 2026-09-07** — generated, not
+   hand-authored; see A3's own entry for the disclosed methodology
+   deviation and the recommended spot-check.
 2. **A1 (Android)** in parallel — it unblocks six verifications at once,
    plus device-verifying C3's SOS wiring (code-complete, done above).
 3. **B1 (browser-verify)** — biggest pile of finished-but-unproven work,
@@ -203,5 +458,8 @@ drains on whatever next sync trigger exists.
    see C2's own note.)
 5. **B2, B4** — close the verification gaps Sprint 8 will otherwise
    inherit.
-6. **A2 (model run)** once a capable machine is available → then Sprint
-   8's AI evaluation box.
+6. **A2 (model run)** — hand `eval-kit/` to a friend with capable
+   hardware (see A2's own entry for what "capable" means here: this
+   workstation itself timed out on a single record at 300s CPU-only) →
+   then Sprint 8's AI evaluation box, informed by the disclosed
+   generation-method caveat on the dataset itself.

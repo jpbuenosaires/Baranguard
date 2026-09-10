@@ -94,11 +94,17 @@ trap cleanup EXIT
 step "0. Schema + accounts"
 mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || { fail "Could not connect"; exit 1; }
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 applied" || fail "0001 failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" >/dev/null && pass "barangays seeded" || fail "seed failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0003_shift_schedule_nullable_user.sql" >/dev/null && pass "0003 applied" || fail "0003 failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0004_blotter_revision.sql" >/dev/null && pass "0004 applied" || fail "0004 failed"
-mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0007_retention_columns.sql" >/dev/null && pass "0007 applied" || fail "0007 failed"
+# FULL CHAIN, not this sprint's subset — see verify-sprint7-retention.sh's
+# note. Migration 0011 added `user.is_suspended`, which
+# AuthController::login() selects, so a partial schema 500s every login
+# and this suite could not reach a single assertion.
+for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_user 0004_blotter_revision \
+         0005_sms_envelope_replay 0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
+         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension 0012_system_settings \
+         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools; do
+  mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
+done
+pass "Migrations 0001-0015 applied"
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
 HASH=$("$PHP_BIN" -r "echo password_hash('$TEST_PW', PASSWORD_ARGON2ID);")

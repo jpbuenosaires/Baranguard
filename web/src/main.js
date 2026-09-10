@@ -22,7 +22,6 @@ import { renderAdminDashboardPage } from './pages/admin-dashboard.js';
 import { renderDispatchCenterPage } from './pages/dispatch-center.js';
 import { renderIncidentManagementPage } from './pages/incident-management.js';
 import { renderGisLiveTrackingPage } from './pages/gis-live-tracking.js';
-import { renderBlotterListPage } from './pages/blotter-list.js';
 import { renderAnalyticsPage } from './pages/analytics.js';
 import { renderSettingsPage } from './pages/settings.js';
 import { renderCitizenReportsInboxPage } from './pages/citizen-reports-inbox.js';
@@ -41,7 +40,6 @@ const PAGE_ROLES = {
   dispatch: ['admin'],
   'incident-management': ['admin', 'secretary'],
   gis: ['admin', 'punong_barangay'],
-  blotter: ['admin', 'secretary', 'punong_barangay'],
   // 2026-09-05 merge of W9 Statistical Reports + W5 Historical Heatmap
   // into one tabbed screen — see pages/analytics.js. Same role pair both
   // already had, so (unlike `personnel` below) no per-tab role gating.
@@ -61,14 +59,17 @@ const PAGE_ROLES = {
   'map-packages': ['admin'],
   settings: ['admin', 'secretary', 'punong_barangay'],
   // W8 is a per-incident DETAIL view, not a destination in its own right:
-  // it needs an incident id, so it has no sidebar entry and is reached by
-  // clicking a row in W6 Electronic Blotter. Listed here purely so the
-  // role gate below covers it.
+  // it needs an incident id, so it has no sidebar entry and is reached
+  // from incident detail's "Review AI redaction" button. Listed here
+  // purely so the role gate below covers it.
   'ai-review': ['secretary'],
-  // W7 Electronic Blotter Detail — also a per-incident detail view. Every
-  // role that can see the blotter list can open an entry; the finalize/
-  // amend controls inside are Secretary-only, and the server enforces that
-  // independently (§2 Rule 6: client-side hiding is UX, not a boundary).
+  // Per-incident detail view — the app's ONLY one, and the landing point
+  // for search, notifications, Incident Management and the dashboard. The
+  // finalize/amend controls inside are Secretary-only, and the server
+  // enforces that independently (§2 Rule 6: client-side hiding is UX, not
+  // a boundary). Keeps the 'blotter-detail' key after W6's removal; the
+  // rename is a separate pass, since no automated check validates a
+  // navigate() key and ~12 call sites reference this one.
   'blotter-detail': ['admin', 'secretary', 'punong_barangay'],
 };
 
@@ -133,14 +134,18 @@ function boot(currentPage, param) {
     // "View in Incident Management" after a conversion) - undefined for the
     // normal nav-menu entry, same optional-vs-required split DETAIL_PAGES
     // already draws for ai-review/blotter-detail.
-    renderIncidentManagementPage(root, session.user, onLoggedOut, navigate, param);
+    // Returns a stop handle: the AI Classifier panel in the detail pane
+    // polls a queued job, and that interval must not outlive the page.
+    const handle = renderIncidentManagementPage(root, session.user, onLoggedOut, navigate, param);
+    activeStop = handle?.stop ?? null;
   } else if (page === 'gis') {
     const handle = renderGisLiveTrackingPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
-  } else if (page === 'blotter') {
-    renderBlotterListPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'analytics') {
-    renderAnalyticsPage(root, session.user, onLoggedOut, navigate);
+    // Returns a stop handle: the Threat Analyzer tab polls a queued job,
+    // and that interval must not outlive the page.
+    const handle = renderAnalyticsPage(root, session.user, onLoggedOut, navigate);
+    activeStop = handle?.stop ?? null;
   } else if (page === 'citizen-inbox') {
     renderCitizenReportsInboxPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'personnel') {
@@ -164,7 +169,10 @@ function boot(currentPage, param) {
   } else if (page === 'settings') {
     renderSettingsPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'blotter-detail') {
-    renderBlotterDetailPage(root, session.user, onLoggedOut, navigate, param);
+    // Returns a stop handle: the Secretary-only AI Blotter Assistant
+    // polls a queued job, and that interval must not outlive the page.
+    const handle = renderBlotterDetailPage(root, session.user, onLoggedOut, navigate, param);
+    activeStop = handle?.stop ?? null;
   } else if (page === 'ai-review') {
     // Returns a stop handle: W8 polls the AI draft while a job is queued,
     // and that interval must not outlive the page (same contract the GIS

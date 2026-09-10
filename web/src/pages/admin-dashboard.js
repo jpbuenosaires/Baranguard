@@ -32,6 +32,7 @@ import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { InfoTip } from '../components/Tooltip.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -631,7 +632,7 @@ function renderQuickActionsCard(navigate) {
     { label: 'Log an Incident', icon: icons.alertTriangle, page: 'incident-management' },
     { label: 'Dispatch Center', icon: icons.radio, page: 'dispatch' },
     { label: 'Message a Resident', icon: icons.messageSquare, page: 'sms-log' },
-    { label: 'View Blotter', icon: icons.fileText, page: 'blotter' },
+    { label: 'Analytics', icon: icons.barChart, page: 'analytics' },
   ];
   const grid = document.createElement('div');
   grid.className = 'quick-actions-grid';
@@ -679,8 +680,3 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
   return card;
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}

@@ -935,7 +935,6 @@ const LANDING_OPTIONS = [
   { key: 'dispatch', label: 'Dispatch Center', roles: ['admin'] },
   { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'] },
   { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'] },
-  { key: 'blotter', label: 'Electronic Blotter', roles: ['admin', 'secretary', 'punong_barangay'] },
   { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'] },
   { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'] },
   { key: 'personnel', label: 'Personnel', roles: ['admin', 'punong_barangay'] },

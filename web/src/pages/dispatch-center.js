@@ -35,6 +35,7 @@ import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 
@@ -60,15 +61,6 @@ const CATEGORY_CHIPS = [
   { key: 'medical', label: 'Medical' },
   { key: 'disturbance', label: 'Disturbance' },
 ];
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function formatElapsed(timestamp) {
   if (!timestamp) return 'Just now';

@@ -244,6 +244,133 @@ final class AiJobQueue
     }
 
     /**
+     * The four AI Tools task types (migration 0015), and which of them
+     * have a parent incident.
+     *
+     * `TOOL_TASK_REQUIRES_INCIDENT` IS THE PHP HALF OF AN INVARIANT THE
+     * DATABASE CANNOT HOLD. 0015's own header explains why there is no
+     * table CHECK: MariaDB 10.4 rejects one on `notification`'s entity
+     * matrix with ERROR 1901 (§5), so this codebase enforces that shape
+     * of rule in PHP by standing decision, not by oversight.
+     */
+    public const TOOL_TASK_TYPES = ['blotter_assist', 'classification', 'sms_compose', 'threat_analysis'];
+    public const TOOL_TASK_REQUIRES_INCIDENT = [
+        'blotter_assist' => true,
+        'classification' => true,
+        'sms_compose' => false,
+        'threat_analysis' => false,
+    ];
+
+    /**
+     * Queues one AI Tools job.
+     *
+     * Independent like `enqueueTranslation()`, deliberately: an operator
+     * may generate several SMS drafts for one situation and compare them,
+     * so a new run neither supersedes nor is superseded by an earlier
+     * one. There is no `draft_version` here for the same reason — nothing
+     * approves a tool job onto a record, so there is no stale-edit race
+     * for a version to guard.
+     *
+     * `$barangayId` is always required, including for the two
+     * incident-scoped tools. With `incident_id` nullable since 0015 it is
+     * the only thing that scopes a job to a tenant, and §2 Rule 2 wants
+     * that check available server-side without a join back to `incident`.
+     *
+     * @return array{log_id:int,pipeline_run_id:string,status:string}
+     */
+    public static function enqueueToolJob(
+        PDO $pdo,
+        string $taskType,
+        ?int $incidentId,
+        int $barangayId,
+        int $requestedByUserId,
+        ?string $toolInput,
+        string $modelVersion
+    ): array {
+        if (!in_array($taskType, self::TOOL_TASK_TYPES, true)) {
+            throw new \InvalidArgumentException("Unknown AI tool task type: {$taskType}");
+        }
+        if (self::TOOL_TASK_REQUIRES_INCIDENT[$taskType] && $incidentId === null) {
+            throw new \InvalidArgumentException("Task type {$taskType} requires an incident.");
+        }
+        if (!self::TOOL_TASK_REQUIRES_INCIDENT[$taskType] && $incidentId !== null) {
+            throw new \InvalidArgumentException("Task type {$taskType} must not carry an incident.");
+        }
+
+        $pipelineRunId = self::uuid();
+
+        $stmt = $pdo->prepare(
+            "INSERT INTO ai_processing_log
+                (incident_id, barangay_id, requested_by_user_id, pipeline_run_id, task_type,
+                 model_version, tool_input, status, created_at)
+             VALUES
+                (:incident_id, :barangay_id, :requested_by, :pipeline_run_id, :task_type,
+                 :model_version, :tool_input, 'queued', UTC_TIMESTAMP())"
+        );
+        $stmt->execute([
+            'incident_id' => $incidentId,
+            'barangay_id' => $barangayId,
+            'requested_by' => $requestedByUserId,
+            'pipeline_run_id' => $pipelineRunId,
+            'task_type' => $taskType,
+            'model_version' => $modelVersion,
+            'tool_input' => $toolInput,
+        ]);
+
+        return ['log_id' => (int) $pdo->lastInsertId(), 'pipeline_run_id' => $pipelineRunId, 'status' => 'queued'];
+    }
+
+    /**
+     * One tool job by id, for the polling endpoint.
+     *
+     * Returns `barangay_id` and `requested_by_user_id` so the caller can
+     * apply Rule 2's tenant check (and 404, never 403, on a miss) without
+     * a second query. Deliberately does NOT return `incident_id`'s
+     * narrative or any joined incident column — a tool job's output is
+     * the only content this endpoint has any business returning.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function toolJobById(PDO $pdo, int $logId): ?array
+    {
+        $stmt = $pdo->prepare(
+            "SELECT log_id, incident_id, barangay_id, requested_by_user_id, pipeline_run_id,
+                    task_type, model_version, tool_input, tool_output, status, error_code,
+                    processed_at, created_at
+             FROM ai_processing_log
+             WHERE log_id = :log_id AND task_type IN ('blotter_assist','classification','sms_compose','threat_analysis')"
+        );
+        $stmt->execute(['log_id' => $logId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
+    }
+
+    /** Records a completed tool run. */
+    public static function completeToolJob(
+        PDO $pdo,
+        int $logId,
+        string $output,
+        string $actualModelVersion
+    ): void {
+        $stmt = $pdo->prepare(
+            "UPDATE ai_processing_log
+                SET tool_output = :output,
+                    model_version = :model_version,
+                    status = 'completed',
+                    error_code = NULL,
+                    processed_at = UTC_TIMESTAMP()
+              WHERE log_id = :log_id"
+        );
+        $stmt->execute([
+            'output' => $output,
+            // Rule 16: the model the run ACTUALLY used, as reported by the
+            // server — not the one requested at enqueue time.
+            'model_version' => $actualModelVersion,
+            'log_id' => $logId,
+        ]);
+    }
+
+    /**
      * The incident's CURRENT redaction/summary draft — the one
      * `GET /incidents/:id/ai-draft` returns and the one approval must
      * match. Superseded rows are excluded by definition.
@@ -335,8 +462,8 @@ final class AiJobQueue
             }
 
             $rowStmt = $pdo->prepare(
-                'SELECT log_id, incident_id, pipeline_run_id, task_type, model_version, target_language,
-                        draft_redacted_narrative, draft_version, status, created_at
+                'SELECT log_id, incident_id, barangay_id, pipeline_run_id, task_type, model_version, target_language,
+                        draft_redacted_narrative, draft_version, tool_input, status, created_at
                  FROM ai_processing_log WHERE log_id = :log_id'
             );
             $rowStmt->execute(['log_id' => (int) $logId]);

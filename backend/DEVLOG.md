@@ -8963,3 +8963,1044 @@ against expected px, and the contrast sweep above. **Still not verified:**
 anything behind authentication — logging in needs a password this session
 did not have — so the audited screens were exercised by constructing their
 markup against the live stylesheets, not by opening the real screens.
+
+---
+
+## 2026-09-07 — Full bug / logic / business-rule audit (audit only, no code changed)
+
+User-requested: "run a full audit — the bug issue, or logic errors or
+business rules error ... then replace the current references in claude
+md ... what you will do is audit, do not change code." Not a Sprint 8
+box; logged as a deliberate exception the same way the 2026-09-06 UI/UX
+audit was. **No file under `backend/`, `web/` or `mobile/` was
+modified.** Only docs.
+
+Full report: `docs/AUDIT_2026-09-07.md`. Findings tracked for
+remediation as `docs/REMAINING.md` section **F**, which now gates
+Sprint 8.
+
+### Method
+
+Route-table enumeration (77 live + 6 internal — §5's count is correct);
+a rule-by-rule trace of §2's eleven non-negotiables through the
+controllers that implement them; a mechanical scan of every
+`innerHTML`/`insertAdjacentHTML` template literal under `web/src` with a
+throwaway script that walks each template tracking `${}` nesting and
+filters out known-safe expressions; `git diff`/`git show` review of the
+uncommitted working tree against `HEAD`; and a claim-by-claim check of
+the four auto-loaded docs against the code.
+
+### The two P0s
+
+**F1 — the API is published to the public internet.** `web/index.html:142`
+in the working tree points at
+`https://wheels-howto-obvious-describing.trycloudflare.com/api/v1`. §1
+defines this as a LAN-only, no-cloud system, and that assumption is
+load-bearing in two places that cite it by name: the CORS default in
+`backend/public/index.php` (unset in `.env`, so it serves `*`) and
+`CitizenReportsController::submit()`'s per-`REMOTE_ADDR` throttle —
+which behind a tunnel collapses into ONE global bucket for every citizen
+in the barangay. Committed `HEAD` reads `8140`, the disposable
+`baranguard_uiseed` preview DB.
+
+`docs/HANDOFF.md` carried a "RESOLVED 2026-09-05: web app reverted to
+the real API" banner asserting `8081`. `git log -S` shows that line has
+only ever been touched by `f918090`. The banner was wrong for two days
+and one `git show` would have disproved it — the banner is now rewritten
+in place with that lesson attached, rather than quietly deleted.
+
+**F2 — stored XSS from an unauthenticated endpoint into the Secretary
+session.** `POST /citizen-reports` (`requiresAuth = false`) stores
+`description` verbatim; convert copies it to `incident.raw_narrative`;
+`web/src/pages/blotter-detail.js:135` renders it unescaped inside the
+`modal.innerHTML` print template starting at line 78; the token is in
+`sessionStorage`. The Secretary session is the ONE session that can read
+every `raw_narrative` in the barangay, so this is a §2 Rule 1
+exfiltration path with no authentication in front of it. `contact_number`
+(32 chars — enough for a payload) does the same at
+`citizen-reports-inbox.js:421` with no conversion step needed.
+
+Worth noting for whoever fixes it: the *rest* of `blotter-detail.js`
+handles the narrative correctly with `textContent` (lines 611, 624, 923,
+1012). The print modal is the single place it does not, which is exactly
+why it survived every prior review pass. The systemic version (F3) is
+~40 more sites across 12 page modules; three files each define a private
+`escapeHtml` and none applies it everywhere.
+
+### The finding that changes scope, not just correctness
+
+**F4 — evidence attachment upload does not exist server-side.** No
+`POST /incidents/:id/evidence` route, no `INSERT INTO
+evidence_attachment` anywhere in `backend/`, no evidence channel in
+`SyncController::batch()` (it takes `incidents`, `gps_tracks`,
+`duty_status_updates`, `dispatch_status_updates`, `sos`). Mobile writes
+`evidence_attachment_local` and nothing ships it.
+
+So `GET /incidents/:id/evidence` is permanently empty in production, and
+`RetentionService`'s evidence purge, `evidence_attachment.legal_hold`
+and §11's evidence retention window all govern a table that cannot be
+populated. `REMAINING.md` C4 had this as "evidence files can't be
+downloaded from W7" and A1 had photo/voice capture as merely
+"device-unverified" — both understated it badly. It is unbuilt
+end-to-end, and it is a scope decision (build it, or descope it and
+correct §11), not a bug fix.
+
+### P1/P2, briefly
+
+- **F5** `PATCH /incidents/:id` requires and UUID-validates
+  `Idempotency-Key`, then discards it. Never stored, never replayed —
+  Rule 3 theatre. Every sibling write replays for real.
+- **F6** `AuthMiddleware::authenticate()` rejects on `is_active` as
+  documented defense-in-depth but has no line for 0011's independent
+  `is_suspended` axis. Unreachable today (login checks it; the suspend
+  endpoint revokes sessions in the same transaction) — an asymmetry to
+  close, not a live hole.
+- **F7** `POST /blotter` writes the Secretary's text to BOTH
+  `raw_narrative` and `blotter_record.narrative_summary` on a
+  born-finalized record, making it Admin/PB-readable with no redaction
+  step. The only such path in the system, and Rule 1 does not carve it
+  out. Recorded as an open question in `REFERENCE.md` §2 Rule 1 rather
+  than silently accepted.
+- **F8** `avg_response_time_minutes` `AVG()`s over an un-deduplicated
+  `incident JOIN dispatch`, so an incident with two arrived dispatches
+  is weighted twice. §6 defines it per incident. This gates Sprint 8's
+  response-time box — noted there.
+- **F9** `POST /blotter` can answer `200 []` (shared idempotency
+  namespace with `POST /incidents`, read with a different query); Enter
+  double-toggles the new GIS Live Activity panel in the uncommitted
+  diff; `SmsController::broadcast()` resolves idempotency with
+  `JSON_EXTRACT` over unindexed, ever-growing `audit_log`.
+
+### What passed, so nobody re-derives it
+
+Rule 4 (only `AiDraftController::approve()` writes
+`incident.redacted_narrative`) · Rule 5 (the three `new OllamaClient()`
+sites in `AiDraftController` call `isConfigured()`/`model()` only, never
+the network) · Rule 8 (no `Audit::record()` call carries narrative,
+credentials, coordinates or personal data — checked all 36) · Rule 11
+(`ReportsController` buckets on real Asia/Manila calendar days converted
+to UTC bounds; the `response_time_trend` loop does `setTimezone($manila)`
+too, despite a variable named `$createdAtUtcRow` that reads like a bug
+and is not) · cross-tenant 404 everywhere, with the four `403`s all
+being within-tenant role/ownership checks and `requireTenant()` correctly
+ordered before them · `verify-web-wiring.mjs` 497/497 · every one of the
+43 `web/src` modules parses clean under `node --input-type=module
+--check` · no fabricated identities, phone numbers or `|| <nonzero>`
+count fallbacks left (the 2026-09-06 sweep held).
+
+### The meta-finding
+
+**Every static check in this project was green on code with a live P0.**
+`node --input-type=module --check` on all 43 modules, wiring 497/497,
+`php -l` clean — and not one of them can see an unescaped `${narrative}`
+inside an `innerHTML` template, or an API base URL pointing at the open
+internet. This is the third time in four days that this project's green
+suite has meant less than it looked like it meant (2026-09-06's
+`ReferenceError` in `LiveMap.js`, then `node --check`'s sloppy-mode blind
+spot, now this). Added as item 0 of `HANDOFF.md`'s "three things most
+likely to bite you".
+
+### Docs reconciled
+
+`docs/AUDIT_2026-09-07.md` (new, the report) · `HANDOFF.md` (new P0
+banner; the false "reverted to the real API" banner rewritten with the
+lesson; recommended-next-step re-ordered behind F1-F4; new item 0 in
+"most likely to bite you") · `REMAINING.md` (new gating section F; C4's
+evidence line corrected; D's W21 row corrected — it claimed "no schema,
+no endpoints" when 0012 + `SettingsController` shipped 2026-09-05; E's
+three stray root files confirmed gone and replaced with the seven
+untracked design-doc artifacts that are actually there) ·
+`REFERENCE.md` (§1 LAN-only warning; §2 Rule 1 open question for F7; §5
+known-gaps block; §6 wiring count 453 → 497 and a no-unescaped-innerHTML
+rule) · `SPRINTS.md` (two pre-UAT exit conditions marked FAILING rather
+than unfinished, with the specific evidence, plus notes on the two
+Sprint 8 boxes the findings touch).
+
+---
+
+## 2026-09-07 (2) — Friend-runnable AI evaluation kit: 200-record dataset generated + `eval-kit/` packaged runner
+
+User wants a friend to run the redaction evaluation on her own machine —
+solving both A3 (the 200-record dataset never existed) and A2 (this
+workstation was assumed to have no capable hardware) in one session. Not
+a Sprint 8 box; planned via `EnterPlanMode`/`AskUserQuestion` first (four
+real decision forks — dataset provenance, DB access, pacing, packaging —
+all resolved by the user before any code was written), then built per the
+approved plan (`.claude/plans/lively-doodling-wadler.md`).
+
+### Part 1 — the 200-record dataset now exists
+
+**New file: `backend/scripts/generate-eval-dataset.php`.** The guide
+(`docs/AI_Evaluation_Dataset_Guide.md`) assumed three people would
+hand-author 200 records; that never happened. By explicit user decision,
+this script generates them instead — template + pool synthesis, not 200
+typed-by-hand records, specifically so every `entities[].text` is
+guaranteed to appear verbatim in its `narrative` (the same variable is
+substituted into both places, never retyped) rather than relying on a
+human to copy-paste correctly 200 times, which the guide itself names as
+the #1 scoring-breaking mistake.
+
+Output: `backend/fixtures/redaction-eval-v1.json` — 200 records,
+`eval-001`..`eval-200`. Coverage, self-validated after generation (every
+entity/must_keep string checked for verbatim presence, ids checked for
+uniqueness, then cross-checked by actually running the harness):
+- 11 incident types, 18–19 records each
+- language mix exactly 70 English / 70 Tagalog-Taglish / 60 Bikol (the
+  guide's own target split)
+- 40 deliberately hard records: 8 homonym-surname (Mercado/Cruz/Reyes
+  used as a name AND, separately in the same narrative, as the ordinary
+  word for market/cross), 6 duplicate-surname, 6 untitled-mid-sentence,
+  4 purok-that-sounds-like-a-landmark, 4 fake-ID-decoy (a case number
+  deliberately NOT planted as an entity, to catch over-redaction), 10
+  no-PII (`entities: []`), 2 formatting oddities (ALL CAPS / no
+  punctuation)
+- entity totals: NAME 300, ADDRESS 190, PHONE 168, PLATE_NUMBER 26,
+  ID_NUMBER 24, EMAIL 15, ACCOUNT 14, DATE_OF_BIRTH 12 — all 8 categories
+  represented with enough samples to be a real per-category signal, not
+  one noisy data point
+
+**Real bugs found and fixed while validating, worth remembering:** the
+first draft's `must_keep` computation merged the FULL candidate item-word
+list into every record instead of just the one word actually chosen
+(`array_merge($mustKeep, $itemWords, ...)` instead of `[$item, ...]`) —
+111 validation failures, all "must_keep word not found," because most
+records only ever used one of several candidate words. Separately, seven
+of the eleven incident-type scenario templates hard-coded one item word
+directly into the sentence instead of using the `{ITEM}` placeholder they
+were supposed to have, so a *different* randomly-picked item word (still
+recorded as must_keep) never actually appeared in the narrative — e.g.
+`physical_injury`'s English template only ever said "altercation," never
+using `{ITEM}` at all, even though `itemWords` offered "fistfight" as an
+alternative. Fixed by rewriting every scenario template to genuinely
+route through `{ITEM}`. Both classes of bug are the exact "the entity
+string must be the SAME text in both places" failure the guide's own §2
+warns about — just committed by a generator script instead of a human,
+which is exactly why the self-validation step is not optional.
+
+**Sanity check, run and matching the guide's own predicted shape:**
+`php scripts/ai-evaluate.php --engine=baseline --dataset=fixtures/redaction-eval-v1.json`
+→ TP=245 FN=504 FP=0, recall 32.71%, precision 100.00% — high precision,
+poor recall, concentrated in NAME/ADDRESS leaks (visible per-record in
+`--verbose`). Same pattern as the 10-record sample fixture's documented
+39.13%/100%. This is real evidence the planted entities are tagged
+sensibly, not just structurally valid JSON.
+
+**Honesty requirement, written into the dataset's own metadata** (not
+left to a README nobody reads): `generation_method` states plainly this
+was AI-generated via template synthesis, not independently authored by
+three human labelers as the guide assumed, and recommends a human
+spot-check pass before quoting results in the capstone — especially the
+Bikol subset, where the generating model's own fluency is weaker than
+Tagalog/English and mistakes there are the most consequential, since
+Bikol is the language segment (Rule 16) this whole evaluation cares
+about most. Matches this project's own standing rule against unverifiable
+claims (§8) — a dataset whose provenance is misrepresented would be
+exactly that.
+
+### Part 2 — `ai-evaluate.php` gained pacing/resume, additive only
+
+Four new opt-in flags (`--batch-size`, `--rest-seconds`, `--resume`,
+`--save-results`) — every flag documented before this session still
+means exactly what it always meant, and both example commands already in
+the guide were re-run and produce byte-identical results to before
+(`TP=9 FN=14 FP=0` on the sample fixture, unchanged).
+
+- `--resume` loads a small checkpoint JSON next to the dataset
+  (`<dataset>.<engine>.<model-slug>.checkpoint.json`), keyed to the exact
+  dataset/dataset_version/engine/model_version combination so partial
+  results from two different models can never silently merge into one
+  total. Checkpointed after **every** freshly-scored record, not just
+  every batch — an interruption loses at most the one record in flight.
+- `--batch-size`/`--rest-seconds` sleep between batches (friend package
+  uses 20/120, per the user's own pacing decision) — never after the
+  final record, never for records skipped via `--resume` (no work was
+  done for those, nothing to rest from).
+- `--save-results` writes the same RESULT block already printed to
+  console into `evaluation-results-<timestamp>.txt`, plus the verbose
+  per-record leak lines into `evaluation-log-<timestamp>.txt` — for a
+  run nobody is watching the whole time.
+
+**Verified, not just written:** a genuine two-stage resume test (score
+records 1–6, then request 1–10 with `--resume`) produced totals
+byte-identical to a single uninterrupted 1–10 run (`TP=14 FN=24 FP=0`
+both ways) — no double-count, no skip. Batch pacing verified to sleep
+exactly `floor(N/batch_size)` times for N records, never after the last
+one. `--save-results` verified to produce both files with correct
+content.
+
+### Part 3 — `eval-kit/`, the actual thing that gets handed to the friend
+
+New top-level folder, deliberately outside `backend/`/`web/`/`mobile/`/
+`docs/` since it's neither served nor part of the production app. Mirrors
+just enough of `backend/`'s own folder shape
+(`scripts/`,`config/`,`services/ai/`,`fixtures/`) that the copied
+`ai-evaluate.php`'s own `dirname(__DIR__)`-relative paths resolve
+correctly unmodified. Confirmed self-contained: run directly from inside
+`eval-kit/` with its own `.env`, it reproduces the exact same baseline
+result as running from inside the real `backend/` (`TP=245 FN=504 FP=0`)
+— nothing in it reaches back into the real repo.
+
+Total size: 316K (a handful of PHP files, two JSON fixtures, one `.bat`,
+one README) — no build step, no zip tooling, easy to hand over as-is.
+Confirmed her machine needs **no database, no `.env` secrets beyond the
+three `OLLAMA_*` values** — `ai-evaluate.php`'s DB-write path is only
+ever reached when `--dry-run` is absent, and her package's launcher
+always passes `--dry-run`.
+
+`run-evaluation.bat` — the one file she double-clicks: checks `php` is
+on PATH, bootstraps `.env` from `.env.example` on first run and stops so
+she confirms the model name before anything runs, checks Ollama is
+reachable and the configured model is actually pulled (via `curl
+--connect-timeout 3` against `/api/tags`, never through the slow
+generate-call path — see the finding below on why that distinction
+matters), runs a 3-record smoke test against the existing sample
+fixture before committing to the real run, then runs the full 200 with
+`--batch-size=20 --rest-seconds=120 --resume --save-results`.
+
+### A real finding while testing this: Ollama IS installed and reachable on this workstation — but no generation has ever completed
+
+`docs/REMAINING.md` A2 and `docs/HANDOFF.md` both stated flatly that "the
+model has never been called." That's no longer accurate as written.
+While smoke-testing the friend package's `--engine=model` path against
+this workstation's real, already-running Ollama (confirmed via `netstat`:
+`ollama.exe`/`ollama app.exe` listening on `127.0.0.1:11434`, and the
+model genuinely pulled — `aisingapore/Llama-SEA-LION-v3.5-8B-R:latest`,
+4.9GB, Q4_K_M — confirmed via a real `/api/tags` response), a real
+`generate()` call was made for the first time this project's history.
+**It did not complete**: `Could not reach Ollama: Operation timed out
+after 300001 milliseconds with 0 bytes received` — the full 300-second
+default timeout elapsed with zero bytes back, on a single record, on
+this machine's CPU. `OllamaUnavailableException`'s handling worked
+exactly as designed (clean message, checkpoint-safe exit, no crash) —
+that part of the pipeline is now proven, not just reasoned-about.
+
+This is real, useful data, not just a blocker restated: this specific
+workstation's CPU cannot complete even one redaction within 5 minutes,
+which is exactly the situation the friend's (hopefully more capable)
+machine is meant to route around. `eval-kit/.env.example`'s
+`OLLAMA_TIMEOUT_SECONDS` default was set to 600 (not the project's usual
+300) specifically because of this measured data point, with a comment
+explaining why, rather than guessing at a safer number.
+
+**Doc corrections:** `REMAINING.md` A2's "the model has still never been
+called" is now "a real call was attempted and did not complete within
+300s on this workstation's CPU — see the eval-kit session's DEVLOG entry
+for the measured timeout." A2/A3 now both point at `eval-kit/` as a
+concrete, running path rather than an abstract blocker on "a person" or
+"a machine."
+
+---
+
+## 2026-09-07 (3) — Docs overhaul: auto-loaded token budget cut ~58%
+
+User-requested: compact the docs set for token efficiency, propose the
+new structure first, then execute on approval. Proposed a structure with
+measured before/after word counts; user approved all four recommended
+decisions as stated. No code touched — docs only.
+
+**The core diagnosis:** `docs/HANDOFF.md` had been treated as append-only
+(15 chronologically-stacked dated banners back to 2026-09-05) when its
+own stated purpose was "single-page current snapshot." Every banner
+already said some version of "full detail in DEVLOG" — so none of it was
+unique information, just an ever-growing paid-every-session cost. This
+one file was 58% of the entire auto-loaded budget by itself.
+
+**Auto-loaded set (CLAUDE.md + its three `@import`s), before → after:**
+
+| File | Before | After |
+|---|---|---|
+| CLAUDE.md | 714 | 417 |
+| docs/REFERENCE.md | 3,325 | 3,027 |
+| docs/SPRINTS.md | 934 | 851 |
+| docs/HANDOFF.md | 6,957 | 760 |
+| **Total** | **11,930** | **5,055 (-58%)** |
+
+**What changed in each:**
+- **HANDOFF.md** — rewritten from scratch, not trimmed. Deleted all 15
+  historical banners (2026-09-05 through 2026-09-07); their content is
+  not lost, it was already duplicated in DEVLOG. Kept: current P0/P1
+  status (pointers to `AUDIT_2026-09-07.md`/`REMAINING.md` §F, not full
+  restatement), the eval-kit status, "three things most likely to bite,"
+  one consolidated "recommended next step" list (previously had a
+  "superseded... but here's the old list too" doubling), the operational
+  quick-reference block, conventions. Deleted the "Environment notes"
+  section entirely — it was a third copy of facts already in CLAUDE.md's
+  "Working directory" and (partially) `REFERENCE.md` §8; it even said so
+  itself ("the rest ... is in REFERENCE.md §8"). **New standing rule,
+  stated at the top of the file itself and in CLAUDE.md: HANDOFF.md is
+  replaced in place going forward, never appended to.**
+- **REFERENCE.md** — the two audit-finding boxes added earlier the same
+  day (LAN-only violation, five non-matching route contracts) collapsed
+  from full restatements (348 words combined) to one-line pointers at
+  `AUDIT_2026-09-07.md`/`REMAINING.md` §F. Rule 1's F7 open-question note
+  tightened similarly. Nothing else touched — the rest of this file is
+  real technical reference content (schema/API/roles/design system), not
+  narrative, and doesn't compact further without losing information.
+- **SPRINTS.md** — the audit-recap paragraph inside Sprint 8's own prompt
+  block (218 words) collapsed to two sentences with the same pointers.
+  Standing rules and the Sprint 8 checkbox menu untouched.
+- **CLAUDE.md** — "Working directory" section rewritten tighter (same
+  facts: junction, vhost ports, mobile not static-servable, `.htaccess`
+  protection — fewer words). The audit-summary paragraph and "Reading the
+  archives" section merged into one compact "Not auto-loaded — open
+  deliberately" list. Added two things that were previously undocumented
+  anywhere in CLAUDE.md: an explicit note that the Master Reference is
+  known stale relative to migrations 0008-0014 (flagged, not fixed — see
+  below), and the new HANDOFF.md replace-not-append rule.
+
+**Files not auto-loaded — sized for clutter, not tokens, since they cost
+nothing per session regardless of size:**
+- **`docs/AI_Evaluation_Dataset_Guide.md`** shrunk 1,972 → 439 words. Its
+  original job (instructing three people to hand-label 200 records) is
+  moot now that `generate-eval-dataset.php` does it — by the user's
+  explicit choice, kept rather than deleted, because the 8 PII category
+  definitions and judgement-call rules are still the live contract the
+  generator follows and still the first thing to check if the dataset is
+  ever extended or disputed. Marked superseded at the top; the
+  hand-authoring instructions, the three-way split, and the calibration/
+  cross-check process are gone (they describe a process that didn't
+  happen).
+- **`docs/Baranguard_Sprint_Prompts.md`** — left untouched, by the user's
+  explicit choice. Sprints 0-7 complete, pure history, zero per-session
+  cost regardless of its 7,675 words — no reason to touch it.
+- **`docs/Baranguard_Master_Reference_FINAL .md`** — left untouched. Its
+  staleness relative to migrations 0008-0014 (party fields,
+  `is_suspended`, `display_id`, `case_status`, `system_settings`/W21, two
+  newer endpoints) was flagged during this session's proposal but
+  explicitly scoped OUT of this restructuring pass — it's a
+  content-accuracy problem, not a token-efficiency one, and the user
+  deferred it rather than folding it in. Now flagged in CLAUDE.md itself
+  so it isn't silently forgotten.
+- **`docs/REMAINING.md`, `docs/AUDIT_2026-09-07.md`** — untouched, both
+  already lean and actively load-bearing.
+
+**Net effect:** every session opened in this repo from now on pays
+~5,055 words instead of ~11,930 before it reads a single line of actual
+task instruction — and the file that's supposed to answer "where do
+things stand right now" now actually answers that in under 800 words
+instead of requiring a scroll through seven sessions of history to find
+the current banner at the top.
+
+---
+
+## 2026-09-07 (4) — Master Reference rewritten: reconciled with shipped code, 7 logic gaps fixed, compacted 57%
+
+Continuation of the same day's docs overhaul, at the user's explicit
+request: compact the Master Reference too, fix what's broken in it, and
+delete what's not needed. 16,829 → 7,261 words (-57%). Full rewrite via
+`Write`, not incremental edits — too much needed to change at once to do
+safely as a diff.
+
+**Critical constraint respected throughout: §1-§11 section numbers and
+all 32 Architecture Rule numbers were preserved exactly**, never
+reordered or renumbered. Before writing a word, grepped every other doc
+plus `backend/DEVLOG.md` (9,300+ lines) and `Baranguard_Sprint_Prompts.md`
+for `§N`/`Rule N` citations — found dozens of live citations to specific
+rule numbers (12, 13, 15, 16, 17, 23, 24, 27 especially) going back to
+Sprint 1. Renumbering would have silently invalidated every one of them.
+Confirmed after the rewrite: every citation elsewhere in the repo still
+points at a rule with the same substance it always had. One self-inflicted
+citation error caught and fixed before finishing: a line cited "Rule 5"
+for "the API never calls Ollama directly," confusing this document's own
+Rule 5 (telecom SMS) with `REFERENCE.md`'s *separately and independently
+numbered* 11-item "Rule 5" ("The API never calls Ollama") — the two rule
+lists share numbers 1-11 but are not the same list. Fixed to state the
+fact without a false pointer.
+
+**Reconciled against migrations 0008-0014** — the actual reason this
+rewrite was overdue. Added to §5: `user.is_suspended`/`suspended_reason`/
+`suspended_at` (0011, a third axis independent of `is_active`), `incident`
+and `blotter_record`'s three party fields + `location_description` (0008,
+0010) + `display_id` (0014), `blotter_record.case_status` (0009),
+`sms_log.message_type='manual'` + `message_body`/`read_at` (0013),
+`ai_processing_log.task_type='extraction'` + its three `draft_*` party
+columns (0008), and the new `system_settings` table (0012) with its
+explicit narrow-override note. **Found and added a whole missing table**:
+`blotter_revision` (migration 0004) was never in this document at all —
+a real schema gap, not just a stale one. Added to §6: `PATCH
+/incidents/:id`, `POST /blotter` (walk-in), `GET/PATCH /system-settings`,
+the extraction endpoints — none of which existed in this document before
+today. Added to §7: suspend action, walk-in blotter row, System Settings
+row.
+
+**Applied the seven internal-logic fixes from the same day's "does this
+sound logical" pass** (originally just discussed, never written down
+until now):
+- Rule 7 split into an inbound clause (LAN-only, now correctly flagged as
+  a currently-open P0 violation rather than a bare assumption) and an
+  outbound clause (FCM/Semaphore genuinely need internet; this doesn't
+  contradict "LAN-only" — degraded alerting is a defined state, not a
+  contradiction).
+- Rule 9 gained the actual lockout number (5 attempts / 15 minutes) —
+  previously specified nowhere in either this doc or `REFERENCE.md`,
+  forcing the real implementation to invent a value that was never fed
+  back into the reference.
+- Rule 21 now names the walk-in incident-creation exception explicitly
+  instead of silently contradicting its own "creates pending incident"
+  claim, and points at a cheaper fix (a `source` discriminator) than the
+  new-status-enum value the team had already correctly rejected as too
+  heavy.
+- Rule 27 (SOS) no longer claims resilience the two built fallback tiers
+  (app, SMS) can't deliver — both terminate on the single-point-of-failure
+  workstation Rule 15 already names, so a total outage isn't survived by
+  either. States this plainly and names the actual fix (native-SMS-to-
+  backup-contact, a third tier that never touches the workstation) as not
+  yet built, rather than pretending the gap doesn't exist.
+- §6's "Internal SMS/GSM" section split into genuinely-inbound handlers
+  vs. backend-triggered outbound sends — the original text described all
+  six endpoints as "inbound handlers... callable by the ingestion
+  service," which is only true of four of them.
+- §11's `sms_log` retention row and §5's `sms_log` entry both now name
+  the real gap (no `legal_hold` column, so a legal hold on the linked
+  incident doesn't protect its SMS trail) as a target-rule-not-yet-built,
+  rather than silently matching the current under-protective behavior.
+- §11's `mobile_device` retention row now specifies scrubbing secret
+  columns in place rather than deleting the row — the previous
+  implied behavior (delete after 90 days) cascades `ON DELETE SET NULL`
+  onto `incident.device_id`, silently destroying device-provenance on
+  7-year legal records 90 days after a Tanod's device is deactivated.
+  This is the same pattern `RetentionService` already uses for
+  `raw_narrative` itself (null the field, keep the row) — applying an
+  existing pattern, not inventing a new one.
+
+None of the seven required a real migration or code change to fix *in
+this document* — each is written as the correct target rule with an
+explicit "not yet built" flag where the real schema/code hasn't caught up
+yet, the same honesty pattern `REMAINING.md` §F already uses elsewhere in
+this project. No migration was written; that's future work if picked up.
+
+**Deleted entirely, all now superseded by content that already lives
+elsewhere and cost real words for zero ongoing reference value:**
+- §12 Super Prompt Library — duplicated by `SPRINTS.md` (live Sprint 8
+  prompt) and `Baranguard_Sprint_Prompts.md` (historical prompts).
+- §13 Daily Session Checklist — duplicated by `SPRINTS.md`'s own
+  "Standing rules for every session," already more current.
+- §14 Development Integrity Note — pure meta-commentary about the
+  document's own rigor; the one actionable line (reconcile deviations
+  before code becomes the new reference) already lives in `CLAUDE.md`.
+- §15 Reference Audit Status — a snapshot of a 2026-09-02 self-audit that
+  declared the document "closed for architecture changes," which was
+  already false by the time this rewrite started.
+- §16 Worked End-to-End Trace — a one-time synthetic validation run
+  against MariaDB 10.11 (not even the actual 10.4 this project runs).
+  Its one genuinely reusable fact (a table-level CHECK can't reference an
+  `ON DELETE SET NULL` column, `ERROR 1901`) was already independently
+  documented in `REFERENCE.md` §4 — fully redundant, not just stale.
+- §8's ~140-line "Adopted UI reference: Figma Make..." subsection — a
+  blow-by-blow record of which mockup patterns were adopted/rejected
+  from a one-time 2026-09-02 Figma import. The decision is long since
+  built; the narrative belongs in DEVLOG (where it also already lives),
+  not in a living technical reference. Every screen entry in §9 that
+  referenced this narrative ("UI reference: ...") had that clause
+  stripped along with it.
+- §10's original "Feature Backlog" — the sprint-mapped historical list
+  (redundant with `Baranguard_Sprint_Prompts.md`) and the "Resolved
+  decisions" list (redundant with §2's own rules, just reworded) both
+  cut. **Kept and renamed** "Explicitly out of scope" — just the
+  still-relevant unscoped-ideas list, because `SPRINTS.md` line ~43
+  ("already in §9/§10 without an explicit architecture-review note")
+  depends on §10 meaning exactly this, and renaming/removing the section
+  number would have broken that cross-reference too.
+
+**§11 (Retention) kept at that exact number** even though old §10 doesn't
+match the deleted content's original name — Rules 11 and 25 both cite
+"§11" for retention internally, and `REMAINING.md`/`AUDIT_2026-09-07.md`
+cite it externally. Verified all of these still resolve correctly after
+the rewrite.
+
+**Verification performed, not just asserted:** grepped every `§N` used
+inside the new file against its own header list (all resolve, none point
+at a deleted section); grepped every `Rule N` citation inside the new
+file against the rules list itself (all 8 found — 1, 7, 12, 15, 17, 21,
+27 — match their number's actual current content); grepped `Rule
+[12-32]` and `§[9-11]` across every other doc plus DEVLOG and
+Sprint_Prompts.md to confirm nothing external broke; ran a markdown
+table-column-count check across the whole file (the only "mismatches" it
+found are the role matrix's intentional single-cell section-divider
+rows, a pattern that already existed in the original document).
+
+**Also updated:** `CLAUDE.md`'s stale "known stale relative to migrations
+0008-0014, not yet reconciled" note → now says reconciled, with the word
+count corrected 16.8k → 7.3k. `REFERENCE.md`'s own word-count mention
+corrected the same way.
+
+---
+
+## 2026-09-07 (5) — A1-A7 fixes and the feature brainstorm captured as trackable backlog
+
+The seven logic-gap fixes (A1-A7) and the 14 recommended feature
+candidates from earlier the same day's brainstorm existed only in chat
+until now — user asked for them written down "where they belong," compact,
+no loss of accuracy. Landed as a new `docs/REMAINING.md` §G, not a new
+file: REMAINING already distinguishes blocking (🔴/🟠) from nice-to-have
+(🟢) work via its existing legend, so a fifth lettered section fits its
+own structure rather than fragmenting into a separate backlog doc.
+
+Four of the seven (now G1-G4) still need real code/schema work — SOS's
+third fallback tier, `sms_log.legal_hold`, `mobile_device` scrub-not-delete,
+and the `incident.source='web_walkin'` discriminator — each pointed back
+at the Master Reference section where its correct target rule already
+lives (written during the same day's Master Reference rewrite), so
+implementing is "match code to an already-decided rule," not a fresh
+design decision. The other three (A2/A3/A6 — the SMS endpoint split, Rule
+7's inbound/outbound split, the lockout number) were pure doc/wording
+fixes already applied directly to the Master Reference itself during that
+rewrite — noted as done, not re-listed as outstanding.
+
+The 14 feature candidates kept their one-line rationale each, organized
+by the same six categories used when presenting them, with the two that
+touch existing tracked work cross-referenced (the photo-compression idea
+bundled with F4's evidence-upload build-out; G4 cross-referenced against
+F8's response-time metric fix). No new code, no schema changes — this
+entry and the `REMAINING.md` §G addition are both purely organizational.
+
+---
+
+## 2026-09-07 (6) — Docs QA pass: three real staleness bugs found and fixed
+
+User asked "is the docs folder content all okay, or is there any to
+fix?" after the day's five-part docs overhaul. Ran a fresh check rather
+than trusting memory: every `§N` citation across all compact docs against
+the Master Reference's real TOC, every `docs/*.md`/`backend/DEVLOG.md`
+file-path reference against what actually exists, a code-fence balance
+check, and a markdown table column-count check across every edited file.
+Structurally everything held — no broken references, no unbalanced
+fences, no genuine table corruption (the flagged "mismatches" were the
+Role Matrix's intentional single-cell section-divider rows, a pattern
+already in the original document).
+
+**Three real content bugs found, not just structural ones:**
+- `docs/REFERENCE.md`'s verification-suite table still said
+  `verify-web-wiring.mjs | 453` two sections below prose on the same page
+  that already said 497 — the table wasn't updated when the number was
+  corrected earlier the same day. Fixed to 497 with a pointer back to the
+  prose instead of a second hardcoded number likely to drift again.
+- `docs/SPRINTS.md`'s AI-evaluation checkbox still described the
+  200-record dataset as a blocker ("needs the 200-record dataset AND a
+  machine") after the same day's work made the dataset exist. Fixed to
+  separate the two states: dataset done, machine still needed.
+- `docs/HANDOFF.md` — being a replaced-in-place snapshot cuts both ways:
+  it hadn't been rewritten since the Master Reference rewrite or the
+  `REMAINING.md` §G backlog capture, both of which happened later the
+  same session and both of which are exactly the kind of picture-changing
+  work its own stated discipline requires it to reflect. Added a
+  paragraph covering both.
+
+**One thing surfaced, not fixed — flagged to the user instead of guessed
+at:** every date stamp written today ("2026-09-07") across HANDOFF,
+REMAINING, this log, the Master Reference's currency note, and the
+audit's own filename (`AUDIT_2026-09-07.md`) reflects the date this body
+of work started, not real wall-clock time — file mtimes and the system
+clock agree the actual edits landed 2026-09-08, after the session crossed
+midnight. Not fixed unilaterally: `AUDIT_2026-09-07.md`'s filename is
+cited by exact name dozens of times across every doc, this log, and the
+Master Reference — renaming it or splitting the narrative across two
+dates is a real, risky, low-value edit for what is a calendar-label
+question, not a factual error. Left as one continuous "2026-09-07
+session" pending the user's call.
+
+---
+
+## 2026-09-07 (7) — CLAUDE.md deduplicated against HANDOFF.md
+
+User asked how to make `CLAUDE.md` more accurate/token-efficient
+specifically. Found the real lever: `CLAUDE.md` and `HANDOFF.md` are both
+auto-loaded via `@import` into the same context every session, but
+`CLAUDE.md`'s "Two P0s are currently open" paragraph and its "Current
+status" section both restated facts `HANDOFF.md` (loaded immediately
+after it) already states in full — the model would read the same two
+facts twice in one context load for zero benefit. `CLAUDE.md`'s own
+opening line says its job is to point at the imported files, not
+duplicate them.
+
+Trimmed both to pointers at `HANDOFF.md`. Kept the one line that wasn't
+duplicated — the "treat a stale HANDOFF.md like a stale DEVLOG claim"
+behavioral rule — since that's an instruction, not a status fact HANDOFF
+also states. Also added a small forward-looking note on the
+`AUDIT_2026-09-07.md` bullet: once `REMAINING.md` §F closes, that bullet
+and the P0-status pointer above it should be removed, not left citing a
+resolved audit as still-open — cheap insurance against the exact kind of
+staleness this whole session's QA pass kept finding elsewhere. Net word
+count nearly flat (424 → 421) but the duplicate-fact count across the
+CLAUDE.md+HANDOFF.md pair dropped to zero, which is the actual efficiency
+metric that matters when two files are always loaded together.
+
+---
+
+## 2026-09-07 (7) — CLAUDE.md: two more duplicate spots found, plus two real accuracy gaps
+
+User asked how to further enhance CLAUDE.md for accuracy and token
+efficiency. Re-checked fresh rather than assuming the prior pass (above)
+caught everything — it hadn't. Same waste pattern, two more instances:
+
+- The opening paragraph's parenthetical ("pick exactly ONE Today's cut
+  item... never invent fields/routes/roles not listed") restated
+  `SPRINTS.md`'s own standing rule #1 and `REFERENCE.md`'s own opening
+  warning verbatim — both auto-load via `@import` two lines below.
+  Trimmed to a pointer, keeping only "confirm architectural decisions
+  with the user before writing code," which isn't stated verbatim
+  anywhere else.
+- The whole "One standing rule" section (treat a stale HANDOFF.md like a
+  stale DEVLOG claim, rewrite don't append) restated `HANDOFF.md`'s own
+  Conventions section almost word-for-word. Cut entirely from CLAUDE.md —
+  the "Not auto-loaded" list already has one shorter instance of the same
+  idea in context, and the authoritative copy belongs in the file the
+  rule is actually about.
+- The Master Reference bullet's "Reconciled 2026-09-07 against
+  migrations 0008-0014..." clause was a dated fact sitting in a file
+  meant to change rarely — moved the currency claim to a pointer at the
+  Master Reference's own closing "Document status" note (which is the
+  file actually responsible for staying current), rather than
+  duplicating a date here that will look stale the next time either file
+  changes.
+
+421 → 367 words, zero information loss — every word cut is still
+verbatim-reachable within a few hundred tokens via the imports that load
+right after it.
+
+**Two real accuracy gaps found in the process, both fixed, neither in
+CLAUDE.md itself:**
+- `docs/REFERENCE.md` §2's own "Non-negotiable rules" list is
+  independently numbered 1-11 — it is NOT the same numbering as the
+  Master Reference's 32-rule §2 (confirmed: this file's own "Rule 5" is
+  "the API never calls Ollama"; the Master Reference's Rule 5 is telecom
+  SMS). This is the exact mistake made and caught during the same day's
+  Master Reference rewrite (a citation had to be fixed there for this
+  reason) — added a note at the top of REFERENCE.md §2 so the next
+  session doesn't make the same mistake blind.
+- The Master Reference's own §4 folder tree never got `eval-kit/` added
+  after that folder was created the same day — a real, if small,
+  omission in the one section whose whole job is to be the complete
+  folder map. Added.
+
+---
+
+## 2026-09-10 — DILG BIMSS reckoning: blotter narrowed, AI Tools screen added
+
+**Multi-box session, explicitly requested by the user** (SPRINTS.md rule
+2's "deliberate exception" — logged here as that rule requires). Plan
+approved before any code: `.claude/plans/mellow-wibbling-stream.md`.
+
+### What forced this
+
+A web search for what DILG BIMSS actually is settled a question this
+project had been answering wrong. BIMSS/BIMS is now **mandated for all
+barangays by DILG Memorandum Circular**, it is an 11-subsystem suite, and
+one of those subsystems — **KPIS, the Katarungang Pambarangay Information
+System** — is already "the barangay's database on Katarungang Pambarangay
+cases filed to the Lupong Tagapamayapa". BIMS also ships its own
+electronic blotter.
+
+Earlier the same session I had told the user the opposite: that
+Baranguard's blotter was legally distinct from BIMSS because it was tied
+to RA 7160 §394(c) and the Katarungang Pambarangay Law. **That was wrong
+and the search corrected it.** Worth recording as a reasoning error, not
+just an outcome: the RA 7160 citation was real, but "this function has a
+statutory basis" does not imply "no other mandated system implements it".
+
+User's standing constraint: Baranguard **complements** BIMSS and may
+never be positioned as replacing it. So a Baranguard feature that
+duplicates a BIMSS records function is pure liability.
+
+### Decisions taken (both put to the user, both approved)
+
+1. **Blotter narrows.** `POST /blotter` (walk-in entry) removed — a
+   walk-in with no prior incident is exactly a native KPIS case. The
+   standalone **W6 records list** removed — it is the screen that
+   visually competes with KPIS. What stays is the incident-originated
+   path (dispatch → AI redaction → finalize → Lupon packet), which BIMSS
+   has no dispatch layer to feed.
+2. **AI Tools screen added** with four local-model drafting aids, and the
+   AI pipeline's *stated purpose* repositioned: it is the PII firewall
+   (§2 Rule 1) plus a drafting aid whose output a Secretary re-keys into
+   BIMSS/KPIS. Its mechanics did not change.
+
+### What "delete the blotter" could NOT mean
+
+`web/src/pages/blotter-detail.js` turned out to be **the app's only
+per-incident detail view** — it tolerates `blotter = null` (`:232-236`)
+and is the landing target for Incident Management, SMS Monitor, the
+dashboard, the audit log, global search and notification clicks. Deleting
+it would have left the app with no way to open an incident at all. Only
+the list went. The screen keeps the `blotter-detail` route key: ~12
+`navigate()` call sites reference it and **no automated check in this
+stack validates a navigate key**, so the rename is its own pass.
+
+Its back button is now role-aware (`incident-management` for
+Admin/Secretary, `dashboard` for Punong Barangay) because PB has no
+Incident Management screen. **Consequence worth stating: Punong Barangay
+loses list-of-cases access**, which §3 previously granted via the blotter
+list. PB still reaches incidents from the dashboard.
+
+### Bugs found that were NOT part of the plan
+
+- **`IncidentsController::updateStatus()` did not exist.**
+  `routes/incidents.php:19` routed `PATCH /incidents/:id/status` to it,
+  `apiClient.js` called it from two places, and `audit-log.js:52` already
+  mapped its `incident_resolved` audit action. A live 500, and the reason
+  nothing ever set `blotter_record.case_status='resolved'` despite
+  REFERENCE §5 claiming it did. Written this session, against the
+  contract `verify-sprint6.sh` already encoded — see below.
+
+- **EVERY VERIFICATION SUITE THAT LOGS IN HAS BEEN BROKEN SINCE
+  2026-09-05.** Migration 0011 added `user.is_suspended`;
+  `AuthController::login()` selects it; but `verify-sprint6.sh`,
+  `verify-sprint7-retention.sh`, `verify-sprint7-pentest-incidents.sh`
+  and `verify-sprint7-audit.sh` each applied only their own sprint's
+  subset of migrations (0001/0002/0004-ish). Every login in those suites
+  500'd, so they exited at setup without reaching a single assertion —
+  while REFERENCE §9 went on listing them as green (112/66/68/56).
+  Fixed by applying the FULL chain 0001-0015 in all four. **The general
+  lesson, written into each script:** a suite pinned to a partial schema
+  expires the next time a migration touches a table it logs in through.
+
+- **`assignDisplayId()` was dead** once `createEntry()` went —
+  `finalize()` has its own inline retry loop (`:307-320`) and the helper
+  had been extracted for the walk-in path only. Removed.
+
+- **`INCIDENT_TYPES` no longer needed to be public.** Its docblock said
+  it was public "so BlotterController's walk-in entry validates against
+  ONE list"; that caller is gone and no other exists (the other three
+  controllers each keep a private copy — a real duplication, left alone
+  as out of scope). Back to private.
+
+### The suite corrected my API, not the reverse
+
+Once `verify-sprint6.sh` could run, it failed my fresh `updateStatus()`
+on three assertions — and it was right on all three. §6's contract, which
+that suite already encoded:
+
+- only a **`dispatched`** incident may be resolved (`pending` → 409);
+- a repeat resolve is **409**, not an idempotent 200;
+- therefore exactly one `incident_resolved` audit row.
+
+I had implemented "already resolved → 200" on the reasoning that a
+double-click is not a conflict. Wrong against the spec, and the fix is
+better anyway: gating on `status === 'dispatched'` collapses all three
+cases into one guard, and makes the endpoint safe without an
+`Idempotency-Key` because the second call no longer finds a resolvable
+incident.
+
+### Migration 0015
+
+`ai_processing_log.incident_id` had been `NOT NULL` since 0001, and it is
+how every AI job inherits its tenant. Two of the four new tools (SMS
+Composer, Threat Analyzer) have no incident — so they had neither a
+parent nor a barangay, i.e. nothing to satisfy §2 Rule 2 with. 0015
+therefore makes `incident_id` nullable and adds `barangay_id`,
+`requested_by_user_id`, `tool_input`, `tool_output`, plus four
+`task_type` values.
+
+- The "incident tasks need `incident_id`, tool tasks need `barangay_id`"
+  invariant is enforced **in PHP**, not as a table CHECK — §5 already
+  records ERROR 1901 on MariaDB 10.4 for exactly that shape of
+  constraint on `notification`.
+- Verified up, down, and idempotent against a real MariaDB 10.4 before
+  anything was built on it.
+- Nullable `incident_id` does not disturb `purgeOneIncident()`'s ordered
+  cascade: FK RESTRICT still applies to every non-null value.
+
+**Retention needed its own rule.** `purgeAiProcessingLogs()` INNER JOINs
+`incident`, so NULL-incident rows were invisible to it and would never
+have expired. New `AI_TOOL_JOB_DAYS = 90` + `purgeAiToolJobs()`, scoped
+by `incident_id IS NULL` rather than by task type — the discriminator is
+"has a parent", not "is a tool", so `blotter_assist`/`classification`
+correctly keep following their case. **90 days was signed off explicitly
+by the user**, per §2 Rule 10 (retention numbers are an architecture
+decision, not a runbook edit); it was not picked silently.
+
+### Rule 1 constraints per tool, and why the role gates differ
+
+| Tool | Reads | Role | Why |
+|---|---|---|---|
+| Blotter Assistant | `raw_narrative` | Secretary only | Rule 1's only reader; output is the BIMSS/KPIS handoff draft and redacts as it drafts |
+| Incident Classifier | approved `redacted_narrative` | Admin + Secretary | Reading only the approved text is *what makes it* Admin-safe |
+| SMS Composer | operator-typed prompt, nothing else | Admin only | Output goes to Semaphore, an external channel — narrative may not leave that way. Matches `/sms/send`'s gate so it cannot draft what the caller cannot send |
+| Threat Analyzer | aggregate counts | Admin + PB | Oversight-shaped |
+
+The Threat Analyzer deliberately excludes `location_description` even
+though it is "just a location": it is free text an intake officer typed
+("in front of the sari-sari store by the Cruz house") and is identifying
+in practice. It groups by type / time-of-day / day-of-week instead, which
+answers the rostering question without it. Day bucketing uses a fixed
+`+08:00` offset, never `CONVERT_TZ()` (Rule 11).
+
+### Deviation from the approved plan (one, deliberate)
+
+The plan said to probe model availability via the existing
+`GET /system/health`. **That was wrong: it is Admin-only**, and this
+screen serves Secretary and Punong Barangay too. Added
+`GET /ai-tools/availability`, which reuses
+`SystemHealthController::ollamaStatus()` (made public) rather than
+copying the probe. Same coarse three states, no URL/model/error detail —
+safe for any authenticated role precisely because it carries no detail.
+
+### Honest scope of verification
+
+`backend/scripts/verify-ai-tools.sh` — **63/63**, new. Four-dimension
+pen-test per tool plus the two things unique to this feature: tenant
+scoping for jobs that have no incident, and **the queue surviving an
+unreachable model** (`REMAINING.md` A2 calls that the single most
+important untested behaviour in the pipeline — it is now tested, by
+pointing `OLLAMA_URL` at a dead port and asserting jobs come back
+`queued`, never `failed`).
+
+**A real generate() completing is still NOT verified and was not faked.**
+This workstation times out at 300s with zero bytes (A2). Everything up to
+"worker claims the job and hands it back intact" is genuinely exercised.
+
+One assertion in that suite was wrong on first run and the code was
+right: removing POST from a path that still serves GET yields **405**,
+not 404. Corrected the expectation, not the router.
+
+Browser pass (disposable seeded DB, local API, both themes): sidebar
+shows AI Tools and no Electronic Blotter; Admin sees three tools,
+Secretary sees two (no SMS Composer, no Threat Analyzer); the
+unavailable banner renders honestly against a dead model with Generate
+disabled; Incident Management → incident detail → AI review → back →
+back all work.
+
+**Two UI bugs the browser found that no static check could:**
+- The result pane said "Generating is unavailable — see the notice
+  above" during the ~5s availability probe, while no banner existed yet.
+  Now says "Checking whether the local AI model is available…".
+- The AI Tools nav entry was parked after Personnel, so the sidebar
+  rendered **two** "Records & Reporting" headers — the render loop emits
+  one each time the group changes. Moved inside the group's contiguous
+  run; noted in the nav table so it is not reintroduced.
+
+### Also done
+
+`web/src/utils/escapeHtml.js` — one shared helper, replacing three
+diverged private copies (`admin-dashboard`, `dispatch-center`,
+`gis-live-tracking`). Two of the three never escaped the single quote,
+which is live inside any single-quoted attribute, and dispatch-center's
+`if (!str) return ''` rendered a real `0` as blank. This is a foothold
+for `REMAINING.md` F3, **not** the F3 sweep — ~45 interpolation sites
+across 12 modules remain open. The new AI Tools screen renders model
+output via `textContent` throughout and interpolates nothing.
+
+`verify-web-wiring.mjs`: **504/504, 0 failed** (was 497 — blotter-list
+removed, ai-tools added). It caught the one thing it exists to catch:
+`btn-blotter-new`, used by Incident Management's "New Incident" button,
+was defined in the deleted `blotter-list.css`. Moved to
+`incident-management.css` as `.btn-new-incident` — the old name was
+always wrong, it opens the incident create pane.
+
+Suites after the migration-chain fix: sprint6 all green, retention
+**62/0**, pentest-incidents **68/0**, audit **52/0**, ai-tools **63/0**.
+
+---
+
+## 2026-09-10 (2) — AI Tools screen dissolved into the screens that do the work
+
+Same-day reversal of the previous entry's UI, on the user's call, and the
+user was right. Plan approved first (`.claude/plans/mellow-wibbling-stream.md`).
+
+### Why
+
+A standalone "AI Tools" screen with four assistants in a rail makes every
+tool a detour: an operator is mid-task and wants help with *that* task,
+not a trip to an AI menu. The strongest evidence the instinct was right
+is that **each tool's server-side role gate already matched its natural
+host screen exactly**, without anyone having designed it that way —
+Classifier = Incident Management (admin+secretary), SMS Composer = SMS
+Monitor (admin), Threat Analyzer = Analytics (admin+PB), Blotter
+Assistant = incident detail's existing Secretary-only section.
+
+**Pure frontend re-hosting.** No endpoint, migration, prompt, worker
+branch or role gate changed. `verify-ai-tools.sh` still passes **63/63
+untouched** — that is the proof.
+
+### Decisions (three put to the user, all recommended options taken)
+
+- Threat Analyzer → Analytics as a third tab.
+- Classifier → incident detail pane; **"Apply in Edit"** opens the
+  existing Edit form prefilled. The human still presses Save; no new
+  write path.
+- SMS Composer → collapsible card at the top of the existing right-hand
+  feed pane; **"Use this draft"** writes into the compose textarea. No
+  grid change, and the panel has no send button by design — sending
+  stays on the audited path with server-side recipient resolution.
+
+### What was extracted: `components/AiToolPanel.js` + `AiToolPanel.css`
+
+Everything generic lives in one component so four hosts cannot grow four
+divergent copies (the `escapeHtml`/tab-bar/filter-chip lesson from
+2026-09-06): the cached availability probe and honest banner, the 3s
+poll, all render states, the error-code map, `textContent`-only output,
+Copy, and the submit mechanics. Per-tool config carries only what varies:
+`run()`, input kind/label/hint, `emptyText`, optional footer actions.
+Returns `{el, stop}` — `Menu.js`'s handle shape plus the router's stop
+contract.
+
+- **Collapsible is the first shared disclosure primitive in the app.**
+  There was none in base.css or components/. It copies the *shape* of
+  the GIS Live Activity panel but not its structure: the toggle button is
+  the only interactive element and carries `aria-expanded` itself,
+  instead of a `role="button" tabindex="0"` wrapper with its own keydown
+  handler nesting a button inside a button.
+- Fixed while extracting: the page hardcoded `field.id='ai-tool-input'`,
+  which breaks `label.htmlFor` the moment two panels share a document.
+  Now unique per instance.
+- The page CSS had re-rolled `button.primary`, the textarea and the card
+  — all near-duplicates of base.css. The component CSS is thin and reuses
+  them.
+
+### Two hazards the design had to handle, both verified in the browser
+
+1. **Timer leak on remount.** Incident Management wipes
+   `rightPanel.innerHTML` on every row click; that does NOT clear a
+   `setInterval`. Every host holds the handle and calls `stop()` before
+   any wipe, and chains it into the page's stop. Measured: after four
+   incident remounts, **one** live timer (the page's own nav poll), not
+   five.
+2. **Probe storm on remount.** The same wipe would fire one
+   `GET /ai-tools/availability` per click, each taking seconds to time
+   out against this workstation's unreachable model. The probe is cached
+   at module level (60s TTL, in-flight shared). Measured: **one** probe
+   across four remounts.
+
+### Gaps found doing it
+
+- **Three pages returned no stop handle at all** — Incident Management,
+  incident detail, Analytics — so `main.js` never had anything to call on
+  navigation. All three now return one and `main.js` captures it.
+- **The Edit Incident form had no Incident Type select**, though
+  `PATCH /incidents/:id` has accepted `incident_type` all along. A
+  mis-typed intake could only be corrected in the database. Added, so the
+  Classifier's main output has somewhere to land. Its parser validates
+  both values against the enums — a model answering "Type: arson" cannot
+  put an invalid value into the select (unit-checked).
+- **I introduced and caught a real bug mid-phase:** the first placement
+  of `return { stop }` in `incident-management.js` sat *above* the
+  `window.addEventListener('keydown', …)` registration and above two
+  `let` declarations. The listener would never have bound and the
+  variables would have stayed in the temporal dead zone for every caller.
+  Moved the return to the last statement of the function and the
+  declarations up with the rest of the page state. `node --check` cannot
+  see either fault; the fix came from reading, not tooling.
+- **`REMAINING.md` F9's "Enter double-toggles the GIS Live Activity
+  panel" is NOT reproducible.** The bubble-phase keydown handler's
+  `preventDefault()` cancels the inner button's native activation before
+  it dispatches `click`, so only one toggle runs. The entry was
+  theoretical. Marked as such rather than left as an open defect.
+
+### Verification
+
+`verify-web-wiring.mjs` **508/508**. `verify-ai-tools.sh` **63/63**
+unchanged. Regressions: sprint6 all green, retention 62/0, pentest 68/0,
+audit 52/0. Browser (disposable seeded DB, local API, tunnel URL
+restored after): no AI Tools nav item; Classifier mounts collapsed under
+the badges, expands with `aria-expanded`, honest banner, Generate
+disabled; Edit form shows the new Type select prefilled; SMS composer
+sits above the live feed, survives a 10s feed poll, has no send button,
+grid columns unchanged; Threat Analyzer tab present with the non-forecast
+label and torn down on tab switch; Secretary sees the Blotter Assistant
+in incident detail and Admin does not.
+
+**Not verified and not faked:** the Apply → Edit prefill path driven by a
+*completed* job, and "Use this draft" landing real model text. Both need
+a generation to finish, which this workstation cannot do (A2). The parser
+and the textarea hand-off are exercised in isolation; the model-fed path
+stays `[~]` until `eval-kit/` runs on capable hardware.

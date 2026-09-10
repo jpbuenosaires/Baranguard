@@ -103,16 +103,26 @@ do {
     }
 
     $logId = (int) $job['log_id'];
-    $incidentId = (int) $job['incident_id'];
     $taskType = (string) $job['task_type'];
+    // Nullable since migration 0015 — the two non-incident AI Tools jobs
+    // carry a barangay instead.
+    $incidentLabel = $job['incident_id'] === null ? '—' : (string) (int) $job['incident_id'];
     $startedAt = microtime(true);
-    out("[job {$logId}] claimed — task={$taskType} incident={$incidentId}");
+    out("[job {$logId}] claimed — task={$taskType} incident={$incidentLabel}");
 
     try {
         if ($taskType === 'translation') {
             runTranslationJob($pdo, $client, $job);
         } elseif ($taskType === 'extraction') {
             runExtractionJob($pdo, $client, $job);
+        } elseif ($taskType === 'blotter_assist') {
+            runBlotterAssistJob($pdo, $client, $job);
+        } elseif ($taskType === 'classification') {
+            runClassificationJob($pdo, $client, $job);
+        } elseif ($taskType === 'sms_compose') {
+            runSmsComposeJob($pdo, $client, $job);
+        } elseif ($taskType === 'threat_analysis') {
+            runThreatAnalysisJob($pdo, $client, $job);
         } elseif (trim((string) ($job['draft_redacted_narrative'] ?? '')) !== '') {
             // A queued row that ALREADY has a draft narrative can only be a
             // summary regeneration (POST .../regenerate-summary saved the
@@ -312,6 +322,235 @@ function parseExtractionLines(string $text): array
     }
 
     return [$fields['complainant'], $fields['respondent'], $fields['contact']];
+}
+
+// ---------------------------------------------------------------------
+// AI Tools runners (migration 0015). All four write `tool_output` via
+// AiJobQueue::completeToolJob() and none of them approves anything onto a
+// record — a tool job is a suggestion a human reads, never a committed
+// value. Only `ai-draft/approve` may write `redacted_narrative` (Rule 4),
+// and nothing here goes near it.
+// ---------------------------------------------------------------------
+
+/**
+ * AI Blotter Assistant — a BIMSS/KPIS handoff draft.
+ *
+ * Reads `raw_narrative` and redacts as it drafts (see
+ * AiPrompts::blotterAssist()). Secretary-only at the API, which is what
+ * makes reading raw text here legitimate under §2 Rule 1.
+ *
+ * @param array<string,mixed> $job
+ */
+function runBlotterAssistJob(PDO $pdo, OllamaClient $client, array $job): void
+{
+    $logId = (int) $job['log_id'];
+    $incidentId = (int) $job['incident_id'];
+
+    $stmt = $pdo->prepare('SELECT incident_type FROM incident WHERE incident_id = :incident_id');
+    $stmt->execute(['incident_id' => $incidentId]);
+    $incidentType = $stmt->fetchColumn();
+    if ($incidentType === false) {
+        AiJobQueue::fail($pdo, $logId, 'INCIDENT_MISSING');
+        out("[job {$logId}] FAILED — incident {$incidentId} no longer exists.");
+        return;
+    }
+
+    $raw = AiJobQueue::rawNarrativeFor($pdo, $incidentId);
+    if ($raw === null || trim($raw) === '') {
+        AiJobQueue::fail($pdo, $logId, 'INCIDENT_MISSING_RAW');
+        out("[job {$logId}] FAILED — incident {$incidentId} has no raw narrative.");
+        return;
+    }
+
+    $result = $client->generate(AiPrompts::blotterAssist($raw, (string) $incidentType));
+    $text = trim(AiPrompts::stripReasoning($result['text']));
+    if ($text === '') {
+        AiJobQueue::fail($pdo, $logId, 'BLOTTER_ASSIST_EMPTY_AFTER_STRIP');
+        out("[job {$logId}] FAILED — model returned nothing usable.");
+        return;
+    }
+
+    out("[job {$logId}] blotter assist produced " . mb_strlen($text) . ' chars');
+    AiJobQueue::completeToolJob($pdo, $logId, $text, $result['model']);
+}
+
+/**
+ * Incident Classifier — reads the APPROVED redacted narrative only.
+ *
+ * §2 Rule 30: the prerequisite is rechecked here, at write time, not just
+ * when the job was queued — an approval can be absent all along, and the
+ * row can change while the job sits in the queue. Failing closed matters
+ * more here than elsewhere because an Admin may read this output, and raw
+ * text must never reach one.
+ *
+ * @param array<string,mixed> $job
+ */
+function runClassificationJob(PDO $pdo, OllamaClient $client, array $job): void
+{
+    $logId = (int) $job['log_id'];
+    $incidentId = (int) $job['incident_id'];
+
+    $stmt = $pdo->prepare(
+        'SELECT redacted_narrative, redaction_approved_at, incident_type, priority
+           FROM incident WHERE incident_id = :incident_id'
+    );
+    $stmt->execute(['incident_id' => $incidentId]);
+    $incident = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($incident === false) {
+        AiJobQueue::fail($pdo, $logId, 'INCIDENT_MISSING');
+        out("[job {$logId}] FAILED — incident {$incidentId} no longer exists.");
+        return;
+    }
+    if ($incident['redaction_approved_at'] === null || trim((string) $incident['redacted_narrative']) === '') {
+        AiJobQueue::fail($pdo, $logId, 'CLASSIFICATION_NOT_APPROVED');
+        out("[job {$logId}] FAILED — incident {$incidentId} has no approved redaction to read.");
+        return;
+    }
+
+    $result = $client->generate(AiPrompts::classification(
+        (string) $incident['redacted_narrative'],
+        (string) $incident['incident_type'],
+        (string) $incident['priority']
+    ));
+    $text = trim(AiPrompts::stripReasoning($result['text']));
+    if ($text === '') {
+        AiJobQueue::fail($pdo, $logId, 'CLASSIFICATION_EMPTY_AFTER_STRIP');
+        out("[job {$logId}] FAILED — model returned nothing usable.");
+        return;
+    }
+
+    out("[job {$logId}] classification produced " . mb_strlen($text) . ' chars');
+    AiJobQueue::completeToolJob($pdo, $logId, $text, $result['model']);
+}
+
+/**
+ * SMS Composer — operator-typed prompt in, draft message out.
+ *
+ * Touches no incident and reads no narrative: `tool_input` is the only
+ * source, because this output is bound for an external gateway and §2
+ * Rule 1 does not permit narrative text to leave that way.
+ *
+ * @param array<string,mixed> $job
+ */
+function runSmsComposeJob(PDO $pdo, OllamaClient $client, array $job): void
+{
+    $logId = (int) $job['log_id'];
+    $input = trim((string) ($job['tool_input'] ?? ''));
+    if ($input === '') {
+        AiJobQueue::fail($pdo, $logId, 'TOOL_INPUT_MISSING');
+        out("[job {$logId}] FAILED — no operator prompt stored.");
+        return;
+    }
+
+    $result = $client->generate(AiPrompts::smsCompose($input));
+    $text = trim(AiPrompts::stripReasoning($result['text']));
+    if ($text === '') {
+        AiJobQueue::fail($pdo, $logId, 'SMS_COMPOSE_EMPTY_AFTER_STRIP');
+        out("[job {$logId}] FAILED — model returned nothing usable.");
+        return;
+    }
+
+    out("[job {$logId}] sms draft produced " . mb_strlen($text) . ' chars');
+    AiJobQueue::completeToolJob($pdo, $logId, $text, $result['model']);
+}
+
+/** How far back the Threat Analyzer aggregates. */
+const THREAT_ANALYSIS_WINDOW_DAYS = 90;
+
+/**
+ * Threat Analyzer — aggregate counts in, patrol suggestions out.
+ *
+ * @param array<string,mixed> $job
+ */
+function runThreatAnalysisJob(PDO $pdo, OllamaClient $client, array $job): void
+{
+    $logId = (int) $job['log_id'];
+    $barangayId = (int) $job['barangay_id'];
+
+    [$summary, $total] = buildThreatAggregate($pdo, $barangayId, THREAT_ANALYSIS_WINDOW_DAYS);
+    if ($total === 0) {
+        AiJobQueue::fail($pdo, $logId, 'THREAT_ANALYSIS_NO_DATA');
+        out("[job {$logId}] FAILED — no incidents in the last " . THREAT_ANALYSIS_WINDOW_DAYS . ' days to analyse.');
+        return;
+    }
+
+    $periodLabel = 'the last ' . THREAT_ANALYSIS_WINDOW_DAYS . ' days';
+    $result = $client->generate(AiPrompts::threatAnalysis($summary, $periodLabel));
+    $text = trim(AiPrompts::stripReasoning($result['text']));
+    if ($text === '') {
+        AiJobQueue::fail($pdo, $logId, 'THREAT_ANALYSIS_EMPTY_AFTER_STRIP');
+        out("[job {$logId}] FAILED — model returned nothing usable.");
+        return;
+    }
+
+    out("[job {$logId}] threat analysis over {$total} incident(s) produced " . mb_strlen($text) . ' chars');
+    AiJobQueue::completeToolJob($pdo, $logId, $text, $result['model']);
+}
+
+/**
+ * Builds the Threat Analyzer's input: counts only, no free text.
+ *
+ * `location_description` is deliberately excluded — see
+ * AiPrompts::threatAnalysis()'s docblock for why a free-text location an
+ * intake officer typed is identifying in practice.
+ *
+ * Rule 11: operational hours are Asia/Manila, and day-bucketing is done
+ * against a FIXED +08:00 offset rather than `CONVERT_TZ()`, whose tz
+ * tables are not loaded on stock XAMPP.
+ *
+ * @return array{0:string,1:int} [summary, total]
+ */
+function buildThreatAggregate(PDO $pdo, int $barangayId, int $days): array
+{
+    $params = ['barangay_id' => $barangayId, 'days' => $days];
+    $window = 'barangay_id = :barangay_id AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+
+    $totalStmt = $pdo->prepare("SELECT COUNT(*) FROM incident WHERE {$window}");
+    $totalStmt->execute($params);
+    $total = (int) $totalStmt->fetchColumn();
+    if ($total === 0) {
+        return ['', 0];
+    }
+
+    $typeStmt = $pdo->prepare(
+        "SELECT incident_type, COUNT(*) AS n FROM incident
+          WHERE {$window} GROUP BY incident_type ORDER BY n DESC"
+    );
+    $typeStmt->execute($params);
+
+    $bucketStmt = $pdo->prepare(
+        "SELECT CASE
+                  WHEN HOUR(DATE_ADD(created_at, INTERVAL 8 HOUR)) < 6  THEN 'Late night (00:00-05:59)'
+                  WHEN HOUR(DATE_ADD(created_at, INTERVAL 8 HOUR)) < 12 THEN 'Morning (06:00-11:59)'
+                  WHEN HOUR(DATE_ADD(created_at, INTERVAL 8 HOUR)) < 18 THEN 'Afternoon (12:00-17:59)'
+                  ELSE 'Evening (18:00-23:59)'
+                END AS bucket, COUNT(*) AS n
+           FROM incident WHERE {$window} GROUP BY bucket ORDER BY n DESC"
+    );
+    $bucketStmt->execute($params);
+
+    $dowStmt = $pdo->prepare(
+        "SELECT DAYNAME(DATE_ADD(created_at, INTERVAL 8 HOUR)) AS dow, COUNT(*) AS n
+           FROM incident WHERE {$window} GROUP BY dow ORDER BY n DESC"
+    );
+    $dowStmt->execute($params);
+
+    $lines = ["Total incidents recorded: {$total}", '', 'By incident type:'];
+    foreach ($typeStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $lines[] = "- {$row['incident_type']}: {$row['n']}";
+    }
+    $lines[] = '';
+    $lines[] = 'By time of day:';
+    foreach ($bucketStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $lines[] = "- {$row['bucket']}: {$row['n']}";
+    }
+    $lines[] = '';
+    $lines[] = 'By day of week:';
+    foreach ($dowStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $lines[] = "- {$row['dow']}: {$row['n']}";
+    }
+
+    return [implode("\n", $lines), $total];
 }
 
 /**

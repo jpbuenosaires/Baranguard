@@ -97,8 +97,12 @@ final class IncidentsController
 {
     private const INCIDENT_STATUSES = ['pending', 'dispatched', 'resolved'];
     private const INCIDENT_PRIORITIES = ['normal', 'high', 'critical'];
-    /** Public so BlotterController's walk-in entry validates against ONE list, not a drifting copy. */
-    public const INCIDENT_TYPES = [
+    /**
+     * Was `public` so BlotterController's walk-in entry could validate
+     * against one list; that endpoint was removed 2026-09-10 and no caller
+     * outside this class remains, so it is private again.
+     */
+    private const INCIDENT_TYPES = [
         'theft', 'physical_injury', 'disturbance', 'domestic_dispute',
         'vandalism', 'traffic_incident', 'fire', 'medical_emergency',
         'missing_person', 'animal_complaint', 'other',
@@ -662,6 +666,118 @@ final class IncidentsController
         ]);
 
         Http::send(200, ['incident_id' => $incidentId, 'updated' => true, 'fields' => $changedFields]);
+    }
+
+    /**
+     * `PATCH /incidents/:id/status` — Admin only, body exactly
+     * `{status:"resolved"}`.
+     *
+     * NOT a general status setter. `pending` and `dispatched` belong to
+     * the dispatch lifecycle, which moves them on its own; the only
+     * transition a human drives directly is closing the incident out, so
+     * that is the only one accepted here.
+     *
+     * ONLY A `dispatched` INCIDENT MAY BE RESOLVED (§6). A `pending` one
+     * has had no response to conclude, and an already-`resolved` one is a
+     * repeat — both are 409. That also makes the endpoint safe without an
+     * `Idempotency-Key`: a double submit cannot write a second audit row,
+     * because the second call no longer finds a resolvable incident.
+     *
+     * Refuses while any dispatch is still open (`assigned`/`en_route`/
+     * `arrived`): resolving an incident whose Tanod is mid-response would
+     * strand that dispatch in a non-terminal state with nothing left to
+     * close it.
+     *
+     * Also flips a linked FINALIZED blotter to `case_status='resolved'`.
+     * Migration 0009 makes `resolved` reachable only from here — which is
+     * why `BlotterController::amend()` rejects the value outright — so
+     * that the ledger cannot claim a case is open after its parent
+     * incident closed.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function updateStatus(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+        if (!ctype_digit($incidentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+
+        $body = Http::jsonBody();
+        if (($body['status'] ?? null) !== 'resolved') {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'status must be "resolved".');
+        }
+
+        $stmt = $pdo->prepare('SELECT incident_id, barangay_id, status FROM incident WHERE incident_id = :id');
+        $stmt->execute(['id' => $incidentId]);
+        $incident = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        // Cross-tenant is 404, never 403 (Rule 2).
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+        if ($incident['status'] !== 'dispatched') {
+            throw new ApiError(
+                409,
+                'CONFLICT',
+                $incident['status'] === 'resolved'
+                    ? 'This incident is already resolved.'
+                    : 'Only a dispatched incident can be resolved.'
+            );
+        }
+
+        $openStmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM dispatch
+             WHERE incident_id = :id AND status IN ('assigned','en_route','arrived')"
+        );
+        $openStmt->execute(['id' => $incidentId]);
+        if ((int) $openStmt->fetchColumn() > 0) {
+            throw new ApiError(409, 'CONFLICT', 'Cannot resolve an incident that still has an active dispatch.');
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("UPDATE incident SET status = 'resolved', updated_at = UTC_TIMESTAMP() WHERE incident_id = :id")
+                ->execute(['id' => $incidentId]);
+
+            $blotterStmt = $pdo->prepare(
+                'SELECT blotter_id, case_status FROM blotter_record
+                 WHERE incident_id = :id AND finalized_at IS NOT NULL
+                 FOR UPDATE'
+            );
+            $blotterStmt->execute(['id' => $incidentId]);
+            $blotter = $blotterStmt->fetch(PDO::FETCH_ASSOC);
+            $flipsBlotter = $blotter !== false && $blotter['case_status'] !== 'resolved';
+
+            if ($flipsBlotter) {
+                // Narrative and revision trail are untouched — this moves
+                // the case_status column only, which is why it needs no
+                // blotter_revision row (nothing a revision would record
+                // has changed).
+                $pdo->prepare("UPDATE blotter_record SET case_status = 'resolved' WHERE blotter_id = :blotter_id")
+                    ->execute(['blotter_id' => (int) $blotter['blotter_id']]);
+            }
+
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_resolved', 'incident', $incidentId, [
+                'from_status' => $incident['status'],
+                'to_status' => 'resolved',
+            ]);
+            if ($flipsBlotter) {
+                Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'blotter_case_status_changed', 'blotter_record', (int) $blotter['blotter_id'], [
+                    'from_case_status' => $blotter['case_status'],
+                    'to_case_status' => 'resolved',
+                ]);
+            }
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        Http::send(200, ['incident_id' => $incidentId, 'status' => 'resolved']);
     }
 
     /**

@@ -49,6 +49,8 @@ export const icons = {
   // Corner marks for the dashboard's two chart cards.
   trendingUp: (size = 20) => svg('<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>', size),
   activity: (size = 20) => svg('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>', size),
+  // One large four-point star plus a small one — the AI Tools nav item.
+  sparkles: (size = 20) => svg('<path d="M10 3 L12 8.5 L17.5 10.5 L12 12.5 L10 18 L8 12.5 L2.5 10.5 L8 8.5 Z"/><path d="M18 3.5 L19 6 L21.5 7 L19 8 L18 10.5 L17 8 L14.5 7 L17 6 Z"/>', size),
   x: (size = 20) => svg('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', size),
   menu: (size = 20) => svg('<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>', size),
   search: (size = 20) => svg('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>', size),

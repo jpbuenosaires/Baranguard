@@ -102,8 +102,16 @@ final class SystemHealthController
      * or any error detail into the response (§6: this endpoint "never
      * exposes credentials, tokens, internal filesystem paths, or raw
      * data"); the coarse status is the whole contract.
+     *
+     * PUBLIC so `AiToolsController::availability()` can reuse it. This
+     * endpoint is Admin-only but the AI Tools screen serves Secretary and
+     * Punong Barangay too, and those roles need the same honest answer to
+     * avoid offering a Generate button that cannot work (§2 Rule 6).
+     * Sharing the probe keeps one implementation rather than a second copy
+     * that can drift; the coarse status is safe for any authenticated role
+     * precisely because it carries no detail.
      */
-    private static function ollamaStatus(): string
+    public static function ollamaStatus(): string
     {
         $client = new OllamaClient();
         if (!$client->isConfigured()) {

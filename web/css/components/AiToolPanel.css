@@ -1,0 +1,208 @@
+/**
+ * AiToolPanel.css — one AI assistant, embedded in its host screen.
+ *
+ * Replaces `css/pages/ai-tools.css`, which styled a standalone screen
+ * that no longer exists. The rail and page grid are gone; what survives
+ * is the panel itself.
+ *
+ * Deliberately thin. The panel is a `.card` (base.css), its button is
+ * `button.primary`/`.ghost` (base.css), its textarea is
+ * `.textarea--resizable` (base.css), and its status pills are
+ * `.status-pill--*` (base.css). The earlier page CSS re-rolled all four
+ * — near-duplicates of rules that already existed. Only what is genuinely
+ * this component's own is below.
+ */
+
+.ai-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+/* ==========================================================================
+   Header — collapsible and plain share the type treatment
+   ========================================================================== */
+
+.ai-panel__head {
+  display: flex;
+  align-items: center;
+}
+
+.ai-panel__title-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.ai-panel__title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ai-panel__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-link);
+}
+
+/* The toggle is the whole header row and the only focusable thing in it —
+   see AiToolPanel.js for why the header is not itself a role="button". */
+.ai-panel__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text-primary);
+}
+
+.ai-panel__toggle:hover .ai-panel__title {
+  color: var(--color-link);
+}
+
+.ai-panel__chevron {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.ai-panel.is-collapsed .ai-panel__chevron {
+  transform: rotate(-90deg);
+}
+
+.ai-panel.is-collapsed .ai-panel__body {
+  display: none;
+}
+
+/* ==========================================================================
+   Body
+   ========================================================================== */
+
+.ai-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.ai-panel__hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* Warning-toned: "you cannot use this right now" is a real condition.
+   `not_configured` is the exception — a dependency this deployment simply
+   does not have is neutral, never red (§2 Rule 6). */
+.ai-panel__banner {
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-sm-md);
+  border: 1px solid var(--color-warning);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-md, 0.5rem);
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-warning) 8%);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.ai-panel__banner--neutral {
+  border-color: var(--color-border);
+  border-left-color: var(--color-text-tertiary);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+
+.ai-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.ai-panel__label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ai-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ==========================================================================
+   Result
+   ========================================================================== */
+
+.ai-panel__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.ai-panel__result--error {
+  padding-left: var(--spacing-sm);
+  border-left: 3px solid var(--color-critical);
+}
+
+.ai-panel__status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.ai-panel__empty,
+.ai-panel__message {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* `pre` because the Threat Analyzer returns bulleted sections and the
+   Classifier returns labelled lines — collapsing that whitespace would
+   destroy the only structure those answers have. */
+.ai-panel__output {
+  margin: 0;
+  padding: var(--spacing-sm-md);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.ai-panel__footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.ai-panel__model {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+}
+
+@media (max-width: 840px) {
+  .ai-panel__model {
+    margin-left: 0;
+  }
+}

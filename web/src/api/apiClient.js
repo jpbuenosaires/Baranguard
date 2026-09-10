@@ -862,6 +862,72 @@ export async function search(q) {
   }));
 }
 
+// ---------------------------------------------------------------------
+// AI Tools (migration 0015) — the four assistants on the AI Tools screen.
+//
+// Every one of these is asynchronous: the API only ever enqueues (§2 Rule
+// 5 — nothing in the request path talks to Ollama), so each returns a
+// `jobId` the caller polls with getAiToolJob() until it leaves `queued`/
+// `processing`. Same contract W8's redaction draft already has.
+// ---------------------------------------------------------------------
+
+/**
+ * GET /ai-tools/availability — is a working model behind these tools?
+ * One of 'healthy' | 'unhealthy' | 'not_configured'. Drives the screen's
+ * honest unavailable banner (§2 Rule 6); `unhealthy` is a normal 200.
+ */
+export async function getAiToolsAvailability() {
+  const json = await request('GET', '/ai-tools/availability', { auth: true });
+  return { ollama: json.ollama };
+}
+
+/** POST /incidents/:id/ai-tools/blotter-assist — Secretary only. */
+export async function queueBlotterAssist(incidentId) {
+  const json = await request('POST', `/incidents/${incidentId}/ai-tools/blotter-assist`, { auth: true });
+  return { jobId: json.job_id, taskType: json.task_type, status: json.status };
+}
+
+/** POST /incidents/:id/ai-tools/classify — Admin + Secretary. 409 if no approved redaction. */
+export async function queueIncidentClassification(incidentId) {
+  const json = await request('POST', `/incidents/${incidentId}/ai-tools/classify`, { auth: true });
+  return { jobId: json.job_id, taskType: json.task_type, status: json.status };
+}
+
+/**
+ * POST /ai-tools/sms-compose — Admin only.
+ *
+ * `prompt` is operator-typed text and is the ONLY input. There is
+ * deliberately no incident parameter: the draft is bound for an external
+ * SMS gateway, and §2 Rule 1 does not permit narrative text to leave the
+ * system that way. Don't add one.
+ */
+export async function queueSmsCompose(prompt) {
+  const json = await request('POST', '/ai-tools/sms-compose', { body: { prompt }, auth: true });
+  return { jobId: json.job_id, taskType: json.task_type, status: json.status };
+}
+
+/** POST /ai-tools/threat-analysis — Admin + Punong Barangay. Scope is the caller's own barangay, server-side. */
+export async function queueThreatAnalysis() {
+  const json = await request('POST', '/ai-tools/threat-analysis', { auth: true });
+  return { jobId: json.job_id, taskType: json.task_type, status: json.status };
+}
+
+/** GET /ai-tools/jobs/:id — poll one tool job. Only the requester can read it. */
+export async function getAiToolJob(jobId) {
+  const json = await request('GET', `/ai-tools/jobs/${jobId}`, { auth: true });
+  return {
+    jobId: json.job_id,
+    taskType: json.task_type,
+    incidentId: json.incident_id,
+    status: json.status,
+    output: json.output,
+    errorCode: json.error_code,
+    modelVersion: json.model_version,
+    createdAt: json.created_at,
+    processedAt: json.processed_at,
+  };
+}
+
 /** GET /system/health — Admin only. Coarse status per dependency; see SystemHealthController.php. */
 export async function getSystemHealth() {
   const json = await request('GET', '/system/health', { auth: true });
@@ -1360,45 +1426,6 @@ export async function getBlotterList({ q, status, page, limit } = {}) {
     page: json.page,
     limit: json.limit,
     total: json.total,
-  };
-}
-
-/**
- * POST /blotter — a walk-in blotter entry: a complaint brought to the
- * barangay hall in person, written straight into the ledger. Secretary
- * only (§3 — a row created here is born finalized, which is exactly the
- * capability Admin is denied on finalize/amend).
- *
- * **`case_status` is deliberately not a parameter.** Every entry starts
- * `active`, same as finalize() — §5 makes case_status forward-only past
- * `active`, so letting the creator pick one would skip the transitions
- * those rules exist to order. Move it on afterwards through blotter amend.
- *
- * `idempotencyKey` is the required UUID (Idempotency-Key header): a
- * double-submit returns the original ledger entry rather than issuing a
- * second case number for the same complaint.
- */
-export async function createBlotterRecord(data) {
-  const body = {
-    incident_type: data.incidentType,
-    narrative_summary: data.narrativeSummary,
-    location_description: data.locationDescription,
-    complainant_name: data.complainantName,
-    respondent_name: data.respondentName,
-    complainant_contact_number: data.complainantContactNumber,
-  };
-  const json = await request('POST', '/blotter', {
-    body,
-    auth: true,
-    idempotencyKey: data.idempotencyKey,
-  });
-  return {
-    blotterId: json.blotter_id,
-    incidentId: json.incident_id,
-    displayId: json.display_id,
-    incidentDisplayId: json.incident_display_id,
-    caseStatus: json.case_status,
-    revisionNo: json.revision_no,
   };
 }
 

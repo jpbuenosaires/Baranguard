@@ -32,6 +32,9 @@ use PDO;
  *   sms_log                1 year, independent of the linked incident.
  *   ai_processing_log      1 year, OR until the linked incident's own
  *                          retention expires, whichever is LONGER.
+ *   AI Tools jobs          90 days from created_at. Migration 0015's
+ *                          NULL-incident rows only — they have no case to
+ *                          follow, so the rule above cannot reach them.
  *   mobile_device          deleted 90 days after deactivation.
  *   offline mirror         no independent retention (Rule 2) — see
  *                          purgeOfflineQueue()'s own doc.
@@ -100,6 +103,7 @@ final class RetentionService
     public const CITIZEN_REPORT_DAYS = 365;       // unconverted only
     public const SMS_LOG_DAYS = 365;
     public const AI_LOG_DAYS = 365;               // or the incident's, whichever is longer
+    public const AI_TOOL_JOB_DAYS = 90;           // AI Tools jobs, which have no incident
     public const AUDIT_LOG_DAYS = 2557;           // aligned with blotter retention
     public const DEVICE_DEACTIVATED_DAYS = 90;
 
@@ -109,6 +113,7 @@ final class RetentionService
         'citizen_report',
         'sms_log',
         'ai_processing_log',
+        'ai_tool_job',
         'mobile_device',
         'audit_log',
         'incident_records',
@@ -154,6 +159,7 @@ final class RetentionService
                 'citizen_report' => $this->purgeCitizenReports(),
                 'sms_log' => $this->purgeSmsLogs(),
                 'ai_processing_log' => $this->purgeAiProcessingLogs(),
+                'ai_tool_job' => $this->purgeAiToolJobs(),
                 'mobile_device' => $this->purgeDeactivatedDevices(),
                 'audit_log' => $this->purgeAuditLog(),
                 'incident_records' => $this->purgeExpiredIncidentRecords(),
@@ -339,6 +345,55 @@ final class RetentionService
         $this->audit('retention_ai_log_purged', 'ai_processing_log', ['purged' => $purged, 'held' => $held]);
         $this->note("ai_processing_log: purged {$purged}, {$held} on legal hold");
         return ['purged' => $purged, 'held' => $held, 'eligible' => $eligible];
+    }
+
+    // ------------------------------------------------------------------
+    // Rule 4b — AI Tools jobs (migration 0015): 90 days from created_at
+    // ------------------------------------------------------------------
+
+    /**
+     * The AI Tools screen's four assistants (migration 0015). Two of them
+     * — SMS Composer and Threat Analyzer — are not incident-scoped, so
+     * their rows carry `incident_id IS NULL` and `barangay_id` instead.
+     *
+     * THEY NEED THEIR OWN RULE BECAUSE purgeAiProcessingLogs() ABOVE
+     * CANNOT SEE THEM: it INNER JOINs `incident` to apply "whichever is
+     * longer", and an inner join drops every NULL-incident row. Without
+     * this method those jobs would never expire at all.
+     *
+     * Scoped by `incident_id IS NULL` rather than by `task_type`: the two
+     * incident-scoped tools (blotter_assist, classification) DO have a
+     * parent incident and must keep following it, exactly as redaction
+     * and extraction do. The discriminator is "has a parent", not "is a
+     * tool".
+     *
+     * No legal-hold check: a hold is placed on a case (see class doc),
+     * and by definition these rows have no case. An operator's SMS draft
+     * is a working artifact, not part of any incident's record.
+     *
+     * @return array{purged:int, held:int, eligible:int}
+     */
+    public function purgeAiToolJobs(): array
+    {
+        $from = 'ai_processing_log a';
+        $where = 'a.incident_id IS NULL
+                  AND a.created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :tool_days DAY)';
+        $params = ['tool_days' => self::AI_TOOL_JOB_DAYS];
+
+        $eligible = $this->countWhere($from, $where, $params);
+
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("ai_tool_job: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $stmt = $this->pdo->prepare("DELETE a FROM ai_processing_log a WHERE {$where}");
+        $stmt->execute($params);
+        $purged = $stmt->rowCount();
+
+        $this->audit('retention_ai_tool_job_purged', 'ai_processing_log', ['purged' => $purged]);
+        $this->note("ai_tool_job: purged {$purged}");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible];
     }
 
     // ------------------------------------------------------------------
