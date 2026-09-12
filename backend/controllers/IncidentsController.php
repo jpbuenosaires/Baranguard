@@ -606,6 +606,30 @@ final class IncidentsController
         // shared implementation of that.
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
 
+        // Idempotency (§2 Rule 3): a retry with the same key must return the
+        // original row, never write a second audit row. There is no natural
+        // unique column an UPDATE can dedupe on the way a CREATE dedupes on
+        // client_event_id, so this replays off `audit_log` instead — the
+        // same shape `SmsController::broadcast()` already uses for exactly
+        // this reason (a write with no dedicated idempotency column).
+        $replayStmt = $pdo->prepare(
+            "SELECT metadata_json FROM audit_log
+             WHERE barangay_id = :barangay_id AND action = 'incident_updated' AND entity_id = :entity_id
+               AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.idempotency_key')) = :idempotency_key
+             LIMIT 1"
+        );
+        $replayStmt->execute([
+            'barangay_id' => $identity['barangay_id'],
+            'entity_id' => $incidentId,
+            'idempotency_key' => $idempotencyKey,
+        ]);
+        $priorMetadataJson = $replayStmt->fetchColumn();
+        if ($priorMetadataJson !== false) {
+            $prior = json_decode((string) $priorMetadataJson, true);
+            Http::send(200, ['incident_id' => $incidentId, 'updated' => true, 'fields' => $prior['fields'] ?? []]);
+            return;
+        }
+
         $updates = [];
         $params = ['id' => $incidentId];
         $changedFields = [];
@@ -661,9 +685,12 @@ final class IncidentsController
         $updateStmt = $pdo->prepare('UPDATE incident SET ' . implode(', ', $updates) . ' WHERE incident_id = :id');
         $updateStmt->execute($params);
 
-        // Field NAMES only - never the submitted values (Rule 8).
+        // Field NAMES only - never the submitted values (Rule 8). The
+        // idempotency key itself is a client-supplied UUID token, not
+        // incident content, so it is safe to record alongside them.
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_updated', 'incident', $incidentId, [
             'fields' => $changedFields,
+            'idempotency_key' => $idempotencyKey,
         ]);
 
         Http::send(200, ['incident_id' => $incidentId, 'updated' => true, 'fields' => $changedFields]);
