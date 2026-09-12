@@ -51,3 +51,18 @@ mobile/ios/
 *.pem
 *.key
 *.crt
+
+# eval-kit/ (2026-09-07) — the friend-facing AI evaluation package is
+# committed as a template; her own .env and whatever a real run produces
+# (checkpoint state, results/log files) are local artifacts, not source.
+eval-kit/.env
+eval-kit/**/*.checkpoint.json
+eval-kit/**/evaluation-results-*.txt
+eval-kit/**/evaluation-log-*.txt
+
+# backend/fixtures/ — same reasoning for checkpoint/result artifacts a
+# local ai-evaluate.php run produces next to the dataset (the dataset
+# JSON itself IS committed; only its run-time byproducts are not).
+backend/fixtures/*.checkpoint.json
+backend/fixtures/evaluation-results-*.txt
+backend/fixtures/evaluation-log-*.txt

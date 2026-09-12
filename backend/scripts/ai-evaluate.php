@@ -50,6 +50,31 @@ declare(strict_types=1);
  *   --dry-run                 print results, write nothing to the database
  *   --verbose                 per-record detail, including which entities leaked
  *
+ * Long-run pacing/resume (all opt-in — omitting every one of these reproduces
+ * the exact original behavior above, unchanged):
+ *   --batch-size=N            after every N freshly-scored records, sleep
+ *                             --rest-seconds before continuing. A 200-record
+ *                             --engine=model run is minutes-per-record on
+ *                             CPU (hours total) — this is a thermal/pacing
+ *                             courtesy for a machine running unattended, not
+ *                             a correctness requirement.
+ *   --rest-seconds=N          pause length for the above (default 60)
+ *   --resume                  on startup, load
+ *                             <dataset>.<engine>.<model-slug>.checkpoint.json
+ *                             next to the dataset file, skip any record id
+ *                             already scored there, and fold its tp/fn/fp
+ *                             into the totals. Checkpointed after EVERY
+ *                             record (not just every batch), so at most one
+ *                             in-flight record is ever lost to an
+ *                             interruption — rerunning the same command is
+ *                             always safe.
+ *   --save-results            also write the final RESULT block to
+ *                             evaluation-results-<timestamp>.txt and the
+ *                             verbose per-record lines to
+ *                             evaluation-log-<timestamp>.txt, next to the
+ *                             dataset — for a run where nobody is watching
+ *                             the console the whole time.
+ *
  * OUTPUT DISCIPLINE: `--verbose` prints the ENTITY STRINGS that leaked,
  * because that is the whole point of a failure report — but every record in
  * a legitimate dataset is INVENTED (see the guide; using real narratives is
@@ -128,6 +153,28 @@ if ($engine === 'model') {
     out("Model: {$modelVersion} · prompts: " . AiPrompts::PROMPT_VERSION);
     out('This calls the model once per record and is SLOW on CPU. --limit=N to sample.');
 }
+
+// --- Checkpoint (--resume) ---------------------------------------------
+$checkpointPath = checkpointPath($datasetPath, $engine, $modelVersion);
+$checkpointRecords = []; // id => ['tp'=>,'fn'=>,'fp'=>]
+if ($options['resume'] && is_file($checkpointPath)) {
+    $loaded = json_decode((string) file_get_contents($checkpointPath), true);
+    if (is_array($loaded)
+        && ($loaded['dataset'] ?? null) === $datasetName
+        && ($loaded['dataset_version'] ?? null) === $datasetVersion
+        && ($loaded['engine'] ?? null) === $engine
+        && ($loaded['model_version'] ?? null) === $modelVersion
+        && is_array($loaded['records'] ?? null)
+    ) {
+        $checkpointRecords = $loaded['records'];
+        out(sprintf('Resuming: %d record(s) already scored in a previous run of this exact dataset/engine/model.', count($checkpointRecords)));
+    } else {
+        out('A checkpoint file exists but is for a different dataset/engine/model — starting fresh (old checkpoint left untouched).');
+    }
+}
+if ($options['resume'] || $options['batchSize'] !== null) {
+    out("Checkpoint file: {$checkpointPath}");
+}
 out('');
 
 $totalTp = 0;
@@ -135,7 +182,10 @@ $totalFn = 0;
 $totalFp = 0;
 $scored = 0;
 $skipped = 0;
+$resumedFromCheckpoint = 0;
+$verboseLog = [];
 $startedAt = microtime(true);
+$sinceLastRest = 0;
 
 foreach ($records as $index => $record) {
     if (!is_array($record) || !isset($record['narrative'])) {
@@ -143,6 +193,17 @@ foreach ($records as $index => $record) {
         continue;
     }
     $id = (string) ($record['id'] ?? ('record-' . $index));
+
+    // Already scored in a prior, interrupted run of this exact dataset/engine/model.
+    if (isset($checkpointRecords[$id])) {
+        $totalTp += (int) $checkpointRecords[$id]['tp'];
+        $totalFn += (int) $checkpointRecords[$id]['fn'];
+        $totalFp += (int) $checkpointRecords[$id]['fp'];
+        $scored++;
+        $resumedFromCheckpoint++;
+        continue;
+    }
+
     $narrative = (string) $record['narrative'];
     $entities = is_array($record['entities'] ?? null) ? $record['entities'] : [];
     $mustKeep = is_array($record['must_keep'] ?? null) ? $record['must_keep'] : [];
@@ -154,6 +215,7 @@ foreach ($records as $index => $record) {
     } catch (OllamaUnavailableException $e) {
         out("[{$id}] Ollama unavailable — stopping. Nothing was written.");
         out('  ' . $e->getMessage());
+        out('Progress so far is safely checkpointed — rerun the same command with --resume to continue.');
         exit(1);
     } catch (OllamaException $e) {
         out("[{$id}] model error, counting every entity as a miss: " . $e->getMessage());
@@ -168,8 +230,32 @@ foreach ($records as $index => $record) {
 
     if ($options['verbose'] || $result['fn'] > 0) {
         $leaked = $result['leaked'] === [] ? '' : ' LEAKED: ' . implode(' | ', $result['leaked']);
-        out(sprintf('[%s] tp=%d fn=%d fp=%d%s', $id, $result['tp'], $result['fn'], $result['fp'], $leaked));
+        $line = sprintf('[%s] tp=%d fn=%d fp=%d%s', $id, $result['tp'], $result['fn'], $result['fp'], $leaked);
+        out($line);
+        $verboseLog[] = $line;
     }
+
+    // Checkpoint every freshly-scored record — an interruption never loses
+    // more than the one record that was in flight.
+    $checkpointRecords[$id] = ['tp' => $result['tp'], 'fn' => $result['fn'], 'fp' => $result['fp']];
+    writeCheckpoint($checkpointPath, $datasetName, $datasetVersion, $engine, $modelVersion, $checkpointRecords);
+
+    // Pacing: a rest every N freshly-processed records — never for records
+    // that were skipped via --resume (no work was actually done for those),
+    // and never after the very last record (nothing left to rest before).
+    if ($options['batchSize'] !== null) {
+        $sinceLastRest++;
+        $recordsRemaining = count($records) - $scored - $skipped;
+        if ($sinceLastRest >= $options['batchSize'] && $recordsRemaining > 0) {
+            out(sprintf('--- resting %ds after %d records (batch pacing) ---', $options['restSeconds'], $sinceLastRest));
+            sleep($options['restSeconds']);
+            $sinceLastRest = 0;
+        }
+    }
+}
+
+if ($resumedFromCheckpoint > 0) {
+    out(sprintf('(%d of %d records were already scored from the checkpoint and were not re-run.)', $resumedFromCheckpoint, $scored));
 }
 
 $elapsed = round(microtime(true) - $startedAt, 1);
@@ -180,19 +266,40 @@ $elapsed = round(microtime(true) - $startedAt, 1);
 $recall = ($totalTp + $totalFn) > 0 ? $totalTp / ($totalTp + $totalFn) : null;
 $precision = ($totalTp + $totalFp) > 0 ? $totalTp / ($totalTp + $totalFp) : null;
 
-out('');
-out('================ RESULT ================');
-out("Engine:      {$engine} ({$modelVersion})");
-out("Records:     {$scored} scored" . ($skipped > 0 ? ", {$skipped} skipped (malformed)" : ''));
-out("Entities:    TP={$totalTp} FN={$totalFn} FP={$totalFp}");
-out('Recall:      ' . formatScore($recall) . '   (target >= 95%)');
-out('Precision:   ' . formatScore($precision) . '   (target >= 90%)');
-out("Elapsed:     {$elapsed}s");
-out('========================================');
-
+$resultLines = [
+    '================ RESULT ================',
+    "Engine:      {$engine} ({$modelVersion})",
+    "Dataset:     {$datasetName} ({$datasetVersion})",
+    "Records:     {$scored} scored" . ($skipped > 0 ? ", {$skipped} skipped (malformed)" : ''),
+    "Entities:    TP={$totalTp} FN={$totalFn} FP={$totalFp}",
+    'Recall:      ' . formatScore($recall) . '   (target >= 95%)',
+    'Precision:   ' . formatScore($precision) . '   (target >= 90%)',
+    "Elapsed:     {$elapsed}s",
+    '========================================',
+];
 if ($recall !== null && $precision !== null) {
     $meets = $recall >= 0.95 && $precision >= 0.90;
-    out($meets ? 'MEETS the §10 target.' : 'DOES NOT meet the §10 target.');
+    $resultLines[] = $meets ? 'MEETS the §10 target.' : 'DOES NOT meet the §10 target.';
+}
+
+out('');
+foreach ($resultLines as $line) {
+    out($line);
+}
+
+if ($options['saveResults']) {
+    $timestamp = gmdate('Ymd-His');
+    $resultsPath = dirname($datasetPath) . "/evaluation-results-{$timestamp}.txt";
+    $logPath = dirname($datasetPath) . "/evaluation-log-{$timestamp}.txt";
+    file_put_contents($resultsPath, implode(PHP_EOL, $resultLines) . PHP_EOL);
+    if ($verboseLog !== []) {
+        file_put_contents($logPath, implode(PHP_EOL, $verboseLog) . PHP_EOL);
+    }
+    out('');
+    out("Results saved to: {$resultsPath}");
+    if ($verboseLog !== []) {
+        out("Per-record log saved to: {$logPath}");
+    }
 }
 
 if ($options['dryRun']) {
@@ -309,7 +416,7 @@ function formatScore(?float $value): string
 
 /**
  * @param string[] $argv
- * @return array{engine:string,dataset:string,limit:?int,dryRun:bool,verbose:bool}
+ * @return array{engine:string,dataset:string,limit:?int,dryRun:bool,verbose:bool,batchSize:?int,restSeconds:int,resume:bool,saveResults:bool}
  */
 function parseArguments(array $argv): array
 {
@@ -319,6 +426,10 @@ function parseArguments(array $argv): array
         'limit' => null,
         'dryRun' => false,
         'verbose' => false,
+        'batchSize' => null,
+        'restSeconds' => 60,
+        'resume' => false,
+        'saveResults' => false,
     ];
     foreach (array_slice($argv, 1) as $argument) {
         if (str_starts_with($argument, '--engine=')) {
@@ -336,9 +447,45 @@ function parseArguments(array $argv): array
             $options['dryRun'] = true;
         } elseif ($argument === '--verbose') {
             $options['verbose'] = true;
+        } elseif (str_starts_with($argument, '--batch-size=')) {
+            $options['batchSize'] = max(1, (int) substr($argument, strlen('--batch-size=')));
+        } elseif (str_starts_with($argument, '--rest-seconds=')) {
+            $options['restSeconds'] = max(0, (int) substr($argument, strlen('--rest-seconds=')));
+        } elseif ($argument === '--resume') {
+            $options['resume'] = true;
+        } elseif ($argument === '--save-results') {
+            $options['saveResults'] = true;
         }
     }
     return $options;
+}
+
+/**
+ * One checkpoint file per (dataset, engine, model) combination, next to the
+ * dataset itself. Deliberately NOT reused across different models/engines —
+ * mixing partial results from two different models into one total would be
+ * a silent correctness bug, not a convenience.
+ */
+function checkpointPath(string $datasetPath, string $engine, string $modelVersion): string
+{
+    $slug = preg_replace('/[^A-Za-z0-9]+/', '_', $modelVersion) ?? 'model';
+    $base = pathinfo($datasetPath, PATHINFO_FILENAME);
+    return dirname($datasetPath) . "/{$base}.{$engine}.{$slug}.checkpoint.json";
+}
+
+/**
+ * @param array<string,array{tp:int,fn:int,fp:int}> $records
+ */
+function writeCheckpoint(string $path, string $datasetName, string $datasetVersion, string $engine, string $modelVersion, array $records): void
+{
+    file_put_contents($path, json_encode([
+        'dataset' => $datasetName,
+        'dataset_version' => $datasetVersion,
+        'engine' => $engine,
+        'model_version' => $modelVersion,
+        'updated_at' => gmdate('c'),
+        'records' => $records,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 }
 
 function out(string $message): void
