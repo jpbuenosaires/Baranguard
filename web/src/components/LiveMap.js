@@ -81,7 +81,7 @@ const CLUSTER_RADIUS_PX = 44; // Screen-pixel distance under which two Tanod mar
  *   destroy: () => void,
  * }}
  */
-export function LiveMap(container) {
+export function LiveMap(container, options = {}) {
   container.classList.add('live-map');
 
   const map = new maplibregl.Map({
@@ -91,7 +91,9 @@ export function LiveMap(container) {
     zoom: DEFAULT_ZOOM,
     attributionControl: false,
   });
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  if (options.showNavControl !== false) {
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  }
   // Required by OSM's tile usage policy ("you must display an
   // OpenStreetMap attribution") — compact so it doesn't crowd the small
   // map panes this component renders into (W3's sidebar pane vs. W4's

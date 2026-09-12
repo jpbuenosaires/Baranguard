@@ -17,7 +17,7 @@
 import { icons } from './icons.js';
 import { avatarInitials } from './Avatar.js';
 import { Menu, MenuItem } from './Menu.js';
-import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications } from '../api/apiClient.js';
+import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, getAiToolsAvailability } from '../api/apiClient.js';
 
 // notification.notification_type is an ENUM — these are display labels for
 // its four members, not a second source of truth for what types exist.
@@ -494,9 +494,14 @@ export function AppShell(user, activePage, navigate, onLogout) {
     const statusBadge = document.createElement('div');
     // The text changes asynchronously once the health probe resolves, so
     // it needs to be announced rather than silently swapped.
-    statusBadge.setAttribute('role', 'status');
+    statusBadge.setAttribute('role', 'button');
+    statusBadge.setAttribute('tabindex', '0');
+    statusBadge.setAttribute('aria-label', 'System health status. Click to open Service Health dashboard.');
+    statusBadge.style.cursor = 'pointer';
     statusBadge.className = 'status-badge status-badge--checking';
     statusBadge.innerHTML = '<span class="status-badge__dot"></span><span class="status-badge__text">Checking…</span>';
+    statusBadge.addEventListener('click', () => navigate('service-health'));
+    statusBadge.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') navigate('service-health'); });
     topbarUser.appendChild(statusBadge);
     getSystemHealth().then((health) => {
       const coreDown = health.api !== 'healthy' || health.db !== 'healthy';
@@ -510,11 +515,30 @@ export function AppShell(user, activePage, navigate, onLogout) {
       const text = coreDown ? 'Database Unavailable' : aiDown ? 'AI Unavailable' : 'All Systems Operational';
       statusBadge.className = 'status-badge status-badge--' + state;
       statusBadge.querySelector('.status-badge__text').textContent = text;
-      statusBadge.title = `API: ${health.api} · DB: ${health.db} · OSRM: ${health.osrm} · Ollama: ${health.ollama} · GSM: ${health.gsmIngestion} · Notifications: ${health.notificationConfig}`;
+      statusBadge.title = `API: ${health.api} · DB: ${health.db} · OSRM: ${health.osrm} · Ollama: ${health.ollama} · GSM: ${health.gsmIngestion} · Notifications: ${health.notificationConfig} (Click to view full health)`;
     }).catch(() => {
       statusBadge.className = 'status-badge status-badge--down';
       statusBadge.querySelector('.status-badge__text').textContent = 'Status unavailable';
     });
+  } else if (user.role === 'secretary' || user.role === 'punong_barangay') {
+    const aiBadge = document.createElement('div');
+    aiBadge.className = 'topbar__ai-badge topbar__ai-badge--neutral';
+    aiBadge.innerHTML = `<span class="topbar__ai-dot"></span><span class="topbar__ai-icon" aria-hidden="true">${icons.sparkles(12)}</span><span class="topbar__ai-text">AI Ready</span>`;
+    aiBadge.style.display = 'none';
+    topbarUser.appendChild(aiBadge);
+
+    getAiToolsAvailability().then(({ ollama }) => {
+      aiBadge.style.display = 'inline-flex';
+      const isOk = ollama === 'healthy';
+      const isWarn = ollama === 'unhealthy';
+      aiBadge.className = `topbar__ai-badge topbar__ai-badge--${isOk ? 'ok' : isWarn ? 'warn' : 'neutral'}`;
+      aiBadge.querySelector('.topbar__ai-text').textContent = isOk ? 'AI Ready' : isWarn ? 'AI Offline' : 'AI Inactive';
+      aiBadge.title = isOk
+        ? 'Local Ollama AI model is online and ready.'
+        : isWarn
+          ? 'Local AI model is not responding. AI drafting is paused.'
+          : 'No local AI model is configured on this workstation.';
+    }).catch(() => {});
   }
 
   sidebarUserRole.textContent = roleLabel;

@@ -330,6 +330,8 @@
 
 .topbar {
   /* Glassmorphism, moderate scope — same fallback pattern as .card. */
+  position: relative;
+  z-index: 50;
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
@@ -362,15 +364,13 @@
   top: calc(100% + var(--spacing-xs));
   left: 0;
   right: 0;
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-floating);
   max-height: 20rem;
   overflow-y: auto;
-  z-index: 20;
+  z-index: 100;
   animation: fade-in-up 0.15s ease-out;
 }
 .topbar__search-result {
@@ -448,6 +448,54 @@
    uses it (see base.css). */
 .status-badge--warn { background: var(--tint-warning-bg); color: var(--color-warning-text); }
 .status-badge--warn .status-badge__dot { background: var(--color-warning); }
+
+/* Topbar AI readiness badge for non-admin roles */
+.topbar__ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: var(--spacing-2xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.topbar__ai-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.topbar__ai-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.topbar__ai-badge--ok {
+  background: var(--tint-success-solid);
+  color: var(--color-success-text);
+}
+.topbar__ai-badge--ok .topbar__ai-dot {
+  background: var(--color-success);
+}
+
+.topbar__ai-badge--warn {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+}
+.topbar__ai-badge--warn .topbar__ai-dot {
+  background: var(--color-warning);
+}
+
+.topbar__ai-badge--neutral {
+  background: var(--tint-neutral-bg);
+  color: var(--color-text-secondary);
+}
+.topbar__ai-badge--neutral .topbar__ai-dot {
+  background: var(--color-text-tertiary);
+}
 
 /* Empty until a page mounts a PageHeader into it; collapses to nothing
    when unused so pages that don't have one are unaffected. */

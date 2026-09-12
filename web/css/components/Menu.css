@@ -12,21 +12,25 @@
   position: absolute;
   top: calc(100% + var(--spacing-xs));
   right: 0;
-  min-width: 15rem;
+  min-width: 16rem;
   max-width: 22rem;
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-floating);
-  z-index: 40;
+  z-index: 100;
   padding: var(--spacing-xs);
   max-height: 24rem;
   overflow-y: auto;
   animation: scale-in 0.15s ease-out;
 }
 .menu__panel--left { right: auto; left: 0; }
+
+[data-theme="dark"] .menu__panel {
+  background: rgba(30, 41, 59, 0.96);
+  border-color: rgba(51, 65, 85, 0.9);
+  box-shadow: 0 20px 36px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
 
 .menu__item {
   display: flex;
@@ -46,8 +50,11 @@
   transition: background-color 0.15s ease, transform 0.15s ease;
 }
 .menu__item:hover {
-  background: var(--gradient-card-hover);
+  background: var(--color-bg);
   transform: translateX(2px);
+}
+[data-theme="dark"] .menu__item:hover {
+  background: rgba(51, 65, 85, 0.5);
 }
 .menu__item--danger { color: var(--color-critical); }
 .menu__item--danger:hover { background: var(--tint-critical-bg); }
@@ -66,8 +73,15 @@
   border-bottom: 1px solid var(--color-divider);
   margin-bottom: var(--spacing-xs);
 }
-.menu__header-name { font-weight: 600; font-size: var(--font-size-sm); }
-.menu__header-meta { font-size: var(--font-size-label); color: var(--color-text-tertiary); }
+.menu__header-name {
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+.menu__header-meta {
+  font-size: var(--font-size-label);
+  color: var(--color-text-tertiary);
+}
 .menu__empty {
   padding: var(--spacing-md) var(--spacing-sm-md);
   font-size: var(--font-size-sm);
@@ -119,9 +133,14 @@
 }
 /* Unread rows carry a leading accent bar as well as bolder text, so the
    distinction survives greyscale. */
-.notification-item--unread { border-left: 3px solid var(--color-primary); }
-.notification-item--unread .menu__item-text > span:first-child { font-weight: 600; }
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .menu__panel { background: var(--color-surface); border-color: var(--color-border); }
+.notification-item--unread {
+  border-left: 3px solid var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+}
+.notification-item--unread:hover {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+.notification-item--unread .menu__item-text > span:first-child {
+  font-weight: 700;
+  color: var(--color-text-primary);
 }
