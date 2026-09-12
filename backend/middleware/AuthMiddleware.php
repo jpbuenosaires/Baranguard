@@ -70,7 +70,7 @@ final class AuthMiddleware
         // the database session + user rows are authoritative.
         $stmt = $pdo->prepare(
             'SELECT s.session_id, s.expires_at, s.revoked_at,
-                    u.user_id, u.barangay_id, u.role, u.is_active
+                    u.user_id, u.barangay_id, u.role, u.is_active, u.is_suspended
              FROM auth_session s
              JOIN user u ON u.user_id = s.user_id
              WHERE s.jti = :jti
@@ -93,6 +93,15 @@ final class AuthMiddleware
             // Deactivation is supposed to revoke sessions transactionally
             // (§6 PATCH /users/:id) — this is defense in depth for the
             // window between deactivation and that revocation landing.
+            throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired token.');
+        }
+        if ((int) $row['is_suspended'] === 1) {
+            // Migration 0011: is_suspended is a third, independent axis from
+            // is_active (§4). UsersController::updateStatus() revokes every
+            // session transactionally when it suspends someone, same as
+            // deactivation above — this is the matching defense-in-depth for
+            // the window between that suspension and the revocation landing,
+            // or for a suspension set outside that endpoint entirely.
             throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired token.');
         }
 
