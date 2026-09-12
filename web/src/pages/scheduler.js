@@ -16,6 +16,7 @@ import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const SCHEDULE_COLUMNS = [
   { key: 'status', label: 'Status' },
@@ -269,7 +270,7 @@ export function renderSchedulerTab(container, user) {
             }
             const tag = document.createElement('span');
             tag.className = 'shift-zone-tag';
-            tag.innerHTML = `<span style="color:var(--color-primary);">${icons.map(14)}</span><span>${shift.patrolZone}</span>`;
+            tag.innerHTML = `<span style="color:var(--color-primary);">${icons.map(14)}</span><span>${escapeHtml(shift.patrolZone)}</span>`;
             return tag;
           }
 

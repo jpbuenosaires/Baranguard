@@ -20,6 +20,7 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { AiToolPanel } from '../components/AiToolPanel.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const INCIDENT_TYPE_LABELS = {
   sos: 'SOS / Emergency',
@@ -1441,8 +1442,8 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--color-bg); border-radius: 10px; border: 1px solid var(--color-border);">
           <div class="incident-tanod-avatar" style="width: 40px; height: 40px;">${icons.users(20)}</div>
           <div>
-            <div style="font-weight: 600; font-size: 0.9375rem; color: var(--color-text-primary);">${officerName}</div>
-            <div style="font-size: 0.8125rem; color: var(--color-text-secondary);">${hasContact ? `Phone: ${phoneStr}` : 'No contact number on file'}</div>
+            <div style="font-weight: 600; font-size: 0.9375rem; color: var(--color-text-primary);">${escapeHtml(officerName)}</div>
+            <div style="font-size: 0.8125rem; color: var(--color-text-secondary);">${hasContact ? `Phone: ${escapeHtml(phoneStr)}` : 'No contact number on file'}</div>
           </div>
         </div>
         ${hasContact ? `
@@ -1462,7 +1463,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         ${hasContact ? `
         <div class="sms-compose-section" style="display: none; flex-direction: column; gap: 8px; margin-top: 8px;">
           <label class="incident-form-label">SMS Message Content</label>
-          <textarea class="incident-form-textarea sms-text-input" rows="3">[Baranguard] Alert regarding Incident ${incidentCode}: Immediate status update requested.</textarea>
+          <textarea class="incident-form-textarea sms-text-input" rows="3">[Baranguard] Alert regarding Incident ${escapeHtml(incidentCode)}: Immediate status update requested.</textarea>
           <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
             <button type="button" class="incident-form-cancel btn-sms-cancel">Cancel</button>
             <button type="button" class="btn-action-dispatch btn-sms-send" style="height: 38px; padding: 0 16px; flex: 0 0 auto;">Send SMS</button>

@@ -36,6 +36,7 @@ import { AiToolPanel } from '../components/AiToolPanel.js';
 import { icons } from '../components/icons.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
 import { avatarInitials } from '../components/Avatar.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const PAGE_SIZE = 25;
 const LIVE_FEED_POLL_MS = 10000;
@@ -1028,7 +1029,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
     const phoneLine = document.createElement('div');
     phoneLine.className = 'sms-thread-header__phone';
-    phoneLine.innerHTML = `<span aria-hidden="true" style="display:inline-flex; color: var(--color-text-tertiary);">${icons.phone(13)}</span><span>${convo.phoneNumber}</span>`;
+    phoneLine.innerHTML = `<span aria-hidden="true" style="display:inline-flex; color: var(--color-text-tertiary);">${icons.phone(13)}</span><span>${escapeHtml(convo.phoneNumber)}</span>`;
 
     info.append(nameTitle, phoneLine);
     contactWrap.append(avatar, info);
@@ -2091,7 +2092,7 @@ function renderRowDetail(pane, row, navigate) {
         <span class="sms-detail-failure-icon">⚠️</span>
         <strong>Delivery Failure</strong>
       </div>
-      <div class="sms-detail-failure-text">${row.failureReason}</div>
+      <div class="sms-detail-failure-text">${escapeHtml(row.failureReason)}</div>
     `;
     card.appendChild(failBox);
   }

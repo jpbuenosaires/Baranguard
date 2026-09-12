@@ -13,6 +13,7 @@ import { PageHeader } from '../components/PageHeader.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 // Same 11-member enum as `incident.incident_type` (§5)
 const INCIDENT_TYPE_OPTIONS = [
@@ -362,7 +363,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     metaGrid.innerHTML = `
       <div class="citizen-detail-meta-item">
         <span class="citizen-detail-meta-label">Submitted</span>
-        <span class="citizen-detail-meta-val" title="${formatDateTime(report.submittedAt)}">${timeAgo(report.submittedAt)}</span>
+        <span class="citizen-detail-meta-val" title="${escapeHtml(formatDateTime(report.submittedAt))}">${escapeHtml(timeAgo(report.submittedAt))}</span>
       </div>
       <div class="citizen-detail-meta-item">
         <span class="citizen-detail-meta-label">Coordinates</span>
@@ -370,7 +371,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       </div>
       <div class="citizen-detail-meta-item">
         <span class="citizen-detail-meta-label">Contact</span>
-        <span class="citizen-detail-meta-val">${report.contactNumber || 'Anonymous'}</span>
+        <span class="citizen-detail-meta-val">${escapeHtml(report.contactNumber || 'Anonymous')}</span>
       </div>
       <div class="citizen-detail-meta-item">
         <span class="citizen-detail-meta-label">Status</span>
@@ -420,7 +421,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     const contactText = document.createElement('div');
     contactText.innerHTML = `
       <div class="citizen-detail-meta-label">Reporter Contact Number</div>
-      <div class="citizen-contact-card__phone">${report.contactNumber || 'No contact number provided'}</div>
+      <div class="citizen-contact-card__phone">${escapeHtml(report.contactNumber || 'No contact number provided')}</div>
     `;
     contactInfo.append(contactIcon, contactText);
     contactCard.appendChild(contactInfo);
