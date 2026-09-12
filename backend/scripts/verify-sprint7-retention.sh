@@ -93,10 +93,11 @@ mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CH
 for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_user 0004_blotter_revision \
          0005_sms_envelope_replay 0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
          0009_blotter_case_status 0010_incident_location_description 0011_user_suspension 0012_system_settings \
-         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools; do
+         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
+         0016_retention_hold_and_device_scrub; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Migrations 0001-0015 applied"
+pass "Migrations 0001-0016 applied"
 
 # The four schema gaps 0007 exists to close — asserted against
 # information_schema, not assumed from the migration file's intent.
@@ -111,6 +112,13 @@ expect_eq "$DEACT_COL" "1" "0007: mobile_device.deactivated_at exists"
 
 # Re-running must be a no-op (every statement is guarded).
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0007_retention_columns.sql" >/dev/null 2>&1 && pass "0007 is idempotent (re-ran cleanly)" || fail "0007 re-run failed"
+
+# The two gaps 0016 exists to close — same information_schema discipline.
+SMS_HOLD_COL=$(db_one "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='sms_log' AND COLUMN_NAME='legal_hold';")
+expect_eq "$SMS_HOLD_COL" "1" "0016: sms_log.legal_hold exists"
+SCRUB_COL=$(db_one "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='mobile_device' AND COLUMN_NAME='secrets_scrubbed_at';")
+expect_eq "$SCRUB_COL" "1" "0016: mobile_device.secrets_scrubbed_at exists"
+mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0016_retention_hold_and_device_scrub.sql" >/dev/null 2>&1 && pass "0016 is idempotent (re-ran cleanly)" || fail "0016 re-run failed"
 
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
@@ -231,18 +239,47 @@ CONVERTED_KEPT=$(db_one "SELECT COUNT(*) FROM citizen_report WHERE description =
 expect_eq "$CONVERTED_KEPT" "1" "CONVERTED report ignored this rule entirely (§11: follows its incident)"
 
 # --------------------------------------------------------------------------
-step "4. sms_log — 1 year, independent of the incident"
+step "4. sms_log — 1 year, EXTENDED by a hold on the linked case (0016)"
 # --------------------------------------------------------------------------
+# Five 400-day-old rows, all past the flat clock, differing only in which
+# hold path (if any) reaches them. Before 0016 this table had no
+# legal_hold column at all and every one of these would have been purged.
+HELD_INCIDENT=$(db_one "SELECT incident_id FROM incident WHERE legal_hold = 1 LIMIT 1;")
+HELD_REPORT=$(db_one "SELECT report_id FROM citizen_report WHERE legal_hold = 1 LIMIT 1;")
 mysql_exec "$VALDB" <<SQL
-INSERT INTO sms_log (barangay_id, incident_id, transport, message_type, direction, status, created_at) VALUES
- (1, $CONV_INCIDENT, 'semaphore','dispatch','outbound','sent', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY)),
- (1, $CONV_INCIDENT, 'semaphore','dispatch','outbound','sent', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 100 DAY));
+INSERT INTO dispatch (incident_id, dispatched_by, tanod_id, priority, status, dispatched_at, created_client_request_id)
+ VALUES ($HELD_INCIDENT, 2, 2, 'normal', 'completed', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 399 DAY), UUID());
 SQL
+HELD_DISPATCH=$(db_one "SELECT dispatch_id FROM dispatch ORDER BY dispatch_id DESC LIMIT 1;")
+mysql_exec "$VALDB" <<SQL
+INSERT INTO sms_log (barangay_id, incident_id, report_id, dispatch_id, transport, message_type, direction, status, legal_hold, created_at) VALUES
+ (1, $CONV_INCIDENT, NULL, NULL, 'semaphore','dispatch','outbound','sent', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY)),
+ (1, $CONV_INCIDENT, NULL, NULL, 'semaphore','dispatch','outbound','sent', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 100 DAY)),
+ (1, $HELD_INCIDENT, NULL, NULL, 'semaphore','dispatch','outbound','sent', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY)),
+ (1, NULL, $HELD_REPORT, NULL, 'semaphore','confirmation','outbound','sent', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY)),
+ (1, NULL, NULL, $HELD_DISPATCH, 'semaphore','dispatch','outbound','sent', 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY)),
+ (1, NULL, NULL, NULL, 'semaphore','manual','outbound','sent', 1, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY));
+SQL
+SMS_DRY="$(run_job --dry-run --only=sms_log)"
+expect_contains "$SMS_DRY" "sms_log: 1 eligible, 4 on legal hold" "held rows are COUNTED and reported, not silently skipped"
+
 run_job --only=sms_log >/dev/null
-SMS_LEFT=$(db_one "SELECT COUNT(*) FROM sms_log;")
-expect_eq "$SMS_LEFT" "1" "400-day sms_log row purged, 100-day row kept"
+SMS_UNHELD_GONE=$(db_one "SELECT COUNT(*) FROM sms_log WHERE incident_id = $CONV_INCIDENT AND created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY);")
+expect_eq "$SMS_UNHELD_GONE" "0" "400-day row on an UNHELD incident purged"
+SMS_RECENT_KEPT=$(db_one "SELECT COUNT(*) FROM sms_log WHERE incident_id = $CONV_INCIDENT;")
+expect_eq "$SMS_RECENT_KEPT" "1" "100-day row kept (under the 1-year clock)"
+SMS_HELD_INCIDENT=$(db_one "SELECT COUNT(*) FROM sms_log WHERE incident_id = $HELD_INCIDENT;")
+expect_eq "$SMS_HELD_INCIDENT" "1" "hold INHERITED from the linked incident kept a 400-day row"
+SMS_HELD_REPORT=$(db_one "SELECT COUNT(*) FROM sms_log WHERE report_id = $HELD_REPORT;")
+expect_eq "$SMS_HELD_REPORT" "1" "hold inherited from the linked citizen_report kept a 400-day row"
+SMS_HELD_DISPATCH=$(db_one "SELECT COUNT(*) FROM sms_log WHERE dispatch_id = $HELD_DISPATCH;")
+expect_eq "$SMS_HELD_DISPATCH" "1" "hold resolved THROUGH a dispatch to its incident kept a 400-day row"
+SMS_OWN_HOLD=$(db_one "SELECT COUNT(*) FROM sms_log WHERE legal_hold = 1;")
+expect_eq "$SMS_OWN_HOLD" "1" "row's OWN legal_hold kept it with no linked case at all"
 SMS_INCIDENT_ALIVE=$(db_one "SELECT COUNT(*) FROM incident WHERE incident_id = $CONV_INCIDENT;")
 expect_eq "$SMS_INCIDENT_ALIVE" "1" "purging an sms_log row did not touch its incident"
+SMS_AUDIT=$(db_one "SELECT metadata_json FROM audit_log WHERE action='retention_sms_log_purged';")
+expect_contains "$SMS_AUDIT" '"held":4' "audit metadata carries the held count"
 
 # --------------------------------------------------------------------------
 step "5. ai_processing_log — 1 year OR the incident's clock, whichever is longer"
@@ -258,21 +295,42 @@ AI_KEPT=$(db_one "SELECT COUNT(*) FROM ai_processing_log;")
 expect_eq "$AI_KEPT" "1" "400-day draft KEPT because its incident's 7-year clock is longer"
 
 # --------------------------------------------------------------------------
-step "6. mobile_device — 90 days after deactivation"
+step "6. mobile_device — secrets scrubbed at 90 days, ROW RETAINED (0016)"
 # --------------------------------------------------------------------------
+# The rule changed: this used to DELETE the row, which silently stripped
+# `incident.device_id` off 7-year records via ON DELETE SET NULL 90 days
+# after a handset was retired. The provenance assertion below is the one
+# that would have caught that, and is the reason the rule was revised.
 mysql_exec "$VALDB" <<SQL
 INSERT INTO mobile_device (device_id, user_id, platform, fcm_token, device_secret_ref, last_seen_at, is_active, created_at, deactivated_at) VALUES
  ('dev-old-inactive', 2, 'android', 'tok', 'secret-should-go', UTC_TIMESTAMP(), 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY)),
  ('dev-recent-inactive', 2, 'android', 'tok', 'secret-stays', UTC_TIMESTAMP(), 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)),
  ('dev-still-active', 2, 'android', 'tok', 'secret-stays', UTC_TIMESTAMP(), 1, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY), NULL);
 SQL
+# An old incident filed by the retired handset — its device attribution is
+# what the previous delete-the-row rule destroyed.
+mysql_exec "$VALDB" <<SQL
+INSERT INTO incident (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source, created_at, updated_at, legal_hold)
+ VALUES (1, 2, 'dev-old-inactive', 'theft', 'normal', 'filed from the retired handset', 'resolved', 'app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY), UTC_TIMESTAMP(), 1);
+SQL
 run_job --only=mobile_device >/dev/null
+
 DEV_OLD=$(db_one "SELECT COUNT(*) FROM mobile_device WHERE device_id = 'dev-old-inactive';")
-expect_eq "$DEV_OLD" "0" "device deactivated 120 days ago purged (secret gone with it)"
-DEV_RECENT=$(db_one "SELECT COUNT(*) FROM mobile_device WHERE device_id = 'dev-recent-inactive';")
-expect_eq "$DEV_RECENT" "1" "device deactivated 30 days ago kept (inside 90-day window)"
-DEV_ACTIVE=$(db_one "SELECT COUNT(*) FROM mobile_device WHERE device_id = 'dev-still-active';")
-expect_eq "$DEV_ACTIVE" "1" "active device never touched"
+expect_eq "$DEV_OLD" "1" "device deactivated 120 days ago is RETAINED, not deleted"
+DEV_SCRUBBED=$(db_one "SELECT fcm_token = '' AND device_secret_ref IS NULL AND secrets_scrubbed_at IS NOT NULL FROM mobile_device WHERE device_id = 'dev-old-inactive';")
+expect_eq "$DEV_SCRUBBED" "1" "its secrets ARE gone (fcm_token emptied, device_secret_ref NULL, marker set)"
+DEV_PROVENANCE=$(db_one "SELECT COUNT(*) FROM incident WHERE device_id = 'dev-old-inactive';")
+expect_eq "$DEV_PROVENANCE" "1" "the 7-year incident still knows which device filed it (the whole point)"
+
+DEV_RECENT=$(db_one "SELECT device_secret_ref FROM mobile_device WHERE device_id = 'dev-recent-inactive';")
+expect_eq "$DEV_RECENT" "secret-stays" "device deactivated 30 days ago untouched (inside 90-day window)"
+DEV_ACTIVE=$(db_one "SELECT device_secret_ref FROM mobile_device WHERE device_id = 'dev-still-active';")
+expect_eq "$DEV_ACTIVE" "secret-stays" "active device never touched"
+
+DEV_AUDIT=$(db_one "SELECT metadata_json FROM audit_log WHERE action='retention_device_secrets_scrubbed';")
+expect_contains "$DEV_AUDIT" '"scrubbed":1' "audit records a scrub, not a purge"
+DEV_RERUN="$(run_job --only=mobile_device)"
+expect_contains "$DEV_RERUN" "mobile_device: 0 eligible" "already-scrubbed rows are not eligible again (idempotent)"
 
 # --------------------------------------------------------------------------
 step "7. audit_log — 7 years"
@@ -371,7 +429,7 @@ expect_contains "$FULL_OUT" "backups are NOT covered" "run states backups are ou
 # their raw_narrative) + the legal-hold twin from step 8. The only
 # incident that should be GONE is step 8's unheld 8-year-old case.
 LEFT=$(db_one "SELECT COUNT(*) FROM incident;")
-expect_eq "$LEFT" "6" "full run left exactly the 6 surviving incidents (5 in-window + 1 held)"
+expect_eq "$LEFT" "7" "full run left exactly the 7 surviving incidents (5 in-window + 1 held + step 6's held provenance case)"
 
 # --------------------------------------------------------------------------
 step "10. DevicesController sets deactivated_at (the 90-day clock's source)"

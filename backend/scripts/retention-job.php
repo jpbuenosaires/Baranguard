@@ -135,14 +135,16 @@ function printRuleTable(): void
     out('');
     out(sprintf('  %-20s %s', 'raw_narrative', RetentionService::RAW_NARRATIVE_GRACE_DAYS . ' days after approved redaction; ' . RetentionService::RAW_NARRATIVE_CEILING_DAYS . '-day ceiling if never approved'));
     out(sprintf('  %-20s %s', 'citizen_report', RetentionService::CITIZEN_REPORT_DAYS . ' days from submitted_at, UNCONVERTED reports only'));
-    out(sprintf('  %-20s %s', 'sms_log', RetentionService::SMS_LOG_DAYS . ' days from created_at'));
+    out(sprintf('  %-20s %s', 'sms_log', RetentionService::SMS_LOG_DAYS . ' days from created_at, extended by a hold on the linked case'));
     out(sprintf('  %-20s %s', 'ai_processing_log', RetentionService::AI_LOG_DAYS . ' days, or the incident\'s ' . RetentionService::RECORD_RETENTION_DAYS . '-day clock — whichever is longer'));
-    out(sprintf('  %-20s %s', 'mobile_device', RetentionService::DEVICE_DEACTIVATED_DAYS . ' days after deactivation'));
+    out(sprintf('  %-20s %s', 'mobile_device', RetentionService::DEVICE_DEACTIVATED_DAYS . ' days after deactivation — secrets scrubbed, row RETAINED for provenance'));
     out(sprintf('  %-20s %s', 'audit_log', RetentionService::AUDIT_LOG_DAYS . ' days (7 years)'));
     out(sprintf('  %-20s %s', 'incident_records', RetentionService::RECORD_RETENTION_DAYS . ' days (7 years) — incident + blotter + evidence cascade'));
     out('');
     out('Legal hold (incident.legal_hold, evidence_attachment.legal_hold,');
-    out('citizen_report.legal_hold) is the only exception to any of these.');
+    out('citizen_report.legal_hold, sms_log.legal_hold) is the only exception');
+    out('to any of these. A hold on an incident also covers its dependent');
+    out('case records, including the SMS trail linked to it or to its dispatch.');
 }
 
 function out(string $line): void

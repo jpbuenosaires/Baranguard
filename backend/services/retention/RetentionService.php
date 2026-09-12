@@ -29,13 +29,18 @@ use PDO;
  *                          a converted report drops its own clock and
  *                          follows the linked incident.
  *   audit_log              7 years.
- *   sms_log                1 year, independent of the linked incident.
+ *   sms_log                1 year, extended for the duration of any hold
+ *                          on the linked incident/dispatch/citizen
+ *                          report (migration 0016).
  *   ai_processing_log      1 year, OR until the linked incident's own
  *                          retention expires, whichever is LONGER.
  *   AI Tools jobs          90 days from created_at. Migration 0015's
  *                          NULL-incident rows only — they have no case to
  *                          follow, so the rule above cannot reach them.
- *   mobile_device          deleted 90 days after deactivation.
+ *   mobile_device          secret columns (fcm_token, device_secret_ref)
+ *                          cleared 90 days after deactivation; the ROW
+ *                          is retained so `incident.device_id`
+ *                          provenance survives (migration 0016).
  *   offline mirror         no independent retention (Rule 2) — see
  *                          purgeOfflineQueue()'s own doc.
  *   backups                explicitly OUT of scope for a database job —
@@ -53,7 +58,11 @@ use PDO;
  *     `blotter_record`, `blotter_revision`, `dispatch` and
  *     `ai_processing_log` have no `legal_hold` column of their own; a
  *     hold is placed on a case, not a row. Migration 0007's own header
- *     carries the same note.
+ *     carries the same note. **`sms_log` gained its own `legal_hold` in
+ *     0016 and is the one exception** — not because the principle
+ *     changed, but because a transport record can be held on its own
+ *     (an SMS thread subpoenaed independently of any case). It is
+ *     checked IN ADDITION to the inherited holds, never instead of them.
  *
  *   - **Each purge runs in its own transaction, one record at a time for
  *     the cascading rules**, not one giant DELETE. §5's FK policy makes
@@ -160,7 +169,7 @@ final class RetentionService
                 'sms_log' => $this->purgeSmsLogs(),
                 'ai_processing_log' => $this->purgeAiProcessingLogs(),
                 'ai_tool_job' => $this->purgeAiToolJobs(),
-                'mobile_device' => $this->purgeDeactivatedDevices(),
+                'mobile_device' => $this->scrubDeactivatedDevices(),
                 'audit_log' => $this->purgeAuditLog(),
                 'incident_records' => $this->purgeExpiredIncidentRecords(),
             };
@@ -271,33 +280,72 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Rule 3 — sms_log (§11: "1 year default, independent of the linked
-    // incident's own retention")
+    // Rule 3 — sms_log (§11: "1 year default, extended for the duration
+    // of any hold on the linked incident / dispatch / citizen report")
     // ------------------------------------------------------------------
 
-    /** @return array{purged:int, held:int} */
+    /**
+     * The 1-year clock is still flat and still independent of the linked
+     * incident's own 7-year record retention — a transport log is not the
+     * evidentiary record and does not inherit its length. What it DOES
+     * inherit is a legal hold, which is a different thing from a
+     * retention period: §11's target rule says the clock is "extended for
+     * the duration of any hold on the linked incident/dispatch/citizen
+     * report", because a hold freezes everything about how a case was
+     * handled, and the SMS trail is part of that.
+     *
+     * Until migration 0016 this was unexecutable — the column did not
+     * exist — and this method purged on the flat clock regardless of any
+     * hold, which this comment used to describe as intentional. It was
+     * not; it was the gap `docs/REMAINING.md` §G2 tracked.
+     *
+     * FOUR HOLD PATHS, checked at purge time rather than trusted as
+     * pre-propagated flags:
+     *   - the row's own `legal_hold` (a hold placed on an SMS thread
+     *     directly, e.g. subpoenaed on its own);
+     *   - the linked `incident`;
+     *   - the linked `citizen_report`;
+     *   - the linked `dispatch`, which has no `legal_hold` of its own by
+     *     0007's resolved decision ("a hold is placed on a CASE, not on a
+     *     row"), so it resolves through to its incident.
+     *
+     * Checking live beats inheriting on write: a hold placed AFTER the
+     * message was logged still protects it, with no backfill step and no
+     * window where a just-held case has un-held messages.
+     *
+     * @return array{purged:int, held:int}
+     */
     public function purgeSmsLogs(): array
     {
-        // "Independent of the linked incident" is why there is no join
-        // here and no legal-hold check: §11 gives sms_log a flat clock,
-        // and `sms_log` carries no legal_hold column precisely because
-        // the transport record is not the evidentiary record.
-        $where = 'created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+        $aged = 'created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+        $onHold =
+            "(legal_hold = 1
+              OR EXISTS (SELECT 1 FROM incident i
+                          WHERE i.incident_id = sms_log.incident_id AND i.legal_hold = 1)
+              OR EXISTS (SELECT 1 FROM citizen_report cr
+                          WHERE cr.report_id = sms_log.report_id AND cr.legal_hold = 1)
+              OR EXISTS (SELECT 1 FROM dispatch d
+                          JOIN incident di ON di.incident_id = d.incident_id
+                          WHERE d.dispatch_id = sms_log.dispatch_id AND di.legal_hold = 1))";
         $params = ['days' => self::SMS_LOG_DAYS];
 
-        $eligible = $this->countWhere('sms_log', $where, $params);
+        // Held rows are COUNTED and REPORTED, never silently skipped —
+        // the class-level resolved decision every other rule follows.
+        $held = $this->countWhere('sms_log', "{$aged} AND {$onHold}", $params);
+        $eligible = $this->countWhere('sms_log', "{$aged} AND NOT {$onHold}", $params);
+
         if ($this->dryRun || $eligible === 0) {
-            $this->note("sms_log: {$eligible} eligible");
-            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+            $this->note("sms_log: {$eligible} eligible, {$held} on legal hold");
+            return ['purged' => 0, 'held' => $held, 'eligible' => $eligible];
         }
 
-        $stmt = $this->pdo->prepare("DELETE FROM sms_log WHERE {$where}");
+        $stmt = $this->pdo->prepare("DELETE FROM sms_log WHERE {$aged} AND NOT {$onHold}");
         $stmt->execute($params);
         $purged = $stmt->rowCount();
 
-        $this->audit('retention_sms_log_purged', 'sms_log', ['purged' => $purged]);
-        $this->note("sms_log: purged {$purged}");
-        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible];
+        $this->audit('retention_sms_log_purged', 'sms_log', ['purged' => $purged, 'held' => $held]);
+        $this->note("sms_log: purged {$purged}, {$held} on legal hold");
+        return ['purged' => $purged, 'held' => $held, 'eligible' => $eligible];
     }
 
     // ------------------------------------------------------------------
@@ -397,32 +445,60 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Rule 5 — mobile_device (§11: "deleted 90 days after deactivation",
-    // matching Rule 9's auth_session purge window)
+    // Rule 5 — mobile_device (§11: secret columns cleared 90 days after
+    // deactivation, matching Rule 9's auth_session purge window; the row
+    // itself is RETAINED)
     // ------------------------------------------------------------------
 
     /**
-     * Deletes the device row, which takes `device_secret_ref` with it —
-     * §11 says "`mobile_device` / device secrets", and Rule 26 wants the
-     * secret gone, not merely orphaned.
+     * Scrubs the device's secrets in place and KEEPS the row.
      *
-     * FK-safe with no ordering work: every reference to `mobile_device`
-     * is ON DELETE SET NULL (`incident.device_id`,
-     * `notification_target.device_id`), so an old incident keeps its row
-     * and simply forgets which retired handset filed it.
+     * WHY THIS IS NOT A DELETE, which is what §11 originally said and
+     * what this method used to do: every reference to `mobile_device` is
+     * ON DELETE SET NULL (`incident.device_id`,
+     * `notification_target.device_id`). Deleting the row therefore
+     * silently strips device provenance off incidents that are
+     * themselves under 7-year retention or an active legal hold — 90
+     * days after a Tanod's handset is deactivated, a 7-year legal record
+     * quietly forgets which device filed it. That is a retention rule
+     * destroying data a longer retention rule requires be kept, which
+     * cannot be the right reading of §11.
+     *
+     * Rule 26's actual requirement is that the SECRETS not linger, not
+     * that the row not exist: `fcm_token` and `device_secret_ref` are
+     * cleared, which satisfies it exactly. This is the same shape
+     * `purgeRawNarratives()` above already uses — clear the sensitive
+     * field, keep the row, stamp a marker — applying an established
+     * pattern rather than inventing one.
+     *
+     * `fcm_token` is NOT NULL in the 0001 baseline, so it is emptied
+     * rather than nulled. That is safe and not merely tolerable:
+     * `NotificationDispatcher` only ever reads a token
+     * `WHERE ... is_active = 1`, and every row this touches is
+     * `is_active = 0`, so an emptied token is unreachable by the send
+     * path by construction. (Widening the column to NULL was rejected:
+     * it would be a schema change to express something the scan's own
+     * `is_active = 0` filter already guarantees.)
+     *
+     * `secrets_scrubbed_at` (migration 0016) is both the per-record
+     * evidence Rule 17 wants from a retention job and the idempotency
+     * guard — an already-scrubbed row is not eligible again, so the
+     * counts an operator sees are real work remaining, not a permanent
+     * backlog of rows the job re-reports every night.
      *
      * A device with `deactivated_at IS NULL` is never touched, even if
      * `is_active = 0` — migration 0007 backfills that column precisely so
-     * no row is stuck in an unpurgeable state.
+     * no row is stuck in an unprocessable state.
      *
      * @return array{purged:int, held:int}
      */
-    public function purgeDeactivatedDevices(): array
+    public function scrubDeactivatedDevices(): array
     {
         $where =
             'is_active = 0
              AND deactivated_at IS NOT NULL
-             AND deactivated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+             AND deactivated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)
+             AND secrets_scrubbed_at IS NULL';
         $params = ['days' => self::DEVICE_DEACTIVATED_DAYS];
 
         $eligible = $this->countWhere('mobile_device', $where, $params);
@@ -431,12 +507,18 @@ final class RetentionService
             return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
         }
 
-        $stmt = $this->pdo->prepare("DELETE FROM mobile_device WHERE {$where}");
+        $stmt = $this->pdo->prepare(
+            "UPDATE mobile_device
+                SET fcm_token = '',
+                    device_secret_ref = NULL,
+                    secrets_scrubbed_at = UTC_TIMESTAMP()
+              WHERE {$where}"
+        );
         $stmt->execute($params);
         $purged = $stmt->rowCount();
 
-        $this->audit('retention_device_purged', 'mobile_device', ['purged' => $purged]);
-        $this->note("mobile_device: purged {$purged}");
+        $this->audit('retention_device_secrets_scrubbed', 'mobile_device', ['scrubbed' => $purged]);
+        $this->note("mobile_device: scrubbed secrets on {$purged} (rows retained for provenance)");
         return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible];
     }
 

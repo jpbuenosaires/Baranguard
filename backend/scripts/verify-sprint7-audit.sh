@@ -101,10 +101,11 @@ mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CH
 for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_user 0004_blotter_revision \
          0005_sms_envelope_replay 0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
          0009_blotter_case_status 0010_incident_location_description 0011_user_suspension 0012_system_settings \
-         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools; do
+         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
+         0016_retention_hold_and_device_scrub; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Migrations 0001-0015 applied"
+pass "Migrations 0001-0016 applied"
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
 HASH=$("$PHP_BIN" -r "echo password_hash('$TEST_PW', PASSWORD_ARGON2ID);")
