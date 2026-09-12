@@ -48,6 +48,7 @@ import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const POLL_INTERVAL_MS = 15000;
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
@@ -276,15 +277,46 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       const activityWidget = document.createElement('div');
       activityWidget.className = 'gis-floating-activity';
       activityWidget.innerHTML = `
-        <div class="gis-floating-activity__header">
-          ${icons.activity(16)}
-          <span>Live Activity</span>
+        <div class="gis-floating-activity__header" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle Live Activity panel">
+          <div class="gis-floating-activity__title-group">
+            ${icons.activity(16)}
+            <span>Live Activity</span>
+          </div>
+          <button type="button" class="gis-floating-activity__toggle" aria-label="Collapse Live Activity" title="Collapse Live Activity">
+            ${icons.chevronDown(16)}
+          </button>
         </div>
       `;
       floatingActivityListEl = document.createElement('div');
       floatingActivityListEl.className = 'gis-floating-activity__list';
       activityWidget.appendChild(floatingActivityListEl);
       mapViewport.appendChild(activityWidget);
+
+      const activityHeader = activityWidget.querySelector('.gis-floating-activity__header');
+      const collapseBtn = activityWidget.querySelector('.gis-floating-activity__toggle');
+      const toggleCollapse = () => {
+        const isCollapsed = activityWidget.classList.toggle('is-collapsed');
+        const label = isCollapsed ? 'Expand Live Activity' : 'Collapse Live Activity';
+        collapseBtn.setAttribute('aria-label', label);
+        collapseBtn.title = label;
+        activityHeader.setAttribute('aria-expanded', String(!isCollapsed));
+      };
+
+      collapseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleCollapse();
+      });
+
+      activityHeader.addEventListener('click', () => {
+        toggleCollapse();
+      });
+
+      activityHeader.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleCollapse();
+        }
+      });
 
       // Floating Map Legend Widget (Bottom-Left of Map)
       const legendWidget = document.createElement('div');
@@ -309,7 +341,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       layoutEl.append(sidebar, mapCard);
       container.appendChild(layoutEl);
 
-      liveMap = LiveMap(mapViewport);
+      liveMap = LiveMap(mapViewport, { showNavControl: false });
     }
 
     // ── Update 3 Mini Status Cards ──
@@ -578,15 +610,6 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   }
 
   return { stop: stopPolling };
-}
-
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 function formatElapsed(timestamp) {

@@ -416,6 +416,17 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
           emptyText: 'Generate a draft entry for BIMSS/KPIS transcription.',
           run: () => queueBlotterAssist(incidentId),
         },
+        footerActions: [{
+          label: 'Copy for BIMSS',
+          onClick: async (output) => {
+            try {
+              await navigator.clipboard.writeText(output);
+              showToast('Draft copied. Ready to paste into DILG BIMSS/KPIS.', { variant: 'success' });
+            } catch {
+              showToast('Could not copy automatically — please select and copy the text.', { variant: 'error' });
+            }
+          },
+        }],
       });
       main.appendChild(assistantPanel.el);
     } else if (blotter) {

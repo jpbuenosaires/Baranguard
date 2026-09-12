@@ -50,6 +50,7 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
+import { confirmDialog } from '../components/ConfirmDialog.js';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -116,6 +117,8 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
   let extractionDraft = null;
   /** Tracks whether the Secretary has edited the draft text away from what the server holds. */
   let edited = false;
+  let extractionInputs = { complainant: null, respondent: null, contact: null };
+  let extractionEdited = false;
   /**
    * Live references into the current render. Declared HERE, above the
    * `return` below — a `let` declared after the return would never be
@@ -226,8 +229,71 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     content.appendChild(block);
   }
 
+  function buildWorkflowStepper() {
+    const nav = document.createElement('nav');
+    nav.className = 'ai-review__stepper';
+    nav.setAttribute('aria-label', 'Redaction workflow progress');
+
+    const step1Done = Boolean(draft && draft.status === 'completed');
+    const step1Running = Boolean(draft && (draft.status === 'queued' || draft.status === 'processing'));
+
+    const step2Active = step1Done && !incident.redactionApprovedAt;
+    const step2Done = step1Done && (incident.redactionApprovedAt || (!edited && !draft?.draftSummaryStale));
+
+    const step3Warning = Boolean(draft && (draft.draftSummaryStale || edited));
+    const step3Done = Boolean(draft && !draft.draftSummaryStale && !edited && draft.draftSummary);
+
+    const step4Done = Boolean(incident.redactionApprovedAt);
+    const step4Ready = step1Done && !step3Warning && !step4Done;
+
+    const steps = [
+      {
+        num: '1',
+        label: 'Intake Redaction',
+        state: step1Done ? 'done' : step1Running ? 'running' : 'pending',
+      },
+      {
+        num: '2',
+        label: 'Review & Edit',
+        state: step2Done ? 'done' : step2Active ? 'active' : 'pending',
+      },
+      {
+        num: '3',
+        label: 'Summary Sync',
+        state: step3Warning ? 'warning' : step3Done ? 'done' : 'pending',
+      },
+      {
+        num: '4',
+        label: 'Approve & Commit',
+        state: step4Done ? 'done' : step4Ready ? 'active' : 'pending',
+      },
+    ];
+
+    for (const s of steps) {
+      const item = document.createElement('div');
+      item.className = `ai-review__step ai-review__step--${s.state}`;
+
+      const icon = document.createElement('span');
+      icon.className = 'ai-review__step-icon';
+      if (s.state === 'done') icon.innerHTML = icons.check(14);
+      else if (s.state === 'warning') icon.innerHTML = icons.alertCircle(14);
+      else if (s.state === 'running') icon.innerHTML = `<span class="is-spinning">${icons.repeat(14)}</span>`;
+      else icon.textContent = s.num;
+
+      const label = document.createElement('span');
+      label.className = 'ai-review__step-label';
+      label.textContent = s.label;
+
+      item.append(icon, label);
+      nav.appendChild(item);
+    }
+
+    return nav;
+  }
+
   function render() {
     content.innerHTML = '';
+    content.appendChild(buildWorkflowStepper());
     content.appendChild(buildIncidentSummary());
 
     if (!draft) {
@@ -540,6 +606,20 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     summaryText.textContent = draft.draftSummary ?? '(not generated yet)';
     draftCard.append(summaryHeading, summaryText);
 
+    if (draft.draftSummaryStale || edited) {
+      const inlineRegen = document.createElement('div');
+      inlineRegen.className = 'ai-review__inline-regen';
+      const regenBtn = document.createElement('button');
+      regenBtn.type = 'button';
+      regenBtn.className = 'ghost';
+      regenBtn.style.fontSize = 'var(--font-size-xs)';
+      regenBtn.innerHTML = `${icons.repeat(14)} <span>Sync / Regenerate Summary</span>`;
+      regenBtn.disabled = draft.status === 'queued' || draft.status === 'processing';
+      regenBtn.addEventListener('click', () => runRegenerate(regenBtn));
+      inlineRegen.appendChild(regenBtn);
+      draftCard.appendChild(inlineRegen);
+    }
+
     draftCard.appendChild(buildExtractionSection());
 
     layout.append(rawCard, draftCard);
@@ -586,12 +666,16 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
     const pending = extractionDraft.status === 'queued' || extractionDraft.status === 'processing';
 
+    const baseComplainant = (hasApproved ? incident.complainantName : extractionDraft.draftComplainantName) ?? '';
+    const baseRespondent = (hasApproved ? incident.respondentName : extractionDraft.draftRespondentName) ?? '';
+    const baseContact = (hasApproved ? incident.complainantContactNumber : extractionDraft.draftComplainantContactNumber) ?? '';
+
     const complainantLabel = document.createElement('label');
     complainantLabel.className = 'label';
     complainantLabel.textContent = 'Complainant name';
     const complainantInput = document.createElement('input');
     complainantInput.type = 'text';
-    complainantInput.value = (hasApproved ? incident.complainantName : extractionDraft.draftComplainantName) ?? '';
+    complainantInput.value = baseComplainant;
     complainantInput.disabled = pending;
 
     const respondentLabel = document.createElement('label');
@@ -599,7 +683,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     respondentLabel.textContent = 'Respondent name';
     const respondentInput = document.createElement('input');
     respondentInput.type = 'text';
-    respondentInput.value = (hasApproved ? incident.respondentName : extractionDraft.draftRespondentName) ?? '';
+    respondentInput.value = baseRespondent;
     respondentInput.disabled = pending;
 
     const contactLabel = document.createElement('label');
@@ -607,19 +691,37 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     contactLabel.textContent = 'Contact number';
     const contactInput = document.createElement('input');
     contactInput.type = 'tel';
-    contactInput.value = (hasApproved ? incident.complainantContactNumber : extractionDraft.draftComplainantContactNumber) ?? '';
+    contactInput.value = baseContact;
     contactInput.disabled = pending;
+
+    extractionInputs = {
+      complainant: complainantInput,
+      respondent: respondentInput,
+      contact: contactInput,
+    };
+
+    const checkExtractionEdited = () => {
+      extractionEdited = complainantInput.value !== baseComplainant
+        || respondentInput.value !== baseRespondent
+        || contactInput.value !== baseContact;
+    };
+    complainantInput.addEventListener('input', checkExtractionEdited);
+    respondentInput.addEventListener('input', checkExtractionEdited);
+    contactInput.addEventListener('input', checkExtractionEdited);
 
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.className = 'ghost';
     saveButton.textContent = pending ? 'Extraction still running…' : 'Save';
     saveButton.disabled = pending;
-    saveButton.addEventListener('click', () => runSaveExtraction(saveButton, {
-      complainantName: complainantInput.value,
-      respondentName: respondentInput.value,
-      complainantContactNumber: contactInput.value,
-    }));
+    saveButton.addEventListener('click', () => {
+      extractionEdited = false;
+      runSaveExtraction(saveButton, {
+        complainantName: complainantInput.value,
+        respondentName: respondentInput.value,
+        complainantContactNumber: contactInput.value,
+      });
+    });
 
     wrap.append(complainantLabel, complainantInput, respondentLabel, respondentInput, contactLabel, contactInput, saveButton);
     return wrap;
@@ -719,6 +821,29 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
   async function runApprove(button) {
     button.disabled = true;
+
+    if (extractionEdited && extractionDraft) {
+      const shouldSaveFirst = await confirmDialog({
+        title: 'Save Party Information?',
+        description: 'You modified the Complainant or Respondent fields. Would you like to save these names before finalizing the redaction approval?',
+        confirmLabel: 'Save & Approve',
+        cancelLabel: 'Approve Without Saving',
+      });
+      if (shouldSaveFirst) {
+        try {
+          await approveExtraction(incidentId, {
+            complainantName: extractionInputs.complainant?.value,
+            respondentName: extractionInputs.respondent?.value,
+            complainantContactNumber: extractionInputs.contact?.value,
+            draftVersion: extractionDraft.draftVersion,
+          });
+          extractionEdited = false;
+        } catch {
+          showToast('Could not save party names, but continuing with redaction approval.', { variant: 'error' });
+        }
+      }
+    }
+
     try {
       await approveAiDraft(incidentId, {
         // Approval sends the SERVER's current draft text, not the

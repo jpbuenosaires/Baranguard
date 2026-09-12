@@ -476,6 +476,11 @@
   height: 100%;
 }
 
+/* Hide MapLibre default navigation controls (GIS header already provides custom zoom buttons) */
+.gis-map-viewport .maplibregl-ctrl-top-right {
+  display: none !important;
+}
+
 /* Floating Live Activity Feed Widget (Top Right) */
 .gis-floating-activity {
   position: absolute;
@@ -493,22 +498,83 @@
   flex-direction: column;
   z-index: 20;
   overflow: hidden;
-  transition: all 0.2s ease;
+  transition: max-height 0.25s ease, box-shadow 0.2s ease;
 }
 
 .gis-floating-activity__header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--spacing-sm);
-  padding: 0.875rem var(--spacing-md) 0.625rem;
+  padding: 0.75rem var(--spacing-md) 0.625rem;
   font-size: 0.875rem;
   font-weight: 700;
   color: var(--color-text-primary);
   border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
 }
 
-.gis-floating-activity__header svg {
+.gis-floating-activity__header:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}
+
+.gis-floating-activity__title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.gis-floating-activity__title-group svg {
   color: var(--color-primary);
+}
+
+.gis-floating-activity__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm, 4px);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.gis-floating-activity__toggle svg {
+  color: var(--color-text-secondary);
+  transition: transform 0.25s ease;
+  transform: rotate(180deg);
+}
+
+.gis-floating-activity__toggle:hover {
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.gis-floating-activity__toggle:hover svg {
+  color: var(--color-text-primary);
+}
+
+/* Collapsed state */
+.gis-floating-activity.is-collapsed {
+  max-height: none;
+  border-radius: var(--radius-xl, 14px);
+}
+
+.gis-floating-activity.is-collapsed .gis-floating-activity__header {
+  border-bottom: none;
+  padding: 0.625rem var(--spacing-md);
+}
+
+.gis-floating-activity.is-collapsed .gis-floating-activity__list {
+  display: none;
+}
+
+.gis-floating-activity.is-collapsed .gis-floating-activity__toggle svg {
+  transform: rotate(0deg);
 }
 
 .gis-floating-activity__list {
