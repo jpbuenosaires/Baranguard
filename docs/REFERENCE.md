@@ -243,7 +243,9 @@ case_status, display_id, location_description)
 > matching `/sms/send`, and takes an operator-typed `prompt` and nothing
 > else (its output leaves via Semaphore, so Rule 1 bars narrative input);
 > **threat-analysis** Admin+PB, aggregate counts only, scope always the
-> caller's own barangay resolved server-side. `GET /ai-tools/jobs/:id` is
+> caller's own barangay resolved server-side. Optional body `{days}` or
+> `{from,to}` (since 2026-09-12) picks the window; omitted defaults to
+> the prior fixed 90 days. `GET /ai-tools/jobs/:id` is
 > owner-scoped as well as tenant-scoped — an Admin cannot poll a
 > Secretary's blotter-assist job (404, never 403).
 > `GET /ai-tools/availability` returns the same coarse
@@ -398,9 +400,14 @@ the detail pane and **+Incident Type select** on the Edit form, both
 > the same day; an operator is mid-task and wants help with that task).
 > Each is an `AiToolPanel` (§6):
 > - **AI Classifier** — Incident Management detail pane, under the
->   priority/status badges, collapsed by default. *Apply in Edit* opens
->   the Edit form with the suggested type/priority preselected; the human
->   still saves. Invalid model values never reach the select.
+>   priority/status badges, collapsed by default. **Since 2026-09-12 it
+>   also auto-runs once per incident per visit** as soon as an approved
+>   redaction exists (no click needed), and surfaces a small "AI suggests:
+>   {type} · {priority}" chip above the panel *only* when its suggestion
+>   disagrees with what is already recorded — a matching suggestion stays
+>   silent. *Apply in Edit* opens the Edit form with the suggested
+>   type/priority preselected; the human still saves. Invalid model
+>   values never reach the select.
 > - **AI Blotter Assistant** — incident detail (`blotter-detail`), main
 >   column, inside the Secretary-only branch. Framed as a draft to
 >   transcribe into DILG BIMSS/KPIS; it writes nothing to Baranguard.
@@ -409,7 +416,9 @@ the detail pane and **+Incident Type select** on the Edit form, both
 >   textarea; **no send button** — sending stays on the audited path.
 > - **Threat Analyzer** — Analytics › third tab, not collapsible, with an
 >   explicit "describes what was recorded, not a forecast" label
->   matching the Heatmap's own non-predictive framing.
+>   matching the Heatmap's own non-predictive framing. Since 2026-09-12
+>   it takes a 7/30/90-day preset or a custom range via the shared
+>   `DateRangePicker` (default 90 days, matching the prior fixed window).
 >
 > Every panel polls like W8 (3s) because the API only enqueues, and
 > **renders a real probe-driven unavailable banner and disables Generate

@@ -10004,3 +10004,132 @@ in incident detail and Admin does not.
 a generation to finish, which this workstation cannot do (A2). The parser
 and the textarea hand-off are exercised in isolation; the model-fed path
 stays `[~]` until `eval-kit/` runs on capable hardware.
+
+## 2026-09-12 — Six sessions' worth of uncommitted work finally landed; AI Classifier auto-check added
+
+Opened to seed the disposable UI-demo DB and browser-verify the app.
+Along the way found the working tree was carrying substantial, finished,
+never-committed work — some of it from the 2026-09-10 entries above,
+some clearly newer — and closed that gap, then added one real feature on
+top of it.
+
+### The uncommitted-work problem
+
+`git status` at session start showed ~28 modified files across backend
+controllers, the AI worker, and a dozen web pages/components, none of it
+staged, none of it reflected in `HANDOFF.md`'s "committed as `f1d87a4`"
+claim from two sessions ago. Every file was read before touching
+anything (§ this project's own rule about trusting `git diff` over a
+stale doc claim). All of it turned out coherent and complete — no
+half-finished hunks, no contradictions with the docs, nothing that
+failed `verify-web-wiring.mjs` (513/513 with everything applied) or a
+syntax check. It split cleanly into six independent commits, each
+buildable on its own, pushed to `origin/main` as:
+
+- `69c7bf3` **Friend-runnable AI evaluation kit** — `--resume` (checkpoint
+  after every record, never lose more than one in-flight record to an
+  interruption), `--batch-size`/`--rest-seconds` (thermal pacing for an
+  unattended multi-hour run), `--save-results`. `eval-kit/` packages the
+  whole harness (dataset, scripts, a Composer-free `.env` loader) so this
+  can run on a friend's hardware independently of this workstation —
+  this is `REMAINING.md` A3's actual deliverable, which `HANDOFF.md` had
+  already claimed done without it ever reaching git.
+- `ae200aa` **Threat Analyzer accepts a custom date range** — 7/30/90-day
+  presets plus custom via the existing shared `DateRangePicker`; worker
+  and endpoint accept an optional `{days}` or `{from,to}` and fall back
+  to the prior fixed 90-day behavior when neither is sent.
+- `58b5e17` **Topbar AI-readiness badge + dark-mode chrome fixes** — an
+  honest Ollama-probe-backed "AI Ready/Offline/Inactive" badge for
+  Secretary/PB (Admin's own health badge is now clickable, jumping to
+  Service Health); MapLibre's vendored popup/controls/attribution and the
+  shared dropdown menu panel now respect dark mode (they didn't before —
+  default light-only chrome, `!important`-overridden deliberately since
+  nothing else can reach a vendored library's own rules).
+- `27d6cc9` **AI Review workflow stepper; SMS/blotter draft actions; GIS
+  widget polish** — a 4-step progress stepper on AI Review (Intake
+  Redaction / Review & Edit / Summary Sync / Approve & Commit); "Use in
+  Broadcast" alongside SMS Monitor's existing "Use in Conversation";
+  "Copy for BIMSS" on the Blotter Assistant; GIS Live Tracking's floating
+  Live Activity widget made collapsible and its private `escapeHtml()`
+  swapped for the shared `web/src/utils/escapeHtml.js` (that shared file
+  already existed in git history — this was the last private copy).
+- `496e18f` **Docs**: `docs/AUDIT_2026-09-07.md` committed for the first
+  time — `REFERENCE.md`/`HANDOFF.md`/`SPRINTS.md` had been citing it by
+  path ("Evidence: docs/AUDIT_2026-09-07.md") since 2026-09-07 while it
+  sat uncommitted; `CLAUDE.md` and `SPRINTS.md` brought to the state
+  those citations already assumed.
+- `dab2032` — see below, this session's own feature.
+
+**Process note for next time:** six sessions' worth of finished,
+verified work sitting uncommitted for up to five days is exactly the
+kind of gap `HANDOFF.md` already warns about elsewhere ("a stale
+`HANDOFF.md` is treated like a stale DEVLOG claim: verify against the
+repo") — except this time the risk was losing real work, not just a
+stale doc. Commit and push before a session ends, not just when asked.
+
+### AI Classifier auto-check (this session's own feature)
+
+**The complaint that started it:** by the time the Classifier becomes
+available (after a Secretary approves a redaction), intake has *already*
+picked a type/priority on the Log an Incident form — so what is a
+Generate button actually for? Real answer: the intake pick is a rough
+guess from a raw, unredacted call before the full story is known; the
+Classifier is a second look once the narrative is fully captured and
+redacted, and the *only* way Admin can get that second look without ever
+touching `raw_narrative` (Rule 1's whole reason for the redaction-gate).
+The dead-weight problem was real but was a UX problem — nobody was
+prompted to actually use it — not a reason to remove it.
+
+**Fix:** `AiToolPanel.js` gained two generic, reusable hooks —
+`tool.autoRun` (queue an `input:'none'` tool the moment the model is
+known available, instead of waiting for a click) and `options.onResult`
+(fires on every completion, manual or auto, so a host can react without
+a footer-button click). The completion toast is suppressed specifically
+for an auto-started job — nobody asked for it — `onResult` still fires.
+Incident Management wires both: the Classifier auto-runs once per
+incident per page visit (a `Set` guards against re-queuing on
+reselect/remount) as soon as an approved redaction exists, and a small
+"AI suggests: {type} · {priority}" chip appears above the panel *only*
+when the result disagrees with what is already on record — clicking it
+expands the panel. A matching suggestion stays silent by design (Rule
+6 — no control firing without real signal behind it).
+
+Verified end-to-end against the disposable `baranguard_uiseed` DB: no
+toast on auto-completion, correct chip text and click-to-expand, "Apply
+in Edit" prefilling the right values. Real generation still can't finish
+on this workstation (A2 unchanged), so completion was simulated with a
+direct DB write for the test, then reset to `queued` afterward.
+
+### Two bugs found and fixed along the way
+
+1. **`.incident-layout.has-detail` (incident-management.css) squeezed the
+   detail pane to ~78px at any viewport under 1024px.** Its own
+   `grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.95fr)` has
+   no width guard and out-specifies the mobile single-column override
+   `.incident-layout { grid-template-columns: 1fr }` inside its own
+   `@media (max-width: 1024px)` block — two classes beats one regardless
+   of which is inside a media query. Compounding it: hiding
+   `.incident-left-panel` via `display:none` drops it from the grid
+   entirely, so the surviving right panel auto-placed into the *first*
+   (squeezed) track while the second, empty track still reserved its
+   380px minimum. This is the default width of this project's own
+   browser-pane tooling, so it was not a narrow-viewport edge case — it
+   was hitting every session using it. Fixed by adding
+   `.incident-layout.has-detail` to the same mobile media-query rule.
+2. **The disposable `baranguard_uiseed` demo DB never had migration 0015
+   applied** — `ai_processing_log` was missing `barangay_id`,
+   `requested_by_user_id`, `tool_input`, `tool_output`, and all four AI
+   Tools task types, so any of the four AI Tools 500'd the moment
+   Generate was actually clicked against seeded data (`SQLSTATE[42S22]:
+   Column not found: 1054`), not just the new auto-check. Applied 0015
+   to `baranguard_uiseed` directly (idempotent per its own header,
+   disposable DB only — the real `baranguard` DB already had it per
+   2026-09-10's entry).
+
+### Verification
+
+`verify-web-wiring.mjs` **513/513** (up from 508 — the new mismatch-chip
+classes). All touched JS/PHP parse clean. Browser: logged in as
+`admin.dao` and `secretary.dao` against `baranguard_uiseed`; confirmed
+the layout fix (right panel 78px → 476px), the auto-check firing exactly
+once per incident, the mismatch chip, and the Apply-in-Edit prefill.
