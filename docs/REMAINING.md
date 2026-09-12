@@ -25,7 +25,15 @@ on any list:
   assertion while §9 listed them green. Fixed; see `REFERENCE.md` §9's
   warning box.
 
-**F1-F4 remain open and still gate Sprint 8.**
+**2026-09-12:** F2/F3 (the XSS sweep), F5 (`PATCH /incidents/:id`
+idempotency), F6 (`is_suspended` not checked on authenticated requests),
+and F8 (`avg_response_time_minutes` double-count) were all fixed and
+proven — F5/F6/F8 each with a new purpose-built verify script, since none
+of the three endpoints had ever been exercised by an existing suite. See
+`backend/DEVLOG.md` 2026-09-12 (4).
+
+**F1 and F4 remain open and still gate Sprint 8 — both are decisions,
+not code.**
 
 ---
 
@@ -51,7 +59,7 @@ citizens would share one bucket and one spammer locks out the barangay.
 can be verified honestly until this is settled — a browser pass against
 preview data proves nothing about production.
 
-### 🔴 F2. Stored XSS reaches the Secretary session from an anonymous attacker
+### ✅ F2. Stored XSS reaches the Secretary session from an anonymous attacker — CLOSED 2026-09-12
 `POST /citizen-reports` is unauthenticated and stores `description`
 (≤2000 chars) verbatim → convert copies it to `incident.raw_narrative` →
 `web/src/pages/blotter-detail.js:135` renders it unescaped inside
@@ -61,7 +69,11 @@ this is a §2 Rule 1 exfiltration path with no authentication in front of
 it. `contact_number` (≤32 chars — enough) does the same at
 `citizen-reports-inbox.js:421` and needs no conversion step.
 
-### 🔴 F3. ~40 further unescaped `innerHTML` interpolations
+**Fixed 2026-09-12:** both interpolation sites now go through the shared
+`web/src/utils/escapeHtml.js`. See F3's own closure note for the full
+site list and DEVLOG detail.
+
+### ✅ F3. ~40 further unescaped `innerHTML` interpolations — CLOSED 2026-09-12
 Across 12 page modules. Only `admin-dashboard.js`, `dispatch-center.js`
 and `gis-live-tracking.js` define an `escapeHtml` helper, and none of
 the three applies it at every site. The ones taking non-Admin input:
@@ -88,19 +100,35 @@ evidence is out of scope and correct §11.
 *(This supersedes C4's "evidence files can't be downloaded from W7" and
 A1's framing of photo/voice capture as merely device-unverified.)*
 
-### 🟠 F5. `PATCH /incidents/:id` idempotency is theatre
+### ✅ F5. `PATCH /incidents/:id` idempotency is theatre — CLOSED 2026-09-12
 The endpoint requires and UUID-validates `Idempotency-Key`, then never
 stores or replays it. §2 Rule 3: "a retry must return the original row."
 Every sibling write does this for real. A double-submit currently writes
 a duplicate `incident_updated` audit row.
 
-### 🟠 F6. `is_suspended` is not checked on authenticated requests
+**Fixed:** replays off `audit_log` (`action='incident_updated'`,
+`entity_id`, an `idempotency_key` field added to the existing
+`metadata_json`) — the same shape `SmsController::broadcast()` already
+uses, since an UPDATE has no natural unique column to dedupe on the way
+a CREATE dedupes on `client_event_id`. This endpoint had never been
+called over HTTP by any existing verify suite, so proof needed a new
+script: `backend/scripts/verify-f5-incident-update-idempotency.sh`
+(16/16), which confirms a retry with the same key writes exactly one
+audit row and does not re-apply the write.
+
+### ✅ F6. `is_suspended` is not checked on authenticated requests — CLOSED 2026-09-12
 `AuthMiddleware::authenticate()` rejects on `is_active` as documented
 defense-in-depth but has no equivalent line for migration 0011's
 independent `is_suspended` axis. Unreachable today (login checks it, and
 the suspend endpoint revokes sessions transactionally), so this is an
 asymmetry to close, not a live hole — but it is an omission, not a
 decision.
+
+**Fixed:** mirrors the `is_active` check exactly. Also had zero suite
+coverage outside `AuthController::login()`; proven by a new script,
+`backend/scripts/verify-f6-suspended-request-rejected.sh` (8/8), which
+suspends a user via direct SQL (leaving the session row un-revoked on
+purpose) to isolate this check from session-revocation covering for it.
 
 ### ✅ F7. Walk-in blotter shows unredacted intake text to Admin and PB — CLOSED BY REMOVAL (2026-09-10)
 `POST /blotter` no longer exists. It was removed because DILG BIMSS's
@@ -110,12 +138,25 @@ database and Baranguard must complement BIMSS rather than duplicate it
 being written. `raw_narrative` now reaches a non-Secretary through no
 path at all.
 
-### 🟠 F8. `avg_response_time_minutes` double-counts multi-dispatch incidents
+### ✅ F8. `avg_response_time_minutes` double-counts multi-dispatch incidents — CLOSED 2026-09-12
 `AVG(TIMESTAMPDIFF(...))` over `incident JOIN dispatch` with no de-dup,
 in both `ReportsController::summary()` and the export path. An incident
 with two arrived dispatches is weighted twice; §6 defines the metric per
 incident. **Settle this before picking Sprint 8's response-time box** —
 otherwise that box reports a wrong number as a measured one.
+
+**Fixed:** all three call sites (`summary()`'s scalar,
+`response_time_trend[]`, and the export path's
+`averageResponseTimeMinutes()`) now join against `(SELECT incident_id,
+MIN(arrived_at) AS first_arrived_at FROM dispatch WHERE arrived_at IS
+NOT NULL GROUP BY incident_id)` — one row per incident, first arrival
+defines "the" response time. Proven at two levels: an isolated SQL
+demonstration (old query gives 17.5 on a 2-dispatch fixture, new gives
+10.0) and a new HTTP-level script,
+`backend/scripts/verify-f8-response-time-dedup.sh` (8/8), which seeds
+exactly that scenario and asserts the real endpoint reports the
+de-duplicated figure. Sprint 8's response-time box can now proceed —
+this was the blocker its own menu entry named.
 
 ### 🟢 F9. Smaller, contained
 - ~~`POST /blotter` can answer `200 []`~~ **✅ closed by removal
@@ -476,7 +517,7 @@ merely un-started.
 
 **Civic/oversight**
 - ✅ **Periodic PB digest — the content half ALREADY EXISTS; the periodic half is C2-blocked.** `GET /reports/export?format=pdf` already produces a PDF summary and is already `punong_barangay`-accessible — verified 2026-09-12 by generating and downloading a 27KB packet as `kapitan.dao`. Building a second near-identical "digest" endpoint would duplicate it. What is genuinely missing is *periodic*, and nothing on this system is scheduled (**C2**); it becomes trivial once that is wired.
-- ✅ **Aggregated public transparency report — DONE 2026-09-12 (Phase 5).** `GET /public/transparency?barangay_id=N`, the only unauthenticated read in the system. Counts only, no location breakdown at any level, monthly not daily buckets, and categories under 5 pooled rather than dropped (dropping breaks the total and leaks the hidden number by subtraction). No response-time figure on purpose — F8's double-count means publishing one would be publishing a known-wrong number. Not rate-limited, and the class doc says so plainly instead of shipping an APCu limiter that this build cannot run.
+- ✅ **Aggregated public transparency report — DONE 2026-09-12 (Phase 5).** `GET /public/transparency?barangay_id=N`, the only unauthenticated read in the system. Counts only, no location breakdown at any level, monthly not daily buckets, and categories under 5 pooled rather than dropped (dropping breaks the total and leaks the hidden number by subtraction). No response-time figure — at the time this shipped, F8's double-count meant publishing one would have been publishing a known-wrong number. **F8 is now fixed (2026-09-12)**, so that specific reason no longer applies; whether a response-time figure belongs in a *public* transparency report is a separate policy question this entry never actually settled, not something the F8 fix alone resolves — left as a genuinely open follow-up, not auto-added here. Not rate-limited, and the class doc says so plainly instead of shipping an APCu limiter that this build cannot run.
 
 **Mobile**
 - ⛔ **Client-side photo compression — BLOCKED BEHIND F4**, exactly as this entry always said: build it into the work that builds the upload endpoint at all, not as a separate later feature.
@@ -485,11 +526,14 @@ merely un-started.
 
 ## Suggested order
 
-**0. Section F first** — F1 (settle the API base URL), then F2/F3 (the
-XSS sweep), then a decision on F4 (evidence upload: build or descope).
-F1 in particular gates step 3 below: browser-verifying screens that are
+**0. Section F first.** F2/F3 (XSS sweep), F5 (PATCH idempotency), F6
+(is_suspended), and F8 (response-time double-count) are all **closed as
+of 2026-09-12** — see each item's own closure note above. **F1 (settle
+the real API base URL) and F4 (evidence upload: build or descope) are
+the two that remain, and both need the user, not more code.** F1 in
+particular gates step 3 below: browser-verifying screens that are
 pointed at seeded preview data over a public tunnel proves nothing about
-production. F8 needs settling before Sprint 8's response-time box.
+production.
 
 *(The rest of the order is unchanged. A3 is now ✅ done — see its own
 entry — and A2 has a concrete path via `eval-kit/` that a friend can run

@@ -10380,3 +10380,157 @@ assertion was touched — the goal is not to make suites green:
 **The lesson, recorded in §9's warning box too:** when this class of bug
 turns up, check EVERY suite, not the ones in front of you. Finding it
 twice cost a week of false confidence.
+
+## 2026-09-12 (4) — F2/F3 XSS sweep, F5/F6/F8 fixed and proven, design docs relocated
+
+User asked for every item in `REMAINING.md` that a coding session could
+do safely without touching Android (a device-verification session was
+running in parallel via Android Studio). Picked: **F2/F3** (the XSS
+sweep), **F5/F6/F8** (the three P1 audit findings that are real code
+bugs, not scope decisions), and the housekeeping in §E. **Not done in
+this pass** — B2 (pen-test dispatch/shifts/citizen-reports/SMS/map-
+packages) and B4 (`verify-sprint3.sh`) are each their own substantial
+new-suite-writing undertaking and were left for a dedicated session
+rather than rushed; F1 and F4 remain open by design (F1 needs a human
+decision on the real deployment URL, F4 is a scope call).
+
+### F2/F3 — the XSS sweep, closed
+
+All eleven sites from `AUDIT_2026-09-07.md`'s F2/F3 tables, fixed with
+the existing shared `web/src/utils/escapeHtml.js` (already used by GIS
+Live Tracking since 2026-09-10 — nothing new needed inventing):
+
+- `blotter-detail.js` — the F2 exploit chain itself (the print-modal
+  narrative interpolation) plus five sibling fields in the redesigned
+  dossier card (compName/compContact/respName, the location tile's
+  value AND its `title` attribute, officerName) that the 2026-09-05/10
+  UI overhaul had re-introduced at new line numbers after the audit was
+  written against the old ones.
+- `citizen-reports-inbox.js` — `contactNumber` at both sites (`description`
+  was already safe via `textContent`).
+- `incident-management.js` — the contact modal's `officerName`/`phoneStr`,
+  plus `incidentCode` inside a `<textarea>` (a `</textarea>` breakout the
+  audit's table didn't call out by name but is the same class of bug).
+- `sms-monitor.js`, `scheduler.js`, `swap-requests.js`, `map-packages.js`,
+  `audit-log.js`, `settings.js` — one or two sites each, per the audit's
+  table.
+- `blotter-list.js` — **the file no longer exists.** W6 (the standalone
+  blotter records list) was removed 2026-09-10 for the DILG BIMSS reason
+  §1 documents; its F3 row is closed by removal, not by fix.
+
+`node web/scripts/verify-web-wiring.mjs` — 536/536, no regressions.
+
+Not done, logged rather than silently skipped: the three modules with
+their OWN private `escapeHtml` (admin-dashboard.js, dispatch-center.js,
+gis-live-tracking.js) were not consolidated onto the shared one.
+`REMAINING.md`'s own F3 note calls this out as a real follow-up ("the
+fix is one shared helper, not 45 individual judgement calls") — it just
+wasn't part of THIS pass, which fixed the sites with no escaping at all.
+
+### F5 — `PATCH /incidents/:id` idempotency, fixed and proven
+
+There is no natural unique column an UPDATE can dedupe on the way a
+CREATE dedupes on `client_event_id` — so this mirrors the shape
+`SmsController::broadcast()` already uses for exactly that reason: a
+replay lookup against `audit_log` (`action='incident_updated'`,
+`entity_id`, and a new `idempotency_key` field inside the existing
+`metadata_json`, matched via `JSON_EXTRACT`), checked before the update
+runs. A key match returns the ORIGINAL `fields` array from that first
+call's audit row rather than re-running the `UPDATE` or writing a second
+audit row.
+
+**This endpoint had never been called over HTTP by any existing verify
+suite** (HANDOFF.md said so; grepping every `*.sh` for `PATCH.*incidents`
+confirmed it — every hit was `/incidents/:id/status`, the different
+`updateStatus()` endpoint). So proving the fix meant writing a new
+script rather than trusting an existing one to exercise it:
+`backend/scripts/verify-f5-incident-update-idempotency.sh`, 16/16,
+including the actual bug scenario — same key twice writes ONE audit row
+and does NOT re-apply the write (verified by setting the DB back to a
+different value between the two calls and confirming the replay leaves
+it alone, rather than just checking the audit count).
+
+### F6 — `is_suspended` now checked on every authenticated request, fixed and proven
+
+Mirrors the existing `is_active` check in `AuthMiddleware::authenticate()`
+exactly (same SELECT, same 401, same "defense in depth for the window
+before revocation lands" framing) — `is_suspended` is migration 0011's
+independent third axis (§4) and had no equivalent line.
+
+Also had zero coverage outside `AuthController::login()` — confirmed by
+grep, same as F5. New script:
+`backend/scripts/verify-f6-suspended-request-rejected.sh`, 8/8. The
+interesting case it isolates: a user suspended by **direct SQL** (a
+restore, or any path other than `UsersController::updateStatus()`)
+keeps a live, non-revoked `auth_session` row — the test suspends that
+way on purpose and confirms the session is still `revoked_at IS NULL`
+before checking that the SAME token is now rejected anyway, so the
+result is attributable to `is_suspended` alone and not to session
+revocation covering for it.
+
+(First draft of this test used `GET /barangays` as the authenticated
+probe and got a false pass at `200` after "suspension" — `/barangays` is
+`requiresAuth: false`, so `AuthMiddleware::authenticate()` was never
+being called at all. Caught by the test itself failing where it should
+have passed; switched to `GET /incidents`, which does require auth.)
+
+### F8 — `avg_response_time_minutes` double-count, fixed and proven
+
+`AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.arrived_at))` joined every
+arrived `dispatch` row with no de-dup, so an incident dispatched twice
+(both reaching `arrived`) was averaged in TWICE against §6's own "per
+incident" definition. Same bug, independently, in three places:
+`ReportsController::summary()`'s scalar, its `response_time_trend[]`
+per-day breakdown, and the export path's `averageResponseTimeMinutes()`
+— none of the three had been touched when the audit found the first one.
+
+Fix: each query now joins against `(SELECT incident_id, MIN(arrived_at)
+AS first_arrived_at FROM dispatch WHERE arrived_at IS NOT NULL GROUP BY
+incident_id)` instead of the raw table — one row per incident,
+first-responder-to-scene as the definition of "the" response time for
+that incident.
+
+Proven twice, at two levels:
+1. Isolated SQL demonstration (not committed, just run interactively
+   against a scratch database): a 1-incident/2-dispatch fixture with
+   arrivals at +10 and +25 minutes from `created_at` — the OLD query
+   (join every arrived dispatch, no de-dup) gives **17.5** (the average
+   of 10 and 25, i.e. counted twice); the NEW query (join the per-
+   incident earliest arrival) gives **10.0**.
+2. Through the real HTTP endpoint:
+   `backend/scripts/verify-f8-response-time-dedup.sh`, 8/8 — seeds
+   exactly that two-arrival scenario, hits `GET /reports/summary`, and
+   asserts `avg_response_time_minutes = 10`, not the `25` the bug would
+   have produced. Also confirms the PDF export path (the only caller of
+   `averageResponseTimeMinutes()` — CSV never included this figure)
+   still generates and downloads cleanly after the rewrite.
+
+`verify-w2-reports.sh` (31/31, unchanged) and `verify-sprint7-audit.sh`
+(52/52, unchanged) both still pass — neither's fixture happens to seed a
+multi-dispatch incident, so passing them proves no regression but NOT
+the fix itself; that's what the new F8 script is for.
+
+### Housekeeping (§E)
+
+- The stray `baranguard_device_check` database flagged in §E no longer
+  exists — already dropped by an earlier session, this one just
+  confirmed it via `SHOW TABLES` erroring "Unknown database".
+- The eight untracked design-doc/scratch files sitting at the repo root
+  (`Baranguard_System_Design_Document.docx`/`.pdf`, four `diagram_*.png`,
+  `scratch_diagrams.py`) are real deliverables, not throwaway scratch —
+  moved into `docs/design/` and committed rather than gitignored.
+  `docs/progress-tracker.html` was already under `docs/`, left in place.
+- `mobile/android/` — deliberately **left as a decision, not acted on**.
+  §E frames it as "decide whether to commit"; committing a large
+  generated native Android project is a real repo-structure change with
+  its own tradeoffs (size, generated-vs-hand-fixed file mixing) that
+  wasn't part of "safe to do without asking."
+
+### Verification run this session
+
+`verify-web-wiring.mjs` 536/536 · `verify-sprint7-audit.sh` 52/52 ·
+`verify-w2-reports.sh` 31/31 · `verify-f5-incident-update-idempotency.sh`
+16/16 (new) · `verify-f6-suspended-request-rejected.sh` 8/8 (new) ·
+`verify-f8-response-time-dedup.sh` 8/8 (new). All against disposable
+databases; the real `baranguard` database and `backend/.env` were never
+touched.

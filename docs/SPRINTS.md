@@ -53,23 +53,27 @@ notification/SOS fallback tests pass · restore test passes · no
 unresolved P0/P1 reference contradictions.
   -> Status: schema, restore test, and incident-tenant penetration are
      DONE. See docs/REMAINING.md for the ones that are not.
-  -> TWO exit conditions are currently FAILING (not merely unfinished) —
-     `docs/REMAINING.md` §F is the remediation list and it GATES this
-     sprint. **Do not open a Sprint 8 box while §F1-F4 are open** — a
+  -> `docs/REMAINING.md` §F is the remediation list and it GATES this
+     sprint. **Do not open a Sprint 8 box while §F1 or F4 are open** — a
      UAT sign-off against seeded preview data over a public tunnel
-     wouldn't mean anything. Evidence: `docs/AUDIT_2026-09-07.md`.
+     wouldn't mean anything. F2/F3/F5/F6/F8 were fixed and proven
+     2026-09-12 (each with a new verify script — see `backend/DEVLOG.md`
+     2026-09-12 (4)); F1 (the real API base URL) and F4 (evidence
+     upload: build or descope) are the two still open, and both need a
+     decision from the user, not more code. Evidence:
+     `docs/AUDIT_2026-09-07.md`.
 
-Two Sprint 8 boxes below are directly affected, so read these before
-picking either:
-  * "Dispatch response-time metric" — the existing implementation
-    double-counts incidents with more than one arrived dispatch
-    (REMAINING F8). Settle the per-incident definition FIRST, or this
-    box reports a wrong number as a measured one, which is exactly what
-    the sprint's own "REAL MEASURED NUMBERS" rule forbids.
-  * "Raw-PII exposure audit" — start from F2/F3/F7 rather than from
-    scratch; the raw-narrative-to-Secretary-session path and the
-    walk-in blotter's Admin/PB visibility are already traced with
-    file:line evidence.
+One Sprint 8 box below was directly affected and is now unblocked:
+  * "Dispatch response-time metric" — the double-count bug (F8) that
+    would have made this box report a wrong number as a measured one is
+    fixed as of 2026-09-12: `ReportsController` now takes the
+    per-incident first arrival (`MIN(arrived_at)`), proven by
+    `backend/scripts/verify-f8-response-time-dedup.sh`. This box can
+    proceed using that fixed definition.
+  * "Raw-PII exposure audit" — F2/F3 (the stored-XSS chain) are now
+    fixed; F7 was closed by removal 2026-09-10. Starting from those
+    closed items' evidence is still useful context, but they are no
+    longer open findings to re-verify as part of this box.
 
 Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
   [ ] Auth/session revocation + lockout evidence

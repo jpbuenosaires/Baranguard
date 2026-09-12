@@ -11,205 +11,158 @@ lives in `backend/DEVLOG.md` (grep it; don't read it front to back).
 
 **Sprints 0–7 are complete.** Sprint 8 (UAT/evaluation) is open but
 **still gated** by `docs/REMAINING.md` §F — do not open a Sprint 8 box
-while F1-F4 are unresolved. Nothing this session changed that gate.
+while F1 or F4 are unresolved (F2/F3/F5/F6 closed this session — see
+below).
 
-**The §G feature backlog is worked to completion.** All 14 candidates
-resolved: **7 built** (nearest-Tanod dispatch ranking, stale-urgent
-escalation, Lupon packet verification code, health-check history,
-closing-the-loop citizen SMS, public transparency report, consented
-advisory broadcast list — migrations 0017 and 0018), **4 found already
-shipped** (redaction diff view, backup-staleness warning, two-way SMS
-console, PB digest), and **3 deliberately not built with reasons**
-(second responder needs an architecture review; evidence-access audit
-and photo compression both belong to F4's work). Detail:
-`backend/DEVLOG.md` 2026-09-12 (3), statuses in `REMAINING.md` §G.
+**§F's audit remediation: F2/F3/F5/F6/F8 fixed and proven this session.
+F1 and F4 remain — both are decisions, not code.**
 
-**⚠️ NINE MORE VERIFY SUITES WERE DEAD, NOT GREEN — and this is the most
-important thing in this handoff.** The 2026-09-10 session fixed four
-suites pinned to a partial migration chain and believed it closed. A
-routine regression run on 2026-09-12 caught `verify-sprint4-phase2-3.sh`
-failing at "Login failed"; asking the general question — *which suites
-log in but never apply 0011?* — returned nine more. All had been dead
-since 2026-09-05 while `REFERENCE.md` §9 listed each green with a
-specific count. **Nine suites' worth of Sprint 8 evidence was fiction.**
-All nine now apply 0001-0018 and every §9 count has been re-measured.
-Two genuine findings surfaced the moment `sprint1-remaining` could run
-again — both stale Sprint-1 expectations, both verified by hand before
-any assertion was relaxed (see §9's warning box).
+- **F2/F3 (the XSS sweep) — CLOSED.** All eleven `innerHTML`
+  interpolation sites from `docs/AUDIT_2026-09-07.md` are now escaped via
+  the existing shared `web/src/utils/escapeHtml.js`. One site
+  (`blotter-list.js`) no longer exists — closed by W6's 2026-09-10
+  removal, not by fix. `verify-web-wiring.mjs` 536/536, no regressions.
+- **F5 (`PATCH /incidents/:id` idempotency) — CLOSED.** Was validated but
+  never stored/replayed; now replays off `audit_log` (same shape
+  `SmsController::broadcast()` already uses — there's no natural unique
+  column an UPDATE can dedupe on the way a CREATE dedupes on
+  `client_event_id`). Proven by a new script,
+  `verify-f5-incident-update-idempotency.sh` (16/16) — this endpoint had
+  never been called over HTTP by any existing suite, so nothing else
+  exercised it.
+- **F6 (`is_suspended` not checked on authenticated requests) — CLOSED.**
+  `AuthMiddleware::authenticate()` now checks it exactly like `is_active`.
+  Proven by a new script, `verify-f6-suspended-request-rejected.sh`
+  (8/8), which suspends a user via direct SQL (session deliberately left
+  un-revoked) to isolate this check from session-revocation covering for
+  it.
+- **F8 (`avg_response_time_minutes` double-counts multi-dispatch
+  incidents) — CLOSED.** All three call sites (`summary()`'s scalar,
+  `response_time_trend[]`, and the export path) now join against a
+  per-incident `MIN(arrived_at)` subquery instead of the raw `dispatch`
+  table. Proven two ways: an isolated SQL demonstration (old query gives
+  17.5 on a 2-dispatch fixture, new gives the correct 10.0) and a new
+  HTTP-level script, `verify-f8-response-time-dedup.sh` (8/8).
+- **F1 still open** — the real `BARANGUARD_API_BASE_URL` for a genuine
+  deployment has never been decided, only ever pointed at disposable
+  preview/local values. This is a decision for the user, not something a
+  coding session can settle on its own.
+- **F4 still open** — evidence attachment upload is unbuilt end-to-end
+  server-side (no route, no `INSERT`, no sync channel). Needs an explicit
+  scope call: build it, or formally descope and correct §11's retention
+  table, which currently governs a table nothing can ever populate.
 
-**The A1-A7 logic-gap backlog is now swept, and only one item survives.**
-Of the seven: A2/A3/A6 were already done (pure doc fixes applied to the
-Master Reference on 2026-09-07 — verified still present, not taken on
-trust); **G2 and G3 are now built** (migration 0016 — `sms_log.legal_hold`
-so a legal hold on a case protects its SMS trail, and `mobile_device`
-secrets scrubbed in place instead of the row being deleted, which used to
-strip device provenance off 7-year records); **G4 is closed as obsolete**
-(its walk-in-born-`resolved` path stopped existing when `POST /blotter`
-was removed — all three creation sites now hardcode `pending`, so there
-is nothing left to discriminate and adding the enum value would be a
-Rule 6 violation); **G1 (SOS third fallback tier) is the one still open**,
-blocked on a native SMS plugin + device *and* an unmade decision about
-where the backup contact number lives. Full reasoning, including why
-building G1's logic without its send path was rejected: `backend/DEVLOG.md`
-2026-09-12 (2).
+**Not done this session, logged rather than silently skipped:** B2
+(pen-test dispatch/shifts/citizen-reports/SMS/map-packages — Incidents'
+own 68-check pass is the template) and B4 (`verify-sprint3.sh`, which
+has never existed) are each their own substantial new-suite-writing
+session and were left for one, rather than rushed. Three new verify
+scripts this session (`verify-f5-*`, `verify-f6-*`, `verify-f8-*`) join
+the existing eighteen — none of the counts in `REFERENCE.md` §9 changed,
+since those three are new files, not adjustments to existing suites.
 
-**Migrations 0016, 0017 and 0018 are applied to BOTH the real
-`baranguard` DB and the demo `baranguard_uiseed` DB** (2026-09-12, as
-root; each verified up/down/re-up and idempotent on a disposable DB
-first). Every verify suite now applies the full 0001-0018 chain.
+**Housekeeping (§E):** the stray `baranguard_device_check` DB no longer
+exists (already dropped by an earlier session). The eight untracked
+design-doc files that had been sitting at the repo root
+(`Baranguard_System_Design_Document.docx`/`.pdf`, four `diagram_*.png`,
+`scratch_diagrams.py`) are real deliverables, not scratch — moved into
+`docs/design/` and committed. `mobile/android/`'s "commit or not"
+decision is deliberately still open — see §E's own note in
+`REMAINING.md` for why that one wasn't just acted on.
 
-**Six sessions' worth of finished, uncommitted work landed and pushed to
-`origin/main` this session** (repo: `github.com/jpbuenosaires/Baranguard`).
-`git status` at the start showed ~28 modified files across backend
-controllers, the AI worker, and a dozen web files that were never staged
-— all reviewed file-by-file, found coherent and complete, split into six
-independent commits:
+**⚠️ There is a SEPARATE body of uncommitted mobile UI work in this
+working tree that this session did NOT touch, review, or commit** — 14
+files under `mobile/src` (`App.tsx`, several pages, `apiService.ts`,
+theme CSS, `vite.config.ts`) show as modified, and four new files exist
+(`components/MobileHeader.tsx`, `components/SyncQueueModal.tsx`,
+`pages/profile.tsx`, and a new `utils/` directory) that were not present
+at the start of the previous session. `pages/profile.tsx` in particular
+is notable: `REFERENCE.md` §7 and `App.tsx`'s own routing currently say
+M10 Profile is **not built yet** (`NotBuiltYetPage`) — if this file
+actually implements it, that is real, unlogged scope that predates this
+handoff entry and needs the same file-by-file review the six-sessions'
+land in the 2026-09-12 (1) DEVLOG entry got, before anyone trusts or
+commits it. **Do not assume it is safe to commit as-is** — verify it
+first, the same way that entry did. This session's own commits were
+scoped narrowly to specific backend/web files by path for exactly this
+reason: an unreviewed parallel change sitting in the same working tree
+is not something to sweep in with a broad `git add`.
 
-- `69c7bf3` Friend-runnable AI evaluation kit (`--resume`/checkpoint,
-  `--batch-size`/`--rest-seconds` pacing, `--save-results`) + `eval-kit/`
-  — this is `REMAINING.md` A3's actual deliverable, previously claimed
-  done in this file without ever reaching git.
-- `ae200aa` Threat Analyzer accepts a custom date range (7/30/90-day
-  presets or custom, via the existing `DateRangePicker`).
-- `58b5e17` Topbar AI-readiness badge for Secretary/PB (Ollama-probe
-  backed, matches Admin's health badge honesty); dark-mode fixes for
-  MapLibre's vendored chrome and the shared dropdown menu.
-- `27d6cc9` AI Review workflow stepper; "Use in Broadcast" (SMS Composer)
-  and "Copy for BIMSS" (Blotter Assistant) draft actions; GIS Live
-  Tracking's floating widget made collapsible, its private `escapeHtml()`
-  swapped for the shared `web/src/utils/escapeHtml.js`.
-- `496e18f` `docs/AUDIT_2026-09-07.md` committed for the first time (the
-  other docs had cited it by path since 2026-09-07 while it sat
-  uncommitted); `CLAUDE.md`/`SPRINTS.md` brought to the state those
-  citations already assumed.
-- `dab2032` This session's own feature — see below.
+**The §G feature backlog is worked to completion** (unchanged this
+session). All 14 candidates resolved: 7 built, 4 found already shipped,
+3 deliberately not built with reasons. Detail: `backend/DEVLOG.md`
+2026-09-12 (3), statuses in `REMAINING.md` §G.
 
-Full narrative and the two bugs found doing this: `backend/DEVLOG.md`'s
-2026-09-12 entry.
+**⚠️ Nine verify suites were dead, not green, until 2026-09-12** —
+unchanged this session, still the most important piece of *prior*
+context if you haven't read it yet. All nine now apply the full
+0001-0018 chain and every §9 count was re-measured. Detail:
+`backend/DEVLOG.md` 2026-09-12 and 2026-09-12 (3), `REFERENCE.md` §9's
+warning box.
 
-**AI Classifier now auto-checks itself instead of waiting for a click.**
-The four local-AI drafting aids from 2026-09-10 (`components/AiToolPanel.js`,
-embedded in host screens, not a standalone AI screen — Classifier in
-Incident Management, Blotter Assistant in incident detail (Secretary
-only), Message Composer in SMS Monitor, Threat Analyzer in Analytics)
-are unchanged in that respect. What's new: the Classifier auto-runs once
-per incident per visit as soon as an approved redaction exists (`AiToolPanel`
-gained generic `tool.autoRun` + `options.onResult` hooks other panels can
-reuse), and shows a small "AI suggests: {type} · {priority}" chip only
-when its suggestion disagrees with what's already on record — a match
-stays silent. Clicking the chip expands the panel; "Apply in Edit" is
-unchanged. Reasoning for *why* this beats a manual button: the intake
-pick is a rough guess from a raw call before the full story is known,
-and the auto-check is the only way Admin gets a second look without ever
-touching `raw_narrative`.
+**The A1-A7 logic-gap backlog is swept; G1 (SOS third fallback tier) is
+the one item still open**, blocked on a native SMS plugin + device and
+an unmade decision about where the backup contact number lives.
+Unchanged this session. Detail: `backend/DEVLOG.md` 2026-09-12 (2).
 
-**If you touch a screen that hosts a panel:** call the panel's `stop()`
-before wiping its DOM and chain it into the page's stop — `innerHTML=''`
-does not clear a poll interval. (Fixed for all four host screens
-2026-09-10; still true.)
+**Migrations 0016, 0017, 0018 are applied to both the real `baranguard`
+DB and the demo `baranguard_uiseed` DB.** Unchanged this session.
 
-**A real layout bug was found and fixed:** `.incident-layout.has-detail`
-in `incident-management.css` squeezed the detail pane to ~78px at any
-viewport under 1024px — its own two-class `grid-template-columns` rule
-out-specifies the mobile single-column override sitting in the same
-file's own media query, and hiding the left panel via `display:none`
-compounded it by dropping it from the grid so the visible right panel
-landed in the *wrong*, squeezed track. This is the default width of this
-project's own browser-pane tooling, so it wasn't an edge case — it hit
-every session that opened an incident detail this way. Fixed by adding
-`.incident-layout.has-detail` to the mobile media query.
+**AI Classifier auto-checks itself; a real layout bug in
+`incident-management.css` was found and fixed; a demo-DB migration gap
+was found and fixed.** All unchanged this session — full detail in the
+2026-09-12 (1) DEVLOG entry if you need it.
 
-**A second, unrelated gap was found and fixed:** the disposable
-`baranguard_uiseed` demo DB never had migration 0015 applied, so
-`ai_processing_log` was missing the columns/enum values the four AI
-Tools need — any of them 500'd the moment Generate was actually clicked
-against seeded data, not just the new auto-check. Applied 0015 to
-`baranguard_uiseed` directly (idempotent, disposable-DB-only; the real
-`baranguard` DB already had it per the 2026-09-10 entry).
-
-**Two P0s are still open** (`docs/AUDIT_2026-09-07.md`):
-1. **F1, still unresolved.** `web/index.html` no longer points at the
-   public Cloudflare tunnel (that uncommitted value is gone), but nothing
-   has replaced it with a real decision either — the working tree
-   currently carries a temporary `http://localhost:8081/api/v1` pointer
-   used only to browser-verify this session's work, and it is
-   deliberately **uncommitted**. The underlying question — what should
-   `BARANGUARD_API_BASE_URL` actually be in a real deployment — is still
-   open and still gates Sprint 8.
-2. An unauthenticated citizen report can still execute script in the
-   Secretary session via unescaped `innerHTML` in `blotter-detail.js`
-   (unchanged; not touched this session).
-
-Of the four P1s, F7 and F9's first bullet are closed by removal (see the
-2026-09-10 entry); evidence upload (F4), `PATCH /incidents/:id`
-idempotency (F5) and `avg_response_time_minutes` (F8) remain.
-
-**`eval-kit/` still needs capable hardware.** Unchanged: Ollama is
-installed here and the model is pulled, but a real `generate()` has
-never completed on this workstation (300s timeout, zero bytes). The
-eval-kit's `--resume`/checkpoint support (this session, see above) is
-specifically what makes handing it to someone with capable hardware
-practical — a multi-hour run surviving interruption instead of needing
-to finish in one sitting.
+**`eval-kit/` still needs capable hardware.** Unchanged: no
+`generate()` has ever completed on this workstation.
 
 ## Three things most likely to bite you
 
 1. **Every static check in this project can be green on code with a P0
    defect.** `node --input-type=module --check`, `verify-web-wiring.mjs`,
-   `php -l` all parse-and-resolve; none can see an unescaped
-   `${narrative}` inside `innerHTML`, or an API base URL pointing
-   somewhere it shouldn't. Green means "it parses," not "it's safe to
-   ship." Nor do they validate a `navigate()` key or a CSS specificity
-   fight between two rules that both technically apply — a browser pass
-   is what caught both real bugs this session.
-2. **Finished work sitting uncommitted is a standing risk, not a
-   curiosity.** Six sessions' worth of it accumulated silently while
-   `HANDOFF.md` kept claiming a different, older commit was current.
-   Commit and push before a session ends.
-3. **A verification suite pinned to a partial migration chain expires
-   silently** — this bit the demo `baranguard_uiseed` DB the same way it
-   bit four verify suites in an earlier session (2026-09-05 → -10 entry).
-   A disposable/demo database needs the *full* current migration chain,
-   not whatever subset it was seeded with originally.
-4. **`backend/.env` is currently pointed at `baranguard_uiseed`, not
-   `baranguard`** — left that way from this session's browser
-   verification, and it is NOT tracked by git so nothing will remind
-   you. It already caused one confusing failure: a freshly-migrated
-   database reporting `Unknown column` because the CLI job was quietly
-   running somewhere else. `DB_NAME=baranguard php backend/scripts/...`
-   overrides it for one command (an already-set env var beats `.env`,
-   per `REFERENCE.md` §8); change the file itself before trusting any
-   CLI run against "the real database."
+   `php -l` all parse-and-resolve; none of them caught the eleven XSS
+   sites this session fixed, or would have caught F5/F6/F8 either — all
+   three needed a real HTTP call against a real database to prove, which
+   is why each got its own new verify script rather than a claim.
+2. **A verify script proves nothing about an endpoint it never calls.**
+   F5 and F6 were both provably broken for a long time specifically
+   *because* no existing suite exercised the code path — `grep` for the
+   route across every `*.sh` before trusting a suite's green result to
+   mean "this endpoint works," not just "the suites that happen to touch
+   it pass."
+3. **Finished work sitting uncommitted is a standing risk, not a
+   curiosity** — see the mobile UI work flagged above. Review it
+   file-by-file before committing it, the same way the six-sessions'
+   backlog was reviewed on 2026-09-12, rather than either ignoring it
+   indefinitely or sweeping it in blind.
+4. **`backend/.env` may still be pointed at `baranguard_uiseed`, not
+   `baranguard`**, from earlier browser-verification sessions, and it is
+   NOT tracked by git so nothing will remind you. `DB_NAME=baranguard
+   php backend/scripts/...` overrides it for one command; check the file
+   itself before trusting any CLI run against "the real database."
 
 ## Recommended next step
 
-**F2 is now the most valuable thing left, and it has been true for a
-while.** Seven features shipped on 2026-09-12 while a P0 sat open in
-which an unauthenticated citizen report can execute script in the
-Secretary session — the one session that can read every `raw_narrative`
-in the barangay. `REMAINING.md`'s own legend calls everything built that
-day 🟢, and §F gates Sprint 8. The fix is mechanical and half-done
-already: `web/src/utils/escapeHtml.js` exists and GIS Live Tracking was
-migrated onto it; the remaining ~40 sites are in the audit with
-file:line evidence. **Do F2/F3 before any more feature work.**
+**F1 is now the most valuable open item.** Every other §F code defect is
+closed; F1 is purely a decision (the real `BARANGUARD_API_BASE_URL`) and
+F4 purely a scope call (build evidence upload, or descope it and correct
+§11). Neither needs more investigation — both need the user to decide.
 
-1. **`REMAINING.md` §F1-F4** — settle the real `BARANGUARD_API_BASE_URL`
-   value (F1 is a decision now, not a leftover tunnel to rip out), the
-   XSS sweep (F2/F3), and the evidence-upload scope call (F4). Nothing
-   else can be trusted as "verified against production" until F1 is
-   settled.
-2. **Hand `eval-kit/` to a friend with capable hardware** (or wait for
-   her run) — the new checkpoint/resume support means an interrupted run
-   is no longer a lost run.
-3. **Browser-verify the screens nobody has opened yet**: Dispatch
+1. **Settle F1** (the real deployment API base URL) and **F4** (build
+   evidence upload, or formally descope it). Nothing can be called
+   "verified against production" until F1 is settled.
+2. **Review and decide on the parallel mobile UI work** flagged above
+   (`MobileHeader.tsx`, `SyncQueueModal.tsx`, `pages/profile.tsx`,
+   `utils/`, and the modified files around them) before it becomes a
+   sixth "six sessions of uncommitted work" story.
+3. **B1** — browser-verify the screens nobody has opened yet (Dispatch
    Center, GIS Live Tracking, Analytics > Heatmap, the Dashboard
    tooltips/attention banner, Citizen Reports' Convert-to-Incident
-   dialog. See `REMAINING.md` B1 for the full list.
-4. **Decide the untracked design-doc artifacts** at the repo root
-   (`Baranguard_System_Design_Document.docx/.pdf`, four `diagram_*.png`,
-   `scratch_diagrams.py`, `docs/progress-tracker.html`) — commit under
-   `docs/`, or gitignore them. Still undecided; still sitting untracked.
-5. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
+   dialog). See `REMAINING.md` B1.
+4. **B2, B4** — pen-test the non-incident resource types, and write the
+   Sprint-3-endpoint verify script that has never existed.
+5. **Hand `eval-kit/` to a friend with capable hardware** for A2.
+6. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
 
 Full ordered list with reasoning, including the hardware/account-blocked
 items: **`docs/REMAINING.md`**.
@@ -229,6 +182,11 @@ cd backend && php scripts/ai-worker.php --status
 
 # Web wiring check — run after ANY web change
 node web/scripts/verify-web-wiring.mjs
+
+# This session's new verify scripts
+bash backend/scripts/verify-f5-incident-update-idempotency.sh
+bash backend/scripts/verify-f6-suspended-request-rejected.sh
+bash backend/scripts/verify-f8-response-time-dedup.sh
 ```
 
 Neither the retention job nor the restore drill is **scheduled** — both
