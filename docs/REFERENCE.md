@@ -17,9 +17,11 @@ Offline-first, locally hosted Barangay Intelligence and Emergency
 Dispatch System for four barangays in Pilar, Sorsogon. Production
 system, not a demo. Single workstation, LAN-only, no cloud.
 
-> **⚠️ LAN-only is currently violated — P0, open.** `web/index.html`
-> points at a public tunnel; see `docs/HANDOFF.md` / `docs/REMAINING.md`
-> §F1 / `docs/AUDIT_2026-09-07.md` for the evidence and fix.
+> **⚠️ The API base URL is still undecided — P0, open.** The public
+> Cloudflare tunnel that made this a live LAN-only violation is gone, but
+> nothing replaced it with a real decision: committed `HEAD` still points
+> at `127.0.0.1:8140` (the disposable preview DB). See `docs/REMAINING.md`
+> §F1 for what has to be settled and why it gates everything else.
 
 **Stack:** PHP 8.2 serves all of `/api/v1/*` (resolved Sprint 1 — Node is
 CLI tooling only). MariaDB 10.4 via XAMPP. Web: vanilla JS, **no bundler,
@@ -161,9 +163,12 @@ manual send · 0014 incident/blotter display_id · 0015 ai_tools
 `idx_sms_log_retention`, `mobile_device.secrets_scrubbed_at` — closes
 `REMAINING.md` §G2/§G3; both verified up, down and idempotent against a
 disposable MariaDB 10.4 first, same as 0015).
-**All sixteen are applied to the real local `baranguard` DB** (0008–0014
-on 2026-09-05, 0015 on 2026-09-10, 0016 on 2026-09-12). On a new machine,
-apply all sixteen in order — as
+**0017 health_check_log** (dependency-status CHANGE log behind W20's new
+"Dependency status changes" section and `GET /system/health/history`;
+a row only when the observed statuses differ from the newest one).
+**All seventeen are applied to the real local `baranguard` DB** (0008–0014
+on 2026-09-05, 0015 on 2026-09-10, 0016–0017 on 2026-09-12). On a new
+machine, apply all seventeen in order — as
 DBA/root, **not** as `baranguard_app`, which has no `ALTER`/`CREATE
 TABLE` (see §8).
 
@@ -177,7 +182,7 @@ instead).
 
 ---
 
-## 5. Endpoints (82 live `/api/v1` routes, all built)
+## 5. Endpoints (83 live `/api/v1` routes, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -213,7 +218,7 @@ extraction+approve — extraction is independent of redaction, migration
 **Notifications/SOS** notifications · ack · tanod-sos (+ack/resolve)
 **Devices/Map** register · deactivate · map-packages (get/upload/download)
 **Reports** summary · heatmap · nav-counts · **export (+download)**
-**Ops** `/audit-log` · `/system/health` · `/search` ·
+**Ops** `/audit-log` · `/system/health` (+`/history` — Admin-only dependency-status CHANGE log, migration 0017, added 2026-09-12 outside §6's original list) · `/search` ·
 `/barangays` · `/users` (list gains `q=`, last_login_at, is_suspended;
 suspend/unsuspend alongside the existing is_active toggle) ·
 `/citizen-reports` (+`/:id/convert` since 2026-09-05 — always speced in

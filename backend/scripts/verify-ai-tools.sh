@@ -118,10 +118,11 @@ for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_u
          0005_sms_envelope_replay 0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
          0009_blotter_case_status 0010_incident_location_description 0011_user_suspension 0012_system_settings \
          0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
-         0016_retention_hold_and_device_scrub; do
+         0016_retention_hold_and_device_scrub \
+         0017_health_check_log; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Migrations 0001-0016 applied"
+pass "Migrations 0001-0017 applied"
 
 ENUM_OK=$(db_one "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='ai_processing_log' AND COLUMN_NAME='task_type';")
 expect_contains "$ENUM_OK" "sms_compose" "0015 widened task_type to include the tool types"
