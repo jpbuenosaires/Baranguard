@@ -907,8 +907,12 @@ export async function queueSmsCompose(prompt) {
 }
 
 /** POST /ai-tools/threat-analysis — Admin + Punong Barangay. Scope is the caller's own barangay, server-side. */
-export async function queueThreatAnalysis() {
-  const json = await request('POST', '/ai-tools/threat-analysis', { auth: true });
+export async function queueThreatAnalysis(payload = null) {
+  const options = { auth: true };
+  if (payload && typeof payload === 'object') {
+    options.body = payload;
+  }
+  const json = await request('POST', '/ai-tools/threat-analysis', options);
   return { jobId: json.job_id, taskType: json.task_type, status: json.status };
 }
 

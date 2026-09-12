@@ -467,14 +467,32 @@ function runThreatAnalysisJob(PDO $pdo, OllamaClient $client, array $job): void
     $logId = (int) $job['log_id'];
     $barangayId = (int) $job['barangay_id'];
 
-    [$summary, $total] = buildThreatAggregate($pdo, $barangayId, THREAT_ANALYSIS_WINDOW_DAYS);
+    $days = THREAT_ANALYSIS_WINDOW_DAYS;
+    $from = null;
+    $to = null;
+    $periodLabel = 'the last ' . THREAT_ANALYSIS_WINDOW_DAYS . ' days';
+
+    if (!empty($job['tool_input'])) {
+        $input = json_decode((string) $job['tool_input'], true);
+        if (is_array($input)) {
+            if (!empty($input['days']) && is_numeric($input['days'])) {
+                $days = max(1, min(365, (int) $input['days']));
+                $periodLabel = "the last {$days} days";
+            } elseif (!empty($input['from']) && !empty($input['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $input['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $input['to'])) {
+                $from = (string) $input['from'];
+                $to = (string) $input['to'];
+                $periodLabel = "the period from {$from} to {$to}";
+            }
+        }
+    }
+
+    [$summary, $total] = buildThreatAggregate($pdo, $barangayId, $days, $from, $to);
     if ($total === 0) {
         AiJobQueue::fail($pdo, $logId, 'THREAT_ANALYSIS_NO_DATA');
-        out("[job {$logId}] FAILED — no incidents in the last " . THREAT_ANALYSIS_WINDOW_DAYS . ' days to analyse.');
+        out("[job {$logId}] FAILED — no incidents in {$periodLabel} to analyse.");
         return;
     }
 
-    $periodLabel = 'the last ' . THREAT_ANALYSIS_WINDOW_DAYS . ' days';
     $result = $client->generate(AiPrompts::threatAnalysis($summary, $periodLabel));
     $text = trim(AiPrompts::stripReasoning($result['text']));
     if ($text === '') {
@@ -500,10 +518,17 @@ function runThreatAnalysisJob(PDO $pdo, OllamaClient $client, array $job): void
  *
  * @return array{0:string,1:int} [summary, total]
  */
-function buildThreatAggregate(PDO $pdo, int $barangayId, int $days): array
+function buildThreatAggregate(PDO $pdo, int $barangayId, int $days, ?string $from = null, ?string $to = null): array
 {
-    $params = ['barangay_id' => $barangayId, 'days' => $days];
-    $window = 'barangay_id = :barangay_id AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+    $params = ['barangay_id' => $barangayId];
+    if ($from !== null && $to !== null) {
+        $params['date_from'] = $from;
+        $params['date_to'] = $to;
+        $window = 'barangay_id = :barangay_id AND DATE(DATE_ADD(created_at, INTERVAL 8 HOUR)) BETWEEN :date_from AND :date_to';
+    } else {
+        $params['days'] = $days;
+        $window = 'barangay_id = :barangay_id AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+    }
 
     $totalStmt = $pdo->prepare("SELECT COUNT(*) FROM incident WHERE {$window}");
     $totalStmt->execute($params);
