@@ -21,4 +21,9 @@ return [
     ['PATCH', '#^/sms/conversations/([0-9+]+)/resolve$#', [SmsController::class, 'resolveConversation'], true],
     ['POST', '#^/sms/send$#', [SmsController::class, 'send'], true],
     ['POST', '#^/sms/broadcast$#', [SmsController::class, 'broadcast'], true],
+    // Advisory subscribers (migration 0018). Admin-only; consent rules
+    // are enforced in the controller, not left to the UI.
+    ['GET', '#^/sms/subscribers$#', [SmsController::class, 'subscribers'], true],
+    ['POST', '#^/sms/subscribers$#', [SmsController::class, 'addSubscriber'], true],
+    ['PATCH', '#^/sms/subscribers/(\d+)/opt-out$#', [SmsController::class, 'optOutSubscriber'], true],
 ];

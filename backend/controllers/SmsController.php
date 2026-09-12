@@ -441,8 +441,8 @@ final class SmsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'message is too long (max ' . self::MAX_MESSAGE_LENGTH . ' characters).');
         }
         $scope = $body['scope'] ?? null;
-        if (!in_array($scope, ['on_duty_tanods', 'role'], true)) {
-            throw new ApiError(400, 'VALIDATION_ERROR', "scope must be one of: on_duty_tanods, role.");
+        if (!in_array($scope, ['on_duty_tanods', 'role', 'subscribers'], true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "scope must be one of: on_duty_tanods, role, subscribers.");
         }
         $role = $body['role'] ?? null;
         if ($scope === 'role' && (!is_string($role) || !in_array($role, ['admin', 'secretary', 'tanod', 'punong_barangay'], true))) {
@@ -472,7 +472,18 @@ final class SmsController
             ]);
         }
 
-        if ($scope === 'on_duty_tanods') {
+        if ($scope === 'subscribers') {
+            // Residents who have CONSENTED and not withdrawn (migration
+            // 0018). Deliberately not "every number we have ever seen" —
+            // see that migration's header for why reusing sms_log or
+            // citizen_report numbers here would be an RA 10173 problem,
+            // not a shortcut.
+            $recipientsStmt = $pdo->prepare(
+                "SELECT NULL AS user_id, contact_number FROM sms_subscriber
+                 WHERE barangay_id = :barangay_id AND opted_out_at IS NULL"
+            );
+            $recipientsStmt->execute(['barangay_id' => $identity['barangay_id']]);
+        } elseif ($scope === 'on_duty_tanods') {
             $recipientsStmt = $pdo->prepare(
                 "SELECT u.user_id, u.contact_number FROM user u
                  WHERE u.barangay_id = :barangay_id AND u.role = 'tanod' AND u.is_active = 1
@@ -541,5 +552,182 @@ final class SmsController
             throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be in YYYY-MM-DD format.");
         }
         return $date;
+    }
+
+    // ==================================================================
+    // Advisory subscribers (migration 0018) — Admin only, own barangay.
+    //
+    // These three endpoints exist so a barangay-wide advisory has a
+    // LAWFUL recipient list. The consent rules are enforced here, at the
+    // boundary, not left to whoever builds a UI on top: `consent_source`
+    // is required on every create, an existing number cannot be silently
+    // re-subscribed, and removal is an opt-out timestamp rather than a
+    // delete. See 0018's header for the RA 10173 reasoning.
+    // ==================================================================
+
+    private const CONSENT_SOURCES = ['walk_in', 'staff_entry', 'sms_keyword'];
+
+    /** `GET /sms/subscribers` — Admin only. Includes opted-out rows,
+     *  because the withdrawal record is part of what has to be visible. */
+    public static function subscribers(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+
+        $stmt = $pdo->prepare(
+            'SELECT subscriber_id, contact_number, consent_at, consent_source, consent_note,
+                    opted_out_at, created_at
+               FROM sms_subscriber
+              WHERE barangay_id = :barangay_id
+              ORDER BY opted_out_at IS NOT NULL, created_at DESC'
+        );
+        $stmt->execute(['barangay_id' => $identity['barangay_id']]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $active = 0;
+        foreach ($rows as $row) {
+            if ($row['opted_out_at'] === null) {
+                $active++;
+            }
+        }
+
+        Http::send(200, [
+            'items' => array_map(static fn (array $r): array => [
+                'subscriber_id' => (int) $r['subscriber_id'],
+                'contact_number' => $r['contact_number'],
+                'consent_at' => $r['consent_at'],
+                'consent_source' => $r['consent_source'],
+                'consent_note' => $r['consent_note'],
+                'opted_out_at' => $r['opted_out_at'],
+                'created_at' => $r['created_at'],
+            ], $rows),
+            'active_count' => $active,
+            'total_count' => count($rows),
+        ]);
+    }
+
+    /**
+     * `POST /sms/subscribers` — Admin only.
+     * Body: `{contact_number, consent_source, consent_note?}`.
+     *
+     * `consent_source` is REQUIRED and has no default. That is the whole
+     * control: there is no way to add a resident to the advisory list
+     * without stating how their consent was obtained.
+     */
+    public static function addSubscriber(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+
+        $body = Http::jsonBody();
+        $number = $body['contact_number'] ?? null;
+        if (!is_string($number) || trim($number) === '') {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'contact_number is required.');
+        }
+        $number = trim($number);
+        if (mb_strlen($number) > 32) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'contact_number must be at most 32 characters.');
+        }
+
+        $source = $body['consent_source'] ?? null;
+        if (!is_string($source) || !in_array($source, self::CONSENT_SOURCES, true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'consent_source must be one of: ' . implode(', ', self::CONSENT_SOURCES) . '.');
+        }
+
+        $note = $body['consent_note'] ?? null;
+        if ($note !== null && (!is_string($note) || mb_strlen($note) > 255)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'consent_note must be a string of at most 255 characters.');
+        }
+
+        $existingStmt = $pdo->prepare(
+            'SELECT subscriber_id, opted_out_at FROM sms_subscriber
+              WHERE barangay_id = :barangay_id AND contact_number = :contact_number LIMIT 1'
+        );
+        $existingStmt->execute(['barangay_id' => $identity['barangay_id'], 'contact_number' => $number]);
+        $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($existing !== false) {
+            // Re-subscribing someone who withdrew is allowed, but it is an
+            // explicit act that records FRESH consent and clears the
+            // withdrawal — never a silent revival of the old row.
+            if ($existing['opted_out_at'] === null) {
+                throw new ApiError(409, 'CONFLICT', 'This number is already subscribed.');
+            }
+            $update = $pdo->prepare(
+                'UPDATE sms_subscriber
+                    SET opted_out_at = NULL, consent_at = UTC_TIMESTAMP(), consent_source = :consent_source,
+                        consent_note = :consent_note, created_by_user_id = :actor
+                  WHERE subscriber_id = :subscriber_id'
+            );
+            $update->execute([
+                'consent_source' => $source,
+                'consent_note' => $note,
+                'actor' => $identity['user_id'],
+                'subscriber_id' => (int) $existing['subscriber_id'],
+            ]);
+            $subscriberId = (int) $existing['subscriber_id'];
+        } else {
+            $insert = $pdo->prepare(
+                'INSERT INTO sms_subscriber
+                    (barangay_id, contact_number, consent_at, consent_source, consent_note, created_by_user_id, created_at)
+                 VALUES
+                    (:barangay_id, :contact_number, UTC_TIMESTAMP(), :consent_source, :consent_note, :actor, UTC_TIMESTAMP())'
+            );
+            $insert->execute([
+                'barangay_id' => $identity['barangay_id'],
+                'contact_number' => $number,
+                'consent_source' => $source,
+                'consent_note' => $note,
+                'actor' => $identity['user_id'],
+            ]);
+            $subscriberId = (int) $pdo->lastInsertId();
+        }
+
+        // Rule 17 allow-list: identifiers and the consent SOURCE, which
+        // is a status. The number itself is personal data and stays out
+        // of audit metadata, same as every other contact field.
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'sms_subscriber_added', 'sms_subscriber', $subscriberId, [
+            'consent_source' => $source,
+        ]);
+
+        Http::send(201, ['subscriber_id' => $subscriberId]);
+    }
+
+    /**
+     * `PATCH /sms/subscribers/:id/opt-out` — Admin only.
+     *
+     * Records a withdrawal; never deletes. Idempotent: opting out an
+     * already-opted-out subscriber returns the original timestamp rather
+     * than overwriting it, because the date consent was withdrawn is
+     * itself the fact worth keeping.
+     */
+    public static function optOutSubscriber(PDO $pdo, array $identity, string $subscriberIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+
+        if (!ctype_digit($subscriberIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Subscriber not found.');
+        }
+        $subscriberId = (int) $subscriberIdParam;
+
+        $stmt = $pdo->prepare(
+            'SELECT subscriber_id, barangay_id, opted_out_at FROM sms_subscriber WHERE subscriber_id = :id LIMIT 1'
+        );
+        $stmt->execute(['id' => $subscriberId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Subscriber not found.');
+        }
+        // Cross-tenant is 404, never 403 (§2 Rule 2).
+        AuthMiddleware::requireTenant($identity, (int) $row['barangay_id']);
+
+        if ($row['opted_out_at'] === null) {
+            $pdo->prepare('UPDATE sms_subscriber SET opted_out_at = UTC_TIMESTAMP() WHERE subscriber_id = :id')
+                ->execute(['id' => $subscriberId]);
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'sms_subscriber_opted_out', 'sms_subscriber', $subscriberId, []);
+        }
+
+        $readBack = $pdo->prepare('SELECT opted_out_at FROM sms_subscriber WHERE subscriber_id = :id');
+        $readBack->execute(['id' => $subscriberId]);
+
+        Http::send(200, ['subscriber_id' => $subscriberId, 'opted_out_at' => $readBack->fetchColumn()]);
     }
 }
