@@ -198,6 +198,36 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
 }
 
 /**
+ * When an un-dispatched high/critical incident's wait escalates the
+ * banner from "here is a count" to "this one has been ignored".
+ *
+ * THIS IS A DISPLAY HEURISTIC, NOT AN SLA. No document in this project
+ * defines a dispatch response target — §11 sets retention windows, and
+ * Sprint 8's response-time box measures `created_at → arrived_at` without
+ * asserting what it should be. So this number decides only when the
+ * escalation line changes wording and colour; it is never presented to
+ * the operator as a breached standard, and the minutes shown beside it
+ * are always the real measured wait. If a real SLA is ever adopted, it
+ * belongs in the reference first and this constant follows it.
+ */
+const STALE_URGENT_MINUTES = 15;
+
+/**
+ * Minutes the OLDEST still-pending urgent incident has been waiting, or
+ * null when there are none. Reads `createdAt`, which `apiClient`'s
+ * `reviveUtcTimestamps` has already normalised to a real UTC instant —
+ * parsing the raw `2026-09-06 13:41:20` here would silently shift by the
+ * local offset (the bug commit 891a01b fixed across 85 call sites).
+ */
+function urgentWaitMinutes(urgentItems) {
+  const times = urgentItems
+    .map((i) => new Date(i.createdAt).getTime())
+    .filter((t) => Number.isFinite(t));
+  if (times.length === 0) return null;
+  return Math.max(0, Math.floor((Date.now() - Math.min(...times)) / 60000));
+}
+
+/**
  * 2026-09-05 UX pass: the dashboard used to be entirely retrospective (a
  * date-range summary) with no "what needs my attention right now" signal
  * — an Admin had to separately open Dispatch Center to discover a pending
@@ -213,6 +243,7 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
   let openSosCount = 0;
   let hasCriticalOrHighPending = false;
   let criticalCount = 0;
+  let oldestUrgentMinutes = null;
 
   try {
     const [sosItems, pendingRes] = await Promise.all([
@@ -224,6 +255,7 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
       const urgentItems = pendingRes.items.filter((i) => i.priority === 'critical' || i.priority === 'high' || i.incidentType === 'sos');
       criticalCount = urgentItems.length;
       hasCriticalOrHighPending = criticalCount > 0;
+      oldestUrgentMinutes = urgentWaitMinutes(urgentItems);
     }
   } catch {
     // Best-effort — the banner still shows the pending-incident count below.
@@ -232,6 +264,7 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
   host.innerHTML = '';
   if (pendingCount === 0 && openSosCount === 0) return;
 
+  const isStale = oldestUrgentMinutes !== null && oldestUrgentMinutes >= STALE_URGENT_MINUTES;
   const isCritical = openSosCount > 0 || hasCriticalOrHighPending;
   const banner = document.createElement('div');
   banner.className = `attention-banner attention-banner--${isCritical ? 'critical' : 'warning'}`;
@@ -245,6 +278,22 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
   if (pendingCount > 0) parts.push(pendingCount === 1 ? '1 incident pending dispatch' : `${pendingCount} incidents pending dispatch`);
   text.textContent = `${parts.join(' and ')} — needs attention.`;
   banner.appendChild(text);
+
+  // The escalation line. Only appears when there IS an urgent incident
+  // still waiting, and the number in it is always the real measured wait
+  // of the oldest one — never a bucket or a rounded-up "over N minutes".
+  if (oldestUrgentMinutes !== null) {
+    const escalation = document.createElement('span');
+    escalation.className = `attention-banner__escalation${isStale ? ' attention-banner__escalation--stale' : ''}`;
+    const waited = oldestUrgentMinutes < 60
+      ? `${oldestUrgentMinutes} min`
+      : `${Math.floor(oldestUrgentMinutes / 60)}h ${oldestUrgentMinutes % 60}m`;
+    escalation.textContent = isStale
+      ? `Oldest high/critical incident has waited ${waited} with no Tanod dispatched.`
+      : `Oldest high/critical incident waiting ${waited}.`;
+    if (isStale) escalation.setAttribute('role', 'alert');
+    banner.appendChild(escalation);
+  }
 
   // Dispatch Center is Admin-only (§7) — Punong Barangay is read-only
   // oversight and has no screen to act on this from, so it sees the same

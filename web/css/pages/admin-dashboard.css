@@ -82,6 +82,36 @@
   border: 1px solid color-mix(in srgb, var(--color-warning) 30%, var(--color-border));
 }
 
+/* Stale-urgent escalation line. Drops onto its own full-width row under
+   the existing count line rather than competing with it inline — the
+   count answers "how much is waiting", this answers "how long has the
+   worst of it waited", and they are different questions. */
+.attention-banner { flex-wrap: wrap; }
+.attention-banner__escalation {
+  flex-basis: 100%;
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+  opacity: 0.95;
+}
+.attention-banner__escalation--stale {
+  font-weight: 700;
+  opacity: 1;
+}
+/* Inside the red banner the text is already white, so the stale variant
+   earns its emphasis from weight and a rule, not another colour that
+   would have to win contrast against a gradient. */
+.attention-banner--critical .attention-banner__escalation--stale {
+  border-top: 1px solid color-mix(in srgb, var(--color-white) 35%, transparent);
+  padding-top: var(--spacing-2xs);
+  margin-top: var(--spacing-2xs);
+}
+/* `--pill-critical-text` (not `--color-critical`) — the -text tokens are
+   the ones specced for readable text on a tint, which is exactly what
+   the warning banner's background is. */
+.attention-banner--warning .attention-banner__escalation--stale {
+  color: var(--pill-critical-text);
+}
+
 [data-theme="dark"] .attention-banner--warning {
   background: rgba(251, 191, 36, 0.12);
   color: #FDE68A;

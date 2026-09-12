@@ -385,7 +385,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const locLabel = urgentCritical.locationDescription || urgentCritical.location_description || 'Barangay Area';
       alertTextEl.textContent = `PRIORITY ALERT: ${typeLabel} in ${locLabel} - Requires immediate dispatch`;
       alertBtnEl.onclick = async () => {
-        await promptDispatchTanod({ incident: urgentCritical, incidentTypeLabel: typeLabel, eligibleTanods });
+        await promptDispatchTanod({ incident: urgentCritical, incidentTypeLabel: typeLabel, eligibleTanods, tanodPositions: gpsItems });
         onQueueChanged();
       };
     } else {
@@ -427,7 +427,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         const incident = pendingIncidents.find((i) => i.incidentId === incidentId);
         if (!incident) return;
         const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
-        const dispatched = await promptDispatchTanod({ incident, incidentTypeLabel: typeLabel, eligibleTanods });
+        const dispatched = await promptDispatchTanod({ incident, incidentTypeLabel: typeLabel, eligibleTanods, tanodPositions: gpsItems });
         if (dispatched) onQueueChanged();
       },
     );
@@ -557,7 +557,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
           e.stopPropagation();
           dispatchBtn.disabled = true;
           const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
-          const dispatched = await promptDispatchTanod({ incident: item, incidentTypeLabel: typeLabel, eligibleTanods });
+          const dispatched = await promptDispatchTanod({ incident: item, incidentTypeLabel: typeLabel, eligibleTanods, tanodPositions: gpsItems });
           if (dispatched) {
             onQueueChanged();
           } else {
