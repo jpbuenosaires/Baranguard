@@ -31,22 +31,25 @@ on any list:
 
 ## F. Audit remediation (2026-09-07) — gates Sprint 8
 
-### 🔴 F1. The API is published to the public internet
-`web/index.html:142`, uncommitted, points at a Cloudflare quick tunnel
-(`https://wheels-howto-obvious-describing.trycloudflare.com/api/v1`) on a
-system §1 defines as LAN-only, no cloud. `backend/.env` sets no
-`CORS_ALLOWED_ORIGIN`, so the API answers `*`.
+### 🔴 F1. The API base URL is still an undecided placeholder, not a real deployment value
+`web/index.html:142` in committed `HEAD` points at `http://127.0.0.1:8140/api/v1`
+(disposable `baranguard_uiseed` preview DB) on a system §1 defines as
+LAN-only, no cloud. `backend/.env` sets no `CORS_ALLOWED_ORIGIN`, so the
+API answers `*`. **The 2026-09-07 public Cloudflare tunnel value that
+used to sit here uncommitted is gone** — a 2026-09-12 session pointed the
+working tree at `http://localhost:8081/api/v1` instead, purely to
+browser-verify that session's own changes, and deliberately left it
+uncommitted rather than pushing a different guess. **The actual decision
+— what `BARANGUARD_API_BASE_URL` should be in a real deployment — has
+still never been made.** Whichever value is chosen, remember the
+second-order effect: a tunnel (or anything else that puts every client
+behind one shared address) **defeats the citizen-report rate limit** —
+`CitizenReportsController::submit()` throttles on `REMOTE_ADDR`, so all
+citizens would share one bucket and one spammer locks out the barangay.
 
-Second-order effect worth its own line: it **defeats the citizen-report
-rate limit**. `CitizenReportsController::submit()` throttles on
-`REMOTE_ADDR`, which behind a tunnel is the same local address for every
-submitter — so all citizens share one bucket and one spammer locks out
-the barangay.
-
-Committed `HEAD` is also wrong, just less dangerously: `8140`, the
-disposable `baranguard_uiseed` preview DB. **Decide the intended value
-and set it.** Nothing else in this file can be verified honestly until
-this is settled — a browser pass against preview data proves nothing.
+**Decide the intended value and commit it.** Nothing else in this file
+can be verified honestly until this is settled — a browser pass against
+preview data proves nothing about production.
 
 ### 🔴 F2. Stored XSS reaches the Secretary session from an anonymous attacker
 `POST /citizen-reports` is unauthenticated and stores `description`
@@ -178,12 +181,15 @@ apparently not fast enough to complete even one generation within the
 300s default timeout, which is real evidence for why a more capable
 machine matters here, not just an assumption.
 
-**A concrete path now exists:** `eval-kit/` (new top-level folder, see
-DEVLOG) is a small (316K), self-contained package — a friend with
-possibly-faster hardware runs it via one `.bat` double-click, entirely
-locally (no DB, no project secrets leave this workstation), and sends
-back a results file. It paces itself (20-record batches, 2-minute rests)
-and checkpoints so a multi-hour run survives being closed and resumed.
+**A concrete path now exists:** `eval-kit/` is a small (316K),
+self-contained package — a friend with possibly-faster hardware runs it
+via one `.bat` double-click, entirely locally (no DB, no project secrets
+leave this workstation), and sends back a results file. It paces itself
+(20-record batches, 2-minute rests) and checkpoints so a multi-hour run
+survives being closed and resumed. **Committed and pushed 2026-09-12**
+(`69c7bf3`) — it had actually existed uncommitted since 2026-09-07 and
+only reached git this session; still nobody has run it on hardware that
+can finish a generation.
 
 Must still confirm, once a run actually completes somewhere:
 - No `<think>` block survives into `draft_redacted_narrative`
@@ -349,12 +355,15 @@ drains on whatever next sync trigger exists.
   never investigated, safe to drop after a look.
 - ✅ The three empty untracked files in the repo root (`cls`, `git`,
   `main)`) are **gone** — confirmed 2026-09-07, nothing to do.
-- 🟢 Seven untracked design-doc artifacts sit in the repo root instead
-  and have done for several sessions:
+- 🟢 Eight untracked design-doc/scratch artifacts sit in the repo root
+  and `docs/` and have done for several sessions:
   `Baranguard_System_Design_Document.docx`/`.pdf`, four `diagram_*.png`,
-  and `scratch_diagrams.py`. Commit them under `docs/`, or gitignore
-  them — but decide, rather than letting them keep riding along
-  untracked where `git add -A` could sweep them in.
+  `scratch_diagrams.py`, and `docs/progress-tracker.html`. Still
+  undecided as of 2026-09-12, despite six other uncommitted changes from
+  around the same period finally landing that session (see DEVLOG).
+  Commit them under `docs/`, or gitignore them — but decide, rather than
+  letting them keep riding along untracked where `git add -A` could
+  sweep them in.
 - 🟢 `mobile/android/` is gitignored but now holds real, non-regeneratable
   fixes (`gradle.properties`, manifest permissions). `npx cap sync` is
   safe; `npx cap add android` would destroy them. Decide whether to
