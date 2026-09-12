@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Sms\CitizenUpdateNotifier;
 use PDO;
 
 /**
@@ -340,6 +341,15 @@ final class CitizenReportsController
             }
             throw $e;
         }
+
+        // AFTER the commit, deliberately. The conversion is the records
+        // action and must stand on its own; texting the reporter is a
+        // courtesy that follows it. Inside the transaction, a gateway
+        // timeout would roll back a completed conversion, and an SMS
+        // already handed to Semaphore cannot be un-sent by a rollback
+        // anyway — so the only correct order is commit first, notify
+        // second. The notifier swallows its own failures.
+        CitizenUpdateNotifier::notifyReceived($pdo, $reportId);
 
         Http::send(200, [
             'incident_id' => $incidentId,

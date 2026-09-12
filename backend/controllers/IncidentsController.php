@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Sms\CitizenUpdateNotifier;
 use PDO;
 
 /**
@@ -775,6 +776,19 @@ final class IncidentsController
         } catch (\Throwable $e) {
             $pdo->rollBack();
             throw $e;
+        }
+
+        // Close the loop with the citizen who reported it, if this
+        // incident came from a citizen report AND they left a number.
+        // Both conditions are checked inside the notifier; most incidents
+        // are staff- or Tanod-filed and no report row exists, in which
+        // case this does nothing. After the commit, and best-effort, for
+        // the same reasons the conversion path documents.
+        $reportStmt = $pdo->prepare('SELECT report_id FROM citizen_report WHERE incident_id = :incident_id LIMIT 1');
+        $reportStmt->execute(['incident_id' => $incidentId]);
+        $linkedReportId = $reportStmt->fetchColumn();
+        if ($linkedReportId !== false) {
+            CitizenUpdateNotifier::notifyResolved($pdo, (int) $linkedReportId);
         }
 
         Http::send(200, ['incident_id' => $incidentId, 'status' => 'resolved']);
