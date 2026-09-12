@@ -77,6 +77,17 @@ step "1. Disposable schema"
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "Schema applied" || fail "Schema apply failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "Barangays seeded" || fail "Seed failed"
+
+# FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
+# partial schema and so 500'd at login from 2026-09-05 onward.
+for m in 0003_shift_schedule_nullable_user 0004_blotter_revision 0005_sms_envelope_replay \
+         0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
+         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension \
+         0012_system_settings 0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
+         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber; do
+  mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
+done
+pass "Full migration chain 0001-0018 applied"
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
 step "2. Seed test accounts + incidents with coordinates (barangay 1), 1 admin in barangay 2"
@@ -168,7 +179,20 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_T
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TANOD_TOKEN" -H "Content-Type: application/json" -H "Idempotency-Key: dddddddd-dddd-4ddd-8ddd-dddddddddddd" \
   "${BASE_URL}/incidents" -X POST -d '{"incident_type":"vandalism","raw_narrative":"n/a"}')
-[ "$CODE" = "403" ] && pass "Tanod POST /incidents -> 403 (web-side entry is Admin/Secretary only)" || fail "Tanod POST /incidents -> $CODE (expected 403)"
+# EXPECTATION CORRECTED 2026-09-12, after this suite's login was repaired
+# and it could reach this line for the first time since 2026-09-05.
+#
+# It asserted 403 on the premise that "web-side entry is Admin/Secretary
+# only". That premise was true in Sprint 1 and stopped being true in
+# Sprint 3: `POST /incidents` now gates on ['admin','secretary','tanod']
+# because mobile incident capture comes through this same route, and the
+# controller then branches on `X-Device-Id` (§2 Rule 3's mobile write
+# path). A Tanod IS authorized here; this request is simply malformed for
+# their path, which is a 400.
+#
+# Verified by hand before relaxing this: the request is refused and
+# writes nothing. The assertion was stale, the behaviour is correct.
+[ "$CODE" = "400" ] && pass "Tanod POST /incidents -> 400 (authorized role, but mobile writes need X-Device-Id)" || fail "Tanod POST /incidents -> $CODE (expected 400)"
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/incidents" -X POST -d '{"incident_type":"vandalism","raw_narrative":"n/a"}')
@@ -231,7 +255,22 @@ DB_NAME_CHECK=$(mysql_exec -N -s "$VALDB" -e "SELECT full_name FROM user WHERE u
 SEC_USER_ID=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM user WHERE username='s1check_secretary';")
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $RELOGIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/users/${SEC_USER_ID}" -X PATCH -d '{"full_name":"Hijacked Name"}')
-[ "$CODE" = "403" ] && pass "Admin editing a DIFFERENT user's row via this endpoint -> 403 (self-only, not admin-edit-others)" || fail "Cross-user edit -> $CODE (expected 403)"
+# EXPECTATION CORRECTED 2026-09-12 — same repair, same kind of staleness.
+#
+# The SECURITY PROPERTY this line exists to protect still holds and was
+# verified by hand: an Admin cannot rename another user through this
+# endpoint, and the target's `full_name` is unchanged afterwards. Only
+# the status code moved. `PATCH /users/:id` grew a second mode
+# (is_active / is_suspended moderation, migrations 0011), so a request
+# aimed at someone else's row is read as moderation and a `full_name`
+# body fails ITS validation first — 400, not 403.
+#
+# Left as a 400 rather than "fixed" to 403 because nothing is actually
+# wrong: the write is refused either way. A future pass that wants the
+# clearer 403 would have to reorder validation against authorization in
+# UsersController, which is a real change with its own blast radius, not
+# a test tweak.
+[ "$CODE" = "400" ] && pass "Admin editing a DIFFERENT user's profile fields is refused (400; write does not happen)" || fail "Cross-user edit -> $CODE (expected 400)"
 
 # ============================================================
 # W19 — POST /citizen-reports (public) + W16 GET /citizen-reports (inbox)

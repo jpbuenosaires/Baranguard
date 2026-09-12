@@ -486,41 +486,67 @@ forbids shipping a control that looks functional and does nothing.
 
 ## 9. Verification suites (all green — re-run before trusting a change)
 
+**Every count below was re-measured on 2026-09-12.** Nine of these were
+listed green while being completely dead — see the warning box after the
+table. Do not update a number here without re-running the suite.
+
 | Script | Checks |
 |---|---|
 | `verify-sprint0.sh` | 19 |
-| `verify-sprint1-auth.sh` | 22 |
-| `verify-w2-reports.sh` | 30 |
-| `verify-w3-w4-dispatch-gis.sh` | 37 |
-| `verify-sprint1-remaining.sh` | 34 |
-| `verify-scheduler-fatigue.sh` | 42 |
-| `verify-devices-map-packages.sh` | 54 |
-| `verify-duty-status-map-upload.sh` | 40 |
-| `verify-sprint4.sh` | 48 |
-| `verify-sprint4-phase2-3.sh` | 69 |
-| `verify-sprint6.sh` | all green (re-runs 2026-09-10) |
+| `verify-sprint1-auth.sh` | 23 |
+| `verify-w2-reports.sh` | 31 |
+| `verify-w3-w4-dispatch-gis.sh` | 38 |
+| `verify-sprint1-remaining.sh` | 35 |
+| `verify-scheduler-fatigue.sh` | 43 |
+| `verify-devices-map-packages.sh` | 55 |
+| `verify-duty-status-map-upload.sh` | 41 |
+| `verify-sprint4.sh` | 50 |
+| `verify-sprint4-phase2-3.sh` | 70 |
+| `verify-sprint6.sh` | 110 |
 | `verify-sprint7-retention.sh` | 76 (was 62; +14 for migration 0016's hold/scrub rules) |
 | `verify-sprint7-audit.sh` | 52 |
 | `verify-sprint7-pentest-incidents.sh` | 68 |
-| `verify-ai-tools.sh` | 63 (new 2026-09-10) |
+| `verify-ai-tools.sh` | 63 |
 | `restore-drill.sh` | 12 (against the real DB) |
-| `verify-web-wiring.mjs` | 508 (moves as screens change; see §6 above) |
+| `verify-web-wiring.mjs` | 518 (moves as screens change; see §6 above) |
 | `mobile: verify.schema` | 113 |
 
 All use a disposable database + disposable app user + throwaway port and
 never touch the real `baranguard` database.
 
-> **⚠️ Every suite that logs in was silently broken from 2026-09-05 to
-> 2026-09-10, and this table said otherwise the whole time.** Migration
-> 0011 added `user.is_suspended`, `AuthController::login()` selects it,
-> but sprint6 / sprint7-retention / sprint7-pentest-incidents /
-> sprint7-audit each applied only their own sprint's subset of
-> migrations — so every login 500'd and each suite exited at setup
-> without reaching one assertion. All four now apply the FULL chain
-> 0001-0015. **Never pin a suite to a partial schema:** it expires the
-> next time a migration touches a table the suite logs in through, and it
-> fails in the one way that looks like infrastructure trouble rather than
-> a stale script. Counts above are what they report now, re-measured.
+> **⚠️ Every suite that logs in was silently broken from 2026-09-05, and
+> this table said otherwise for a week.** Migration 0011 added
+> `user.is_suspended`, `AuthController::login()` selects it, but each
+> suite applied only its own sprint's subset of migrations — so every
+> login 500'd and the suite exited at setup without reaching one
+> assertion.
+>
+> **This was found twice.** On 2026-09-10 four suites were repaired
+> (sprint6, sprint7-retention, sprint7-pentest-incidents, sprint7-audit)
+> and the problem was believed closed. On **2026-09-12** a routine
+> regression run caught `verify-sprint4-phase2-3.sh` failing at "Login
+> failed", and a systematic check —"which suites log in but never apply
+> 0011?"— found **nine more**: sprint1-auth, sprint1-remaining,
+> w2-reports, w3-w4-dispatch-gis, scheduler-fatigue,
+> devices-map-packages, duty-status-map-upload, sprint4, and
+> sprint4-phase2-3. All nine had been dead for a week while listed green
+> here. All now apply the FULL chain 0001-0018.
+>
+> **Two real findings surfaced the moment sprint1-remaining could reach
+> its assertions again**, both stale Sprint-1 expectations rather than
+> defects, both verified by hand before the assertion was relaxed:
+> `POST /incidents` now legitimately admits `tanod` (mobile capture came
+> through this route in Sprint 3) so a Tanod without `X-Device-Id` gets
+> 400, not 403; and an Admin editing another user's profile fields is
+> refused with 400 rather than 403 because `PATCH /users/:id` grew a
+> second moderation mode — the write still does not happen.
+>
+> **Never pin a suite to a partial schema:** it expires the next time a
+> migration touches a table the suite logs in through, and it fails in
+> the one way that looks like infrastructure trouble rather than a stale
+> script. **And when you find this class of bug, check EVERY suite, not
+> the ones in front of you** — that is the whole reason it took two
+> passes. Counts above are what they report now, re-measured.
 
 ---
 
