@@ -20,6 +20,9 @@ import {
   getSmsLogs,
   getUsers,
   queueSmsCompose,
+  getSmsSubscribers,
+  addSmsSubscriber,
+  optOutSmsSubscriber,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -210,7 +213,19 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
     <span>Activity Log</span>
   `;
 
+  // Advisory subscribers (migration 0018). Admin-only in the UI too —
+  // the server enforces it regardless, but offering a tab that only
+  // 403s would be a control that does nothing (§2 Rule 6).
+  const subscribersTabBtn = document.createElement('button');
+  subscribersTabBtn.type = 'button';
+  subscribersTabBtn.className = 'page-tab';
+  subscribersTabBtn.innerHTML = `
+    <span class="page-tab__icon" aria-hidden="true">${icons.users(16)}</span>
+    <span>Advisory List</span>
+  `;
+
   tabRow.append(conversationsTabBtn, activityTabBtn);
+  if (user.role === 'admin') tabRow.append(subscribersTabBtn);
   tabBar.appendChild(tabRow);
   header.appendChild(tabBar);
 
@@ -223,6 +238,7 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   function syncTabs() {
     conversationsTabBtn.classList.toggle('is-active', activeTab === 'conversations');
     activityTabBtn.classList.toggle('is-active', activeTab === 'activity-log');
+    subscribersTabBtn.classList.toggle('is-active', activeTab === 'subscribers');
   }
 
   conversationsTabBtn.addEventListener('click', () => {
@@ -233,6 +249,12 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
 
   activityTabBtn.addEventListener('click', () => {
     activeTab = 'activity-log';
+    syncTabs();
+    renderActiveTab();
+  });
+
+  subscribersTabBtn.addEventListener('click', () => {
+    activeTab = 'subscribers';
     syncTabs();
     renderActiveTab();
   });
@@ -282,6 +304,8 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
         updateUnreadBadge, navigate, initialPhone,
         (fn) => { composerStop = fn; },
       );
+    } else if (activeTab === 'subscribers') {
+      renderSubscribersTab(body);
     } else {
       renderActivityLogTab(body, pageHeader, navigate);
     }
@@ -291,6 +315,236 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   renderActiveTab();
 
   return { stop: stopAllPolling };
+}
+
+// ============================================================
+// Advisory List Tab (migration 0018)
+// ============================================================
+
+const CONSENT_SOURCE_LABELS = {
+  walk_in: 'Walk-in / signed at the hall',
+  staff_entry: 'Recorded by staff',
+  sms_keyword: 'Texted in to subscribe',
+};
+
+/**
+ * Manages the consented recipients of barangay-wide advisories.
+ *
+ * THE WHOLE SCREEN IS ABOUT CONSENT, not about collecting numbers. The
+ * form cannot be submitted without saying how consent was obtained,
+ * because the server will not accept it without that either — the UI is
+ * not the control, it just refuses to pretend otherwise. Opted-out
+ * entries stay listed, greyed, with the date they withdrew: that record
+ * is the proof the withdrawal was honoured, and hiding it would make the
+ * list look tidier while making the barangay less able to answer for
+ * itself.
+ *
+ * All four states (§8): loading, error-with-retry, empty, populated.
+ */
+function renderSubscribersTab(container) {
+  container.innerHTML = '';
+
+  const intro = document.createElement('p');
+  intro.className = 'note';
+  intro.textContent = 'Residents who have agreed to receive barangay-wide advisories (flood, curfew, suspension of classes). '
+    + 'Numbers collected for incident reports are deliberately NOT reusable here — consent for one purpose is not consent for another '
+    + 'under the Data Privacy Act, so every entry records how agreement was obtained.';
+  container.appendChild(intro);
+
+  const formCard = document.createElement('div');
+  formCard.className = 'card sms-subscriber-form';
+  const form = document.createElement('form');
+  form.className = 'sms-subscriber-form__row';
+
+  const numberInput = document.createElement('input');
+  numberInput.type = 'tel';
+  numberInput.placeholder = 'Mobile number';
+  numberInput.setAttribute('aria-label', 'Subscriber mobile number');
+  numberInput.required = true;
+
+  const sourceSelect = document.createElement('select');
+  sourceSelect.setAttribute('aria-label', 'How consent was obtained');
+  // No blank option and no pre-selected "default" that could be accepted
+  // without a decision — the first entry is a prompt that fails
+  // validation if left as-is.
+  const prompt = document.createElement('option');
+  prompt.value = '';
+  prompt.textContent = 'How was consent given?';
+  sourceSelect.appendChild(prompt);
+  for (const [value, label] of Object.entries(CONSENT_SOURCE_LABELS)) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    sourceSelect.appendChild(opt);
+  }
+
+  const noteInput = document.createElement('input');
+  noteInput.type = 'text';
+  noteInput.placeholder = 'Note (optional) — e.g. barangay assembly list';
+  noteInput.setAttribute('aria-label', 'Consent note');
+  noteInput.maxLength = 255;
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'submit';
+  addBtn.className = 'primary';
+  addBtn.textContent = 'Add subscriber';
+
+  form.append(numberInput, sourceSelect, noteInput, addBtn);
+  formCard.appendChild(form);
+  container.appendChild(formCard);
+
+  const listHost = document.createElement('div');
+  container.appendChild(listHost);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const contactNumber = numberInput.value.trim();
+    const consentSource = sourceSelect.value;
+    if (contactNumber === '') {
+      showToast('Enter the mobile number.', { variant: 'error' });
+      return;
+    }
+    if (consentSource === '') {
+      showToast('Select how consent was obtained — it cannot be left blank.', { variant: 'error' });
+      return;
+    }
+    addBtn.disabled = true;
+    try {
+      await addSmsSubscriber({ contactNumber, consentSource, consentNote: noteInput.value.trim() });
+      showToast('Subscriber added.', { variant: 'success' });
+      numberInput.value = '';
+      noteInput.value = '';
+      sourceSelect.value = '';
+      await load();
+    } catch (err) {
+      showToast(err instanceof ApiClientError ? err.message : 'Could not add the subscriber.', { variant: 'error' });
+    } finally {
+      addBtn.disabled = false;
+    }
+  });
+
+  async function load() {
+    listHost.innerHTML = '';
+    const loading = document.createElement('p');
+    loading.className = 'note';
+    loading.textContent = 'Loading subscribers…';
+    listHost.appendChild(loading);
+
+    let data;
+    try {
+      data = await getSmsSubscribers();
+    } catch (err) {
+      listHost.innerHTML = '';
+      const error = document.createElement('div');
+      error.className = 'card';
+      const msg = document.createElement('p');
+      msg.textContent = err instanceof ApiClientError ? err.message : 'Could not load the advisory list.';
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'ghost';
+      retry.textContent = 'Retry';
+      retry.addEventListener('click', () => load());
+      error.append(msg, retry);
+      listHost.appendChild(error);
+      return;
+    }
+
+    listHost.innerHTML = '';
+
+    const strip = document.createElement('div');
+    strip.className = 'stat-card-grid';
+    for (const [label, value] of [['Active subscribers', data.activeCount], ['Total on record', data.totalCount]]) {
+      const cell = document.createElement('div');
+      cell.className = 'stat-card';
+      const v = document.createElement('span');
+      v.className = 'stat-card__value';
+      v.textContent = String(value);
+      const l = document.createElement('span');
+      l.className = 'stat-card__label';
+      l.textContent = label;
+      cell.append(v, l);
+      strip.appendChild(cell);
+    }
+    listHost.appendChild(strip);
+
+    if (data.items.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'note';
+      empty.textContent = 'No one has subscribed yet. A barangay-wide advisory will reach nobody until residents opt in.';
+      listHost.appendChild(empty);
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'data-table';
+    table.innerHTML = '<thead><tr><th>Number</th><th>Consent</th><th>Recorded</th><th>Status</th><th></th></tr></thead>';
+    const tbody = document.createElement('tbody');
+
+    for (const item of data.items) {
+      const tr = document.createElement('tr');
+      if (item.optedOutAt) tr.className = 'is-opted-out';
+
+      const num = document.createElement('td');
+      num.textContent = item.contactNumber;
+
+      const consent = document.createElement('td');
+      consent.textContent = CONSENT_SOURCE_LABELS[item.consentSource] || item.consentSource;
+      if (item.consentNote) {
+        const note = document.createElement('small');
+        note.className = 'sms-subscriber-note';
+        note.textContent = item.consentNote;
+        consent.appendChild(document.createElement('br'));
+        consent.appendChild(note);
+      }
+
+      const when = document.createElement('td');
+      when.textContent = item.consentAt ? new Date(item.consentAt).toLocaleDateString() : '—';
+
+      const status = document.createElement('td');
+      const pill = document.createElement('span');
+      pill.className = `status-pill ${item.optedOutAt ? 'status-pill--neutral' : 'status-pill--success'}`;
+      pill.textContent = item.optedOutAt ? 'Opted out' : 'Subscribed';
+      status.appendChild(pill);
+      if (item.optedOutAt) {
+        const date = document.createElement('small');
+        date.className = 'sms-subscriber-note';
+        date.textContent = `on ${new Date(item.optedOutAt).toLocaleDateString()}`;
+        status.appendChild(document.createElement('br'));
+        status.appendChild(date);
+      }
+
+      const action = document.createElement('td');
+      if (!item.optedOutAt) {
+        const out = document.createElement('button');
+        out.type = 'button';
+        out.className = 'ghost';
+        out.textContent = 'Opt out';
+        out.addEventListener('click', async () => {
+          const ok = await confirmDialog({
+            title: 'Record opt-out?',
+            message: `${item.contactNumber} will stop receiving barangay advisories. The record is kept, not deleted, so the withdrawal can be shown to have been honoured.`,
+            confirmLabel: 'Record opt-out',
+          });
+          if (!ok) return;
+          try {
+            await optOutSmsSubscriber(item.subscriberId);
+            showToast('Opt-out recorded.', { variant: 'success' });
+            await load();
+          } catch (err) {
+            showToast(err instanceof ApiClientError ? err.message : 'Could not record the opt-out.', { variant: 'error' });
+          }
+        });
+        action.appendChild(out);
+      }
+
+      tr.append(num, consent, when, status, action);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    listHost.appendChild(table);
+  }
+
+  load();
 }
 
 // ============================================================

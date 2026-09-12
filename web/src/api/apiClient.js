@@ -968,6 +968,49 @@ export async function getSystemHealthHistory() {
   };
 }
 
+// --- Advisory subscribers (migration 0018, Admin only) ---------------------
+
+/**
+ * GET /sms/subscribers — includes opted-out rows deliberately: the
+ * withdrawal record is part of what has to stay visible, not something
+ * to hide once honoured.
+ */
+export async function getSmsSubscribers() {
+  const json = await request('GET', '/sms/subscribers', { auth: true });
+  return {
+    activeCount: json.active_count,
+    totalCount: json.total_count,
+    items: (json.items || []).map((row) => ({
+      subscriberId: row.subscriber_id,
+      contactNumber: row.contact_number,
+      consentAt: row.consent_at,
+      consentSource: row.consent_source,
+      consentNote: row.consent_note,
+      optedOutAt: row.opted_out_at,
+      createdAt: row.created_at,
+    })),
+  };
+}
+
+/**
+ * POST /sms/subscribers. `consentSource` is required by the server and
+ * has no default — a resident cannot be added to the advisory list
+ * without recording how their consent was obtained (RA 10173).
+ */
+export async function addSmsSubscriber({ contactNumber, consentSource, consentNote }) {
+  const json = await request('POST', '/sms/subscribers', {
+    body: { contact_number: contactNumber, consent_source: consentSource, consent_note: consentNote || null },
+    auth: true,
+  });
+  return { subscriberId: json.subscriber_id };
+}
+
+/** PATCH /sms/subscribers/:id/opt-out — records a withdrawal, never deletes. */
+export async function optOutSmsSubscriber(subscriberId) {
+  const json = await request('PATCH', `/sms/subscribers/${subscriberId}/opt-out`, { auth: true });
+  return { subscriberId: json.subscriber_id, optedOutAt: json.opted_out_at };
+}
+
 /**
  * GET /audit-log — §6, §9 W17 (Admin only, own barangay, newest-first).
  * Defaults to the last 7 days server-side when no range is given, per

@@ -1522,3 +1522,33 @@
   font-size: 0.8125rem;
 }
 
+
+/* ==========================================================================
+   Advisory List tab (migration 0018)
+   ========================================================================== */
+
+.sms-subscriber-form {
+  padding: var(--pad-panel);
+  margin-bottom: var(--spacing-md);
+}
+
+.sms-subscriber-form__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+.sms-subscriber-form__row input[type="tel"] { flex: 0 1 12rem; }
+.sms-subscriber-form__row input[type="text"] { flex: 1 1 16rem; min-width: 0; }
+.sms-subscriber-form__row select { flex: 0 1 16rem; }
+
+.sms-subscriber-note {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+/* An opted-out row stays visible on purpose — it is the record that the
+   withdrawal was honoured — but recedes so the active list reads first. */
+.data-table tr.is-opted-out td {
+  opacity: 0.62;
+}
