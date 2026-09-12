@@ -10267,3 +10267,116 @@ running where it looked like it was running. Worth remembering as a
 live instance of §8's documented env-precedence hazard: the fix was
 `DB_NAME=baranguard php ...` (an already-set env var wins over `.env`),
 and the demo DB needed the migration too.
+
+## 2026-09-12 (3) — The 14-item feature backlog worked to completion in phases; nine MORE dead verify suites found
+
+User asked for the whole §G feature-candidate list, in phases. Ran as
+five phases across migrations 0017 and 0018. **The most important thing
+that came out of it was not a feature** — see the last section.
+
+### Outcome of all 14
+
+Built (6): nearest-Tanod dispatch ranking · stale-urgent escalation ·
+Lupon packet verification code · health-check history · closing-the-loop
+SMS · public transparency report · consented advisory broadcast list.
+(That is 7 — the count below reconciles because two of the original 14
+turned out to already exist.)
+
+**Already shipped, found by looking before building (4):** redaction
+diff view (an LCS word-level diff, landed in `27d6cc9`); backup-staleness
+warning; two-way SMS console; PB digest (`/reports/export?format=pdf`,
+already PB-accessible — verified by generating one as `kapitan.dao`).
+Checking first is what `SPRINTS.md`'s "never regenerate what's already
+built" is for, and it paid four times here.
+
+**Deliberately not built (3), each for a stated reason rather than
+skipped:** backup/second responder reopens the "one active dispatch per
+incident" resolved decision and needs an architecture review;
+evidence-access audit has literally nothing to audit (nothing writes
+`evidence_attachment`, no download route, table empty — auditing the one
+surviving read would record "someone listed zero files", the §2 Rule 6
+shape); client-side photo compression belongs to F4's upload work, as
+that entry always said.
+
+### Three judgement calls worth keeping
+
+**The transparency report's suppression floor is the feature.** Counts
+only, no location at any level, monthly buckets, and categories under 5
+POOLED rather than dropped — dropping silently stops the parts summing
+to the total and leaks the hidden number by subtraction. Verified both
+directions: with demo data all 11 types fall under the floor and pool
+into one entry; after pushing theft above it, theft publishes by name
+and the other 8 stay pooled, totals reconciling to 24 both times. No
+response-time figure, because F8's double-count means publishing one
+would publish a known-wrong number to the public.
+
+**An APCu rate limiter was written for that endpoint and then deleted.**
+APCu is not loaded on this XAMPP build, so it was a control that looked
+functional and did nothing. The class doc now states the endpoint is
+unthrottled and why copying `CitizenReportsController`'s limiter does
+not work (that one counts the audit rows its own writes produce; this
+one deliberately writes none).
+
+**Consent is a column, not a policy.** `sms_subscriber.consent_at` and
+`consent_source` are NOT NULL, so a subscriber without provenance cannot
+exist; removal is `opted_out_at`, never a DELETE, because proving a
+withdrawal was honoured requires keeping the record OF it. The shortcut
+this prevents is real and tempting: every resident number is already in
+`sms_log` and `citizen_report`, and broadcasting to those would be
+trivial and unlawful — they were given to report an incident, and a
+resident who texted once about a stray dog did not subscribe to curfew
+notices.
+
+### A defect the static checks cannot see, again
+
+`status-pill--warning` was used in `service-health.js` and **defined in
+no stylesheet at all**, so W20's "No Backup Taken" badge — the most
+alarming disaster-recovery state on that screen — rendered with no fill.
+`verify-web-wiring.mjs` cannot catch it: the class is assembled inside a
+ternary in a template literal, invisible to its static extraction. A
+systematic sweep of `status-pill--*` found this was the only genuine
+case; the other seven candidates were substring false positives from
+`shift-status-pill--*` and `gis-personnel-card__status-pill--*`.
+
+### THE FINDING: nine MORE dead verify suites
+
+A routine regression run showed `verify-sprint4-phase2-3.sh` failing at
+"Login failed" — the exact symptom 2026-09-10 documented. That session
+repaired four suites and reasonably concluded the problem was closed.
+
+It was not. Asking the general question — *which suites log in but never
+apply 0011?* — returned **nine**: sprint1-auth, sprint1-remaining,
+w2-reports, w3-w4-dispatch-gis, scheduler-fatigue,
+devices-map-packages, duty-status-map-upload, sprint4, and
+sprint4-phase2-3. Every one had been dead since 2026-09-05, exiting at
+setup without reaching a single assertion, while `REFERENCE.md` §9
+listed each as green with a specific number. Nine suites' worth of the
+evidence base for Sprint 8 readiness was fiction.
+
+All nine now apply the full chain 0001-0018, and every count in §9 was
+re-measured rather than adjusted: sprint0 19, sprint1-auth 23,
+sprint1-remaining 35, w2-reports 31, w3-w4 38, scheduler-fatigue 43,
+devices-map-packages 55, duty-status-map-upload 41, sprint4 50,
+sprint4-phase2-3 70, sprint6 110, retention 76, audit 52, pentest 68,
+ai-tools 63.
+
+**Two real findings surfaced the instant `sprint1-remaining` could reach
+its assertions again**, and both were verified by hand BEFORE the
+assertion was touched — the goal is not to make suites green:
+
+- `Tanod POST /incidents -> 403` assumed web entry was Admin/Secretary
+  only. True in Sprint 1, false since Sprint 3 when mobile capture
+  started using the same route: the gate legitimately admits `tanod`, so
+  a Tanod without `X-Device-Id` gets 400. Confirmed the request writes
+  nothing.
+- `Admin editing another user's row -> 403` now returns 400, because
+  `PATCH /users/:id` grew a moderation mode (0011) and a `full_name`
+  body fails that path's validation first. Confirmed the protective
+  property holds — the target's name is unchanged. Left at 400 rather
+  than "corrected" to 403: reordering validation against authorization
+  in `UsersController` is a real change with its own blast radius, not a
+  test tweak.
+
+**The lesson, recorded in §9's warning box too:** when this class of bug
+turns up, check EVERY suite, not the ones in front of you. Finding it
+twice cost a week of false confidence.

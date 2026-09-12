@@ -13,6 +13,30 @@ lives in `backend/DEVLOG.md` (grep it; don't read it front to back).
 **still gated** by `docs/REMAINING.md` §F — do not open a Sprint 8 box
 while F1-F4 are unresolved. Nothing this session changed that gate.
 
+**The §G feature backlog is worked to completion.** All 14 candidates
+resolved: **7 built** (nearest-Tanod dispatch ranking, stale-urgent
+escalation, Lupon packet verification code, health-check history,
+closing-the-loop citizen SMS, public transparency report, consented
+advisory broadcast list — migrations 0017 and 0018), **4 found already
+shipped** (redaction diff view, backup-staleness warning, two-way SMS
+console, PB digest), and **3 deliberately not built with reasons**
+(second responder needs an architecture review; evidence-access audit
+and photo compression both belong to F4's work). Detail:
+`backend/DEVLOG.md` 2026-09-12 (3), statuses in `REMAINING.md` §G.
+
+**⚠️ NINE MORE VERIFY SUITES WERE DEAD, NOT GREEN — and this is the most
+important thing in this handoff.** The 2026-09-10 session fixed four
+suites pinned to a partial migration chain and believed it closed. A
+routine regression run on 2026-09-12 caught `verify-sprint4-phase2-3.sh`
+failing at "Login failed"; asking the general question — *which suites
+log in but never apply 0011?* — returned nine more. All had been dead
+since 2026-09-05 while `REFERENCE.md` §9 listed each green with a
+specific count. **Nine suites' worth of Sprint 8 evidence was fiction.**
+All nine now apply 0001-0018 and every §9 count has been re-measured.
+Two genuine findings surfaced the moment `sprint1-remaining` could run
+again — both stale Sprint-1 expectations, both verified by hand before
+any assertion was relaxed (see §9's warning box).
+
 **The A1-A7 logic-gap backlog is now swept, and only one item survives.**
 Of the seven: A2/A3/A6 were already done (pure doc fixes applied to the
 Master Reference on 2026-09-07 — verified still present, not taken on
@@ -29,10 +53,10 @@ where the backup contact number lives. Full reasoning, including why
 building G1's logic without its send path was rejected: `backend/DEVLOG.md`
 2026-09-12 (2).
 
-**Migration 0016 is applied to BOTH the real `baranguard` DB and the demo
-`baranguard_uiseed` DB** (2026-09-12, as root; verified up/down/re-up and
-idempotent on a disposable DB first). `verify-sprint7-retention.sh` is
-**76/76**, up from 62.
+**Migrations 0016, 0017 and 0018 are applied to BOTH the real
+`baranguard` DB and the demo `baranguard_uiseed` DB** (2026-09-12, as
+root; each verified up/down/re-up and idempotent on a disposable DB
+first). Every verify suite now applies the full 0001-0018 chain.
 
 **Six sessions' worth of finished, uncommitted work landed and pushed to
 `origin/main` this session** (repo: `github.com/jpbuenosaires/Baranguard`).
@@ -159,7 +183,17 @@ to finish in one sitting.
 
 ## Recommended next step
 
-1. **`REMAINING.md` §F1-F4 first** — settle the real `BARANGUARD_API_BASE_URL`
+**F2 is now the most valuable thing left, and it has been true for a
+while.** Seven features shipped on 2026-09-12 while a P0 sat open in
+which an unauthenticated citizen report can execute script in the
+Secretary session — the one session that can read every `raw_narrative`
+in the barangay. `REMAINING.md`'s own legend calls everything built that
+day 🟢, and §F gates Sprint 8. The fix is mechanical and half-done
+already: `web/src/utils/escapeHtml.js` exists and GIS Live Tracking was
+migrated onto it; the remaining ~40 sites are in the audit with
+file:line evidence. **Do F2/F3 before any more feature work.**
+
+1. **`REMAINING.md` §F1-F4** — settle the real `BARANGUARD_API_BASE_URL`
    value (F1 is a decision now, not a leftover tunnel to rip out), the
    XSS sweep (F2/F3), and the evidence-upload scope call (F4). Nothing
    else can be trusted as "verified against production" until F1 is
