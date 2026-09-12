@@ -450,19 +450,24 @@ is the only one of the four still open.**
 Each is 🟢 unless noted. One-line rationale kept; full discussion was in
 that session's chat, not duplicated here.
 
+**Being worked in phases since 2026-09-12** — Phase 1 and Phase 2 are
+done and committed; Phases 3-5 below are not started. Two items are
+blocked behind other decisions and are marked ⛔ rather than left looking
+merely un-started.
+
 **Dispatch/incident**
-- Nearest-available-Tanod ranking on the dispatch picker — decision support only, reuses existing GPS + duty data.
-- Stale-pending escalation for undispatched high/critical incidents — closes the one gap where only SOS currently escalates urgency.
-- Backup/second responder on critical incidents — reopens the "one active dispatch per incident" resolved decision; warranted for fire/medical, real barangay practice.
+- ✅ **Nearest-available-Tanod ranking on the dispatch picker — DONE 2026-09-12 (Phase 1).** `promptDispatchTanod()` orders by real haversine distance to each Tanod's last GPS fix and labels every option with a measured distance; no fix sorts last as "location unknown", a stale fix shows its age, and a missing incident coordinate falls back to the unranked list. Decision support only — no automatic assignment.
+- ✅ **Stale-pending escalation for undispatched high/critical incidents — DONE 2026-09-12 (Phase 1).** The dashboard attention banner now carries the real measured wait of the oldest un-dispatched high/critical incident and escalates past `STALE_URGENT_MINUTES`, which is documented as a display heuristic and explicitly **not** an SLA — no document in this project defines a dispatch response target.
+- ⛔ **Backup/second responder on critical incidents — NEEDS A DECISION, not code.** It reopens the "one active dispatch per incident" resolved decision and touches Rules 21/28's state machine, so it cannot be built without the architecture review this repo requires for exactly that. Warranted for fire/medical; still warranted; still a decision.
 
 **AI/oversight**
-- Redaction diff view (highlight exactly what was removed) — near-free, pure UI over data already stored.
-- Evidence-access audit — log every *view/download* of `evidence_attachment`, not just upload; closes a real gap in Rule 17's audited-action list.
-- Lupon packet verification hash/QR — small addition, real integrity value for a document that leaves the system into a non-auditable paper context.
+- ✅ **Redaction diff view — ALREADY SHIPPED** (commit `27d6cc9`, found 2026-09-12 while phasing this list). An LCS word-level diff in `ai-review.js` marks which original words survived redaction. It was never listed as done because it landed inside a batch of uncommitted work.
+- ⛔ **Evidence-access audit — BLOCKED BEHIND F4, same as the photo-compression item.** There is nothing to audit: nothing in `backend/` ever writes `evidence_attachment` (F4), there is no download route, and the table is empty. Auditing `GET /incidents/:id/evidence` today would record "someone listed zero files" — an oversight control that can never observe the thing it exists for, which is the §2 Rule 6 shape. Build it **with** F4's upload/download work, not before.
+- ✅ **Lupon packet verification hash — DONE 2026-09-12 (Phase 2).** A SHA-256 over the case content (not the PDF bytes — hashing the file to then print the hash inside it is circular) is printed on the packet as a 16-hex-character grouped code, and recorded in the `lupon_packet_generated` audit row. It is re-derivable: regenerate and compare, and a mismatch means the record was amended after printing or the paper is not ours. The generation timestamp is deliberately excluded so the code is stable. **QR deliberately not built** — a QR encoder in hand-rolled PHP is real work for marginal gain over a transcribable code.
 
 **Resilience**
-- Health-check history, not just current snapshot — cheap, directly serves Rule 15's own stated risk.
-- Backup-staleness warning in W20 — trivial once health history exists; turns a timestamp into something actionable.
+- Health-check history, not just current snapshot — cheap, directly serves Rule 15's own stated risk. *(Phase 3, not started — needs migration 0017.)*
+- Backup-staleness warning in W20 — trivial once health history exists; turns a timestamp into something actionable. *(Phase 3, rides on the item above.)*
 
 **Communication**
 - Closing-the-loop SMS to the citizen reporter ("received"/"resolved") — cheap, reuses the existing outbound pipeline and the contact number already collected for this purpose.
