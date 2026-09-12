@@ -100,6 +100,28 @@ mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CH
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "Schema applied" || fail "Schema apply failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "Barangays seeded" || fail "Seed failed"
 
+# FULL CHAIN, not this sprint's subset (added 2026-09-12).
+#
+# This suite applied 0001+0002 only, which was correct when written and
+# silently stopped being correct on 2026-09-05: migration 0011 added
+# `user.is_suspended`, which AuthController::login() SELECTs, so every
+# login here 500'd and the suite exited without reaching its assertions —
+# while REFERENCE.md §9 kept listing it green. The 2026-09-10 session
+# fixed four suites this way and missed this one.
+#
+# A suite pinned to a partial schema expires the next time a migration
+# touches a table it logs in through, and it fails in the way that looks
+# like infrastructure trouble rather than a stale script. Keep this loop
+# current when adding migrations.
+for m in 0003_shift_schedule_nullable_user 0004_blotter_revision 0005_sms_envelope_replay \
+         0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
+         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension \
+         0012_system_settings 0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
+         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber; do
+  mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
+done
+pass "Full migration chain 0001-0018 applied"
+
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
 TEST_USERNAME="sprint1_check_admin"

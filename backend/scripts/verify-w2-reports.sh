@@ -96,6 +96,17 @@ step "1. Set up disposable schema"
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "Schema applied" || fail "Schema apply failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "Barangays seeded" || fail "Seed failed"
+
+# FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
+# partial schema and so 500'd at login from 2026-09-05 onward.
+for m in 0003_shift_schedule_nullable_user 0004_blotter_revision 0005_sms_envelope_replay \
+         0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
+         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension \
+         0012_system_settings 0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
+         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber; do
+  mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
+done
+pass "Full migration chain 0001-0018 applied"
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
 step "2. Seed test accounts + duty status (barangay 1) + a second-barangay admin"
