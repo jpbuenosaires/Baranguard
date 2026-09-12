@@ -25,6 +25,15 @@ use PDO;
  * only described in prose ("trend[] with a defined date bucket and
  * counts", §9). Resolved decisions, logged in DEVLOG.md:
  *
+ *   - **Fixed 2026-09 (REMAINING.md F8):** an incident with more than one
+ *     arrived dispatch was being averaged once per dispatch row, double-
+ *     (or triple-) counting it against §6's "per incident" definition.
+ *     The query now takes the per-incident MIN(arrived_at) — the first
+ *     responder to reach the scene — so every incident contributes
+ *     exactly one data point. Applies to the summary scalar, the
+ *     per-day response_time_trend[], and the export path's
+ *     averageResponseTimeMinutes() — all three shared the same bug.
+ *
  *   - Query params: optional `date_from` / `date_to` (YYYY-MM-DD,
  *     inclusive, calendar days in Asia/Manila per §5's UI-display-uses-
  *     Asia/Manila rule). Default range when neither is given: trailing 30
@@ -177,12 +186,16 @@ final class ReportsController
         }
 
         $stmt = $pdo->prepare(
-            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.arrived_at)) AS avg_minutes
+            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at)) AS avg_minutes
              FROM incident i
-             JOIN dispatch d ON d.incident_id = i.incident_id
+             JOIN (
+                 SELECT incident_id, MIN(arrived_at) AS first_arrived_at
+                 FROM dispatch
+                 WHERE arrived_at IS NOT NULL
+                 GROUP BY incident_id
+             ) d ON d.incident_id = i.incident_id
              WHERE i.barangay_id = :barangay_id
-               AND i.created_at >= :range_start AND i.created_at < :range_end
-               AND d.arrived_at IS NOT NULL'
+               AND i.created_at >= :range_start AND i.created_at < :range_end'
         );
         $stmt->execute([
             'barangay_id' => $barangayId,
@@ -202,12 +215,16 @@ final class ReportsController
         // facts, same reasoning as the range-level scalar.
         $responseTimeMap = array_fill_keys(array_keys($trendMap), []);
         $stmt = $pdo->prepare(
-            'SELECT i.created_at, TIMESTAMPDIFF(MINUTE, i.created_at, d.arrived_at) AS minutes
+            'SELECT i.created_at, TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at) AS minutes
              FROM incident i
-             JOIN dispatch d ON d.incident_id = i.incident_id
+             JOIN (
+                 SELECT incident_id, MIN(arrived_at) AS first_arrived_at
+                 FROM dispatch
+                 WHERE arrived_at IS NOT NULL
+                 GROUP BY incident_id
+             ) d ON d.incident_id = i.incident_id
              WHERE i.barangay_id = :barangay_id
-               AND i.created_at >= :range_start AND i.created_at < :range_end
-               AND d.arrived_at IS NOT NULL'
+               AND i.created_at >= :range_start AND i.created_at < :range_end'
         );
         $stmt->execute([
             'barangay_id' => $barangayId,
@@ -603,13 +620,17 @@ final class ReportsController
         $rangeEndUtc = $to->setTime(0, 0, 0)->modify('+1 day')->setTimezone($utc)->format('Y-m-d H:i:s');
 
         $stmt = $pdo->prepare(
-            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.arrived_at)) AS avg_minutes
+            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at)) AS avg_minutes
              FROM incident i
-             JOIN dispatch d ON d.incident_id = i.incident_id
+             JOIN (
+                 SELECT incident_id, MIN(arrived_at) AS first_arrived_at
+                 FROM dispatch
+                 WHERE arrived_at IS NOT NULL
+                 GROUP BY incident_id
+             ) d ON d.incident_id = i.incident_id
              WHERE i.barangay_id = :barangay_id
                AND i.created_at >= :range_start
-               AND i.created_at < :range_end
-               AND d.arrived_at IS NOT NULL'
+               AND i.created_at < :range_end'
         );
         $stmt->execute([
             'barangay_id' => $barangayId,
