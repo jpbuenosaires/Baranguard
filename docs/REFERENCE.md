@@ -279,13 +279,15 @@ served by `public/internal.php` — structurally separate from `/api/v1`)
 `{"error":{"code":"...","message":"..."}}`. Pagination: `page`/`limit`,
 default 25, max 100.
 
-> **⚠️ Three routes above still don't match their documented contract** —
-> evidence upload doesn't exist server-side, `PATCH /incidents/:id` isn't
-> actually idempotent, `avg_response_time_minutes` double-counts
-> multi-dispatch incidents, and `POST /citizen-reports` is the head of a
-> stored-XSS chain. Full evidence: `docs/AUDIT_2026-09-07.md` (findings
-> F2–F5, F8); tracked as `docs/REMAINING.md` §F. *(`POST /blotter`'s
-> `200 []` left this list on 2026-09-10 — the endpoint was removed.)*
+> **⚠️ One route above still doesn't match its documented contract:**
+> evidence upload does not exist server-side (F4) — no `POST
+> /incidents/:id/evidence` route, no writer anywhere in `backend/`. Full
+> evidence: `docs/AUDIT_2026-09-07.md`; tracked as `docs/REMAINING.md` §F.
+> *(`POST /blotter`'s `200 []` left this list on 2026-09-10 — the
+> endpoint was removed. The stored-XSS chain through `POST
+> /citizen-reports` (F2/F3), `PATCH /incidents/:id`'s idempotency
+> theatre (F5), and `avg_response_time_minutes`'s double-count (F8) were
+> all fixed and proven 2026-09-12 — see `backend/DEVLOG.md`.)*
 
 ---
 
@@ -350,13 +352,20 @@ until 2026-09-07; the total moves in both directions as screens are
 added and merged — the number that matters is failures = 0).
 
 **Never interpolate server data into an `innerHTML` template.** Use
-`textContent`, or escape. The 2026-09-07 audit found ~45 sites that do
-interpolate unescaped, one of which lets an *unauthenticated* citizen
-report execute script in the Secretary session — the one session that
-can read every `raw_narrative` in the barangay (§2 Rule 1). Three page
-modules each define their own private `escapeHtml`; none applies it
-consistently. See `docs/AUDIT_2026-09-07.md` F2/F3. Note that neither
-`verify-web-wiring.mjs` nor `node --check` can see this class of defect.
+`textContent`, or escape. The 2026-09-07 audit found eleven sites (one
+chain, F2, plus ten more, F3) that interpolated unescaped — one of which
+let an *unauthenticated* citizen report execute script in the Secretary
+session, the one session that can read every `raw_narrative` in the
+barangay (§2 Rule 1). **All eleven were fixed 2026-09-12** using the
+shared `web/src/utils/escapeHtml.js` (`verify-web-wiring.mjs` 536/536
+after the fix). Three page modules (`admin-dashboard.js`,
+`dispatch-center.js`, `gis-live-tracking.js`) still each define their
+own private `escapeHtml` rather than importing the shared one — not a
+defect (each escapes correctly at its own call sites), but real
+duplication a future pass should consolidate. See `docs/AUDIT_2026-09-07.md`
+F2/F3 and `backend/DEVLOG.md` 2026-09-12 (4). Note that neither
+`verify-web-wiring.mjs` nor `node --check` can see this class of defect
+— the fix had to be verified by reading every site, not by a script.
 
 ---
 
