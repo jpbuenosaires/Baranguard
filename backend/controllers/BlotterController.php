@@ -771,9 +771,16 @@ final class BlotterController
             throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'Could not write the Lupon packet.');
         }
 
+        // The verification code goes into the audit trail as well as onto
+        // the paper, so "what did the copy handed to the Lupon on this
+        // date actually say" is answerable later from the system's own
+        // records. Rule 17-safe: a digest is an identifier, and being a
+        // one-way hash it carries none of the narrative it was derived
+        // from.
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'lupon_packet_generated', 'blotter_record', (int) $context['blotter_id'], [
             'incident_id' => (int) $context['incident_id'],
             'revision_no' => (int) $context['revision_no'],
+            'verification_code' => self::formatVerificationCode(self::packetDigest($context)),
         ]);
 
         // API-relative, like map packages' download_url: the server has no
@@ -896,9 +903,74 @@ final class BlotterController
                 . 'been removed under the Data Privacy Act (RA 10173); placeholders such as '
                 . '[NAME] and [ADDRESS] mark where identifying details were withheld.'
             )
+            ->keyValue('Verification code', self::formatVerificationCode(self::packetDigest($context)))
+            ->paragraph(
+                'To verify this printed copy: regenerate the packet for this incident in '
+                . 'Baranguard and compare the verification code above. The code is derived '
+                . 'from the case content itself, so it stays the same on every regeneration '
+                . 'of an unchanged record — a code that no longer matches means the record '
+                . 'was amended after this copy was printed, or this copy did not come from '
+                . 'this system. It is an integrity check, not a signature.'
+            )
             ->paragraph('Generated ' . self::formatManilaTime(gmdate('Y-m-d H:i:s')) . ' (Asia/Manila).');
 
         return $pdf->render();
+    }
+
+    /**
+     * SHA-256 over the case content this packet asserts.
+     *
+     * WHY CONTENT AND NOT THE PDF BYTES: the code has to be printed ON the
+     * document, and hashing the finished file to then print the hash
+     * inside it is circular. Hashing the source fields also gives the
+     * property that actually matters on paper — the code is
+     * RE-DERIVABLE. A Secretary holding a printout regenerates the packet
+     * and compares; equal means the record still says what the paper
+     * says, different means it was amended since (or the paper is not
+     * ours). Hashing bytes would only ever prove a file matched itself.
+     *
+     * The generation timestamp is deliberately NOT an input — including
+     * it would make every regeneration produce a different code and
+     * destroy the only property being sold here. Field boundaries are
+     * length-prefixed so no combination of contents can be re-split into
+     * a different-but-colliding record.
+     *
+     * @param array<string,mixed> $context
+     */
+    private static function packetDigest(array $context): string
+    {
+        $fields = [
+            (string) (int) $context['incident_id'],
+            (string) $context['incident_type'],
+            (string) $context['created_at'],
+            (string) (int) $context['blotter_id'],
+            (string) (int) $context['revision_no'],
+            (string) $context['finalized_at'],
+            (string) ($context['amended_at'] ?? ''),
+            (string) $context['redaction_approved_at'],
+            (string) $context['narrative_summary'],
+            (string) $context['redacted_narrative'],
+        ];
+        $canonical = '';
+        foreach ($fields as $value) {
+            $canonical .= strlen($value) . ':' . $value . "\n";
+        }
+        return hash('sha256', $canonical);
+    }
+
+    /**
+     * First 16 hex characters, in groups of four.
+     *
+     * Truncated because a human has to read this off paper and type it
+     * back, and 64 characters would not survive that. 64 bits is far more
+     * than enough for the threat here — catching an amended or
+     * substituted case packet, not resisting a funded collision attack.
+     * Uppercased and grouped for transcription, same reason map-package
+     * checksums are displayed grouped in W18.
+     */
+    private static function formatVerificationCode(string $digest): string
+    {
+        return implode('-', str_split(strtoupper(substr($digest, 0, 16)), 4));
     }
 
     /**
