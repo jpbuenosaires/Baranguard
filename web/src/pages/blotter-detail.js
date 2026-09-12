@@ -45,6 +45,7 @@ import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { AiToolPanel } from '../components/AiToolPanel.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -103,38 +104,38 @@ function openPrintModal(incident, blotter, evidence) {
       <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;padding:0.75rem 1rem;border-radius:6px;margin-bottom:1.25rem;">
         <div>
           <span style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;">BLOTTER ENTRY NO.</span>
-          <p style="margin:0;font-size:1.05rem;font-weight:800;color:#0f172a;font-family:monospace;">${blotterDisplayId}</p>
+          <p style="margin:0;font-size:1.05rem;font-weight:800;color:#0f172a;font-family:monospace;">${escapeHtml(blotterDisplayId)}</p>
         </div>
         <div style="text-align:right;">
           <span style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;">DATE & TIME LOGGED</span>
-          <p style="margin:0;font-size:0.9rem;font-weight:600;color:#334155;">${incidentDate}</p>
+          <p style="margin:0;font-size:0.9rem;font-weight:600;color:#334155;">${escapeHtml(incidentDate)}</p>
         </div>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
         <div style="padding:0.75rem;border:1px solid #e2e8f0;border-radius:6px;">
           <span style="font-size:0.75rem;font-weight:700;color:#2563eb;text-transform:uppercase;">COMPLAINANT</span>
-          <p style="margin:0.25rem 0 0 0;font-size:0.95rem;font-weight:600;color:#0f172a;">${blotter?.complainantName || incident.complainantName || 'Walk-in Complainant / Confidential'}</p>
-          <p style="margin:0.15rem 0 0 0;font-size:0.8rem;color:#64748b;">Contact: ${blotter?.complainantContactNumber || incident.complainantContactNumber || 'Not recorded'}</p>
+          <p style="margin:0.25rem 0 0 0;font-size:0.95rem;font-weight:600;color:#0f172a;">${escapeHtml(blotter?.complainantName || incident.complainantName || 'Walk-in Complainant / Confidential')}</p>
+          <p style="margin:0.15rem 0 0 0;font-size:0.8rem;color:#64748b;">Contact: ${escapeHtml(blotter?.complainantContactNumber || incident.complainantContactNumber || 'Not recorded')}</p>
         </div>
         <div style="padding:0.75rem;border:1px solid #e2e8f0;border-radius:6px;">
           <span style="font-size:0.75rem;font-weight:700;color:#d97706;text-transform:uppercase;">RESPONDENT</span>
-          <p style="margin:0.25rem 0 0 0;font-size:0.95rem;font-weight:600;color:#0f172a;">${blotter?.respondentName || incident.respondentName || 'Unspecified / Under Inquiry'}</p>
-          <p style="margin:0.15rem 0 0 0;font-size:0.8rem;color:#64748b;">Type: ${INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType}</p>
+          <p style="margin:0.25rem 0 0 0;font-size:0.95rem;font-weight:600;color:#0f172a;">${escapeHtml(blotter?.respondentName || incident.respondentName || 'Unspecified / Under Inquiry')}</p>
+          <p style="margin:0.15rem 0 0 0;font-size:0.8rem;color:#64748b;">Type: ${escapeHtml(INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType)}</p>
         </div>
       </div>
 
       <div style="margin-bottom:1.25rem;">
         <span style="font-size:0.75rem;font-weight:700;color:#475569;text-transform:uppercase;">INCIDENT LOCATION</span>
         <p style="margin:0.25rem 0 0 0;font-size:0.88rem;color:#1e293b;background:#f8fafc;padding:0.5rem 0.75rem;border-radius:4px;border:1px solid #e2e8f0;">
-          ${incident.locationDescription || (incident.latitude != null ? `${incident.latitude.toFixed(5)}, ${incident.longitude.toFixed(5)}` : 'Barangay Jurisdiction')}
+          ${escapeHtml(incident.locationDescription || (incident.latitude != null ? `${incident.latitude.toFixed(5)}, ${incident.longitude.toFixed(5)}` : 'Barangay Jurisdiction'))}
         </p>
       </div>
 
       <div style="margin-bottom:1.25rem;">
         <span style="font-size:0.75rem;font-weight:700;color:#475569;text-transform:uppercase;">OFFICIAL STATEMENT & SUMMARY</span>
         <div style="margin-top:0.35rem;padding:0.85rem;background:#f8fafc;border-left:3px solid #2563eb;border-radius:0 4px 4px 0;font-size:0.88rem;line-height:1.6;color:#1e293b;white-space:pre-wrap;">
-          ${blotter?.narrativeSummary || incident.redactedNarrative || incident.rawNarrative || 'No official summary provided.'}
+          ${escapeHtml(blotter?.narrativeSummary || incident.redactedNarrative || incident.rawNarrative || 'No official summary provided.')}
         </div>
       </div>
 
@@ -532,10 +533,10 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
         <span class="party-card__tag party-card__tag--complainant">Complainant</span>
         <span class="party-card__hint">Initiator / Reporting Party</span>
       </div>
-      <div class="party-card__name">${compName}</div>
+      <div class="party-card__name">${escapeHtml(compName)}</div>
       <div class="party-card__contact">
         ${icons.phone(13)}
-        <span>${compContact}</span>
+        <span>${escapeHtml(compContact)}</span>
       </div>
     `;
 
@@ -547,7 +548,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
         <span class="party-card__tag party-card__tag--respondent">Respondent</span>
         <span class="party-card__hint">Subject of Inquiry / Dispute</span>
       </div>
-      <div class="party-card__name">${respName}</div>
+      <div class="party-card__name">${escapeHtml(respName)}</div>
       <div class="party-card__contact">
         ${icons.shield(13)}
         <span>Barangay inquiry & conciliation subject</span>
@@ -576,7 +577,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       <div class="meta-tile__icon">${icons.mapPin(16)}</div>
       <div class="meta-tile__content">
         <span class="meta-tile__label">Location / Scene</span>
-        <span class="meta-tile__value" title="${locDesc}">${locDesc}</span>
+        <span class="meta-tile__value" title="${escapeHtml(locDesc)}">${escapeHtml(locDesc)}</span>
       </div>
     `;
 
@@ -614,7 +615,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       <div class="meta-tile__icon">${icons.users(16)}</div>
       <div class="meta-tile__content">
         <span class="meta-tile__label">Recording Officer</span>
-        <span class="meta-tile__value">${officerName}</span>
+        <span class="meta-tile__value">${escapeHtml(officerName)}</span>
       </div>
     `;
 

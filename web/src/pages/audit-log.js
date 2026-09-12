@@ -35,6 +35,7 @@ import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const PAGE_SIZE = 25;
 
@@ -584,7 +585,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Actor / Initiator</span>
-        <span class="audit-modal-value">${row.actorUserId !== null ? `${row.actorUsername || 'User'} (#${row.actorUserId})` : 'System Daemon (Automated)'}</span>
+        <span class="audit-modal-value">${row.actorUserId !== null ? `${escapeHtml(row.actorUsername || 'User')} (#${row.actorUserId})` : 'System Daemon (Automated)'}</span>
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Action</span>
@@ -594,7 +595,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Target Entity</span>
-        <span class="audit-modal-value">${row.entityType || 'General'}${row.entityId !== null ? ` #${row.entityId}` : ''}</span>
+        <span class="audit-modal-value">${escapeHtml(row.entityType || 'General')}${row.entityId !== null ? ` #${row.entityId}` : ''}</span>
       </div>
     `;
 

@@ -16,6 +16,7 @@ import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { icons } from '../components/icons.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const STATUS_PILL_CLASS = {
   pending: 'status-pill--pending',
@@ -232,7 +233,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
             // Requester
             const reqParty = document.createElement('span');
             reqParty.className = 'swap-party';
-            reqParty.innerHTML = `${avatarInitials(requesterName, 24)}<span>${requesterName}</span>`;
+            reqParty.innerHTML = `${avatarInitials(requesterName, 24)}<span>${escapeHtml(requesterName)}</span>`;
 
             // Arrow
             const arrow = document.createElement('span');
@@ -244,7 +245,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
             if (targetName) {
               const targetParty = document.createElement('span');
               targetParty.className = 'swap-party';
-              targetParty.innerHTML = `${avatarInitials(targetName, 24)}<span>${targetName}</span>`;
+              targetParty.innerHTML = `${avatarInitials(targetName, 24)}<span>${escapeHtml(targetName)}</span>`;
               flowRow.appendChild(targetParty);
             } else {
               const openBadge = document.createElement('span');

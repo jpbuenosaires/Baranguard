@@ -27,6 +27,7 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const VERSION_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 const MAX_BYTES = 500 * 1024 * 1024; // 500 MB server ceiling
@@ -299,7 +300,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
       versionItem.className = 'map-pkg-detail-item';
       versionItem.innerHTML = `
         <span class="map-pkg-detail-label">Current Published Version</span>
-        <span class="map-pkg-detail-val" style="font-size: 1.125rem; color: var(--color-primary);">v${pkg.version}</span>
+        <span class="map-pkg-detail-val" style="font-size: 1.125rem; color: var(--color-primary);">v${escapeHtml(pkg.version)}</span>
       `;
 
       // Item 3: Device Sync Status

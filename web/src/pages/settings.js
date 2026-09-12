@@ -21,6 +21,7 @@ import { PageHeader } from '../components/PageHeader.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const ROLE_LABELS = {
   admin: 'Admin',
@@ -706,8 +707,8 @@ function buildGeneralCard(settings) {
   brandHero.className = 'settings-brand-hero';
   brandHero.innerHTML = `
     <div>
-      <div class="settings-brand-hero__title">${settings['general.system_name'] || 'BARANGUARD'}</div>
-      <div class="settings-brand-hero__sub">${settings['general.municipality'] || 'Pilar, Sorsogon'} • ${settings['general.region'] || 'Region V (Bicol)'}</div>
+      <div class="settings-brand-hero__title">${escapeHtml(settings['general.system_name'] || 'BARANGUARD')}</div>
+      <div class="settings-brand-hero__sub">${escapeHtml(settings['general.municipality'] || 'Pilar, Sorsogon')} • ${escapeHtml(settings['general.region'] || 'Region V (Bicol)')}</div>
     </div>
     <span class="role-badge role-badge--admin">DEPLOYMENT TENANT</span>
   `;
