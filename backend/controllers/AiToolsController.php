@@ -109,10 +109,9 @@ final class AiToolsController
     {
         AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
 
-        // No body: the window is a worker-side constant and the scope is
-        // always the caller's own barangay, resolved from the session.
-        // Neither is client-supplied, so neither can be widened by one.
-        self::enqueue($pdo, $identity, 'threat_analysis', null, null);
+        $body = Http::jsonBody();
+        $toolInput = !empty($body) ? json_encode($body) : null;
+        self::enqueue($pdo, $identity, 'threat_analysis', null, $toolInput);
     }
 
     /**

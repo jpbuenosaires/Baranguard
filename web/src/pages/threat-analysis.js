@@ -1,5 +1,6 @@
 import { AiToolPanel } from '../components/AiToolPanel.js';
 import { queueThreatAnalysis } from '../api/apiClient.js';
+import { DateRangePicker } from '../components/DateRangePicker.js';
 
 /**
  * threat-analysis.js — the Threat Analyzer tab of Analytics.
@@ -24,25 +25,66 @@ import { queueThreatAnalysis } from '../api/apiClient.js';
  * @returns {{stop: () => void}}
  */
 export function renderThreatAnalysisTab(body, pageHeader, user) {
+  let currentRange = { mode: '90', from: null, to: null };
+
+  const rangePicker = DateRangePicker({
+    value: '90',
+    ariaLabel: 'Threat analysis timeframe',
+    onChange: (state) => {
+      currentRange = state;
+      updateContextLabel();
+    },
+  });
+  currentRange = rangePicker.getState();
+  pageHeader.actions.appendChild(rangePicker.el);
+
   const intro = document.createElement('p');
   intro.className = 'note';
-  intro.textContent =
-    'Summarises the last 90 days of recorded incidents for your barangay by type, '
-    + 'time of day and day of week, then suggests when patrols would help. It reads '
-    + 'counts only — no names, no addresses, no households. It describes what has '
-    + 'already been recorded and is not a forecast of future incidents.';
   body.appendChild(intro);
+
+  function updateContextLabel() {
+    let windowLabel = 'the last 90 days';
+    if (currentRange.mode === '7') windowLabel = 'the last 7 days';
+    else if (currentRange.mode === '30') windowLabel = 'the last 30 days';
+    else if (currentRange.mode === '90') windowLabel = 'the last 90 days';
+    else if (currentRange.from && currentRange.to) {
+      windowLabel = `the period ${currentRange.from} to ${currentRange.to}`;
+    }
+
+    intro.textContent =
+      `Summarises recorded incidents for your barangay over ${windowLabel} by type, `
+      + 'time of day, and day of week, then suggests targeted patrol roster adjustments. It reads '
+      + 'aggregate counts only — no citizen names, no addresses, no personal identities. It describes historical '
+      + 'incident patterns and is not a predictive forecast.';
+  }
+  updateContextLabel();
 
   const panel = AiToolPanel({
     collapsible: false,
     tool: {
       label: 'Threat Analyzer',
       input: 'none',
-      emptyText: 'Run the analyzer to summarise the last 90 days and get patrol suggestions.',
-      run: () => queueThreatAnalysis(),
+      emptyText: 'Run the analyzer to examine incident patterns and get non-predictive patrol suggestions.',
+      run: () => {
+        const payload = {};
+        if (currentRange.mode === 'custom' && currentRange.from && currentRange.to) {
+          payload.from = currentRange.from;
+          payload.to = currentRange.to;
+        } else if (['7', '30', '90'].includes(currentRange.mode)) {
+          payload.days = Number(currentRange.mode);
+        } else {
+          payload.days = 90;
+        }
+        return queueThreatAnalysis(payload);
+      },
     },
   });
   body.appendChild(panel.el);
 
-  return { stop: panel.stop };
+  return {
+    stop() {
+      panel.stop();
+      rangePicker.el.remove();
+    },
+  };
 }
