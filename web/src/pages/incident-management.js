@@ -178,6 +178,15 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   let classifierPanel = null;
   let pendingClassification = null;
 
+  /**
+   * Incidents the Classifier has already auto-run for once this page
+   * visit, so reselecting the same row (or the list refreshing under it)
+   * does not queue a duplicate background job every time the detail
+   * pane remounts. Cleared implicitly on navigation away from this page
+   * (a fresh page instance gets a fresh Set).
+   */
+  const autoClassifiedIncidentIds = new Set();
+
   // Cached Lookups
   const barangayNameById = new Map();
   let eligibleTanods = [];
@@ -728,6 +737,38 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     badgesRow.append(prioBadge, statBadge);
     rightPanel.appendChild(badgesRow);
 
+    // 2a. Classifier mismatch chip — populated only if an auto-run (or a
+    // manual regenerate) disagrees with what is already on record. Stays
+    // empty otherwise, deliberately: a suggestion that matches what intake
+    // already picked is not worth an operator's attention (§2 Rule 6 —
+    // no control/notice that fires without real signal behind it).
+    const mismatchSlot = document.createElement('div');
+    mismatchSlot.className = 'incident-classifier-mismatch-slot';
+    rightPanel.appendChild(mismatchSlot);
+
+    function renderClassificationMismatch(parsed) {
+      mismatchSlot.innerHTML = '';
+      if (!parsed) return;
+      const typeDiffers = parsed.incidentType && parsed.incidentType !== row.incidentType;
+      const prioDiffers = parsed.priority && parsed.priority !== prioKey;
+      if (!typeDiffers && !prioDiffers) return;
+
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'status-pill status-pill--info incident-classifier-mismatch-chip';
+      const bits = [];
+      if (typeDiffers) bits.push(INCIDENT_TYPE_LABELS[parsed.incidentType] || parsed.incidentType);
+      if (prioDiffers) bits.push(`${PRIORITY_LABELS[parsed.priority] || parsed.priority} priority`);
+      chip.innerHTML = `${icons.sparkles(13)} <span>AI suggests: ${bits.join(' · ')}</span>`;
+      chip.title = 'Open the AI Classifier to review and apply';
+      chip.addEventListener('click', () => {
+        const toggle = classifierPanel?.el.querySelector('.ai-panel__toggle');
+        if (toggle?.getAttribute('aria-expanded') === 'false') toggle.click();
+        classifierPanel?.el.scrollIntoView({ block: 'nearest' });
+      });
+      mismatchSlot.appendChild(chip);
+    }
+
     // 2b. AI Classifier — directly under the badges it comments on.
     //
     // Collapsed by default: this pane is already dense, and the tool is
@@ -735,6 +776,9 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     // not something to read on every incident. Admin and Secretary both
     // reach this screen and both may run the classifier, so there is no
     // extra gate here — the server enforces its own regardless.
+    const hasApprovedRedaction = Boolean(detail?.redactionApprovedAt || detail?.redactedNarrative);
+    const shouldAutoClassify = hasApprovedRedaction && !autoClassifiedIncidentIds.has(row.incidentId);
+    if (shouldAutoClassify) autoClassifiedIncidentIds.add(row.incidentId);
     classifierPanel = AiToolPanel({
       collapsible: true,
       startCollapsed: true,
@@ -743,8 +787,15 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         hint: 'Suggests a type and priority from the approved redacted narrative. The incident needs an approved redaction first.',
         input: 'none',
         emptyText: 'Run the classifier to get a suggested type and priority for this incident.',
+        disabled: !hasApprovedRedaction,
+        disabledTitle: 'Redaction Approval Required',
+        disabledReason: user.role === 'secretary'
+          ? 'Approve the redaction in AI Redaction Review first before classifying.'
+          : 'The Secretary must review and approve this incident’s AI redaction before it can be classified.',
         run: () => queueIncidentClassification(row.incidentId),
+        autoRun: shouldAutoClassify,
       },
+      onResult: (output) => renderClassificationMismatch(parseClassification(output)),
       footerActions: [{
         label: 'Apply in Edit',
         onClick: (output) => {

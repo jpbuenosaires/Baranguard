@@ -528,6 +528,26 @@
   color: var(--color-warning);
 }
 
+/* Classifier mismatch chip — an empty slot collapses to 0 height on its
+   own (no padding/margin here), so nothing renders when the auto-check
+   agrees with what is already on record. */
+.incident-classifier-mismatch-slot:not(:empty) {
+  margin-top: var(--spacing-sm);
+}
+
+.incident-classifier-mismatch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.incident-classifier-mismatch-chip:hover {
+  filter: brightness(0.96);
+}
+
 .incident-detail-badge--medium,
 .incident-detail-badge--normal {
   background: var(--tint-info-bg);
@@ -1167,7 +1187,8 @@
     height: auto !important;
   }
 
-  .incident-layout {
+  .incident-layout,
+  .incident-layout.has-detail {
     grid-template-columns: 1fr;
     height: auto;
   }
