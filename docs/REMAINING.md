@@ -385,30 +385,65 @@ Each of these has its correct, intended behavior already spelled out in
 inline) — implementing means matching code/schema to a rule that already
 exists, not inventing one.
 
-- 🟢 **G1 — SOS third fallback tier.** App and SMS fallback (Rule 27)
-  both terminate on the same workstation Rule 15 already calls a single
-  point of failure — neither survives a total outage. Fix: mobile app
-  sends a native-device SMS (own SIM, no gateway) to a configured backup
-  contact with GPS coords, only when both other paths are confirmed
-  unreachable. Needs: a mobile-side native SMS call + a configured
-  contact number, no backend change.
-- 🟢 **G2 — `sms_log.legal_hold` column.** Retention currently purges SMS
-  logs on a flat 1-year clock regardless of a hold on the linked
-  incident/dispatch. Fix: new migration adding `legal_hold BOOLEAN`
-  (mirrors `incident`/`citizen_report`/`evidence_attachment`), inherited
-  from the linked record; retention job checks it.
-- 🟢 **G3 — `mobile_device` retention should scrub, not delete.** Deleting
-  the row 90 days after deactivation cascades `ON DELETE SET NULL` onto
-  `incident.device_id`, silently erasing device provenance from 7-year
-  legal records. Fix: `RetentionService` clears `fcm_token`/
-  `device_secret_ref` in place and keeps the row — the same pattern
-  already used for `raw_narrative` itself.
-- 🟠 **G4 — `incident.source = 'web_walkin'` discriminator.** Cheaper than
-  a new `status` enum value (already rejected once for cost): lets
-  reports/dashboards exclude walk-in incidents from response-time and
-  pending-queue metrics with a `WHERE` clause instead of by accident.
-  **Touches F8** (`avg_response_time_minutes` double-count fix) — do
-  both in the same pass if either is picked up.
+**Status 2026-09-12: G2 and G3 are built, G4 is closed as obsolete, G1
+is the only one of the four still open.**
+
+- 🔴 **G1 — SOS third fallback tier. STILL OPEN, and blocked on the same
+  thing A1 is.** App and SMS fallback (Rule 27) both terminate on the
+  same workstation Rule 15 already calls a single point of failure —
+  neither survives a total outage. Fix: mobile app sends a native-device
+  SMS (own SIM, no gateway) to a configured backup contact with GPS
+  coords, only when both other paths are confirmed unreachable.
+  **Why it wasn't built in the 2026-09-12 pass that closed G2/G3:** it
+  needs (a) a native Capacitor SMS plugin plus the `SEND_SMS` runtime
+  permission, which cannot be built or tested without the Android
+  device/emulator **A1** is blocked on, and (b) an unmade architecture
+  decision about where the backup contact number lives — `system_settings`
+  is the obvious home but §7's W21 note explicitly forbids widening that
+  table's narrow override without the same explicit sign-off the SMS
+  gateway keys got. Note that `mobile/src/services/smsFallbackState.ts`
+  already models the four transport states correctly and its header
+  already records that nothing sets `smsAttempted` — building the
+  decision logic alone would reproduce exactly that situation one layer
+  up, which §2 Rule 6 is about. **Needs a decision on (b), then a device
+  for (a).**
+- ✅ **G2 — `sms_log.legal_hold` column — DONE 2026-09-12.** Migration
+  0016 adds the column (+ `idx_sms_log_retention`), and
+  `RetentionService::purgeSmsLogs()` now checks four hold paths at purge
+  time rather than trusting a pre-propagated flag: the row's own
+  `legal_hold`, the linked `incident`, the linked `citizen_report`, and
+  the linked `dispatch` resolved through to its incident (dispatch has no
+  `legal_hold` of its own, by 0007's "a hold is placed on a CASE" rule).
+  Held rows are counted and reported like every other rule. Proven by
+  six new assertions in `verify-sprint7-retention.sh` (76/76).
+- ✅ **G3 — `mobile_device` retention scrubs, not deletes — DONE
+  2026-09-12.** `RetentionService::scrubDeactivatedDevices()` (renamed
+  from `purgeDeactivatedDevices()`) clears `fcm_token`/
+  `device_secret_ref` in place and keeps the row, stamping migration
+  0016's `secrets_scrubbed_at` as both per-record evidence and the
+  idempotency guard — the same shape `raw_narrative` already used. The
+  assertion that matters is in the suite: a 7-year incident filed by a
+  retired handset still resolves its `device_id` after the scrub, which
+  the old delete-the-row behaviour destroyed.
+- ⬜ **G4 — `incident.source = 'web_walkin'` discriminator — CLOSED AS
+  OBSOLETE 2026-09-12, not built.** Its entire purpose was to let
+  reports exclude walk-in incidents that entered the system already
+  `resolved`, skipping the `pending`/dispatch lifecycle. **That path no
+  longer exists.** `POST /blotter` was removed 2026-09-10, and all three
+  surviving incident-creation sites — `CitizenReportsController:290`,
+  `IncidentsController:894` (web) and `:1086` (mobile/sync) — hardcode
+  `status = 'pending'`; `IncidentsController::updateStatus()` further
+  refuses to resolve anything not already `dispatched`. There is
+  therefore no incident for the discriminator to discriminate, and
+  adding an enum value nothing can ever write is precisely the control
+  §2 Rule 6 forbids. **F8's `avg_response_time_minutes` double-count is
+  unaffected** — it needs de-duplication in its own `JOIN`, which never
+  depended on this discriminator.
+
+  *(Observation, not tracked work: because resolution requires a
+  `dispatched` incident, a walk-in logged at the desk that genuinely
+  needs no Tanod sent has no legitimate way to reach `resolved`. That is
+  a different question from G4 and is deliberately not folded into it.)*
 
 ### New feature candidates (2026-09-07 brainstorm, curated subset)
 

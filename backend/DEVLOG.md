@@ -10133,3 +10133,137 @@ classes). All touched JS/PHP parse clean. Browser: logged in as
 `admin.dao` and `secretary.dao` against `baranguard_uiseed`; confirmed
 the layout fix (right panel 78px → 476px), the auto-check firing exactly
 once per incident, the mismatch chip, and the Apply-in-Edit prefill.
+
+## 2026-09-12 (2) — A1-A7 swept: G2/G3 built (migration 0016), G4 closed as obsolete, G1 left honestly blocked
+
+User asked to implement "all of A1-A7 whichever is not implemented" —
+the seven logic-gap fixes from the 2026-09-07 Master Reference pass.
+First finding: **three of the seven were already done** and only the
+other four were ever open. A2 (the §6 inbound/outbound SMS endpoint
+split), A3 (Rule 7's inbound/outbound split) and A6 (Rule 9's 5-attempt
+/ 15-minute lockout number) were pure doc fixes applied directly to the
+Master Reference during that same 2026-09-07 rewrite — verified still
+present in Rules 7, 9 and 22 before touching anything, rather than
+trusting the DEVLOG entry that claimed it.
+
+That left A1/A4/A5/A7 = `REMAINING.md` §G1-G4. Two built, one closed,
+one left alone — with the reasoning for each recorded below, because
+"didn't build it" is the part most likely to be misread later as an
+oversight.
+
+### Built: G2 + G3, migration 0016
+
+Both were the same *kind* of gap — §11 already stated the correct rule,
+the schema just never gained the column to execute it, so
+`RetentionService` implemented the under-protective behaviour and
+documented that it was doing so.
+
+**G2 — `sms_log.legal_hold`.** The table was purged on a flat 1-year
+clock regardless of a hold on the case the message belonged to, meaning
+a legal hold on an incident did not protect the SMS trail of how that
+incident was handled. 0016 adds the column plus
+`idx_sms_log_retention (legal_hold, created_at)`.
+
+`purgeSmsLogs()` now checks **four** hold paths, and checks them LIVE at
+purge time rather than trusting a flag propagated at write time — a hold
+placed *after* a message was logged still protects it, with no backfill
+step and no window where a just-held case has un-held messages:
+- the row's own `legal_hold` (an SMS thread subpoenaed on its own);
+- the linked `incident`;
+- the linked `citizen_report`;
+- the linked `dispatch`, resolved *through* to its incident, because
+  `dispatch` has no `legal_hold` of its own under 0007's resolved
+  decision that "a hold is placed on a CASE, not on a row."
+
+That last point is why `sms_log` gaining its own column is not a
+reversal of 0007's principle: it is checked *in addition to* the
+inherited holds, never instead of them. Held rows are counted and
+reported like every other rule, per the class-level decision that a run
+which quietly did nothing must be distinguishable from a broken one.
+
+**G3 — `mobile_device` scrub, not delete.** `purgeDeactivatedDevices()`
+became `scrubDeactivatedDevices()`: it clears `fcm_token` and
+`device_secret_ref` in place and KEEPS the row, stamping 0016's
+`secrets_scrubbed_at`. The old behaviour deleted the row, and because
+every reference to `mobile_device` is `ON DELETE SET NULL`
+(`incident.device_id`, `notification_target.device_id`), that silently
+stripped device provenance off incidents under 7-year retention or
+active legal hold — a retention rule destroying data a *longer*
+retention rule requires be kept. Rule 26's actual requirement is that
+the secrets not linger, which clearing them satisfies exactly.
+
+Two details worth keeping:
+- `fcm_token` is NOT NULL in the 0001 baseline, so it is emptied rather
+  than nulled. Safe by construction, not merely tolerable:
+  `NotificationDispatcher` only reads tokens `WHERE ... is_active = 1`,
+  and every row this touches is `is_active = 0`. Widening the column to
+  NULL was rejected as a schema change to express something the scan's
+  own filter already guarantees.
+- `secrets_scrubbed_at` is both Rule 17's per-record evidence and the
+  idempotency guard, so an already-scrubbed row is not eligible forever
+  — the counts an operator sees are real work remaining, not a permanent
+  backlog. Same shape `incident.raw_narrative_purged_at` already had;
+  an existing pattern applied, not a new one invented.
+
+### Closed as obsolete, NOT built: G4 (`incident.source = 'web_walkin'`)
+
+Its entire purpose was excluding walk-in incidents that entered the
+system already `resolved`, skipping the `pending`/dispatch lifecycle.
+**That path no longer exists.** Checked rather than assumed: all three
+surviving incident-creation sites hardcode `status = 'pending'`
+(`CitizenReportsController:290`, `IncidentsController:894` web,
+`:1086` mobile/sync), `POST /blotter` was removed 2026-09-10, and
+`updateStatus()` refuses to resolve anything not already `dispatched`.
+There is no incident left for the discriminator to discriminate, so
+adding the enum value would ship something nothing can ever write —
+exactly the control §2 Rule 6 forbids. F8's `avg_response_time_minutes`
+double-count is unaffected; it needs de-duplication in its own JOIN and
+never depended on this.
+
+*Noticed while proving that, and deliberately NOT folded in:* since
+resolution requires a `dispatched` incident, a walk-in logged at the
+desk that genuinely needs no Tanod sent has no legitimate route to
+`resolved`. Real, separate, and not in scope for this pass.
+
+### Left open, deliberately: G1 (SOS third fallback tier)
+
+Needs two things this session could not honestly produce. **(a)** A
+native Capacitor SMS plugin plus the `SEND_SMS` runtime permission —
+unbuildable and untestable without the Android device `REMAINING.md` A1
+is blocked on. **(b)** An unmade architecture decision about where the
+backup contact number lives: `system_settings` is the obvious home, but
+§7's W21 note explicitly forbids widening that table's narrow override
+without the same explicit sign-off the SMS gateway keys got.
+
+Building only the decision logic was considered and rejected:
+`mobile/src/services/smsFallbackState.ts` already models the four
+transport states correctly and its own header already records that
+nothing sets `smsAttempted`. Adding an unreachable "both paths down →
+send" branch on top would reproduce that same situation one layer up
+and make the gap harder to see, not smaller.
+
+### Verification
+
+`verify-sprint7-retention.sh` **76/76** (was 62): +14 assertions, the
+load-bearing ones being each of the four hold paths keeping a 400-day
+row, the dry-run reporting `1 eligible, 4 on legal hold` (held rows
+counted, not silently skipped), and — for G3 — a 7-year incident still
+resolving its `device_id` *after* the scrub, which is precisely what the
+old delete-the-row rule destroyed. The suite's own migration chain is
+now 0001-0016; its full-run survivor count was corrected 6 → 7 for the
+provenance incident the new step seeds.
+
+Migration 0016 verified **up, down, re-up, and idempotent in both
+directions** against a disposable MariaDB 10.4 before being applied
+anywhere real. Applied to the real `baranguard` DB and to the demo
+`baranguard_uiseed` DB (2026-09-12, as root). Both then dry-run clean
+through `retention-job.php`.
+
+**One real catch surfaced by that dry run:** it first failed with
+`Unknown column 'legal_hold'` against a database that had just been
+migrated — because `backend/.env` was still pointed at
+`baranguard_uiseed` from earlier the same day, so the job was not
+running where it looked like it was running. Worth remembering as a
+live instance of §8's documented env-precedence hazard: the fix was
+`DB_NAME=baranguard php ...` (an already-set env var wins over `.env`),
+and the demo DB needed the migration too.

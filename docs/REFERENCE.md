@@ -155,12 +155,15 @@ shift user · 0004 blotter_revision · 0005 sms_envelope_replay · 0006
 sms_log.barangay_id · 0007 retention columns · 0008 incident party
 fields · 0009 blotter case_status · 0010 incident location_description ·
 0011 user suspension · 0012 system_settings (§7 W21 override) · 0013 sms
-manual send · 0014 incident/blotter display_id · **0015 ai_tools**
-(nullable incident_id + tenant/requester/tool columns + four task types;
-verified up, down and idempotent against a disposable MariaDB 10.4 first).
-**All fifteen are applied to the real local `baranguard` DB** (0008–0014
-on 2026-09-05, 0015 on 2026-09-10). On a new machine, apply all fifteen
-in order — as
+manual send · 0014 incident/blotter display_id · 0015 ai_tools
+(nullable incident_id + tenant/requester/tool columns + four task types) ·
+**0016 retention hold + device scrub** (`sms_log.legal_hold` +
+`idx_sms_log_retention`, `mobile_device.secrets_scrubbed_at` — closes
+`REMAINING.md` §G2/§G3; both verified up, down and idempotent against a
+disposable MariaDB 10.4 first, same as 0015).
+**All sixteen are applied to the real local `baranguard` DB** (0008–0014
+on 2026-09-05, 0015 on 2026-09-10, 0016 on 2026-09-12). On a new machine,
+apply all sixteen in order — as
 DBA/root, **not** as `baranguard_app`, which has no `ALTER`/`CREATE
 TABLE` (see §8).
 
@@ -491,7 +494,7 @@ forbids shipping a control that looks functional and does nothing.
 | `verify-sprint4.sh` | 48 |
 | `verify-sprint4-phase2-3.sh` | 69 |
 | `verify-sprint6.sh` | all green (re-runs 2026-09-10) |
-| `verify-sprint7-retention.sh` | 62 |
+| `verify-sprint7-retention.sh` | 76 (was 62; +14 for migration 0016's hold/scrub rules) |
 | `verify-sprint7-audit.sh` | 52 |
 | `verify-sprint7-pentest-incidents.sh` | 68 |
 | `verify-ai-tools.sh` | 63 (new 2026-09-10) |
