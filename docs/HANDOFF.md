@@ -13,6 +13,27 @@ lives in `backend/DEVLOG.md` (grep it; don't read it front to back).
 **still gated** by `docs/REMAINING.md` §F — do not open a Sprint 8 box
 while F1-F4 are unresolved. Nothing this session changed that gate.
 
+**The A1-A7 logic-gap backlog is now swept, and only one item survives.**
+Of the seven: A2/A3/A6 were already done (pure doc fixes applied to the
+Master Reference on 2026-09-07 — verified still present, not taken on
+trust); **G2 and G3 are now built** (migration 0016 — `sms_log.legal_hold`
+so a legal hold on a case protects its SMS trail, and `mobile_device`
+secrets scrubbed in place instead of the row being deleted, which used to
+strip device provenance off 7-year records); **G4 is closed as obsolete**
+(its walk-in-born-`resolved` path stopped existing when `POST /blotter`
+was removed — all three creation sites now hardcode `pending`, so there
+is nothing left to discriminate and adding the enum value would be a
+Rule 6 violation); **G1 (SOS third fallback tier) is the one still open**,
+blocked on a native SMS plugin + device *and* an unmade decision about
+where the backup contact number lives. Full reasoning, including why
+building G1's logic without its send path was rejected: `backend/DEVLOG.md`
+2026-09-12 (2).
+
+**Migration 0016 is applied to BOTH the real `baranguard` DB and the demo
+`baranguard_uiseed` DB** (2026-09-12, as root; verified up/down/re-up and
+idempotent on a disposable DB first). `verify-sprint7-retention.sh` is
+**76/76**, up from 62.
+
 **Six sessions' worth of finished, uncommitted work landed and pushed to
 `origin/main` this session** (repo: `github.com/jpbuenosaires/Baranguard`).
 `git status` at the start showed ~28 modified files across backend
@@ -126,6 +147,15 @@ to finish in one sitting.
    bit four verify suites in an earlier session (2026-09-05 → -10 entry).
    A disposable/demo database needs the *full* current migration chain,
    not whatever subset it was seeded with originally.
+4. **`backend/.env` is currently pointed at `baranguard_uiseed`, not
+   `baranguard`** — left that way from this session's browser
+   verification, and it is NOT tracked by git so nothing will remind
+   you. It already caused one confusing failure: a freshly-migrated
+   database reporting `Unknown column` because the CLI job was quietly
+   running somewhere else. `DB_NAME=baranguard php backend/scripts/...`
+   overrides it for one command (an already-set env var beats `.env`,
+   per `REFERENCE.md` §8); change the file itself before trusting any
+   CLI run against "the real database."
 
 ## Recommended next step
 
