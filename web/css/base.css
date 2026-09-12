@@ -1481,3 +1481,19 @@ html, body, .status-pill,
   max-height: calc(100vh - 4rem);
   overflow-y: auto;
 }
+
+/* Global utility for spinning icons (exporting, loading, refreshing) */
+.is-spinning svg,
+svg.is-spinning {
+  animation: spin-refresh 0.8s linear infinite;
+}
+@keyframes spin-refresh {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning svg,
+  svg.is-spinning {
+    animation: none;
+  }
+}

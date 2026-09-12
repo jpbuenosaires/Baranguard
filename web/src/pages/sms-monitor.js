@@ -376,21 +376,31 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
       placeholder: 'e.g. baha sa Purok 3, iwasan ang daan',
       maxLength: 2000,
       emptyText: 'Describe a situation above to get a draft advisory.',
+      isSms: true,
       run: (value) => queueSmsCompose(value),
     },
-    footerActions: [{
-      label: 'Use this draft',
-      onClick: (output) => {
-        if (!composeTextareaRef) {
-          showToast('Open a conversation first, then use the draft.', { variant: 'error' });
-          return;
-        }
-        composeTextareaRef.value = output;
-        composeTextareaRef.dispatchEvent(new Event('input', { bubbles: true }));
-        composeTextareaRef.focus();
-        showToast('Draft moved to the message box — review it before sending.', { variant: 'success' });
+    footerActions: [
+      {
+        label: 'Use in Conversation',
+        onClick: (output) => {
+          if (!composeTextareaRef) {
+            showToast('Select or open a conversation on the left first to apply this draft.', { variant: 'info' });
+            if (contactPane._searchInput) contactPane._searchInput.focus();
+            return;
+          }
+          composeTextareaRef.value = output;
+          composeTextareaRef.dispatchEvent(new Event('input', { bubbles: true }));
+          composeTextareaRef.focus();
+          showToast('Draft moved to conversation message box — review before sending.', { variant: 'success' });
+        },
       },
-    }],
+      {
+        label: 'Use in Broadcast',
+        onClick: (output) => {
+          openBroadcastModal(output);
+        },
+      },
+    ],
   });
   feedPane.insertBefore(composerPanel.el, feedPane.firstChild);
   if (registerComposerStop) registerComposerStop(composerPanel.stop);
@@ -1022,13 +1032,13 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   }
 
   // Modals
-  function openBroadcastModal() {
+  function openBroadcastModal(initialText = '') {
     const modalEl = buildBroadcastModal(() => {
       document.body.removeChild(modalEl);
       loadStatStrip();
     }, () => {
       document.body.removeChild(modalEl);
-    });
+    }, initialText);
     document.body.appendChild(modalEl);
   }
 
@@ -1210,7 +1220,7 @@ function describeLiveFeedEvent(item) {
 /**
  * Broadcast Alert Modal with Live Device Preview.
  */
-function buildBroadcastModal(onSuccess, onCancel) {
+function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
   const overlay = document.createElement('div');
   overlay.className = 'sms-modal-overlay';
 
@@ -1305,6 +1315,14 @@ function buildBroadcastModal(onSuccess, onCancel) {
     counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}`;
     previewBubble.textContent = textarea.value.trim() || 'Your message text will appear here…';
   });
+
+  if (initialText) {
+    textarea.value = initialText;
+    const initialLen = textarea.value.length;
+    const initialSeg = getSmsSegmentCount(initialLen);
+    counterWrap.innerHTML = `${initialLen} / ${initialSeg.limit} chars · ${initialSeg.segments} SMS ${initialSeg.segments === 1 ? 'segment' : 'segments'}`;
+    previewBubble.textContent = textarea.value.trim() || 'Your message text will appear here…';
+  }
 
   body.append(scopeField, msgField, previewBox);
 

@@ -70,3 +70,93 @@
 }
 /* The count line above the original ("4 identifiers removed: 2 name…"). */
 .redaction-summary { margin-bottom: var(--spacing-sm); }
+
+/* ==========================================================================
+   Workflow Stepper
+   ========================================================================== */
+
+.ai-review__stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+
+.ai-review__step {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.ai-review__step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-full);
+  background: var(--tint-neutral-bg);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.ai-review__step-label {
+  font-weight: 500;
+}
+
+.ai-review__step--done {
+  color: var(--color-success-text);
+}
+
+.ai-review__step--done .ai-review__step-icon {
+  background: var(--tint-success-bg);
+  color: var(--color-success-solid);
+}
+
+.ai-review__step--active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.ai-review__step--active .ai-review__step-icon {
+  background: var(--color-surface-blue);
+  color: var(--color-primary);
+}
+
+.ai-review__step--warning {
+  color: var(--color-warning-text);
+}
+
+.ai-review__step--warning .ai-review__step-icon {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-solid);
+}
+
+.ai-review__step--running {
+  color: var(--color-info-text);
+}
+
+.ai-review__step--running .ai-review__step-icon {
+  background: var(--tint-info-bg);
+  color: var(--color-info);
+}
+
+.ai-review__step--pending {
+  color: var(--color-text-tertiary);
+  opacity: 0.65;
+}
+
+.ai-review__inline-regen {
+  margin-top: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
