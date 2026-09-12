@@ -111,13 +111,26 @@ let instanceSeq = 0;
  * @param {boolean} [options.startCollapsed]
  * @param {Array<{label:string, onClick:(output:string, job:object)=>void}>} [options.footerActions]
  *        Extra actions shown beside Copy once a draft is ready.
+ * @param {(output:string, job:object)=>void} [options.onResult]
+ *        Fired every time a job reaches `completed`, manual or auto-run —
+ *        for a host that needs to react without waiting on a footer click
+ *        (e.g. comparing a suggestion against what is already on record).
  * @returns {{el: HTMLElement, stop: () => void}}
  *
  * `tool` carries only what genuinely varies:
  *   { label, hint, input:'text'|'incident'|'none', inputLabel, placeholder,
- *     maxLength, emptyText, run(value) -> Promise<{jobId}> }
+ *     maxLength, emptyText, run(value) -> Promise<{jobId}>,
+ *     autoRun?: boolean }
+ *
+ * `autoRun` (input:'none' tools only) queues the job as soon as the
+ * model is known to be available, instead of waiting for the operator to
+ * press Generate — for a check the host wants to run quietly and only
+ * surface if the result disagrees with something already on record. The
+ * completion toast is suppressed for an auto-started job specifically
+ * because nobody asked for it; `onResult` still fires so the host can
+ * decide what, if anything, to show.
  */
-export function AiToolPanel({ tool, collapsible = false, startCollapsed = false, footerActions = [] }) {
+export function AiToolPanel({ tool, collapsible = false, startCollapsed = false, footerActions = [], onResult }) {
   // Unique per instance: the id is referenced by the label's `htmlFor`,
   // and a hardcoded one breaks the moment two panels share a document.
   const inputId = `ai-tool-input-${++instanceSeq}`;
@@ -195,18 +208,73 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
 
   // ----- helpers ------------------------------------------------------
 
+  let jobStartedAt = null;
+  let elapsedTimer = null;
+
+  function formatElapsed(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    if (totalSec < 60) return `${totalSec}s`;
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}m ${sec}s`;
+  }
+
+  function startElapsedTimer() {
+    stopElapsedTimer();
+    elapsedTimer = setInterval(() => {
+      const timerEl = el.querySelector('.ai-panel__timer');
+      if (timerEl && jobStartedAt) {
+        timerEl.textContent = `· ${formatElapsed(Date.now() - jobStartedAt)}`;
+      }
+    }, 1000);
+  }
+
+  function stopElapsedTimer() {
+    if (elapsedTimer !== null) {
+      clearInterval(elapsedTimer);
+      elapsedTimer = null;
+    }
+  }
+
   function isPending(j) {
     return j !== null && (j.status === 'queued' || j.status === 'processing');
   }
 
   function canGenerate() {
+    if (tool.disabled) return false;
     return availability === 'healthy';
   }
 
   function stop() {
+    stopElapsedTimer();
     if (pollTimer !== null) {
       clearInterval(pollTimer);
       pollTimer = null;
+    }
+  }
+
+  // An auto-started job is a quiet background check, not something the
+  // operator asked for — its completion toast is suppressed below, but
+  // `onResult` still fires either way.
+  let isAutoRun = false;
+
+  async function runNow(rawValue, { auto = false } = {}) {
+    isAutoRun = auto;
+    busy = true;
+    errorMessage = null;
+    job = null;
+    jobStartedAt = Date.now();
+    render();
+    try {
+      const queued = await tool.run(rawValue);
+      job = { ...queued, output: null, errorCode: null };
+      startPollingIfPending();
+    } catch (err) {
+      errorMessage = err instanceof ApiClientError ? err.message : 'Could not start the job.';
+      jobStartedAt = null;
+    } finally {
+      busy = false;
+      render();
     }
   }
 
@@ -220,10 +288,29 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
     label.textContent = text;
     line.appendChild(pill);
     line.appendChild(label);
+
+    if (isPending(job) && jobStartedAt) {
+      const timer = document.createElement('span');
+      timer.className = 'ai-panel__timer';
+      timer.textContent = `· ${formatElapsed(Date.now() - jobStartedAt)}`;
+      line.appendChild(timer);
+    }
     return line;
   }
 
   function buildBanner() {
+    if (tool.disabled) {
+      const banner = document.createElement('p');
+      banner.className = 'ai-panel__banner ai-panel__banner--neutral';
+      banner.setAttribute('role', 'status');
+      const strong = document.createElement('strong');
+      strong.textContent = tool.disabledTitle || 'Prerequisite not met.';
+      const detail = document.createElement('span');
+      detail.textContent = ` ${tool.disabledReason || 'This action is unavailable until required steps are completed.'}`;
+      banner.append(strong, detail);
+      return banner;
+    }
+
     if (availability === null || availability === 'healthy') return null;
 
     const banner = document.createElement('p');
@@ -245,6 +332,64 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
     return banner;
   }
 
+  function buildStructuredClassifier(output) {
+    const lines = output.split('\n');
+    let typeVal = null;
+    let prioVal = null;
+    let reasonVal = null;
+    for (const line of lines) {
+      const tMatch = line.match(/^Type:\s*(.+)$/i);
+      if (tMatch) typeVal = tMatch[1].trim();
+      const pMatch = line.match(/^Priority:\s*(.+)$/i);
+      if (pMatch) prioVal = pMatch[1].trim();
+      const rMatch = line.match(/^Reasoning:\s*(.+)$/i);
+      if (rMatch) reasonVal = rMatch[1].trim();
+    }
+    if (!typeVal && !prioVal) return null;
+
+    const card = document.createElement('div');
+    card.className = 'ai-panel__structured';
+
+    const header = document.createElement('div');
+    header.className = 'ai-panel__structured-header';
+
+    const pills = document.createElement('div');
+    pills.className = 'ai-panel__structured-pills';
+
+    if (typeVal) {
+      const typePill = document.createElement('span');
+      typePill.className = 'status-pill status-pill--info';
+      typePill.textContent = `Type: ${typeVal.replace(/_/g, ' ')}`;
+      pills.appendChild(typePill);
+    }
+
+    if (prioVal) {
+      const p = prioVal.toLowerCase();
+      const prioPill = document.createElement('span');
+      const pClass = p === 'critical' ? 'status-pill--critical' : p === 'high' ? 'status-pill--pending' : 'status-pill--info';
+      prioPill.className = `status-pill ${pClass}`;
+      prioPill.textContent = `Priority: ${prioVal}`;
+      pills.appendChild(prioPill);
+    }
+    header.appendChild(pills);
+    card.appendChild(header);
+
+    if (reasonVal) {
+      const sec = document.createElement('div');
+      sec.className = 'ai-panel__structured-section';
+      const title = document.createElement('span');
+      title.className = 'ai-panel__structured-section-title';
+      title.textContent = 'Assessment Reasoning';
+      const quote = document.createElement('p');
+      quote.className = 'ai-panel__structured-quote';
+      quote.textContent = reasonVal;
+      sec.append(title, quote);
+      card.appendChild(sec);
+    }
+
+    return card;
+  }
+
   // ----- render -------------------------------------------------------
 
   function render() {
@@ -261,6 +406,23 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
 
     const banner = buildBanner();
     if (banner) bodyEl.appendChild(banner);
+
+    // If still probing availability, show clean skeleton loading
+    if (availability === null && !tool.disabled) {
+      const skeletonWrap = document.createElement('div');
+      skeletonWrap.className = 'ai-panel__skeleton-wrap';
+      skeletonWrap.setAttribute('role', 'status');
+      skeletonWrap.setAttribute('aria-label', 'Checking AI model availability…');
+      const sLine = document.createElement('div');
+      sLine.className = 'skeleton skeleton--line';
+      sLine.style.width = '70%';
+      const sBlock = document.createElement('div');
+      sBlock.className = 'skeleton skeleton--block';
+      sBlock.style.height = '2.75rem';
+      skeletonWrap.append(sLine, sBlock);
+      bodyEl.appendChild(skeletonWrap);
+      return;
+    }
 
     // --- form ---
     const form = document.createElement('form');
@@ -300,11 +462,13 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
     generate.innerHTML = `${icons.sparkles(16)} <span>Generate</span>`;
     generate.disabled = busy || isPending(job) || !canGenerate();
     if (!canGenerate()) {
-      generate.title = availability === null
-        ? 'Checking whether the local AI model is available…'
-        : availability === 'not_configured'
-          ? 'No AI model is configured on this workstation.'
-          : 'The local AI model is not responding.';
+      generate.title = tool.disabled
+        ? (tool.disabledReason || 'Prerequisite not met.')
+        : availability === null
+          ? 'Checking whether the local AI model is available…'
+          : availability === 'not_configured'
+            ? 'No AI model is configured on this workstation.'
+            : 'The local AI model is not responding.';
     }
     actions.appendChild(generate);
     form.appendChild(actions);
@@ -319,20 +483,7 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
         return;
       }
 
-      busy = true;
-      errorMessage = null;
-      job = null;
-      render();
-      try {
-        const queued = await tool.run(raw);
-        job = { ...queued, output: null, errorCode: null };
-        startPollingIfPending();
-      } catch (err) {
-        errorMessage = err instanceof ApiClientError ? err.message : 'Could not start the job.';
-      } finally {
-        busy = false;
-        render();
-      }
+      await runNow(raw);
     });
 
     bodyEl.appendChild(form);
@@ -353,15 +504,14 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
     } else if (job === null) {
       const empty = document.createElement('p');
       empty.className = 'ai-panel__empty';
-      // The probing case is a real few seconds, not a formality — the
-      // probe waits out a connection attempt. Pointing at a banner that
-      // has not rendered yet would describe a screen nobody is looking at.
       if (availability === null) {
         empty.textContent = 'Checking whether the local AI model is available…';
       } else if (canGenerate()) {
         empty.textContent = tool.emptyText ?? 'Nothing generated yet.';
       } else {
-        empty.textContent = 'Generating is unavailable — see the notice above.';
+        empty.textContent = tool.disabled
+          ? (tool.disabledReason || 'Prerequisite not met.')
+          : 'Generating is unavailable — see the notice above.';
       }
       result.appendChild(empty);
     } else if (isPending(job)) {
@@ -370,21 +520,68 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
         job.status === 'queued' ? 'Queued. The local model runs one job at a time.' : 'Running…'
       ));
     } else if (job.status === 'failed') {
-      result.classList.add('ai-panel__result--error');
-      result.appendChild(buildStatusLine('failed', 'Failed'));
-      const msg = document.createElement('p');
-      msg.className = 'ai-panel__message';
-      msg.setAttribute('role', 'alert');
-      msg.textContent = ERROR_TEXT[job.errorCode] ?? `The job failed (${job.errorCode ?? 'no code reported'}).`;
-      result.appendChild(msg);
+      if (job.errorCode === 'THREAT_ANALYSIS_NO_DATA') {
+        // Honest neutral empty state rather than error alert for zero incidents
+        const neutralCard = document.createElement('div');
+        neutralCard.className = 'ai-panel__result--neutral';
+
+        const statusLine = document.createElement('div');
+        statusLine.className = 'ai-panel__status';
+        const pill = document.createElement('span');
+        pill.className = 'status-pill status-pill--info';
+        pill.textContent = 'No Incidents';
+        const label = document.createElement('span');
+        label.textContent = 'Zero incidents recorded in this timeframe';
+        statusLine.append(pill, label);
+
+        const neutralBody = document.createElement('div');
+        neutralBody.className = 'ai-panel__neutral-card';
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'ai-panel__neutral-icon';
+        iconSpan.innerHTML = icons.info(18);
+        const text = document.createElement('p');
+        text.className = 'ai-panel__message';
+        text.textContent = 'No incidents were recorded in the selected period. This indicates a quiet period with no recorded patterns to analyze.';
+        neutralBody.append(iconSpan, text);
+
+        neutralCard.append(statusLine, neutralBody);
+        result.appendChild(neutralCard);
+      } else {
+        result.classList.add('ai-panel__result--error');
+        result.appendChild(buildStatusLine('failed', 'Failed'));
+        const msg = document.createElement('p');
+        msg.className = 'ai-panel__message';
+        msg.setAttribute('role', 'alert');
+        msg.textContent = ERROR_TEXT[job.errorCode] ?? `The job failed (${job.errorCode ?? 'no code reported'}).`;
+        result.appendChild(msg);
+      }
     } else {
       result.appendChild(buildStatusLine('completed', 'Draft ready'));
 
-      // textContent, never innerHTML — this is model output.
-      const output = document.createElement('pre');
-      output.className = 'ai-panel__output';
-      output.textContent = job.output ?? '';
-      result.appendChild(output);
+      // If classifier, show clean structured presentation first
+      const structuredView = buildStructuredClassifier(job.output ?? '');
+      if (structuredView) {
+        result.appendChild(structuredView);
+      } else {
+        const output = document.createElement('pre');
+        output.className = 'ai-panel__output';
+        output.textContent = job.output ?? '';
+        result.appendChild(output);
+      }
+
+      // Metadata line: word & character counts + SMS segment if applicable
+      const metaLine = document.createElement('div');
+      metaLine.className = 'ai-panel__meta-line';
+      const outputText = job.output ?? '';
+      const chars = outputText.length;
+      const words = outputText.trim().split(/\s+/).filter(Boolean).length;
+      let metaText = `${chars} chars · ${words} words`;
+      if (tool.isSms || tool.label === 'AI Message Composer') {
+        const segs = Math.ceil(chars / 160) || 1;
+        metaText += ` · ${segs} SMS ${segs === 1 ? 'segment' : 'segments'}`;
+      }
+      metaLine.textContent = metaText;
+      result.appendChild(metaLine);
 
       const footer = document.createElement('div');
       footer.className = 'ai-panel__footer';
@@ -412,6 +609,17 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
       });
       footer.appendChild(copy);
 
+      // Built-in Regenerate Action
+      const regenBtn = document.createElement('button');
+      regenBtn.type = 'button';
+      regenBtn.className = 'ghost';
+      regenBtn.innerHTML = `${icons.repeat(14)} <span>Regenerate</span>`;
+      regenBtn.disabled = busy || isPending(job) || !canGenerate();
+      regenBtn.addEventListener('click', () => {
+        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      });
+      footer.appendChild(regenBtn);
+
       if (job.modelVersion) {
         const model = document.createElement('span');
         model.className = 'ai-panel__model';
@@ -430,6 +638,8 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
   function startPollingIfPending() {
     stop();
     if (!isPending(job)) return;
+    if (!jobStartedAt) jobStartedAt = Date.now();
+    startElapsedTimer();
 
     pollTimer = setInterval(async () => {
       try {
@@ -438,11 +648,14 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
         job = fresh;
         if (!isPending(fresh)) {
           stop();
-          if (wasPending) {
+          if (wasPending && !isAutoRun) {
             showToast(
               fresh.status === 'completed' ? 'Draft is ready.' : 'The AI job failed.',
               { variant: fresh.status === 'completed' ? 'success' : 'error' }
             );
+          }
+          if (wasPending && fresh.status === 'completed' && typeof onResult === 'function') {
+            onResult(fresh.output ?? '', fresh);
           }
         }
         render();
@@ -460,6 +673,9 @@ export function AiToolPanel({ tool, collapsible = false, startCollapsed = false,
     if (destroyed) return;
     availability = value_;
     render();
+    if (tool.autoRun && tool.input === 'none' && job === null && !busy && canGenerate()) {
+      runNow('', { auto: true });
+    }
   });
 
   return {
