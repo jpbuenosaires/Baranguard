@@ -1,0 +1,117 @@
+{
+  "_comment": "SMOKE-TEST FIXTURE, NOT THE EVALUATION SET. Ten invented records used to prove backend/scripts/ai-evaluate.php scores correctly. The real 200-record set is built by hand by three people per docs/AI_Evaluation_Dataset_Guide.md and belongs in redaction-eval-v1.json. Every record here is INVENTED — no real incident narrative is ever used as a fixture (RA 10173). Doubles as a worked example of the record format.",
+  "dataset_name": "redaction-eval-sample",
+  "dataset_version": "sample-v1",
+  "records": [
+    {
+      "id": "sample-001",
+      "author": "A",
+      "incident_type": "theft",
+      "narrative": "Nagreklamo si Rosalinda Mercado, 42 anyos, naninirahan sa 24 Purok Maligaya, na nawala ang kanyang cellphone kaninang alas-tres ng hapon sa palengke. Ang contact number niya ay 0917-555-2841. Nakita ni Danilo Reyes ang suspek na tumakas sakay ng motorsiklo na may plate ABC 1234.",
+      "entities": [
+        { "type": "NAME", "text": "Rosalinda Mercado" },
+        { "type": "ADDRESS", "text": "24 Purok Maligaya" },
+        { "type": "PHONE", "text": "0917-555-2841" },
+        { "type": "NAME", "text": "Danilo Reyes" },
+        { "type": "PLATE_NUMBER", "text": "ABC 1234" }
+      ],
+      "must_keep": ["cellphone", "palengke", "motorsiklo"]
+    },
+    {
+      "id": "sample-002",
+      "author": "A",
+      "incident_type": "disturbance",
+      "narrative": "A noise complaint was filed against a videoke session near the basketball court in Barangay Dao. The complainant, Aileen Villanueva, may be reached at aileen.v@example.ph or 09185552910. She was born on March 14, 1983.",
+      "entities": [
+        { "type": "NAME", "text": "Aileen Villanueva" },
+        { "type": "EMAIL", "text": "aileen.v@example.ph" },
+        { "type": "PHONE", "text": "09185552910" },
+        { "type": "DATE_OF_BIRTH", "text": "March 14, 1983" }
+      ],
+      "must_keep": ["videoke", "basketball court", "Barangay Dao"]
+    },
+    {
+      "id": "sample-003",
+      "author": "B",
+      "incident_type": "traffic_incident",
+      "narrative": "Dalawang tricycle ang nagbanggaan sa kanto malapit sa simbahan. Walang malubhang nasugatan. Ang driver na si Arnel Domingo ay may lisensya bilang ID number 1234-5678-9012 at nakatira sa Sitio Bagong Silang.",
+      "entities": [
+        { "type": "NAME", "text": "Arnel Domingo" },
+        { "type": "ID_NUMBER", "text": "1234-5678-9012" },
+        { "type": "ADDRESS", "text": "Sitio Bagong Silang" }
+      ],
+      "must_keep": ["tricycle", "simbahan", "lisensya"]
+    },
+    {
+      "id": "sample-004",
+      "author": "B",
+      "incident_type": "animal_complaint",
+      "narrative": "A stray dog was reported wandering near the elementary school gate during dismissal. Barangay tanods contained the animal and contacted the municipal veterinary office. No one was bitten.",
+      "entities": [],
+      "must_keep": ["stray dog", "elementary school", "veterinary office"]
+    },
+    {
+      "id": "sample-005",
+      "author": "B",
+      "incident_type": "vandalism",
+      "narrative": "Spray paint was found on the barangay hall wall. A witness, Marites Cruz, said she saw two teenagers running toward Purok Pag-asa at around 9pm. Her number is +63 917 555 3120.",
+      "entities": [
+        { "type": "NAME", "text": "Marites Cruz" },
+        { "type": "ADDRESS", "text": "Purok Pag-asa" },
+        { "type": "PHONE", "text": "+63 917 555 3120" }
+      ],
+      "must_keep": ["Spray paint", "barangay hall", "teenagers"]
+    },
+    {
+      "id": "sample-006",
+      "author": "C",
+      "incident_type": "medical_emergency",
+      "narrative": "An elderly resident collapsed at the plaza and was assisted by responding tanods before transport to the municipal health center. Vital signs were stable on handover.",
+      "entities": [],
+      "must_keep": ["plaza", "health center", "Vital signs"]
+    },
+    {
+      "id": "sample-007",
+      "author": "C",
+      "incident_type": "domestic_dispute",
+      "narrative": "Isang alitan sa pagitan ng magkapitbahay ang naiulat sa Purok Masagana. Sina Nestor Pascual at Lorna Pascual ay parehong nagbigay ng salaysay. Walang pisikal na away na naganap.",
+      "entities": [
+        { "type": "ADDRESS", "text": "Purok Masagana" },
+        { "type": "NAME", "text": "Nestor Pascual" },
+        { "type": "NAME", "text": "Lorna Pascual" }
+      ],
+      "must_keep": ["magkapitbahay", "salaysay"]
+    },
+    {
+      "id": "sample-008",
+      "author": "C",
+      "incident_type": "missing_person",
+      "narrative": "A parent reported that her son did not return home from school by 7pm. The child was later found at a classmate's house. The parent, Jocelyn Espino, can be contacted at 0918-555-7744.",
+      "entities": [
+        { "type": "NAME", "text": "Jocelyn Espino" },
+        { "type": "PHONE", "text": "0918-555-7744" }
+      ],
+      "must_keep": ["school", "classmate"]
+    },
+    {
+      "id": "sample-009",
+      "author": "A",
+      "incident_type": "theft",
+      "narrative": "Nawawala ang laman ng tindahan sa Purok Rizal matapos ang isang pagnanakaw. Ang may-ari na si Eduardo Mercado ay nag-ulat ng halagang limang libong piso. Ang kanyang GCash account ay 09175558800.",
+      "entities": [
+        { "type": "ADDRESS", "text": "Purok Rizal" },
+        { "type": "NAME", "text": "Eduardo Mercado" },
+        { "type": "ACCOUNT", "text": "09175558800" }
+      ],
+      "must_keep": ["tindahan", "pagnanakaw", "limang libong piso"]
+    },
+    {
+      "id": "sample-010",
+      "author": "A",
+      "incident_type": "other",
+      "narrative": "A resident asked the barangay to mediate a boundary disagreement over a fence line between two lots. Both parties agreed to appear before the Lupon at the next scheduled hearing.",
+      "entities": [],
+      "must_keep": ["boundary", "fence line", "Lupon"]
+    }
+  ]
+}
