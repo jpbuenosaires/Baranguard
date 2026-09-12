@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baranguard — Progress Tracker</title>
+<style>
+  :root {
+    --color-bg: #F8FAFC;
+    --color-surface: #FFFFFF;
+    --color-border: #E2E8F0;
+    --color-text-primary: #0F172A;
+    --color-text-secondary: #475569;
+    --color-navy: #1E3A6E;
+    --color-primary: #1D4ED8;
+    --color-critical: #DC2626;
+    --color-critical-bg: #FEE2E2;
+    --color-warning: #D97706;
+    --color-warning-bg: #FEF3C7;
+    --color-success: #16A34A;
+    --color-success-bg: #DCFCE7;
+    --color-info: #0891B2;
+    --shadow-card: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.06);
+    --radius-md: 10px;
+    --radius-sm: 6px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: #0B1220;
+      --color-surface: #131C2E;
+      --color-border: #253249;
+      --color-text-primary: #E5EAF3;
+      --color-text-secondary: #93A1B8;
+      --color-navy: #6C8FD1;
+      --color-primary: #5B8CFF;
+      --color-critical: #F87171;
+      --color-critical-bg: #3B1418;
+      --color-warning: #FBBF24;
+      --color-warning-bg: #3A2A0C;
+      --color-success: #4ADE80;
+      --color-success-bg: #0F2B1A;
+      --color-info: #38BDF8;
+      --shadow-card: 0 1px 3px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  header.top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  header.top h1 {
+    margin: 0 0 4px;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--color-navy);
+  }
+  header.top p {
+    margin: 0;
+    color: var(--color-text-secondary);
+    max-width: 60ch;
+  }
+  .top-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    padding: 7px 12px;
+  }
+  button:hover { border-color: var(--color-primary); }
+  button.primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+  button.ghost-danger { color: var(--color-critical); }
+
+  /* Overall progress */
+  .overall-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+  }
+  .overall-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .overall-top .big { font-size: 1.6rem; font-weight: 800; }
+  .overall-top .sub { color: var(--color-text-secondary); font-size: .85rem; }
+  .bar-track {
+    height: 10px;
+    border-radius: 999px;
+    background: var(--color-border);
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-info), var(--color-success));
+    border-radius: 999px;
+    transition: width .25s ease;
+  }
+  .priority-breakdown {
+    display: flex;
+    gap: 14px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+    font-size: .8rem;
+    color: var(--color-text-secondary);
+  }
+  .priority-breakdown span.dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 18px;
+  }
+  .controls input[type="search"] {
+    flex: 1;
+    min-width: 160px;
+    font: inherit;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+  }
+  .filter-chip {
+    padding: 6px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    font-size: .8rem;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    user-select: none;
+  }
+  .filter-chip.active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .8rem;
+    color: var(--color-text-secondary);
+    margin-left: auto;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  /* Category sections */
+  .category {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .category-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 16px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .category-header:hover { background: rgba(29,78,216,0.04); }
+  .category-header .chev {
+    transition: transform .15s ease;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
+  .category.collapsed .chev { transform: rotate(-90deg); }
+  .category-header .title {
+    font-weight: 700;
+    flex: 1;
+  }
+  .category-header .count {
+    font-size: .78rem;
+    color: var(--color-text-secondary);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    padding: 2px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .category-header .mini-bar {
+    width: 70px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-border);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .category-header .mini-fill {
+    height: 100%;
+    background: var(--color-success);
+  }
+  .category-body {
+    border-top: 1px solid var(--color-border);
+  }
+  .category.collapsed .category-body { display: none; }
+  .category-note {
+    padding: 10px 16px;
+    font-size: .82rem;
+    color: var(--color-text-secondary);
+    font-style: italic;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* Item rows */
+  .item {
+    display: flex;
+    gap: 11px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--color-border);
+    align-items: flex-start;
+  }
+  .item:last-child { border-bottom: none; }
+  .item.hidden { display: none; }
+  .item input[type="checkbox"] {
+    width: 18px; height: 18px;
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: var(--color-success);
+    cursor: pointer;
+  }
+  .item .body { flex: 1; min-width: 0; }
+  .item .row1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .item .id-badge {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--color-text-secondary);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+  .item .title {
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+  .item.done .title { text-decoration: line-through; color: var(--color-text-secondary); font-weight: 500; }
+  .item .desc {
+    margin-top: 3px;
+    color: var(--color-text-secondary);
+    font-size: .85rem;
+  }
+  .item.done .desc { opacity: .6; }
+  .pill {
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .pill.blocker { background: var(--color-critical-bg); color: var(--color-critical); }
+  .pill.uat { background: var(--color-warning-bg); color: var(--color-warning); }
+  .pill.polish { background: var(--color-success-bg); color: var(--color-success); }
+  .pill.done { background: var(--color-success-bg); color: var(--color-success); }
+
+  /* Custom items */
+  .custom-add {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+  .custom-add input[type="text"] {
+    flex: 1;
+    font: inherit;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+  }
+  .item .remove-btn {
+    border: none;
+    background: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 2px 6px;
+    flex-shrink: 0;
+  }
+  .item .remove-btn:hover { color: var(--color-critical); }
+
+  .empty-state {
+    text-align: center;
+    padding: 30px 16px;
+    color: var(--color-text-secondary);
+  }
+
+  footer.note {
+    margin-top: 24px;
+    padding: 14px 16px;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: .8rem;
+    color: var(--color-text-secondary);
+  }
+  footer.note code {
+    background: var(--color-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Baranguard — Progress Tracker</h1>
+      <p>Snapshot of <code>docs/REMAINING.md</code> as of 2026-09-07, turned into a checklist. Your check marks live only in this browser's local storage — nothing is sent anywhere.</p>
+    </div>
+    <div class="top-actions">
+      <button id="exportBtn" title="Copy a plain-text summary of what's checked">Export</button>
+      <button id="resetBtn" class="ghost-danger" title="Clear all progress and start over">Reset</button>
+    </div>
+  </header>
+
+  <div class="overall-card">
+    <div class="overall-top">
+      <div><span class="big" id="overallCount">0 / 0</span> <span class="sub">items done</span></div>
+      <div class="sub" id="overallPct">0%</div>
+    </div>
+    <div class="bar-track"><div class="bar-fill" id="overallBar" style="width:0%"></div></div>
+    <div class="priority-breakdown" id="priorityBreakdown"></div>
+  </div>
+
+  <div class="controls">
+    <input type="search" id="searchBox" placeholder="Search items…">
+    <div class="filter-chip active" data-filter="all">All</div>
+    <div class="filter-chip" data-filter="blocker">🔴 Blocks Sprint 8</div>
+    <div class="filter-chip" data-filter="uat">🟠 Needed for UAT</div>
+    <div class="filter-chip" data-filter="polish">🟢 Polish</div>
+    <div class="filter-chip" data-filter="done">✅ Done</div>
+    <label class="toggle-label">
+      <input type="checkbox" id="hideDoneToggle"> Hide completed
+    </label>
+  </div>
+
+  <div id="categories"></div>
+
+  <footer class="note">
+    This is a static snapshot, not a live sync — if <code>docs/REMAINING.md</code> changes later, this list won't update on its own. Storage key: <code>baranguard-tracker-v1</code> in this browser's <code>localStorage</code>, scoped to wherever this file is opened from. Clearing browser data/site data for this file, or opening it from a different path, starts fresh.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const STORAGE_KEY = "baranguard-tracker-v1";
+
+  // priority: "blocker" (🔴 blocks Sprint 8) · "uat" (🟠 needed for credible UAT) · "polish" (🟢 nice-to-have)
+  // "done" true = REMAINING.md already marks this ✅ as of 2026-09-07 (pre-checked, but you can uncheck if it regresses)
+  const DATA = [
+    { cat: "F", catTitle: "F — Audit remediation (gates Sprint 8)", note: "Defects in shipped, believed-correct behaviour — not just unfinished work. Evidence: docs/AUDIT_2026-09-07.md", items: [
+      { id: "F1", p: "blocker", t: "API is published to the public internet", d: "web/index.html points at a public Cloudflare tunnel on a LAN-only system; HEAD points at a disposable preview DB. Also defeats the citizen-report per-IP rate limit. Settle the intended base URL first — nothing else can be verified honestly until this is." },
+      { id: "F2", p: "blocker", t: "Stored XSS: anonymous citizen report → Secretary session", d: "POST /citizen-reports stores description/contact_number unescaped; renders unescaped in blotter-detail.js and citizen-reports-inbox.js. Reaches the one session that can read every raw_narrative." },
+      { id: "F3", p: "blocker", t: "~40 further unescaped innerHTML interpolations", d: "Across 12 page modules. Only 3 files define escapeHtml and none apply it everywhere. Fix is one shared helper, not 45 judgement calls." },
+      { id: "F4", p: "blocker", t: "Evidence attachment upload doesn't exist server-side", d: "No POST route, no INSERT INTO evidence_attachment anywhere, no evidence channel in /sync/batch. Build it, or formally descope and correct §11 retention." },
+      { id: "F5", p: "uat", t: "PATCH /incidents/:id idempotency is theatre", d: "Requires and validates Idempotency-Key, then discards it — never stores or replays. Every sibling write replays for real." },
+      { id: "F6", p: "uat", t: "is_suspended not checked in AuthMiddleware::authenticate()", d: "Only is_active is checked there. Unreachable today (login + suspend endpoint both cover it) but it's an omission, not a decision." },
+      { id: "F7", p: "uat", t: "Walk-in blotter shows unredacted text to Admin/PB", d: "POST /blotter writes raw text into both raw_narrative and narrative_summary on a born-finalized record — the only path where raw_narrative reaches a non-Secretary. Needs a written carve-out or split fields." },
+      { id: "F8", p: "uat", t: "avg_response_time_minutes double-counts multi-dispatch incidents", d: "AVG() over an un-deduplicated incident JOIN dispatch. Settle the per-incident definition before picking Sprint 8's response-time box." },
+      { id: "F9", p: "polish", t: "Smaller contained bugs", d: "POST /blotter can answer 200 [] on a shared idempotency key with no blotter row; GIS Live Activity Enter key double-toggles (net no-op); SMS broadcast idempotency scans audit_log via unindexed JSON_EXTRACT." },
+    ]},
+    { cat: "A", catTitle: "A — Blocked on hardware or accounts you have to provide", note: "Nothing here can be finished by a coding session alone — the long poles.", items: [
+      { id: "A1", p: "blocker", t: "Android device/emulator run", d: "Blocked on JDK 21 + an API 36 emulator. Once it runs: SQLCipher check, offline-kill survival, photo/voice real files, keystore round-trip, M5/M6/M7/M12/M13 on a real screen, runSyncPass() draining a queue." },
+      { id: "A2", p: "blocker", t: "Run the AI model end-to-end", d: "This workstation is confirmed too slow — a real generate() call timed out at 300s with 0 bytes. eval-kit/ packages the run for a friend's capable machine; hand it off and wait for a completed run." },
+      { id: "A3", p: "blocker", t: "The 200-record evaluation dataset", d: "DONE — generated (not hand-authored) via backend/scripts/generate-eval-dataset.php. Baseline: 32.71% recall / 100% precision. Recommend a human spot-check of the Bikol subset before quoting results.", done: true },
+      { id: "A4", p: "uat", t: "Real FCM + Semaphore credentials", d: "Rule 12's fallback ladder is logically verified but no Tanod's phone has ever actually buzzed." },
+      { id: "A5", p: "polish", t: "GSM modem hardware", d: "Only needed for the tethered-phone inbound path. The contract is already proven by sms-envelope-build.php." },
+    ]},
+    { cat: "B", catTitle: "B — Verification a coding session can do now", note: "", items: [
+      { id: "B1", p: "blocker", t: "Browser-verify the unverified screens", d: "Round-2 UI (9 phases: Dispatch queue, Blotter Entry, topbar, Incident Management, rebuilt Electronic Blotter, Settings rail, SMS log, Analytics charts) plus Sprint 7's W17/W20 — wired and wiring-checked but never opened in a browser. Largest pile of unverified-but-finished work." },
+      { id: "B2", p: "uat", t: "Pen-test the other resource types", d: "Incidents passed 68/68. Dispatch, shifts, citizen reports, SMS logs, map packages have had no equivalent pass. Reuse verify-sprint7-pentest-incidents.sh's four-dimension structure." },
+      { id: "B3", p: "uat", t: "Run the restore drill with your own passphrase", d: "Drill is proven 12/12 but used a scratch dir — W20 still shows \"Never\"." },
+      { id: "B4", p: "uat", t: "Verify Sprint 3's backend against real XAMPP", d: "POST /gps, PATCH /dispatch/:id/status, POST /sync/batch, GET /incidents/nearby, mobile POST /incidents — no dedicated verify-sprint3.sh. Interrupted-sync resume and duplicate-GPS handling specifically unproven." },
+      { id: "B5", p: "polish", t: "Roles other than Admin in a browser", d: "Almost all browser verification has been done as Admin. Punong Barangay and Secretary never walked through the full nav." },
+    ]},
+    { cat: "C", catTitle: "C — Real gaps in shipped behaviour", note: "", items: [
+      { id: "C1", p: "uat", t: "Backup file expiry (§11 / Rule 11)", d: "DONE — backup.sh computes the earliest legal-hold floor and refuses to prune past it, failing closed if the hold check can't run.", done: true },
+      { id: "C2", p: "uat", t: "Nothing is scheduled", d: "retention-job.php and restore-drill.sh are CLI-only, neither runs on its own. Needs a human at the keyboard running the final schtasks command — deliberately not automatable by a coding session." },
+      { id: "C3", p: "uat", t: "Mobile SOS button", d: "DONE, code-complete — POST /tanod-sos wired online-first with offline-queue fallback, compiles clean. Still device-unverified (same A1 blocker).", done: true },
+      { id: "C4", p: "polish", t: "Smaller known gaps", d: "LineChart has no data-gap concept (null renders as 0); on-device SMS send, M12 full-screen intent, and M7 live basemap are all deferred pending a real device; 13 pre-existing npm advisories in mobile/ never triaged." },
+    ]},
+    { cat: "D", catTitle: "D — Unbuilt screens", note: "", items: [
+      { id: "D-W10", p: "uat", t: "W10 User Management", d: "Built: create/deactivate/reactivate with session revocation and one-active-Admin guard. Role changes to an existing account deliberately out of scope.", done: true },
+      { id: "D-W18", p: "polish", t: "W18 Map Package Management", d: "Built and browser-verified end-to-end (empty state, invalid-file rejection, real MBTiles upload).", done: true },
+      { id: "D-W21", p: "uat", t: "W21 System Settings — full scope", d: "Only a narrow override shipped (SMS gateway + general display keys, migration 0012). Notifications/Security/GIS/Backup sections remain unbuilt — no schema, no endpoints, and §2 Rule 6 forbids a control that looks functional and does nothing." },
+    ]},
+    { cat: "E", catTitle: "E — Housekeeping", note: "", items: [
+      { id: "E1", p: "polish", t: "Stray baranguard_device_check database", d: "Flagged, never investigated. Safe to drop after a look (needs MySQL running to check)." },
+      { id: "E2", p: "polish", t: "Stray empty root files (cls, git, main))", d: "Confirmed gone as of 2026-09-07.", done: true },
+      { id: "E3", p: "polish", t: "Untracked design-doc artifacts at repo root", d: "Baranguard_System_Design_Document.docx/.pdf, four diagram_*.png, scratch_diagrams.py. Decide: commit under docs/, or gitignore — just pick one." },
+      { id: "E4", p: "polish", t: "mobile/android/ commit decision", d: "Gitignored but holds real non-regeneratable fixes (gradle.properties, manifest permissions). npx cap sync is safe; npx cap add android would destroy them." },
+    ]},
+    { cat: "G", catTitle: "G — Recommended enhancements (not required for Sprint 8)", note: "Target rules for G1-G4 are already written in the Master Reference — implementing means matching code/schema to a decision already made, not inventing one.", items: [
+      { id: "G1", p: "polish", t: "SOS third fallback tier", d: "App + SMS fallback both terminate on the same single-point-of-failure workstation. Fix: mobile app sends a native-device SMS (own SIM, no gateway) to a backup contact when both other paths are unreachable." },
+      { id: "G2", p: "polish", t: "sms_log.legal_hold column", d: "Retention purges SMS logs on a flat 1-year clock regardless of a hold on the linked incident. New migration + retention-job check." },
+      { id: "G3", p: "polish", t: "mobile_device retention: scrub, not delete", d: "Deleting the row cascades ON DELETE SET NULL onto incident.device_id, erasing 7-year legal-record provenance. Clear fcm_token/device_secret_ref in place instead, same pattern as raw_narrative." },
+      { id: "G4", p: "uat", t: "incident.source = 'web_walkin' discriminator", d: "Cheaper than a new status enum value. Lets dashboards exclude walk-ins from response-time/pending metrics by a WHERE clause. Touches F8 — do both together if either is picked up." },
+      { id: "G-f1", p: "polish", t: "Feature: Nearest-available-Tanod ranking on dispatch", d: "Decision support only, reuses existing GPS + duty data." },
+      { id: "G-f2", p: "polish", t: "Feature: Stale-pending escalation", d: "For undispatched high/critical incidents — closes the gap where only SOS currently escalates urgency." },
+      { id: "G-f3", p: "polish", t: "Feature: Backup/second responder on critical incidents", d: "Reopens the \"one active dispatch per incident\" decision — warranted for fire/medical." },
+      { id: "G-f4", p: "polish", t: "Feature: Redaction diff view", d: "Highlight exactly what was removed — near-free, pure UI over data already stored." },
+      { id: "G-f5", p: "polish", t: "Feature: Evidence-access audit", d: "Log every view/download of evidence_attachment, not just upload — closes a real Rule 17 gap." },
+      { id: "G-f6", p: "polish", t: "Feature: Lupon packet verification hash/QR", d: "Real integrity value for a document that leaves the system into a non-auditable paper context." },
+      { id: "G-f7", p: "polish", t: "Feature: Health-check history", d: "Not just current snapshot — serves Rule 15's own stated single-point-of-failure risk." },
+      { id: "G-f8", p: "polish", t: "Feature: Backup-staleness warning in W20", d: "Trivial once health-check history exists." },
+      { id: "G-f9", p: "polish", t: "Feature: Closing-the-loop SMS to citizen reporter", d: "\"Received\"/\"resolved\" — cheap, reuses existing pipeline and already-collected contact number." },
+      { id: "G-f10", p: "polish", t: "Feature: Two-way SMS console", d: "Already named in the Master Reference's out-of-scope list. Real value given the population's phone mix." },
+      { id: "G-f11", p: "polish", t: "Feature: Barangay-wide advisory broadcast", d: "Flood/curfew alerts. Needs a proper opt-in subscriber list, not a reuse of every number in sms_log (Data Privacy Act consent)." },
+      { id: "G-f12", p: "polish", t: "Feature: Periodic PB digest", d: "Reuses the PDF engine built for the Lupon packet — fits how a PB, not Admin, would consume this system." },
+      { id: "G-f13", p: "polish", t: "Feature: Aggregated public transparency report", d: "Must stay strictly aggregate — no incident-level or fine-grained map detail." },
+      { id: "G-f14", p: "polish", t: "Feature: Client-side photo compression", d: "Before evidence upload — build into the same work as the upload endpoint itself (F4), not separately." },
+    ]},
+  ];
+
+  const PILL_LABEL = { blocker: "🔴 Blocker", uat: "🟠 UAT", polish: "🟢 Polish", done: "✅ Done" };
+  const PILL_CLASS = { blocker: "blocker", uat: "uat", polish: "polish", done: "done" };
+  const PRIORITY_COLOR = { blocker: "var(--color-critical)", uat: "var(--color-warning)", polish: "var(--color-success)" };
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return { checked: {}, custom: [], collapsed: {} };
+      const parsed = JSON.parse(raw);
+      return {
+        checked: parsed.checked || {},
+        custom: Array.isArray(parsed.custom) ? parsed.custom : [],
+        collapsed: parsed.collapsed || {},
+      };
+    } catch (e) {
+      console.warn("Baranguard tracker: could not read saved progress, starting fresh.", e);
+      return { checked: {}, custom: [], collapsed: {} };
+    }
+  }
+
+  function saveState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.warn("Baranguard tracker: could not save progress (storage full or blocked).", e);
+    }
+  }
+
+  let state = loadState();
+
+  // Seed defaults for items marked done:true the very first time they're seen,
+  // without ever overriding a choice the user already made (present in `checked`).
+  DATA.forEach(group => group.items.forEach(item => {
+    if (item.done && !(item.id in state.checked)) {
+      state.checked[item.id] = true;
+    }
+  }));
+
+  let activeFilter = "all";
+  let searchTerm = "";
+  let hideDone = false;
+
+  const categoriesEl = document.getElementById("categories");
+  const searchBox = document.getElementById("searchBox");
+  const hideDoneToggle = document.getElementById("hideDoneToggle");
+
+  function isChecked(id) {
+    return !!state.checked[id];
+  }
+
+  function setChecked(id, val) {
+    state.checked[id] = val;
+    saveState();
+    render();
+  }
+
+  function matchesFilter(item) {
+    if (activeFilter === "all") return true;
+    if (activeFilter === "done") return isChecked(item.id);
+    return item.p === activeFilter;
+  }
+
+  function matchesSearch(item) {
+    if (!searchTerm) return true;
+    const hay = (item.t + " " + item.d + " " + item.id).toLowerCase();
+    return hay.includes(searchTerm.toLowerCase());
+  }
+
+  function render() {
+    // Overall stats (built-in items + custom items)
+    const allItems = [];
+    DATA.forEach(g => g.items.forEach(i => allItems.push(i)));
+    const totalBuiltIn = allItems.length;
+    const doneBuiltIn = allItems.filter(i => isChecked(i.id)).length;
+    const doneCustom = state.custom.filter(c => c.done).length;
+    const totalAll = totalBuiltIn + state.custom.length;
+    const doneAll = doneBuiltIn + doneCustom;
+    const pct = totalAll ? Math.round((doneAll / totalAll) * 100) : 0;
+
+    document.getElementById("overallCount").textContent = doneAll + " / " + totalAll;
+    document.getElementById("overallPct").textContent = pct + "%";
+    document.getElementById("overallBar").style.width = pct + "%";
+
+    const byPriority = { blocker: [0, 0], uat: [0, 0], polish: [0, 0] };
+    allItems.forEach(i => {
+      byPriority[i.p][1]++;
+      if (isChecked(i.id)) byPriority[i.p][0]++;
+    });
+    const pb = document.getElementById("priorityBreakdown");
+    pb.innerHTML = Object.keys(byPriority).map(p => {
+      const [done, total] = byPriority[p];
+      return '<span><span class="dot" style="background:' + PRIORITY_COLOR[p] + '"></span>' +
+        PILL_LABEL[p] + ": " + done + "/" + total + "</span>";
+    }).join("");
+
+    // Category sections
+    categoriesEl.innerHTML = "";
+    DATA.forEach(group => {
+      const visibleItems = group.items.filter(i => matchesFilter(i) && matchesSearch(i) && !(hideDone && isChecked(i.id)));
+      const groupDone = group.items.filter(i => isChecked(i.id)).length;
+      const groupTotal = group.items.length;
+      const groupPct = groupTotal ? Math.round((groupDone / groupTotal) * 100) : 0;
+
+      const catEl = document.createElement("div");
+      catEl.className = "category" + (state.collapsed[group.cat] ? " collapsed" : "");
+
+      const header = document.createElement("div");
+      header.className = "category-header";
+      header.innerHTML =
+        '<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>' +
+        '<span class="title">' + group.catTitle + '</span>' +
+        '<div class="mini-bar"><div class="mini-fill" style="width:' + groupPct + '%"></div></div>' +
+        '<span class="count">' + groupDone + '/' + groupTotal + '</span>';
+      header.addEventListener("click", () => {
+        state.collapsed[group.cat] = !state.collapsed[group.cat];
+        saveState();
+        render();
+      });
+      catEl.appendChild(header);
+
+      const body = document.createElement("div");
+      body.className = "category-body";
+
+      if (group.note) {
+        const noteEl = document.createElement("div");
+        noteEl.className = "category-note";
+        noteEl.textContent = group.note;
+        body.appendChild(noteEl);
+      }
+
+      if (visibleItems.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "Nothing here matches the current filter/search.";
+        body.appendChild(empty);
+      }
+
+      visibleItems.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "item" + (isChecked(item.id) ? " done" : "");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = isChecked(item.id);
+        cb.addEventListener("change", () => setChecked(item.id, cb.checked));
+
+        // Completion overrides the displayed pill, but never the underlying
+        // item.p — that stays the real priority tier so the priority-filter
+        // chips and the breakdown stats still count a checked-off blocker
+        // as a blocker (combine with "Hide completed" to see only what's left).
+        const pillKey = isChecked(item.id) ? "done" : item.p;
+        const bodyDiv = document.createElement("div");
+        bodyDiv.className = "body";
+        bodyDiv.innerHTML =
+          '<div class="row1">' +
+            '<span class="id-badge">' + item.id + '</span>' +
+            '<span class="title">' + escapeHtml(item.t) + '</span>' +
+            '<span class="pill ' + PILL_CLASS[pillKey] + '">' + PILL_LABEL[pillKey] + '</span>' +
+          '</div>' +
+          '<div class="desc">' + escapeHtml(item.d) + '</div>';
+
+        row.appendChild(cb);
+        row.appendChild(bodyDiv);
+        body.appendChild(row);
+      });
+
+      catEl.appendChild(body);
+      categoriesEl.appendChild(catEl);
+    });
+
+    // Custom items section
+    renderCustomSection();
+  }
+
+  function renderCustomSection() {
+    let customCat = document.getElementById("customCategory");
+    if (!customCat) {
+      customCat = document.createElement("div");
+      customCat.id = "customCategory";
+      customCat.className = "category";
+      categoriesEl.appendChild(customCat);
+    } else {
+      customCat.innerHTML = "";
+      categoriesEl.appendChild(customCat); // keep it last
+    }
+
+    const doneCustom = state.custom.filter(c => c.done).length;
+    const header = document.createElement("div");
+    header.className = "category-header";
+    header.innerHTML =
+      '<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>' +
+      '<span class="title">My additional items</span>' +
+      '<span class="count">' + doneCustom + '/' + state.custom.length + '</span>';
+    header.addEventListener("click", () => {
+      customCat.classList.toggle("collapsed");
+    });
+    customCat.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "category-body";
+
+    if (state.custom.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "Nothing added yet — jot down anything not already covered above.";
+      body.appendChild(empty);
+    }
+
+    state.custom.forEach((c, idx) => {
+      const row = document.createElement("div");
+      row.className = "item" + (c.done ? " done" : "");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!c.done;
+      cb.addEventListener("change", () => {
+        state.custom[idx].done = cb.checked;
+        saveState();
+        render();
+      });
+
+      const bodyDiv = document.createElement("div");
+      bodyDiv.className = "body";
+      bodyDiv.innerHTML = '<div class="row1"><span class="title">' + escapeHtml(c.text) + '</span></div>';
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove-btn";
+      removeBtn.title = "Remove";
+      removeBtn.textContent = "✕";
+      removeBtn.addEventListener("click", () => {
+        state.custom.splice(idx, 1);
+        saveState();
+        render();
+      });
+
+      row.appendChild(cb);
+      row.appendChild(bodyDiv);
+      row.appendChild(removeBtn);
+      body.appendChild(row);
+    });
+
+    const addRow = document.createElement("div");
+    addRow.className = "custom-add";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "Add a to-do and press Enter…";
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && input.value.trim()) {
+        state.custom.push({ text: input.value.trim(), done: false });
+        saveState();
+        input.value = "";
+        render();
+      }
+    });
+    addRow.appendChild(input);
+    body.appendChild(addRow);
+
+    customCat.appendChild(body);
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // --- Controls wiring ---
+  document.querySelectorAll(".filter-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      activeFilter = chip.getAttribute("data-filter");
+      render();
+    });
+  });
+
+  searchBox.addEventListener("input", () => {
+    searchTerm = searchBox.value;
+    render();
+  });
+
+  hideDoneToggle.addEventListener("change", () => {
+    hideDone = hideDoneToggle.checked;
+    render();
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    if (confirm("Clear all checked progress and custom items? This cannot be undone.")) {
+      state = { checked: {}, custom: [], collapsed: {} };
+      DATA.forEach(group => group.items.forEach(item => {
+        if (item.done) state.checked[item.id] = true;
+      }));
+      saveState();
+      render();
+    }
+  });
+
+  document.getElementById("exportBtn").addEventListener("click", () => {
+    let lines = ["Baranguard progress export — " + new Date().toISOString().slice(0, 10)];
+    DATA.forEach(group => {
+      lines.push("", group.catTitle);
+      group.items.forEach(item => {
+        lines.push((isChecked(item.id) ? "[x] " : "[ ] ") + item.id + " — " + item.t);
+      });
+    });
+    if (state.custom.length) {
+      lines.push("", "My additional items");
+      state.custom.forEach(c => lines.push((c.done ? "[x] " : "[ ] ") + c.text));
+    }
+    const text = lines.join("\n");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => alert("Copied a plain-text summary to your clipboard."),
+        () => window.prompt("Copy this text:", text)
+      );
+    } else {
+      window.prompt("Copy this text:", text);
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
