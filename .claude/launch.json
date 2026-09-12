@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "mobile", "--", "--port", "5173", "--strictPort"],
       "port": 5173
+    },
+    {
+      "name": "docs-static",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8910", "-t", "docs"],
+      "port": 8910
     }
   ]
 }

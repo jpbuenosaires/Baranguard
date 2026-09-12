@@ -53,6 +53,23 @@ notification/SOS fallback tests pass · restore test passes · no
 unresolved P0/P1 reference contradictions.
   -> Status: schema, restore test, and incident-tenant penetration are
      DONE. See docs/REMAINING.md for the ones that are not.
+  -> TWO exit conditions are currently FAILING (not merely unfinished) —
+     `docs/REMAINING.md` §F is the remediation list and it GATES this
+     sprint. **Do not open a Sprint 8 box while §F1-F4 are open** — a
+     UAT sign-off against seeded preview data over a public tunnel
+     wouldn't mean anything. Evidence: `docs/AUDIT_2026-09-07.md`.
+
+Two Sprint 8 boxes below are directly affected, so read these before
+picking either:
+  * "Dispatch response-time metric" — the existing implementation
+    double-counts incidents with more than one arrived dispatch
+    (REMAINING F8). Settle the per-incident definition FIRST, or this
+    box reports a wrong number as a measured one, which is exactly what
+    the sprint's own "REAL MEASURED NUMBERS" rule forbids.
+  * "Raw-PII exposure audit" — start from F2/F3/F7 rather than from
+    scratch; the raw-narrative-to-Secretary-session path and the
+    walk-in blotter's Admin/PB visibility are already traced with
+    file:line evidence.
 
 Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
   [ ] Auth/session revocation + lockout evidence
@@ -74,8 +91,9 @@ Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
   [ ] Fatigue audit trail
   [ ] Valid JSON contracts (schema-validate every §6 response shape)
   [ ] AI dataset evaluation run / Bikol language-quality validation
-      (needs the 200-record dataset AND a machine that can run SEA-LION
-      — the single biggest outstanding item; see docs/REMAINING.md)
+      (the 200-record dataset now exists — generated, not hand-authored,
+      see docs/REMAINING.md A3; still needs a machine that can run
+      SEA-LION at usable speed, see A2 and eval-kit/)
   [ ] SLM inference time / 3+ Android device tiers (workstation-side —
       this session records the methodology, the run happens outside it)
   [ ] One specific end-to-end UAT scenario (name it in prose)
