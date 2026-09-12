@@ -43,6 +43,10 @@ use PDO;
  */
 final class SystemHealthController
 {
+    /** Most transitions `history()` will return. See that method for why
+     *  it is a hard cap rather than pagination. */
+    private const HISTORY_LIMIT = 100;
+
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
     {
@@ -58,18 +62,34 @@ final class SystemHealthController
 
         $fcmStatus = self::envConfiguredStatus('FCM_SERVICE_ACCOUNT_PATH');
         $smsStatus = self::envConfiguredStatus('SEMAPHORE_API_KEY');
+        $osrmStatus = self::envConfiguredStatus('OSRM_URL');
+        $ollamaStatus = self::ollamaStatus();
+        $gsmStatus = self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN');
+
+        // Migration 0017: remember what this probe saw, but only when it
+        // differs from the last thing recorded. See recordHealthSample()
+        // and the migration header for why this is a change log rather
+        // than a sample-per-call time series.
+        self::recordHealthSample($pdo, [
+            'db_status' => $db,
+            'osrm_status' => $osrmStatus,
+            'ollama_status' => $ollamaStatus,
+            'gsm_status' => $gsmStatus,
+            'fcm_status' => $fcmStatus,
+            'sms_status' => $smsStatus,
+        ]);
 
         Http::send(200, [
             'api' => 'healthy', // this code is executing, so the API itself responded.
             'db' => $db,
-            'osrm' => self::envConfiguredStatus('OSRM_URL'),
-            'ollama' => self::ollamaStatus(),
+            'osrm' => $osrmStatus,
+            'ollama' => $ollamaStatus,
             // §2 Rule 22's "internal ingestion service" isn't a process
             // this endpoint can reach out and ping — INTERNAL_SERVICE_TOKEN
             // being set is the honest signal actually available here: it's
             // what the /internal/sms/* router itself requires before it
             // will accept anything (see public/internal.php).
-            'gsm_ingestion' => self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN'),
+            'gsm_ingestion' => $gsmStatus,
             // Fine-grained per-transport status (Sprint 4). `fcm` and
             // `sms_semaphore` are each independently truthful about
             // configuration presence — NEITHER is a live reachability
@@ -94,6 +114,108 @@ final class SystemHealthController
             // "never", never a fabricated recent timestamp.
             'restore_test_at' => self::lastRestoreDrillTimestamp(),
         ]);
+    }
+
+    /**
+     * `GET /system/health/history` — Admin only. The transitions behind
+     * the snapshot `index()` returns.
+     *
+     * NOT IN §6's ENDPOINT LIST, added deliberately (2026-09-12), same
+     * justification `BlotterController::luponPacketDownload()` records
+     * for itself: the stored data is useless without a way to read it,
+     * and §2 Rule 15 explicitly names the risk this answers. Admin-only,
+     * matching `index()` — this is operational infrastructure detail,
+     * and §3 gives Punong Barangay oversight of INCIDENTS, not of the
+     * workstation's plumbing.
+     *
+     * Returns transitions newest-first, capped. No pagination: this is a
+     * change log an operator scans, not a dataset they page through, and
+     * an unbounded one would be a footgun on a table that grows from
+     * outages.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function history(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+
+        $stmt = $pdo->query(
+            'SELECT recorded_at, db_status, osrm_status, ollama_status,
+                    gsm_status, fcm_status, sms_status
+               FROM health_check_log
+              ORDER BY recorded_at DESC, log_id DESC
+              LIMIT ' . self::HISTORY_LIMIT
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        Http::send(200, [
+            'items' => array_map(static fn (array $r): array => [
+                'recorded_at' => $r['recorded_at'],
+                'db' => $r['db_status'],
+                'osrm' => $r['osrm_status'],
+                'ollama' => $r['ollama_status'],
+                'gsm_ingestion' => $r['gsm_status'],
+                'fcm' => $r['fcm_status'],
+                'sms_semaphore' => $r['sms_status'],
+            ], $rows),
+            // Said in the payload, not just in the UI, so any consumer of
+            // this endpoint inherits the caveat rather than having to
+            // know it: these are observations, not a continuous record.
+            'sampling' => 'change_only_on_probe',
+        ]);
+    }
+
+    /**
+     * Writes one row only when the observed statuses differ from the
+     * newest recorded row (or when there is no row at all).
+     *
+     * WHY A READ ENDPOINT WRITES: `/system/health` is not a plain read,
+     * it is a probe — it actively pings the model server and the
+     * database. Recording what the probe saw is the point of having run
+     * it, and no other caller exists to do the recording (nothing on
+     * this system is scheduled — `docs/REMAINING.md` C2).
+     *
+     * FAILS SILENTLY, DELIBERATELY. A health endpoint that 500s because
+     * its own bookkeeping table is missing or unwritable would take down
+     * the screen an operator opens precisely when things are broken —
+     * turning a partial outage into a blind one. History is strictly
+     * less important than the answer, so any failure here is swallowed
+     * and the snapshot still returns.
+     *
+     * @param array<string,string> $statuses column => status
+     */
+    private static function recordHealthSample(PDO $pdo, array $statuses): void
+    {
+        try {
+            $latest = $pdo->query(
+                'SELECT db_status, osrm_status, ollama_status, gsm_status, fcm_status, sms_status
+                   FROM health_check_log ORDER BY log_id DESC LIMIT 1'
+            )->fetch(PDO::FETCH_ASSOC);
+
+            // Same states as last time — nothing changed, nothing to say.
+            if ($latest !== false && $latest !== null) {
+                $unchanged = true;
+                foreach ($statuses as $column => $value) {
+                    if ((string) ($latest[$column] ?? '') !== $value) {
+                        $unchanged = false;
+                        break;
+                    }
+                }
+                if ($unchanged) {
+                    return;
+                }
+            }
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO health_check_log
+                    (recorded_at, db_status, osrm_status, ollama_status, gsm_status, fcm_status, sms_status)
+                 VALUES
+                    (UTC_TIMESTAMP(), :db_status, :osrm_status, :ollama_status, :gsm_status, :fcm_status, :sms_status)'
+            );
+            $stmt->execute($statuses);
+        } catch (\Throwable) {
+            // See the doc block: never let bookkeeping break the probe.
+        }
     }
 
     /**

@@ -27,7 +27,7 @@
  * kebab-case filename per §4.
  */
 
-import { getSystemHealth, logout, ApiClientError } from '../api/apiClient.js';
+import { getSystemHealth, getSystemHealthHistory, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
@@ -603,6 +603,115 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     drSection.append(backupCard, restoreCard);
     pageContainer.appendChild(drSection);
+
+    renderHistory(pageContainer);
+  }
+
+  /**
+   * Dependency-status transitions (migration 0017). Appended after the
+   * current-state cards because it answers the follow-up question, not
+   * the first one: the cards say what is true now, this says how stable
+   * that has been — the thing §2 Rule 15's single-point-of-failure risk
+   * actually turns on.
+   *
+   * Its own async load, with its own failure handling: history is
+   * strictly secondary to the live snapshot, so a failure here must
+   * degrade to a note rather than blanking a page an operator is likely
+   * reading BECAUSE something is broken.
+   */
+  async function renderHistory(container) {
+    const section = document.createElement('div');
+    section.className = 'health-history';
+
+    const heading = document.createElement('h3');
+    heading.className = 'health-history__heading';
+    heading.textContent = 'Dependency status changes';
+    section.appendChild(heading);
+
+    const note = document.createElement('p');
+    note.className = 'health-history__note';
+    section.appendChild(note);
+
+    container.appendChild(section);
+
+    let history;
+    try {
+      history = await getSystemHealthHistory();
+    } catch {
+      note.textContent = 'Status history could not be loaded. The live checks above are unaffected.';
+      return;
+    }
+    // Same liveness idiom the refresh timer above uses — this page has no
+    // stop handle, it checks whether its own shell is still in the DOM.
+    if (!shell.el.isConnected) return;
+
+    // The caveat is stated before the data, not under it — a gap in this
+    // list means nobody was looking, and an operator who reads the rows
+    // first will have already drawn the wrong conclusion.
+    note.textContent = 'A row is recorded only when a status actually changes, and only while this page is being checked — '
+      + 'nothing polls in the background yet, so a gap means no one was watching, not that nothing happened.';
+
+    if (history.items.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'health-history__empty';
+      empty.textContent = 'No status changes recorded yet. The first check writes one entry; after that, only changes appear.';
+      section.appendChild(empty);
+      return;
+    }
+
+    const DEPENDENCIES = [
+      ['db', 'Database'],
+      ['osrm', 'Routing (OSRM)'],
+      ['ollama', 'Local AI (Ollama)'],
+      ['gsmIngestion', 'GSM ingestion'],
+      ['fcm', 'Push (FCM)'],
+      ['smsSemaphore', 'SMS (Semaphore)'],
+    ];
+
+    const list = document.createElement('ul');
+    list.className = 'health-history__list';
+    // Walk oldest-to-newest so each entry can name what CHANGED against
+    // the one before it; the list is then reversed for display, keeping
+    // newest first without computing diffs backwards.
+    const chronological = [...history.items].reverse();
+    const entries = chronological.map((row, index) => {
+      const previous = index === 0 ? null : chronological[index - 1];
+      const changed = previous === null
+        ? []
+        : DEPENDENCIES.filter(([key]) => row[key] !== previous[key]);
+      return { row, changed, isFirst: previous === null };
+    });
+
+    for (const { row, changed, isFirst } of entries.reverse()) {
+      const item = document.createElement('li');
+      item.className = 'health-history__item';
+
+      const when = document.createElement('span');
+      when.className = 'health-history__when';
+      when.textContent = new Date(row.recordedAt).toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+      item.appendChild(when);
+
+      const what = document.createElement('span');
+      what.className = 'health-history__what';
+      if (isFirst) {
+        what.textContent = 'First recorded check.';
+      } else {
+        what.textContent = changed
+          .map(([key, label]) => `${label} → ${STATUS_LABEL[row[key]] || row[key]}`)
+          .join(' · ');
+      }
+      item.appendChild(what);
+
+      // A transition INTO a non-healthy state is the one worth spotting
+      // in a scan; recoveries are good news and do not need to shout.
+      if (changed.some(([key]) => row[key] !== 'healthy')) {
+        item.classList.add('health-history__item--degraded');
+      }
+      list.appendChild(item);
+    }
+    section.appendChild(list);
   }
 
   function buildTerminalBox(command) {

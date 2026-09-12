@@ -1326,6 +1326,16 @@ html, body, .status-pill,
 .status-pill--success { background: var(--tint-success-bg); color: var(--pill-success-text); box-shadow: 0 0 8px rgba(22,163,74,0.15); }
 .status-pill--neutral { background: var(--tint-neutral-bg); color: var(--pill-neutral-text); }
 .status-pill--critical { background: var(--tint-critical-bg); color: var(--pill-critical-text); box-shadow: 0 0 8px rgba(220,38,38,0.2); }
+/* `--warning` is a deliberate alias of `--pending`'s treatment, not a
+   sixth colour: they are the same amber semantic tier, and W20's backup
+   card reaches for the name "warning" while queues reach for "pending".
+   Added 2026-09-12 because service-health.js was already using this
+   class and NOTHING defined it — the "No Backup Taken" badge, the single
+   most alarming disaster-recovery state on that screen, was rendering
+   with no fill at all. `verify-web-wiring.mjs` could not catch it: the
+   class name is assembled inside a ternary in a template literal, which
+   its static extraction cannot see. */
+.status-pill--warning { background: var(--tint-warning-bg); color: var(--color-warning-text); box-shadow: 0 0 8px rgba(217,119,6,0.15); }
 /* Left-border accent on critical pills specifically — a stronger visual
    scan cue for the one status that actually needs to jump out in a list
    (§8's status-pill spec doesn't call for this on the other four, and

@@ -944,6 +944,31 @@ export async function getSystemHealth() {
 }
 
 /**
+ * GET /system/health/history — Admin only. Dependency-status TRANSITIONS,
+ * newest first (migration 0017).
+ *
+ * `sampling` comes back as a machine-readable caveat rather than a
+ * comment: a row exists only where a probe actually observed a change,
+ * so gaps mean "nobody was looking", never "nothing happened". Callers
+ * are expected to surface that, not hide it.
+ */
+export async function getSystemHealthHistory() {
+  const json = await request('GET', '/system/health/history', { auth: true });
+  return {
+    sampling: json.sampling,
+    items: (json.items || []).map((row) => ({
+      recordedAt: row.recorded_at,
+      db: row.db,
+      osrm: row.osrm,
+      ollama: row.ollama,
+      gsmIngestion: row.gsm_ingestion,
+      fcm: row.fcm,
+      smsSemaphore: row.sms_semaphore,
+    })),
+  };
+}
+
+/**
  * GET /audit-log — §6, §9 W17 (Admin only, own barangay, newest-first).
  * Defaults to the last 7 days server-side when no range is given, per
  * W17's documented default view. `metadataJson` arrives already parsed.
