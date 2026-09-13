@@ -455,10 +455,16 @@ final class SmsController
         // to derive N distinct ones from). A retry with the same header
         // finds this exact prior broadcast in `audit_log` and returns its
         // recorded outcome instead of sending everything a second time.
+        //
+        // Queries `audit_log.idempotency_key` (migration 0019's VIRTUAL
+        // generated column + index) rather than a bare JSON_EXTRACT() —
+        // MariaDB only uses the index when the generated column itself is
+        // referenced, not an equivalent expression. See that migration's
+        // header for why this was a full unindexed scan before.
         $auditStmt = $pdo->prepare(
             "SELECT metadata_json FROM audit_log
              WHERE barangay_id = :barangay_id AND action = 'sms_broadcast_sent'
-               AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.idempotency_key')) = :idempotency_key
+               AND idempotency_key = :idempotency_key
              LIMIT 1"
         );
         $auditStmt->execute(['barangay_id' => $identity['barangay_id'], 'idempotency_key' => $idempotencyKey]);

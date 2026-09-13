@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Baranguard is offline-first, LAN-only, single-workstation (REFERENCE.md
+  §1) — the barangay workstation has no TLS certificate and no public
+  hostname, only a DHCP-assigned LAN IP. Android 9+ (API 28+) blocks
+  cleartext (plain HTTP) traffic by default, which would make this app
+  unable to reach that workstation at all. Permitted broadly rather than
+  scoped to one IP because the workstation's LAN IP is not fixed and
+  REFERENCE.md's F1 (the real BARANGUARD_API_BASE_URL for a deployment)
+  is still an open decision — revisit this file once F1 is settled,
+  especially if that decision introduces a stable hostname or LAN TLS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
