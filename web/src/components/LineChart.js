@@ -19,8 +19,15 @@
  * would be invisible in one of the two themes — the exact class of bug
  * the token audit found across the app).
  *
+ * A `null`/`undefined` entry in a point's `values[]` is a genuine gap —
+ * "no data that day" — not a zero. It breaks the line/area for that
+ * series at that point instead of being drawn as a fabricated 0; a
+ * caller with an average that can legitimately be absent (no incidents
+ * arrived that day, say) should pass `null` through rather than
+ * coalescing it beforehand.
+ *
  * @param {{
- *   points: Array<{label:string, values:number[]}>,
+ *   points: Array<{label:string, values:Array<number|null>}>,
  *   series: Array<{name:string, colorVar:string}>,
  *   caption?: string,
  * }} props
@@ -67,7 +74,7 @@ export function LineChart({ points, series, caption }) {
   const axisColor = readToken('--chart-axis-text', '#64748B');
   const colors = series.map((s, i) => readToken(s.colorVar, i === 0 ? '#2563EB' : '#15803D'));
 
-  const allValues = points.flatMap((p) => p.values);
+  const allValues = points.flatMap((p) => p.values).filter((v) => v != null);
   const yMax = niceMax(Math.max(1, ...allValues));
 
   const plotW = VIEW_W - PAD.left - PAD.right;
@@ -139,39 +146,68 @@ export function LineChart({ points, series, caption }) {
   // --- series -------------------------------------------------------------
   const seriesCoords = []; // seriesCoords[si][i] = [cx, cy], kept for the hover crosshair below
   series.forEach((s, si) => {
-    const coords = points.map((p, i) => [x(i), y(p.values[si] ?? 0)]);
+    // `null` marks a gap — kept as `null` in seriesCoords (rather than
+    // coordinates for a fabricated 0) so the hover handler below can also
+    // tell "no data here" from "a real value at the y=0 gridline".
+    const coords = points.map((p, i) => {
+      const v = p.values[si];
+      return v == null ? null : [x(i), y(v)];
+    });
     seriesCoords.push(coords);
 
-    // Soft area under the line, then the line itself. The fill is what
-    // makes two overlapping series readable where they nearly coincide.
-    const area = document.createElementNS(svgNS, 'path');
-    const areaD = `M ${coords[0][0]} ${PAD.top + plotH} `
-      + coords.map(([cx, cy]) => `L ${cx} ${cy}`).join(' ')
-      + ` L ${coords[coords.length - 1][0]} ${PAD.top + plotH} Z`;
-    area.setAttribute('d', areaD);
-    area.setAttribute('fill', colors[si]);
-    area.setAttribute('opacity', '0.10');
-    svg.appendChild(area);
+    // Split into contiguous runs of real points — each run gets its own
+    // area fill and line segment, so a gap actually breaks the drawing
+    // instead of interpolating a line through a fabricated 0.
+    const runs = [];
+    let current = [];
+    coords.forEach((c) => {
+      if (c === null) {
+        if (current.length) runs.push(current);
+        current = [];
+      } else {
+        current.push(c);
+      }
+    });
+    if (current.length) runs.push(current);
 
-    const path = document.createElementNS(svgNS, 'path');
-    path.setAttribute('d', `M ${coords.map(([cx, cy]) => `${cx} ${cy}`).join(' L ')}`);
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', colors[si]);
-    path.setAttribute('stroke-width', '2.5');
-    path.setAttribute('stroke-linejoin', 'round');
-    path.setAttribute('stroke-linecap', 'round');
-    // vector-effect keeps the stroke 2.5px on screen despite the
-    // non-uniform scaling preserveAspectRatio="none" applies.
-    path.setAttribute('vector-effect', 'non-scaling-stroke');
-    svg.appendChild(path);
+    runs.forEach((run) => {
+      // A lone point between two gaps has nothing to draw a line/area
+      // between — it still gets a dot below, same as any other point.
+      if (run.length < 2) return;
+
+      // Soft area under the line, then the line itself. The fill is what
+      // makes two overlapping series readable where they nearly coincide.
+      const area = document.createElementNS(svgNS, 'path');
+      const areaD = `M ${run[0][0]} ${PAD.top + plotH} `
+        + run.map(([cx, cy]) => `L ${cx} ${cy}`).join(' ')
+        + ` L ${run[run.length - 1][0]} ${PAD.top + plotH} Z`;
+      area.setAttribute('d', areaD);
+      area.setAttribute('fill', colors[si]);
+      area.setAttribute('opacity', '0.10');
+      svg.appendChild(area);
+
+      const path = document.createElementNS(svgNS, 'path');
+      path.setAttribute('d', `M ${run.map(([cx, cy]) => `${cx} ${cy}`).join(' L ')}`);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', colors[si]);
+      path.setAttribute('stroke-width', '2.5');
+      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('stroke-linecap', 'round');
+      // vector-effect keeps the stroke 2.5px on screen despite the
+      // non-uniform scaling preserveAspectRatio="none" applies.
+      path.setAttribute('vector-effect', 'non-scaling-stroke');
+      svg.appendChild(path);
+    });
 
     // Point markers, but only when they won't collapse into a solid bar —
     // a 30-day range at this width has no room for 30 dots. The hover
     // crosshair below (added 2026-09-06) covers every range regardless of
     // this density limit — these are the always-visible dots, not the
-    // only way to read a value off the line.
+    // only way to read a value off the line. Gaps (null) have no dot.
     if (points.length <= 14) {
-      coords.forEach(([cx, cy], i) => {
+      coords.forEach((c) => {
+        if (c === null) return;
+        const [cx, cy] = c;
         const dot = document.createElementNS(svgNS, 'circle');
         dot.setAttribute('cx', String(cx));
         dot.setAttribute('cy', String(cy));
@@ -242,24 +278,36 @@ export function LineChart({ points, series, caption }) {
     crosshair.style.opacity = '1';
 
     const pxX = x(i) / scale;
+    // A series with a gap at this x has no coordinate to place its hover
+    // dot at — hide it rather than falling back to (NaN, NaN).
     let topY = Infinity;
     hoverDots.forEach((dot, si) => {
-      const [cx, cy] = seriesCoords[si][i];
+      const c = seriesCoords[si][i];
+      if (c === null) {
+        dot.style.opacity = '0';
+        return;
+      }
+      const [cx, cy] = c;
       const pxY = cy / scaleY;
       dot.style.left = `${pxX}px`;
       dot.style.top = `${pxY}px`;
       dot.style.opacity = '1';
       topY = Math.min(topY, cy);
     });
+    // Every series is a gap at this x — anchor the tooltip to the top of
+    // the plot instead of leaving topY at Infinity.
+    if (topY === Infinity) topY = PAD.top;
 
     tooltip.innerHTML = `<div class="line-chart__tooltip-title">${points[i].label}</div>`
-      + series.map((s, si) => (
-        `<div class="line-chart__tooltip-row">`
-        + `<span class="line-chart__tooltip-swatch" style="background:${colors[si]}"></span>`
-        + `<span class="line-chart__tooltip-name">${s.name}</span>`
-        + `<span class="line-chart__tooltip-value">${points[i].values[si] ?? 0}</span>`
-        + `</div>`
-      )).join('');
+      + series.map((s, si) => {
+        const v = points[i].values[si];
+        const valueText = v == null ? 'No data' : String(v);
+        return `<div class="line-chart__tooltip-row">`
+          + `<span class="line-chart__tooltip-swatch" style="background:${colors[si]}"></span>`
+          + `<span class="line-chart__tooltip-name">${s.name}</span>`
+          + `<span class="line-chart__tooltip-value">${valueText}</span>`
+          + `</div>`;
+      }).join('');
     tooltip.hidden = false;
 
     // Position in the plot's own pixel space (not SVG viewBox units) — the
@@ -312,7 +360,7 @@ export function LineChart({ points, series, caption }) {
   const table = document.createElement('table');
   const head = series.map((s) => `<th scope="col">${s.name}</th>`).join('');
   const body = points.map((p) => (
-    `<tr><td>${p.label}</td>${p.values.map((v) => `<td>${v}</td>`).join('')}</tr>`
+    `<tr><td>${p.label}</td>${p.values.map((v) => `<td>${v == null ? 'No data' : v}</td>`).join('')}</tr>`
   )).join('');
   table.innerHTML = `<caption>${caption ?? 'Trend'}</caption>`
     + `<thead><tr><th scope="col">Date</th>${head}</tr></thead><tbody>${body}</tbody>`;
