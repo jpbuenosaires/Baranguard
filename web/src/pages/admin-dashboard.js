@@ -18,6 +18,16 @@
  * a slow/failed previous-period fetch never blocks the dashboard's core
  * data from rendering.
  *
+ * CORRECTION, found by browser-verifying Punong Barangay's own nav
+ * (2026-09-13, docs/REMAINING.md B5): the class doc above used to claim
+ * "both roles just call the same GET" for this whole screen. That was
+ * false for the Tanods On Duty panel specifically — `GET /users?role=`
+ * is Admin-only server-side (§3; UsersController::index() requires the
+ * `admin` role), so Punong Barangay 403'd on every single dashboard load
+ * and `loadTanodsOnDuty()`'s catch-all turned that permanent, by-design
+ * 403 into a generic "Could not load Tanod duty status." — indistinguishable
+ * from a real transient failure. See that function's own note below.
+ *
  * kebab-case filename per §4 (pages/routes convention).
  */
 
@@ -182,7 +192,7 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
       const committed = rangePicker.getState();
       loadDeltas(body, committed.from, committed.to, summary);
       loadRecentIncidents(body, navigate);
-      loadTanodsOnDuty(body, user.barangayId);
+      loadTanodsOnDuty(body, user.barangayId, user.role);
       loadAttentionBanner(body, navigate, user.role, summary.byStatus.pending || 0);
     } catch (err) {
       const message = err instanceof ApiClientError
@@ -345,9 +355,19 @@ async function loadRecentIncidents(container, navigate) {
   }
 }
 
-async function loadTanodsOnDuty(container, barangayId) {
+async function loadTanodsOnDuty(container, barangayId, role) {
   const host = container.querySelector('[data-tanods-on-duty]');
   if (!host) return;
+  // `GET /users` (needed here purely to resolve a Tanod's display name) is
+  // Admin-only server-side (§3) — Punong Barangay has no Personnel/Users
+  // reach at all, by design, not by omission. Skip the doomed call rather
+  // than let it 403 on every load and report a permissions boundary as a
+  // generic load failure; the aggregate "Tanods On Duty" KPI card above
+  // this panel already gives PB the count.
+  if (role !== 'admin') {
+    host.innerHTML = '<p class="note">Named roster is available to Admin. See the count above for the total on duty.</p>';
+    return;
+  }
   try {
     const [dutyStatuses, tanodsRes] = await Promise.all([
       getDutyStatus(barangayId),
