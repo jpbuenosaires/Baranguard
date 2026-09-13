@@ -57,15 +57,27 @@ files — that's it.
    for `evaluation-results-*.txt` and `evaluation-log-*.txt` in this
    folder. Just send those two files back (email, chat, whatever's easy).
 
-## The other 7 things this AI model does (optional, for the technically curious)
+## The other 7 things this AI model does (optional, and a bigger ask)
 
 The double-click `run-evaluation.bat` only tests ONE thing — redaction
 (removing personal info) — because it's the most important one and the
 one most worth everyone's patience. The same AI model also writes case
-summaries, translates records, drafts SMS alerts, and a few other things.
-If you're comfortable with Command Prompt and want to help test those
-too, each has its own command (run from inside this folder, same as the
-`.bat` file does):
+summaries, translates records, pulls out complainant/respondent/contact
+details, classifies incidents, drafts a formal blotter entry, composes
+SMS alerts, and analyzes incident patterns.
+
+**Only do this after `run-evaluation.bat` has finished at least its
+first smoke test successfully** (it's what confirms PHP/Ollama are set
+up right). Then just double-click **`run-evaluation-other-tasks.bat`** —
+same kind of walkthrough as the first one, it runs all 7 automatically,
+one after another, and tells you what to send back at the end. Five of
+the seven run against the same 350-record set redaction did, so expect
+this to take roughly as long as that run did, five times over — it's a
+genuinely bigger ask than the first `.bat`, entirely optional, and just
+as safe to close and resume later.
+
+If you'd rather run just ONE of the seven yourself instead of all of
+them, each has its own command (run from inside this folder):
 
 ```
 php scripts\ai-evaluate.php --task=summary --engine=model --dry-run --verbose --save-results
