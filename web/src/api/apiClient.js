@@ -1249,9 +1249,23 @@ export async function getIncident(incidentId) {
     // Dispatch stages for W7's §9-mandated timeline. They live here rather
     // than on GET /dispatch because that endpoint is Admin/PB/Tanod only
     // and W7 is a Secretary screen — see IncidentsController::show().
+    // dispatchedAt/arrivedAt mean "the primary/first responder" now that
+    // an incident can have more than one concurrent dispatch — `dispatches`
+    // below is the full, authoritative list.
     dispatchedAt: json.dispatched_at ?? null,
     arrivedAt: json.arrived_at ?? null,
     hasActiveDispatch: json.has_active_dispatch === true,
+    dispatches: (json.dispatches || []).map((row) => ({
+      dispatchId: row.dispatch_id,
+      tanodId: row.tanod_id,
+      tanodName: row.tanod_name,
+      status: row.status,
+      dispatchedAt: row.dispatched_at,
+      enRouteAt: row.en_route_at,
+      arrivedAt: row.arrived_at,
+      completedAt: row.completed_at,
+      cancelledAt: row.cancelled_at,
+    })),
   };
 }
 

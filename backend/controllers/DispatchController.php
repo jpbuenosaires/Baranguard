@@ -127,8 +127,20 @@ final class DispatchController
                 throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
             }
             AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
-            if ($incident['status'] !== 'pending') {
-                throw new ApiError(409, 'CONFLICT', 'Incident is not pending — it may already be dispatched or resolved.');
+            // 2026-09-13, explicit user-approved architecture change
+            // (docs/REMAINING.md G-backlog "backup/second responder"):
+            // an incident may now have MORE THAN ONE concurrent active
+            // dispatch — Admin's own judgment call, no incident-type or
+            // priority gate. `dispatched` is therefore also acceptable
+            // here, not just `pending`; only `resolved` (or any other
+            // non-actionable status) is still refused. See that plan's
+            // own "what already works with zero changes" section for
+            // why the resolve-gate, response-time metric, dispatch list
+            // endpoint, mobile, and the notification target were all
+            // already safe under N concurrent dispatches without any
+            // change of their own.
+            if (!in_array($incident['status'], ['pending', 'dispatched'], true)) {
+                throw new ApiError(409, 'CONFLICT', 'Incident is not pending or dispatched — it may already be resolved.');
             }
 
             $tanodStmt = $pdo->prepare(
@@ -146,6 +158,20 @@ final class DispatchController
             $tanodStmt->execute(['tanod_id' => $tanodId, 'barangay_id' => $identity['barangay_id']]);
             if ($tanodStmt->fetch(PDO::FETCH_ASSOC) === false) {
                 throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'The selected Tanod is not available for assignment.');
+            }
+
+            // A Tanod cannot be double-assigned to the same incident —
+            // this doesn't follow automatically from allowing a SECOND
+            // (different) responder above, so it needs its own guard.
+            $dupStmt = $pdo->prepare(
+                "SELECT 1 FROM dispatch
+                 WHERE incident_id = :incident_id AND tanod_id = :tanod_id
+                   AND status IN ('assigned','en_route','arrived')
+                 LIMIT 1"
+            );
+            $dupStmt->execute(['incident_id' => $incidentId, 'tanod_id' => $tanodId]);
+            if ($dupStmt->fetch(PDO::FETCH_ASSOC) !== false) {
+                throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on this incident.');
             }
 
             $insertStmt = $pdo->prepare(
@@ -197,6 +223,11 @@ final class DispatchController
                 // Matches the literal the INSERT above writes; there is
                 // no self-hosted OSRM in this environment yet.
                 'route_status' => 'unavailable',
+                // True when this call added a responder to an incident
+                // that was ALREADY dispatched (read from the row fetched
+                // before the UPDATE above changed it) — distinguishes a
+                // primary assignment from a backup one in the trail.
+                'is_additional_responder' => $incident['status'] === 'dispatched',
             ]);
 
             $pdo->commit();
@@ -377,11 +408,29 @@ final class DispatchController
 
             // §5 Rule 21/28: dispatched -> pending only through valid
             // cancellation before arrival — this is that transition.
-            $revertStmt = $pdo->prepare(
-                "UPDATE incident SET status = 'pending', updated_at = UTC_TIMESTAMP()
-                 WHERE incident_id = :incident_id AND status = 'dispatched'"
+            //
+            // 2026-09-13: now conditional on no OTHER dispatch still
+            // being active on this incident. Since a second/backup
+            // responder can exist (docs/REMAINING.md G-backlog), cancelling
+            // one of two active dispatches must NOT un-dispatch an
+            // incident the other responder is still actively working.
+            // The just-cancelled row above already excludes itself from
+            // this COUNT — its status was just flipped away from the
+            // assigned/en_route/arrived set.
+            $remainingActiveStmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM dispatch
+                 WHERE incident_id = :incident_id AND status IN ('assigned','en_route','arrived')"
             );
-            $revertStmt->execute(['incident_id' => $dispatch['incident_id']]);
+            $remainingActiveStmt->execute(['incident_id' => $dispatch['incident_id']]);
+            $revertedToPending = false;
+            if ((int) $remainingActiveStmt->fetchColumn() === 0) {
+                $revertStmt = $pdo->prepare(
+                    "UPDATE incident SET status = 'pending', updated_at = UTC_TIMESTAMP()
+                     WHERE incident_id = :incident_id AND status = 'dispatched'"
+                );
+                $revertStmt->execute(['incident_id' => $dispatch['incident_id']]);
+                $revertedToPending = true;
+            }
 
             // Read the server-assigned timestamp back rather than
             // approximating it in PHP (gmdate() could drift a second
@@ -394,7 +443,10 @@ final class DispatchController
             // own note — this half was the other Sprint 7 audit gap.
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_cancelled', 'dispatch', $dispatchId, [
                 'incident_id' => (int) $dispatch['incident_id'],
-                'incident_status' => 'pending',
+                // 2026-09-13: reflects the real outcome now that a second
+                // responder can keep an incident 'dispatched' after this
+                // cancellation — no longer always 'pending'.
+                'incident_status' => $revertedToPending ? 'pending' : 'dispatched',
             ]);
 
             $pdo->commit();
@@ -407,7 +459,10 @@ final class DispatchController
             'dispatch_id' => $dispatchId,
             'status' => 'cancelled',
             'incident_id' => (int) $dispatch['incident_id'],
-            'incident_status' => 'pending',
+            // 2026-09-13: was hardcoded 'pending' — no longer correct
+            // once a second responder can keep the incident 'dispatched'
+            // after this specific cancellation.
+            'incident_status' => $revertedToPending ? 'pending' : 'dispatched',
             'cancelled_at' => $cancelledAt,
         ]);
     }
