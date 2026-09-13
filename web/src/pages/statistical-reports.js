@@ -412,7 +412,7 @@ function renderReport(container, summary, role) {
     'Average response time from dispatch to arrival on scene.'
   ));
   responseTimeCard.appendChild(LineChart({
-    points: summary.responseTimeTrend.map((day) => ({ label: shortDate(day.date), values: [day.avgMinutes ?? 0] })),
+    points: summary.responseTimeTrend.map((day) => ({ label: shortDate(day.date), values: [day.avgMinutes] })),
     series: [{ name: 'Avg. minutes to arrival', colorVar: '--chart-line-2' }],
     caption: 'Average response time by day',
   }));
