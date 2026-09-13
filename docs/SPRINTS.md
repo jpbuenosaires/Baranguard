@@ -109,8 +109,13 @@ Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
   [ ] Valid JSON contracts (schema-validate every §6 response shape)
   [ ] AI dataset evaluation run / Bikol language-quality validation
       (the 200-record dataset now exists — generated, not hand-authored,
-      see docs/REMAINING.md A3; still needs a machine that can run
-      SEA-LION at usable speed, see A2 and eval-kit/)
+      see docs/REMAINING.md A3. **Real recall/precision numbers now
+      exist too, 2026-09-14**, from a friend's completed eval-kit/ run:
+      98.26%/75.88% overall, with a per-language breakdown showing Bikol
+      as the weakest recall — see REMAINING.md A2 and backend/DEVLOG.md.
+      Picking this box still means writing it up as a real Sprint 8
+      deliverable — the `ai_evaluation_run` DB row and the Bikol human
+      spot-check A3 recommends are both still outstanding.)
   [ ] SLM inference time / 3+ Android device tiers (workstation-side —
       this session records the methodology, the run happens outside it)
   [ ] One specific end-to-end UAT scenario (name it in prose)
