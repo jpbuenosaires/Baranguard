@@ -40,6 +40,34 @@ rather than writing to the real `baranguard`/`baranguard_uiseed`
 databases without being asked; the long-recommended Bikol human
 spot-check also still hasn't happened.
 
+**A2's own finding immediately surfaced a bigger gap, closed the same
+day: `docs/REMAINING.md` A6, "7 of the model's 8 tasks were never
+evaluated at all."** The model backs 8 distinct prompt types
+(`AiPrompts.php`); only `redaction` had ever been scored. Planned first
+(researched methodology + targets for every task, four confirmed
+architecture decisions), then rebuilt: the evaluation dataset grew from
+200 to **350 records across 7 language buckets** — the original 3 pure
+languages (en/tl/bcl) plus **4 code-mixed combinations**
+(bcl-tl/bcl-en/tl-en/bcl-tl-en), because Bicol-region residents typically
+code-switch and a monolingual-only corpus was testing an unrealistic
+input shape — plus new ground truth (`complainant`/`respondent`/
+`contact`/`priority`) for the two tasks that needed it. New
+`backend/services/eval/` scorer classes (33/33 unit-checked); `ai-
+evaluate.php` generalized to a `--task=` dispatch across all 8 tasks,
+its pacing/resume/checkpoint machinery unchanged and re-verified;
+migration `0021` added generic metric columns to `ai_evaluation_run` for
+the tasks that aren't precision/recall-shaped (verified up/down/
+idempotent against a disposable DB, not yet applied to the real
+databases); `eval-kit/` converted from a hand-maintained copy to a
+GENERATED one (`build-eval-kit.php`), closing a real, already-confirmed
+drift bug (its `AiPrompts.php` copy was missing 4 of 8 methods). See
+`backend/DEVLOG.md` 2026-09-14 ("full 8-task AI evaluation rebuild") and
+`docs/REMAINING.md` A6 for the complete writeup, provisional per-task
+targets (all researched, none yet empirically validated), and what's
+still open (a friend's hardware still needs to run the other 7 tasks
+against the real model, same as A2 needed for redaction; the human-rated
+translation/summary quality samples haven't happened).
+
 ### NEWEST: full turn-by-turn routing shipped (2026-09-13, same day, after everything else below)
 
 Closes `docs/REMAINING.md` §C4. Took three real architecture decisions
@@ -236,27 +264,42 @@ real shift, ahead of anything in `REMAINING.md`'s own numbered order.
    `adb logcat -b crash` / `dumpsys activity` running.
 3. **Confirm G1's real-SMS leg** — configure a backup contact, kill
    connectivity, verify the on-device SMS actually arrives.
-4. **Write a real `ai_evaluation_run` row from the 2026-09-14 results**
-   (dataset `redaction-eval-v1`/`v1`, model
-   `aisingapore/Llama-SEA-LION-v3.5-8B-R`, sample_count 200,
-   precision_score 0.75880, recall_score 0.98260) — needs an explicit
-   go-ahead since it writes to the real `baranguard`/`baranguard_uiseed`
-   databases; see `REMAINING.md` A2. Then the Bikol human spot-check A3
-   has recommended since 2026-09-07.
-5. **The 6 remaining `mobile/` npm advisories** — down from 9: the
+4. **Apply migration 0021 to the real databases, then write TWO real
+   `ai_evaluation_run` rows** — both need an explicit go-ahead since they
+   write to the real `baranguard`/`baranguard_uiseed` databases:
+   - redaction, from A2's 2026-09-14 results: dataset
+     `redaction-eval-v1`/`v1` (the historical file, kept for exactly this
+     reason), model `aisingapore/Llama-SEA-LION-v3.5-8B-R`, sample_count
+     200, precision_score 0.75880, recall_score 0.98260.
+   - Nothing to write yet for the other 7 tasks — A6's rebuild produced
+     the harness and datasets, not a real model run against them (needs
+     a friend's hardware, next).
+5. **Hand the rebuilt `eval-kit/` to a friend again, for the other 7
+   tasks** (A6, closed 2026-09-14) — redaction already has real numbers;
+   summary/translation/extraction/blotter-assist/classification/
+   sms-compose/threat-analysis don't. `README-FOR-FRIEND.md` has the
+   7 commands. Expect this to take considerably longer than A2's own run
+   (8 tasks, not 1) — see `REMAINING.md` A6 for the researched
+   provisional targets to check results against.
+6. Then the Bikol human spot-check A3 has recommended since 2026-09-07
+   (redaction) — and now also the human-rated translation/summary
+   quality samples A6 calls for.
+7. **The 6 remaining `mobile/` npm advisories** — down from 9: the
    Cypress 13→16 bump closed 3 (both HIGHs). The rest are the two
    already-deliberate major-version bumps (`react-router`, `@capacitor/
    cli`/`xcode`); see `REMAINING.md`'s C4 section.
-6. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`,
+8. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`,
    now informed by A2's real numbers for its AI-evaluation box.
-7. ~~Apply migration 0020 to the real databases~~ **Done 2026-09-13** —
+9. ~~Apply migration 0020 to the real databases~~ **Done 2026-09-13** —
    applied to both `baranguard` and `baranguard_uiseed`.
-8. ~~Cypress 13→16 npm-audit bump~~ **Done 2026-09-13** — see `REMAINING.md`
-   C4 and `backend/DEVLOG.md` for the writeup, including the correction
-   that `cypress/e2e/test.cy.ts` was never a real spec (unmodified Vite
-   scaffold) — a real e2e test is still open, separate work.
-9. ~~Hand `eval-kit/` to a friend with capable hardware for A2~~ **Done,
-   results back 2026-09-14** — see item 4 above and `REMAINING.md` A2.
+10. ~~Cypress 13→16 npm-audit bump~~ **Done 2026-09-13** — see `REMAINING.md`
+    C4 and `backend/DEVLOG.md` for the writeup, including the correction
+    that `cypress/e2e/test.cy.ts` was never a real spec (unmodified Vite
+    scaffold) — a real e2e test is still open, separate work.
+11. ~~Hand `eval-kit/` to a friend with capable hardware for A2~~ **Done,
+    results back 2026-09-14** — see item 4 above and `REMAINING.md` A2.
+12. ~~7 of the model's 8 tasks had no evaluation harness (A6)~~ **Done
+    2026-09-14** — see item 5 above and `REMAINING.md` A6.
 
 Full ordered list with reasoning, including hardware/account-blocked
 items: **`docs/REMAINING.md`**.

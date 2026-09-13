@@ -11854,3 +11854,196 @@ for reference during this session; not committed — `.gitignore` already
 excludes `*.checkpoint.json` and `evaluation-{results,log}-*.txt` there
 by deliberate 2026-09-07 policy (local run artifacts, not source), and
 nothing here changes that reasoning.
+
+## 2026-09-14 (continued): full 8-task AI evaluation rebuild (closes A6)
+
+User asked, in order: log the A6 gap (done above/in REMAINING.md), then
+plan the full replacement before touching code, with research behind
+every methodology and target rather than invented numbers, and with two
+specific follow-up research questions (is 200 records enough, and should
+the corpus include Bikol/Tagalog/English code-mixing). Used `EnterPlanMode`
+— researched via `WebSearch` across 8 topics (de-identification
+benchmarks, NER/field-extraction F1, incident-classification accuracy,
+TICK-style checklist evaluation for constrained generation, LLM-as-judge
+self-preference bias, low-resource MT metrics, NLP evaluation sample-size
+math, Bicol-region code-switching sociolinguistics — each cited), an
+`Explore` agent for repo facts (the generator's own structure, the
+`ai_evaluation_run` schema, confirmed no scorer/judge abstraction existed
+anywhere), then four `AskUserQuestion` decisions before writing the final
+plan: keep redaction's existing methodology unchanged; add a new
+migration for generic metric columns rather than overload precision/
+recall; mechanical checklist + human spot-check instead of LLM-as-judge;
+auto-generate `eval-kit/` instead of hand-maintaining it. All four
+confirmed, plus explicit sign-off on the researched 350-record/7-bucket
+sizing. Plan file: `C:\Users\Jayson Buenosaires\.claude\plans\
+misty-frolicking-finch.md` (kept on disk, not deleted).
+
+**Built, in order:**
+
+1. **`backend/scripts/generate-eval-dataset.php` rebuilt.** Renamed
+   output `eval-incidents-v1.json`. Language handling changed from a
+   single `$lang` string to a `$langMix` array — the MAIN sentence keeps
+   one primary language for grammatical coherence, but every OTHER
+   appended clause (witness, respondent, ID/email/DOB/account asides,
+   the homonym common-noun aside) independently picks a language from
+   the record's mix, which is what makes a `bcl-tl-en` record realistic
+   inter-sentential code-switching rather than one bolted-on clause. New
+   `RESPONDENT_ELIGIBLE_TYPES` (domestic_dispute/physical_injury/
+   vandalism/disturbance/theft) + a new respondent-naming branch, gated
+   at 45% chance so plenty of records legitimately have no respondent
+   (extraction's own "leave it blank" case). New `priorityForType()` —
+   deterministic from `incident_type`, quoting `AiPrompts::
+   classification()`'s own written definition verbatim in a comment
+   rather than inventing a mapping. `--count=N` CLI flag added (there
+   was none before; record count was hardcoded 200). Hard-case tag
+   counts scaled proportionally from the original 40/200 ratio.
+   **Real bug found and fixed while extending it**: the first
+   350-record run failed self-validation —
+   `eval-281: entity 'alfredo.lazaro36@gmail.com' (EMAIL) not found`.
+   Root cause: `formatting_oddity`'s punctuation-stripping variant
+   (`preg_replace('/[.,]/', '', $narrative)`) strips periods from the
+   WHOLE narrative, including inside an EMAIL address or a
+   DATE_OF_BIRTH string ("January 5, 1990") that are themselves planted
+   entities — corrupting the exact text the validator checks for. This
+   bug existed in the ORIGINAL 200-record generator too; it simply never
+   hit an EMAIL/DOB entity on a `formatting_oddity` slot in that random
+   seed. Fixed by checking post-strip whether any entity's exact text
+   still appears, falling back to the uppercase variant when it doesn't
+   — verified by re-running: 350/350 pass, 0 errors.
+   Result: 350 records, exactly 50 per language bucket (7×50), priority
+   distribution `{normal:190, high:128, critical:32}`, 78 records with a
+   named respondent, hard-case counts scaled 14/11/11/7/7/18/4.
+2. **Two new small generators**: `generate-eval-sms-prompts.php` (35
+   synthetic operator-prompt records, 16 with planted decoy PII —
+   `AiPrompts::smsCompose()`'s own rule is "do not include any personal
+   name... even if the request below contains one," so a decoy that
+   never appeared would test nothing) and
+   `generate-eval-threat-stats.php` (25 synthetic aggregate-count blocks
+   — each a `label: count` line list threat-analysis's grounding check
+   can verify a cited number really was given). Both self-validate; both
+   passed clean on first run.
+3. **New `backend/services/eval/`** (mirrors `services/ai/`):
+   `RedactionScorer` (ported `ai-evaluate.php`'s old `scoreRecord()`
+   near-verbatim, plus two new static methods: `countLeaks()` — reused by
+   blotter-assist and sms-compose's own PII-leak checks — and
+   `deriveGoldRedacted()`, which mechanically substitutes each ground-
+   truth entity with its placeholder so summary/translation/
+   classification have a "gold redacted" input without needing a second
+   real model call; longest-text-first substitution order so one
+   entity's text never corrupts another that contains it as a
+   substring); `ExtractionScorer` and `ClassificationScorer` (new,
+   parse `AiPrompts`'s fixed-line output formats and exact-match against
+   ground truth); `ChecklistScorer` (new — generic TICK-style
+   constraint-checklist primitives: placeholder-count parity, sentence/
+   character-count bounds, denylist-term absence, fact-mention presence,
+   number-grounding-against-source with a disclosed small-number
+   ignore-list to avoid false-positiving on the prompts' own "at most
+   three" phrasing, section-header presence, bullet counting);
+   `AiEvaluationRunRepository` (factors out the raw SQL INSERT that used
+   to be copy-pasted identically in both `backend/scripts/
+   ai-evaluate.php` and `eval-kit/scripts/ai-evaluate.php` — confirmed
+   byte-identical duplication by the explore agent).
+   **Verification**: `backend/scripts/verify-eval-scorers.php`, a plain
+   PHP assertion script (no PHPUnit/Composer anywhere in this repo,
+   confirmed — same convention `generate-eval-dataset.php`'s own
+   self-validation already uses). 33/33 pass. Two of the first 33
+   assertions failed on the first run — both were the TEST's own fault,
+   not the scorer's: two hand-written fixtures accidentally combined two
+   independent scoring effects (an extra placeholder AND a dropped
+   must_keep word) into one output string, so `fp` came out to 2 where
+   the test asserted 1. Isolated each effect into its own fixture; all
+   33 pass.
+4. **`backend/scripts/ai-evaluate.php` generalized.** Gained `--task=`
+   (8 values) and `--translate-to=`; `TASK_DEFAULTS` maps each task to
+   its own default dataset. The existing pacing/resume/checkpoint/
+   save-results loop is UNCHANGED in shape — only the per-record
+   "build a prompt" / "score the output" / "fold into totals" steps
+   became task-dispatched (`buildPrompt()`/`scoreOne()`/`foldResult()`/
+   `finalizeMetrics()`), each a `switch($task)` calling into the new
+   scorer classes. Checkpoint filenames gained a `.<task>.` segment
+   (`<dataset>.<task>.<engine>.<model>.checkpoint.json`) so two tasks
+   scored against the same dataset file never collide.
+   **Verified two ways, both without touching Ollama** (this
+   workstation still cannot complete a real generation within 300s, per
+   A2 — a live 8-task run is a friend-run step, later, same as A2's
+   own):
+   - `--task=redaction --engine=baseline` full 350-record `--dry-run`:
+     30.60% recall / 100% precision — same shape as the original
+     200-record baseline (32.71%/100%, A3), confirming the rebuilt
+     corpus still makes the same baseline-vs-model case.
+   - `--limit=5 --resume --dry-run` run twice: second run correctly
+     printed "Resuming: 5 record(s) already scored," proving the
+     generalized checkpoint plumbing survived the task-dispatch
+     rewrite intact.
+   The 7 other tasks' `buildPrompt()`/`scoreOne()` wiring could not be
+   exercised end-to-end the same way (they all require the real model —
+   there is no baseline for them, by design) — confirmed correct instead
+   by direct code review plus the scorer-level unit tests in (3), since
+   each task's `scoreOne()` branch is a thin, directly-inspectable call
+   into an already-unit-tested scorer method.
+5. **Migration `0021_ai_evaluation_run_generic_metrics.sql`** (+ down).
+   Adds `metric_a_name`/`metric_a_value`/`metric_b_name`/
+   `metric_b_value` (nullable, `VARCHAR(32)`/`DECIMAL(8,5)` pairs) after
+   `recall_score`. Verified against a disposable `baranguard_migration_check`
+   database: applied `0001_baseline_schema.sql` alone (confirmed via the
+   explore agent that no migration 0002-0020 touches `ai_evaluation_run`,
+   so the full chain wasn't needed for this specific check), then 0021
+   up (re-ran it a second time — idempotent, confirmed via `DESCRIBE`),
+   then 0021 down (re-ran twice — idempotent, columns cleanly gone,
+   `precision_score`/`recall_score`/everything else untouched). Not yet
+   applied to the real `baranguard`/`baranguard_uiseed` databases —
+   that's a deliberate pause, same reasoning as A2's own paused
+   `ai_evaluation_run` INSERT: real-database writes weren't asked for
+   this session.
+6. **`eval-kit/` converted to a generated artifact.** New
+   `backend/scripts/build-eval-kit.php` copies 11 canonical `backend/`
+   files (5×`services/ai/`, 4×`services/eval/` minus the repository
+   class which needs DB access eval-kit never has, the generalized
+   `ai-evaluate.php`, `config/autoload.php`) plus 4 fixture datasets into
+   `eval-kit/`, stamping a "GENERATED — do not hand-edit" banner on every
+   PHP file. Deliberately NOT copied: `AiJobQueue.php` (interfaces the
+   real `ai_processing_log` queue; eval-kit never touches it) and
+   `config/db.php` (eval-kit has no DB access at all — a friend's run is
+   always `--dry-run`, matching the existing `run-evaluation.bat`).
+   **Confirmed the exact drift bug this closes**: `eval-kit/`'s pre-
+   existing `AiPrompts.php` had only 6 of the file's 10
+   `public static function` entries (the 4 AI-Tools prompts were
+   missing) — regenerating brought it to 10/10, matching `backend/`'s
+   own count exactly. Ran the regenerated copy directly
+   (`eval-kit/scripts/ai-evaluate.php --task=redaction --engine=baseline
+   --limit=10 --dry-run`) — worked identically to the `backend/` copy.
+   `run-evaluation.bat` and `README-FOR-FRIEND.md` updated: new dataset
+   filename, 350 (not 200) records mentioned, 7 language buckets
+   including code-mixing disclosed to whoever ran an earlier version of
+   this kit, and a new section giving a technically-comfortable friend
+   the 7 additional `--task=` commands for the other model capabilities
+   — the one-click default still only runs redaction, the highest-stakes
+   task, unchanged from before.
+   Removed from `eval-kit/fixtures/`: the superseded `redaction-eval-v1
+   .json` and the two 2026-09-10 run-artifact files that had been copied
+   there earlier this session for the A2 analysis — `eval-kit/` now
+   represents the current package to hand to a friend, not a scratch
+   space. `backend/fixtures/redaction-eval-v1.json` itself is KEPT
+   (not deleted) — it's the exact dataset A2's already-recorded real
+   98.26%/75.88% numbers were measured against; deleting it would make
+   those numbers unreproducible. `docs/AI_Evaluation_Dataset_Guide.md`
+   updated to point at the new filename and explain why the old one is
+   kept.
+
+**Provisional targets, none yet empirically validated** (see
+`docs/REMAINING.md` A6 for the full table and literature citations):
+extraction ≥85%/field, classification ≥85% type / ≥80% priority,
+summary/blotter-assist/sms-compose/threat-analysis ≥90% mechanical
+compliance, translation has no automated target (human rating only).
+
+**Not done, stated plainly**: no real model run against any of the 7 new
+tasks (needs a friend's hardware, same as A2); no `ai_evaluation_run` row
+written for any task, old or new (redaction's real A2 result is STILL
+unwritten to the real database — that was already disclosed as paused in
+this file's own earlier 2026-09-14 entry, and remains so); migration 0021
+not yet applied to the real databases; the human-rated translation/
+summary quality sample hasn't happened; classification's eval tests
+whether the model arrives at the right answer, not whether it corrects a
+wrong "current" one (no dataset variant with deliberately-wrong current
+values was built — disclosed as a gap in `ai-evaluate.php`'s own header,
+not silently assumed covered).

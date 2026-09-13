@@ -1,0 +1,872 @@
+{
+    "dataset_name": "eval-threat-stats-v1",
+    "dataset_version": "v1",
+    "generation_method": "AI-generated synthetic aggregate incident-count summaries (backend/scripts/generate-eval-threat-stats.php). No real barangay incident history is used or approximated -- every count is invented.",
+    "generated_at": "2026-09-13T21:23:17+00:00",
+    "record_count": 25,
+    "records": [
+        {
+            "id": "threat-001",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "disturbance: 8\ndomestic_dispute: 6\nanimal_complaint: 5\nother: 3\nSaturday: 1\nSunday: 4\nlate night (12MN-6AM): 2",
+            "counts": [
+                {
+                    "label": "disturbance",
+                    "count": 8
+                },
+                {
+                    "label": "domestic_dispute",
+                    "count": 6
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 5
+                },
+                {
+                    "label": "other",
+                    "count": 3
+                },
+                {
+                    "label": "Saturday",
+                    "count": 1
+                },
+                {
+                    "label": "Sunday",
+                    "count": 4
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 2
+                }
+            ]
+        },
+        {
+            "id": "threat-002",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "missing_person: 6\nanimal_complaint: 9\nother: 5\nTuesday: 2\nWednesday: 2\nSaturday: 6\nlate night (12MN-6AM): 3",
+            "counts": [
+                {
+                    "label": "missing_person",
+                    "count": 6
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 9
+                },
+                {
+                    "label": "other",
+                    "count": 5
+                },
+                {
+                    "label": "Tuesday",
+                    "count": 2
+                },
+                {
+                    "label": "Wednesday",
+                    "count": 2
+                },
+                {
+                    "label": "Saturday",
+                    "count": 6
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 3
+                }
+            ]
+        },
+        {
+            "id": "threat-003",
+            "period_label": "the last 30 days",
+            "aggregate_summary": "theft: 2\ntraffic_incident: 4\nMonday: 4\nWednesday: 6\nFriday: 1\nevening (6PM-12MN): 5\nlate night (12MN-6AM): 2",
+            "counts": [
+                {
+                    "label": "theft",
+                    "count": 2
+                },
+                {
+                    "label": "traffic_incident",
+                    "count": 4
+                },
+                {
+                    "label": "Monday",
+                    "count": 4
+                },
+                {
+                    "label": "Wednesday",
+                    "count": 6
+                },
+                {
+                    "label": "Friday",
+                    "count": 1
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 5
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 2
+                }
+            ]
+        },
+        {
+            "id": "threat-004",
+            "period_label": "the last 30 days",
+            "aggregate_summary": "disturbance: 8\nvandalism: 1\nfire: 6\nmissing_person: 7\nMonday: 6\nSunday: 4\nafternoon (12NN-6PM): 5",
+            "counts": [
+                {
+                    "label": "disturbance",
+                    "count": 8
+                },
+                {
+                    "label": "vandalism",
+                    "count": 1
+                },
+                {
+                    "label": "fire",
+                    "count": 6
+                },
+                {
+                    "label": "missing_person",
+                    "count": 7
+                },
+                {
+                    "label": "Monday",
+                    "count": 6
+                },
+                {
+                    "label": "Sunday",
+                    "count": 4
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 5
+                }
+            ]
+        },
+        {
+            "id": "threat-005",
+            "period_label": "the last 90 days",
+            "aggregate_summary": "vandalism: 6\nfire: 7\nThursday: 3\nFriday: 2\nSunday: 1\nafternoon (12NN-6PM): 6\nlate night (12MN-6AM): 4",
+            "counts": [
+                {
+                    "label": "vandalism",
+                    "count": 6
+                },
+                {
+                    "label": "fire",
+                    "count": 7
+                },
+                {
+                    "label": "Thursday",
+                    "count": 3
+                },
+                {
+                    "label": "Friday",
+                    "count": 2
+                },
+                {
+                    "label": "Sunday",
+                    "count": 1
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 6
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 4
+                }
+            ]
+        },
+        {
+            "id": "threat-006",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "vandalism: 9\nfire: 8\nmedical_emergency: 4\nTuesday: 4\nSaturday: 2\nSunday: 2\nlate night (12MN-6AM): 1",
+            "counts": [
+                {
+                    "label": "vandalism",
+                    "count": 9
+                },
+                {
+                    "label": "fire",
+                    "count": 8
+                },
+                {
+                    "label": "medical_emergency",
+                    "count": 4
+                },
+                {
+                    "label": "Tuesday",
+                    "count": 4
+                },
+                {
+                    "label": "Saturday",
+                    "count": 2
+                },
+                {
+                    "label": "Sunday",
+                    "count": 2
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 1
+                }
+            ]
+        },
+        {
+            "id": "threat-007",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "physical_injury: 3\ndomestic_dispute: 8\nThursday: 6\nFriday: 3\nSaturday: 5\nmorning (6AM-12NN): 4\nafternoon (12NN-6PM): 6",
+            "counts": [
+                {
+                    "label": "physical_injury",
+                    "count": 3
+                },
+                {
+                    "label": "domestic_dispute",
+                    "count": 8
+                },
+                {
+                    "label": "Thursday",
+                    "count": 6
+                },
+                {
+                    "label": "Friday",
+                    "count": 3
+                },
+                {
+                    "label": "Saturday",
+                    "count": 5
+                },
+                {
+                    "label": "morning (6AM-12NN)",
+                    "count": 4
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 6
+                }
+            ]
+        },
+        {
+            "id": "threat-008",
+            "period_label": "the last 30 days",
+            "aggregate_summary": "theft: 2\nphysical_injury: 1\ndomestic_dispute: 2\nvandalism: 9\nThursday: 3\nSaturday: 3\nmorning (6AM-12NN): 2",
+            "counts": [
+                {
+                    "label": "theft",
+                    "count": 2
+                },
+                {
+                    "label": "physical_injury",
+                    "count": 1
+                },
+                {
+                    "label": "domestic_dispute",
+                    "count": 2
+                },
+                {
+                    "label": "vandalism",
+                    "count": 9
+                },
+                {
+                    "label": "Thursday",
+                    "count": 3
+                },
+                {
+                    "label": "Saturday",
+                    "count": 3
+                },
+                {
+                    "label": "morning (6AM-12NN)",
+                    "count": 2
+                }
+            ]
+        },
+        {
+            "id": "threat-009",
+            "period_label": "the last 30 days",
+            "aggregate_summary": "physical_injury: 4\ndomestic_dispute: 5\nvandalism: 7\nanimal_complaint: 8\nMonday: 4\nThursday: 2\nlate night (12MN-6AM): 3",
+            "counts": [
+                {
+                    "label": "physical_injury",
+                    "count": 4
+                },
+                {
+                    "label": "domestic_dispute",
+                    "count": 5
+                },
+                {
+                    "label": "vandalism",
+                    "count": 7
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 8
+                },
+                {
+                    "label": "Monday",
+                    "count": 4
+                },
+                {
+                    "label": "Thursday",
+                    "count": 2
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 3
+                }
+            ]
+        },
+        {
+            "id": "threat-010",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "theft: 4\nphysical_injury: 5\ntraffic_incident: 6\nfire: 1\nWednesday: 3\nSaturday: 4\nmorning (6AM-12NN): 5",
+            "counts": [
+                {
+                    "label": "theft",
+                    "count": 4
+                },
+                {
+                    "label": "physical_injury",
+                    "count": 5
+                },
+                {
+                    "label": "traffic_incident",
+                    "count": 6
+                },
+                {
+                    "label": "fire",
+                    "count": 1
+                },
+                {
+                    "label": "Wednesday",
+                    "count": 3
+                },
+                {
+                    "label": "Saturday",
+                    "count": 4
+                },
+                {
+                    "label": "morning (6AM-12NN)",
+                    "count": 5
+                }
+            ]
+        },
+        {
+            "id": "threat-011",
+            "period_label": "the last 90 days",
+            "aggregate_summary": "theft: 1\nmedical_emergency: 6\nWednesday: 4\nThursday: 6\nmorning (6AM-12NN): 5\nevening (6PM-12MN): 6",
+            "counts": [
+                {
+                    "label": "theft",
+                    "count": 1
+                },
+                {
+                    "label": "medical_emergency",
+                    "count": 6
+                },
+                {
+                    "label": "Wednesday",
+                    "count": 4
+                },
+                {
+                    "label": "Thursday",
+                    "count": 6
+                },
+                {
+                    "label": "morning (6AM-12NN)",
+                    "count": 5
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 6
+                }
+            ]
+        },
+        {
+            "id": "threat-012",
+            "period_label": "the last 30 days",
+            "aggregate_summary": "theft: 1\nphysical_injury: 8\ndisturbance: 7\nanimal_complaint: 5\nMonday: 5\nThursday: 6\nevening (6PM-12MN): 5",
+            "counts": [
+                {
+                    "label": "theft",
+                    "count": 1
+                },
+                {
+                    "label": "physical_injury",
+                    "count": 8
+                },
+                {
+                    "label": "disturbance",
+                    "count": 7
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 5
+                },
+                {
+                    "label": "Monday",
+                    "count": 5
+                },
+                {
+                    "label": "Thursday",
+                    "count": 6
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 5
+                }
+            ]
+        },
+        {
+            "id": "threat-013",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "domestic_dispute: 2\ntraffic_incident: 3\nThursday: 2\nSaturday: 4\nafternoon (12NN-6PM): 4\nlate night (12MN-6AM): 1",
+            "counts": [
+                {
+                    "label": "domestic_dispute",
+                    "count": 2
+                },
+                {
+                    "label": "traffic_incident",
+                    "count": 3
+                },
+                {
+                    "label": "Thursday",
+                    "count": 2
+                },
+                {
+                    "label": "Saturday",
+                    "count": 4
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 4
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 1
+                }
+            ]
+        },
+        {
+            "id": "threat-014",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "domestic_dispute: 9\nvandalism: 7\ntraffic_incident: 2\nWednesday: 6\nSunday: 1\nmorning (6AM-12NN): 1\nevening (6PM-12MN): 6",
+            "counts": [
+                {
+                    "label": "domestic_dispute",
+                    "count": 9
+                },
+                {
+                    "label": "vandalism",
+                    "count": 7
+                },
+                {
+                    "label": "traffic_incident",
+                    "count": 2
+                },
+                {
+                    "label": "Wednesday",
+                    "count": 6
+                },
+                {
+                    "label": "Sunday",
+                    "count": 1
+                },
+                {
+                    "label": "morning (6AM-12NN)",
+                    "count": 1
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 6
+                }
+            ]
+        },
+        {
+            "id": "threat-015",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "disturbance: 5\ntraffic_incident: 5\nmedical_emergency: 9\nanimal_complaint: 4\nTuesday: 4\nSaturday: 4\nmorning (6AM-12NN): 5\nlate night (12MN-6AM): 4",
+            "counts": [
+                {
+                    "label": "disturbance",
+                    "count": 5
+                },
+                {
+                    "label": "traffic_incident",
+                    "count": 5
+                },
+                {
+                    "label": "medical_emergency",
+                    "count": 9
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 4
+                },
+                {
+                    "label": "Tuesday",
+                    "count": 4
+                },
+                {
+                    "label": "Saturday",
+                    "count": 4
+                },
+                {
+                    "label": "morning (6AM-12NN)",
+                    "count": 5
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 4
+                }
+            ]
+        },
+        {
+            "id": "threat-016",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "disturbance: 2\nmedical_emergency: 7\nother: 7\nMonday: 4\nFriday: 5\nmorning (6AM-12NN): 4",
+            "counts": [
+                {
+                    "label": "disturbance",
+                    "count": 2
+                },
+                {
+                    "label": "medical_emergency",
+                    "count": 7
+                },
+                {
+                    "label": "other",
+                    "count": 7
+                },
+                {
+                    "label": "Monday",
+                    "count": 4
+                },
+                {
+                    "label": "Friday",
+                    "count": 5
+                },
+                {
+                    "label": "morning (6AM-12NN)",
+                    "count": 4
+                }
+            ]
+        },
+        {
+            "id": "threat-017",
+            "period_label": "the last 90 days",
+            "aggregate_summary": "disturbance: 2\ntraffic_incident: 8\nanimal_complaint: 5\nThursday: 3\nFriday: 4\nafternoon (12NN-6PM): 4\nlate night (12MN-6AM): 1",
+            "counts": [
+                {
+                    "label": "disturbance",
+                    "count": 2
+                },
+                {
+                    "label": "traffic_incident",
+                    "count": 8
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 5
+                },
+                {
+                    "label": "Thursday",
+                    "count": 3
+                },
+                {
+                    "label": "Friday",
+                    "count": 4
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 4
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 1
+                }
+            ]
+        },
+        {
+            "id": "threat-018",
+            "period_label": "the last 90 days",
+            "aggregate_summary": "theft: 4\ndisturbance: 2\nMonday: 5\nThursday: 6\nafternoon (12NN-6PM): 5\nevening (6PM-12MN): 2",
+            "counts": [
+                {
+                    "label": "theft",
+                    "count": 4
+                },
+                {
+                    "label": "disturbance",
+                    "count": 2
+                },
+                {
+                    "label": "Monday",
+                    "count": 5
+                },
+                {
+                    "label": "Thursday",
+                    "count": 6
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 5
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 2
+                }
+            ]
+        },
+        {
+            "id": "threat-019",
+            "period_label": "the last 7 days",
+            "aggregate_summary": "missing_person: 2\nanimal_complaint: 4\nMonday: 5\nThursday: 2\nSunday: 5\nevening (6PM-12MN): 2\nlate night (12MN-6AM): 1",
+            "counts": [
+                {
+                    "label": "missing_person",
+                    "count": 2
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 4
+                },
+                {
+                    "label": "Monday",
+                    "count": 5
+                },
+                {
+                    "label": "Thursday",
+                    "count": 2
+                },
+                {
+                    "label": "Sunday",
+                    "count": 5
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 2
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 1
+                }
+            ]
+        },
+        {
+            "id": "threat-020",
+            "period_label": "the last 90 days",
+            "aggregate_summary": "physical_injury: 1\ndomestic_dispute: 9\nvandalism: 6\nWednesday: 3\nThursday: 3\nafternoon (12NN-6PM): 4\nevening (6PM-12MN): 3",
+            "counts": [
+                {
+                    "label": "physical_injury",
+                    "count": 1
+                },
+                {
+                    "label": "domestic_dispute",
+                    "count": 9
+                },
+                {
+                    "label": "vandalism",
+                    "count": 6
+                },
+                {
+                    "label": "Wednesday",
+                    "count": 3
+                },
+                {
+                    "label": "Thursday",
+                    "count": 3
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 4
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 3
+                }
+            ]
+        },
+        {
+            "id": "threat-021",
+            "period_label": "the last 30 days",
+            "aggregate_summary": "vandalism: 1\ntraffic_incident: 5\nfire: 6\nmissing_person: 5\nMonday: 2\nTuesday: 5\nlate night (12MN-6AM): 1",
+            "counts": [
+                {
+                    "label": "vandalism",
+                    "count": 1
+                },
+                {
+                    "label": "traffic_incident",
+                    "count": 5
+                },
+                {
+                    "label": "fire",
+                    "count": 6
+                },
+                {
+                    "label": "missing_person",
+                    "count": 5
+                },
+                {
+                    "label": "Monday",
+                    "count": 2
+                },
+                {
+                    "label": "Tuesday",
+                    "count": 5
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 1
+                }
+            ]
+        },
+        {
+            "id": "threat-022",
+            "period_label": "the last 30 days",
+            "aggregate_summary": "disturbance: 7\ntraffic_incident: 2\nmedical_emergency: 8\nanimal_complaint: 4\nTuesday: 5\nThursday: 5\nSaturday: 2\nafternoon (12NN-6PM): 6\nlate night (12MN-6AM): 4",
+            "counts": [
+                {
+                    "label": "disturbance",
+                    "count": 7
+                },
+                {
+                    "label": "traffic_incident",
+                    "count": 2
+                },
+                {
+                    "label": "medical_emergency",
+                    "count": 8
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 4
+                },
+                {
+                    "label": "Tuesday",
+                    "count": 5
+                },
+                {
+                    "label": "Thursday",
+                    "count": 5
+                },
+                {
+                    "label": "Saturday",
+                    "count": 2
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 6
+                },
+                {
+                    "label": "late night (12MN-6AM)",
+                    "count": 4
+                }
+            ]
+        },
+        {
+            "id": "threat-023",
+            "period_label": "the last 90 days",
+            "aggregate_summary": "physical_injury: 5\nvandalism: 5\nWednesday: 6\nFriday: 6\nafternoon (12NN-6PM): 2\nevening (6PM-12MN): 3",
+            "counts": [
+                {
+                    "label": "physical_injury",
+                    "count": 5
+                },
+                {
+                    "label": "vandalism",
+                    "count": 5
+                },
+                {
+                    "label": "Wednesday",
+                    "count": 6
+                },
+                {
+                    "label": "Friday",
+                    "count": 6
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 2
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 3
+                }
+            ]
+        },
+        {
+            "id": "threat-024",
+            "period_label": "the last 90 days",
+            "aggregate_summary": "physical_injury: 9\nmissing_person: 5\nanimal_complaint: 4\nother: 9\nTuesday: 3\nWednesday: 4\nSaturday: 6\nevening (6PM-12MN): 6",
+            "counts": [
+                {
+                    "label": "physical_injury",
+                    "count": 9
+                },
+                {
+                    "label": "missing_person",
+                    "count": 5
+                },
+                {
+                    "label": "animal_complaint",
+                    "count": 4
+                },
+                {
+                    "label": "other",
+                    "count": 9
+                },
+                {
+                    "label": "Tuesday",
+                    "count": 3
+                },
+                {
+                    "label": "Wednesday",
+                    "count": 4
+                },
+                {
+                    "label": "Saturday",
+                    "count": 6
+                },
+                {
+                    "label": "evening (6PM-12MN)",
+                    "count": 6
+                }
+            ]
+        },
+        {
+            "id": "threat-025",
+            "period_label": "the last 30 days",
+            "aggregate_summary": "vandalism: 6\nmissing_person: 3\nThursday: 4\nFriday: 3\nafternoon (12NN-6PM): 1",
+            "counts": [
+                {
+                    "label": "vandalism",
+                    "count": 6
+                },
+                {
+                    "label": "missing_person",
+                    "count": 3
+                },
+                {
+                    "label": "Thursday",
+                    "count": 4
+                },
+                {
+                    "label": "Friday",
+                    "count": 3
+                },
+                {
+                    "label": "afternoon (12NN-6PM)",
+                    "count": 1
+                }
+            ]
+        }
+    ]
+}

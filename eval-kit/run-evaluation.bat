@@ -86,7 +86,7 @@ REM --- 4. Quick 3-record smoke test before committing to the full run --
 :smoke_test
 echo Running a quick 3-record check first (about a minute or two)...
 echo.
-php scripts\ai-evaluate.php --engine=model --dataset=fixtures\redaction-eval-sample.json --limit=3 --dry-run --verbose
+php scripts\ai-evaluate.php --task=redaction --engine=model --dataset=fixtures\eval-incidents-v1.json --limit=3 --dry-run --verbose
 if errorlevel 1 (
     echo.
     echo [ERROR] The quick check above failed. Nothing else was run.
@@ -99,9 +99,9 @@ echo.
 echo The quick check worked.
 echo.
 
-REM --- 5. The real 200-record run, paced and resumable -----------------
+REM --- 5. The real 350-record redaction run, paced and resumable --------
 echo ============================================
-echo Ready to run the full 200-record test.
+echo Ready to run the full 350-record redaction test.
 echo.
 echo This can take SEVERAL HOURS depending on your computer, and will
 echo pause for a couple of minutes every 20 records to rest your CPU
@@ -110,11 +110,17 @@ echo.
 echo You can safely close this window at any point and run this file
 echo again later - it always picks up exactly where it left off and
 echo never redoes work or loses progress.
+echo.
+echo This kit can also score 7 OTHER things the same AI model does
+echo (writing summaries, translating, classifying incidents, drafting
+echo SMS alerts...) - see README-FOR-FRIEND.md for those commands if
+echo you're comfortable running one yourself. This default run only
+echo does the redaction test, the most important one.
 echo ============================================
 echo.
 pause
 
-php scripts\ai-evaluate.php --engine=model --dataset=fixtures\redaction-eval-v1.json --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
+php scripts\ai-evaluate.php --task=redaction --engine=model --dataset=fixtures\eval-incidents-v1.json --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
 
 echo.
 echo ============================================
