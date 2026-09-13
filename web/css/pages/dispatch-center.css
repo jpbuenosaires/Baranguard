@@ -363,6 +363,15 @@
   transform: translateY(-1px);
 }
 
+/* 2026-09-13: wraps one-or-more .queue-incident-card__dispatched-info
+   rows when an incident has more than one concurrent responder
+   (docs/REMAINING.md G-backlog "second responder") — each row already
+   carries its own margin-top, so this just needs to stack them. */
+.queue-incident-card__dispatched-list {
+  display: flex;
+  flex-direction: column;
+}
+
 .queue-incident-card__dispatched-info {
   background: var(--color-bg);
   border: 1px solid var(--color-border);

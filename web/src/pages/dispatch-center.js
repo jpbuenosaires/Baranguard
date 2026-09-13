@@ -171,8 +171,14 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   async function load(showLoadingState) {
     if (showLoadingState && !layoutEl) renderLoading(body);
     try {
-      const [incidentsRes, dispatchesRes, dutyStatuses, usersRes, sosItems, gpsItems] = await Promise.all([
+      const [incidentsRes, dispatchedIncidentsRes, dispatchesRes, dutyStatuses, usersRes, sosItems, gpsItems] = await Promise.all([
         getIncidents({ status: 'pending', limit: 100 }),
+        // 2026-09-13: fetched so grouped dispatch cards (below) can show
+        // the incident's REAL type/location/display id — GET /dispatch's
+        // own rows don't carry those (see mapDispatch()), so a dispatched
+        // card previously fell back to generic "Emergency"/"Location
+        // pinned on map" text regardless of what the incident actually was.
+        getIncidents({ status: 'dispatched', limit: 100 }),
         getDispatches({ limit: 100 }),
         getDutyStatus(user.barangayId),
         getUsers({ role: 'tanod', limit: 100 }),
@@ -180,15 +186,41 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         getGpsLive(user.barangayId).catch(() => []),
       ]);
 
+      const incidentById = new Map(
+        [...incidentsRes.items, ...dispatchedIncidentsRes.items].map((i) => [i.incidentId, i])
+      );
       const onDutyUserIds = new Set(dutyStatuses.filter((d) => d.status === 'on_duty').map((d) => d.userId));
       const eligibleTanods = usersRes.items.filter((u) => u.isActive && onDutyUserIds.has(u.userId));
       const activeDispatches = dispatchesRes.items.filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status));
+
+      // 2026-09-13, docs/REMAINING.md G-backlog "second responder": an
+      // incident can now have more than one concurrent active dispatch.
+      // Group by incidentId into ONE queue item per incident (carrying
+      // its own real incident fields plus the full list of responders)
+      // rather than one item per dispatch row — the queue used to render
+      // a second/third full duplicate card for the same incident.
+      const groupsByIncident = new Map();
+      for (const dispatch of activeDispatches) {
+        if (!groupsByIncident.has(dispatch.incidentId)) {
+          groupsByIncident.set(dispatch.incidentId, { ...incidentById.get(dispatch.incidentId), incidentId: dispatch.incidentId, dispatches: [] });
+        }
+        groupsByIncident.get(dispatch.incidentId).dispatches.push(dispatch);
+      }
+      const groupedActiveDispatches = [...groupsByIncident.values()].map((group) => ({
+        ...group,
+        // Earliest responder's own dispatchedAt represents "when this
+        // incident was first engaged" for sort/elapsed-time purposes.
+        dispatchedAt: group.dispatches.reduce((earliest, d) => (
+          !earliest || new Date(d.dispatchedAt) < new Date(earliest) ? d.dispatchedAt : earliest
+        ), null),
+      }));
+
       const openSos = sosItems.filter((s) => s.status !== 'resolved');
       const tanodNames = new Map(usersRes.items.map((u) => [u.userId, u.fullName]));
 
       latestData = {
         pendingIncidents: incidentsRes.items,
-        activeDispatches,
+        activeDispatches: groupedActiveDispatches,
         eligibleTanods,
         openSos: openSos.map((s) => ({ ...s, fullName: tanodNames.get(s.userId) })),
         gpsItems,
@@ -476,7 +508,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const idStr = String(item.displayId || item.incidentId || item.dispatchId || '').toLowerCase();
       const typeStr = (INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType || '').toLowerCase();
       const locStr = (item.locationDescription || item.location_description || '').toLowerCase();
-      const tanodStr = (item.tanodName || '').toLowerCase();
+      // A grouped dispatched item has `dispatches[]` (one or more
+      // responders); a pending item has neither — matches any responder's
+      // name, not just a single one.
+      const tanodStr = (item.dispatches || []).map((d) => d.tanodName || '').join(' ').toLowerCase();
       return idStr.includes(searchQuery) || typeStr.includes(searchQuery) || locStr.includes(searchQuery) || tanodStr.includes(searchQuery);
     });
 
@@ -566,60 +601,73 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         });
         card.append(cardHeader, titleRow, locRow, timeRow, dispatchBtn);
       } else {
-        // Dispatched item
-        const dispatchedInfo = document.createElement('div');
-        dispatchedInfo.className = 'queue-incident-card__dispatched-info';
+        // Dispatched item — one row per responder (docs/REMAINING.md
+        // G-backlog "second responder": an incident can now have more
+        // than one concurrent active dispatch; this used to render a
+        // full SEPARATE duplicate card per responder on the SAME
+        // incident, which is what this groups away).
+        const dispatchedList = document.createElement('div');
+        dispatchedList.className = 'queue-incident-card__dispatched-list';
 
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'queue-incident-card__dispatched-name';
-        nameSpan.textContent = `Assigned: ${item.tanodName || `Tanod #${item.tanodId}`}`;
+        for (const dispatch of item.dispatches) {
+          const dispatchedInfo = document.createElement('div');
+          dispatchedInfo.className = 'queue-incident-card__dispatched-info';
 
-        const actionsGroup = document.createElement('div');
-        actionsGroup.style.display = 'flex';
-        actionsGroup.style.alignItems = 'center';
-        actionsGroup.style.gap = '0.375rem';
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'queue-incident-card__dispatched-name';
+          nameSpan.textContent = `Assigned: ${dispatch.tanodName || `Tanod #${dispatch.tanodId}`}`;
 
-        const tanodGps = gpsItems.find((g) => g.userId === item.tanodId);
-        if (tanodGps && tanodGps.latitude != null && tanodGps.longitude != null) {
-          const locateBtn = document.createElement('button');
-          locateBtn.type = 'button';
-          locateBtn.className = 'queue-incident-card__locate-btn';
-          locateBtn.innerHTML = `${icons.mapPin(11)} Locate`;
-          locateBtn.title = 'Focus on Tanod on live map';
-          locateBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 17);
-          });
-          actionsGroup.appendChild(locateBtn);
-        }
+          const actionsGroup = document.createElement('div');
+          actionsGroup.style.display = 'flex';
+          actionsGroup.style.alignItems = 'center';
+          actionsGroup.style.gap = '0.375rem';
 
-        const cancelBtn = document.createElement('button');
-        cancelBtn.type = 'button';
-        cancelBtn.className = 'queue-incident-card__cancel-btn';
-        cancelBtn.textContent = 'Cancel';
-        cancelBtn.title = 'Cancel this dispatch';
-        cancelBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const confirmed = await confirmDialog({
-            title: `Cancel dispatch #${item.dispatchId}?`,
-            description: 'The incident will return to the pending queue.',
-            confirmLabel: 'Cancel dispatch',
-            cancelLabel: 'Keep it',
-            danger: true,
-          });
-          if (!confirmed) return;
-          try {
-            await cancelDispatch(item.dispatchId);
-            showToast(`Dispatch #${item.dispatchId} cancelled`, { variant: 'info' });
-            onQueueChanged();
-          } catch (err) {
-            showToast(err instanceof ApiClientError ? err.message : 'Could not cancel dispatch.', { variant: 'error' });
+          const tanodGps = gpsItems.find((g) => g.userId === dispatch.tanodId);
+          if (tanodGps && tanodGps.latitude != null && tanodGps.longitude != null) {
+            const locateBtn = document.createElement('button');
+            locateBtn.type = 'button';
+            locateBtn.className = 'queue-incident-card__locate-btn';
+            locateBtn.innerHTML = `${icons.mapPin(11)} Locate`;
+            locateBtn.title = 'Focus on Tanod on live map';
+            locateBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 17);
+            });
+            actionsGroup.appendChild(locateBtn);
           }
-        });
-        actionsGroup.appendChild(cancelBtn);
 
-        dispatchedInfo.append(nameSpan, actionsGroup);
-        card.append(cardHeader, titleRow, locRow, timeRow, dispatchedInfo);
+          const cancelBtn = document.createElement('button');
+          cancelBtn.type = 'button';
+          cancelBtn.className = 'queue-incident-card__cancel-btn';
+          cancelBtn.textContent = 'Cancel';
+          cancelBtn.title = 'Cancel this dispatch';
+          cancelBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const confirmed = await confirmDialog({
+              title: `Cancel dispatch #${dispatch.dispatchId}?`,
+              // 2026-09-13: was "The incident will return to the pending
+              // queue" unconditionally — no longer always true once a
+              // second responder can stay active after this cancellation.
+              description: `This removes ${dispatch.tanodName || 'this responder'} from the incident.`,
+              confirmLabel: 'Cancel dispatch',
+              cancelLabel: 'Keep it',
+              danger: true,
+            });
+            if (!confirmed) return;
+            try {
+              await cancelDispatch(dispatch.dispatchId);
+              showToast(`Dispatch #${dispatch.dispatchId} cancelled`, { variant: 'info' });
+              onQueueChanged();
+            } catch (err) {
+              showToast(err instanceof ApiClientError ? err.message : 'Could not cancel dispatch.', { variant: 'error' });
+            }
+          });
+          actionsGroup.appendChild(cancelBtn);
+
+          dispatchedInfo.append(nameSpan, actionsGroup);
+          dispatchedList.appendChild(dispatchedInfo);
+        }
+        card.append(cardHeader, titleRow, locRow, timeRow, dispatchedList);
       }
 
       // Card Click: Focus on Map
@@ -632,8 +680,13 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
             }
           }
         } else {
-          const tanodGps = gpsItems.find((g) => g.userId === item.tanodId);
-          if (tanodGps && tanodGps.latitude != null && tanodGps.longitude != null) {
+          // Multiple responders may be on this incident — fly to the
+          // first one with a live GPS fix rather than picking one
+          // arbitrarily by field name.
+          const tanodGps = item.dispatches
+            .map((d) => gpsItems.find((g) => g.userId === d.tanodId))
+            .find((g) => g && g.latitude != null && g.longitude != null);
+          if (tanodGps) {
             liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 17);
           }
         }
