@@ -209,9 +209,16 @@ this was the blocker its own menu entry named.
   keydown handler) is still fragile; `AiToolPanel` deliberately uses the
   simpler structure — the toggle button is the only interactive element —
   and the GIS panel could be brought in line when next touched.
-- `SmsController::broadcast()` resolves idempotency with
-  `JSON_EXTRACT` over unindexed `audit_log` — a growing full scan, and
-  it makes an append-only record load-bearing for write correctness.
+- ~~`SmsController::broadcast()` resolves idempotency with
+  `JSON_EXTRACT` over unindexed `audit_log`~~ **✅ CLOSED 2026-09-13.**
+  Migration `0019_audit_log_idempotency_index.sql` adds a VIRTUAL
+  generated column + covering index; `SmsController.php` now queries the
+  column directly. Proven with EXPLAIN at 500+ rows: old query `type:
+  ALL` (full scan), new query `type: ref` (1 row). New script:
+  `backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh`, 15/15.
+  `IncidentsController`'s F5 idempotency replay has the identical shape
+  and would benefit the same way — left as a follow-up, not folded into
+  this fix (see that migration's own header).
 
 ---
 
@@ -527,10 +534,25 @@ same value. This is the SAME class of MariaDB/PDO gotcha §8 already
 documents for `SKIP LOCKED`/CHECK constraints — worth remembering the
 next time a query reuses a named parameter anywhere in this codebase.
 
-### 🟢 B5. Roles other than Admin in a browser
-Almost all browser verification has been done as Admin (plus one
-Secretary pass on W7/W8). Punong Barangay and Secretary have never been
-walked through the full nav.
+### ✅ B5. Roles other than Admin in a browser — DONE 2026-09-13, found and fixed a REAL bug
+Secretary and Punong Barangay both walked through their full nav against
+real `baranguard_uiseed` data. Secretary: Incident Management (list +
+detail, AI Classifier), Blotter Entry (AI Blotter Assistant confirmed
+present and working), Citizen Reports, Settings — clean. Punong Barangay:
+Dashboard, Live Map, Analytics (all 3 tabs), Personnel (Fatigue Flags
+only, matching §7), Settings — clean after one fix.
+
+**Found live, not in review: the Dashboard's "Tanods On Duty" panel was
+permanently broken for Punong Barangay.** `admin-dashboard.js`'s
+`loadTanodsOnDuty()` called `GET /users?role=tanod` unconditionally for
+both roles sharing this dashboard module — that endpoint is genuinely
+Admin-only server-side (§3), so every PB load 403'd and a `Promise.all`
+catch-all turned that 100%-reproducible permissions boundary into a
+generic "Could not load Tanod duty status." **Fixed**: skip the doomed
+call for non-admin roles and show an honest "Named roster is available
+to Admin. See the count above" instead (the aggregate count is already
+in the KPI card above, which PB can read). Confirmed via browser
+before/after network-log comparison; Admin's roster view is unchanged.
 
 ---
 
@@ -567,8 +589,14 @@ blocker as everything else mobile. Also still true: nothing calls
 drains on whatever next sync trigger exists.
 
 ### 🟢 C4. Smaller known gaps
-- `LineChart` has no data-gap concept — a null response-time day renders
-  as 0 on Analytics.
+- ~~`LineChart` has no data-gap concept — a null response-time day
+  renders as 0 on Analytics~~ **✅ FIXED 2026-09-13.** The `?? 0` was at
+  the `statistical-reports.js` call site, discarding the null/real-zero
+  distinction `ReportsController::summary()` already makes on purpose.
+  `LineChart.js` now treats `null` as a genuine gap: the line/area breaks
+  around it (drawn per contiguous run of real points), no dot, and the
+  hover tooltip + accessible table show "No data" instead of a
+  fabricated value. `verify-web-wiring.mjs` 536/536 after the change.
 - ~~Evidence files can't be downloaded from W7~~ **Was understated —
   promoted to F4, now CLOSED 2026-09-13.** See F4's own entry.
 - ~~On-device SMS sending was never built, so M13 could only ever show
@@ -617,7 +645,24 @@ drains on whatever next sync trigger exists.
   permission added — `@capacitor/geolocation` and
   `@capacitor/push-notifications` are now registered native plugins
   (6 → 8). `gradle.properties`' hand-fixed JDK paths confirmed intact.
-- 13 pre-existing npm advisories in `mobile/` — never triaged.
+- ~~13 pre-existing npm advisories in `mobile/` — never triaged~~
+  **✅ TRIAGED 2026-09-13, 4 of 13 fixed.** `qs`→6.16.0 and
+  `@babel/runtime`→7.26.10 fixed via `package.json` `overrides` (both
+  plain security patches, non-breaking, confirmed via a clean `npx tsc
+  --noEmit` afterward) — this also cleared `get-blob-duration` and
+  `capacitor-voice-recorder` off the list, since both were only flagged
+  transitively through the vulnerable `@babel/runtime`, not by their own
+  code. Remaining 9 (7 moderate, 2 high) are all major-version bumps
+  deliberately left alone: `react-router`/`react-router-dom` (real
+  production dependency — needs a v6→v8 bump coupled to `@ionic/
+  react-router`'s peer version plus a full mobile nav regression pass on
+  a device, and conflating it with the already-in-progress C6 router bug
+  was judged worse than leaving it); `cypress` and its three transitive
+  advisories (dev-only, real e2e specs exist, a 13→16 bump needs its own
+  test-and-fix pass); `@capacitor/cli`/`xcode` (the "fix" is a downgrade
+  from 8.5.x, and `xcode` is iOS-only tooling, inert on this
+  Android-only project). See `backend/DEVLOG.md` 2026-09-13 for the full
+  per-package breakdown.
 
 ### ✅ C5. Every device on a no-Firebase deployment could never actually register — CLOSED 2026-09-13
 Found on the real device, not in review: `POST /devices/register`
@@ -705,23 +750,30 @@ service constraint at that specific mark.
 
 ## E. Housekeeping
 
-- 🟢 A stray `baranguard_device_check` database exists locally — flagged,
-  never investigated, safe to drop after a look.
+- ✅ A stray `baranguard_device_check` database was flagged 2026-09-07 as
+  "never investigated" — **checked 2026-09-13: it does not exist.**
+  `SHOW DATABASES` on the real MariaDB instance lists only
+  `baranguard`/`baranguard_uiseed`/the standard system schemas. Resolved
+  sometime between the two dates without this doc being updated; nothing
+  to do now.
 - ✅ The three empty untracked files in the repo root (`cls`, `git`,
   `main)`) are **gone** — confirmed 2026-09-07, nothing to do.
-- 🟢 Eight untracked design-doc/scratch artifacts sit in the repo root
-  and `docs/` and have done for several sessions:
-  `Baranguard_System_Design_Document.docx`/`.pdf`, four `diagram_*.png`,
-  `scratch_diagrams.py`, and `docs/progress-tracker.html`. Still
-  undecided as of 2026-09-12, despite six other uncommitted changes from
-  around the same period finally landing that session (see DEVLOG).
-  Commit them under `docs/`, or gitignore them — but decide, rather than
-  letting them keep riding along untracked where `git add -A` could
-  sweep them in.
-- 🟢 `mobile/android/` is gitignored but now holds real, non-regeneratable
-  fixes (`gradle.properties`, manifest permissions). `npx cap sync` is
-  safe; `npx cap add android` would destroy them. Decide whether to
-  commit it.
+- ✅ The eight untracked design-doc/scratch artifacts this line used to
+  flag (`Baranguard_System_Design_Document.docx`/`.pdf`, four
+  `diagram_*.png`, `scratch_diagrams.py`, `docs/progress-tracker.html`)
+  **no longer exist on disk — checked 2026-09-13.** Already gone by some
+  earlier, undocumented cleanup; nothing to delete.
+- ✅ `mobile/android/` — **committed 2026-09-13**, explicit user
+  sign-off. It now holds real, non-regeneratable hand-fixes
+  (`gradle.properties`'s JDK installation paths, `AndroidManifest.xml`'s
+  permissions, the native Java plugin sources from Phase 4) that `npx
+  cap add android` would silently destroy if ever regenerated from
+  scratch. The blanket top-level `.gitignore` line is removed; the
+  nested `mobile/android/.gitignore` (Capacitor's own generated one,
+  already correct) does the actual filtering — confirmed by inspecting
+  the full staged file list that `build/`, `.gradle/`,
+  `local.properties`, and `capacitor-cordova-android-plugins/` were
+  correctly excluded.
 
 ---
 

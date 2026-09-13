@@ -176,11 +176,19 @@ disposable MariaDB 10.4 first, same as 0015).
 **0017 health_check_log** (dependency-status CHANGE log behind W20's new
 "Dependency status changes" section and `GET /system/health/history`;
 a row only when the observed statuses differ from the newest one).
-**All seventeen are applied to the real local `baranguard` DB** (0008–0014
-on 2026-09-05, 0015 on 2026-09-10, 0016–0017 on 2026-09-12). On a new
-machine, apply all seventeen in order — as
-DBA/root, **not** as `baranguard_app`, which has no `ALTER`/`CREATE
-TABLE` (see §8).
+**0018 sms_subscriber** (consent-tracked recipient list behind the
+Barangay-wide advisory broadcast feature — `consent_at`/`consent_source`
+NOT NULL, removal is `opted_out_at` not a DELETE; see §7's Phase 5 note).
+**0019 audit_log_idempotency_index** (VIRTUAL generated column +
+covering index on `audit_log`, closing §F9's last item — see that
+migration's own header; `SmsController::broadcast()` is the only caller
+updated to use it, `IncidentsController`'s identical-shaped F5 lookup is
+a deliberate follow-up, not touched).
+**All nineteen are applied to the real local `baranguard` DB** (0008–0014
+on 2026-09-05, 0015 on 2026-09-10, 0016–0017 on 2026-09-12, 0018 on
+2026-09-12, 0019 on 2026-09-13). On a new machine, apply all nineteen in
+order — as DBA/root, **not** as `baranguard_app`, which has no
+`ALTER`/`CREATE TABLE` (see §8).
 
 **FK trap:** `ai_processing_log`, `evidence_attachment`, `blotter_record`
 and `dispatch` are all `ON DELETE RESTRICT` against `incident` — deleting
@@ -534,6 +542,9 @@ table. Do not update a number here without re-running the suite.
 | `verify-sprint7-audit.sh` | 52 |
 | `verify-sprint7-pentest-incidents.sh` | 68 |
 | `verify-ai-tools.sh` | 63 |
+| `verify-b2-pentest-remaining-resources.sh` | 59 |
+| `verify-sprint3.sh` | 38 |
+| `verify-f9-sms-broadcast-idempotency-index.sh` | 15 |
 | `restore-drill.sh` | 12 (against the real DB) |
 | `verify-web-wiring.mjs` | 518 (moves as screens change; see §6 above) |
 | `mobile: verify.schema` | 113 |

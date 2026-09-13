@@ -20,8 +20,12 @@ gate note for the exact current wording.
 **2026-09-13 (this session): continued real-device testing on the same
 Infinix X6840, found and fixed three real bugs, made and implemented one
 real architecture decision, closed out the last two open items from the
-Sept-7 audit and the G1-G4 backlog, and found two new bugs that are
-still open.**
+Sept-7 audit and the G1-G4 backlog, found two new bugs that are still
+open, then — in a separate, later continuation of the same date,
+explicitly requested by the user as a deliberate multi-box exception
+(SPRINTS.md standing rule #2) — closed a punch list of seven small
+backend/web/housekeeping items and found one more real bug along the
+way (B5, below).**
 
 ### Fixed and device-verified this session
 
@@ -158,6 +162,64 @@ Continuing the same session after the mobile debugging above:
   interrupted-sync resume both behave exactly as `/sync/batch`'s
   idempotency design intends.
 
+### Later the same day: punch-list session (deliberate multi-box exception) — six closed, one already-resolved
+
+User explicitly asked for seven independent small items in one sitting
+rather than the usual one-box-at-a-time discipline (logged as such in
+`backend/DEVLOG.md` per SPRINTS.md's own standing-rule exception clause).
+No Sprint 8 box was picked this round.
+
+- **`baranguard_device_check` stray DB** — checked, doesn't exist.
+  Already resolved sometime after the 2026-09-07 flag; doc corrected.
+- **`SmsController::broadcast()`'s idempotency lookup (REMAINING.md
+  §F9's last item) — FIXED.** New migration
+  `0019_audit_log_idempotency_index.sql` (VIRTUAL generated column +
+  covering index on `audit_log`); the controller now queries the column
+  directly instead of a bare `JSON_EXTRACT()`. Proven with EXPLAIN at
+  500+ rows (`type: ALL` → `type: ref`) and a new script,
+  `backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh`, 15/15.
+  Applied to both real databases. `IncidentsController`'s F5 lookup has
+  the identical shape and would benefit the same way — deliberately left
+  as a follow-up, not folded in.
+- **`LineChart`'s null-day-renders-as-zero gap (REMAINING.md §C4) —
+  FIXED.** The `?? 0` was at the `statistical-reports.js` call site, not
+  in the chart itself; the backend already distinguished "no data" from
+  "a real zero" on purpose. `LineChart.js` now draws a genuine gap
+  (broken line/area, no dot, "No data" in the tooltip and accessible
+  table) instead of a fabricated zero. `verify-web-wiring.mjs` 536/536.
+- **`mobile/` `npm audit` — 13 advisories triaged, 4 fixed via
+  `package.json` `overrides`** (`qs`→6.16.0, `@babel/runtime`→7.26.10 —
+  both non-breaking security patches, confirmed via a clean `npx tsc
+  --noEmit`), **9 left deliberately unfixed and documented**
+  (react-router/react-router-dom needs a major bump entangled with the
+  still-open C6 router bug; cypress's tree needs its own test pass since
+  real e2e specs exist; @capacitor/cli's "fix" is a downgrade this
+  session's own earlier work depended against). Full per-package
+  reasoning in `backend/DEVLOG.md` and `REMAINING.md`'s C4 section.
+- **Browser-verified Secretary and Punong Barangay nav end-to-end
+  (REMAINING.md §B5) — found and fixed a real bug.** Both roles' full
+  nav walked clean against real `baranguard_uiseed` data (Secretary:
+  Incident Management, Blotter Entry + AI Blotter Assistant, Citizen
+  Reports, Settings; PB: Dashboard, Live Map, Analytics' 3 tabs,
+  Personnel/Fatigue, Settings) — **except** the Dashboard's "Tanods On
+  Duty" panel, which called an Admin-only endpoint (`GET /users`)
+  unconditionally for both roles sharing that dashboard module, so every
+  PB load 403'd and a generic catch-all reported the permissions
+  boundary as "Could not load Tanod duty status." **Fixed**: skip the
+  doomed call for non-admin roles, show an honest "available to Admin"
+  message instead — confirmed via browser (network log before/after),
+  Admin's own view unchanged.
+- **Housekeeping**: the 8 untracked scratch/design files `REMAINING.md`
+  §E flagged were already gone from disk (some earlier, undocumented
+  cleanup) — nothing to delete, doc corrected. `mobile/android/` —
+  **committed**, explicit user sign-off, since it now carries real
+  non-regeneratable hand-fixes (`gradle.properties`, `AndroidManifest.xml`,
+  the native Java plugin sources from Phase 4) that `npx cap add android`
+  would destroy if regenerated; the nested Capacitor-generated
+  `mobile/android/.gitignore` already correctly excludes `build/`,
+  `.gradle/`, `local.properties` — only the blanket top-level line was
+  wrong, and it's now removed.
+
 ### Previously-flagged uncommitted mobile UI work — now resolved
 
 Earlier snapshots of this file flagged a separate body of uncommitted
@@ -268,10 +330,15 @@ below Sprint 8's gate).
 4. **Settle F1's web-dashboard half** — the real production API base URL
    for Admin/Secretary/PB, and revisit `CORS_ALLOWED_ORIGIN` once that's
    decided.
-5. ~~B1, B2, B4~~ **Done 2026-09-13** — see their own `REMAINING.md`
-   entries (B4 in particular found and fixed a real `nearby()` bug).
+5. ~~B1, B2, B4, B5~~ **Done 2026-09-13** — see their own `REMAINING.md`
+   entries (B4 found and fixed a real `nearby()` bug; B5 found and fixed
+   a real Punong-Barangay-only dashboard bug).
 6. **Hand `eval-kit/` to a friend with capable hardware** for A2.
-7. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
+7. **The 9 remaining `mobile/` npm advisories** (react-router major bump,
+   cypress major bump, @capacitor/cli) — each needs its own
+   test-and-verify pass; see `REMAINING.md`'s C4 section for why none
+   were force-fixed this session.
+8. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
 
 Full ordered list with reasoning, including the hardware/account-blocked
 items: **`docs/REMAINING.md`**.
@@ -303,6 +370,9 @@ bash backend/scripts/verify-b2-pentest-remaining-resources.sh
 
 # B4: Sprint 3 backend (gps, dispatch status, sync/batch, nearby, mobile incidents)
 bash backend/scripts/verify-sprint3.sh
+
+# F9: SMS broadcast idempotency index (this session's new assertions)
+bash backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh
 
 # Build + install the mobile app onto a connected Android device
 cd mobile && npx vite build && npx cap sync android
