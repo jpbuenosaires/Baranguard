@@ -30,8 +30,30 @@ use Baranguard\Middleware\AuthMiddleware;
 // reasonable dev convenience here — override via CORS_ALLOWED_ORIGIN in
 // .env for anything stricter. Logged as a resolved decision in
 // DEVLOG.md since the reference doesn't specify CORS policy.
-$corsOrigin = baranguard_env('CORS_ALLOWED_ORIGIN') ?: '*';
-header("Access-Control-Allow-Origin: {$corsOrigin}");
+//
+// 2026-09-13, F1's web half: `CORS_ALLOWED_ORIGIN` now also accepts a
+// comma-separated list of exact origins (scheme+host+port), not just the
+// literal `*` — needed once the web dashboard's real address (the
+// workstation's Tailscale MagicDNS name) and the mobile app's own
+// Capacitor WebView origin (`http://localhost`, unrelated to any human
+// browsing choice) became two DIFFERENT real origins that both need
+// access, neither of which is "all of them". A comma list is matched
+// against the actual `Origin` request header and echoes back ONLY that
+// exact match (`Vary: Origin` alongside it, since the response now
+// differs by request) — an origin not on the list gets no CORS header
+// at all, which is what makes the browser refuse the response rather
+// than this endpoint trying to reject it itself.
+$corsConfig = baranguard_env('CORS_ALLOWED_ORIGIN') ?: '*';
+if ($corsConfig === '*') {
+    header('Access-Control-Allow-Origin: *');
+} else {
+    $allowedOrigins = array_map('trim', explode(',', $corsConfig));
+    $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if ($requestOrigin !== '' && in_array($requestOrigin, $allowedOrigins, true)) {
+        header("Access-Control-Allow-Origin: {$requestOrigin}");
+        header('Vary: Origin');
+    }
+}
 header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Device-Id');
 header('Access-Control-Expose-Headers: X-Renewed-Token');

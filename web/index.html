@@ -139,7 +139,19 @@
     // htdocs subfolder — the front controller matches REQUEST_URI against
     // exactly "/api/v1", so a subfolder mount 404s. Served on its own
     // port instead: see web/README-serving.md ("Option C").
-    window.BARANGUARD_API_BASE_URL = 'http://localhost:8081/api/v1'; // TEMP local pointer — public tunnel is dead (P0, REMAINING.md §F1); disposable baranguard_uiseed DB, not real baranguard
+    //
+    // F1's web half, resolved 2026-09-13: this now points at the
+    // workstation's Tailscale MagicDNS name — the same tailnet mobile
+    // already joined (see mobile/src/services/apiService.ts's own note),
+    // chosen so Admin/Secretary/PB reach the API identically whether
+    // sitting at the barangay hall or connecting remotely, without ever
+    // exposing the API on the open internet. Works the same way whether
+    // this PAGE itself was loaded via `http://localhost/baranguard/web/`
+    // or via this same Tailscale hostname — either way, the browser's own
+    // Origin only matters for backend/.env's CORS_ALLOWED_ORIGIN list,
+    // which now allows both. Still disposable baranguard_uiseed DB, not
+    // the real baranguard database.
+    window.BARANGUARD_API_BASE_URL = 'http://laptop-b2rp6jkk.tail631c69.ts.net:8081/api/v1';
   </script>
 </head>
 <body>
