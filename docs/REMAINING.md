@@ -32,18 +32,20 @@ proven — F5/F6/F8 each with a new purpose-built verify script, since none
 of the three endpoints had ever been exercised by an existing suite. See
 `backend/DEVLOG.md` 2026-09-12 (4).
 
-**2026-09-13: F4 is closed** (evidence upload built end-to-end — see F4's
-own entry) **and F1 is half-decided** — mobile's connectivity problem got
-a real architectural answer (Tailscale), but the web dashboard's own API
-base URL and `backend/.env`'s `CORS_ALLOWED_ORIGIN=*` are unchanged and
-still gate a real production sign-off. See F1's own entry for the exact
-split.
+**2026-09-13: F4 and F1 are both closed.** F4: evidence upload built
+end-to-end. F1: mobile's connectivity problem got a real architectural
+answer (Tailscale) earlier the same week, and the web dashboard's own
+half was resolved the same way later on 2026-09-13 — both now point at
+the workstation's Tailscale hostname, with `CORS_ALLOWED_ORIGIN`
+extended to a real multi-origin allow-list rather than staying a bare
+wildcard. See F1's own entry for the full detail. Section F now gates
+nothing left in Sprint 8's own pre-UAT exit conditions.
 
 ---
 
 ## F. Audit remediation (2026-09-07) — gates Sprint 8
 
-### 🟠 F1. The API base URL is decided for mobile, still open for the web dashboard
+### ✅ F1. The API base URL — CLOSED 2026-09-13, both halves
 **Mobile half — RESOLVED 2026-09-13, explicit user decision.** A Tanod's
 phone must reach the workstation whether it's on barangay WiFi or out on
 patrol on mobile data, and the barangay's residential internet connection
@@ -70,27 +72,45 @@ default has never actually been the address a real login exercised —
 only the backend's reachability over Tailscale has been proven, not the
 full mobile round-trip through it.
 
-**Web dashboard half — STILL OPEN, unchanged.** `web/index.html:142` in
-committed `HEAD` still points at `http://localhost:8081/api/v1` with its
-own comment admitting it's a "TEMP local pointer," and `backend/.env`
-still sets `CORS_ALLOWED_ORIGIN=*`. The Tailscale decision above was
-scoped to the mobile connectivity problem specifically and never asked
-"what does Admin/Secretary/PB use in a real deployment" — that is a
-separate, still fully open decision (plain LAN address for desk use at
-the barangay hall? also Tailscale, for remote admin access?), and
-tightening `CORS_ALLOWED_ORIGIN` off the wildcard without knowing that
-answer would risk breaking the mobile app's own WebView origin (Capacitor
-serves the app from `http://localhost`, which the current wildcard
-happens to already permit).
+**Web dashboard half — RESOLVED 2026-09-13, explicit user decision: also
+Tailscale.** Rather than a separate LAN-only address, Admin/Secretary/PB
+use the SAME `laptop-b2rp6jkk.tail631c69.ts.net` hostname mobile already
+uses — one address works whether someone is sitting at the barangay hall
+(the workstation's own tailnet membership makes this work over LAN too)
+or connecting remotely, and it's already proven reachable (confirmed via
+direct `curl`, both port 8081's API and port 80's web dashboard, real
+200 responses with correct CORS headers).
 
-**Decide the web dashboard's intended value and commit it, then revisit
-CORS.** The second-order effect this item has always flagged still
-applies to whatever is chosen: a shared address in front of every client
-defeats the citizen-report rate limit
-(`CitizenReportsController::submit()` throttles on `REMOTE_ADDR`) — this
-does NOT apply to the Tailscale mesh above, since each device gets its
-own distinct private IP, but would apply again if the web side is ever
-put behind a single shared reverse proxy.
+`web/index.html`'s `window.BARANGUARD_API_BASE_URL` now points there.
+`CORS_ALLOWED_ORIGIN` could no longer be a single value or the wildcard
+once there were two genuinely different real origins that both need
+access — the web dashboard's own Tailscale-hostname origin AND the
+mobile app's separate Capacitor WebView origin (`http://localhost`,
+unrelated to any human's browsing choice, and unaffected by this
+decision). `backend/public/index.php`'s CORS block now supports a
+comma-separated allow-list, matched against the real `Origin` request
+header, echoing back only an exact match with `Vary: Origin` — an origin
+not on the list gets no CORS header at all, so the browser refuses the
+response on its own. `backend/.env` now sets
+`CORS_ALLOWED_ORIGIN=http://laptop-b2rp6jkk.tail631c69.ts.net,http://localhost`.
+Confirmed via `verify-sprint1-auth.sh` (23/23, exercises the wildcard
+dev-mode path used by every other disposable-DB suite, unaffected) and
+direct `curl` against both allowed origins and a disallowed one.
+
+**Outstanding, not blocking**: Windows Firewall has no inbound rule for
+port 80 (only 8081 does, from the mobile-side fix) — a remote Tailscale
+peer could be silently blocked the same class of way mobile was before
+that fix. This is a system-security-setting change outside what a coding
+session does on the user's behalf (same reasoning as C2's Task Scheduler
+step); the user has the exact `New-NetFirewallRule` command to run.
+
+The second-order effect this item always flagged does not apply to
+either half of this decision: a shared address in front of every client
+would defeat the citizen-report rate limit
+(`CitizenReportsController::submit()` throttles on `REMOTE_ADDR`), but
+the Tailscale mesh gives each device its own distinct private IP — this
+would only resurface if either side were ever put behind a single shared
+reverse proxy instead.
 
 ### ✅ F2. Stored XSS reaches the Secretary session from an anonymous attacker — CLOSED 2026-09-12
 `POST /citizen-reports` is unauthenticated and stores `description`
@@ -201,14 +221,16 @@ this was the blocker its own menu entry named.
 - ~~`POST /blotter` can answer `200 []`~~ **✅ closed by removal
   2026-09-10** — the endpoint is gone (see F7).
 - ~~Enter double-toggles the GIS Live Activity collapse panel~~ **✅ not
-  reproducible (2026-09-10).** Read while extracting `AiToolPanel`: the
-  header's bubble-phase `keydown` handler calls `preventDefault()`, which
-  cancels the inner button's native Enter/Space activation before it
-  dispatches `click`, so only one toggle runs. The entry was theoretical.
-  The nesting (a `<button>` inside a `role="button"` header with its own
-  keydown handler) is still fragile; `AiToolPanel` deliberately uses the
-  simpler structure — the toggle button is the only interactive element —
-  and the GIS panel could be brought in line when next touched.
+  reproducible (2026-09-10)**, and the fragile structure behind it is now
+  **✅ CLOSED 2026-09-13.** The header was a `<div role="button">` wrapping
+  a separate `<button>` toggle, each with its own click handler and a
+  `stopPropagation()`/`preventDefault()` pair to stop a double-toggle —
+  the exact shape `AiToolPanel`'s own note warned against. Replaced with a
+  single real `<button>` header (the only interactive element, carrying
+  `aria-expanded` itself), matching `AiToolPanel`'s pattern exactly; the
+  chevron is now a decorative `aria-hidden` span. Browser-confirmed:
+  click-anywhere-on-header still toggles, Enter/Space each toggle exactly
+  once, focus ring visible, no console errors.
 - ~~`SmsController::broadcast()` resolves idempotency with
   `JSON_EXTRACT` over unindexed `audit_log`~~ **✅ CLOSED 2026-09-13.**
   Migration `0019_audit_log_idempotency_index.sql` adds a VIRTUAL
@@ -216,9 +238,12 @@ this was the blocker its own menu entry named.
   column directly. Proven with EXPLAIN at 500+ rows: old query `type:
   ALL` (full scan), new query `type: ref` (1 row). New script:
   `backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh`, 15/15.
-  `IncidentsController`'s F5 idempotency replay has the identical shape
-  and would benefit the same way — left as a follow-up, not folded into
-  this fix (see that migration's own header).
+  `IncidentsController`'s F5 idempotency replay had the identical shape
+  and got the same fix the same day — **✅ ALSO CLOSED 2026-09-13**:
+  its replay query now queries `idempotency_key` directly too. Proven by
+  the existing `verify-f5-incident-update-idempotency.sh` (updated to
+  apply migration 0019, still 16/16 — behavior unchanged, only the query
+  plan improved).
 
 ---
 
@@ -347,11 +372,18 @@ device (not just "the app boots"), this clears:
   kept as an explicit, secondary "Open in external navigation app" link
   rather than removed outright. Full detail: `backend/DEVLOG.md`
   2026-09-13.
-- `runSyncPass()` draining a queue after a forced offline→online cycle
-
-**Also outstanding here:** nothing calls `runSyncPass()` yet — no timer,
-no app-foreground hook. Wiring a trigger is a small code task that only
-makes sense to verify on a device.
+- ✅ `runSyncPass()` draining a queue after a forced offline→online cycle
+  — **the trigger itself is already built and wired, corrected
+  2026-09-13.** This line was stale: `syncScheduler.ts` (Mobile
+  Improvement Plan Phase 1.1, built earlier this same week) already
+  wires three automatic triggers — network reconnect, app foreground,
+  and a 60s on-duty-only interval — plus a cold-start pass, and
+  `App.tsx` already calls `startSyncScheduler()` on mount. Confirmed by
+  reading both files directly, not assumed. What's still genuinely
+  unproven is DEVICE verification that these triggers actually fire and
+  drain a queue on a real disconnect/reconnect or backgrounding cycle —
+  that part of this list item remains open, tracked below, not the
+  trigger's existence.
 
 ### 🔴 A2. Run the AI model end-to-end (blocks the AI evaluation box)
 **Blocked on:** a machine that can run SEA-LION at usable speed. **This
@@ -736,6 +768,40 @@ whether `PatrolLocationService.java`'s location callback or notification
 handling does anything that could legitimately violate a foreground-
 service constraint at that specific mark.
 
+### ✅ C8. Two more live fabrication bugs — found and CLOSED 2026-09-13
+Found during the same session's final `grep` sweep after fixing three
+similar fallbacks in `incident-management.js` (see G's backup/second-
+responder entry) — not part of that feature, an independent §2 Rule 6
+violation each:
+
+- **`sms-monitor.js`'s Live Feed widget** invented a cover story for
+  every single SMS log entry — `describeLiveFeedEvent()` keyword-matched
+  `item.messageBody` and returned fabricated text like `"Tanod Ramos
+  confirmed dispatch"` / `"Dispatch order sent to Tanod Garcia"` /
+  `"Tip received from Brgy. Marifosque"`. Neither Tanod exists in the
+  real seed data. Worse than a missing-data fallback: `GET /sms/logs`
+  never returns `message_body` or a phone number at all (masked by
+  design, §5), so those keyword branches could never match anything
+  real — every row got fabricated text, unconditionally. **Fixed**:
+  replaced with an honest `{direction} {message type}` description built
+  from the two fields this endpoint actually returns. Also removed a
+  "Click to view related conversation" affordance (click handler +
+  `cursor:pointer` styling) keyed on `item.phoneNumber`, a field that
+  likewise never exists on this endpoint's rows — it looked interactive
+  and could never do anything.
+- **`gis-live-tracking.js`'s personnel cards** fell back to the literal
+  `'Brgy. Dao'` whenever a Tanod's roster lookup lacked a
+  `barangayName` — but `GET /users` never returns that field at all, so
+  this fired for **every Tanod, on every installation**, wrong for
+  barangays 2-4's own screens every time it rendered. **Fixed**: replaced
+  with real GPS recency (`formatAge(g.ageSeconds)`, now exported from
+  `LiveMap.js` and reused rather than duplicated).
+
+`verify-web-wiring.mjs` 537/537 after both fixes. See
+`backend/DEVLOG.md` 2026-09-13 for the full writeup, including the two
+similar-looking spots checked and found to be genuinely honest
+fallbacks (not fabrications) rather than "fixed."
+
 ---
 
 ## D. Unbuilt screens
@@ -861,18 +927,28 @@ Each is 🟢 unless noted. One-line rationale kept; full discussion was in
 that session's chat, not duplicated here.
 
 **Being worked in phases since 2026-09-12** — Phase 1 and Phase 2 are
-done and committed; Phases 3-5 below are not started. Two items are
-blocked behind other decisions and are marked ⛔ rather than left looking
-merely un-started.
+done and committed. **Update 2026-09-13: all three items once marked ⛔
+"blocked behind other decisions" are now resolved** — backup/second
+responder got its architecture review and shipped (see its own entry
+above); evidence-access audit and client-side photo compression were
+both quietly unblocked when F4 (evidence upload) shipped the same day,
+and are marked done in their own entries. Nothing in this backlog is
+blocked on a decision any more.
 
 **Dispatch/incident**
 - ✅ **Nearest-available-Tanod ranking on the dispatch picker — DONE 2026-09-12 (Phase 1).** `promptDispatchTanod()` orders by real haversine distance to each Tanod's last GPS fix and labels every option with a measured distance; no fix sorts last as "location unknown", a stale fix shows its age, and a missing incident coordinate falls back to the unranked list. Decision support only — no automatic assignment.
 - ✅ **Stale-pending escalation for undispatched high/critical incidents — DONE 2026-09-12 (Phase 1).** The dashboard attention banner now carries the real measured wait of the oldest un-dispatched high/critical incident and escalates past `STALE_URGENT_MINUTES`, which is documented as a display heuristic and explicitly **not** an SLA — no document in this project defines a dispatch response target.
-- ⛔ **Backup/second responder on critical incidents — NEEDS A DECISION, not code.** It reopens the "one active dispatch per incident" resolved decision and touches Rules 21/28's state machine, so it cannot be built without the architecture review this repo requires for exactly that. Warranted for fire/medical; still warranted; still a decision.
+- ✅ **Backup/second responder on critical incidents — DONE 2026-09-13.** The architecture review this item always said it needed happened via `EnterPlanMode`, with explicit user sign-off on the two open questions: **no eligibility gate** (any incident, any priority — Admin's own judgment call, not hardcoded to fire/medical as originally floated) and **unbounded concurrent dispatches** (not capped at 2). `DispatchController::create()` now accepts a new dispatch when the incident is `pending` OR `dispatched` (previously `pending`-only), with a new guard rejecting a Tanod already actively assigned to the same incident. `DispatchController::cancel()` no longer unconditionally reverts the incident to `pending` — it now checks whether another active dispatch remains first, so cancelling one of two responders no longer incorrectly un-dispatches an incident the other is still working. `IncidentsController::show()` gained a `dispatches[]` array (every responder, real name + real timestamps) alongside the existing singular `dispatched_at`/`arrived_at` pair, which now means "the primary/first responder" rather than "the most recent one." Everything else — the resolve-gate's `COUNT(*)` check, `ReportsController`'s `GROUP BY incident_id` response-time metric, the `dispatch` table's schema, `DispatchController::index()`, mobile's per-dispatch model, and the dispatch-creation notification — was already correct for N concurrent dispatches with zero changes needed, confirmed by a dedicated Explore pass before any code was written.
+
+  **Found and fixed along the way, not part of the feature itself**: `incident-management.js`'s "Assigned Tanod" card and Timeline section had THREE hardcoded fabricated fallbacks — a fake name ("Tanod Ramos"), a fake relative time ("2 min later"), and a fake narrative placeholder — that rendered whenever real dispatch data was missing, a live §2 Rule 6 violation ("no fabricated statistics... no hardcoded identities") confirmed against the real `baranguard_uiseed` data (a resolved incident with **zero** dispatch rows still showed a fully fabricated "Dispatched to Tanod Ramos — 2 min later" timeline entry). All three replaced with honest empty states, discovered only because this feature required rebuilding that exact UI to support more than one responder.
+
+  Web UI: Incident Management's detail pane now lists every active responder as its own row (plural "Assigned Tanods" once there's more than one) and gained an "Assign Additional Responder" action alongside "Resolve Incident" once an incident is already dispatched. **Dispatch Center follow-up, same day**: the active-dispatch queue originally rendered one full duplicate card per DISPATCH rather than per INCIDENT — two responders on one incident showed as two separate cards, each with the wrong generic "Emergency"/"Location pinned on map" text (traced to `GET /dispatch`'s own rows never having carried incident type/location — a pre-existing, unrelated gap surfaced by this same investigation). Fixed by grouping active dispatches by `incident_id` client-side (a second `getIncidents({status:'dispatched'})` call now supplies the real incident fields) — one card per incident, one row per responder inside it, KPI "Dispatched" count now reflects incidents rather than raw responder count.
+
+  New verify script `backend/scripts/verify-second-responder.sh`, 22/22, covering: first dispatch (regression), a genuinely new second responder, the duplicate-Tanod guard, `GET /incidents/:id`'s real `dispatches[]` array, cancel-one-of-two (stays dispatched), cancel-the-last-one (reverts to pending, regression), resolve requiring ALL dispatches `completed` not just `arrived`, and cross-tenant isolation. Full regression pass clean: `verify-sprint6.sh` (110/110), `verify-b2-pentest-remaining-resources.sh` (59/59), `verify-sprint3.sh` (38/38), `verify-web-wiring.mjs` (536/536). Browser-verified directly by the user against real `baranguard_uiseed` data, both the assignment flow and the Dispatch Center grouping.
 
 **AI/oversight**
 - ✅ **Redaction diff view — ALREADY SHIPPED** (commit `27d6cc9`, found 2026-09-12 while phasing this list). An LCS word-level diff in `ai-review.js` marks which original words survived redaction. It was never listed as done because it landed inside a batch of uncommitted work.
-- ⛔ **Evidence-access audit — BLOCKED BEHIND F4, same as the photo-compression item.** There is nothing to audit: nothing in `backend/` ever writes `evidence_attachment` (F4), there is no download route, and the table is empty. Auditing `GET /incidents/:id/evidence` today would record "someone listed zero files" — an oversight control that can never observe the thing it exists for, which is the §2 Rule 6 shape. Build it **with** F4's upload/download work, not before.
+- ✅ **Evidence-access audit — DONE 2026-09-13.** Was blocked behind F4 not existing; F4 closed 2026-09-13, so there was finally something real to audit. `IncidentsController::evidence()` now writes an `evidence_accessed` audit row (barangay + actor + incident id + `item_count` — allow-listed per Rule 8, never filenames/hashes/paths) on every successful `GET /incidents/:id/evidence` call, logged whether or not the incident has any files yet, so "nobody's touched this incident's evidence" is provable the same way access is. Added to the Audit Log screen's action labels and its "Blotter & Incidents" filter category. Browser-confirmed: opening an incident's detail pane writes a real row visible in Audit Log with a correctly humanized label, no console errors.
 - ✅ **Lupon packet verification hash — DONE 2026-09-12 (Phase 2).** A SHA-256 over the case content (not the PDF bytes — hashing the file to then print the hash inside it is circular) is printed on the packet as a 16-hex-character grouped code, and recorded in the `lupon_packet_generated` audit row. It is re-derivable: regenerate and compare, and a mismatch means the record was amended after printing or the paper is not ours. The generation timestamp is deliberately excluded so the code is stable. **QR deliberately not built** — a QR encoder in hand-rolled PHP is real work for marginal gain over a transcribable code.
 
 **Resilience**
@@ -889,20 +965,18 @@ merely un-started.
 - ✅ **Aggregated public transparency report — DONE 2026-09-12 (Phase 5).** `GET /public/transparency?barangay_id=N`, the only unauthenticated read in the system. Counts only, no location breakdown at any level, monthly not daily buckets, and categories under 5 pooled rather than dropped (dropping breaks the total and leaks the hidden number by subtraction). No response-time figure — at the time this shipped, F8's double-count meant publishing one would have been publishing a known-wrong number. **F8 is now fixed (2026-09-12)**, so that specific reason no longer applies; whether a response-time figure belongs in a *public* transparency report is a separate policy question this entry never actually settled, not something the F8 fix alone resolves — left as a genuinely open follow-up, not auto-added here. Not rate-limited, and the class doc says so plainly instead of shipping an APCu limiter that this build cannot run.
 
 **Mobile**
-- ⛔ **Client-side photo compression — BLOCKED BEHIND F4**, exactly as this entry always said: build it into the work that builds the upload endpoint at all, not as a separate later feature.
+- ✅ **Client-side photo compression — DONE, built alongside F4 (evidence upload), 2026-09-13.** Exactly as this entry always said it should: not a separate later feature. F4's own closure note: photos are compressed client-side (max 1600px, JPEG @ 0.75) before upload, so a 4-8MB camera capture doesn't cross the wire uncompressed. This line was stale until caught during the second-responder session's docs pass — the work had already shipped, just never marked here.
 
 ---
 
 ## Suggested order
 
-**0. Section F first.** F2/F3 (XSS sweep), F5 (PATCH idempotency), F6
-(is_suspended), and F8 (response-time double-count) are all **closed as
-of 2026-09-12**, and **F4 (evidence upload) closed 2026-09-13** — see
-each item's own closure note above. **F1 is half-decided**: mobile's
-side has a real answer (Tailscale), but the web dashboard's own API base
-URL and CORS are still open — see F1's own entry. It still gates step 3
-below for the web side specifically: browser-verifying screens pointed
-at `localhost`/preview data proves nothing about a real deployment.
+**0. Section F is now entirely closed.** F2/F3 (XSS sweep), F5 (PATCH
+idempotency), F6 (is_suspended), and F8 (response-time double-count) are
+all closed as of 2026-09-12; F4 (evidence upload) and **F1 (both mobile
+and web dashboard halves)** closed 2026-09-13 — see each item's own
+closure note above. Step 3 below (browser-verify) can now legitimately
+target the real deployment address, not just `localhost`/preview data.
 
 **0.5. C6 and C7 (2026-09-13, real-device-confirmed) are now the most
 urgent items in this file, ahead of the numbered list below.** Both were

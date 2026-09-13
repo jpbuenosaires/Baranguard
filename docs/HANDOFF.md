@@ -10,12 +10,12 @@ lives in `backend/DEVLOG.md` (grep it; don't read it front to back).
 ## Where things stand
 
 **Sprints 0–7 are complete.** Sprint 8 (UAT/evaluation) is open. Its old
-gate (`docs/REMAINING.md` §F) has moved: **F4 is now closed**, **F1 is
-half-decided** (mobile side resolved, web dashboard side still open —
-see below), and Sprint 8 also now has two NEW, real-device-confirmed
-blockers (C6, C7) that aren't part of §F but should be fixed before any
-UAT scenario touches login or an on-duty shift. See `SPRINTS.md`'s own
-gate note for the exact current wording.
+gate (`docs/REMAINING.md` §F) has moved: **F1 and F4 are both fully
+closed now** (F1's web dashboard half closed 2026-09-13, same day as
+everything below), and Sprint 8 also now has two NEW, real-device-
+confirmed blockers (C6, C7) that aren't part of §F but should be fixed
+before any UAT scenario touches login or an on-duty shift. See
+`SPRINTS.md`'s own gate note for the exact current wording.
 
 **2026-09-13 (this session): continued real-device testing on the same
 Infinix X6840, found and fixed three real bugs, made and implemented one
@@ -25,7 +25,12 @@ open, then — in a separate, later continuation of the same date,
 explicitly requested by the user as a deliberate multi-box exception
 (SPRINTS.md standing rule #2) — closed a punch list of seven small
 backend/web/housekeeping items and found one more real bug along the
-way (B5, below).**
+way (B5, below), then published a complexity-grouped backlog artifact
+of everything still open, closed its four "Quick" items, closed F1's
+web-dashboard half, confirmed a "Moderate" item (`runSyncPass()`'s
+trigger) was already done, and shipped the backup/second-responder
+feature from the same tier — finding and fixing three fabricated-data
+bugs and one Dispatch Center display bug along the way.**
 
 ### Fixed and device-verified this session
 
@@ -220,6 +225,93 @@ No Sprint 8 box was picked this round.
   `.gradle/`, `local.properties` — only the blanket top-level line was
   wrong, and it's now removed.
 
+### Then: a complexity-grouped backlog artifact, and its four "Quick" items
+
+User asked for every remaining `REMAINING.md` item, with everything
+already shipped stripped out, grouped by how hard each is to start.
+Published as a private Claude Artifact ("Baranguard Backlog") — not
+tracked in this repo, so its own URL isn't repeated here; ask the session
+that made it, or `action: list` an artifacts listing, if it's needed
+again. Four items were tagged "Quick" and were then built the same
+session:
+
+- **`IncidentsController`'s F5 idempotency replay — indexed**, same fix
+  as `SmsController::broadcast()` got earlier the same day (migration
+  0019's generated column). `verify-f5-incident-update-idempotency.sh`'s
+  own migration chain was still short one migration (0018, not 0019) —
+  updated it; still 16/16.
+- **Evidence-access audit log — built.** `IncidentsController::evidence()`
+  now writes an `evidence_accessed` audit row (incident id + item count,
+  nothing else) on every read, closing a `REMAINING.md` G-backlog item
+  that F4 shipping earlier the same day had quietly unblocked. This is a
+  new pattern for the codebase — no endpoint audited a READ before this.
+- **Three duplicate `escapeHtml()` helpers — already gone.** The
+  `REFERENCE.md` §6 note claiming they still existed was stale; corrected
+  rather than "fixed" a second time.
+- **GIS Live Activity panel — simplified** to `AiToolPanel`'s single-
+  real-`<button>` pattern, removing the nested-button/`role="button"`/
+  `stopPropagation()` shape that made the "Enter double-toggles it" bug
+  possible in the first place (even though that specific bug wasn't
+  reproducible).
+
+Both browser-dependent items (the audit row appearing, the panel's
+toggle behavior) were confirmed by the user directly against the running
+app, not by this session's own browser tooling — its viewport-emulation
+state got confused mid-check and manual verification was faster than
+fighting it. From here on the user took over ALL browser verification
+directly ("I will always browser verify") — this session gives manual
+step-by-step instructions instead of driving the Browser pane itself.
+
+### Then: F1's web half, a stale note corrected, and backup/second responder shipped
+
+Three more items from the same backlog artifact, same day:
+
+- **F1, web dashboard half — CLOSED.** Explicit user decision: the web
+  dashboard uses the SAME Tailscale hostname mobile already does
+  (`laptop-b2rp6jkk.tail631c69.ts.net`), not a separate LAN-only address
+  — one address for desk use at the barangay hall and remote admin
+  access alike. `web/index.html`'s API base URL updated;
+  `backend/public/index.php`'s CORS handling extended to a real
+  multi-origin allow-list (matched against the actual `Origin` header,
+  since a bare wildcard or single value could no longer cover both the
+  web dashboard's new origin and mobile's separate Capacitor WebView
+  origin); `backend/.env` updated. Confirmed via direct `curl` against
+  both allowed origins and a disallowed one, and via
+  `verify-sprint1-auth.sh` (23/23, unaffected wildcard dev-mode path).
+  **Outstanding, needs the user**: no Windows Firewall rule exists for
+  port 80 yet (only 8081 does) — command is in Operational Quick
+  Reference below.
+- **`runSyncPass()`'s trigger — was already done.** The backlog item
+  assumed this still needed building; reading `syncScheduler.ts` and
+  `App.tsx` directly showed it was fully wired (three triggers + cold
+  start) during this same week's earlier mobile-device session, just
+  never reflected back into `REMAINING.md`. No code change — doc
+  correction only. Device-verifying that it actually drains a queue on
+  a real disconnect/reconnect remains open (A1).
+- **Backup/second responder on critical incidents — SHIPPED**, via
+  `EnterPlanMode` given the scope (reopens the "one active dispatch per
+  incident" resolved decision). User sign-off: no eligibility gate (any
+  incident, Admin's judgment call) and unbounded concurrent dispatches.
+  `DispatchController::create()`/`cancel()` and `IncidentsController::
+  show()` (new `dispatches[]` array) all updated; new script
+  `verify-second-responder.sh` (22/22); full regression clean
+  (`verify-sprint6.sh` 110/110, `verify-b2-pentest-remaining-resources.sh`
+  59/59, `verify-sprint3.sh` 38/38). **Found and fixed along the way**:
+  `incident-management.js` had three hardcoded fabricated fallbacks (a
+  fake name "Tanod Ramos", a fake "2 min later" elapsed time, and a fake
+  placeholder narrative) that rendered whenever real dispatch data was
+  missing — confirmed against real `baranguard_uiseed` data, a resolved
+  incident with ZERO dispatch rows still showed a fully invented
+  timeline entry. All three replaced with honest empty states. **Same-day
+  follow-up, user-caught in browser verification**: Dispatch Center's
+  queue rendered one full duplicate card per DISPATCH instead of per
+  INCIDENT — fixed by grouping client-side (`incident_id`), which also
+  fixed a separate pre-existing gap (dispatched cards showing generic
+  "Emergency"/"Location pinned on map" text regardless of the real
+  incident, since `GET /dispatch` never carried those fields). Both the
+  assignment flow and the Dispatch Center grouping were browser-verified
+  by the user directly.
+
 ### Previously-flagged uncommitted mobile UI work — now resolved
 
 Earlier snapshots of this file flagged a separate body of uncommitted
@@ -327,9 +419,8 @@ below Sprint 8's gate).
    rather than noticing it as a side effect of testing something else).
 3. **Confirm G1's real-SMS leg** — configure a backup contact, kill
    connectivity, and verify the on-device SMS actually arrives.
-4. **Settle F1's web-dashboard half** — the real production API base URL
-   for Admin/Secretary/PB, and revisit `CORS_ALLOWED_ORIGIN` once that's
-   decided.
+4. **Run the port-80 firewall command** (below) — F1's web half is code-
+   complete but nothing has opened the port to remote Tailscale peers yet.
 5. ~~B1, B2, B4, B5~~ **Done 2026-09-13** — see their own `REMAINING.md`
    entries (B4 found and fixed a real `nearby()` bug; B5 found and fixed
    a real Punong-Barangay-only dashboard bug).
@@ -374,6 +465,12 @@ bash backend/scripts/verify-sprint3.sh
 # F9: SMS broadcast idempotency index (this session's new assertions)
 bash backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh
 
+# Backup/second responder (this session's new assertions)
+bash backend/scripts/verify-second-responder.sh
+
+# F1 web half: open port 80 to remote Tailscale peers (run once, elevated PowerShell)
+# New-NetFirewallRule -DisplayName "Baranguard Web Dashboard 80" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow -Profile Any
+
 # Build + install the mobile app onto a connected Android device
 cd mobile && npx vite build && npx cap sync android
 cd android
@@ -384,7 +481,7 @@ export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=C:/gtmp"
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell monkey -p ph.baranguard.tanod -c android.intent.category.LAUNCHER 1
 
-# Tailscale status (mobile connectivity, F1's mobile half)
+# Tailscale status (both mobile AND web dashboard connectivity — F1, closed)
 tailscale status
 ```
 

@@ -10,20 +10,18 @@ with the user before writing code.
 @docs/SPRINTS.md
 @docs/HANDOFF.md
 
-Current P0 status is in `HANDOFF.md` (loaded above) — not restated here
-to avoid saying the same thing twice in the same context. File:line
-evidence: `docs/AUDIT_2026-09-07.md`; remediation list: `docs/REMAINING.md`
-§F. Neither is auto-loaded.
+`docs/REMAINING.md` §F (the 2026-09-07 audit's remediation list) closed
+in full on 2026-09-13 — F1 (the last open item, both its mobile and web
+dashboard halves) resolved via Tailscale. `docs/AUDIT_2026-09-07.md`'s
+findings are now historical only; current status lives in `HANDOFF.md`
+(loaded above), not restated here to avoid saying the same thing twice
+in the same context.
 
 ## Not auto-loaded — open deliberately
 
 - **`docs/REMAINING.md`** — full ordered list of what's left before
   Sprint 8, including hardware/account-blocked items. Open when picking
   Sprint 8 work or planning.
-- **`docs/AUDIT_2026-09-07.md`** — the P0/P1 evidence above. Dated and
-  self-expiring: once `REMAINING.md` §F closes, remove this bullet and
-  the "Current P0 status" line above rather than leaving them citing a
-  resolved audit as if still open.
 - **`docs/Baranguard_Master_Reference_FINAL .md`** — the real source of
   truth; `REFERENCE.md` summarises it with section numbers. **If the two
   disagree, this file wins** and `REFERENCE.md` should be corrected. Its
