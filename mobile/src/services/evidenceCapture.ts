@@ -17,12 +17,30 @@
  * value trusted from the plugin — the same "verify, don't assume"
  * discipline `evidenceRepository.ts`'s eventual upload path will depend
  * on.
+ *
+ * PHOTO COMPRESSION (Mobile Improvement Plan Phase 3.1): camera sensors
+ * commonly produce 4-8MB originals; a barangay's WiFi/hotspot sync
+ * shouldn't have to move that much per photo for a record that only
+ * needs to stay legible, not print-resolution. `capturePhoto()` downsamples
+ * to a 1600px max dimension and re-encodes as JPEG @ 0.75 quality via an
+ * in-memory `<canvas>` BEFORE the file ever touches disk — the SHA-256 is
+ * computed over the compressed bytes actually written, same as before. If
+ * compression fails for any reason (a WebView/canvas limitation on some
+ * device), the ORIGINAL uncompressed capture is saved instead of losing
+ * the photo — still real evidence, just larger, never silently dropped.
+ * Voice notes are NOT compressed: AAC recordings are already compact
+ * relative to a multi-MB camera photo, so there is no equivalent problem
+ * to solve there.
  */
 
 import { Camera } from '@capacitor/camera';
+import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { uuid } from './uuid';
+
+const MAX_PHOTO_DIMENSION = 1600;
+const PHOTO_JPEG_QUALITY = 0.75;
 
 export interface StagedAttachment {
   type: 'photo' | 'voice';
@@ -48,14 +66,62 @@ async function sha256OfBase64(base64: string): Promise<string> {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      // FileReader's data URL is "data:<mime>;base64,<payload>" —
+      // Filesystem.writeFile wants just the payload.
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read compressed image data.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
- * Opens the device camera, then copies the result out of the Camera
- * plugin's own temp storage into app-private `Directory.Data` — the temp
- * URI is never referenced again after this returns.
+ * Downsamples and re-encodes a captured photo via an in-memory canvas.
+ * Reads through `Capacitor.convertFileSrc()` so the plugin's own temp URI
+ * (a native file:// path) is loadable as an <img> source inside the
+ * WebView.
+ */
+async function compressPhoto(sourceUri: string): Promise<Blob> {
+  const image = new Image();
+  const loaded = new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error('Could not load the captured photo for compression.'));
+  });
+  image.src = Capacitor.convertFileSrc(sourceUri);
+  await loaded;
+
+  let { naturalWidth: width, naturalHeight: height } = image;
+  if (width > MAX_PHOTO_DIMENSION || height > MAX_PHOTO_DIMENSION) {
+    const scale = MAX_PHOTO_DIMENSION / Math.max(width, height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context unavailable.');
+  ctx.drawImage(image, 0, 0, width, height);
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', PHOTO_JPEG_QUALITY));
+  if (!blob) throw new Error('Could not encode the compressed photo.');
+  return blob;
+}
+
+/**
+ * Opens the device camera, compresses the result (see this file's header
+ * comment), and writes it into app-private `Directory.Data` — the Camera
+ * plugin's own temp URI is never referenced again after this returns.
  */
 export async function capturePhoto(): Promise<StagedAttachment> {
   const result = await Camera.takePhoto({ quality: 80, saveToGallery: false, includeMetadata: true });
@@ -64,13 +130,28 @@ export async function capturePhoto(): Promise<StagedAttachment> {
   }
   // The plugin's own format note: Android/iOS may report 'jpg' instead of
   // 'jpeg' for the same format — normalize both to the one MIME type.
-  const format = (result.metadata?.format ?? 'jpeg').toLowerCase();
-  const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
-  const extension = format === 'png' ? 'png' : 'jpg';
-  const relativePath = `${EVIDENCE_SUBDIR}/${uuid()}.${extension}`;
+  // Only relevant to the uncompressed FALLBACK path below; the compressed
+  // path always re-encodes to JPEG regardless of the original format.
+  const originalFormat = (result.metadata?.format ?? 'jpeg').toLowerCase();
+  const originalMimeType = originalFormat === 'png' ? 'image/png' : 'image/jpeg';
+  const originalExtension = originalFormat === 'png' ? 'png' : 'jpg';
 
   await ensureEvidenceDir();
-  await Filesystem.copy({ from: result.uri, to: relativePath, toDirectory: Directory.Data });
+
+  let relativePath: string;
+  let mimeType: string;
+  try {
+    const compressed = await compressPhoto(result.uri);
+    relativePath = `${EVIDENCE_SUBDIR}/${uuid()}.jpg`;
+    mimeType = 'image/jpeg';
+    await Filesystem.writeFile({ path: relativePath, directory: Directory.Data, data: await blobToBase64(compressed) });
+  } catch {
+    // Compression failed (canvas/WebView limitation on this device) —
+    // fall back to the original capture rather than losing the photo.
+    relativePath = `${EVIDENCE_SUBDIR}/${uuid()}.${originalExtension}`;
+    mimeType = originalMimeType;
+    await Filesystem.copy({ from: result.uri, to: relativePath, toDirectory: Directory.Data });
+  }
 
   const stat = await Filesystem.stat({ path: relativePath, directory: Directory.Data });
   const read = await Filesystem.readFile({ path: relativePath, directory: Directory.Data });
@@ -136,4 +217,40 @@ export async function cancelVoiceRecording(): Promise<void> {
   } finally {
     activeRecording = false;
   }
+}
+
+/**
+ * Deletes a captured attachment's file off disk (Phase 3.3's 30-day
+ * cleanup rule) — never the database row, which is
+ * `evidenceRepository.ts`'s job. Tolerant of the file already being gone
+ * (a repeat prune pass, or a partial previous run) — that is the
+ * intended end state, not a failure.
+ */
+export async function deleteEvidenceFile(filePath: string): Promise<void> {
+  try {
+    await Filesystem.deleteFile({ path: filePath });
+  } catch {
+    // Already gone — fine, that's the goal.
+  }
+}
+
+/**
+ * Reads a previously-captured attachment's bytes back off disk, for
+ * `syncService.ts`'s evidence-upload step (Phase 3.2). `filePath` here is
+ * always the FULL URI `StagedAttachment.filePath` already carries (both
+ * capture paths above return `stat.uri`, not a `Directory.Data`-relative
+ * path), so no `directory` option is passed — same convention
+ * `stopVoiceRecording()` above already uses when reopening a path the
+ * recorder plugin returned directly.
+ */
+export async function readEvidenceFile(filePath: string, mimeType: string): Promise<Blob> {
+  const read = await Filesystem.readFile({ path: filePath });
+  if (typeof read.data === 'string') {
+    const binary = atob(read.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType });
+  }
+  // Web platform's Filesystem implementation returns a Blob directly.
+  return read.data;
 }

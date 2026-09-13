@@ -86,6 +86,7 @@ const EXPECTED = {
     uploaded_url:          ['TEXT', 0, null, 0],
     last_attempt_at:       ['TEXT', 0, null, 0],
     attempts:              ['INTEGER', 1, '0', 0],
+    synced_at:             ['TEXT', 0, null, 0],
   },
   dispatch_local: {
     local_id:                  ['TEXT', 1, null, 1],

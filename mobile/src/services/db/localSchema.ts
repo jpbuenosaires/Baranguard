@@ -50,7 +50,7 @@
  * unsynced field captures, which Rule 2 ("offline capture is durable
  * until reconciliation") forbids.
  */
-export const LOCAL_SCHEMA_VERSION = 3;
+export const LOCAL_SCHEMA_VERSION = 4;
 
 /** Statements for schema version 1 (Sprint 2 baseline cut). */
 const MIGRATION_001_BASELINE: readonly string[] = [
@@ -101,6 +101,18 @@ const MIGRATION_001_BASELINE: readonly string[] = [
   // `package_id` is the SERVER's package id (§6 POST /map-packages
   // returns it), not a device-local autoincrement, so it is a plain
   // INTEGER PRIMARY KEY with no AUTOINCREMENT.
+  //
+  // UNUSED as of the M7 rendered-basemap cut (2026-09-12):
+  // `mapPackageService.ts` tracks this instead via @capacitor/preferences
+  // + @capacitor/filesystem, specifically so it works on the web platform
+  // too — this table lives in the SQLCipher database, which
+  // localDatabase.ts refuses to open outside Android by design, which
+  // would have made the whole feature untestable in a browser preview.
+  // See mapPackageService.ts's own header comment for the full reasoning.
+  // Left in place (not dropped — Rule 2/9's "never destroy state a
+  // migration created" applies to this local schema the same as the
+  // backend's) for a future session to migrate onto once this path is
+  // device-verified.
   `CREATE TABLE IF NOT EXISTS offline_map_package_local (
     package_id      INTEGER NOT NULL PRIMARY KEY,
     barangay_id     INTEGER NOT NULL,
@@ -238,6 +250,21 @@ const MIGRATION_003_DISPATCH_GPS_SYNC: readonly string[] = [
 ];
 
 /**
+ * Statements for schema version 4 (Mobile Improvement Plan Phase 3.2/3.3:
+ * evidence upload + the cleanup rule that depends on knowing WHEN a row
+ * synced). `evidence_attachment_local.synced` (migration 2) already says
+ * WHETHER a row uploaded; nothing recorded WHEN, so Phase 3.3's "clear
+ * the local binary 30+ days after a CONFIRMED upload" rule had nothing to
+ * measure the 30 days FROM. `local_id` (already a stable client UUID,
+ * minted once at capture time — see evidenceRepository.ts) doubles as the
+ * server's `client_request_id` idempotency key; no separate column is
+ * needed for that half.
+ */
+const MIGRATION_004_EVIDENCE_SYNC_TRACKING: readonly string[] = [
+  `ALTER TABLE evidence_attachment_local ADD COLUMN synced_at TEXT NULL`,
+];
+
+/**
  * Ordered migrations. Index 0 takes the DB from user_version 0 -> 1,
  * index 1 takes it 1 -> 2, and so on. Append only — never edit a
  * released entry (same rule as the backend's completed migration files).
@@ -246,6 +273,7 @@ export const LOCAL_MIGRATIONS: readonly (readonly string[])[] = [
   MIGRATION_001_BASELINE,
   MIGRATION_002_EVIDENCE,
   MIGRATION_003_DISPATCH_GPS_SYNC,
+  MIGRATION_004_EVIDENCE_SYNC_TRACKING,
 ];
 
 /** Every table this cut is responsible for, for assertions/diagnostics. */
@@ -330,6 +358,8 @@ export interface EvidenceAttachmentLocalRow {
   uploaded_url: string | null;
   last_attempt_at: string | null;
   attempts: number;
+  /** ISO 8601 UTC — when a successful upload was CONFIRMED (migration 4), for Phase 3.3's 30-day cleanup rule. Null until then. */
+  synced_at: string | null;
 }
 
 export interface DispatchLocalRow {
