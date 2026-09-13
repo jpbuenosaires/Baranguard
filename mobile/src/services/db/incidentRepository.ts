@@ -149,6 +149,19 @@ export function deriveSyncState(row: IncidentLocalRow): SyncState {
 // directly — the capture screens only ever read the row back via
 // `getLocalIncident`/`deriveSyncState` above.
 
+/**
+ * Every incident this DEVICE has ever captured, newest first — M14 "My
+ * Reports" (Mobile Improvement Plan Phase 2.2). Deliberately not scoped
+ * to unsynced-only like `listUnsyncedIncidents()` below: a Tanod checking
+ * "what happened to the report I filed" needs to see synced rows too, not
+ * just the ones still in flight.
+ */
+export async function listAllLocalIncidents(): Promise<IncidentLocalRow[]> {
+  const db = await openLocalDatabase();
+  const result = await db.query('SELECT * FROM incident_local ORDER BY created_offline_at DESC');
+  return (result.values ?? []) as IncidentLocalRow[];
+}
+
 /** Rows not yet confirmed by the server, oldest first (§5 sync invariants). */
 export async function listUnsyncedIncidents(): Promise<IncidentLocalRow[]> {
   const db = await openLocalDatabase();
