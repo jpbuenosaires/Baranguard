@@ -11222,3 +11222,303 @@ Secretary + Punong Barangay browser walk via the real `baranguard_uiseed`
 demo data, before/after network-log comparison for the dashboard fix.
 Migration 0019 tested up/down/round-trip on a disposable database before
 being applied to both real databases (`baranguard`, `baranguard_uiseed`).
+
+## 2026-09-13 (continued): the four "Quick" items from the published backlog
+
+User asked for a visual backlog artifact grouping every remaining
+REMAINING.md item by complexity (published separately, not tracked here),
+then asked to do the four items tagged "Quick" in it. All four done,
+browser-verified by the user directly (given manual verification
+instructions rather than fighting this session's own browser-tooling
+viewport issues), confirmed working before this entry was written.
+
+- **`IncidentsController::update()`'s F5 idempotency replay — now also
+  indexed.** Had the identical bare `JSON_UNQUOTE(JSON_EXTRACT(...))`
+  shape `SmsController::broadcast()` was just fixed for (this same date's
+  earlier F9 close, migration 0019). Changed the query to reference
+  `audit_log.idempotency_key` (the generated column) directly, same as
+  that fix. `verify-f5-incident-update-idempotency.sh` had never applied
+  migration 0019 — its own migration chain only went to 0018 — so it
+  would have broken the moment it ran against a DB with the new column
+  missing entirely; updated the script's chain to 0001-0019 as part of
+  this change (found by checking, per this repo's own "when you find this
+  class of bug, check EVERY suite" lesson, not assumed safe). Also
+  checked `verify-sprint6.sh`, the only other suite that calls a PATCH
+  under `/incidents/`, but it only exercises `/incidents/:id/status` (a
+  different controller method, unaffected) — confirmed by grep, not
+  assumed. Still 16/16 after the change; behavior unchanged, only the
+  query plan improved.
+
+- **Evidence-access audit log — built.** `docs/REMAINING.md`'s G-backlog
+  item was blocked behind F4 not existing; F4 closed earlier the same
+  day, so there was finally something real to audit. This is a genuinely
+  new pattern for this codebase — grepped `IncidentsController::show()`
+  and every other `Audit::record()` call site first and confirmed there
+  was no existing precedent for auditing a READ anywhere, only writes.
+  `IncidentsController::evidence()` now calls `Audit::record(...,
+  'evidence_accessed', 'incident', $incidentId, ['item_count' =>
+  count($items)])` on every successful call — allow-listed metadata per
+  Rule 8 (a count, nothing else), logged even when `item_count` is 0, so
+  "nobody has touched this incident's evidence" is provable the same way
+  an actual access is. Added `evidence_accessed` to `audit-log.js`'s
+  `ACTION_LABELS` and its "Blotter & Incidents" filter category — while
+  there, noticed `incident_updated`, `sms_broadcast_sent` and
+  `blotter_case_status_changed` are ALSO missing from that same label
+  map (pre-existing gaps, not something this change introduced; they
+  still render via the humanized-fallback path, just aren't filterable
+  by category) — logged here rather than fixed, since expanding three
+  unrelated actions' labels was not part of this quick item's scope.
+  One design note worth keeping: this GET fires automatically on every
+  incident-detail page view (confirmed in this session's own earlier B5
+  network logs), not just on a deliberate "view evidence" action — a
+  real, if modest, volume tradeoff against the alternative of only
+  logging when a caller actually looks at a file, which isn't possible
+  yet since there is still no per-file download endpoint (only the list
+  GET and the upload POST exist).
+
+- **The three duplicate `escapeHtml()` helpers — already gone, nothing to
+  do.** `docs/REFERENCE.md` §6 has carried a note since 2026-09-12 saying
+  `admin-dashboard.js`, `dispatch-center.js` and `gis-live-tracking.js`
+  each still defined a private copy instead of importing
+  `web/src/utils/escapeHtml.js`. Grepped all three plus the whole of
+  `web/src` for any `function escapeHtml`/`const escapeHtml` definition:
+  the shared util is the ONLY one, and all three files already import it.
+  Resolved at some point after that note was written, by a change that
+  didn't update the note — corrected the stale claim in REFERENCE.md
+  rather than "fixing" code that was already fixed.
+
+- **GIS Live Activity collapse panel — simplified to match `AiToolPanel`'s
+  pattern.** Was a `<div role="button" tabindex="0">` header wrapping a
+  separate `<button>` toggle, each with its own click handler, the outer
+  one also carrying a `keydown` handler and the inner one calling
+  `stopPropagation()` — the exact "button nested inside a role=button
+  header" shape `AiToolPanel.js`'s own code comment already named as
+  fragile (F9's "Enter double-toggles this panel" entry was marked not
+  reproducible only because `preventDefault()` in the keydown handler
+  happened to suppress the second toggle, not because the structure was
+  sound). Replaced with a single real `<button>` header — the only
+  interactive element, carrying `aria-expanded` itself — and turned the
+  chevron into a decorative `aria-hidden` span, deleting the keydown
+  handler and the `stopPropagation()` entirely (native button semantics
+  handle Enter/Space for free). `gis-live-tracking.css` needed a proper
+  button reset on the header (`background`, `border`, `font`, `text-
+  align`, `width`, `min-height`, `border-radius`) since the global
+  `button` rule in `base.css` would otherwise impose its own padding/
+  radius/min-height on top of this component's own sizing. Browser-
+  confirmed by the user directly: click-anywhere-on-header still toggles,
+  Enter and Space each toggle exactly once, focus ring visible, no
+  console errors.
+
+### Verification
+
+`bash backend/scripts/verify-f5-incident-update-idempotency.sh` 16/16
+(migration chain updated to include 0019). `node
+web/scripts/verify-web-wiring.mjs` 536/536. `php -l` clean on
+`IncidentsController.php`. User confirmed both browser-dependent items
+(evidence audit row appearing correctly in Audit Log; GIS panel toggle
+behavior) working directly, given manual verification steps rather than
+this session fighting its own browser tool's viewport-emulation state.
+
+## 2026-09-13 (continued): backup/second responder — architecture review, build, and a real bug hunt along the way
+
+The published backlog artifact's "Moderate" tier included "Backup /
+second responder on critical incidents," carried in `docs/REMAINING.md`
+since 2026-09-07 as explicitly blocked on an architecture review: it
+reopens the "one active dispatch per incident" resolved decision and
+touches Rules 21/28's state machine. User greenlit reopening it, with
+two follow-up decisions asked and answered explicitly: **no eligibility
+gate** (any incident, any priority — Admin's own judgment call, not
+hardcoded to fire/medical as the backlog item originally floated) and
+**unbounded concurrent dispatches** (not capped at 2).
+
+### Process: EnterPlanMode, not straight to code
+
+Given the scope (reopens a resolved architecture decision, touches
+multiple controllers, needs a written design the user can review before
+any code lands), this went through `EnterPlanMode` rather than being
+implemented ad hoc. A dedicated Explore agent first mapped every place
+in the codebase that assumed "at most one active dispatch per incident"
+before the plan was drafted — worth recording what it found already
+worked with ZERO changes, since assuming the opposite would have wasted
+effort: `IncidentsController::updateStatus()`'s resolve-gate was already
+a `COUNT(*) > 0` check, not an assume-one check; `ReportsController`'s
+F8-fixed response-time metric already `GROUP BY incident_id`; the
+`dispatch` table schema has no `UNIQUE(incident_id)`; `DispatchController
+::index()` already returns one row per dispatch with an `incident_id`
+filter; `dispatch-center.js`'s queue already rendered multiple dispatch
+rows per incident with no dedup (this specific fact turned out to need a
+follow-up anyway — see below); mobile's `assignments.tsx` is already
+modeled per-dispatch; and the dispatch-creation notification already
+targets only the newly-assigned Tanod. Plan approved, then implemented
+exactly as written:
+
+- **`DispatchController::create()`** — the actual one-dispatch gate
+  (`if ($incident['status'] !== 'pending')`) now accepts `pending` OR
+  `dispatched`, rejecting only a genuinely non-actionable status. New
+  guard: a Tanod cannot be double-assigned to an incident they already
+  have an active dispatch on. Audit metadata gained
+  `is_additional_responder`.
+- **`DispatchController::cancel()`** — no longer unconditionally reverts
+  the incident to `pending` on any single cancellation. Now checks
+  whether another active dispatch remains first. **Found while
+  implementing, not in the plan**: the endpoint's own HTTP response
+  ALSO hardcoded `'incident_status' => 'pending'` unconditionally (the
+  plan only named the DB-side revert and the audit metadata) — same bug,
+  third spot, fixed alongside the other two.
+- **`IncidentsController::show()`** — new `dispatches[]` array, one
+  entry per real dispatch (tanod name + status + all four timestamps),
+  ordered earliest-first. The existing singular `dispatched_at`/
+  `arrived_at` join was flipped from `ORDER BY ... DESC` to `ASC` so it
+  keeps meaning "the primary/first responder" rather than silently
+  becoming "whichever responder was added most recently."
+
+### Found and fixed along the way: three fabricated fallbacks in incident-management.js
+
+Rewriting the "Assigned Tanod" card and Timeline section to support more
+than one responder required understanding exactly where their data came
+from — which surfaced a real, live §2 Rule 6 violation ("no fabricated
+statistics... no hardcoded identities") that predates this session
+entirely. Confirmed against the real `baranguard_uiseed` database:
+incident #23 (INC-2026-023), status `resolved`, has **zero** rows in
+`dispatch` — yet the UI showed a complete, convincing "Dispatched to
+Tanod Ramos — 2 min later" timeline entry. Root cause: `officerNameText`
+fell back to the literal string `'Tanod Ramos'` when `row.officerName`
+was falsy, `formatRelativeTime(...) || '2 min later'` did the same for
+the elapsed time, and the Timeline's "Dispatched" stage rendered based
+on `row.status !== 'pending'` regardless of whether real dispatch data
+existed at all. A third, adjacent fallback in the same file's
+Description card fabricated an entire fictional narrative ("Caller
+reported an incident in the designated purok area. Investigation in
+progress.") under the same missing-data condition. `grep`
+confirmed "Ramos" appears nowhere in the real seed fixtures — this was
+never a coincidentally-real name.
+
+All three replaced with honest empty states: "Not yet assigned" for the
+tanod card, no timeline stage at all when there's no real dispatch, and
+a narrative fallback that's honest about WHY it's empty (differs for
+Secretary — who'd see a real gap as "none recorded" — versus every other
+role, who only ever sees the APPROVED redaction, so a gap there usually
+just means approval hasn't happened yet).
+
+### Follow-up same day, user-requested: Dispatch Center card grouping
+
+User caught, browser-verifying the feature: Dispatch Center's active-
+dispatch queue rendered a SEPARATE full card per dispatch, so two
+responders on one incident showed as two duplicate cards. Root cause
+confirmed: `GET /dispatch`'s own rows (`mapDispatch()` in `apiClient.js`)
+never carried incident type/location/display-id — a pre-existing,
+unrelated gap (every "dispatched" card in this screen has ALWAYS shown
+generic "Emergency"/"Location pinned on map" text, not just for
+multi-responder incidents) that grouping cards by `incident_id`
+necessarily surfaced, since the real incident fields were needed to
+render a shared card header. Fixed by adding a second parallel
+`getIncidents({status:'dispatched'})` fetch, grouping `activeDispatches`
+by `incidentId` client-side, and rendering one card per incident with
+one responder-row per dispatch inside it (each keeping its own
+Cancel/Locate actions). The "Dispatched" KPI now counts incidents with
+an active dispatch, matching "Pending" being an incident count, rather
+than raw responder count. The cancel-confirmation dialog's copy
+("The incident will return to the pending queue") was also unconditionally
+wrong once a second responder can survive a single cancellation — softened
+to describe only what's actually guaranteed.
+
+### Verification
+
+New script `backend/scripts/verify-second-responder.sh`, 22/22: first
+dispatch (regression), a genuine second responder on an already-
+dispatched incident, the duplicate-Tanod guard, `GET /incidents/:id`'s
+real `dispatches[]` array with both real names present, cancel-one-of-
+two (incident stays dispatched), cancel-the-last-one (reverts to
+pending, regression), resolve correctly still blocked at `arrived`
+(not just requiring one dispatch — ALL must reach `completed`), and
+cross-tenant isolation (404, Rule 2). Full regression, all clean:
+`verify-sprint6.sh` 110/110, `verify-b2-pentest-remaining-resources.sh`
+59/59, `verify-sprint3.sh` 38/38, `verify-web-wiring.mjs` 536/536,
+`php -l` clean on both controllers, `node --check` clean on both
+touched JS files. User browser-verified both the assignment flow and
+the Dispatch Center grouping directly against real `baranguard_uiseed`
+data, per their own stated preference to drive browser checks
+themselves this session.
+
+### Then: F1's web half, a stale doc corrected, and a wider fabrication sweep
+
+Three more items, same session, working through the rest of the
+backlog artifact's "Moderate" tier:
+
+- **F1, web dashboard half — CLOSED.** Explicit user decision: same
+  Tailscale hostname mobile already uses
+  (`laptop-b2rp6jkk.tail631c69.ts.net`), not a separate LAN-only address —
+  one address for desk use and remote admin access alike.
+  `web/index.html`'s `BARANGUARD_API_BASE_URL` updated.
+  `backend/public/index.php`'s CORS handling extended from a bare
+  wildcard-or-single-value to a real comma-separated allow-list matched
+  against the actual `Origin` header (echoing back only an exact match,
+  with `Vary: Origin`) — needed once the web dashboard's new origin and
+  mobile's separate Capacitor WebView origin (`http://localhost`) were
+  two genuinely different values that both needed access.
+  `backend/.env` updated to the new list. Verified: direct `curl`
+  against both allowed origins and a disallowed one, plus
+  `verify-sprint1-auth.sh` (23/23, confirms the wildcard dev-mode path
+  every disposable-DB suite relies on is unaffected). **Outstanding,
+  needs the user**: no Windows Firewall rule admits inbound traffic on
+  port 80 yet (only 8081 does, from the earlier mobile fix) — command
+  recorded in `docs/HANDOFF.md`.
+- **`runSyncPass()`'s trigger — doc correction, not a build.** The
+  backlog artifact (and `REMAINING.md` A1) said this still needed
+  wiring. Reading `mobile/src/services/syncScheduler.ts` and `App.tsx`
+  directly showed three triggers (network reconnect, app foreground, a
+  60s on-duty interval) plus a cold-start pass were ALREADY built and
+  wired — done during this same week's earlier mobile-device session,
+  just never reflected back into the docs. No code changed;
+  `REMAINING.md` corrected to say what's actually still open
+  (device-verifying it fires on a real disconnect/reconnect cycle,
+  tracked under A1).
+- **Fabrication sweep, prompted by a final `grep` before closing out
+  today's docs.** Having just fixed three hardcoded fallbacks in
+  `incident-management.js` (see the backup/second-responder entry
+  above), a targeted `grep -rn "Tanod Ramos\|2 min later"` across
+  `web/src` to confirm nothing was missed turned up TWO more, in
+  completely different files:
+  - **`sms-monitor.js`'s `describeLiveFeedEvent()`** — the Live Feed
+    widget on SMS Monitor didn't describe the real SMS at all. It
+    keyword-matched `item.messageBody` for strings like "salamat",
+    "garcia", "ramos" and returned entirely invented cover stories:
+    `"Tanod Ramos confirmed dispatch"`, `"Dispatch order sent to Tanod
+    Garcia"`, `"Tip received from Brgy. Marifosque"`. Neither "Ramos"
+    nor "Garcia" exists in the real seed fixtures. Worse than a
+    missing-data fallback: `GET /sms/logs` never returns `message_body`
+    or a phone number in the first place (masked by design — see
+    REFERENCE.md §5's own note on this endpoint), so the keyword
+    branches could never match anything real; every row, always, got
+    fabricated text. Replaced with an honest description built from the
+    two fields this endpoint actually returns — direction + message
+    type, humanized the same way the Conversations tab already does
+    (`replace(/_/g, ' ')`). Also removed a "Click to view related
+    conversation" click handler and its `cursor:pointer`/hover CSS on
+    the same feed items — it was keyed on `item.phoneNumber`, a field
+    that (by the same masking-by-design) never exists on this endpoint's
+    rows either, so the affordance looked interactive and never did
+    anything, the exact shape §2 Rule 6 forbids.
+  - **`gis-live-tracking.js`'s personnel-card location line** — fell
+    back to the literal string `'Brgy. Dao'` whenever
+    `tanodUser?.barangayName` was falsy. Checked `GET /users`'s real
+    response shape: it never includes a `barangayName` field AT ALL, so
+    this fallback fired for **every Tanod, on every installation** —
+    wrong for barangays 2-4's own GIS screens every single time, not an
+    edge case. Since every Tanod shown here is already the viewer's own
+    barangay by tenant scoping, a per-card barangay label added no real
+    information even when correct; replaced with real, already-computed
+    GPS recency (`formatAge(g.ageSeconds)`, exported from `LiveMap.js`
+    where the map's own marker popups already used it — one function,
+    not a second copy).
+
+  Also checked (found clean, no action needed): `citizen-report.js`'s
+  `${barangayName || 'your barangay'}` fallback is an honest generic
+  placeholder, not a fabricated specific claim; `map-packages.js`'s
+  "Tanod Mobile Sync" stat tile is a real feature-category label with a
+  value correctly derived from real `isPublished` state, not fabricated
+  data — grep false positives, left alone.
+
+  `node web/scripts/verify-web-wiring.mjs` 537/537 after all of the
+  above (536→537: the new `formatAge` import). `node --check` clean on
+  `sms-monitor.js`, `gis-live-tracking.js`, and `LiveMap.js`.

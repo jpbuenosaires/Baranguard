@@ -57,15 +57,14 @@ unresolved P0/P1 reference contradictions.
      sprint. F2/F3/F5/F6/F8 were fixed and proven 2026-09-12 (each with a
      new verify script — see `backend/DEVLOG.md` 2026-09-12 (4)); **F4
      (evidence upload) closed 2026-09-13** (built end-to-end, proven by
-     `backend/scripts/verify-evidence-upload.sh`). **F1 is now
-     half-decided**, not fully open: mobile's connectivity has a real
-     architectural answer (Tailscale, 2026-09-13), but the web
-     dashboard's own API base URL and `CORS_ALLOWED_ORIGIN` are
-     unchanged — **do not open a Sprint 8 box that depends on
-     browser-verifying the web dashboard against a real deployment
-     address until that half is settled**; boxes that only exercise
-     mobile/backend behavior are no longer blocked by F1. Evidence:
-     `docs/AUDIT_2026-09-07.md`; current status: `docs/REMAINING.md` §F1.
+     `backend/scripts/verify-evidence-upload.sh`). **F1 is now FULLY
+     CLOSED, both halves, 2026-09-13**: mobile's connectivity and the
+     web dashboard's own API base URL/`CORS_ALLOWED_ORIGIN` both resolved
+     to the same Tailscale hostname, with CORS extended to a real
+     multi-origin allow-list. Section F no longer gates any Sprint 8 box
+     — a box that browser-verifies the web dashboard against a real
+     deployment address can now proceed. Evidence: `docs/AUDIT_2026-09-07.md`;
+     current status: `docs/REMAINING.md` §F1.
   -> **New as of 2026-09-13, real-device-confirmed, not part of §F but
      directly relevant to this sprint's own "critical notification/SOS
      fallback tests pass" exit condition:** `docs/REMAINING.md` C6 (login

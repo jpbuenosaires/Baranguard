@@ -17,21 +17,25 @@ Offline-first, locally hosted Barangay Intelligence and Emergency
 Dispatch System for four barangays in Pilar, Sorsogon. Production
 system, not a demo. Single workstation, LAN-only, no cloud.
 
-> **⚠️ The API base URL is half-decided — P0, still open for the web side.**
-> **Mobile is resolved, 2026-09-13:** a Tanod's phone reaches the
-> workstation over Tailscale (a private WireGuard mesh) instead of a bare
-> LAN IP, specifically because it must work whether the phone is on
-> barangay WiFi or out on patrol on mobile data — explicit user decision,
-> chosen over a public tunnel/reverse-proxy precisely because it never
-> exposes the API on the open internet (§2 Rule 7 still holds; only
-> devices approved into the tailnet can reach it at all). `mobile/src/
-> services/apiService.ts`'s `DEFAULT_API_BASE_URL` now points at the
-> workstation's Tailscale MagicDNS name. **`web/index.html`'s own pointer
-> and `backend/.env`'s `CORS_ALLOWED_ORIGIN=*` are UNCHANGED and still
-> open** — the web dashboard's real production address (LAN-only at the
-> barangay hall, or also over Tailscale for remote admin access) was
-> never part of this decision and still needs one. See `docs/REMAINING.md`
-> §F1 for the exact remaining gaps.
+> **The API base URL is fully decided, both mobile and web — closed
+> 2026-09-13.** A Tanod's phone and the web dashboard alike reach the
+> workstation over Tailscale (a private WireGuard mesh) at
+> `laptop-b2rp6jkk.tail631c69.ts.net` — one address either way, chosen
+> because it must work whether someone is on barangay WiFi, out on
+> patrol on mobile data, or administering remotely, and chosen over a
+> public tunnel/reverse-proxy precisely because it never exposes the API
+> on the open internet (§2 Rule 7 still holds; only devices approved into
+> the tailnet can reach it at all). `mobile/src/services/apiService.ts`'s
+> `DEFAULT_API_BASE_URL` and `web/index.html`'s
+> `window.BARANGUARD_API_BASE_URL` both point there;
+> `backend/public/index.php`'s CORS handling now supports a real
+> multi-origin allow-list (`backend/.env`'s `CORS_ALLOWED_ORIGIN`) rather
+> than a bare wildcard, since the web dashboard's origin and mobile's
+> separate Capacitor WebView origin are genuinely different values that
+> both need access. See `docs/REMAINING.md` §F1 for the full detail —
+> one real gap remains there (no Windows Firewall rule yet admits inbound
+> traffic on port 80 for a remote Tailscale peer), tracked as its own
+> item, not blocking this decision's own closure.
 
 **Stack:** PHP 8.2 serves all of `/api/v1/*` (resolved Sprint 1 — Node is
 CLI tooling only). MariaDB 10.4 via XAMPP. Web: vanilla JS, **no bundler,
@@ -235,6 +239,19 @@ extraction+approve — extraction is independent of redaction, migration
 > the second Antigravity pass" for what the first draft of this endpoint
 > did and why it never shipped.
 **Dispatch** list (tanod_name joined) · create · cancel · status
+
+> **An incident may have more than one concurrent active dispatch,
+> resolved 2026-09-13** (`docs/REMAINING.md` G-backlog "backup/second
+> responder," explicit user architecture sign-off — no incident-type or
+> priority gate, unbounded count, Admin's own judgment call each time).
+> `create` now accepts `pending` OR `dispatched` incidents (previously
+> `pending`-only), rejecting only a Tanod already actively assigned to
+> that same incident. `cancel` no longer unconditionally reverts the
+> incident to `pending` — only when no OTHER active dispatch remains on
+> it. `GET /incidents/:id` gained a `dispatches[]` array (every
+> responder, real name + timestamps); its existing singular
+> `dispatched_at`/`arrived_at` pair now means "the primary/first
+> responder" specifically. See `backend/scripts/verify-second-responder.sh`.
 **GPS** live · history · post · `/sync/batch`
 **Scheduling** shifts (list/create/update) · swap requests · fatigue flags
 **Notifications/SOS** notifications · ack · tanod-sos (+ack/resolve)
@@ -373,9 +390,12 @@ their margin: keep badge tints at 8%.
 
 **Run `node web/scripts/verify-web-wiring.mjs` after any web change** —
 it catches imports and CSS classes that don't resolve, which no other
-check in this stack can see. Currently **508/508** (this line said 453
-until 2026-09-07; the total moves in both directions as screens are
-added and merged — the number that matters is failures = 0).
+check in this stack can see. Currently **537/537** (this line said 508
+until 2026-09-07, then drifted further uncorrected through several
+sessions' worth of real runs in between; the total moves in both
+directions as screens are added and merged — the number that matters is
+failures = 0, and this line itself is a poor tripwire for staleness
+precisely because a lower number looks equally "fine").
 
 **Never interpolate server data into an `innerHTML` template.** Use
 `textContent`, or escape. The 2026-09-07 audit found eleven sites (one
@@ -384,21 +404,26 @@ let an *unauthenticated* citizen report execute script in the Secretary
 session, the one session that can read every `raw_narrative` in the
 barangay (§2 Rule 1). **All eleven were fixed 2026-09-12** using the
 shared `web/src/utils/escapeHtml.js` (`verify-web-wiring.mjs` 536/536
-after the fix). Three page modules (`admin-dashboard.js`,
-`dispatch-center.js`, `gis-live-tracking.js`) still each define their
-own private `escapeHtml` rather than importing the shared one — not a
-defect (each escapes correctly at its own call sites), but real
-duplication a future pass should consolidate. See `docs/AUDIT_2026-09-07.md`
-F2/F3 and `backend/DEVLOG.md` 2026-09-12 (4). Note that neither
-`verify-web-wiring.mjs` nor `node --check` can see this class of defect
-— the fix had to be verified by reading every site, not by a script.
+after the fix). **Correction, 2026-09-13**: this note previously said
+`admin-dashboard.js`, `dispatch-center.js` and `gis-live-tracking.js`
+still each defined their own private `escapeHtml` — checked while
+picking up a `docs/REMAINING.md` backlog item and found already false;
+all three already import the shared helper, with no private definition
+left anywhere in `web/src`. Resolved sometime after this note was
+written, without the note being updated — nothing left to consolidate.
+See `docs/AUDIT_2026-09-07.md` F2/F3 and `backend/DEVLOG.md` 2026-09-12
+(4). Note that neither `verify-web-wiring.mjs` nor `node --check` can see
+this class of defect — the original fix had to be verified by reading
+every site, not by a script.
 
 ---
 
 ## 7. Screens (§9)
 
 **Built:** W1 login · W2 dashboard · W3 dispatch (map incident markers +
-assign-from-map, migration-free) · W4 GIS · **W7 incident detail**
+assign-from-map, migration-free; **queue groups multiple active
+dispatches on one incident into a single card since 2026-09-13** — it
+used to render one full duplicate card per responder) · W4 GIS · **W7 incident detail**
 (still routed as `blotter-detail`; case_status transition control) ·
 W8 AI review ·
 **Analytics** (2026-09-05 merge of W5 Historical Heatmap + W9
@@ -420,7 +445,10 @@ management · W19 public report · W20 service health · Incident
 Management (search, Resolve action, location_description,
 complainant/respondent/contact fields on create; **+AI Classifier** in
 the detail pane and **+Incident Type select** on the Edit form, both
-2026-09-10).
+2026-09-10; **+multi-responder support** — the Assigned Tanod card lists
+every active responder and gains an "Assign Additional Responder" action
+once an incident is already dispatched, 2026-09-13, see §5's Dispatch
+note above).
 **Mobile:** M1–M7, M12, M13.
 
 > **W6 Electronic Blotter (records list) was REMOVED 2026-09-10** — DILG
@@ -545,8 +573,9 @@ table. Do not update a number here without re-running the suite.
 | `verify-b2-pentest-remaining-resources.sh` | 59 |
 | `verify-sprint3.sh` | 38 |
 | `verify-f9-sms-broadcast-idempotency-index.sh` | 15 |
+| `verify-second-responder.sh` | 22 |
 | `restore-drill.sh` | 12 (against the real DB) |
-| `verify-web-wiring.mjs` | 518 (moves as screens change; see §6 above) |
+| `verify-web-wiring.mjs` | 537 (moves as screens change; see §6 above) |
 | `mobile: verify.schema` | 113 |
 
 All use a disposable database + disposable app user + throwaway port and
