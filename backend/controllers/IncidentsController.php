@@ -298,12 +298,22 @@ final class IncidentsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'radius_m must be between 1 and ' . self::NEARBY_MAX_RADIUS_M . '.');
         }
 
+        // §8 (MariaDB 10.4 limits) note: with PDO::ATTR_EMULATE_PREPARES
+        // false (config/db.php — native prepares), a named parameter can
+        // only be bound to ONE placeholder occurrence; MySQL's binary
+        // protocol has no concept of "the same named param reused",
+        // unlike emulated mode. `:lat` appears twice in the haversine
+        // formula below, so it needs two distinct placeholders
+        // (`:lat`/`:lat2`) each bound to the same value — found live via
+        // `verify-sprint3.sh` (SQLSTATE[HY093] "Invalid parameter
+        // number"), not caught by anything static, since this endpoint
+        // had never been exercised by an existing suite.
         $stmt = $pdo->prepare(
             'SELECT incident_id, incident_type, priority, status, latitude, longitude, created_at,
                     (6371000 * ACOS(
                         LEAST(1, GREATEST(-1,
                             COS(RADIANS(:lat)) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(:lng))
-                            + SIN(RADIANS(:lat)) * SIN(RADIANS(latitude))
+                            + SIN(RADIANS(:lat2)) * SIN(RADIANS(latitude))
                         ))
                     )) AS distance_m
              FROM incident
@@ -315,6 +325,7 @@ final class IncidentsController
              LIMIT 100'
         );
         $stmt->bindValue(':lat', $lat);
+        $stmt->bindValue(':lat2', $lat);
         $stmt->bindValue(':lng', $lng);
         $stmt->bindValue(':barangay_id', $identity['barangay_id'], PDO::PARAM_INT);
         $stmt->bindValue(':radius_m', $radiusM, PDO::PARAM_INT);
