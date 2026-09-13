@@ -11760,3 +11760,97 @@ folded into this bump.
 confirmed by reading the stack trace back to `localDatabase.ts:49`, not
 guessed). No mobile source changed — `package.json` +
 `package-lock.json` only. Committed `a4c24f0`.
+
+## 2026-09-14: first real end-to-end AI evaluation run — A2 substantially unblocked
+
+A friend ran `eval-kit/` on their own hardware (2026-09-10, per the
+files' own timestamps) and sent back five files: the two inputs
+(`redaction-eval-v1.json`, `redaction-eval-sample.json` — both
+byte-identical to this repo's tracked copies, confirmed via `diff`, so
+nothing about the dataset was altered on their end) and three outputs
+(`ai-evaluate.php`'s checkpoint, results, and verbose-log files). This is
+the **first completed real generation the model has ever produced against
+the full 200-record dataset** in this project's history — every prior
+evaluation-related entry in this log (see "Phase 3 (evaluation harness)"
+and A2's own `REMAINING.md` entry) explicitly says the model itself had
+never actually finished a run.
+
+**Verified before trusting any of it** — the checkpoint's own per-record
+tp/fn/fp sum to *exactly* the top-level results file's aggregate (TP=736,
+FN=13, FP=234, 200 records; recomputed independently with a small script,
+not eyeballed), so the results file is a real, arithmetically consistent
+derivative of the checkpoint, not a hand-typed number.
+
+**Headline (from `evaluation-results-20260910-051943.txt`):**
+- **Recall: 98.26%** (target ≥95%, per `docs/AI_Evaluation_Dataset_Guide.md` —
+  **MEETS** it)
+- **Precision: 75.88%** (target ≥90% — **DOES NOT meet** it; the results
+  file says so itself, in plain text, per §2 Rule 6's own "no demo tells"
+  spirit)
+- Elapsed 1007.1s for this invocation — **not** the full 200-record
+  wall-clock time. The verbose log only contains 24 consecutive lines
+  (`eval-179` LEAKED `Ofelia Lazaro`, `eval-185` LEAKED `Hernan Castillo`,
+  `eval-200` LEAKED `Arturo Mendoza`, plus 21 non-leak lines around them)
+  — `ai-evaluate.php` only logs a freshly-*scored* record (`--resume`
+  silently skips anything already in the checkpoint without logging it,
+  see the script's own loop), so this was a resumed run: records 1–176
+  came from an earlier, uncaptured session's checkpoint, and only records
+  177–200 were freshly generated this leg. The 1007.1s therefore times
+  ~24 fresh generations (~42s/record), not all 200 — do not requote it as
+  a per-200-record figure. Net effect: 10 of the 13 real leaked names
+  (the ones in records 1–176) are not recoverable from what was sent —
+  only the aggregate FN=13 count is solid, not all 13 identities.
+
+**Real breakdown computed from the checkpoint × dataset join (not in
+either file the friend sent — derived this session, joining `checkpoint
+.records[id].{tp,fn,fp}` against `redaction-eval-v1.json`'s per-record
+`language`/`hard_case` fields):**
+
+| Language | n | Recall | Precision |
+|---|---|---|---|
+| English (`en`) | 70 | 98.86% | 76.25% |
+| Tagalog (`tl`) | 70 | 98.85% | 75.37% |
+| Bikol (`bcl`) | 60 | **96.90%** | 76.04% |
+
+This directly answers Sprint 8's own "Bikol language-quality validation"
+half of its AI-evaluation box: Bikol's recall is measurably the weakest
+of the three (7 of the 13 total leaks are Bikol records, despite Bikol
+being only 30% of the dataset) — a real number behind A3's earlier
+qualitative note that "the generating model's own fluency is weaker" for
+Bikol. Precision is roughly flat across all three languages (~75–76%),
+so the precision miss is not a language-specific problem.
+
+**A genuinely surprising second finding**: all 13 leaks came from
+`hard_case: null` ("ordinary") records — every one of the deliberately
+engineered adversarial categories (`homonym_surname`, `duplicate_surname`,
+`purok_landmark`, `untitled_midsentence`, `fake_id_decoy`,
+`formatting_oddity`, `no_pii` — 40 records total across all seven) scored
+a perfect 0 FN. The hard cases A3's generator was specifically built to
+stress did not break the model; plain, unremarkable narratives did.
+Worth a follow-up look at what the 13 actual leaked records have in
+common structurally, but that's future work, not claimed here.
+
+**What this means for §2 Rule 6 ("no confidence numbers not backed by a
+real `ai_evaluation_run`")**: a real, verified, joinable result now
+exists for the first time. **No row has been written to the
+`ai_evaluation_run` table yet** — that's a deliberate pause, not an
+oversight: writing production data wasn't part of what was asked this
+session, and doing so silently would be inserting into the real
+`baranguard`/`baranguard_uiseed` databases without being asked. See
+`docs/REMAINING.md` A2 and `docs/HANDOFF.md` for the recommended next
+step.
+
+**Not done, stated plainly**: no `ai_evaluation_run` row written; the 10
+unrecoverable leaked identities from records 1–176; no independent
+confirmation this run's `model_version` or Ollama config matches what
+`ai-worker.php` would use in production (the checkpoint's own
+`model_version` field says `aisingapore/Llama-SEA-LION-v3.5-8B-R`,
+matching, but engine parameters like temperature were not disclosed by
+the friend and aren't recorded in any of the five files); the
+long-recommended human spot-check of the Bikol subset (A3) still hasn't
+happened — this session's language breakdown is a recall/precision
+number, not a fluency review. Files kept locally in `eval-kit/fixtures/`
+for reference during this session; not committed — `.gitignore` already
+excludes `*.checkpoint.json` and `evaluation-{results,log}-*.txt` there
+by deliberate 2026-09-07 policy (local run artifacts, not source), and
+nothing here changes that reasoning.

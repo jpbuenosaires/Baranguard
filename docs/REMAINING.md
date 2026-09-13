@@ -385,10 +385,44 @@ device (not just "the app boots"), this clears:
   that part of this list item remains open, tracked below, not the
   trigger's existence.
 
-### 🔴 A2. Run the AI model end-to-end (blocks the AI evaluation box)
-**Blocked on:** a machine that can run SEA-LION at usable speed. **This
+### 🟠 A2. Run the AI model end-to-end — SUBSTANTIALLY UNBLOCKED 2026-09-14
+**Was blocked on:** a machine that can run SEA-LION at usable speed. **This
 workstation is confirmed NOT to be that machine** (see below) — the
-"blocked on a machine" framing is now measured, not assumed.
+"blocked on a machine" framing was measured, not assumed.
+
+**A friend ran `eval-kit/` to completion on their own hardware
+(2026-09-10) and sent back the results — the first completed real model
+run against the full 200-record dataset in this project's history.**
+Verified before trusting: the checkpoint's own per-record tp/fn/fp sums
+match the results file's aggregate exactly (recomputed independently,
+not eyeballed), and both input dataset files are byte-identical to this
+repo's tracked copies.
+
+- **Recall: 98.26%** (target ≥95% — **meets** it)
+- **Precision: 75.88%** (target ≥90% — **does not meet** it; the results
+  file says so itself)
+- **By language** (derived this session by joining the checkpoint against
+  the dataset's own `language` field — not in either file the friend
+  sent): English 98.86%R/76.25%P (n=70), Tagalog 98.85%R/75.37%P (n=70),
+  **Bikol 96.90%R/76.04%P (n=60)** — Bikol is the measurably weakest
+  recall, 7 of the 13 total leaks despite being 30% of the dataset,
+  giving A3's earlier "Bikol fluency is weaker" note a real number.
+  Precision is flat across languages, so the miss isn't language-specific.
+- **Surprising**: all 13 leaks came from `hard_case: null` ("ordinary")
+  records — every deliberately engineered hard-case category (40 records
+  across 7 categories) scored a perfect 0 FN.
+- **Caveat**: the run was resumed (only 24 of 200 records were freshly
+  logged this leg), so the reported 1007.1s elapsed is NOT the full
+  200-record wall-clock time, and only 3 of the 13 leaked names' actual
+  identities survived (the other 10 were scored in an earlier,
+  uncaptured session). The aggregate FN=13 count itself is solid.
+- **Not done yet**: no row written to the real `ai_evaluation_run` table
+  (§2 Rule 6 wants exactly this kind of record backing any displayed
+  confidence number) — a deliberate pause, since inserting into the real
+  `baranguard`/`baranguard_uiseed` databases wasn't asked for this
+  session. The long-recommended human spot-check of the Bikol subset
+  hasn't happened — this is a recall/precision number, not a fluency
+  review. See `backend/DEVLOG.md` 2026-09-14 for the full writeup.
 
 **Updated 2026-09-07: Ollama is installed, running, and has the model
 pulled on this workstation** (`ollama.exe`/`ollama app.exe` listening on
@@ -1025,8 +1059,8 @@ genuinely unusable for a real shift until fixed — start here before
 anything below.
 
 *(The rest of the order is unchanged. A3 is now ✅ done — see its own
-entry — and A2 has a concrete path via `eval-kit/` that a friend can run
-in parallel with everything below; nobody needs to wait on it.)*
+entry — and A2 got real results from a friend's run 2026-09-14; see its
+own entry for the numbers and what's still open.)*
 
 1. ~~Start A3 (dataset)~~ **Done 2026-09-07** — generated, not
    hand-authored; see A3's own entry for the disclosed methodology
@@ -1042,8 +1076,9 @@ in parallel with everything below; nobody needs to wait on it.)*
 5. ~~B2, B4~~ **Done 2026-09-13** — 59/59 and 38/38 respectively, and B4
    found and fixed a real, previously-undetected 500 in
    `GET /incidents/nearby`. See each entry's own note.
-6. **A2 (model run)** — hand `eval-kit/` to a friend with capable
-   hardware (see A2's own entry for what "capable" means here: this
-   workstation itself timed out on a single record at 300s CPU-only) →
-   then Sprint 8's AI evaluation box, informed by the disclosed
-   generation-method caveat on the dataset itself.
+6. ~~A2 (model run)~~ **Real results in 2026-09-14** — 98.26% recall
+   (meets target) / 75.88% precision (misses target); see A2's own entry
+   for the per-language breakdown and what's still open (no
+   `ai_evaluation_run` row written yet, Bikol human spot-check still
+   pending) before Sprint 8's AI evaluation box can be written up in
+   full.

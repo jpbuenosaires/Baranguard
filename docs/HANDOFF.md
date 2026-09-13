@@ -5,16 +5,40 @@ sections below fresh each time something changes the picture — never
 stack a new dated banner on an old one. Full session-by-session history
 lives in `backend/DEVLOG.md` (grep it; don't read it front to back).
 
-**Last updated: 2026-09-13.**
+**Last updated: 2026-09-14.**
 
 ## Where things stand
 
 **Sprints 0–7 are complete.** Sprint 8 (UAT/evaluation) is open. Its old
 gate (`docs/REMAINING.md` §F) is fully closed. §C4's turn-by-turn routing
-gap is also now closed (below) — Sprint 8 still has two real-device-
-confirmed blockers (C6, C7) that should be fixed before any UAT scenario
-touches login or an on-duty shift. See `SPRINTS.md`'s own gate note for
-exact current wording.
+gap is also now closed — Sprint 8 still has two real-device-confirmed
+blockers (C6, C7) that should be fixed before any UAT scenario touches
+login or an on-duty shift. See `SPRINTS.md`'s own gate note for exact
+current wording.
+
+**A2 (the AI model's own end-to-end run) got real results 2026-09-14** —
+a friend ran `eval-kit/` on their own hardware and sent back a completed
+200-record evaluation, the first the model has ever actually finished
+against the full dataset. Verified, not just trusted: the checkpoint's
+per-record sums match the results file's aggregate exactly, and both
+input dataset files are byte-identical to this repo's tracked copies.
+**Recall 98.26% meets the ≥95% target; precision 75.88% misses the ≥90%
+target** (the results file says so itself). A language breakdown derived
+this session (joining the checkpoint against the dataset's own
+`language` field, not present in either file sent) shows Bikol as the
+measurably weakest recall (96.90% vs ~98.85% for English/Tagalog) — 7 of
+the 13 total leaks despite being 30% of the dataset — while precision is
+flat across languages. A second finding: every one of the 13 leaks came
+from an "ordinary" (`hard_case: null`) record; none of the 7 deliberately
+engineered hard-case categories produced a single leak. See
+`backend/DEVLOG.md` 2026-09-14 and `docs/REMAINING.md` A2 for the full
+numbers and caveats (the run was resumed, so its 1007.1s elapsed timing
+covers only the last 24 records, not all 200; only 3 of the 13 leaked
+names' identities survived in what was sent). **Not yet done**: no row
+written to the real `ai_evaluation_run` table — deliberately paused
+rather than writing to the real `baranguard`/`baranguard_uiseed`
+databases without being asked; the long-recommended Bikol human
+spot-check also still hasn't happened.
 
 ### NEWEST: full turn-by-turn routing shipped (2026-09-13, same day, after everything else below)
 
@@ -212,18 +236,27 @@ real shift, ahead of anything in `REMAINING.md`'s own numbered order.
    `adb logcat -b crash` / `dumpsys activity` running.
 3. **Confirm G1's real-SMS leg** — configure a backup contact, kill
    connectivity, verify the on-device SMS actually arrives.
-4. **Hand `eval-kit/` to a friend with capable hardware** for A2.
+4. **Write a real `ai_evaluation_run` row from the 2026-09-14 results**
+   (dataset `redaction-eval-v1`/`v1`, model
+   `aisingapore/Llama-SEA-LION-v3.5-8B-R`, sample_count 200,
+   precision_score 0.75880, recall_score 0.98260) — needs an explicit
+   go-ahead since it writes to the real `baranguard`/`baranguard_uiseed`
+   databases; see `REMAINING.md` A2. Then the Bikol human spot-check A3
+   has recommended since 2026-09-07.
 5. **The 6 remaining `mobile/` npm advisories** — down from 9: the
    Cypress 13→16 bump closed 3 (both HIGHs). The rest are the two
    already-deliberate major-version bumps (`react-router`, `@capacitor/
    cli`/`xcode`); see `REMAINING.md`'s C4 section.
-6. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
+6. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`,
+   now informed by A2's real numbers for its AI-evaluation box.
 7. ~~Apply migration 0020 to the real databases~~ **Done 2026-09-13** —
    applied to both `baranguard` and `baranguard_uiseed`.
 8. ~~Cypress 13→16 npm-audit bump~~ **Done 2026-09-13** — see `REMAINING.md`
    C4 and `backend/DEVLOG.md` for the writeup, including the correction
    that `cypress/e2e/test.cy.ts` was never a real spec (unmodified Vite
    scaffold) — a real e2e test is still open, separate work.
+9. ~~Hand `eval-kit/` to a friend with capable hardware for A2~~ **Done,
+   results back 2026-09-14** — see item 4 above and `REMAINING.md` A2.
 
 Full ordered list with reasoning, including hardware/account-blocked
 items: **`docs/REMAINING.md`**.
