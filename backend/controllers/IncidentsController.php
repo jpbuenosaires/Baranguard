@@ -412,7 +412,12 @@ final class IncidentsController
              LEFT JOIN dispatch d ON d.dispatch_id = (
                  SELECT d2.dispatch_id FROM dispatch d2
                  WHERE d2.incident_id = i.incident_id
-                 ORDER BY d2.dispatched_at DESC
+                 -- 2026-09-13: earliest first, not most recent — this
+                 -- singular pair now means \"the PRIMARY/first responder's
+                 -- timeline\" now that a second responder can exist
+                 -- (docs/REMAINING.md G-backlog); the new `dispatches`
+                 -- array below is the authoritative full list.
+                 ORDER BY d2.dispatched_at ASC
                  LIMIT 1
              )
              WHERE i.incident_id = :incident_id"
@@ -446,6 +451,41 @@ final class IncidentsController
             }
         }
 
+        // 2026-09-13, docs/REMAINING.md G-backlog "backup/second responder":
+        // an incident can now have more than one concurrent dispatch, so
+        // the singular dispatched_at/arrived_at pair above is no longer
+        // the full picture. This is the authoritative full list, one row
+        // per dispatch ever made on this incident (including cancelled —
+        // an incident's real history includes a responder who was pulled
+        // off it, same reasoning index()'s officer_name comment already
+        // gives for including cancelled dispatches). Tanod NAME is
+        // included here, not just timestamps, because the existing W7 UI
+        // already renders an "Assigned Tanod" card for every role that can
+        // view this endpoint — this fixes that card's data source rather
+        // than widening what it discloses.
+        $dispatchesStmt = $pdo->prepare(
+            'SELECT d.dispatch_id, d.tanod_id, u.full_name AS tanod_name, d.status,
+                    d.dispatched_at, d.en_route_at, d.arrived_at, d.completed_at, d.cancelled_at
+             FROM dispatch d
+             JOIN user u ON u.user_id = d.tanod_id
+             WHERE d.incident_id = :incident_id
+             ORDER BY d.dispatched_at ASC'
+        );
+        $dispatchesStmt->execute(['incident_id' => $incidentId]);
+        $dispatches = array_map(static function (array $row): array {
+            return [
+                'dispatch_id' => (int) $row['dispatch_id'],
+                'tanod_id' => (int) $row['tanod_id'],
+                'tanod_name' => $row['tanod_name'],
+                'status' => $row['status'],
+                'dispatched_at' => $row['dispatched_at'],
+                'en_route_at' => $row['en_route_at'],
+                'arrived_at' => $row['arrived_at'],
+                'completed_at' => $row['completed_at'],
+                'cancelled_at' => $row['cancelled_at'],
+            ];
+        }, $dispatchesStmt->fetchAll(PDO::FETCH_ASSOC));
+
         $payload = [
             'incident_id' => (int) $incident['incident_id'],
             'barangay_id' => (int) $incident['barangay_id'],
@@ -469,9 +509,12 @@ final class IncidentsController
                 ? (int) $incident['redaction_approved_by']
                 : null,
             // See the query comment above for why these three are here.
+            // dispatched_at/arrived_at now mean "the primary/first
+            // responder" specifically — see `dispatches` for the full list.
             'dispatched_at' => $incident['dispatched_at'],
             'arrived_at' => $incident['arrived_at'],
             'has_active_dispatch' => (bool) $incident['has_active_dispatch'],
+            'dispatches' => $dispatches,
         ];
 
         // The one raw-narrative disclosure in the system. Added LAST and
@@ -562,6 +605,16 @@ final class IncidentsController
                 'original_filename' => $row['original_filename'],
             ];
         }, $rows);
+
+        // Evidence-access audit (docs/REMAINING.md §G — was blocked behind
+        // F4 not existing; unblocked 2026-09-13). Every successful read is
+        // logged, not just ones that return files, so an all-clear "nobody
+        // accessed this incident's evidence" is provable the same way an
+        // access is. Metadata is allow-listed per Rule 8 — a count, never
+        // filenames/hashes/paths, none of which belong in audit_log anyway.
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'evidence_accessed', 'incident', $incidentId, [
+            'item_count' => count($items),
+        ]);
 
         Http::send(200, ['items' => $items]);
     }
@@ -849,10 +902,18 @@ final class IncidentsController
         // client_event_id, so this replays off `audit_log` instead — the
         // same shape `SmsController::broadcast()` already uses for exactly
         // this reason (a write with no dedicated idempotency column).
+        //
+        // Queries `audit_log.idempotency_key` (migration 0019's VIRTUAL
+        // generated column + index) rather than a bare JSON_EXTRACT() —
+        // MariaDB only uses the index when the generated column itself is
+        // referenced, not an equivalent expression. This lookup used to be
+        // a full scan of every incident_updated row for this incident;
+        // SmsController::broadcast() hit the identical shape first (see
+        // that migration's header) and this was the deliberate follow-up.
         $replayStmt = $pdo->prepare(
             "SELECT metadata_json FROM audit_log
              WHERE barangay_id = :barangay_id AND action = 'incident_updated' AND entity_id = :entity_id
-               AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.idempotency_key')) = :idempotency_key
+               AND idempotency_key = :idempotency_key
              LIMIT 1"
         );
         $replayStmt->execute([

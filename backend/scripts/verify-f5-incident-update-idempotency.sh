@@ -84,10 +84,11 @@ for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_u
          0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
          0016_retention_hold_and_device_scrub \
          0017_health_check_log \
-         0018_sms_subscriber; do
+         0018_sms_subscriber \
+         0019_audit_log_idempotency_index; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Migrations 0001-0018 applied"
+pass "Migrations 0001-0019 applied"
 
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
