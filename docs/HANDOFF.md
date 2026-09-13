@@ -213,11 +213,17 @@ real shift, ahead of anything in `REMAINING.md`'s own numbered order.
 3. **Confirm G1's real-SMS leg** — configure a backup contact, kill
    connectivity, verify the on-device SMS actually arrives.
 4. **Hand `eval-kit/` to a friend with capable hardware** for A2.
-5. **The 9 remaining `mobile/` npm advisories** — each needs its own
-   test-and-verify pass; see `REMAINING.md`'s C4 section.
+5. **The 6 remaining `mobile/` npm advisories** — down from 9: the
+   Cypress 13→16 bump closed 3 (both HIGHs). The rest are the two
+   already-deliberate major-version bumps (`react-router`, `@capacitor/
+   cli`/`xcode`); see `REMAINING.md`'s C4 section.
 6. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
 7. ~~Apply migration 0020 to the real databases~~ **Done 2026-09-13** —
    applied to both `baranguard` and `baranguard_uiseed`.
+8. ~~Cypress 13→16 npm-audit bump~~ **Done 2026-09-13** — see `REMAINING.md`
+   C4 and `backend/DEVLOG.md` for the writeup, including the correction
+   that `cypress/e2e/test.cy.ts` was never a real spec (unmodified Vite
+   scaffold) — a real e2e test is still open, separate work.
 
 Full ordered list with reasoning, including hardware/account-blocked
 items: **`docs/REMAINING.md`**.

@@ -695,23 +695,40 @@ drains on whatever next sync trigger exists.
   `@capacitor/push-notifications` are now registered native plugins
   (6 → 8). `gradle.properties`' hand-fixed JDK paths confirmed intact.
 - ~~13 pre-existing npm advisories in `mobile/` — never triaged~~
-  **✅ TRIAGED 2026-09-13, 4 of 13 fixed.** `qs`→6.16.0 and
+  **✅ TRIAGED 2026-09-13, 7 of 13 fixed.** `qs`→6.16.0 and
   `@babel/runtime`→7.26.10 fixed via `package.json` `overrides` (both
   plain security patches, non-breaking, confirmed via a clean `npx tsc
   --noEmit` afterward) — this also cleared `get-blob-duration` and
   `capacitor-voice-recorder` off the list, since both were only flagged
   transitively through the vulnerable `@babel/runtime`, not by their own
-  code. Remaining 9 (7 moderate, 2 high) are all major-version bumps
-  deliberately left alone: `react-router`/`react-router-dom` (real
-  production dependency — needs a v6→v8 bump coupled to `@ionic/
-  react-router`'s peer version plus a full mobile nav regression pass on
-  a device, and conflating it with the already-in-progress C6 router bug
-  was judged worse than leaving it); `cypress` and its three transitive
-  advisories (dev-only, real e2e specs exist, a 13→16 bump needs its own
-  test-and-fix pass); `@capacitor/cli`/`xcode` (the "fix" is a downgrade
-  from 8.5.x, and `xcode` is iOS-only tooling, inert on this
-  Android-only project). See `backend/DEVLOG.md` 2026-09-13 for the full
-  per-package breakdown.
+  code. **`cypress` 13→16 closed the same day** (see below) clearing its
+  three transitive advisories (`extract-zip` symlink traversal,
+  `@cypress/request`'s vulnerable `uuid` — both HIGH), confirmed via
+  `npm ls extract-zip` returning empty post-bump. Remaining 6 (all
+  moderate) are the two major-version bumps deliberately left alone:
+  `react-router`/`react-router-dom` (real production dependency — needs
+  a v6→v8 bump coupled to `@ionic/react-router`'s own peer version plus
+  a full mobile nav regression pass on a device, and conflating it with
+  the already-in-progress C6 router bug was judged worse than leaving
+  it); `@capacitor/cli`/`xcode` (the "fix" is a downgrade from 8.5.x, and
+  `xcode` is iOS-only tooling, inert on this Android-only project). See
+  `backend/DEVLOG.md` 2026-09-13 for the full per-package breakdown.
+- ~~Cypress major version bump~~ **✅ CLOSED 2026-09-13.**
+  `mobile/package.json`'s `cypress` bumped `^13.5.0`→`^16.0.0`; `npm
+  audit` 9→6 (both HIGH findings gone). **Correction to this item's own
+  prior wording**: "real e2e specs exist under `mobile/cypress/`" was
+  checked, not re-assumed, and turned out false —
+  `cypress/e2e/test.cy.ts` is unmodified Vite/Ionic scaffold boilerplate
+  (asserts on `#container` / "Ready to create an app?", neither of which
+  exist in this app), never adapted to Baranguard. `npx cypress run`
+  against it still fails post-bump, but for a reason unrelated to the
+  version change — the app throws before the assertion runs
+  (`localDatabase.ts`'s deliberate web-unsupported guard, reached via
+  `App.tsx`'s mount effect) — the exact same failure Cypress 13 would
+  have produced. Writing a real spec against the actual app is separate,
+  open work — see `backend/DEVLOG.md` 2026-09-13 ("Cypress 13→16 bump")
+  for the full writeup. `package.json`/`package-lock.json` only,
+  committed `a4c24f0`.
 
 ### ✅ C5. Every device on a no-Firebase deployment could never actually register — CLOSED 2026-09-13
 Found on the real device, not in review: `POST /devices/register`
