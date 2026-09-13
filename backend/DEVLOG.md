@@ -11522,3 +11522,196 @@ backlog artifact's "Moderate" tier:
   `node web/scripts/verify-web-wiring.mjs` 537/537 after all of the
   above (536→537: the new `formatAge` import). `node --check` clean on
   `sms-monitor.js`, `gis-live-tracking.js`, and `LiveMap.js`.
+
+## 2026-09-13 (continued): full turn-by-turn routing shipped — three
+## architecture decisions in one session, then the actual build
+
+`docs/REMAINING.md` §C4's routing gap ("needs an offline routing engine
+... neither exists anywhere in this stack") is closed. Getting there
+took three real architecture decisions in a row, each abandoned for a
+concrete reason rather than a preference — recorded in full because the
+first two left no code behind and would otherwise be invisible history:
+
+1. **Self-hosted OSRM** (matches the Master Reference's own §1 stack
+   line) — started, hit a wrong-tag `git clone` (OSRM renumbered past
+   v5.x to calendar versioning; `v5.27.1` doesn't exist), then a real
+   toolchain wall: OSRM's current build requires vcpkg compiling
+   Boost/TBB/libarchive from source, which is memory-hungry on this
+   workstation's ~8GB RAM. WSL2 was installed, a `.wslconfig` swap file
+   was added, the build script was fixed twice — abandoned anyway, by
+   user choice, before a single line of PHP was written against it.
+2. **Google Routes API** — built completely: `GoogleRoutesClient.php`
+   (field/enum names verified against Google's own published `.proto`
+   sources, not guessed), a migration, `SystemHealthController.php`
+   wiring, web dashboard updates. Torn out the same day, before
+   shipping, the moment the user said they have no credit card — Google
+   requires a billing account with a card on file even to stay inside
+   the free tier, a hard blocker this project's own "no card" constraint
+   makes unconditional, not a preference to weigh.
+3. **OpenRouteService (ORS)** — the one that shipped. Free, no card,
+   signup-only (openrouteservice.org/sign-up), OSM-data-backed (same
+   underlying data source the abandoned OSRM plan would have used, just
+   hosted). Request-building verified against ORS's own official Python
+   client source (github.com/GIScience/openrouteservice-py) after their
+   docs pages wouldn't render for automated fetching.
+
+**What actually shipped, all verified against a real ORS key the user
+provided (not just unit-level):**
+
+- `backend/services/routing/OrsClient.php` (+ `OrsException.php`/
+  `OrsUnavailableException.php`) — the only place this codebase talks to
+  ORS. `geometries=geojson` request param means mobile never needs a
+  polyline decoder; ORS's own `instruction` field is already
+  human-readable text, so (unlike the OSRM plan) no maneuver-to-text
+  translation table was needed either.
+- `SystemHealthController.php` — `GET /system/health`'s `ors` field is a
+  REAL probe (`OrsClient::ping()`, a genuine route request against two
+  confirmed on-road points), not a presence check — same pattern
+  `ollamaStatus()` already set. Migration `0020_health_check_log_ors`
+  adds one status column (simpler than the two-column car/foot design
+  the abandoned OSRM plan would have needed, since ORS takes `mode` as
+  one request parameter, not two separate self-hosted processes).
+- `DispatchController::route()` — new `GET /dispatch/:id/route?latitude=
+  &longitude=&mode=car|foot`. Mirrors `IncidentsController::nearby()`'s
+  validation (this is "compute against live input," not "create a
+  resource once," so no `Idempotency-Key`). The GET-that-writes shape
+  reuses `SystemHealthController`'s own "WHY A READ ENDPOINT WRITES"
+  justification verbatim rather than inventing a new one. On ORS
+  failure/rejection, ANY existing `route_json` is kept and marked
+  `stale` rather than discarded — proven live, not just reasoned about
+  (see below). Not audited (Rule 8 bars raw coordinates in `audit_log`,
+  and a Tanod's position changes far more often than a status
+  transition would justify logging).
+- Mobile: `apiService.getDispatchRoute()` + a shared `mapRouteJson()`
+  normalizer, `dispatchRepository.cacheRouteFetch()` (reuses
+  `dispatch_local`'s already-existing `route_json`/`route_status`
+  columns — no `localSchema.ts` migration), `LiveMapCanvas.tsx` gained a
+  `routeGeometry` prop (a GeoJSON source+line layer on top of the
+  existing raster basemap, no new library), `assignment-detail.tsx`
+  gained an explicit "Get Route" button + turn-by-turn step list. The
+  "Open in external navigation app" link is UNCHANGED — explicit
+  non-regression requirement, not an oversight. `npx tsc --noEmit` and
+  `npx eslint` both clean on every touched file (one pre-existing,
+  unrelated `timeOutline` unused-import warning in
+  `assignment-detail.tsx`, not introduced by this work).
+
+**Two real bugs found along the way, both fixed:**
+
+- **`route_json` shape inconsistency.** `apiService.mapDispatch()` (used
+  by `GET /dispatch`) passed the server's snake_case `route_json`
+  through untransformed, while the new `getDispatchRoute()` returned a
+  camelCase-normalized shape — same field, two different shapes
+  depending on which endpoint last populated it, invisible until a
+  caller actually needed to read both. Fixed by extracting one shared
+  `mapRouteJson()` normalizer both now use; `DispatchEntry.routeJson`
+  retyped from `unknown | null` to the real `RouteData | null`.
+- **The mobile app's own `DEFAULT_CENTER` (LiveMapCanvas.tsx,
+  12.9186°N/123.6667°E) has no routable road within 350m in OSM's data
+  for this area** — found live, not suspected: the first real health-
+  check probe against it returned ORS error 2010 verbatim. Not a client
+  bug; a genuine illustration of the rural-OSM-coverage trade-off this
+  architecture decision accepted. `OrsClient.php`'s health-check
+  constants were moved to a different, confirmed-on-road pair (real
+  street names: Prieto, Smith Street — extracted from an actual computed
+  route's geometry, not guessed), documented inline for whoever next
+  touches `DEFAULT_CENTER` itself (a display-only map-center constant
+  elsewhere in both web and mobile — not a routing anchor, left alone).
+
+**Verification:** `backend/scripts/verify-routing.sh` (new), 23/23,
+against a disposable DB over real HTTP — role/tenant/ownership/
+validation with ORS unconfigured (never a 500, honest
+`route_status: unavailable`), then a second block (only runs with a real
+`ORS_API_KEY` found in `backend/.env`, mirroring `restore-drill.sh`'s
+own "some real infrastructure is a human-supplied precondition"
+precedent) proving a real route persists, a rejected refresh keeps the
+prior route marked `stale` instead of discarding it, `GET /dispatch`'s
+list decodes it correctly, and the health probe reports `healthy`.
+`node web/scripts/verify-web-wiring.mjs` unaffected (536/537 — the one
+failure is pre-existing, unrelated in-progress `AppShell.js` work already
+in the tree, not touched by this session beyond one unrelated line).
+
+Migrations 0001-0020 (0020 = this session's `ors_status` column) all
+applied/idempotent/rollback-clean against a disposable DB — not yet
+applied to the real `baranguard`/`baranguard_uiseed` databases.
+
+## 2026-09-13 (continued): migration 0020 applied to both real
+## databases, then web dashboard route rendering (read-only)
+
+**Migration 0020 applied for real.** Ran `0020_health_check_log_ors.sql`
+against both `baranguard` and `baranguard_uiseed`, confirmed via
+`DESCRIBE health_check_log` on each — `ors_status` present, defaulted
+`not_configured`. Docs (`REFERENCE.md`, `HANDOFF.md`) corrected from
+"not yet applied" to reflect this.
+
+**Web dashboard route rendering — shipped, read-only by explicit user
+decision.** The Dispatch Center map now shows a route a Tanod's own
+mobile "Get Route" tap already computed — the web dashboard never
+calls the routing endpoint itself (no geolocation/coordinate-input
+concept exists anywhere in its Admin-facing pages, and routing FROM the
+Admin's own desk position wouldn't be operationally meaningful).
+Planned via `EnterPlanMode` given the scope; built exactly as planned:
+
+- `web/src/api/apiClient.js`: new `mapRouteJson()` — `mapDispatch()`
+  passed `route_json` through raw/un-normalized (no snake_case→camelCase
+  conversion of the nested `mode`/`distance_m`/`duration_s`/`steps[]`
+  fields), the identical shape-inconsistency bug found and fixed on the
+  mobile side the same day, now fixed here the same way.
+- `web/src/components/LiveMap.js`: new `setRoute(geojson | null)`,
+  mirroring `setBoundary`/`applyBoundary`'s exact pattern (including the
+  `ready`/pending-until-map-loaded deferral) — one function, `null`
+  clears the layer. Same `themeToken('--color-primary', '#1D4ED8')` the
+  boundary line already uses, matching mobile's own `ROUTE_LINE_COLOR`
+  hex for visual consistency across both apps.
+- `web/src/pages/dispatch-center.js`: a "Show Route"/"Hide Route" button
+  per responder (between the existing Locate/Cancel buttons), gated on
+  `dispatch.routeJson` being non-null (never shown for `unavailable`,
+  per §2 Rule 6). Single-active-route model — showing one clears any
+  other, matching Locate's own single-focus precedent and avoiding
+  clutter when an incident has multiple concurrent responders
+  (second-responder feature). A poll-sync block re-draws the shown
+  route if fresh data still has it, or clears it if that dispatch fell
+  out of the active list (cancelled/completed).
+- `web/css/pages/dispatch-center.css`: `.queue-incident-card__route-btn`,
+  copying `.queue-incident-card__locate-btn`'s style as the base plus an
+  `.is-active` solid-fill state.
+
+**Real bug found, NOT introduced by this work — flagged, not silently
+fixed away.** `dispatch-center.js` already had uncommitted, in-progress
+changes from elsewhere in the tree before this session touched it (see
+this file's own earlier notes on concurrent uncommitted mobile/web work
+already present). That pre-existing diff had accidentally deleted
+`let latestData = null;` from the closure's own state declarations —
+confirmed via `git diff` showing it as a clean removal with no
+replacement, and confirmed this predated any edit of mine by checking
+my own FIRST `Read` of the file this session, which already showed it
+absent. Effect: every `load()` call threw `ReferenceError: latestData
+is not defined` at the point `latestData = {...}` tried to assign to an
+undeclared binding (ES modules are always strict-mode; this coalesced
+into the screen's generic "Something went wrong loading the Dispatch
+Center" error, with nothing logged to console by the existing catch
+block). Found live, not suspected — a browser walkthrough hit it
+immediately. Restored the single missing declaration line; not a
+change to anything I own, called out here so whoever's editing this
+file elsewhere knows what happened to it.
+
+**Verification — real, not just static.** `node web/scripts/verify-web-
+wiring.mjs`: 536/537 (unaffected; the one failure is the
+`sos-muted-notice` gap in that same pre-existing uncommitted
+`AppShell.js` work, untouched by this session). Real browser
+walkthrough against the actual `baranguard_uiseed` demo database and
+the actual running backend (not a disposable/mocked test harness): a
+throwaway admin account was created in `baranguard_uiseed` (deleted
+after), logged in through the real UI, and the real
+`GET /dispatch/:id/route` endpoint was called for a real existing
+dispatch (dispatch_id 13, tanod Arnel Dela Cruz, incident #18) using the
+same confirmed on-road coordinates `OrsClient.php`'s health check uses —
+producing a genuine 935m/196s ORS route. Confirmed in Dispatch Center:
+the "Show Route" button appeared ONLY on that one dispatch's row (every
+other active dispatch correctly showed no button, having never had a
+route computed); clicking it drew a real blue line on the map tracing
+the actual computed path through Pilar's streets (screenshotted, matches
+the ORS response's own turn list); clicking "Hide Route" cleared it;
+button state (outlined ↔ solid "Hide Route") tracked correctly. Both the
+throwaway admin account and the test route data written onto dispatch 13
+were cleaned up afterward — `baranguard_uiseed` is back to its
+pre-verification state.

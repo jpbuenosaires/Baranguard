@@ -28,6 +28,7 @@ import { hasLiveSession } from './services/session';
 import { registerCriticalAlertListeners } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
+import { initThemeListener } from './utils/theme';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -189,6 +190,10 @@ const App: React.FC = () => {
     // running it more often than the app actually restarts, and every run
     // is real file I/O over however many evidence rows exist.
     void pruneOldSyncedEvidenceFiles();
+    const unbindTheme = initThemeListener();
+    return () => {
+      unbindTheme();
+    };
   }, []);
 
   return (

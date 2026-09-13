@@ -9,6 +9,9 @@ use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Notifications\NotificationDispatcher;
 use Baranguard\Services\Notifications\NotificationService;
+use Baranguard\Services\Routing\OrsClient;
+use Baranguard\Services\Routing\OrsException;
+use Baranguard\Services\Routing\OrsUnavailableException;
 use PDO;
 
 /**
@@ -26,13 +29,15 @@ use PDO;
  *     notification model, the entity-integrity enforcement, and the
  *     FCM/SMS ladder, so `create()` now records the notification in the
  *     same transaction as the dispatch.
- *   - **OSRM is not wired up.** Every new dispatch gets
- *     `route_status="unavailable"` and `route_json=NULL` — §6 already
- *     documents this as an acceptable outcome ("OSRM failure does not
- *     roll back dispatch creation"), it just doesn't say what to do when
- *     OSRM was never attempted because no self-hosted OSRM instance
- *     exists in this environment yet. Treated identically to an OSRM
- *     failure.
+ *   - **Routing is NOT computed at creation time.** Every new dispatch
+ *     still gets `route_status="unavailable"` and `route_json=NULL` at
+ *     `create()` — §6's "OSRM failure does not roll back dispatch
+ *     creation" allowance is honored the same way regardless of which
+ *     routing backend is behind it. `route()` below (2026-09-13, turn-
+ *     by-turn build, docs/REMAINING.md §C4) is what actually populates
+ *     these fields, on demand, once the Tanod has a current GPS fix to
+ *     route FROM — computing it eagerly at creation time would mean
+ *     routing from the Admin's desk, not the Tanod's position.
  *   - **Tanod eligibility ("on-duty")** means the Tanod's most recent
  *     `duty_status` row (by `changed_at`) is exactly `on_duty` —
  *     `responding` is excluded (already engaged elsewhere) and so is
@@ -185,7 +190,7 @@ final class DispatchController
                 'dispatched_by' => $identity['user_id'],
                 'tanod_id' => $tanodId,
                 'priority' => $incident['priority'],
-                'route_status' => 'unavailable', // No self-hosted OSRM in this environment yet — see class doc.
+                'route_status' => 'unavailable', // Not computed at creation time — see class doc; route() computes it on demand.
                 'status' => 'assigned',
                 'request_id' => $requestId,
             ]);
@@ -220,8 +225,9 @@ final class DispatchController
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_created', 'dispatch', $dispatchId, [
                 'incident_id' => $incidentId,
                 'tanod_id' => $tanodId,
-                // Matches the literal the INSERT above writes; there is
-                // no self-hosted OSRM in this environment yet.
+                // Matches the literal the INSERT above writes — routing
+                // isn't computed until route() is called with a real
+                // Tanod position, not at creation time (see class doc).
                 'route_status' => 'unavailable',
                 // True when this call added a responder to an incident
                 // that was ALREADY dispatched (read from the row fetched
@@ -584,5 +590,139 @@ final class DispatchController
         }
 
         return ['dispatch_id' => $dispatchId, 'status' => $newStatus, 'updated_at' => $updatedAt];
+    }
+
+    /**
+     * `GET /dispatch/:id/route?latitude=&longitude=&mode=car|foot`
+     * (2026-09-13, turn-by-turn build, docs/REMAINING.md §C4). Computes
+     * a road-snapped route from the caller's CURRENT position (the
+     * Tanod's live GPS fix, passed as query params — not read from any
+     * stored position) to the dispatch's incident, via `OrsClient`, and
+     * persists the result onto `dispatch.route_json`/`route_status`.
+     *
+     * WHY A GET WRITES: same justification `SystemHealthController`'s
+     * own class doc already gives for its endpoint — this is a probe,
+     * not a plain read (it actively calls ORS), and recording what it
+     * found is the point of having called it. It is naturally
+     * idempotent regardless: the route depends on the Tanod's current
+     * position, which changes constantly, so this is "compute against
+     * live input" rather than "create a resource once" — the same shape
+     * `IncidentsController::nearby()` already has, which is why this
+     * mirrors that endpoint's validation instead of `POST /dispatch`'s
+     * `Idempotency-Key` pattern. Recomputing is naturally idempotent too:
+     * the same inputs give the same ORS answer, and different inputs
+     * just replace the cached value — no duplicate-row risk an
+     * idempotency key would need to guard against.
+     *
+     * NEVER 500s on a routing failure, and NEVER silently discards a
+     * previously-good route: if ORS can't be reached or rejects the
+     * request (unconfigured, rate-limited, no road within range of the
+     * given position — a real, observed failure mode, see
+     * `OrsClient`'s own doc block), any existing `route_json` is KEPT
+     * and `route_status` is set to `stale` rather than `unavailable` —
+     * exactly what that status value and the Master Reference's M6
+     * "cached route labeled as such" line exist for. Only a dispatch
+     * that has NEVER had a successful route falls to `unavailable`.
+     * Mirrors `POST /dispatch`'s own documented "routing failure doesn't
+     * roll back dispatch creation" philosophy, applied to a read.
+     *
+     * Not audited: Rule 8 forbids raw coordinates in `audit_log`, and a
+     * Tanod's position updates repeatedly per assignment (unlike a
+     * status transition, at most ~3 times total) — logging every fetch
+     * would be operational noise closer to `GET /dispatch` (not
+     * audited) than `dispatch_status_override` (audited, but rare).
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function route(PDO $pdo, array $identity, string $dispatchIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'tanod']);
+        if (!ctype_digit($dispatchIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Dispatch not found.');
+        }
+        $dispatchId = (int) $dispatchIdParam;
+
+        // Validation mirrors IncidentsController::nearby() exactly — same
+        // "compute against live input" shape, same required/range checks.
+        $latParam = Http::query('latitude');
+        $lngParam = Http::query('longitude');
+        if ($latParam === null || $lngParam === null || !is_numeric($latParam) || !is_numeric($lngParam)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude and longitude are required.');
+        }
+        $originLat = (float) $latParam;
+        $originLng = (float) $lngParam;
+        if ($originLat < -90 || $originLat > 90 || $originLng < -180 || $originLng > 180) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude/longitude are out of range.');
+        }
+
+        $mode = Http::query('mode') ?? OrsClient::MODE_CAR;
+        if ($mode !== OrsClient::MODE_CAR && $mode !== OrsClient::MODE_FOOT) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'mode must be one of: car, foot.');
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT d.dispatch_id, d.tanod_id, d.route_json, i.barangay_id,
+                    i.latitude AS incident_lat, i.longitude AS incident_lng
+             FROM dispatch d
+             JOIN incident i ON i.incident_id = d.incident_id
+             WHERE d.dispatch_id = :dispatch_id'
+        );
+        $stmt->execute(['dispatch_id' => $dispatchId]);
+        $dispatch = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($dispatch === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Dispatch not found.');
+        }
+        AuthMiddleware::requireTenant($identity, (int) $dispatch['barangay_id']);
+
+        // Same own-Tanod-or-Admin gate applyStatusTransition() already
+        // uses — a Tanod may only route their OWN assigned dispatch.
+        $isAdmin = $identity['role'] === 'admin';
+        $isOwnTanod = $identity['role'] === 'tanod' && (int) $dispatch['tanod_id'] === $identity['user_id'];
+        if (!$isAdmin && !$isOwnTanod) {
+            throw new ApiError(403, 'FORBIDDEN', 'This role cannot perform this action.');
+        }
+
+        if ($dispatch['incident_lat'] === null || $dispatch['incident_lng'] === null) {
+            throw new ApiError(409, 'CONFLICT', 'This incident has no location to route to.');
+        }
+        $destLat = (float) $dispatch['incident_lat'];
+        $destLng = (float) $dispatch['incident_lng'];
+
+        $priorRouteJson = $dispatch['route_json'];
+
+        try {
+            $result = (new OrsClient())->route($originLat, $originLng, $destLat, $destLng, $mode);
+            $routeJson = json_encode([
+                'mode' => $mode,
+                'geometry' => $result['geometry'],
+                'distance_m' => $result['distance_m'],
+                'duration_s' => $result['duration_s'],
+                'steps' => $result['steps'],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $routeStatus = 'available';
+        } catch (OrsUnavailableException | OrsException) {
+            // Both failure modes get the same fallback here — see this
+            // method's own doc block for why "genuinely rejected" isn't
+            // treated as more destructive than "transiently unreachable":
+            // either way, an existing good route is more useful kept and
+            // labeled stale than discarded.
+            $routeJson = $priorRouteJson;
+            $routeStatus = $priorRouteJson !== null ? 'stale' : 'unavailable';
+        }
+
+        $updateStmt = $pdo->prepare(
+            'UPDATE dispatch SET route_json = :route_json, route_status = :route_status WHERE dispatch_id = :dispatch_id'
+        );
+        $updateStmt->execute([
+            'route_json' => $routeJson,
+            'route_status' => $routeStatus,
+            'dispatch_id' => $dispatchId,
+        ]);
+
+        Http::send(200, [
+            'dispatch_id' => $dispatchId,
+            'route_status' => $routeStatus,
+            'route_json' => $routeJson !== null ? json_decode($routeJson, true) : null,
+        ]);
     }
 }

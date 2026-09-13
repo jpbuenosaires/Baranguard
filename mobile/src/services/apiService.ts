@@ -494,13 +494,64 @@ export async function getSosFallbackContact(): Promise<string | null> {
 export type DispatchStatus = 'assigned' | 'en_route' | 'arrived' | 'completed' | 'cancelled';
 /** §5 dispatch.route_status enum. */
 export type RouteStatus = 'available' | 'unavailable' | 'stale';
+export type RouteMode = 'car' | 'foot';
+
+export interface RouteStep {
+  instruction: string;
+  /** ORS's `type` code isn't a text enum (see OrsClient.php) — this carries the road name instead, when known. */
+  maneuver: string;
+  distanceM: number;
+  durationS: number;
+}
+
+/** `dispatch.route_json`'s decoded shape once `route_status` is `available`/`stale` — see DispatchController::route(). */
+export interface RouteData {
+  mode: RouteMode;
+  /** Already-decoded GeoJSON LineString — no polyline-decoder library needed, see OrsClient.php's own doc block. */
+  geometry: { type: string; coordinates: [number, number][] };
+  distanceM: number;
+  durationS: number;
+  steps: RouteStep[];
+}
+
+type RawRouteJson = {
+  mode: RouteMode;
+  geometry: { type: string; coordinates: [number, number][] };
+  distance_m: number;
+  duration_s: number;
+  steps: { instruction: string; maneuver: string; distance_m: number; duration_s: number }[];
+} | null;
+
+/**
+ * Normalizes the server's snake_case `route_json` into the same
+ * camelCase `RouteData` shape everywhere it enters the app — both
+ * `GET /dispatch` (via `mapDispatch`) and `GET /dispatch/:id/route`
+ * (below) carry this field, and a caller (assignment-detail.tsx) must
+ * not need to know which endpoint last populated it.
+ */
+function mapRouteJson(raw: unknown): RouteData | null {
+  const json = raw as RawRouteJson;
+  if (!json) return null;
+  return {
+    mode: json.mode,
+    geometry: json.geometry,
+    distanceM: json.distance_m,
+    durationS: json.duration_s,
+    steps: (json.steps ?? []).map((s) => ({
+      instruction: s.instruction,
+      maneuver: s.maneuver,
+      distanceM: s.distance_m,
+      durationS: s.duration_s,
+    })),
+  };
+}
 
 export interface DispatchEntry {
   dispatchId: number;
   incidentId: number;
   tanodId: number;
   priority: string;
-  routeJson: unknown | null;
+  routeJson: RouteData | null;
   routeStatus: RouteStatus;
   status: DispatchStatus;
   /** Redacted-safe fields joined in from the incident (Sprint 3 addition — see DispatchController.php's class doc). */
@@ -536,7 +587,7 @@ function mapDispatch(json: {
     incidentId: json.incident_id,
     tanodId: json.tanod_id,
     priority: json.priority,
-    routeJson: json.route_json,
+    routeJson: mapRouteJson(json.route_json),
     routeStatus: json.route_status,
     status: json.status,
     incidentType: json.incident_type ?? null,
@@ -576,6 +627,42 @@ export async function updateDispatchStatus(
     { method: 'PATCH', body: { status } }
   );
   return { dispatchId: json.dispatch_id, status: json.status, updatedAt: json.updated_at };
+}
+
+/**
+ * GET /dispatch/:id/route — computes (and caches server-side) a
+ * road-snapped route from the CALLER'S CURRENT position to the
+ * dispatch's incident. Explicit-tap only (assignment-detail.tsx's "Get
+ * Route" button) — never auto-fetched on screen mount — both for
+ * battery/data reasons and because ORS's free tier is request-limited
+ * (see backend/.env.example's ORS_API_KEY block).
+ *
+ * `routeStatus` can be `unavailable` (never fetched, or ORS
+ * unreachable/unconfigured with nothing cached yet) or `stale` (a
+ * refresh failed but a PRIOR good route is still being returned,
+ * `routeJson` not null) — never throws for either; only a genuine
+ * network/auth failure throws (`ApiError`), same as every other call
+ * through `request()`.
+ */
+export async function getDispatchRoute(
+  dispatchId: number,
+  position: { latitude: number; longitude: number },
+  mode: RouteMode = 'car'
+): Promise<{ dispatchId: number; routeStatus: RouteStatus; routeJson: RouteData | null }> {
+  const query = new URLSearchParams({
+    latitude: String(position.latitude),
+    longitude: String(position.longitude),
+    mode,
+  });
+  const json = await request<{ dispatch_id: number; route_status: RouteStatus; route_json: unknown | null }>(
+    `/dispatch/${dispatchId}/route?${query.toString()}`
+  );
+
+  return {
+    dispatchId: json.dispatch_id,
+    routeStatus: json.route_status,
+    routeJson: mapRouteJson(json.route_json),
+  };
 }
 
 // --- GPS (§6, Sprint 3: M7 Live Map) ----------------------------------------

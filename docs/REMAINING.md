@@ -666,13 +666,30 @@ drains on whatever next sync trigger exists.
   has no real backend package or real device available to exercise
   end-to-end in this environment — same A1 blocker as the rest of
   mobile's local-storage layer, disclosed rather than claimed proven.
-  Full turn-by-turn routing remains separately unbuilt, below.
-- Full turn-by-turn routing (road-snapped directions, recalculation)
-  needs an offline routing engine (OSRM/GraphHopper-class) plus real
-  road-network data for Pilar, Sorsogon extracted from OpenStreetMap —
-  neither exists anywhere in this stack. This is a multi-session build on
-  its own, not an increment on the basemap work above, and is unaffected
-  by that work being done.
+  Full turn-by-turn routing (below) was a separate build, unaffected by
+  this one.
+- ✅ **Full turn-by-turn routing — CLOSED 2026-09-13.** Real, verified
+  road-snapped directions + recalculation, not the geodesic
+  distance/bearing figure `geo.ts` already had. Backed by OpenRouteService
+  (ORS) — a free, no-card cloud routing API — after a self-hosted OSRM
+  build was started and abandoned (WSL2/vcpkg memory constraints on this
+  workstation's ~8GB RAM) and a completely-built Google Routes API
+  replacement was torn out the same day (requires a billing account with
+  a card on file even for free-tier use; this deployment has none). See
+  `backend/services/routing/OrsClient.php`'s own doc block for the full
+  three-decision history, and `backend/DEVLOG.md` 2026-09-13 ("full
+  turn-by-turn routing shipped") for the complete build + verification
+  writeup. New endpoint `GET /dispatch/:id/route`; new script
+  `backend/scripts/verify-routing.sh`, 23/23 against a disposable DB
+  **and** a real ORS key — including a live-proven case (not just
+  reasoned about) where a rejected refresh keeps the prior good route
+  marked `stale` instead of discarding it. Mobile: `assignment-detail.tsx`
+  gained an explicit "Get Route" button + turn-by-turn step list drawn on
+  `LiveMapCanvas.tsx`'s existing basemap; the "Open in external
+  navigation app" link is unchanged (explicit non-regression
+  requirement). `npx tsc --noEmit` clean — same **code-complete,
+  device-unverified** caveat every other mobile feature here carries
+  pending A1's real-hardware access.
 - ✅ `npx cap sync android` run + the `POST_NOTIFICATIONS` manifest
   permission added — `@capacitor/geolocation` and
   `@capacitor/push-notifications` are now registered native plugins

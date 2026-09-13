@@ -80,13 +80,27 @@ document.addEventListener('click', (event) => {
 const playedSosIds = new Set();
 const dismissedSosIds = new Set();
 
-function playSosKlaxonTone() {
+function playSosKlaxonTone(onBlocked) {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
+    if (!AudioCtx) {
+      onBlocked?.();
+      return;
+    }
     const ctx = new AudioCtx();
     if (ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
+      ctx.resume().then(() => {
+        if (ctx.state === 'suspended') onBlocked?.();
+      }).catch(() => {
+        onBlocked?.();
+      });
+      const resumeOnInteract = () => {
+        ctx.resume().catch(() => {});
+        window.removeEventListener('click', resumeOnInteract);
+        window.removeEventListener('keydown', resumeOnInteract);
+      };
+      window.addEventListener('click', resumeOnInteract, { once: true });
+      window.addEventListener('keydown', resumeOnInteract, { once: true });
     }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -109,7 +123,7 @@ function playSosKlaxonTone() {
       ctx.close().catch(() => {});
     }, 750);
   } catch {
-    // Autoplay restrictions or unavailable audio context
+    onBlocked?.();
   }
 }
 
@@ -411,6 +425,14 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay (read-only)' };
   const roleLabel = ROLE_LABELS[user.role] ?? user.role;
 
+  // Mobile search toggle button (visible on <=768px)
+  const mobileSearchBtn = document.createElement('button');
+  mobileSearchBtn.type = 'button';
+  mobileSearchBtn.className = 'topbar__search-toggle icon-btn';
+  mobileSearchBtn.setAttribute('aria-label', 'Open search');
+  mobileSearchBtn.innerHTML = icons.search(18);
+  topbar.appendChild(mobileSearchBtn);
+
   // Real search — GET /search, incidents only (see SearchController.php's
   // own doc for scope). Replaces a prior placeholder input that called
   // nothing (§8: no decorative control that does nothing when used).
@@ -425,10 +447,29 @@ export function AppShell(user, activePage, navigate, onLogout) {
   searchInput.type = 'search';
   searchInput.placeholder = 'Search incidents by ID, type, or status…';
   searchInput.autocomplete = 'off';
+
+  const mobileSearchClose = document.createElement('button');
+  mobileSearchClose.type = 'button';
+  mobileSearchClose.className = 'topbar__search-close';
+  mobileSearchClose.setAttribute('aria-label', 'Close search');
+  mobileSearchClose.innerHTML = icons.x(18);
+  mobileSearchClose.addEventListener('click', () => {
+    searchHost.classList.remove('is-mobile-open');
+    searchResults.hidden = true;
+  });
+
   const searchResults = document.createElement('div');
   searchResults.className = 'topbar__search-results';
   searchResults.hidden = true;
-  searchHost.append(searchLabel, searchInput, searchResults);
+  searchHost.append(searchLabel, searchInput, mobileSearchClose, searchResults);
+
+  mobileSearchBtn.addEventListener('click', () => {
+    searchHost.classList.toggle('is-mobile-open');
+    if (searchHost.classList.contains('is-mobile-open')) {
+      searchInput.focus();
+    }
+  });
+
   activeSearchHost = searchHost;
   activeSearchResults = searchResults;
 
@@ -557,7 +598,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
       const text = coreDown ? 'Database Unavailable' : aiDown ? 'AI Unavailable' : 'All Systems Operational';
       statusBadge.className = 'status-badge status-badge--' + state;
       statusBadge.querySelector('.status-badge__text').textContent = text;
-      statusBadge.title = `API: ${health.api} · DB: ${health.db} · OSRM: ${health.osrm} · Ollama: ${health.ollama} · GSM: ${health.gsmIngestion} · Notifications: ${health.notificationConfig} (Click to view full health)`;
+      statusBadge.title = `API: ${health.api} · DB: ${health.db} · Routing: ${health.ors} · Ollama: ${health.ollama} · GSM: ${health.gsmIngestion} · Notifications: ${health.notificationConfig} (Click to view full health)`;
     }).catch(() => {
       statusBadge.className = 'status-badge status-badge--down';
       statusBadge.querySelector('.status-badge__text').textContent = 'Status unavailable';
@@ -684,7 +725,18 @@ export function AppShell(user, activePage, navigate, onLogout) {
 
       if (!playedSosIds.has(pendingSos.id)) {
         playedSosIds.add(pendingSos.id);
-        playSosKlaxonTone();
+        playSosKlaxonTone(() => {
+          const bodyEl = sosBannerHost.querySelector('.emergency-sos-banner__body');
+          if (bodyEl && !bodyEl.querySelector('.sos-muted-notice')) {
+            const mutedEl = document.createElement('div');
+            mutedEl.className = 'sos-muted-notice';
+            mutedEl.style.fontSize = '0.75rem';
+            mutedEl.style.opacity = '0.9';
+            mutedEl.style.marginTop = '0.25rem';
+            mutedEl.textContent = '🔇 Audio siren muted by browser — click anywhere to unmute';
+            bodyEl.appendChild(mutedEl);
+          }
+        });
       }
     } else {
       sosBannerHost.hidden = true;

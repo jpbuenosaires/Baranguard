@@ -107,9 +107,18 @@ export function renderLoginPage(root, onSuccess) {
   form.noValidate = true;
 
   const errorBox = document.createElement('div');
+  errorBox.id = 'login-error';
   errorBox.className = 'login-form__error';
   errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
+
+  const clearInputError = (input) => {
+    input.removeAttribute('aria-invalid');
+    input.removeAttribute('aria-describedby');
+    if (!usernameInput.getAttribute('aria-invalid') && !passwordInput.getAttribute('aria-invalid')) {
+      errorBox.hidden = true;
+    }
+  };
 
   // Labels are visually hidden, not omitted — the visible placeholder
   // text stays exactly as designed, but "placeholder-only" leaves screen
@@ -126,6 +135,7 @@ export function renderLoginPage(root, onSuccess) {
   usernameInput.placeholder = 'Username';
   usernameInput.autocomplete = 'username';
   usernameInput.required = true;
+  usernameInput.addEventListener('input', () => clearInputError(usernameInput));
   let rememberedUsername = '';
   try { rememberedUsername = localStorage.getItem(REMEMBERED_USERNAME_KEY) || ''; } catch { /* private mode — just start blank */ }
   if (rememberedUsername) usernameInput.value = rememberedUsername;
@@ -143,6 +153,7 @@ export function renderLoginPage(root, onSuccess) {
   passwordInput.placeholder = 'Password';
   passwordInput.autocomplete = 'current-password';
   passwordInput.required = true;
+  passwordInput.addEventListener('input', () => clearInputError(passwordInput));
   const passwordToggle = document.createElement('button');
   passwordToggle.type = 'button';
   passwordToggle.className = 'login-password-field__toggle';
@@ -198,19 +209,40 @@ export function renderLoginPage(root, onSuccess) {
   screen.append(hero, formPanel);
   root.appendChild(screen);
 
+  const setControlsDisabled = (disabled) => {
+    usernameInput.disabled = disabled;
+    passwordInput.disabled = disabled;
+    passwordToggle.disabled = disabled;
+    rememberCheckbox.disabled = disabled;
+    submitButton.disabled = disabled;
+  };
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     errorBox.hidden = true;
+    usernameInput.removeAttribute('aria-invalid');
+    usernameInput.removeAttribute('aria-describedby');
+    passwordInput.removeAttribute('aria-invalid');
+    passwordInput.removeAttribute('aria-describedby');
 
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
     if (!username || !password) {
       errorBox.textContent = 'Enter a username and password.';
       errorBox.hidden = false;
+      if (!username) {
+        usernameInput.setAttribute('aria-invalid', 'true');
+        usernameInput.setAttribute('aria-describedby', 'login-error');
+        usernameInput.focus();
+      } else {
+        passwordInput.setAttribute('aria-invalid', 'true');
+        passwordInput.setAttribute('aria-describedby', 'login-error');
+        passwordInput.focus();
+      }
       return;
     }
 
-    submitButton.disabled = true;
+    setControlsDisabled(true);
     submitButton.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span>Signing in…</span>`;
 
     try {
@@ -219,6 +251,7 @@ export function renderLoginPage(root, onSuccess) {
         if (rememberCheckbox.checked) localStorage.setItem(REMEMBERED_USERNAME_KEY, username);
         else localStorage.removeItem(REMEMBERED_USERNAME_KEY);
       } catch { /* private mode — the preference just won't persist */ }
+      submitButton.textContent = 'Redirecting…';
       onSuccess(user);
     } catch (err) {
       // §9 W1: generic message regardless of the actual failure reason —
@@ -233,6 +266,8 @@ export function renderLoginPage(root, onSuccess) {
       }
       errorBox.hidden = false;
       passwordInput.value = '';
+      passwordInput.setAttribute('aria-invalid', 'true');
+      passwordInput.setAttribute('aria-describedby', 'login-error');
       // 2026-09-06 UX pass: the field was cleared but focus stayed on the
       // (disabled, then re-enabled) submit button, so retyping needed an
       // extra click every time — a real, easily-missed friction point on
@@ -244,8 +279,10 @@ export function renderLoginPage(root, onSuccess) {
       void card.offsetWidth; // force reflow so removing+re-adding the class actually replays the animation
       card.classList.add('is-shaking');
     } finally {
-      submitButton.disabled = false;
-      submitButton.textContent = 'Sign in';
+      setControlsDisabled(false);
+      if (submitButton.textContent !== 'Redirecting…') {
+        submitButton.textContent = 'Sign in';
+      }
     }
   });
 

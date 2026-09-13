@@ -179,6 +179,58 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   let classifierPanel = null;
   let pendingClassification = null;
 
+  function handleKeyDown(event) {
+    const tag = event.target?.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable) {
+      return;
+    }
+    if (activeModalEl) return;
+
+    if (event.key === 'Escape') {
+      if (selectedIncidentId != null) {
+        event.preventDefault();
+        closeDetailPane();
+      }
+      return;
+    }
+
+    if (!lastItems || lastItems.length === 0) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      const currentIdx = selectedIncidentId != null
+        ? lastItems.findIndex((r) => r.incidentId === selectedIncidentId)
+        : -1;
+      const nextIdx = Math.min(currentIdx + 1, lastItems.length - 1);
+      if (nextIdx !== currentIdx && lastItems[nextIdx]) {
+        selectIncident(lastItems[nextIdx]);
+        const trs = tableContainer.querySelectorAll('tbody tr');
+        trs[nextIdx]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      const currentIdx = selectedIncidentId != null
+        ? lastItems.findIndex((r) => r.incidentId === selectedIncidentId)
+        : 0;
+      const prevIdx = Math.max(currentIdx - 1, 0);
+      if (prevIdx !== currentIdx && lastItems[prevIdx]) {
+        selectIncident(lastItems[prevIdx]);
+        const trs = tableContainer.querySelectorAll('tbody tr');
+        trs[prevIdx]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    } else if (event.key === 'Enter') {
+      if (selectedIncidentId != null && activeViewMode === 'detail' && canCreate) {
+        const editBtn = rightPanel.querySelector('.btn-incident-edit');
+        if (editBtn) {
+          event.preventDefault();
+          editBtn.click();
+        }
+      }
+    }
+  }
+
+  window.addEventListener('keydown', handleKeyDown);
+
   /**
    * Incidents the Classifier has already auto-run for once this page
    * visit, so reselecting the same row (or the list refreshing under it)
@@ -1765,9 +1817,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     container.appendChild(block);
   }
 
-  // Last statement in the function, deliberately: everything above it —
-  // including the window keydown listener — must actually run. The AI
-  // Classifier panel polls, and main.js calls this on the next
-  // navigation so that interval cannot outlive the page.
-  return { stop: stopClassifier };
+  function stop() {
+    window.removeEventListener('keydown', handleKeyDown);
+    stopClassifier();
+  }
+
+  return { stop };
 }

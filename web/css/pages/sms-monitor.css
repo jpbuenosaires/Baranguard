@@ -130,15 +130,19 @@
   .sms-layout {
     grid-template-columns: 1fr;
     height: auto;
+    gap: var(--spacing-sm);
   }
   .sms-contact-pane {
-    height: 22rem;
+    height: 18rem;
+    max-height: 40vh;
   }
   .sms-thread-pane {
-    height: 34rem;
+    height: 28rem;
+    max-height: 60vh;
   }
   .sms-feed-pane {
-    height: 20rem;
+    height: 16rem;
+    max-height: 35vh;
   }
 }
 
@@ -959,6 +963,11 @@
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.8); }
 }
+@media (prefers-reduced-motion: reduce) {
+  .sms-live-dot {
+    animation: none;
+  }
+}
 
 .sms-feed-list {
   flex: 1 1 0;
@@ -1545,4 +1554,14 @@
    withdrawal was honoured — but recedes so the active list reads first. */
 .data-table tr.is-opted-out td {
   opacity: 0.62;
+}
+
+/* --- Focus Rings ---------------------------------------------------------- */
+.sms-filter-chip:focus-visible,
+.sms-contact-card:focus-visible,
+.sms-quick-chip:focus-visible,
+.sms-compose-send-circle:focus-visible,
+.sms-kpi-col:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }

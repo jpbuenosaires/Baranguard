@@ -578,8 +578,8 @@ function cardHeader(title, subtitle, icon, description, viewAll) {
   if (viewAll) {
     corner = document.createElement('button');
     corner.type = 'button';
-    corner.className = 'card-header__icon card-header__icon--action';
-    corner.innerHTML = icons.arrowUpRight(18);
+    corner.className = 'card-header__action-btn';
+    corner.innerHTML = `<span>${escapeHtml(viewAll.label)}</span> ${icons.arrowUpRight(14)}`;
     corner.setAttribute('aria-label', viewAll.label);
     corner.title = viewAll.label;
     corner.addEventListener('click', viewAll.onClick);

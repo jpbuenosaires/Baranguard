@@ -27,7 +27,7 @@
  * the element that should receive initial focus); `resolveValue` maps a
  * confirm click onto the promise's resolved value.
  */
-function openDialog({ title, description, confirmLabel, cancelLabel, danger, buildBody, cancelValue, resolveValue }) {
+function openDialog({ title, description, confirmLabel, cancelLabel, danger, buildBody, cancelValue, resolveValue, onConfirmAsync }) {
   return new Promise((resolve) => {
     const previouslyFocused = document.activeElement;
 
@@ -99,8 +99,35 @@ function openDialog({ title, description, confirmLabel, cancelLabel, danger, bui
       }
     }
 
+    const errorEl = document.createElement('div');
+    errorEl.className = 'confirm-dialog__error';
+    errorEl.setAttribute('role', 'alert');
+    errorEl.hidden = true;
+    dialog.appendChild(errorEl);
+
     cancelButton.addEventListener('click', () => close(cancelValue));
-    confirmButton.addEventListener('click', () => close(resolveValue()));
+    confirmButton.addEventListener('click', async () => {
+      if (typeof onConfirmAsync === 'function') {
+        confirmButton.disabled = true;
+        cancelButton.disabled = true;
+        const originalContent = confirmButton.innerHTML;
+        confirmButton.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span> <span>${confirmLabel}</span>`;
+        errorEl.hidden = true;
+        try {
+          const val = resolveValue();
+          await onConfirmAsync(val);
+          close(val);
+        } catch (err) {
+          confirmButton.disabled = false;
+          cancelButton.disabled = false;
+          confirmButton.innerHTML = originalContent;
+          errorEl.textContent = err?.message || 'Operation failed. Please try again.';
+          errorEl.hidden = false;
+        }
+      } else {
+        close(resolveValue());
+      }
+    });
     // Clicking the backdrop itself (not the dialog card) counts as cancel.
     backdrop.addEventListener('click', (event) => {
       if (event.target === backdrop) close(cancelValue);
@@ -116,12 +143,12 @@ function openDialog({ title, description, confirmLabel, cancelLabel, danger, bui
 }
 
 /**
- * @param {{title: string, description?: string, confirmLabel?: string, cancelLabel?: string, danger?: boolean}} options
+ * @param {{title: string, description?: string, confirmLabel?: string, cancelLabel?: string, danger?: boolean, onConfirmAsync?: () => Promise<any>}} options
  * @returns {Promise<boolean>} resolves true only if the user clicked the confirm button
  */
-export function confirmDialog({ title, description, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false }) {
+export function confirmDialog({ title, description, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false, onConfirmAsync }) {
   return openDialog({
-    title, description, confirmLabel, cancelLabel, danger,
+    title, description, confirmLabel, cancelLabel, danger, onConfirmAsync,
     cancelValue: false,
     resolveValue: () => true,
   });

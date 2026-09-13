@@ -600,3 +600,46 @@
   font-size: 0.75rem;
   color: var(--color-text-secondary);
 }
+
+/* --- Focus Rings ---------------------------------------------------------- */
+.shift-preset-btn:focus-visible,
+.user-action-btn:focus-visible,
+.personnel-modal__close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* --- Responsive ----------------------------------------------------------- */
+@media (max-width: 640px) {
+  .personnel-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .shift-presets-row {
+    grid-template-columns: 1fr;
+  }
+  .personnel-filter-bar__left {
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .personnel-search-wrap {
+    max-width: 100%;
+    min-width: 100%;
+  }
+  .personnel-filter-select {
+    width: 100%;
+  }
+}
+
+/* --- Reduced Motion ------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .personnel-container {
+    animation: none;
+  }
+  .shift-status-pill--active::before {
+    animation: none;
+  }
+  .fatigue-meter-fill.is-severe {
+    animation: none;
+  }
+}

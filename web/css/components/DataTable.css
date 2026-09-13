@@ -83,6 +83,11 @@
   cursor: pointer;
 }
 .data-table__sort-button:hover { color: var(--color-primary); }
+.data-table__sort-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  color: var(--color-primary);
+}
 /* Neutral ↕ at rest so a sortable column is identifiable before it has
    been clicked (audit A12); the active column's arrow takes full weight. */
 .data-table__sort-icon { font-size: 0.625rem; width: 0.625rem; display: inline-block; opacity: 0.4; }

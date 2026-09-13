@@ -225,32 +225,25 @@ const AssignmentsPage: React.FC = () => {
                   <button
                     key={row.local_id}
                     type="button"
-                    className={`card ${accentClass}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '16px',
-                      cursor: 'pointer',
-                    }}
+                    className={`card ${accentClass} assignment-card`}
                     onClick={() => navigate(`/assignments/${encodeURIComponent(row.local_id)}`)}
                   >
-                    <div style={{ flex: 1, paddingRight: '12px' }}>
-                      <div className="card__header" style={{ marginBottom: '6px' }}>
+                    <div className="assignment-card__body">
+                      <div className="card__header assignment-card__header">
                         <span className={`status-pill ${pillClass}`}>{row.priority}</span>
                         <span className={`status-pill ${statusClass}`}>{STATUS_LABEL[row.status] ?? row.status}</span>
-                        <span style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-text-tertiary)', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>
+                        <span className="assignment-card__id">
                           #{row.server_dispatch_id ?? row.local_id.slice(0, 6)}
                         </span>
                       </div>
 
-                      <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: '4px' }}>
+                      <div className="assignment-card__type">
                         {row.redacted_incident_type
                           ? row.redacted_incident_type.replace(/_/g, ' ').toUpperCase()
                           : 'Incident Details Restricted'}
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                      <div className="assignment-card__location">
                         <IonIcon icon={locationOutline} style={{ fontSize: '1rem', color: 'var(--color-primary)' }} />
                         <span>
                           {row.latitude === null || row.longitude === null
@@ -262,14 +255,14 @@ const AssignmentsPage: React.FC = () => {
                       </div>
 
                       {stale && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '0.72rem', color: 'var(--color-warning)' }}>
+                        <div className="assignment-card__stale">
                           <IonIcon icon={timeOutline} />
                           <span>Cached — not updated live</span>
                         </div>
                       )}
                     </div>
 
-                    <IonIcon icon={chevronForwardOutline} style={{ fontSize: '1.25rem', color: 'var(--color-text-tertiary)' }} />
+                    <IonIcon icon={chevronForwardOutline} className="assignment-card__chevron" />
                   </button>
                 );
               })}

@@ -76,6 +76,10 @@
   color: #FFFFFF;
   transform: scale(1.05);
 }
+.sidebar__collapse:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #0c1626, 0 0 0 4px #3b82f6;
+}
 
 /* Sidebar user footer — pinned to the bottom card */
 .sidebar__user {
@@ -139,6 +143,10 @@
   background: rgba(239, 68, 68, 0.18);
   color: #F87171;
   transform: scale(1.08);
+}
+.sidebar__user-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #0c1626, 0 0 0 4px #ef4444;
 }
 
 /* Manual collapse */
@@ -409,6 +417,10 @@
   font-weight: 500;
   white-space: nowrap;
 }
+.status-badge:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
 .status-badge__dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; }
 .status-badge--checking { background: var(--tint-neutral-bg); color: var(--color-text-secondary); }
 .status-badge--checking .status-badge__dot { background: var(--color-text-secondary); }
@@ -570,12 +582,18 @@
 
 .topbar__menu { display: none; }
 .sidebar__scrim { display: none; }
+.topbar__search-toggle { display: none; }
+.topbar__search-close { display: none; }
 
 @media (max-width: 768px) {
   .topbar__menu {
     display: inline-flex;
     flex-shrink: 0;
     margin-right: var(--spacing-sm);
+  }
+  .topbar__menu:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
   .sidebar {
@@ -633,8 +651,58 @@
   }
   .sidebar__scrim.is-open { opacity: 1; pointer-events: auto; }
 
-  .topbar { flex-wrap: wrap; }
-  .topbar__search { max-width: none; order: 3; flex-basis: 100%; }
+  .topbar { flex-wrap: nowrap; gap: var(--spacing-sm); }
+  .topbar__search-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .topbar__search {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    padding: var(--spacing-md);
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    max-width: none;
+    border-radius: 0;
+  }
+  .topbar__search.is-mobile-open {
+    display: flex;
+    animation: fade-in-up 0.18s ease-out;
+  }
+  .topbar__search-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: transparent;
+    border: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    border-radius: var(--radius-sm);
+  }
+  .topbar__search-close:focus-visible {
+    outline: 2px solid var(--color-primary);
+  }
+  .topbar__search input[type="search"] {
+    width: 100%;
+    padding-right: 2.5rem;
+  }
+  .topbar__search-results {
+    position: static;
+    max-height: calc(100vh - 5rem);
+    width: 100%;
+    border-radius: var(--radius-lg);
+  }
 }
 
 /* audit A15: the topbar carried theme toggle + a nowrap health badge +

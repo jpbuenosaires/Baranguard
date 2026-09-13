@@ -90,6 +90,7 @@
   --color-text-primary: #0f172a;
   --color-text-secondary: #475569;
   --color-text-tertiary: #64748b;
+  --color-text-disabled: #94a3b8;
   --color-row-active-bg: #eff6ff;
 
   --color-critical: #dc2626;
@@ -157,9 +158,9 @@
   --ion-text-color-rgb: 15, 23, 42;
   --ion-border-color: var(--color-border);
 
-  --ion-card-background: var(--color-white);
-  --ion-item-background: var(--color-white);
-  --ion-toolbar-background: var(--color-white);
+  --ion-card-background: var(--color-surface);
+  --ion-item-background: var(--color-surface);
+  --ion-toolbar-background: var(--color-surface);
   --ion-toolbar-color: var(--color-text-primary);
 
   --ion-color-primary: #1d4ed8;
@@ -205,4 +206,151 @@
   --ion-color-medium-contrast-rgb: 255, 255, 255;
   --ion-color-medium-shade: #3e4b5c;
   --ion-color-medium-tint: #596678;
+}
+
+/* --- Dark Theme Tokens (Ported from Web Command Center) ------------- */
+:root {
+  --dark-surface: #1e293b;
+  --dark-surface-elevated: #1e293b;
+  --dark-surface-hover: #334155;
+  --dark-bg: #0f172a;
+  --dark-border: #334155;
+  --dark-border-subtle: #1e293b;
+  --dark-text-primary: #f1f5f9;
+  --dark-text-secondary: #94a3b8;
+  --dark-text-tertiary: #93a2b4;
+  --dark-text-disabled: #64748b;
+  --dark-critical: #f87171;
+  --dark-warning: #fbbf24;
+  --dark-warning-text: #fde68a;
+  --dark-success: #4ade80;
+  --dark-info: #38bdf8;
+  --dark-primary: #2563eb;
+  --dark-primary-hover: #1d4ed8;
+  --dark-accent: #60a5fa;
+  --dark-row-active-bg: #1e3a5f;
+  --dark-border-blue: #1d4ed8;
+  --dark-surface-blue: #1e293b;
+
+  --dark-pill-info-text: #bae6fd;
+  --dark-pill-critical-text: #fca5a5;
+  --dark-pill-neutral-text: #cbd5e1;
+  --dark-pill-success-text: #86efac;
+  --dark-pill-warning-text: #fde68a;
+
+  --dark-tint-success-bg: color-mix(in srgb, #4ade80 18%, #1e293b);
+  --dark-tint-critical-bg: color-mix(in srgb, #f87171 18%, #1e293b);
+  --dark-tint-warning-bg: color-mix(in srgb, #fbbf24 18%, #1e293b);
+  --dark-tint-info-bg: color-mix(in srgb, #38bdf8 18%, #1e293b);
+  --dark-tint-neutral-bg: color-mix(in srgb, #94a3b8 16%, #1e293b);
+
+  --dark-glass-bg: rgba(30, 41, 59, 0.88);
+  --dark-glass-border: rgba(255, 255, 255, 0.1);
+  --dark-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --dark-shadow-elevated: 0 10px 20px -3px rgba(0, 0, 0, 0.45), 0 4px 8px -4px rgba(0, 0, 0, 0.4);
+  --dark-shadow-floating: 0 20px 30px -5px rgba(0, 0, 0, 0.6), 0 8px 12px -6px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-surface: var(--dark-surface);
+    --color-surface-elevated: var(--dark-surface-elevated);
+    --color-surface-hover: var(--dark-surface-hover);
+    --color-bg: var(--dark-bg);
+    --color-border: var(--dark-border);
+    --color-border-subtle: var(--dark-border-subtle);
+    --color-text-primary: var(--dark-text-primary);
+    --color-text-secondary: var(--dark-text-secondary);
+    --color-text-tertiary: var(--dark-text-tertiary);
+    --color-text-disabled: var(--dark-text-disabled);
+    --color-critical: var(--dark-critical);
+    --color-warning: var(--dark-warning);
+    --color-success: var(--dark-success);
+    --color-info: var(--dark-info);
+    --color-primary: var(--dark-primary);
+    --color-primary-hover: var(--dark-primary-hover);
+    --color-accent: var(--dark-accent);
+    --color-row-active-bg: var(--dark-row-active-bg);
+    --color-border-blue: var(--dark-border-blue);
+    --color-surface-blue: var(--dark-surface-blue);
+
+    --pill-success-text: var(--dark-pill-success-text);
+    --pill-critical-text: var(--dark-pill-critical-text);
+    --pill-info-text: var(--dark-pill-info-text);
+    --pill-neutral-text: var(--dark-pill-neutral-text);
+    --pill-warning-text: var(--dark-pill-warning-text);
+
+    --tint-success-bg: var(--dark-tint-success-bg);
+    --tint-critical-bg: var(--dark-tint-critical-bg);
+    --tint-warning-bg: var(--dark-tint-warning-bg);
+    --tint-info-bg: var(--dark-tint-info-bg);
+    --tint-neutral-bg: var(--dark-tint-neutral-bg);
+
+    --glass-bg: var(--dark-glass-bg);
+    --glass-border: var(--dark-glass-border);
+    --shadow-card: var(--dark-shadow-card);
+    --shadow-elevated: var(--dark-shadow-elevated);
+    --shadow-floating: var(--dark-shadow-floating);
+
+    --ion-background-color: var(--dark-bg);
+    --ion-background-color-rgb: 15, 23, 42;
+    --ion-text-color: var(--dark-text-primary);
+    --ion-text-color-rgb: 241, 245, 249;
+    --ion-border-color: var(--dark-border);
+    --ion-card-background: var(--dark-surface);
+    --ion-item-background: var(--dark-surface);
+    --ion-toolbar-background: var(--dark-surface);
+    --ion-toolbar-color: var(--dark-text-primary);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-surface: var(--dark-surface);
+  --color-surface-elevated: var(--dark-surface-elevated);
+  --color-surface-hover: var(--dark-surface-hover);
+  --color-bg: var(--dark-bg);
+  --color-border: var(--dark-border);
+  --color-border-subtle: var(--dark-border-subtle);
+  --color-text-primary: var(--dark-text-primary);
+  --color-text-secondary: var(--dark-text-secondary);
+  --color-text-tertiary: var(--dark-text-tertiary);
+  --color-text-disabled: var(--dark-text-disabled);
+  --color-critical: var(--dark-critical);
+  --color-warning: var(--dark-warning);
+  --color-success: var(--dark-success);
+  --color-info: var(--dark-info);
+  --color-primary: var(--dark-primary);
+  --color-primary-hover: var(--dark-primary-hover);
+  --color-accent: var(--dark-accent);
+  --color-row-active-bg: var(--dark-row-active-bg);
+  --color-border-blue: var(--dark-border-blue);
+  --color-surface-blue: var(--dark-surface-blue);
+
+  --pill-success-text: var(--dark-pill-success-text);
+  --pill-critical-text: var(--dark-pill-critical-text);
+  --pill-info-text: var(--dark-pill-info-text);
+  --pill-neutral-text: var(--dark-pill-neutral-text);
+  --pill-warning-text: var(--dark-pill-warning-text);
+
+  --tint-success-bg: var(--dark-tint-success-bg);
+  --tint-critical-bg: var(--dark-tint-critical-bg);
+  --tint-warning-bg: var(--dark-tint-warning-bg);
+  --tint-info-bg: var(--dark-tint-info-bg);
+  --tint-neutral-bg: var(--dark-tint-neutral-bg);
+
+  --glass-bg: var(--dark-glass-bg);
+  --glass-border: var(--dark-glass-border);
+  --shadow-card: var(--dark-shadow-card);
+  --shadow-elevated: var(--dark-shadow-elevated);
+  --shadow-floating: var(--dark-shadow-floating);
+
+  --ion-background-color: var(--dark-bg);
+  --ion-background-color-rgb: 15, 23, 42;
+  --ion-text-color: var(--dark-text-primary);
+  --ion-text-color-rgb: 241, 245, 249;
+  --ion-border-color: var(--dark-border);
+  --ion-card-background: var(--dark-surface);
+  --ion-item-background: var(--dark-surface);
+  --ion-toolbar-background: var(--dark-surface);
+  --ion-toolbar-color: var(--dark-text-primary);
 }

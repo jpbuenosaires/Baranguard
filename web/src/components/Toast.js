@@ -78,6 +78,9 @@ export function showToast(message, { variant = 'info', duration = 4000 } = {}) {
 
   let timeoutHandle;
   let dismissed = false;
+  let startTime = Date.now();
+  let remaining = duration;
+
   const dismiss = () => {
     if (dismissed) return;
     dismissed = true;
@@ -89,6 +92,21 @@ export function showToast(message, { variant = 'info', duration = 4000 } = {}) {
     // fires for — but if it somehow doesn't, don't leave a dead toast.
     setTimeout(() => toast.remove(), 400);
   };
+
+  const pause = () => {
+    if (dismissed) return;
+    clearTimeout(timeoutHandle);
+    remaining -= (Date.now() - startTime);
+  };
+
+  const resume = () => {
+    if (dismissed) return;
+    startTime = Date.now();
+    timeoutHandle = setTimeout(dismiss, Math.max(remaining, 500));
+  };
+
+  toast.addEventListener('mouseenter', pause);
+  toast.addEventListener('mouseleave', resume);
 
   closeButton.addEventListener('click', (event) => {
     event.stopPropagation();

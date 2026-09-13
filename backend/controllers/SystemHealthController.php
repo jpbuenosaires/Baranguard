@@ -8,6 +8,7 @@ use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Ai\OllamaClient;
 use Baranguard\Services\Ai\OllamaException;
 use Baranguard\Services\Ai\OllamaUnavailableException;
+use Baranguard\Services\Routing\OrsClient;
 use PDO;
 
 /**
@@ -17,29 +18,46 @@ use PDO;
  * status badge needed a real endpoint instead of the hardcoded
  * "All Systems Operational" §8 already forbids.
  *
- * Every dependency this deployment hasn't wired up yet (OSRM/GSM
- * ingestion/notification transports — all later sprints) honestly reports
+ * Every dependency this deployment hasn't wired up yet (GSM ingestion/
+ * notification transports — all later sprints) honestly reports
  * `not_configured`, not `healthy` — a truthful "not built yet" is not a
  * demo/prototype tell, a fabricated green badge is. `not_configured` is
  * detected from the actual absence of that dependency's env var, not a
  * hardcoded false.
  *
- * `ollama` was UPGRADED from that env-var-presence check to a real live
- * probe in Sprint 5, and it is now the only dependency here that actually
- * talks to its service. §6's three states map onto it as:
- *   - `not_configured` — OLLAMA_URL/OLLAMA_MODEL unset; this deployment
- *     has no AI wired up at all.
- *   - `unhealthy` — configured but the check failed. That covers BOTH
- *     "the service didn't answer" AND "the service answered but the
- *     configured model isn't pulled" — the latter is genuinely unhealthy
- *     rather than healthy, because every AI job on that workstation will
- *     fail until someone runs `ollama pull`. Reporting green there would
- *     be precisely the fabricated badge §8 forbids.
- *   - `healthy` — service answered and the configured model is present.
+ * `ollama` and `ors` are both UPGRADED from that env-var-
+ * presence check to a real live probe (Ollama in Sprint 5; routing when
+ * turn-by-turn was built — docs/REMAINING.md §C4). §6's three states map
+ * onto both as:
+ *   - `not_configured` — OLLAMA_URL/OLLAMA_MODEL (or ORS_API_KEY)
+ *     unset; this deployment has no AI (or routing) wired up at all.
+ *   - `unhealthy` — configured but the check failed. For Ollama that
+ *     covers BOTH "the service didn't answer" AND "the service answered
+ *     but the configured model isn't pulled" — the latter is genuinely
+ *     unhealthy rather than healthy, because every AI job on that
+ *     workstation will fail until someone runs `ollama pull`. Reporting
+ *     green there would be precisely the fabricated badge §8 forbids.
+ *   - `healthy` — service answered (and, for Ollama, the configured
+ *     model is present).
  *
- * The probe uses OllamaClient's short ping timeout, not its generation
- * timeout: this runs inside an Admin's web request, so a stalled model
- * server must not hang the health page for minutes.
+ * `ors` is a REAL DEPARTURE from every other dependency here: it is the
+ * one cloud call in this stack (OpenRouteService, HeiGIT/Heidelberg
+ * University — chosen over Google's Routes API specifically because
+ * Google requires a billing account with a card on file even to stay in
+ * the free tier, which this deployment doesn't have), not a self-hosted
+ * process — see OrsClient's own doc block for why, and for what that
+ * trade actually costs (live Tanod/incident coordinates leave the
+ * system on every route request). `osrm_status` (migration 0017) is no
+ * longer read from any env var — this deployment never wires up OSRM —
+ * and is written as a fixed `not_configured` literal purely so the
+ * already-applied migration's NOT NULL column stays satisfied; it is
+ * deliberately NOT exposed in this endpoint's response any more (see
+ * `ors` instead).
+ *
+ * The probes use each client's short ping timeout, not a
+ * generation/route timeout: this runs inside an Admin's web request, so
+ * a stalled service must not hang the health page for seconds longer
+ * than necessary.
  */
 final class SystemHealthController
 {
@@ -62,17 +80,17 @@ final class SystemHealthController
 
         $fcmStatus = self::envConfiguredStatus('FCM_SERVICE_ACCOUNT_PATH');
         $smsStatus = self::envConfiguredStatus('SEMAPHORE_API_KEY');
-        $osrmStatus = self::envConfiguredStatus('OSRM_URL');
+        $orsStatus = self::orsStatus();
         $ollamaStatus = self::ollamaStatus();
         $gsmStatus = self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN');
 
-        // Migration 0017: remember what this probe saw, but only when it
-        // differs from the last thing recorded. See recordHealthSample()
-        // and the migration header for why this is a change log rather
-        // than a sample-per-call time series.
+        // Migration 0017/0020: remember what this probe saw, but only
+        // when it differs from the last thing recorded. See
+        // recordHealthSample() and the migration headers for why this is
+        // a change log rather than a sample-per-call time series.
         self::recordHealthSample($pdo, [
             'db_status' => $db,
-            'osrm_status' => $osrmStatus,
+            'ors_status' => $orsStatus,
             'ollama_status' => $ollamaStatus,
             'gsm_status' => $gsmStatus,
             'fcm_status' => $fcmStatus,
@@ -82,7 +100,7 @@ final class SystemHealthController
         Http::send(200, [
             'api' => 'healthy', // this code is executing, so the API itself responded.
             'db' => $db,
-            'osrm' => $osrmStatus,
+            'ors' => $orsStatus,
             'ollama' => $ollamaStatus,
             // §2 Rule 22's "internal ingestion service" isn't a process
             // this endpoint can reach out and ping — INTERNAL_SERVICE_TOKEN
@@ -140,7 +158,7 @@ final class SystemHealthController
         AuthMiddleware::requireRole($identity, ['admin']);
 
         $stmt = $pdo->query(
-            'SELECT recorded_at, db_status, osrm_status, ollama_status,
+            'SELECT recorded_at, db_status, ors_status, ollama_status,
                     gsm_status, fcm_status, sms_status
                FROM health_check_log
               ORDER BY recorded_at DESC, log_id DESC
@@ -152,7 +170,7 @@ final class SystemHealthController
             'items' => array_map(static fn (array $r): array => [
                 'recorded_at' => $r['recorded_at'],
                 'db' => $r['db_status'],
-                'osrm' => $r['osrm_status'],
+                'ors' => $r['ors_status'],
                 'ollama' => $r['ollama_status'],
                 'gsm_ingestion' => $r['gsm_status'],
                 'fcm' => $r['fcm_status'],
@@ -188,7 +206,7 @@ final class SystemHealthController
     {
         try {
             $latest = $pdo->query(
-                'SELECT db_status, osrm_status, ollama_status, gsm_status, fcm_status, sms_status
+                'SELECT db_status, ors_status, ollama_status, gsm_status, fcm_status, sms_status
                    FROM health_check_log ORDER BY log_id DESC LIMIT 1'
             )->fetch(PDO::FETCH_ASSOC);
 
@@ -206,11 +224,17 @@ final class SystemHealthController
                 }
             }
 
+            // osrm_status (migration 0017) is a fixed literal, not a bound
+            // param: this deployment never wires up OSRM any more (see
+            // class doc), so there is nothing to check, and hardcoding it
+            // here — rather than threading a dead value through $statuses
+            // and its unchanged-comparison loop above — keeps that fact
+            // visible at the one place it's still written.
             $stmt = $pdo->prepare(
-                'INSERT INTO health_check_log
-                    (recorded_at, db_status, osrm_status, ollama_status, gsm_status, fcm_status, sms_status)
+                "INSERT INTO health_check_log
+                    (recorded_at, db_status, osrm_status, ors_status, ollama_status, gsm_status, fcm_status, sms_status)
                  VALUES
-                    (UTC_TIMESTAMP(), :db_status, :osrm_status, :ollama_status, :gsm_status, :fcm_status, :sms_status)'
+                    (UTC_TIMESTAMP(), :db_status, 'not_configured', :ors_status, :ollama_status, :gsm_status, :fcm_status, :sms_status)"
             );
             $stmt->execute($statuses);
         } catch (\Throwable) {
@@ -252,6 +276,25 @@ final class SystemHealthController
     {
         $value = baranguard_env($envVar);
         return ($value !== false && trim((string) $value) !== '') ? 'healthy' : 'not_configured';
+    }
+
+    /**
+     * A real probe of OpenRouteService — a genuine route request
+     * (`OrsClient::ping()`), not a bare presence check, so an invalid
+     * key or an exhausted rate limit shows as `unhealthy` rather than
+     * `healthy`. Never leaks the key or any error detail (same contract
+     * `ollamaStatus()` already documents).
+     *
+     * PUBLIC for the same reason `ollamaStatus()` is: Phase 3's
+     * `DispatchController::route()` reuses it rather than re-probing.
+     */
+    public static function orsStatus(): string
+    {
+        $client = new OrsClient();
+        if (!$client->isConfigured()) {
+            return 'not_configured';
+        }
+        return $client->ping() ? 'healthy' : 'unhealthy';
     }
 
     /**

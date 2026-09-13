@@ -316,7 +316,7 @@
 }
 
 .gis-personnel-card__status-pill {
-  font-size: 0.625rem;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   padding: var(--spacing-3xs) var(--spacing-sm);
   border-radius: 4px;
@@ -340,7 +340,7 @@
 }
 
 .gis-personnel-card__incident-pill {
-  font-size: 0.625rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   padding: var(--spacing-3xs) var(--spacing-2xs);
   border-radius: 4px;
@@ -745,18 +745,48 @@
 
 /* Responsive layout adjustments */
 @media (max-width: 1024px) {
+  .page-content:has(.gis-layout),
+  .page-content:has(.gis-page-container),
+  .page-content.gis-page-content {
+    overflow-y: auto !important;
+    height: auto !important;
+  }
   .gis-layout {
     grid-template-columns: 1fr;
     height: auto;
+    overflow: visible;
+  }
+  .gis-page-container,
+  .gis-page-wrapper,
+  .gis-page-body {
+    overflow: visible;
+    height: auto;
   }
   .gis-sidebar {
-    max-height: 32rem;
+    max-height: 28rem;
   }
   .gis-map-card {
     height: 32rem;
+    min-height: 24rem;
   }
   .gis-floating-activity {
-    width: 16rem;
+    width: 14rem;
+    max-width: calc(100% - 2rem);
+  }
+}
+
+@media (max-width: 640px) {
+  .gis-map-card {
+    height: 24rem;
+  }
+  .gis-floating-activity {
+    max-width: 12rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gis-floating-activity {
+    transition: none;
   }
 }
 

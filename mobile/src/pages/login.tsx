@@ -97,9 +97,9 @@ const LoginPage: React.FC = () => {
               </div>
 
               <form onSubmit={handleSubmit}>
-                <IonList inset className="ion-no-margin" style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                <IonList inset className="ion-no-margin mobile-login-form">
                   <IonItem lines="full">
-                    <IonIcon icon={personOutline} slot="start" color="medium" style={{ fontSize: '1.2rem', marginRight: '8px' }} />
+                    <IonIcon icon={personOutline} slot="start" color="medium" className="mobile-login-icon" />
                     <TextField
                       label="Username"
                       autocapitalize="off"
@@ -109,7 +109,7 @@ const LoginPage: React.FC = () => {
                     />
                   </IonItem>
                   <IonItem lines="none" style={{ position: 'relative' }}>
-                    <IonIcon icon={lockClosedOutline} slot="start" color="medium" style={{ fontSize: '1.2rem', marginRight: '8px' }} />
+                    <IonIcon icon={lockClosedOutline} slot="start" color="medium" className="mobile-login-icon" />
                     <TextField
                       label="Password"
                       type={showPassword ? 'text' : 'password'}
@@ -120,20 +120,7 @@ const LoginPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      style={{
-                        position: 'absolute',
-                        right: '12px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--color-text-tertiary)',
-                        padding: '4px',
-                        cursor: 'pointer',
-                        zIndex: 10,
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
+                      className="mobile-login-password-toggle"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       <IonIcon icon={showPassword ? eyeOffOutline : eyeOutline} style={{ fontSize: '1.25rem' }} />
@@ -142,21 +129,8 @@ const LoginPage: React.FC = () => {
                 </IonList>
 
                 {error && (
-                  <div style={{ marginTop: '12px' }}>
-                    <div
-                      style={{
-                        background: 'var(--tint-critical-bg)',
-                        border: '1px solid color-mix(in srgb, var(--color-critical) 30%, transparent)',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '10px 14px',
-                        color: 'var(--pill-critical-text)',
-                        fontSize: 'var(--font-size-sm)',
-                        lineHeight: '1.4',
-                      }}
-                      role="alert"
-                    >
-                      {error}
-                    </div>
+                  <div className="mobile-login-error" role="alert">
+                    {error}
                   </div>
                 )}
 
@@ -164,14 +138,7 @@ const LoginPage: React.FC = () => {
                   type="submit"
                   expand="block"
                   disabled={busy}
-                  style={{
-                    marginTop: '20px',
-                    '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
-                    '--border-radius': 'var(--radius-md)',
-                    fontWeight: '700',
-                    height: '48px',
-                    boxShadow: 'var(--shadow-fab)',
-                  }}
+                  className="mobile-login-submit"
                 >
                   {busy ? <IonSpinner name="dots" /> : 'Sign In to Console'}
                 </IonButton>

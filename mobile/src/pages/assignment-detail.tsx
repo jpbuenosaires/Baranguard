@@ -30,11 +30,23 @@
  * OWN map. "Navigate" now RECENTERS that embedded map (via
  * `LiveMapCanvasHandle.recenter()`); a separate, explicitly-opt-in "Open
  * in external navigation app" link below the map still reaches the old
- * `geo:` behavior for a Tanod who genuinely wants road-snapped turn-by-
- * turn — full in-app routing needs an offline routing engine + real road
- * data that don't exist anywhere in this stack (REMAINING.md C4), so this
- * screen is honest about giving distance/bearing on a real map rather
- * than pretending to route.
+ * `geo:` behavior for a Tanod who wants a second opinion or their
+ * phone's own offline maps.
+ *
+ * REAL TURN-BY-TURN ROUTING (2026-09-13, same day, later): the "no
+ * routing engine exists in this stack" limitation above is closed — see
+ * `apiService.getDispatchRoute()`/`OrsClient.php`'s own doc block for the
+ * architecture (OpenRouteService, a free cloud API, chosen after a
+ * self-hosted OSRM build and a Google Routes API build were each tried
+ * and abandoned the same day). "Get Route" below is an EXPLICIT tap, not
+ * auto-fetched on screen mount — same battery/data reasoning every other
+ * network action on this screen already follows, and ORS's free tier is
+ * request-limited. A fetched route draws as a real line on the embedded
+ * map and a plain turn-by-turn step list; `ROUTE_STATUS_LABEL` below
+ * needed no change — it was already honest about `available`/
+ * `unavailable`/`stale`, and now reflects real values instead of always
+ * `unavailable`. The external-navigation-app link is UNCHANGED and stays
+ * — this was an explicit non-regression requirement, not an oversight.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -53,12 +65,14 @@ import {
   navigateOutline,
   syncOutline,
   timeOutline,
+  trailSignOutline,
 } from 'ionicons/icons';
 import LiveMapCanvas, { type FocusTarget, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import MobileHeader from '../components/MobileHeader';
-import { ApiError, updateDispatchStatus, type NearbyIncident } from '../services/apiService';
+import { ApiError, getDispatchRoute, updateDispatchStatus, type NearbyIncident, type RouteData } from '../services/apiService';
 import {
   applyLocalStatusChange,
+  cacheRouteFetch,
   getCachedDispatch,
   isCacheStale,
   markStatusSynced,
@@ -68,6 +82,7 @@ import { enqueueDispatchStatusChange } from '../services/db/offlineQueueReposito
 import type { DispatchLocalRow } from '../services/db/localSchema';
 import { getCurrentPosition, watchPosition, type DevicePosition } from '../services/geolocation';
 import { loadSession } from '../services/session';
+import tacticalFeedback from '../utils/tacticalFeedback';
 
 const STATUS_LABEL: Record<string, string> = {
   assigned: 'Assigned',
@@ -99,6 +114,8 @@ const AssignmentDetailPage: React.FC = () => {
   const [note, setNote] = useState<string | null>(null);
   const [position, setPosition] = useState<DevicePosition | null>(null);
   const [barangayId, setBarangayId] = useState<number | null>(null);
+  const [route, setRoute] = useState<RouteData | null>(null);
+  const [fetchingRoute, setFetchingRoute] = useState(false);
   const mapRef = useRef<LiveMapCanvasHandle>(null);
 
   useEffect(() => {
@@ -107,6 +124,22 @@ const AssignmentDetailPage: React.FC = () => {
       .then(setRow)
       .finally(() => setLoading(false));
   }, [localId]);
+
+  // Hydrates the on-screen route from whatever is already cached
+  // (a prior fetch this session, or one carried in from GET /dispatch's
+  // own list refresh) so a Tanod reopening this screen sees the last
+  // known route immediately, without needing to tap "Get Route" again.
+  useEffect(() => {
+    if (!row?.route_json) {
+      setRoute(null);
+      return;
+    }
+    try {
+      setRoute(JSON.parse(row.route_json) as RouteData);
+    } catch {
+      setRoute(null);
+    }
+  }, [row?.route_json]);
 
   // Foreground-only self position, purely for the embedded map — same
   // "starts on mount, stops on unmount" contract geolocation.ts already
@@ -158,6 +191,7 @@ const AssignmentDetailPage: React.FC = () => {
     setNote(null);
     try {
       const { clientEventId } = await applyLocalStatusChange(row.local_id, next);
+      tacticalFeedback.vibrate([40, 50, 40]);
       const refreshed = await getCachedDispatch(row.local_id);
       setRow(refreshed);
 
@@ -191,10 +225,53 @@ const AssignmentDetailPage: React.FC = () => {
     mapRef.current?.recenter();
   }
 
-  /** The explicit, opt-in escape hatch for a Tanod who wants real road-snapped turn-by-turn. */
+  /** The explicit, opt-in escape hatch for a Tanod who wants their phone's own external maps app. */
   function handleOpenExternalMaps() {
     if (!row || row.latitude === null || row.longitude === null) return;
     window.location.href = `geo:${row.latitude},${row.longitude}?q=${row.latitude},${row.longitude}`;
+  }
+
+  /**
+   * Fetches a real road-snapped route from the Tanod's CURRENT position
+   * (reusing this screen's own `position` state — no second GPS call) to
+   * the assignment's destination, via `GET /dispatch/:id/route`. Explicit
+   * tap only — see this file's header comment for why. Caches the result
+   * onto `dispatch_local` regardless of outcome (`route_status` alone
+   * carries whether it's fresh, stale, or unavailable), mirroring
+   * `handleAdvanceStatus()`'s own "update local state, note the outcome,
+   * never throw past this handler" shape.
+   */
+  async function handleGetRoute() {
+    if (!row || row.server_dispatch_id === null || !position) {
+      setNote(position ? 'This assignment has no server id yet — cannot fetch a route.' : 'Waiting for a GPS fix — try again in a moment.');
+      return;
+    }
+
+    setFetchingRoute(true);
+    setNote(null);
+    try {
+      const result = await getDispatchRoute(row.server_dispatch_id, {
+        latitude: position.latitude,
+        longitude: position.longitude,
+      });
+      await cacheRouteFetch(row.local_id, result.routeJson, result.routeStatus);
+      setRow(await getCachedDispatch(row.local_id));
+      setNote(
+        result.routeStatus === 'available'
+          ? 'Route updated.'
+          : result.routeStatus === 'stale'
+            ? 'Could not refresh — showing the last known route.'
+            : 'No route available right now.'
+      );
+    } catch (error) {
+      setNote(
+        error instanceof ApiError && error.isOffline
+          ? 'Offline — cannot fetch a route right now.'
+          : 'Workstation unreachable — cannot fetch a route right now.'
+      );
+    } finally {
+      setFetchingRoute(false);
+    }
   }
 
   if (!row && !loading) {
@@ -305,8 +382,28 @@ const AssignmentDetailPage: React.FC = () => {
                     incidents={destinationIncidents}
                     tanods={[]}
                     focusTarget={focusTarget}
+                    routeGeometry={route?.geometry ?? null}
                   />
-                  <div style={{ textAlign: 'right', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={handleGetRoute}
+                      disabled={fetchingRoute || !position}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '4px 0',
+                        color: fetchingRoute || !position ? 'var(--color-text-tertiary)' : 'var(--color-primary)',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      {fetchingRoute ? <IonSpinner name="dots" /> : <IonIcon icon={trailSignOutline} />}
+                      {fetchingRoute ? 'Getting route…' : 'Get Route'}
+                    </button>
                     <button
                       type="button"
                       onClick={handleOpenExternalMaps}
@@ -322,6 +419,30 @@ const AssignmentDetailPage: React.FC = () => {
                       Open in external navigation app
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Turn-by-turn step list — only once a route has actually been fetched */}
+              {route && route.steps.length > 0 && (
+                <div className="card--elevated" style={{ padding: '14px 16px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+                    <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
+                      TURN-BY-TURN ({route.mode === 'car' ? 'driving' : 'walking'})
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>
+                      {(route.distanceM / 1000).toFixed(1)} km · {Math.round(route.durationS / 60)} min
+                    </span>
+                  </div>
+                  <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {route.steps.map((step, idx) => (
+                      <li key={idx} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-primary)' }}>
+                        {step.instruction || (step.maneuver !== 'UNKNOWN' ? `Continue on ${step.maneuver}` : 'Continue')}
+                        {step.distanceM > 0 && (
+                          <span style={{ color: 'var(--color-text-tertiary)' }}> — {Math.round(step.distanceM)}m</span>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
                 </div>
               )}
 

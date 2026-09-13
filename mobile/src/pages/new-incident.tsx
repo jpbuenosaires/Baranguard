@@ -70,6 +70,7 @@ import {
 } from '../services/evidenceCapture';
 import { getCurrentPosition, type DevicePosition } from '../services/geolocation';
 import { loadSession } from '../services/session';
+import tacticalFeedback from '../utils/tacticalFeedback';
 
 /** Human labels for §5's incident_type enum. Values are never re-cased. */
 const TYPE_LABELS: Record<IncidentType, string> = {
@@ -261,6 +262,7 @@ const NewIncidentPage: React.FC = () => {
         }
       }
 
+      tacticalFeedback.onSuccess();
       navigate(`/incidents/${encodeURIComponent(saved.localId)}/submitted`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the incident locally.');
