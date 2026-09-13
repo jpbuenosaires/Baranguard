@@ -71,6 +71,7 @@ const ACTION_LABELS = {
   map_package_published: 'Map package published',
   citizen_report_submitted: 'Citizen report submitted',
   report_exported: 'Report exported',
+  evidence_accessed: 'Evidence accessed',
 };
 
 const CATEGORIES = {
@@ -92,6 +93,7 @@ const CATEGORIES = {
       'incident_resolved', 'blotter_finalized', 'blotter_amended',
       'lupon_packet_generated', 'citizen_report_submitted',
       'tanod_sos_raised', 'tanod_sos_acknowledged', 'tanod_sos_resolved',
+      'evidence_accessed',
     ],
   },
   system: {
