@@ -848,78 +848,106 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     infoGrid.append(locCard, repCard);
     rightPanel.appendChild(infoGrid);
 
-    // 4. Assigned Tanod Card (with Smart Assign / Contact modal)
+    // 4. Assigned Tanod(s) Card (with Smart Assign / Contact modal)
+    //
+    // 2026-09-13: rebuilt on real `detail.dispatches` data. The previous
+    // version fell back to a hardcoded fake name ("Tanod Ramos") and a
+    // fake relative time ("2 min later") whenever no real dispatch data
+    // was available for an already-dispatched/resolved incident — a live
+    // §2 Rule 6 violation ("no fabricated statistics... no hardcoded
+    // identities") found while wiring this card to show more than one
+    // responder for docs/REMAINING.md's second-responder feature. An
+    // incident can now have more than one concurrent active dispatch —
+    // each gets its own row here.
     const tanodCard = document.createElement('div');
     tanodCard.className = 'incident-tanod-card';
+    const activeDispatches = (detail.dispatches || []).filter((d) => ['assigned', 'en_route', 'arrived'].includes(d.status));
     const tanodLabel = document.createElement('span');
     tanodLabel.className = 'incident-info-box__label';
-    tanodLabel.textContent = 'Assigned Tanod';
+    tanodLabel.textContent = activeDispatches.length > 1 ? 'Assigned Tanods' : 'Assigned Tanod';
+    tanodCard.appendChild(tanodLabel);
 
-    const tanodContent = document.createElement('div');
-    tanodContent.className = 'incident-tanod-card__content';
+    const DISPATCH_STATUS_TEXT = { assigned: 'Assigned', en_route: 'En route', arrived: 'On scene' };
 
-    const tanodLeft = document.createElement('div');
-    tanodLeft.className = 'incident-tanod-card__left';
+    if (activeDispatches.length === 0) {
+      const tanodContent = document.createElement('div');
+      tanodContent.className = 'incident-tanod-card__content';
+      const tanodLeft = document.createElement('div');
+      tanodLeft.className = 'incident-tanod-card__left';
+      const avatar = document.createElement('div');
+      avatar.className = 'incident-tanod-avatar incident-tanod-avatar--unassigned';
+      avatar.innerHTML = icons.users(18);
+      const tanodMeta = document.createElement('div');
+      const tanodName = document.createElement('div');
+      tanodName.className = 'incident-tanod-name';
+      tanodName.textContent = 'Not yet assigned';
+      const tanodStatus = document.createElement('div');
+      tanodStatus.className = 'incident-tanod-status';
+      tanodStatus.textContent = 'Click assign to dispatch on-duty tanod';
+      tanodMeta.append(tanodName, tanodStatus);
+      tanodLeft.append(avatar, tanodMeta);
 
-    const isAssigned = row.status !== 'pending' || Boolean(row.officerName);
-    const avatar = document.createElement('div');
-    avatar.className = `incident-tanod-avatar ${isAssigned ? '' : 'incident-tanod-avatar--unassigned'}`;
-    avatar.innerHTML = icons.users(18);
-
-    const tanodMeta = document.createElement('div');
-    const officerNameText = row.officerName || (isAssigned ? 'Tanod Ramos' : 'Not yet assigned');
-    const tanodName = document.createElement('div');
-    tanodName.className = 'incident-tanod-name';
-    tanodName.textContent = officerNameText;
-
-    const tanodStatus = document.createElement('div');
-    tanodStatus.className = 'incident-tanod-status';
-    tanodStatus.textContent = isAssigned ? `On duty • ${bName}` : 'Click assign to dispatch on-duty tanod';
-    tanodMeta.append(tanodName, tanodStatus);
-
-    tanodLeft.append(avatar, tanodMeta);
-
-    let tanodActionBtn;
-    if (!isAssigned) {
-      // Smart shortcut: dispatch directly from card
-      tanodActionBtn = document.createElement('button');
-      tanodActionBtn.type = 'button';
-      tanodActionBtn.className = 'btn-tanod-assign';
-      tanodActionBtn.innerHTML = `${icons.plus(14)} <span>Assign</span>`;
-      tanodActionBtn.addEventListener('click', async () => {
-        tanodActionBtn.disabled = true;
-        const dispatched = await promptDispatchTanod({
-          incident: row,
-          incidentTypeLabel: typeLabel,
-          eligibleTanods,
-        });
+      const assignBtn = document.createElement('button');
+      assignBtn.type = 'button';
+      assignBtn.className = 'btn-tanod-assign';
+      assignBtn.innerHTML = `${icons.plus(14)} <span>Assign</span>`;
+      assignBtn.addEventListener('click', async () => {
+        assignBtn.disabled = true;
+        const dispatched = await promptDispatchTanod({ incident: row, incidentTypeLabel: typeLabel, eligibleTanods });
         if (dispatched) {
           await load();
           refreshCounterCounts();
           const refreshed = lastItems.find((r) => r.incidentId === row.incidentId);
           if (refreshed) selectIncident(refreshed);
         } else {
-          tanodActionBtn.disabled = false;
+          assignBtn.disabled = false;
         }
       });
+      tanodContent.append(tanodLeft, assignBtn);
+      tanodCard.appendChild(tanodContent);
     } else {
-      // Contact button: triggers Contact modal with Direct Call + Direct SMS
-      tanodActionBtn = document.createElement('button');
-      tanodActionBtn.type = 'button';
-      tanodActionBtn.className = 'btn-tanod-contact';
-      tanodActionBtn.textContent = 'Contact';
-      tanodActionBtn.addEventListener('click', () => {
-        showContactModal({
-          officerName: officerNameText,
-          contactNumber: officerContact,
-          incidentCode: code,
-          incidentId: row.incidentId,
+      for (const dispatch of activeDispatches) {
+        const tanodContent = document.createElement('div');
+        tanodContent.className = 'incident-tanod-card__content';
+        const tanodLeft = document.createElement('div');
+        tanodLeft.className = 'incident-tanod-card__left';
+        const avatar = document.createElement('div');
+        avatar.className = 'incident-tanod-avatar';
+        avatar.innerHTML = icons.users(18);
+        const tanodMeta = document.createElement('div');
+        const tanodName = document.createElement('div');
+        tanodName.className = 'incident-tanod-name';
+        tanodName.textContent = dispatch.tanodName;
+        const tanodStatus = document.createElement('div');
+        tanodStatus.className = 'incident-tanod-status';
+        tanodStatus.textContent = `${DISPATCH_STATUS_TEXT[dispatch.status] || dispatch.status} • ${bName}`;
+        tanodMeta.append(tanodName, tanodStatus);
+        tanodLeft.append(avatar, tanodMeta);
+
+        // Contact modal's phone number stays Admin-only (unchanged) — it
+        // comes from the separate Admin-only GET /dispatch enrichment
+        // call above, not this endpoint. Only the FIRST active dispatch
+        // gets the number selectIncident() already fetched; additional
+        // responders' numbers aren't separately enriched (Admin can still
+        // find them via Dispatch Center) — a deliberate scope boundary,
+        // not an oversight.
+        const contactBtn = document.createElement('button');
+        contactBtn.type = 'button';
+        contactBtn.className = 'btn-tanod-contact';
+        contactBtn.textContent = 'Contact';
+        contactBtn.addEventListener('click', () => {
+          showContactModal({
+            officerName: dispatch.tanodName,
+            contactNumber: dispatch.dispatchId === activeDispatches[0].dispatchId ? officerContact : null,
+            incidentCode: code,
+            incidentId: row.incidentId,
+          });
         });
-      });
+        tanodContent.append(tanodLeft, contactBtn);
+        tanodCard.appendChild(tanodContent);
+      }
     }
 
-    tanodContent.append(tanodLeft, tanodActionBtn);
-    tanodCard.append(tanodLabel, tanodContent);
     rightPanel.appendChild(tanodCard);
 
     // 5. Description Card
@@ -930,7 +958,16 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     descLabel.textContent = 'Description';
     const descBody = document.createElement('p');
     descBody.className = 'incident-desc-body';
-    descBody.textContent = detail.redactedNarrative || detail.rawNarrative || 'Caller reported an incident in the designated purok area. Investigation in progress.';
+    // 2026-09-13: was a fabricated placeholder narrative ("Caller reported
+    // an incident in the designated purok area...") — a §2 Rule 6
+    // violation, found alongside the Assigned Tanod card's own fake
+    // fallbacks above. The honest empty state differs by WHY there's
+    // nothing to show: Secretary can always see raw_narrative, so a gap
+    // there means none was recorded; every other role only ever sees the
+    // APPROVED redaction, so a gap there usually means approval simply
+    // hasn't happened yet.
+    descBody.textContent = detail.redactedNarrative || detail.rawNarrative
+      || (user.role === 'secretary' ? 'No narrative recorded for this incident.' : 'Narrative pending redaction approval.');
     descCard.append(descLabel, descBody);
     rightPanel.appendChild(descCard);
 
@@ -962,6 +999,30 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       });
       actionsRow.appendChild(dispatchBtn);
     } else if (row.status === 'dispatched') {
+      // 2026-09-13: an already-dispatched incident can now get an
+      // additional concurrent responder too (docs/REMAINING.md G-backlog,
+      // explicit user sign-off — no incident-type/priority gate, Admin's
+      // own judgment call). Reuses the exact same promptDispatchTanod()
+      // flow as the "Assign" button above; the server is the real
+      // enforcement point either way.
+      const addResponderBtn = document.createElement('button');
+      addResponderBtn.type = 'button';
+      addResponderBtn.className = 'btn-tanod-assign';
+      addResponderBtn.innerHTML = `${icons.plus(14)} <span>Assign Additional Responder</span>`;
+      addResponderBtn.addEventListener('click', async () => {
+        addResponderBtn.disabled = true;
+        const dispatched = await promptDispatchTanod({ incident: row, incidentTypeLabel: typeLabel, eligibleTanods });
+        if (dispatched) {
+          await load();
+          refreshCounterCounts();
+          const refreshed = lastItems.find((r) => r.incidentId === row.incidentId);
+          if (refreshed) selectIncident(refreshed);
+        } else {
+          addResponderBtn.disabled = false;
+        }
+      });
+      actionsRow.appendChild(addResponderBtn);
+
       const resolveBtn = document.createElement('button');
       resolveBtn.type = 'button';
       resolveBtn.className = 'btn-action-resolve';
@@ -1041,36 +1102,77 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     s1.append(dot1, t1, time1);
     timelineList.appendChild(s1);
 
-    // Stage 2: Dispatched
-    if (detail.dispatchedAt || row.status !== 'pending') {
-      const s2 = document.createElement('div');
-      s2.className = 'incident-timeline-item';
-      const dot2 = document.createElement('span');
-      dot2.className = 'incident-timeline-dot incident-timeline-dot--amber';
-      const t2 = document.createElement('span');
-      t2.className = 'incident-timeline-title';
-      t2.textContent = `Dispatched to ${officerNameText}`;
-      const time2 = document.createElement('span');
-      time2.className = 'incident-timeline-time';
-      time2.textContent = formatRelativeTime(row.createdAt, detail.dispatchedAt) || '2 min later';
-      s2.append(dot2, t2, time2);
-      timelineList.appendChild(s2);
+    // Stages 2+: one dispatched/arrived(or cancelled) pair per REAL
+    // dispatch row (docs/REMAINING.md G-backlog — an incident can now
+    // have more than one). 2026-09-13: this used to render a single
+    // "Dispatched to {officerNameText}" stage unconditionally whenever
+    // row.status !== 'pending', with a hardcoded fake name and a
+    // hardcoded fake "2 min later" whenever real dispatch data was
+    // missing — a live §2 Rule 6 violation ("no fabricated statistics...
+    // no hardcoded identities"), confirmed against the real
+    // baranguard_uiseed data (a resolved incident with ZERO dispatch
+    // rows still showed "Dispatched to Tanod Ramos — 2 min later").
+    // Every value below comes from a real `dispatches[]` row; when there
+    // isn't one yet, no stage renders — an honest gap, not an invented one.
+    const allDispatchesSorted = detail.dispatches || [];
+    const showTanodInLabel = allDispatchesSorted.length > 1;
+    for (const dispatch of allDispatchesSorted) {
+      const sDispatched = document.createElement('div');
+      sDispatched.className = 'incident-timeline-item';
+      const dotD = document.createElement('span');
+      dotD.className = 'incident-timeline-dot incident-timeline-dot--amber';
+      const tD = document.createElement('span');
+      tD.className = 'incident-timeline-title';
+      tD.textContent = `Dispatched to ${dispatch.tanodName}`;
+      const timeD = document.createElement('span');
+      timeD.className = 'incident-timeline-time';
+      timeD.textContent = formatRelativeTime(row.createdAt, dispatch.dispatchedAt);
+      sDispatched.append(dotD, tD, timeD);
+      timelineList.appendChild(sDispatched);
+
+      if (dispatch.cancelledAt) {
+        const sCancelled = document.createElement('div');
+        sCancelled.className = 'incident-timeline-item';
+        const dotC = document.createElement('span');
+        dotC.className = 'incident-timeline-dot incident-timeline-dot--red';
+        const tC = document.createElement('span');
+        tC.className = 'incident-timeline-title';
+        tC.textContent = showTanodInLabel ? `${dispatch.tanodName}'s dispatch cancelled` : 'Dispatch cancelled';
+        const timeC = document.createElement('span');
+        timeC.className = 'incident-timeline-time';
+        timeC.textContent = formatDateTime(dispatch.cancelledAt);
+        sCancelled.append(dotC, tC, timeC);
+        timelineList.appendChild(sCancelled);
+      } else if (dispatch.arrivedAt) {
+        const sArrived = document.createElement('div');
+        sArrived.className = 'incident-timeline-item';
+        const dotA = document.createElement('span');
+        dotA.className = 'incident-timeline-dot incident-timeline-dot--green';
+        const tA = document.createElement('span');
+        tA.className = 'incident-timeline-title';
+        tA.textContent = showTanodInLabel ? `${dispatch.tanodName} arrived on scene` : 'Arrived on scene';
+        const timeA = document.createElement('span');
+        timeA.className = 'incident-timeline-time';
+        timeA.textContent = formatDateTime(dispatch.arrivedAt);
+        sArrived.append(dotA, tA, timeA);
+        timelineList.appendChild(sArrived);
+      }
     }
 
-    // Stage 3: Arrived on scene or Resolved
-    if (detail.arrivedAt || row.status === 'resolved') {
-      const s3 = document.createElement('div');
-      s3.className = 'incident-timeline-item';
-      const dot3 = document.createElement('span');
-      dot3.className = 'incident-timeline-dot incident-timeline-dot--green';
-      const t3 = document.createElement('span');
-      t3.className = 'incident-timeline-title';
-      t3.textContent = row.status === 'resolved' ? 'Incident resolved' : 'Arrived on scene';
-      const time3 = document.createElement('span');
-      time3.className = 'incident-timeline-time';
-      time3.textContent = formatDateTime(detail.arrivedAt || row.createdAt);
-      s3.append(dot3, t3, time3);
-      timelineList.appendChild(s3);
+    // Final stage: resolution itself — unrelated to any one dispatch.
+    if (row.status === 'resolved') {
+      const sResolved = document.createElement('div');
+      sResolved.className = 'incident-timeline-item';
+      const dotR = document.createElement('span');
+      dotR.className = 'incident-timeline-dot incident-timeline-dot--green';
+      const tR = document.createElement('span');
+      tR.className = 'incident-timeline-title';
+      tR.textContent = 'Incident resolved';
+      const timeR = document.createElement('span');
+      timeR.className = 'incident-timeline-time';
+      timeR.textContent = formatDateTime(detail.arrivedAt || row.createdAt);
+      sResolved.append(dotR, tR, timeR);
+      timelineList.appendChild(sResolved);
     }
 
     timelineSection.appendChild(timelineList);
