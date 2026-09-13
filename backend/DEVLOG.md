@@ -11038,3 +11038,187 @@ browser session (Audit Log + Personnel screens) that this device's real
 registration event and login timestamp are visible in the real demo
 database (bug 3). C6 and C7 remain open and unfixed — see their own
 `REMAINING.md` entries for the next diagnostic step.
+
+## 2026-09-13 (continued): multi-item punch-list session — DELIBERATE
+## MULTI-BOX EXCEPTION (SPRINTS.md standing rule #2)
+
+User explicitly asked for seven independent small items done in one
+sitting rather than the usual one-box-at-a-time discipline: drop a stray
+DB, fix an unindexed idempotency lookup, fix a chart's null-day gap, run
+`npm audit` on `mobile/`, browser-verify Secretary/PB nav, and two
+housekeeping decisions (asked and answered via AskUserQuestion — scratch
+files: delete; `mobile/android/`: commit). No Sprint 8 box was picked
+("not yet"). Logged here per standing rule #2's own instruction.
+
+- **Stray `baranguard_device_check` DB** — does not exist. `SHOW
+  DATABASES` on the real MariaDB instance lists only
+  `baranguard`/`baranguard_uiseed`/the standard system schemas. This
+  `REMAINING.md` E item was already stale (flagged 2026-09-07, "never
+  investigated" — apparently resolved sometime since without the doc
+  being updated). No action needed; the doc line is removed.
+
+- **`SmsController::broadcast()`'s idempotency lookup (REMAINING.md
+  §F9's last open item) — FIXED.** The replay check matched
+  `JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.idempotency_key'))` in
+  the WHERE clause — a full scan of every `audit_log` row for
+  (barangay_id, action) on every single broadcast call, since
+  `audit_log` is append-only and grows without bound. New migration
+  `0019_audit_log_idempotency_index.sql` adds a VIRTUAL generated column
+  (`idempotency_key`) + a covering index
+  (`barangay_id, action, idempotency_key`); `SmsController.php` now
+  queries the generated column directly rather than the bare expression
+  — confirmed by testing (not assumed) that MariaDB 10.4 does NOT
+  rewrite a bare `JSON_EXTRACT()` expression to use an index on a
+  matching generated column the way MySQL 8's functional indexes do; the
+  query has to name the column itself. Proven at the SQL level with a
+  501-row disposable table: the old query plan is `type: ALL` (full
+  scan, 501 rows examined); the new one is `type: ref` using
+  `idx_audit_log_idempotency` (1 row examined). New script
+  `backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh`, 15/15
+  — schema assertions (generated column + index shape, EXPLAIN plan
+  proof) plus functional assertions (first broadcast sends, a replay
+  with the same key returns the same result without a second
+  `sms_log`/`audit_log` row, a different key is a genuinely new send).
+  Migration applied to both real databases (`baranguard`,
+  `baranguard_uiseed`) after verifying up/down/round-trip on a
+  disposable one. **Deliberately out of scope**: `IncidentsController`'s
+  F5 idempotency replay has the identical bare-`JSON_EXTRACT()` shape
+  and would benefit the same way — left as a follow-up, since the user's
+  ask named `SmsController::broadcast()` specifically.
+
+- **`LineChart`'s null-day-renders-as-zero gap (REMAINING.md §C4) —
+  FIXED.** Traced to `statistical-reports.js`'s own call site coalescing
+  `day.avgMinutes ?? 0` before ever handing the value to `LineChart` —
+  `ReportsController::summary()`'s `response_time_trend[]` already
+  distinguishes "no arrivals that day" (`null`) from "a real zero-minute
+  average" by design (see that controller's own comment), but the chart
+  call site discarded the distinction, and `LineChart` itself had no
+  concept of a gap even if a `null` had reached it. Fixed both:
+  removed the `?? 0` at the call site, and reworked `LineChart.js` to
+  treat `null`/`undefined` as a genuine break — `yMax` computation
+  filters nulls, the line/area path is now built per contiguous run of
+  real points (a run of length 1 gets a dot only, no line/area), null
+  points get no dot, the hover tooltip and the accessible data table
+  both render "No data" instead of a fabricated value, and the hover
+  crosshair no longer computes `NaN` positions when every series is a
+  gap at that x. The OTHER `LineChart` caller in both `admin-dashboard.js`
+  and `statistical-reports.js` (`day.resolved ?? 0`, the Incident Trends
+  chart) was deliberately left alone — that 0 is a real SQL `COUNT()`
+  default, not a masked absence, so coalescing it is correct there.
+  `node web/scripts/verify-web-wiring.mjs` 536/536 after the change.
+
+- **`mobile/` `npm audit` — 13 advisories triaged, 4 fixed, 9 left
+  documented (not blindly force-fixed).** Full breakdown:
+  - **Fixed via `package.json` `overrides`** (both plain security
+    patches with no API change, confirmed via `npx tsc --noEmit` clean
+    afterward): `qs` → `6.16.0` (moderate DoS in `qs.stringify`, only
+    reachable through `cypress`'s own HTTP client — dev-only, never
+    shipped) and `@babel/runtime` → `7.26.10` (moderate ReDoS in
+    generated code, reached only via `get-blob-duration` →
+    `capacitor-voice-recorder`'s dependency chain, not the recorder
+    package's own code). This also cleared `get-blob-duration` and
+    `capacitor-voice-recorder` off the advisory list, since both were
+    only flagged transitively through the vulnerable `@babel/runtime`.
+    Advisory count: 13 → 9 (7 moderate, 2 high).
+  - **`capacitor-voice-recorder`'s own advisory was a false lead**: npm
+    audit's suggested "fix" was downgrading the installed `7.0.6` to
+    `1.1.1` — a different major lineage entirely that would gut the
+    evidence-upload voice-capture feature (F4). Investigated instead of
+    applied: the actual installed version was never itself flagged by a
+    CVE (`isDirect: true` but empty `via` beyond the transitive
+    `@babel/runtime` chain above), so fixing the real chain (above)
+    resolved this without touching the recorder package at all.
+  - **`@ionic/react-router`'s flagged "vulnerable range" is a set of
+    dev/nightly prerelease version strings** (e.g.
+    `8.8.1-dev.11772745200.1f0e21b1 - ...`), not the installed stable
+    `9.0.1` — confirmed its only `via` is "depends on vulnerable
+    react-router/react-router-dom", i.e. purely transitive. Not a
+    distinct finding; resolves automatically once react-router itself is
+    fixed (below).
+  - **Left deliberately unfixed, documented as real remaining risk**:
+    `react-router`/`react-router-dom` (moderate — CVE-2025-68470 open-
+    redirect bypass + an SSR-hydration constructor-injection CVE,
+    neither trivially inapplicable to this app the way the SSR one might
+    seem, since this app never runs SSR but the fix requires a major
+    v6→v8 bump tightly coupled to `@ionic/react-router`'s own peer
+    version, needing a full mobile navigation regression pass this
+    session had no device attached to run — and C6, an existing *router*
+    bug, is already under separate investigation, so conflating two
+    router changes at once was judged worse than leaving this
+    documented); `cypress`/`extract-zip`/`@cypress/request`/`uuid`
+    (high/moderate, all transitively from the `cypress` devDependency —
+    real e2e specs exist under `mobile/cypress/`, so a 13→16 major bump
+    risks breaking them and needs its own test-and-fix pass, not a blind
+    force-fix; zero production risk either way, dev-only); `@capacitor/
+    cli`/`xcode` (moderate — `xcode` is Capacitor's iOS-only tooling
+    dependency, inert on this Android-only project since `mobile/ios/`
+    has never been built; npm's suggested "fix" is a downgrade from
+    `8.5.x` to `8.4.3`, and this session's own earlier work relied on
+    Capacitor 8.5 behavior, so downgrading was judged higher-risk than
+    the advisory itself).
+
+- **Browser-verified Secretary and Punong Barangay nav end-to-end
+  (REMAINING.md §B5) against real `baranguard_uiseed` data — found and
+  fixed one real bug.** Secretary: Incident Management (list + detail,
+  AI Classifier's honest "redaction approval required" gate), Blotter
+  Entry (`blotter-detail` — AI Blotter Assistant panel confirmed present
+  and working, "no approved redaction" honestly blocks finalize),
+  Citizen Reports, Settings (personal profile only, no System Settings
+  sections — correctly Admin-only) — all clean, zero console errors.
+  Punong Barangay: Dashboard, Live Map, Analytics (all three tabs —
+  Reports, Heatmap, Threat Analyzer), Personnel (Fatigue Flags only, no
+  Users/Scheduler/Swap-requests tabs — matches §7 exactly), Settings
+  (personal profile only) — all clean **after one fix**:
+  - **`admin-dashboard.js`'s "Tanods On Duty" panel was permanently
+    broken for Punong Barangay — FIXED.** The panel's `loadTanodsOnDuty()`
+    called `GET /users?role=tanod` unconditionally for both roles that
+    share this dashboard module (this file's own class doc claimed "both
+    roles just call the same GET" for the whole screen — that claim was
+    false for this one panel). `GET /users` is genuinely Admin-only
+    server-side (`UsersController::index()`, matching §3 — PB has no
+    Personnel/Users reach at all, by design). Every PB dashboard load
+    therefore 403'd on this call, and the `Promise.all` wrapping it
+    caught the 403 into a generic `Could not load Tanod duty status.` —
+    indistinguishable from a real transient failure, when it was in fact
+    a 100%-reproducible permissions boundary. Fixed by passing the
+    caller's role into `loadTanodsOnDuty()` and skipping the doomed
+    `getUsers()` call entirely for non-admin roles, rendering an honest
+    "Named roster is available to Admin. See the count above for the
+    total on duty." instead — the aggregate count is already shown in
+    the KPI card above this panel via `reports/summary`, which PB can
+    already read. Confirmed no regression: Admin's dashboard still shows
+    the full named roster unchanged. Confirmed by browser (before: 403 in
+    network log + broken message for PB; after: no `/users` request at
+    all for PB, correct message; Admin unaffected) rather than by
+    reading the code alone. Worth noting: the Fatigue Flags screen
+    already had the equivalent problem solved correctly (it falls back to
+    a generic "Tanod #N" label instead of calling `/users` at all) —
+    this dashboard panel was the one place that hadn't followed that
+    existing pattern.
+
+- **Housekeeping, per explicit user decisions**: the 8 untracked
+  scratch/design files `REMAINING.md` §E flagged (the .docx/.pdf,
+  `diagram_*.png` files, `scratch_diagrams.py`, `docs/progress-
+  tracker.html`) no longer exist on disk — already gone by some earlier,
+  undocumented cleanup; nothing to delete, the doc line is removed.
+  `mobile/android/` — committed, per explicit user sign-off, since it now
+  holds real, non-regeneratable hand-fixes (`gradle.properties`'s JDK
+  installation paths, `AndroidManifest.xml`'s location/notification
+  permissions, the native Java plugin sources from Phase 4) that `npx cap
+  add android` would silently destroy if ever regenerated from scratch.
+  The blanket top-level `.gitignore` line excluding the whole directory
+  is removed; the nested `mobile/android/.gitignore` (Capacitor's own
+  generated one, already correct) now does the actual filtering —
+  confirmed by inspection of the full staged file list that `build/`,
+  `.gradle/`, `local.properties`, and `capacitor-cordova-android-
+  plugins/` were correctly excluded, nothing machine-specific committed.
+
+### Verification
+
+`bash backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh`
+15/15 (new). `node web/scripts/verify-web-wiring.mjs` 536/536. `npx tsc
+--noEmit` clean in `mobile/` after the dependency overrides. Full
+Secretary + Punong Barangay browser walk via the real `baranguard_uiseed`
+demo data, before/after network-log comparison for the dashboard fix.
+Migration 0019 tested up/down/round-trip on a disposable database before
+being applied to both real databases (`baranguard`, `baranguard_uiseed`).
