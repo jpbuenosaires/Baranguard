@@ -1404,7 +1404,6 @@ function renderFeedItems(items, listHost, onSelectPhone) {
   items.forEach((item) => {
     const entry = document.createElement('div');
     entry.className = 'sms-feed-item';
-    entry.title = 'Click to view related conversation';
 
     const dot = document.createElement('span');
     dot.className = 'sms-feed-dot';
@@ -1431,41 +1430,39 @@ function renderFeedItems(items, listHost, onSelectPhone) {
     body.append(text, time);
     entry.append(dot, body);
 
-    entry.addEventListener('click', () => {
-      if (item.phoneNumber) {
-        onSelectPhone(item.phoneNumber);
-      }
-    });
+    // 2026-09-13: removed a "Click to view related conversation" title +
+    // click handler keyed on `item.phoneNumber` — GET /sms/logs never
+    // returns a phone number (masked by design, REFERENCE.md §5) so this
+    // could never actually fire; it looked interactive and did nothing,
+    // exactly what §2 Rule 6 forbids. `onSelectPhone` stays a parameter
+    // here (unused in this function now) since callers still thread it
+    // through for `loadLiveFeed`'s own signature, shared with other real
+    // uses of the same callback elsewhere in this file.
 
     listHost.appendChild(entry);
   });
 }
 
+// 2026-09-13: was keyword-matching against `item.messageBody`/hardcoded
+// barangay and Tanod names ("Tanod Ramos", "Tanod Garcia", "Brgy.
+// Marifosque"/"Brgy. Binanuahan") that exist nowhere in this project's
+// real seed data — a live §2 Rule 6 violation ("no fabricated
+// statistics... no hardcoded identities") found while closing out a
+// backlog item elsewhere. Worse than a missing-data fallback: this ran
+// on EVERY row unconditionally, and `GET /sms/logs` never even returns
+// `message_body` or a phone number in the first place (masked by
+// design, see REFERENCE.md §5's own note on this endpoint) — so the
+// keyword branches could never match real data; they'd have silently
+// fired their fabricated text only for the empty-string case, i.e.
+// always. Replaced with a plain, honest description built from the two
+// real fields this endpoint actually returns: direction and message
+// type, same `replace(/_/g, ' ')` humanization already used elsewhere
+// in this file (see the Conversations detail rendering).
 function describeLiveFeedEvent(item) {
-  const type = item.messageType || '';
-  const direction = item.direction || 'inbound';
-  const body = (item.messageBody || '').toLowerCase();
-
-  if (direction === 'inbound') {
-    if (type === 'confirmation' || body.includes('salamat') || body.includes('naresolba')) {
-      return 'Positive feedback from Brgy. Binanuahan';
-    }
-    if (body.includes('suspek') || type === 'incident') {
-      return 'Tip received from Brgy. Marifosque';
-    }
-    if (body.includes('dispatch') || body.includes('confirmed')) {
-      return 'Tanod Ramos confirmed dispatch';
-    }
-    return 'New report from Brgy. Dao';
-  } else {
-    if (type === 'dispatch' || body.includes('garcia') || body.includes('balogo')) {
-      return 'Dispatch order sent to Tanod Garcia';
-    }
-    if (type === 'priority_alert' || body.includes('ramos') || body.includes('alerto')) {
-      return 'Auto-alert sent to Tanod Ramos';
-    }
-    return 'Dispatch order sent to on-duty team';
-  }
+  const direction = item.direction === 'outbound' ? 'Outbound' : 'Inbound';
+  const typeLabel = item.messageType ? item.messageType.replace(/_/g, ' ') : 'message';
+  const statusNote = item.status === 'failed' ? ' — failed' : '';
+  return `${direction} ${typeLabel}${statusNote}`;
 }
 
 // ============================================================
