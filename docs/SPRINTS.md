@@ -54,14 +54,28 @@ unresolved P0/P1 reference contradictions.
   -> Status: schema, restore test, and incident-tenant penetration are
      DONE. See docs/REMAINING.md for the ones that are not.
   -> `docs/REMAINING.md` §F is the remediation list and it GATES this
-     sprint. **Do not open a Sprint 8 box while §F1 or F4 are open** — a
-     UAT sign-off against seeded preview data over a public tunnel
-     wouldn't mean anything. F2/F3/F5/F6/F8 were fixed and proven
-     2026-09-12 (each with a new verify script — see `backend/DEVLOG.md`
-     2026-09-12 (4)); F1 (the real API base URL) and F4 (evidence
-     upload: build or descope) are the two still open, and both need a
-     decision from the user, not more code. Evidence:
-     `docs/AUDIT_2026-09-07.md`.
+     sprint. F2/F3/F5/F6/F8 were fixed and proven 2026-09-12 (each with a
+     new verify script — see `backend/DEVLOG.md` 2026-09-12 (4)); **F4
+     (evidence upload) closed 2026-09-13** (built end-to-end, proven by
+     `backend/scripts/verify-evidence-upload.sh`). **F1 is now
+     half-decided**, not fully open: mobile's connectivity has a real
+     architectural answer (Tailscale, 2026-09-13), but the web
+     dashboard's own API base URL and `CORS_ALLOWED_ORIGIN` are
+     unchanged — **do not open a Sprint 8 box that depends on
+     browser-verifying the web dashboard against a real deployment
+     address until that half is settled**; boxes that only exercise
+     mobile/backend behavior are no longer blocked by F1. Evidence:
+     `docs/AUDIT_2026-09-07.md`; current status: `docs/REMAINING.md` §F1.
+  -> **New as of 2026-09-13, real-device-confirmed, not part of §F but
+     directly relevant to this sprint's own "critical notification/SOS
+     fallback tests pass" exit condition:** `docs/REMAINING.md` C6 (login
+     can leave the old screen visually stuck over Home — the app works
+     underneath, but a real Tanod would see a frozen login and assume
+     failure) and C7 (the app process died twice, ~50 seconds into
+     on-duty patrol GPS, silently stopping tracking) are both open and
+     unfixed. Treat these as blocking any UAT scenario that walks through
+     login or an on-duty patrol shift until resolved — see their own
+     entries for what's known so far.
 
 One Sprint 8 box below was directly affected and is now unblocked:
   * "Dispatch response-time metric" — the double-count bug (F8) that

@@ -17,11 +17,21 @@ Offline-first, locally hosted Barangay Intelligence and Emergency
 Dispatch System for four barangays in Pilar, Sorsogon. Production
 system, not a demo. Single workstation, LAN-only, no cloud.
 
-> **⚠️ The API base URL is still undecided — P0, open.** The public
-> Cloudflare tunnel that made this a live LAN-only violation is gone, but
-> nothing replaced it with a real decision: committed `HEAD` still points
-> at `127.0.0.1:8140` (the disposable preview DB). See `docs/REMAINING.md`
-> §F1 for what has to be settled and why it gates everything else.
+> **⚠️ The API base URL is half-decided — P0, still open for the web side.**
+> **Mobile is resolved, 2026-09-13:** a Tanod's phone reaches the
+> workstation over Tailscale (a private WireGuard mesh) instead of a bare
+> LAN IP, specifically because it must work whether the phone is on
+> barangay WiFi or out on patrol on mobile data — explicit user decision,
+> chosen over a public tunnel/reverse-proxy precisely because it never
+> exposes the API on the open internet (§2 Rule 7 still holds; only
+> devices approved into the tailnet can reach it at all). `mobile/src/
+> services/apiService.ts`'s `DEFAULT_API_BASE_URL` now points at the
+> workstation's Tailscale MagicDNS name. **`web/index.html`'s own pointer
+> and `backend/.env`'s `CORS_ALLOWED_ORIGIN=*` are UNCHANGED and still
+> open** — the web dashboard's real production address (LAN-only at the
+> barangay hall, or also over Tailscale for remote admin access) was
+> never part of this decision and still needs one. See `docs/REMAINING.md`
+> §F1 for the exact remaining gaps.
 
 **Stack:** PHP 8.2 serves all of `/api/v1/*` (resolved Sprint 1 — Node is
 CLI tooling only). MariaDB 10.4 via XAMPP. Web: vanilla JS, **no bundler,
@@ -189,7 +199,11 @@ list; controllers carry the per-endpoint contract in their class docs.
 
 **Auth** login · logout · change-password
 **Incidents** list (+`q=` search since the UX overhaul) · show · create ·
-**update** (`PATCH /incidents/:id`, 2026-09-06) · nearby · evidence ·
+**update** (`PATCH /incidents/:id`, 2026-09-06) · nearby · evidence (GET) ·
+**evidence (POST, closes F4, 2026-09-13)** — `POST /incidents/:id/evidence`,
+Tanod-only, multipart (`type`: photo/voice, `sha256`, `mime_type`,
+`original_filename`), tenant + device-ownership + tanod-may-access all
+checked server-side same as every other mobile-scoped write — ·
 status (also flips a linked finalized blotter's case_status to
 `resolved`, non-destructive, audited) · blotter · finalize · amend
 (+optional forward-only case_status transition) · lupon-packet
@@ -279,11 +293,15 @@ served by `public/internal.php` — structurally separate from `/api/v1`)
 `{"error":{"code":"...","message":"..."}}`. Pagination: `page`/`limit`,
 default 25, max 100.
 
-> **⚠️ One route above still doesn't match its documented contract:**
-> evidence upload does not exist server-side (F4) — no `POST
-> /incidents/:id/evidence` route, no writer anywhere in `backend/`. Full
-> evidence: `docs/AUDIT_2026-09-07.md`; tracked as `docs/REMAINING.md` §F.
-> *(`POST /blotter`'s `200 []` left this list on 2026-09-10 — the
+> **F4 (evidence upload) is now CLOSED, 2026-09-13.** `POST
+> /incidents/:id/evidence` exists and writes `evidence_attachment` for
+> real (see the Incidents line above); the mobile side compresses photos
+> client-side, drains a local upload queue through it (`syncService.ts`),
+> and `backend/scripts/verify-evidence-upload.sh` proves it end-to-end.
+> This closes the LAST open item from `docs/AUDIT_2026-09-07.md`'s P0/P1
+> list — F1 (the API base URL) is the only one of that audit's findings
+> still open, and only for the web dashboard side (§1's warning box
+> above). *(`POST /blotter`'s `200 []` left this list on 2026-09-10 — the
 > endpoint was removed. The stored-XSS chain through `POST
 > /citizen-reports` (F2/F3), `PATCH /incidents/:id`'s idempotency
 > theatre (F5), and `avg_response_time_minutes`'s double-count (F8) were
@@ -507,7 +525,7 @@ table. Do not update a number here without re-running the suite.
 | `verify-w3-w4-dispatch-gis.sh` | 38 |
 | `verify-sprint1-remaining.sh` | 35 |
 | `verify-scheduler-fatigue.sh` | 43 |
-| `verify-devices-map-packages.sh` | 55 |
+| `verify-devices-map-packages.sh` | 57 (was 55; +2 for `fcm_token`-optional, 2026-09-13 — see REMAINING.md C5) |
 | `verify-duty-status-map-upload.sh` | 41 |
 | `verify-sprint4.sh` | 50 |
 | `verify-sprint4-phase2-3.sh` | 70 |

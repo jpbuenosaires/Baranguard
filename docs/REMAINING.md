@@ -32,32 +32,65 @@ proven — F5/F6/F8 each with a new purpose-built verify script, since none
 of the three endpoints had ever been exercised by an existing suite. See
 `backend/DEVLOG.md` 2026-09-12 (4).
 
-**F1 and F4 remain open and still gate Sprint 8 — both are decisions,
-not code.**
+**2026-09-13: F4 is closed** (evidence upload built end-to-end — see F4's
+own entry) **and F1 is half-decided** — mobile's connectivity problem got
+a real architectural answer (Tailscale), but the web dashboard's own API
+base URL and `backend/.env`'s `CORS_ALLOWED_ORIGIN=*` are unchanged and
+still gate a real production sign-off. See F1's own entry for the exact
+split.
 
 ---
 
 ## F. Audit remediation (2026-09-07) — gates Sprint 8
 
-### 🔴 F1. The API base URL is still an undecided placeholder, not a real deployment value
-`web/index.html:142` in committed `HEAD` points at `http://127.0.0.1:8140/api/v1`
-(disposable `baranguard_uiseed` preview DB) on a system §1 defines as
-LAN-only, no cloud. `backend/.env` sets no `CORS_ALLOWED_ORIGIN`, so the
-API answers `*`. **The 2026-09-07 public Cloudflare tunnel value that
-used to sit here uncommitted is gone** — a 2026-09-12 session pointed the
-working tree at `http://localhost:8081/api/v1` instead, purely to
-browser-verify that session's own changes, and deliberately left it
-uncommitted rather than pushing a different guess. **The actual decision
-— what `BARANGUARD_API_BASE_URL` should be in a real deployment — has
-still never been made.** Whichever value is chosen, remember the
-second-order effect: a tunnel (or anything else that puts every client
-behind one shared address) **defeats the citizen-report rate limit** —
-`CitizenReportsController::submit()` throttles on `REMOTE_ADDR`, so all
-citizens would share one bucket and one spammer locks out the barangay.
+### 🟠 F1. The API base URL is decided for mobile, still open for the web dashboard
+**Mobile half — RESOLVED 2026-09-13, explicit user decision.** A Tanod's
+phone must reach the workstation whether it's on barangay WiFi or out on
+patrol on mobile data, and the barangay's residential internet connection
+can't reliably be port-forwarded to (common CGNAT on Philippine
+residential ISPs — confirmed for this deployment). Chosen: **Tailscale**,
+a private WireGuard mesh — the workstation and each Tanod's phone join
+one tailnet, so the phone always reaches the workstation at a stable
+address (`laptop-b2rp6jkk.tail631c69.ts.net`) regardless of which network
+it's physically on, without ever exposing the API on the open internet
+(only devices explicitly approved into the tailnet can reach it at all —
+a stronger boundary than "on the same WiFi," not a weaker one, and
+nothing like the public Cloudflare tunnel this same F1 item used to flag
+as a live violation). `mobile/src/services/apiService.ts`'s
+`DEFAULT_API_BASE_URL` now points there. Device-side firewall/bind
+checks done and confirmed on this workstation: port 8081 listens on
+`0.0.0.0`, the existing `Baranguard Backend 8081` firewall rule already
+covers the `Any` profile (not just Private/Public), and Windows
+classifies the Tailscale adapter itself as Private. A direct `curl` from
+the workstation to its own Tailscale address round-tripped a real
+authenticated request successfully. **Not yet device-verified
+end-to-end**, stated plainly: the test phone still has a manual LAN-IP
+override saved in Profile from earlier testing, so the new Tailscale
+default has never actually been the address a real login exercised —
+only the backend's reachability over Tailscale has been proven, not the
+full mobile round-trip through it.
 
-**Decide the intended value and commit it.** Nothing else in this file
-can be verified honestly until this is settled — a browser pass against
-preview data proves nothing about production.
+**Web dashboard half — STILL OPEN, unchanged.** `web/index.html:142` in
+committed `HEAD` still points at `http://localhost:8081/api/v1` with its
+own comment admitting it's a "TEMP local pointer," and `backend/.env`
+still sets `CORS_ALLOWED_ORIGIN=*`. The Tailscale decision above was
+scoped to the mobile connectivity problem specifically and never asked
+"what does Admin/Secretary/PB use in a real deployment" — that is a
+separate, still fully open decision (plain LAN address for desk use at
+the barangay hall? also Tailscale, for remote admin access?), and
+tightening `CORS_ALLOWED_ORIGIN` off the wildcard without knowing that
+answer would risk breaking the mobile app's own WebView origin (Capacitor
+serves the app from `http://localhost`, which the current wildcard
+happens to already permit).
+
+**Decide the web dashboard's intended value and commit it, then revisit
+CORS.** The second-order effect this item has always flagged still
+applies to whatever is chosen: a shared address in front of every client
+defeats the citizen-report rate limit
+(`CitizenReportsController::submit()` throttles on `REMOTE_ADDR`) — this
+does NOT apply to the Tailscale mesh above, since each device gets its
+own distinct private IP, but would apply again if the web side is ever
+put behind a single shared reverse proxy.
 
 ### ✅ F2. Stored XSS reaches the Secretary session from an anonymous attacker — CLOSED 2026-09-12
 `POST /citizen-reports` is unauthenticated and stores `description`
@@ -82,23 +115,29 @@ the three applies it at every site. The ones taking non-Admin input:
 `sms-monitor.js:697,1745` · `map-packages.js:300`. Full table in the
 audit. The fix is one shared helper, not 45 individual judgement calls.
 
-### 🔴 F4. Evidence attachment upload does not exist server-side
-Not "device-unverified" — **unbuilt**. No `POST /incidents/:id/evidence`
-route, no `INSERT INTO evidence_attachment` anywhere in `backend/`, and
-`/sync/batch` has no evidence channel (it accepts `incidents`,
-`gps_tracks`, `duty_status_updates`, `dispatch_status_updates`, `sos`).
-Mobile writes to a local `evidence_attachment_local` table that nothing
-ever ships.
+### ✅ F4. Evidence attachment upload does not exist server-side — CLOSED 2026-09-13
+Was not "device-unverified" — **unbuilt**: no `POST /incidents/:id/evidence`
+route, no `INSERT INTO evidence_attachment` anywhere in `backend/`.
 
-Consequences: `GET /incidents/:id/evidence` is permanently empty in
-production, and `RetentionService`'s evidence purge,
-`evidence_attachment.legal_hold` and §11's evidence retention window all
-govern a table that cannot be populated. This is a scope decision, not a
-bug fix — build the endpoint plus the sync channel, or write down that
-evidence is out of scope and correct §11.
+**Built:** `IncidentsController::uploadEvidence()` — Tanod-only,
+multipart (`type`: photo/voice, `sha256`, `mime_type`,
+`original_filename`), the same tenant + device-ownership +
+tanod-may-access checks every other mobile-scoped write already gets.
+Deliberately NOT folded into `/sync/batch`'s JSON channels — a per-file
+multipart upload doesn't fit that body shape, and it needs the parent
+incident's server id, which the batch call is what assigns in the first
+place — so `syncService.ts` drains a local evidence-upload queue in its
+own step, right after the batch step, against this new endpoint. Photos
+are compressed client-side first (max 1600px, JPEG @ 0.75) so a
+4-8MB camera capture doesn't have to cross the wire uncompressed.
+`backend/scripts/verify-evidence-upload.sh` proves the endpoint for
+real. `RetentionService`'s evidence purge, `evidence_attachment.legal_hold`
+and §11's evidence retention window now govern a table that can actually
+be populated, closing the consequence this item originally raised.
 
-*(This supersedes C4's "evidence files can't be downloaded from W7" and
-A1's framing of photo/voice capture as merely device-unverified.)*
+*(This also closes C4's "evidence files can't be downloaded from W7" and
+A1's framing of photo/voice capture as merely device-unverified — both
+were downstream of this same gap.)*
 
 ### ✅ F5. `PATCH /incidents/:id` idempotency is theatre — CLOSED 2026-09-12
 The endpoint requires and UUID-validates `Idempotency-Key`, then never
@@ -381,6 +420,22 @@ A Firebase project (`google-services.json` + `FCM_SERVICE_ACCOUNT_PATH`)
 and a funded Semaphore account. Rule 12's fallback ladder is fully
 verified *logically*, but **no Tanod's phone has ever actually buzzed.**
 
+**2026-09-13: this gap crashed the whole app for real, not just a
+theoretical hole.** `PushNotifications.register()` throws a native
+`IllegalStateException` ("Default FirebaseApp is not initialized") when
+no `google-services.json` exists, and that exception is thrown on
+Capacitor's own native plugin-invocation thread — before the call can
+ever settle a JS promise, so the JS-level try/catch already wrapping it
+(`deviceIdentity.ts`'s `getFcmToken()`) could not intercept it, crashing
+login every time on the real device. **Fixed** with a native check
+(`FullScreenAlertPlugin.isFirebaseAvailable()`, Java, tries
+`FirebaseApp.getInstance()` in a try/catch) called BEFORE `register()`,
+so the app now skips the crash-prone call instead of reacting to a
+failure it structurally cannot observe. This does not reduce this item's
+scope — a real Firebase project is still needed before any push actually
+works — but it means the absence of one no longer takes the whole app
+down with it.
+
 ### 🟢 A5. GSM modem hardware
 Only needed if you want the tethered-phone inbound path. The contract is
 already proven — `scripts/sms-envelope-build.php` produces exactly what
@@ -390,24 +445,48 @@ the ingestion daemon would.
 
 ## B. Verification a coding session can do now
 
-### 🔴 B1. Browser-verify the unverified screens
-Two batches, both wired and wiring-checked but **never opened in a
-browser**:
-- **Round-2 UI (9 phases):** Dispatch queue fix, Blotter Entry two-column
-  + timeline rail, avatar/bell topbar, KPI convention, Incident
-  Management, rebuilt Electronic Blotter, Settings rail, SMS log
-  filters/stats, Analytics charts. Checklist ready at
-  `.claude/plans/clever-wishing-hummingbird.md`.
-- **Sprint 7:** W17 Audit Log Viewer, W20 Service Health.
+### ✅ B1. Browser-verify the unverified screens — DONE 2026-09-13
+The `.claude/plans/clever-wishing-hummingbird.md` checklist this item
+used to point at no longer exists, and its "rebuilt Electronic Blotter"
+line is moot — W6 was removed entirely 2026-09-10 (§1, DILG BIMSS). What
+actually needed checking against the CURRENT screen set was walked
+end-to-end as Admin against the real `baranguard_uiseed` demo DB:
+Dashboard (incl. the live SOS klaxon banner), Dispatch Center (emergency
+queue + live map), Live Map/GIS Tracking (5 field personnel, Live
+Activity feed), Incident Management (list + detail pane, including the
+AI Classifier's honest "redaction approval required" state), Analytics'
+all three tabs (Reports, Heatmap, Threat Analyzer), SMS Monitor's both
+tabs (Conversations incl. AI Message Composer, Activity Log), Audit Log,
+Service Health, Citizen Reports incl. the Convert-to-Incident panel,
+Personnel's all four tabs (Users, Scheduler, Swap requests, Fatigue
+flags), Settings incl. the SOS Fallback card, and Map Packages.
 
-This is the largest pile of unverified-but-finished work in the project.
+**Result: every screen renders real data with no console errors.** The
+one network "error" logged (`GET /map-packages/1` → 404) is the CORRECT,
+designed behavior for a barangay with no published offline package yet —
+the UI shows an honest "No Offline Basemap Deployed" empty state, not a
+broken one; this is the same behavior `verify-devices-map-packages.sh`
+already proved server-side. Service Health also correctly shows an "OSRM
+Routing Engine — NOT CONFIGURED" probe, honestly reflecting that turn-
+by-turn routing genuinely doesn't exist yet (§2 Rule 6) rather than
+hiding or faking it.
 
-### 🟠 B2. Pen-test the other resource types
-Incidents passed 68/68. Dispatch, shifts, citizen reports, SMS logs and
-map packages have had **no equivalent pass**. Reuse
-`verify-sprint7-pentest-incidents.sh`'s four-dimension structure (no
-token / wrong role / cross-tenant / wrong owner) — it's designed to be
-copied.
+### ✅ B2. Pen-test the other resource types — DONE 2026-09-13
+Incidents passed 68/68 (existing). Dispatch, Shifts (+ swap requests),
+Citizen Reports, and SMS now have their own four-dimension pass too:
+`backend/scripts/verify-b2-pentest-remaining-resources.sh`, **59/59**,
+reusing `verify-sprint7-pentest-incidents.sh`'s structure (no token /
+wrong role / cross-tenant / wrong owner) applied per resource according
+to its own actual shape — not every resource has all four dimensions
+meaningfully (Shifts' PATCH is Admin-only by design, so there's no
+"wrong owner" case there). **Map Packages deliberately NOT re-covered**:
+`verify-devices-map-packages.sh`'s steps 10-15 already exercise its role
+gating and cross-tenant isolation; duplicating it would prove nothing
+new. Along the way, confirmed (not assumed) that list-shaped endpoints
+without a single fetch-then-check resource (SMS conversations by phone
+number) enforce tenant isolation via an empty result set, not a 404 —
+a real, different-but-correct isolation shape worth knowing before
+assuming every endpoint follows the fetch-then-404 pattern.
 
 ### 🟠 B3. Run the restore drill with your own passphrase
 The drill is proven (12/12 against the real database) but this session
@@ -416,13 +495,37 @@ used a scratch backup dir deliberately, so **W20 still shows "Never"**:
 BACKUP_ENCRYPTION_PASSPHRASE=your-passphrase bash backend/scripts/restore-drill.sh
 ```
 
-### 🟠 B4. Verify Sprint 3's backend against real XAMPP
-`POST /gps`, `PATCH /dispatch/:id/status`, `POST /sync/batch`,
-`GET /incidents/nearby`, and the mobile `POST /incidents` branch were
-coded in one sitting and **never got their own verify script**. They're
-exercised incidentally by later suites, but there is no
-`verify-sprint3.sh`. Interrupted-sync resume and duplicate-GPS handling
-are specifically unproven.
+### ✅ B4. Verify Sprint 3's backend against real XAMPP — DONE 2026-09-13, found and fixed a REAL bug
+`backend/scripts/verify-sprint3.sh`, **38/38**, covers `POST /gps`,
+`PATCH /dispatch/:id/status`'s forward-only state machine, `POST
+/sync/batch`, `GET /incidents/nearby`, and the mobile `POST /incidents`
+branch — functional/integration coverage, not a pentest (Dispatch's own
+auth dimensions are B2's job). Both specifically-flagged-unproven
+behaviors are now proven: **duplicate-GPS handling** (resubmitting a
+`client_event_id` never creates a second `gps_track` row) and
+**interrupted-sync resume** (resubmitting an ENTIRE `/sync/batch` body,
+as a real offline client would after not knowing which items already
+landed, replays already-succeeded items as `'duplicate'` with zero side
+effects and only genuinely retries the ones that previously failed).
+
+**Found live, not in review: `GET /incidents/nearby` 500'd on every
+single real call, always, since the day it was built.** The haversine
+SQL uses the named parameter `:lat` twice (once in each `COS`/`SIN`
+term), but `config/db.php` runs `PDO::ATTR_EMULATE_PREPARES => false` —
+with NATIVE prepared statements, MySQL's binary protocol has no concept
+of a named parameter being reused across multiple placeholder positions
+the way emulated mode allows; only one of the two occurrences ever got a
+bound value, so every call threw `SQLSTATE[HY093]: Invalid parameter
+number`, caught generically and returned as an opaque `SERVER_ERROR`.
+Nothing static could have caught this — it's a working SQL string in a
+syntactically valid `prepare()` call — and nothing dynamic ever did
+either, because this suite is the first thing that ever called this
+endpoint over real HTTP against a real PDO connection with real prepare
+semantics. **Fixed**: `IncidentsController.php` now uses a second
+distinct placeholder (`:lat2`) for the repeated occurrence, bound to the
+same value. This is the SAME class of MariaDB/PDO gotcha §8 already
+documents for `SKIP LOCKED`/CHECK constraints — worth remembering the
+next time a query reuses a named parameter anywhere in this codebase.
 
 ### 🟢 B5. Roles other than Admin in a browser
 Almost all browser verification has been done as Admin (plus one
@@ -466,13 +569,11 @@ drains on whatever next sync trigger exists.
 ### 🟢 C4. Smaller known gaps
 - `LineChart` has no data-gap concept — a null response-time day renders
   as 0 on Analytics.
-- ~~Evidence files can't be downloaded from W7~~ **Understated —
-  promoted to F4.** They can't be *uploaded* either; nothing in
-  `backend/` ever writes `evidence_attachment`. Downloading was never
-  the binding constraint.
-- On-device SMS sending was never built, so M13 can only ever show
-  `saved_locally_for_retry`. **Deferred** — needs a native SMS plugin
-  and device verification (A1).
+- ~~Evidence files can't be downloaded from W7~~ **Was understated —
+  promoted to F4, now CLOSED 2026-09-13.** See F4's own entry.
+- ~~On-device SMS sending was never built, so M13 could only ever show
+  `saved_locally_for_retry`~~ **DONE 2026-09-13 — see G1's own entry.**
+  M13 can now genuinely reach `sent_by_sms`.
 - M12 is a JS overlay, not a native full-screen-intent activity.
   **Deferred** — needs a native Android activity and device
   verification (A1).
@@ -517,6 +618,78 @@ drains on whatever next sync trigger exists.
   `@capacitor/push-notifications` are now registered native plugins
   (6 → 8). `gradle.properties`' hand-fixed JDK paths confirmed intact.
 - 13 pre-existing npm advisories in `mobile/` — never triaged.
+
+### ✅ C5. Every device on a no-Firebase deployment could never actually register — CLOSED 2026-09-13
+Found on the real device, not in review: `POST /devices/register`
+required `fcm_token` (§6's own literal body shape), and the mobile side
+deliberately never called it without a real one (`getFcmToken()` always
+resolves `null` here — no Firebase project, A4). Net effect: **this
+device had never once completed real registration**, on any build,
+ever — invisible until `POST /sync/batch` (which the new automatic sync
+scheduler is the first thing to ever call unprompted) rejected it with
+422 "Device is not registered or not active for this account."
+
+**Fixed:** `fcm_token` is now optional (`DevicesController.php`'s class
+doc records the decision) — a missing/empty token stores as `''`, the
+exact convention `RetentionService::scrubDeactivatedDevices()` already
+established for "no token," which `NotificationDispatcher` already reads
+as "fall through to SMS" (Rule 12). A re-registration never overwrites a
+REAL stored token with an empty one. `login.tsx` now always calls
+`registerDevice()`. Proven two ways: `verify-devices-map-packages.sh`
+(57/57, new assertions added) against a disposable DB, and a direct
+`curl` registration + `/sync/batch` call against the real
+`baranguard_uiseed` deployment for this device's actual `device_id`.
+
+### 🔴 C6. Login sometimes leaves the OLD page visually stuck over Home — OPEN, real-device-confirmed
+Found 2026-09-13 while re-testing C5's fix. Symptom: tap "Sign In to
+Console," the spinner clears, and the screen appears to stay on the
+login form — but it is not actually stuck. Confirmed via Chrome remote
+DevTools against the live WebView: `location.pathname` correctly reads
+`/home`, and Home's own mount effects genuinely run (duty status loads,
+`PatrolLocation.start()` resolves `{started:true}`, cached dispatches
+load) — so navigation itself succeeds. `document.querySelectorAll(
+'.ion-page').length` returns **3**, and two of those three pages share
+the exact same `z-index: 101` with neither hidden (`display: flex` on
+both) — a genuine Ionic `IonRouterOutlet` page-stacking bug, not a
+routing or session bug. `/login` and the tab shell's `/*` route are
+sibling top-level routes in the SAME outer `IonRouterOutlet`
+(`App.tsx`), and `login.tsx`'s imperative `navigate('/home', {replace:
+true})` crosses that outlet boundary directly into a nested route inside
+`TabbedShell`'s OWN inner `IonRouterOutlet` — a known-fragile transition
+shape for Ionic React's page-stack management. **Not yet root-caused to
+a specific fix** (last diagnostic query mid-flight was interrupted to
+confirm exactly which physical page is on top and why); investigation
+was deliberately paused, not abandoned as closed. Likely masked until
+now by C5/the FCM crash (`AUDIT_2026-09-07.md`'s and A4's own crashes)
+making login never survive long enough to expose it. Next session:
+resume from checking whether the old `/login` `.ion-page` element is
+missing Ionic's usual `ion-page-hidden`/`ion-page-invisible` class after
+this specific cross-outlet transition, and whether routing the
+post-login redirect through the INNER outlet (e.g. Home mounting a
+`<Redirect>` of its own) rather than the outer one avoids the boundary
+crossing entirely.
+
+### 🔴 C7. The whole app process died twice, ~50 seconds after patrol GPS started — OPEN, UNINVESTIGATED
+Found in passing while chasing C6, not yet its own investigation.
+`adb logcat` shows `Process ph.baranguard.tanod has died: fg +50 FGS`
+twice across this session's testing, both times landing almost exactly
+50 seconds after `PatrolLocationService` (Phase 4.1's background GPS
+foreground service) starts — no Java exception, no `FATAL EXCEPTION`
+trace either time, which rules out an ordinary uncaught-exception crash
+and points at either a native crash inside the service/location callback
+or an OS-level foreground-service policy kill specific to this device's
+Android build (`targetSdkVersion:36` — Android 15/16 tightened several
+foreground-service rules) or its OEM (Transsion/Infinix XOS is known for
+aggressive background/foreground process management). **This is a
+different, more serious failure mode than C6** — C6 is a visual glitch
+with the app still alive underneath; this kills the process outright
+mid-patrol, which for a real on-duty Tanod means GPS tracking silently
+stops. Needs its own session: reproduce deliberately (toggle on-duty,
+wait ~50s, watch `adb logcat -b crash` and `dumpsys activity` rather than
+noticing it as a side effect of testing something else), and check
+whether `PatrolLocationService.java`'s location callback or notification
+handling does anything that could legitimately violate a foreground-
+service constraint at that specific mark.
 
 ---
 
@@ -566,28 +739,32 @@ Each of these has its correct, intended behavior already spelled out in
 inline) — implementing means matching code/schema to a rule that already
 exists, not inventing one.
 
-**Status 2026-09-12: G2 and G3 are built, G4 is closed as obsolete, G1
-is the only one of the four still open.**
+**Status 2026-09-13: all four are resolved — G2/G3 built 2026-09-12, G4
+closed as obsolete, G1 (the last one) built 2026-09-13.**
 
-- 🔴 **G1 — SOS third fallback tier. STILL OPEN, and blocked on the same
-  thing A1 is.** App and SMS fallback (Rule 27) both terminate on the
-  same workstation Rule 15 already calls a single point of failure —
-  neither survives a total outage. Fix: mobile app sends a native-device
-  SMS (own SIM, no gateway) to a configured backup contact with GPS
-  coords, only when both other paths are confirmed unreachable.
-  **Why it wasn't built in the 2026-09-12 pass that closed G2/G3:** it
-  needs (a) a native Capacitor SMS plugin plus the `SEND_SMS` runtime
-  permission, which cannot be built or tested without the Android
-  device/emulator **A1** is blocked on, and (b) an unmade architecture
-  decision about where the backup contact number lives — `system_settings`
-  is the obvious home but §7's W21 note explicitly forbids widening that
-  table's narrow override without the same explicit sign-off the SMS
-  gateway keys got. Note that `mobile/src/services/smsFallbackState.ts`
-  already models the four transport states correctly and its header
-  already records that nothing sets `smsAttempted` — building the
-  decision logic alone would reproduce exactly that situation one layer
-  up, which §2 Rule 6 is about. **Needs a decision on (b), then a device
-  for (a).**
+- ✅ **G1 — SOS third fallback tier — BUILT 2026-09-13.** Both blockers the
+  2026-09-12 pass left open are now resolved: (a) a device — this
+  session ran on the real physical device A1 describes — and (b) the
+  backup-contact-number decision, resolved the same way as the SMS
+  gateway keys (`system_settings.sos_fallback.backup_contact_number`,
+  Admin-only via the Settings screen's new "SOS Fallback" card, masked
+  on read, explicit user sign-off — the same narrow W21 override, one
+  more key, not a widening of what it covers in kind). Mobile side:
+  `SosSmsPlugin.java` (native `SEND_SMS`) + `sosSms.ts` construct and
+  send a compact envelope (`BG-SOS|V1|BRGY:...|OFFICER:...|LAT:...|
+  LNG:...|TIME:...`) directly from the Tanod's own SIM, no gateway,
+  only once the direct app POST and the workstation are both confirmed
+  unreachable; `sosFallbackContact.ts` caches the number locally (via
+  `GET /tanod-sos/fallback-contact`, a narrow tanod-readable path that
+  never exposes the Admin-only `sms_gateway.api_key` alongside it) so it
+  is already on-device before an outage, since that is the one moment
+  the server can't be asked. **Code-complete and wired end-to-end;
+  a real SMS actually arriving has not been confirmed in this
+  session** — the workstation-reachability and app-POST legs of the
+  fallback ladder were exercised, but the native-SMS leg itself still
+  needs one real test with a backup contact configured and WiFi/data
+  off. `mobile/src/services/smsFallbackState.ts`'s four transport states
+  are now genuinely all reachable, not just modeled.
 - ✅ **G2 — `sms_log.legal_hold` column — DONE 2026-09-12.** Migration
   0016 adds the column (+ `idx_sms_log_retention`), and
   `RetentionService::purgeSmsLogs()` now checks four hold paths at purge
@@ -668,12 +845,24 @@ merely un-started.
 
 **0. Section F first.** F2/F3 (XSS sweep), F5 (PATCH idempotency), F6
 (is_suspended), and F8 (response-time double-count) are all **closed as
-of 2026-09-12** — see each item's own closure note above. **F1 (settle
-the real API base URL) and F4 (evidence upload: build or descope) are
-the two that remain, and both need the user, not more code.** F1 in
-particular gates step 3 below: browser-verifying screens that are
-pointed at seeded preview data over a public tunnel proves nothing about
-production.
+of 2026-09-12**, and **F4 (evidence upload) closed 2026-09-13** — see
+each item's own closure note above. **F1 is half-decided**: mobile's
+side has a real answer (Tailscale), but the web dashboard's own API base
+URL and CORS are still open — see F1's own entry. It still gates step 3
+below for the web side specifically: browser-verifying screens pointed
+at `localhost`/preview data proves nothing about a real deployment.
+
+**0.5. C6 and C7 (2026-09-13, real-device-confirmed) are now the most
+urgent items in this file, ahead of the numbered list below.** Both were
+found testing the SAME session's own fixes on the real device: C6 (login
+visually stuck behind the old page — the app actually works underneath,
+confirmed via remote DevTools, but a real Tanod would see a frozen
+screen and assume login failed) and C7 (the whole app process dies
+~50 seconds into on-duty patrol GPS — a silent tracking outage, not a
+cosmetic issue). Neither blocks Sprint 8's own gate the way F1/F4 did,
+but both make the mobile app this session just finished building
+genuinely unusable for a real shift until fixed — start here before
+anything below.
 
 *(The rest of the order is unchanged. A3 is now ✅ done — see its own
 entry — and A2 has a concrete path via `eval-kit/` that a friend can run
@@ -684,13 +873,15 @@ in parallel with everything below; nobody needs to wait on it.)*
    deviation and the recommended spot-check.
 2. **A1 (Android)** in parallel — it unblocks six verifications at once,
    plus device-verifying C3's SOS wiring (code-complete, done above).
-3. **B1 (browser-verify)** — biggest pile of finished-but-unproven work,
-   and needs nothing but a session.
+3. ~~B1 (browser-verify)~~ **Done 2026-09-13** — every flagged screen
+   walked in a real browser against real data, zero defects found. See
+   B1's own entry.
 4. **B3, C2** — quick, and they make W20 tell the truth. (C2's Task
    Scheduler wiring still needs a human to run the final command —
    see C2's own note.)
-5. **B2, B4** — close the verification gaps Sprint 8 will otherwise
-   inherit.
+5. ~~B2, B4~~ **Done 2026-09-13** — 59/59 and 38/38 respectively, and B4
+   found and fixed a real, previously-undetected 500 in
+   `GET /incidents/nearby`. See each entry's own note.
 6. **A2 (model run)** — hand `eval-kit/` to a friend with capable
    hardware (see A2's own entry for what "capable" means here: this
    workstation itself timed out on a single record at 300s CPU-only) →

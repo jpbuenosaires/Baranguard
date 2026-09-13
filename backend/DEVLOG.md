@@ -10827,3 +10827,214 @@ Maps).
 entry documented (all in the other, unrelated uncommitted mobile UI
 pile), zero new ones. `npx vite build` + `gradlew assembleDebug`: both
 succeed.
+
+## 2026-09-13 (2) — Three real device bugs found and fixed, Tailscale decided for mobile connectivity, G1 built, B1/B2/B4 all closed (one of them found a live 500)
+
+**Disclosed gap before this entry starts:** the Mobile Improvement Plan's
+Phases 1-4 (background sync, GPS-on-intake + M14 My Reports, photo
+compression + evidence upload, background patrol GPS + full-screen
+alerts + G1 SMS fallback + M7 basemap) were built and committed earlier
+this same session (`a72dbde`, `f3d550b`, `64c1319`, `b1951b1`, plus
+`b570d25` for the backend/web half) but never got their own DEVLOG entry
+— found while writing this one. Not reconstructed retroactively here;
+each commit's own message is the record for that work. This entry
+covers what happened AFTER those commits, testing them for real.
+
+### Architecture decision: mobile connectivity via Tailscale
+
+User-initiated discussion: the mobile app must reach the workstation
+whether a Tanod is on barangay WiFi or out on patrol on mobile data, and
+the barangay's residential internet can't reliably be port-forwarded to
+(CGNAT is common on Philippine residential ISPs). Discussed three shapes
+— do-nothing (offline-capture, sync-on-WiFi-return only), a private VPN
+overlay, and a properly-secured public reverse proxy — and rejected the
+last one explicitly as structurally the same shape as the Cloudflare
+tunnel `AUDIT_2026-09-07.md` F1 already flagged as a live LAN-only
+violation. Chosen: **Tailscale**, a private WireGuard mesh, specifically
+because it never exposes the API on the open internet — only devices
+explicitly approved into one tailnet can reach it, over an authenticated
+encrypted tunnel. User already had Tailscale account + device approval
+set up by the time of the next step; this session confirmed the
+workstation joined (`laptop-b2rp6jkk`, `100.80.85.56`,
+`tail631c69.ts.net` MagicDNS suffix), confirmed port 8081 listens on
+`0.0.0.0`, confirmed the existing `Baranguard Backend 8081` firewall rule
+covers the `Any` profile (not just Private/Public), confirmed Windows
+classifies the Tailscale adapter as Private, and proved a `curl` from the
+workstation to its own Tailscale address round-trips a real authenticated
+request. `mobile/src/services/apiService.ts`'s `DEFAULT_API_BASE_URL`
+now points at the Tailscale MagicDNS name instead of a LAN IP guess.
+**Not device-verified end-to-end**: the test phone had a manual LAN-IP
+override saved in Profile from earlier testing, so a real login was never
+observed going out over the new Tailscale default specifically — only
+the backend's own Tailscale reachability was proven directly.
+`web/index.html`'s own pointer and `backend/.env`'s `CORS_ALLOWED_ORIGIN`
+were explicitly untouched — this decision was scoped to mobile only.
+
+### Bug 1 — login crashed the app (native thread, JS try/catch could not help)
+
+Real-device repro: tapping "Sign In to Console" crashed the whole app,
+every time. `adb logcat` showed `FATAL EXCEPTION: CapacitorPlugins` →
+`IllegalStateException: Default FirebaseApp is not initialized` inside
+`PushNotificationsPlugin.register()` — this deployment has no
+`google-services.json` (REMAINING.md A4, confirmed still true). The
+exception fires on Capacitor's own native plugin-invocation thread,
+before the call can settle a JS promise, so `deviceIdentity.ts`'s
+existing try/catch around `getFcmToken()` — which looked properly
+defensive, timeout included — could not intercept it. **Fixed** by
+adding a native check that runs BEFORE the crash-prone call instead of
+reacting to a failure JS structurally cannot observe:
+`FullScreenAlertPlugin.isFirebaseAvailable()` (Java, tries
+`FirebaseApp.getInstance()` in its own try/catch, always resolves a
+boolean) wired into `getFcmToken()`. Confirmed crash-free across
+multiple real relaunch/login cycles afterward.
+
+### Bug 2 — the full-screen critical alert crashed every time it opened
+
+Same session, same device. `CriticalAlertActivity` was declared in
+`AndroidManifest.xml` with `android:theme="@style/AppTheme.NoActionBarLaunch"`
+(parent `Theme.SplashScreen`), but the Activity extends
+`AppCompatActivity`, which requires a `Theme.AppCompat` descendant —
+`IllegalStateException` at `setContentView()`, 100% reproducible, from
+both the Profile test button and (this matters more) a real notification
+tap. **Fixed**: theme changed to `@style/AppTheme.NoActionBar`, a real
+`Theme.AppCompat.DayNight.NoActionBar` descendant already defined in
+`styles.xml`. Not re-confirmed on-device after this specific fix in
+isolation — the root cause is a deterministic Android platform
+requirement, not timing-dependent, so confidence is high but this is
+disclosed rather than claimed proven.
+
+### Bug 3 — every device on this deployment could never actually register (REMAINING.md C5)
+
+Found chasing why `POST /sync/batch` — which the new automatic sync
+scheduler is the first thing to ever call unprompted — rejected the
+phone with 422 "Device is not registered or not active." Root cause:
+`POST /devices/register` required `fcm_token` (§6's own literal body
+shape), and the mobile side deliberately never called it without a real
+one (an intentional decision to avoid registering with a placeholder
+token). Net effect on a no-Firebase deployment: this device had never
+once completed real registration, on any build, ever — invisible until
+something finally called `/sync/batch` automatically. **Fixed**, user
+decision confirmed before touching the documented `/devices/register`
+contract: `fcm_token` is now optional
+(`DevicesController.php`), stored as `''` when absent — reusing the
+EXACT convention `RetentionService::scrubDeactivatedDevices()` already
+established for "no token" (rejected widening the column to NULL for the
+same reason that method's own doc already gives), which
+`NotificationDispatcher` already reads as "fall through to SMS" (Rule
+12) with no new dispatcher logic needed. The `ON DUPLICATE KEY UPDATE`
+clause was also hardened so a later empty-token re-registration can never
+clobber a real stored token. `login.tsx` now always calls
+`registerDevice()`. Proven both ways:
+`verify-devices-map-packages.sh` updated to 57/57 (two new assertions
+for the missing-fcm_token case), and a direct `curl` registration +
+`/sync/batch` call against the real `baranguard_uiseed` deployment for
+this device's actual `device_id` — both before AND after confirmed via
+the Audit Log and Personnel screens in a real browser session, showing
+this exact device_id's real registration event and the phone's own
+real last-login timestamp.
+
+### G1 (SOS third fallback tier) — the last item of the G1-G4 backlog, now built
+
+Both blockers the 2026-09-12 (2) entry left open are resolved: a real
+device (this session), and the backup-contact-number decision — lives in
+`system_settings.sos_fallback.backup_contact_number`, the same narrow
+W21-style override the SMS gateway keys got, explicit user sign-off.
+`SosSmsPlugin.java` (native `SEND_SMS`) + `sosSms.ts` construct and send
+a compact envelope directly from the Tanod's own SIM when both the app
+POST and the workstation are confirmed unreachable;
+`sosFallbackContact.ts` caches the number locally ahead of time via the
+new `GET /tanod-sos/fallback-contact` (narrowly tanod-readable, never
+exposes `sms_gateway.api_key`). Code-complete and wired; the real-SMS
+leg itself was not confirmed to actually arrive in this session — that
+is the one remaining verification step.
+
+### A real bug found chasing an unrelated one — Ionic page-stacking (REMAINING.md C6, still OPEN)
+
+After fixing bugs 1-3, login STILL appeared to hang at the login screen.
+Confirmed via remote Chrome DevTools against the live WebView (the user
+does not have a dev-tools tab locally; walked them through
+`chrome://inspect#devices` step by step) that this is NOT a navigation or
+session bug: `location.pathname` genuinely reads `/home`, and Home's own
+mount effects demonstrably run (`PatrolLocation.start()` resolves
+`{started:true}`, cached dispatches load) — but
+`document.querySelectorAll('.ion-page').length` returns 3, and two of
+those three share the identical `z-index: 101` with neither hidden.
+Root-caused to `/login` and the tab shell's `/*` route being sibling
+top-level routes in the same outer `IonRouterOutlet` (`App.tsx`), while
+`login.tsx`'s imperative `navigate('/home', {replace:true})` has to cross
+directly into a route nested inside `TabbedShell`'s OWN inner outlet — a
+documented-fragile transition shape for Ionic React. **Deliberately left
+open, not fixed** — user asked to pause this investigation and pivot to
+docs cleanup instead. Also found in passing, same session, uninvestigated
+and unrelated: the whole app process died twice (`adb logcat`: `Process
+ph.baranguard.tanod has died: fg +50 FGS`, no Java exception either
+time) roughly 50 seconds after `PatrolLocationService` starts — see
+REMAINING.md C7.
+
+### Docs cleanup, then B1/B2/B4
+
+User asked for a `docs/`-only cleanup pass. Conclusion after reviewing
+every file against this project's own stated retention rules: nothing
+qualified for deletion (Master Reference, Sprint Prompts, AI Eval Guide,
+`docs/design/`, `progress-tracker.html`, and `AUDIT_2026-09-07.md` are
+all deliberately kept, and the audit's own self-expiry condition — §F
+fully closing — isn't met since F1's web-dashboard half is still open).
+Updated REFERENCE.md/REMAINING.md/SPRINTS.md/HANDOFF.md instead to
+retire F4 (evidence upload, actually closed by an earlier commit this
+session that had never been reflected in the docs) and correct F1's
+framing to the Tailscale decision above.
+
+Then, at the user's request, closed out three more `REMAINING.md` items
+in the same sitting:
+
+- **B1 (browser-verify)** — every flagged screen (the old checklist file
+  this item pointed at no longer exists, and its "rebuilt Electronic
+  Blotter" line was moot post-W6-removal) walked as Admin against real
+  `baranguard_uiseed` data: Dispatch Center, GIS Live Tracking, Incident
+  Management, Analytics' three tabs, SMS Monitor's two tabs, Audit Log,
+  Service Health, Citizen Reports' convert panel, Personnel's four tabs,
+  Settings, Map Packages. Zero real defects; the one logged 404
+  (`GET /map-packages/1`) is the correct, designed empty state.
+- **B2 (pen-test the rest)** — new
+  `backend/scripts/verify-b2-pentest-remaining-resources.sh`, 59/59:
+  Dispatch, Shifts, Shift-Swap-Requests, Citizen Reports, SMS, reusing
+  `verify-sprint7-pentest-incidents.sh`'s four-dimension structure
+  applied per resource according to its own actual shape (not every
+  resource has a meaningful "wrong owner" case). Map Packages
+  deliberately left to its existing suite.
+- **B4 (Sprint 3 backend)** — new `backend/scripts/verify-sprint3.sh`,
+  38/38, proving `POST /gps`'s duplicate-handling, the dispatch status
+  state machine's forward-only guarantee, `/sync/batch`'s interrupted-
+  sync-resume behavior, `GET /incidents/nearby`'s distance math and
+  tenant scoping, and the mobile incident-creation branch's device
+  ownership + idempotent replay. **Found live: `GET /incidents/nearby`
+  had 500'd on every real call since the day it was built.** The
+  haversine SQL reuses the named parameter `:lat` across two placeholder
+  positions in the same query; `config/db.php` runs
+  `PDO::ATTR_EMULATE_PREPARES => false` (native prepares), under which
+  MySQL's binary protocol has no concept of a named parameter being
+  reused the way emulated mode allows — every call threw
+  `SQLSTATE[HY093]: Invalid parameter number`, generically caught and
+  returned as an opaque `SERVER_ERROR`. Nothing static could see this
+  (valid SQL, valid PHP); nothing dynamic ever did either, because this
+  suite is the first thing that ever called this endpoint over real HTTP
+  with real prepare semantics. **Fixed**: a second distinct placeholder
+  (`:lat2`) bound to the same value. Then wrote a PHP-tokenizer scan
+  (not a naive grep — nested parens in real SQL, e.g. `COUNT(*)`, break
+  a naive one) over every `->prepare()` call in all of
+  `backend/controllers/` and `backend/services/` (33 files) to check
+  whether this was systemic: confirmed isolated, this was the only
+  occurrence.
+
+### Verification
+
+`bash backend/scripts/verify-devices-map-packages.sh` 57/57,
+`bash backend/scripts/verify-b2-pentest-remaining-resources.sh` 59/59,
+`bash backend/scripts/verify-sprint3.sh` 38/38 — all three re-run clean
+together in the same pass before this entry was written. `php -l` clean
+on both touched controllers. Real device: confirmed crash-free across
+multiple relaunch cycles post-fix (bugs 1-2), confirmed via a live
+browser session (Audit Log + Personnel screens) that this device's real
+registration event and login timestamp are visible in the real demo
+database (bug 3). C6 and C7 remain open and unfixed — see their own
+`REMAINING.md` entries for the next diagnostic step.
