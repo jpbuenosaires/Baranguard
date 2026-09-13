@@ -48,6 +48,27 @@ use PDO;
  *   - **`fcm_token` is never echoed back** in any response, and never
  *     written to audit metadata (§6 "Returns no FCM token"; Rule 17
  *     allows identifiers/statuses only).
+ *   - **`fcm_token` is OPTIONAL, not required — explicit decision,
+ *     2026-09-13.** §6's literal body shape names it, but this deployment
+ *     has no real Firebase project (REMAINING.md A4) and never has, so
+ *     `getFcmToken()` on the mobile side always resolves `null`. Requiring
+ *     it here meant a Tanod's device NEVER actually registered, on any
+ *     build, ever — `mobile_device` had no row for it at all, which only
+ *     surfaced as `POST /sync/batch`'s "Device is not registered" 422 once
+ *     something (the Mobile Improvement Plan's sync scheduler) finally
+ *     called that endpoint automatically instead of only on a manual tap.
+ *     Push being unconfigured must be as neutral as Ollama or the SMS
+ *     gateway being unconfigured elsewhere in this codebase (§2 Rule 6) —
+ *     it must never silently block a device from registering at all. A
+ *     missing/empty token is stored as `''`, reusing the EXACT convention
+ *     `RetentionService::scrubDeactivatedDevices()` already established
+ *     for "no token" (that method's own doc explains why the column
+ *     stays `NOT NULL` rather than being widened) — `NotificationDispatcher`
+ *     already treats an empty `fcm_token` as "no active registration" and
+ *     falls through to SMS (Rule 12), so this needed no new dispatcher
+ *     logic, only reusing what already existed. A later re-registration
+ *     never overwrites a REAL stored token with an empty one — see the
+ *     `ON DUPLICATE KEY UPDATE` clause below.
  *
  * Sprint 4 addition — SMS envelope key provisioning (§6 "Internal SMS /
  * GSM", §2 Rule 26): §6 documents no separate key-provisioning endpoint,
@@ -90,9 +111,13 @@ final class DevicesController
         if (!is_string($deviceId) || !preg_match(self::DEVICE_ID_PATTERN, $deviceId)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'device_id must be 8-64 characters of A-Z a-z 0-9 . _ : or -.');
         }
-        if (!is_string($fcmToken) || trim($fcmToken) === '') {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'fcm_token is required.');
+        // Optional (see class doc, 2026-09-13) — null/missing/empty all mean
+        // "no push registration on this device", stored as ''. Anything
+        // else must still be a real string, not some other JSON type.
+        if ($fcmToken !== null && !is_string($fcmToken)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'fcm_token must be a string.');
         }
+        $fcmToken = is_string($fcmToken) ? trim($fcmToken) : '';
         // §5 `mobile_device.platform` is ENUM('android') — the only value
         // the schema accepts, so anything else is a validation error here
         // rather than a database error later.
@@ -147,7 +172,12 @@ final class DevicesController
                  VALUES
                     (:device_id, :user_id, 'android', :fcm_token, :device_secret_ref, :app_version, UTC_TIMESTAMP(), 1, UTC_TIMESTAMP())
                  ON DUPLICATE KEY UPDATE
-                    fcm_token = VALUES(fcm_token),
+                    -- An empty incoming token (push still unconfigured, or
+                    -- this attempt just couldn't get one) must never erase
+                    -- a REAL token this device registered earlier — same
+                    -- 'never clobber a good value with an absent one' care
+                    -- as device_secret_ref's COALESCE just below.
+                    fcm_token = IF(VALUES(fcm_token) = '', fcm_token, VALUES(fcm_token)),
                     app_version = VALUES(app_version),
                     last_seen_at = UTC_TIMESTAMP(),
                     is_active = 1,

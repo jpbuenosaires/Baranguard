@@ -15,6 +15,8 @@ import { registerPlugin } from '@capacitor/core';
 
 export interface FullScreenAlertPlugin {
   showTest(options: { title?: string; body?: string }): Promise<{ shown: boolean }>;
+  /** True only when the native Firebase SDK actually initialized (REMAINING.md A4) — see the Java method's own doc. */
+  isFirebaseAvailable(): Promise<{ available: boolean }>;
 }
 
 const FullScreenAlert = registerPlugin<FullScreenAlertPlugin>('FullScreenAlert');

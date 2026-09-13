@@ -36,21 +36,32 @@ import {
 } from './session';
 
 /**
- * The workstation's API base URL on the LAN. §2 Rule 7: locally hosted,
- * no public internet exposure assumed — so this is a deployment-time
- * value, not a build-time constant baked in for everyone. `VITE_API_BASE_URL`
- * sets the BUILD-time default; `setApiBaseUrlOverride()` below (Mobile
- * Improvement Plan Phase 1.3) lets a Tanod correct it AT RUNTIME from
- * Profile when the workstation's DHCP-assigned LAN IP changes — rebuilding
- * the whole app just to update one IP address isn't realistic in the
- * field. Deliberately NOT built: mDNS/subnet-broadcast auto-discovery —
- * the manual override is the actual fix for "DHCP reassigned the IP" (a
- * five-second Profile edit), and client-isolated barangay WiFi routers
- * commonly block the multicast/broadcast traffic auto-discovery would
- * need anyway, so it would be unreliable scope for uncertain benefit.
+ * The workstation's API base URL. §2 Rule 7: locally hosted, no PUBLIC
+ * internet exposure — that still holds here, because this now points at
+ * the workstation's Tailscale (WireGuard-based private mesh) address
+ * rather than its bare LAN IP. Decided 2026-09-13: a Tanod's phone needs
+ * to reach the workstation whether it's on barangay WiFi or out on patrol
+ * on mobile data, and the barangay's residential internet connection
+ * cannot reliably be port-forwarded to (common CGNAT on Philippine
+ * residential ISPs). Tailscale solves that without ever exposing the API
+ * on the open internet: only devices explicitly approved into this one
+ * tailnet can reach it at all, over an authenticated, encrypted tunnel —
+ * a stronger boundary than "on the same WiFi" was, not a weaker one.
+ * `laptop-b2rp6jkk.tail631c69.ts.net` is this workstation's MagicDNS name,
+ * which stays stable even if its raw `100.x.y.z` Tailscale IP is ever
+ * reassigned — deliberately used here instead of the raw IP for that
+ * reason. This is still not a build-time constant baked in for everyone:
+ * `VITE_API_BASE_URL` sets the BUILD-time default; `setApiBaseUrlOverride()`
+ * below (Mobile Improvement Plan Phase 1.3) lets a Tanod correct it AT
+ * RUNTIME from Profile — e.g. a different workstation entirely, or a
+ * plain LAN address for local-only testing without Tailscale in the way.
+ * Deliberately NOT built: mDNS/subnet-broadcast auto-discovery — a manual
+ * override already covers "the address changed," and client-isolated
+ * barangay WiFi routers commonly block the multicast/broadcast traffic
+ * auto-discovery would need anyway.
  */
 const DEFAULT_API_BASE_URL: string =
-  (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'http://192.168.1.10/baranguard-api/api/v1';
+  (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'http://laptop-b2rp6jkk.tail631c69.ts.net:8081/api/v1';
 
 const API_BASE_URL_OVERRIDE_KEY = 'baranguard.apiBaseUrlOverride';
 
@@ -147,6 +158,18 @@ interface RequestOptions {
   auth?: boolean;
 }
 
+/**
+ * No previous version of this function ever bounded how long a request
+ * could take — on a genuinely bad connection (weak WiFi, far from the
+ * router) `fetch()` can sit unresolved for a very long time with nothing
+ * for the caller to catch, which reads to a Tanod as the app simply being
+ * stuck rather than "the workstation is slow to reach right now." 15s is
+ * generous for a real LAN/Tailscale hop but short enough that a bad
+ * connection fails honestly instead of hanging the caller indefinitely —
+ * same spirit as deviceIdentity.ts's 8s FCM-registration bound.
+ */
+const REQUEST_TIMEOUT_MS = 15000;
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, auth = true } = options;
 
@@ -167,10 +190,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch {
     // §2 Rule 15: the workstation is a known single point of failure and
-    // the app must degrade, not crash, when it is unavailable.
+    // the app must degrade, not crash, when it is unavailable. Covers both
+    // an outright connection failure and this now timing out.
     throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the barangay workstation.');
   }
 
@@ -260,10 +285,17 @@ export interface DeviceRegistration {
 /**
  * POST /devices/register. Tanod-only server-side.
  * The server returns no FCM token by design (§6) — do not expect one.
+ *
+ * `fcmToken` is nullable — explicit decision, 2026-09-13 (see
+ * DevicesController.php's class doc): this deployment has no real Firebase
+ * project, so `getFcmToken()` always resolves null, and a device must
+ * still register (and become sync-capable) without one. `null` is sent
+ * through as-is rather than coerced to `''` here — the server's own
+ * validation already treats null/missing/empty identically.
  */
 export async function registerDevice(params: {
   deviceId: string;
-  fcmToken: string;
+  fcmToken: string | null;
   appVersion?: string;
 }): Promise<DeviceRegistration> {
   const json = await request<{ device_id: string; registered: boolean; message_encryption_key?: string }>(

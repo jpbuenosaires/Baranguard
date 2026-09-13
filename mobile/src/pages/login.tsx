@@ -196,19 +196,24 @@ const LoginPage: React.FC = () => {
 async function runPostLoginSetup(barangayId: number): Promise<void> {
   try {
     const fcmToken = await getFcmToken();
-    if (fcmToken) {
-      const registration = await registerDevice({ deviceId: await getDeviceId(), fcmToken });
-      // Sprint 4 Phase 3: present ONLY on this device_id's first-ever
-      // registration — see DevicesController.php's own doc. Stored once,
-      // never re-fetched (there is nowhere else to get it from — the
-      // server does not re-return it on later calls, deliberately).
-      if (registration.messageEncryptionKey) {
-        await storeMessageEncryptionKey(registration.messageEncryptionKey);
-      }
+    // Registration always happens now, even when fcmToken is null —
+    // explicit decision, 2026-09-13 (DevicesController.php's class doc).
+    // A device with no push capability must still become the ACTIVE,
+    // sync-capable row POST /sync/batch requires; skipping registration
+    // entirely (the old behavior) left every device on this no-Firebase
+    // deployment permanently unregistered, which only surfaced once the
+    // sync scheduler started calling /sync/batch automatically. This is
+    // NOT "faking" push reachability — null is sent honestly, and the
+    // server stores it as an empty token, which NotificationDispatcher
+    // already reads as "fall through to SMS" (Rule 12).
+    const registration = await registerDevice({ deviceId: await getDeviceId(), fcmToken });
+    // Sprint 4 Phase 3: present ONLY on this device_id's first-ever
+    // registration — see DevicesController.php's own doc. Stored once,
+    // never re-fetched (there is nowhere else to get it from — the
+    // server does not re-return it on later calls, deliberately).
+    if (registration.messageEncryptionKey) {
+      await storeMessageEncryptionKey(registration.messageEncryptionKey);
     }
-    // When fcmToken is null the device is deliberately NOT registered —
-    // see getFcmToken()'s comment. Registering with a placeholder token
-    // would tell the server this device is push-reachable when it isn't.
   } catch {
     // Non-fatal by design.
   }

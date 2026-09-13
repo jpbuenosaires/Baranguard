@@ -185,7 +185,14 @@ expect_eq "$(status_of POST /devices/register "$ADMIN_TOKEN" '{"device_id":"admi
 expect_eq "$(status_of POST /devices/register "$SEC_TOKEN" '{"device_id":"sec-device-001","fcm_token":"tok","platform":"android"}')" "403" "Secretary cannot register a device"
 expect_eq "$(status_of POST /devices/register "$T1_TOKEN" '{"device_id":"short","fcm_token":"tok","platform":"android"}')" "400" "device_id shorter than 8 chars rejected"
 expect_eq "$(status_of POST /devices/register "$T1_TOKEN" '{"device_id":"tanod1-device-aaa","fcm_token":"tok","platform":"ios"}')" "400" "platform other than android rejected"
-expect_eq "$(status_of POST /devices/register "$T1_TOKEN" '{"device_id":"tanod1-device-aaa","platform":"android"}')" "400" "missing fcm_token rejected"
+# fcm_token is OPTIONAL as of 2026-09-13 (DevicesController.php's class
+# doc) — a device without a real Firebase project must still be able to
+# register, storing '' the same way RetentionService's scrub already
+# represents "no token". Uses a throwaway device_id so it doesn't collide
+# with step 5's happy-path row for tanod1-device-aaa below.
+expect_eq "$(status_of POST /devices/register "$T1_TOKEN" '{"device_id":"tanod1-device-notoken","platform":"android"}')" "200" "missing fcm_token now accepted (no Firebase project on this deployment)"
+expect_eq "$(db_one "SELECT fcm_token FROM mobile_device WHERE device_id='tanod1-device-notoken';")" "" "missing fcm_token stored as empty string, not NULL"
+expect_eq "$(db_one "SELECT is_active FROM mobile_device WHERE device_id='tanod1-device-notoken';")" "1" "device without a token is still ACTIVE and sync-capable"
 # POST /devices/register has a FIXED path — device_id travels in the body,
 # so an illegal id is a controller validation error (400), not a routing
 # miss. Only the PATCH route, which carries the id in the URL, can 404 on
@@ -200,8 +207,12 @@ expect_eq "$(echo "$REG" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php:
 if echo "$REG" | grep -qi "fcm"; then fail "Response leaked an FCM token/field (§6: returns no FCM token)"; else pass "Response contains no FCM token (§6)"; fi
 expect_eq "$(db_one "SELECT is_active FROM mobile_device WHERE device_id='tanod1-device-aaa';")" "1" "Device row is active in DB"
 expect_eq "$(db_one "SELECT fcm_token FROM mobile_device WHERE device_id='tanod1-device-aaa';")" "fcm-token-one" "fcm_token stored server-side"
-expect_eq "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='device_registered';")" "1" "audit_log has one device_registered row"
-if db_one "SELECT metadata_json FROM audit_log WHERE action='device_registered';" | grep -qi "fcm-token-one"; then
+# Scoped to THIS device_id specifically — step 4 above now also registers
+# a real device (the missing-fcm_token case), which legitimately writes
+# its own device_registered row, so an unscoped COUNT(*) over the whole
+# table is no longer "exactly one" account-wide.
+expect_eq "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='device_registered' AND metadata_json LIKE '%tanod1-device-aaa%';")" "1" "audit_log has one device_registered row for this device"
+if db_one "SELECT metadata_json FROM audit_log WHERE action='device_registered' AND metadata_json LIKE '%tanod1-device-aaa%';" | grep -qi "fcm-token-one"; then
   fail "Audit metadata leaked the FCM token (§2 Rule 17)"
 else
   pass "Audit metadata contains no FCM token (§2 Rule 17)"

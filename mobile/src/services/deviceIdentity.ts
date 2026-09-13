@@ -13,6 +13,7 @@
 import { Preferences } from '@capacitor/preferences';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
+import FullScreenAlert from './fullScreenAlert';
 
 const DEVICE_ID_KEY = 'baranguard.deviceId';
 /** 8s is generous for a registration round-trip against Google's servers
@@ -57,13 +58,20 @@ export async function getDeviceId(): Promise<string> {
  * means a Tanod must be able to sign in and start capturing regardless of
  * whether push messaging is available on this particular device.
  *
- * NOT DEVICE-VERIFIED, stated plainly: this compiles and type-checks
- * against `@capacitor/push-notifications`' documented Android API but has
- * never executed on a real device — no Android SDK/emulator is available
- * in this environment (see DEVLOG.md), and even once that's resolved, a
- * REAL Firebase project + `google-services.json` is a SEPARATE prerequisite
- * this workstation does not have either (the backend side of this same
- * gap is `FCM_SERVICE_ACCOUNT_PATH` in backend/.env.example, also unset).
+ * DEVICE-VERIFIED, and the hard way: run on a real device 2026-09-13
+ * without the guard below, `PushNotifications.register()` crashed the
+ * entire app on login with an uncaught native `IllegalStateException`
+ * ("Default FirebaseApp is not initialized") — a REAL Firebase project +
+ * `google-services.json` is a SEPARATE prerequisite this workstation
+ * still does not have (REMAINING.md A4; the backend side of the same gap
+ * is `FCM_SERVICE_ACCOUNT_PATH` in backend/.env.example, also unset). The
+ * try/catch below did NOT help: that exception is thrown on Capacitor's
+ * own native plugin-invocation thread, before `register()`'s promise can
+ * ever reject, so it never reaches JS at all — it just kills the process.
+ * `FullScreenAlertPlugin.isFirebaseAvailable()` (native, added the same
+ * day) is what actually prevents this, by checking Firebase's real
+ * process-level init state BEFORE the crash-prone call, not by reacting
+ * to a failure JS can't observe.
  */
 export async function getFcmToken(): Promise<string | null> {
   if (Capacitor.getPlatform() !== 'android') {
@@ -76,6 +84,11 @@ export async function getFcmToken(): Promise<string | null> {
   }
 
   try {
+    const { available } = await FullScreenAlert.isFirebaseAvailable();
+    if (!available) {
+      return null;
+    }
+
     const permission = await PushNotifications.checkPermissions();
     let granted = permission.receive === 'granted';
     if (!granted && permission.receive !== 'denied') {
