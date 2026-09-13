@@ -26,6 +26,7 @@
  * working regardless of session/API state.
  */
 
+import { Preferences } from '@capacitor/preferences';
 import {
   loadSession,
   readTokenExpiry,
@@ -37,11 +38,91 @@ import {
 /**
  * The workstation's API base URL on the LAN. §2 Rule 7: locally hosted,
  * no public internet exposure assumed — so this is a deployment-time
- * value, not a build-time constant baked in for everyone. Override with
- * VITE_API_BASE_URL at build time.
+ * value, not a build-time constant baked in for everyone. `VITE_API_BASE_URL`
+ * sets the BUILD-time default; `setApiBaseUrlOverride()` below (Mobile
+ * Improvement Plan Phase 1.3) lets a Tanod correct it AT RUNTIME from
+ * Profile when the workstation's DHCP-assigned LAN IP changes — rebuilding
+ * the whole app just to update one IP address isn't realistic in the
+ * field. Deliberately NOT built: mDNS/subnet-broadcast auto-discovery —
+ * the manual override is the actual fix for "DHCP reassigned the IP" (a
+ * five-second Profile edit), and client-isolated barangay WiFi routers
+ * commonly block the multicast/broadcast traffic auto-discovery would
+ * need anyway, so it would be unreliable scope for uncertain benefit.
  */
-const API_BASE_URL: string =
+const DEFAULT_API_BASE_URL: string =
   (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'http://192.168.1.10/baranguard-api/api/v1';
+
+const API_BASE_URL_OVERRIDE_KEY = 'baranguard.apiBaseUrlOverride';
+
+let API_BASE_URL: string = DEFAULT_API_BASE_URL;
+
+/**
+ * Loads a previously-saved override, if any, replacing the build-time
+ * default for the rest of this app launch. Fired once at module load
+ * (below) rather than awaited from `App.tsx`'s startup — Preferences
+ * reads are fast and this resolves well before a Tanod can type
+ * credentials on the login screen, and every function in this file reads
+ * the mutable `API_BASE_URL` binding fresh on each call, so a request
+ * fired before this resolves just uses the default for that one call
+ * rather than failing.
+ */
+/**
+ * Mirrors the resolved `API_BASE_URL` into Preferences under a SEPARATE,
+ * always-current key (distinct from `API_BASE_URL_OVERRIDE_KEY`, which is
+ * only ever written when a Tanod explicitly overrides the default) —
+ * `PatrolLocationService.java` (Mobile Improvement Plan Phase 4.1) reads
+ * this key directly from the SAME "CapacitorStorage" SharedPreferences
+ * file to know where to POST background GPS points, since a Vite
+ * build-time constant baked into the JS bundle is invisible to native
+ * code, and the override key alone would be absent for a device that
+ * never customized it.
+ */
+const EFFECTIVE_API_BASE_URL_KEY = 'baranguard.effectiveApiBaseUrl';
+async function persistEffectiveApiBaseUrl(): Promise<void> {
+  try {
+    await Preferences.set({ key: EFFECTIVE_API_BASE_URL_KEY, value: API_BASE_URL });
+  } catch {
+    // Best-effort — worst case, the native service falls back to its own hardcoded default.
+  }
+}
+
+async function loadApiBaseUrlOverride(): Promise<void> {
+  try {
+    const { value } = await Preferences.get({ key: API_BASE_URL_OVERRIDE_KEY });
+    if (value) API_BASE_URL = value;
+  } catch {
+    // Keep the build-time default.
+  }
+  await persistEffectiveApiBaseUrl();
+}
+void loadApiBaseUrlOverride();
+
+/** The URL every request in this file is currently using — for Profile's connection settings card to display. */
+export function getApiBaseUrl(): string {
+  return API_BASE_URL;
+}
+
+/** True when a Tanod has saved a runtime override (vs. still using the build-time default). */
+export function hasApiBaseUrlOverride(): boolean {
+  return API_BASE_URL !== DEFAULT_API_BASE_URL;
+}
+
+/**
+ * Persists a new workstation base URL and applies it immediately — no
+ * app restart needed. Pass `null` to clear the override and revert to the
+ * build-time default.
+ */
+export async function setApiBaseUrlOverride(url: string | null): Promise<void> {
+  if (url) {
+    const trimmed = url.trim().replace(/\/+$/, '');
+    await Preferences.set({ key: API_BASE_URL_OVERRIDE_KEY, value: trimmed });
+    API_BASE_URL = trimmed;
+  } else {
+    await Preferences.remove({ key: API_BASE_URL_OVERRIDE_KEY });
+    API_BASE_URL = DEFAULT_API_BASE_URL;
+  }
+  await persistEffectiveApiBaseUrl();
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -249,6 +330,41 @@ export function mapPackageDownloadUrl(barangayId: number): string {
   return `${API_BASE_URL}/map-packages/${barangayId}/download`;
 }
 
+/**
+ * GET /map-packages/:barangayId/download. Streams the published MBTiles
+ * package's raw bytes — bypasses `request()`'s JSON handling (this is a
+ * binary transfer, sometimes tens of MB), but is still the one place in
+ * the app allowed to `fetch()` the API directly, per this file's own
+ * single-boundary rule. Auth/renewal follow the same rules as every other
+ * call here. Checksum verification is the CALLER's job
+ * (`mapPackageService.ts`) — §2 Rule 14 / §6: "client verifies SHA-256
+ * before activation", and this function has no opinion on what "before
+ * activation" means for local storage.
+ */
+export async function downloadMapPackage(barangayId: number): Promise<Uint8Array> {
+  const session = await loadSession();
+  if (!session) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'You are signed out.');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(mapPackageDownloadUrl(barangayId), {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+  } catch {
+    throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the barangay workstation.');
+  }
+
+  const renewed = response.headers.get('X-Renewed-Token');
+  if (renewed) await storeRenewedToken(renewed);
+
+  if (!response.ok) {
+    throw new ApiError(response.status, 'SERVER_ERROR', 'Could not download the map package.');
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 // --- Duty status (§6, M2 Home) ----------------------------------------------
 
 /** §5 duty_status.status enum — the only accepted values. */
@@ -325,6 +441,19 @@ export async function postSos(params: {
     },
   });
   return { sosId: json.sos_id, status: json.status, receivedAt: json.received_at };
+}
+
+/**
+ * GET /tanod-sos/fallback-contact — G1's third SOS fallback tier (Mobile
+ * Improvement Plan Phase 4.3). Deliberately NOT `GET /system-settings`
+ * (Admin-only, and it would also hand a Tanod's phone the SMS gateway
+ * API key). Returns null when no backup contact has been configured —
+ * a legitimate, non-error outcome (§7's W21 note: this key defaults
+ * empty until an Admin sets it).
+ */
+export async function getSosFallbackContact(): Promise<string | null> {
+  const json = await request<{ backup_contact_number: string | null }>('/tanod-sos/fallback-contact');
+  return json.backup_contact_number;
 }
 
 // --- Dispatch (§6, Sprint 1 web + Sprint 3 mobile: M5/M6) -------------------
@@ -488,6 +617,155 @@ export async function getNearbyIncidents(params: {
   }));
 }
 
+export interface NearbyTanod {
+  userId: number;
+  fullName: string;
+  dispatchId: number | null;
+  latitude: number;
+  longitude: number;
+  accuracyM: number;
+  recordedAt: string;
+  ageSeconds: number;
+  isStale: boolean;
+}
+
+/**
+ * GET /gps/live?barangay_id=me — same-barangay on-duty-or-not active Tanod
+ * roster (2026-09-12: opened to the `tanod` role alongside admin/PB, an
+ * explicit user decision — see GpsController::live()'s own doc comment).
+ * Returns every OTHER active Tanod in the caller's own barangay who has
+ * ever recorded a position; the caller's own row is filtered out here
+ * since "nearby Tanods" means peers, not a duplicate of the position this
+ * screen already shows from the device's own GPS.
+ */
+export async function getNearbyTanods(): Promise<NearbyTanod[]> {
+  const session = await loadSession();
+  if (!session) return [];
+  const json = await request<{
+    items: {
+      user_id: number;
+      full_name: string;
+      dispatch_id: number | null;
+      latitude: number;
+      longitude: number;
+      accuracy_m: number;
+      recorded_at: string;
+      age_seconds: number;
+      is_stale: boolean;
+    }[];
+  }>(`/gps/live?barangay_id=${session.barangayId}`);
+  return json.items
+    .filter((row) => row.user_id !== session.userId)
+    .map((row) => ({
+      userId: row.user_id,
+      fullName: row.full_name,
+      dispatchId: row.dispatch_id,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      accuracyM: row.accuracy_m,
+      recordedAt: row.recorded_at,
+      ageSeconds: row.age_seconds,
+      isStale: row.is_stale,
+    }));
+}
+
+// --- Evidence upload (§6, closes F4 — Mobile Improvement Plan Phase 3.2) ---
+
+export interface EvidenceUploadItem {
+  type: 'photo' | 'voice';
+  sha256: string;
+  mimeType: string;
+  originalFilename?: string;
+  /** The evidence row's own local_id doubles as the server's idempotency key — see evidenceRepository.ts. */
+  clientRequestId: string;
+}
+
+export interface UploadedEvidence {
+  attachmentId: number;
+  incidentId: number;
+  type: string;
+  uploadedBy: number;
+  uploadedAt: string;
+  sha256: string;
+  byteSize: number;
+  mimeType: string;
+  originalFilename: string;
+}
+
+/**
+ * POST /incidents/:incidentServerId/evidence — multipart upload. Bypasses
+ * `request()`'s JSON handling (binary transfer via `FormData`), the same
+ * single-boundary exception `downloadMapPackage()` already is.
+ * `X-Device-Id` is required server-side (`assertDeviceOwnership()`),
+ * matching every other mobile write's §2 Rule 3 contract. The server
+ * computes its OWN sha256 over the received bytes and rejects a mismatch
+ * against `item.sha256` — this function does not pre-verify that itself,
+ * trusting the server's check rather than duplicating it.
+ */
+export async function uploadEvidence(
+  incidentServerId: number,
+  deviceId: string,
+  fileBytes: Blob,
+  item: EvidenceUploadItem
+): Promise<UploadedEvidence> {
+  const session = await loadSession();
+  if (!session) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'You are signed out.');
+  }
+
+  const form = new FormData();
+  form.append('file', fileBytes, item.originalFilename || 'evidence');
+  form.append('type', item.type);
+  form.append('sha256', item.sha256);
+  form.append('mime_type', item.mimeType);
+  form.append('client_request_id', item.clientRequestId);
+  if (item.originalFilename) form.append('original_filename', item.originalFilename);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/incidents/${incidentServerId}/evidence`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.token}`, 'X-Device-Id': deviceId },
+      body: form,
+    });
+  } catch {
+    throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the barangay workstation.');
+  }
+
+  const renewed = response.headers.get('X-Renewed-Token');
+  if (renewed) await storeRenewedToken(renewed);
+
+  const text = await response.text();
+  const payload = text ? safeJsonParse(text) : null;
+  if (!response.ok) {
+    const error = (payload as { error?: { code?: string; message?: string } } | null)?.error;
+    throw new ApiError(response.status, error?.code ?? 'SERVER_ERROR', error?.message ?? 'Evidence upload failed.');
+  }
+
+  const json = payload as {
+    attachment_id: number;
+    incident_id: number;
+    type: string;
+    uploaded_by: number;
+    uploaded_at: string;
+    sha256: string;
+    byte_size: number;
+    mime_type: string;
+    original_filename: string;
+  };
+  return {
+    attachmentId: json.attachment_id,
+    incidentId: json.incident_id,
+    type: json.type,
+    uploadedBy: json.uploaded_by,
+    uploadedAt: json.uploaded_at,
+    sha256: json.sha256,
+    byteSize: json.byte_size,
+    mimeType: json.mime_type,
+    originalFilename: json.original_filename,
+  };
+}
+
 // --- Sync (§6 "Sync" section, Sprint 3) -------------------------------------
 
 /** One item's shape for POST /sync/batch's `incidents[]` array (mirrors POST /incidents mobile body). */
@@ -578,6 +856,89 @@ export async function syncBatch(params: {
   }));
 }
 
+// --- Shifts & swap requests (§6 "Shifts and fatigue" — M8/M9, Phase 4.4) ---
+
+export interface ShiftEntry {
+  shiftId: number;
+  patrolZone: string | null;
+  startAt: string;
+  endAt: string;
+  version: number;
+}
+
+/** GET /shifts — §6: a tanod caller is forced server-side to their own rows, so this is already "my shifts", no ?user_id=me needed. */
+export async function getMyShifts(): Promise<ShiftEntry[]> {
+  const json = await request<{
+    items: { shift_id: number; user_id: number | null; patrol_zone: string | null; start_at: string; end_at: string; version: number }[];
+  }>('/shifts?limit=100');
+  return json.items.map((row) => ({
+    shiftId: row.shift_id,
+    patrolZone: row.patrol_zone,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    version: row.version,
+  }));
+}
+
+/** §5 shift_swap_request.status enum. */
+export type ShiftSwapStatus = 'pending' | 'approved' | 'denied';
+
+export interface ShiftSwapRequestEntry {
+  requestId: number;
+  requestingUserId: number;
+  shiftId: number;
+  targetUserId: number | null;
+  reason: string | null;
+  status: ShiftSwapStatus;
+  requestedAt: string;
+  resolvedAt: string | null;
+}
+
+function mapSwapRequest(json: {
+  request_id: number;
+  requesting_user_id: number;
+  shift_id: number;
+  target_user_id: number | null;
+  reason: string | null;
+  status: ShiftSwapStatus;
+  requested_at: string;
+  resolved_at: string | null;
+}): ShiftSwapRequestEntry {
+  return {
+    requestId: json.request_id,
+    requestingUserId: json.requesting_user_id,
+    shiftId: json.shift_id,
+    targetUserId: json.target_user_id,
+    reason: json.reason,
+    status: json.status,
+    requestedAt: json.requested_at,
+    resolvedAt: json.resolved_at,
+  };
+}
+
+/** GET /shift-swap-requests — a tanod caller sees only requests THEY raised (§6, mirrors GET /shifts' own scoping). */
+export async function getMyShiftSwapRequests(): Promise<ShiftSwapRequestEntry[]> {
+  const json = await request<{ items: Parameters<typeof mapSwapRequest>[0][] }>('/shift-swap-requests?limit=100');
+  return json.items.map(mapSwapRequest);
+}
+
+/**
+ * POST /shift-swap-requests. No `target_user_id` here on purpose: picking
+ * a specific substitute needs `GET /users` to know who else is a tanod in
+ * this barangay, and that endpoint is Admin-only (§7) — a Tanod has no
+ * API to safely populate that picker from, so this raises an
+ * un-targeted request (the desk/Admin assigns a substitute when
+ * reviewing it) rather than asking for a raw numeric user id nobody would
+ * actually know.
+ */
+export async function requestShiftSwap(shiftId: number, reason: string | undefined, clientRequestId: string): Promise<ShiftSwapRequestEntry> {
+  const json = await request<Parameters<typeof mapSwapRequest>[0]>('/shift-swap-requests', {
+    method: 'POST',
+    body: { shift_id: shiftId, reason: reason || undefined, client_request_id: clientRequestId },
+  });
+  return mapSwapRequest(json);
+}
+
 // --- Notifications (§6 "Notification acknowledgment", M12) -----------------
 
 /**
@@ -593,3 +954,25 @@ export async function acknowledgeNotification(notificationId: number): Promise<{
   );
   return { acknowledgedAt: json.acknowledged_at };
 }
+
+/**
+ * Lightweight probe to check if the workstation API is reachable.
+ * Returns true if reachable, false otherwise.
+ */
+export async function checkHealth(): Promise<boolean> {
+  try {
+    // `/health` was never a real route (this call 404'd silently — no
+    // endpoint by that name exists anywhere in backend/routes/). `/barangays`
+    // is the one genuinely public, no-auth, always-cheap GET in this API
+    // (built for W19's pre-login picker — see BarangaysController's own
+    // doc), which is exactly what a reachability probe needs: it works
+    // identically before and after login, unlike an authenticated route
+    // that would also fail on a merely-expired session and be
+    // misread as "workstation unreachable".
+    const res = await fetch(`${API_BASE_URL}/barangays`, { method: 'GET', signal: AbortSignal.timeout(3000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+

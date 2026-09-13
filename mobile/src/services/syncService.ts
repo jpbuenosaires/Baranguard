@@ -19,11 +19,21 @@
  * `offline_queue_local`'s `'sos'` items the same way `dispatch_status`
  * does — an SOS raised while offline queues here when the direct
  * `POST /tanod-sos` attempt fails, and drains on the next pass.
+ *
+ * EVIDENCE (Mobile Improvement Plan Phase 3.2, closes F4): drained in a
+ * SEPARATE step after the batch above, not folded into it — evidence
+ * upload is a per-file multipart POST (`/incidents/:id/evidence`), not
+ * JSON that fits `/sync/batch`'s body shape, and it needs the PARENT
+ * incident's server id, which the batch call above is what assigns in
+ * the first place. Running it after means an incident synced in THIS
+ * same pass can have its evidence uploaded in this same pass too, rather
+ * than waiting for the next trigger.
  */
 
 import { getDeviceId } from './deviceIdentity';
 import {
   syncBatch,
+  uploadEvidence,
   type SyncBatchResult,
   type SyncDispatchStatusItem,
   type SyncGpsItem,
@@ -42,12 +52,20 @@ import {
   markQueueItemResolved,
 } from './db/offlineQueueRepository';
 import { markStatusSynced } from './db/dispatchRepository';
+import {
+  listPendingEvidenceUploads,
+  markEvidenceAttemptFailed,
+  markEvidenceSynced,
+} from './db/evidenceRepository';
+import { readEvidenceFile } from './evidenceCapture';
 
 export interface SyncSummary {
   attempted: number;
   succeeded: number;
   duplicates: number;
   failed: number;
+  evidenceUploaded: number;
+  evidenceFailed: number;
 }
 
 /**
@@ -65,15 +83,68 @@ export async function runSyncPass(): Promise<SyncSummary> {
   const pendingDispatchStatus = await listPendingDispatchStatusUpdates();
   const pendingSos = await listPendingSosItems();
 
+  let succeeded = 0;
+  let duplicates = 0;
+  let failed = 0;
+  let attempted = 0;
+
   if (
-    unsyncedIncidents.length === 0 &&
-    unsyncedGps.length === 0 &&
-    pendingDispatchStatus.length === 0 &&
-    pendingSos.length === 0
+    unsyncedIncidents.length > 0 ||
+    unsyncedGps.length > 0 ||
+    pendingDispatchStatus.length > 0 ||
+    pendingSos.length > 0
   ) {
-    return { attempted: 0, succeeded: 0, duplicates: 0, failed: 0 };
+    const batchResult = await runBatchSync(deviceId, unsyncedIncidents, unsyncedGps, pendingDispatchStatus, pendingSos);
+    attempted = batchResult.attempted;
+    succeeded = batchResult.succeeded;
+    duplicates = batchResult.duplicates;
+    failed = batchResult.failed;
   }
 
+  // Evidence is checked every pass regardless of whether the batch above
+  // ran — a previous pass may have already synced the parent incident
+  // while its evidence upload failed (or hadn't been captured yet), so
+  // there can be pending evidence with nothing else to batch this time.
+  let evidenceUploaded = 0;
+  let evidenceFailed = 0;
+  const pendingEvidence = await listPendingEvidenceUploads();
+  for (const item of pendingEvidence) {
+    try {
+      const bytes = await readEvidenceFile(item.filePath, item.mimeType);
+      const uploaded = await uploadEvidence(item.incidentServerId, deviceId, bytes, {
+        type: item.type === 'voice' ? 'voice' : 'photo',
+        sha256: item.sha256,
+        mimeType: item.mimeType,
+        clientRequestId: item.localId,
+      });
+      await markEvidenceSynced(item.localId, uploaded.attachmentId);
+      evidenceUploaded += 1;
+    } catch {
+      // Offline, or the server rejected it — the row stays unsynced for
+      // the next pass to retry, same "no local state to unwind" contract
+      // as the batch path above.
+      await markEvidenceAttemptFailed(item.localId);
+      evidenceFailed += 1;
+    }
+  }
+
+  return { attempted, succeeded, duplicates, failed, evidenceUploaded, evidenceFailed };
+}
+
+interface BatchSyncResult {
+  attempted: number;
+  succeeded: number;
+  duplicates: number;
+  failed: number;
+}
+
+async function runBatchSync(
+  deviceId: string,
+  unsyncedIncidents: Awaited<ReturnType<typeof listUnsyncedIncidents>>,
+  unsyncedGps: Awaited<ReturnType<typeof listUnsyncedGpsPoints>>,
+  pendingDispatchStatus: Awaited<ReturnType<typeof listPendingDispatchStatusUpdates>>,
+  pendingSos: Awaited<ReturnType<typeof listPendingSosItems>>
+): Promise<BatchSyncResult> {
   const incidentItems: SyncIncidentItem[] = unsyncedIncidents.map((row) => ({
     incident_type: row.incident_type,
     raw_narrative: row.raw_narrative,
@@ -154,3 +225,4 @@ export async function runSyncPass(): Promise<SyncSummary> {
 
   return { attempted: results.length, succeeded, duplicates, failed };
 }
+
