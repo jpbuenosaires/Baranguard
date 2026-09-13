@@ -182,19 +182,125 @@ Nothing in this group can be finished by a coding session alone. These
 are the long poles — start them first, because everything downstream
 waits on them.
 
-### 🔴 A1. Android device/emulator run (blocks ALL mobile verification)
-**Blocked on:** JDK 21 (Temurin) + an API 36 emulator, both part-installed.
-Environment bugs are already solved and documented (`C:\gtmp` for
-`java.io.tmpdir`, short paths for the space in the username, `sdk.dir`
-format) — see DEVLOG's "Android SDK / native build environment" entry.
+### 🟠 A1. Android device/emulator run — PARTIALLY UNBLOCKED 2026-09-12, further 2026-09-13
+**A real physical device now runs the app and reaches the real backend —
+the "does it run at all" half of this blocker is cleared.** The six
+verifications below are still open; a device that boots the app is not
+the same as those being tested.
 
-Once it runs, this clears **six** outstanding verifications at once:
+**2026-09-13: the app was actually BUILT and INSTALLED on the device
+(not just reasoned about) for the first time, from this workstation's own
+CLI.** `npx vite build` → `npx cap sync android` → `gradlew assembleDebug`
+→ `adb install -r`. One new environment gotcha found and fixed, logged
+below alongside 2026-09-12's; two real-device passes recorded under the
+six-item list.
+
+**What actually blocked a real device, found and fixed 2026-09-12 (none
+of this was previously documented — logged here so the next machine that
+hits it doesn't re-discover it from scratch):**
+- **Windows Firewall silently drops inbound connections** to the PHP dev
+  server's port unless a rule explicitly allows it — a phone gets
+  "cannot reach the workstation" with no other symptom. Fix: `New-NetFirewallRule`
+  for the backend's port, run by the user (firewall rules are a system
+  security setting, not something a coding session does on someone's
+  behalf).
+- **Android blocks cleartext (plain HTTP) traffic by default** (API 28+)
+  at the OS level — needs `network_security_config.xml`
+  (`cleartextTrafficPermitted="true"`) referenced from
+  `AndroidManifest.xml`. This project is LAN-only with no TLS
+  infrastructure (§1), so this is the correct fix, not a workaround —
+  revisit if F1's deployment decision ever introduces a stable hostname
+  or LAN TLS.
+- **A SEPARATE mixed-content block, even with cleartext permitted above.**
+  Capacitor's default local-page origin is `https://localhost`; fetching
+  a plain `http://` backend from that `https://` origin is blocked by the
+  WebView engine's own mixed-content policy, independent of the Android
+  OS-level policy above. Symptom: `TypeError: Failed to fetch` with no
+  further detail (Chromium deliberately doesn't expose the reason to JS).
+  Fix: `server.androidScheme: 'http'` in `capacitor.config.ts`, so the
+  app's own origin matches the backend's scheme.
+- **`ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` were never declared
+  in `AndroidManifest.xml`** — `@capacitor/geolocation` was a registered
+  plugin (per the 2026-09-05 fix below) but the permission itself was
+  missing, so `Geolocation.getCurrentPosition()` failed immediately.
+  This silently broke SOS (`home.tsx` refuses to transmit without a GPS
+  fix), the Live Map, and "Use Current Location" on Log Incident — all
+  three failed with no error a user would recognize as a permissions
+  problem. Fixed by declaring both permissions.
+- The Vite dev server needs `server.host: true` to listen on the LAN
+  interface at all, and `.env.local`'s `VITE_API_BASE_URL` must be the
+  workstation's actual LAN IP, not `localhost` — `localhost` inside the
+  app means the phone itself, not the PC, with no error distinguishing
+  the two failure modes.
+
+**Debugging technique worth keeping:** the app's own error handling
+deliberately swallows the raw fetch failure (`apiService.ts`'s
+`catch {}` — by design, so a Tanod never sees a raw stack trace). When
+the generic "cannot reach the workstation" message isn't enough to
+diagnose *which* of the above is the cause, pull the real error via
+`adb logcat -d | grep -i capacitor` after a temporary `console.error` in
+that catch block — this surfaced the mixed-content error above in
+seconds where blind guessing had already ruled out firewall/CORS/DNS one
+at a time.
+
+**Original blocker, now moot:** JDK 21 (Temurin) + an API 36 emulator
+were "part-installed" — superseded by testing on a real physical device
+over USB instead, which sidesteps the emulator setup entirely. Android
+Studio itself (not the SDK) was slow to open on this workstation, but
+`npx cap run android` / manual `gradlew` invocation both hit unrelated
+sandboxing issues in-session (`.bat`/`.ps1` script execution blocked);
+building through Android Studio's own UI worked without issue.
+
+**2026-09-13 correction: `./gradlew` (the Unix wrapper script, no
+extension) runs fine from Git Bash — the `.bat`/`.ps1` sandboxing above
+doesn't apply to it.** What actually broke a plain `./gradlew
+assembleDebug` this session was unrelated to sandboxing: the shell's
+`JAVA_HOME` was independently set to JDK 17 (a system-wide env var), and
+**Gradle's daemon uses `JAVA_HOME` over whatever `java` resolves to on
+PATH** — even though `java -version` on PATH already resolved to Temurin
+21. Since the Capacitor plugin modules set `sourceCompatibility
+JavaVersion.VERSION_21` directly (not via a toolchain request),
+`gradle.properties`' `org.gradle.java.installations.paths` (which lists
+JDK 21 as a toolchain candidate) never came into play — the daemon simply
+compiled with JDK 17's `javac`, which cannot target a release higher than
+itself: `invalid source release: 21`. Fix: `./gradlew --stop` (kill the
+wrong-JVM daemon) then re-run with `JAVA_HOME` explicitly overridden to
+the JDK 21 path for the gradlew invocation. `C:/gtmp` as
+`TMPDIR`/`TEMP`/`TMP`/`-Djava.io.tmpdir` (2026-09-03's fix) was still
+required and still worked.
+
+Once the six items below are ACTUALLY exercised on the now-working
+device (not just "the app boots"), this clears:
 - SQLCipher actually encrypts the DB file (pull it off the device and
   confirm it isn't readable plaintext SQLite)
 - Offline capture survives app kill
 - Photo/voice capture produces a real playable file
 - Keystore passphrase round-trip + the legacy-migration path
-- M5/M6/M7 (Sprint 3) and M12/M13 (Sprint 4) on a real screen
+- M5/M6/M7 (Sprint 3) and M12/M13 (Sprint 4) on a real screen —
+  **M6/M7 now have a real PASS, 2026-09-13**: login (`tanod.reyes` /
+  `Demo@2026`, per `backend/fixtures/uiseed-dao-demo.sql`'s own header),
+  Home's duty-status toggle, the Assignments list showing a real seeded
+  dispatch (#12, THEFT, ARRIVED), Assignment Detail's 4-stage workflow
+  stepper, and — the actual point of this session — M7's rendered
+  basemap (`LiveMapCanvas.tsx`) genuinely renders on-device with a real
+  self GPS marker and a real destination marker, both via the
+  **online-OSM-fallback path only** (no offline package has ever been
+  published for barangay 1 on `baranguard_uiseed` — `SELECT * FROM
+  offline_map_package` returns zero rows — so the sql.js/MBTiles-protocol
+  path itself is STILL not device-verified). Zero crashes across two
+  install/relaunch cycles (`logcat` grepped for `FATAL|AndroidRuntime|
+  Uncaught`, empty both times). M5/M12/M13 and hold-SOS remain untested
+  this session. SQLCipher, offline-capture-survives-kill, and photo/voice
+  capture (this list's other three items) are also still untouched.
+- **A real bug this device pass caught, fixed same session**: Assignment
+  Detail's "Navigate" fired a `geo:` intent that left the app for Google
+  Maps — reported by the user directly after using the build. Fixed by
+  embedding `LiveMapCanvas.tsx` in that screen instead (self + destination
+  on Baranguard's own map); "Navigate" is now "Center Map" and recenters
+  the embedded map instead of leaving the app, with the old external hand-off
+  kept as an explicit, secondary "Open in external navigation app" link
+  rather than removed outright. Full detail: `backend/DEVLOG.md`
+  2026-09-13.
 - `runSyncPass()` draining a queue after a forced offline→online cycle
 
 **Also outstanding here:** nothing calls `runSyncPass()` yet — no timer,
@@ -370,8 +476,42 @@ drains on whatever next sync trigger exists.
 - M12 is a JS overlay, not a native full-screen-intent activity.
   **Deferred** — needs a native Android activity and device
   verification (A1).
-- M7 Live Map has no rendered basemap (status view only). **Deferred**
-  — needs a real MapLibre/tile integration and device verification (A1).
+- ✅ **M7 Live Map rendered basemap — DONE 2026-09-12.** The "needs a
+  native, offline-tile-capable map renderer" framing below turned out to
+  be avoidable: `mobile/` is a real Vite/npm-bundled app, so MapLibre GL
+  JS installs as a normal dependency and runs inside the existing
+  Capacitor WebView — no native plugin, no AndroidManifest change. Two
+  architecture decisions were confirmed with the user first (CLAUDE.md
+  requires this): pure-JS-in-WebView over a native plugin, and
+  **offline MBTiles-first with online OSM fallback** (not the
+  online-only path `web/`'s own LiveMap took) — chosen because the field
+  app is specifically where offline matters (§1). `mbtilesReader.ts`
+  reads the downloaded package via `sql.js` (WASM SQLite);
+  `mapPackageService.ts` downloads/SHA-256-verifies/stores it (§2 Rule
+  14); `LiveMapCanvas.tsx` renders it via a MapLibre custom protocol,
+  falling back to online tiles when no package is installed. Nearby
+  incidents/Tanods (already fetched by the pre-existing status view) now
+  plot as real map pins, in addition to the distance/bearing list, which
+  is kept, not replaced. Real browser-rendered proof (a live OpenStreetMap
+  basemap centered correctly on Pilar/Dao/Binanuahan/Marifosque, no
+  crash, graceful fallback when the fake test backend was unreachable) —
+  see `backend/DEVLOG.md` 2026-09-12 (5) for the full verification
+  writeup and the one deliberate deviation (package-activation metadata
+  tracked via `@capacitor/preferences`, not the pre-declared
+  `offline_map_package_local` SQLite table, because that table lives in
+  the Android-only encrypted local DB and using it would have made this
+  whole feature untestable in a browser). **What this does NOT close:**
+  the offline-MBTiles path itself (download → verify → local tile read)
+  has no real backend package or real device available to exercise
+  end-to-end in this environment — same A1 blocker as the rest of
+  mobile's local-storage layer, disclosed rather than claimed proven.
+  Full turn-by-turn routing remains separately unbuilt, below.
+- Full turn-by-turn routing (road-snapped directions, recalculation)
+  needs an offline routing engine (OSRM/GraphHopper-class) plus real
+  road-network data for Pilar, Sorsogon extracted from OpenStreetMap —
+  neither exists anywhere in this stack. This is a multi-session build on
+  its own, not an increment on the basemap work above, and is unaffected
+  by that work being done.
 - ✅ `npx cap sync android` run + the `POST_NOTIFICATIONS` manifest
   permission added — `@capacitor/geolocation` and
   `@capacitor/push-notifications` are now registered native plugins

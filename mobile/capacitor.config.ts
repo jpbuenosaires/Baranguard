@@ -20,6 +20,18 @@ const config: CapacitorConfig = {
   appId: 'ph.baranguard.tanod',
   appName: 'Baranguard',
   webDir: 'dist',
+  // Capacitor's default local-page origin is https://localhost. The
+  // workstation this app talks to is plain HTTP (LAN-only, no TLS
+  // infrastructure — §1), and fetching http:// from an https:// origin is
+  // blocked as mixed content by the WebView engine itself, independent of
+  // Android's OS-level cleartext-traffic policy (network_security_config,
+  // already permitted). Setting the scheme to http:// makes the app's own
+  // origin match the backend's, removing that separate restriction. If a
+  // TLS-fronted deployment is ever set up (revisit alongside REFERENCE.md
+  // F1's still-open API base URL decision), switch this back to 'https'.
+  server: {
+    androidScheme: 'http',
+  },
   plugins: {
     CapacitorSQLite: {
       androidIsEncryption: true,
