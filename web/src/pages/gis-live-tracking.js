@@ -44,7 +44,7 @@
 import {
   getGpsLive, getTanodSos, getDutyStatus, getDispatches, getUsers, logout, ApiClientError,
 } from '../api/apiClient.js';
-import { LiveMap } from '../components/LiveMap.js';
+import { LiveMap, formatAge } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
@@ -274,18 +274,26 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       mapCard.appendChild(mapViewport);
 
       // Floating Live Activity Widget (Top-Right of Map)
+      //
+      // The header is a single real <button> — the only interactive
+      // element — carrying `aria-expanded` itself, same pattern
+      // AiToolPanel.js uses (see that file's own note on why a button
+      // nested inside a role="button" header, each with its own handler,
+      // is fragile: it needs stopPropagation/preventDefault to avoid a
+      // double-toggle rather than just not having two interactive
+      // elements in the first place).
       const activityWidget = document.createElement('div');
       activityWidget.className = 'gis-floating-activity';
       activityWidget.innerHTML = `
-        <div class="gis-floating-activity__header" role="button" tabindex="0" aria-expanded="true" aria-label="Toggle Live Activity panel">
-          <div class="gis-floating-activity__title-group">
+        <button type="button" class="gis-floating-activity__header" aria-expanded="true" aria-label="Collapse Live Activity">
+          <span class="gis-floating-activity__title-group">
             ${icons.activity(16)}
             <span>Live Activity</span>
-          </div>
-          <button type="button" class="gis-floating-activity__toggle" aria-label="Collapse Live Activity" title="Collapse Live Activity">
+          </span>
+          <span class="gis-floating-activity__toggle" aria-hidden="true">
             ${icons.chevronDown(16)}
-          </button>
-        </div>
+          </span>
+        </button>
       `;
       floatingActivityListEl = document.createElement('div');
       floatingActivityListEl.className = 'gis-floating-activity__list';
@@ -293,30 +301,14 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       mapViewport.appendChild(activityWidget);
 
       const activityHeader = activityWidget.querySelector('.gis-floating-activity__header');
-      const collapseBtn = activityWidget.querySelector('.gis-floating-activity__toggle');
       const toggleCollapse = () => {
         const isCollapsed = activityWidget.classList.toggle('is-collapsed');
         const label = isCollapsed ? 'Expand Live Activity' : 'Collapse Live Activity';
-        collapseBtn.setAttribute('aria-label', label);
-        collapseBtn.title = label;
+        activityHeader.setAttribute('aria-label', label);
         activityHeader.setAttribute('aria-expanded', String(!isCollapsed));
       };
 
-      collapseBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleCollapse();
-      });
-
-      activityHeader.addEventListener('click', () => {
-        toggleCollapse();
-      });
-
-      activityHeader.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          toggleCollapse();
-        }
-      });
+      activityHeader.addEventListener('click', toggleCollapse);
 
       // Floating Map Legend Widget (Bottom-Left of Map)
       const legendWidget = document.createElement('div');
@@ -434,7 +426,19 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         const dispatchObj = dispatchedMap.get(g.userId);
         const tanodUser = tanodRosterById.get(g.userId);
         const badgeCode = tanodUser?.badgeNumber || `T-${String(g.userId).padStart(3, '0')}`;
-        const locationText = tanodUser?.barangayName ? `Brgy. ${tanodUser.barangayName}` : 'Brgy. Dao';
+        // 2026-09-13: was `tanodUser?.barangayName ? ... : 'Brgy. Dao'` —
+        // GET /users never returns a barangayName field at all (see
+        // apiClient.js's mapUser shape), so this fell back to the
+        // literal 'Brgy. Dao' UNCONDITIONALLY, for every Tanod, on every
+        // installation — wrong for barangays 2-4 every single time, a
+        // live §2 Rule 6 violation found in the same sweep as the SMS
+        // Monitor and incident-management.js fabrications. Every Tanod on
+        // this screen is already the viewer's own barangay by tenant
+        // scoping, so a per-card barangay label added no real
+        // information anyway; replaced with real, already-computed GPS
+        // recency instead (same `formatAge()` the map's own marker
+        // popups already use).
+        const locationText = `Last seen ${formatAge(g.ageSeconds)}`;
 
         const card = document.createElement('div');
         card.className = 'gis-personnel-card';

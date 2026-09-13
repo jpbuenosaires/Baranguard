@@ -485,7 +485,7 @@ function buildStyle() {
   };
 }
 
-function formatAge(ageSeconds) {
+export function formatAge(ageSeconds) {
   if (ageSeconds < 60) return `${ageSeconds}s ago`;
   const minutes = Math.floor(ageSeconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
