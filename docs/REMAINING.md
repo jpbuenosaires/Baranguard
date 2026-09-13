@@ -514,6 +514,33 @@ Only needed if you want the tethered-phone inbound path. The contract is
 already proven — `scripts/sms-envelope-build.php` produces exactly what
 the ingestion daemon would.
 
+### 🔴 A6. Seven of the model's eight tasks have never been evaluated at all
+Found 2026-09-14 while explaining A2's results to the user. The local
+model (`aisingapore/Llama-SEA-LION-v3.5-8B-R`) backs **eight** distinct
+prompt types — `backend/services/ai/AiPrompts.php`'s own function list:
+`redaction`, `summary`, `translation`, `extraction`, `blotterAssist`,
+`classification`, `smsCompose`, `threatAnalysis`. **A2/A3/`eval-kit/`
+measure exactly one of these: `redaction`.**
+`eval-kit/scripts/ai-evaluate.php` hardcodes `'task_type' => 'redaction'`
+(confirmed by reading the source, not inferred), and
+`docs/AI_Evaluation_Dataset_Guide.md` never mentions the other seven.
+Net effect: the only AI-quality number this project has ever measured
+is "does redaction find and remove PII" — summary quality, translation
+quality, extraction accuracy, and the four AI Tools assistants'
+output quality are all completely unverified. Redaction is the
+highest-stakes of the eight (a miss is a privacy leak, §2 Rule 1), so
+this isn't nothing, but "the AI works" is not something this project can
+currently back up beyond that one task.
+
+**Being replaced 2026-09-14, in progress**: a plan was requested before
+any code changes — see the session's own plan (research into per-task
+evaluation methodology and defensible target thresholds, since redaction's
+95%/90% targets don't obviously transfer to summarization/translation/
+extraction/classification/open-ended-generation tasks) and the rebuilt
+`eval-kit/` once that plan is approved. Do not assume `eval-kit/`'s
+current shape (redaction-only, single dataset file) survives this — this
+entry should be updated once the replacement lands.
+
 ---
 
 ## B. Verification a coding session can do now
