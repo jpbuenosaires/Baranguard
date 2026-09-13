@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+
+        <!-- Mobile Improvement Plan Phase 4.1: background patrol GPS. A
+             location-type foreground service on API 34+ (this app targets
+             36) MUST declare its type here, matching the manifest
+             permission below — the OS refuses to start it otherwise. -->
+        <service
+            android:name=".PatrolLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- Mobile Improvement Plan Phase 4.2: full-screen critical alert.
+             CriticalAlertActivity shows OVER the lock screen — noHistory
+             so it never lingers in the recent-apps stack once dismissed,
+             excludeFromRecents so it never appears there at all (it is an
+             alert, not a real app screen a Tanod would return to). -->
+        <activity
+            android:name=".CriticalAlertActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <!-- Overrides @capacitor/push-notifications' own MessagingService
+             registration below with CriticalAlertMessagingService, which
+             extends it — the standard Android technique for customizing a
+             library's FCM handling: remove the library's <service> entry
+             by exact android:name, then declare the subclass with the
+             identical intent-filter in its place. -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+        <service
+            android:name=".CriticalAlertMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- @capacitor/geolocation's implementation calls getCurrentPosition
+         via Android's FusedLocationProviderClient, which requires one of
+         these declared here (same "plugin's own AAR manifest doesn't
+         declare it" situation as CAMERA/RECORD_AUDIO/POST_NOTIFICATIONS
+         below) — missing until now, which silently broke every caller:
+         SOS (home.tsx requires a GPS fix before it will transmit),
+         "Use Current Location" on Log Incident, and GPS-track broadcast.
+         COARSE is requested alongside FINE because some OEM WebViews only
+         grant FINE if COARSE is also declared. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- @capacitor/camera's own CameraPlugin.kt declares a CAMERA permission
+         alias it requests at runtime; neither plugin's own AAR manifest
+         declares these, so the app manifest must (confirmed by reading
+         each plugin's Java/Kotlin source, not assumed) — Android refuses
+         to grant a runtime permission that was never declared here. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- capacitor-voice-recorder's VoiceRecorder.java requests exactly
+         this permission via its own @Permission annotation. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Android 13+ (API 33) requires this to show any notification,
+         including the M12 SOS/critical-alert push — @capacitor/push-notifications
+         does not declare it in its own AAR manifest either. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- G1's third SOS fallback tier (Mobile Improvement Plan Phase 4.3):
+         SosSmsPlugin.java sends a native SMS directly via SmsManager (own
+         SIM, no gateway) ONLY when both the direct app POST and the
+         workstation itself are confirmed unreachable — a total-outage
+         path with no other transport left. This app is sideloaded, not
+         Play-Store-distributed, so the Play policy restricting SEND_SMS
+         to default-SMS-handler apps does not apply here; a self-installed
+         internal tool may request it directly like any other runtime
+         permission. -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
+    <!-- Mobile Improvement Plan Phase 4.1: PatrolLocationService keeps
+         broadcasting GPS while on duty even with the app backgrounded or
+         the screen locked — a plain JS setInterval/watchPosition (M7 Live
+         Map's own, foreground-only by its own explicit design) stops the
+         moment the WebView isn't the front app. FOREGROUND_SERVICE_LOCATION
+         is the API 34+ companion permission the "location" foreground
+         service type above requires; without it the OS throws a
+         SecurityException at startForeground(), not a silent no-op. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- Mobile Improvement Plan Phase 4.2: lets CriticalAlertNotifier's
+         notification launch CriticalAlertActivity immediately (waking a
+         locked screen) instead of the OS silently downgrading it to an
+         ordinary heads-up notification. Android 14+ (API 34) further
+         requires the app to actually be an eligible use case (alarms,
+         calls, or similar time-critical alerts) at runtime — an SOS/
+         priority-dispatch alert is exactly that category. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- Not required: this app never refuses to install on a device
+         without a camera, since M3 works with narrative-only capture. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+</manifest>

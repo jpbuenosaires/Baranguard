@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Baranguard</string>
+    <string name="title_activity_main">Baranguard</string>
+    <string name="package_name">ph.baranguard.tanod</string>
+    <string name="custom_url_scheme">ph.baranguard.tanod</string>
+</resources>
