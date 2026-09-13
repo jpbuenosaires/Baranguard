@@ -10534,3 +10534,296 @@ the fix itself; that's what the new F8 script is for.
 `verify-f8-response-time-dedup.sh` 8/8 (new). All against disposable
 databases; the real `baranguard` database and `backend/.env` were never
 touched.
+
+## 2026-09-12 (5) — M7 Live Map gets a real rendered basemap (REMAINING.md C4)
+
+User picked C4's "M7 rendered basemap" specifically (not B1's GIS Live
+Tracking browser-verify, not W18, both offered as alternatives — user
+picked from a 4-option menu since "the map" was ambiguous across
+REMAINING.md). `live-map.tsx`'s own header comment had documented the
+blocker as needing "a native, offline-tile-capable map renderer (e.g.
+MapLibre Native via a Capacitor plugin) — a materially bigger native
+dependency than anything else in this cut." That framing turned out to be
+avoidable: `mobile/` is a real Vite/npm-bundled app (unlike `web/`, which
+has no build step at all and hand-vendors MapLibre GL JS into
+`web/vendor/`), so the same library installs as a normal dependency and
+runs inside the existing Capacitor WebView — no native plugin, no
+AndroidManifest change.
+
+**Two architecture decisions confirmed with the user before writing code**
+(CLAUDE.md requires this for architectural calls):
+1. Pure-JS-in-WebView over a true native map plugin — removes the
+   "materially bigger native dependency" framing entirely.
+2. Tile source: **offline MBTiles-first, online OSM fallback** — not the
+   online-only path `web/src/components/LiveMap.js` took (that was
+   offered as the faster, lower-risk option; user chose the bigger scope
+   because the field app is where offline actually matters, per §1's
+   "offline field capture" being Baranguard's whole reason to exist next
+   to BIMSS).
+
+### What was built
+
+- **`mobile/src/services/mbtilesReader.ts`** (new) — opens a downloaded
+  `.mbtiles` file via `sql.js` (WASM SQLite, `npm install sql.js`, wasm
+  asset bundled locally through Vite's `?url` import — no CDN fetch, same
+  vendor-don't-fetch precedent as Inter in `theme/variables.css`).
+  `getTile(z,x,y)` takes XYZ and flips to MBTiles' own TMS row numbering
+  internally. Reads the package's own `metadata` table for
+  format/bounds/min-max zoom.
+- **`mobile/src/services/mapPackageService.ts`** (new) — downloads via a
+  new `apiService.downloadMapPackage()`, SHA-256-verifies against the
+  metadata endpoint's checksum (§2 Rule 14: "client verifies SHA-256
+  before activation" — a mismatch never activates, silently keeps
+  whatever was already installed), and stores the bytes via
+  `@capacitor/filesystem` (`Directory.Data`, mirroring
+  `evidenceCapture.ts`'s existing pattern for photo/voice).
+  **Deliberate deviation, logged in the file's own header comment:**
+  activation metadata (version/checksum/path) is tracked via
+  `@capacitor/preferences`, NOT the pre-declared `offline_map_package_local`
+  SQLite table in `localSchema.ts`. That table lives in the SQLCipher
+  local database, which `localDatabase.ts` refuses to open on the web
+  platform BY DESIGN (Android-only) — using it would have made this
+  entire feature untestable outside a physical device, the same A1
+  blocker stalling the rest of the local-storage layer. A basemap package
+  carries no PII, so the SQLCipher-at-rest guarantee never actually
+  applied here. The table is left in place, unused, with a comment
+  pointing at this decision — not dropped (mobile's local schema follows
+  the same "never destroy state a migration created" discipline as the
+  backend's numbered migrations).
+- **`mobile/src/components/LiveMapCanvas.tsx`** (new) — MapLibre GL JS
+  map. Registers ONE global custom protocol
+  (`baranguard-mbtiles://tile/{z}/{x}/{y}`) at module load (not
+  per-mount, to avoid double-registration races), backed by a
+  module-level "current reader" the protocol handler reads from. Falls
+  back to the same `tile.openstreetmap.org` raster source
+  `web/src/components/LiveMap.js` uses when no package is installed or
+  the installed one fails to open (corrupt/partial file on disk → caught,
+  logged only via the fallback, never a hard crash). Plots self (blue
+  puck, centers the map once on the first GPS fix only — never re-yanks
+  the view on later polling refreshes), nearby incidents (priority-
+  colored dots, reusing `--color-critical`/`--color-warning`/
+  `--color-primary` — the SAME tokens the existing status-pill classes
+  resolve to, confirmed by reading `app.css`'s own `.status-pill--*`
+  rules rather than guessing), and nearby Tanods (fresh/stale). A small
+  recenter FAB (shown only once a position exists).
+- **`apiService.ts`**: added `downloadMapPackage()` — the one new
+  fetch-the-API-directly function, consistent with this file's own
+  documented "single boundary" rule (binary transfer, bypasses
+  `request()`'s JSON handling, but still auth/renewal-aware like every
+  other call here).
+- **`login.tsx`**: the existing post-login `getMapPackage()` call (which
+  intentionally discarded its result — "M1's contract is only to CHECK
+  the version... downloading is the offline-basemap box, not this one")
+  now fires `ensureMapPackageDownloaded()` instead, still un-awaited
+  (§9 M1 must never block entry to M2). `live-map.tsx` also re-checks on
+  its own mount as a safety net for a long-lived session.
+- **`app.css`**: `.map-marker*` classes — reuses the existing
+  `mobile-urgent-pulse` keyframe for the critical-incident dot only (NOT
+  the self-puck — that keyframe's box-shadow is hardcoded to
+  `--color-critical`, so applying it to a blue puck would pulse the wrong
+  color; caught by actually reading the keyframe before reusing it,
+  rather than assuming).
+- **`mobile/src/types/sql-wasm.d.ts`** (new) — a small ambient module
+  shim. `mbtilesReader.ts` imports sql.js's concrete
+  `dist/sql-wasm.js` build directly (not the bare `sql.js` specifier)
+  so bundling doesn't depend on which of the package's several dist
+  variants a "browser"-field resolution happens to pick; `@types/sql.js`
+  only covers the package root, so this points the exact subpath import
+  at the same types.
+
+### Verification
+
+- `npx tsc --noEmit`: zero NEW errors. The twelve pre-existing errors
+  (all `'--background'` Ionic CSS-var typing + `new-incident.tsx`'s
+  `local_id`/`SavedIncident` mismatch) are in the OTHER uncommitted
+  mobile UI work this session did not touch — see HANDOFF.md's standing
+  warning about that separate body of work. One real error this session
+  DID introduce (`crypto.subtle.digest` vs. TS 5.7+'s newly-generic
+  `Uint8Array<ArrayBufferLike>` vs. `BufferSource`'s `<ArrayBuffer>`) was
+  found and fixed with a narrow, explained cast.
+- `npx vite build`: succeeds. Confirms the sql.js wasm asset bundles
+  correctly via the `?url` import (emitted as a real hashed asset,
+  658KB), MapLibre's CSS import resolves, and the ambient module shim
+  satisfies the type checker at build time too.
+- **Real browser render, not just a build pass**: started the
+  `baranguard-mobile` dev server, seeded a fake session directly into
+  `localStorage` (`CapacitorStorage.baranguard.session` — confirmed this
+  is `@capacitor/preferences`' actual web-platform key format by reading
+  its source, not guessed) to get past `RequireSession` without a real
+  backend, and navigated to `/map`. Result: a REAL OpenStreetMap basemap
+  rendered, centered on Pilar/Dao/Binanuahan/Marifosque exactly as
+  expected from the hardcoded default center, with working zoom controls,
+  correctly labeled "Online basemap · OpenStreetMap (no package
+  downloaded)" (accurate — no backend was reachable to offer a package),
+  and the pre-existing GPS/nearby-incident/nearby-Tanod status cards
+  still rendering underneath, unchanged. Console showed only expected
+  404/401s from the unreachable fake API host — no uncaught exception, no
+  React crash, confirming `ensureMapPackageDownloaded()`'s
+  never-throws contract actually holds in practice, not just by
+  inspection.
+- **NOT verified, honestly stated**: the offline-MBTiles path itself
+  (download → checksum verify → sql.js tile read → custom-protocol
+  render) has no real backend package or real barangay session available
+  in this environment to exercise end-to-end, and Capacitor Filesystem's
+  native (vs. this session's web) code path is entirely unexercised —
+  same A1 blocker as the rest of mobile's local-storage layer. This is a
+  real, reasoned-about, but device/backend-unverified path, disclosed the
+  same way `evidenceCapture.ts`/`deviceIdentity.ts` disclose theirs, not
+  claimed as proven.
+
+### Not touched
+
+No backend/schema changes — `GET /map-packages/:barangayId` and
+`GET /map-packages/:barangayId/download` already existed and needed
+nothing new. `web/`'s own LiveMap.js is untouched.
+
+## 2026-09-13 — First real on-device build/install (A1 partially closed), then a real Tanod-reported bug fixed same session
+
+User asked to "build everything that is remaining to mobile phone." A
+physical device (Infinix X6840, `adb devices` shows it authorized over
+USB) was already connected — this is the first session where the app was
+actually built and installed on it, rather than reasoned about.
+
+### Environment gotchas hit and fixed, none previously documented for THIS exact failure mode
+
+- **Gradle's daemon JVM, not `java` on PATH, decides the compiler.**
+  `java -version` on PATH already resolved to Temurin 21, but the shell's
+  `JAVA_HOME` was independently set to JDK 17 (a system-wide env var,
+  unrelated to this project) and Gradle prefers `JAVA_HOME` over PATH for
+  its own daemon. Result: `capacitor-android:compileDebugJavaWithJavac`
+  failed with `invalid source release: 21` — the six Capacitor plugin
+  modules' `sourceCompatibility/targetCompatibility VERSION_21` was being
+  compiled by a JDK 17 `javac`, which cannot target a release higher than
+  itself. Fix: explicitly `export JAVA_HOME=".../jdk-21.0.12.101-hotspot"`
+  before invoking `gradlew`, plus `./gradlew --stop` first to kill the
+  already-started (wrong-JVM) daemon rather than have it silently reused.
+  `gradle.properties`' own `org.gradle.java.installations.paths` lists
+  JDK 21 as a TOOLCHAIN candidate, but that only matters for
+  toolchain-based version resolution — it does nothing about which JVM
+  runs the daemon itself when `sourceCompatibility` is set directly
+  (as these plugins' own build.gradle files do), which is the actual
+  mechanism here.
+- **`./gradlew` (the Unix wrapper script) works fine directly from Git
+  Bash** — no `.bat`/`.ps1` sandboxing issue this session, contradicting
+  the "manual gradlew invocation hit unrelated sandboxing issues"
+  framing in `REMAINING.md` A1. That entry's own follow-up note already
+  named this as the likely reason ("`.bat`/`.ps1` script execution
+  blocked" — `gradlew` itself has no such extension), so this isn't a
+  contradiction so much as A1's own caveat being confirmed correct.
+  `C:/gtmp` (the short, space-free `java.io.tmpdir` fix from 2026-09-03)
+  was still in place and still necessary — exported `TMPDIR`/`TEMP`/`TMP`
+  plus `JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=C:/gtmp` before every gradlew
+  invocation.
+- Full pipeline that worked: `npx vite build` (NOT `npm run build` —
+  that script's `tsc` gate still fails on the pre-existing, unrelated
+  mobile UI pile's type errors flagged in the 2026-09-12 (5) entry; `vite
+  build` alone doesn't type-check and produces a correct `dist/` either
+  way) → `npx cap sync android` → `./gradlew assembleDebug` (JAVA_HOME=21,
+  as above) → `adb install -r app-debug.apk` → `adb shell monkey -p
+  ph.baranguard.tanod -c android.intent.category.LAUNCHER 1` to launch.
+- Network path confirmed working end-to-end for the first time on this
+  device: it connects to the workstation's mobile hotspot
+  (`192.168.137.166` on the `192.168.137.1` AP) which routes to the
+  workstation's real LAN interface (`192.168.254.101`) — `adb shell ping`
+  from the device and a direct `curl` from the workstation both
+  confirmed `http://192.168.254.101:8081/api/v1` (already the value in
+  `mobile/.env.local`) is reachable, so no firewall/network change was
+  needed this time (the 2026-09-12 firewall-rule fix from A1 evidently
+  still holds).
+- **`backend/.env` is still pointed at `baranguard_uiseed`, not
+  `baranguard`** (HANDOFF's own standing warning #4, reconfirmed rather
+  than assumed) — so this device build is running against the UI-seed
+  demo data, not production. The stored session already on the device
+  from a PRIOR install (`tanod.reyes` / "Jomar Reyes", barangay 1) still
+  decoded correctly but had already expired (15-minute JWT), so the app
+  correctly fell back to the login screen rather than trusting a stale
+  token — confirms `hasLiveSession()`'s expiry check works for real, not
+  just by inspection. Re-authenticated using the credentials documented in
+  `backend/fixtures/uiseed-dao-demo.sql`'s own header comment (`tanod.reyes`
+  / `Demo@2026`) rather than guessing.
+
+### What is now REAL device-verified (closes part of REMAINING.md A1)
+
+App installs, launches, and runs without a single crash across two
+install/relaunch cycles. Confirmed on-screen and in `logcat`, not assumed:
+duty-status toggle, the dispatch queue (a real seeded THEFT dispatch,
+status ARRIVED), the 4-stage workflow stepper, and — the actual subject of
+this session — **M7/M6's rendered basemap actually renders on a real
+device**, online-OSM-fallback path (see caveat below), with a real self
+GPS marker and real destination marker both plotting correctly.
+
+**Still NOT device-verified, stated precisely rather than glossed over:**
+the offline-MBTiles path specifically. `SELECT * FROM
+offline_map_package` against `baranguard_uiseed` returns zero rows — no
+package has ever been published for barangay 1 on this database, so every
+render this session exercised the ONLINE OpenStreetMap fallback, not the
+sql.js/MBTiles-protocol path `mbtilesReader.ts`/`mapPackageService.ts`
+implement. That code path remains reasoned-about-but-unexercised until
+someone actually uploads a package via `POST /map-packages`. SQLCipher
+encryption-at-rest, offline capture surviving app kill, and photo/voice
+capture are ALSO still unverified — this session didn't touch those
+flows, only Home/Assignments/Live Map screens.
+
+### The bug: Assignments → Navigate left the app for Google Maps
+
+Reported directly by the user after using the freshly-installed build:
+tapping "Navigate" in Assignment Detail fired a `geo:` intent, which
+Android resolves to whichever maps app is installed — Google Maps here —
+taking the Tanod out of Baranguard entirely. `assignment-detail.tsx`'s
+own header comment had documented this as deliberate ("no new mapping
+dependency... exactly the right fallback when new OSRM routing is
+unavailable offline") — a reasonable call BEFORE M7 had a real map, moot
+now that it does.
+
+**Fix:** `assignment-detail.tsx` now embeds `LiveMapCanvas.tsx` (the same
+component M7 Live Map uses) directly in the screen, showing the Tanod's
+own live position and the assignment's destination on Baranguard's OWN
+map — no more leaving the app by default. Specifics:
+- `LiveMapCanvas.tsx` gained an optional `focusTarget` prop (a single
+  lat/lng) and is now wrapped in `forwardRef`/`useImperativeHandle`
+  exposing `recenter()`. A new shared `centerMap()` helper fits the
+  camera to whichever of self-position/focusTarget are available —
+  both → `fitBounds`, one → center-on-it. Live Map itself is unaffected
+  (it never passes `focusTarget`, so its own behavior — center on self
+  only — is unchanged; confirmed by re-reading the diff, not assumed).
+- `assignment-detail.tsx`'s "Navigate" button is relabeled "Center Map"
+  (icon changed from `navigateOutline` to `locateOutline` — it no longer
+  navigates anywhere, and calling it "Navigate" while it only recenters
+  would be exactly the misleading-control problem §2 Rule 6 is about) and
+  now calls the embedded map's `recenter()` instead of firing the `geo:`
+  intent.
+- The old `geo:` behavior isn't removed — a Tanod who genuinely wants
+  real road-snapped turn-by-turn still has "Open in external navigation
+  app", a small explicit text link below the map. This is deliberately
+  NOT the default anymore, but the capability isn't regressed either:
+  full in-app routing needs an offline routing engine + real road-network
+  data neither of which exist anywhere in this stack (REMAINING.md C4's
+  own routing note, unaffected by this fix).
+- The screen now also runs its own foreground-only `getCurrentPosition()`
+  /`watchPosition()` (same contract `geolocation.ts` already documents for
+  Live Map: starts on mount, stops on unmount) purely to feed the embedded
+  map — it does NOT call `postGps()`; GPS broadcast to the server stays
+  exclusively Live Map's job, avoiding a second, redundant broadcast path.
+
+**Verified on the real device, not just rebuilt:** rebuilt (`vite build`
+→ `cap sync` → `gradlew assembleDebug` → `adb install -r`), reinstalled,
+relaunched, re-authenticated, opened the real THEFT dispatch (#12),
+confirmed the embedded map renders with both a self marker and a
+destination marker, tapped "Center Map" and watched it correctly
+`fitBounds` across BOTH markers — which, because this device's real GPS
+fix is nowhere near barangay 1's seeded test coordinates (self resolved
+somewhere around Legazpi/Donsol, ~100km from the Pilar/Dao test data),
+ended up being a genuinely more thorough proof of the bounds-fitting math
+than a same-location happy path would have been. No crash, confirmed in
+`logcat` (`grep -iE "FATAL|AndroidRuntime|Uncaught"` — empty both times).
+The "Open in external navigation app" escape hatch was not re-tested
+on-device this session (unchanged code path, already proven by the very
+bug report that prompted this fix — it undeniably still opens Google
+Maps).
+
+### Verification
+
+`npx tsc --noEmit`: same twelve pre-existing errors as the 2026-09-12 (5)
+entry documented (all in the other, unrelated uncommitted mobile UI
+pile), zero new ones. `npx vite build` + `gradlew assembleDebug`: both
+succeed.

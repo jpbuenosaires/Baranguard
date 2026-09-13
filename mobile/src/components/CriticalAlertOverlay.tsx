@@ -29,7 +29,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { IonButton } from '@ionic/react';
+import { IonButton, IonIcon } from '@ionic/react';
+import { warningOutline } from 'ionicons/icons';
 import { subscribeToCriticalAlert, dismissCriticalAlert, type CriticalAlert } from '../services/criticalAlertStore';
 import { acknowledgeNotification } from '../services/apiService';
 
@@ -54,9 +55,7 @@ const CriticalAlertOverlay: React.FC = () => {
     try {
       await acknowledgeNotification(alert.notificationId);
     } catch {
-      // Fire-and-forget on failure — see class doc. The alert still
-      // dismisses; the ack itself is idempotent and can be retried by any
-      // later mechanism without risk.
+      // Fire-and-forget on failure
     } finally {
       setAcknowledging(false);
       dismissCriticalAlert();
@@ -65,12 +64,27 @@ const CriticalAlertOverlay: React.FC = () => {
 
   return (
     <div className="critical-alert-overlay" role="alertdialog" aria-live="assertive" aria-label={TYPE_LABEL[alert.notificationType]}>
-      <div className="critical-alert-overlay__card">
-        <p className="critical-alert-overlay__title">{TYPE_LABEL[alert.notificationType]}</p>
+      <div
+        className="critical-alert-overlay__card"
+        style={{
+          borderTop: '4px solid var(--color-critical)',
+          boxShadow: 'var(--glow-critical), var(--shadow-floating)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          <IonIcon icon={warningOutline} style={{ fontSize: '1.4rem', color: 'var(--color-critical)' }} />
+          <p className="critical-alert-overlay__title" style={{ margin: 0 }}>{TYPE_LABEL[alert.notificationType]}</p>
+        </div>
         <p className="critical-alert-overlay__body">{alert.body || alert.title}</p>
         <div className="critical-alert-overlay__actions">
-          <IonButton expand="block" color="danger" disabled={acknowledging} onClick={handleAcknowledge}>
-            {acknowledging ? 'Acknowledging…' : 'Acknowledge'}
+          <IonButton
+            expand="block"
+            color="danger"
+            disabled={acknowledging}
+            onClick={handleAcknowledge}
+            style={{ fontWeight: 700, height: '44px' }}
+          >
+            {acknowledging ? 'Acknowledging…' : 'Acknowledge Alert'}
           </IonButton>
         </div>
       </div>

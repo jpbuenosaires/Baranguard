@@ -12,19 +12,22 @@ import {
   setupIonicReact,
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { addCircle, homeOutline, listOutline, mapOutline, personOutline } from 'ionicons/icons';
-import NotBuiltYetPage from './components/NotBuiltYetPage';
+import { add, homeOutline, listOutline, mapOutline, personOutline } from 'ionicons/icons';
 import CriticalAlertOverlay from './components/CriticalAlertOverlay';
-import NotificationDiagnostics from './components/NotificationDiagnostics';
 import AssignmentDetailPage from './pages/assignment-detail';
 import AssignmentsPage from './pages/assignments';
 import HomePage from './pages/home';
 import IncidentSubmittedPage from './pages/incident-submitted';
 import LiveMapPage from './pages/live-map';
 import LoginPage from './pages/login';
+import MyReportsPage from './pages/my-reports';
+import MyShiftsPage from './pages/my-shifts';
 import NewIncidentPage from './pages/new-incident';
+import ProfilePage from './pages/profile';
 import { hasLiveSession } from './services/session';
 import { registerCriticalAlertListeners } from './services/criticalAlertStore';
+import { startSyncScheduler } from './services/syncScheduler';
+import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -107,8 +110,10 @@ const RequireSession: React.FC<{ children: React.ReactNode }> = ({ children }) =
  * week. Tabs: Home / Assignments / Log Incident / Map / Profile.
  *
  * Assignments (M5) and Map (M7) are Sprint 3 scope, now built — see
- * assignments.tsx/live-map.tsx. Profile (M10) is not built yet and still
- * routes to `NotBuiltYetPage` rather than being hidden.
+ * assignments.tsx/live-map.tsx. Profile (M10) is also built (profile.tsx)
+ * and routed for real below — this comment previously said it still fell
+ * back to `NotBuiltYetPage`, which stopped being true once profile.tsx
+ * was wired in; corrected rather than left to mislead the next reader.
  */
 const TabbedShell: React.FC = () => (
   <IonTabs>
@@ -120,22 +125,16 @@ const TabbedShell: React.FC = () => (
       <Route path="/assignments/:localId" element={<AssignmentDetailPage />} />
       {/* M3. */}
       <Route path="/incidents/new" element={<NewIncidentPage />} />
+      {/* M14 — reached from Profile and from M4's confirmation screen, not its own tab (a 6th bottom tab for a reference screen would crowd the four the Tanod actually needs dozens of times a shift). */}
+      <Route path="/reports" element={<MyReportsPage />} />
+      {/* M8/M9 — reached from Profile, same "not a tab" reasoning as M14 above (used at most twice a week). */}
+      <Route path="/shifts" element={<MyShiftsPage />} />
       {/* M7. */}
       <Route path="/map" element={<LiveMapPage />} />
-      <Route
-        path="/profile"
-        element={
-          <NotBuiltYetPage
-            title="Profile"
-            detail="M10 Profile is not built yet. Sign out is still available from Home for now."
-          >
-            <NotificationDiagnostics />
-          </NotBuiltYetPage>
-        }
-      />
+      <Route path="/profile" element={<ProfilePage />} />
       <Route path="/" element={<Navigate to="/home" replace />} />
     </IonRouterOutlet>
-    <IonTabBar slot="bottom">
+    <IonTabBar slot="bottom" className="mobile-tab-bar">
       <IonTabButton tab="home" href="/home">
         <IonIcon icon={homeOutline} />
         <IonLabel>Home</IonLabel>
@@ -144,8 +143,10 @@ const TabbedShell: React.FC = () => (
         <IonIcon icon={listOutline} />
         <IonLabel>Assignments</IonLabel>
       </IonTabButton>
-      <IonTabButton tab="log-incident" href="/incidents/new">
-        <IonIcon icon={addCircle} />
+      <IonTabButton tab="log-incident" href="/incidents/new" className="mobile-tab-button--fab">
+        <div className="tab-fab-btn" aria-hidden="true">
+          <IonIcon icon={add} />
+        </div>
         <IonLabel>Log Incident</IonLabel>
       </IonTabButton>
       <IonTabButton tab="map" href="/map">
@@ -172,11 +173,22 @@ const TabbedShell: React.FC = () => (
  * `registerCriticalAlertListeners()` is called once, at the app's own
  * mount — not inside `RequireSession` or any per-tab component — so a
  * push arriving before login (device already registered from a previous
- * session) is not silently missed.
+ * session) is not silently missed. `startSyncScheduler()` (Mobile
+ * Improvement Plan Phase 1.1) is registered the same way and for the same
+ * reason — a Tanod regaining connectivity while sitting on the login
+ * screen (signed out from a previous session, about to sign back in)
+ * should not need to also happen to be on a screen that sets up its own
+ * sync trigger.
  */
 const App: React.FC = () => {
   useEffect(() => {
     registerCriticalAlertListeners();
+    startSyncScheduler();
+    // Once per cold start, not per sync tick — Phase 3.3's cleanup rule
+    // only matters on a 30-day timescale, so there is no benefit to
+    // running it more often than the app actually restarts, and every run
+    // is real file I/O over however many evidence rows exist.
+    void pruneOldSyncedEvidenceFiles();
   }, []);
 
   return (

@@ -27,17 +27,20 @@ import { useNavigate } from 'react-router-dom';
 import {
   IonButton,
   IonContent,
+  IonIcon,
   IonItem,
   IonList,
   IonNote,
   IonPage,
   IonSpinner,
-  IonText,
 } from '@ionic/react';
+import { eyeOffOutline, eyeOutline, lockClosedOutline, personOutline, shield } from 'ionicons/icons';
 import { TextField } from '../components/FormFields';
-import { ApiError, getMapPackage, login, registerDevice } from '../services/apiService';
+import { ApiError, login, registerDevice } from '../services/apiService';
 import { getDeviceId, getFcmToken } from '../services/deviceIdentity';
+import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
+import { refreshSosFallbackContact } from '../services/sosFallbackContact';
 
 const GENERIC_FAILURE = 'Unable to sign in with those credentials.';
 
@@ -45,6 +48,7 @@ const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -80,45 +84,100 @@ const LoginPage: React.FC = () => {
 
   return (
     <IonPage>
-      <IonContent className="ion-padding">
-        <div className="app-column">
-          <IonText>
-            <h1 className="app-title">Baranguard</h1>
-            <p className="app-subtitle">Tanod sign in</p>
-          </IonText>
+      <IonContent fullscreen className="ion-no-padding">
+        <div className="mobile-login-bg">
+          <div className="app-column" style={{ width: '100%', padding: '0 8px' }}>
+            <div className="mobile-login-card">
+              <div className="mobile-login-brand">
+                <div className="mobile-login-emblem">
+                  <IonIcon icon={shield} />
+                </div>
+                <h1 className="mobile-login-title">BARANGUARD</h1>
+                <p className="mobile-login-subtitle">Field Responder Console</p>
+              </div>
 
-          <form onSubmit={handleSubmit}>
-            <IonList inset>
-              <IonItem>
-                <TextField
-                  label="Username"
-                  autocapitalize="off"
-                  value={username}
-                  onChange={setUsername}
+              <form onSubmit={handleSubmit}>
+                <IonList inset className="ion-no-margin" style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                  <IonItem lines="full">
+                    <IonIcon icon={personOutline} slot="start" color="medium" style={{ fontSize: '1.2rem', marginRight: '8px' }} />
+                    <TextField
+                      label="Username"
+                      autocapitalize="off"
+                      value={username}
+                      onChange={setUsername}
+                      disabled={busy}
+                    />
+                  </IonItem>
+                  <IonItem lines="none" style={{ position: 'relative' }}>
+                    <IonIcon icon={lockClosedOutline} slot="start" color="medium" style={{ fontSize: '1.2rem', marginRight: '8px' }} />
+                    <TextField
+                      label="Password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={setPassword}
+                      disabled={busy}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--color-text-tertiary)',
+                        padding: '4px',
+                        cursor: 'pointer',
+                        zIndex: 10,
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <IonIcon icon={showPassword ? eyeOffOutline : eyeOutline} style={{ fontSize: '1.25rem' }} />
+                    </button>
+                  </IonItem>
+                </IonList>
+
+                {error && (
+                  <div style={{ marginTop: '12px' }}>
+                    <div
+                      style={{
+                        background: 'var(--tint-critical-bg)',
+                        border: '1px solid color-mix(in srgb, var(--color-critical) 30%, transparent)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '10px 14px',
+                        color: 'var(--pill-critical-text)',
+                        fontSize: 'var(--font-size-sm)',
+                        lineHeight: '1.4',
+                      }}
+                      role="alert"
+                    >
+                      {error}
+                    </div>
+                  </div>
+                )}
+
+                <IonButton
+                  type="submit"
+                  expand="block"
                   disabled={busy}
-                />
-              </IonItem>
-              <IonItem>
-                <TextField
-                  label="Password"
-                  type="password"
-                  value={password}
-                  onChange={setPassword}
-                  disabled={busy}
-                />
-              </IonItem>
-            </IonList>
-
-            {error && (
-              <IonNote className="app-error" role="alert">
-                {error}
-              </IonNote>
-            )}
-
-            <IonButton type="submit" expand="block" disabled={busy}>
-              {busy ? <IonSpinner name="dots" /> : 'Sign in'}
-            </IonButton>
-          </form>
+                  style={{
+                    marginTop: '20px',
+                    '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
+                    '--border-radius': 'var(--radius-md)',
+                    fontWeight: '700',
+                    height: '48px',
+                    boxShadow: 'var(--shadow-fab)',
+                  }}
+                >
+                  {busy ? <IonSpinner name="dots" /> : 'Sign In to Console'}
+                </IonButton>
+              </form>
+            </div>
+          </div>
         </div>
       </IonContent>
     </IonPage>
@@ -154,14 +213,18 @@ async function runPostLoginSetup(barangayId: number): Promise<void> {
     // Non-fatal by design.
   }
 
-  try {
-    // Result intentionally unused for now: M1's contract is only to CHECK
-    // the version. Actually downloading and SHA-256-verifying the package
-    // is the offline-basemap box, not this one.
-    await getMapPackage(barangayId);
-  } catch {
-    // Non-fatal by design.
-  }
+  // Deliberately NOT awaited: §9 M1's contract is that the map check must
+  // never block entry to M2, and a multi-MB package download even less
+  // so. mapPackageService.ts itself never throws (offline/server-error
+  // just means "keep whatever's already installed"), and live-map.tsx
+  // re-checks on its own mount as a safety net for a session that never
+  // reaches this point (e.g. resumed from a background service worker).
+  void ensureMapPackageDownloaded(barangayId);
+
+  // G1's SOS fallback contact (Phase 4.3) — cached now, while online,
+  // because the moment it's actually needed is the moment the server is
+  // confirmed unreachable. Same non-blocking, non-fatal treatment.
+  void refreshSosFallbackContact();
 }
 
 export default LoginPage;
