@@ -47,6 +47,17 @@ final class SettingsController
         'general.region' => ['default' => 'Region V (Bicol)', 'max' => 100, 'secret' => false],
         'sms_gateway.sender_name' => ['default' => '', 'max' => 32, 'secret' => false],
         'sms_gateway.api_key' => ['default' => '', 'max' => 255, 'secret' => true],
+        // G1 (Mobile Improvement Plan Phase 4.3) — the third SOS fallback
+        // tier's destination: a human backup contact the mobile app SMSes
+        // DIRECTLY (own SIM, no gateway) when both the direct app POST and
+        // the workstation itself are confirmed unreachable. Explicit user
+        // decision (2026-09-13): lives here rather than a new table/column,
+        // as one more narrow, non-secret key on the same override W21
+        // already established — not a widening of what that override
+        // covers in kind, just in count. Never returned by the Admin-only
+        // GET above to any OTHER role — see TanodSosController::fallbackContact()
+        // for the one narrow, tanod-readable path to this single value.
+        'sos_fallback.backup_contact_number' => ['default' => '', 'max' => 32, 'secret' => false],
     ];
 
     /** Placeholder echoed back for a secret whose real value is already set — never a real key. */

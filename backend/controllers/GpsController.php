@@ -63,10 +63,19 @@ final class GpsController
     private const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
-    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    /**
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     *
+     * Tanod admitted alongside admin/punong_barangay (2026-09-12, explicit
+     * user decision): a Tanod sees the same same-barangay-active-Tanod
+     * roster this query already builds for Admin/PB — no new query, no
+     * wider data exposure than those two roles already have for their own
+     * barangay. requireTenant() below still blocks a Tanod from ever
+     * passing a barangay_id other than their own (404, Rule 2).
+     */
     public static function live(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay', 'tanod']);
 
         $barangayIdParam = Http::query('barangay_id');
         if ($barangayIdParam === null || !ctype_digit($barangayIdParam)) {

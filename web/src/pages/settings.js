@@ -42,6 +42,7 @@ const ACCOUNT_SECTIONS = [
 const SYSTEM_SECTIONS = [
   { key: 'general', label: 'General', subLabel: 'Municipal & jurisdiction branding', icon: icons.shield },
   { key: 'sms-gateway', label: 'SMS Gateway', subLabel: 'Semaphore integration & credentials', icon: icons.messageSquare },
+  { key: 'sos-fallback', label: 'SOS Fallback', subLabel: 'Backup contact for total-outage SOS', icon: icons.alertTriangle },
 ];
 
 /**
@@ -150,6 +151,9 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
     } else if (activeSection === 'sms-gateway') {
       panel.appendChild(buildLoadingCard('SMS Gateway'));
       loadSystemSettingsInto(panel, buildSmsGatewayCard);
+    } else if (activeSection === 'sos-fallback') {
+      panel.appendChild(buildLoadingCard('SOS Fallback'));
+      loadSystemSettingsInto(panel, buildSosFallbackCard);
     }
   }
   renderPanel();
@@ -925,6 +929,110 @@ function buildSmsGatewayCard(settings) {
     } finally {
       submitButton.disabled = false;
       submitButton.textContent = 'Save Gateway Settings';
+    }
+  });
+
+  return card;
+}
+
+/**
+ * 6. SOS Fallback Card (Admin Only) — G1's third SOS fallback tier
+ * (Mobile Improvement Plan Phase 4.3): the one destination a Tanod's
+ * phone SMSes DIRECTLY (own SIM, no gateway) when both the direct app
+ * POST and the workstation itself are confirmed unreachable. A single
+ * non-secret phone number, same `system_settings` override W21 already
+ * established for the SMS Gateway keys above — explicit user decision,
+ * 2026-09-13 (see `SettingsController::KEYS`'s own comment).
+ */
+function buildSosFallbackCard(settings) {
+  const card = document.createElement('div');
+  card.className = 'settings-card';
+
+  const headerEl = document.createElement('div');
+  headerEl.className = 'settings-card__header';
+  headerEl.innerHTML = `
+    <div class="settings-card__title-wrap">
+      <span class="settings-card__icon">${icons.alertTriangle(20)}</span>
+      <div>
+        <h3 class="settings-card__title">SOS Fallback Contact</h3>
+        <p class="settings-card__subtitle">Backup phone number for a total-outage SOS (app and workstation both unreachable)</p>
+      </div>
+    </div>
+  `;
+  card.appendChild(headerEl);
+
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'settings-card__body';
+
+  const statusBox = document.createElement('div');
+  statusBox.className = 'settings-gateway-status-box';
+  const configured = Boolean(settings['sos_fallback.backup_contact_number']);
+  statusBox.innerHTML = `
+    <div style="display:flex; align-items:center; gap:0.625rem;">
+      <span style="color:var(--color-primary);">${icons.phone(18)}</span>
+      <div>
+        <div style="font-size:var(--font-size-sm); font-weight:700; color:var(--color-text-primary);">Direct Device SMS (no gateway)</div>
+        <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">Sent from the Tanod's own phone SIM — only when the app AND the workstation are both unreachable</div>
+      </div>
+    </div>
+    <span class="status-pill ${configured ? 'status-pill--success' : 'status-pill--neutral'}">
+      ${configured ? 'CONFIGURED' : 'NOT CONFIGURED'}
+    </span>
+  `;
+  bodyEl.appendChild(statusBox);
+
+  const form = document.createElement('form');
+  form.className = 'settings-form';
+  form.noValidate = true;
+
+  const numberField = document.createElement('div');
+  numberField.className = 'settings-field';
+  const numberLabel = document.createElement('label');
+  numberLabel.className = 'settings-label';
+  numberLabel.htmlFor = 'settings-sos-fallback-number';
+  numberLabel.textContent = 'Backup Contact Number';
+
+  const numberInput = document.createElement('input');
+  numberInput.id = 'settings-sos-fallback-number';
+  numberInput.type = 'tel';
+  numberInput.className = 'settings-input';
+  numberInput.placeholder = 'e.g. 09171234567';
+  numberInput.value = settings['sos_fallback.backup_contact_number'] || '';
+  numberInput.maxLength = 32;
+
+  const numberNote = document.createElement('span');
+  numberNote.className = 'settings-help-text';
+  numberNote.textContent =
+    'A real, monitored mobile number (e.g. a supervisor’s personal phone). Left blank, the app has nothing to fall back to for a total-outage SOS.';
+
+  numberField.append(numberLabel, numberInput, numberNote);
+
+  const submitButton = document.createElement('button');
+  submitButton.type = 'submit';
+  submitButton.className = 'primary';
+  submitButton.style.cssText = 'width: fit-content; min-width: 140px; margin-top: 0.25rem;';
+  submitButton.textContent = 'Save Fallback Contact';
+
+  form.append(numberField, submitButton);
+  bodyEl.appendChild(form);
+  card.appendChild(bodyEl);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving…';
+
+    try {
+      await updateSystemSettings({
+        'sos_fallback.backup_contact_number': numberInput.value.trim(),
+      });
+      showToast('SOS fallback contact saved successfully.', { variant: 'success' });
+    } catch (err) {
+      const message = err instanceof ApiClientError ? err.message : 'Could not save the SOS fallback contact.';
+      showToast(message, { variant: 'error' });
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Save Fallback Contact';
     }
   });
 
