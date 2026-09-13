@@ -1,10 +1,15 @@
 # Baranguard AI evaluation — thank you for helping with this!
 
 This folder measures how well a local AI model removes personal
-information (names, addresses, phone numbers, etc.) from 200 made-up
+information (names, addresses, phone numbers, etc.) from 350 made-up
 sample incident reports. Every single report in here is fictional —
 invented specifically for this test, never a real complaint from anyone.
 Nothing in this folder is private or sensitive.
+
+(If you ran an earlier version of this kit before: it used to test 200
+reports in 3 languages. It's now 350 reports across 7 language
+combinations — including reports that mix Bikol, Tagalog, and English in
+the same report, since that's how people actually write in real life.)
 
 Your computer never sends anything anywhere. Everything runs entirely on
 your own machine, offline. When it's done, you send back two small text
@@ -37,7 +42,7 @@ files — that's it.
    `.bat` again.
 3. It runs a tiny 3-record test first (a minute or two) to make sure
    everything is set up right before committing to the full run.
-4. Then it runs the real 200-record test. **This takes a while — could be
+4. Then it runs the real 350-record test. **This takes a while — could be
    several hours, possibly longer on an older machine.** That's expected,
    not a hang: a real test of this same tool on the project's own
    CPU-only dev machine took more than 5 minutes for a single record. It
@@ -51,6 +56,32 @@ files — that's it.
 6. When it finishes, it prints exactly which files to send back — look
    for `evaluation-results-*.txt` and `evaluation-log-*.txt` in this
    folder. Just send those two files back (email, chat, whatever's easy).
+
+## The other 7 things this AI model does (optional, for the technically curious)
+
+The double-click `run-evaluation.bat` only tests ONE thing — redaction
+(removing personal info) — because it's the most important one and the
+one most worth everyone's patience. The same AI model also writes case
+summaries, translates records, drafts SMS alerts, and a few other things.
+If you're comfortable with Command Prompt and want to help test those
+too, each has its own command (run from inside this folder, same as the
+`.bat` file does):
+
+```
+php scripts\ai-evaluate.php --task=summary --engine=model --dry-run --verbose --save-results
+php scripts\ai-evaluate.php --task=extraction --engine=model --dry-run --verbose --save-results
+php scripts\ai-evaluate.php --task=classification --engine=model --dry-run --verbose --save-results
+php scripts\ai-evaluate.php --task=blotter-assist --engine=model --dry-run --verbose --save-results
+php scripts\ai-evaluate.php --task=translation --translate-to=fil --engine=model --dry-run --verbose --save-results
+php scripts\ai-evaluate.php --task=sms-compose --engine=model --dry-run --verbose --save-results
+php scripts\ai-evaluate.php --task=threat-analysis --engine=model --dry-run --verbose --save-results
+```
+
+Add `--batch-size=20 --rest-seconds=120 --resume` to any of these the
+same way the main run does, if you want the same pacing/resume behavior
+for a long unattended run. Each one writes its own
+`evaluation-results-<task>-*.txt` / `evaluation-log-<task>-*.txt` files —
+send back whichever ones you ran, alongside the main redaction files.
 
 ## Is my computer okay to run this on?
 

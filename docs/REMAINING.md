@@ -514,32 +514,86 @@ Only needed if you want the tethered-phone inbound path. The contract is
 already proven — `scripts/sms-envelope-build.php` produces exactly what
 the ingestion daemon would.
 
-### 🔴 A6. Seven of the model's eight tasks have never been evaluated at all
-Found 2026-09-14 while explaining A2's results to the user. The local
-model (`aisingapore/Llama-SEA-LION-v3.5-8B-R`) backs **eight** distinct
-prompt types — `backend/services/ai/AiPrompts.php`'s own function list:
-`redaction`, `summary`, `translation`, `extraction`, `blotterAssist`,
-`classification`, `smsCompose`, `threatAnalysis`. **A2/A3/`eval-kit/`
-measure exactly one of these: `redaction`.**
-`eval-kit/scripts/ai-evaluate.php` hardcodes `'task_type' => 'redaction'`
-(confirmed by reading the source, not inferred), and
-`docs/AI_Evaluation_Dataset_Guide.md` never mentions the other seven.
-Net effect: the only AI-quality number this project has ever measured
-is "does redaction find and remove PII" — summary quality, translation
-quality, extraction accuracy, and the four AI Tools assistants'
-output quality are all completely unverified. Redaction is the
-highest-stakes of the eight (a miss is a privacy leak, §2 Rule 1), so
-this isn't nothing, but "the AI works" is not something this project can
-currently back up beyond that one task.
+### ✅ A6. Seven of the model's eight tasks had never been evaluated — CLOSED 2026-09-14
+Found 2026-09-14 while explaining A2's results to the user: the local
+model backs **eight** distinct prompt types
+(`backend/services/ai/AiPrompts.php`), and `eval-kit/scripts/
+ai-evaluate.php` hardcoded `'task_type' => 'redaction'` — only one of the
+eight had ever been measured.
 
-**Being replaced 2026-09-14, in progress**: a plan was requested before
-any code changes — see the session's own plan (research into per-task
-evaluation methodology and defensible target thresholds, since redaction's
-95%/90% targets don't obviously transfer to summarization/translation/
-extraction/classification/open-ended-generation tasks) and the rebuilt
-`eval-kit/` once that plan is approved. Do not assume `eval-kit/`'s
-current shape (redaction-only, single dataset file) survives this — this
-entry should be updated once the replacement lands.
+**Rebuilt the same day, researched before any code was written** (see
+that session's own plan, still on disk, for the full research writeup —
+de-identification benchmarks, LLM-as-judge self-preference bias, TICK-
+style checklist evaluation, low-resource MT metrics, sample-size math,
+and Bicol-region code-switching literature, each with sources):
+
+- **Dataset**: `backend/scripts/generate-eval-dataset.php` rebuilt —
+  `eval-incidents-v1.json`, 350 records (was 200), across **7 language
+  buckets**: `en`/`tl`/`bcl` pure plus **4 code-mixed combinations**
+  (`bcl-tl`, `bcl-en`, `tl-en`, `bcl-tl-en`) — sociolinguistic research on
+  the Bicol region is explicit that residents typically code-switch, so a
+  monolingual-only corpus was testing an unrealistic input shape. New
+  ground truth: `complainant`/`respondent`/`contact` (for extraction) and
+  `priority` (for classification, derived deterministically from
+  `AiPrompts::classification()`'s own written definition). Two new small
+  datasets: `eval-sms-prompts-v1.json` (35 synthetic operator prompts,
+  some with planted decoy PII) and `eval-threat-stats-v1.json` (25
+  synthetic aggregate-count blocks with known numbers). All three
+  self-validate before writing, same discipline the original generator
+  already had. A real bug was found and fixed while extending it:
+  formatting_oddity's punctuation-stripping could corrupt an EMAIL/
+  DATE_OF_BIRTH entity's own text (both contain periods/commas) — now
+  falls back to the uppercase variant instead when that would happen.
+- **Scorers** (new `backend/services/eval/`): `RedactionScorer` (ported
+  unchanged — the existing recall/precision methodology was kept
+  deliberately, it already matches real de-id benchmarks),
+  `ExtractionScorer` and `ClassificationScorer` (new, exact-match),
+  `ChecklistScorer` (new, generic TICK-style constraint-checklist
+  primitives reused by summary/translation/blotter-assist/sms-compose/
+  threat-analysis — mechanical checks wherever the prompt's own rules
+  allow it, explicitly NOT an LLM-as-judge: documented self-preference
+  bias would make the same model judging itself misleading, and a
+  different judge model would need a second local model or an external
+  call, conflicting with §2 Rule 5). 33/33 hand-checked assertions pass
+  (`backend/scripts/verify-eval-scorers.php`).
+- **`backend/scripts/ai-evaluate.php` generalized**: `--task=` dispatches
+  across all 8 tasks; the existing pacing/resume/checkpoint/save-results
+  machinery is untouched (it was already task-agnostic) and proven still
+  correct via a real `--resume` smoke test. `--task=redaction
+  --engine=baseline` end-to-end run on the new 350-record corpus: 30.60%
+  recall / 100% precision — same shape as the original 200-record
+  baseline (32.71%/100%), confirming the rebuilt corpus still makes the
+  same case for the model over regex.
+- **Migration 0021** added `metric_a_name`/`metric_a_value`/
+  `metric_b_name`/`metric_b_value` to `ai_evaluation_run` (verified up/
+  down/idempotent against a disposable DB) — `precision_score`/
+  `recall_score` are untouched for `redaction`/`extraction`; the four new
+  columns hold classification's accuracy pair and the checklist tasks'
+  compliance rate, self-describing per row.
+- **`eval-kit/` is now GENERATED**, not hand-maintained —
+  `backend/scripts/build-eval-kit.php` copies the canonical `backend/`
+  files across. This closes a real, already-confirmed drift bug found
+  while researching this rebuild: `eval-kit/`'s own `AiPrompts.php` copy
+  was missing 4 of the 8 methods. `run-evaluation.bat`/
+  `README-FOR-FRIEND.md` updated for the new 350-record corpus and the 7
+  additional `--task=` commands available to a technically-comfortable
+  friend.
+
+**Provisional targets** (researched, not yet empirically validated —
+disclosed as such): extraction ≥85% per-field accuracy; classification
+≥85% type / ≥80% priority accuracy; summary/blotter-assist/sms-compose/
+threat-analysis ≥90% mechanical compliance rate; translation has no
+automated pass/fail — a human bilingual rater is the primary signal
+(≥4/5 target), same reasoning as A3's own Bikol spot-check recommendation.
+
+**Not done**: no real model run against any of the 7 new tasks yet (this
+workstation cannot complete even one redaction generation within 300s,
+per A2 — a friend's hardware is the same next step A2 needed); the
+human-rated translation/summary quality samples haven't happened;
+classification's eval measures whether the model arrives at the right
+answer, not whether it CORRECTS a wrong "current" value (disclosed gap,
+see `ai-evaluate.php`'s own header). See `backend/DEVLOG.md` 2026-09-14
+for the complete build writeup.
 
 ---
 

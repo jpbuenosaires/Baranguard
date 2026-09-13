@@ -3,11 +3,22 @@
 **Superseded 2026-09-07.** This originally instructed three people to
 hand-author the 200-record evaluation set. That never happened; by
 explicit user decision, `backend/scripts/generate-eval-dataset.php`
-generates `backend/fixtures/redaction-eval-v1.json` instead (template +
-pool synthesis, self-validated, disclosed as AI-generated in the
-dataset's own `generation_method` field — see `backend/DEVLOG.md`'s
-"Friend-runnable AI evaluation kit" entry for the full story). The
-hand-authoring process below is no longer followed.
+generates the dataset instead (template + pool synthesis, self-validated,
+disclosed as AI-generated in the dataset's own `generation_method` field
+— see `backend/DEVLOG.md`'s "Friend-runnable AI evaluation kit" entry for
+the full story). The hand-authoring process below is no longer followed.
+
+**Updated 2026-09-14 (docs/REMAINING.md A6):** the dataset was rebuilt
+and renamed `backend/fixtures/eval-incidents-v1.json` — 350 records
+(was 200), across 7 language buckets including 4 code-mixed Bikol/
+Tagalog/English combinations (was 3 pure languages), plus new
+`complainant`/`respondent`/`contact`/`priority` ground-truth fields for
+the extraction and classification tasks. `redaction-eval-v1.json` is kept
+in `backend/fixtures/` only as the historical audit trail for A2's
+already-recorded real evaluation run (2026-09-10) — it is not used by
+anything going forward. The PII category definitions below are
+unaffected by the rename; they are still the live contract the generator
+follows.
 
 **Kept for one reason:** the PII category definitions and judgement
 calls below are still the live contract the generator script follows,
