@@ -44,7 +44,14 @@ Thumbs.db
 .history/
 
 # Capacitor generated builds
-mobile/android/
+# mobile/android/ committed 2026-09-13 (explicit user decision) — it now
+# carries real, non-regeneratable hand-fixes (gradle.properties' JDK
+# installation paths, AndroidManifest.xml permissions) that `npx cap add
+# android` would silently destroy if the directory were ever regenerated
+# from scratch. The nested mobile/android/.gitignore (Capacitor's own
+# generated one) already excludes build/, .gradle/, local.properties and
+# other machine-specific/regenerable content correctly — this blanket
+# line was overriding it wholesale rather than deferring to it.
 mobile/ios/
 
 # Sensitive certificates
