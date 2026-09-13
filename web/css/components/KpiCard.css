@@ -93,6 +93,23 @@
   transform: translateY(-4px);
   box-shadow: var(--shadow-card-hover);
 }
+.kpi-grid .card:focus-visible,
+.kpi-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.kpi-card__sparkline-point {
+  fill: var(--color-primary);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease, r 0.15s ease;
+}
+.kpi-card__sparkline-point:hover,
+.kpi-card__sparkline-point:focus-visible {
+  opacity: 1;
+  r: 4.5;
+  outline: none;
+}
 .kpi-card__value {
   animation: count-up 0.4s ease-out;
 }

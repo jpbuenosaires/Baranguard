@@ -45,23 +45,10 @@
  * a media query, which is what broke responsiveness before.
  */
 
-/* ⚠ THIS KNOB WAS INERT UNTIL 2026-09-04 — read before changing it.
-   `html { font-size: 75% }` never took effect. The `html, body { … }`
-   rule further down this file also sets `font-size: var(--font-size-md)`,
-   which is `1rem`; it has equal specificity and comes later, so it won.
-   And `rem` ON THE ROOT ELEMENT resolves against the browser's initial
-   16px, not against this declaration — so the root computed to 16px and
-   the whole documented scaling mechanism did nothing. Measured in a
-   browser: computed html font-size 16px, 1rem = 16px.
-   Consequence worth knowing: every size in this file has always rendered
-   at its face value (--font-size-sm = 14px, --font-size-label = 12px),
-   NOT at the 75% the comment below describes.
-   The contradiction is now fixed — `html, body` sets it on `body` only,
-   so this line genuinely controls the root. It is set to 100% precisely
-   because that is what the app has actually been rendering at all along:
-   making the knob work must not silently resize a UI nobody asked to
-   change. Turn it down if a denser console is wanted; it will now
-   actually respond. */
+/* UI scale knob: `html { font-size: 100% }` operates as the single root scale knob.
+   All sizing tokens across the system are declared in `rem`, so altering this
+   percentage proportionally scales typography, spacing, controls, and layout.
+   It defaults to 100% to preserve browser font scaling and user accessibility preferences. */
 html { font-size: 100%; }
 
 /**
@@ -909,7 +896,6 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 .textarea--resizable { resize: vertical; }
 /* Tight label-over-control pairing inside a form row. */
 .stack-tight { display: flex; flex-direction: column; gap: var(--spacing-xs); }
-.row-start { justify-content: flex-start; }
 /* Skeletons that fill their container rather than taking a fixed shape.
    `min-height` floor for the same reason `.gis-page__map-wrapper--fill`
    has one (gis-live-tracking.css) — `height: 100%` alone collapses when
@@ -1385,12 +1371,8 @@ html, body, .status-pill,
 .range-picker-custom-row[hidden] { display: none; }
 
 .row-between { display: flex; justify-content: space-between; align-items: center; gap: var(--spacing-sm); }
-/* Standalone, not a `.row-between` modifier — a self-contained flex row
-   for a single right-aligned element (e.g. a "View all →" link under a
-   summary panel), unlike `.row-start` above which is meant to pair with
-   `.row-between` but is declared earlier in this file, so it loses that
-   pairing's cascade (pre-existing, not this rule's concern). */
-.row-end { display: flex; justify-content: flex-end; align-items: center; gap: var(--spacing-sm); }
+.row-start   { display: flex; justify-content: flex-start; align-items: center; gap: var(--spacing-sm); }
+.row-end     { display: flex; justify-content: flex-end; align-items: center; gap: var(--spacing-sm); }
 .avatar-row { display: flex; align-items: center; gap: var(--spacing-sm); }
 .note { text-transform: none; font-weight: 400; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 
@@ -1490,6 +1472,11 @@ html, body, .status-pill,
   max-width: 34rem;
   max-height: calc(100vh - 4rem);
   overflow-y: auto;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .modal-backdrop { background: rgba(15, 23, 42, 0.75); }
+  .modal-card { background: var(--color-surface); border-color: var(--color-border); }
 }
 
 /* Global utility for spinning icons (exporting, loading, refreshing) */

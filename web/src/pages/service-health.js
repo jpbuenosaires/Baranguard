@@ -1,9 +1,14 @@
 /**
  * service-health.js — W20 Service Health / Recovery (§9): "Roles: Admin
  * only · API: GET /system/health (local-only) · Shows MariaDB, API,
- * OSRM, Ollama, GSM ingestion, notification configuration, and
+ * routing, Ollama, GSM ingestion, notification configuration, and
  * backup/last-restore-test status. This is operational diagnostics, not
- * a public endpoint."
+ * a public endpoint." (Routing is OpenRouteService (ORS), not the
+ * self-hosted OSRM this spec line originally named, and not Google's
+ * Routes API either — Google was ruled out because it requires a
+ * billing account with a card on file even for free-tier use, which
+ * this deployment doesn't have. 2026-09-13 architecture decisions, see
+ * OrsClient.php's own doc block.)
  *
  * THE POINT OF THIS SCREEN IS HONESTY ABOUT WHAT ISN'T WIRED UP.
  * §6 gives three coarse statuses, and the distinction between two of
@@ -45,7 +50,7 @@ const DOMAINS = {
   intelligence: {
     id: 'intelligence',
     label: 'Intelligence & Routing',
-    description: 'Self-hosted AI language model daemon and OpenStreetMap routing calculations',
+    description: 'Self-hosted AI language model daemon and OpenRouteService turn-by-turn calculations',
     icon: icons.compass,
   },
   communications: {
@@ -104,19 +109,19 @@ const DEPENDENCIES = [
     runbook: '# Verify Ollama status:\nollama list\n# Pull configured SEA-LION model if missing:\nollama pull sea-lion\n# Start Ollama service:\nollama serve',
   },
   {
-    key: 'osrm',
+    key: 'ors',
     domain: 'intelligence',
-    label: 'OSRM Routing Engine',
-    description: 'Turn-by-turn routing daemon for tanod dispatch and patrol ETA',
+    label: 'OpenRouteService (Routing)',
+    description: 'Cloud turn-by-turn routing for tanod dispatch and patrol ETA (car and foot), free tier, no card required',
     icon: icons.map,
-    probeType: 'Config & Reachability',
-    probeDetail: 'Validates OSRM_URL presence and routing backend socket',
-    configKey: 'OSRM_URL',
+    probeType: 'Live Route Request',
+    probeDetail: 'Requests a real route between two fixed Pilar/Sorsogon points, not just a key presence check',
+    configKey: 'ORS_API_KEY',
     impacted: [
       'Dispatch Center (W3) Tanod-to-incident road travel time and ETA',
-      'Falls back gracefully to direct geodesic distance if unconfigured',
+      'Falls back to the mobile app’s external navigation link if unconfigured or unreachable',
     ],
-    runbook: '# Verify OSRM local server:\ncurl "http://localhost:5000/route/v1/driving/123.0,13.0;123.1,13.1?overview=false"\n# Set OSRM_URL in backend/.env',
+    runbook: '# Verify the key is working (coordinates confirmed on-road in Pilar,\n# unlike the map\'s own DEFAULT_CENTER — see OrsClient.php\'s doc block):\ncurl -X POST "https://api.openrouteservice.org/v2/directions/driving-car/geojson" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: $ORS_API_KEY" \\\n  -d \'{"coordinates":[[123.670203,12.918905],[123.672552,12.921617]]}\'\n# Set ORS_API_KEY in backend/.env — free key from openrouteservice.org/sign-up, no card required (that signup is yours to do, not automatable).',
   },
   {
     key: 'gsmIngestion',
@@ -661,7 +666,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     const DEPENDENCIES = [
       ['db', 'Database'],
-      ['osrm', 'Routing (OSRM)'],
+      ['ors', 'Routing (ORS)'],
       ['ollama', 'Local AI (Ollama)'],
       ['gsmIngestion', 'GSM ingestion'],
       ['fcm', 'Push (FCM)'],

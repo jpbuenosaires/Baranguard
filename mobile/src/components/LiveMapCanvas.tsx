@@ -39,6 +39,7 @@ import {
   Marker,
   NavigationControl,
   addProtocol,
+  type GeoJSONSource,
   type StyleSpecification,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -54,6 +55,10 @@ const DEFAULT_CENTER: [number, number] = [123.6667, 12.9186];
 const DEFAULT_ZOOM = 13;
 const POSITION_ZOOM = 15;
 const TILE_PROTOCOL = 'baranguard-mbtiles';
+const ROUTE_SOURCE_ID = 'route';
+const ROUTE_LAYER_ID = 'route-line';
+/** Matches --color-primary (variables.css) — MapLibre paint properties can't resolve CSS custom properties. */
+const ROUTE_LINE_COLOR = '#1d4ed8';
 
 export type BasemapStatus =
   | { kind: 'loading' }
@@ -92,6 +97,15 @@ interface Props {
    * drop a pin rather than only ever trusting the device's own GPS fix.
    */
   onMapClick?: (point: FocusTarget) => void;
+  /**
+   * A road-snapped route geometry (already-decoded GeoJSON LineString —
+   * see `apiService.getDispatchRoute()`/`OrsClient.php`'s own doc block
+   * for why no polyline decoding is ever needed here) drawn on top of
+   * the basemap. `null`/`undefined` draws nothing — assignment-detail.tsx
+   * is the only caller that ever sets this, after its explicit "Get
+   * Route" action.
+   */
+  routeGeometry?: { type: string; coordinates: [number, number][] } | null;
 }
 
 /** Frames the camera on whichever of self/focusTarget are available; both → fits bounds, one → centers on it. */
@@ -184,7 +198,7 @@ function priorityMarkerClass(priority: string): string {
 }
 
 const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCanvas(
-  { barangayId, position, incidents, tanods, onStatusChange, focusTarget, onMapClick },
+  { barangayId, position, incidents, tanods, onStatusChange, focusTarget, onMapClick, routeGeometry },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -337,6 +351,47 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       return new Marker({ element: el }).setLngLat([tanod.longitude, tanod.latitude]).addTo(map);
     });
   }, [tanods, status]);
+
+  // Draws/updates/clears the route line — a GeoJSON source+layer on top
+  // of the raster basemap (MapLibre supports this natively regardless of
+  // whether the basemap itself is the offline or online style). Re-added
+  // after every map recreation (barangayId change) since a new MaplibreMap
+  // instance has no sources of its own yet; updated via setData() on the
+  // existing source otherwise, rather than removing/re-adding every time
+  // routeGeometry changes (e.g. after a route refresh).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    function applyRoute() {
+      if (!map) return;
+      if (!routeGeometry) {
+        if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
+        if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);
+        return;
+      }
+      const data: GeoJSON.Feature = { type: 'Feature', properties: {}, geometry: routeGeometry as GeoJSON.Geometry };
+      const existing = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined;
+      if (existing) {
+        existing.setData(data);
+      } else {
+        map.addSource(ROUTE_SOURCE_ID, { type: 'geojson', data });
+        map.addLayer({
+          id: ROUTE_LAYER_ID,
+          type: 'line',
+          source: ROUTE_SOURCE_ID,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': ROUTE_LINE_COLOR, 'line-width': 5, 'line-opacity': 0.85 },
+        });
+      }
+    }
+
+    if (map.isStyleLoaded()) {
+      applyRoute();
+    } else {
+      map.once('load', applyRoute);
+    }
+  }, [routeGeometry, status]);
 
   function recenter() {
     const map = mapRef.current;

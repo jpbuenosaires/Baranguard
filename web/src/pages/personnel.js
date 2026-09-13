@@ -138,10 +138,12 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
     pageHeader.actions.innerHTML = '';
     body.innerHTML = '';
 
-    // Re-trigger CSS animation
-    body.style.animation = 'none';
-    void body.offsetHeight; // trigger reflow
-    body.style.animation = '';
+    // Re-trigger CSS animation unless reduced motion is preferred
+    if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      body.style.animation = 'none';
+      void body.offsetHeight; // trigger reflow
+      body.style.animation = '';
+    }
 
     if (activeTab === 'users') {
       renderUsersTab(body, pageHeader, user);

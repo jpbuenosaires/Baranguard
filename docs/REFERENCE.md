@@ -188,10 +188,16 @@ covering index on `audit_log`, closing §F9's last item — see that
 migration's own header; `SmsController::broadcast()` is the only caller
 updated to use it, `IncidentsController`'s identical-shaped F5 lookup is
 a deliberate follow-up, not touched).
-**All nineteen are applied to the real local `baranguard` DB** (0008–0014
+**0020 health_check_log_ors** (adds `health_check_log.ors_status` —
+turn-by-turn routing's health-probe column, 2026-09-13; second design on
+this column in one day, see `OrsClient.php`'s doc block — verified
+idempotent/rollback-clean against disposable DBs only, see below).
+
+**All twenty are applied to the real local `baranguard` DB** (0008–0014
 on 2026-09-05, 0015 on 2026-09-10, 0016–0017 on 2026-09-12, 0018 on
-2026-09-12, 0019 on 2026-09-13). On a new machine, apply all nineteen in
-order — as DBA/root, **not** as `baranguard_app`, which has no
+2026-09-12, 0019 on 2026-09-13, 0020 on 2026-09-13 — also applied to the
+`baranguard_uiseed` demo DB the same day). On a new machine, apply all
+twenty in order — as DBA/root, **not** as `baranguard_app`, which has no
 `ALTER`/`CREATE TABLE` (see §8).
 
 **FK trap:** `ai_processing_log`, `evidence_attachment`, `blotter_record`
@@ -204,7 +210,7 @@ instead).
 
 ---
 
-## 5. Endpoints (83 live `/api/v1` routes, all built)
+## 5. Endpoints (84 live `/api/v1` routes, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -238,7 +244,9 @@ extraction+approve — extraction is independent of redaction, migration
 > **names**, never values (Rule 8). See `backend/DEVLOG.md`'s "Review of
 > the second Antigravity pass" for what the first draft of this endpoint
 > did and why it never shipped.
-**Dispatch** list (tanod_name joined) · create · cancel · status
+**Dispatch** list (tanod_name joined) · create · cancel · status ·
+**route** (`GET /dispatch/:id/route`, closes turn-by-turn routing,
+2026-09-13)
 
 > **An incident may have more than one concurrent active dispatch,
 > resolved 2026-09-13** (`docs/REMAINING.md` G-backlog "backup/second
@@ -252,6 +260,21 @@ extraction+approve — extraction is independent of redaction, migration
 > responder, real name + timestamps); its existing singular
 > `dispatched_at`/`arrived_at` pair now means "the primary/first
 > responder" specifically. See `backend/scripts/verify-second-responder.sh`.
+
+> **`GET /dispatch/:id/route?latitude=&longitude=&mode=car|foot`
+> (2026-09-13) computes a road-snapped route from the CALLER's current
+> position** (not a stored one — a Tanod's live GPS fix, passed as query
+> params) to the dispatch's incident, via OpenRouteService
+> (`OrsClient.php` — see its own doc block for why ORS, not a
+> self-hosted engine or Google's API), and persists the result onto
+> `dispatch.route_json`/`route_status`. Own-Tanod-or-Admin gated, same as
+> `PATCH /dispatch/:id/status`. A GET that writes, deliberately — same
+> justification `GET /system/health` already documents for itself. Never
+> a 500 on a routing failure: an existing `route_json` is kept and
+> `route_status` set to `stale` rather than discarded; only a dispatch
+> that's never had a successful route falls to `unavailable`. Not
+> audited (Rule 8 bars raw coordinates in `audit_log`). See
+> `backend/scripts/verify-routing.sh`.
 **GPS** live · history · post · `/sync/batch`
 **Scheduling** shifts (list/create/update) · swap requests · fatigue flags
 **Notifications/SOS** notifications · ack · tanod-sos (+ack/resolve)
@@ -574,6 +597,7 @@ table. Do not update a number here without re-running the suite.
 | `verify-sprint3.sh` | 38 |
 | `verify-f9-sms-broadcast-idempotency-index.sh` | 15 |
 | `verify-second-responder.sh` | 22 |
+| `verify-routing.sh` | 23 (real ORS block included — a real `ORS_API_KEY` was present in `backend/.env` when last measured, 2026-09-13; that block SKIPs rather than fails if one isn't) |
 | `restore-drill.sh` | 12 (against the real DB) |
 | `verify-web-wiring.mjs` | 537 (moves as screens change; see §6 above) |
 | `mobile: verify.schema` | 113 |

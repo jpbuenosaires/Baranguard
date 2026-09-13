@@ -35,6 +35,7 @@ import MobileHeader from '../components/MobileHeader';
 import { deriveSyncState, getLocalIncident, type SyncState } from '../services/db/incidentRepository';
 import type { IncidentLocalRow } from '../services/db/localSchema';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
+import tacticalFeedback from '../utils/tacticalFeedback';
 
 const STATE_LABELS: Record<SyncState, string> = {
   saved_locally: 'Saved locally',
@@ -89,6 +90,7 @@ const IncidentSubmittedPage: React.FC = () => {
   const handleCopyId = () => {
     if (!row?.client_event_id) return;
     navigator.clipboard.writeText(row.client_event_id);
+    tacticalFeedback.vibrate(30);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -194,8 +196,9 @@ const IncidentSubmittedPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleCopyId}
+                    aria-label="Copy reference ID"
                     style={{
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
                       gap: '4px',
                       background: 'var(--color-surface-blue)',
@@ -203,13 +206,13 @@ const IncidentSubmittedPage: React.FC = () => {
                       borderRadius: 'var(--radius-sm)',
                       padding: '4px 8px',
                       color: 'var(--color-primary)',
-                      fontSize: '0.75rem',
+                      fontSize: 'var(--font-size-label)',
                       fontWeight: 600,
                       cursor: 'pointer',
                     }}
                   >
-                    <IonIcon icon={copied ? checkmarkOutline : copyOutline} />
-                    <span>{copied ? 'Copied!' : 'Copy'}</span>
+                    <IonIcon icon={copied ? checkmarkOutline : copyOutline} aria-hidden="true" />
+                    <span aria-live="polite">{copied ? 'Copied!' : 'Copy'}</span>
                   </button>
                 </div>
 

@@ -79,7 +79,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   width: 100%;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
@@ -930,4 +930,44 @@
   font-weight: 700;
   flex-shrink: 0;
   margin-top: var(--spacing-3xs);
+}
+
+/* --- Focus Rings ---------------------------------------------------------- */
+.citizen-status-select:focus-visible,
+.citizen-triage-select:focus-visible,
+.citizen-priority-pill:focus-visible,
+.citizen-detail-close-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* --- Inbox Responsive ----------------------------------------------------- */
+@media (max-width: 1024px) {
+  .citizen-inbox-layout.has-detail {
+    grid-template-columns: 1fr;
+  }
+  .citizen-inbox-left-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .citizen-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .citizen-search-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .citizen-status-select {
+    width: 100%;
+  }
+}
+
+/* --- Reduced Motion ------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .citizen-detail-pane {
+    animation: none;
+  }
 }

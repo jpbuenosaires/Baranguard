@@ -110,6 +110,9 @@ export function LiveMap(container, options = {}) {
   // fits once, the first time there's a point to fit, and never again.
   let hasFittedBounds = false;
   const pendingBoundary = { value: null };
+  // undefined = setRoute() was never called yet (skip the no-op flush
+  // below); null = explicitly cleared; a geometry object = pending draw.
+  const pendingRoute = { value: undefined };
   let lastRawMarkers = []; // re-clustered on zoom/move — see recluster() below.
   let reclusterHandle = null;
 
@@ -117,6 +120,9 @@ export function LiveMap(container, options = {}) {
     ready = true;
     if (pendingBoundary.value) {
       applyBoundary(map, pendingBoundary.value);
+    }
+    if (pendingRoute.value !== undefined) {
+      applyRoute(map, pendingRoute.value);
     }
   });
 
@@ -315,6 +321,24 @@ export function LiveMap(container, options = {}) {
     applyBoundary(map, geojson);
   }
 
+  /**
+   * Draws (or updates, or clears) a single road-snapped route line —
+   * Dispatch Center's read-only display of a route a Tanod's own mobile
+   * "Get Route" tap already computed (`dispatch.route_json.geometry`,
+   * an already-decoded GeoJSON LineString — never a polyline needing
+   * decoding). One function, not a separate clear method: `setRoute(null)`
+   * removes the line, matching that a dispatch's `routeJson` is already
+   * `null` exactly when there's nothing to show — callers never need to
+   * special-case "no route."
+   */
+  function setRoute(geojson) {
+    if (!ready) {
+      pendingRoute.value = geojson;
+      return;
+    }
+    applyRoute(map, geojson);
+  }
+
   // A real bug caught by this session's own Playwright walkthrough (not
   // just claimed working): main.js's boot() stops the outgoing page's
   // poll/map via a stored handle on every navigation, including the one
@@ -413,7 +437,7 @@ export function LiveMap(container, options = {}) {
     if (!destroyed) map.resize();
   }
 
-  return { setMarkers, setSosMarkers, setIncidentMarkers, setBoundary, flyTo, highlightIncident, fitAll, resize, zoomIn, zoomOut, destroy };
+  return { setMarkers, setSosMarkers, setIncidentMarkers, setBoundary, setRoute, flyTo, highlightIncident, fitAll, resize, zoomIn, zoomOut, destroy };
 }
 
 /**
@@ -455,6 +479,35 @@ function applyBoundary(map, geojson) {
     type: 'line',
     source: 'barangay-boundary',
     paint: { 'line-color': themeToken('--color-primary', '#1D4ED8'), 'line-width': 2 },
+  });
+}
+
+/**
+ * Same reused-token color as the boundary line above (`--color-primary`),
+ * and the same literal hex `LiveMapCanvas.tsx`'s own `ROUTE_LINE_COLOR`
+ * hardcodes on mobile, so a route reads as the same visual language in
+ * both apps. No dedicated CSS class exists for this layer, deliberately
+ * — MapLibre paint properties can't take a live `var(--token)` the way a
+ * CSS `background` can (see `themeToken()`'s own doc comment above).
+ */
+function applyRoute(map, geojson) {
+  if (!geojson) {
+    if (map.getLayer('dispatch-route-line')) map.removeLayer('dispatch-route-line');
+    if (map.getSource('dispatch-route')) map.removeSource('dispatch-route');
+    return;
+  }
+  const data = { type: 'Feature', properties: {}, geometry: geojson };
+  if (map.getSource('dispatch-route')) {
+    map.getSource('dispatch-route').setData(data);
+    return;
+  }
+  map.addSource('dispatch-route', { type: 'geojson', data });
+  map.addLayer({
+    id: 'dispatch-route-line',
+    type: 'line',
+    source: 'dispatch-route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': themeToken('--color-primary', '#1D4ED8'), 'line-width': 5, 'line-opacity': 0.85 },
   });
 }
 

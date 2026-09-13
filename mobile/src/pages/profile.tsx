@@ -34,6 +34,10 @@ import {
   timeOutline,
   volumeHighOutline,
   wifiOutline,
+  colorPaletteOutline,
+  moonOutline,
+  sunnyOutline,
+  phonePortraitOutline,
 } from 'ionicons/icons';
 import { TextField } from '../components/FormFields';
 import FullScreenAlert from '../services/fullScreenAlert';
@@ -54,6 +58,7 @@ import {
   type StorageSnapshot,
 } from '../services/storageMaintenance';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { getStoredTheme, setTheme, type ThemePreference, THEME_CHANGED_EVENT } from '../utils/theme';
 
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
@@ -143,9 +148,18 @@ const ProfilePage: React.FC = () => {
     }
   };
 
+  // Theme / Appearance
+  const [themePref, setThemePref] = useState<ThemePreference>(() => getStoredTheme());
+
   useEffect(() => {
     void loadData();
     void pingWorkstation();
+
+    const handleThemeChanged = () => {
+      setThemePref(getStoredTheme());
+    };
+    window.addEventListener(THEME_CHANGED_EVENT, handleThemeChanged);
+    return () => window.removeEventListener(THEME_CHANGED_EVENT, handleThemeChanged);
   }, []);
 
   const handleSaveBaseUrl = async () => {
@@ -348,6 +362,54 @@ const ProfilePage: React.FC = () => {
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>View your schedule and request a swap</div>
               </div>
             </button>
+          </div>
+
+          {/* Appearance / Night Patrol Theme */}
+          <div className="card--elevated" style={{ marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <IonIcon icon={colorPaletteOutline} style={{ fontSize: '1.3rem', color: 'var(--color-primary)' }} />
+              <span style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                Appearance & Night Mode
+              </span>
+            </div>
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>
+              Switch to dark theme for night patrol operations to reduce glare and preserve night vision.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+              {(['system', 'light', 'dark'] as ThemePreference[]).map((mode) => {
+                const isActive = themePref === mode;
+                const modeLabel = mode === 'system' ? 'System' : mode === 'light' ? 'Light' : 'Dark';
+                const modeIcon = mode === 'system' ? phonePortraitOutline : mode === 'light' ? sunnyOutline : moonOutline;
+
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => {
+                      setTheme(mode);
+                      setToastMessage(`Theme set to ${modeLabel}.`);
+                    }}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      padding: '10px 4px',
+                      borderRadius: 'var(--radius-md)',
+                      border: isActive ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                      background: isActive ? 'var(--color-row-active-bg)' : 'var(--color-surface)',
+                      color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                      fontWeight: isActive ? 700 : 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <IonIcon icon={modeIcon} style={{ fontSize: '1.2rem' }} />
+                    <span style={{ fontSize: 'var(--font-size-label)' }}>{modeLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Card 2: Workstation LAN Telemetry */}

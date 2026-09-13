@@ -173,3 +173,24 @@ export async function markStatusSynced(localId: string): Promise<void> {
     /* transaction */ false
   );
 }
+
+/**
+ * Caches the result of an explicit `apiService.getDispatchRoute()` call
+ * (assignment-detail.tsx's "Get Route" button) onto the already-existing
+ * `route_json`/`route_status` columns — no `localSchema.ts` migration
+ * needed, `cacheDispatchesFromServer()` above has written these same
+ * columns since M7's build. Route-only, deliberately narrower than that
+ * function: a route fetch shouldn't touch this row's status/priority/etc.
+ */
+export async function cacheRouteFetch(
+  localId: string,
+  routeJson: unknown | null,
+  routeStatus: 'available' | 'unavailable' | 'stale'
+): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    'UPDATE dispatch_local SET route_json = ?, route_status = ? WHERE local_id = ?',
+    [routeJson ? JSON.stringify(routeJson) : null, routeStatus, localId],
+    /* transaction */ false
+  );
+}

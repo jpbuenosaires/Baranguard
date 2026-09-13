@@ -88,10 +88,20 @@
   border-radius: var(--radius-sm);
 }
 .login-password-field__toggle:hover { color: var(--color-text-secondary); background: var(--color-bg); }
+.login-password-field__toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  color: var(--color-text-primary);
+}
 
 /* Brighter focus glow on login page inputs to stand out against gradient bg. */
 .login-card input:focus {
   box-shadow: 0 0 0 2px var(--color-primary), 0 0 12px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.login-card input[aria-invalid="true"] {
+  border-color: var(--color-critical);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-critical) 35%, transparent);
 }
 
 /* Caps Lock warning (2026-09-05 UX pass) — sits right under the password
@@ -131,6 +141,15 @@
   0%, 100% { transform: translateX(0); }
   20%, 60% { transform: translateX(-0.5rem); }
   40%, 80% { transform: translateX(0.5rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-page, .login-hero { animation: none; }
+  .login-card { animation: none; }
+  .login-card.is-shaking {
+    animation: none;
+    box-shadow: var(--shadow-floating), 0 0 0 2px var(--color-critical);
+  }
 }
 
 .login-screen {

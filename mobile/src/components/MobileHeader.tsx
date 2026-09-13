@@ -16,9 +16,10 @@ import {
   IonIcon,
   IonToolbar,
 } from '@ionic/react';
-import { shield } from 'ionicons/icons';
+import { moonOutline, shield, sunnyOutline } from 'ionicons/icons';
 import { checkHealth } from '../services/apiService';
 import SyncQueueModal from './SyncQueueModal';
+import { isCurrentlyDark, toggleTheme, THEME_CHANGED_EVENT } from '../utils/theme';
 
 interface MobileHeaderProps {
   title?: string;
@@ -37,6 +38,15 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
 }) => {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [dark, setDark] = useState<boolean>(() => isCurrentlyDark());
+
+  useEffect(() => {
+    const handleThemeChanged = () => {
+      setDark(isCurrentlyDark());
+    };
+    window.addEventListener(THEME_CHANGED_EVENT, handleThemeChanged);
+    return () => window.removeEventListener(THEME_CHANGED_EVENT, handleThemeChanged);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +95,33 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
               {rightSlot}
               <button
                 type="button"
+                className="mobile-topbar__theme-toggle"
+                aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+                title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+                onClick={() => {
+                  toggleTheme();
+                  setDark(isCurrentlyDark());
+                }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.12)',
+                  border: 'none',
+                  borderRadius: '999px',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--color-white)',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                <IonIcon icon={dark ? sunnyOutline : moonOutline} style={{ fontSize: '1.1rem' }} />
+              </button>
+              <button
+                type="button"
                 className="mobile-topbar__status"
+                aria-label={isOnline ? 'Workstation Connected — tap to inspect sync queue' : 'Offline Mode — tap to inspect sync queue'}
                 title={isOnline ? 'Workstation Connected — tap to inspect queue' : 'Offline Mode — tap to inspect queue'}
                 onClick={() => setShowSyncModal(true)}
                 style={{ cursor: 'pointer', border: 'none' }}

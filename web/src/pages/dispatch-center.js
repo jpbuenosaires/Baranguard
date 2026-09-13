@@ -156,6 +156,24 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
   const POLL_INTERVAL_MS = 15000;
 
+  // Read-only route display (2026-09-13) — which dispatch's route, if
+  // any, is currently drawn on the map. Survives updateQueueView()'s
+  // full DOM rebuild on every poll/filter change; synced against fresh
+  // data at the end of that function (see below).
+  let activeRouteDispatchId = null;
+
+  let liveElapsedTimer = setInterval(() => {
+    if (!queueListEl) return;
+    const timeRows = queueListEl.querySelectorAll('.queue-incident-card__time[data-timestamp]');
+    for (const row of timeRows) {
+      const ts = row.dataset.timestamp;
+      const span = row.querySelector('.queue-incident-card__elapsed');
+      if (span && ts) {
+        span.textContent = formatElapsed(ts);
+      }
+    }
+  }, 1000);
+
   load(true);
   pollTimer = setInterval(() => load(false), POLL_INTERVAL_MS);
 
@@ -164,6 +182,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   function stopPolling() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
+    if (liveElapsedTimer) clearInterval(liveElapsedTimer);
+    liveElapsedTimer = null;
     if (liveMap) liveMap.destroy();
     liveMap = null;
   }
@@ -580,7 +600,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const timeRow = document.createElement('div');
       timeRow.className = 'queue-incident-card__time';
       const timestamp = item.itemStatus === 'pending' ? item.createdAt : item.dispatchedAt;
-      timeRow.innerHTML = `${icons.clock(13)} <span>${formatElapsed(timestamp)}</span>`;
+      if (timestamp) timeRow.dataset.timestamp = timestamp;
+      timeRow.innerHTML = `${icons.clock(13)} <span class="queue-incident-card__elapsed">${formatElapsed(timestamp)}</span>`;
 
       // Card Action
       if (item.itemStatus === 'pending') {
@@ -634,6 +655,43 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
               liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 17);
             });
             actionsGroup.appendChild(locateBtn);
+          }
+
+          // Read-only route display (2026-09-13): shows whatever route a
+          // Tanod's own mobile "Get Route" tap already computed —
+          // Dispatch Center never requests a route itself (no
+          // geolocation/coordinate-input concept exists on the web
+          // dashboard, and routing from the Admin's own desk position
+          // wouldn't be operationally meaningful anyway). Only rendered
+          // once a route has been computed at least once (routeStatus
+          // 'available' or 'stale') — never for 'unavailable', same
+          // "no control that looks functional and does nothing"
+          // principle the conditional Locate button above already follows.
+          if (dispatch.routeJson) {
+            const routeBtn = document.createElement('button');
+            routeBtn.type = 'button';
+            routeBtn.className = 'queue-incident-card__route-btn';
+            const isActiveRoute = activeRouteDispatchId === dispatch.dispatchId;
+            routeBtn.classList.toggle('is-active', isActiveRoute);
+            const staleTag = dispatch.routeStatus === 'stale' ? ' (may be outdated)' : '';
+            routeBtn.innerHTML = `${icons.map(11)} ${isActiveRoute ? 'Hide Route' : 'Show Route'}`;
+            routeBtn.title = `${isActiveRoute ? 'Hide' : 'Show'} this Tanod's route to the incident${staleTag}`;
+            routeBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              // Single-active-route model: showing one clears/replaces
+              // any other — avoids cluttering the map when an incident
+              // has several concurrent responders (second-responder
+              // feature), matching Locate's own single-focus precedent.
+              if (activeRouteDispatchId === dispatch.dispatchId) {
+                activeRouteDispatchId = null;
+                liveMap?.setRoute(null);
+              } else {
+                activeRouteDispatchId = dispatch.dispatchId;
+                liveMap?.setRoute(dispatch.routeJson.geometry);
+              }
+              updateQueueView();
+            });
+            actionsGroup.appendChild(routeBtn);
           }
 
           const cancelBtn = document.createElement('button');
@@ -693,6 +751,24 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       });
 
       queueListEl.appendChild(card);
+    }
+
+    // Keep the currently-shown route (if any) in sync with this fresh
+    // poll: re-draw it if its dispatch still has a route (so a Tanod
+    // requesting a fresh one on their phone shows up here within one
+    // 15s poll cycle), or clear it if that dispatch dropped out of the
+    // active list entirely (cancelled/completed) rather than leaving a
+    // stale line pointing at a dispatch that no longer exists.
+    if (activeRouteDispatchId != null) {
+      const stillActive = sorted
+        .flatMap((item) => item.dispatches || [])
+        .find((d) => d.dispatchId === activeRouteDispatchId);
+      if (stillActive && stillActive.routeJson) {
+        liveMap?.setRoute(stillActive.routeJson.geometry);
+      } else {
+        activeRouteDispatchId = null;
+        liveMap?.setRoute(null);
+      }
     }
   }
 

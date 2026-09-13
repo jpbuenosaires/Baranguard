@@ -552,6 +552,32 @@ export async function cancelDispatch(dispatchId) {
   };
 }
 
+/**
+ * Normalizes `dispatch.route_json`'s snake_case nested shape (as
+ * `DispatchController::route()` writes it — `mode`, `distance_m`,
+ * `duration_s`, `steps[].instruction/maneuver/distance_m/duration_s`)
+ * into the same camelCase shape `mobile/src/services/apiService.ts`'s
+ * own `mapRouteJson()` already normalizes to, so a caller doesn't need
+ * to know which endpoint last populated this field. Mirrors that
+ * function field-for-field (ported here since this codebase has no
+ * shared module between mobile and web).
+ */
+function mapRouteJson(raw) {
+  if (!raw) return null;
+  return {
+    mode: raw.mode,
+    geometry: raw.geometry,
+    distanceM: raw.distance_m,
+    durationS: raw.duration_s,
+    steps: (raw.steps ?? []).map((s) => ({
+      instruction: s.instruction,
+      maneuver: s.maneuver,
+      distanceM: s.distance_m,
+      durationS: s.duration_s,
+    })),
+  };
+}
+
 function mapDispatch(row) {
   return {
     dispatchId: row.dispatch_id,
@@ -559,7 +585,7 @@ function mapDispatch(row) {
     tanodId: row.tanod_id,
     tanodName: row.tanod_name ?? null,
     priority: row.priority,
-    routeJson: row.route_json,
+    routeJson: mapRouteJson(row.route_json),
     routeStatus: row.route_status,
     status: row.status,
     dispatchedAt: row.dispatched_at,
@@ -936,7 +962,7 @@ export async function getAiToolJob(jobId) {
 export async function getSystemHealth() {
   const json = await request('GET', '/system/health', { auth: true });
   return {
-    api: json.api, db: json.db, osrm: json.osrm, ollama: json.ollama,
+    api: json.api, db: json.db, ors: json.ors, ollama: json.ollama,
     gsmIngestion: json.gsm_ingestion, notificationConfig: json.notification_config,
     fcm: json.fcm, smsSemaphore: json.sms_semaphore,
     backupLastSuccess: json.backup_last_success, restoreTestAt: json.restore_test_at,
@@ -959,7 +985,7 @@ export async function getSystemHealthHistory() {
     items: (json.items || []).map((row) => ({
       recordedAt: row.recorded_at,
       db: row.db,
-      osrm: row.osrm,
+      ors: row.ors,
       ollama: row.ollama,
       gsmIngestion: row.gsm_ingestion,
       fcm: row.fcm,

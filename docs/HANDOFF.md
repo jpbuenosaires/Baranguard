@@ -10,428 +10,216 @@ lives in `backend/DEVLOG.md` (grep it; don't read it front to back).
 ## Where things stand
 
 **Sprints 0–7 are complete.** Sprint 8 (UAT/evaluation) is open. Its old
-gate (`docs/REMAINING.md` §F) has moved: **F1 and F4 are both fully
-closed now** (F1's web dashboard half closed 2026-09-13, same day as
-everything below), and Sprint 8 also now has two NEW, real-device-
-confirmed blockers (C6, C7) that aren't part of §F but should be fixed
-before any UAT scenario touches login or an on-duty shift. See
-`SPRINTS.md`'s own gate note for the exact current wording.
+gate (`docs/REMAINING.md` §F) is fully closed. §C4's turn-by-turn routing
+gap is also now closed (below) — Sprint 8 still has two real-device-
+confirmed blockers (C6, C7) that should be fixed before any UAT scenario
+touches login or an on-duty shift. See `SPRINTS.md`'s own gate note for
+exact current wording.
 
-**2026-09-13 (this session): continued real-device testing on the same
-Infinix X6840, found and fixed three real bugs, made and implemented one
-real architecture decision, closed out the last two open items from the
-Sept-7 audit and the G1-G4 backlog, found two new bugs that are still
-open, then — in a separate, later continuation of the same date,
-explicitly requested by the user as a deliberate multi-box exception
-(SPRINTS.md standing rule #2) — closed a punch list of seven small
-backend/web/housekeeping items and found one more real bug along the
-way (B5, below), then published a complexity-grouped backlog artifact
-of everything still open, closed its four "Quick" items, closed F1's
-web-dashboard half, confirmed a "Moderate" item (`runSyncPass()`'s
-trigger) was already done, and shipped the backup/second-responder
-feature from the same tier — finding and fixing three fabricated-data
-bugs and one Dispatch Center display bug along the way.**
+### NEWEST: full turn-by-turn routing shipped (2026-09-13, same day, after everything else below)
 
-### Fixed and device-verified this session
+Closes `docs/REMAINING.md` §C4. Took three real architecture decisions
+in a row before anything shipped — worth knowing because the first two
+left no code behind and are otherwise invisible history:
 
-- **Login crashed the whole app** — `PushNotifications.register()`
-  throws a native `IllegalStateException` ("Default FirebaseApp is not
-  initialized") when no `google-services.json` exists (this deployment
-  has never had a real Firebase project — `REMAINING.md` A4). The
-  exception fires on Capacitor's own native plugin-invocation thread,
-  before the call can ever settle a JS promise, so `deviceIdentity.ts`'s
-  existing try/catch around it could not intercept it — it just killed
-  the process. **Fixed** with a native check
-  (`FullScreenAlertPlugin.isFirebaseAvailable()`) called BEFORE
-  `register()`, so the app now skips the crash-prone call instead of
-  reacting to a failure it structurally cannot observe. Confirmed
-  crash-free across multiple real relaunch cycles.
-- **The full-screen critical alert (M12/Phase 4.2) crashed every time it
-  opened** — `CriticalAlertActivity` was declared in the manifest with
-  `android:theme="@style/AppTheme.NoActionBarLaunch"` (parent
-  `Theme.SplashScreen`), but the Activity extends `AppCompatActivity`,
-  which requires a `Theme.AppCompat` descendant — `IllegalStateException`
-  at `setContentView()`, 100% reproducible, both from the Profile test
-  button and a real notification tap. **Fixed**: theme changed to
-  `@style/AppTheme.NoActionBar` (a real `Theme.AppCompat.DayNight.
-  NoActionBar` descendant already defined in `styles.xml`). Not
-  re-confirmed on-device after this specific fix in this session — the
-  root cause is a deterministic Android platform requirement, not a
-  timing-dependent bug, so confidence is high, but this is disclosed
-  rather than claimed proven.
-- **Every device on this no-Firebase deployment could never actually
-  register** (`REMAINING.md` C5, closed) — `POST /devices/register`
-  required `fcm_token`, and the mobile side never called it without a
-  real one, so this device had never once completed real registration.
-  Invisible until `POST /sync/batch` — which this session's own sync
-  scheduler is the first thing to ever call automatically — rejected it
-  with 422. **Fixed**: `fcm_token` is now optional
-  (`DevicesController.php`), stored as `''` when absent (the same
-  convention `RetentionService` already used for "no token," which
-  `NotificationDispatcher` already reads as "fall through to SMS").
-  Proven both ways: `verify-devices-map-packages.sh` (57/57, disposable
-  DB) and a direct `curl` registration + `/sync/batch` call against the
-  real `baranguard_uiseed` deployment for this device's actual
-  `device_id`.
+1. **Self-hosted OSRM** (the Master Reference's original §1 stack line)
+   — abandoned mid-Phase-1 after a wrong-tag `git clone` (OSRM
+   renumbered past v5.x) and then a real toolchain wall: OSRM's current
+   build needs vcpkg compiling Boost/TBB/libarchive from source, memory-
+   heavy on this workstation's ~8GB RAM.
+2. **Google Routes API** — built COMPLETELY (client, migration, health
+   probe, web dashboard wiring), then torn out the same day the moment
+   it became clear Google requires a billing account with a card on
+   file even to stay in the free tier — a hard blocker, not a
+   preference, given this deployment has no card.
+3. **OpenRouteService (ORS)** — shipped. Free, no card, OSM-data-backed.
+   Request-building verified directly against ORS's own official Python
+   client source; response field names confirmed live against a real
+   route computed with the user's real key.
 
-### Architecture decision made and implemented: mobile connectivity via Tailscale
+**What's real and verified, not just built:**
+- `backend/services/routing/OrsClient.php` + two exceptions — the only
+  caller of ORS. `geometries=geojson` means no polyline-decoder library
+  anywhere in this stack; ORS's own `instruction` text means no
+  maneuver-code translation table either.
+- `SystemHealthController.php`'s `ors` field (renamed from `osrm`) is a
+  REAL probe now, not a presence check — confirmed live: `not_configured`
+  with no key, `healthy` with the user's real key.
+- New endpoint `GET /dispatch/:id/route?latitude=&longitude=&mode=
+  car|foot` — `DispatchController::route()`. Own-Tanod-or-Admin gated,
+  tenant-scoped, never a 500. A rejected/unreachable refresh KEEPS the
+  prior good route and marks it `stale` — proven live (not just reasoned
+  about) using the discovery below.
+- Mobile: `apiService.getDispatchRoute()`, `dispatchRepository.
+  cacheRouteFetch()` (reuses existing `dispatch_local` columns, no
+  schema change), `LiveMapCanvas.tsx` gained a `routeGeometry` layer,
+  `assignment-detail.tsx` gained an explicit "Get Route" button + step
+  list. The external-navigation-app link is UNCHANGED (explicit
+  non-regression requirement). `npx tsc --noEmit` and `npx eslint` both
+  clean.
+- **Real bug found live, not suspected**: the mobile app's own
+  `DEFAULT_CENTER` map constant (12.9186°N/123.6667°E) has NO routable
+  road within 350m in OSM's data for this area — ORS's first real probe
+  against it returned a genuine rejection. `OrsClient.php`'s health-check
+  points were moved to a confirmed-on-road pair instead (real street
+  names: Prieto, Smith Street). `DEFAULT_CENTER` itself is a display-only
+  map-center constant elsewhere (web + mobile) and was left alone.
+- **Real bug found and fixed**: `route_json` had two different shapes
+  depending on which endpoint last wrote it (`GET /dispatch`'s
+  `mapDispatch()` passed the server's raw snake_case through untouched;
+  the new endpoint's mapper normalized to camelCase). Fixed with one
+  shared `mapRouteJson()` normalizer both now use.
 
-User-requested discussion, explicit decision, 2026-09-13: the mobile app
-must reach the workstation whether a Tanod is on barangay WiFi or out on
-patrol on mobile data, and the barangay's residential internet can't
-reliably be port-forwarded to (CGNAT). Chosen: **Tailscale**, a private
-WireGuard mesh — the workstation and each Tanod's phone join one tailnet,
-so the phone reaches the workstation at a stable address
-(`laptop-b2rp6jkk.tail631c69.ts.net`) over any transport, without ever
-exposing the API on the open internet. Implemented:
-`mobile/src/services/apiService.ts`'s `DEFAULT_API_BASE_URL` now points
-there. Confirmed on the workstation: port 8081 listens on `0.0.0.0`, the
-existing `Baranguard Backend 8081` firewall rule covers `Any` profile,
-Windows classifies the Tailscale adapter as Private, and a direct `curl`
-to the workstation's own Tailscale address round-tripped a real
-authenticated request. **Not yet device-verified end-to-end** — the test
-phone still has a manual LAN-IP override saved in Profile from earlier
-testing, so the new Tailscale default has never actually been the
-address a real login exercised on-device. **The web dashboard's own API
-base URL and `backend/.env`'s `CORS_ALLOWED_ORIGIN=*` were explicitly
-NOT part of this decision and remain open** — see `REMAINING.md` F1.
+**Verification**: new `backend/scripts/verify-routing.sh`, 23/23, against
+a disposable DB over real HTTP — including a real-ORS block (only runs
+with a real key in `backend/.env`, same "human-supplied precondition"
+shape `restore-drill.sh` already has) that proves the stale-fallback
+behavior against genuine ORS responses, not mocks. `verify-web-wiring.mjs`
+unaffected (536/537 — the one failure is pre-existing, unrelated
+in-progress `AppShell.js` work already in the tree).
 
-### G1 (SOS third fallback tier) — last item of the G1-G4 backlog, now built
+**Docs reconciled the same session**: `docs/Baranguard_Master_Reference_
+FINAL .md` (§1 stack table, Rules 7/15, `POST /dispatch` + new
+`GET /dispatch/:id/route` contracts, `GET /system/health` shape),
+`docs/REFERENCE.md` (§5 endpoint count 83→84, migration list, §9 verify
+table), `docs/REMAINING.md` §C4, `backend/DEVLOG.md`.
 
-Both blockers the 2026-09-12 pass left open are resolved: a real device
-(this session), and the backup-contact-number decision (lives in
-`system_settings.sos_fallback.backup_contact_number`, the same narrow
-W21-style override the SMS gateway keys got, explicit user sign-off).
-`SosSmsPlugin.java` + `sosSms.ts` send a compact envelope directly from
-the Tanod's own SIM when both the app POST and the workstation are
-confirmed unreachable; `sosFallbackContact.ts` caches the number
-on-device ahead of time. Code-complete and wired; **a real SMS actually
-arriving has not been confirmed in this session** — that one leg of the
-fallback ladder still needs a live test with a backup contact configured
-and connectivity off.
+**Migration 0020 applied to both real databases** (`baranguard` and
+`baranguard_uiseed`, 2026-09-13, confirmed via `DESCRIBE
+health_check_log` on each — `ors_status` present, defaulted
+`not_configured`). A real `ORS_API_KEY` is in the real `backend/.env`
+(the same file `verify-routing.sh`'s real-ORS block reads). No
+real-device confirmation of the mobile UI yet — same A1 blocker as
+everything else mobile, disclosed rather than claimed proven.
 
-### Two new bugs found, both still OPEN
+**Web dashboard route rendering — also shipped the same day, read-only
+by explicit user decision.** Dispatch Center now shows whatever route a
+Tanod's own mobile "Get Route" tap already computed — the web dashboard
+never calls the routing endpoint itself (no geolocation/coordinate-input
+concept exists anywhere in its Admin pages, and routing from the
+Admin's own desk wouldn't be operationally meaningful). Planned via
+`EnterPlanMode` first, then built: `apiClient.js` gained the same
+`mapRouteJson()` fix mobile got; `LiveMap.js` gained `setRoute()`
+mirroring its existing `setBoundary()` pattern exactly; `dispatch-
+center.js` gained a per-responder "Show Route"/"Hide Route" button
+(single-active-route model, gated on a route actually existing).
+**Verified against real data, not mocks**: a throwaway admin account
+was created in `baranguard_uiseed` (deleted after), the real
+`GET /dispatch/:id/route` endpoint was called for a real dispatch to
+produce a genuine ORS route, and a real browser walkthrough confirmed
+the button appears only on that dispatch, clicking it draws the actual
+computed route line on the map (screenshotted), and hiding it clears the
+line. **Real bug found along the way, NOT caused by this work**: the
+same pre-existing uncommitted `dispatch-center.js` changes already in
+the tree before this session (see "previously-flagged uncommitted work"
+pattern elsewhere in this file's history) had accidentally deleted
+`let latestData = null;`, breaking the ENTIRE screen with a
+`ReferenceError` — confirmed via `git diff` and this session's own first
+`Read` of the file (already missing before any edit of mine). Restored
+the one line so the screen works; flagged in `backend/DEVLOG.md` rather
+than silently fixed away, since it isn't code this session owns.
 
-- **C6 — login can leave the OLD screen visually stuck over Home.** Not
-  a navigation or session bug: confirmed via remote Chrome DevTools that
-  `location.pathname` is genuinely `/home` and Home's own mount effects
-  run (patrol tracking starts, dispatches cache) — but
-  `document.querySelectorAll('.ion-page').length` returns 3, and two of
-  those three share the exact same `z-index: 101` with neither hidden.
-  This is an Ionic `IonRouterOutlet` page-stacking bug: `/login` and the
-  tab shell's `/*` route are sibling top-level routes in the same outer
-  outlet, and `login.tsx`'s imperative `navigate('/home', {replace:
-  true})` crosses directly into a route nested inside `TabbedShell`'s
-  OWN inner outlet — a known-fragile transition shape for Ionic React.
-  Likely masked until now by the crashes above making login never
-  survive long enough to expose it. **Investigation was paused, not
-  resolved** — see `REMAINING.md` C6 for the exact next diagnostic step.
-- **C7 — the whole app process died twice, ~50 seconds after patrol GPS
-  started.** Found in passing while chasing C6. `adb logcat` shows
-  `Process ph.baranguard.tanod has died: fg +50 FGS` with no Java
-  exception either time — rules out an ordinary uncaught-exception crash.
-  More serious than C6 (kills the process outright, not just a visual
-  glitch) and completely uninvestigated — needs its own session. See
-  `REMAINING.md` C7.
+### Everything before that (condensed — see `backend/DEVLOG.md` for full detail)
 
-### B1, B2, B4 all done this session — and a real, previously-invisible bug found and fixed
+Earlier the same day: continued real-device testing on the same Infinix
+X6840 — found/fixed 3 real mobile bugs (a native FCM-registration crash
+on login, a full-screen critical-alert theme crash, no-Firebase devices
+unable to register at all — `REMAINING.md` C5), decided + implemented
+Tailscale as the mobile connectivity architecture, shipped G1's SOS
+third-fallback-tier SMS path, found 2 new bugs still open (C6, C7 —
+below). Then, as an explicit user-requested multi-box exception: closed
+a 7-item punch list (F9's idempotency index, a chart null-vs-zero bug,
+npm audit triage, Secretary/PB nav browser-verify — which found and
+fixed a real PB dashboard 403 bug, `mobile/android/` committed), closed
+4 "Quick" items from a published backlog artifact (F5 idempotency index,
+an evidence-access audit log, a stale doc correction, a GIS panel
+simplification), closed F1's web-dashboard half, and shipped backup/
+second-responder dispatch (finding + fixing 3 fabricated-data UI
+fallbacks and 1 Dispatch Center per-dispatch-not-per-incident card bug
+along the way). All of F2/F3/F5/F6/F7/F8, G2/G3/G4, and the full §G
+backlog were already closed in prior sessions and remain unchanged.
+Migrations 0001–0019 are applied to both real databases.
 
-Continuing the same session after the mobile debugging above:
+## Two bugs found this week, still OPEN (unrelated to routing)
 
-- **B1 (browser-verify)** — every flagged screen (Dispatch Center, GIS
-  Live Tracking, Incident Management, all three Analytics tabs, both SMS
-  Monitor tabs, Audit Log, Service Health, Citizen Reports' convert
-  panel, all four Personnel tabs, Settings incl. SOS Fallback, Map
-  Packages) walked as Admin against the real `baranguard_uiseed` demo
-  data. Zero real defects — the one logged network "error" was the
-  correct, designed 404 for a not-yet-published map package, already
-  proven server-side by `verify-devices-map-packages.sh`.
-- **B2 (pen-test the rest)** — new `backend/scripts/
-  verify-b2-pentest-remaining-resources.sh`, 59/59: Dispatch, Shifts,
-  Shift-Swap-Requests, Citizen Reports, SMS all now have the same
-  four-dimension pass Incidents already had. Map Packages deliberately
-  left to its existing suite rather than duplicated.
-- **B4 (Sprint 3 backend)** — new `backend/scripts/verify-sprint3.sh`,
-  38/38, and it earned its keep immediately: **`GET /incidents/nearby`
-  has 500'd on every real call since the day it was built.** The
-  haversine SQL reuses the named parameter `:lat` across two placeholder
-  positions, which only works under PDO's EMULATED prepares —
-  `config/db.php` runs native prepares (`ATTR_EMULATE_PREPARES => false`),
-  so MySQL's binary protocol threw `SQLSTATE[HY093]: Invalid parameter
-  number` on every single call, silently swallowed into a generic
-  `SERVER_ERROR`. Nothing static could see this (it's valid SQL and valid
-  PHP); nothing dynamic ever exercised it until this suite was the first
-  thing to call this endpoint over real HTTP. **Fixed** — a second
-  distinct placeholder (`:lat2`) for the repeated occurrence, bound to
-  the same value. Also confirmed for real: duplicate-GPS handling and
-  interrupted-sync resume both behave exactly as `/sync/batch`'s
-  idempotency design intends.
-
-### Later the same day: punch-list session (deliberate multi-box exception) — six closed, one already-resolved
-
-User explicitly asked for seven independent small items in one sitting
-rather than the usual one-box-at-a-time discipline (logged as such in
-`backend/DEVLOG.md` per SPRINTS.md's own standing-rule exception clause).
-No Sprint 8 box was picked this round.
-
-- **`baranguard_device_check` stray DB** — checked, doesn't exist.
-  Already resolved sometime after the 2026-09-07 flag; doc corrected.
-- **`SmsController::broadcast()`'s idempotency lookup (REMAINING.md
-  §F9's last item) — FIXED.** New migration
-  `0019_audit_log_idempotency_index.sql` (VIRTUAL generated column +
-  covering index on `audit_log`); the controller now queries the column
-  directly instead of a bare `JSON_EXTRACT()`. Proven with EXPLAIN at
-  500+ rows (`type: ALL` → `type: ref`) and a new script,
-  `backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh`, 15/15.
-  Applied to both real databases. `IncidentsController`'s F5 lookup has
-  the identical shape and would benefit the same way — deliberately left
-  as a follow-up, not folded in.
-- **`LineChart`'s null-day-renders-as-zero gap (REMAINING.md §C4) —
-  FIXED.** The `?? 0` was at the `statistical-reports.js` call site, not
-  in the chart itself; the backend already distinguished "no data" from
-  "a real zero" on purpose. `LineChart.js` now draws a genuine gap
-  (broken line/area, no dot, "No data" in the tooltip and accessible
-  table) instead of a fabricated zero. `verify-web-wiring.mjs` 536/536.
-- **`mobile/` `npm audit` — 13 advisories triaged, 4 fixed via
-  `package.json` `overrides`** (`qs`→6.16.0, `@babel/runtime`→7.26.10 —
-  both non-breaking security patches, confirmed via a clean `npx tsc
-  --noEmit`), **9 left deliberately unfixed and documented**
-  (react-router/react-router-dom needs a major bump entangled with the
-  still-open C6 router bug; cypress's tree needs its own test pass since
-  real e2e specs exist; @capacitor/cli's "fix" is a downgrade this
-  session's own earlier work depended against). Full per-package
-  reasoning in `backend/DEVLOG.md` and `REMAINING.md`'s C4 section.
-- **Browser-verified Secretary and Punong Barangay nav end-to-end
-  (REMAINING.md §B5) — found and fixed a real bug.** Both roles' full
-  nav walked clean against real `baranguard_uiseed` data (Secretary:
-  Incident Management, Blotter Entry + AI Blotter Assistant, Citizen
-  Reports, Settings; PB: Dashboard, Live Map, Analytics' 3 tabs,
-  Personnel/Fatigue, Settings) — **except** the Dashboard's "Tanods On
-  Duty" panel, which called an Admin-only endpoint (`GET /users`)
-  unconditionally for both roles sharing that dashboard module, so every
-  PB load 403'd and a generic catch-all reported the permissions
-  boundary as "Could not load Tanod duty status." **Fixed**: skip the
-  doomed call for non-admin roles, show an honest "available to Admin"
-  message instead — confirmed via browser (network log before/after),
-  Admin's own view unchanged.
-- **Housekeeping**: the 8 untracked scratch/design files `REMAINING.md`
-  §E flagged were already gone from disk (some earlier, undocumented
-  cleanup) — nothing to delete, doc corrected. `mobile/android/` —
-  **committed**, explicit user sign-off, since it now carries real
-  non-regeneratable hand-fixes (`gradle.properties`, `AndroidManifest.xml`,
-  the native Java plugin sources from Phase 4) that `npx cap add android`
-  would destroy if regenerated; the nested Capacitor-generated
-  `mobile/android/.gitignore` already correctly excludes `build/`,
-  `.gradle/`, `local.properties` — only the blanket top-level line was
-  wrong, and it's now removed.
-
-### Then: a complexity-grouped backlog artifact, and its four "Quick" items
-
-User asked for every remaining `REMAINING.md` item, with everything
-already shipped stripped out, grouped by how hard each is to start.
-Published as a private Claude Artifact ("Baranguard Backlog") — not
-tracked in this repo, so its own URL isn't repeated here; ask the session
-that made it, or `action: list` an artifacts listing, if it's needed
-again. Four items were tagged "Quick" and were then built the same
-session:
-
-- **`IncidentsController`'s F5 idempotency replay — indexed**, same fix
-  as `SmsController::broadcast()` got earlier the same day (migration
-  0019's generated column). `verify-f5-incident-update-idempotency.sh`'s
-  own migration chain was still short one migration (0018, not 0019) —
-  updated it; still 16/16.
-- **Evidence-access audit log — built.** `IncidentsController::evidence()`
-  now writes an `evidence_accessed` audit row (incident id + item count,
-  nothing else) on every read, closing a `REMAINING.md` G-backlog item
-  that F4 shipping earlier the same day had quietly unblocked. This is a
-  new pattern for the codebase — no endpoint audited a READ before this.
-- **Three duplicate `escapeHtml()` helpers — already gone.** The
-  `REFERENCE.md` §6 note claiming they still existed was stale; corrected
-  rather than "fixed" a second time.
-- **GIS Live Activity panel — simplified** to `AiToolPanel`'s single-
-  real-`<button>` pattern, removing the nested-button/`role="button"`/
-  `stopPropagation()` shape that made the "Enter double-toggles it" bug
-  possible in the first place (even though that specific bug wasn't
-  reproducible).
-
-Both browser-dependent items (the audit row appearing, the panel's
-toggle behavior) were confirmed by the user directly against the running
-app, not by this session's own browser tooling — its viewport-emulation
-state got confused mid-check and manual verification was faster than
-fighting it. From here on the user took over ALL browser verification
-directly ("I will always browser verify") — this session gives manual
-step-by-step instructions instead of driving the Browser pane itself.
-
-### Then: F1's web half, a stale note corrected, and backup/second responder shipped
-
-Three more items from the same backlog artifact, same day:
-
-- **F1, web dashboard half — CLOSED.** Explicit user decision: the web
-  dashboard uses the SAME Tailscale hostname mobile already does
-  (`laptop-b2rp6jkk.tail631c69.ts.net`), not a separate LAN-only address
-  — one address for desk use at the barangay hall and remote admin
-  access alike. `web/index.html`'s API base URL updated;
-  `backend/public/index.php`'s CORS handling extended to a real
-  multi-origin allow-list (matched against the actual `Origin` header,
-  since a bare wildcard or single value could no longer cover both the
-  web dashboard's new origin and mobile's separate Capacitor WebView
-  origin); `backend/.env` updated. Confirmed via direct `curl` against
-  both allowed origins and a disallowed one, and via
-  `verify-sprint1-auth.sh` (23/23, unaffected wildcard dev-mode path).
-  **Outstanding, needs the user**: no Windows Firewall rule exists for
-  port 80 yet (only 8081 does) — command is in Operational Quick
-  Reference below.
-- **`runSyncPass()`'s trigger — was already done.** The backlog item
-  assumed this still needed building; reading `syncScheduler.ts` and
-  `App.tsx` directly showed it was fully wired (three triggers + cold
-  start) during this same week's earlier mobile-device session, just
-  never reflected back into `REMAINING.md`. No code change — doc
-  correction only. Device-verifying that it actually drains a queue on
-  a real disconnect/reconnect remains open (A1).
-- **Backup/second responder on critical incidents — SHIPPED**, via
-  `EnterPlanMode` given the scope (reopens the "one active dispatch per
-  incident" resolved decision). User sign-off: no eligibility gate (any
-  incident, Admin's judgment call) and unbounded concurrent dispatches.
-  `DispatchController::create()`/`cancel()` and `IncidentsController::
-  show()` (new `dispatches[]` array) all updated; new script
-  `verify-second-responder.sh` (22/22); full regression clean
-  (`verify-sprint6.sh` 110/110, `verify-b2-pentest-remaining-resources.sh`
-  59/59, `verify-sprint3.sh` 38/38). **Found and fixed along the way**:
-  `incident-management.js` had three hardcoded fabricated fallbacks (a
-  fake name "Tanod Ramos", a fake "2 min later" elapsed time, and a fake
-  placeholder narrative) that rendered whenever real dispatch data was
-  missing — confirmed against real `baranguard_uiseed` data, a resolved
-  incident with ZERO dispatch rows still showed a fully invented
-  timeline entry. All three replaced with honest empty states. **Same-day
-  follow-up, user-caught in browser verification**: Dispatch Center's
-  queue rendered one full duplicate card per DISPATCH instead of per
-  INCIDENT — fixed by grouping client-side (`incident_id`), which also
-  fixed a separate pre-existing gap (dispatched cards showing generic
-  "Emergency"/"Location pinned on map" text regardless of the real
-  incident, since `GET /dispatch` never carried those fields). Both the
-  assignment flow and the Dispatch Center grouping were browser-verified
-  by the user directly.
-
-### Previously-flagged uncommitted mobile UI work — now resolved
-
-Earlier snapshots of this file flagged a separate body of uncommitted
-mobile UI work (`MobileHeader.tsx`, `SyncQueueModal.tsx`,
-`pages/profile.tsx`, `utils/`, and four files carrying mixed hunks from
-two different sessions layered together) as a standing risk needing a
-file-by-file/hunk-by-hunk review before committing. **That review
-happened and everything was committed** across five phase commits this
-session (`a72dbde` Phase 1, `f3d550b` Phase 2, `64c1319` Phase 3,
-`b1951b1` Phase 4, plus `b570d25` for the backend/web half) — see those
-commits' own messages for what landed in each. Nothing from that body of
-work remains uncommitted.
-
-### Unchanged from prior sessions (condensed — see `backend/DEVLOG.md` for full detail)
-
-- F2/F3 (XSS sweep), F5 (PATCH idempotency), F6 (`is_suspended`), F7
-  (walk-in blotter, closed by removal), F8 (response-time double-count)
-  — all closed 2026-09-10/12, unchanged.
-- G2 (`sms_log.legal_hold`) and G3 (`mobile_device` scrub-not-delete) —
-  closed 2026-09-12, unchanged. G4 closed as obsolete.
-- The §G feature-candidate backlog (14 items, 2026-09-07 brainstorm) is
-  fully resolved — unchanged.
-- Nine verify suites were dead (not green) from 2026-09-05 until
-  2026-09-12 due to a missing migration in each suite's own setup — all
-  fixed, all now apply the full 0001-0018 chain, unchanged.
-- Migrations 0001-0018 are applied to both the real `baranguard` DB and
-  the demo `baranguard_uiseed` DB — unchanged.
-- M7 Live Map's rendered basemap (MapLibre + sql.js/MBTiles, online OSM
-  fallback) is built and real-device-confirmed on the online-fallback
-  path only — no offline `.mbtiles` package has ever been published for
-  barangay 1, so the sql.js/MBTiles-protocol path itself remains
-  device-unverified. Unchanged.
-- Assignment Detail's "Navigate" now embeds `LiveMapCanvas` instead of
-  handing off to Google Maps (the external link survives as an explicit
-  opt-in) — fixed and real-device-confirmed 2026-09-13, unchanged this
-  session.
-- `eval-kit/` still needs capable hardware — no `generate()` has ever
-  completed on this workstation. Unchanged.
+- **C6 — login can leave the OLD screen visually stuck over Home.**
+  Confirmed via remote DevTools: `location.pathname` is genuinely
+  `/home` and Home's mount effects run, but `document.
+  querySelectorAll('.ion-page').length` returns 3, two sharing the same
+  `z-index`. An Ionic `IonRouterOutlet` page-stacking bug — `/login`
+  and the tab shell's `/*` route are siblings in the same outer outlet,
+  and `login.tsx`'s `navigate('/home', {replace:true})` crosses directly
+  into a route nested inside `TabbedShell`'s OWN inner outlet.
+  Investigation paused, not resolved — see `REMAINING.md` C6.
+- **C7 — the whole app process died twice, ~50s after patrol GPS
+  started.** `adb logcat` shows `Process ... has died: fg +50 FGS` with
+  no Java exception either time. More serious than C6, completely
+  uninvestigated. See `REMAINING.md` C7.
 
 ## Things most likely to bite you
 
 1. **A native exception on Capacitor's own plugin-invocation thread
-   cannot be caught by JS try/catch, no matter how defensively the JS
-   side is written.** The FCM crash above looked "safe" at the JS layer
-   (try/catch wrapped, a timeout, a `.catch()` on the register call) and
-   still crashed the whole process, because the exception never reached
-   the JS promise machinery at all. The only real fix is a native check
-   BEFORE the crash-prone call, not a JS-side reaction to it — remember
-   this pattern before trusting any "it's wrapped in try/catch" claim
-   about a native plugin call on this stack.
+   cannot be caught by JS try/catch.** The only real fix is a native
+   check BEFORE the crash-prone call.
 2. **Ionic's `IonRouterOutlet` treats sibling top-level routes as
-   separate page-stack entries, and an imperative `navigate()` crossing
-   from one into a route nested inside another outlet (like `/login` →
-   `/home` here) can leave the old page visually on top even though
-   React Router's own state is completely correct.** `location.pathname`
-   being right is not proof the screen is right — check
-   `document.querySelectorAll('.ion-page')` and each one's z-index/
-   display when a screen "looks stuck" (see C6).
+   separate page-stack entries.** `location.pathname` being right is
+   not proof the screen is right (see C6).
 3. **Every static check in this project can be green on code with a P0
-   defect.** `node --input-type=module --check`, `verify-web-wiring.mjs`,
-   `php -l`, and a clean `tsc` all parse-and-resolve; none of them would
-   have caught the FCM crash, the CriticalAlertActivity theme mismatch,
-   or the device-registration 422 — all three needed a real device or a
-   real HTTP call against a real database to prove.
+   defect.** `node --check`, `verify-web-wiring.mjs`, `php -l`, `tsc`
+   all parse-and-resolve; none of them caught the FCM crash, the
+   CriticalAlertActivity theme mismatch, the device-registration 422, or
+   `GET /incidents/nearby`'s reused-named-parameter 500 — all needed a
+   real device or a real HTTP call to prove.
 4. **A verify script proves nothing about an endpoint it never calls.**
-   `/sync/batch`'s device-registration check was silently broken for as
-   long as nothing called it automatically — `grep` for the route across
-   every `*.sh` before trusting a suite's green result to mean "this
-   endpoint works," not just "the suites that happen to touch it pass."
+   Grep every `*.sh` for a route before trusting a suite's green result.
 5. **`backend/.env` may still be pointed at `baranguard_uiseed`, not
-   `baranguard`**, and it is NOT tracked by git so nothing will remind
-   you. `DB_NAME=baranguard php backend/scripts/...` overrides it for one
-   command; check the file itself before trusting any CLI run against
-   "the real database."
-6. **Gradle's daemon JVM is decided by `JAVA_HOME`, not by whatever
-   `java` resolves to on PATH.** Always `export JAVA_HOME=".../
-   jdk-21.0.12.101-hotspot"` (and `./gradlew --stop` first) before
-   building the Android app from a shell.
-7. **A named PDO parameter can only be bound to ONE placeholder occurrence
-   under native prepares** (`config/db.php`'s `ATTR_EMULATE_PREPARES =>
-   false`) — reusing `:name` twice in one query string (e.g. a haversine
-   formula needing the same latitude twice) silently compiles and lints
-   clean, then throws `SQLSTATE[HY093]` on every real call. This bit
-   `GET /incidents/nearby` for this endpoint's entire lifetime. **Checked,
-   not just fixed**: a PHP-tokenizer scan of every `->prepare()` call
-   across all of `backend/controllers/` and `backend/services/` (33
-   files) confirms this was the ONLY occurrence — not a systemic pattern,
-   but worth re-running that same scan after adding any new query that
-   might reuse a coordinate/value across a formula.
+   `baranguard`**, and it is NOT tracked by git. Check the file itself
+   before trusting any CLI run against "the real database."
+6. **Gradle's daemon JVM is decided by `JAVA_HOME`, not `java` on PATH.**
+   Always `export JAVA_HOME=...` (and `./gradlew --stop` first).
+7. **A named PDO parameter can only be bound to ONE placeholder
+   occurrence under native prepares** (`config/db.php`'s
+   `ATTR_EMULATE_PREPARES => false`) — bit `GET /incidents/nearby` for
+   its entire lifetime, fixed.
+8. **OSRM's build system changed from apt-installable system packages to
+   vcpkg-managed from-source builds somewhere between v5.x and v26.x**,
+   and its versioning scheme changed too (no more v5.x tags at all) —
+   cost real time this session before the OSRM path was abandoned for
+   other reasons. Irrelevant now that routing runs on ORS, but a trap
+   for anyone who revisits self-hosting later.
+9. **Google Maps Platform requires a billing account with a card on
+   file to issue ANY API key**, even one that will only ever be used
+   inside the free tier. Confirm this constraint before starting any
+   Google Cloud integration on a deployment without a card.
+10. **An already-open browser tab can keep running a stale JS module
+    graph even after a hard refresh (Ctrl+Shift+R) fetches the corrected
+    file from the server.** Hit this browser-verifying the route-
+    rendering fix — `fetch(url, {cache:'no-store'})` confirmed the
+    server had the fixed file, Network showed fresh 200s on reload, yet
+    the SAME tab kept throwing the old error. A brand-new tab (same
+    login, same URL) loaded the fix immediately. If a fix "isn't taking"
+    in the browser despite the server clearly serving it, try a fresh
+    tab before assuming the fix is wrong.
 
 ## Recommended next step
 
-**C6 and C7 first — they make the mobile app this session just finished
-building genuinely unusable for a real shift**, ahead of anything in
-`REMAINING.md`'s own numbered order (which is still valid for everything
-below Sprint 8's gate).
+**C6 and C7 first** — they make the mobile app genuinely unusable for a
+real shift, ahead of anything in `REMAINING.md`'s own numbered order.
 
-1. **C6** — resume the paused investigation: confirm which physical
-   `.ion-page` is the stale login screen and whether it's missing
-   Ionic's usual hidden class, then either fix the cross-outlet
-   transition or route the post-login redirect through Home's own inner
-   outlet instead.
-2. **C7** — give this its own session. Reproduce deliberately (toggle
-   on-duty, wait ~50s, watch `adb logcat -b crash` and `dumpsys activity`
-   rather than noticing it as a side effect of testing something else).
+1. **C6** — resume the paused investigation (see `REMAINING.md` C6 for
+   the exact next diagnostic step).
+2. **C7** — give this its own session; reproduce deliberately with
+   `adb logcat -b crash` / `dumpsys activity` running.
 3. **Confirm G1's real-SMS leg** — configure a backup contact, kill
-   connectivity, and verify the on-device SMS actually arrives.
-4. **Run the port-80 firewall command** (below) — F1's web half is code-
-   complete but nothing has opened the port to remote Tailscale peers yet.
-5. ~~B1, B2, B4, B5~~ **Done 2026-09-13** — see their own `REMAINING.md`
-   entries (B4 found and fixed a real `nearby()` bug; B5 found and fixed
-   a real Punong-Barangay-only dashboard bug).
-6. **Hand `eval-kit/` to a friend with capable hardware** for A2.
-7. **The 9 remaining `mobile/` npm advisories** (react-router major bump,
-   cypress major bump, @capacitor/cli) — each needs its own
-   test-and-verify pass; see `REMAINING.md`'s C4 section for why none
-   were force-fixed this session.
-8. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
+   connectivity, verify the on-device SMS actually arrives.
+4. **Hand `eval-kit/` to a friend with capable hardware** for A2.
+5. **The 9 remaining `mobile/` npm advisories** — each needs its own
+   test-and-verify pass; see `REMAINING.md`'s C4 section.
+6. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
+7. ~~Apply migration 0020 to the real databases~~ **Done 2026-09-13** —
+   applied to both `baranguard` and `baranguard_uiseed`.
 
-Full ordered list with reasoning, including the hardware/account-blocked
+Full ordered list with reasoning, including hardware/account-blocked
 items: **`docs/REMAINING.md`**.
 
 ## Operational quick reference
@@ -450,26 +238,26 @@ cd backend && php scripts/ai-worker.php --status
 # Web wiring check — run after ANY web change
 node web/scripts/verify-web-wiring.mjs
 
-# Device registration + map-packages (this session's new assertions)
+# Turn-by-turn routing (real ORS block runs only with a real key in backend/.env)
+bash backend/scripts/verify-routing.sh
+
+# Device registration + map-packages
 bash backend/scripts/verify-devices-map-packages.sh
 
-# Evidence upload (F4)
+# Evidence upload
 bash backend/scripts/verify-evidence-upload.sh
 
-# B2: pen-test dispatch/shifts/swap-requests/citizen-reports/sms
+# Pen-test dispatch/shifts/swap-requests/citizen-reports/sms
 bash backend/scripts/verify-b2-pentest-remaining-resources.sh
 
-# B4: Sprint 3 backend (gps, dispatch status, sync/batch, nearby, mobile incidents)
+# Sprint 3 backend (gps, dispatch status, sync/batch, nearby, mobile incidents)
 bash backend/scripts/verify-sprint3.sh
 
-# F9: SMS broadcast idempotency index (this session's new assertions)
+# SMS broadcast idempotency index
 bash backend/scripts/verify-f9-sms-broadcast-idempotency-index.sh
 
-# Backup/second responder (this session's new assertions)
+# Backup/second responder
 bash backend/scripts/verify-second-responder.sh
-
-# F1 web half: open port 80 to remote Tailscale peers (run once, elevated PowerShell)
-# New-NetFirewallRule -DisplayName "Baranguard Web Dashboard 80" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow -Profile Any
 
 # Build + install the mobile app onto a connected Android device
 cd mobile && npx vite build && npx cap sync android
@@ -481,7 +269,7 @@ export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=C:/gtmp"
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell monkey -p ph.baranguard.tanod -c android.intent.category.LAUNCHER 1
 
-# Tailscale status (both mobile AND web dashboard connectivity — F1, closed)
+# Tailscale status (both mobile AND web dashboard connectivity)
 tailscale status
 ```
 

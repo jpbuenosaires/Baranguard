@@ -142,19 +142,19 @@ function buildSparkline(values, accent) {
   const min = Math.min(...values);
   const range = max - min || 1; // avoid divide-by-zero on a flat series.
   const stepX = width / (values.length - 1);
-  const points = values
-    .map((v, i) => {
-      const x = i * stepX;
-      const y = height - ((v - min) / range) * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
+  const pointCoords = values.map((v, i) => {
+    const x = i * stepX;
+    const y = height - ((v - min) / range) * (height - 8) - 4;
+    return { x, y, v, i };
+  });
+  const points = pointCoords.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+
+  const circlesHtml = pointCoords
+    .map((p) => `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="3" class="kpi-card__sparkline-point"><title>Day ${p.i + 1}: ${p.v}</title></circle>`)
+    .join('');
 
   const wrap = document.createElement('div');
   wrap.className = 'kpi-card__sparkline';
-  // aria-hidden — the real number is already announced by the value
-  // element above; a sparkline is a supplementary visual trend cue, not
-  // information that exists nowhere else.
-  wrap.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" class="kpi-card__sparkline-line kpi-card__sparkline-line--${accent || 'blue'}" fill="none" /></svg>`;
+  wrap.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Trend sparkline"><polyline points="${points}" class="kpi-card__sparkline-line kpi-card__sparkline-line--${accent || 'blue'}" fill="none" />${circlesHtml}</svg>`;
   return wrap;
 }

@@ -770,3 +770,22 @@
   color: var(--color-warning-text);
   font-weight: 600;
 }
+
+@media (max-width: 480px) {
+  .health-history__item {
+    flex-direction: column;
+    gap: var(--spacing-3xs);
+  }
+  .health-history__when {
+    min-width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .health-pulse-dot {
+    animation: none;
+  }
+  .health-refresh-btn.is-refreshing svg {
+    animation: none;
+  }
+}

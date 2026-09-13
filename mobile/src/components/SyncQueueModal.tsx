@@ -120,13 +120,13 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="app-column" style={{ paddingTop: 0 }}>
           {/* Connection Telemetry */}
-          <div className="card--elevated" style={{ marginBottom: '16px' }}>
+          <div className="card--elevated sync-queue__section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                <div className="sync-queue__title">
                   Workstation LAN Connection
                 </div>
-                <div style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                <div className="sync-queue__subtitle">
                   {isOnline
                     ? `Active connection (${latencyMs ?? 0}ms latency)`
                     : 'Workstation unreachable — local cache active'}
@@ -139,8 +139,8 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
           </div>
 
           {/* Pending Queue Breakdown */}
-          <div className="card--elevated" style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
+          <div className="card--elevated sync-queue__section">
+            <div className="sync-queue__category-label">
               STAGED RECORDS WAITING TO SYNC ({totalPending})
             </div>
 
@@ -150,40 +150,40 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--color-border-subtle)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="sync-queue__row">
+                  <div className="sync-queue__row-label">
                     <IonIcon icon={documentTextOutline} style={{ color: 'var(--color-primary)' }} />
-                    <span style={{ fontSize: 'var(--font-size-sm)' }}>Incidents (M3 Local Reports)</span>
+                    <span>Incidents (M3 Local Reports)</span>
                   </div>
                   <span className={`status-pill ${incidentCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
                     {incidentCount}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--color-border-subtle)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="sync-queue__row">
+                  <div className="sync-queue__row-label">
                     <IonIcon icon={navigateOutline} style={{ color: 'var(--color-success)' }} />
-                    <span style={{ fontSize: 'var(--font-size-sm)' }}>GPS Breadcrumbs (M7 Tracking)</span>
+                    <span>GPS Breadcrumbs (M7 Tracking)</span>
                   </div>
                   <span className={`status-pill ${gpsCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
                     {gpsCount}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--color-border-subtle)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="sync-queue__row">
+                  <div className="sync-queue__row-label">
                     <IonIcon icon={radioOutline} style={{ color: 'var(--color-warning)' }} />
-                    <span style={{ fontSize: 'var(--font-size-sm)' }}>Dispatch Status Updates (M6)</span>
+                    <span>Dispatch Status Updates (M6)</span>
                   </div>
                   <span className={`status-pill ${dispatchStatusCount > 0 ? 'status-pill--pending' : 'status-pill--neutral'}`}>
                     {dispatchStatusCount}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="sync-queue__row">
+                  <div className="sync-queue__row-label">
                     <IonIcon icon={warningOutline} style={{ color: 'var(--color-critical)' }} />
-                    <span style={{ fontSize: 'var(--font-size-sm)' }}>Emergency SOS Offline Queue</span>
+                    <span>Emergency SOS Offline Queue</span>
                   </div>
                   <span className={`status-pill ${sosCount > 0 ? 'status-pill--critical is-urgent' : 'status-pill--neutral'}`}>
                     {sosCount}
