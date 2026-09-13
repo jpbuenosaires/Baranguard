@@ -506,11 +506,20 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
+  width: 100%;
+  min-height: auto;
   padding: 0.75rem var(--spacing-md) 0.625rem;
+  font: inherit;
   font-size: 0.875rem;
   font-weight: 700;
+  text-align: left;
   color: var(--color-text-primary);
+  background: transparent;
+  border: none;
   border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
   user-select: none;
   transition: background-color 0.15s ease;
@@ -531,16 +540,12 @@
 }
 
 .gis-floating-activity__toggle {
+  /* Decorative chevron only — the header button above is the sole
+     interactive element and carries hover/focus state for the whole row. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--color-text-secondary);
-  cursor: pointer;
   padding: 0.25rem;
-  border-radius: var(--radius-sm, 4px);
-  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .gis-floating-activity__toggle svg {
@@ -549,12 +554,7 @@
   transform: rotate(180deg);
 }
 
-.gis-floating-activity__toggle:hover {
-  background-color: var(--color-bg);
-  color: var(--color-text-primary);
-}
-
-.gis-floating-activity__toggle:hover svg {
+.gis-floating-activity__header:hover .gis-floating-activity__toggle svg {
   color: var(--color-text-primary);
 }
 
