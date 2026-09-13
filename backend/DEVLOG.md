@@ -11715,3 +11715,48 @@ button state (outlined ↔ solid "Hide Route") tracked correctly. Both the
 throwaway admin account and the test route data written onto dispatch 13
 were cleaned up afterward — `baranguard_uiseed` is back to its
 pre-verification state.
+
+## 2026-09-13 (continued): Cypress 13→16 bump in mobile/, closing that npm-audit item
+
+Picked up `REMAINING.md`'s own "Cypress major version bump" item from
+the 9-advisory triage two entries above. `mobile/package.json`'s
+`cypress` was `^13.5.0`; bumped to `^16.0.0`, `npm install` (had to be
+re-run once — the first invocation's postinstall binary-verification
+step was still running in the background when a status check read
+`node_modules/cypress`'s version early, leaving `package-lock.json`
+transiently pointing at the old 13.17.0 resolved entry against an
+already-16.0.0 `node_modules`; re-running `npm install` after the
+background process actually exited reconciled the lockfile correctly).
+
+**Result: 9 advisories → 6.** Both HIGH-severity findings are gone
+(`extract-zip`'s symlink path traversal, `@cypress/request`'s vulnerable
+`uuid`) — both were transitive through `cypress<16`. Confirmed via
+`npm ls extract-zip` returning empty post-bump. The remaining 6
+(`react-router`/`react-router-dom`'s open-redirect + SSR constructor
+injection, `uuid` via `@capacitor/cli`→`xcode`) are the two items this
+same triage already deliberately left alone — untouched here, no scope
+creep.
+
+**Real finding: the "real e2e specs exist under `mobile/cypress/`"
+claim in `REMAINING.md`/the backlog artifact was wrong — checked, not
+assumed.** `cypress/e2e/test.cy.ts` is unmodified Vite/Ionic scaffold
+boilerplate (`cy.visit('/')` + `cy.contains('#container', 'Ready to
+create an app?')`), never adapted to Baranguard's actual UI — `#container`
+and that copy don't exist anywhere in this app. Running it headless
+against the real dev server (`npx cypress run`) confirmed it fails, but
+for a reason with nothing to do with the version bump: the app throws
+an unhandled promise rejection from `localDatabase.ts`'s deliberate
+"encrypted local store is Android-only, web isn't wired up" guard
+(reached via `App.tsx`'s mount effect → `storageMaintenance.ts` →
+`evidenceRepository.ts`) before the assertion could ever run. Cypress 13
+would have failed identically. This means the "needs its own test-and-
+fix pass" framing was correct in spirit but understates it: there is no
+existing real spec to fix, just scaffolding to replace — writing an
+actual e2e test against the real app is its own separate task, not
+folded into this bump.
+
+**Verification**: `npm audit` before/after (9→6, both highs cleared),
+`npx cypress run` (1 failing, pre-existing/unrelated reason as above,
+confirmed by reading the stack trace back to `localDatabase.ts:49`, not
+guessed). No mobile source changed — `package.json` +
+`package-lock.json` only. Committed `a4c24f0`.
