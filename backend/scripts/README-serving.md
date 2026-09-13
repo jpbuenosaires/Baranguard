@@ -47,4 +47,9 @@ Beyond Sprint 0's `DB_*` values, this needs:
   `.env.example`. Generate one with:
   `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"`
 - `JWT_EXPIRES_IN_MINUTES` — defaults to 15 per §2 Rule 9 if unset.
-- `CORS_ALLOWED_ORIGIN` — optional, defaults to `*` for local dev.
+- `CORS_ALLOWED_ORIGIN` — optional, defaults to `*` for local dev. For a
+  real deployment, set it to a comma-separated list of exact origins
+  instead (e.g. `http://your-tailscale-hostname,http://localhost` — the
+  `localhost` entry is the mobile app's own Capacitor WebView origin,
+  keep it regardless of the web dashboard's own address). See F1 in
+  `docs/REMAINING.md` and `backend/public/index.php`'s CORS block.
