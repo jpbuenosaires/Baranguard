@@ -112,6 +112,13 @@ final class IncidentsController
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
 
+    // §5 has no documented ceiling for one evidence file; picked as a sane
+    // bound for a phone-captured photo/voice note (the mobile client's own
+    // compression, Mobile Improvement Plan Phase 3.1, targets 250-450KB
+    // per photo — this is headroom for the uncompressed fallback path and
+    // longer voice notes, not a target).
+    private const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024;
+
     // §6 "radius has a server maximum" for GET /incidents/nearby — not a
     // number the reference states, resolved here (logged in DEVLOG.md):
     // 2km default, 5km hard cap. A barangay is a small area; 5km already
@@ -546,6 +553,225 @@ final class IncidentsController
         }, $rows);
 
         Http::send(200, ['items' => $items]);
+    }
+
+    /**
+     * POST /incidents/:id/evidence — closes F4 (`docs/REMAINING.md`,
+     * `docs/AUDIT_2026-09-07.md`): the master reference documented this
+     * contract from the start ("`evidence_attachment`'s schema is real,
+     * the upload endpoint is not"), and this is that endpoint. Mobile
+     * Improvement Plan Phase 3.2.
+     *
+     * Tanod-only (mirrors `createMobileItem()`'s mobile-write shape
+     * exactly): `X-Device-Id` header required and verified via
+     * `assertDeviceOwnership()`, same as every other tanod mobile write —
+     * Admin/Secretary have no capture flow to upload FROM, only the
+     * existing GET above to read what a Tanod already sent. Ownership
+     * of the INCIDENT itself reuses `tanodMayAccess()` verbatim — the
+     * same "reported_by = caller OR has a dispatch on it" rule the GET
+     * endpoint already enforces, so a Tanod cannot attach evidence to an
+     * incident that isn't theirs.
+     *
+     * Body: multipart/form-data — `file` (binary), `type`
+     * ('photo'|'voice'), `sha256` (64 hex chars, the CLIENT's own hash of
+     * the bytes it captured), `mime_type`, `original_filename` (optional),
+     * `client_request_id` (UUID — §29's idempotency key for this
+     * endpoint, backed by `evidence_attachment`'s own
+     * UNIQUE(client_request_id) — a retry with the same id returns the
+     * ORIGINAL row rather than creating a second attachment, never a 409).
+     *
+     * The server computes its OWN sha256 over the bytes it actually
+     * received and REJECTS a mismatch against the client-supplied value
+     * (400) rather than trusting it — evidence is exactly the kind of
+     * record where "the file on disk matches what the device captured"
+     * must be provably true, not merely claimed, mirroring this whole
+     * codebase's "hash the real bytes, never trust a client-reported
+     * value" discipline (`evidenceCapture.ts` does the same on the
+     * device's own side).
+     *
+     * Deliberately NOT built here: a download endpoint (the `evidence()`
+     * GET docblock above already earmarks that as separate, later scope)
+     * and independent evidence retention enforcement — `file_path` is
+     * stored, `retention_expires_at` left NULL same as every other
+     * insert path in this codebase, since evidence is currently purged
+     * only as part of `RetentionService::purgeOneIncident()`'s cascade,
+     * not on its own clock; building that independently is a different,
+     * undocumented scope this endpoint doesn't invent.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function uploadEvidence(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['tanod']);
+        if (!ctype_digit($incidentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+
+        $deviceId = Http::header('X-Device-Id');
+        if ($deviceId === null) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
+        }
+        self::assertDeviceOwnership($pdo, $identity, $deviceId);
+
+        $incidentStmt = $pdo->prepare('SELECT incident_id, barangay_id FROM incident WHERE incident_id = :incident_id');
+        $incidentStmt->execute(['incident_id' => $incidentId]);
+        $incident = $incidentStmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+        if (!self::tanodMayAccess($pdo, $incidentId, $identity['user_id'])) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+
+        $type = $_POST['type'] ?? null;
+        if (!is_string($type) || !in_array($type, ['photo', 'voice'], true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "type must be 'photo' or 'voice'.");
+        }
+        $clientSha256 = $_POST['sha256'] ?? null;
+        if (!is_string($clientSha256) || !preg_match('/^[0-9a-f]{64}$/i', $clientSha256)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'sha256 must be 64 hex characters.');
+        }
+        $mimeType = $_POST['mime_type'] ?? null;
+        if (!is_string($mimeType) || trim($mimeType) === '' || strlen($mimeType) > 100) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'mime_type is required (max 100 characters).');
+        }
+        $originalFilename = $_POST['original_filename'] ?? '';
+        if (!is_string($originalFilename) || strlen($originalFilename) > 255) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'original_filename must be at most 255 characters.');
+        }
+        $clientRequestId = $_POST['client_request_id'] ?? null;
+        if (!is_string($clientRequestId) || !preg_match(self::UUID_PATTERN, $clientRequestId)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'client_request_id must be a UUID.');
+        }
+
+        // Idempotent retry: the same client_request_id returns the
+        // original row rather than a second attachment or a 409 — same
+        // "a retry must return the original row" guarantee every other
+        // mobile write in this codebase gives (§2 Rule 3).
+        $existingStmt = $pdo->prepare(
+            'SELECT attachment_id, incident_id, type, uploaded_by, uploaded_at, sha256, byte_size, mime_type, original_filename
+             FROM evidence_attachment WHERE client_request_id = :client_request_id LIMIT 1'
+        );
+        $existingStmt->execute(['client_request_id' => $clientRequestId]);
+        $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+        if ($existing !== false) {
+            Http::send(200, self::mapEvidenceRow($existing));
+            return;
+        }
+
+        $file = $_FILES['file'] ?? null;
+        if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'file is required.');
+        }
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'File upload failed.');
+        }
+        $tmpPath = (string) $file['tmp_name'];
+        if (!is_uploaded_file($tmpPath)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Invalid upload.');
+        }
+        $byteSize = filesize($tmpPath);
+        if ($byteSize === false || $byteSize === 0) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Uploaded file is empty.');
+        }
+        if ($byteSize > self::MAX_EVIDENCE_BYTES) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'File exceeds the maximum evidence size (25MB).');
+        }
+
+        $serverSha256 = hash_file('sha256', $tmpPath);
+        if (!hash_equals($serverSha256, strtolower($clientSha256))) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'sha256 does not match the uploaded bytes.');
+        }
+
+        $baseDir = self::evidenceStorageDir();
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0750, true) && !is_dir($baseDir)) {
+            throw new ApiError(500, 'SERVER_ERROR', 'Could not prepare evidence storage directory.');
+        }
+        $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+        $relativeFilename = 'incident-' . $incidentId . '-' . bin2hex(random_bytes(8)) . ($extension !== '' ? '.' . $extension : '');
+        $destination = $baseDir . DIRECTORY_SEPARATOR . $relativeFilename;
+        if (!move_uploaded_file($tmpPath, $destination)) {
+            throw new ApiError(500, 'SERVER_ERROR', 'Could not store the uploaded evidence file.');
+        }
+
+        try {
+            $pdo->beginTransaction();
+            $insertStmt = $pdo->prepare(
+                'INSERT INTO evidence_attachment
+                    (incident_id, type, file_path, uploaded_by, uploaded_at, sha256, byte_size, mime_type, original_filename, client_request_id)
+                 VALUES (:incident_id, :type, :file_path, :uploaded_by, UTC_TIMESTAMP(), :sha256, :byte_size, :mime_type, :original_filename, :client_request_id)'
+            );
+            $insertStmt->execute([
+                'incident_id' => $incidentId,
+                'type' => $type,
+                'file_path' => $relativeFilename,
+                'uploaded_by' => $identity['user_id'],
+                'sha256' => $serverSha256,
+                'byte_size' => $byteSize,
+                'mime_type' => $mimeType,
+                'original_filename' => $originalFilename,
+                'client_request_id' => $clientRequestId,
+            ]);
+            $attachmentId = (int) $pdo->lastInsertId();
+
+            Audit::record(
+                $pdo,
+                (int) $incident['barangay_id'],
+                $identity['user_id'],
+                'evidence_uploaded',
+                'evidence_attachment',
+                $attachmentId,
+                ['incident_id' => $incidentId, 'type' => $type]
+            );
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            @unlink($destination);
+            throw $e;
+        }
+
+        Http::send(201, [
+            'attachment_id' => $attachmentId,
+            'incident_id' => $incidentId,
+            'type' => $type,
+            'uploaded_by' => $identity['user_id'],
+            'uploaded_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'sha256' => $serverSha256,
+            'byte_size' => $byteSize,
+            'mime_type' => $mimeType,
+            'original_filename' => $originalFilename,
+        ]);
+    }
+
+    /** @param array<string,mixed> $row @return array<string,mixed> */
+    private static function mapEvidenceRow(array $row): array
+    {
+        return [
+            'attachment_id' => (int) $row['attachment_id'],
+            'incident_id' => (int) $row['incident_id'],
+            'type' => $row['type'],
+            'uploaded_by' => (int) $row['uploaded_by'],
+            'uploaded_at' => $row['uploaded_at'],
+            'sha256' => $row['sha256'],
+            'byte_size' => (int) $row['byte_size'],
+            'mime_type' => $row['mime_type'],
+            'original_filename' => $row['original_filename'],
+        ];
+    }
+
+    /** Same `EVIDENCE_DIR` resolution `RetentionService::resolveEvidencePath()` uses, so a purge can find what this endpoint writes. */
+    private static function evidenceStorageDir(): string
+    {
+        $base = baranguard_env('EVIDENCE_DIR');
+        if ($base === false || trim((string) $base) === '') {
+            return dirname(__DIR__) . '/storage/evidence';
+        }
+        return rtrim((string) $base, '/\\');
     }
 
     /**

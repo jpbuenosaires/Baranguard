@@ -160,3 +160,17 @@
   align-items: center;
   gap: var(--spacing-xs);
 }
+
+/* Dark theme stepper active icon contrast polish */
+:root[data-theme="dark"] .ai-review__step--active .ai-review__step-icon {
+  background: var(--color-row-active-bg);
+  color: var(--color-accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ai-review__step--active .ai-review__step-icon {
+    background: var(--color-row-active-bg);
+    color: var(--color-accent);
+  }
+}
+

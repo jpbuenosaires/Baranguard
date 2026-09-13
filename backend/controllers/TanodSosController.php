@@ -375,4 +375,31 @@ final class TanodSosController
         }
         Http::send(200, $payload);
     }
+
+    /**
+     * GET /tanod-sos/fallback-contact — G1's third fallback tier (Mobile
+     * Improvement Plan Phase 4.3): the ONE value a Tanod's phone needs to
+     * SMS directly (own SIM, no gateway) when both the direct app POST and
+     * the workstation itself are confirmed unreachable — a total-outage
+     * path that, by definition, cannot go through the workstation to look
+     * anything up in the moment it's needed, so the app fetches this ahead
+     * of time (e.g. at login) and holds it locally for that moment.
+     *
+     * Deliberately NOT `GET /system-settings` itself, which is Admin-only
+     * and returns `sms_gateway.api_key` alongside everything else — a
+     * secret a Tanod's phone must never receive. This reads the SAME
+     * `system_settings` row (via `SettingsController::get()`, the
+     * existing internal unmasked single-key lookup already used by
+     * `SmsGatewayService`) but exposes ONLY this one non-secret key,
+     * narrowly, to the one role that needs it.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function fallbackContact(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['tanod']);
+
+        $number = SettingsController::get($pdo, 'sos_fallback.backup_contact_number');
+        Http::send(200, ['backup_contact_number' => $number !== '' ? $number : null]);
+    }
 }

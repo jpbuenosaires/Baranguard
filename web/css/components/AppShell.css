@@ -669,3 +669,161 @@
     border-color: var(--color-border);
   }
 }
+
+/* ==========================================================================
+   Emergency SOS Banner (Real-Time Tanod Distress Broadcast)
+   ========================================================================== */
+
+.topbar__sos-banner-host {
+  width: 100%;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.emergency-sos-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+  padding: 0.625rem 1.25rem;
+  background: linear-gradient(90deg, #991B1B 0%, #DC2626 50%, #B91C1C 100%);
+  color: var(--color-white);
+  border-bottom: 2px solid #F87171;
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.35);
+  animation: emergency-banner-slide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes emergency-banner-slide {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.emergency-sos-banner__indicator {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+}
+
+.emergency-sos-banner__pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-full);
+  border: 2px solid #FFFFFF;
+  animation: emergency-radar-pulse 1.4s infinite cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@keyframes emergency-radar-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.emergency-sos-banner__icon {
+  display: inline-flex;
+  color: #FFFFFF;
+}
+
+.emergency-sos-banner__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.emergency-sos-banner__headline {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #FFFFFF;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.emergency-sos-banner__headline strong {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 0.25rem;
+  color: #FEF08A;
+}
+
+.emergency-sos-banner__meta {
+  font-size: var(--font-size-xs);
+  color: rgba(255, 255, 255, 0.9);
+  font-family: var(--font-mono);
+}
+
+.emergency-sos-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.emergency-sos-banner__btn-dispatch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  background: #FFFFFF;
+  color: #991B1B;
+  font-weight: 700;
+  font-size: var(--font-size-xs);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
+}
+
+.emergency-sos-banner__btn-dispatch:hover {
+  background: #FEF2F2;
+  color: #7F1D1D;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.emergency-sos-banner__btn-dismiss {
+  color: rgba(255, 255, 255, 0.8);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emergency-sos-banner__btn-dismiss:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+@media (max-width: 640px) {
+  .emergency-sos-banner {
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+  }
+  .emergency-sos-banner__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
