@@ -11,7 +11,8 @@
  * isn't built, rather than either hiding the tab or faking content.
  */
 
-import { IonContent, IonHeader, IonNote, IonPage, IonTitle, IonToolbar } from '@ionic/react';
+import { IonContent, IonNote, IonPage } from '@ionic/react';
+import MobileHeader from './MobileHeader';
 
 interface NotBuiltYetPageProps {
   title: string;
@@ -22,12 +23,8 @@ interface NotBuiltYetPageProps {
 
 const NotBuiltYetPage: React.FC<NotBuiltYetPageProps> = ({ title, detail, children }) => (
   <IonPage>
-    <IonHeader>
-      <IonToolbar>
-        <IonTitle>{title}</IonTitle>
-      </IonToolbar>
-    </IonHeader>
-    <IonContent className="ion-padding">
+    <MobileHeader title={title.toUpperCase()} subtitle="System Module" />
+    <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
       <div className="app-column">
         <h2 className="app-title">{title} isn't built yet</h2>
         <IonNote className="app-note">{detail}</IonNote>

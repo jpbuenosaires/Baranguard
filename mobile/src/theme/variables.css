@@ -74,18 +74,51 @@
 :root {
   /* --- §8 tokens, verbatim ------------------------------------------- */
   --color-navy: #1e3a6e;
+  --color-navy-dark: #162d58;
   --color-primary: #1d4ed8;
+  --color-primary-hover: #1e40af;
   --color-accent: #3b82f6;
   --color-surface-blue: #e0f2fe;
   --color-white: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-hover: #f1f5f9;
   --color-bg: #f8fafc;
   --color-border: #e2e8f0;
+  --color-border-subtle: #f1f5f9;
+  --color-border-blue: #bfdbfe;
   --color-text-primary: #0f172a;
   --color-text-secondary: #475569;
+  --color-text-tertiary: #64748b;
+  --color-row-active-bg: #eff6ff;
+
   --color-critical: #dc2626;
   --color-warning: #d97706;
   --color-success: #16a34a;
   --color-info: #0891b2;
+
+  /* Contrast-audited pill text tokens (WCAG AA compliant against tints) */
+  --pill-success-text: #15803d;
+  --pill-critical-text: #991b1b;
+  --pill-info-text: #1d4ed8;
+  --pill-neutral-text: #1e293b;
+  --pill-warning-text: #78350f;
+
+  /* Solid tints for containers and badges */
+  --tint-success-bg: #f0fdf4;
+  --tint-critical-bg: #fee2e2;
+  --tint-warning-bg: #fef3c7;
+  --tint-info-bg: #dbeafe;
+  --tint-neutral-bg: #f3f4f6;
+
+  /* Glassmorphism & elevation polish */
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --glass-border: rgba(226, 232, 240, 0.85);
+  --glass-blur: 16px;
+  --gradient-hero: linear-gradient(135deg, #1e3a6e 0%, #1d4ed8 50%, #3b82f6 100%);
+  --gradient-navy: linear-gradient(135deg, #1e3a6e 0%, #162d58 100%);
+  --glow-primary: 0 0 20px rgba(59, 130, 246, 0.25);
+  --glow-critical: 0 0 24px rgba(220, 38, 38, 0.35);
 
   --spacing-xs: 4px;
   --spacing-sm: 8px;
@@ -95,6 +128,7 @@
   --spacing-2xl: 48px;
 
   --font-base: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'SFMono-Regular', 'JetBrains Mono', Consolas, Menlo, monospace;
   --font-size-label: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-md: 1rem;
@@ -105,9 +139,14 @@
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
+  --radius-xl: 20px;
 
   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-card-hover: 0 8px 20px -4px rgba(15, 23, 42, 0.1), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
   --shadow-elevated: 0 4px 12px rgba(15, 23, 42, 0.1);
+  --shadow-floating: 0 12px 28px -4px rgba(15, 23, 42, 0.14), 0 6px 12px -4px rgba(15, 23, 42, 0.08);
+  --shadow-fab: 0 8px 20px rgba(29, 78, 216, 0.35);
+  --shadow-fab-critical: 0 8px 20px rgba(220, 38, 38, 0.4);
 
   /* --- Ionic theming, mapped onto the tokens above -------------------- */
   /* Ionic needs -rgb companions for its own alpha compositing. */
