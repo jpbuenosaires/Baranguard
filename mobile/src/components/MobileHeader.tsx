@@ -33,7 +33,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   title,
   subtitle,
   showBack = false,
-  defaultBackHref = '/home',
+  defaultBackHref = '/tabs/home',
   rightSlot,
 }) => {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);

@@ -402,7 +402,7 @@ const HomePage: React.FC = () => {
             <button
               type="button"
               className="action-card"
-              onClick={() => navigate('/incidents/new')}
+              onClick={() => navigate('/tabs/incidents/new')}
             >
               <div className="action-card__icon-box action-card__icon-box--primary">
                 <IonIcon icon={documentTextOutline} />
@@ -414,7 +414,7 @@ const HomePage: React.FC = () => {
             <button
               type="button"
               className="action-card"
-              onClick={() => navigate('/assignments')}
+              onClick={() => navigate('/tabs/assignments')}
             >
               <div className="action-card__icon-box action-card__icon-box--warning">
                 <IonIcon icon={radioOutline} />
@@ -431,7 +431,7 @@ const HomePage: React.FC = () => {
             <button
               type="button"
               className="action-card"
-              onClick={() => navigate('/map')}
+              onClick={() => navigate('/tabs/map')}
             >
               <div className="action-card__icon-box action-card__icon-box--info">
                 <IonIcon icon={mapOutline} />

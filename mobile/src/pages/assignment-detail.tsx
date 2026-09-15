@@ -277,13 +277,13 @@ const AssignmentDetailPage: React.FC = () => {
   if (!row && !loading) {
     return (
       <IonPage>
-        <MobileHeader title="ASSIGNMENT" showBack defaultBackHref="/assignments" />
+        <MobileHeader title="ASSIGNMENT" showBack defaultBackHref="/tabs/assignments" />
         <IonContent className="ion-padding">
           <div className="card--elevated" style={{ textAlign: 'center', padding: '32px 16px', marginTop: '24px' }}>
             <p style={{ color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
               This assignment is not found in the local device cache.
             </p>
-            <IonButton expand="block" onClick={() => navigate('/assignments')}>
+            <IonButton expand="block" onClick={() => navigate('/tabs/assignments')}>
               Back to Assignments
             </IonButton>
           </div>
@@ -319,7 +319,7 @@ const AssignmentDetailPage: React.FC = () => {
         title={row ? `DISPATCH #${row.server_dispatch_id ?? row.local_id.slice(0, 6)}` : 'DISPATCH'}
         subtitle="Field Assignment Detail"
         showBack
-        defaultBackHref="/assignments"
+        defaultBackHref="/tabs/assignments"
       />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>

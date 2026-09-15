@@ -67,7 +67,7 @@ const LoginPage: React.FC = () => {
       // Authentication succeeded. Everything below is best-effort setup —
       // §9 M1: "enters M2 without blocking on map download".
       await runPostLoginSetup(session.barangayId);
-      navigate('/home', { replace: true });
+      navigate('/tabs/home', { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.isOffline) {
         // A different fact from bad credentials — say so honestly rather

@@ -866,8 +866,64 @@ REAL stored token with an empty one. `login.tsx` now always calls
 `curl` registration + `/sync/batch` call against the real
 `baranguard_uiseed` deployment for this device's actual `device_id`.
 
-### 🔴 C6. Login sometimes leaves the OLD page visually stuck over Home — OPEN, real-device-confirmed
-Found 2026-09-13 while re-testing C5's fix. Symptom: tap "Sign In to
+### ✅ C6. Login sometimes leaves the OLD page visually stuck over Home — CLOSED 2026-09-15, real-device-verified
+**Root cause (found, fixed and proven on a Galaxy A21s / SM-A217F via
+Chrome remote DevTools, 2026-09-15):** `@ionic/react-router` 9.0.3's
+`StackManager` mishandles a tab shell mounted at a ROOT-LEVEL catch-all
+`path="/*"` — which is exactly how `App.tsx` mounted `TabbedShell`. In
+`handleReadyEnteringView()` a route ending in `/*` is a "wildcard
+container" whose base is `path.replace(/\/\*$/, '')` — for `/*` the EMPTY
+string — so its "navigating within the same container?" test collapses
+to `pathname.startsWith('/')` and is true for every absolute path. The
+`/login` → `/home` transition was therefore classified as an in-container
+tab change and **skipped**: the entering shell kept `ion-page-invisible`
+(opacity 0) and the leaving login page never got `ion-page-hidden`. The
+symptom was only ever "sometimes" because a 300 ms wait-timeout fallback
+hides the old page itself when the shell mounts slowly — i.e. it failed
+on every FAST login (the shell registered 116 ms after navigation in the
+captured repro). A second, latent defect had the same cause: a root
+catch-all matches every pathname, so at sign-out the outlet's view lookup
+returned the mounted shell view as the "entering" view for `/login` and
+overwrote its route element in place (view id reused, `childProps.path`
+still `/*`) — it rendered, but as a corrupted same-view transition.
+`REMAINING.md`'s own prior "cross-outlet boundary" theory and the "route
+the redirect through the inner outlet" idea were both wrong: the defect
+is entirely inside the OUTER outlet's handling of `/*`, regardless of who
+triggers the navigation. Nightly `9.0.4-nightly.20260914` still carries
+the same code, so this is not fixed upstream.
+
+**Fix:** the shell now lives at `/tabs/*` with RELATIVE child routes
+(`home`, `assignments`, `assignments/:localId`, `incidents/new`,
+`reports`, `shifts`, `map`, `profile`, plus an `index` redirect) — the
+shape Ionic's own React Router 6 docs use — and `/` redirects to
+`/tabs/home`. Every `navigate()` target, tab-bar `href`, and
+`defaultBackHref` moved under `/tabs/…`; `/login` and M4's
+`/incidents/:localId/submitted` stay outside the shell as before. No `*`
+not-found route was added, deliberately (a mounted catch-all view is the
+second defect above). `App.tsx`'s `TabbedShell` doc carries the full
+reasoning. Files: `App.tsx`, `MobileHeader.tsx`, `login.tsx`, `home.tsx`,
+`assignments.tsx`, `assignment-detail.tsx`, `incident-submitted.tsx`,
+`profile.tsx`, `my-reports.tsx`, `my-shifts.tsx`, `new-incident.tsx`.
+
+**Evidence, all on the real device, new build installed:** a DOM
+`MutationObserver` log injected over the DevTools protocol shows the
+fixed `/login` → `/tabs/home` transition revealing the shell and hiding
+the login page in the same frame (5 ms after the shell registered) and
+removing the login page 250 ms later; the outlet's internal view stack
+(read through the React fiber) holds exactly one `/tabs/*` view with
+`base: /tabs`. Verified the same way: sign-out (shell hidden, then all
+six of its pages unmounted, a REAL `/login` view — not a repurposed
+one); the original repro sequence sign-out → sign-in, twice, both times
+"Home appeared normally" per the user; tab switching and a param route
+(`/tabs/assignments/srv-18`, `useParams` resolved); hardware Back from a
+detail page back to its list; the M4 confirmation-page round trip
+(`/incidents/:id/submitted` ↔ shell, both directions, which shared the
+same defect shape); and cold start both without a session (→ `/login`)
+and with one (→ `/tabs/home`). `npx tsc --noEmit` clean; `npx eslint`
+reports only pre-existing unused-icon imports already present in HEAD
+(`e559dbd`), none in lines this change touched.
+
+*Original entry, kept for the record:* Symptom: tap "Sign In to
 Console," the spinner clears, and the screen appears to stay on the
 login form — but it is not actually stuck. Confirmed via Chrome remote
 DevTools against the live WebView: `location.pathname` correctly reads
@@ -1127,17 +1183,17 @@ and web dashboard halves)** closed 2026-09-13 — see each item's own
 closure note above. Step 3 below (browser-verify) can now legitimately
 target the real deployment address, not just `localhost`/preview data.
 
-**0.5. C6 and C7 (2026-09-13, real-device-confirmed) are now the most
-urgent items in this file, ahead of the numbered list below.** Both were
-found testing the SAME session's own fixes on the real device: C6 (login
-visually stuck behind the old page — the app actually works underneath,
-confirmed via remote DevTools, but a real Tanod would see a frozen
-screen and assume login failed) and C7 (the whole app process dies
-~50 seconds into on-duty patrol GPS — a silent tracking outage, not a
-cosmetic issue). Neither blocks Sprint 8's own gate the way F1/F4 did,
-but both make the mobile app this session just finished building
-genuinely unusable for a real shift until fixed — start here before
-anything below.
+**0.5. C7 (2026-09-13, real-device-confirmed) is now the most urgent
+item in this file, ahead of the numbered list below.** It was found
+testing that session's own fixes on the real device: the whole app
+process dies ~50 seconds into on-duty patrol GPS — a silent tracking
+outage, not a cosmetic issue. It doesn't block Sprint 8's own gate the
+way F1/F4 did, but it makes the mobile app genuinely unusable for a real
+shift until fixed — start here before anything below. *(C6 — login
+visually stuck behind the old page — was the other half of this item
+until **2026-09-15, now ✅ CLOSED**: an `@ionic/react-router` defect with a
+root-level `/*` tab shell, fixed by moving the shell to `/tabs/*`; see
+its own entry.)*
 
 *(The rest of the order is unchanged. A3 is now ✅ done — see its own
 entry — and A2 got real results from a friend's run 2026-09-14; see its
