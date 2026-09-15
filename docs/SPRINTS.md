@@ -65,16 +65,18 @@ unresolved P0/P1 reference contradictions.
      — a box that browser-verifies the web dashboard against a real
      deployment address can now proceed. Evidence: `docs/AUDIT_2026-09-07.md`;
      current status: `docs/REMAINING.md` §F1.
-  -> **New as of 2026-09-13, real-device-confirmed, not part of §F but
-     directly relevant to this sprint's own "critical notification/SOS
-     fallback tests pass" exit condition:** `docs/REMAINING.md` C6 (login
-     can leave the old screen visually stuck over Home — the app works
-     underneath, but a real Tanod would see a frozen login and assume
-     failure) and C7 (the app process died twice, ~50 seconds into
-     on-duty patrol GPS, silently stopping tracking) are both open and
-     unfixed. Treat these as blocking any UAT scenario that walks through
-     login or an on-duty patrol shift until resolved — see their own
-     entries for what's known so far.
+  -> **Real-device-confirmed 2026-09-13, not part of §F but directly
+     relevant to this sprint's own "critical notification/SOS fallback
+     tests pass" exit condition:** `docs/REMAINING.md` C7 (the app
+     process died twice, ~50 seconds into on-duty patrol GPS, silently
+     stopping tracking) is still open and unfixed. Treat it as blocking
+     any UAT scenario that walks through an on-duty patrol shift until
+     resolved — see its entry for what's known so far. **C6 (login left
+     the old screen visually stuck over Home) is CLOSED as of
+     2026-09-15** — an `@ionic/react-router` defect with a root-level
+     `/*` tab shell, fixed by moving the shell to `/tabs/*` and proven on
+     the device through the exact repro sequence, so login-walking UAT
+     scenarios are no longer blocked by it.
 
 One Sprint 8 box below was directly affected and is now unblocked:
   * "Dispatch response-time metric" — the double-count bug (F8) that

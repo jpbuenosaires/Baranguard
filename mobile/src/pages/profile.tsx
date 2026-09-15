@@ -319,7 +319,7 @@ const ProfilePage: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px', marginBottom: '16px' }}>
             <button
               type="button"
-              onClick={() => navigate('/reports')}
+              onClick={() => navigate('/tabs/reports')}
               className="card--elevated"
               style={{
                 display: 'flex',
@@ -342,7 +342,7 @@ const ProfilePage: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => navigate('/shifts')}
+              onClick={() => navigate('/tabs/shifts')}
               className="card--elevated"
               style={{
                 display: 'flex',

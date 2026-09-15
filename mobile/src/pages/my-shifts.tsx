@@ -91,7 +91,7 @@ const MyShiftsPage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="MY SHIFTS" subtitle="Schedule & Swap Requests" showBack defaultBackHref="/profile" />
+      <MobileHeader title="MY SHIFTS" subtitle="Schedule & Swap Requests" showBack defaultBackHref="/tabs/profile" />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="app-column">

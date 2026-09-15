@@ -115,46 +115,83 @@ const RequireSession: React.FC<{ children: React.ReactNode }> = ({ children }) =
  * and routed for real below — this comment previously said it still fell
  * back to `NotBuiltYetPage`, which stopped being true once profile.tsx
  * was wired in; corrected rather than left to mislead the next reader.
+ *
+ * ROUTE SHAPE (2026-09-15, closes REMAINING.md C6 — login leaving the old
+ * screen stuck over Home): the shell is mounted at `/tabs/*` with
+ * RELATIVE child paths — the exact shape Ionic's own React Router 6 docs
+ * use — and NOT at a root-level catch-all `/*` with absolute children,
+ * which is what it was until today. That is not a style preference:
+ * `@ionic/react-router` 9.0.3's StackManager mishandles a root-level
+ * `/*` container in two ways, both confirmed on a real device through
+ * remote DevTools (DOM mutation log + the outlet's internal view stack),
+ * not reasoned about:
+ *
+ *   1. `handleReadyEnteringView()` derives a container route's base as
+ *      `path.replace(/\/\*$/, '')`, which for `/*` is the EMPTY string.
+ *      Its "navigating within the same container?" check then reduces
+ *      to `pathname.startsWith('/')` — true for every absolute path — so
+ *      the `/login` -> `/home` transition was classified as an
+ *      in-container tab change and skipped outright: the entering shell
+ *      kept `ion-page-invisible` (opacity 0) and the leaving login page
+ *      never received `ion-page-hidden`. The Tanod saw a frozen login
+ *      form over a fully working Home. It only "sometimes" worked
+ *      because a 300 ms wait-timeout fallback hides the old page itself
+ *      when the shell mounts slowly — i.e. it failed on every FAST login.
+ *   2. A root-level catch-all matches EVERY pathname, so at sign-out the
+ *      outlet's view lookup returned the mounted tab-shell view as the
+ *      "entering" view for `/login` and overwrote its route element with
+ *      the login route (same view id, `childProps.path` still `/*`). It
+ *      rendered, but as a corrupted same-view transition, not a page
+ *      change.
+ *
+ * With a non-empty base (`/tabs`) neither lookup can match a sibling
+ * route and the container check compares real prefixes. The tab bar
+ * hrefs, every `navigate()` call site and every `defaultBackHref` moved
+ * with it; `/login` and M4's `/incidents/:localId/submitted` stay OUTSIDE
+ * the shell exactly as before. `/` redirects into `/tabs/home` (a cold
+ * start always lands on `/`). There is deliberately NO `*` not-found
+ * route: a mounted catch-all view is precisely what finding 2 is about.
  */
 const TabbedShell: React.FC = () => (
   <IonTabs>
     <IonRouterOutlet>
-      <Route path="/home" element={<HomePage />} />
+      <Route path="home" element={<HomePage />} />
       {/* M5. */}
-      <Route path="/assignments" element={<AssignmentsPage />} />
+      <Route path="assignments" element={<AssignmentsPage />} />
       {/* M6 — reached by tapping a card on M5, not a tab of its own. */}
-      <Route path="/assignments/:localId" element={<AssignmentDetailPage />} />
+      <Route path="assignments/:localId" element={<AssignmentDetailPage />} />
       {/* M3. */}
-      <Route path="/incidents/new" element={<NewIncidentPage />} />
+      <Route path="incidents/new" element={<NewIncidentPage />} />
       {/* M14 — reached from Profile and from M4's confirmation screen, not its own tab (a 6th bottom tab for a reference screen would crowd the four the Tanod actually needs dozens of times a shift). */}
-      <Route path="/reports" element={<MyReportsPage />} />
+      <Route path="reports" element={<MyReportsPage />} />
       {/* M8/M9 — reached from Profile, same "not a tab" reasoning as M14 above (used at most twice a week). */}
-      <Route path="/shifts" element={<MyShiftsPage />} />
+      <Route path="shifts" element={<MyShiftsPage />} />
       {/* M7. */}
-      <Route path="/map" element={<LiveMapPage />} />
-      <Route path="/profile" element={<ProfilePage />} />
-      <Route path="/" element={<Navigate to="/home" replace />} />
+      <Route path="map" element={<LiveMapPage />} />
+      <Route path="profile" element={<ProfilePage />} />
+      {/* Bare `/tabs` — nothing in the app navigates there; a safety net only. */}
+      <Route index element={<Navigate to="/tabs/home" replace />} />
     </IonRouterOutlet>
     <IonTabBar slot="bottom" className="mobile-tab-bar">
-      <IonTabButton tab="home" href="/home">
+      <IonTabButton tab="home" href="/tabs/home">
         <IonIcon icon={homeOutline} />
         <IonLabel>Home</IonLabel>
       </IonTabButton>
-      <IonTabButton tab="assignments" href="/assignments">
+      <IonTabButton tab="assignments" href="/tabs/assignments">
         <IonIcon icon={listOutline} />
         <IonLabel>Assignments</IonLabel>
       </IonTabButton>
-      <IonTabButton tab="log-incident" href="/incidents/new" className="mobile-tab-button--fab">
+      <IonTabButton tab="log-incident" href="/tabs/incidents/new" className="mobile-tab-button--fab">
         <div className="tab-fab-btn" aria-hidden="true">
           <IonIcon icon={add} />
         </div>
         <IonLabel>Log Incident</IonLabel>
       </IonTabButton>
-      <IonTabButton tab="map" href="/map">
+      <IonTabButton tab="map" href="/tabs/map">
         <IonIcon icon={mapOutline} />
         <IonLabel>Map</IonLabel>
       </IonTabButton>
-      <IonTabButton tab="profile" href="/profile">
+      <IonTabButton tab="profile" href="/tabs/profile">
         <IonIcon icon={personOutline} />
         <IonLabel>Profile</IonLabel>
       </IonTabButton>
@@ -215,13 +252,16 @@ const App: React.FC = () => {
             }
           />
           <Route
-            path="/*"
+            path="/tabs/*"
             element={
               <RequireSession>
                 <TabbedShell />
               </RequireSession>
             }
           />
+          {/* A cold start (and a WebView restore) always lands on `/`. See
+              TabbedShell's doc for why the shell is NOT a root catch-all. */}
+          <Route path="/" element={<Navigate to="/tabs/home" replace />} />
         </IonRouterOutlet>
       </IonReactRouter>
     </IonApp>

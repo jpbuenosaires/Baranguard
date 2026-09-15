@@ -226,7 +226,7 @@ const AssignmentsPage: React.FC = () => {
                     key={row.local_id}
                     type="button"
                     className={`card ${accentClass} assignment-card`}
-                    onClick={() => navigate(`/assignments/${encodeURIComponent(row.local_id)}`)}
+                    onClick={() => navigate(`/tabs/assignments/${encodeURIComponent(row.local_id)}`)}
                   >
                     <div className="assignment-card__body">
                       <div className="card__header assignment-card__header">

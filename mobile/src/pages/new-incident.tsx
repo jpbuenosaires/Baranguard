@@ -279,7 +279,7 @@ const NewIncidentPage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="LOG INCIDENT" subtitle="Field Incident Intake" showBack defaultBackHref="/home" />
+      <MobileHeader title="LOG INCIDENT" subtitle="Field Incident Intake" showBack defaultBackHref="/tabs/home" />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="app-column">

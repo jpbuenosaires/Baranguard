@@ -121,7 +121,7 @@ const IncidentSubmittedPage: React.FC = () => {
               <p style={{ color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
                 That incident report could not be located in local storage.
               </p>
-              <IonButton expand="block" onClick={() => navigate('/home', { replace: true })}>
+              <IonButton expand="block" onClick={() => navigate('/tabs/home', { replace: true })}>
                 Return to Home
               </IonButton>
             </div>
@@ -240,7 +240,7 @@ const IncidentSubmittedPage: React.FC = () => {
               {/* Dual Actions */}
               <IonButton
                 expand="block"
-                onClick={() => navigate('/home', { replace: true })}
+                onClick={() => navigate('/tabs/home', { replace: true })}
                 style={{
                   '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
                   fontWeight: 700,
@@ -256,7 +256,7 @@ const IncidentSubmittedPage: React.FC = () => {
               <IonButton
                 expand="block"
                 fill="outline"
-                onClick={() => navigate('/incidents/new', { replace: true })}
+                onClick={() => navigate('/tabs/incidents/new', { replace: true })}
                 style={{ fontWeight: 700, height: '48px', marginBottom: '10px' }}
               >
                 <IonIcon icon={documentTextOutline} slot="start" />
@@ -266,7 +266,7 @@ const IncidentSubmittedPage: React.FC = () => {
               <IonButton
                 expand="block"
                 fill="clear"
-                onClick={() => navigate('/reports')}
+                onClick={() => navigate('/tabs/reports')}
                 style={{ fontWeight: 600, height: '44px' }}
               >
                 <IonIcon icon={listOutline} slot="start" />

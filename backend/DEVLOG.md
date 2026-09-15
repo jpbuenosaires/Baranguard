@@ -12047,3 +12047,165 @@ whether the model arrives at the right answer, not whether it corrects a
 wrong "current" one (no dataset variant with deliberately-wrong current
 values was built — disclosed as a gap in `ai-evaluate.php`'s own header,
 not silently assumed covered).
+
+## 2026-09-15: C6 closed — Ionic page-stack bug root-caused on a real device, tab shell moved from `/*` to `/tabs/*`
+
+**Cut:** `docs/REMAINING.md` C6 only ("login sometimes leaves the OLD
+page visually stuck over Home"), the top-priority item `HANDOFF.md` named
+for the next session. Not a Sprint 8 box — a blocker for the ones that
+walk through login. Real device this time was a **Samsung Galaxy A21s
+(SM-A217F, Android 12) over wireless adb**, not the Infinix.
+
+### Diagnosis — what was actually wrong, with evidence
+
+The 2026-09-13 theory ("`login.tsx`'s `navigate('/home')` crosses the
+outer/inner outlet boundary") was wrong. The defect is entirely inside
+the OUTER `IonRouterOutlet`'s handling of a tab shell mounted at a
+root-level catch-all `path="/*"` — which is how `App.tsx` mounted
+`TabbedShell` since the tabs were introduced.
+
+Read from `node_modules/@ionic/react-router/dist/index.js` (9.0.3,
+`StackManager.handleReadyEnteringView()`): any route whose `path` ends
+in `/*` is a "wildcard container route", and its base is computed as
+`routePath.replace(/\/\*$/, '')`. For `/*` that is the **empty string**,
+so the guard
+
+```
+currentInContainer  = pathname.startsWith(containerBase + '/') || pathname === containerBase
+previousInContainer = lastPathname.startsWith(containerBase + '/') || ...
+```
+
+degenerates to `startsWith('/')` — true for every absolute path — and
+the method concludes "navigating within the same container; the nested
+outlet will handle it" and **returns before `transitionPage()`**. So on
+`/login` → `/home` the entering shell page keeps the `ion-page-invisible`
+class its `PageManager` ref adds on mount (`opacity: 0`), and the leaving
+login page never receives `ion-page-hidden` (`display: none`). The Tanod
+sees a frozen login form over a fully mounted, fully working Home.
+
+Why "sometimes": `handleWaitingForIonPage()` starts a 300 ms
+`ION_PAGE_WAIT_TIMEOUT_MS` timer when the shell has no page element
+yet. If the shell registers AFTER 300 ms, the timeout branch hides every
+other view itself and a second 300 ms safety net strips
+`ion-page-invisible` — so a slow login accidentally worked, a fast one
+never did. In the captured repro the shell registered **116 ms** after
+navigation.
+
+**Second, latent defect with the same cause** — found by reading the
+outlet's internal view stack, not by symptom: a root catch-all view
+matches every pathname, so at sign-out `findViewItemByPath('/login')`
+returned the mounted shell view as the *entering* view and
+`handlePageTransition()` overwrote its `reactElement` with the `/login`
+route in place. The device dump showed exactly that — a view with
+`reactElement.props.path: "/login"` but `routeData.childProps.path:
+"/*"`, same id as the shell created at cold start, and a `lastTransition`
+with no `leavingId`. It rendered by accident (same-view transition), but
+it is corrupted state. Checked `9.0.4-nightly.20260914` from npm: same
+code, so nothing to upgrade to.
+
+**How the evidence was gathered — reusable, no app changes:** `adb
+forward tcp:9222 localabstract:webview_devtools_remote_<pid>`, then the
+Chrome DevTools Protocol from a 30-line Node script (Node 22+'s built-in
+`WebSocket`, `Runtime.evaluate` with `awaitPromise`/`returnByValue`).
+Three probes:
+1. A `MutationObserver` on `document.body` logging class/style/
+   `aria-hidden` changes and add/remove of every `.ion-page` with
+   `performance.now()` timestamps, plus wrapped `history.pushState`/
+   `replaceState`. Installed once; survives SPA navigation.
+2. The outer outlet's **view stack**, read through the React fiber:
+   `Object.keys(el).find(k => k.startsWith('__reactFiber$'))`, walk
+   `.return` until a `stateNode` with `handlePageTransition` AND
+   `registerIonPage` (method names survive terser; `constructor.name`
+   does not), then `sm.context.getViewItemsForOutlet(sm.id)`.
+3. `Page.captureScreenshot` for the before/after pictures.
+
+Before the fix, the user signed out and back in while probe 1 ran: shell
+page added with `ion-page-invisible` at +116 ms, Home's inner page
+committed at +253 ms — and then **no further mutation on either outer
+page, ever**. Probe 2 confirmed `lastTransition` still pointed at the
+previous transition (the skip returns before it is updated).
+
+### Fix
+
+Canonical Ionic React Router 6 shape, straight from Ionic's own docs:
+outer `<Route path="/tabs/*">` → `RequireSession` → `TabbedShell`; inner
+routes RELATIVE (`home`, `assignments`, `assignments/:localId`,
+`incidents/new`, `reports`, `shifts`, `map`, `profile`, `index` →
+`/tabs/home`); outer `<Route path="/">` → `/tabs/home` (a cold start and a
+WebView restore always land on `/`). `/login` and M4's
+`/incidents/:localId/submitted` stay OUTSIDE the shell exactly as before.
+With a non-empty base the container check compares real prefixes and no
+outer view can match a sibling route. **Deliberately no `*` not-found
+route** — a mounted catch-all is precisely the second defect.
+Considered and rejected: `path="*"` (one-token change, but a mounted `*`
+view is still matched for `/login` by `findViewItemByPath`, so defect 2
+survives, and `renderViewItem`'s catch-all deactivation hides the shell
+without lifecycle events); patching `node_modules` (fragile, and a
+consumer-side shape the library is tested against exists).
+
+Files (all `mobile/src`): `App.tsx` (routes, tab hrefs, `TabbedShell`
+doc block with the full mechanism), `components/MobileHeader.tsx`
+(default `defaultBackHref`), `pages/login.tsx`, `home.tsx`,
+`assignments.tsx`, `assignment-detail.tsx`, `incident-submitted.tsx`,
+`profile.tsx`, `my-reports.tsx`, `my-shifts.tsx`, `new-incident.tsx` —
+path strings only outside `App.tsx`. No backend, no schema, no web.
+
+### Verification (real device, new debug build installed with `adb install -r`)
+
+- `npx tsc --noEmit` clean. `npx eslint`: only pre-existing unused
+  ionicons imports in `home/new-incident/profile/assignments/
+  assignment-detail.tsx`, confirmed present in HEAD `e559dbd` by linting
+  `git show HEAD:…` — not in any line this change touched, left alone.
+- **Fixed login (probe 1):** `/login` → `/tabs/home` at t0; spinner div
+  +43 ms; shell page added invisible +114 ms; **+119 ms shell revealed
+  and login `ion-page-hidden`/`aria-hidden` in the same frame**; Home's
+  inner page committed (z-index 101) +282 ms; login page REMOVED +367 ms.
+  Probe 2: exactly one outer view, `/tabs/*`, `base: "/tabs"`; inner
+  outlet `mountPath: "/tabs"`.
+- **Sign-out (driven over CDP: Profile › Sign Out › confirm):** logout
+  round-trip took ~4.3 s over Tailscale, then `/tabs/profile` → `/login`:
+  login added +214 ms, revealed + shell hidden +260 ms, all six shell
+  pages and the shell itself removed +509 ms. Probe 2: one outer view,
+  `/login` with `childProps.path: "/login"` — a REAL login view, id
+  advanced, `lastTransition` has both entering and leaving ids.
+- **The original repro, sign-out → sign-in, twice** (user-driven, they
+  type the password): "Home appeared normally" both times; probe 1
+  shows the identical fixed sequence.
+- Tab switching Home/Assignments/Map/Profile, the param route
+  `/tabs/assignments/srv-18` (so `useParams` resolves through Ionic's
+  reconstructed `RouteContext`), and hardware Back from that detail
+  back to the list (detail destroyed, list restored) — all clean.
+- **M4 round trip** (same defect shape, both directions): drove
+  `NavManager.onNavigate('/incidents/c6-probe/submitted','replace',
+  'none')` via the fiber (a non-existent id renders the page's own
+  "Report Not Found" state, so nothing was written), shell fully
+  unmounted and the outer page visible; "Return to Home" → shell back,
+  outer page gone.
+- Cold start without a session (expired token) → `/` → `/tabs/home` →
+  `RequireSession` → `/login`, stale views cleaned; cold start WITH a
+  live session → `/tabs/home`, Home visible, one outer view z-index 101.
+- `npx vitest run`: `App.test.tsx` fails exactly as documented under
+  `REMAINING.md` C4's Cypress note (`localDatabase.ts`'s web guard via
+  `App.tsx`'s mount effect) — pre-existing, unrelated; the other file
+  (another session's `routeProgress.test.ts`, 24 tests) passes.
+
+### Caveats, stated plainly
+
+- Two other Claude sessions had uncommitted in-flight mobile work in the
+  tree (`LiveMapCanvas.tsx`, `assignment-detail.tsx`, `app.css`,
+  untracked `ActiveStepCard.tsx`/`routeProgress.ts`; `login.tsx`'s
+  workstation-address UI). The device build necessarily includes it
+  (a build is of the working tree). Only this fix's own hunks were
+  committed — `login.tsx` and `assignment-detail.tsx` were staged as
+  partial patches so the other work stays uncommitted and untouched.
+- The "cross-outlet boundary" and "route the redirect through the inner
+  outlet" ideas recorded on 2026-09-13 are both retracted above; the
+  `REMAINING.md` C6 entry keeps its original text below the closure note
+  for the record.
+- C7 (process death ~50 s into patrol GPS) is untouched and is now the
+  single most urgent item. The A21s is a second device to try to
+  reproduce it on.
+
+Docs reconciled: `docs/REMAINING.md` (C6 closed, "0.5" reordered to C7
+alone), `docs/SPRINTS.md` (gate note), `docs/HANDOFF.md` (rewritten in
+place: NEWEST section, bite list #2, next steps).
