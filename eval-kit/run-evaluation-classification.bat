@@ -3,15 +3,11 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ============================================
-echo  Baranguard AI Evaluation - Other 7 Tasks
+echo  Baranguard AI Evaluation - Task 3/7: Classifying incidents
 echo ============================================
 echo.
-echo run-evaluation.bat already tests REDACTION (removing personal info) -
-echo the most important one. This file tests the other 7 things the same
-echo AI model does: writing case summaries, translating records, pulling
-echo out complainant/respondent/contact details, classifying incidents,
-echo drafting a formal blotter entry, composing SMS alerts, and analyzing
-echo incident patterns. Nothing on this computer is sent anywhere -
+echo This tests how well the AI picks the right incident type and
+echo priority for a report. Nothing on this computer is sent anywhere -
 echo everything runs locally, offline, same as before.
 echo.
 echo Only run this AFTER run-evaluation.bat has worked at least once -
@@ -87,12 +83,27 @@ echo.
 pause
 exit /b 1
 
-REM --- 4. Quick 1-record smoke test (on a task other than redaction, --
-REM        since run-evaluation.bat already proved redaction works) ----
+REM --- 4. Already have progress from an earlier run? Skip straight to  --
+REM        resuming it automatically - no smoke test, no confirmation   --
+REM        prompt, so closing this window and double-clicking the file  --
+REM        again later just continues unattended.                      --
+set "HAS_PROGRESS="
+if exist "fixtures\eval-incidents-v1.classification.model.*.checkpoint.json" set "HAS_PROGRESS=1"
+if defined HAS_PROGRESS (
+    echo Found progress from an earlier run of this task - continuing
+    echo automatically from where it left off...
+    echo.
+    goto :run_full
+)
+
+REM --- 5. Quick 1-record smoke test -------------------------------------
+REM        --resume here too: without it, this would write its OWN     --
+REM        1-record checkpoint on top of the real one and wipe out any  --
+REM        existing progress. Harmless on a truly fresh run.            --
 :smoke_test
 echo Running a quick 1-record check first (about half a minute)...
 echo.
-php scripts\ai-evaluate.php --task=summary --engine=model --limit=1 --dry-run --verbose
+php scripts\ai-evaluate.php --task=classification --engine=model --limit=1 --dry-run --verbose --resume
 if errorlevel 1 (
     echo.
     echo [ERROR] The quick check above failed. Nothing else was run.
@@ -106,65 +117,33 @@ echo The quick check worked.
 echo.
 
 echo ============================================
-echo Ready to run all 7 remaining tasks, one after another.
+echo Ready to run the full 350-record classification test.
 echo.
-echo Five of these (summary, extraction, classification, blotter-assist,
-echo translation) run against the same 350-record set as redaction, so
-echo expect roughly the SAME LENGTH OF TIME AS THAT RUN, for EACH of the
-echo five - this is the biggest ask of the bunch. The last two
-echo (sms-compose, threat-analysis) use much smaller sets (35 and 25
-echo records) and will finish far faster.
+echo This runs against the same 350-record set as redaction, so expect
+echo roughly the SAME LENGTH OF TIME AS THAT RUN.
 echo.
-echo Same as before: you can safely close this window at any point and
-echo run this file again later. Each task remembers its own progress
-echo separately and picks up exactly where it left off - nothing is
-echo redone or lost, and a task that already finished is skipped near-
-echo instantly on a re-run.
+echo You can safely close this window at any point. Just double-click
+echo this file again later - it picks up exactly where it left off
+echo AUTOMATICALLY (no need to click through this message again), without
+echo repeating work or affecting the other 6 tasks at all.
 echo ============================================
 echo.
 pause
 
-echo.
-echo === 1/7: summary ===
-php scripts\ai-evaluate.php --task=summary --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
-
-echo.
-echo === 2/7: extraction ===
-php scripts\ai-evaluate.php --task=extraction --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
-
-echo.
-echo === 3/7: classification ===
+:run_full
 php scripts\ai-evaluate.php --task=classification --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
 
 echo.
-echo === 4/7: blotter-assist ===
-php scripts\ai-evaluate.php --task=blotter-assist --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
-
-echo.
-echo === 5/7: translation (to Filipino/Tagalog) ===
-php scripts\ai-evaluate.php --task=translation --translate-to=fil --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
-
-echo.
-echo === 6/7: sms-compose (much smaller, 35 records) ===
-php scripts\ai-evaluate.php --task=sms-compose --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=60 --resume --save-results
-
-echo.
-echo === 7/7: threat-analysis (much smaller, 25 records) ===
-php scripts\ai-evaluate.php --task=threat-analysis --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=60 --resume --save-results
-
-echo.
 echo ============================================
-echo All 7 tasks attempted. If any one shows an error above about
-echo Ollama being unavailable partway through, that's fine - just run
-echo this file again and it'll pick up from exactly where that task
-echo left off, without repeating the tasks that already finished.
+echo If you see an error above about Ollama being unavailable partway
+echo through, that's fine - just run this file again and it'll pick up
+echo from exactly where it left off.
 echo.
-echo When everything above finishes cleanly, please send back every
-echo file in this folder's "fixtures" subfolder that starts with:
-echo   evaluation-results-
-echo   evaluation-log-
-echo (there should be up to 7 of each - one pair per task.)
+echo When it finishes, please send back these two files from this
+echo folder's "fixtures" subfolder:
+echo   evaluation-results-classification-*.txt
+echo   evaluation-log-classification-*.txt
 echo.
-echo Thank you again for helping with this!
+echo Thank you for helping with this!
 echo ============================================
 pause

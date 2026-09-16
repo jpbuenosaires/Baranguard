@@ -25,18 +25,32 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  IonAlert,
   IonButton,
   IonContent,
   IonIcon,
   IonItem,
   IonList,
-  IonNote,
   IonPage,
   IonSpinner,
 } from '@ionic/react';
-import { eyeOffOutline, eyeOutline, lockClosedOutline, personOutline, shield } from 'ionicons/icons';
+import {
+  eyeOffOutline,
+  eyeOutline,
+  lockClosedOutline,
+  personOutline,
+  settingsOutline,
+  shield,
+} from 'ionicons/icons';
 import { TextField } from '../components/FormFields';
-import { ApiError, login, registerDevice } from '../services/apiService';
+import {
+  ApiError,
+  getApiBaseUrl,
+  hasApiBaseUrlOverride,
+  login,
+  registerDevice,
+  setApiBaseUrlOverride,
+} from '../services/apiService';
 import { getDeviceId, getFcmToken } from '../services/deviceIdentity';
 import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
@@ -51,6 +65,11 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [serverUrlAlertOpen, setServerUrlAlertOpen] = useState(false);
+  const [serverUrlValue, setServerUrlValue] = useState(getApiBaseUrl());
+  const [serverUrlMessage, setServerUrlMessage] = useState(
+    'Only change this if told to by an administrator.'
+  );
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -142,10 +161,63 @@ const LoginPage: React.FC = () => {
                 >
                   {busy ? <IonSpinner name="dots" /> : 'Sign In to Console'}
                 </IonButton>
+
+                <IonButton
+                  fill="clear"
+                  size="small"
+                  type="button"
+                  expand="block"
+                  disabled={busy}
+                  onClick={() => {
+                    setServerUrlValue(getApiBaseUrl());
+                    setServerUrlMessage('Only change this if told to by an administrator.');
+                    setServerUrlAlertOpen(true);
+                  }}
+                >
+                  <IonIcon icon={settingsOutline} slot="start" />
+                  Workstation address{hasApiBaseUrlOverride() ? ' (custom)' : ''}
+                </IonButton>
               </form>
             </div>
           </div>
         </div>
+
+        <IonAlert
+          isOpen={serverUrlAlertOpen}
+          onDidDismiss={() => setServerUrlAlertOpen(false)}
+          header="Workstation Address"
+          message={serverUrlMessage}
+          inputs={[
+            {
+              name: 'url',
+              type: 'url',
+              placeholder: 'https://server:8081/api/v1',
+              value: serverUrlValue,
+            },
+          ]}
+          buttons={[
+            { text: 'Cancel', role: 'cancel' },
+            {
+              text: 'Reset to default',
+              handler: () => {
+                void setApiBaseUrlOverride(null);
+              },
+            },
+            {
+              text: 'Save',
+              handler: (data: { url?: string }) => {
+                const trimmed = (data.url ?? '').trim();
+                if (!trimmed) return false;
+                if (!/^https?:\/\//i.test(trimmed)) {
+                  setServerUrlMessage('Enter a full address starting with http:// or https://');
+                  return false;
+                }
+                void setApiBaseUrlOverride(trimmed);
+                return true;
+              },
+            },
+          ]}
+        />
       </IonContent>
     </IonPage>
   );

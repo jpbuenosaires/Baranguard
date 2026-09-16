@@ -49,7 +49,9 @@ Beyond Sprint 0's `DB_*` values, this needs:
 - `JWT_EXPIRES_IN_MINUTES` — defaults to 15 per §2 Rule 9 if unset.
 - `CORS_ALLOWED_ORIGIN` — optional, defaults to `*` for local dev. For a
   real deployment, set it to a comma-separated list of exact origins
-  instead (e.g. `http://your-tailscale-hostname,http://localhost` — the
-  `localhost` entry is the mobile app's own Capacitor WebView origin,
-  keep it regardless of the web dashboard's own address). See F1 in
+  instead (e.g. `http://192.168.1.23,http://localhost` — the `localhost`
+  entry is the mobile app's own Capacitor WebView origin, keep it
+  regardless of the web dashboard's own address; add a temporary
+  Cloudflare Quick Tunnel origin here too if you're using one for remote
+  testing — see `web/index.html`'s own note). See F1 in
   `docs/REMAINING.md` and `backend/public/index.php`'s CORS block.

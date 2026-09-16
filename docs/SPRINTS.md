@@ -51,44 +51,19 @@ response shape and authorization rule the implementation actually matches
 · tenant penetration tests pass · offline duplicate tests pass · critical
 notification/SOS fallback tests pass · restore test passes · no
 unresolved P0/P1 reference contradictions.
-  -> Status: schema, restore test, and incident-tenant penetration are
-     DONE. See docs/REMAINING.md for the ones that are not.
-  -> `docs/REMAINING.md` §F is the remediation list and it GATES this
-     sprint. F2/F3/F5/F6/F8 were fixed and proven 2026-09-12 (each with a
-     new verify script — see `backend/DEVLOG.md` 2026-09-12 (4)); **F4
-     (evidence upload) closed 2026-09-13** (built end-to-end, proven by
-     `backend/scripts/verify-evidence-upload.sh`). **F1 is now FULLY
-     CLOSED, both halves, 2026-09-13**: mobile's connectivity and the
-     web dashboard's own API base URL/`CORS_ALLOWED_ORIGIN` both resolved
-     to the same Tailscale hostname, with CORS extended to a real
-     multi-origin allow-list. Section F no longer gates any Sprint 8 box
-     — a box that browser-verifies the web dashboard against a real
-     deployment address can now proceed. Evidence: `docs/AUDIT_2026-09-07.md`;
-     current status: `docs/REMAINING.md` §F1.
-  -> **Real-device-confirmed 2026-09-13, not part of §F but directly
-     relevant to this sprint's own "critical notification/SOS fallback
-     tests pass" exit condition:** `docs/REMAINING.md` C7 (the app
-     process died twice, ~50 seconds into on-duty patrol GPS, silently
-     stopping tracking) is still open and unfixed. Treat it as blocking
-     any UAT scenario that walks through an on-duty patrol shift until
-     resolved — see its entry for what's known so far. **C6 (login left
-     the old screen visually stuck over Home) is CLOSED as of
-     2026-09-15** — an `@ionic/react-router` defect with a root-level
-     `/*` tab shell, fixed by moving the shell to `/tabs/*` and proven on
-     the device through the exact repro sequence, so login-walking UAT
-     scenarios are no longer blocked by it.
-
-One Sprint 8 box below was directly affected and is now unblocked:
-  * "Dispatch response-time metric" — the double-count bug (F8) that
-    would have made this box report a wrong number as a measured one is
-    fixed as of 2026-09-12: `ReportsController` now takes the
-    per-incident first arrival (`MIN(arrived_at)`), proven by
-    `backend/scripts/verify-f8-response-time-dedup.sh`. This box can
-    proceed using that fixed definition.
-  * "Raw-PII exposure audit" — F2/F3 (the stored-XSS chain) are now
-    fixed; F7 was closed by removal 2026-09-10. Starting from those
-    closed items' evidence is still useful context, but they are no
-    longer open findings to re-verify as part of this box.
+  -> Status: schema, restore test, incident-tenant penetration DONE.
+     `docs/REMAINING.md` §F (the 2026-09-07 audit's remediation list,
+     originally this sprint's gate) is now **entirely closed** — no box
+     below is blocked by it. The "Dispatch response-time metric" box can
+     use `ReportsController`'s now-fixed per-incident `MIN(arrived_at)`
+     definition (F8); the "Raw-PII exposure audit" box starts from
+     already-fixed F2/F3/F7 as context, not open findings.
+  -> **Real-device blocker, relevant to "critical notification/SOS
+     fallback tests pass":** `docs/REMAINING.md` C7 (app process dies
+     ~50s into on-duty patrol GPS) is OPEN — treat it as blocking any UAT
+     scenario walking through an on-duty patrol shift until fixed. C6
+     (login stuck over Home) is closed and no longer blocks login-walking
+     scenarios.
 
 Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
   [ ] Auth/session revocation + lockout evidence
@@ -110,14 +85,12 @@ Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
   [ ] Fatigue audit trail
   [ ] Valid JSON contracts (schema-validate every §6 response shape)
   [ ] AI dataset evaluation run / Bikol language-quality validation
-      (the 200-record dataset now exists — generated, not hand-authored,
-      see docs/REMAINING.md A3. **Real recall/precision numbers now
-      exist too, 2026-09-14**, from a friend's completed eval-kit/ run:
-      98.26%/75.88% overall, with a per-language breakdown showing Bikol
-      as the weakest recall — see REMAINING.md A2 and backend/DEVLOG.md.
-      Picking this box still means writing it up as a real Sprint 8
-      deliverable — the `ai_evaluation_run` DB row and the Bikol human
-      spot-check A3 recommends are both still outstanding.)
+      (redaction has real numbers, 2026-09-14: 98.26% recall / 75.88%
+      precision, Bikol weakest-recall language — see REMAINING.md A2.
+      All 8 model tasks now have a harness+dataset (A6) but only
+      redaction has a real run. Picking this box means writing it up as
+      a real deliverable — the `ai_evaluation_run` DB row and Bikol human
+      spot-check are both still outstanding.)
   [ ] SLM inference time / 3+ Android device tiers (workstation-side —
       this session records the methodology, the run happens outside it)
   [ ] One specific end-to-end UAT scenario (name it in prose)

@@ -82,11 +82,28 @@ echo.
 pause
 exit /b 1
 
-REM --- 4. Quick 3-record smoke test before committing to the full run --
+REM --- 4. Already have progress from an earlier run? Skip straight to  --
+REM        resuming it automatically - no smoke test, no confirmation   --
+REM        prompt, so closing this window and double-clicking the file  --
+REM        again later just continues unattended.                      --
+set "HAS_PROGRESS="
+if exist "fixtures\eval-incidents-v1.redaction.model.*.checkpoint.json" set "HAS_PROGRESS=1"
+if defined HAS_PROGRESS (
+    echo Found progress from an earlier run of this test - continuing
+    echo automatically from where it left off...
+    echo.
+    goto :run_full
+)
+
+REM --- 5. Quick 3-record smoke test before committing to the full run --
+REM        --resume here too: without it, this write its OWN 3-record   --
+REM        checkpoint on top of the real one, which would have wiped out --
+REM        any existing progress if you'd already started the real run  --
+REM        below and come back later. Harmless on a truly fresh run.    --
 :smoke_test
 echo Running a quick 3-record check first (about a minute or two)...
 echo.
-php scripts\ai-evaluate.php --task=redaction --engine=model --dataset=fixtures\eval-incidents-v1.json --limit=3 --dry-run --verbose
+php scripts\ai-evaluate.php --task=redaction --engine=model --dataset=fixtures\eval-incidents-v1.json --limit=3 --dry-run --verbose --resume
 if errorlevel 1 (
     echo.
     echo [ERROR] The quick check above failed. Nothing else was run.
@@ -99,7 +116,7 @@ echo.
 echo The quick check worked.
 echo.
 
-REM --- 5. The real 350-record redaction run, paced and resumable --------
+REM --- 6. The real 350-record redaction run, paced and resumable --------
 echo ============================================
 echo Ready to run the full 350-record redaction test.
 echo.
@@ -107,8 +124,9 @@ echo This can take SEVERAL HOURS depending on your computer, and will
 echo pause for a couple of minutes every 20 records to rest your CPU
 echo (you'll see "resting..." messages - that's expected).
 echo.
-echo You can safely close this window at any point and run this file
-echo again later - it always picks up exactly where it left off and
+echo You can safely close this window at any point. Just double-click
+echo this file again later - it picks up exactly where it left off
+echo AUTOMATICALLY (no need to click through this message again), and
 echo never redoes work or loses progress.
 echo.
 echo This kit can also score 7 OTHER things the same AI model does
@@ -120,6 +138,7 @@ echo ============================================
 echo.
 pause
 
+:run_full
 php scripts\ai-evaluate.php --task=redaction --engine=model --dataset=fixtures\eval-incidents-v1.json --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
 
 echo.

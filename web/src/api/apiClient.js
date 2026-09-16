@@ -674,6 +674,12 @@ export async function getNotifications({ limit } = {}) {
       targetedAt: row.targeted_at,
       ackStatus: row.ack_status, // enum value, unconverted
       acknowledgedAt: row.acknowledged_at,
+      incidentType: row.incident_type,
+      incidentPriority: row.incident_priority,
+      incidentDisplayId: row.incident_display_id,
+      sosTanodName: row.sos_tanod_name,
+      dispatchTanodName: row.dispatch_tanod_name,
+      dispatchStatus: row.dispatch_status,
     })),
     unreadCount: json.unread_count,
   };
@@ -688,6 +694,15 @@ export async function getNotifications({ limit } = {}) {
  */
 export async function acknowledgeTanodSos(sosId) {
   return request('PATCH', `/tanod-sos/${sosId}/acknowledge`, { auth: true });
+}
+
+/**
+ * PATCH /tanod-sos/:id/resolve — Admin-only action to close an SOS emergency
+ * once responders have arrived and confirmed the Tanod is safe.
+ * Clears the SOS alert across the system.
+ */
+export async function resolveTanodSos(sosId) {
+  return request('PATCH', `/tanod-sos/${sosId}/resolve`, { auth: true });
 }
 
 // --- Duty status (read-only this sprint: Admin's Tanod-picker source) ------

@@ -95,9 +95,18 @@ final class NotificationsController
         $stmt = $pdo->prepare(
             "SELECT n.notification_id, n.notification_type, n.dispatch_id, n.sos_id,
                     n.incident_id, n.created_at,
-                    nt.ack_status, nt.acknowledged_at, nt.targeted_at
+                    nt.ack_status, nt.acknowledged_at, nt.targeted_at,
+                    i.incident_type, i.priority AS incident_priority, i.display_id AS incident_display_id,
+                    u_sos.full_name AS sos_tanod_name,
+                    u_dsp.full_name AS dispatch_tanod_name,
+                    d.status AS dispatch_status
                FROM notification_target nt
                JOIN notification n ON n.notification_id = nt.notification_id
+               LEFT JOIN incident i ON i.incident_id = n.incident_id
+               LEFT JOIN tanod_sos s ON s.sos_id = n.sos_id
+               LEFT JOIN user u_sos ON u_sos.user_id = s.user_id
+               LEFT JOIN dispatch d ON d.dispatch_id = n.dispatch_id
+               LEFT JOIN user u_dsp ON u_dsp.user_id = d.tanod_id
               WHERE {$whereSql}
               ORDER BY (nt.ack_status = 'pending') DESC, n.created_at DESC
               LIMIT :limit"
@@ -119,6 +128,12 @@ final class NotificationsController
                 'targeted_at' => $row['targeted_at'],
                 'ack_status' => $row['ack_status'],
                 'acknowledged_at' => $row['acknowledged_at'],
+                'incident_type' => $row['incident_type'] ?? null,
+                'incident_priority' => $row['incident_priority'] ?? null,
+                'incident_display_id' => $row['incident_display_id'] ?? null,
+                'sos_tanod_name' => $row['sos_tanod_name'] ?? null,
+                'dispatch_tanod_name' => $row['dispatch_tanod_name'] ?? null,
+                'dispatch_status' => $row['dispatch_status'] ?? null,
             ];
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
 

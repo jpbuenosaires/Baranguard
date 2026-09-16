@@ -55,3 +55,18 @@ export function formatDistance(meters: number): string {
   if (meters < 1000) return `${Math.round(meters)}m`;
   return `${(meters / 1000).toFixed(1)}km`;
 }
+
+/** Formats age in seconds into concise tactical time (e.g., 'Just now', '15m ago', '2h ago', '10d ago'). */
+export function formatRelativeAge(seconds: number): string {
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const remMins = minutes % 60;
+    return remMins > 0 ? `${hours}h ${remMins}m ago` : `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+

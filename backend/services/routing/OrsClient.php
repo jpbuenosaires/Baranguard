@@ -26,7 +26,8 @@ namespace Baranguard\Services\Routing;
  *     user made explicitly.
  *   - The phone needs to reach the public internet directly for this
  *     one feature — every other mobile feature only ever needs to reach
- *     the Tailscale-connected workstation.
+ *     the workstation itself (plain LAN by default; see
+ *     apiService.ts's own note on temporary remote-testing options).
  *   - Free tier, no card — but rate-limited; exact current limits are
  *     whatever ORS's dashboard shows at signup (their docs pages did
  *     not render for automated verification when this was built).

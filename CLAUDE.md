@@ -11,11 +11,11 @@ with the user before writing code.
 @docs/HANDOFF.md
 
 `docs/REMAINING.md` §F (the 2026-09-07 audit's remediation list) closed
-in full on 2026-09-13 — F1 (the last open item, both its mobile and web
-dashboard halves) resolved via Tailscale. `docs/AUDIT_2026-09-07.md`'s
-findings are now historical only; current status lives in `HANDOFF.md`
-(loaded above), not restated here to avoid saying the same thing twice
-in the same context.
+in full on 2026-09-13, but F1 (API base URL, both mobile and web) was
+reopened 2026-09-15 — see `REFERENCE.md` §1. `docs/AUDIT_2026-09-07.md`'s
+other findings are still historical only; current status lives in
+`HANDOFF.md` (loaded above), not restated here to avoid saying the same
+thing twice in the same context.
 
 ## Not auto-loaded — open deliberately
 

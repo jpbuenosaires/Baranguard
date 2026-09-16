@@ -525,7 +525,7 @@ final class DispatchController
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
-                'SELECT d.dispatch_id, d.tanod_id, d.status, i.barangay_id
+                'SELECT d.dispatch_id, d.incident_id, d.tanod_id, d.status, i.barangay_id
                  FROM dispatch d
                  JOIN incident i ON i.incident_id = d.incident_id
                  WHERE d.dispatch_id = :dispatch_id
@@ -577,6 +577,20 @@ final class DispatchController
                     'to' => $newStatus,
                     'reason' => $overrideReason,
                 ]);
+            } else if (in_array($newStatus, ['arrived', 'completed'], true)) {
+                try {
+                    $admins = NotificationService::adminRecipients($pdo, (int) $identity['barangay_id']);
+                    if (!empty($admins)) {
+                        NotificationService::create(
+                            $pdo,
+                            (int) $identity['barangay_id'],
+                            NotificationService::TYPE_OTHER,
+                            ['dispatch_id' => $dispatchId, 'incident_id' => (int) $dispatch['incident_id']],
+                            (int) $identity['user_id'],
+                            $admins
+                        );
+                    }
+                } catch (\Throwable $ignored) {}
             }
 
             $readBack = $pdo->prepare("SELECT {$timestampColumn} FROM dispatch WHERE dispatch_id = :dispatch_id");

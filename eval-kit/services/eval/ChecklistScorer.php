@@ -99,22 +99,59 @@ final class ChecklistScorer
     }
 
     /**
-     * Every fact in $facts appears somewhere in $output — a SOFT signal
-     * (the prompt allows omitting a fact, it just must never INVENT one
-     * that isn't given), reported as its own checklist item rather than
-     * folded silently into a pass/fail that would misrepresent an
-     * omission as equivalent to a fabrication.
+     * Every fact in $facts is reflected somewhere in $output — a SOFT
+     * signal (the prompt allows omitting a fact, it just must never
+     * INVENT one that isn't given), reported as its own checklist item
+     * rather than folded silently into a pass/fail that would
+     * misrepresent an omission as equivalent to a fabrication.
+     *
+     * NOT an exact-phrase substring match (found 2026-09-15: the original
+     * version required $output to contain a $fact like "this Friday, 8AM
+     * to 3PM" or "Purok Bagong Silang and Purok Masagana" VERBATIM, while
+     * sms-compose's own prompt simultaneously caps the message at 300
+     * characters — a real SMS-writing model paraphrases/abbreviates
+     * ("Fri 8AM-3PM") to fit, which is correct behavior the prompt never
+     * forbids, but failed the old check 100% of the time on a real run).
+     * Falls back to majority-of-significant-words-present when the exact
+     * phrase isn't found: still catches an outright dropped or fabricated
+     * fact (none of its key words appear), without requiring the model to
+     * reproduce the dataset's own wording.
      *
      * @param string[] $facts
      */
     public static function mentionsAllFacts(string $output, array $facts): bool
     {
         foreach ($facts as $fact) {
-            if (mb_stripos($output, $fact) === false) {
+            if (!self::factReflected($output, $fact)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private const FACT_STOPWORDS = ['the', 'a', 'an', 'and', 'or', 'to', 'at', 'in', 'on', 'for', 'of', 'this', 'that', 'their'];
+
+    private static function factReflected(string $output, string $fact): bool
+    {
+        if (mb_stripos($output, $fact) !== false) {
+            return true;
+        }
+        $words = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($fact), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $significant = array_values(array_filter(
+            $words,
+            static fn (string $w): bool => mb_strlen($w) >= 3 && !in_array($w, self::FACT_STOPWORDS, true)
+        ));
+        if ($significant === []) {
+            return true; // Nothing meaningful left to check (e.g. a fact that was only stopwords).
+        }
+        $outputLower = mb_strtolower($output);
+        $matched = 0;
+        foreach ($significant as $word) {
+            if (mb_stripos($outputLower, $word) !== false) {
+                $matched++;
+            }
+        }
+        return ($matched / count($significant)) >= 0.5;
     }
 
     /**

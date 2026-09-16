@@ -70,6 +70,13 @@
   flex-shrink: 0;
 }
 
+.dispatch-priority-alert__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
 .dispatch-priority-alert__btn {
   background: var(--color-white);
   color: var(--color-critical-solid);
@@ -87,6 +94,16 @@
 .dispatch-priority-alert__btn:hover {
   background: var(--tint-critical-bg);
   transform: translateY(-1px);
+}
+
+.dispatch-priority-alert__btn--resolve {
+  background: #15803d;
+  color: var(--color-white);
+}
+
+.dispatch-priority-alert__btn--resolve:hover {
+  background: #166534;
+  color: var(--color-white);
 }
 
 /* 3-KPI Card Container (Mounted inside PageHeader actions) */

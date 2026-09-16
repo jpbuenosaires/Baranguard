@@ -49,6 +49,7 @@ import { MbtilesReader } from '../services/mbtilesReader';
 import { getActiveMapPackage, readMapPackageBytes } from '../services/mapPackageService';
 import type { NearbyIncident, NearbyTanod } from '../services/apiService';
 import type { DevicePosition } from '../services/geolocation';
+import { splitRouteAtSnap } from '../utils/routeProgress';
 
 /** Pilar, Sorsogon — matches web/src/components/LiveMap.js's default center. */
 const DEFAULT_CENTER: [number, number] = [123.6667, 12.9186];
@@ -56,9 +57,23 @@ const DEFAULT_ZOOM = 13;
 const POSITION_ZOOM = 15;
 const TILE_PROTOCOL = 'baranguard-mbtiles';
 const ROUTE_SOURCE_ID = 'route';
+const ROUTE_CASING_LAYER_ID = 'route-line-casing';
 const ROUTE_LAYER_ID = 'route-line';
-/** Matches --color-primary (variables.css) — MapLibre paint properties can't resolve CSS custom properties. */
-const ROUTE_LINE_COLOR = '#1d4ed8';
+const ROUTE_TRAVELED_SOURCE_ID = 'route-traveled';
+const ROUTE_TRAVELED_LAYER_ID = 'route-line-traveled';
+const ROUTE_REMAINING_SOURCE_ID = 'route-remaining';
+const ROUTE_REMAINING_CASING_LAYER_ID = 'route-remaining-casing';
+const ROUTE_REMAINING_LAYER_ID = 'route-line-remaining';
+const ROUTE_GUIDELINE_SOURCE_ID = 'route-guideline';
+const ROUTE_GUIDELINE_LAYER_ID = 'route-guideline-line';
+
+/** Vibrant royal blue for the active route line (Google Maps style). */
+const ROUTE_LINE_COLOR = '#2563eb';
+/** White halo/casing separating the route from complex basemaps. */
+const ROUTE_CASING_COLOR = '#ffffff';
+/** Dimmed slate gray for the traveled portion of the route in navigation mode. */
+const ROUTE_TRAVELED_COLOR = '#cbd5e1';
+const NAV_FOLLOW_ZOOM = 17;
 
 export type BasemapStatus =
   | { kind: 'loading' }
@@ -106,6 +121,30 @@ interface Props {
    * Route" action.
    */
   routeGeometry?: { type: string; coordinates: [number, number][] } | null;
+  /**
+   * When true, the map enters navigation follow mode: auto-follows the
+   * user's position, shows heading-up rotation, and splits the route
+   * into traveled (gray) and remaining (blue) segments. Driven by the
+   * "Start Navigation" button in assignment-detail.tsx.
+   */
+  navigationMode?: boolean;
+  /**
+   * Navigation progress data from routeProgress.ts — drives the camera
+   * position, route split point, and bearing in navigation mode. Only
+   * meaningful when `navigationMode` is true and a route is loaded.
+   */
+  routeProgress?: {
+    snappedPoint: { lng: number; lat: number };
+    routeBearing: number;
+    snappedSegmentIndex: number;
+    progressFraction: number;
+  } | null;
+  /**
+   * Called when the user manually pans/drags the map during navigation
+   * mode — the parent should pause auto-follow and show a "Re-center"
+   * prompt. The existing recenter FAB already handles reactivation.
+   */
+  onUserPan?: () => void;
 }
 
 /** Frames the camera on whichever of self/focusTarget are available; both → fits bounds, one → centers on it. */
@@ -198,7 +237,7 @@ function priorityMarkerClass(priority: string): string {
 }
 
 const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCanvas(
-  { barangayId, position, incidents, tanods, onStatusChange, focusTarget, onMapClick, routeGeometry },
+  { barangayId, position, incidents, tanods, onStatusChange, focusTarget, onMapClick, routeGeometry, navigationMode, routeProgress, onUserPan },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -211,6 +250,10 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
   // FormFields.tsx's useElementEvent already uses in this codebase).
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
+  const onUserPanRef = useRef(onUserPan);
+  onUserPanRef.current = onUserPan;
+  /** Tracks whether the user has manually panned the map (pauses auto-follow in nav mode). */
+  const userPannedRef = useRef(false);
   const [status, setStatus] = useState<BasemapStatus>({ kind: 'loading' });
 
   useEffect(() => {
@@ -268,6 +311,11 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       map.on('click', (e) => {
         onMapClickRef.current?.({ latitude: e.lngLat.lat, longitude: e.lngLat.lng });
       });
+      // Detect manual user interaction to pause navigation auto-follow.
+      map.on('dragstart', () => {
+        userPannedRef.current = true;
+        onUserPanRef.current?.();
+      });
       mapRef.current = map;
       setStatus(nextStatus);
     }
@@ -306,7 +354,7 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     if (position) {
       selfMarkerRef.current?.remove();
       const el = document.createElement('div');
-      el.className = 'map-marker map-marker--self';
+      el.className = navigationMode ? 'map-marker map-marker--self-navigating' : 'map-marker map-marker--self';
       el.title = `Your position — accuracy ±${position.accuracyM.toFixed(0)}m`;
       selfMarkerRef.current = new Marker({ element: el }).setLngLat([position.longitude, position.latitude]).addTo(map);
     }
@@ -315,17 +363,44 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       framedOnce.current = true;
       centerMap(map, position, focusTarget, false);
     }
-  }, [position, focusTarget, status]);
+  }, [position, focusTarget, status, navigationMode]);
+
+  // Navigation auto-follow: when in navigation mode and the user hasn't
+  // manually panned, smoothly track the user's snapped position with
+  // heading-up rotation on every GPS update.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !navigationMode || !routeProgress || !position || userPannedRef.current) return;
+
+    map.easeTo({
+      center: [position.longitude, position.latitude],
+      zoom: NAV_FOLLOW_ZOOM,
+      bearing: routeProgress.routeBearing,
+      duration: 500,
+    });
+  }, [navigationMode, position, routeProgress]);
 
   useImperativeHandle(
     ref,
     () => ({
       recenter: () => {
         const map = mapRef.current;
-        if (map) centerMap(map, position, focusTarget, true);
+        // Reset the user-panned flag so auto-follow resumes.
+        userPannedRef.current = false;
+        if (navigationMode && routeProgress && position) {
+          // In navigation mode: snap to the user's current position with heading.
+          map?.easeTo({
+            center: [position.longitude, position.latitude],
+            zoom: NAV_FOLLOW_ZOOM,
+            bearing: routeProgress.routeBearing,
+            duration: 500,
+          });
+        } else if (map) {
+          centerMap(map, position, focusTarget, true);
+        }
       },
     }),
-    [position, focusTarget]
+    [position, focusTarget, navigationMode, routeProgress]
   );
 
   useEffect(() => {
@@ -333,12 +408,19 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     if (!map) return;
     incidentMarkersRef.current.forEach((m) => m.remove());
     incidentMarkersRef.current = incidents.map((incident: NearbyIncident) => {
+      const isDestination =
+        focusTarget &&
+        Math.abs(incident.latitude - focusTarget.latitude) < 0.00005 &&
+        Math.abs(incident.longitude - focusTarget.longitude) < 0.00005;
+
       const el = document.createElement('div');
-      el.className = priorityMarkerClass(incident.priority);
+      el.className = isDestination
+        ? `map-marker map-marker--destination ${priorityMarkerClass(incident.priority)}`
+        : priorityMarkerClass(incident.priority);
       el.title = `${incident.incidentType.replace(/_/g, ' ')} · ${incident.priority} · ${Math.floor(incident.ageSeconds / 60)}m ago`;
       return new Marker({ element: el }).setLngLat([incident.longitude, incident.latitude]).addTo(map);
     });
-  }, [incidents, status]);
+  }, [incidents, status, focusTarget]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -353,35 +435,179 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
   }, [tanods, status]);
 
   // Draws/updates/clears the route line — a GeoJSON source+layer on top
-  // of the raster basemap (MapLibre supports this natively regardless of
-  // whether the basemap itself is the offline or online style). Re-added
-  // after every map recreation (barangayId change) since a new MaplibreMap
-  // instance has no sources of its own yet; updated via setData() on the
-  // existing source otherwise, rather than removing/re-adding every time
-  // routeGeometry changes (e.g. after a route refresh).
+  // of the raster basemap.
+  //
+  // Visual Hierarchy (Google Maps quality):
+  //   1. Casing / Halo: 11px white line underneath, provides high contrast over roads & terrain
+  //   2. Core Line: 7px vibrant royal blue (#2563eb)
+  //   3. In Navigation mode: Traveled portion dims to 5px slate gray (#cbd5e1)
+  //   4. Fallback Guideline: If route is unavailable/loading, draws a 4px dashed vector
+  //      directly between user and target so a line is ALWAYS visible.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
+    /** Removes all route-related layers and sources. */
+    function clearAllRouteLayers() {
+      if (!map) return;
+      const layers = [
+        ROUTE_CASING_LAYER_ID,
+        ROUTE_LAYER_ID,
+        ROUTE_TRAVELED_LAYER_ID,
+        ROUTE_REMAINING_CASING_LAYER_ID,
+        ROUTE_REMAINING_LAYER_ID,
+        ROUTE_GUIDELINE_LAYER_ID,
+      ];
+      for (const layerId of layers) {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+      }
+      const sources = [
+        ROUTE_SOURCE_ID,
+        ROUTE_TRAVELED_SOURCE_ID,
+        ROUTE_REMAINING_SOURCE_ID,
+        ROUTE_GUIDELINE_SOURCE_ID,
+      ];
+      for (const sourceId of sources) {
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+      }
+    }
+
     function applyRoute() {
       if (!map) return;
-      if (!routeGeometry) {
-        if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
-        if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);
+
+      // --- Fallback Guideline: When road route is not yet available, draw dashed direct line ---
+      if (!routeGeometry && position && focusTarget) {
+        clearAllRouteLayers();
+        const directFeature: GeoJSON.Feature = {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [position.longitude, position.latitude],
+              [focusTarget.longitude, focusTarget.latitude],
+            ],
+          },
+        };
+        map.addSource(ROUTE_GUIDELINE_SOURCE_ID, { type: 'geojson', data: directFeature });
+        map.addLayer({
+          id: ROUTE_GUIDELINE_LAYER_ID,
+          type: 'line',
+          source: ROUTE_GUIDELINE_SOURCE_ID,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': ROUTE_LINE_COLOR,
+            'line-width': 4,
+            'line-dasharray': [2, 2],
+            'line-opacity': 0.85,
+          },
+        });
         return;
       }
+
+      if (!routeGeometry) {
+        clearAllRouteLayers();
+        return;
+      }
+
+      // Remove fallback guideline if it was active
+      if (map.getLayer(ROUTE_GUIDELINE_LAYER_ID)) map.removeLayer(ROUTE_GUIDELINE_LAYER_ID);
+      if (map.getSource(ROUTE_GUIDELINE_SOURCE_ID)) map.removeSource(ROUTE_GUIDELINE_SOURCE_ID);
+
+      // --- Navigation mode: split into traveled + remaining (with casing) ---
+      if (navigationMode && routeProgress && routeGeometry.coordinates) {
+        // Remove the static line layers if they exist
+        if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
+        if (map.getLayer(ROUTE_CASING_LAYER_ID)) map.removeLayer(ROUTE_CASING_LAYER_ID);
+        if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);
+
+        const { traveled, remaining } = splitRouteAtSnap(
+          routeGeometry.coordinates,
+          routeProgress.snappedSegmentIndex,
+          routeProgress.snappedPoint,
+        );
+
+        const traveledFeature: GeoJSON.Feature = {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: traveled },
+        };
+        const remainingFeature: GeoJSON.Feature = {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: remaining },
+        };
+
+        // 1. Traveled layer (dimmed gray trail)
+        const existingTraveled = map.getSource(ROUTE_TRAVELED_SOURCE_ID) as GeoJSONSource | undefined;
+        if (existingTraveled) {
+          existingTraveled.setData(traveledFeature);
+        } else {
+          map.addSource(ROUTE_TRAVELED_SOURCE_ID, { type: 'geojson', data: traveledFeature });
+          map.addLayer({
+            id: ROUTE_TRAVELED_LAYER_ID,
+            type: 'line',
+            source: ROUTE_TRAVELED_SOURCE_ID,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': ROUTE_TRAVELED_COLOR, 'line-width': 5, 'line-opacity': 0.6 },
+          });
+        }
+
+        // 2. Remaining layer (white casing halo + vibrant royal blue core)
+        const existingRemaining = map.getSource(ROUTE_REMAINING_SOURCE_ID) as GeoJSONSource | undefined;
+        if (existingRemaining) {
+          existingRemaining.setData(remainingFeature);
+        } else {
+          map.addSource(ROUTE_REMAINING_SOURCE_ID, { type: 'geojson', data: remainingFeature });
+          // Casing layer first (underneath)
+          map.addLayer({
+            id: ROUTE_REMAINING_CASING_LAYER_ID,
+            type: 'line',
+            source: ROUTE_REMAINING_SOURCE_ID,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': ROUTE_CASING_COLOR, 'line-width': 11, 'line-opacity': 0.95 },
+          });
+          // Core route line
+          map.addLayer({
+            id: ROUTE_REMAINING_LAYER_ID,
+            type: 'line',
+            source: ROUTE_REMAINING_SOURCE_ID,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': ROUTE_LINE_COLOR, 'line-width': 7, 'line-opacity': 0.95 },
+          });
+        }
+        return;
+      }
+
+      // --- Static Overview Mode: High-contrast line with white casing ---
+      // Clear navigation-mode split layers
+      if (map.getLayer(ROUTE_TRAVELED_LAYER_ID)) map.removeLayer(ROUTE_TRAVELED_LAYER_ID);
+      if (map.getSource(ROUTE_TRAVELED_SOURCE_ID)) map.removeSource(ROUTE_TRAVELED_SOURCE_ID);
+      if (map.getLayer(ROUTE_REMAINING_LAYER_ID)) map.removeLayer(ROUTE_REMAINING_LAYER_ID);
+      if (map.getLayer(ROUTE_REMAINING_CASING_LAYER_ID)) map.removeLayer(ROUTE_REMAINING_CASING_LAYER_ID);
+      if (map.getSource(ROUTE_REMAINING_SOURCE_ID)) map.removeSource(ROUTE_REMAINING_SOURCE_ID);
+
       const data: GeoJSON.Feature = { type: 'Feature', properties: {}, geometry: routeGeometry as GeoJSON.Geometry };
       const existing = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined;
       if (existing) {
         existing.setData(data);
       } else {
         map.addSource(ROUTE_SOURCE_ID, { type: 'geojson', data });
+        // White casing halo (bottom layer)
+        map.addLayer({
+          id: ROUTE_CASING_LAYER_ID,
+          type: 'line',
+          source: ROUTE_SOURCE_ID,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': ROUTE_CASING_COLOR, 'line-width': 11, 'line-opacity': 0.95 },
+        });
+        // Vibrant blue core line (top layer)
         map.addLayer({
           id: ROUTE_LAYER_ID,
           type: 'line',
           source: ROUTE_SOURCE_ID,
           layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': ROUTE_LINE_COLOR, 'line-width': 5, 'line-opacity': 0.85 },
+          paint: { 'line-color': ROUTE_LINE_COLOR, 'line-width': 7, 'line-opacity': 0.95 },
         });
       }
     }
@@ -391,16 +617,33 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     } else {
       map.once('load', applyRoute);
     }
-  }, [routeGeometry, status]);
+  }, [routeGeometry, status, navigationMode, routeProgress, position, focusTarget]);
 
   function recenter() {
     const map = mapRef.current;
-    if (map) centerMap(map, position, focusTarget, true);
+    // Reset user-panned flag so auto-follow resumes in navigation mode.
+    userPannedRef.current = false;
+    if (navigationMode && routeProgress && position) {
+      map?.easeTo({
+        center: [position.longitude, position.latitude],
+        zoom: NAV_FOLLOW_ZOOM,
+        bearing: routeProgress.routeBearing,
+        duration: 500,
+      });
+    } else if (map) {
+      centerMap(map, position, focusTarget, true);
+    }
   }
+
+  const mapHeight = navigationMode ? '68vh' : '300px';
 
   return (
     <div style={{ position: 'relative', borderRadius: 'var(--radius-md)', overflow: 'hidden', boxShadow: 'var(--shadow-elevated)' }}>
-      <div ref={containerRef} style={{ width: '100%', height: '280px', background: 'var(--tint-neutral-bg)' }} />
+      <div
+        ref={containerRef}
+        className={navigationMode ? 'map-container--navigating' : undefined}
+        style={{ width: '100%', height: mapHeight, background: 'var(--tint-neutral-bg)', transition: 'height 0.3s ease' }}
+      />
       {(position || focusTarget) && (
         <button
           type="button"
@@ -408,8 +651,8 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
           aria-label="Recenter map"
           style={{
             position: 'absolute',
-            right: '10px',
-            bottom: '10px',
+            right: '12px',
+            bottom: '12px',
             width: '40px',
             height: '40px',
             borderRadius: '50%',
@@ -421,6 +664,7 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '1.25rem',
+            zIndex: 8,
           }}
         >
           <IonIcon icon={locateOutline} />

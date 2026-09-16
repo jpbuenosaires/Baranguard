@@ -33,11 +33,14 @@ use Baranguard\Middleware\AuthMiddleware;
 //
 // 2026-09-13, F1's web half: `CORS_ALLOWED_ORIGIN` now also accepts a
 // comma-separated list of exact origins (scheme+host+port), not just the
-// literal `*` — needed once the web dashboard's real address (the
-// workstation's Tailscale MagicDNS name) and the mobile app's own
-// Capacitor WebView origin (`http://localhost`, unrelated to any human
-// browsing choice) became two DIFFERENT real origins that both need
-// access, neither of which is "all of them". A comma list is matched
+// literal `*` — needed once the web dashboard's real address and the
+// mobile app's own Capacitor WebView origin (`http://localhost`,
+// unrelated to any human browsing choice) became two DIFFERENT real
+// origins that both need access, neither of which is "all of them". A
+// remote/testing origin (e.g. a Cloudflare Quick Tunnel hostname — see
+// web/index.html's own note; ephemeral, changes every run, not a
+// production access path) can be added to this list the same way, or
+// this can just stay `*` for local-only dev. A comma list is matched
 // against the actual `Origin` request header and echoes back ONLY that
 // exact match (`Vary: Origin` alongside it, since the response now
 // differs by request) — an origin not on the list gets no CORS header

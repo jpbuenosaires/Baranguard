@@ -57,26 +57,30 @@ import {
   IonToast,
 } from '@ionic/react';
 import {
-  addOutline,
+  alertCircleOutline,
+  arrowForwardOutline,
+  callOutline,
   documentTextOutline,
-  logOutOutline,
   mapOutline,
-  navigateOutline,
+  medkitOutline,
   radioOutline,
   shieldCheckmarkOutline,
-  syncOutline,
+  shieldOutline,
+  timeOutline,
   warningOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
 import tacticalFeedback from '../utils/tacticalFeedback';
-import { getOwnDutyStatus, logout, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
+import { getOwnDutyStatus, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
 import { ApiError } from '../services/apiService';
 import { getCurrentPosition } from '../services/geolocation';
 import { enqueueSosItem } from '../services/db/offlineQueueRepository';
 import { listActiveCachedDispatches } from '../services/db/dispatchRepository';
+import { listAllLocalIncidents } from '../services/db/incidentRepository';
+import type { DispatchLocalRow } from '../services/db/localSchema';
 import { startPatrolTracking, stopPatrolTracking } from '../services/patrolLocationService';
-import { clearSession, loadSession } from '../services/session';
+import { loadSession } from '../services/session';
 import { getCachedSosFallbackContact } from '../services/sosFallbackContact';
 import SosSms from '../services/sosSms';
 import type { SmsFallbackInput } from '../services/smsFallbackState';
@@ -95,13 +99,23 @@ const STATUS_LABEL: Record<DutyStatus, string> = {
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const [fullName, setFullName] = useState('');
+  const [barangayName, setBarangayName] = useState('Dao');
   const [status, setStatus] = useState<DutyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [toggling, setToggling] = useState(false);
   const [dutyError, setDutyError] = useState<string | null>(null);
   const [activeDispatchCount, setActiveDispatchCount] = useState<number>(0);
+  const [topDispatch, setTopDispatch] = useState<DispatchLocalRow | null>(null);
 
-  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+  // Shift Telemetry State
+  const [shiftStartTime, setShiftStartTime] = useState<number | null>(() => {
+    const saved = localStorage.getItem('baranguard.shiftStartTime');
+    return saved ? parseInt(saved, 10) : null;
+  });
+  const [shiftElapsed, setShiftElapsed] = useState<string>('0m');
+  const [todayIncidentCount, setTodayIncidentCount] = useState<number>(0);
+  const [deskContact, setDeskContact] = useState<string>('0917-000-0000');
+
   const [dutyToast, setDutyToast] = useState<string | null>(null);
   const [confirmingSos, setConfirmingSos] = useState(false);
   const [raisingSos, setRaisingSos] = useState(false);
@@ -114,20 +128,59 @@ const HomePage: React.FC = () => {
   const holdTimerRef = useRef<number | null>(null);
   const holdStartTimeRef = useRef<number | null>(null);
 
+  // Live Shift Duration Timer
   useEffect(() => {
-    loadSession().then((session) => setFullName(session?.fullName ?? ''));
+    if (status === 'on_duty') {
+      let startTime = shiftStartTime;
+      if (!startTime) {
+        startTime = Date.now();
+        setShiftStartTime(startTime);
+        localStorage.setItem('baranguard.shiftStartTime', startTime.toString());
+      }
+
+      const updateTimer = () => {
+        const diffMs = Math.max(0, Date.now() - (startTime ?? Date.now()));
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        const hours = Math.floor(diffMins / 60);
+        const mins = diffMins % 60;
+        if (hours > 0) {
+          setShiftElapsed(`${hours}h ${mins}m`);
+        } else {
+          setShiftElapsed(`${mins}m`);
+        }
+      };
+
+      updateTimer();
+      const interval = setInterval(updateTimer, 30000);
+      return () => clearInterval(interval);
+    } else {
+      setShiftElapsed('0m');
+      setShiftStartTime(null);
+      localStorage.removeItem('baranguard.shiftStartTime');
+    }
+  }, [status, shiftStartTime]);
+
+  useEffect(() => {
+    loadSession().then((session) => {
+      setFullName(session?.fullName ?? '');
+      if (session?.barangayId) {
+        setBarangayName(BARANGAY_NAMES[session.barangayId] ?? `Brgy ${session.barangayId}`);
+      }
+    });
 
     getOwnDutyStatus()
       .then((entry) => {
         const resolved = entry?.status ?? 'off_duty';
         setStatus(resolved);
         setKnownDutyStatus(resolved);
-        // Phase 4.1: resume background tracking on load if a previous
-        // session left this Tanod on duty — the foreground service does
-        // NOT survive an app reinstall/process-data-clear, only an
-        // ordinary background/kill-and-restart, so this is the resync
-        // point for "was on duty, reopened the app".
-        if (resolved === 'on_duty') void startPatrolTracking();
+        if (resolved === 'on_duty') {
+          void startPatrolTracking();
+          if (!localStorage.getItem('baranguard.shiftStartTime')) {
+            const now = Date.now();
+            setShiftStartTime(now);
+            localStorage.setItem('baranguard.shiftStartTime', now.toString());
+          }
+        }
       })
       .catch((error: unknown) => {
         setStatus(null);
@@ -140,8 +193,34 @@ const HomePage: React.FC = () => {
       .finally(() => setLoadingStatus(false));
 
     listActiveCachedDispatches()
-      .then((items) => setActiveDispatchCount(items.length))
-      .catch(() => setActiveDispatchCount(0));
+      .then((items) => {
+        setActiveDispatchCount(items.length);
+        setTopDispatch(items[0] ?? null);
+      })
+      .catch(() => {
+        setActiveDispatchCount(0);
+        setTopDispatch(null);
+      });
+
+    // Query incidents filed today
+    listAllLocalIncidents()
+      .then((items) => {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayItems = items.filter((item) => (item.created_offline_at || '').startsWith(todayStr));
+        setTodayIncidentCount(todayItems.length);
+      })
+      .catch(() => {
+        setTodayIncidentCount(0);
+      });
+
+    // Query emergency desk contact
+    getCachedSosFallbackContact()
+      .then((num) => {
+        if (num) setDeskContact(num);
+      })
+      .catch(() => {
+        // Safe fallback
+      });
   }, []);
 
   async function handleToggleDuty() {
@@ -279,23 +358,6 @@ const HomePage: React.FC = () => {
     }
   }
 
-  async function handleSignOut() {
-    try {
-      await logout();
-    } catch {
-      // Offline sign-out support
-    }
-    await clearSession();
-    // Stops the on-duty sync interval from firing against a signed-out
-    // session — the next login's own getOwnDutyStatus() call re-establishes it.
-    setKnownDutyStatus(null);
-    // A signed-out session has no token for PatrolLocationService's own
-    // background POSTs to authenticate with — stop it rather than leave
-    // it running (and its notification showing) with nothing useful to do.
-    void stopPatrolTracking();
-    navigate('/login', { replace: true });
-  }
-
   const initials = fullName
     ? fullName
         .split(' ')
@@ -305,62 +367,66 @@ const HomePage: React.FC = () => {
         .toUpperCase()
     : 'BP';
 
-  const CIRCUMFERENCE = 2 * Math.PI * 38; // Radius 38
-  const strokeDashoffset = CIRCUMFERENCE - (holdProgress / 100) * CIRCUMFERENCE;
-
   return (
     <IonPage>
       <MobileHeader />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
-        <div className="app-column">
-          {/* Officer Hero Card */}
-          <div className="hero-officer-card">
-            <div className="hero-officer-header">
-              <div className="hero-officer__avatar">{initials}</div>
-              <div className="hero-officer__info">
-                <h2 className="hero-officer__name">{fullName || 'Tanod Officer'}</h2>
-                <div className="hero-officer__badge">
+        <div className="home-dashboard-layout">
+          {/* 1. Tactical Officer Status Hub */}
+          <div className="tactical-officer-hub">
+            <div className="tactical-officer-top">
+              <div className="tactical-officer-avatar">{initials}</div>
+              <div className="tactical-officer-meta">
+                <h2 className="tactical-officer-name">{fullName || 'Tanod Officer'}</h2>
+                <div className="tactical-officer-sub">
                   <IonIcon icon={shieldCheckmarkOutline} />
-                  <span>Barangay Security Responder</span>
+                  <span>Security Responder · Brgy {barangayName}</span>
                 </div>
               </div>
             </div>
 
-            {/* Tactical Duty Switch */}
-            <div className="duty-switch-card">
-              <div className="duty-status-badge">
+            <div className="tactical-officer-divider" />
+
+            <div className="tactical-officer-bottom">
+              <div className="tactical-duty-status">
                 <div
-                  className={`duty-pulse-indicator ${
-                    status === 'on_duty' ? 'duty-pulse-indicator--on' : 'duty-pulse-indicator--off'
+                  className={`tactical-duty-pulse ${
+                    status === 'on_duty' ? 'tactical-duty-pulse--on' : 'tactical-duty-pulse--off'
                   }`}
                 />
-                <div className="duty-status-text">
-                  <span className="duty-status-title">
-                    {loadingStatus ? 'Checking Shift…' : status ? STATUS_LABEL[status] : 'Standby'}
+                <div className="tactical-duty-text">
+                  <span
+                    className={`tactical-duty-title ${
+                      status === 'on_duty' ? 'tactical-duty-title--on' : 'tactical-duty-title--off'
+                    }`}
+                  >
+                    {loadingStatus ? 'Checking Shift…' : status === 'on_duty' ? 'On Active Patrol' : 'Off Duty (Standby)'}
                   </span>
-                  <span className="duty-status-sub">
-                    {status === 'on_duty' ? 'Active on Field Patrol' : 'Off Patrol Status'}
+                  <span className="tactical-duty-telemetry">
+                    {status === 'on_duty' ? 'Foreground GPS · 15s Broadcast' : 'Patrol tracking inactive'}
                   </span>
                 </div>
               </div>
 
-              <IonButton
-                className="duty-toggle-button"
-                size="small"
+              <button
+                type="button"
+                className={`tactical-duty-btn ${
+                  status === 'on_duty' ? 'tactical-duty-btn--on' : 'tactical-duty-btn--off'
+                }`}
                 disabled={loadingStatus || toggling}
                 onClick={handleToggleDuty}
               >
                 {toggling ? <IonSpinner name="dots" /> : status === 'on_duty' ? 'Go Off Duty' : 'Go On Duty'}
-              </IonButton>
+              </button>
             </div>
 
             {dutyError && (
               <div
                 style={{
                   marginTop: '10px',
-                  background: 'rgba(220, 38, 38, 0.2)',
-                  border: '1px solid rgba(220, 38, 38, 0.4)',
+                  background: 'rgba(220, 38, 38, 0.25)',
+                  border: '1px solid rgba(220, 38, 38, 0.5)',
                   padding: '6px 10px',
                   borderRadius: 'var(--radius-sm)',
                   fontSize: 'var(--font-size-label)',
@@ -372,126 +438,163 @@ const HomePage: React.FC = () => {
             )}
           </div>
 
-          {/* Telemetry Strip */}
-          <div className="telemetry-strip">
-            <div className="telemetry-card">
-              <div className="telemetry-card__icon">
-                <IonIcon icon={radioOutline} />
-              </div>
-              <div className="telemetry-card__details">
-                <span className="telemetry-card__label">Dispatches</span>
-                <span className="telemetry-card__value">
-                  {activeDispatchCount} {activeDispatchCount === 1 ? 'Active' : 'Active'}
+          {/* 2. Situational Awareness Hub (Active Mission OR Perimeter Secure) */}
+          {topDispatch ? (
+            <div className="situational-hub situational-hub--mission">
+              <div className="situational-header">
+                <span className="situational-badge situational-badge--mission">
+                  <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.05rem' }} />
+                  ACTIVE DISPATCH #{topDispatch.server_dispatch_id ?? topDispatch.local_id.slice(0, 6)}
+                </span>
+                <span className="status-pill status-pill--critical is-urgent">
+                  {topDispatch.priority.toUpperCase()}
                 </span>
               </div>
-            </div>
-
-            <div className="telemetry-card">
-              <div className="telemetry-card__icon" style={{ color: 'var(--color-success)' }}>
-                <IonIcon icon={navigateOutline} />
+              <h3 className="situational-sub">
+                {topDispatch.redacted_incident_type ? topDispatch.redacted_incident_type.replace(/_/g, ' ').toUpperCase() : 'INCIDENT REPORTED'}
+              </h3>
+              <div className="situational-detail">
+                Assigned to your unit · Tap below to launch turn-by-turn route navigation.
               </div>
-              <div className="telemetry-card__details">
-                <span className="telemetry-card__label">GPS Broadcast</span>
-                <span className="telemetry-card__value">15s Cadence</span>
+              <div className="situational-mission-action">
+                <button
+                  type="button"
+                  className="situational-navigate-btn"
+                  onClick={() => navigate(`/tabs/assignments/${encodeURIComponent(topDispatch.local_id)}`)}
+                >
+                  <span>NAVIGATE ROUTE</span>
+                  <IonIcon icon={arrowForwardOutline} />
+                </button>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="situational-hub situational-hub--clear">
+              <div className="situational-header">
+                <span className="situational-badge situational-badge--clear">
+                  <IonIcon icon={shieldCheckmarkOutline} style={{ fontSize: '1.05rem' }} />
+                  PERIMETER CLEAR · SECTOR {barangayName.toUpperCase()}
+                </span>
+                <span className="status-pill status-pill--success">READY</span>
+              </div>
+              <p className="situational-sub">
+                No active emergency dispatches in queue.
+              </p>
+              <div className="situational-detail">
+                Encrypted SQLite active · Standby or maintain active field patrol.
+              </div>
+            </div>
+          )}
 
-          {/* Operational Action Grid */}
-          <div className="action-grid">
+          {/* 3. Primary Field Action Tiles (No Duplicate Tab Clones) */}
+          <div className="tactical-action-grid">
             <button
               type="button"
-              className="action-card"
+              className="tactical-action-card"
               onClick={() => navigate('/tabs/incidents/new')}
             >
-              <div className="action-card__icon-box action-card__icon-box--primary">
+              <div className="tactical-action-icon-box tactical-action-icon-box--primary">
                 <IonIcon icon={documentTextOutline} />
               </div>
-              <h3 className="action-card__title">Log Incident</h3>
-              <p className="action-card__desc">Capture report with photo & voice evidence</p>
-            </button>
-
-            <button
-              type="button"
-              className="action-card"
-              onClick={() => navigate('/tabs/assignments')}
-            >
-              <div className="action-card__icon-box action-card__icon-box--warning">
-                <IonIcon icon={radioOutline} />
+              <h3 className="tactical-action-title">Log Incident</h3>
+              <p className="tactical-action-desc">Rapid field report intake</p>
+              <div className="tactical-action-chips">
+                <span className="tactical-mini-chip">Photo</span>
+                <span className="tactical-mini-chip">Voice</span>
+                <span className="tactical-mini-chip">GPS</span>
               </div>
-              {activeDispatchCount > 0 && (
-                <span className="action-card__badge status-pill status-pill--critical">
-                  {activeDispatchCount} NEW
-                </span>
-              )}
-              <h3 className="action-card__title">Assignments</h3>
-              <p className="action-card__desc">View dispatches and update response status</p>
             </button>
 
             <button
               type="button"
-              className="action-card"
+              className="tactical-action-card"
               onClick={() => navigate('/tabs/map')}
             >
-              <div className="action-card__icon-box action-card__icon-box--info">
+              <div className="tactical-action-icon-box tactical-action-icon-box--info">
                 <IonIcon icon={mapOutline} />
               </div>
-              <h3 className="action-card__title">Live Map</h3>
-              <p className="action-card__desc">Check GPS telemetry and nearby incidents</p>
-            </button>
-
-            <div className="action-card" style={{ opacity: 0.9 }}>
-              <div className="action-card__icon-box" style={{ background: 'var(--tint-neutral-bg)', color: 'var(--color-text-secondary)' }}>
-                <IonIcon icon={syncOutline} />
+              <h3 className="tactical-action-title">Live Radar</h3>
+              <p className="tactical-action-desc">Team map & telemetry</p>
+              <div className="tactical-action-chips">
+                <span className="tactical-mini-chip">Basemap</span>
+                <span className="tactical-mini-chip">Tanods</span>
               </div>
-              <h3 className="action-card__title">Offline Store</h3>
-              <p className="action-card__desc">Local SQLite encryption active</p>
+            </button>
+          </div>
+
+          {/* 4. Shift Patrol Telemetry Strip */}
+          <div className="tactical-shift-strip">
+            <div className="tactical-shift-metric">
+              <div className="tactical-shift-icon-wrap">
+                <IonIcon icon={timeOutline} />
+              </div>
+              <div className="tactical-shift-info">
+                <span className="tactical-shift-value">
+                  {status === 'on_duty' ? shiftElapsed : 'Standby'}
+                </span>
+                <span className="tactical-shift-label">
+                  {status === 'on_duty' ? 'Active Patrol' : 'Off Duty'}
+                </span>
+              </div>
+            </div>
+
+            <div className="tactical-shift-metric">
+              <div className={`tactical-shift-icon-wrap ${status === 'on_duty' ? 'tactical-shift-icon-wrap--live' : 'tactical-shift-icon-wrap--idle'}`}>
+                <IonIcon icon={radioOutline} />
+              </div>
+              <div className="tactical-shift-info">
+                <span className="tactical-shift-value">
+                  {status === 'on_duty' ? '15s Sync' : 'GPS Idle'}
+                </span>
+                <span className="tactical-shift-label">HQ Radar</span>
+              </div>
+            </div>
+
+            <div className="tactical-shift-metric">
+              <div className="tactical-shift-icon-wrap">
+                <IonIcon icon={documentTextOutline} />
+              </div>
+              <div className="tactical-shift-info">
+                <span className="tactical-shift-value">{todayIncidentCount} Filed</span>
+                <span className="tactical-shift-label">Today</span>
+              </div>
             </div>
           </div>
 
-          {/* Tactical Emergency SOS Console */}
-          <div className="sos-tactical-box">
-            <div className="sos-tactical-box__title">
-              <IonIcon icon={warningOutline} />
-              <span>EMERGENCY SOS DISPATCH</span>
+          {/* 5. Full-Width Tactical Emergency SOS Panel */}
+          <div className="tactical-sos-panel">
+            <div
+              className="tactical-sos-hold-strip"
+              onPointerDown={startHoldSos}
+              onPointerUp={cancelHoldSos}
+              onPointerLeave={cancelHoldSos}
+              onTouchStart={startHoldSos}
+              onTouchEnd={cancelHoldSos}
+              role="button"
+              tabIndex={0}
+              aria-label="Hold 2 seconds for emergency SOS"
+            >
+              <div
+                className="tactical-sos-progress-fill"
+                style={{ width: `${holdProgress}%` }}
+              />
+
+              <div className="tactical-sos-content">
+                <div className="tactical-sos-icon-wrap">
+                  <IonIcon icon={warningOutline} />
+                </div>
+                <div className="tactical-sos-text">
+                  <div className="tactical-sos-title">
+                    {raisingSos ? 'Transmitting SOS…' : holdProgress > 0 ? `Holding (${Math.round(holdProgress)}%)…` : 'EMERGENCY SOS BACKUP'}
+                  </div>
+                  <div className="tactical-sos-sub">
+                    {holdProgress > 0 ? 'Release to cancel · Keep holding' : 'Press & hold 2s to alert HQ and nearby responders'}
+                  </div>
+                </div>
+                <div className="tactical-sos-countdown">
+                  {raisingSos ? <IonSpinner name="dots" color="danger" /> : holdProgress > 0 ? `${Math.round(holdProgress)}%` : 'HOLD 2S'}
+                </div>
+              </div>
             </div>
-            <p className="sos-tactical-box__sub">
-              Press and hold for 2 seconds to alert Barangay Admin and nearby Tanod
-            </p>
-
-            <div className="sos-hold-wrapper">
-              <svg className="sos-hold-svg" viewBox="0 0 90 90">
-                <circle cx="45" cy="45" r="38" className="sos-hold-track" />
-                <circle
-                  cx="45"
-                  cy="45"
-                  r="38"
-                  className="sos-hold-progress"
-                  style={{
-                    strokeDasharray: CIRCUMFERENCE,
-                    strokeDashoffset,
-                  }}
-                />
-              </svg>
-
-              <button
-                type="button"
-                className="sos-hold-btn"
-                onPointerDown={startHoldSos}
-                onPointerUp={cancelHoldSos}
-                onPointerLeave={cancelHoldSos}
-                onTouchStart={startHoldSos}
-                onTouchEnd={cancelHoldSos}
-                disabled={raisingSos}
-                aria-label="Press and hold to trigger Emergency SOS"
-              >
-                {raisingSos ? <IonSpinner name="dots" color="light" /> : 'HOLD\nSOS'}
-              </button>
-            </div>
-
-            <span className="sos-hold-caption">
-              {holdProgress > 0 ? `Holding (${Math.round(holdProgress)}%)…` : 'Hold 2s to activate'}
-            </span>
 
             {sosFallbackOutcome && (
               <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'center' }}>
@@ -499,21 +602,44 @@ const HomePage: React.FC = () => {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => setConfirmingSos(true)}
-              style={{
-                marginTop: '10px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--color-critical)',
-                fontSize: '0.75rem',
-                textDecoration: 'underline',
-                cursor: 'pointer',
-              }}
-            >
-              Or tap here for emergency confirmation
-            </button>
+            {/* 1-Tap Emergency Speed-Dial Dock */}
+            <div className="tactical-speed-dial-dock">
+              <div className="tactical-speed-dial-label">
+                <IonIcon icon={callOutline} />
+                <span>Direct Emergency Voice Lines</span>
+              </div>
+              <div className="tactical-speed-dial-grid">
+                <a
+                  href={`tel:${deskContact.replace(/[^0-9+]/g, '') || '911'}`}
+                  className="tactical-speed-dial-btn"
+                  onClick={() => tacticalFeedback.onWarning()}
+                >
+                  <IonIcon icon={callOutline} />
+                  <span className="tactical-speed-dial-btn-title">Brgy Desk</span>
+                  <span className="tactical-speed-dial-btn-sub">HQ Dispatch</span>
+                </a>
+
+                <a
+                  href="tel:911"
+                  className="tactical-speed-dial-btn"
+                  onClick={() => tacticalFeedback.onWarning()}
+                >
+                  <IonIcon icon={shieldOutline} />
+                  <span className="tactical-speed-dial-btn-title">Police 911</span>
+                  <span className="tactical-speed-dial-btn-sub">PNP Station</span>
+                </a>
+
+                <a
+                  href="tel:160"
+                  className="tactical-speed-dial-btn"
+                  onClick={() => tacticalFeedback.onWarning()}
+                >
+                  <IonIcon icon={medkitOutline} />
+                  <span className="tactical-speed-dial-btn-title">MDRRMO</span>
+                  <span className="tactical-speed-dial-btn-sub">Rescue / BFP</span>
+                </a>
+              </div>
+            </div>
           </div>
 
           {sosError && (
@@ -523,8 +649,7 @@ const HomePage: React.FC = () => {
                 color: 'var(--pill-critical-text)',
                 border: '1px solid var(--color-critical)',
                 borderRadius: 'var(--radius-md)',
-                padding: '10px',
-                marginBottom: '16px',
+                padding: '8px 12px',
                 fontSize: 'var(--font-size-sm)',
               }}
               role="alert"
@@ -532,19 +657,6 @@ const HomePage: React.FC = () => {
               {sosError}
             </div>
           )}
-
-          {/* Sign Out Utility */}
-          <div style={{ textAlign: 'center', marginTop: '16px', marginBottom: '32px' }}>
-            <IonButton
-              fill="clear"
-              color="medium"
-              onClick={() => setConfirmingSignOut(true)}
-              style={{ fontSize: 'var(--font-size-sm)', textTransform: 'none' }}
-            >
-              <IonIcon icon={logOutOutline} slot="start" />
-              Sign out of Patrol Console
-            </IonButton>
-          </div>
         </div>
 
         <IonToast
@@ -571,17 +683,6 @@ const HomePage: React.FC = () => {
           buttons={[
             { text: 'Cancel', role: 'cancel' },
             { text: 'Transmit SOS Now', role: 'destructive', handler: handleRaiseSos },
-          ]}
-        />
-
-        <IonAlert
-          isOpen={confirmingSignOut}
-          onDidDismiss={() => setConfirmingSignOut(false)}
-          header="Sign out?"
-          message="You will need to sign in again to resume field patrol and sync."
-          buttons={[
-            { text: 'Cancel', role: 'cancel' },
-            { text: 'Sign Out', role: 'destructive', handler: handleSignOut },
           ]}
         />
       </IonContent>

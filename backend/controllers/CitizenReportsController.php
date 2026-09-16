@@ -8,6 +8,7 @@ use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Sms\CitizenUpdateNotifier;
+use Baranguard\Services\Notifications\NotificationService;
 use PDO;
 
 /**
@@ -320,6 +321,20 @@ final class CitizenReportsController
                 }
             }
             $incidentId = (int) $pdo->lastInsertId();
+
+            try {
+                $admins = NotificationService::adminRecipients($pdo, (int) $report['barangay_id']);
+                if (!empty($admins)) {
+                    NotificationService::create(
+                        $pdo,
+                        (int) $report['barangay_id'],
+                        NotificationService::TYPE_PRIORITY_ALERT,
+                        ['incident_id' => $incidentId],
+                        (int) $identity['user_id'],
+                        $admins
+                    );
+                }
+            } catch (\Throwable $ignored) {}
 
             $updateStmt = $pdo->prepare(
                 'UPDATE citizen_report SET incident_id = :incident_id, converted_at = UTC_TIMESTAMP() WHERE report_id = :report_id'
