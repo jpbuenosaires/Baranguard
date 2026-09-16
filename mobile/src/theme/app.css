@@ -153,8 +153,28 @@
 .map-marker--tanod-stale {
   background: var(--color-text-tertiary);
 }
+.map-marker--destination {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+  border-color: var(--color-white);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-critical) 35%, transparent), var(--shadow-fab);
+  animation: destination-beacon-pulse 1.8s ease-in-out infinite;
+  z-index: 10;
+}
+@keyframes destination-beacon-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-critical) 40%, transparent), var(--shadow-fab);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-critical) 0%, transparent), var(--shadow-fab);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .map-marker--critical { animation: none; }
+  .map-marker--destination { animation: none; }
 }
 
 /* --- Reference / monospace identifiers -------------------------------- */
@@ -860,40 +880,55 @@
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--color-border);
-  box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06);
+  height: calc(56px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .mobile-tab-bar ion-tab-button {
   --color: var(--color-text-secondary);
   --color-selected: var(--color-primary);
   font-weight: 500;
+  padding: 4px 0 2px;
+}
+.mobile-tab-bar ion-tab-button ion-icon {
+  font-size: 20px;
+  margin-bottom: 2px;
+}
+.mobile-tab-bar ion-tab-button ion-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+  font-weight: 600;
 }
 .mobile-tab-bar ion-tab-button.tab-selected {
   font-weight: 700;
 }
 .mobile-tab-button--fab {
   overflow: visible;
+  position: relative;
+  justify-content: center;
 }
 .mobile-tab-button--fab ion-label {
-  font-weight: 600;
-  margin-top: 2px;
+  display: none !important;
 }
 .tab-fab-btn {
-  width: 50px;
-  height: 50px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%);
   color: var(--color-white);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-fab);
-  margin-top: -18px;
-  border: 3px solid var(--color-white);
-  transition: transform 0.15s ease;
+  box-shadow: 0 6px 18px rgba(29, 78, 216, 0.42);
+  margin-top: -24px;
+  border: 3.5px solid var(--color-white);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 10;
 }
 .tab-fab-btn ion-icon {
-  font-size: 26px;
+  font-size: 28px;
   color: var(--color-white) !important;
+  margin-bottom: 0 !important;
 }
 .tab-fab-btn:active {
   transform: scale(0.92);
@@ -1162,3 +1197,1517 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
 }
+
+/* ====================================================================
+   Live Navigation HUD — Turn-by-turn overlay & markers
+   ==================================================================== */
+
+/* --- Navigation self marker ----------------------------------------- */
+
+.map-marker--self-navigating {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  border: 3px solid var(--color-white);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 60%, transparent);
+  animation: nav-self-pulse 2s infinite;
+  position: relative;
+}
+
+.map-marker--self-navigating::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid var(--color-primary);
+}
+
+@keyframes nav-self-pulse {
+  0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--color-primary) 60%, transparent); }
+  70%  { box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-primary) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--color-primary) 0%, transparent); }
+}
+
+/* --- Navigation HUD container (Slim Top Banner - Google Maps Style) -- */
+
+.nav-hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12), var(--shadow-card);
+  padding: 8px 12px;
+  z-index: 10;
+}
+
+/* --- Navigation HUD row --------------------------------------------- */
+
+.nav-hud__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* --- Navigation HUD maneuver icon ----------------------------------- */
+
+.nav-hud__maneuver-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-blue);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12);
+}
+
+/* --- Navigation HUD distance --------------------------------------- */
+
+.nav-hud__distance {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+/* --- Navigation HUD instruction ------------------------------------- */
+
+.nav-hud__instruction {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Navigation HUD stats ------------------------------------------- */
+
+.nav-hud__stats {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* --- Navigation progress bar ---------------------------------------- */
+
+.nav-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border);
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.nav-progress__fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent, var(--color-primary)) 100%);
+  transition: width 0.5s ease;
+}
+
+/* --- Navigation HUD state modifiers --------------------------------- */
+
+.nav-hud--off-route {
+  background: var(--tint-warning-bg);
+  border-left: 4px solid var(--color-warning);
+}
+
+.nav-hud--arrived {
+  background: var(--tint-success-bg);
+  border-left: 4px solid var(--color-success);
+}
+
+/* --- Map container in navigation mode ------------------------------- */
+
+.map-container--navigating {
+  height: 68vh;
+  transition: height 0.3s ease;
+}
+
+/* --- Start / Stop navigation button --------------------------------- */
+
+.nav-toggle-btn {
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  padding: 6px 16px;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-toggle-btn--start {
+  background: linear-gradient(135deg, var(--color-navy), var(--color-primary));
+  color: var(--color-white);
+  box-shadow: var(--shadow-fab);
+}
+
+.nav-toggle-btn--stop {
+  background: transparent;
+  border: 1px solid var(--color-text-tertiary);
+  color: var(--color-text-secondary);
+}
+
+/* --- Upcoming step preview ------------------------------------------ */
+
+.nav-upcoming__step {
+  display: flex;
+  flex-direction: row;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-border-subtle, var(--color-border));
+}
+
+.nav-upcoming__step--active {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+/* --- Reduced-motion overrides --------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .map-marker--self-navigating { animation: none; }
+  .nav-progress__fill { transition: none; }
+  .map-container--navigating { transition: none; }
+  .recording-live-dot { animation: none; }
+}
+
+/* ====================================================================
+   Field Incident Intake Overhaul (new-incident.tsx)
+   ==================================================================== */
+
+.intake-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 16px;
+}
+
+.intake-section {
+  margin-bottom: 20px;
+}
+
+.intake-section:last-child {
+  margin-bottom: 0;
+}
+
+.intake-section-title {
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+/* Category Grid */
+.intake-category-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.intake-category-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 4px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 1.5px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: center;
+}
+
+.intake-category-chip__icon {
+  font-size: 1.25rem;
+  color: var(--color-text-tertiary);
+  transition: color 0.2s ease;
+}
+
+.intake-category-chip--active {
+  background: var(--color-surface-blue);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+}
+
+.intake-category-chip--active .intake-category-chip__icon {
+  color: var(--color-primary);
+}
+
+/* Location Strip */
+.intake-location-box {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.intake-location-badge {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.intake-location-coords {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.intake-location-clear-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-size: 0.75rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.intake-location-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--color-text-tertiary);
+  margin-bottom: 10px;
+}
+
+.intake-btn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.intake-btn-action {
+  --border-radius: var(--radius-md);
+  font-weight: 600;
+  text-transform: none;
+  font-size: var(--font-size-sm);
+  margin: 0;
+  height: 40px;
+}
+
+/* Media Dock */
+.intake-media-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.intake-recording-chip {
+  margin-top: 10px;
+  background: var(--tint-critical-bg);
+  border: 1px solid var(--color-critical);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.intake-recording-chip__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-critical);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+/* Sticky Action Footer */
+.intake-sticky-footer {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 12px 16px;
+  margin: 16px -16px -16px -16px;
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  z-index: 20;
+}
+
+.intake-security-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--color-text-tertiary);
+  margin-top: 6px;
+}
+
+/* ====================================================================
+   Tactical Field Console Overhaul (home.tsx)
+   ==================================================================== */
+
+.home-dashboard-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 18px;
+}
+
+/* --- Tactical Officer Hub --- */
+.tactical-officer-hub {
+  background: linear-gradient(135deg, #0b1329 0%, #1e293b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: 0 4px 20px rgba(11, 19, 41, 0.4), var(--shadow-elevated);
+  position: relative;
+  overflow: hidden;
+}
+
+.tactical-officer-hub::after {
+  content: '';
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.22) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.tactical-officer-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.tactical-officer-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.tactical-officer-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.tactical-officer-name {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.tactical-officer-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--color-surface-blue);
+  font-weight: 600;
+  margin-top: 3px;
+}
+
+.tactical-officer-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 12px 0;
+}
+
+.tactical-officer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.tactical-duty-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tactical-duty-pulse {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tactical-duty-pulse--on {
+  background: var(--color-success);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 60%, transparent);
+  animation: duty-pulse 2s infinite;
+}
+
+.tactical-duty-pulse--off {
+  background: var(--color-text-disabled);
+}
+
+.tactical-duty-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.tactical-duty-title {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tactical-duty-title--on {
+  color: #4ade80;
+}
+
+.tactical-duty-title--off {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.tactical-duty-telemetry {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.tactical-duty-btn {
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tactical-duty-btn--on {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.tactical-duty-btn--off {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+/* --- Situational Awareness Hub --- */
+.situational-hub {
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-card);
+  transition: all 0.2s ease;
+}
+
+.situational-hub--mission {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(249, 115, 22, 0.1) 100%);
+  border: 1.5px solid var(--color-critical);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.18);
+}
+
+.situational-hub--clear {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.situational-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.situational-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.situational-badge--mission {
+  color: var(--color-critical);
+}
+
+.situational-badge--clear {
+  color: var(--color-success);
+}
+
+.situational-sub {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.situational-detail {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  margin-top: 3px;
+}
+
+.situational-mission-action {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.situational-navigate-btn {
+  background: linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.situational-navigate-btn:active {
+  transform: scale(0.97);
+}
+
+/* --- High-Utility Tactical Action Tiles --- */
+.tactical-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.tactical-action-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  width: 100%;
+}
+
+.tactical-action-card:active {
+  transform: scale(0.97);
+  box-shadow: none;
+}
+
+.tactical-action-icon-box {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  margin-bottom: 10px;
+}
+
+.tactical-action-icon-box--primary {
+  background: var(--color-surface-blue);
+  color: var(--color-primary);
+}
+
+.tactical-action-icon-box--info {
+  background: var(--tint-info-bg);
+  color: var(--color-info);
+}
+
+.tactical-action-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 2px;
+  line-height: 1.2;
+}
+
+.tactical-action-desc {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.tactical-action-chips {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.tactical-mini-chip {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+}
+
+/* --- Shift Patrol Telemetry Strip --- */
+.tactical-shift-strip {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 10px 14px;
+  display: grid;
+  grid-template-columns: 1.15fr 1.1fr 0.95fr;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow-card);
+}
+
+.tactical-shift-metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tactical-shift-metric + .tactical-shift-metric {
+  border-left: 1px solid var(--color-border);
+  padding-left: 8px;
+}
+
+.tactical-shift-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--color-surface-blue);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.tactical-shift-icon-wrap--live {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--color-success);
+}
+
+.tactical-shift-icon-wrap--idle {
+  background: var(--color-bg);
+  color: var(--color-text-tertiary);
+}
+
+.tactical-shift-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tactical-shift-value {
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.tactical-shift-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  margin-top: 1px;
+}
+
+/* --- Full-Width Anchored Tactical SOS Panel --- */
+.tactical-sos-panel {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(220, 38, 38, 0.03) 100%);
+  border: 1.5px solid var(--color-critical);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.tactical-sos-hold-strip {
+  position: relative;
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid var(--color-critical);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.tactical-sos-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: color-mix(in srgb, var(--color-critical) 35%, transparent);
+  transition: width 0.05s linear;
+  pointer-events: none;
+}
+
+.tactical-sos-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.tactical-sos-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-critical);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.4);
+}
+
+.tactical-sos-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.tactical-sos-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--color-critical);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+
+.tactical-sos-sub {
+  font-size: 0.68rem;
+  color: var(--color-text-secondary);
+  line-height: 1.2;
+  margin-top: 1px;
+}
+
+.tactical-sos-countdown {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--color-critical);
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid var(--color-critical);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+/* --- 1-Tap Emergency Speed-Dial Dock --- */
+.tactical-speed-dial-dock {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(220, 38, 38, 0.35);
+}
+
+.tactical-speed-dial-label {
+  font-size: 0.64rem;
+  font-weight: 800;
+  color: var(--color-critical);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tactical-speed-dial-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.tactical-speed-dial-btn {
+  background: var(--color-surface);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: var(--radius-md);
+  padding: 7px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--color-text-primary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: var(--shadow-card);
+}
+
+.tactical-speed-dial-btn:active {
+  transform: scale(0.96);
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.tactical-speed-dial-btn ion-icon {
+  font-size: 1.1rem;
+  color: var(--color-critical);
+}
+
+.tactical-speed-dial-btn-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--color-text-primary);
+}
+
+.tactical-speed-dial-btn-sub {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  line-height: 1;
+}
+
+[data-theme="dark"] .tactical-speed-dial-btn {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(220, 38, 38, 0.4);
+}
+
+
+
+/* ====================================================================
+   Tactical Dispatches Queue Overhaul (assignments.tsx)
+   ==================================================================== */
+
+.dispatch-layout {
+  padding-top: 4px !important;
+  padding-bottom: 20px;
+}
+
+/* Filter Segment Bar */
+.dispatch-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 14px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.dispatch-filter-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.dispatch-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.dispatch-filter-chip:active {
+  transform: scale(0.96);
+}
+
+.dispatch-filter-chip--active {
+  background: var(--color-navy);
+  border-color: var(--color-navy);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+}
+
+.dispatch-filter-count {
+  background: rgba(255, 255, 255, 0.2);
+  color: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.dispatch-filter-chip:not(.dispatch-filter-chip--active) .dispatch-filter-count {
+  background: var(--color-border);
+  color: var(--color-text-tertiary);
+}
+
+/* Dispatch Card */
+.dispatch-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+  width: 100%;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dispatch-card:active {
+  transform: scale(0.99);
+}
+
+/* Critical Accent: high-visibility urgency */
+.dispatch-card--critical {
+  border-left: 5px solid var(--color-critical);
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.04) 0%, var(--color-surface) 35%);
+  box-shadow: 0 3px 12px rgba(220, 38, 38, 0.12), var(--shadow-card);
+}
+
+.dispatch-card--high {
+  border-left: 5px solid var(--color-warning);
+}
+
+.dispatch-card--normal {
+  border-left: 4px solid var(--color-primary);
+}
+
+/* Top Meta Row */
+.dispatch-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dispatch-card-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dispatch-id-badge {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  background: var(--color-border-subtle, rgba(0, 0, 0, 0.04));
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+[data-theme="dark"] .dispatch-id-badge {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Card Main Details */
+.dispatch-card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.dispatch-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--color-surface-blue);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+}
+
+.dispatch-icon-box--critical {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--color-critical);
+}
+
+.dispatch-icon-box--warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-warning);
+}
+
+.dispatch-icon-box--success {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--color-success);
+}
+
+.dispatch-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.dispatch-card-type {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  margin: 0 0 4px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.dispatch-card-geo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.dispatch-card-geo ion-icon {
+  font-size: 0.9rem;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.dispatch-card--critical .dispatch-card-geo ion-icon {
+  color: var(--color-critical);
+}
+
+.dispatch-card-stale {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-warning);
+  margin-top: 4px;
+}
+
+/* Card Action Footer */
+.dispatch-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.dispatch-status-note {
+  font-size: 0.72rem;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dispatch-action-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: 0.02em;
+}
+
+.dispatch-action-cta--navigate {
+  background: var(--color-primary);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+}
+
+.dispatch-action-cta--start {
+  background: var(--color-navy);
+  color: #ffffff;
+}
+
+.dispatch-action-cta--view {
+  background: var(--color-surface-blue);
+  color: var(--color-primary);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+[data-theme="dark"] .dispatch-action-cta--view {
+  background: rgba(37, 99, 235, 0.15);
+  color: #93c5fd;
+  border-color: rgba(147, 197, 253, 0.2);
+}
+
+/* ====================================================================
+   Console & Profile Overhaul (profile.tsx)
+   ==================================================================== */
+
+.profile-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px !important;
+  padding-bottom: 20px;
+}
+
+/* Officer Card Header */
+.profile-officer-card {
+  background: linear-gradient(135deg, #0b1329 0%, #1e293b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  box-shadow: 0 4px 20px rgba(11, 19, 41, 0.35), var(--shadow-elevated);
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-officer-card::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.profile-officer-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.profile-avatar-circle {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.profile-officer-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-officer-name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.profile-officer-role {
+  font-size: 0.76rem;
+  color: var(--color-surface-blue);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.profile-device-strip {
+  margin-top: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.profile-device-key {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-copy-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.profile-copy-btn:active {
+  transform: scale(0.95);
+  background: var(--color-primary);
+}
+
+/* Quick Action Grid */
+.profile-quick-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.profile-quick-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  text-align: left;
+  transition: transform 0.15s ease;
+}
+
+.profile-quick-card:active {
+  transform: scale(0.98);
+}
+
+.profile-quick-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--color-surface-blue);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.profile-quick-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.profile-quick-sub {
+  font-size: 0.68rem;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+/* Telemetry & Database Hub */
+.profile-section-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.profile-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.profile-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+
+.profile-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.profile-stat-box {
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-stat-box-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.profile-stat-box-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+/* Collapsible Settings Drawer */
+.profile-drawer-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--color-border);
+  padding: 10px 2px 2px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.profile-drawer-content {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border);
+}
+
+/* Sign Out Card */
+.profile-signout-card {
+  margin-top: 6px;
+}
+
+.profile-signout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: rgba(220, 38, 38, 0.08);
+  border: 1.5px solid var(--color-critical);
+  color: var(--color-critical);
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: 0.02em;
+}
+
+.profile-signout-btn:active {
+  background: var(--color-critical);
+  color: #ffffff;
+  transform: scale(0.99);
+}
+
+
+

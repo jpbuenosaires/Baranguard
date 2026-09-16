@@ -8,6 +8,7 @@ use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Sms\CitizenUpdateNotifier;
+use Baranguard\Services\Notifications\NotificationService;
 use PDO;
 
 /**
@@ -1276,6 +1277,25 @@ final class IncidentsController
             }
             $incidentId = (int) $pdo->lastInsertId();
 
+            try {
+                $admins = NotificationService::adminRecipients($pdo, (int) $identity['barangay_id']);
+                if (!empty($admins)) {
+                    $notifType = in_array($priority, ['critical', 'high'], true)
+                        ? NotificationService::TYPE_PRIORITY_ALERT
+                        : NotificationService::TYPE_OTHER;
+                    NotificationService::create(
+                        $pdo,
+                        (int) $identity['barangay_id'],
+                        $notifType,
+                        ['incident_id' => $incidentId],
+                        (int) $identity['user_id'],
+                        $admins
+                    );
+                }
+            } catch (\Throwable $ignored) {
+                // Best-effort; notification error never fails incident creation
+            }
+
             $pdo->commit();
         } catch (\Throwable $e) {
             $pdo->rollBack();
@@ -1456,6 +1476,23 @@ final class IncidentsController
                 }
             }
             $incidentId = (int) $pdo->lastInsertId();
+
+            try {
+                $admins = NotificationService::adminRecipients($pdo, (int) $identity['barangay_id']);
+                if (!empty($admins)) {
+                    NotificationService::create(
+                        $pdo,
+                        (int) $identity['barangay_id'],
+                        NotificationService::TYPE_PRIORITY_ALERT,
+                        ['incident_id' => $incidentId],
+                        (int) $identity['user_id'],
+                        $admins
+                    );
+                }
+            } catch (\Throwable $ignored) {
+                // Best-effort; notification error never fails incident creation
+            }
+
             $pdo->commit();
         } catch (\Throwable $e) {
             $pdo->rollBack();

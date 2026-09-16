@@ -3,12 +3,16 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ============================================
-echo  Baranguard AI Evaluation - Friend Test Kit
+echo  Baranguard AI Evaluation - Task 6/7: Composing SMS alerts
 echo ============================================
 echo.
-echo This tests how well a local AI model removes personal information
-echo from 200 made-up sample incident reports. Nothing on this computer
-echo is sent anywhere - everything runs locally, offline.
+echo This tests how well the AI drafts short public SMS advisories from
+echo an operator's instructions. Nothing on this computer is sent
+echo anywhere - everything runs locally, offline, same as before.
+echo.
+echo Only run this AFTER run-evaluation.bat has worked at least once -
+echo it checks PHP/Ollama the same way, so if that one worked, this will
+echo too.
 echo.
 
 REM --- 1. Check PHP is installed --------------------------------------
@@ -18,23 +22,20 @@ if errorlevel 1 (
     echo.
     echo Please install it first - open Command Prompt and run:
     echo     winget install PHP.PHP
-    echo Then close this window and double-click run-evaluation.bat again.
+    echo Then close this window and double-click this file again.
     echo.
     pause
     exit /b 1
 )
 
-REM --- 2. Check .env exists, bootstrap it on first run ----------------
+REM --- 2. Check .env exists (run-evaluation.bat creates it first) -----
 if not exist ".env" (
-    copy ".env.example" ".env" >nul
-    echo A ".env" settings file was just created for you in this folder.
+    echo [ERROR] No ".env" file found yet.
     echo.
-    echo Please open ".env" in Notepad, check the model name matches
-    echo exactly what you ran "ollama pull" with, save it, then run
-    echo this file again.
+    echo Please run run-evaluation.bat first - it sets this up for you.
     echo.
     pause
-    exit /b 0
+    exit /b 1
 )
 
 REM --- Read OLLAMA_URL / OLLAMA_MODEL out of .env ----------------------
@@ -87,23 +88,22 @@ REM        resuming it automatically - no smoke test, no confirmation   --
 REM        prompt, so closing this window and double-clicking the file  --
 REM        again later just continues unattended.                      --
 set "HAS_PROGRESS="
-if exist "fixtures\eval-incidents-v1.redaction.model.*.checkpoint.json" set "HAS_PROGRESS=1"
+if exist "fixtures\eval-sms-prompts-v1.sms-compose.model.*.checkpoint.json" set "HAS_PROGRESS=1"
 if defined HAS_PROGRESS (
-    echo Found progress from an earlier run of this test - continuing
+    echo Found progress from an earlier run of this task - continuing
     echo automatically from where it left off...
     echo.
     goto :run_full
 )
 
-REM --- 5. Quick 3-record smoke test before committing to the full run --
-REM        --resume here too: without it, this write its OWN 3-record   --
-REM        checkpoint on top of the real one, which would have wiped out --
-REM        any existing progress if you'd already started the real run  --
-REM        below and come back later. Harmless on a truly fresh run.    --
+REM --- 5. Quick 1-record smoke test -------------------------------------
+REM        --resume here too: without it, this would write its OWN     --
+REM        1-record checkpoint on top of the real one and wipe out any  --
+REM        existing progress. Harmless on a truly fresh run.            --
 :smoke_test
-echo Running a quick 3-record check first (about a minute or two)...
+echo Running a quick 1-record check first (about half a minute)...
 echo.
-php scripts\ai-evaluate.php --task=redaction --engine=model --dataset=fixtures\eval-incidents-v1.json --limit=3 --dry-run --verbose --resume
+php scripts\ai-evaluate.php --task=sms-compose --engine=model --limit=1 --dry-run --verbose --resume
 if errorlevel 1 (
     echo.
     echo [ERROR] The quick check above failed. Nothing else was run.
@@ -116,41 +116,33 @@ echo.
 echo The quick check worked.
 echo.
 
-REM --- 6. The real 350-record redaction run, paced and resumable --------
 echo ============================================
-echo Ready to run the full 350-record redaction test.
+echo Ready to run the full 35-record SMS-composing test.
 echo.
-echo This can take SEVERAL HOURS depending on your computer, and will
-echo pause for a couple of minutes every 20 records to rest your CPU
-echo (you'll see "resting..." messages - that's expected).
+echo This set is much smaller than the others (35 records, not 350) - it
+echo should finish in well under half an hour.
 echo.
 echo You can safely close this window at any point. Just double-click
 echo this file again later - it picks up exactly where it left off
-echo AUTOMATICALLY (no need to click through this message again), and
-echo never redoes work or loses progress.
-echo.
-echo This kit can also score 7 OTHER things the same AI model does
-echo (writing summaries, translating, classifying incidents, drafting
-echo SMS alerts...) - see README-FOR-FRIEND.md for those commands if
-echo you're comfortable running one yourself. This default run only
-echo does the redaction test, the most important one.
+echo AUTOMATICALLY (no need to click through this message again), without
+echo repeating work or affecting the other 6 tasks at all.
 echo ============================================
 echo.
 pause
 
 :run_full
-php scripts\ai-evaluate.php --task=redaction --engine=model --dataset=fixtures\eval-incidents-v1.json --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
+php scripts\ai-evaluate.php --task=sms-compose --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=60 --resume --save-results
 
 echo.
 echo ============================================
 echo If you see an error above about Ollama being unavailable partway
-echo through, that's fine - your progress up to that point is saved.
-echo Just run this file again to continue from there.
+echo through, that's fine - just run this file again and it'll pick up
+echo from exactly where it left off.
 echo.
-echo When the run finishes completely, please send back these two
-echo files from this folder:
-echo   evaluation-results-*.txt
-echo   evaluation-log-*.txt
+echo When it finishes, please send back these two files from this
+echo folder's "fixtures" subfolder:
+echo   evaluation-results-sms-compose-*.txt
+echo   evaluation-log-sms-compose-*.txt
 echo.
 echo Thank you for helping with this!
 echo ============================================

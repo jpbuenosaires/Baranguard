@@ -177,7 +177,8 @@ if ($task === 'translation') {
 $checkpointPath = checkpointPath($datasetPath, $task, $engine, $modelVersion);
 $checkpointRecords = [];
 if ($options['resume'] && is_file($checkpointPath)) {
-    $loaded = json_decode((string) file_get_contents($checkpointPath), true);
+    $raw = (string) file_get_contents($checkpointPath);
+    $loaded = json_decode($raw, true);
     if (is_array($loaded)
         && ($loaded['dataset'] ?? null) === $datasetName
         && ($loaded['dataset_version'] ?? null) === $datasetVersion
@@ -188,6 +189,16 @@ if ($options['resume'] && is_file($checkpointPath)) {
     ) {
         $checkpointRecords = $loaded['records'];
         out(sprintf('Resuming: %d record(s) already scored in a previous run of this exact dataset/task/engine/model.', count($checkpointRecords)));
+    } elseif ($loaded === null && trim($raw) !== '' && strtolower(trim($raw)) !== 'null') {
+        // json_decode() only returns null for genuinely empty/absent input
+        // or invalid JSON — a non-empty, non-"null" file that still failed
+        // to parse is corruption (almost always a write interrupted
+        // mid-flight by an old version of writeCheckpoint(), fixed
+        // 2026-09-15), not a legitimate mismatch. Back it up rather than
+        // let it just get silently overwritten by the fresh run below.
+        $backupPath = $checkpointPath . '.corrupt-' . gmdate('Ymd-His');
+        copy($checkpointPath, $backupPath);
+        out("WARNING: checkpoint file was not valid JSON (likely corrupted by the previous run being interrupted mid-write) — starting this task fresh. The corrupt file was kept for reference at: {$backupPath}");
     } else {
         out('A checkpoint file exists but is for a different dataset/task/engine/model — starting fresh (old checkpoint left untouched).');
     }
@@ -667,9 +678,22 @@ function checkpointPath(string $datasetPath, string $task, string $engine, strin
     return dirname($datasetPath) . "/{$base}.{$task}.{$engine}.{$slug}.checkpoint.json";
 }
 
+/**
+ * Written atomically (temp file + rename) — found 2026-09-15 after a
+ * friend's runs sometimes "forgot" their progress on --resume. Root
+ * cause: this used to be a single file_put_contents() straight to the
+ * real checkpoint path, so closing the console window (or any other
+ * abrupt kill) DURING that write left a truncated, invalid JSON file —
+ * silently discarded as "a checkpoint for a different task" by the
+ * loader below, restarting the whole task from record 1. rename() onto
+ * an existing path is atomic on both POSIX and Windows/NTFS (PHP's own
+ * rename() uses MoveFileEx with replace-existing on Windows), so a kill
+ * mid-write now leaves either the untouched previous checkpoint or the
+ * new one, never a half-written file.
+ */
 function writeCheckpoint(string $path, string $datasetName, string $datasetVersion, string $task, string $engine, string $modelVersion, array $records): void
 {
-    file_put_contents($path, json_encode([
+    $json = json_encode([
         'dataset' => $datasetName,
         'dataset_version' => $datasetVersion,
         'task' => $task,
@@ -677,7 +701,10 @@ function writeCheckpoint(string $path, string $datasetName, string $datasetVersi
         'model_version' => $modelVersion,
         'updated_at' => gmdate('c'),
         'records' => $records,
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    $tmpPath = $path . '.tmp-' . getmypid();
+    file_put_contents($tmpPath, $json);
+    rename($tmpPath, $path);
 }
 
 function out(string $message): void

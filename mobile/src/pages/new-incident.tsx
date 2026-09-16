@@ -46,11 +46,17 @@ import {
   IonSpinner,
 } from '@ionic/react';
 import {
+  alertCircleOutline,
   cameraOutline,
+  carOutline,
   closeOutline,
-  documentTextOutline,
+  flameOutline,
   locateOutline,
+  locationOutline,
+  lockClosedOutline,
   mapOutline,
+  medicalOutline,
+  medkitOutline,
   micOutline,
   shieldCheckmarkOutline,
   stopCircleOutline,
@@ -87,13 +93,13 @@ const TYPE_LABELS: Record<IncidentType, string> = {
   other: 'Other',
 };
 
-const POPULAR_TYPES: IncidentType[] = [
-  'disturbance',
-  'theft',
-  'physical_injury',
-  'traffic_incident',
-  'medical_emergency',
-  'fire',
+const POPULAR_TYPE_CONFIG: { type: IncidentType; label: string; icon: typeof alertCircleOutline }[] = [
+  { type: 'disturbance', label: 'Disturbance', icon: alertCircleOutline },
+  { type: 'theft', label: 'Theft', icon: shieldCheckmarkOutline },
+  { type: 'physical_injury', label: 'Injury', icon: medkitOutline },
+  { type: 'traffic_incident', label: 'Traffic', icon: carOutline },
+  { type: 'medical_emergency', label: 'Medical', icon: medicalOutline },
+  { type: 'fire', label: 'Fire', icon: flameOutline },
 ];
 
 interface StagedItem {
@@ -283,265 +289,236 @@ const NewIncidentPage: React.FC = () => {
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="app-column">
-          {/* Card 1: Incident Category */}
-          <div className="card--elevated" style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-              INCIDENT CLASSIFICATION
-            </div>
-
-            <SelectField
-              label="Select incident category"
-              value={incidentType}
-              onChange={setIncidentType}
-              disabled={saving}
-              options={INCIDENT_TYPES.map((type) => ({ value: type, label: TYPE_LABELS[type] }))}
-            />
-
-            {/* Quick-select chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '12px' }}>
-              {POPULAR_TYPES.map((type) => {
-                const isSelected = incidentType === type;
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setIncidentType(type)}
-                    disabled={saving}
-                    style={{
-                      padding: '5px 12px',
-                      borderRadius: '999px',
-                      fontSize: 'var(--font-size-label)',
-                      fontWeight: 600,
-                      border: isSelected ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                      background: isSelected ? 'var(--color-surface-blue)' : 'var(--color-white)',
-                      color: isSelected ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {TYPE_LABELS[type]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Card 2: Narrative */}
-          <div className="card--elevated" style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-              INCIDENT NARRATIVE
-            </div>
-
-            <TextAreaField
-              label="Describe what happened (persons involved, time, location details)"
-              value={narrative}
-              onChange={setNarrative}
-              rows={5}
-              disabled={saving}
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>
-                {narrative.length} characters
-              </span>
-            </div>
-          </div>
-
-          {/* Card 2.5: Location (Phase 2.1) */}
-          <div className="card--elevated" style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-              LOCATION (OPTIONAL)
-            </div>
-
-            {location ? (
-              <div
-                style={{
-                  background: 'var(--color-bg)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '10px 12px',
-                  marginBottom: '10px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span className={`status-pill ${accuracyPill(location.accuracyM).className}`}>
-                    {accuracyPill(location.accuracyM).label}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleClearLocation}
-                    disabled={saving}
-                    style={{ background: 'none', border: 'none', color: 'var(--color-text-tertiary)', fontSize: '0.75rem', textDecoration: 'underline' }}
-                  >
-                    Clear
-                  </button>
-                </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--color-text-primary)' }}>
-                  {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
-                </div>
+          <div className="intake-card">
+            {/* Section 1: Classification */}
+            <div className="intake-section">
+              <div className="intake-section-title">
+                <span>Incident Classification</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-primary)' }}>
+                  {TYPE_LABELS[incidentType]}
+                </span>
               </div>
-            ) : (
-              <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
-                No location tagged — the report will still save without one.
+
+              {/* Quick-select Category Grid */}
+              <div className="intake-category-grid">
+                {POPULAR_TYPE_CONFIG.map(({ type, label, icon }) => {
+                  const isSelected = incidentType === type;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`intake-category-chip ${isSelected ? 'intake-category-chip--active' : ''}`}
+                      onClick={() => {
+                        setIncidentType(type);
+                        tacticalFeedback.vibrate(15);
+                      }}
+                      disabled={saving}
+                    >
+                      <IonIcon icon={icon} className="intake-category-chip__icon" />
+                      <span>{label}</span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <IonButton
-                fill="outline"
-                onClick={handleTagGps}
-                disabled={saving || acquiringGps}
-                style={{ fontWeight: 600, textTransform: 'none' }}
-              >
-                <IonIcon slot="start" icon={locateOutline} />
-                {acquiringGps ? <IonSpinner name="dots" /> : 'Tag Current GPS'}
-              </IonButton>
-
-              <IonButton
-                fill="outline"
-                onClick={handleOpenPicker}
+              {/* Extended Dropdown for all incident types */}
+              <SelectField
+                label="Or select from all categories"
+                value={incidentType}
+                onChange={setIncidentType}
                 disabled={saving}
-                style={{ fontWeight: 600, textTransform: 'none' }}
-              >
-                <IonIcon slot="start" icon={mapOutline} />
-                Pick on Map
-              </IonButton>
+                options={INCIDENT_TYPES.map((type) => ({ value: type, label: TYPE_LABELS[type] }))}
+              />
             </div>
 
-            {locationError && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  background: 'var(--tint-critical-bg)',
-                  border: '1px solid var(--color-critical)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '8px 12px',
-                  color: 'var(--pill-critical-text)',
-                  fontSize: 'var(--font-size-sm)',
-                }}
-                role="alert"
-              >
-                {locationError}
+            {/* Section 2: Narrative */}
+            <div className="intake-section">
+              <div className="intake-section-title">
+                <span>Incident Narrative</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
+                  {narrative.length} characters
+                </span>
               </div>
-            )}
-          </div>
 
-          {/* Card 3: Evidence Capture Station */}
-          <div className="card--elevated" style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-              ATTACH EVIDENCE (OPTIONAL)
+              <TextAreaField
+                label="Describe what happened (persons involved, time, location details)"
+                value={narrative}
+                onChange={setNarrative}
+                rows={4}
+                disabled={saving}
+              />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <IonButton
-                fill="outline"
-                onClick={handleAddPhoto}
-                disabled={saving || capturing || recording}
-                style={{ fontWeight: 600, textTransform: 'none' }}
-              >
-                <IonIcon slot="start" icon={cameraOutline} />
-                {capturing && !recording ? <IonSpinner name="dots" /> : 'Photo'}
-              </IonButton>
+            {/* Section 3: Smart Location Strip */}
+            <div className="intake-section">
+              <div className="intake-section-title">
+                <span>Incident Location (Optional)</span>
+              </div>
 
-              <IonButton
-                fill="outline"
-                color={recording ? 'danger' : 'primary'}
-                onClick={handleToggleVoice}
-                disabled={saving || (capturing && !recording)}
-                style={{ fontWeight: 600, textTransform: 'none' }}
-              >
-                <IonIcon slot="start" icon={recording ? stopCircleOutline : micOutline} />
-                {recording ? 'Stop Note' : 'Voice Note'}
-              </IonButton>
-            </div>
+              <div className="intake-location-box">
+                {location ? (
+                  <div className="intake-location-badge">
+                    <div className="intake-location-coords">
+                      <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)', fontSize: '1.1rem' }} />
+                      <span>{location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</span>
+                      <span className={`status-pill ${accuracyPill(location.accuracyM).className}`}>
+                        {accuracyPill(location.accuracyM).label}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="intake-location-clear-btn"
+                      onClick={handleClearLocation}
+                      disabled={saving}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : (
+                  <div className="intake-location-empty">
+                    <IonIcon icon={locationOutline} style={{ fontSize: '1.1rem' }} />
+                    <span>No coordinate tagged — report will save without location</span>
+                  </div>
+                )}
 
-            {recording && (
-              <div className="recording-active-card">
-                <div className="recording-live-indicator">
-                  <div className="recording-live-dot" />
-                  <span style={{ fontWeight: 700, color: 'var(--color-critical)', fontSize: 'var(--font-size-sm)' }}>
-                    Recording Voice Note: {formatTimer(recordDuration)}
-                  </span>
+                <div className="intake-btn-grid">
+                  <IonButton
+                    fill={location && location.accuracyM !== null ? 'solid' : 'outline'}
+                    className="intake-btn-action"
+                    onClick={handleTagGps}
+                    disabled={saving || acquiringGps}
+                  >
+                    <IonIcon slot="start" icon={locateOutline} />
+                    {acquiringGps ? <IonSpinner name="dots" /> : 'Tag GPS Fix'}
+                  </IonButton>
+
+                  <IonButton
+                    fill={location && location.accuracyM === null ? 'solid' : 'outline'}
+                    className="intake-btn-action"
+                    onClick={handleOpenPicker}
+                    disabled={saving}
+                  >
+                    <IonIcon slot="start" icon={mapOutline} />
+                    Pick on Map
+                  </IonButton>
                 </div>
-                <IonButton size="small" color="danger" onClick={handleToggleVoice}>
-                  Stop
+
+                {locationError && (
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      background: 'var(--tint-critical-bg)',
+                      border: '1px solid var(--color-critical)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '6px 10px',
+                      color: 'var(--pill-critical-text)',
+                      fontSize: 'var(--font-size-label)',
+                    }}
+                    role="alert"
+                  >
+                    {locationError}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Section 4: Evidence Attachments */}
+            <div className="intake-section">
+              <div className="intake-section-title">
+                <span>Evidence Attachments</span>
+                {staged.length > 0 && (
+                  <span className="status-pill status-pill--info">{staged.length} ATTACHED</span>
+                )}
+              </div>
+
+              <div className="intake-media-bar">
+                <IonButton
+                  fill="outline"
+                  className="intake-btn-action"
+                  onClick={handleAddPhoto}
+                  disabled={saving || capturing || recording}
+                >
+                  <IonIcon slot="start" icon={cameraOutline} />
+                  {capturing && !recording ? <IonSpinner name="dots" /> : 'Photo Evidence'}
+                </IonButton>
+
+                <IonButton
+                  fill={recording ? 'solid' : 'outline'}
+                  color={recording ? 'danger' : 'primary'}
+                  className="intake-btn-action"
+                  onClick={handleToggleVoice}
+                  disabled={saving || (capturing && !recording)}
+                >
+                  <IonIcon slot="start" icon={recording ? stopCircleOutline : micOutline} />
+                  {recording ? 'Stop Memo' : 'Voice Memo'}
                 </IonButton>
               </div>
-            )}
 
-            {captureError && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  background: 'var(--tint-critical-bg)',
-                  border: '1px solid var(--color-critical)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '8px 12px',
-                  color: 'var(--pill-critical-text)',
-                  fontSize: 'var(--font-size-sm)',
-                }}
-                role="alert"
-              >
-                {captureError}
-              </div>
-            )}
-
-            {/* Staged Media Gallery */}
-            {staged.length > 0 && (
-              <div style={{ marginTop: '12px' }}>
-                <div style={{ fontSize: 'var(--font-size-label)', color: 'var(--color-text-tertiary)', marginBottom: '6px' }}>
-                  ATTACHED FILES ({staged.length})
+              {recording && (
+                <div className="intake-recording-chip">
+                  <div className="intake-recording-chip__status">
+                    <div className="recording-live-dot" />
+                    <span>Recording voice note: {formatTimer(recordDuration)}</span>
+                  </div>
+                  <IonButton size="small" color="danger" fill="solid" onClick={handleToggleVoice}>
+                    Finish
+                  </IonButton>
                 </div>
-                <div className="media-grid">
-                  {staged.map((item) => (
-                    <div key={item.key} className="media-tile">
-                      {item.attachment.type === 'photo' ? (
-                        <img
-                          src={Capacitor.convertFileSrc(item.attachment.filePath)}
-                          alt="Captured evidence"
-                          className="media-tile__img"
-                          onError={(e) => {
-                            // Fallback if WebView local file scheme has permission barrier
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="media-tile__voice">
-                          <IonIcon icon={micOutline} style={{ fontSize: '1.4rem' }} />
-                          <span className="media-tile__voice-size">
-                            {(item.attachment.byteSize / 1024).toFixed(0)} KB
-                          </span>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        className="media-tile__remove"
-                        disabled={saving}
-                        onClick={() => handleRemoveStaged(item.key)}
-                        aria-label="Remove attachment"
-                      >
-                        <IonIcon icon={closeOutline} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+              )}
 
-          {/* Local Security Assurance */}
-          <div
-            style={{
-              background: 'var(--tint-info-bg)',
-              border: '1px solid color-mix(in srgb, var(--color-primary) 20%, transparent)',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px',
-              display: 'flex',
-              gap: '10px',
-              marginBottom: '20px',
-            }}
-          >
-            <IonIcon icon={shieldCheckmarkOutline} style={{ fontSize: '1.4rem', color: 'var(--color-primary)', flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '0.78rem', color: 'var(--pill-info-text)', lineHeight: '1.4' }}>
-              <strong>Encrypted Local Storage:</strong> This report is committed directly to your device’s encrypted SQLite database first. Sync to Barangay HQ workstation will occur automatically upon network contact.
+              {captureError && (
+                <div
+                  style={{
+                    marginTop: '8px',
+                    background: 'var(--tint-critical-bg)',
+                    border: '1px solid var(--color-critical)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '6px 10px',
+                    color: 'var(--pill-critical-text)',
+                    fontSize: 'var(--font-size-label)',
+                  }}
+                  role="alert"
+                >
+                  {captureError}
+                </div>
+              )}
+
+              {staged.length > 0 && (
+                <div style={{ marginTop: '12px' }}>
+                  <div className="media-grid">
+                    {staged.map((item) => (
+                      <div key={item.key} className="media-tile">
+                        {item.attachment.type === 'photo' ? (
+                          <img
+                            src={Capacitor.convertFileSrc(item.attachment.filePath)}
+                            alt="Captured evidence"
+                            className="media-tile__img"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="media-tile__voice">
+                            <IonIcon icon={micOutline} style={{ fontSize: '1.4rem' }} />
+                            <span className="media-tile__voice-size">
+                              {(item.attachment.byteSize / 1024).toFixed(0)} KB
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="media-tile__remove"
+                          disabled={saving}
+                          onClick={() => handleRemoveStaged(item.key)}
+                          aria-label="Remove attachment"
+                        >
+                          <IonIcon icon={closeOutline} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -553,7 +530,7 @@ const NewIncidentPage: React.FC = () => {
                 borderRadius: 'var(--radius-md)',
                 padding: '10px 14px',
                 color: 'var(--pill-critical-text)',
-                marginBottom: '16px',
+                marginBottom: '12px',
                 fontSize: 'var(--font-size-sm)',
               }}
               role="alert"
@@ -562,19 +539,28 @@ const NewIncidentPage: React.FC = () => {
             </div>
           )}
 
-          <IonButton
-            expand="block"
-            onClick={handleSave}
-            disabled={saving || recording}
-            style={{
-              '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
-              fontWeight: 700,
-              height: '48px',
-              boxShadow: 'var(--shadow-fab)',
-            }}
-          >
-            {saving ? <IonSpinner name="dots" /> : 'Save Incident Report'}
-          </IonButton>
+          {/* Sticky Tactical Footer */}
+          <div className="intake-sticky-footer">
+            <IonButton
+              expand="block"
+              onClick={handleSave}
+              disabled={saving || recording}
+              style={{
+                '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
+                fontWeight: 700,
+                height: '46px',
+                boxShadow: 'var(--shadow-fab)',
+                margin: 0,
+              }}
+            >
+              {saving ? <IonSpinner name="dots" /> : 'Save Incident Report'}
+            </IonButton>
+
+            <div className="intake-security-note">
+              <IonIcon icon={lockClosedOutline} />
+              <span>Encrypted SQLite · Local persistence guaranteed</span>
+            </div>
+          </div>
         </div>
 
         <LocationPickerModal

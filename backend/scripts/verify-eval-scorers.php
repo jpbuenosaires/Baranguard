@@ -141,6 +141,27 @@ check('ChecklistScorer::mentionsAllFacts: all facts present -> true',
 check('ChecklistScorer::mentionsAllFacts: a fact missing -> false',
     !ChecklistScorer::mentionsAllFacts('Water will be off tomorrow.', ['tomorrow', 'plaza']));
 
+// Regression for the 2026-09-15 fix: a real SMS-writing model paraphrases to
+// fit the same prompt's 300-char cap, so an exact-phrase match failed every
+// one of 35/35 real records on a real run. These use the actual dataset
+// wording (fixtures/eval-sms-prompts-v1.json) and a plausible abbreviated
+// SMS a compliant model would write, not a phrase invented for this test.
+check('ChecklistScorer::mentionsAllFacts: paraphrased time (comma/word-order changed) -> true',
+    ChecklistScorer::mentionsAllFacts(
+        'Advisory: Free vaccination Fri 8AM-3PM at the barangay health center. Bring your barangay ID.',
+        ['the barangay health center', 'this Friday, 8AM to 3PM']
+    ));
+check('ChecklistScorer::mentionsAllFacts: paraphrased place ("and" -> "&") -> true',
+    ChecklistScorer::mentionsAllFacts(
+        'Power interruption tomorrow 9AM-12NN sa Purok Bagong Silang & Purok Masagana. Unplug appliances.',
+        ['Purok Bagong Silang and Purok Masagana', 'tomorrow, 9AM to 12NN']
+    ));
+check('ChecklistScorer::mentionsAllFacts: fact genuinely dropped (no key words at all) -> false',
+    !ChecklistScorer::mentionsAllFacts(
+        'Please stay safe and follow barangay instructions.',
+        ['the barangay health center', 'this Friday, 8AM to 3PM']
+    ));
+
 $counts = [['label' => 'theft', 'count' => 5], ['label' => 'fire', 'count' => 2]];
 $g = ChecklistScorer::numbersAreGrounded('Theft cases numbered 5 this period, fire cases 2.', $counts);
 check('ChecklistScorer::numbersAreGrounded: only known numbers cited -> ok', $g['ok']);

@@ -33,6 +33,7 @@
 
 import { PushNotifications, type PushNotificationSchema, type ActionPerformed } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
+import FullScreenAlert from './fullScreenAlert';
 
 export type CriticalNotificationType = 'sos' | 'priority_alert' | 'dispatch';
 
@@ -130,4 +131,35 @@ export function registerCriticalAlertListeners(): void {
       notify();
     }
   });
+}
+
+/**
+ * C4 (2026-09-15): the third way an alert can reach this store, alongside
+ * the two listeners above. `CriticalAlertActivity`'s "Open Baranguard"
+ * button cold-launches the app with no Capacitor push event at all — the
+ * OS never re-delivers the push that triggered it — so on every cold
+ * start this checks whether that native screen just stashed one, and if
+ * so feeds it through the exact same `parseAlert()` shape-guard the two
+ * push listeners use, rather than trusting the native side's shape
+ * unchecked. Call once from `App.tsx`'s mount effect, next to
+ * `registerCriticalAlertListeners()`. A no-op on web/if nothing's
+ * pending, same stance as the listener registration above.
+ */
+export async function checkForPendingNativeAlert(): Promise<void> {
+  if (Capacitor.getPlatform() !== 'android') {
+    return;
+  }
+  const result = await FullScreenAlert.getPendingAlert();
+  if (!result.pending) {
+    return;
+  }
+  const alert = parseAlert(
+    { notification_id: result.notificationId, notification_type: result.notificationType },
+    result.title,
+    result.body
+  );
+  if (alert) {
+    currentAlert = alert;
+    notify();
+  }
 }

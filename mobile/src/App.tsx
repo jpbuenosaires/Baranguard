@@ -25,7 +25,7 @@ import MyShiftsPage from './pages/my-shifts';
 import NewIncidentPage from './pages/new-incident';
 import ProfilePage from './pages/profile';
 import { hasLiveSession } from './services/session';
-import { registerCriticalAlertListeners } from './services/criticalAlertStore';
+import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
 import { initThemeListener } from './utils/theme';
@@ -216,11 +216,16 @@ const TabbedShell: React.FC = () => (
  * reason — a Tanod regaining connectivity while sitting on the login
  * screen (signed out from a previous session, about to sign back in)
  * should not need to also happen to be on a screen that sets up its own
- * sync trigger.
+ * sync trigger. `checkForPendingNativeAlert()` (C4, 2026-09-15) runs
+ * alongside it for the same "don't miss it" reason: `CriticalAlertActivity`'s
+ * "Open Baranguard" button cold-launches the app with no Capacitor push
+ * event to listen for, so this is the only way that handoff reaches the
+ * overlay.
  */
 const App: React.FC = () => {
   useEffect(() => {
     registerCriticalAlertListeners();
+    void checkForPendingNativeAlert();
     startSyncScheduler();
     // Once per cold start, not per sync tick — Phase 3.3's cleanup rule
     // only matters on a 30-day timescale, so there is no benefit to

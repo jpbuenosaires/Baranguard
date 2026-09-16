@@ -49,7 +49,7 @@
  * — this was an explicit non-regression requirement, not an oversight.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   IonButton,
@@ -63,11 +63,16 @@ import {
   locateOutline,
   locationOutline,
   navigateOutline,
+  openOutline,
+  playOutline,
+  refreshOutline,
+  stopOutline,
   syncOutline,
   timeOutline,
   trailSignOutline,
 } from 'ionicons/icons';
 import LiveMapCanvas, { type FocusTarget, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
+import ActiveStepCard from '../components/ActiveStepCard';
 import MobileHeader from '../components/MobileHeader';
 import { ApiError, getDispatchRoute, updateDispatchStatus, type NearbyIncident, type RouteData } from '../services/apiService';
 import {
@@ -83,6 +88,8 @@ import type { DispatchLocalRow } from '../services/db/localSchema';
 import { getCurrentPosition, watchPosition, type DevicePosition } from '../services/geolocation';
 import { loadSession } from '../services/session';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { computeNavigationState, type NavigationState } from '../utils/routeProgress';
+import { distanceMeters, formatDistance } from '../utils/geo';
 
 const STATUS_LABEL: Record<string, string> = {
   assigned: 'Assigned',
@@ -116,6 +123,10 @@ const AssignmentDetailPage: React.FC = () => {
   const [barangayId, setBarangayId] = useState<number | null>(null);
   const [route, setRoute] = useState<RouteData | null>(null);
   const [fetchingRoute, setFetchingRoute] = useState(false);
+  const [navigationActive, setNavigationActive] = useState(false);
+  const [navState, setNavState] = useState<NavigationState | null>(null);
+  /** Prevents the arrival prompt from firing more than once per navigation session. */
+  const arrivalPromptedRef = useRef(false);
   const mapRef = useRef<LiveMapCanvasHandle>(null);
 
   useEffect(() => {
@@ -128,7 +139,7 @@ const AssignmentDetailPage: React.FC = () => {
   // Hydrates the on-screen route from whatever is already cached
   // (a prior fetch this session, or one carried in from GET /dispatch's
   // own list refresh) so a Tanod reopening this screen sees the last
-  // known route immediately, without needing to tap "Get Route" again.
+  // known route immediately.
   useEffect(() => {
     if (!row?.route_json) {
       setRoute(null);
@@ -141,10 +152,16 @@ const AssignmentDetailPage: React.FC = () => {
     }
   }, [row?.route_json]);
 
+  // Auto-activate Navigation Mode if the assignment is already en_route
+  useEffect(() => {
+    if (row?.status === 'en_route') {
+      setNavigationActive(true);
+    }
+  }, [row?.status]);
+
   // Foreground-only self position, purely for the embedded map — same
   // "starts on mount, stops on unmount" contract geolocation.ts already
-  // documents for live-map.tsx (this screen never calls postGps(); GPS
-  // broadcast stays exclusively Live Map's job).
+  // documents for live-map.tsx.
   useEffect(() => {
     let stopWatch: (() => void) | undefined;
     let cancelled = false;
@@ -176,6 +193,62 @@ const AssignmentDetailPage: React.FC = () => {
       cancelled = true;
       stopWatch?.();
     };
+  }, []);
+
+  // Auto-fetch route once GPS position & server dispatch ID are ready,
+  // so the user never has to search for and manually tap "Get Route".
+  const autoFetchedRef = useRef(false);
+  useEffect(() => {
+    if (
+      !autoFetchedRef.current &&
+      row &&
+      row.server_dispatch_id !== null &&
+      position &&
+      (!route || row.route_status === 'stale')
+    ) {
+      autoFetchedRef.current = true;
+      void handleGetRoute();
+    }
+  }, [row?.server_dispatch_id, position, route, row?.route_status]);
+
+  // --- Navigation engine: compute NavigationState on every GPS update ---
+  useEffect(() => {
+    if (!navigationActive || !route || !position) {
+      setNavState(null);
+      return;
+    }
+    const state = computeNavigationState(position, route);
+    setNavState(state);
+
+    // Arrival detection: haptic feedback + note, once per session.
+    if (state?.hasArrived && !arrivalPromptedRef.current) {
+      arrivalPromptedRef.current = true;
+      tacticalFeedback.vibrate([80, 100, 80, 100, 80]);
+      // If the Tanod is still en_route, prompt to advance.
+      if (row?.status === 'en_route') {
+        setNote('You have arrived at the destination — tap "Mark Arrived" to update your status.');
+      } else {
+        setNote('You have arrived at the destination.');
+      }
+    }
+  }, [navigationActive, route, position]);
+
+  /** Toggle navigation on/off. */
+  const handleToggleNavigation = useCallback(() => {
+    setNavigationActive((prev) => {
+      if (prev) {
+        // Stopping navigation — clear state.
+        setNavState(null);
+        arrivalPromptedRef.current = false;
+      }
+      return !prev;
+    });
+  }, []);
+
+  /** Called when user manually pans the map during navigation — we just let auto-follow pause naturally. */
+  const handleUserPan = useCallback(() => {
+    // The LiveMapCanvas handles pausing auto-follow internally via userPannedRef.
+    // The recenter FAB (already in the map) reactivates it.
   }, []);
 
   async function handleAdvanceStatus() {
@@ -330,51 +403,118 @@ const AssignmentDetailPage: React.FC = () => {
             </div>
           ) : row ? (
             <>
-              {/* Tactical Briefing Card */}
-              <div className="card--tactical card--elevated" style={{ marginBottom: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span
-                    className={`status-pill ${
-                      row.priority === 'critical'
-                        ? 'status-pill--critical is-urgent'
-                        : row.priority === 'high'
-                          ? 'status-pill--pending'
-                          : 'status-pill--info'
-                    }`}
-                  >
-                    {row.priority} PRIORITY
-                  </span>
+              {/* Incident Header: Collapsed 1-line chip when navigating, standard card when in overview */}
+              {navigationActive ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px 12px',
+                    marginBottom: '8px',
+                    boxShadow: 'var(--shadow-card)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <span
+                      className={`status-pill ${
+                        row.priority === 'critical'
+                          ? 'status-pill--critical is-urgent'
+                          : row.priority === 'high'
+                            ? 'status-pill--pending'
+                            : 'status-pill--info'
+                      }`}
+                      style={{ fontSize: '0.68rem', padding: '2px 8px' }}
+                    >
+                      {row.priority}
+                    </span>
+                    <span
+                      style={{
+                        fontWeight: 800,
+                        fontSize: '0.88rem',
+                        color: 'var(--color-text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {row.redacted_incident_type
+                        ? row.redacted_incident_type.replace(/_/g, ' ').toUpperCase()
+                        : 'INCIDENT'}
+                    </span>
+                  </div>
 
-                  <span className="status-pill status-pill--info">
-                    {STATUS_LABEL[row.status] ?? row.status}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => setNavigationActive(false)}
+                      style={{
+                        background: 'none',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '999px',
+                        padding: '3px 8px',
+                        fontSize: '0.72rem',
+                        color: 'var(--color-text-secondary)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Overview
+                    </button>
+                  </div>
                 </div>
+              ) : (
+                /* Standard Briefing Card (Overview Mode) */
+                <div className="card--tactical card--elevated" style={{ marginBottom: '12px', padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span
+                      className={`status-pill ${
+                        row.priority === 'critical'
+                          ? 'status-pill--critical is-urgent'
+                          : row.priority === 'high'
+                            ? 'status-pill--pending'
+                            : 'status-pill--info'
+                      }`}
+                    >
+                      {row.priority} PRIORITY
+                    </span>
 
-                <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 800, margin: '0 0 6px', color: 'var(--color-text-primary)' }}>
-                  {row.redacted_incident_type
-                    ? row.redacted_incident_type.replace(/_/g, ' ').toUpperCase()
-                    : 'INCIDENT BRIEFING'}
-                </h2>
+                    <span className="status-pill status-pill--info">
+                      {STATUS_LABEL[row.status] ?? row.status}
+                    </span>
+                  </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: '8px' }}>
-                  <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)' }} />
-                  <span>
-                    {row.latitude !== null && row.longitude !== null
-                      ? `${row.latitude.toFixed(5)}, ${row.longitude.toFixed(5)}`
-                      : 'Coordinates not specified'}
-                  </span>
+                  <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 800, margin: '0 0 4px', color: 'var(--color-text-primary)' }}>
+                    {row.redacted_incident_type
+                      ? row.redacted_incident_type.replace(/_/g, ' ').toUpperCase()
+                      : 'INCIDENT BRIEFING'}
+                  </h2>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)' }} />
+                      <span>
+                        {position && focusTarget
+                          ? `${formatDistance(distanceMeters(position.latitude, position.longitude, focusTarget.latitude, focusTarget.longitude))} away`
+                          : row.latitude !== null && row.longitude !== null
+                            ? `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`
+                            : 'Target location set'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-text-tertiary)', fontSize: '0.72rem' }}>
+                      <span>{ROUTE_STATUS_LABEL[row.route_status] ?? row.route_status}</span>
+                      {stale && <span style={{ color: 'var(--color-warning)' }}>(Cached)</span>}
+                    </div>
+                  </div>
                 </div>
+              )}
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-tertiary)', fontSize: '0.75rem' }}>
-                  <IonIcon icon={navigateOutline} />
-                  <span>{ROUTE_STATUS_LABEL[row.route_status] ?? row.route_status}</span>
-                  {stale && <span style={{ color: 'var(--color-warning)' }}>(Cached)</span>}
-                </div>
-              </div>
-
-              {/* In-app destination map — replaces the old external geo: hand-off */}
+              {/* In-app destination map — Navigation & Guidance Canvas */}
               {focusTarget && (
-                <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '8px', position: 'relative' }}>
                   <LiveMapCanvas
                     ref={mapRef}
                     barangayId={barangayId}
@@ -383,95 +523,124 @@ const AssignmentDetailPage: React.FC = () => {
                     tanods={[]}
                     focusTarget={focusTarget}
                     routeGeometry={route?.geometry ?? null}
+                    navigationMode={navigationActive}
+                    routeProgress={navState ? {
+                      snappedPoint: navState.snappedPoint,
+                      routeBearing: navState.routeBearing,
+                      snappedSegmentIndex: navState.snappedSegmentIndex,
+                      progressFraction: navState.progressFraction,
+                    } : null}
+                    onUserPan={handleUserPan}
                   />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                    <button
-                      type="button"
-                      onClick={handleGetRoute}
-                      disabled={fetchingRoute || !position}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: '4px 0',
-                        color: fetchingRoute || !position ? 'var(--color-text-tertiary)' : 'var(--color-primary)',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                    >
-                      {fetchingRoute ? <IonSpinner name="dots" /> : <IonIcon icon={trailSignOutline} />}
-                      {fetchingRoute ? 'Getting route…' : 'Get Route'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleOpenExternalMaps}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: '4px 0',
-                        color: 'var(--color-text-tertiary)',
-                        fontSize: '0.72rem',
-                        textDecoration: 'underline',
-                      }}
-                    >
-                      Open in external navigation app
-                    </button>
-                  </div>
-                </div>
-              )}
 
-              {/* Turn-by-turn step list — only once a route has actually been fetched */}
-              {route && route.steps.length > 0 && (
-                <div className="card--elevated" style={{ padding: '14px 16px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
-                    <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
-                      TURN-BY-TURN ({route.mode === 'car' ? 'driving' : 'walking'})
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>
-                      {(route.distanceM / 1000).toFixed(1)} km · {Math.round(route.durationS / 60)} min
-                    </span>
-                  </div>
-                  <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {route.steps.map((step, idx) => (
-                      <li key={idx} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-primary)' }}>
-                        {step.instruction || (step.maneuver !== 'UNKNOWN' ? `Continue on ${step.maneuver}` : 'Continue')}
-                        {step.distanceM > 0 && (
-                          <span style={{ color: 'var(--color-text-tertiary)' }}> — {Math.round(step.distanceM)}m</span>
+                  {/* Navigation HUD banner — Slim, Top-Anchored (Google Maps style) */}
+                  {navigationActive && navState && route && (
+                    <ActiveStepCard
+                      navState={navState}
+                      steps={route.steps}
+                      mode={route.mode}
+                      onReroute={handleGetRoute}
+                    />
+                  )}
+
+                  {/* Secondary Quick Actions Toolbar */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', padding: '0 2px' }}>
+                    {!navigationActive ? (
+                      <button
+                        type="button"
+                        onClick={() => setNavigationActive(true)}
+                        className="nav-toggle-btn nav-toggle-btn--start"
+                        style={{ padding: '4px 12px', fontSize: '0.78rem' }}
+                      >
+                        <IonIcon icon={playOutline} style={{ marginRight: '4px' }} />
+                        Start Navigation
+                      </button>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {fetchingRoute && (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <IonSpinner name="dots" style={{ width: '14px', height: '14px' }} />
+                            Updating route…
+                          </span>
                         )}
-                      </li>
-                    ))}
-                  </ol>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={handleGetRoute}
+                        disabled={fetchingRoute || !position}
+                        title="Recalculate route"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: '4px',
+                          color: 'var(--color-primary)',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <IonIcon icon={refreshOutline} />
+                        Re-route
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleOpenExternalMaps}
+                        title="Open in external maps"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: '4px',
+                          color: 'var(--color-text-tertiary)',
+                          fontSize: '0.75rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <IonIcon icon={openOutline} />
+                        External
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              {/* 4-Stage Status Stepper */}
-              <div className="card--elevated" style={{ padding: '16px 8px', marginBottom: '16px' }}>
-                <div style={{ paddingLeft: '8px', marginBottom: '12px', fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
-                  DISPATCH WORKFLOW
-                </div>
-                <div className="stepper-container">
-                  {STAGES.map((stageName, idx) => {
-                    const isDone = idx < currentStageIndex;
-                    const isActive = idx === currentStageIndex;
-                    return (
-                      <div key={stageName} className="stepper-step">
-                        <div
-                          className={`stepper-node ${
-                            isDone ? 'stepper-node--completed' : isActive ? 'stepper-node--active' : ''
-                          }`}
-                        >
-                          {isDone ? <IonIcon icon={checkmarkCircleOutline} /> : idx + 1}
+              {/* 4-Stage Status Stepper — Hidden during active navigation to save vertical space */}
+              {!navigationActive && (
+                <div className="card--elevated" style={{ padding: '14px 8px', marginBottom: '14px' }}>
+                  <div style={{ paddingLeft: '8px', marginBottom: '10px', fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
+                    DISPATCH WORKFLOW
+                  </div>
+                  <div className="stepper-container" style={{ margin: '8px 0' }}>
+                    {STAGES.map((stageName, idx) => {
+                      const isDone = idx < currentStageIndex;
+                      const isActive = idx === currentStageIndex;
+                      return (
+                        <div key={stageName} className="stepper-step">
+                          <div
+                            className={`stepper-node ${
+                              isDone ? 'stepper-node--completed' : isActive ? 'stepper-node--active' : ''
+                            }`}
+                          >
+                            {isDone ? <IonIcon icon={checkmarkCircleOutline} /> : idx + 1}
+                          </div>
+                          <span className={`stepper-text ${isActive ? 'stepper-text--active' : ''}`}>
+                            {STATUS_LABEL[stageName]}
+                          </span>
                         </div>
-                        <span className={`stepper-text ${isActive ? 'stepper-text--active' : ''}`}>
-                          {STATUS_LABEL[stageName]}
-                        </span>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Notification / Sync Status */}
               {note && (
@@ -480,10 +649,10 @@ const AssignmentDetailPage: React.FC = () => {
                     background: 'var(--tint-info-bg)',
                     border: '1px solid color-mix(in srgb, var(--color-primary) 30%, transparent)',
                     borderRadius: 'var(--radius-md)',
-                    padding: '10px 14px',
+                    padding: '8px 12px',
                     color: 'var(--pill-info-text)',
                     fontSize: 'var(--font-size-sm)',
-                    marginBottom: '16px',
+                    marginBottom: '8px',
                   }}
                   role="status"
                 >
@@ -497,10 +666,10 @@ const AssignmentDetailPage: React.FC = () => {
                     background: 'var(--tint-warning-bg)',
                     border: '1px solid var(--color-warning)',
                     borderRadius: 'var(--radius-md)',
-                    padding: '10px 14px',
+                    padding: '8px 12px',
                     color: 'var(--pill-warning-text)',
                     fontSize: 'var(--font-size-sm)',
-                    marginBottom: '16px',
+                    marginBottom: '8px',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
@@ -512,31 +681,31 @@ const AssignmentDetailPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Sticky Action Controls */}
+              {/* Sticky Action Controls — Single prominent primary action */}
               <div className="sticky-action-bar">
-                <IonButton
-                  expand="block"
-                  fill="outline"
-                  disabled={row.latitude === null || row.longitude === null}
-                  onClick={handleNavigate}
-                  style={{ flex: 1, fontWeight: 700 }}
-                >
-                  <IonIcon icon={locateOutline} slot="start" />
-                  Center Map
-                </IonButton>
-
-                {next && (
+                {next ? (
                   <IonButton
                     expand="block"
                     disabled={updating}
                     onClick={handleAdvanceStatus}
                     style={{
-                      flex: 1.5,
-                      fontWeight: 700,
+                      flex: 1,
+                      fontWeight: 800,
+                      height: '46px',
                       '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
                     }}
                   >
                     {updating ? <IonSpinner name="dots" /> : NEXT_ACTION_LABEL[next]}
+                  </IonButton>
+                ) : (
+                  <IonButton
+                    expand="block"
+                    fill="outline"
+                    onClick={handleNavigate}
+                    style={{ flex: 1, fontWeight: 700 }}
+                  >
+                    <IonIcon icon={locateOutline} slot="start" />
+                    Center Map
                   </IonButton>
                 )}
               </div>

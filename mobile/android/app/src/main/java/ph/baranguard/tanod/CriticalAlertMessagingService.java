@@ -48,7 +48,14 @@ public class CriticalAlertMessagingService extends MessagingService {
             String body = notificationBlock != null && notificationBlock.getBody() != null
                 ? notificationBlock.getBody()
                 : "";
-            CriticalAlertNotifier.postFullScreenAlert(getApplicationContext(), title, body);
+            // notification_id travels in the same `data` payload
+            // NotificationDispatcher.php already sends (see its own
+            // attemptFcm() call) — threading it through here is what lets
+            // CriticalAlertActivity's "Open Baranguard" button hand off to
+            // criticalAlertStore.ts's real ack workflow instead of cold-
+            // launching with no context.
+            String notificationId = data.get("notification_id");
+            CriticalAlertNotifier.postFullScreenAlert(getApplicationContext(), title, body, notificationId, notificationType);
         }
         // Preserves the plugin's own default handling (foreground JS
         // listener via criticalAlertStore.ts, token refresh, non-critical

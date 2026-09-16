@@ -13,10 +13,25 @@
 
 import { registerPlugin } from '@capacitor/core';
 
+export interface PendingNativeAlert {
+  pending: true;
+  notificationId: string;
+  notificationType: string;
+  title: string;
+  body: string;
+}
+
 export interface FullScreenAlertPlugin {
   showTest(options: { title?: string; body?: string }): Promise<{ shown: boolean }>;
   /** True only when the native Firebase SDK actually initialized (REMAINING.md A4) — see the Java method's own doc. */
   isFirebaseAvailable(): Promise<{ available: boolean }>;
+  /**
+   * Reads and clears whatever `CriticalAlertActivity`'s "Open Baranguard"
+   * button stashed just before cold-launching the app (C4, 2026-09-15) —
+   * see `criticalAlertStore.ts`'s `checkForPendingNativeAlert()`, the only
+   * caller.
+   */
+  getPendingAlert(): Promise<PendingNativeAlert | { pending: false }>;
 }
 
 const FullScreenAlert = registerPlugin<FullScreenAlertPlugin>('FullScreenAlert');

@@ -185,6 +185,28 @@ final class NotificationService
     }
 
     /**
+     * Active admin and secretary users in the barangay who receive administrative alerts.
+     *
+     * @return int[]
+     */
+    public static function adminRecipients(PDO $pdo, int $barangayId, ?int $excludeUserId = null): array
+    {
+        $sql = "SELECT u.user_id
+                  FROM user u
+                 WHERE u.barangay_id = :barangay_id
+                   AND u.is_active = 1
+                   AND u.role IN ('admin', 'secretary')";
+        $params = ['barangay_id' => $barangayId];
+        if ($excludeUserId !== null) {
+            $sql .= " AND u.user_id <> :exclude_user_id";
+            $params['exclude_user_id'] = $excludeUserId;
+        }
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
      * §5's notification entity-integrity matrix. See the class doc for why
      * this lives in PHP and not in a CHECK constraint.
      */

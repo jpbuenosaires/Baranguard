@@ -10828,7 +10828,7 @@ entry documented (all in the other, unrelated uncommitted mobile UI
 pile), zero new ones. `npx vite build` + `gradlew assembleDebug`: both
 succeed.
 
-## 2026-09-13 (2) — Three real device bugs found and fixed, Tailscale decided for mobile connectivity, G1 built, B1/B2/B4 all closed (one of them found a live 500)
+## 2026-09-13 (2) — Three real device bugs found and fixed, a private mesh VPN decided for mobile connectivity, G1 built, B1/B2/B4 all closed (one of them found a live 500)
 
 **Disclosed gap before this entry starts:** the Mobile Improvement Plan's
 Phases 1-4 (background sync, GPS-on-intake + M14 My Reports, photo
@@ -10840,7 +10840,7 @@ this same session (`a72dbde`, `f3d550b`, `64c1319`, `b1951b1`, plus
 each commit's own message is the record for that work. This entry
 covers what happened AFTER those commits, testing them for real.
 
-### Architecture decision: mobile connectivity via Tailscale
+### Architecture decision: mobile connectivity via a private mesh VPN
 
 User-initiated discussion: the mobile app must reach the workstation
 whether a Tanod is on barangay WiFi or out on patrol on mobile data, and
@@ -10848,27 +10848,31 @@ the barangay's residential internet can't reliably be port-forwarded to
 (CGNAT is common on Philippine residential ISPs). Discussed three shapes
 — do-nothing (offline-capture, sync-on-WiFi-return only), a private VPN
 overlay, and a properly-secured public reverse proxy — and rejected the
-last one explicitly as structurally the same shape as the Cloudflare
-tunnel `AUDIT_2026-09-07.md` F1 already flagged as a live LAN-only
-violation. Chosen: **Tailscale**, a private WireGuard mesh, specifically
-because it never exposes the API on the open internet — only devices
-explicitly approved into one tailnet can reach it, over an authenticated
-encrypted tunnel. User already had Tailscale account + device approval
-set up by the time of the next step; this session confirmed the
-workstation joined (`laptop-b2rp6jkk`, `100.80.85.56`,
-`tail631c69.ts.net` MagicDNS suffix), confirmed port 8081 listens on
-`0.0.0.0`, confirmed the existing `Baranguard Backend 8081` firewall rule
-covers the `Any` profile (not just Private/Public), confirmed Windows
-classifies the Tailscale adapter as Private, and proved a `curl` from the
-workstation to its own Tailscale address round-trips a real authenticated
-request. `mobile/src/services/apiService.ts`'s `DEFAULT_API_BASE_URL`
-now points at the Tailscale MagicDNS name instead of a LAN IP guess.
+last one explicitly as structurally the same shape as the live LAN-only
+violation `AUDIT_2026-09-07.md` F1 already flagged. Chosen: a private
+WireGuard-based mesh VPN service, specifically because it never exposes
+the API on the open internet — only devices explicitly approved into the
+mesh can reach it, over an authenticated encrypted tunnel. User already
+had an account + device approval set up by the time of the next step;
+this session confirmed the workstation joined the mesh under a stable
+DNS name, confirmed port 8081 listens on `0.0.0.0`, confirmed the
+existing `Baranguard Backend 8081` firewall rule covers the `Any`
+profile (not just Private/Public), confirmed Windows classifies the mesh
+adapter as Private, and proved a `curl` from the workstation to its own
+mesh address round-trips a real authenticated request.
+`mobile/src/services/apiService.ts`'s `DEFAULT_API_BASE_URL` now points
+at the mesh's stable DNS name instead of a LAN IP guess.
 **Not device-verified end-to-end**: the test phone had a manual LAN-IP
 override saved in Profile from earlier testing, so a real login was never
-observed going out over the new Tailscale default specifically — only
-the backend's own Tailscale reachability was proven directly.
-`web/index.html`'s own pointer and `backend/.env`'s `CORS_ALLOWED_ORIGIN`
-were explicitly untouched — this decision was scoped to mobile only.
+observed going out over the new mesh default specifically — only the
+backend's own mesh reachability was proven directly. `web/index.html`'s
+own pointer and `backend/.env`'s `CORS_ALLOWED_ORIGIN` were explicitly
+untouched — this decision was scoped to mobile only.
+
+**Superseded 2026-09-15**: this mesh VPN was decommissioned — see that
+date's entry. The public-reverse-proxy exposure this decision explicitly
+rejected is now knowingly accepted, but ONLY for temporary manual testing
+via a Cloudflare Quick Tunnel, never as a standing production posture.
 
 ### Bug 1 — login crashed the app (native thread, JS try/catch could not help)
 
@@ -10982,7 +10986,7 @@ fully closing — isn't met since F1's web-dashboard half is still open).
 Updated REFERENCE.md/REMAINING.md/SPRINTS.md/HANDOFF.md instead to
 retire F4 (evidence upload, actually closed by an earlier commit this
 session that had never been reflected in the docs) and correct F1's
-framing to the Tailscale decision above.
+framing to the mesh-VPN decision above.
 
 Then, at the user's request, closed out three more `REMAINING.md` items
 in the same sitting:
@@ -11445,10 +11449,10 @@ themselves this session.
 Three more items, same session, working through the rest of the
 backlog artifact's "Moderate" tier:
 
-- **F1, web dashboard half — CLOSED.** Explicit user decision: same
-  Tailscale hostname mobile already uses
-  (`laptop-b2rp6jkk.tail631c69.ts.net`), not a separate LAN-only address —
-  one address for desk use and remote admin access alike.
+- **F1, web dashboard half — CLOSED** (reopened 2026-09-15, see that
+  entry). Explicit user decision: same mesh VPN hostname mobile already
+  uses, not a separate LAN-only address — one address for desk use and
+  remote admin access alike.
   `web/index.html`'s `BARANGUARD_API_BASE_URL` updated.
   `backend/public/index.php`'s CORS handling extended from a bare
   wildcard-or-single-value to a real comma-separated allow-list matched
@@ -12163,7 +12167,8 @@ path strings only outside `App.tsx`. No backend, no schema, no web.
   Probe 2: exactly one outer view, `/tabs/*`, `base: "/tabs"`; inner
   outlet `mountPath: "/tabs"`.
 - **Sign-out (driven over CDP: Profile › Sign Out › confirm):** logout
-  round-trip took ~4.3 s over Tailscale, then `/tabs/profile` → `/login`:
+  round-trip took ~4.3 s over the mesh VPN then in use, then
+  `/tabs/profile` → `/login`:
   login added +214 ms, revealed + shell hidden +260 ms, all six shell
   pages and the shell itself removed +509 ms. Probe 2: one outer view,
   `/login` with `childProps.path: "/login"` — a REAL login view, id
@@ -12209,3 +12214,554 @@ path strings only outside `App.tsx`. No backend, no schema, no web.
 Docs reconciled: `docs/REMAINING.md` (C6 closed, "0.5" reordered to C7
 alone), `docs/SPRINTS.md` (gate note), `docs/HANDOFF.md` (rewritten in
 place: NEWEST section, bite list #2, next steps).
+
+### 2026-09-15 (2) — C7's first deliberate investigation: does NOT reproduce on the Galaxy A21s
+
+User picked C7 from the four flagged backlog items (C7, the
+react-router major bump, rebuilding M12's SOS alert as a native
+Activity, A1's remaining device checks) as this session's cut, given
+`HANDOFF.md`'s own "give this its own session" note and the A21s
+already being connected over wireless adb.
+
+**Code review first** (before touching the device): re-read
+`PatrolLocationService.java`, `PatrolLocationPlugin.java`, and
+`AndroidManifest.xml`. Ruled out the obvious manifest/permission gaps —
+`android:foregroundServiceType="location"` is declared,
+`FOREGROUND_SERVICE_LOCATION` is present, `startForeground()` runs
+synchronously in `onCreate()`, and the service has no `android:process`
+(runs in the default process — a kill of it takes the whole app down,
+consistent with what's observed). Confirmed one real gap: **no code
+anywhere in `mobile/` requests battery-optimization exemption** — grepped
+`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `isIgnoringBatteryOptimizations`,
+`PowerManager` across both `mobile/android` and `mobile/src`, zero
+matches. Also confirmed via `grep -n "C7" backend/DEVLOG.md` that the 3
+prior mentions of C7 in this file carry no diagnostic detail beyond
+`REMAINING.md`'s own summary, and no repro/verify script for it exists
+anywhere in `mobile/` or `backend/scripts/`.
+
+**Live instrumented repro on the connected A21s** (`adb-RR8N803NX8E-...`,
+wireless adb, full path
+`C:\Users\JAYSON~1\AppData\Local\Android\Sdk\platform-tools\adb.exe` —
+see [[android-device-and-adb]]): checked `dumpsys deviceidle whitelist`
+(app not on it), `am get-standby-bucket` (10 = ACTIVE, app was in
+foreground), `dumpsys battery` (51%, not a low-battery-restriction
+scenario) before starting. Then two clean runs, each `adb logcat -c`
+first with a background `logcat -v threadtime` capture spanning the
+whole window, `dumpsys activity processes`/`dumpsys deviceidle` polled
+every 8s via a loop, deliberately run 3x past the historical ~50s
+failure mark rather than stopping at the first sign of survival:
+
+1. **Foreground** (screen on, `MainActivity` visible, on-duty toggled
+   via `adb shell input tap` on the real Home screen): 176s straight,
+   same pid (15125) the whole time, zero crash/kill signature.
+2. **Backgrounded + screen locked** (`adb shell input keyevent
+   KEYCODE_HOME` then `KEYCODE_POWER`, confirmed via `dumpsys power`
+   showing `mWakefulness=Dozing`) — the actual on-duty-patrol condition
+   a real Tanod would be in: **168s straight**, same pid, zero crash/kill
+   signature. `ActivityManager` killed several *other* idle apps in this
+   window (`Killing ... (adj 995): empty for 1800s`,
+   `ML_Kill: timeout 1800001`) but never touched `ph.baranguard.tanod`.
+   No `DEBUG`/`Fatal signal` tombstone line and no
+   `lmkd`/`lowmemorykiller` line in either capture, at all.
+
+**This is a real, informative negative result — not an inconclusive
+one.** `HANDOFF.md`'s own recommended-next-step note asked exactly this
+question: "the A21s is a second device to try to reproduce it on... if
+it does NOT die there, the OEM-policy theory gains weight." It didn't
+reproduce, on runs deliberately 3x longer than the failure window, under
+both the easy condition and the realistic locked/backgrounded one. A
+generic Android version bug, a native crash in Play Services location
+internals, or a low-memory kill would all be expected to be
+device-agnostic and should have shown up here too — none did. That
+shifts weight toward something specific to the Infinix X6840's
+Transsion/XOS build (the theory `REMAINING.md`'s original C7 entry
+already named), but this was **not independently confirmed** by
+reproducing on the Infinix itself this session — it wasn't connected.
+Leading hypothesis, not a proven cause.
+
+**Deliberately did NOT write the battery-exemption fix this session,**
+even though it's the obvious/standard mitigation for exactly this class
+of issue and the code-review gap is real. Writing it now, without ever
+having reproduced the failure on hardware that actually shows it, would
+mean shipping a fix with zero verification and effectively closing C7 on
+faith — the opposite of `SPRINTS.md`'s "prove it, don't claim it" rule.
+Asked the user how to proceed (options: ship the fix unverified and say
+so; get the Infinix connected this session and reproduce for real; stop
+and document the negative result) — user chose to stop and document.
+
+**C7 remains OPEN.** `docs/REMAINING.md`'s C7 entry rewritten with this
+finding (kept the original description, added the 2026-09-15 investigation
+as a dated addendum rather than replacing it). Next session needs the
+Infinix X6840 physically in hand to reproduce for real and get the
+tombstone/lmkd/ActivityManager evidence this session could only rule
+things out with, not confirm a cause for.
+
+### 2026-09-15 (3) — three-item batch: react-router audit closed out, C4's real gap fixed, A1 handed to the user
+
+Explicit multi-box exception (user asked for all three of the session's
+remaining flagged items at once — react-router bump, C4, A1 — after C7's
+own session; logged as such per `SPRINTS.md`'s "one item unless
+explicitly asked for more" rule and this file's own history of the same
+pattern). User is running every piece of real-device verification
+themselves this time (the react-router regression pass, C4's on-device
+confirmation, all six A1 checks) — this session's own scope was code plus
+research, verified only by `npx tsc --noEmit` and a device-free Gradle
+Java compile.
+
+**1. react-router v6→v8 — investigated, not bumped.** `npm audit` in
+`mobile/` confirms the two CVEs are real: GHSA-wrjc-x8rr-h8h6 (open
+redirect via backslash in `<Link>`/`useNavigate`, affects
+`react-router` `>=6.0.0 <7.18.0`) and GHSA-337j-9hxr-rhxg (SSR hydration
+constructor injection via `deserializeErrors()`, `>=6.4.0 <7.18.0`,
+CVSS 6.1); both fixed only at `react-router@8.3.1`/
+`react-router-dom@7.18.3`. Checked the npm registry directly rather than
+trusting `npm audit`'s own `fixAvailable` field (which oddly suggested
+`@ionic/react-router@8.8.19` — a version OLDER than the installed
+9.0.3, clearly the resolver picking a nearest range match, not a real
+recommendation): `npm view @ionic/react-router@latest peerDependencies`
+→ `{"react-router": ">=6.4.0 <7", "react-router-dom": ">=6.4.0 <7"}`,
+and this is unchanged even in the newest published build,
+`9.0.4-nightly.20260914` (one day old at the time of checking). There is
+currently no Ionic router release, stable or nightly, that tolerates
+react-router v7 or v8 — the literal ask is not achievable today without
+forcing a peer-incompatible install against `@ionic/react-router`'s own
+internals, which is exactly the `StackManager`/`IonRouterOutlet` code
+path C6 was just root-caused and fixed against, same day, earlier in
+this file.
+
+Also checked whether the two CVEs are even exploitable in this app's
+actual usage, since that changes how much the block above should matter:
+`grep -n "useNavigate\|navigate(\|<Link\b" mobile/src -r` — 8 files, every
+`navigate()` target is either a hardcoded literal path or an
+app-generated id passed through `encodeURIComponent` (`assignments.tsx:229`,
+`new-incident.tsx:266`), never attacker- or user-supplied text; zero
+`<Link>` usages anywhere (Ionic apps use `useNavigate`/`IonRouterLink`
+instead). No SSR exists anywhere in this stack — `mobile/` is a
+Capacitor WebView app, client-rendered only. Both CVEs need exactly the
+attack surface (attacker-controlled navigation targets; a server-render
+hydration step) this app doesn't have.
+
+**Decision: stay deferred, but with a documented risk basis now instead
+of just "conflicts with other work."** Writing this up rather than
+leaving the prior note's reasoning to go stale — `docs/REMAINING.md`'s
+existing npm-audit paragraph (2026-09-13) already deferred this bump for
+scheduling reasons; this session adds the "is it actually blocked, and
+does it actually matter" analysis that was missing. Revisit once Ionic
+publishes v7/v8 peer support — check `npm view @ionic/react-router
+peerDependencies` again before assuming that's still true.
+
+**2. C4 — the real gap was much smaller than the backlog wording said.**
+`docs/REMAINING.md`'s C4 bullet read "M12 is a JS overlay, not a native
+full-screen-intent activity... needs a native Android activity." Read
+the actual code before planning any work, per this project's own "read
+the real file before extending it" rule — and that wording was stale.
+`CriticalAlertActivity.java`/`CriticalAlertNotifier.java`/
+`CriticalAlertMessagingService.java` (Phase 4.2) already ARE a real,
+working native full-screen-intent Activity, wired through the manifest
+(`USE_FULL_SCREEN_INTENT`, `MainActivity.java`'s plugin registration).
+The actual gap: "Open Baranguard" cold-launched the app via a bare
+`getLaunchIntentForPackage()` with **zero extras**, so
+`criticalAlertStore.ts`'s real acknowledge UI (`POST
+/notifications/:id/ack`) never learned which alert to show — a Tanod
+who dismissed the lock-screen alert this way lost all context on the
+alert they'd just been woken for. The backend already sends the fields
+needed to fix this: `NotificationDispatcher.php:266-269` puts
+`notification_id`/`notification_type` in the same FCM `data` payload
+`CriticalAlertMessagingService.onMessageReceived()` already reads
+`notification_type` from — they just weren't threaded any further.
+
+**Fix — thread the two existing fields end to end, add nothing
+duplicative:**
+- `CriticalAlertNotifier.postFullScreenAlert()` gained two params
+  (`notificationId`, `notificationType`), put as extras onto the
+  existing `activityIntent` alongside `EXTRA_TITLE`/`EXTRA_BODY`.
+- `CriticalAlertMessagingService.onMessageReceived()` now reads
+  `data.get("notification_id")` next to its existing
+  `notification_type` read and passes both through.
+- `FullScreenAlertPlugin.showTest()` (the manual diagnostic path, since
+  no real Firebase project exists — A4) passes a fixed sentinel
+  (`"-1"`/`"sos"`) so it still exercises the same handoff code a real
+  push would use, rather than a special-cased branch.
+- `CriticalAlertActivity` gained `EXTRA_NOTIFICATION_ID`/
+  `EXTRA_NOTIFICATION_TYPE` constants, a small static `PendingAlert`
+  holder (`takePendingAlert()`, read-and-clear), and the "Open
+  Baranguard" click listener now stashes the alert there before
+  launching the app. Static, not `SharedPreferences` — deliberately: this
+  button can only ever be tapped while its own process is already alive
+  (a killed process would have to be started to run this Activity at
+  all), so the process about to host `MainActivity` next is the same one
+  holding the field; no persistence needed for a same-process handoff.
+- `FullScreenAlertPlugin` gained `getPendingAlert()`, a
+  `@PluginMethod` that reads-and-clears the static holder and resolves
+  `{pending:false}` when there's nothing to hand off.
+- `fullScreenAlert.ts` gained the matching TS signature.
+- `criticalAlertStore.ts` gained `checkForPendingNativeAlert()` — reuses
+  the exact same `parseAlert()` shape-guard the two existing push
+  listeners already use, rather than trusting the native payload
+  unchecked.
+- `App.tsx`'s mount effect now also calls `checkForPendingNativeAlert()`
+  right next to the existing `registerCriticalAlertListeners()` call,
+  same "once per cold start, don't miss it" reasoning already documented
+  there.
+
+`CriticalAlertActivity.java`'s own "deliberately THIN" design note is
+preserved — the acknowledge workflow itself still lives entirely in
+`CriticalAlertOverlay.tsx`; this change only makes sure it gets called
+with the right data, not a second implementation of it.
+
+Verified without a device: `npx tsc --noEmit` clean; `cd mobile/android
+&& JAVA_HOME=... ./gradlew compileDebugJavaWithJavac` → `BUILD
+SUCCESSFUL` (one pre-existing deprecation note on
+`CriticalAlertActivity.java`, unrelated to this change — present before
+it too). **Not device-verified** — same A1/A4 disclosure this file
+already carries for the rest of Phase 4.2; the user is doing that pass
+themselves, per A1's own "M12 on a real screen" check, now also covering
+whether "Open Baranguard" actually reaches the overlay with real
+content.
+
+`docs/REMAINING.md`'s stale C4 bullet corrected in place (kept as a
+struck-through note plus the real finding, matching this file's own
+established correction pattern rather than silently rewriting history).
+
+**3. A1 — no code, handed the user an exact checklist** (six items, each
+with the precise `adb`/file-path command rather than a restated
+description) instead of re-deriving it from scratch next session. See
+this session's own chat transcript / `docs/REMAINING.md`'s A1 entry for
+the six items; nothing here needed a source-code change since all six
+are pure device-behavior verification with zero existing test coverage
+(`mobile/src` has exactly two test files, neither touches SQLCipher,
+`passphrase.ts`, `evidenceCapture.ts`, or `syncScheduler.ts`).
+
+## 2026-09-15 (4) — Repo portability pass: private mesh VPN removed, Cloudflare Quick Tunnel documented as testing-only, stray debug artifacts cleaned up
+
+**Context**: user wants to develop this project from a second laptop and
+asked for a portability/onboarding plan. While scoping that, user
+separately instructed removing the private mesh VPN (Tailscale) entirely
+and switching to Cloudflare — found already running as `cloudflared
+tunnel --url http://localhost:8081` (a free Quick Tunnel: no account, no
+fixed hostname, a NEW random `*.trycloudflare.com` address every
+restart).
+
+**Flagged and confirmed with the user before proceeding**: a Quick
+Tunnel has no Cloudflare Access/Zero Trust policy in front of it, so it
+is reachable by anyone who obtains the URL — structurally the same
+"public reverse proxy" shape the 2026-09-13 mesh-VPN decision explicitly
+rejected (see that entry, now de-branded — below). User's explicit call:
+accept this, documented plainly as **testing-only, never a production
+access path**.
+
+**What changed**:
+- `mobile/src/services/apiService.ts` — `DEFAULT_API_BASE_URL` fallback
+  changed from the mesh VPN hostname to `http://localhost:8081/api/v1`;
+  doc comment rewritten. No change to the runtime-override mechanism
+  itself (`setApiBaseUrlOverride()`/Profile already existed and already
+  covers "the address changed").
+- `web/index.html` — previously hardcoded one fixed remote hostname with
+  zero override mechanism (unlike mobile). Added a `localStorage` +
+  `?api_base=` query-param override (query param wins, persists, then
+  strips itself from the URL bar), falling back to
+  `http://localhost:8081/api/v1`. This is a genuinely new capability,
+  not a straight substitution — the old hardcoded-URL pattern cannot
+  work at all for a URL that changes every `cloudflared` restart.
+- `backend/public/index.php`, `backend/services/routing/OrsClient.php`,
+  `backend/.env.example`, `backend/scripts/README-serving.md` — comments
+  updated to drop the mesh-VPN-specific wording, note the Cloudflare
+  Quick Tunnel testing option and its caveats.
+- `docs/REFERENCE.md` §1 rewritten: base architecture is LAN-only again;
+  `REMAINING.md` §F1 reopened (was closed 2026-09-13 via the mesh VPN);
+  `docs/HANDOFF.md` and `CLAUDE.md` updated to match.
+- This file's own 2026-09-13 (2) entry: **de-branded, not deleted** —
+  "Tailscale" and its specific hostname/MagicDNS details were replaced
+  with generic "private mesh VPN" language throughout (user asked to
+  scrub all mentions of the brand name everywhere, including history).
+  The reasoning and chronology are otherwise intact and still accurate;
+  only the vendor name and now-defunct hostname were removed, since
+  restating "Cloudflare was chosen" at that point in history would have
+  been factually false — a public tunnel was the alternative EXPLICITLY
+  REJECTED that day.
+- Removed 13 untracked stray debug-capture files from `mobile/`
+  (`.installed.apk`, `.phone-screenshot.png`, `.s1-8.png`, `.t1-4.png`,
+  all dated 2026-09-12/13) — leftovers from earlier device-testing
+  sessions, never committed to git.
+
+**Not done, and deliberately not done**: no Cloudflare Named Tunnel /
+Access policy was set up (would need a Cloudflare account + domain —
+user chose to accept the Quick Tunnel's exposure for testing instead).
+No persistent remote-access mechanism replaces the mesh VPN; F1 stays
+open until one exists or the requirement is dropped.
+
+**Next**: `docs/SETUP.md` (new) + `backend/scripts/bootstrap-db.sh` (new)
+for the actual portability request — a backend+web, local-only-dev setup
+guide for a second machine.
+
+## 2026-09-15 (5) — Reviewed the friend's eval-kit run, found+fixed a real checkpoint-corruption bug, split the "other 7 tasks" bat into 7 separate files
+
+**Reviewed the friend's fixtures** (checkpoints/results/logs for the 7
+non-redaction tasks, dropped in `D:\fixtures`): only **extraction**
+(350/350) and **sms-compose** (35/35) had actually finished; the other 5
+were mid-run (2-14% done) — expected, not broken, given an 8B model on
+CPU takes ~20-40s/record. Two real findings surfaced from reading the
+scorer source (`backend/services/eval/ChecklistScorer.php`) against the
+data, reported to the user, not yet acted on (waiting on a decision):
+- **sms-compose's 67.1%/"fails target" verdict is very likely wrong.**
+  `mentionsAllFacts()` requires an exact verbatim substring match of a
+  full "given_facts" phrase inside a message the model is simultaneously
+  told to keep under 300 chars — failed 35/35 (100%), which is a scorer
+  brittleness signature, not a 0%-ever competency signature. Separately,
+  `no_planted_pii_leaked` conflates two different `planted_pii` cases
+  under one field: every single "leak" in the log is a case where the
+  operator's OWN prompt said "contact the barangay hall at X" — the
+  model correctly relayed requested contact info and was penalized for
+  it. Every prompt where PII was a private bystander name (should stay
+  out) was correctly withheld, 0 leaks. Not fixed yet — needs the
+  dataset's `planted_pii` split into "must include" vs "must withhold"
+  and a softer/keyword-based `mentionsAllFacts`.
+- **summary drops placeholders far more than translation on the same
+  check** (`placeholderCountsMatch`): translation fails it 4.4% (2/45)
+  vs. summary 80% (16/20) on their in-progress samples. Same scorer, same
+  check, wildly different rates on the same underlying data — points at
+  a genuine task-specific issue (summarization compresses/drops the
+  sentence carrying a placeholder), not a scorer bug, worth attention
+  once the full run lands.
+- blotter-assist's tiny sample (21/350) showed 43% of drafts leaking a
+  real name/address — flagged as "watch this once it completes," not
+  concluded, given the sample size.
+
+**Two real bugs found and fixed** (user reported "sometimes when I exit
+the cmd it doesn't actually resume") in `backend/scripts/ai-evaluate.php`
+(source of truth; regenerated into `eval-kit/` via
+`php scripts/build-eval-kit.php` after):
+1. `writeCheckpoint()` was a single non-atomic `file_put_contents()`
+   straight to the real checkpoint path. Closing the console window (or
+   any other abrupt kill) DURING that write left a truncated, invalid
+   JSON file. Fixed: write to a `.tmp-<pid>` file, then `rename()` into
+   place — atomic on both POSIX and Windows/NTFS.
+2. The `--resume` loader treated a corrupt (unparseable) checkpoint
+   identically to "a checkpoint for a different dataset/task" — printed
+   a misleading message and silently started over, discarding whatever
+   had actually been scored. Fixed: distinguish "genuinely
+   empty/absent/null" from "non-empty but failed to parse" (the
+   corruption case), and back the corrupt file up
+   (`<path>.corrupt-<timestamp>`) instead of letting it just get
+   overwritten by the fresh run.
+   **Verified both fixes directly**: ran a real 2-record dataset through
+   `ai-evaluate.php --resume`, confirmed a clean checkpoint is written;
+   truncated it mid-file to simulate a kill; reran with `--resume` and
+   confirmed the new warning fires, the corrupt file is preserved as
+   `.checkpoint.json.corrupt-20260915-070105`, and the run proceeds
+   correctly on a fresh checkpoint rather than silently misreporting.
+
+**Split `eval-kit/run-evaluation-other-tasks.bat` into 7 separate files**
+(user asked directly, on top of the resume-bug report — being stuck
+partway through a 5-tasks-in-one-window script is exactly what made the
+corruption bug painful to work around): `run-evaluation-summary.bat`,
+`-extraction.bat`, `-classification.bat`, `-blotter-assist.bat`,
+`-translation.bat`, `-sms-compose.bat`, `-threat-analysis.bat`. Each is
+fully self-contained (same PHP/.env/Ollama checks as the original,
+copied per file since the `.bat` files aren't part of
+`build-eval-kit.php`'s generated set) and runs/resumes exactly one task,
+so closing one window never affects the other six. The combined
+`run-evaluation-other-tasks.bat` is deleted; `README-FOR-FRIEND.md`
+updated to list the 7 files and their manual-command equivalents.
+Verified: all 7 files' task names/flags checked programmatically against
+the original combined file's per-task settings (batch-size/rest-seconds
+match); the exact `php scripts\ai-evaluate.php --task=classification
+--engine=model --limit=1 --dry-run --verbose` command line one of the
+new `.bat` files runs was executed directly against the real local
+Ollama + model — connected and began generating with no CLI/argument
+error (didn't wait out the full ~1-3 min CPU generation, not needed to
+prove the command itself is correct).
+
+Not done: the sms-compose scorer/dataset fix (needs the user's sign-off
+on the fix shape) and writing anything to `ai_evaluation_run` for this
+batch — nothing here is a trustworthy, complete result yet except
+extraction.
+
+**Follow-up same day: found the REAL cause of "sometimes it doesn't
+resume"** — user pushed back after the checkpoint-corruption fix above,
+and it turned out to be the smaller of two bugs. The actual dominant
+cause: every `.bat` file's own "quick smoke test" step (`--limit=1` or
+`--limit=3`, `--dry-run`, no `--resume`) calls `ai-evaluate.php` against
+the SAME checkpoint path the real run uses (checkpoint path depends only
+on dataset/task/engine/model, never on whether `--resume` was passed).
+Without `--resume`, `$checkpointRecords` starts empty regardless of what
+was already on disk, so the smoke test's own `writeCheckpoint()` call
+overwrites the entire file down to just its own 1-3 records — silently
+discarding e.g. 200 real records of progress, EVERY single time a `.bat`
+file is reopened, before the real resumed run even starts. This affected
+`run-evaluation.bat` too (its smoke test also omitted `--resume`), not
+just the 7 other-task files.
+
+**Reproduced and fixed for real**: built a 5-record disposable dataset,
+ran a real `--resume --save-results` pass to get 5 checkpointed records,
+then ran the OLD-style smoke test command (`--limit=1 --dry-run
+--verbose`, no `--resume`) against it — checkpoint dropped from 5 records
+to 1, confirming the bug exactly as diagnosed. Restored the 5-record
+checkpoint, added `--resume` to the smoke-test invocation, reran it —
+all 5 records survived this time.
+
+**Fix applied to all 8 `.bat` files** (`run-evaluation.bat` + the 7
+per-task files from the split above):
+1. Every smoke-test `php` call now includes `--resume` — the smoke test
+   remains meaningful on a genuinely fresh run and becomes a fast,
+   non-destructive no-op confirmation on every later reopen.
+2. **New, addressing the user's explicit ask** ("when I exit the cmd I
+   want it to auto continue the next time I open the bat file"): each
+   file now checks `if exist
+   "fixtures\<dataset>.<task>.model.*.checkpoint.json"` right after the
+   Ollama check. If a checkpoint already exists, it skips the smoke test
+   AND the "ready to run — press a key" confirmation entirely and jumps
+   straight to the real `--resume` run via a `:run_full` label — so
+   reopening a `.bat` after closing it mid-run is now fully unattended:
+   double-click, and it continues on its own with no keypress needed. A
+   genuinely first-ever run (no checkpoint yet) still gets the smoke
+   test and the "this can take hours" confirmation pause, which is
+   useful precisely because it's the first time.
+
+## 2026-09-15 (6) — Fixed the sms-compose `mentions_given_facts` scorer bug; corrected an earlier wrong claim about `no_planted_pii_leaked`
+
+User asked to fix both sms-compose scorer issues flagged earlier today.
+Before touching code, went back to `AiPrompts::smsCompose()`'s actual
+prompt text (hadn't been read directly when the earlier claim was made)
+and found the earlier "no_planted_pii_leaked conflates two cases" claim
+was **wrong** — the prompt is explicit: "Do not include any personal
+name, house address, or phone number, **even if the request below
+contains one**." That's a deliberate blanket rule, not a bug in the
+check. The high leak rate on PHONE/ADDRESS decoys (vs. 0% on NAME
+decoys) is real signal: the model reliably withholds a bystander's name
+but unreliably withholds a phone/address when the operator's own prompt
+phrases it as "call/contact X for concerns" — left unchanged, and
+corrected in this entry rather than quietly dropped.
+
+**`mentions_given_facts` was a real bug, now fixed**
+(`backend/services/eval/ChecklistScorer.php`): `mentionsAllFacts()`
+required an exact-phrase substring match of a `given_facts` string like
+"this Friday, 8AM to 3PM" — while the same prompt caps the message at
+300 characters, so any real paraphrase/abbreviation to fit ("Fri
+8AM-3PM") failed a check that was actually fine to pass. Fixed: try the
+exact phrase first (fast path, still counts), then fall back to
+"majority of the fact's significant (3+ letter, non-stopword) words
+appear somewhere in the output" — still catches an outright dropped or
+fabricated fact (no matching words at all) without demanding the
+model's exact wording.
+
+**Verified, not just asserted**: added 3 new cases to
+`backend/scripts/verify-eval-scorers.php` using the dataset's own real
+wording (`the barangay health center` / `this Friday, 8AM to 3PM`,
+`Purok Bagong Silang and Purok Masagana` / `tomorrow, 9AM to 12NN`) — a
+plausibly-abbreviated compliant SMS now passes, and a message with none
+of a fact's key words still fails. Full suite: 36/36 passed (was 33).
+Regenerated `eval-kit/` via `build-eval-kit.php`; `php -l` clean on both
+copies.
+
+**Operational note for next time this task runs**: the sms-compose
+checkpoint the friend already produced (35/35, scored under the OLD
+buggy check) will NOT get corrected automatically — `--resume` matches
+by record id only, with no way to know the scoring logic changed
+underneath it, so re-running would just replay the stale per-record
+results. That checkpoint file
+(`eval-sms-prompts-v1.sms-compose.model.<slug>.checkpoint.json`, wherever
+the friend's copy lives) needs to be deleted before the next
+`run-evaluation-sms-compose.bat` run for the fix to actually take effect
+on real numbers.
+
+## 2026-09-16 — Mobile live-reload dev workflow, a real SQLite connection-reuse bug found via it, and FCM finally wired up to a real Firebase project
+
+**Live-reload for UI iteration** (user is "constantly editing the UI",
+wanted phone-side changes without a rebuild/reinstall cycle each time):
+`mobile/capacitor.config.ts`'s `server.url` is now opt-in via
+`CAP_LIVE_RELOAD=1 npx cap sync android` — unset, `cap sync` behaves
+exactly as before (bundled `dist/`), so a normal build can never
+accidentally ship pointed at a dev server. Routed over `adb reverse
+tcp:5173 tcp:5173` (USB) rather than the phone's WiFi/LAN IP, since the
+device is already on USB debug and this sidesteps Windows Firewall
+entirely. Real friction found doing this: the USB link kept
+power-cycling, silently dropping the `adb reverse` mapping and producing
+a misleading `net::ERR_CONNECTION_REFUSED` on the WebView with no
+obvious cause — worked around with a background poll-and-reapply loop
+rather than fixing it manually each time.
+
+**Real bug found through live-reload, but real regardless of live-reload**
+(`mobile/src/services/db/localDatabase.ts`): `openLocalDatabase()`
+guarded against re-opening using only a module-level JS variable
+(`database`), on the assumption that variable lives exactly as long as
+the app process. A live-reload WebView reload resets that JS state
+without restarting the native process — the native
+`@capacitor-community/sqlite` plugin's own connection registry survives
+the reload, so `createConnection()` threw `"Connection baranguard
+already exists"`. Every screen that touches the local cache (dispatch,
+incident, gps, evidence, offline-queue repositories all funnel through
+this one function) surfaced that as the SAME generic "Could not refresh
+from the workstation" message a real network failure would produce —
+looked exactly like a connectivity bug, wasn't one. Fixed by checking
+`connection.isConnection()` first and reusing the connection via
+`retrieveConnection()` when the native side already has one open, and
+`database.isDBOpen()` before calling `.open()` again. Confirmed fixed on
+the real device via `adb logcat` (the exact error line stopped
+appearing, dispatch list loaded).
+
+**Found, not yet fixed**: while diagnosing why a dispatch list kept
+showing "Cached data" despite the header's LIVE badge staying green —
+confirmed as *working as designed*, not a bug (the LIVE badge
+deliberately probes the no-auth `/barangays` endpoint specifically so it
+can't be confused by session expiry, see `apiService.ts`'s
+`checkHealth()` comment; "Cached data" is `dispatchRepository.ts`'s
+genuine 10-minute freshness window) — found that the actual refresh
+attempt was failing with a flat `401` (JWT's `JWT_EXPIRES_IN_MINUTES`
+default of 15 minutes had elapsed with no other activity keeping the
+sliding-renewal token alive), and that 401 was being swallowed into the
+same generic "workstation unreachable" wording. Same pattern repeats
+across `assignment-detail.tsx` (×2), `my-shifts.tsx`, `home.tsx` (×3),
+`live-map.tsx` (×2) — none of them, nor anything in `apiService.ts`,
+special-case a 401 to prompt re-login. Net effect: a Tanod whose session
+silently expires from inactivity is never told to log back in and just
+sees misleading connectivity errors indefinitely. Proposed fix (not yet
+built): centralize the 401 check once inside `request()` in
+`apiService.ts`, clear the stored session, redirect to `/login` with a
+real "session expired" message, rather than patching every screen's
+catch block separately.
+
+**Real-time dispatch delivery — confirmed already designed for, not
+missing.** Checking why the Dispatches screen only refreshes on mount
+surfaced that `DispatchController::create()` already fires a real
+notification through `NotificationService`/`NotificationDispatcher` the
+moment a dispatch is created, and `criticalAlertStore.ts` already has a
+`'dispatch'` critical-alert type wired to a full-screen overlay
+regardless of which screen a Tanod is on. It was never wired to real
+credentials — `FcmClient.php`'s own doc comment already said as much
+("NEVER CALLED WITH REAL CREDENTIALS AS OF THIS COMMIT"). See FCM
+section below for what changed. Separately, still-open gap even once
+push works: the critical-alert overlay renders the push payload's own
+content but never refreshes the Dispatches list's local cache, so the
+list itself would stay stale after an acknowledged alert until manually
+reloaded — not fixed yet.
+
+**FCM finally wired to a real Firebase project** (user created it,
+project id `baranguard-acb27`, Android app registered under the real
+package name `ph.baranguard.tanod`): `google-services.json` placed at
+`mobile/android/app/google-services.json` (gitignored —
+`mobile/.gitignore` gained an entry for it; lower-sensitivity than the
+service-account key but still project-identifying, no reason to commit
+it) — confirmed the package name inside it matches before placing.
+Verified `mobile/android/build.gradle`'s `com.google.gms:google-services`
+plugin is already conditionally applied on that file's presence, so no
+Gradle file edits were needed; `./gradlew :app:help` after placing it
+came back clean (plugin now actually activates). Service-account key
+(`baranguard-acb27-firebase-adminsdk-...json`, downloaded from Firebase
+Console → Project settings → Service accounts → Generate new private
+key) moved to `C:\Users\Jayson Buenosaires\baranguard-secrets\` —
+deliberately outside the repo, per `.env.example`'s own instruction
+never to commit it — and `backend/.env`'s `FCM_SERVICE_ACCOUNT_PATH` set
+to that path. Verified end-to-end through the same `env.php` loader the
+live Apache process uses (not just eyeballing the value): resolves to a
+readable file whose own `project_id` matches the one from
+`google-services.json` (`baranguard-acb27`), so `GET /system/health`
+should now report `fcm: healthy` rather than `not_configured`.
+
+**Not yet done**: the currently-installed APK predates
+`google-services.json` (it's compiled into the native build, live-reload
+can't touch it), so a real rebuild+reinstall from Android Studio is
+still needed before device-side FCM registration can actually succeed,
+and a genuine end-to-end push test (create a dispatch, confirm the
+critical-alert overlay actually fires from a real push) hasn't happened
+yet — both pending the user's next rebuild.

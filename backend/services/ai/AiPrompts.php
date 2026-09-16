@@ -268,8 +268,8 @@ final class AiPrompts
         Rules you must follow:
         - Write at most 300 characters. SMS messages are billed per segment, so be brief.
         - Write in the mix of Filipino and English that barangay officials normally use with residents. Keep it plain and direct.
-        - Say what is happening, what residents should do, and where to get help if that applies.
-        - Do not include any personal name, house address, or phone number, even if the request below contains one.
+        - Say what is happening and what residents should do.
+        - If residents need to get help or ask questions, tell them generically where — "sa barangay hall", "sa barangay office" — never by repeating a specific address, phone number, or person's name. This applies even when the request below spells one out: describe the destination generically and leave the exact contact details for barangay staff to add themselves before sending.
         - Do not invent details such as times, place names, or casualty numbers that the request does not give you.
         - Do not add a signature, a sender name, or a disclaimer.
 
@@ -277,6 +277,8 @@ final class AiPrompts
 
         What the official wants to tell residents:
         {$operatorPrompt}
+
+        Reminder: never output a literal phone number, street address, or person's name, even one given above — use a generic phrase like "sa barangay hall" instead.
         PROMPT;
     }
 

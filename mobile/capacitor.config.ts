@@ -31,6 +31,17 @@ const config: CapacitorConfig = {
   // F1's still-open API base URL decision), switch this back to 'https'.
   server: {
     androidScheme: 'http',
+    // Opt-in live reload for UI iteration: when CAP_LIVE_RELOAD=1, the
+    // WebView loads straight from the Vite dev server instead of the
+    // bundled dist/ — UI edits hot-reload on the device with no
+    // rebuild/reinstall cycle. Reached over `adb reverse tcp:5173
+    // tcp:5173` (USB), not LAN, so it works regardless of WiFi/firewall.
+    // Gated behind the env var so a plain `npx cap sync android` (no var
+    // set) always produces the normal bundled build — never silently
+    // ships a build wired to a dev server.
+    ...(process.env.CAP_LIVE_RELOAD === '1'
+      ? { url: 'http://localhost:5173', cleartext: true }
+      : {}),
   },
   plugins: {
     CapacitorSQLite: {

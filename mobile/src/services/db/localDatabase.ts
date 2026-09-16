@@ -87,14 +87,28 @@ export async function openLocalDatabase(): Promise<SQLiteDBConnection> {
     await connection.setEncryptionSecret(secret);
   }
 
-  database = await connection.createConnection(
-    DATABASE_NAME,
-    /* encrypted */ true,
-    /* mode */ 'secret',
-    LOCAL_SCHEMA_VERSION,
-    /* readonly */ false
-  );
-  await database.open();
+  // A dev live-reload page navigation resets this module's JS state
+  // (`database`/`connection` above) without restarting the native app
+  // process — the native plugin's own connection registry survives that
+  // reload, so a plain createConnection() throws "Connection ... already
+  // exists" for a connection this fresh JS context never made. Retrieve
+  // the still-open native connection instead of failing every caller
+  // (dispatch/incident/gps/evidence/offline-queue repositories all funnel
+  // through here) with what looks like a workstation-connectivity error.
+  const alreadyRegistered = (await connection.isConnection(DATABASE_NAME, false)).result === true;
+  database = alreadyRegistered
+    ? await connection.retrieveConnection(DATABASE_NAME, false)
+    : await connection.createConnection(
+        DATABASE_NAME,
+        /* encrypted */ true,
+        /* mode */ 'secret',
+        LOCAL_SCHEMA_VERSION,
+        /* readonly */ false
+      );
+  const isOpen = (await database.isDBOpen()).result === true;
+  if (!isOpen) {
+    await database.open();
+  }
   await migrateLocalDatabase(database);
   return database;
 }

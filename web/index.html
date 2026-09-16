@@ -138,20 +138,47 @@
     // The API needs its OWN Apache DocumentRoot (backend/public), not a
     // htdocs subfolder — the front controller matches REQUEST_URI against
     // exactly "/api/v1", so a subfolder mount 404s. Served on its own
-    // port instead: see web/README-serving.md ("Option C").
+    // port instead: see backend/scripts/README-serving.md.
     //
-    // F1's web half, resolved 2026-09-13: this now points at the
-    // workstation's Tailscale MagicDNS name — the same tailnet mobile
-    // already joined (see mobile/src/services/apiService.ts's own note),
-    // chosen so Admin/Secretary/PB reach the API identically whether
-    // sitting at the barangay hall or connecting remotely, without ever
-    // exposing the API on the open internet. Works the same way whether
-    // this PAGE itself was loaded via `http://localhost/baranguard/web/`
-    // or via this same Tailscale hostname — either way, the browser's own
-    // Origin only matters for backend/.env's CORS_ALLOWED_ORIGIN list,
-    // which now allows both. Still disposable baranguard_uiseed DB, not
-    // the real baranguard database.
-    window.BARANGUARD_API_BASE_URL = 'http://laptop-b2rp6jkk.tail631c69.ts.net:8081/api/v1';
+    // A private-mesh VPN briefly stood in here (2026-09-13 -> 2026-09-15,
+    // see DEVLOG.md for both entries) so this could point at one fixed
+    // remote hostname. It's gone, and nothing replaces it as a persistent
+    // remote address — the base architecture (§1) is plain LAN
+    // reachability, which is what LOCAL_DEFAULT below assumes. Instead of
+    // a single hardcoded value (wrong the moment you're not on the same
+    // machine/network as whoever wrote it), this reads a runtime override
+    // first, mirroring mobile's own Profile override
+    // (apiService.ts's setApiBaseUrlOverride()):
+    //   1. localStorage, if a value was saved on a previous visit.
+    //   2. A `?api_base=` query-string param — set once, it's saved to
+    //      localStorage and stripped from the URL bar. Useful for sharing
+    //      a one-click link when the address changes (e.g. a fresh
+    //      Cloudflare Quick Tunnel run: `cloudflared tunnel --url
+    //      http://localhost:8081` prints a NEW random hostname every
+    //      time it starts, with no Cloudflare-side auth in front of it —
+    //      that's fine for handing a temporary link to a specific test
+    //      device, but it is NOT a production access path; see
+    //      DEVLOG.md 2026-09-15).
+    //   3. LOCAL_DEFAULT, for the common case of opening this page on the
+    //      same machine or LAN as the API.
+    const LOCAL_DEFAULT = 'http://localhost:8081/api/v1';
+    const STORAGE_KEY = 'baranguard.apiBaseUrlOverride';
+    (function resolveApiBaseUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const fromQuery = params.get('api_base');
+      if (fromQuery) {
+        try { window.localStorage.setItem(STORAGE_KEY, fromQuery); } catch (e) { /* best-effort */ }
+        params.delete('api_base');
+        const cleanQuery = params.toString();
+        const cleanUrl = window.location.pathname + (cleanQuery ? '?' + cleanQuery : '') + window.location.hash;
+        window.history.replaceState({}, '', cleanUrl);
+        window.BARANGUARD_API_BASE_URL = fromQuery;
+        return;
+      }
+      let stored = null;
+      try { stored = window.localStorage.getItem(STORAGE_KEY); } catch (e) { /* private mode etc. */ }
+      window.BARANGUARD_API_BASE_URL = stored || LOCAL_DEFAULT;
+    })();
   </script>
 </head>
 <body>

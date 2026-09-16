@@ -31,13 +31,15 @@ final class CriticalAlertNotifier {
 
     private CriticalAlertNotifier() {}
 
-    static void postFullScreenAlert(Context context, String title, String body) {
+    static void postFullScreenAlert(Context context, String title, String body, String notificationId, String notificationType) {
         createChannelIfNeeded(context);
 
         Intent activityIntent = new Intent(context, CriticalAlertActivity.class);
         activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         activityIntent.putExtra(CriticalAlertActivity.EXTRA_TITLE, title);
         activityIntent.putExtra(CriticalAlertActivity.EXTRA_BODY, body);
+        activityIntent.putExtra(CriticalAlertActivity.EXTRA_NOTIFICATION_ID, notificationId);
+        activityIntent.putExtra(CriticalAlertActivity.EXTRA_NOTIFICATION_TYPE, notificationType);
 
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_IMMUTABLE : 0);
         PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(context, 0, activityIntent, flags);

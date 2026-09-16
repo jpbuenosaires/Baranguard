@@ -23,10 +23,39 @@ public class FullScreenAlertPlugin extends Plugin {
     public void showTest(PluginCall call) {
         String title = call.getString("title", "Test Critical Alert");
         String body = call.getString("body", "This is a test of the full-screen emergency alert.");
-        CriticalAlertNotifier.postFullScreenAlert(getContext(), title, body);
+        // Sentinel id/type — this path has no real notification row behind
+        // it, but criticalAlertStore.ts's parseAlert() still needs both
+        // fields present to accept the handoff, so the manual diagnostic
+        // exercises the exact same handoff code the real FCM path uses.
+        CriticalAlertNotifier.postFullScreenAlert(getContext(), title, body, "-1", "sos");
 
         JSObject result = new JSObject();
         result.put("shown", true);
+        call.resolve(result);
+    }
+
+    /**
+     * Reads and clears whatever `CriticalAlertActivity`'s "Open Baranguard"
+     * button stashed just before launching this Activity — the in-process
+     * handoff that lets `criticalAlertStore.ts` show/ack the SAME alert the
+     * native screen just displayed, instead of losing context on cold
+     * launch. Resolves `{pending: false}` when there's nothing to hand off
+     * (the ordinary app-launch case). Called once from `App.tsx`'s mount
+     * effect via `checkForPendingNativeAlert()`.
+     */
+    @PluginMethod
+    public void getPendingAlert(PluginCall call) {
+        CriticalAlertActivity.PendingAlert pending = CriticalAlertActivity.takePendingAlert();
+        JSObject result = new JSObject();
+        if (pending == null) {
+            result.put("pending", false);
+        } else {
+            result.put("pending", true);
+            result.put("notificationId", pending.notificationId);
+            result.put("notificationType", pending.notificationType);
+            result.put("title", pending.title);
+            result.put("body", pending.body);
+        }
         call.resolve(result);
     }
 

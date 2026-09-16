@@ -242,15 +242,44 @@ export function LiveMap(container, options = {}) {
     }
   }
 
-  function setSosMarkers(sosItems) {
+  function setSosMarkers(sosItems, onResolve) {
     sosMarkers = clearMarkers(sosMarkers);
     for (const item of sosItems) {
+      if (item.latitude == null || item.longitude == null) continue;
       const el = document.createElement('div');
       el.className = 'live-map__marker live-map__marker--sos';
       el.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`;
-      el.title = `SOS Alert — ${item.status || 'Active'}`;
-      const marker = new maplibregl.Marker({ element: el })
+      el.title = `SOS Alert #${item.sosId} — ${item.status || 'Active'}`;
+
+      const popupContent = document.createElement('div');
+      popupContent.className = 'live-map__incident-popup';
+      const heading = document.createElement('div');
+      heading.className = 'live-map__incident-popup-heading';
+      heading.textContent = `SOS Alert #${item.sosId}${item.fullName ? ' (' + item.fullName + ')' : ''}`;
+      const statusPill = document.createElement('span');
+      statusPill.className = 'status-pill status-pill--critical';
+      statusPill.textContent = (item.status || 'active').toUpperCase();
+      popupContent.append(heading, statusPill);
+
+      let marker;
+      if (onResolve && item.status !== 'resolved') {
+        const resolveBtn = document.createElement('button');
+        resolveBtn.type = 'button';
+        resolveBtn.className = 'primary';
+        resolveBtn.style.marginTop = '6px';
+        resolveBtn.style.width = '100%';
+        resolveBtn.textContent = 'Resolve SOS';
+        resolveBtn.addEventListener('click', () => {
+          marker?.getPopup()?.remove();
+          onResolve(item.sosId);
+        });
+        popupContent.appendChild(resolveBtn);
+      }
+
+      const popup = new maplibregl.Popup({ offset: 12 }).setDOMContent(popupContent);
+      marker = new maplibregl.Marker({ element: el })
         .setLngLat([item.longitude, item.latitude])
+        .setPopup(popup)
         .addTo(map);
       sosMarkers.push(marker);
     }

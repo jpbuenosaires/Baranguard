@@ -29,3 +29,7 @@ yarn-error.log*
 
 # Optional eslint cache
 .eslintcache
+
+# Firebase config — identifies the real project; keep out of the repo
+# (backend/.env.example makes the same call for the service-account key).
+android/app/google-services.json

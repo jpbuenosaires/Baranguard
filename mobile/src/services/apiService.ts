@@ -37,31 +37,30 @@ import {
 
 /**
  * The workstation's API base URL. §2 Rule 7: locally hosted, no PUBLIC
- * internet exposure — that still holds here, because this now points at
- * the workstation's Tailscale (WireGuard-based private mesh) address
- * rather than its bare LAN IP. Decided 2026-09-13: a Tanod's phone needs
- * to reach the workstation whether it's on barangay WiFi or out on patrol
- * on mobile data, and the barangay's residential internet connection
- * cannot reliably be port-forwarded to (common CGNAT on Philippine
- * residential ISPs). Tailscale solves that without ever exposing the API
- * on the open internet: only devices explicitly approved into this one
- * tailnet can reach it at all, over an authenticated, encrypted tunnel —
- * a stronger boundary than "on the same WiFi" was, not a weaker one.
- * `laptop-b2rp6jkk.tail631c69.ts.net` is this workstation's MagicDNS name,
- * which stays stable even if its raw `100.x.y.z` Tailscale IP is ever
- * reassigned — deliberately used here instead of the raw IP for that
- * reason. This is still not a build-time constant baked in for everyone:
- * `VITE_API_BASE_URL` sets the BUILD-time default; `setApiBaseUrlOverride()`
- * below (Mobile Improvement Plan Phase 1.3) lets a Tanod correct it AT
- * RUNTIME from Profile — e.g. a different workstation entirely, or a
- * plain LAN address for local-only testing without Tailscale in the way.
+ * internet exposure — the base architecture is plain LAN reachability
+ * (a Tanod's phone on the same barangay WiFi as the workstation), which
+ * is what this build-time default assumes.
+ *
+ * A private-mesh VPN (approved-device-only, never exposing the API on
+ * the open internet) was adopted 2026-09-13 for the case where a Tanod
+ * is out on patrol on mobile data rather than barangay WiFi, then
+ * decommissioned 2026-09-15 — see DEVLOG.md for both entries. No
+ * equivalent always-on remote-access mechanism replaces it today. For
+ * temporary remote testing only, a Cloudflare Quick Tunnel
+ * (`cloudflared tunnel --url http://localhost:8081`) can front the API —
+ * its hostname is random and changes every run, is NOT gated by any
+ * Cloudflare-side authentication, and must never be treated as a
+ * production access path (see DEVLOG.md 2026-09-15). Whatever address is
+ * current goes through `setApiBaseUrlOverride()` below at RUNTIME from
+ * Profile, never hardcoded here for everyone: `VITE_API_BASE_URL` sets
+ * only the BUILD-time default (Mobile Improvement Plan Phase 1.3).
  * Deliberately NOT built: mDNS/subnet-broadcast auto-discovery — a manual
  * override already covers "the address changed," and client-isolated
  * barangay WiFi routers commonly block the multicast/broadcast traffic
  * auto-discovery would need anyway.
  */
 const DEFAULT_API_BASE_URL: string =
-  (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'http://laptop-b2rp6jkk.tail631c69.ts.net:8081/api/v1';
+  (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8081/api/v1';
 
 const API_BASE_URL_OVERRIDE_KEY = 'baranguard.apiBaseUrlOverride';
 
@@ -164,7 +163,8 @@ interface RequestOptions {
  * router) `fetch()` can sit unresolved for a very long time with nothing
  * for the caller to catch, which reads to a Tanod as the app simply being
  * stuck rather than "the workstation is slow to reach right now." 15s is
- * generous for a real LAN/Tailscale hop but short enough that a bad
+ * generous for a real LAN hop (or a remote tunnel, when one is in use)
+ * but short enough that a bad
  * connection fails honestly instead of hanging the caller indefinitely —
  * same spirit as deviceIdentity.ts's 8s FCM-registration bound.
  */

@@ -68,32 +68,38 @@ SMS alerts, and analyzes incident patterns.
 
 **Only do this after `run-evaluation.bat` has finished at least its
 first smoke test successfully** (it's what confirms PHP/Ollama are set
-up right). Then just double-click **`run-evaluation-other-tasks.bat`** —
-same kind of walkthrough as the first one, it runs all 7 automatically,
-one after another, and tells you what to send back at the end. Five of
-the seven run against the same 350-record set redaction did, so expect
-this to take roughly as long as that run did, five times over — it's a
-genuinely bigger ask than the first `.bat`, entirely optional, and just
-as safe to close and resume later.
+up right). Each of the 7 has its OWN double-click file, so you can do
+them one at a time, in any order, whenever you have time — closing one
+never affects the others:
 
-If you'd rather run just ONE of the seven yourself instead of all of
-them, each has its own command (run from inside this folder):
+- `run-evaluation-summary.bat`
+- `run-evaluation-extraction.bat`
+- `run-evaluation-classification.bat`
+- `run-evaluation-blotter-assist.bat`
+- `run-evaluation-translation.bat`
+- `run-evaluation-sms-compose.bat` (much smaller set, 35 records — quick)
+- `run-evaluation-threat-analysis.bat` (much smaller set, 25 records — quick)
+
+The first five run against the same 350-record set redaction did, so
+expect each one to take roughly as long as that run did. Same as before:
+safe to close any of these windows at any point and double-click that
+SAME file again later — it remembers exactly where that one task left
+off. Each writes its own `evaluation-results-<task>-*.txt` /
+`evaluation-log-<task>-*.txt` files when it finishes — send back
+whichever ones you've run, alongside the main redaction files.
+
+If you'd rather type the command yourself instead of double-clicking,
+each `.bat` file's real command (run from inside this folder) is:
 
 ```
-php scripts\ai-evaluate.php --task=summary --engine=model --dry-run --verbose --save-results
-php scripts\ai-evaluate.php --task=extraction --engine=model --dry-run --verbose --save-results
-php scripts\ai-evaluate.php --task=classification --engine=model --dry-run --verbose --save-results
-php scripts\ai-evaluate.php --task=blotter-assist --engine=model --dry-run --verbose --save-results
-php scripts\ai-evaluate.php --task=translation --translate-to=fil --engine=model --dry-run --verbose --save-results
-php scripts\ai-evaluate.php --task=sms-compose --engine=model --dry-run --verbose --save-results
-php scripts\ai-evaluate.php --task=threat-analysis --engine=model --dry-run --verbose --save-results
+php scripts\ai-evaluate.php --task=summary --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
+php scripts\ai-evaluate.php --task=extraction --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
+php scripts\ai-evaluate.php --task=classification --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
+php scripts\ai-evaluate.php --task=blotter-assist --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
+php scripts\ai-evaluate.php --task=translation --translate-to=fil --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
+php scripts\ai-evaluate.php --task=sms-compose --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=60 --resume --save-results
+php scripts\ai-evaluate.php --task=threat-analysis --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=60 --resume --save-results
 ```
-
-Add `--batch-size=20 --rest-seconds=120 --resume` to any of these the
-same way the main run does, if you want the same pacing/resume behavior
-for a long unattended run. Each one writes its own
-`evaluation-results-<task>-*.txt` / `evaluation-log-<task>-*.txt` files —
-send back whichever ones you ran, alongside the main redaction files.
 
 ## Is my computer okay to run this on?
 

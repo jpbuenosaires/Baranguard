@@ -5,20 +5,32 @@ cloud-assisted incident reporting and emergency dispatch platform for four
 barangays (Dao, Binanuahan, Marifosque, Banuyo) in Pilar, Sorsogon,
 Philippines. IT capstone project, Bicol University.
 
-## Start here
+## Getting started
 
-Read `/docs/PROJECT_CONTEXT.md` first — it's the condensed reference to
-paste/link at the start of every AI coding session. Full detail lives in the
-companion docs also under `/docs`:
+New machine, backend + web dashboard only: **[`docs/SETUP.md`](docs/SETUP.md)**
+— clone, bootstrap the database, run the API and dashboard. Every step in
+it has actually been run against a disposable database, not just
+described. Mobile (Ionic/Capacitor/Android) isn't covered there yet; see
+`docs/HANDOFF.md`'s operational reference for the build commands.
 
-- `Baranguard_Database_Schema.md`
-- `Baranguard_API_Contract.md`
-- `Baranguard_Feature_Backlog.md`
-- `Baranguard_Screen_Inventory.md`
-- `Baranguard_Role_Permission_Matrix.md`
-- `Baranguard_Naming_Conventions.md`
-- `Baranguard_Phase2_VibeCoding_Guide.md`
-- `DEVLOG.md` — session-by-session build log, update every session
+## Start here (for working on the codebase)
+
+`CLAUDE.md` (repo root) auto-loads three docs at the start of every AI
+coding session — read those, not this file, for the actual reference:
+
+- `docs/REFERENCE.md` — schema, API, roles, screens, non-negotiable rules
+- `docs/SPRINTS.md` — sprint discipline, what's left
+- `docs/HANDOFF.md` — current state, replaced fresh each session
+
+Full detail and history live under `docs/`, opened deliberately (not
+auto-loaded — see `CLAUDE.md` for when to open each):
+
+- `docs/Baranguard_Master_Reference_FINAL .md` — the authority; if it and
+  `REFERENCE.md` disagree, this file wins
+- `docs/REMAINING.md` — full ordered backlog before Sprint 8
+- `docs/Baranguard_Sprint_Prompts.md` — Sprints 0–7 verbatim, pure history
+- `backend/DEVLOG.md` — every decision and why (huge, append-only —
+  grep for what you're touching, don't read front to back)
 
 ## Folder structure
 

@@ -26,7 +26,7 @@
 
 import {
   getIncidents, getDispatches, getDutyStatus, getUsers, getGpsLive, getTanodSos,
-  cancelDispatch, acknowledgeTanodSos, logout, ApiClientError,
+  cancelDispatch, acknowledgeTanodSos, resolveTanodSos, logout, ApiClientError,
 } from '../api/apiClient.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
@@ -142,6 +142,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let priorityAlertEl = null;
   let alertTextEl = null;
   let alertBtnEl = null;
+  let alertResolveBtnEl = null;
   let kpiCardEl = null;
   let queueListEl = null;
   let chipsContainerEl = null;
@@ -273,12 +274,22 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       alertTextEl = document.createElement('span');
       alertLeft.appendChild(alertTextEl);
 
+      const alertActions = document.createElement('div');
+      alertActions.className = 'dispatch-priority-alert__actions';
+
       alertBtnEl = document.createElement('button');
       alertBtnEl.type = 'button';
       alertBtnEl.className = 'dispatch-priority-alert__btn';
       alertBtnEl.textContent = 'Dispatch Now';
 
-      priorityAlertEl.append(alertLeft, alertBtnEl);
+      alertResolveBtnEl = document.createElement('button');
+      alertResolveBtnEl.type = 'button';
+      alertResolveBtnEl.className = 'dispatch-priority-alert__btn dispatch-priority-alert__btn--resolve';
+      alertResolveBtnEl.textContent = 'Resolve SOS';
+      alertResolveBtnEl.style.display = 'none';
+
+      alertActions.append(alertBtnEl, alertResolveBtnEl);
+      priorityAlertEl.append(alertLeft, alertActions);
       container.appendChild(priorityAlertEl);
 
       // 2. 3-KPI Card in PageHeader Actions
@@ -416,6 +427,25 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       liveMap = LiveMap(mapViewportEl);
     }
 
+    const handleResolveSingleSos = async (sosId) => {
+      const sos = openSos.find((s) => s.sosId === sosId);
+      const tanodName = sos?.fullName || (sos ? `Tanod #${sos.userId}` : `SOS #${sosId}`);
+      const confirmed = await confirmDialog({
+        title: `Resolve SOS Emergency #${sosId}?`,
+        description: `Confirm that ${tanodName} is secure and the emergency response is complete. This will mark the SOS as resolved and remove the alert.`,
+        confirmLabel: 'Mark Resolved',
+        cancelLabel: 'Keep Active',
+      });
+      if (!confirmed) return;
+      try {
+        await resolveTanodSos(sosId);
+        showToast(`SOS #${sosId} for ${tanodName} marked as resolved.`, { variant: 'success' });
+        onQueueChanged();
+      } catch (err) {
+        showToast(err instanceof ApiClientError ? err.message : 'Could not resolve SOS.', { variant: 'error' });
+      }
+    };
+
     // Update Priority Alert Banner
     const urgentSos = openSos.find((s) => s.status !== 'resolved');
     const urgentCritical = pendingIncidents.find((i) => i.priority === 'critical');
@@ -423,7 +453,12 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     if (urgentSos) {
       priorityAlertEl.style.display = 'flex';
       const tanodLabel = urgentSos.fullName || `Tanod #${urgentSos.userId}`;
-      alertTextEl.textContent = `PRIORITY ALERT: SOS Emergency for ${tanodLabel} - Requires immediate dispatch`;
+      if (openSos.length > 1) {
+        alertTextEl.textContent = `PRIORITY ALERT: ${openSos.length} Active Tanod SOS Emergencies — Latest: ${tanodLabel}`;
+      } else {
+        alertTextEl.textContent = `PRIORITY ALERT: SOS Emergency for ${tanodLabel} - Requires immediate dispatch`;
+      }
+      alertBtnEl.textContent = 'Locate on Map';
       alertBtnEl.onclick = () => {
         if (urgentSos.latitude != null && urgentSos.longitude != null) {
           liveMap?.flyTo(Number(urgentSos.latitude), Number(urgentSos.longitude), 18);
@@ -431,8 +466,33 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
           liveMap?.fitAll();
         }
       };
+
+      alertResolveBtnEl.style.display = 'inline-flex';
+      alertResolveBtnEl.textContent = openSos.length > 1 ? `Resolve All (${openSos.length})` : 'Resolve SOS';
+      alertResolveBtnEl.onclick = async () => {
+        if (openSos.length > 1) {
+          const confirmed = await confirmDialog({
+            title: `Resolve ${openSos.length} SOS Emergencies?`,
+            description: `Confirm that all ${openSos.length} active Tanod SOS emergencies have been attended to and can be marked as resolved.`,
+            confirmLabel: `Resolve All (${openSos.length})`,
+            cancelLabel: 'Keep Active',
+          });
+          if (!confirmed) return;
+          try {
+            await Promise.all(openSos.map((s) => resolveTanodSos(s.sosId)));
+            showToast(`All ${openSos.length} SOS emergencies marked as resolved.`, { variant: 'success' });
+            onQueueChanged();
+          } catch (err) {
+            showToast(err instanceof ApiClientError ? err.message : 'Could not resolve all SOS emergencies.', { variant: 'error' });
+          }
+        } else {
+          await handleResolveSingleSos(urgentSos.sosId);
+        }
+      };
     } else if (urgentCritical) {
       priorityAlertEl.style.display = 'flex';
+      alertResolveBtnEl.style.display = 'none';
+      alertBtnEl.textContent = 'Dispatch Now';
       const typeLabel = INCIDENT_TYPE_LABELS[urgentCritical.incidentType] || urgentCritical.incidentType;
       const locLabel = urgentCritical.locationDescription || urgentCritical.location_description || 'Barangay Area';
       alertTextEl.textContent = `PRIORITY ALERT: ${typeLabel} in ${locLabel} - Requires immediate dispatch`;
@@ -442,6 +502,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       };
     } else {
       priorityAlertEl.style.display = 'none';
+      alertResolveBtnEl.style.display = 'none';
     }
 
     // Update 3-KPI Card
@@ -465,7 +526,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       userId: g.userId, fullName: g.fullName, latitude: g.latitude, longitude: g.longitude,
       ageSeconds: g.ageSeconds, isStale: g.isStale,
     })));
-    liveMap.setSosMarkers(openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status })));
+    liveMap.setSosMarkers(
+      openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status, fullName: s.fullName })),
+      handleResolveSingleSos
+    );
     liveMap.setIncidentMarkers(
       pendingIncidents.map((incident) => ({
         incidentId: incident.incidentId,

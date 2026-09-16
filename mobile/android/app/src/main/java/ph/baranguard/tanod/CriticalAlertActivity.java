@@ -34,11 +34,47 @@ import androidx.appcompat.app.AppCompatActivity;
  * documented mechanism, exercised in this session only via a manual
  * trigger while the device was unlocked, since no real FCM project exists
  * to deliver a genuine locked-screen push (REMAINING.md A4).
+ *
+ * HANDOFF, ADDED 2026-09-15 (C4): "Open Baranguard" used to cold-launch
+ * the app with no context, so criticalAlertStore.ts's real acknowledge
+ * UI never learned which alert to show. `pendingAlert` is a static,
+ * in-process holder set just before that launch and read once by
+ * `FullScreenAlertPlugin.getPendingAlert()` — safe without
+ * SharedPreferences/persistence because this Activity can only be tapped
+ * while its own process is already alive (a killed process would have to
+ * be started to run this Activity at all), so the process that will host
+ * MainActivity next is the same one holding this static field.
  */
 public class CriticalAlertActivity extends AppCompatActivity {
 
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_BODY = "body";
+    public static final String EXTRA_NOTIFICATION_ID = "notificationId";
+    public static final String EXTRA_NOTIFICATION_TYPE = "notificationType";
+
+    /** Plain data holder for the in-process handoff described above. */
+    static final class PendingAlert {
+        final String notificationId;
+        final String notificationType;
+        final String title;
+        final String body;
+
+        PendingAlert(String notificationId, String notificationType, String title, String body) {
+            this.notificationId = notificationId;
+            this.notificationType = notificationType;
+            this.title = title;
+            this.body = body;
+        }
+    }
+
+    private static volatile PendingAlert pendingAlert;
+
+    /** Read-and-clear — a handoff is consumed at most once. */
+    static PendingAlert takePendingAlert() {
+        PendingAlert result = pendingAlert;
+        pendingAlert = null;
+        return result;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,14 +102,18 @@ public class CriticalAlertActivity extends AppCompatActivity {
 
         String title = getIntent().getStringExtra(EXTRA_TITLE);
         String body = getIntent().getStringExtra(EXTRA_BODY);
+        String notificationId = getIntent().getStringExtra(EXTRA_NOTIFICATION_ID);
+        String notificationType = getIntent().getStringExtra(EXTRA_NOTIFICATION_TYPE);
         setContentView(buildLayout(
             title != null ? title : "Critical alert",
-            body != null ? body : ""
+            body != null ? body : "",
+            notificationId,
+            notificationType
         ));
     }
 
     /** Built in code rather than a layout XML resource — this screen has exactly two lines of text and one button, not worth a separate res/layout file. */
-    private LinearLayout buildLayout(String title, String body) {
+    private LinearLayout buildLayout(String title, String body, String notificationId, String notificationType) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
@@ -98,6 +138,9 @@ public class CriticalAlertActivity extends AppCompatActivity {
         Button openButton = new Button(this);
         openButton.setText("Open Baranguard");
         openButton.setOnClickListener(v -> {
+            if (notificationId != null && notificationType != null) {
+                pendingAlert = new PendingAlert(notificationId, notificationType, title, body);
+            }
             Intent launchIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);

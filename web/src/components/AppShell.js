@@ -76,57 +76,6 @@ document.addEventListener('click', (event) => {
   }
 });
 
-// Real-Time SOS Dispatch Alert Audio-Visual State
-const playedSosIds = new Set();
-const dismissedSosIds = new Set();
-
-function playSosKlaxonTone(onBlocked) {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) {
-      onBlocked?.();
-      return;
-    }
-    const ctx = new AudioCtx();
-    if (ctx.state === 'suspended') {
-      ctx.resume().then(() => {
-        if (ctx.state === 'suspended') onBlocked?.();
-      }).catch(() => {
-        onBlocked?.();
-      });
-      const resumeOnInteract = () => {
-        ctx.resume().catch(() => {});
-        window.removeEventListener('click', resumeOnInteract);
-        window.removeEventListener('keydown', resumeOnInteract);
-      };
-      window.addEventListener('click', resumeOnInteract, { once: true });
-      window.addEventListener('keydown', resumeOnInteract, { once: true });
-    }
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sawtooth';
-    const now = ctx.currentTime;
-    // Two-tone attention siren: 880Hz -> 659Hz -> 880Hz -> 659Hz
-    osc.frequency.setValueAtTime(880, now);
-    osc.frequency.setValueAtTime(659.25, now + 0.15);
-    osc.frequency.setValueAtTime(880, now + 0.30);
-    osc.frequency.setValueAtTime(659.25, now + 0.45);
-
-    gain.gain.setValueAtTime(0.12, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.65);
-    setTimeout(() => {
-      ctx.close().catch(() => {});
-    }, 750);
-  } catch {
-    onBlocked?.();
-  }
-}
-
 
 // §9 role gates: W2 Dashboard and W4 Live Map are Admin + Punong Barangay
 // (read-only); W3 Dispatch Center's create/cancel actions are Admin only,
@@ -401,10 +350,6 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const mainColumn = document.createElement('div');
   mainColumn.className = 'main-column';
 
-  const sosBannerHost = document.createElement('div');
-  sosBannerHost.className = 'topbar__sos-banner-host';
-  sosBannerHost.hidden = true;
-
   // <header> landmark (audit A5).
   const topbar = document.createElement('header');
   topbar.className = 'topbar';
@@ -665,82 +610,49 @@ export function AppShell(user, activePage, navigate, onLogout) {
     }
     for (const item of result.items) {
       const unread = item.ackStatus === 'pending';
+      let label = NOTIFICATION_LABELS[item.notificationType] ?? item.notificationType;
+      let icon = icons.bell;
+
+      if (item.notificationType === 'sos') {
+        icon = icons.alertTriangle;
+        label = item.sosTanodName
+          ? `Tanod SOS: ${item.sosTanodName}`
+          : (item.sosId ? `Tanod SOS #${item.sosId}` : 'Tanod Emergency SOS');
+      } else if (item.notificationType === 'priority_alert') {
+        icon = icons.alertTriangle;
+        const typeStr = item.incidentType ? (INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType) : 'Incident';
+        const idStr = item.incidentDisplayId || (item.incidentId ? `#${item.incidentId}` : '');
+        label = `Priority Alert: ${typeStr} ${idStr}`.trim();
+      } else if (item.notificationType === 'dispatch') {
+        icon = icons.radio;
+        const typeStr = item.incidentType ? ` (${INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType})` : '';
+        label = `Dispatch: ${item.dispatchTanodName || 'Tanod'}${typeStr}`.trim();
+      } else if (item.dispatchStatus === 'completed') {
+        icon = icons.checkCircle;
+        label = `Dispatch Completed: ${item.dispatchTanodName || 'Tanod'}`;
+      } else if (item.dispatchStatus === 'arrived') {
+        icon = icons.mapPin;
+        label = `Tanod Arrived: ${item.dispatchTanodName || 'Tanod'}`;
+      } else if (item.incidentType) {
+        icon = icons.fileText;
+        const typeStr = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
+        const idStr = item.incidentDisplayId || (item.incidentId ? `#${item.incidentId}` : '');
+        label = `New Incident: ${typeStr} ${idStr}`.trim();
+      }
+
       const row = MenuItem({
-        label: NOTIFICATION_LABELS[item.notificationType] ?? item.notificationType,
-        icon: item.notificationType === 'sos' ? icons.alertTriangle : icons.bell,
+        label,
+        icon,
         description: new Date(item.createdAt).toLocaleString(),
         onClick: () => {
           bellMenu.close();
-          // Follow the notification to the thing it is about. There is no
-          // narrative in the payload by design, so the link IS the content.
+          // Follow the notification to the thing it is about.
           if (item.incidentId) navigate('blotter-detail', item.incidentId);
           else if (item.sosId || item.dispatchId) navigate('dispatch');
         },
       });
       if (unread) row.classList.add('notification-item--unread');
       bellMenu.panel.appendChild(row);
-    }
-
-    // Check for unacknowledged Tanod emergency SOS broadcast
-    const pendingSos = result.items.find(
-      (item) => item.notificationType === 'sos' && item.ackStatus === 'pending'
-    );
-
-    if (pendingSos && !dismissedSosIds.has(pendingSos.id)) {
-      sosBannerHost.hidden = false;
-      sosBannerHost.innerHTML = `
-        <div class="emergency-sos-banner" role="alert">
-          <div class="emergency-sos-banner__indicator">
-            <span class="emergency-sos-banner__pulse"></span>
-            <span class="emergency-sos-banner__icon" aria-hidden="true">${icons.alertTriangle(18)}</span>
-          </div>
-          <div class="emergency-sos-banner__body">
-            <div class="emergency-sos-banner__headline">
-              <strong>CRITICAL DISPATCH ALERT:</strong> Active Tanod Emergency SOS Received
-            </div>
-            <div class="emergency-sos-banner__meta">
-              ${pendingSos.sosId ? 'SOS ID #' + pendingSos.sosId + ' · ' : ''}Received ${new Date(pendingSos.createdAt).toLocaleTimeString()}
-            </div>
-          </div>
-          <div class="emergency-sos-banner__actions">
-            <button type="button" class="emergency-sos-banner__btn-dispatch">
-              ${icons.radio(14)} Open Dispatch Center
-            </button>
-            <button type="button" class="emergency-sos-banner__btn-dismiss" aria-label="Dismiss SOS alert banner">
-              ${icons.x(16)}
-            </button>
-          </div>
-        </div>
-      `;
-
-      sosBannerHost.querySelector('.emergency-sos-banner__btn-dispatch')?.addEventListener('click', () => {
-        navigate('dispatch');
-      });
-
-      sosBannerHost.querySelector('.emergency-sos-banner__btn-dismiss')?.addEventListener('click', () => {
-        dismissedSosIds.add(pendingSos.id);
-        sosBannerHost.hidden = true;
-        sosBannerHost.innerHTML = '';
-      });
-
-      if (!playedSosIds.has(pendingSos.id)) {
-        playedSosIds.add(pendingSos.id);
-        playSosKlaxonTone(() => {
-          const bodyEl = sosBannerHost.querySelector('.emergency-sos-banner__body');
-          if (bodyEl && !bodyEl.querySelector('.sos-muted-notice')) {
-            const mutedEl = document.createElement('div');
-            mutedEl.className = 'sos-muted-notice';
-            mutedEl.style.fontSize = '0.75rem';
-            mutedEl.style.opacity = '0.9';
-            mutedEl.style.marginTop = '0.25rem';
-            mutedEl.textContent = '🔇 Audio siren muted by browser — click anywhere to unmute';
-            bodyEl.appendChild(mutedEl);
-          }
-        });
-      }
-    } else {
-      sosBannerHost.hidden = true;
-      sosBannerHost.innerHTML = '';
     }
   }
 
@@ -835,7 +747,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
   contentContainer.className = 'page-container';
   content.appendChild(contentContainer);
 
-  mainColumn.append(topbar, sosBannerHost, header, content);
+  mainColumn.append(topbar, header, content);
   el.append(sidebar, scrim, mainColumn);
 
   // Periodic real-time background notification poller (every 15s).
