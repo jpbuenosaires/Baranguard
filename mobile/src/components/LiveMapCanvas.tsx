@@ -89,6 +89,8 @@ export interface FocusTarget {
 export interface LiveMapCanvasHandle {
   /** Re-frames the camera on self + focusTarget (whichever are available) — the same logic the internal recenter FAB uses. */
   recenter: () => void;
+  /** Smoothly fly camera to specific coordinates with optional zoom */
+  focusCoordinates: (lat: number, lng: number, zoom?: number) => void;
 }
 
 interface Props {
@@ -145,6 +147,12 @@ interface Props {
    * prompt. The existing recenter FAB already handles reactivation.
    */
   onUserPan?: () => void;
+  /** Optional custom map container height (defaults to '340px' or '68vh' in nav mode) */
+  height?: string;
+  /** When true, expands the map container edge-to-edge without border radius or card shadow */
+  fullScreen?: boolean;
+  /** When true, suppresses the internal floating locate FAB (for screens providing their own control rail) */
+  hideRecenterFab?: boolean;
 }
 
 /** Frames the camera on whichever of self/focusTarget are available; both → fits bounds, one → centers on it. */
@@ -237,7 +245,7 @@ function priorityMarkerClass(priority: string): string {
 }
 
 const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCanvas(
-  { barangayId, position, incidents, tanods, onStatusChange, focusTarget, onMapClick, routeGeometry, navigationMode, routeProgress, onUserPan },
+  { barangayId, position, incidents, tanods, onStatusChange, focusTarget, onMapClick, routeGeometry, navigationMode, routeProgress, onUserPan, height, fullScreen, hideRecenterFab },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -398,6 +406,17 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
         } else if (map) {
           centerMap(map, position, focusTarget, true);
         }
+      },
+      focusCoordinates: (lat: number, lng: number, zoom = 16) => {
+        const map = mapRef.current;
+        if (!map) return;
+        userPannedRef.current = true;
+        map.flyTo({
+          center: [lng, lat],
+          zoom,
+          duration: 800,
+          essential: true,
+        });
       },
     }),
     [position, focusTarget, navigationMode, routeProgress]
@@ -635,16 +654,31 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     }
   }
 
-  const mapHeight = navigationMode ? '68vh' : '300px';
+  const isFull = fullScreen || (navigationMode && height === '100%');
+  const mapHeight = height ?? (navigationMode ? '68vh' : '340px');
 
   return (
-    <div style={{ position: 'relative', borderRadius: 'var(--radius-md)', overflow: 'hidden', boxShadow: 'var(--shadow-elevated)' }}>
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: isFull ? '100%' : 'auto',
+        borderRadius: isFull ? '0' : 'var(--radius-md)',
+        overflow: 'hidden',
+        boxShadow: isFull ? 'none' : 'var(--shadow-elevated)',
+      }}
+    >
       <div
         ref={containerRef}
         className={navigationMode ? 'map-container--navigating' : undefined}
-        style={{ width: '100%', height: mapHeight, background: 'var(--tint-neutral-bg)', transition: 'height 0.3s ease' }}
+        style={{
+          width: '100%',
+          height: isFull ? '100%' : mapHeight,
+          background: 'var(--tint-neutral-bg)',
+          transition: 'height 0.3s ease',
+        }}
       />
-      {(position || focusTarget) && (
+      {!hideRecenterFab && (position || focusTarget) && (
         <button
           type="button"
           onClick={recenter}

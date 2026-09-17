@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Route } from 'react-router-dom';
+import { Navigate, Route, useLocation } from 'react-router-dom';
 import {
   IonApp,
   IonIcon,
@@ -12,7 +12,17 @@ import {
   setupIonicReact,
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { add, homeOutline, listOutline, mapOutline, personOutline } from 'ionicons/icons';
+import {
+  add,
+  home,
+  homeOutline,
+  list,
+  listOutline,
+  map,
+  mapOutline,
+  person,
+  personOutline,
+} from 'ionicons/icons';
 import CriticalAlertOverlay from './components/CriticalAlertOverlay';
 import AssignmentDetailPage from './pages/assignment-detail';
 import AssignmentsPage from './pages/assignments';
@@ -29,6 +39,7 @@ import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './se
 import { startSyncScheduler } from './services/syncScheduler';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
 import { initThemeListener } from './utils/theme';
+import tacticalFeedback from './utils/tacticalFeedback';
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -152,52 +163,98 @@ const RequireSession: React.FC<{ children: React.ReactNode }> = ({ children }) =
  * start always lands on `/`). There is deliberately NO `*` not-found
  * route: a mounted catch-all view is precisely what finding 2 is about.
  */
-const TabbedShell: React.FC = () => (
-  <IonTabs>
-    <IonRouterOutlet>
-      <Route path="home" element={<HomePage />} />
-      {/* M5. */}
-      <Route path="assignments" element={<AssignmentsPage />} />
-      {/* M6 — reached by tapping a card on M5, not a tab of its own. */}
-      <Route path="assignments/:localId" element={<AssignmentDetailPage />} />
-      {/* M3. */}
-      <Route path="incidents/new" element={<NewIncidentPage />} />
-      {/* M14 — reached from Profile and from M4's confirmation screen, not its own tab (a 6th bottom tab for a reference screen would crowd the four the Tanod actually needs dozens of times a shift). */}
-      <Route path="reports" element={<MyReportsPage />} />
-      {/* M8/M9 — reached from Profile, same "not a tab" reasoning as M14 above (used at most twice a week). */}
-      <Route path="shifts" element={<MyShiftsPage />} />
-      {/* M7. */}
-      <Route path="map" element={<LiveMapPage />} />
-      <Route path="profile" element={<ProfilePage />} />
-      {/* Bare `/tabs` — nothing in the app navigates there; a safety net only. */}
-      <Route index element={<Navigate to="/tabs/home" replace />} />
-    </IonRouterOutlet>
-    <IonTabBar slot="bottom" className="mobile-tab-bar">
-      <IonTabButton tab="home" href="/tabs/home">
-        <IonIcon icon={homeOutline} />
-        <IonLabel>Home</IonLabel>
-      </IonTabButton>
-      <IonTabButton tab="assignments" href="/tabs/assignments">
-        <IonIcon icon={listOutline} />
-        <IonLabel>Assignments</IonLabel>
-      </IonTabButton>
-      <IonTabButton tab="log-incident" href="/tabs/incidents/new" className="mobile-tab-button--fab">
-        <div className="tab-fab-btn" aria-hidden="true">
-          <IonIcon icon={add} />
-        </div>
-        <IonLabel>Log Incident</IonLabel>
-      </IonTabButton>
-      <IonTabButton tab="map" href="/tabs/map">
-        <IonIcon icon={mapOutline} />
-        <IonLabel>Map</IonLabel>
-      </IonTabButton>
-      <IonTabButton tab="profile" href="/tabs/profile">
-        <IonIcon icon={personOutline} />
-        <IonLabel>Profile</IonLabel>
-      </IonTabButton>
-    </IonTabBar>
-  </IonTabs>
-);
+const TabbedShell: React.FC = () => {
+  const location = useLocation();
+  const currentPath = location.pathname;
+
+  const isHome = currentPath === '/tabs/home';
+  const isAssignments = currentPath.startsWith('/tabs/assignments');
+  const isMap = currentPath === '/tabs/map';
+  const isProfile = currentPath === '/tabs/profile';
+  const isNewIncident = currentPath.startsWith('/tabs/incidents/new');
+  const isAssignmentDetail = currentPath.startsWith('/tabs/assignments/') && currentPath !== '/tabs/assignments';
+
+  return (
+    <IonTabs>
+      <IonRouterOutlet>
+        <Route path="home" element={<HomePage />} />
+        {/* M5. */}
+        <Route path="assignments" element={<AssignmentsPage />} />
+        {/* M6 — reached by tapping a card on M5, not a tab of its own. */}
+        <Route path="assignments/:localId" element={<AssignmentDetailPage />} />
+        {/* M3. */}
+        <Route path="incidents/new" element={<NewIncidentPage />} />
+        {/* M14 — reached from Profile and from M4's confirmation screen, not its own tab (a 6th bottom tab for a reference screen would crowd the four the Tanod actually needs dozens of times a shift). */}
+        <Route path="reports" element={<MyReportsPage />} />
+        {/* M8/M9 — reached from Profile, same "not a tab" reasoning as M14 above (used at most twice a week). */}
+        <Route path="shifts" element={<MyShiftsPage />} />
+        {/* M7. */}
+        <Route path="map" element={<LiveMapPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        {/* Bare `/tabs` — nothing in the app navigates there; a safety net only. */}
+        <Route index element={<Navigate to="/tabs/home" replace />} />
+      </IonRouterOutlet>
+      <IonTabBar slot="bottom" className={`mobile-tab-bar ${isAssignmentDetail || isNewIncident ? 'mobile-tab-bar--hidden' : ''}`}>
+        <IonTabButton
+          tab="home"
+          href="/tabs/home"
+          onClick={() => !isHome && tacticalFeedback.onTap()}
+          className={isHome ? 'tab-item--active' : ''}
+        >
+          <IonIcon icon={isHome ? home : homeOutline} />
+          <IonLabel>Home</IonLabel>
+          <span className="tab-indicator-dot" aria-hidden="true" />
+        </IonTabButton>
+
+        <IonTabButton
+          tab="assignments"
+          href="/tabs/assignments"
+          onClick={() => !isAssignments && tacticalFeedback.onTap()}
+          className={isAssignments ? 'tab-item--active' : ''}
+        >
+          <IonIcon icon={isAssignments ? list : listOutline} />
+          <IonLabel>Assignments</IonLabel>
+          <span className="tab-indicator-dot" aria-hidden="true" />
+        </IonTabButton>
+
+        <IonTabButton
+          tab="log-incident"
+          href="/tabs/incidents/new"
+          className="mobile-tab-button--fab"
+          onClick={() => tacticalFeedback.onTap()}
+        >
+          <div className="tab-fab-btn" aria-label="Log Incident">
+            <div className="tab-fab-ring" />
+            <IonIcon icon={add} />
+          </div>
+          <IonLabel>Log Incident</IonLabel>
+        </IonTabButton>
+
+        <IonTabButton
+          tab="map"
+          href="/tabs/map"
+          onClick={() => !isMap && tacticalFeedback.onTap()}
+          className={isMap ? 'tab-item--active' : ''}
+        >
+          <IonIcon icon={isMap ? map : mapOutline} />
+          <IonLabel>Map</IonLabel>
+          <span className="tab-indicator-dot" aria-hidden="true" />
+        </IonTabButton>
+
+        <IonTabButton
+          tab="profile"
+          href="/tabs/profile"
+          onClick={() => !isProfile && tacticalFeedback.onTap()}
+          className={isProfile ? 'tab-item--active' : ''}
+        >
+          <IonIcon icon={isProfile ? person : personOutline} />
+          <IonLabel>Profile</IonLabel>
+          <span className="tab-indicator-dot" aria-hidden="true" />
+        </IonTabButton>
+      </IonTabBar>
+    </IonTabs>
+  );
+};
 
 /**
  * M12's overlay is mounted here, OUTSIDE `IonReactRouter`/`IonRouterOutlet`

@@ -249,6 +249,19 @@
   --dark-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
   --dark-shadow-elevated: 0 10px 20px -3px rgba(0, 0, 0, 0.45), 0 4px 8px -4px rgba(0, 0, 0, 0.4);
   --dark-shadow-floating: 0 20px 30px -5px rgba(0, 0, 0, 0.6), 0 8px 12px -6px rgba(0, 0, 0, 0.5);
+
+  /* --- Fixed accent constants ---------------------------------------- */
+  /* Not part of the light/dark pair above — these stay the same value
+     regardless of the app's theme. Used by app.css's permanently-dark
+     "tactical hero" cards (Home, Profile, Live Map GPS HUD) and a few
+     repeated bright icon/badge accents that needed a name instead of a
+     hex literal hand-copied at each use site. */
+  --color-navy-deep: #0b1329;
+  --gradient-tactical-dark: linear-gradient(135deg, #0b1329 0%, #1e293b 100%);
+  --color-critical-bright: #ef4444;
+  --color-warning-bright: #f59e0b;
+  --color-success-bright: #10b981;
+  --color-accent-soft: #93c5fd;
 }
 
 @media (prefers-color-scheme: dark) {

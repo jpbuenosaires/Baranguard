@@ -4,22 +4,74 @@
 never stack banners. Full history: `backend/DEVLOG.md` (grep by
 date/keyword, don't read front to back).
 
-**Last updated: 2026-09-16.**
+**Last updated: 2026-09-17.**
 
 ## Where things stand
 
 Sprints 0–7 complete. Sprint 8 (UAT/evaluation) open; `REMAINING.md` §F
 had been fully closed but F1 (API base URL) reopened 2026-09-15 — the
 private mesh VPN that closed it was decommissioned the same day (see
-"2026-09-15 (4)" below and `REFERENCE.md` §1); no persistent
-remote-access mechanism replaces it, base architecture is LAN-only again.
-Turn-by-turn routing, C6 (login stuck
-over Home), and C4's M12 native-alert handoff are all closed 2026-09-15
-or earlier. **One open blocker: C7** (app process dies ~50s into patrol
-GPS) — first investigated 2026-09-15, does not reproduce on a Galaxy
-A21s (negative result favoring an OEM-specific cause over a generic one),
-still needs the Infinix X6840 to reproduce for real. Doesn't block UAT
-scenarios that skip an on-duty patrol shift.
+`REFERENCE.md` §1); no persistent remote-access mechanism replaces it,
+base architecture is LAN-only again, with a Cloudflare Quick Tunnel
+available for temporary remote testing only (started this session,
+ephemeral hostname, no Cloudflare-side auth). Turn-by-turn routing, C6
+(login stuck over Home), and C4's M12 native-alert handoff are all closed
+2026-09-15 or earlier. **One open blocker: C7** (app process dies ~50s
+into patrol GPS) — first investigated 2026-09-15, does not reproduce on a
+Galaxy A21s (negative result favoring an OEM-specific cause over a
+generic one), still needs the Infinix X6840 to reproduce for real.
+Doesn't block UAT scenarios that skip an on-duty patrol shift.
+
+**2026-09-17 — Mobile tactical-theme WIP audited, 5 real bugs found and
+fixed, plus a lint cleanup pass.** The in-progress rework (`App.tsx`,
+`ActiveStepCard.tsx`, `LiveMapCanvas.tsx`, `assignment-detail.tsx`,
+`assignments.tsx`, `live-map.tsx`, `app.css`, `variables.css`,
+`tacticalFeedback.ts`) had 5 real defects: 2 compile errors (missing
+`formatRemainingTime`/`formatNavDistance` import; a nonexistent
+`tacticalFeedback.onWarning()` called by 3 emergency speed-dial buttons)
+and 3 wired-but-dead gaps (turn-by-turn navigation had no Stop button;
+the tab bar didn't hide on the New Incident screen; a fetched
+`activeDispatchCount` was never rendered). All 5 fixed, plus 9 dead
+imports/vars removed and both `exhaustive-deps` warnings resolved.
+Verified: `tsc --noEmit` clean, `eslint` zero errors in source, `npx vite
+build` succeeds. **Not device-verified** — full detail (including which
+`react-hooks/exhaustive-deps` warning got a real dependency vs. a
+documented disable) in `backend/DEVLOG.md` 2026-09-17.
+
+**Still open, not resolved this session**: a live turn-by-turn nav
+screenshot (Dispatch #18, real device data) showed no blue route line
+overlaid on the road — `LiveMapCanvas.tsx`'s route-drawing code looks
+correct on read-through (real royal-blue + white-casing layers, correct
+z-order above the raster basemap), and a diagnostic `console.log` added
+to `applyRoute()` never fired even once despite GPS position updating
+continuously in `adb logcat` — meaning the effect never executed, most
+likely a stale/cached WebView bundle rather than a logic bug (the
+diagnostic log was removed again before this commit; nothing points to a
+real code defect yet). Session's adb connection to the device then became
+intermittent (`no devices/emulators found` after being visible earlier),
+so a `pm clear` to force a truly fresh WebView load was proposed but never
+run. **Next session: reconnect the device, clear app data, retest with a
+fresh diagnostic log before assuming this is a real rendering bug.**
+
+**A5 (GSM modem) was scoped but not built.** User has a tethered Android
+phone available now (adb-readable inbox, not a dedicated AT-command
+modem). Confirmed via code read: **no wire format exists yet** for
+encoding the envelope as SMS text, because on-device SMS *sending* was
+never built either (`smsFallbackState.ts`'s own header comment says so —
+`smsAttempted` is never set anywhere). Planned approach, not started:
+a PHP CLI daemon (`gsm-ingest-daemon.php`, mirroring `ai-worker.php`'s
+`--once`/`--daemon`/`--status` shape) polling
+`adb shell content query --uri content://sms/inbox` every ~10s, parsing
+each new message body as the same flat JSON envelope
+`sms-envelope-build.php` already produces (reusing the proven contract
+rather than inventing a new encoding), POSTing to the matching
+`/internal/sms/*` handler. Testable without the mobile-SmsManager work
+existing: generate an envelope with `sms-envelope-build.php`, send *that*
+JSON as a real SMS from a second phone to the tethered number. Cancelled
+mid-session before implementation — user redirected to other work.
+**Next session, if resumed**: confirm adb sees the tethered phone
+separately from any emulator, then decide daemon scheduling (manual
+testing first vs. wiring into Task Scheduler immediately).
 
 **2026-09-16 — FCM wired to a real Firebase project (project id
 `baranguard-acb27`), rebuild+device test still pending.**
@@ -66,37 +118,6 @@ same as A2 did. No `ai_evaluation_run` row written yet (needs explicit
 go-ahead to write the real DBs); Bikol human spot-check still open. Full
 numbers: `REMAINING.md` A2/A6.
 
-**2026-09-15 (3), multi-box exception** (user asked for all three at
-once, logged per `SPRINTS.md`'s "one item unless asked" rule): closed
-out the react-router audit (above) and fixed C4's real gap — the native
-full-screen SOS Activity already existed, it just cold-launched with no
-context; now threads `notification_id`/`notification_type` through to
-`criticalAlertStore.ts` on cold start. Verified without a device
-(`tsc --noEmit`, Gradle Java compile clean); device confirmation folded
-into A1's checklist, which the user is running directly. Full diffs:
-`backend/DEVLOG.md` 2026-09-15 (3).
-
-**2026-09-15 (4), repo portability + F1 reopened**: user wants to develop
-from a second laptop; added `docs/SETUP.md` (backend+web local-dev guide,
-every step actually run against a disposable DB while writing it) and
-`backend/scripts/bootstrap-db.sh` (creates the DB, applies all 21
-migrations, creates the least-privileged app user — verified end-to-end
-including a real browser login against a fresh bootstrap). Separately,
-user had already replaced the mesh VPN with a bare `cloudflared tunnel
---url` (Cloudflare Quick Tunnel) on this machine; decommissioned the mesh
-VPN references throughout the codebase/docs at the user's request
-(`mobile/apiService.ts`, `web/index.html`, CORS comments, `REFERENCE.md`,
-this file, `REMAINING.md`, `CLAUDE.md`) and **flagged before proceeding**
-that a Quick Tunnel has no Cloudflare-side auth — anyone with the URL can
-reach the API, the exact exposure the original mesh-VPN decision (see
-`DEVLOG.md` 2026-09-13 (2)) rejected. User's explicit call: accept it,
-documented plainly as testing-only, never production. `web/index.html`
-gained a real override mechanism it never had before (`?api_base=` +
-`localStorage`, mirroring mobile's existing Profile override) since a
-Quick Tunnel's hostname changes every restart and can't be hardcoded.
-Also removed 13 untracked stray debug-capture files from `mobile/`. Full
-diffs and reasoning: `backend/DEVLOG.md` 2026-09-15 (4).
-
 ## Things most likely to bite you
 
 1. A native exception on Capacitor's plugin-invocation thread can't be
@@ -125,7 +146,11 @@ diffs and reasoning: `backend/DEVLOG.md` 2026-09-15 (4).
    free-tier — confirm before starting a Google Cloud integration here.
 10. An already-open browser tab can keep running a stale JS module graph
     even after a hard refresh confirms the server has the fix — try a
-    brand-new tab before assuming a fix is wrong.
+    brand-new tab before assuming a fix is wrong. **The same class of
+    staleness may also affect a Capacitor WebView after a full process
+    relaunch, not just a browser tab** — 2026-09-17's route-line
+    investigation never got a `pm clear` retest to confirm, so treat this
+    as a live open question, not a settled one.
 11. `backend/scripts/bootstrap-admin.js`'s own header comment documents a
     `BARANGUARD_BOOTSTRAP_JSON` env var for non-interactive/CI use — the
     code never actually reads it (found 2026-09-15 while verifying
@@ -138,7 +163,12 @@ diffs and reasoning: `backend/DEVLOG.md` 2026-09-15 (4).
     link), producing `net::ERR_CONNECTION_REFUSED` in the WebView with no
     obvious cause. A background loop that polls `adb reverse --list`
     every few seconds and reapplies the mapping when it's missing is the
-    practical fix — see `backend/DEVLOG.md` 2026-09-16.
+    practical fix — see `backend/DEVLOG.md` 2026-09-16. **2026-09-17: the
+    whole adb connection itself (not just the port mapping) can also drop
+    mid-session** (`adb devices` returned empty after being visible
+    earlier, on what was likely a wireless-adb link) — check `adb devices`
+    before trusting any "still connected" assumption from earlier in a
+    session.
 13. A live-reload WebView reload resets `localDatabase.ts`'s module-level
     JS state without restarting the native process, so the native SQLite
     plugin's own connection survives the reload — `createConnection()`
@@ -158,28 +188,34 @@ real answer, then **C7** — makes the mobile app unusable for a real shift.
    `google-services` actually activates, then Run from Android Studio),
    confirm `GET /system/health` reports `fcm: healthy`, then create a
    real dispatch and confirm the critical-alert push actually lands.
-2. **C7** — needs the Infinix X6840 to reproduce; check for a
+2. **Resolve the route-line-not-rendering question** — reconnect the
+   device, `adb shell pm clear ph.baranguard.tanod` for a truly fresh
+   WebView load, re-add a temporary diagnostic log to `applyRoute()` in
+   `LiveMapCanvas.tsx`, and confirm whether it fires this time before
+   assuming any code change is needed.
+3. **C7** — needs the Infinix X6840 to reproduce; check for a
    `DEBUG`/`Fatal signal` tombstone (native crash) vs `lmkd` line (memory
    kill) vs neither (OEM policy, leading hypothesis — fix is
    `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), then implement/verify
    whichever the evidence points to.
-3. **Session-expiry 401 handling** (found 2026-09-16, not fixed) — add a
+4. **Session-expiry 401 handling** (found 2026-09-16, not fixed) — add a
    central check in `apiService.ts`'s `request()` that clears the
    session and redirects to `/login` on a 401, instead of every screen
    showing a misleading "workstation unreachable" message.
-4. **A1's six-item device checklist** — in progress, user-driven. See
+5. **A1's six-item device checklist** — in progress, user-driven. See
    `REMAINING.md` A1 for the exact `adb` command per item.
-5. **Confirm G1's real-SMS leg** — configure a backup contact, kill
-   connectivity, verify the on-device SMS actually arrives.
-6. **Write the redaction `ai_evaluation_run` row** (needs explicit
+6. **GSM modem ingestion daemon (A5)** — scoped 2026-09-17, not built.
+   See "Where things stand" above for the planned design; user has the
+   tethered-phone hardware now.
+7. **Write the redaction `ai_evaluation_run` row** (needs explicit
    go-ahead — writes the real DB): dataset `redaction-eval-v1`/`v1`,
    model `aisingapore/Llama-SEA-LION-v3.5-8B-R`, sample_count 200,
    precision_score 0.75880, recall_score 0.98260. Apply migration 0021
    to the real databases first.
-7. **Hand `eval-kit/` to a friend for the other 7 model tasks** —
+8. **Hand `eval-kit/` to a friend for the other 7 model tasks** —
    `README-FOR-FRIEND.md` has the commands. Then the Bikol human
    spot-check and human-rated translation/summary samples.
-8. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
+9. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
 
 **F1 (reopened)** isn't on this list because nothing currently depends on
 remote access working — LAN-only development and testing both work fine
@@ -239,6 +275,9 @@ adb shell monkey -p ph.baranguard.tanod -c android.intent.category.LAUNCHER 1
 # Check whether a Cloudflare Quick Tunnel is currently running (temporary
 # remote testing only — see REFERENCE.md §1; not a production access path)
 tasklist //FI "IMAGENAME eq cloudflared.exe"
+
+# Mobile static checks (run after ANY mobile change)
+cd mobile && npx tsc --noEmit && npm run lint && node scripts/verify-local-schema.mjs
 ```
 
 Neither the retention job nor the restore drill is scheduled — both are

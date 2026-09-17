@@ -49,7 +49,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   IonAlert,
-  IonButton,
   IonContent,
   IonIcon,
   IonPage,
@@ -89,12 +88,6 @@ import { uuid } from '../services/uuid';
 
 /** §1: "Four barangays, fixed" — REFERENCE.md's own words; not invented here. */
 const BARANGAY_NAMES: Record<number, string> = { 1: 'Dao', 2: 'Binanuahan', 3: 'Marifosque', 4: 'Banuyo' };
-
-const STATUS_LABEL: Record<DutyStatus, string> = {
-  on_duty: 'On Duty',
-  responding: 'Responding',
-  off_duty: 'Off Duty',
-};
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
@@ -454,7 +447,9 @@ const HomePage: React.FC = () => {
                 {topDispatch.redacted_incident_type ? topDispatch.redacted_incident_type.replace(/_/g, ' ').toUpperCase() : 'INCIDENT REPORTED'}
               </h3>
               <div className="situational-detail">
-                Assigned to your unit · Tap below to launch turn-by-turn route navigation.
+                Assigned to your unit
+                {activeDispatchCount > 1 ? ` · ${activeDispatchCount} active assignments` : ''} · Tap below to
+                launch turn-by-turn route navigation.
               </div>
               <div className="situational-mission-action">
                 <button

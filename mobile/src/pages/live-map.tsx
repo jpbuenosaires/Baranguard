@@ -40,16 +40,23 @@ import {
   IonIcon,
   IonPage,
   IonSpinner,
+  IonToast,
 } from '@ionic/react';
 import {
+  copyOutline,
+  expandOutline,
+  contractOutline,
   locateOutline,
   locationOutline,
   navigateOutline,
   radioOutline,
+  shieldCheckmarkOutline,
   timeOutline,
   warningOutline,
+  alertCircleOutline,
+  peopleOutline,
 } from 'ionicons/icons';
-import LiveMapCanvas, { type BasemapStatus } from '../components/LiveMapCanvas';
+import LiveMapCanvas, { type BasemapStatus, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import MobileHeader from '../components/MobileHeader';
 import {
   ApiError,
@@ -64,7 +71,8 @@ import { getCurrentPosition, watchPosition, type DevicePosition } from '../servi
 import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { loadSession } from '../services/session';
 import { uuid } from '../services/uuid';
-import { bearingLabel, distanceMeters, formatDistance } from '../utils/geo';
+import { bearingLabel, distanceMeters, formatDistance, formatRelativeAge } from '../utils/geo';
+import tacticalFeedback from '../utils/tacticalFeedback';
 
 const MIN_BROADCAST_INTERVAL_MS = 15000;
 const NEARBY_REFRESH_INTERVAL_MS = 30000;
@@ -76,11 +84,7 @@ const PRIORITY_PILL_CLASS: Record<string, string> = {
   critical: 'status-pill--critical is-urgent',
 };
 
-const PRIORITY_ACCENT_CLASS: Record<string, string> = {
-  normal: 'card--info-accent',
-  high: 'card--warning-accent',
-  critical: 'card--critical-accent',
-};
+type RadarSegment = 'incidents' | 'tanods';
 
 const LiveMapPage: React.FC = () => {
   const [position, setPosition] = useState<DevicePosition | null>(null);
@@ -91,7 +95,12 @@ const LiveMapPage: React.FC = () => {
   const [tanodsError, setTanodsError] = useState<string | null>(null);
   const [barangayId, setBarangayId] = useState<number | null>(null);
   const [basemapStatus, setBasemapStatus] = useState<BasemapStatus>({ kind: 'loading' });
+  const [activeSegment, setActiveSegment] = useState<RadarSegment>('incidents');
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const lastBroadcastAt = useRef(0);
+  const mapCanvasRef = useRef<LiveMapCanvasHandle | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,12 +108,6 @@ const LiveMapPage: React.FC = () => {
       const session = await loadSession();
       if (cancelled || !session) return;
       setBarangayId(session.barangayId);
-      // Safety-net re-check: login.tsx already kicks this off in the
-      // background on sign-in, but a long-lived session (no fresh login
-      // since an admin published a new package) should still pick up an
-      // update when this screen is opened. Never awaited/blocking — same
-      // non-fatal, offline-tolerant contract as ensureMapPackageDownloaded()
-      // itself.
       void ensureMapPackageDownloaded(session.barangayId);
     }
     void loadBarangay();
@@ -148,7 +151,7 @@ const LiveMapPage: React.FC = () => {
         setPositionError(null);
         await broadcast(initial);
       } catch {
-        setPositionError('Unable to read device location. Please ensure location permissions are enabled.');
+        setPositionError('Unable to read device location. Ensure GPS is enabled.');
       }
 
       try {
@@ -237,99 +240,114 @@ const LiveMapPage: React.FC = () => {
 
   const basemapLabel =
     basemapStatus.kind === 'offline'
-      ? `Offline basemap · package v${basemapStatus.version}`
+      ? `Offline MBTiles v${basemapStatus.version}`
       : basemapStatus.kind === 'online'
-        ? 'Online basemap · OpenStreetMap (no package downloaded)'
+        ? 'Online OpenStreetMap'
         : basemapStatus.kind === 'unavailable'
-          ? 'Basemap unavailable'
-          : 'Loading basemap…';
+          ? 'Basemap Unavailable'
+          : 'Loading Tiles…';
+
+  function handleCopyCoords() {
+    if (!position) return;
+    const coordsStr = `${position.latitude.toFixed(5)}, ${position.longitude.toFixed(5)}`;
+    void navigator.clipboard.writeText(coordsStr);
+    tacticalFeedback.onTap();
+    setToastMessage(`Copied: ${coordsStr} (Ready for radio dispatch)`);
+  }
+
+  function handleFocusTarget(lat: number, lng: number) {
+    tacticalFeedback.onTap();
+    mapCanvasRef.current?.focusCoordinates(lat, lng, 16);
+    // Scroll map smoothly into view if scrolled down
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   return (
     <IonPage>
       <MobileHeader title="LIVE RADAR" subtitle="Field Telemetry" />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
-        <div className="app-column">
-          {/* Rendered basemap */}
-          <LiveMapCanvas
-            barangayId={barangayId}
-            position={position}
-            incidents={nearby}
-            tanods={nearbyTanods}
-            onStatusChange={setBasemapStatus}
-          />
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              margin: '8px 0 20px',
-              fontSize: '0.72rem',
-              color: 'var(--color-text-tertiary)',
-            }}
-          >
-            <IonIcon icon={navigateOutline} />
-            <span>{basemapLabel}</span>
+        <div className="app-column radar-layout">
+          {/* 1. Tactical Map Viewport Container */}
+          <div className="radar-map-wrapper">
+            <LiveMapCanvas
+              ref={mapCanvasRef}
+              barangayId={barangayId}
+              position={position}
+              incidents={nearby}
+              tanods={nearbyTanods}
+              onStatusChange={setBasemapStatus}
+              height={isExpanded ? '60vh' : '330px'}
+            />
+
+            {/* Top-Left Floating Basemap Status Pill */}
+            <div className="radar-map-badge">
+              <IonIcon icon={navigateOutline} style={{ color: 'var(--color-primary)' }} />
+              <span>{basemapLabel}</span>
+            </div>
+
+            {/* Floating Map Utility Stack */}
+            <div className="radar-map-controls">
+              <button
+                type="button"
+                className="radar-map-btn"
+                onClick={() => {
+                  tacticalFeedback.onTap();
+                  setIsExpanded((prev) => !prev);
+                }}
+                aria-label={isExpanded ? 'Collapse Map' : 'Expand Map'}
+              >
+                <IonIcon icon={isExpanded ? contractOutline : expandOutline} />
+              </button>
+            </div>
           </div>
 
-          {/* Radar Telemetry Card */}
-          <div className="card--tactical card--elevated" style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* 2. Tactical GPS Telemetry Lock HUD */}
+          <div className="radar-gps-hud">
+            <div className="radar-gps-hud-header">
+              <div className="radar-gps-hud-title-wrap">
                 <div
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '50%',
-                    background: isLive ? 'var(--tint-success-bg)' : 'var(--tint-neutral-bg)',
-                    color: isLive ? 'var(--color-success)' : 'var(--color-text-secondary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.25rem',
-                  }}
+                  className={`radar-gps-hud-icon ${
+                    isLive ? 'radar-gps-hud-icon--live' : 'radar-gps-hud-icon--stale'
+                  }`}
                 >
                   <IonIcon icon={locateOutline} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                    GPS Telemetry Lock
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>
-                    {isLive ? 'Continuous GPS lock active' : 'Waiting for satellite acquisition'}
+                  <div className="radar-gps-hud-title">GPS Telemetry Lock</div>
+                  <div className="radar-gps-hud-sub">
+                    {isLive ? 'Continuous GPS lock active' : 'Acquiring satellite fix…'}
                   </div>
                 </div>
               </div>
 
               <span className={`status-pill ${isLive ? 'status-pill--success' : 'status-pill--neutral'}`}>
-                {isLive ? 'LIVE LOCK' : 'SIGNAL STALE'}
+                {isLive ? 'LIVE SATELLITE LOCK' : 'SIGNAL STALE'}
               </span>
             </div>
 
             {position ? (
-              <div
-                style={{
-                  background: 'var(--color-bg)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px',
-                  marginBottom: '10px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span style={{ fontSize: 'var(--font-size-label)', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
-                    CURRENT COORDINATES
-                  </span>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                    Accuracy ±{position.accuracyM.toFixed(0)}m
-                  </span>
+              <div className="radar-coords-pill">
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="radar-coords-text">
+                    {position.latitude.toFixed(5)}, {position.longitude.toFixed(5)}
+                  </div>
+                  <div className="radar-coords-meta">
+                    <span>Accuracy: ±{position.accuracyM.toFixed(0)}m</span>
+                    <span>·</span>
+                    <span>{ageSeconds !== null ? formatRelativeAge(ageSeconds) : 'Live'}</span>
+                  </div>
                 </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                  {position.latitude.toFixed(5)}, {position.longitude.toFixed(5)}
-                </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
-                  Last recorded: {ageSeconds}s ago
-                </div>
+
+                <button
+                  type="button"
+                  className="radar-copy-btn"
+                  onClick={handleCopyCoords}
+                  aria-label="Copy Coordinates"
+                >
+                  <IonIcon icon={copyOutline} />
+                  <span>Copy</span>
+                </button>
               </div>
             ) : positionError ? (
               <div
@@ -337,189 +355,274 @@ const LiveMapPage: React.FC = () => {
                   background: 'var(--tint-critical-bg)',
                   border: '1px solid var(--color-critical)',
                   borderRadius: 'var(--radius-sm)',
-                  padding: '10px',
+                  padding: '8px 10px',
                   color: 'var(--pill-critical-text)',
                   fontSize: 'var(--font-size-sm)',
-                  marginBottom: '10px',
                 }}
               >
                 {positionError}
               </div>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 0' }}>
-                <IonSpinner name="dots" />
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                  Acquiring GPS fix…
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0' }}>
+                <IonSpinner name="dots" color="light" />
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'rgba(255, 255, 255, 0.8)' }}>
+                  Triangulating satellite coordinates…
                 </span>
               </div>
             )}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
-              <IonIcon icon={radioOutline} style={{ color: 'var(--color-primary)' }} />
-              <span>Transmitting coordinates to Barangay HQ every 15s</span>
+            <div className="radar-broadcast-indicator">
+              <IonIcon icon={radioOutline} style={{ color: '#38bdf8' }} />
+              <span>Transmitting live coordinates to Barangay HQ every 15s</span>
             </div>
           </div>
 
-          {/* Nearby Incidents Feed */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Nearby Incidents
-            </h3>
-            {nearby.length > 0 && (
-              <span className="status-pill status-pill--info">{nearby.length} WITHIN RANGE</span>
-            )}
+          {/* 3. Tactical Segment Filter Bar */}
+          <div className="radar-segment-bar">
+            <button
+              type="button"
+              className={`radar-segment-tab ${activeSegment === 'incidents' ? 'radar-segment-tab--active' : ''}`}
+              onClick={() => {
+                tacticalFeedback.onTap();
+                setActiveSegment('incidents');
+              }}
+            >
+              <IonIcon icon={alertCircleOutline} />
+              <span>Nearby Incidents</span>
+              <span className="radar-segment-badge">{nearby.length}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`radar-segment-tab ${activeSegment === 'tanods' ? 'radar-segment-tab--active' : ''}`}
+              onClick={() => {
+                tacticalFeedback.onTap();
+                setActiveSegment('tanods');
+              }}
+            >
+              <IonIcon icon={peopleOutline} />
+              <span>Peer Tanods</span>
+              <span className="radar-segment-badge">{nearbyTanods.length}</span>
+            </button>
           </div>
 
-          {nearbyError && (
-            <div
-              style={{
-                background: 'var(--tint-warning-bg)',
-                border: '1px solid var(--color-warning)',
-                borderRadius: 'var(--radius-md)',
-                padding: '10px 14px',
-                marginBottom: '14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: 'var(--pill-warning-text)',
-                fontSize: 'var(--font-size-sm)',
-              }}
-              role="status"
-            >
-              <IonIcon icon={warningOutline} />
-              <span>{nearbyError}</span>
-            </div>
-          )}
-
-          {nearby.length === 0 && !nearbyError ? (
-            <div
-              className="card--elevated"
-              style={{
-                textAlign: 'center',
-                padding: '32px 16px',
-                color: 'var(--color-text-secondary)',
-                fontSize: 'var(--font-size-sm)',
-              }}
-            >
-              No active incidents detected in your immediate perimeter.
-            </div>
-          ) : (
-            <div className="card-list">
-              {nearby.map((incident) => {
-                const accentClass = PRIORITY_ACCENT_CLASS[incident.priority] ?? 'card--info-accent';
-                const pillClass = PRIORITY_PILL_CLASS[incident.priority] ?? 'status-pill--info';
-
-                return (
-                  <div key={incident.incidentId} className={`card ${accentClass}`} style={{ padding: '14px' }}>
-                    <div className="card__header" style={{ marginBottom: '6px' }}>
-                      <span style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                        {incident.incidentType.replace(/_/g, ' ').toUpperCase()}
-                      </span>
-                      <span className={`status-pill ${pillClass}`} style={{ marginLeft: 'auto' }}>
-                        {incident.priority}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                      <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)' }} />
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                        {position
-                          ? `${formatDistance(distanceMeters(position.latitude, position.longitude, incident.latitude, incident.longitude))} · ${bearingLabel(position.latitude, position.longitude, incident.latitude, incident.longitude)}`
-                          : `${incident.latitude.toFixed(4)}, ${incident.longitude.toFixed(4)}`}
-                      </span>
-                      <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}>
-                        <IonIcon icon={timeOutline} />
-                        {Math.floor(incident.ageSeconds / 60)}m ago
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Nearby Tanods Feed */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 12px' }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-              Nearby Tanods
-            </h3>
-            {nearbyTanods.length > 0 && (
-              <span className="status-pill status-pill--info">{nearbyTanods.length} IN BARANGAY</span>
-            )}
-          </div>
-
-          {tanodsError && (
-            <div
-              style={{
-                background: 'var(--tint-warning-bg)',
-                border: '1px solid var(--color-warning)',
-                borderRadius: 'var(--radius-md)',
-                padding: '10px 14px',
-                marginBottom: '14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: 'var(--pill-warning-text)',
-                fontSize: 'var(--font-size-sm)',
-              }}
-              role="status"
-            >
-              <IonIcon icon={warningOutline} />
-              <span>{tanodsError}</span>
-            </div>
-          )}
-
-          {nearbyTanods.length === 0 && !tanodsError ? (
-            <div
-              className="card--elevated"
-              style={{
-                textAlign: 'center',
-                padding: '32px 16px',
-                color: 'var(--color-text-secondary)',
-                fontSize: 'var(--font-size-sm)',
-              }}
-            >
-              No other Tanods have a recorded position right now.
-            </div>
-          ) : (
-            <div className="card-list">
-              {nearbyTanods.map((tanod) => (
-                <div key={tanod.userId} className={`card ${tanod.isStale ? '' : 'card--info-accent'}`} style={{ padding: '14px' }}>
-                  <div className="card__header" style={{ marginBottom: '6px' }}>
-                    <span style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                      {tanod.fullName}
-                    </span>
-                    <span className={`status-pill ${tanod.isStale ? 'status-pill--neutral' : 'status-pill--success'}`} style={{ marginLeft: 'auto' }}>
-                      {tanod.isStale ? 'STALE' : 'LIVE'}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                    <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)' }} />
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                      {position
-                        ? `${formatDistance(distanceMeters(position.latitude, position.longitude, tanod.latitude, tanod.longitude))} · ${bearingLabel(position.latitude, position.longitude, tanod.latitude, tanod.longitude)}`
-                        : `${tanod.latitude.toFixed(4)}, ${tanod.longitude.toFixed(4)}`}
-                    </span>
-                    <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}>
-                      <IonIcon icon={timeOutline} />
-                      {Math.floor(tanod.ageSeconds / 60)}m ago
-                    </span>
-                  </div>
-
-                  {tanod.dispatchId !== null && (
-                    <div style={{ marginTop: '6px', fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>
-                      On an active dispatch
-                    </div>
-                  )}
+          {/* 4. Filtered Perimeter Feed */}
+          {activeSegment === 'incidents' && (
+            <div>
+              {nearbyError && (
+                <div
+                  style={{
+                    background: 'var(--tint-warning-bg)',
+                    border: '1px solid var(--color-warning)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 14px',
+                    marginBottom: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: 'var(--pill-warning-text)',
+                    fontSize: 'var(--font-size-sm)',
+                  }}
+                  role="status"
+                >
+                  <IonIcon icon={warningOutline} />
+                  <span>{nearbyError}</span>
                 </div>
-              ))}
+              )}
+
+              {nearby.length === 0 && !nearbyError ? (
+                <div
+                  className="card--elevated"
+                  style={{
+                    textAlign: 'center',
+                    padding: '36px 16px',
+                    color: 'var(--color-text-secondary)',
+                    fontSize: 'var(--font-size-sm)',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  No active incidents detected in your immediate perimeter.
+                </div>
+              ) : (
+                <div className="card-list">
+                  {nearby.map((incident) => {
+                    const pillClass = PRIORITY_PILL_CLASS[incident.priority] ?? 'status-pill--info';
+                    const priorityModifier = `radar-item-card--${incident.priority}`;
+
+                    return (
+                      <div
+                        key={incident.incidentId}
+                        className={`radar-item-card ${priorityModifier}`}
+                        onClick={() => handleFocusTarget(incident.latitude, incident.longitude)}
+                      >
+                        <div className="radar-item-top">
+                          <div className="radar-item-title">
+                            <span>{incident.incidentType.replace(/_/g, ' ').toUpperCase()}</span>
+                          </div>
+                          <span className={`status-pill ${pillClass}`}>{incident.priority}</span>
+                        </div>
+
+                        <div className="radar-item-meta">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="radar-distance-chip">
+                              <IonIcon icon={locationOutline} />
+                              {position
+                                ? `${formatDistance(distanceMeters(position.latitude, position.longitude, incident.latitude, incident.longitude))} · ${bearingLabel(position.latitude, position.longitude, incident.latitude, incident.longitude)}`
+                                : `${incident.latitude.toFixed(4)}, ${incident.longitude.toFixed(4)}`}
+                            </span>
+
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem' }}>
+                              <IonIcon icon={timeOutline} />
+                              {formatRelativeAge(incident.ageSeconds)}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="radar-focus-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFocusTarget(incident.latitude, incident.longitude);
+                            }}
+                          >
+                            <IonIcon icon={locateOutline} />
+                            <span>View</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSegment === 'tanods' && (
+            <div>
+              {tanodsError && (
+                <div
+                  style={{
+                    background: 'var(--tint-warning-bg)',
+                    border: '1px solid var(--color-warning)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 14px',
+                    marginBottom: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: 'var(--pill-warning-text)',
+                    fontSize: 'var(--font-size-sm)',
+                  }}
+                  role="status"
+                >
+                  <IonIcon icon={warningOutline} />
+                  <span>{tanodsError}</span>
+                </div>
+              )}
+
+              {nearbyTanods.length === 0 && !tanodsError ? (
+                <div
+                  className="card--elevated"
+                  style={{
+                    textAlign: 'center',
+                    padding: '36px 16px',
+                    color: 'var(--color-text-secondary)',
+                    fontSize: 'var(--font-size-sm)',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
+                  No other Tanods have a recorded position right now.
+                </div>
+              ) : (
+                <div className="card-list">
+                  {nearbyTanods.map((tanod) => {
+                    const cardModifier = tanod.isStale ? 'radar-item-card--tanod-stale' : 'radar-item-card--tanod';
+
+                    return (
+                      <div
+                        key={tanod.userId}
+                        className={`radar-item-card ${cardModifier}`}
+                        onClick={() => handleFocusTarget(tanod.latitude, tanod.longitude)}
+                      >
+                        <div className="radar-item-top">
+                          <div className="radar-item-title">
+                            <IonIcon icon={shieldCheckmarkOutline} style={{ color: 'var(--color-primary)' }} />
+                            <span>{tanod.fullName}</span>
+                          </div>
+                          <span
+                            className={`status-pill ${tanod.isStale ? 'status-pill--neutral' : 'status-pill--success'}`}
+                          >
+                            {tanod.isStale ? 'STALE' : 'LIVE'}
+                          </span>
+                        </div>
+
+                        <div className="radar-item-meta">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="radar-distance-chip">
+                              <IonIcon icon={locationOutline} />
+                              {position
+                                ? `${formatDistance(distanceMeters(position.latitude, position.longitude, tanod.latitude, tanod.longitude))} · ${bearingLabel(position.latitude, position.longitude, tanod.latitude, tanod.longitude)}`
+                                : `${tanod.latitude.toFixed(4)}, ${tanod.longitude.toFixed(4)}`}
+                            </span>
+
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem' }}>
+                              <IonIcon icon={timeOutline} />
+                              {formatRelativeAge(tanod.ageSeconds)}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="radar-focus-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFocusTarget(tanod.latitude, tanod.longitude);
+                            }}
+                          >
+                            <IonIcon icon={locateOutline} />
+                            <span>View</span>
+                          </button>
+                        </div>
+
+                        {tanod.dispatchId !== null && (
+                          <div
+                            style={{
+                              marginTop: '8px',
+                              fontSize: '0.72rem',
+                              color: 'var(--color-primary)',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <span>🚔 Assigned to Dispatch #{tanod.dispatchId}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
+
+        <IonToast
+          isOpen={toastMessage !== null}
+          message={toastMessage ?? ''}
+          duration={2500}
+          color="primary"
+          onDidDismiss={() => setToastMessage(null)}
+        />
       </IonContent>
     </IonPage>
   );
 };
 
 export default LiveMapPage;
+

@@ -17,7 +17,6 @@ import {
 } from '@ionic/react';
 import {
   checkmarkCircleOutline,
-  cloudDoneOutline,
   closeOutline,
   documentTextOutline,
   navigateOutline,
