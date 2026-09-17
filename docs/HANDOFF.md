@@ -8,6 +8,41 @@ date/keyword, don't read front to back).
 
 ## Where things stand
 
+**2026-09-17 (3) — Sprint 8: 4 MORE boxes done (6 total today), all
+hardware/credential-free boxes now complete.** Auth/session revocation +
+lockout (new `backend/scripts/verify-auth-lockout-revocation.php`,
+21/21 — real 5-failed-attempt lockout, session revocation on logout,
+change-password revoking other sessions but not itself, all against real
+`baranguard_uiseed` data with full cleanup on exit), Tenant/ownership
+pentest for a non-incident resource (re-ran the existing
+`verify-b2-pentest-remaining-resources.sh`, fresh 59/59), Raw-PII
+exposure audit (full trace of every `raw_narrative` reference in the
+codebase plus an empirical query of all 242 real `audit_log` rows — zero
+violations found), and Fatigue audit trail (re-ran
+`verify-scheduler-fatigue.sh` fresh at 43/43, then filled the one real
+gap it doesn't check — acknowledged a real seeded `fatigue_flag` via the
+live API and confirmed both that the row persists, not deleted, AND that
+a real `audit_log` row was written). Full detail in `backend/DEVLOG.md`
+2026-09-17 (3).
+
+**Found while picking a test account for the lockout script**:
+`tanod.olayvar` — the account this session had been telling the user to
+use for mobile login testing — is actually seeded `is_suspended=1`.
+Login for it is *supposed* to fail. Whichever account the user actually
+used successfully in the emulator earlier was not this one; don't repeat
+this credential without checking `is_active`/`is_suspended` first.
+
+**Remaining Sprint 8 boxes are all genuinely device/credential-blocked**,
+not skipped for convenience: offline cache durability (real Android
+device), notification e2e reliability (real FCM/Semaphore, FCM now wired
+but device-unconfirmed — see below), GPS/route accuracy (needs a real
+GPS trace to compare against), AI dataset evaluation (this workstation
+times out mid-generation — needs a friend's hardware), and SLM inference
+across 3+ device tiers (same). Pick one specific end-to-end UAT scenario
+or sync latency / offline-map availability next only if a real device
+becomes available — attempting them without one would produce weak,
+not-really-measured evidence.
+
 **2026-09-17 (2) — Sprint 8: 2 boxes done, with real evidence.**
 "Dispatch response-time metric" (23 min avg over the default 30-day
 window, n=5; 21.55 min all-time, n=11; range 14–34 min — formula verified
