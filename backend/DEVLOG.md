@@ -13023,3 +13023,146 @@ or error, on every GET route, matches §6's envelope shape exactly.
 - Not run: the other Sprint 8 boxes (device-blocked or needs
   credentials/hardware this session doesn't have) — see `REMAINING.md`
   for the full list.
+
+## 2026-09-17 (3) — Sprint 8: all remaining doable-today boxes (4 more)
+
+User asked for "all doable" boxes after the first 2 — continuing the same
+multi-box exception from 2026-09-17 (2). Reviewed every box in
+`SPRINTS.md`'s menu again and confirmed which are genuinely hardware/
+credential-free: Auth/session revocation + lockout, Tenant/ownership
+pentest (non-incident resource), Raw-PII exposure audit, and Fatigue
+audit trail all qualify. Offline cache durability, Notification e2e
+reliability, GPS/route accuracy, AI dataset evaluation, and SLM inference
+across device tiers all still genuinely need a device/credentials/friend's
+hardware — not attempted, not faked.
+
+### Box 3: Auth/session revocation + lockout evidence
+
+New script: `backend/scripts/verify-auth-lockout-revocation.php` (`php
+-l` clean). Runs against the real backend + `baranguard_uiseed`, on
+`tanod.delacruz` (an active, non-suspended account — see the credential
+correction below for why not `tanod.olayvar`). Mutates that account's
+password/lockout state during the run, restores it to the documented
+seed defaults on exit via `register_shutdown_function` (runs even on
+failure). **21/21 passed**:
+
+- 5 failed logins lock the account; the API returns the identical
+  generic 401 for every one (no distinguishable "you're locked out"
+  response — anti-enumeration, confirmed intentional in
+  `AuthController::login()`'s own comment). Lockout can only be proven
+  by combining that with a direct DB read: after the 5th failure,
+  `locked_until` is set ~15 minutes out and even the **correct**
+  password is then rejected — proving the account is actually locked,
+  not just still guessing wrong.
+- Clearing the lock (simulated directly in the disposable DB rather than
+  sleeping 15 real minutes) lets the correct password through again and
+  resets `failed_login_attempts` to 0.
+- Logout revokes that exact session — the same token is then rejected on
+  a route it worked on moments before. A second logout call on an
+  already-revoked session does not itself error (§6's documented
+  idempotent logout).
+- `change-password` revokes every OTHER active session for that user but
+  leaves the session that made the change valid — proven with two
+  concurrent logins (B1 makes the change, B1 keeps working, B2 is
+  rejected), and the new password is confirmed live by logging in with
+  it before the script's cleanup restores the original.
+
+**Found and corrected a real credential-documentation bug while picking
+a test account**: this session had already corrected the `uiseed`
+password (`DevSeed#2026` → `Demo@2026`, see 2026-09-17 (2)) but had also
+been telling the user `tanod.olayvar` as a working mobile-login account.
+Checking every tanod's `is_active`/`is_suspended` state to pick a safe
+target for this test found `tanod.olayvar` is actually seeded
+`is_suspended=1` — login for that account is *supposed* to fail. Whatever
+account the user actually used successfully in the emulator earlier this
+session was not `tanod.olayvar`; this file previously implied it was.
+`tanod.frasco` was also ruled out (`is_active=0`) before landing on
+`tanod.delacruz`.
+
+### Box 4: Tenant/ownership pentest — non-incident resource (re-verified)
+
+Already built and closed as B2 (`REMAINING.md`) —
+`verify-b2-pentest-remaining-resources.sh` covers dispatch, shifts,
+citizen-reports, and SMS. Re-ran it fresh for this box's own evidence
+rather than just citing the old closure: **59/59, 0 failed**, self-
+cleaning disposable DB, real `baranguard` never touched.
+
+### Box 5: Raw-PII exposure audit
+
+Full-codebase audit against Rule 1 ("`raw_narrative` never leaves the
+system except through the approved AI pipeline... `GET /incidents/:id`
+is the only endpoint that returns it, and only to a Secretary") and
+Rule 8 (audit metadata is identifiers/statuses only). Traced every one of
+the ~60 `raw_narrative` references across the codebase to its actual
+behavior, not just its comments:
+
+- `IncidentsController::show()` — confirmed in the real code (not just
+  the docblock) that `raw_narrative` is only added to the response
+  `if ($identity['role'] === 'secretary')`.
+- `SearchController`'s `SELECT` never queries `raw_narrative` at all —
+  can't leak a column it never fetches.
+- Every `Audit::record()` call site (42 total, grepped and read) — zero
+  pass narrative/description/body/message/contact content as metadata;
+  the one hit on `contact_number` in `UsersController.php` is the FIELD
+  NAME string (which field changed), never the value, matching Rule 8.
+- `ai-worker.php`'s ~40 `out()` calls — every one prints identifiers,
+  statuses, or `mb_strlen()` character counts, never model input/output
+  text. The exception-message ones were checked against
+  `OllamaException`/`OllamaUnavailableException`'s actual construction
+  sites — every message is a generic transport/HTTP-status string, never
+  the request or response body.
+- `NotificationDispatcher::composeMessage()` — every `SELECT` backing an
+  FCM/SMS payload only fetches `incident_type`/coordinates/priority/a
+  Tanod's own name; `raw_narrative`/`redacted_narrative` are never
+  queried here at all.
+- `SmsGatewayService`'s two `raw_narrative` touchpoints are both the
+  INBOUND SMS-fallback incident-creation path (a Tanod's offline
+  narrative arriving as data, same as the normal API `POST /incidents`)
+  — not a leak. `logInbound()`/`logOutbound()`'s `sms_log.message_body`
+  column was traced through every caller (`NotificationDispatcher`,
+  `CitizenUpdateNotifier`'s templated Tagalog courtesy texts, and
+  `SmsController::send()`'s operator-typed manual compose) — none pull
+  from `raw_narrative`/`redacted_narrative`.
+- **Empirical check against the real DB**, not just code review: all 242
+  real rows in `baranguard_uiseed.audit_log` — zero match
+  `REGEXP 'narrative'`, and the 10 largest `metadata_json` payloads (all
+  172 chars, `device_registered` rows) contain only device
+  identifiers/platform/flags, nothing narrative-shaped.
+
+**Zero violations found.** Stated as a real, checked result — not "looks
+fine" from a skim.
+
+### Box 6: Fatigue audit trail
+
+`verify-scheduler-fatigue.sh` re-run fresh: **43/43**, covers
+`fatigue_flag` creation/threshold calc/list/role-scoping/cross-tenant
+isolation/acknowledge/persistence/recalculation on shift swap. That
+script does NOT check the `audit_log` row itself, though — the actual
+gap this box asks about. Filled it with a real check against the live
+seeded DB:
+
+- Before: `fatigue_flag` id 1 (real seeded row, `tanod.reyes`,
+  56.00h/7day) had `acknowledged_by`/`acknowledged_at` both NULL, 0
+  `audit_log` rows for `fatigue_flag_acknowledged`.
+- Called the real `PATCH /fatigue-flags/1/acknowledge` as `admin.dao`.
+- After: the SAME `fatigue_flag` row still exists (id 1, same
+  `user_id`) with `acknowledged_by=1`/`acknowledged_at` now set —
+  confirms §9 W13's "acknowledgment never deletes or hides the
+  historical record" against real data, not just code reading. A real
+  new `audit_log` row exists: `action=fatigue_flag_acknowledged`,
+  `entity_type=fatigue_flag`, `entity_id=1`, `actor_user_id=1`,
+  `metadata_json={"flagged_user_id":4}` — correctly allow-listed,
+  matching Rule 8.
+
+### Verified
+
+- `verify-auth-lockout-revocation.php`: 21/21, real backend + real DB,
+  test account state fully restored on exit (confirmed with a follow-up
+  login).
+- `verify-b2-pentest-remaining-resources.sh`: 59/59, fresh run.
+- `verify-scheduler-fatigue.sh`: 43/43, fresh run, plus one new real
+  audit-log check against `baranguard_uiseed` (not the disposable DB —
+  deliberately, since the point was to check the REAL seed's actual
+  audit trail).
+- Raw-PII audit: code-level trace of every `raw_narrative` reference
+  plus an empirical query against all 242 real `audit_log` rows.
