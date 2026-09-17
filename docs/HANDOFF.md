@@ -8,6 +8,22 @@ date/keyword, don't read front to back).
 
 ## Where things stand
 
+**2026-09-17 (2) — Sprint 8: 2 boxes done, with real evidence.**
+"Dispatch response-time metric" (23 min avg over the default 30-day
+window, n=5; 21.55 min all-time, n=11; range 14–34 min — formula verified
+against both the live `GET /reports/summary` endpoint and independent
+SQL) and "Valid JSON contracts" (new `backend/scripts/verify-json-
+contracts.php`, 50/50 — every one of the 43 live GET routes' response
+envelope matches §6's shape exactly, checked against the real running
+backend and real `baranguard_uiseed` data). Multi-box by explicit user
+request, logged per `SPRINTS.md`'s exception rule. **Also found**: this
+file and `DEVLOG.md` had been telling sessions the wrong
+`baranguard_uiseed` login password (`DevSeed#2026`, stale from the
+2026-09-05 seed round) — the DB was reseeded since without updating that.
+**The real current password is `Demo@2026`** (from
+`backend/fixtures/uiseed-dao-demo.sql`'s own header), confirmed via a
+real login. Full detail: `backend/DEVLOG.md` 2026-09-17 (2).
+
 Sprints 0–7 complete. Sprint 8 (UAT/evaluation) open; `REMAINING.md` §F
 had been fully closed but F1 (API base URL) reopened 2026-09-15 — the
 private mesh VPN that closed it was decommissioned the same day (see
