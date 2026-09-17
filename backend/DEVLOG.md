@@ -12765,3 +12765,165 @@ still needed before device-side FCM registration can actually succeed,
 and a genuine end-to-end push test (create a dispatch, confirm the
 critical-alert overlay actually fires from a real push) hasn't happened
 yet — both pending the user's next rebuild.
+
+## 2026-09-16 (2) — Mobile CSS refactor: token hygiene + dead-code removal in app.css
+
+Requested as a standalone cleanup pass over `mobile/src/theme/app.css`
+(3,350 lines, grown from several rounds of uncommitted screen-visual
+work — Tactical Officer Hub, Dispatch Queue, Profile, Live Radar — none
+of it committed yet). The file's own header comment claims it's "built
+only from §8's tokens", but a full audit found ~60 raw hex literals that
+bypassed the token system entirely, one fully dead-and-superseded CSS
+block, one exact duplicate rule, and one real accessibility gap. Fixed
+all four, changing zero rendered pixels (verified, see below) — this was
+value/dead-code hygiene, not a visual redesign.
+
+**Dead code removed**: `.duty-switch-card`/`.duty-status-badge`/
+`.duty-pulse-indicator(--on|--off)`/`.duty-status-text`/
+`.duty-status-title`/`.duty-status-sub`/`.duty-toggle-button` — grepped
+every `.tsx` in `mobile/src`, zero references anywhere. This was
+home.tsx's OLD duty-switch UI, superseded by the newer "Tactical Officer
+Hub" (`.tactical-officer-hub`, `.tactical-duty-pulse--on`, etc., which
+*is* still used) but never deleted when the new one shipped. Kept the
+shared `@keyframes duty-pulse` since `.tactical-duty-pulse--on` still
+animates with it.
+
+**Real duplicate removed**: `.dispatch-layout` was defined twice under
+two near-identically-named section headers ("Tactical Dispatches Queue
+Overhaul" and "Tactical Field Dispatches Queue Overhaul"), back to back.
+The second definition fully overrode the first's properties, so the
+first block and its header were 100% dead weight — deleted, kept the
+second (which is what actually renders, confirmed against
+`assignments.tsx`'s `dispatch-layout` usage).
+
+**Real accessibility bug found and fixed**: the `prefers-reduced-motion:
+reduce` block still referenced the now-dead `.duty-pulse-indicator--on`
+and never covered its replacement, `.tactical-duty-pulse--on` — meaning
+a user with reduced-motion enabled got an un-silenced pulsing animation
+on the current Home screen's on-duty indicator. Swapped the selector.
+
+**Token hygiene**: added 6 new fixed-value tokens to `variables.css`
+(`--color-navy-deep`, `--gradient-tactical-dark`,
+`--color-critical-bright`, `--color-warning-bright`,
+`--color-success-bright`, `--color-accent-soft`) and replaced every raw
+hex in `app.css` that exactly matched an existing or newly-added token
+(60 literals total) with `var(...)`, via a one-off Node script doing
+literal (non-regex) string substitution to avoid any chance of a regex
+over-match — verified the replacement counts against a pre-pass grep
+count line-for-line. Three identical copies of
+`linear-gradient(135deg, #0b1329 0%, #1e293b 100%)` (Home's officer hub,
+Profile's header card, Live Map's GPS HUD — three unrelated screens that
+had each hand-copied the same gradient) got consolidated into the new
+`--gradient-tactical-dark` token. A handful of raw hexes used exactly
+once with no matching token (`#1e3a8a`, `#b91c1c`, `#b45309`, `#047857`,
+`#059669`, `#34d399`) were deliberately left alone — not every one-off
+decorative color needs a name.
+
+Also removed one redundant rule: `.mobile-login-card` had both a
+`[data-theme="dark"]` override AND an identical
+`@media (prefers-color-scheme: dark) { :root:not([data-theme="light"])... }`
+fallback right below it. `mobile/index.html` always stamps a resolved
+`data-theme` before first paint (confirmed by reading it — same pattern
+§6 documents for the web dashboard), so the media-query fallback can
+never actually fire differently from the `[data-theme="dark"]` rule.
+Deleted the redundant block; left `variables.css`'s own broader use of
+the same fallback pattern alone since unwinding that is a bigger,
+separate change to the token file itself, not this file.
+
+**Verification** (no real device / DB login available this session, so
+verified via the actual browser cascade instead of guessing): started a
+throwaway `vite --port 5180` instance (port 5173 was held by another
+session's dev server, left untouched), opened it in a browser, and for
+every touched rule created a detached DOM element with the class and
+read `getComputedStyle` — confirmed `.tactical-officer-hub` /
+`.profile-officer-card` / `.radar-gps-hud` backgrounds, and every
+substituted icon/text color (critical-bright, warning-bright,
+success-bright, accent-soft, dark-success, dark-critical, dark-accent),
+resolve to the exact same `rgb(...)` as the original hex — zero rendered
+difference. Also confirmed via `document.styleSheets` that the
+reduced-motion rule now actually targets `.tactical-duty-pulse--on`, and
+that the file still parses as valid CSS (brace-balance check + the
+login screen rendering fully styled, which a CSS parse error would have
+broken outright). Did not test authenticated screens on-device (no
+credentials for the real DB from this session) — the computed-style
+check is a stronger guarantee for this specific class of change (a pure
+value-preserving substitution) than an eyeballed screenshot would be,
+since it reads the browser's actual resolved value rather than a human
+visually comparing two images.
+
+Not touched, deliberately: the ~49 `rgba(255, 255, 255, ...)` /
+`rgba(0, 0, 0, ...)` glassmorphism overlay literals scattered through
+the file. These are per-component alpha-blend decisions (glass borders,
+hover overlays) with widely varying alpha values — tokenizing all of
+them would be a much larger, higher-risk change for low payoff, and
+isn't what §8's "never hardcode a hex value" rule is really about (that
+rule is aimed at named colors, not one-off translucency tuning). Also
+did not attempt to unify `.hero-officer-card`'s pre-existing
+`--color-navy`/`--color-navy-dark` gradient with the newer
+`--gradient-tactical-dark` pattern used by the three cards above, even
+though they're visually similar "hero card" treatments with two
+different navy palettes — that would change actual rendered color on
+one of them, which is a design call for the user, not a refactor.
+
+## 2026-09-17 — Mobile UI audit: 5 real bugs found and fixed in the tactical-theme WIP
+
+Requested as a "full audit" of the in-progress mobile tactical-theme
+rework (`App.tsx`, `ActiveStepCard.tsx`, `LiveMapCanvas.tsx`,
+`assignment-detail.tsx`, `assignments.tsx`, `live-map.tsx`, `app.css`,
+`variables.css`, `tacticalFeedback.ts` — see 2026-09-16 (2) above for the
+CSS-specific pass). Ran `tsc --noEmit`, `eslint`, and
+`verify-local-schema.mjs` (114/114, offline-DB layer untouched and
+clean); tsc/eslint surfaced 5 compile errors + 18 lint errors, traced to
+root cause rather than just silenced.
+
+**Compile errors (app would not build)**:
+1. `assignment-detail.tsx` called `formatRemainingTime`/`formatNavDistance`
+   (both real, exported from `routeProgress.ts`) without importing them —
+   one line already imported `computeNavigationState`/`NavigationState`
+   from the same module but not these two. Fixed: added to the import.
+2. Three emergency speed-dial buttons on `home.tsx` (Brgy Desk/Police
+   911/MDRRMO) called `tacticalFeedback.onWarning()`, a method that never
+   existed on the `TacticalFeedback` class. Added `onWarning()` matching
+   the class's existing tone/vibration pattern.
+
+**Wired-but-dead (real functional gaps, not lint noise)**:
+3. `assignment-detail.tsx`'s `handleToggleNavigation()` (starts/stops
+   turn-by-turn nav, fully implemented) had no UI trigger anywhere — no
+   way to stop navigation once started. Added a "Stop Navigation" button
+   to the floating controls rail (`stopOutline` icon, previously an
+   unused import).
+4. `App.tsx` computed `isNewIncident` right next to `isAssignmentDetail`
+   (both added together this session) but only wired `isAssignmentDetail`
+   into `mobile-tab-bar--hidden` — the tab bar was staying visible over
+   the New Incident full-screen form. Fixed: `isAssignmentDetail ||
+   isNewIncident`.
+5. `home.tsx` fetched a real `activeDispatchCount` from
+   `listActiveCachedDispatches()` but never rendered it anywhere. Added
+   "· N active assignments" to the situational-hub mission card when
+   count > 1 (a Tanod can have more than one concurrent active dispatch,
+   per §5's own multi-responder architecture).
+
+**Lint cleanup** (user-approved after the 5 fixes): removed 9 dead
+imports/vars (`navigate`+`useNavigate` in `App.tsx`, `STATUS_LABEL`+
+`IonButton` in `home.tsx` — confirmed dead by grepping for any other
+reference, duty-status text is all hand-written ternaries elsewhere —
+unused icon imports in `assignment-detail.tsx`/`SyncQueueModal.tsx`/
+`profile.tsx`), fixed an `any` return type + unused `mode` prop in
+`ActiveStepCard.tsx` (removed from the destructure, kept in `Props` since
+callers still pass it), and resolved both `react-hooks/exhaustive-deps`
+warnings in `assignment-detail.tsx` (one got a real primitive dep added,
+`row?.status`; the other got a documented `eslint-disable` — the ref-
+based fire-once guard means adding `row`/`handleGetRoute` would either be
+a no-op or reintroduce a refetch loop from an unstable function
+reference).
+
+**Verified**: `tsc --noEmit` clean, `eslint` zero errors in source (one
+pre-existing unrelated error remains against a generated Android build
+artifact, `android/app/build/.../native-bridge.js` — not source, not
+touched), `npx vite build` succeeds (50s, only pre-existing Ionic vendor
+CSS warnings about `:host-context`). Not device-tested — this session's
+emulator access was intermittent (adb losing the device mid-session); the
+route-line-not-rendering investigation on the live nav screen is still
+open, unrelated to these 5 fixes (a temporary diagnostic `console.log`
+added to `LiveMapCanvas.tsx` during that investigation was removed before
+this commit — never reached this state).

@@ -62,6 +62,12 @@ class TacticalFeedback {
     }
   }
 
+  /** Light tap tactile response for UI button clicks. */
+  onTap(): void {
+    this.vibrate(15);
+    this.playTone(600, 30, 'sine', 0.05);
+  }
+
   /** Tactile response when officer toggles duty status. */
   onDutyToggle(isOnDuty: boolean): void {
     this.vibrate([40, 50, 40]);
@@ -87,6 +93,13 @@ class TacticalFeedback {
     this.playTone(880, 200, 'sawtooth', 0.25);
     setTimeout(() => this.playTone(440, 250, 'sawtooth', 0.25), 200);
     setTimeout(() => this.playTone(880, 300, 'sawtooth', 0.25), 450);
+  }
+
+  /** Sharp warning blip for high-stakes actions (e.g. emergency speed-dial). */
+  onWarning(): void {
+    this.vibrate([60, 40, 60]);
+    this.playTone(880, 90, 'square', 0.1);
+    setTimeout(() => this.playTone(880, 90, 'square', 0.1), 130);
   }
 
   /** Success chime for completed sync or saved report. */
