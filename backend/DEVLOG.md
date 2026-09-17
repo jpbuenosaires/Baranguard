@@ -12927,3 +12927,99 @@ route-line-not-rendering investigation on the live nav screen is still
 open, unrelated to these 5 fixes (a temporary diagnostic `console.log`
 added to `LiveMapCanvas.tsx` during that investigation was removed before
 this commit — never reached this state).
+
+## 2026-09-17 (2) — Sprint 8: Dispatch response-time metric + Valid JSON contracts
+
+**Multi-box exception, user asked for 2 explicitly** (per `SPRINTS.md`'s
+"one item unless asked" rule) — user picked from a menu of boxes this
+session narrowed down to the ones doable without a device/credentials.
+
+**Correction found while starting this**: the credentials this session
+had been telling the user for `baranguard_uiseed` (`DevSeed#2026`, from
+the 2026-09-05 seed round documented earlier in this file) are WRONG for
+the DB's current state. The real current password is `Demo@2026` — found
+in `backend/fixtures/uiseed-dao-demo.sql`'s own header comment ("All demo
+accounts share the password: Demo@2026"), confirmed by a real
+`POST /auth/login` returning a valid token. The DB has clearly been
+reseeded since 2026-09-05 (10 users/24 incidents now vs. that entry's 12
+users/30 incidents) without updating every place the old password had
+been repeated. **If a future session tells a user `DevSeed#2026` for
+`baranguard_uiseed`, verify it actually still works first** — don't trust
+this file's own older entries for current seed credentials without a real
+login check.
+
+### Box 1: Dispatch response-time metric
+
+Formula per §6/`ReportsController.php`: `AVG(TIMESTAMPDIFF(MINUTE,
+i.created_at, d.first_arrived_at))` where `d.first_arrived_at` is
+`MIN(arrived_at)` per incident (F8's fix — de-dupes multi-dispatch
+incidents rather than averaging every dispatch row). Verified two ways:
+
+- **Real API** (`GET /reports/summary`, admin.dao token, default 30-day
+  window): `avg_response_time_minutes: 23` (5 incidents with an arrival in
+  the last 30 days from "now" — 2026-09-17 — matching `response_time_trend`'s
+  per-day breakdown: 34, 22, 14, 23, 22 minutes → mean 23.0).
+- **Direct SQL cross-check** (same formula, no date filter, all 11
+  incidents that ever got a dispatch arrival): mean 21.55 min, min 14,
+  max 34. The 30-day-window API number (23) and the all-time number
+  (21.55) differ because they're different populations, not a
+  discrepancy — confirms `resolveDateRange()`'s documented `-29 days`
+  default is what's actually filtering, not a bug.
+- **F8 de-dup mechanism**: exactly one incident in this seed
+  (`incident_id 24`) has 2 dispatches, but neither has `arrived_at` set
+  yet (`assigned`/`en_route`) — correctly excluded from both numbers
+  above by the `WHERE arrived_at IS NOT NULL` join. The dedup logic
+  itself isn't exercised by a real double-counted case in this seed (no
+  incident here has 2+ dispatches that BOTH arrived), so this run
+  confirms the formula matches spec and produces real numbers, but does
+  not additionally re-prove F8's original fix — that proof already exists
+  from F8's own closure.
+
+**Real measured numbers for the UAT report**: 23 min avg (30-day window,
+n=5), 21.55 min avg (all-time, n=11), range 14–34 min. Not target numbers
+restated as measured — pulled live from `baranguard_uiseed` via both the
+real endpoint and independent SQL.
+
+### Box 2: Valid JSON contracts
+
+New script: `backend/scripts/verify-json-contracts.php` (`php -l` clean).
+Scope stated in its own header: validates the response ENVELOPE (valid
+JSON, correct `Content-Type`, success body is never an `{"error":...}`
+wrapper, error body is exactly `{"error":{"code","message"}}` with
+non-empty string fields and no extra top-level keys) for **all 43 live
+GET routes** in `backend/routes/*.php` — not a sample. Does not
+deep-validate every documented field's type on every route (no
+per-endpoint schema spec exists yet for all 90 routes); said so in the
+script's own docblock rather than implying full coverage.
+
+Run against the real running backend (`http://127.0.0.1:8081`) and real
+`baranguard_uiseed` data, real IDs pulled from the DB (incident 1,
+dispatch 12 — has a real `route_json`, blotter 1), logged in as
+admin.dao/secretary.dao/kapitan.dao with real tokens. 50/50 checks
+passed: 36 of the 43 GET routes on their happy path, 3 additional
+not-found checks (`/incidents/999999`, `/blotter/999999`,
+`/map-packages/1` — none seeded, so this doubles as the offline-map
+package's 404 path), and 10 no-token-401 checks sampled across
+controllers (401 is produced by one shared `AuthMiddleware`, not
+per-route code, so a sample is representative — not padding the count).
+
+7 of the 43 landed on a non-2xx status on their happy-path call
+(`duty-status`, `gps/live`, `public/transparency` — missing a required
+query param the script didn't supply; `incidents/nearby`,
+`tanod-sos/fallback-contact` — Admin correctly `FORBIDDEN`, both are
+Tanod-scoped; 2 AI-draft routes — real 404, no AI draft exists yet for
+incident 1). Checked each one's actual body by hand (not just the
+script's PASS) to confirm every one is a legitimate `VALIDATION_ERROR`/
+`FORBIDDEN`/`NOT_FOUND`, not a bug the error-envelope check happened to
+paper over. **Zero contract violations found** — every response, success
+or error, on every GET route, matches §6's envelope shape exactly.
+
+### Verified
+
+- `verify-json-contracts.php`: 50/50, against the real running backend +
+  real seeded DB, not mocked.
+- Response-time formula cross-checked against direct SQL, not just
+  trusted from the endpoint.
+- Not run: the other Sprint 8 boxes (device-blocked or needs
+  credentials/hardware this session doesn't have) — see `REMAINING.md`
+  for the full list.
