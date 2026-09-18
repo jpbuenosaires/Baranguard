@@ -4,9 +4,25 @@
 never stack banners. Full history: `backend/DEVLOG.md` (grep by
 date/keyword, don't read front to back).
 
-**Last updated: 2026-09-17.**
+**Last updated: 2026-09-18.**
 
 ## Where things stand
+
+**2026-09-18 — Session-expiry 401 handling fixed; real
+`ai_evaluation_run` row written to both real DBs.** Both were on the
+"worth doing without a device" list. (1) `apiService.ts`'s `request()`
+now clears the session and fires a central event on any 401 from an
+authenticated call; `App.tsx`'s new `SessionExpiryWatcher` redirects to
+`/login` immediately instead of every screen showing a misleading
+"workstation unreachable" message. Code-verified (tsc/eslint/build all
+clean), not device-tested — the real 401-to-redirect round trip needs a
+live device. (2) Migration 0021 applied for real to both `baranguard`
+and `baranguard_uiseed` (previously only disposable-DB-verified), and the
+real redaction evaluation numbers written to both:
+`redaction-eval-v1`/`v1`, `aisingapore/Llama-SEA-LION-v3.5-8B-R`,
+`sample_count=200`, `precision=0.75880`, `recall=0.98260`. Explicit
+user go-ahead obtained before touching the real DBs. Full detail:
+`backend/DEVLOG.md` 2026-09-18.
 
 **2026-09-17 (3) — Sprint 8: 4 MORE boxes done (6 total today), all
 hardware/credential-free boxes now complete.** Auth/session revocation +
@@ -165,8 +181,8 @@ recall 98.26% (meets target), precision 75.88% (misses target), Bikol
 weakest-recall language bucket. All 8 model tasks (not just redaction)
 now have a harness + 350-record dataset (A6, closed 2026-09-14) but only
 redaction has real numbers — the other 7 need a friend's hardware next,
-same as A2 did. No `ai_evaluation_run` row written yet (needs explicit
-go-ahead to write the real DBs); Bikol human spot-check still open. Full
+same as A2 did. The real `ai_evaluation_run` row IS now written, both
+DBs (2026-09-18, see above); Bikol human spot-check still open. Full
 numbers: `REMAINING.md` A2/A6.
 
 ## Things most likely to bite you
@@ -249,20 +265,15 @@ real answer, then **C7** — makes the mobile app unusable for a real shift.
    kill) vs neither (OEM policy, leading hypothesis — fix is
    `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), then implement/verify
    whichever the evidence points to.
-4. **Session-expiry 401 handling** (found 2026-09-16, not fixed) — add a
-   central check in `apiService.ts`'s `request()` that clears the
-   session and redirects to `/login` on a 401, instead of every screen
-   showing a misleading "workstation unreachable" message.
+4. ~~Session-expiry 401 handling~~ — **done 2026-09-18**, code-verified,
+   not yet device-tested (see "Where things stand" above).
 5. **A1's six-item device checklist** — in progress, user-driven. See
    `REMAINING.md` A1 for the exact `adb` command per item.
 6. **GSM modem ingestion daemon (A5)** — scoped 2026-09-17, not built.
    See "Where things stand" above for the planned design; user has the
    tethered-phone hardware now.
-7. **Write the redaction `ai_evaluation_run` row** (needs explicit
-   go-ahead — writes the real DB): dataset `redaction-eval-v1`/`v1`,
-   model `aisingapore/Llama-SEA-LION-v3.5-8B-R`, sample_count 200,
-   precision_score 0.75880, recall_score 0.98260. Apply migration 0021
-   to the real databases first.
+7. ~~Write the redaction `ai_evaluation_run` row~~ — **done 2026-09-18**,
+   both real DBs (see "Where things stand" above).
 8. **Hand `eval-kit/` to a friend for the other 7 model tasks** —
    `README-FOR-FRIEND.md` has the commands. Then the Bikol human
    spot-check and human-rated translation/summary samples.

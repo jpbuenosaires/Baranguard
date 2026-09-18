@@ -13166,3 +13166,76 @@ seeded DB:
   audit trail).
 - Raw-PII audit: code-level trace of every `raw_narrative` reference
   plus an empirical query against all 242 real `audit_log` rows.
+
+## 2026-09-18 — Session-expiry 401 handling + real ai_evaluation_run row written
+
+Two of the device-free items from `HANDOFF.md`'s recommended-next-step
+list, user-picked ("do the remaining that is worth doing without a
+device"), with explicit separate go-ahead for the DB write.
+
+### Session-expiry 401 handling (found 2026-09-16, fixed here)
+
+The gap: every mobile screen's own catch block guessed at what a failed
+request meant (`ApiError.isOffline` only distinguishes `NETWORK_ERROR`),
+so a genuinely dead session (expired, revoked by a logout elsewhere, or
+invalidated by a password change) read to a Tanod as "workstation
+unreachable" — wrong diagnosis, and no path back to `/login`.
+
+Central fix, three small pieces rather than a per-screen patch:
+
+1. **`mobile/src/services/session.ts`** — added `onSessionExpired()`/
+   `emitSessionExpired()`, a minimal listener-list pair. `apiService.ts`
+   has no router context to act on a dead session; this is how it tells
+   whatever's listening.
+2. **`mobile/src/services/apiService.ts`**'s `request()` — on a 401 from
+   an authenticated call (`auth === true`; `/auth/login` itself passes
+   `auth: false` and is correctly excluded, since ITS 401 means wrong
+   credentials, not an expired session), calls `clearSession()` then
+   `emitSessionExpired()` before throwing the `ApiError` as before —
+   existing callers' catch blocks are untouched, they just now run after
+   the redirect is already in motion. Also wired into the pre-existing
+   "no session at all" early-throw path, for the same reason.
+3. **`mobile/src/App.tsx`** — new `SessionExpiryWatcher`, a render-nothing
+   component mounted inside `IonReactRouter` (needs `useNavigate()`),
+   subscribing once and calling `navigate('/login', { replace: true })`
+   on the event. Sits alongside `RequireSession` rather than replacing
+   it — `RequireSession` still handles the "cold-start with no session"
+   case; this handles "session died mid-use."
+
+Verified: `tsc --noEmit` clean, `eslint` zero errors in source, `npx vite
+build` succeeds (35s). Confirmed in the browser preview that app startup
+is unaffected (same pre-existing Android-only SQLite errors as always,
+nothing new). **Not device-tested** — the actual 401-to-redirect flow
+needs a real expired/revoked token round-tripping through a live
+Capacitor session, which needs a device; the logic was verified by
+reading the full call path, not by exercising it live.
+
+### Real ai_evaluation_run row written (both real DBs)
+
+Migration 0021 (`metric_a/b_name/value` columns, already written
+2026-09-14, previously verified only on a disposable DB) applied for
+real to **both** `baranguard` and `baranguard_uiseed` — confirmed via
+`DESCRIBE` before and after on each, idempotent `ADD COLUMN IF NOT
+EXISTS` guards, zero risk of clobbering existing columns. `GET
+/system/health` confirmed 200 immediately after on the running backend.
+
+Checked first whether anything in application code actually reads
+`ai_evaluation_run` before writing to it: only one reference exists
+(`AiDraftController.php`'s `VALIDATED_LANGUAGES = ['en', 'fil']`
+constant, a comment noting Bikol needs "a real `ai_evaluation_run`
+backing it" before being added) — it's a static list, not derived from
+the table at runtime, so writing this row changes no app behavior. Rule
+16's Bikol caution stays a human decision to make later, not something
+this row auto-flips.
+
+Row written identically to both DBs (both had 0 rows before):
+`dataset_name='redaction-eval-v1'`, `dataset_version='v1'`,
+`model_version='aisingapore/Llama-SEA-LION-v3.5-8B-R'`,
+`task_type='redaction'`, `sample_count=200`, `precision_score=0.75880`,
+`recall_score=0.98260` — the real 2026-09-14 run's numbers, not a
+placeholder. `notes` column carries the Bikol-weakest-recall context and
+a pointer back to `REMAINING.md` A2 / this file's 2026-09-14 entry for
+full methodology, so the row is self-explanatory without a second lookup.
+
+Verified: `evaluation_run_id=1` in both DBs, `DESCRIBE`/`SELECT`
+confirmed matching values in both, backend health-checked after.
