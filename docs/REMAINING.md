@@ -107,8 +107,9 @@ scored. Rebuilt: dataset grew to 350 records across 7 language buckets
 (3 pure + 4 code-mixed, since Bicol-region users typically code-switch);
 new scorer classes (`backend/services/eval/`, 33/33 unit-checked);
 `ai-evaluate.php` generalized to `--task=` dispatch; migration 0021 added
-generic metric columns (verified on disposable DB, not yet applied to
-real DBs); `eval-kit/` is now generated, not hand-maintained (fixed a real
+generic metric columns (applied for real to both `baranguard` and
+`baranguard_uiseed` 2026-09-18); `eval-kit/` is now generated, not
+hand-maintained (fixed a real
 drift bug — it was missing 4 of 8 prompt methods). Provisional targets
 researched, not yet empirically validated. **Not done**: no real model
 run against the 7 new tasks yet (same friend's-hardware step as A2); human-rated translation/summary samples haven't happened.
@@ -172,10 +173,24 @@ obsolete (its use case no longer exists post-F7).
 
 ---
 
+## Sprint 8 — every device-free/AI-free box done 2026-09-17/18
+
+Dispatch response-time metric, Valid JSON contracts, Auth/session
+revocation + lockout, Tenant/ownership pentest (non-incident resource),
+Raw-PII exposure audit, Fatigue audit trail, Offline-map availability
+(server side), and one end-to-end UAT scenario (citizen report →
+resolution) are all done with real evidence — see `backend/DEVLOG.md`
+2026-09-17/18 entries. **Remaining Sprint 8 boxes are genuinely
+hardware/AI-blocked**: offline cache durability, notification e2e
+reliability, GPS/route accuracy, AI dataset evaluation, SLM inference
+across device tiers — none attempted without the real device/friend's
+hardware they need.
+
 ## Current priority
 
 1. **C7** (patrol-GPS process death) — needs the Infinix X6840 in hand to reproduce for real; see C7's entry above for the exact next diagnostic step.
 2. **A1's six-item checklist** — in progress, device-driven.
-3. **C2** (scheduler wiring) + **B3** (real restore-drill passphrase) — quick, both need a human at the keyboard for the final step.
-4. **A2/A6** — hand `eval-kit/` to a friend's hardware for the other 7 model tasks (the redaction `ai_evaluation_run` row is done, 2026-09-18).
-5. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.
+3. **A5's last check** — real `adb shell content query` against the tethered phone; daemon itself is built and proven (see A5 above).
+4. **C2** (scheduler wiring) + **B3** (real restore-drill passphrase) — quick, both need a human at the keyboard for the final step.
+5. **A2/A6** — hand `eval-kit/` to a friend's hardware for the other 7 model tasks (the redaction `ai_evaluation_run` row is done, 2026-09-18).
+6. Then whichever Sprint 8 box a real device unblocks next.
