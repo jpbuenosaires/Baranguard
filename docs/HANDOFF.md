@@ -8,6 +8,31 @@ date/keyword, don't read front to back).
 
 ## Where things stand
 
+**2026-09-18 (3) — A5 (GSM modem) code built, proven end-to-end without
+the phone.** New `backend/scripts/gsm-ingest-daemon.php` reads inbound
+SMS off a tethered phone via `adb content query` and forwards each one to
+`/internal/sms/*` — the exact wire format (SMS body = the flat JSON
+envelope `sms-envelope-build.php` already produces) is defined here for
+the first time, since on-device SMS *sending* was never built either.
+**Found and fixed a real workstation gap along the way**:
+`DEVICE_SECRET_MASTER_KEY` and `INTERNAL_SERVICE_TOKEN` were both unset
+in the real `.env` — meaning `/internal/sms/*` had never actually worked
+on this machine. Generated and set both locally (gitignored, never
+committed). Proved the whole pipeline for real: registered a fresh test
+device, built a genuinely AES-256-GCM-encrypted envelope, fed it through
+the daemon via a fixture shaped like real `adb` output, and confirmed in
+the DB that `raw_narrative` came back decrypted correctly, the incident
+and `sms_log` rows are right, malformed/wrong-type messages are
+skipped, and idempotency holds two ways (local state AND the server's
+own replay-dedup, the second discovered by accident when re-running the
+same fixture). **Not proven**: the real `adb shell content query`
+invocation against your actual tethered phone — the parser matches
+Android's documented output format but was never run against this
+specific phone. `--source=<file>` exists so a future session with the
+phone can capture one real sample and confirm/adjust the parser before
+trusting `--daemon` unattended. Full detail: `backend/DEVLOG.md`
+2026-09-18 (4).
+
 **2026-09-18 (2) — Sprint 8: 2 more boxes (offline-map availability,
 one UAT scenario), device-free and AI-free by explicit request.**
 Offline-map availability: full server-side upload/publish/download/
@@ -288,9 +313,17 @@ real answer, then **C7** — makes the mobile app unusable for a real shift.
    not yet device-tested (see "Where things stand" above).
 5. **A1's six-item device checklist** — in progress, user-driven. See
    `REMAINING.md` A1 for the exact `adb` command per item.
-6. **GSM modem ingestion daemon (A5)** — scoped 2026-09-17, not built.
-   See "Where things stand" above for the planned design; user has the
-   tethered-phone hardware now.
+6. **GSM modem ingestion daemon (A5)** — code built and proven
+   end-to-end 2026-09-18 (see "Where things stand" above). **Left to
+   do**: run `php scripts/gsm-ingest-daemon.php --status` with the real
+   phone attached to confirm `adb` reaches it, capture one real `adb
+   shell content query --uri content://sms/inbox --projection
+   "_id:address:date:body"` sample and diff it against
+   `backend/storage/gsm-test-fixture.txt`'s shape, adjust
+   `parseContentQueryOutput()` if the real output differs, then send one
+   real test SMS (the fixture's envelope JSON as the message body) from
+   a second phone to prove the full physical path before trusting
+   `--daemon` unattended.
 7. ~~Write the redaction `ai_evaluation_run` row~~ — **done 2026-09-18**,
    both real DBs (see "Where things stand" above).
 8. **Hand `eval-kit/` to a friend for the other 7 model tasks** —

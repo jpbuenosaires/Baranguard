@@ -13366,3 +13366,100 @@ Not attempted in this scenario, and correctly not: the AI redaction →
 approval → blotter finalize → Lupon packet tail end (needs Ollama, out of
 scope for this "no local AI" round) and anything needing a mobile
 device (M3/M6/M7's actual UI, offline capture, GPS).
+
+## 2026-09-18 (4) — A5: GSM ingestion daemon built, proven end-to-end without the phone
+
+User has the tethered-phone hardware now but not attached this session;
+asked for the code-buildable part of A5. New:
+`backend/scripts/gsm-ingest-daemon.php` — mirrors `ai-worker.php`'s
+`--once`/`--daemon`/`--status` shape, polls `adb shell content query
+--uri content://sms/inbox --projection "_id:address:date:body"` (`body`
+projected LAST deliberately, so a comma/`=` inside the SMS text can't
+corrupt the fields before it), tracks the highest handled `_id` in
+`backend/storage/gsm-ingest-state.json`, and forwards each new message's
+body BYTE-FOR-BYTE to the matching `/internal/sms/*` handler. The wire
+format — SMS body = the exact flat JSON envelope `sms-envelope-build.php`
+already produces — didn't exist anywhere before this; defined here by
+reusing the proven contract rather than inventing a new one, since
+on-device SMS *sending* was never built either (`smsFallbackState.ts`'s
+own header comment). This process never decrypts anything itself —
+ciphertext in, ciphertext forwarded, same output discipline as
+`ai-worker.php` (identifiers/statuses only; phone numbers masked to the
+last 4 digits in log lines).
+
+**Found while wiring this up**: `DEVICE_SECRET_MASTER_KEY` and
+`INTERNAL_SERVICE_TOKEN` were BOTH unset in the real `backend/.env` —
+meaning no device had ever gotten a real `message_encryption_key` and
+`/internal/sms/*` would 401 every single call, on this workstation,
+until now. Generated both (32 random bytes each, hex) and set them
+locally — `.env` is gitignored so this never reaches the repo;
+`.env.example` already had the correct empty placeholders for both, no
+change needed there. This is genuinely new local configuration, not a
+secret handed to anyone — loopback-only auth token and an at-rest
+wrapping key, both meaningless outside this machine.
+
+**Proven for real, not just parsed against a hand-written fixture that
+assumes success:**
+
+1. Registered a real fresh test device (`and-gsmtest-0002`, as
+   `tanod.reyes`) via the real `POST /devices/register` — this is what
+   made `DEVICE_SECRET_MASTER_KEY` matter immediately: only with it set
+   does a device ever get a real `message_encryption_key` back.
+2. Built a genuinely encrypted envelope with the real
+   `sms-envelope-build.php` (real AES-256-GCM, real AAD) — a
+   `disturbance` incident report, `raw_narrative="Loud dispute reported
+   via GSM fallback SMS test."`
+3. Wrote a fixture file shaped exactly like real `adb shell content
+   query` output (`backend/storage/gsm-test-fixture.txt`, gitignored —
+   see below), with three rows: the real envelope, a plausible OTP-spam
+   text (no JSON at all), and a JSON message with an OUTBOUND-only
+   `message_type` (`dispatch_payload`) that should never arrive as an
+   inbound SMS.
+4. `php scripts/gsm-ingest-daemon.php --once --source=<fixture>`:
+   - Row 1 forwarded to `/internal/sms/incident-fallback` → real `200`,
+     real `incident_id=26`.
+   - **Confirmed against the actual DB, not just the HTTP response**:
+     `GET /incidents/26` as Secretary shows `raw_narrative` decrypted
+     EXACTLY back to the original plaintext, `incident_type=disturbance`,
+     `source=sms`, `reported_by=4` (correctly resolved from
+     `and-gsmtest-0002`'s owning user, `tanod.reyes`), and a real
+     `sms_log` row (`transport=gsm_modem`, `direction=inbound`,
+     `status=received`, `correlation_id` matching the envelope's
+     `client_event_id`).
+   - Row 2 (OTP spam) and row 3 (wrong message_type) both correctly
+     `SKIPPED`, with a reason, and both advanced past in the state file
+     (garbage doesn't get retried forever).
+5. **Idempotency, two layers proven independently**: re-running `--once`
+   against the identical fixture with state already at `last_id=103`
+   forwarded/skipped nothing (local state working). Separately, deleting
+   the state file and re-running from scratch hit the SAME real envelope
+   again — the daemon correctly received a real `422` from the server's
+   OWN replay-dedup (`EnvelopeException`, deliberately generic per its
+   class doc) and treated it as a terminal skip rather than retrying
+   forever. This wasn't planned as a test case; it fell out of re-running
+   the same fixture twice, and is genuinely useful evidence that even a
+   corrupted/lost local state file can't cause a duplicate incident,
+   because the server enforces that independently.
+6. Empty-inbox (`adb`'s real `"No result found."` output, no `Row:`
+   lines at all) handled cleanly — zero rows, no crash, exit 0.
+
+**Not proven, honestly**: the real `adb shell content query` invocation
+against an actual tethered phone. The parser's shape
+(`_id=X, address=Y, date=Z, body=...`) matches Android's documented
+`content query` output format, but no two OEM SMS providers are
+guaranteed byte-identical, and this was never run against this specific
+phone. `--source=<file>` exists specifically so a future session with
+the phone in hand can capture one real `adb shell content query` output
+sample, diff it against the fixture's shape, and adjust the regex in
+`parseContentQueryOutput()` if needed — before ever trusting `--daemon`
+unattended against production data.
+
+Test artifacts (`gsm-test-fixture.txt`, `gsm-test-envelope.json`,
+`gsm-test-empty.txt`, `gsm-ingest-state.json`) all live under
+`backend/storage/`, which is entirely gitignored — kept on disk for the
+next session to reuse rather than deleted, since rebuilding a real
+encrypted envelope requires a device registration round-trip.
+
+Verified: `php -l` clean. Every claim above checked against a real HTTP
+response, a real DB row, or a real exit code — not asserted from reading
+the code alone.

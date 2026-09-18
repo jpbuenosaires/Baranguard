@@ -93,8 +93,13 @@ no-Firebase case no longer crashes the app (native `isFirebaseAvailable()`
 check added 2026-09-13), but push itself still needs a real project.
 
 ### 🟢 A5. GSM modem hardware
-Only needed for the tethered-phone inbound SMS path. Contract already
-proven (`scripts/sms-envelope-build.php`).
+User has the tethered phone now. Ingestion daemon
+(`backend/scripts/gsm-ingest-daemon.php`) built and proven end-to-end
+2026-09-18 against a fixture shaped like real `adb` output — real
+AES-256-GCM decryption, real incident creation, real replay-dedup, all
+confirmed against the DB. Only the actual `adb shell content query`
+invocation against a real phone is unverified; see `HANDOFF.md`'s
+recommended-next-step list for the exact remaining check.
 
 ### ✅ A6. All 8 model tasks now have an eval harness — DONE 2026-09-14
 Was: only `redaction` (1 of 8 `AiPrompts.php` task types) had ever been
