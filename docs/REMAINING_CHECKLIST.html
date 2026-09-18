@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baranguard — Remaining Checklist</title>
+<style>
+  :root {
+    --color-bg: #0b1329;
+    --color-panel: #141d3a;
+    --color-panel-2: #1b2547;
+    --color-border: #2a3560;
+    --color-text: #e6eaf5;
+    --color-text-dim: #9aa5c9;
+    --color-primary: #3b82f6;
+    --color-success: #22c55e;
+    --color-warning: #f59e0b;
+    --color-critical: #ef4444;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, #0b1329 0%, #0e1730 100%);
+    color: var(--color-text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 32px 20px 80px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  header { margin-bottom: 28px; }
+  h1 { font-size: 1.6rem; margin: 0 0 6px; }
+  .subtitle { color: var(--color-text-dim); font-size: 0.95rem; }
+  .updated { color: var(--color-text-dim); font-size: 0.8rem; margin-top: 4px; }
+
+  .progress-bar {
+    margin: 20px 0 32px;
+    background: var(--color-panel);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .progress-track {
+    flex: 1;
+    height: 8px;
+    background: var(--color-panel-2);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-success));
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+  .progress-label { font-size: 0.85rem; color: var(--color-text-dim); white-space: nowrap; }
+
+  .section { margin-bottom: 26px; }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .section-title { font-size: 1.05rem; font-weight: 600; }
+  .badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .badge--device { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.35); }
+  .badge--decision { background: rgba(245,158,11,0.15); color: #fcd34d; border: 1px solid rgba(245,158,11,0.35); }
+  .badge--judgment { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.35); }
+  .badge--done { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.35); }
+
+  .section-note { color: var(--color-text-dim); font-size: 0.85rem; margin: 0 0 12px; }
+
+  ul.items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .item {
+    background: var(--color-panel);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  }
+  .item:hover { border-color: #394675; }
+  .item.checked { opacity: 0.5; }
+  .item.checked .item-title { text-decoration: line-through; }
+
+  .item input[type="checkbox"] {
+    width: 19px;
+    height: 19px;
+    margin-top: 2px;
+    accent-color: var(--color-success);
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .item-body { flex: 1; }
+  .item-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 3px; }
+  .item-detail { color: var(--color-text-dim); font-size: 0.85rem; }
+  .item-detail code {
+    background: var(--color-panel-2);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.8rem;
+    color: #c7d2fe;
+  }
+
+  footer {
+    margin-top: 36px;
+    padding-top: 18px;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-dim);
+    font-size: 0.8rem;
+  }
+  footer a { color: var(--color-primary); }
+
+  .reset-btn {
+    background: none;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-dim);
+    font-size: 0.78rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--color-critical); color: #fca5a5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Baranguard — What's Left</h1>
+    <div class="subtitle">Everything still open after Sprint 8's device-free/AI-free boxes were closed out.</div>
+    <div class="updated">Snapshot: 2026-09-18 · full detail in <code style="color:#c7d2fe">docs/HANDOFF.md</code> and <code style="color:#c7d2fe">docs/REMAINING.md</code></div>
+  </header>
+
+  <div class="progress-bar">
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-label" id="progressLabel">0 / 0 done</div>
+    <button class="reset-btn" id="resetBtn" title="Uncheck everything">Reset</button>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Needs a physical device in hand</span>
+      <span class="badge badge--device">Device</span>
+    </div>
+    <p class="section-note">Nothing further can be verified for these from a coding session alone.</p>
+    <ul class="items">
+      <li class="item">
+        <input type="checkbox" data-id="c7">
+        <div class="item-body">
+          <div class="item-title">C7 — reproduce the patrol-GPS crash</div>
+          <div class="item-detail">On the real <strong>Infinix X6840</strong> (doesn't reproduce on a Galaxy A21s). Capture <code>adb logcat</code> while it happens — look for a <code>DEBUG</code>/<code>Fatal signal</code> tombstone vs an <code>lmkd</code> line vs neither (OEM battery policy, leading hypothesis).</div>
+        </div>
+      </li>
+      <li class="item">
+        <input type="checkbox" data-id="a1">
+        <div class="item-body">
+          <div class="item-title">A1 — six-item device checklist</div>
+          <div class="item-detail">SQLCipher encryption check, offline-kill survival, photo/voice capture, keystore passphrase round-trip, M5/M12/M13 real-screen pass, sync-trigger drain. Exact <code>adb</code> command per item in <code>docs/REMAINING.md</code> §A1.</div>
+        </div>
+      </li>
+      <li class="item">
+        <input type="checkbox" data-id="fcm">
+        <div class="item-body">
+          <div class="item-title">FCM push confirmation</div>
+          <div class="item-detail">Rebuild+reinstall from Android Studio (Gradle sync so <code>google-services</code> activates), confirm <code>GET /system/health</code> reports <code>fcm: healthy</code>, then create a real dispatch and watch the push land.</div>
+        </div>
+      </li>
+      <li class="item">
+        <input type="checkbox" data-id="routeline">
+        <div class="item-body">
+          <div class="item-title">Route-line rendering bug</div>
+          <div class="item-detail">Reconnect the device, <code>adb shell pm clear ph.baranguard.tanod</code> for a fresh WebView load, re-add a temporary diagnostic log to <code>applyRoute()</code> in <code>LiveMapCanvas.tsx</code>, confirm whether it fires.</div>
+        </div>
+      </li>
+      <li class="item">
+        <input type="checkbox" data-id="a5">
+        <div class="item-body">
+          <div class="item-title">A5 — last GSM daemon check</div>
+          <div class="item-detail">With the tethered phone connected: <code>php backend/scripts/gsm-ingest-daemon.php --status</code>, then capture one real <code>adb shell content query</code> sample and diff it against <code>backend/storage/gsm-test-fixture.txt</code>'s shape before trusting <code>--daemon</code> unattended.</div>
+        </div>
+      </li>
+      <li class="item">
+        <input type="checkbox" data-id="g1">
+        <div class="item-body">
+          <div class="item-title">G1 — confirm the real SMS fallback leg</div>
+          <div class="item-detail">Configure a backup SMS contact, kill connectivity, confirm a real SMS actually arrives on-device.</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Needs your decision — then it can be built/run</span>
+      <span class="badge badge--decision">Decision</span>
+    </div>
+    <ul class="items">
+      <li class="item">
+        <input type="checkbox" data-id="c2">
+        <div class="item-body">
+          <div class="item-title">C2 — wire retention-job.php / restore-drill.sh into Task Scheduler</div>
+          <div class="item-detail">Needs a call on: what time it runs, what Windows account it runs as, and whether <code>BACKUP_ENCRYPTION_PASSPHRASE</code> gets stored for the unattended run.</div>
+        </div>
+      </li>
+      <li class="item">
+        <input type="checkbox" data-id="b3">
+        <div class="item-body">
+          <div class="item-title">B3 — run the restore drill for real</div>
+          <div class="item-detail">Provide <code>BACKUP_ENCRYPTION_PASSPHRASE</code>; the drill itself is already proven (12/12), W20 just still shows "Never."</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Needs someone's judgment, not code</span>
+      <span class="badge badge--judgment">Judgment</span>
+    </div>
+    <ul class="items">
+      <li class="item">
+        <input type="checkbox" data-id="evalkit">
+        <div class="item-body">
+          <div class="item-title">Hand eval-kit/ to a friend with faster hardware</div>
+          <div class="item-detail">For the other 7 of 8 AI model tasks — this workstation can't finish a generation inside Ollama's 300s timeout. <code>README-FOR-FRIEND.md</code> has the commands.</div>
+        </div>
+      </li>
+      <li class="item">
+        <input type="checkbox" data-id="bikol">
+        <div class="item-body">
+          <div class="item-title">Bikol human spot-check</div>
+          <div class="item-detail">Redaction's weakest-recall language bucket (96.90% vs ~98.85% en/tl) needs a Bikol speaker to actually read a sample of outputs.</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Done this session, for reference</span>
+      <span class="badge badge--done">Done</span>
+    </div>
+    <ul class="items">
+      <li class="item checked" style="pointer-events:none;">
+        <input type="checkbox" checked disabled>
+        <div class="item-body">
+          <div class="item-title">Sprint 8 — response-time metric, JSON contracts, auth lockout/revocation, tenant pentest, raw-PII audit, fatigue audit trail, offline-map availability, one UAT scenario</div>
+        </div>
+      </li>
+      <li class="item checked" style="pointer-events:none;">
+        <input type="checkbox" checked disabled>
+        <div class="item-body">
+          <div class="item-title">Session-expiry 401 handling (code-complete, not device-tested)</div>
+        </div>
+      </li>
+      <li class="item checked" style="pointer-events:none;">
+        <input type="checkbox" checked disabled>
+        <div class="item-body">
+          <div class="item-title">Real ai_evaluation_run row written to both DBs</div>
+        </div>
+      </li>
+      <li class="item checked" style="pointer-events:none;">
+        <input type="checkbox" checked disabled>
+        <div class="item-body">
+          <div class="item-title">A5 GSM ingestion daemon built + proven against a fixture</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <footer>
+    Checkbox state saves locally in this browser only (<code>localStorage</code>) — it does not sync back to the repo or to Claude. Re-open <code>docs/HANDOFF.md</code> for the authoritative, up-to-date status.
+  </footer>
+</div>
+
+<script>
+(function () {
+  var STORAGE_KEY = 'baranguard.remainingChecklist';
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.item input[type="checkbox"]:not([disabled])'));
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveState(state) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      /* private mode or storage disabled — checkboxes still work for this view */
+    }
+  }
+
+  function updateProgress() {
+    var total = boxes.length;
+    var done = boxes.filter(function (b) { return b.checked; }).length;
+    var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressLabel').textContent = done + ' / ' + total + ' done';
+  }
+
+  function applyState() {
+    var state = loadState();
+    boxes.forEach(function (box) {
+      var id = box.getAttribute('data-id');
+      box.checked = !!state[id];
+      box.closest('.item').classList.toggle('checked', box.checked);
+    });
+    updateProgress();
+  }
+
+  boxes.forEach(function (box) {
+    box.addEventListener('change', function () {
+      var state = loadState();
+      state[box.getAttribute('data-id')] = box.checked;
+      saveState(state);
+      box.closest('.item').classList.toggle('checked', box.checked);
+      updateProgress();
+    });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function () {
+    saveState({});
+    applyState();
+  });
+
+  applyState();
+})();
+</script>
+</body>
+</html>
