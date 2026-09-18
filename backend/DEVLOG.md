@@ -13239,3 +13239,130 @@ full methodology, so the row is self-explanatory without a second lookup.
 
 Verified: `evaluation_run_id=1` in both DBs, `DESCRIBE`/`SELECT`
 confirmed matching values in both, backend health-checked after.
+
+## 2026-09-18 (2) — Sprint 8: Offline-map availability (server side)
+
+User declined the FCM rebuild+install (needs a phone) and explicitly
+asked for tasks needing neither a device nor a local-AI run. Sprint 8's
+"Offline-map availability" box qualifies — `offline_map_package` had
+zero rows in `baranguard_uiseed` (found 2026-09-17), meaning the whole
+upload/publish/download/checksum pathway had never actually been
+exercised, only read as code.
+
+Built two genuinely valid MBTiles files with PHP's `pdo_sqlite` (real
+`CREATE TABLE metadata`/`tiles`, real rows — not a renamed blob) plus one
+deliberately invalid file, then ran the full real pathway against the
+live backend + real `baranguard_uiseed`:
+
+- `GET /map-packages/1` before any upload: real 404 `NOT_FOUND`,
+  matching the 0-row state.
+- Secretary and Tanod both correctly `403 FORBIDDEN` on `POST
+  /map-packages` (Admin-only).
+- The deliberately-invalid file: `400 VALIDATION_ERROR` — both validation
+  tiers (`SQLite format 3` header check, then real `sqlite_master`
+  table check via `pdo_sqlite`) are live on this PHP build, not just the
+  header fallback.
+- Real upload v1 as `admin.dao`: `201`, real `package_id`, real SHA-256.
+- `GET /map-packages/1` (show) returns 200 for BOTH admin and tanod, per
+  §6; `GET /map-packages/1/download` correctly `403`s for Admin (Tanod-
+  only) and `200`s for Tanod.
+- **Full byte-level round trip verified**: downloaded the real bytes as
+  `tanod.delacruz`, computed SHA-256 locally, confirmed it matches both
+  the `X-Checksum-SHA256` response header AND the value from the earlier
+  `show`/`create` calls, and `diff`'d the downloaded file against the
+  original upload — byte-identical. This is exactly the verification
+  step §6 requires the mobile client to do before activating a package,
+  proven against the real server rather than assumed from reading
+  `MbtilesReader.open()`'s call site.
+- Re-uploading the identical version: real `409 CONFLICT`
+  (`UNIQUE(barangay_id, version)` pre-check).
+- Uploading v2: real `201`, and the **atomic publish** invariant (§5:
+  "exactly one package published per barangay") verified directly
+  against the DB — v1 flipped to `is_published=0`, v2 inserted as `1`,
+  never both/neither. `GET /map-packages/1` immediately reflects v2.
+- `audit_log` got real `map_package_published` (x2) and
+  `map_package_downloaded` (x1) rows with correct actor/metadata —
+  checked, not assumed.
+
+**Left the resulting v2 package in `baranguard_uiseed` deliberately**
+(package_id 1/2, barangay 1) rather than cleaning it up — unlike the
+lockout test's throwaway account state, this is a real, valid published
+package that fixes a genuine demo-data gap (W18 Map Package Management
+and M7's offline-map banner had nothing to show before this). Audit log
+rows are correctly NOT deleted either way — `audit_log` is write-once by
+design (§2 Rule 8's neighbor rule), and these are honest records of a
+real action, not noise to scrub.
+
+**Scope stated plainly**: this proves the SERVER-side pathway completely
+— upload, validation, atomic publish, integrity, role gating, audit.
+It does NOT prove the CLIENT side (`MbtilesReader.open()` actually
+rendering the package as a basemap, `offline_map_package_local`'s
+activation flow, or a real device surviving airplane mode with the
+package installed) — that still needs A1's device pass. The uploaded
+tile content itself is synthetic (`fake-png-bytes...`, not a real map
+tile image), so a device that DID load this specific test package would
+see a structurally-valid but visually blank basemap — good enough to
+prove the pipeline, not meant as a real product demo package.
+
+Verified: full flow re-read from `controllers/MapPackagesController.php`
+before testing (not guessed), every assertion above checked against a
+real HTTP response or real DB row, not inferred.
+
+## 2026-09-18 (3) — Sprint 8: one end-to-end UAT scenario, citizen report to resolution
+
+Second device-free/AI-free task from the same request. Walked the full
+citizen-facing incident lifecycle against the real backend + real
+`baranguard_uiseed`, entirely via curl, checking role gating and state
+transitions at every step rather than only the happy path:
+
+1. **`POST /citizen-reports`** (no auth, public W19 form) — real
+   submission, `report_id=10`.
+2. **`POST /citizen-reports/10/convert`** as `secretary.dao` —
+   `incident_id=25` (`display_id=INC-2026-025`), `status=pending`.
+   Confirmed `raw_narrative` visible on `GET /incidents/25` for
+   Secretary only (Rule 1, re-confirmed against a brand-new row, not
+   just the Raw-PII audit's static trace).
+3. **`POST /dispatch`** as `admin.dao` — first attempt against
+   `tanod.delacruz` correctly `422 UNPROCESSABLE_ENTITY` ("not available
+   for assignment") because that account is mid-`responding` on another
+   assignment; checked `duty_status` for who's actually `on_duty`
+   (`tanod.reyes`), retried, got a real `dispatch_id=19`. Incident
+   flipped to `status=dispatched`, `has_active_dispatch=true`.
+4. **`PATCH /dispatch/19/status`** as `tanod.reyes`, three real calls:
+   `en_route` → `arrived` → `completed`. Each returned the correct new
+   status.
+5. **`POST /incidents/25/finalize`** as `admin.dao` → correct `403`
+   (Secretary-only). As `secretary.dao` → real `409 CONFLICT`, "no
+   approved redaction yet; approve the AI draft before finalizing." A
+   genuine, previously-undocumented-in-this-session dependency: blotter
+   finalize requires the AI redaction pipeline to have run and been
+   approved first. **Did not force this through** — the user explicitly
+   asked for tasks that don't run the local model this round, and
+   completing finalize would require a real Ollama generation. Recorded
+   as a real gap in this scenario's completeness, not routed around.
+6. **`PATCH /incidents/25/status {"status":"resolved"}`** as `admin.dao`
+   instead — independent of blotter finalize (checked
+   `IncidentsController::updateStatus()` — no AI-pipeline dependency
+   there), requires the incident to be `dispatched` with no other open
+   dispatch, both true here. Real `200`, final state confirmed:
+   `status=resolved`, `dispatched_at`/`arrived_at` both real timestamps.
+
+**Audit trail for the whole walk, checked as one query**:
+`citizen_report_submitted` (actor NULL — public endpoint) →
+`citizen_report_converted` (actor 2, secretary.dao) → `dispatch_created`
+(actor 1, admin.dao) → `incident_resolved` (actor 1) — every action
+attributed correctly, nothing missing, nothing extra.
+
+**Side effect worth flagging**: this incident resolved in 0 minutes
+(`TIMESTAMPDIFF` rounds down) because every step ran back-to-back via
+script, not real-world timing — `reports/summary`'s
+`avg_response_time_minutes` moved from 23 (this session's earlier Sprint
+8 box 1 reading) to 19 as a result. Both numbers are real and correctly
+computed for their respective moments; a future session reading response-
+time numbers from `baranguard_uiseed` should know incident 25 is an
+artificially fast outlier from this test walk, not a real response.
+
+Not attempted in this scenario, and correctly not: the AI redaction →
+approval → blotter finalize → Lupon packet tail end (needs Ollama, out of
+scope for this "no local AI" round) and anything needing a mobile
+device (M3/M6/M7's actual UI, offline capture, GPS).

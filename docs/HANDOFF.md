@@ -8,6 +8,25 @@ date/keyword, don't read front to back).
 
 ## Where things stand
 
+**2026-09-18 (2) — Sprint 8: 2 more boxes (offline-map availability,
+one UAT scenario), device-free and AI-free by explicit request.**
+Offline-map availability: full server-side upload/publish/download/
+checksum pathway proven against the real backend with genuinely valid
+MBTiles files (built via PHP's `pdo_sqlite`) — atomic single-published-
+package-per-barangay invariant confirmed in the DB, byte-identical
+download round-trip, real audit trail. Left a real published package
+(v2, barangay 1) in `baranguard_uiseed` on purpose — fixes a real demo-
+data gap (W18/M7 had nothing to show before). Client-side activation on
+a real device is still untested — that part needs A1.
+One UAT scenario: full citizen-report → convert → dispatch → en_route →
+arrived → completed → resolved lifecycle walked via curl against real
+data, with correct role gating caught at each step (a wrong-Tanod
+dispatch attempt correctly rejected, Admin correctly blocked from
+finalize). Found blotter finalize needs an approved AI redaction first —
+correctly NOT forced through since the user asked for AI-free work this
+round; resolved the incident status directly instead (a genuinely
+independent path). Full detail: `backend/DEVLOG.md` 2026-09-18 (2)/(3).
+
 **2026-09-18 — Session-expiry 401 handling fixed; real
 `ai_evaluation_run` row written to both real DBs.** Both were on the
 "worth doing without a device" list. (1) `apiService.ts`'s `request()`
