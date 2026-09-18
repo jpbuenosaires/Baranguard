@@ -28,6 +28,8 @@
 
 import { Preferences } from '@capacitor/preferences';
 import {
+  clearSession,
+  emitSessionExpired,
   loadSession,
   readTokenExpiry,
   saveSession,
@@ -179,6 +181,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (auth) {
     const session = await loadSession();
     if (!session) {
+      emitSessionExpired();
       throw new ApiError(401, 'UNAUTHORIZED', 'You are signed out.');
     }
     headers['Authorization'] = `Bearer ${session.token}`;
@@ -210,6 +213,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   if (!response.ok) {
     const error = (payload as { error?: { code?: string; message?: string } } | null)?.error;
+
+    // A 401 on a call that DID send a token means the server no longer
+    // honors it (expired, revoked by logout-elsewhere, or a password
+    // change) — this is a session dying, not "workstation unreachable."
+    // `auth === false` calls (namely /auth/login itself) are excluded:
+    // their 401 means wrong credentials, not an expired session.
+    if (auth && response.status === 401) {
+      await clearSession();
+      emitSessionExpired();
+    }
+
     throw new ApiError(
       response.status,
       error?.code ?? 'SERVER_ERROR',

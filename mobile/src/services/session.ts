@@ -97,3 +97,26 @@ export async function hasLiveSession(): Promise<boolean> {
   if (!session) return false;
   return session.expiresAt * 1000 > Date.now();
 }
+
+/**
+ * Session-expiry notification — `apiService.ts`'s `request()` is the one
+ * place that actually learns a session died server-side (a 401 on an
+ * authenticated call), but it has no router context to act on that. A
+ * single listener, registered once near the app root, is how it tells the
+ * UI to leave whatever screen it's on and go back to `/login`, instead of
+ * every screen's own catch block guessing at what a 401 means (the gap
+ * this was built to close — see DEVLOG.md).
+ */
+let sessionExpiredListeners: Array<() => void> = [];
+
+/** @returns an unsubscribe function. */
+export function onSessionExpired(listener: () => void): () => void {
+  sessionExpiredListeners.push(listener);
+  return () => {
+    sessionExpiredListeners = sessionExpiredListeners.filter((l) => l !== listener);
+  };
+}
+
+export function emitSessionExpired(): void {
+  for (const listener of sessionExpiredListeners) listener();
+}

@@ -72,10 +72,12 @@ timeout (confirmed, not assumed) — needs a friend's faster hardware via
 ≥95% target), precision 75.88% (misses ≥90% target). Bikol is the
 weakest-recall language bucket (96.90% vs ~98.85% en/tl); all 13 leaks
 came from "ordinary" records, zero from the 7 engineered hard-case
-categories. Still open: no row written yet to `ai_evaluation_run` (needs
-explicit go-ahead to write the real DB); Bikol human spot-check still not
-done; **the other 7 of 8 model tasks have a harness+dataset ready
-(A6, closed) but no real run yet** — same friend's-hardware next step.
+categories. **The `ai_evaluation_run` row is now written to both real
+DBs** (2026-09-18, `evaluation_run_id=1` in both `baranguard` and
+`baranguard_uiseed`; migration 0021 applied for real at the same time).
+Still open: Bikol human spot-check not done; **the other 7 of 8 model
+tasks have a harness+dataset ready (A6, closed) but no real run yet** —
+same friend's-hardware next step.
 
 ### ✅ A3. 200/350-record eval dataset — DONE, generated not hand-authored
 `generate-eval-dataset.php` (template+pool synthesis), self-validated.
@@ -170,5 +172,5 @@ obsolete (its use case no longer exists post-F7).
 1. **C7** (patrol-GPS process death) — needs the Infinix X6840 in hand to reproduce for real; see C7's entry above for the exact next diagnostic step.
 2. **A1's six-item checklist** — in progress, device-driven.
 3. **C2** (scheduler wiring) + **B3** (real restore-drill passphrase) — quick, both need a human at the keyboard for the final step.
-4. **A2/A6** — hand `eval-kit/` to a friend's hardware for the other 7 model tasks; write the real `ai_evaluation_run` row for redaction (needs explicit go-ahead to write real DBs).
+4. **A2/A6** — hand `eval-kit/` to a friend's hardware for the other 7 model tasks (the redaction `ai_evaluation_run` row is done, 2026-09-18).
 5. Then **Sprint 8** proper — pick exactly one box from `SPRINTS.md`.

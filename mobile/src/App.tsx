@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Route, useLocation } from 'react-router-dom';
+import { Navigate, Route, useLocation, useNavigate } from 'react-router-dom';
 import {
   IonApp,
   IonIcon,
@@ -34,7 +34,7 @@ import MyReportsPage from './pages/my-reports';
 import MyShiftsPage from './pages/my-shifts';
 import NewIncidentPage from './pages/new-incident';
 import ProfilePage from './pages/profile';
-import { hasLiveSession } from './services/session';
+import { hasLiveSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
@@ -67,6 +67,29 @@ import './theme/variables.css';
 import './theme/app.css';
 
 setupIonicReact();
+
+/**
+ * Listens for `apiService.ts`'s `request()` reporting a dead session (a
+ * 401 on an authenticated call — expired, revoked by logout-elsewhere, or
+ * a password change) and leaves whatever screen is up for `/login`
+ * immediately, instead of leaving a Tanod stuck on a screen that will
+ * keep failing every request with no indication why. Renders nothing;
+ * mounted once, inside the router, so `useNavigate()` works everywhere a
+ * request can fire from. `request()` already cleared the stored session
+ * before emitting, so a fresh `RequireSession` mount (below) correctly
+ * finds nobody signed in.
+ */
+const SessionExpiryWatcher: React.FC = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    return onSessionExpired(() => {
+      navigate('/login', { replace: true });
+    });
+  }, [navigate]);
+
+  return null;
+};
 
 /**
  * Client-side session gate.
@@ -299,6 +322,7 @@ const App: React.FC = () => {
     <IonApp>
       <CriticalAlertOverlay />
       <IonReactRouter>
+        <SessionExpiryWatcher />
         <IonRouterOutlet>
           <Route path="/login" element={<LoginPage />} />
           {/* M4. Reads the stored row and derives its own state — it never
