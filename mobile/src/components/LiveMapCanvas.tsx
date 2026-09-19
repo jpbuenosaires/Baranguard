@@ -12,8 +12,15 @@
  * requirement for the field app. Falls back to online OpenStreetMap
  * raster tiles (the same source `web/src/components/LiveMap.js` already
  * uses, and the same "deliberate, logged deviation" reasoning applies
- * here — see that file's header comment) only when no package is
- * installed yet, or the installed one fails to open.
+ * here — see that file's header comment) at TWO levels: whole-session
+ * (no package installed yet, or the installed one fails to open — see
+ * init() below) AND per-tile (2026-09-18: a package exists and opens
+ * fine, but the requested z/x/y simply isn't in it — e.g. a Tanod has
+ * walked outside their downloaded package's covered area. The offline
+ * reader stays PRIMARY either way — this only reaches the network for
+ * the specific tiles the local package doesn't have, never for ones it
+ * does, so the common in-barangay/poor-signal case still costs zero
+ * network requests).
  *
  * Everything here runs inside the existing Capacitor WebView. No native
  * map plugin, no AndroidManifest change — this is what removes the
@@ -39,10 +46,12 @@ import {
   Marker,
   NavigationControl,
   addProtocol,
+  setWorkerUrl,
   type GeoJSONSource,
   type StyleSpecification,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { locateOutline } from 'ionicons/icons';
 import { IonIcon } from '@ionic/react';
 import { MbtilesReader } from '../services/mbtilesReader';
@@ -50,6 +59,11 @@ import { getActiveMapPackage, readMapPackageBytes } from '../services/mapPackage
 import type { NearbyIncident, NearbyTanod } from '../services/apiService';
 import type { DevicePosition } from '../services/geolocation';
 import { splitRouteAtSnap } from '../utils/routeProgress';
+
+// Register MapLibre's worker bundle with Vite so GeoJSON sources (route polyline) can be tiled in the background.
+// Without this, MapLibre defaults to an empty workerUrl in bundled/Capacitor environments, causing GeoJSON sources
+// to remain unloaded indefinitely and preventing vector lines from rendering.
+setWorkerUrl(maplibreWorkerUrl);
 
 /** Pilar, Sorsogon — matches web/src/components/LiveMap.js's default center. */
 const DEFAULT_CENTER: [number, number] = [123.6667, 12.9186];
@@ -198,10 +212,21 @@ function ensureProtocolRegistered(): void {
     }
     const [, z, x, y] = match;
     const tile = currentReader.getTile(Number(z), Number(x), Number(y));
-    if (!tile) {
-      throw new Error('Tile not present in the offline package.');
+    if (tile) {
+      return { data: tile.buffer.slice(tile.byteOffset, tile.byteOffset + tile.byteLength) };
     }
-    return { data: tile.buffer.slice(tile.byteOffset, tile.byteOffset + tile.byteLength) };
+    // Not in the downloaded package — most likely the Tanod has walked
+    // outside its covered area. The local package stays the PRIMARY
+    // source (see this file's header comment); this per-tile network
+    // fetch only ever runs for coordinates the package doesn't have, so
+    // it never adds latency to a tile the offline reader could already
+    // serve. If there's no connectivity out here either, this throws
+    // like before and MapLibre just leaves that tile blank.
+    const online = await fetch(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`);
+    if (!online.ok) {
+      throw new Error('Tile not present in the offline package, and the online fallback failed.');
+    }
+    return { data: await online.arrayBuffer() };
   });
 }
 
@@ -221,7 +246,7 @@ function buildOnlineStyle(): StyleSpecification {
 }
 
 function buildOfflineStyle(reader: MbtilesReader): StyleSpecification {
-  const { minzoom, maxzoom, bounds } = reader.info;
+  const { minzoom, maxzoom } = reader.info;
   return {
     version: 8,
     sources: {
@@ -231,7 +256,14 @@ function buildOfflineStyle(reader: MbtilesReader): StyleSpecification {
         tileSize: 256,
         minzoom: minzoom ?? 0,
         maxzoom: maxzoom ?? 19,
-        ...(bounds ? { bounds } : {}),
+        // Deliberately NOT setting `bounds` from the package's metadata
+        // here: MapLibre uses a source's `bounds` to decide which tiles
+        // are even worth requesting, so a bounds clamp would stop it
+        // from ever asking the TILE_PROTOCOL handler for coordinates
+        // outside the downloaded package — which is exactly the case
+        // that handler's online fallback exists to serve. Leaving bounds
+        // unset costs nothing extra: the handler still answers
+        // in-package tiles from disk with zero network calls.
       },
     },
     layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
@@ -359,12 +391,14 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     const map = mapRef.current;
     if (!map) return;
 
-    if (position) {
+    if (position && !isNaN(position.longitude) && !isNaN(position.latitude)) {
       selfMarkerRef.current?.remove();
+      const container = document.createElement('div');
       const el = document.createElement('div');
       el.className = navigationMode ? 'map-marker map-marker--self-navigating' : 'map-marker map-marker--self';
       el.title = `Your position — accuracy ±${position.accuracyM.toFixed(0)}m`;
-      selfMarkerRef.current = new Marker({ element: el }).setLngLat([position.longitude, position.latitude]).addTo(map);
+      container.appendChild(el);
+      selfMarkerRef.current = new Marker({ element: container }).setLngLat([position.longitude, position.latitude]).addTo(map);
     }
 
     if (!framedOnce.current && (position || focusTarget)) {
@@ -387,6 +421,27 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       duration: 500,
     });
   }, [navigationMode, position, routeProgress]);
+
+  // 2026-09-18: `containerRef`'s height is CSS-animated (340px <-> 68vh
+  // <-> 100%, `transition: 'height 0.3s ease'`) whenever navigationMode/
+  // fullScreen/height change — e.g. assignment-detail.tsx switching from
+  // the briefing view into turn-by-turn navigation. MapLibre sizes its
+  // WebGL canvas from the container's dimensions AT THE TIME IT LAST
+  // measured them; nothing here was ever calling `map.resize()` after a
+  // layout change, so the canvas could stay sized for the OLD (briefing)
+  // container while `getCenter()`/`getZoom()` correctly reported the new
+  // camera — the route was really being drawn, just into a canvas that
+  // no longer matched what was visually on screen. Resize once
+  // immediately (covers a discrete height prop change) and once after
+  // the CSS transition finishes (covers the animated navigationMode
+  // switch, which fires no resize-observer-friendly single event).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.resize();
+    const timer = setTimeout(() => map.resize(), 320);
+    return () => clearTimeout(timer);
+  }, [navigationMode, fullScreen, height]);
 
   useImperativeHandle(
     ref,
@@ -426,31 +481,43 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     const map = mapRef.current;
     if (!map) return;
     incidentMarkersRef.current.forEach((m) => m.remove());
-    incidentMarkersRef.current = incidents.map((incident: NearbyIncident) => {
-      const isDestination =
-        focusTarget &&
-        Math.abs(incident.latitude - focusTarget.latitude) < 0.00005 &&
-        Math.abs(incident.longitude - focusTarget.longitude) < 0.00005;
+    incidentMarkersRef.current = incidents
+      .filter((incident: NearbyIncident) => typeof incident.longitude === 'number' && typeof incident.latitude === 'number' && !isNaN(incident.longitude) && !isNaN(incident.latitude))
+      .map((incident: NearbyIncident) => {
+        const isDestination =
+          focusTarget &&
+          Math.abs(incident.latitude - focusTarget.latitude) < 0.00005 &&
+          Math.abs(incident.longitude - focusTarget.longitude) < 0.00005;
 
-      const el = document.createElement('div');
-      el.className = isDestination
-        ? `map-marker map-marker--destination ${priorityMarkerClass(incident.priority)}`
-        : priorityMarkerClass(incident.priority);
-      el.title = `${incident.incidentType.replace(/_/g, ' ')} · ${incident.priority} · ${Math.floor(incident.ageSeconds / 60)}m ago`;
-      return new Marker({ element: el }).setLngLat([incident.longitude, incident.latitude]).addTo(map);
-    });
+        // Container div is isolated for MapLibre's coordinate translation transforms
+        const container = document.createElement('div');
+        container.style.cursor = 'pointer';
+
+        const el = document.createElement('div');
+        el.className = isDestination
+          ? `map-marker map-marker--destination ${priorityMarkerClass(incident.priority)}`
+          : priorityMarkerClass(incident.priority);
+        el.title = `${incident.incidentType.replace(/_/g, ' ')} · ${incident.priority} · ${Math.floor(incident.ageSeconds / 60)}m ago`;
+
+        container.appendChild(el);
+        return new Marker({ element: container }).setLngLat([incident.longitude, incident.latitude]).addTo(map);
+      });
   }, [incidents, status, focusTarget]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     tanodMarkersRef.current.forEach((m) => m.remove());
-    tanodMarkersRef.current = tanods.map((tanod: NearbyTanod) => {
-      const el = document.createElement('div');
-      el.className = `map-marker ${tanod.isStale ? 'map-marker--tanod-stale' : 'map-marker--tanod-live'}`;
-      el.title = `${tanod.fullName} — ${tanod.isStale ? 'stale' : 'live'} · ${Math.floor(tanod.ageSeconds / 60)}m ago`;
-      return new Marker({ element: el }).setLngLat([tanod.longitude, tanod.latitude]).addTo(map);
-    });
+    tanodMarkersRef.current = tanods
+      .filter((tanod: NearbyTanod) => typeof tanod.longitude === 'number' && typeof tanod.latitude === 'number' && !isNaN(tanod.longitude) && !isNaN(tanod.latitude))
+      .map((tanod: NearbyTanod) => {
+        const container = document.createElement('div');
+        const el = document.createElement('div');
+        el.className = `map-marker ${tanod.isStale ? 'map-marker--tanod-stale' : 'map-marker--tanod-live'}`;
+        el.title = `${tanod.fullName} — ${tanod.isStale ? 'stale' : 'live'} · ${Math.floor(tanod.ageSeconds / 60)}m ago`;
+        container.appendChild(el);
+        return new Marker({ element: container }).setLngLat([tanod.longitude, tanod.latitude]).addTo(map);
+      });
   }, [tanods, status]);
 
   // Draws/updates/clears the route line — a GeoJSON source+layer on top
@@ -494,6 +561,21 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     function applyRoute() {
       if (!map) return;
 
+      if (!map.isStyleLoaded()) {
+        map.once('idle', applyRoute);
+        return;
+      }
+
+      try {
+        applyRouteBody();
+      } catch (err) {
+        console.warn('[LiveMapCanvas] applyRoute failed, retrying on idle:', err);
+        map.once('idle', applyRoute);
+      }
+    }
+
+    function applyRouteBody() {
+      if (!map) return;
       // --- Fallback Guideline: When road route is not yet available, draw dashed direct line ---
       if (!routeGeometry && position && focusTarget) {
         clearAllRouteLayers();
@@ -635,7 +717,16 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       applyRoute();
     } else {
       map.once('load', applyRoute);
+      map.once('idle', applyRoute);
     }
+    // This effect re-runs on every GPS tick (`position`), so without this
+    // cleanup every run that lands before the style is ready leaves
+    // another stale-closure `once()` listener queued; `off()` removes
+    // one-time listeners too.
+    return () => {
+      map.off('load', applyRoute);
+      map.off('idle', applyRoute);
+    };
   }, [routeGeometry, status, navigationMode, routeProgress, position, focusTarget]);
 
   function recenter() {
