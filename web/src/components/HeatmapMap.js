@@ -26,14 +26,26 @@ export function HeatmapMap(container) {
     container,
     style: {
       version: 8,
-      sources: {},
-      layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#E0F2FE' } }],
+      sources: {
+        'osm-raster': {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+        },
+      },
+      layers: [
+        { id: 'background', type: 'background', paint: { 'background-color': '#E0F2FE' } },
+        { id: 'osm-raster-layer', type: 'raster', source: 'osm-raster' },
+      ],
     },
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
     attributionControl: false,
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
   let ready = false;
   let pendingPoints = null;
@@ -47,17 +59,51 @@ export function HeatmapMap(container) {
       source: SOURCE_ID,
       paint: {
         'heatmap-weight': ['get', 'weight'],
-        'heatmap-intensity': 1,
-        'heatmap-radius': 22,
-        'heatmap-opacity': 0.8,
+        'heatmap-intensity': [
+          'interpolate', ['linear'], ['zoom'],
+          11, 1,
+          15, 3
+        ],
+        'heatmap-radius': [
+          'interpolate', ['linear'], ['zoom'],
+          10, 20,
+          14, 38,
+          17, 55
+        ],
+        'heatmap-opacity': 0.85,
         'heatmap-color': [
           'interpolate', ['linear'], ['heatmap-density'],
-          0, 'rgba(59,130,246,0)',
-          0.3, '#3B82F6',
-          0.6, '#D97706',
-          1, '#DC2626',
+          0, 'rgba(33, 102, 172, 0)',
+          0.2, 'rgb(103, 169, 207)',
+          0.4, 'rgb(209, 229, 240)',
+          0.6, 'rgb(253, 219, 199)',
+          0.8, 'rgb(239, 138, 98)',
+          1, 'rgb(178, 24, 43)'
         ],
       },
+    });
+    // Add glowing circular point clusters when zooming in close
+    map.addLayer({
+      id: 'incident-point-layer',
+      type: 'circle',
+      source: SOURCE_ID,
+      minzoom: 13,
+      paint: {
+        'circle-radius': 6,
+        'circle-color': '#DC2626',
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 2,
+        'circle-opacity': [
+          'interpolate', ['linear'], ['zoom'],
+          13, 0,
+          14, 0.9
+        ],
+        'circle-stroke-opacity': [
+          'interpolate', ['linear'], ['zoom'],
+          13, 0,
+          14, 0.9
+        ]
+      }
     });
     if (pendingPoints) {
       fitToPoints(pendingPoints);
