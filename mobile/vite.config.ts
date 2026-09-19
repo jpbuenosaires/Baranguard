@@ -10,6 +10,9 @@ export default defineConfig({
     react(),
     legacy()
   ],
+  worker: {
+    format: 'es',
+  },
   server: {
     host: true
   },

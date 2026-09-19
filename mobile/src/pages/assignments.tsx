@@ -53,6 +53,7 @@ import {
   pawOutline,
   playOutline,
   radioOutline,
+  refreshOutline,
   searchOutline,
   shieldCheckmarkOutline,
   timeOutline,
@@ -120,6 +121,7 @@ const AssignmentsPage: React.FC = () => {
   const [rows, setRows] = useState<DispatchLocalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [offlineNote, setOfflineNote] = useState<string | null>(null);
+  const [offlineDismissed, setOfflineDismissed] = useState(false);
   const [position, setPosition] = useState<DevicePosition | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -165,8 +167,12 @@ const AssignmentsPage: React.FC = () => {
           : 'Could not refresh from the workstation — showing cached records.'
       );
     }
-    const cached = await listActiveCachedDispatches();
-    setRows(cached);
+    try {
+      const cached = await listActiveCachedDispatches();
+      setRows(cached);
+    } catch (dbErr) {
+      console.warn('[Assignments] Failed to read local dispatch cache:', dbErr);
+    }
   }, []);
 
   useEffect(() => {
@@ -176,8 +182,17 @@ const AssignmentsPage: React.FC = () => {
 
   async function handleRefresh(event: CustomEvent<RefresherEventDetail>) {
     tacticalFeedback.onTap();
-    await load();
-    event.detail.complete();
+    setOfflineDismissed(false);
+    try {
+      await Promise.race([
+        load(),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    } catch (err) {
+      console.warn('[Assignments] Refresh error:', err);
+    } finally {
+      event.detail.complete();
+    }
   }
 
   // Calculate filter counts & closest assignment telemetry
@@ -260,29 +275,43 @@ const AssignmentsPage: React.FC = () => {
       <MobileHeader title="DISPATCHES" subtitle="Active Field Queue" />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
-        <IonRefresher slot="fixed" onIonRefresh={handleRefresh}>
-          <IonRefresherContent />
+        <IonRefresher
+          slot="fixed"
+          onIonRefresh={handleRefresh}
+          style={{ '--color': 'var(--color-primary, #3b82f6)' }}
+        >
+          <IonRefresherContent refreshingSpinner="crescent" />
         </IonRefresher>
 
         <div className="app-column dispatch-layout">
-          {offlineNote && (
-            <div
-              style={{
-                background: 'var(--tint-warning-bg)',
-                border: '1px solid var(--color-warning)',
-                borderRadius: 'var(--radius-md)',
-                padding: '10px 14px',
-                marginBottom: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: 'var(--pill-warning-text)',
-                fontSize: 'var(--font-size-sm)',
-              }}
-              role="status"
-            >
-              <IonIcon icon={warningOutline} style={{ fontSize: '1.2rem', flexShrink: 0 }} />
-              <span>{offlineNote}</span>
+          {offlineNote && !offlineDismissed && (
+            <div className="dispatch-offline-banner" role="status">
+              <div className="dispatch-offline-banner-content">
+                <IonIcon icon={warningOutline} className="dispatch-offline-icon" />
+                <span className="dispatch-offline-text">{offlineNote}</span>
+              </div>
+              <div className="dispatch-offline-actions">
+                <button
+                  type="button"
+                  className="dispatch-offline-btn"
+                  onClick={() => {
+                    tacticalFeedback.onTap();
+                    void load();
+                  }}
+                  title="Retry connecting to workstation"
+                >
+                  <IonIcon icon={refreshOutline} style={{ marginRight: '3px', verticalAlign: '-1px' }} />
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="dispatch-offline-dismiss"
+                  onClick={() => setOfflineDismissed(true)}
+                  aria-label="Dismiss notice"
+                >
+                  <IonIcon icon={closeCircleOutline} />
+                </button>
+              </div>
             </div>
           )}
 
