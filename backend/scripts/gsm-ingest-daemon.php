@@ -151,6 +151,13 @@ function parseContentQueryOutput(string $raw): array
     $rows = [];
     foreach (preg_split('/\R/', $raw) as $line) {
         if (!str_starts_with($line, 'Row:')) {
+            // 2026-09-19, seen on the real Infinix inbox: a body containing a
+            // newline prints as a continuation line with no "Row:" prefix.
+            // Re-attach it to the row above instead of silently truncating.
+            if ($rows !== [] && $line !== '') {
+                $rows[array_key_last($rows)]['body'] .= "
+" . $line;
+            }
             continue;
         }
         if (!preg_match('/_id=(\d+), address=(.*?), date=(\d+), body=(.*)$/s', $line, $m)) {
