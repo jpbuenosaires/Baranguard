@@ -27,6 +27,7 @@
  */
 
 import { Preferences } from '@capacitor/preferences';
+import { getDeviceId } from './deviceIdentity';
 import {
   clearSession,
   emitSessionExpired,
@@ -157,6 +158,8 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   auth?: boolean;
+  /** Extra request headers (e.g. `X-Device-Id` on login). */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -173,9 +176,9 @@ interface RequestOptions {
 const REQUEST_TIMEOUT_MS = 15000;
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, auth = true } = options;
+  const { method = 'GET', body, auth = true, headers: extraHeaders = {} } = options;
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extraHeaders };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   if (auth) {
@@ -257,10 +260,16 @@ interface LoginResponse {
 
 /** POST /auth/login. Returns the session it stored, for the caller to route on. */
 export async function login(username: string, password: string): Promise<StoredSession> {
+  // `X-Device-Id` on login is what earns a DEVICE session (24h sliding,
+  // 7-day cap — backend SessionPolicy, decided 2026-09-19) instead of the
+  // dashboard's 15-minute one. The id is minted on first launch, before any
+  // login, so it always exists here; the server still only grants the
+  // longer session to the tanod role.
   const json = await request<LoginResponse>('/auth/login', {
     method: 'POST',
     body: { username, password },
     auth: false,
+    headers: { 'X-Device-Id': await getDeviceId() },
   });
 
   const session: StoredSession = {

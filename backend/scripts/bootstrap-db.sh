@@ -3,7 +3,7 @@
 # fresh clone). Creates the real application database, creates the
 # least-privileged `baranguard_app` DB user (§8: no CREATE/ALTER/CREATE
 # TABLE — matches docs/REFERENCE.md's stated policy), and applies every
-# migration 0001..0021 in order. Refuses to touch a database that already
+# migration 0001..0022 in order. Refuses to touch a database that already
 # exists — this is a create-once bootstrap, not a re-sync tool; there is
 # no migration-tracking table in this codebase (see backend/migrations/
 # and every verify-*.sh script, which all apply raw .sql files directly),
@@ -106,7 +106,7 @@ else
   exit 1
 fi
 
-step "3. Apply migrations 0001..0021 in order"
+step "3. Apply migrations 0001..0022 in order"
 shopt -s nullglob
 MIGRATION_FILES=("$MIGRATIONS_DIR"/[0-9][0-9][0-9][0-9]_*.sql)
 APPLIED=0
