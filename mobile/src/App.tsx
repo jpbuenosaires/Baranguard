@@ -34,7 +34,7 @@ import MyReportsPage from './pages/my-reports';
 import MyShiftsPage from './pages/my-shifts';
 import NewIncidentPage from './pages/new-incident';
 import ProfilePage from './pages/profile';
-import { hasLiveSession, onSessionExpired } from './services/session';
+import { hasStoredSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
@@ -100,6 +100,14 @@ const SessionExpiryWatcher: React.FC = () => {
  * to avoid showing a signed-out Tanod a screen that would immediately
  * 401.
  *
+ * Gates on a session EXISTING, not on it being locally unexpired
+ * (`hasStoredSession`, not `hasLiveSession` — see session.ts for the
+ * 2026-09-19 device finding behind that). An expired token means the
+ * first authenticated call that actually reaches the workstation gets a
+ * 401, which `request()` turns into a cleared session plus the
+ * `SessionExpiryWatcher` redirect above; until then the Tanod keeps
+ * their cached view, which is the whole point of an offline-first app.
+ *
  * Checks ONCE per mount, not on every navigation. Before the bottom-nav
  * tabs existed, each protected route had its own separate `RequireSession`
  * instance, so a location-keyed effect only re-ran on an actual top-level
@@ -114,8 +122,8 @@ const RequireSession: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   useEffect(() => {
     let active = true;
-    hasLiveSession().then((live) => {
-      if (active) setState(live ? 'in' : 'out');
+    hasStoredSession().then((stored) => {
+      if (active) setState(stored ? 'in' : 'out');
     });
     return () => {
       active = false;

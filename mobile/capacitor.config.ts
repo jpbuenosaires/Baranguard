@@ -20,6 +20,18 @@ const config: CapacitorConfig = {
   appId: 'ph.baranguard.tanod',
   appName: 'Baranguard',
   webDir: 'dist',
+  // 2026-09-19, seen in a real `adb logcat` on the Infinix: Capacitor's
+  // default ('debug') bridge logging echoes EVERY plugin result into
+  // logcat as `Capacitor/Console` lines — which in this app means every
+  // `incident_local` row including `raw_narrative` (§2 Rule 1: never to
+  // logs), and the SQLCipher passphrase itself on every DB open
+  // (`SecureStorage.getItem` → `{"data":"<64 hex>"}`), making the
+  // encrypted-at-rest guarantee only as private as USB debugging. 'none'
+  // silences the bridge in debug builds too — the UAT devices run debug
+  // APKs. `CAP_DEBUG_LOGGING=1 npx cap sync android` re-enables it for a
+  // local diagnostic build only (same opt-in shape as CAP_LIVE_RELOAD
+  // below); never ship an APK built that way.
+  loggingBehavior: process.env.CAP_DEBUG_LOGGING === '1' ? 'debug' : 'none',
   // Capacitor's default local-page origin is https://localhost. The
   // workstation this app talks to is plain HTTP (LAN-only, no TLS
   // infrastructure — §1), and fetching http:// from an https:// origin is

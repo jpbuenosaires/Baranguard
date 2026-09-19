@@ -48,6 +48,8 @@ export type PassphraseProvider = () => Promise<string>;
 let passphraseProvider: PassphraseProvider | null = null;
 let connection: SQLiteConnection | null = null;
 let database: SQLiteDBConnection | null = null;
+/** The one open in flight, so concurrent cold-start callers share it (see openLocalDatabase). */
+let opening: Promise<SQLiteDBConnection> | null = null;
 
 /** Register the passphrase source. Must be called before `openLocalDatabase()`. */
 export function configureLocalDatabase(provider: PassphraseProvider): void {
@@ -60,6 +62,26 @@ export function configureLocalDatabase(provider: PassphraseProvider): void {
  * existing open connection.
  */
 export async function openLocalDatabase(): Promise<SQLiteDBConnection> {
+  if (database) {
+    return database;
+  }
+  // 2026-09-19, seen on the Infinix at cold start with an existing
+  // session: Home's two cache reads and the sync scheduler all call this
+  // before the first open has assigned `database`, so every one of them
+  // passed the guard above and ran its own isConnection/createConnection/
+  // migrate sequence (three `PRAGMA user_version` reads in logcat), and
+  // Home's queries came back empty — "0 Filed", "No active dispatches" —
+  // while Profile, mounted later, read the same rows fine. Serialise: the
+  // first caller performs the open, everyone else awaits that promise.
+  if (!opening) {
+    opening = openLocalDatabaseUncontended().finally(() => {
+      opening = null;
+    });
+  }
+  return opening;
+}
+
+async function openLocalDatabaseUncontended(): Promise<SQLiteDBConnection> {
   if (database) {
     return database;
   }
