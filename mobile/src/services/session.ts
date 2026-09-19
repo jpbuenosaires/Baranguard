@@ -99,6 +99,23 @@ export async function hasLiveSession(): Promise<boolean> {
 }
 
 /**
+ * True if ANY session is stored, expired or not. This is what the app
+ * shell gates on (App.tsx `RequireSession`) — decided 2026-09-19 after a
+ * real device run: a Tanod out of workstation range for >15 minutes
+ * (Rule 9's JWT TTL) who cold-started the app was sent to Login and
+ * could not sign in offline, losing access to their cached dispatches,
+ * the offline map and My Reports until back on the LAN. The server
+ * still rejects the stale token on every request (nothing here revives
+ * a session, Rule 9 holds), and `apiService.request()`'s 401 handling
+ * clears it and redirects to Login the moment the workstation is
+ * reachable again; the phone just no longer pre-empts that locally
+ * while the only thing it can show is its own cache.
+ */
+export async function hasStoredSession(): Promise<boolean> {
+  return (await loadSession()) !== null;
+}
+
+/**
  * Session-expiry notification — `apiService.ts`'s `request()` is the one
  * place that actually learns a session died server-side (a 401 on an
  * authenticated call), but it has no router context to act on that. A

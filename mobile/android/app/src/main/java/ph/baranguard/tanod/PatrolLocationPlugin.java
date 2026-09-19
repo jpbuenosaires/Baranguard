@@ -14,12 +14,13 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * PatrolLocationPlugin — the JS-facing start/stop switch for
  * `PatrolLocationService.java` (Mobile Improvement Plan Phase 4.1).
  *
- * Deliberately does NOT itself request ACCESS_FINE_LOCATION — every
- * caller in this app (home.tsx toggling duty on) has already gone
- * through `@capacitor/geolocation`'s own permission flow before this
- * point (a Tanod cannot get a GPS fix for SOS or the Live Map otherwise),
- * so this plugin only CHECKS the permission already granted (or refuses
- * cleanly if it somehow isn't) rather than duplicating a second
+ * Deliberately does NOT itself request ACCESS_FINE_LOCATION — the JS
+ * caller (`patrolLocationService.ts`'s `startPatrolTracking()`) runs
+ * `@capacitor/geolocation`'s `requestPermissions()` first (explicitly,
+ * since 2026-09-19 — before that the prompt only ever appeared as a side
+ * effect of the Live Map/SOS, so a fresh install going on duty from Home
+ * first landed here ungranted), so this plugin only CHECKS the grant and
+ * refuses cleanly if it's missing rather than duplicating a second
  * permission-request path for the same runtime permission.
  */
 @CapacitorPlugin(name = "PatrolLocation")

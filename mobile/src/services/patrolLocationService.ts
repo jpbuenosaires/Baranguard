@@ -9,9 +9,10 @@
  * `on_duty` (including on load, if already on duty from a previous
  * session) and `stopPatrolTracking()` on going off duty or signing out.
  * Both are best-effort: a rejected `start()` (e.g. permission genuinely
- * missing) is caught and swallowed by the caller, same non-fatal
- * treatment every other native-plugin edge in this app already gets —
- * duty status itself must never be blocked by a tracking side-channel.
+ * refused) never throws, same non-fatal treatment every other
+ * native-plugin edge in this app already gets — duty status itself must
+ * never be blocked by a tracking side-channel — but `start` returns
+ * `false` so the caller can show an honest "GPS off" state.
  *
  * NOT DEVICE-VERIFIED for a completed multi-hour background run (same
  * disclosure this codebase gives every native-plugin edge): the plugin
@@ -22,6 +23,7 @@
  */
 
 import { registerPlugin } from '@capacitor/core';
+import { ensureLocationPermission } from './geolocation';
 
 export interface PatrolLocationPlugin {
   start(): Promise<{ started: boolean }>;
@@ -30,12 +32,21 @@ export interface PatrolLocationPlugin {
 
 const PatrolLocation = registerPlugin<PatrolLocationPlugin>('PatrolLocation');
 
-/** Starts the foreground GPS service. Never throws — a failure (e.g. permission missing) is logged nowhere and simply doesn't start tracking; duty status itself is never blocked by this. */
-export async function startPatrolTracking(): Promise<void> {
+/**
+ * Starts the foreground GPS service. Never throws — duty status itself is
+ * never blocked by this — but DOES tell the caller whether tracking is
+ * really running, so the UI can say "GPS off" instead of pretending
+ * (2026-09-19: the previous `Promise<void>` swallowed a permission
+ * rejection and Home kept displaying "Foreground GPS"). Asks for the
+ * location permission first; the native plugin only checks it.
+ */
+export async function startPatrolTracking(): Promise<boolean> {
   try {
-    await PatrolLocation.start();
+    if (!(await ensureLocationPermission())) return false;
+    const result = await PatrolLocation.start();
+    return result.started === true;
   } catch {
-    // Best-effort — see this file's header comment.
+    return false;
   }
 }
 

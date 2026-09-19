@@ -97,6 +97,8 @@ const HomePage: React.FC = () => {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [toggling, setToggling] = useState(false);
   const [dutyError, setDutyError] = useState<string | null>(null);
+  /** null = not attempted yet / off duty; false = on duty but the GPS service did NOT start (permission refused). */
+  const [patrolTracking, setPatrolTracking] = useState<boolean | null>(null);
   const [activeDispatchCount, setActiveDispatchCount] = useState<number>(0);
   const [topDispatch, setTopDispatch] = useState<DispatchLocalRow | null>(null);
 
@@ -167,7 +169,7 @@ const HomePage: React.FC = () => {
         setStatus(resolved);
         setKnownDutyStatus(resolved);
         if (resolved === 'on_duty') {
-          void startPatrolTracking();
+          void startPatrolTracking().then(applyPatrolResult);
           if (!localStorage.getItem('baranguard.shiftStartTime')) {
             const now = Date.now();
             setShiftStartTime(now);
@@ -202,7 +204,8 @@ const HomePage: React.FC = () => {
         const todayItems = items.filter((item) => (item.created_offline_at || '').startsWith(todayStr));
         setTodayIncidentCount(todayItems.length);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.warn('[Home] filed-today count unavailable:', error instanceof Error ? error.message : String(error));
         setTodayIncidentCount(0);
       });
 
@@ -215,6 +218,14 @@ const HomePage: React.FC = () => {
         // Safe fallback
       });
   }, []);
+
+  const PATROL_GPS_DENIED =
+    'On duty, but patrol GPS is OFF — location permission was not granted. Allow Location for Baranguard in Android Settings, then toggle duty again.';
+
+  function applyPatrolResult(started: boolean) {
+    setPatrolTracking(started);
+    if (!started) setDutyError(PATROL_GPS_DENIED);
+  }
 
   async function handleToggleDuty() {
     const next: DutyStatus = status === 'on_duty' ? 'off_duty' : 'on_duty';
@@ -229,8 +240,12 @@ const HomePage: React.FC = () => {
       // Phase 4.1: the foreground GPS service tracks duty status 1:1 —
       // never running while off duty (§2 Rule 6: no background tracking
       // that isn't tied to a real, visible reason to be tracking).
-      if (entry.status === 'on_duty') void startPatrolTracking();
-      else void stopPatrolTracking();
+      if (entry.status === 'on_duty') {
+        applyPatrolResult(await startPatrolTracking());
+      } else {
+        setPatrolTracking(null);
+        void stopPatrolTracking();
+      }
     } catch (error) {
       setDutyError(
         error instanceof ApiError && error.isOffline
@@ -397,7 +412,11 @@ const HomePage: React.FC = () => {
                     {loadingStatus ? 'Checking Shift…' : status === 'on_duty' ? 'On Active Patrol' : 'Off Duty (Standby)'}
                   </span>
                   <span className="tactical-duty-telemetry">
-                    {status === 'on_duty' ? 'Foreground GPS · 15s Broadcast' : 'Patrol tracking inactive'}
+                    {status !== 'on_duty'
+                      ? 'Patrol tracking inactive'
+                      : patrolTracking === false
+                        ? 'GPS OFF — location permission denied'
+                        : 'Foreground GPS · 30s Broadcast'}
                   </span>
                 </div>
               </div>
@@ -538,7 +557,7 @@ const HomePage: React.FC = () => {
               </div>
               <div className="tactical-shift-info">
                 <span className="tactical-shift-value">
-                  {status === 'on_duty' ? '15s Sync' : 'GPS Idle'}
+                  {status === 'on_duty' ? '30s Sync' : 'GPS Idle'}
                 </span>
                 <span className="tactical-shift-label">HQ Radar</span>
               </div>

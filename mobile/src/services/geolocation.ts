@@ -39,6 +39,31 @@ function toDevicePosition(position: Position): DevicePosition {
   };
 }
 
+/**
+ * Makes sure ACCESS_FINE/COARSE_LOCATION is granted, prompting the OS
+ * dialog if it isn't yet. Returns whether location is usable afterwards.
+ *
+ * 2026-09-19, found on the Infinix after `pm clear`: nothing in the app
+ * ever called `requestPermissions()` explicitly — the prompt only ever
+ * appeared as a side effect of the Live Map/SOS calling
+ * `getCurrentPosition()`. A fresh install that goes on duty from Home
+ * first therefore never got asked, `PatrolLocationPlugin.start()`
+ * rejected on the missing grant, and the duty card still said
+ * "Foreground GPS · 15s Broadcast" with zero GPS running (§2 Rule 6).
+ * `home.tsx` calls this before starting the patrol service.
+ */
+export async function ensureLocationPermission(): Promise<boolean> {
+  try {
+    const current = await Geolocation.checkPermissions();
+    if (current.location === 'granted' || current.coarseLocation === 'granted') return true;
+    const requested = await Geolocation.requestPermissions({ permissions: ['location'] });
+    return requested.location === 'granted' || requested.coarseLocation === 'granted';
+  } catch {
+    // Web/no-plugin environment — let the caller's own start() decide.
+    return false;
+  }
+}
+
 /** One-shot read, for the initial map center before a watch's first callback arrives. */
 export async function getCurrentPosition(): Promise<DevicePosition> {
   const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
