@@ -8,6 +8,7 @@ use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Auth\Jwt;
 use Baranguard\Services\Auth\PasswordPolicy;
+use Baranguard\Services\Auth\SessionPolicy;
 use Baranguard\Services\Auth\Username;
 use PDO;
 
@@ -88,9 +89,12 @@ final class AuthController
             $genericDenied();
         }
 
-        // Success: reset lockout state, issue a session.
-        $expiresInMinutes = (int) (baranguard_env('JWT_EXPIRES_IN_MINUTES') ?: 15);
-        $expiresAt = $now->add(new \DateInterval("PT{$expiresInMinutes}M"));
+        // Success: reset lockout state, issue a session. Lifetime depends on
+        // the session KIND (SessionPolicy, 2026-09-19): a Tanod signing in
+        // from the app (well-formed X-Device-Id) gets a 24h device session;
+        // everything else is the dashboard's 15-minute one.
+        $sessionKind = SessionPolicy::kindForLogin(Http::header('X-Device-Id'), (string) $user['role']);
+        $expiresAt = $now->add(new \DateInterval('PT' . SessionPolicy::lifetimeSeconds($sessionKind) . 'S'));
         $jti = self::generateUuidV4();
 
         $pdo->beginTransaction();
@@ -102,17 +106,19 @@ final class AuthController
             )->execute(['user_id' => $user['user_id']]);
 
             $pdo->prepare(
-                'INSERT INTO auth_session (user_id, jti, issued_at, expires_at, ip_address, user_agent, last_seen_at)
-                 VALUES (:user_id, :jti, UTC_TIMESTAMP(), :expires_at, :ip, :ua, UTC_TIMESTAMP())'
+                'INSERT INTO auth_session (user_id, jti, issued_at, expires_at, ip_address, user_agent, session_kind, last_seen_at)
+                 VALUES (:user_id, :jti, UTC_TIMESTAMP(), :expires_at, :ip, :ua, :kind, UTC_TIMESTAMP())'
             )->execute([
                 'user_id' => $user['user_id'],
                 'jti' => $jti,
                 'expires_at' => $expiresAt->format('Y-m-d H:i:s'),
                 'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
                 'ua' => Http::header('User-Agent'),
+                'kind' => $sessionKind,
             ]);
 
-            self::audit($pdo, (int) $user['barangay_id'], (int) $user['user_id'], 'login_success', 'user', (int) $user['user_id'], ['username' => $username]);
+            // session_kind is a status enum — allow-listed audit metadata (Rule 8).
+            self::audit($pdo, (int) $user['barangay_id'], (int) $user['user_id'], 'login_success', 'user', (int) $user['user_id'], ['username' => $username, 'session_kind' => $sessionKind]);
 
             $pdo->commit();
         } catch (\Throwable $e) {

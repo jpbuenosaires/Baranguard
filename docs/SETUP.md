@@ -121,6 +121,16 @@ to inject an env var).
 
 Log in with the account from step 5.
 
+**The dispatch PC must never sleep.** The dashboard's session is a
+15-minute sliding token that an *open* dashboard renews on its own (it
+polls `/notifications` every 15s), so SOS/new-incident alerts keep
+arriving with nobody touching the keyboard — but only while the machine
+is awake and the tab is open. Set Windows power options to "Never" for
+sleep/display-off on the barangay-hall workstation; a PC that sleeps
+overnight misses every alert until someone signs back in. (Rule 9,
+amended 2026-09-19: the Tanod app gets a 24-hour device session for the
+opposite reason — it must survive being out of range.)
+
 ## 8. What's optional, and what it looks like when it's not configured
 
 | Feature | Env var(s) | If left blank |

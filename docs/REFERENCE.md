@@ -61,7 +61,7 @@ standalone blotter records list were both removed 2026-09-10.
 
 ## 2. Non-negotiable rules — the ones that actually bite
 
-**This numbered list (1-11) is not the Master Reference's own 32-rule
+**This numbered list (1-12) is not the Master Reference's own 32-rule
 §2 list** — overlapping ground, different numbering. A "Rule N" citation
 elsewhere means whichever list context makes clear.
 
@@ -107,6 +107,17 @@ elsewhere means whichever list context makes clear.
 11. **Timestamps stored UTC; operational/display times Asia/Manila.**
     Day-bucketing is done in PHP against a fixed +08:00, never
     `CONVERT_TZ()` (tz tables aren't loaded on stock XAMPP).
+12. **Two session kinds, one revocation rule** (§2 Rule 9, amended
+    2026-09-19; `services/auth/SessionPolicy.php`): the web dashboard
+    gets a 15-minute sliding JWT (an open dashboard polls every 15s and
+    never expires; a closed tab/sleeping PC does); a Tanod login with a
+    well-formed `X-Device-Id` gets a **device** session — 24h sliding,
+    hard cap 7 days from issue, tanod role only. Both die on the next
+    request after logout/suspension/deactivation/password change because
+    `AuthMiddleware` checks `auth_session` every time — never lengthen
+    a token on the assumption that it can't be revoked. The mobile shell
+    also opens on an *expired-but-stored* session (cached view only) so
+    an out-of-range Tanod isn't locked out of their own queue.
 
 ---
 
@@ -150,7 +161,7 @@ is_active) · `system_settings` (§7 W21 note) · `sms_subscriber`
 NULL, removal is `opted_out_at` not a DELETE) · `health_check_log`
 (dependency-status CHANGE log, includes `ors_status`).
 
-**Migrations 0001–0021, all applied to both real DBs** (`baranguard`,
+**Migrations 0001–0022, all applied to both real DBs** (`baranguard`,
 `baranguard_uiseed`). On a new machine apply all in order as DBA/root —
 `baranguard_app` has no `ALTER`/`CREATE TABLE` (§8). Notable ones:
 0008 incident party fields · 0009 blotter case_status · 0011 user
@@ -158,8 +169,8 @@ suspension · 0012 system_settings (W21) · 0014 display_id · 0015 ai_tools
 (nullable incident_id + tenant/requester/tool columns) · 0016 retention
 hold + device scrub · 0017 health_check_log · 0018 sms_subscriber ·
 0019 audit_log idempotency index · 0020 health_check_log.ors_status ·
-0021 generic metric columns on `ai_evaluation_run` (verified on
-disposable DB, not yet on real DBs — needs explicit go-ahead).
+0021 generic metric columns on `ai_evaluation_run` · 0022
+`auth_session.session_kind` (web/device — see §2 rule 12).
 
 **FK trap:** `ai_processing_log`, `evidence_attachment`, `blotter_record`
 and `dispatch` are all `ON DELETE RESTRICT` against `incident` — deleting
@@ -435,6 +446,7 @@ controls that do nothing.
 | `verify-f9-sms-broadcast-idempotency-index.sh` | 15 |
 | `verify-second-responder.sh` | 22 |
 | `verify-routing.sh` | 23 (real-ORS block SKIPs, not fails, if no key) |
+| `verify-device-session.sh` | 20 |
 | `restore-drill.sh` | 12 (real DB) |
 | `verify-web-wiring.mjs` | 537 (moves as screens change) |
 | `mobile: verify.schema` | 113 |

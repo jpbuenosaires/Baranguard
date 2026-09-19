@@ -6,6 +6,7 @@ namespace Baranguard\Middleware;
 use Baranguard\Lib\ApiError;
 use Baranguard\Services\Auth\Jwt;
 use Baranguard\Services\Auth\JwtException;
+use Baranguard\Services\Auth\SessionPolicy;
 use PDO;
 
 /**
@@ -69,7 +70,7 @@ final class AuthMiddleware
         // claims — never trust exp/role/barangay_id from the JWT alone;
         // the database session + user rows are authoritative.
         $stmt = $pdo->prepare(
-            'SELECT s.session_id, s.expires_at, s.revoked_at,
+            'SELECT s.session_id, s.expires_at, s.revoked_at, s.session_kind, s.issued_at,
                     u.user_id, u.barangay_id, u.role, u.is_active, u.is_suspended
              FROM auth_session s
              JOIN user u ON u.user_id = s.user_id
@@ -105,7 +106,8 @@ final class AuthMiddleware
             throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired token.');
         }
 
-        $renewedToken = self::maybeRenew($pdo, (int) $row['session_id'], $jti, (int) $row['user_id'], (int) $row['barangay_id'], (string) $row['role'], $expiresAt);
+        $issuedAt = strtotime($row['issued_at'] . ' UTC') ?: time();
+        $renewedToken = self::maybeRenew($pdo, (int) $row['session_id'], $jti, (int) $row['user_id'], (int) $row['barangay_id'], (string) $row['role'], $expiresAt, (string) $row['session_kind'], $issuedAt);
 
         return [
             'user_id' => (int) $row['user_id'],
@@ -200,17 +202,20 @@ final class AuthMiddleware
         }
     }
 
-    private static function maybeRenew(PDO $pdo, int $sessionId, string $jti, int $userId, int $barangayId, string $role, int $currentExpiresAt): ?string
+    private static function maybeRenew(PDO $pdo, int $sessionId, string $jti, int $userId, int $barangayId, string $role, int $currentExpiresAt, string $sessionKind, int $issuedAt): ?string
     {
-        $expiresInMinutes = (int) (baranguard_env('JWT_EXPIRES_IN_MINUTES') ?: 15);
-        $lifetimeSeconds = $expiresInMinutes * 60;
+        // Lifetime by session kind (SessionPolicy, 2026-09-19): 24h for a
+        // registered device, JWT_EXPIRES_IN_MINUTES for the dashboard.
+        $lifetimeSeconds = SessionPolicy::lifetimeSeconds($sessionKind);
         $remaining = $currentExpiresAt - time();
 
         if ($remaining > $lifetimeSeconds * self::RENEW_WHEN_REMAINING_FRACTION) {
             return null; // Still fresh enough — don't write every request.
         }
 
-        $newExpiresAt = time() + $lifetimeSeconds;
+        // A device session never slides past issued_at + 7 days; once the
+        // cap is reached it simply runs out and the Tanod signs in again.
+        $newExpiresAt = SessionPolicy::capExpiry($sessionKind, $issuedAt, time() + $lifetimeSeconds);
         // Non-decreasing per §6: only ever push the expiry forward.
         if ($newExpiresAt <= $currentExpiresAt) {
             return null;

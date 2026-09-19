@@ -96,10 +96,10 @@ for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_u
          0016_retention_hold_and_device_scrub \
          0017_health_check_log \
          0018_sms_subscriber \
-         0019_audit_log_idempotency_index; do
+         0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Migrations 0001-0019 applied"
+pass "Migrations 0001-0022 applied"
 
 COLTYPE=$(mysql_exec -N -s "$VALDB" -e "SELECT EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='audit_log' AND COLUMN_NAME='idempotency_key';")
 expect_contains "$COLTYPE" "VIRTUAL GENERATED" "audit_log.idempotency_key exists as a VIRTUAL generated column"
