@@ -209,7 +209,7 @@ final class NotificationDispatcher
                     $lng = $row['longitude'];
                 }
                 $location = self::formatLocation($lat, $lng);
-                $what = $incidentType !== null ? "a {$incidentType} incident" : 'an active incident';
+                $what = $incidentType !== null ? self::describeIncidentType($incidentType) : 'an active incident';
                 return [
                     'title' => 'PRIORITY ALERT',
                     'body' => "Priority alert for {$what}{$location}. Open the app immediately.",
@@ -225,6 +225,24 @@ final class NotificationDispatcher
                     'message_type' => '', // Deliberately unmapped — see dispatchToTarget()'s SMS branch.
                 ];
         }
+    }
+
+    /**
+     * Human wording for an `incident.incident_type` enum value in a push/SMS
+     * body: `animal_complaint` -> "an animal complaint incident", `theft` ->
+     * "a theft incident". Observed on the Infinix 2026-09-19 (HANDOFF
+     * "observed, not yet fixed"): the raw enum was being interpolated, so
+     * the heads-up read "a animal_complaint incident". `other` stays the
+     * generic "an active incident" rather than "an other incident".
+     */
+    private static function describeIncidentType(string $incidentType): string
+    {
+        if ($incidentType === 'other') {
+            return 'an active incident';
+        }
+        $words = str_replace('_', ' ', $incidentType);
+        $article = preg_match('/^[aeiou]/i', $words) === 1 ? 'an' : 'a';
+        return "{$article} {$words} incident";
     }
 
     private static function formatLocation($lat, $lng): string
