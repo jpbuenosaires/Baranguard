@@ -31,6 +31,21 @@ final class CriticalAlertNotifier {
 
     private CriticalAlertNotifier() {}
 
+    /**
+     * C4 (2026-09-19 device session): the system heads-up notification
+     * stayed posted after the in-app "ACKNOWLEDGE ALERT" dismissed only
+     * the overlay — `setAutoCancel(true)` above only clears it on a TAP,
+     * not on an in-app acknowledge. Called from
+     * `FullScreenAlertPlugin.dismiss()`, itself called by
+     * `criticalAlertStore.ts`'s `dismissCriticalAlert()`.
+     */
+    static void cancelFullScreenAlert(Context context) {
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) {
+            manager.cancel(NOTIFICATION_ID);
+        }
+    }
+
     static void postFullScreenAlert(Context context, String title, String body, String notificationId, String notificationType) {
         createChannelIfNeeded(context);
 

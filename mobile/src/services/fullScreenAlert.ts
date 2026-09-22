@@ -32,6 +32,11 @@ export interface FullScreenAlertPlugin {
    * caller.
    */
   getPendingAlert(): Promise<PendingNativeAlert | { pending: false }>;
+  /**
+   * Cancels the system heads-up notification (id 2001) — see the Java
+   * method's own doc. A no-op if nothing is posted.
+   */
+  dismiss(): Promise<void>;
 }
 
 const FullScreenAlert = registerPlugin<FullScreenAlertPlugin>('FullScreenAlert');

@@ -4,79 +4,77 @@
 never stack banners. Full history: `backend/DEVLOG.md` (grep by
 date/keyword, don't read front to back).
 
-**Last updated: 2026-09-18.**
+**Last updated: 2026-09-19 (device session).**
 
 ## Where things stand
 
-Sprints 0–7 complete. Sprint 8 (UAT/evaluation): **every box doable
-without a real device or a live Ollama run is now done**, with real
-measured evidence — response-time metric, JSON contract validation,
-auth lockout/session revocation, tenant pentest, raw-PII audit, fatigue
-audit trail, offline-map availability (server side), and one full
-citizen-report-to-resolution UAT scenario. Full detail in
-`backend/DEVLOG.md`'s 2026-09-17/18 entries. What's left in Sprint 8 —
-offline cache durability, notification e2e reliability, GPS/route
-accuracy, AI dataset evaluation, SLM inference across device tiers — is
-genuinely blocked on hardware or a friend's faster machine, not skipped
-for convenience.
+Sprints 0–7 complete. Sprint 8 (UAT/evaluation): every device-free box
+was done 2026-09-17/18; **2026-09-19 was the first real device session
+on the Infinix X6840** (the C7 phone) and closed most of what was
+hardware-blocked. Evidence screenshots: `docs/evidence/2026-09-19-device/`.
+Full detail: `backend/DEVLOG.md` 2026-09-19 entries (1)–(6).
 
-**Credentials, corrected this session — use these, not older ones
-elsewhere in this file's history**: `baranguard_uiseed` login password
-is `Demo@2026` (not `DevSeed#2026`, which was stale from an earlier seed
-round). `tanod.olayvar` is seeded `is_suspended=1` — its login is
-*supposed* to fail; use `tanod.reyes`, `tanod.delacruz`, `tanod.gubaton`,
-or `tanod.dichoso` instead (all active, not suspended).
+**Credentials**: `baranguard_uiseed` password is `Demo@2026`.
+`tanod.olayvar` is seeded suspended — use `tanod.reyes` (user_id 4),
+`tanod.delacruz`, `tanod.gubaton`, or `tanod.dichoso`. `admin.dao` is
+the Admin. `backend/.env` currently points at `baranguard_uiseed`.
 
-**One open blocker: C7** — the app process dies ~50s into patrol GPS.
-Confirmed NOT reproducing on a Galaxy A21s (2026-09-15); still needs the
-Infinix X6840 in hand to reproduce for real and pick between a native
-crash, an `lmkd` memory kill, or (leading hypothesis) an OEM battery
-policy needing `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Doesn't block a
-UAT scenario that skips an on-duty patrol shift.
+**Confirmed on hardware 2026-09-19 (first time for each):**
+- **FCM push lands** (A4): `google-services.json` baked into the APK,
+  `/system/health` → `fcm: healthy`, a real `POST /dispatch` produced a
+  heads-up + in-app NEW DISPATCH sheet within ~1s, ACKNOWLEDGE wrote
+  `notification_target.acknowledged_at`. M12 PASS.
+- **Route line renders** — root cause was MapLibre 6.x's GeoJSON worker
+  never loading under Vite (see 2026-09-19 (1)), not a stale bundle.
+- **C7 did NOT reproduce on the Infinix**: 405s foreground GPS + a
+  screen-off run (result in DEVLOG 2026-09-19 (6)) with
+  `PatrolLocationService` confirmed running and `gps_track` rows every
+  ~30s. Downgraded from 🔴 to 🟡 in REMAINING.md; not closed.
+- **A1**: #1 SQLCipher, #2 offline capture survives kill, #4 keystore
+  round-trip, #6 sync drains queue — all PASS. #3 photo/voice and M13
+  SMS badge still open.
+- **A5**: adb reaches the phone, real `content query` shape matches the
+  fixture. One real envelope SMS from a second phone still to send.
+- **GPS/route accuracy** (Sprint 8 box): stationary baseline measured —
+  30.8s interval, 39.7m avg reported accuracy, 3.0s upload lag, route
+  44.2km vs 29.7km straight-line. Moving-along-a-known-street run not
+  done (device wasn't in Pilar).
 
-**A5 (GSM modem)**: the ingestion daemon
-(`backend/scripts/gsm-ingest-daemon.php`) is built and proven end-to-end
-against a fixture shaped like real `adb` output — real AES-256-GCM
-decrypt, real incident creation, real replay-dedup, all confirmed in the
-DB. Found and fixed along the way: `DEVICE_SECRET_MASTER_KEY` and
-`INTERNAL_SERVICE_TOKEN` were BOTH unset in the real `.env`, meaning
-`/internal/sms/*` had never worked on this workstation at all — both are
-now generated and set locally (gitignored). **Only the real `adb shell
-content query` invocation against your actual tethered phone is
-unverified** — see the Recommended next step below for the exact command.
+**Four bugs found by the device, all fixed and device-verified:**
+1. Fresh install went "on duty" with NO location permission and no GPS
+   while the card said "Foreground GPS" — nothing ever called
+   `requestPermissions()`. Now explicit; card says "GPS OFF" if denied.
+2. **SQLCipher passphrase and `raw_narrative` were in logcat** —
+   Capacitor's default bridge logging echoes every plugin result.
+   `capacitor.config.ts` `loggingBehavior` is now `'none'`
+   (`CAP_DEBUG_LOGGING=1 npx cap sync android` re-enables for a local
+   diagnostic build only).
+3. Cold-start race in `openLocalDatabase()` — three concurrent opens,
+   Home read empty. Now one in-flight promise.
+4. Home said "15s Broadcast"; the service runs 30s. Label fixed.
 
-**FCM**: wired to a real Firebase project (`baranguard-acb27`) 2026-09-16,
-but the installed APK predates `google-services.json` (a native-build-time
-input) — needs a rebuild+reinstall to actually activate, then a real
-dispatch to confirm the push lands. Not done yet.
+**Decision taken (option B, user's call 2026-09-19):** the app shell now
+gates on a session *existing*, not on the 15-min JWT being locally
+unexpired (`hasStoredSession`), so a Tanod out of range >15 min keeps
+their cached dispatches/map/reports on cold start. Server still 401s the
+stale token on first contact and the existing handler redirects to
+Login. **Device verification of this exact path: see DEVLOG 2026-09-19
+(6).**
 
-**Session-expiry 401 handling**: fixed 2026-09-18.
-`apiService.ts`'s `request()` now clears the session and fires a central
-event on any 401 from an authenticated call; `App.tsx`'s
-`SessionExpiryWatcher` redirects to `/login` immediately instead of every
-screen showing a misleading "workstation unreachable" message.
-Code-verified (`tsc`/`eslint`/`vite build` all clean) — **not yet
-device-tested**, the real 401-to-redirect round trip needs a live
-Capacitor session.
+**Observed 2026-09-19, three of four now fixed 2026-09-22 (code only —
+no device this session, so none of the three are device-verified yet)**:
+Home's dispatch card only reading the cache on mount (now also refreshes
+on `appStateChange` resume); the system heads-up staying posted after
+in-app ACKNOWLEDGE (now cancelled via a new `FullScreenAlertPlugin.dismiss()`);
+duty card saying OFF DUTY when status is actually *unknown* offline (now
+its own "Duty Status Unknown (Offline)" label/color). Push body
+"a animal_complaint" was already fixed earlier (`7e9952a`). Detail:
+`backend/DEVLOG.md` 2026-09-22. **Next device session should confirm all
+four** before this line is removed.
 
-**Route-line rendering** (mobile turn-by-turn nav): a live screenshot
-showed no blue route line over the road. `LiveMapCanvas.tsx`'s
-route-drawing code reads correctly, and a diagnostic log added to
-`applyRoute()` never fired even once despite GPS position updating
-continuously — most likely a stale/cached WebView bundle, not a logic
-bug, but never confirmed. The device's adb connection dropped
-mid-investigation before a `pm clear` retest could run. **Next device
-session: reconnect, `adb shell pm clear ph.baranguard.tanod`, re-add a
-temporary log to `applyRoute()`, confirm it fires before assuming any
-code change is needed.**
-
-**A2/A6 (AI eval)**: redaction has a real completed run — recall 98.26%
-(meets target), precision 75.88% (misses target), Bikol is the
-weakest-recall language bucket. The `ai_evaluation_run` row is written to
-both real DBs (2026-09-18). All 8 model tasks have a harness+dataset, but
-only redaction has real numbers — the other 7 need a friend's faster
-hardware (this workstation can't finish a generation inside Ollama's
-300s timeout). Bikol human spot-check still open.
+**A2/A6 (AI eval)**: unchanged — redaction has a real run (98.26% recall
+/ 75.88% precision, Bikol weakest); other 7 tasks need a friend's faster
+hardware (`eval-kit/README-FOR-FRIEND.md`).
 
 ## Things most likely to bite you
 
@@ -110,9 +108,12 @@ hardware (this workstation can't finish a generation inside Ollama's
 10. An already-open browser tab (or a Capacitor WebView after a process
     relaunch) can keep running a stale JS/asset bundle even after the
     server has the fix — try a brand-new tab, or `adb shell pm clear`,
-    before assuming a fix is wrong. Never fully confirmed on the WebView
-    side (see "Route-line rendering" above) — treat as a live open
-    question, not settled.
+    before assuming a fix is wrong. (The 2026-09-18 route-line symptom
+    turned out to be a real bug — MapLibre's worker never loading — not
+    a stale bundle, but the general caution still holds.) Also: `adb
+    shell pm clear` resets RUNTIME PERMISSIONS, not just data — check
+    `dumpsys package ph.baranguard.tanod | grep granted` before trusting
+    any GPS/camera test after a clear.
 11. `backend/scripts/bootstrap-admin.js`'s own header comment documents a
     `BARANGUARD_BOOTSTRAP_JSON` env var for non-interactive/CI use — the
     code never actually reads it. The interactive prompt works fine;
@@ -130,39 +131,38 @@ hardware (this workstation can't finish a generation inside Ollama's
     can survive the reload while the JS side thinks it's starting fresh
     (`localDatabase.ts`'s `"Connection ... already exists"` — fixed, but
     the general lesson holds for any singleton assumption in this
-    codebase).
+    codebase). Bit again 2026-09-19 in a different shape: THREE
+    concurrent `openLocalDatabase()` calls at cold start, because the
+    singleton was assigned only after several awaits — guard the
+    in-flight promise, not just the result.
+14. Capacitor's default `loggingBehavior: 'debug'` prints every plugin
+    result to logcat — including SQLite rows and secure-storage reads.
+    It is now `'none'` in `capacitor.config.ts`; if you need bridge logs
+    to debug, `CAP_DEBUG_LOGGING=1 npx cap sync android`, and never ship
+    that build.
+15. `adb reverse tcp:8081 tcp:8081` is how the phone reaches this PC's
+    backend over USB (default API base `localhost:8081`); `adb reverse
+    --remove tcp:8081` is a clean way to make the workstation
+    "unreachable" for offline tests without touching phone settings.
 
 ## Recommended next step
 
-1. **Rebuild+reinstall the mobile app** — Gradle sync so
-   `google-services` activates, then Run from Android Studio. Confirm
-   `GET /system/health` reports `fcm: healthy`, then create a real
-   dispatch and confirm the critical-alert push lands.
-2. **A5's last check** — with the tethered phone connected:
-   `php backend/scripts/gsm-ingest-daemon.php --status` to confirm `adb`
-   reaches it, then capture one real `adb shell content query --uri
-   content://sms/inbox --projection "_id:address:date:body"` sample and
-   diff it against `backend/storage/gsm-test-fixture.txt`'s shape —
-   adjust `parseContentQueryOutput()` if it differs — then send one real
-   test SMS (the fixture's envelope JSON as the body) from a second
-   phone before trusting `--daemon` unattended.
-3. **Resolve the route-line-not-rendering question** — reconnect the
-   device, `adb shell pm clear ph.baranguard.tanod`, re-add a temporary
-   diagnostic log to `applyRoute()` in `LiveMapCanvas.tsx`, confirm
-   whether it fires this time.
-4. **C7** — needs the Infinix X6840; check for a `DEBUG`/`Fatal signal`
-   tombstone vs an `lmkd` line vs neither (OEM policy, leading
-   hypothesis), then implement/verify whichever the evidence points to.
-5. **A1's six-item device checklist** — in progress, user-driven. See
-   `REMAINING.md` A1 for the exact `adb` command per item.
-6. **C2 (Task Scheduler wiring)** — needs your call on schedule/account
-   and whether `BACKUP_ENCRYPTION_PASSPHRASE` gets stored for unattended
-   runs; tell me and I'll build it.
-7. **B3 (restore drill)** — give me `BACKUP_ENCRYPTION_PASSPHRASE` and
-   I'll run it for real; W20 still shows "Never."
-8. **Hand `eval-kit/` to a friend's faster hardware** for the other 7
-   model tasks — `README-FOR-FRIEND.md` has the commands. Then the
-   Bikol human spot-check and human-rated translation/summary samples.
+1. **A1 #3** — on the phone: Log Incident → Photo Evidence (allow
+   camera), Voice Memo (allow mic), save; then `adb shell run-as
+   ph.baranguard.tanod ls files/evidence/` and pull one file of each to
+   confirm it opens.
+2. **A5's last step** — send one real envelope SMS (the fixture's JSON
+   body) from a second phone to the tethered Infinix, then
+   `php backend/scripts/gsm-ingest-daemon.php --once` and check the DB.
+3. **C7 long locked-screen run** — 30+ min screen-off on the Infinix,
+   `adb logcat` for `has died`/`lmkd`/tombstone. If it ever kills,
+   `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` is the fix to try.
+4. **GPS moving run** — a Tanod walking a known Dao street with the app
+   on duty; compare `gps_track` against the road.
+5. **Fix the four "observed, not yet fixed" items** above — all small.
+6. **C2 (Task Scheduler wiring)** / **B3 (restore drill)** — need your
+   schedule/account call and `BACKUP_ENCRYPTION_PASSPHRASE`.
+7. **Hand `eval-kit/` to faster hardware** for the other 7 model tasks.
 
 **F1 (API base URL, reopened)** isn't on this list — nothing currently
 depends on remote access working; LAN-only development/testing both work

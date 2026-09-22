@@ -69,6 +69,14 @@ export function subscribeToCriticalAlert(listener: Listener): () => void {
 export function dismissCriticalAlert(): void {
   currentAlert = null;
   notify();
+  // The overlay dismissing does not by itself clear the system heads-up
+  // notification (id 2001) — `setAutoCancel` only fires on a direct tap,
+  // so an in-app ACKNOWLEDGE otherwise left it in the tray (found on the
+  // Infinix X6840, 2026-09-19). Best-effort: never block the in-app
+  // dismiss on this, and no-op on web/if nothing was ever posted.
+  if (Capacitor.getPlatform() === 'android') {
+    void FullScreenAlert.dismiss().catch(() => {});
+  }
 }
 
 function parseAlert(data: Record<string, unknown> | undefined, title: string, body: string): CriticalAlert | null {

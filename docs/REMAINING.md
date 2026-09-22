@@ -36,15 +36,24 @@ inbound rule for port 80 (only 8081) — user has the
 
 ## A. Blocked on hardware/accounts — start these first
 
-### 🟠 A1. Android device — six items still need a real device, checklist below
+### 🟡 A1. Android device — 4 of 6 PASSED on the Infinix X6840 (2026-09-19), 2 open
 App runs and reaches the real backend on a physical device (confirmed).
-Open:
-1. **SQLCipher encrypts the DB file** — `adb shell run-as ph.baranguard.tanod cat databases/baranguardSQLite.db | xxd | head`; must NOT start with `53 51 4c 69 74 65...` ("SQLite format 3").
-2. **Offline capture survives app kill** — submit offline, `adb shell am force-stop ph.baranguard.tanod`, relaunch, confirm still queued.
-3. **Photo/voice capture produces a real playable file** — capture, pull via `adb shell run-as ph.baranguard.tanod cat files/evidence/<uuid>.jpg > photo.jpg`, open it.
-4. **Keystore passphrase round-trip** — force-stop/relaunch; passphrase must not regenerate, DB must still open.
-5. **M5/M12/M13 on a real screen** — M5 (Assignments list) and M6/M7 (login, duty toggle, live map) have a real PASS (2026-09-13, no offline-MBTiles device test yet — `offline_map_package` has zero rows). M12 (Critical Alert) and M13 (SMS Fallback badge) untested; M12's native-alert handoff was just fixed 2026-09-15 (see C4) and needs this pass to confirm.
-6. **Sync trigger drains a queue** — trigger code is built/wired (`syncScheduler.ts`: reconnect/foreground/60s-on-duty/cold-start, called from `App.tsx`); go offline → create records → reconnect/background-foreground → confirm queue drains. Device confirmation still missing.
+Evidence: `docs/evidence/2026-09-19-device/`, DEVLOG 2026-09-19 (2)–(5).
+1. ✅ **SQLCipher encrypts the DB file** — header `da db 34 30 …`, not "SQLite format 3". PASS.
+2. ✅ **Offline capture survives app kill** — `adb reverse --remove` (workstation truly unreachable), report saved "for retry", `am force-stop`, relaunch → Unsynced reports 1. PASS.
+3. ⬜ **Photo/voice capture produces a real playable file** — still open; needs the camera/mic permission taps on the phone, then `adb shell run-as ph.baranguard.tanod cat files/evidence/<uuid>.jpg > photo.jpg`.
+4. ✅ **Keystore passphrase round-trip** — same force-stop/relaunch reopened the encrypted DB with 2 cached dispatches. PASS.
+5. 🟡 **M5/M12/M13 on a real screen** — M12 (Critical Alert) **PASS 2026-09-19**: real FCM push → heads-up + in-app NEW DISPATCH sheet → ACKNOWLEDGE → `notification_target.acknowledged_at`. M13 (SMS Fallback badge) still untested (needs Semaphore or a real SMS path). Offline MBTiles: package auto-downloaded on login (2.8MB `barangay-1-v3-real-osm.mbtiles`), rendering with it not separately verified.
+6. ✅ **Sync trigger drains a queue** — the queued report from #2 reached the server ~2s after sign-in (`incident_id` 119, `client_event_id` preserved). PASS.
+
+**Found and fixed during this pass (DEVLOG 2026-09-19):** patrol GPS
+silently off on a fresh install (no explicit location permission
+request); SQLCipher passphrase + `raw_narrative` printed to logcat by
+Capacitor's default bridge logging (`loggingBehavior` now `'none'`);
+cold-start DB open race leaving Home empty; "15s" GPS label vs real 30s.
+**Found, not fixed — needs a decision:** a Tanod offline >15 min who
+cold-starts is sent to Login and cannot reach cached dispatches (JWT TTL
++ `RequireSession`'s local `exp` check). See DEVLOG 2026-09-19 (4).
 
 **Environment gotchas already paid for (don't rediscover)**: Windows
 Firewall blocks inbound to the dev port by default (`New-NetFirewallRule`
@@ -86,20 +95,19 @@ plan by explicit user decision — disclosed in the dataset's own
 `generation_method` field. Recommended, still open: a human spot-check,
 especially the Bikol subset.
 
-### 🟠 A4. Real FCM + Semaphore credentials
-No Firebase project, no funded Semaphore account — Rule 12's fallback
-ladder is logically verified but no phone has ever actually buzzed. The
-no-Firebase case no longer crashes the app (native `isFirebaseAvailable()`
-check added 2026-09-13), but push itself still needs a real project.
+### 🟡 A4. Real FCM + Semaphore credentials — FCM DONE 2026-09-19, Semaphore still none
+Firebase project `baranguard-acb27` is wired and **a phone has now
+actually buzzed**: dispatch 71's critical push landed on the Infinix
+within ~1s of `notification_delivery` 26 `fcm/sent` (DEVLOG 2026-09-19
+(4)). Semaphore: still no funded account, `sms_semaphore:
+not_configured` in `/system/health`, the SMS rung of Rule 12's fallback
+ladder remains logically-verified only.
 
-### 🟢 A5. GSM modem hardware
-User has the tethered phone now. Ingestion daemon
-(`backend/scripts/gsm-ingest-daemon.php`) built and proven end-to-end
-2026-09-18 against a fixture shaped like real `adb` output — real
-AES-256-GCM decryption, real incident creation, real replay-dedup, all
-confirmed against the DB. Only the actual `adb shell content query`
-invocation against a real phone is unverified; see `HANDOFF.md`'s
-recommended-next-step list for the exact remaining check.
+### 🟢 A5. GSM modem hardware — adb path verified 2026-09-19, one real envelope SMS still to send
+`--status` reaches the tethered Infinix; the real `content query` output
+matches the fixture's shape (one parser gap — multi-line bodies — fixed,
+DEVLOG 2026-09-19 (3)). Last step: send one real envelope SMS from a
+second phone and run `--once` against it.
 
 ### ✅ A6. All 8 model tasks now have an eval harness — DONE 2026-09-14
 Was: only `redaction` (1 of 8 `AiPrompts.php` task types) had ever been
@@ -142,8 +150,7 @@ run against the 7 new tasks yet (same friend's-hardware step as A2); human-rated
   - ✅ Cypress 13→16 bump — DONE 2026-09-13, cleared 3 advisories.
 - ✅ **C5. No-Firebase device couldn't register** — DONE 2026-09-13. `fcm_token` made optional server-side.
 - ✅ **C6. Login left old screen stuck over Home** — DONE 2026-09-15, real-device-verified. Root cause: `@ionic/react-router` 9.0.3 mishandles a tab shell mounted at a root-level `path="/*"` catch-all (treats it as matching every pathname, skips the real page transition). Fix: shell moved to `/tabs/*` with relative children. **General lesson, worth remembering beyond this bug**: never mount an Ionic tab shell at a root catch-all; `location.pathname` being correct doesn't prove the screen is — read the outlet's actual view stack. Full forensic detail (DevTools-over-adb technique, proof sequence): `backend/DEVLOG.md` 2026-09-15.
-- 🔴 **C7. App process dies ~50s into patrol GPS — OPEN, first investigation done, still unfixed.** `adb logcat`: `Process ... has died: fg +50 FGS`, no Java exception, both times on an Infinix X6840. Code review ruled out manifest/permission gaps; found a real one — no code requests battery-optimization exemption anywhere in `mobile/`. **2026-09-15: does NOT reproduce on a Galaxy A21s** — two runs (foreground; backgrounded+screen-locked) survived 3x past the failure mark, zero crash/kill signature either way. This is a real negative result supporting an OEM-specific (Transsion/XOS) cause over a generic Android/native/memory one, but wasn't confirmed by reproducing on the Infinix (not connected this session). Deliberately did NOT write the battery-exemption fix without ever reproducing the failure on hardware that shows it. **Next session needs the Infinix X6840** to reproduce, check for a `DEBUG`/`Fatal signal` tombstone (native crash) vs `lmkd` line (memory kill) vs neither (OEM policy — leading hypothesis, fix = `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), then implement/verify whichever the evidence points to.
-- ✅ **C8. Two more fabrication bugs** — found and CLOSED 2026-09-13 (SMS Monitor's fabricated Live Feed text; GIS panel's hardcoded `'Brgy. Dao'` fallback).
+- 🟡 **C7. App process dies ~50s into patrol GPS — did NOT reproduce on the Infinix X6840 itself (2026-09-19).** With location actually granted and `PatrolLocationService` confirmed running (`dumpsys`), PID 29418 survived 405s of foreground GPS — GPS rows every ~30s, a critical push handled mid-patrol — until deliberately force-stopped. A screen-off run on the final build followed (see DEVLOG 2026-09-19 (6) for its result). Important caveat discovered on the way: after any `pm clear`, the app was going "on duty" with NO location permission and no GPS at all while still displaying "Foreground GPS" — so any earlier C7 run done after a data clear wasn't exercising GPS. Now fixed (explicit `requestPermissions`). Still not on the battery-optimisation whitelist and no exemption is requested; if a long locked-screen run ever shows the kill, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` remains the leading fix.
 
 ---
 

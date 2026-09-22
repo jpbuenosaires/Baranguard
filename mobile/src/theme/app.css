@@ -1762,6 +1762,10 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
   background: var(--color-text-disabled);
 }
 
+.tactical-duty-pulse--unknown {
+  background: var(--color-warning);
+}
+
 .tactical-duty-text {
   display: flex;
   flex-direction: column;
@@ -1780,6 +1784,10 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
 
 .tactical-duty-title--off {
   color: rgba(255, 255, 255, 0.65);
+}
+
+.tactical-duty-title--unknown {
+  color: var(--color-warning);
 }
 
 .tactical-duty-telemetry {
