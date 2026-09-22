@@ -13463,3 +13463,439 @@ encrypted envelope requires a device registration round-trip.
 Verified: `php -l` clean. Every claim above checked against a real HTTP
 response, a real DB row, or a real exit code — not asserted from reading
 the code alone.
+
+## 2026-09-18 (5) — `uiseed-dao-demo-bulk.sql`: 96 more procedurally-generated incidents so the demo dataset covers real months, not a 6-week sliver
+
+User asked to make `baranguard_uiseed`'s demo data "more realistic," then
+narrowed it on follow-up: keep it Dao-only, but the dataset itself
+("22 incidents over 6 weeks") is too small.
+
+**New file: `backend/fixtures/uiseed-dao-demo-bulk.sql`, run AFTER
+`uiseed-dao-demo.sql` and BEFORE the audit/refresh-live files.** Adds
+incident_id 23-118 (96 rows) and dispatch_id 15-69 (55 rows), dated
+2026-02-05 through 2026-07-25 — immediately before the hand-curated
+window's 2026-07-26 start — at a similar reporting density (~1 incident
+every 1-3 days) so the run now covers ~7 months instead of 6 weeks.
+Total after all four files: 118 incidents, 69 dispatches.
+
+**Generated, not hand-written, and the file says so in its own header.**
+A throwaway PHP script (not committed — lived in the session scratchpad)
+built the rows from: a weighted `incident_type` distribution matching
+the real enum (`migrations/0001_baseline_schema.sql`), a handful of
+narrative templates per type, coordinates bounded to the same ~0.005°
+(~550m) box around the Dao centroid the main file uses, and a name pool
+that reuses the main file's own surname list — deliberately, since a
+~2,485-person barangay realistically has multiple residents sharing a
+handful of family names. Two real Tanod employment windows were
+respected: `tanod.olayvar` (id 9, suspended 2026-08-28) only gets
+dispatches 2026-04-02..2026-08-28, `tanod.frasco` (id 10, deactivated
+2026-07-30) only gets dispatches 2026-02-20..2026-07-30 — verified by
+querying `MIN`/`MAX(dispatched_at)` per tanod after seeding, both inside
+their windows.
+
+**Deliberately NOT added:** blotter/citizen_report/sms_log rows for any
+of the 96. In the main file's own 22 incidents, only 8 became blotter
+records and 9 became citizen reports — most incidents never go through
+either. Adding one of each per new incident would have made the ratio
+*less* realistic, not more.
+
+**One real bug found and fixed during generation, not by inspection:** the
+first draft's `%ITEM% reported missing from %LOC%...` narrative template
+produced sentences starting with a lowercase item name ("a mobile phone
+reported missing..."); fixed with `ucfirst()` on the assembled sentence.
+A second, separate bug: the location-pool entry "Near the elementary
+school gate" (copied verbatim from the main file's own
+`location_description` values) produced "...reported at Near the
+elementary school gate" when spliced into a template already supplying
+its own "at" — fixed by stripping a leading "Near " only for narrative
+interpolation, while keeping the original string for the
+`location_description` column. Both found by grepping the generated
+output for lowercase sentence starts and doubled connector words before
+loading it, not assumed correct from the generator code.
+
+**Verified for real, not just by loading without an SQL error:** ran all
+four files in order against `baranguard_uiseed`, then queried the live
+table — 118 incidents / 69 dispatches, `incident_type` distribution has
+no zero-count gaps (theft 25 down to fire/missing_person/other 3 each),
+priority normal 65 / high 40 / critical 13, status resolved 112 /
+dispatched 3 / pending 3 (the 3 pending + 3 dispatched are exactly the
+main file's still-open tail — the bulk file only ever writes
+`status='resolved'`), zero rows outside the Dao coordinate bounding box,
+and the two tanod-employment-window checks above. The main file's
+`refresh-live.sql`'s `UPDATE incident ... WHERE incident_id IN (17..22)`
+step (pins the still-open incidents' timestamps to `UTC_TIMESTAMP()` so
+the live dashboard never shows a stale-looking "still open" card) is
+unrelated to this change and ran correctly, unmodified — flagged only
+because a first glance at `MAX(created_at)` after seeding looked wrong
+until traced back to that pre-existing, intentional behavior.
+
+Not done: nothing was added for Binanuahan/Marifosque/Banuyo — the user
+confirmed Dao-only is correct for this pass.
+
+## 2026-09-19 — Route line never rendered: MapLibre 6.x's GeoJSON worker was never starting under Vite/Capacitor
+
+Closes the open question from HANDOFF's "Route-line rendering" section
+(the `applyRoute()` diagnostic that "never fired" — it *was* being
+scheduled, but the layers it added could never be tiled). Root cause
+confirmed by reading `node_modules/maplibre-gl/dist/maplibre-gl-dev.mjs`
+(6.9.0), not inferred:
+
+- Since MapLibre 6 the worker is a SEPARATE module (`maplibre-gl-worker.mjs`)
+  and `defaultWorkerUrl()` resolves it as `new URL('./maplibre-gl-worker.mjs',
+  import.meta.url)` — or returns `""` outright when `import.meta.url` isn't
+  `http(s):`. In a Vite bundle `import.meta.url` is the emitted chunk's
+  URL, and Vite never emits that sibling file, so the worker 404s (prod)
+  or resolves into `node_modules/.vite/deps/` where it doesn't exist
+  (live-reload). Either way `new Worker()` fails, the pool never comes
+  up, and every GeoJSON source (route, traveled/remaining, guideline)
+  stays "loading" forever. Raster basemap tiles are decoded on the main
+  thread, which is why the map itself always looked fine.
+- Fix, in `mobile/src/components/LiveMapCanvas.tsx`: import
+  `maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url` and hand it to
+  `setWorkerUrl()` at module load, so Vite bundles the worker as its own
+  chunk and MapLibre is told exactly where it is. `vite.config.ts` gets
+  `worker: { format: 'es' }` (the worker is an ES module);
+  `vite-env.d.ts` declares the `*?worker&url` module. `npx vite build`
+  now emits `dist/assets/maplibre-gl-worker-<hash>.js` and both the
+  modern and legacy `index-*.js` chunks reference it (verified by grep on
+  the built output).
+- Same file, hardening that fell out of the investigation: `applyRoute()`
+  now waits for `isStyleLoaded()` (re-arming on `idle`) and wraps the
+  body in try/catch that retries once on `idle`; the effect now `off()`s
+  its `load`/`idle` listeners on cleanup — it re-runs on every GPS tick,
+  so without that every run before the style was ready stacked another
+  stale-closure one-shot listener. Also `map.resize()` after the
+  container's animated height change (briefing → navigation) — the
+  canvas could stay sized for the old container while the camera reported
+  the new one — and a per-tile online fallback in the `offline://`
+  protocol handler for z/x/y coordinates the installed package doesn't
+  cover (package stays primary; `bounds` deliberately left unset on the
+  offline source so MapLibre still asks for out-of-package tiles).
+- `mobile/src/pages/assignments.tsx` + `theme/app.css`: pull-to-refresh
+  could sit spinning for the full 15s API timeout on top of the offline
+  banner text; `handleRefresh` now races `load()` against a 5s guard and
+  calls `event.detail.complete()` in `finally`. The inline-styled banner
+  became `.dispatch-offline-banner` with a Retry button and a dismiss
+  control. The "Could not refresh from the workstation" seen on-device
+  was the default `http://localhost:8081` base URL — `localhost` is the
+  phone — not a bug; set the workstation's LAN address in Profile ›
+  Connection Settings, or `adb reverse tcp:8081 tcp:8081`.
+- `mobile/eslint.config.js`: `android` added to `ignores` — `npm run
+  lint` was failing on `android/app/build/.../native-bridge.js`, a Gradle
+  intermediate, after a device build. `eslint src` was already clean.
+
+**Verified:** `tsc --noEmit`, `npm run lint`, `verify-local-schema.mjs`
+(114/114), `vite build` — all clean, worker chunk present and referenced.
+**NOT verified:** the blue route line actually appearing on a device.
+That still needs a rebuild+reinstall (and `pm clear` to rule out the
+stale-WebView-bundle theory from 2026-09-18). Until a screenshot shows
+the line over the road, this is a confirmed root cause with an
+unconfirmed fix, not a closed item.
+
+## 2026-09-19 (2) — Device session on the Infinix X6840: FCM-enabled rebuild, patrol GPS was silently OFF after a fresh install
+
+Rebuilt+reinstalled the app (`google-services.json` finally baked in —
+`processDebugGoogleServices` emitted the sender-ID resources, and
+`GET /system/health` reports `fcm: healthy` against the real service
+account). `pm clear` before launch, which is what surfaced the bug
+below.
+
+**Bug (§2 Rule 6 class — a status claiming something that isn't
+happening):** after login the Tanod was already `on_duty` from the
+previous session and Home showed "ON ACTIVE PATROL · Foreground GPS ·
+15s Broadcast", but `dumpsys package` showed `ACCESS_FINE_LOCATION:
+granted=false` and `gps_track` had received nothing since before the
+reinstall. Cause: nothing in `mobile/src` ever called
+`Geolocation.requestPermissions()`; the OS prompt only ever appeared as
+a side effect of the Live Map/SOS calling `getCurrentPosition()`.
+`PatrolLocationPlugin.java`'s own comment asserted every caller "has
+already gone through the permission flow" — true only if the user had
+happened to open the map first. On a fresh install going on duty from
+Home, `PatrolLocation.start()` rejected, `startPatrolTracking()`
+swallowed it (`Promise<void>`, empty catch), and the card lied.
+
+**Fix:** `geolocation.ts` gains `ensureLocationPermission()`
+(check, then request `location`); `patrolLocationService.ts`'s
+`startPatrolTracking()` calls it first and now returns `Promise<boolean>`
+(still never throws — duty status is never blocked by tracking);
+`home.tsx` keeps a `patrolTracking` state, shows "GPS OFF — location
+permission denied" in the telemetry line and a `dutyError` telling the
+Tanod to allow Location and toggle again. Plugin comment corrected.
+Verified on device: after `install -r` (session kept) the OS location
+dialog appeared on Home load because the Tanod was already on duty —
+exactly the path that was silent before.
+
+**C7 implication:** every earlier "process dies ~50s into patrol"
+observation was on installs where the grant already existed, so this
+doesn't explain C7 — but it means any C7 test after a `pm clear` was
+silently not running GPS at all. Today's C7 watch was restarted only
+after the grant was confirmed in `dumpsys`.
+
+## 2026-09-19 (3) — A5: real `adb shell content query` against the tethered Infinix — shape matches, one parser gap fixed
+
+`php scripts/gsm-ingest-daemon.php --status` → "adb reachable, tethered
+phone responds to content query." A real `content query --uri
+content://sms/inbox --projection "_id:address:date:body"` prints exactly
+the `Row: N _id=…, address=…, date=…, body=…` lines
+`storage/gsm-test-fixture.txt` was modelled on — no change to the
+regex needed. One real difference: a body containing a newline prints
+its remainder as a continuation line with no `Row:` prefix, which
+`parseContentQueryOutput()` silently dropped (body truncated to its
+first line). Fixed: a non-`Row:` line is re-attached to the previous
+row's body. Envelope JSON is single-line so this never bit an envelope,
+but the parser now matches what the phone actually emits. Unit-checked
+with a two-line body followed by a single-line row (`php -r`). Not done:
+sending a real envelope SMS from a second phone and running `--once`
+against it — the inbox has no Baranguard envelope in it yet.
+
+## 2026-09-19 (4) — Infinix X6840 device session, results: FCM landed, route line confirmed, C7 did NOT reproduce, SQLCipher passphrase was in logcat
+
+Evidence screenshots: `docs/evidence/2026-09-19-device/`.
+
+**Confirmed on hardware (first time for each):**
+- **FCM push (A4/A1 #5, M12):** `POST /dispatch` (dispatch_id 71,
+  INC-2026-020 escalated to critical first via `PATCH /incidents/20`)
+  → `notification_delivery` 26 `fcm/sent` at 22:08:31Z → heads-up
+  notification AND the in-app NEW DISPATCH critical-alert sheet on the
+  phone within ~1s (channel `baranguard_critical_alert`, importance 4,
+  category alarm per `dumpsys notification`). ACKNOWLEDGE ALERT →
+  `notification_target.acknowledged_at` 22:09:13Z. Yesterday's delivery
+  25 was accepted by Google too but the installed APK predated
+  `google-services.json`, so nothing could have arrived.
+- **Route line (2026-09-19 entry above):** dispatch 70's navigation
+  shows the blue/white-cased polyline along Maharlika Highway with the
+  turn-by-turn header populated. Closed.
+- **C7 (process dies ~50s into patrol GPS): did NOT reproduce on the
+  Infinix X6840 itself** — the device every earlier failure was seen on.
+  PID 29418 survived 405s of real foreground-service GPS (`dumpsys
+  activity services` showed `PatrolLocationService` the whole time,
+  `gps_track` rows arriving every ~30s, a critical push handled
+  mid-patrol) until my own `am force-stop`. Screen-off was tried for
+  ~20s only (the screen came back on — user interaction — before a
+  longer lock could be observed). Not on the battery-optimisation
+  whitelist, no exemption requested — so the OEM-policy hypothesis is
+  neither confirmed nor ruled out; what IS ruled out is "dies in the
+  foreground within a minute." Remaining C7 hypothesis: screen-off /
+  backgrounded for minutes on XOS. Needs a dedicated locked-screen run.
+- **A1 #1 SQLCipher:** `databases/baranguardSQLite.db` header bytes
+  `da db 34 30 c1 6a …` — not `SQLite format 3`. PASS.
+- **A1 #2 offline capture survives kill:** `adb reverse --remove` (phone
+  genuinely cannot reach `localhost:8081`), Log Incident with GPS fix
+  (±31m, honestly flagged POOR ACCURACY) → "SAVED LOCALLY FOR RETRY",
+  server `incident` count for that `client_event_id` = 0 → `am
+  force-stop` → relaunch → Profile shows UNSYNCED REPORTS 1. PASS.
+- **A1 #4 keystore round-trip:** same force-stop/relaunch reopened the
+  encrypted DB with cached dispatches (2) intact. PASS.
+- **Offline map package** auto-downloaded on login
+  (`files/map-packages/barangay-1-v3-real-osm.mbtiles`, 2.8MB).
+
+**Bugs found, fixed this session:**
+- Patrol GPS silently off after fresh install — entry (2) above.
+- **SQLCipher passphrase + `raw_narrative` in logcat.** Capacitor's
+  default `loggingBehavior: 'debug'` echoes every plugin result as a
+  `Capacitor/Console` line: 120 lines containing `raw_narrative` in one
+  ~15-minute capture, and `SecureStorage.getItem` → `{"data":"<64 hex>"}`
+  — `passphrase.ts`'s 32-byte hex key — on every DB open. The
+  encrypted-at-rest guarantee was only as private as USB debugging.
+  `capacitor.config.ts` now sets `loggingBehavior` to `'none'` unless
+  `CAP_DEBUG_LOGGING=1` at `cap sync` time (opt-in, same shape as
+  `CAP_LIVE_RELOAD`). Rule 1 + Rule 8 class; the UAT devices run debug
+  APKs, so "release builds don't log" was not a defence.
+
+**Observed, NOT fixed — need a decision or a follow-up:**
+- **Offline lockout after 15 min.** JWT TTL is 15 min (Rule 9);
+  `App.tsx` `RequireSession` gates the whole tab shell on the local `exp`
+  check, so a Tanod out of range >15 min who cold-starts lands on Login
+  and cannot log in offline — cached dispatches, offline map and "my
+  reports" unreachable until back on the LAN. Capture is unaffected (the
+  queued report survived and is still on device). Reproduced for real:
+  relaunch at 22:20Z after going unreachable at ~22:10Z → Login screen.
+  Options put to the user: document as-is / read-only cached shell on an
+  expired-but-present session / longer TTL (touches the reference).
+- Home's "0 Filed today" stayed 0 with one `incident_local` row whose
+  `created_offline_at` matches today's UTC date — filter logic reads
+  correct; a `console.warn` was added to Home's catch to see whether the
+  query rejects at cold-start mount. Unresolved this session.
+- Home's "No active emergency dispatches in queue" card reads the cache
+  once on mount only — after the push it still said PERIMETER CLEAR
+  while Assignments correctly listed 2 active. Stale until relaunch.
+- The system heads-up notification stays posted after ACKNOWLEDGE ALERT
+  (the in-app sheet dismisses; notification id 2001 does not).
+- Push body reads "a animal_complaint incident" — article/enum cosmetic.
+- Duty card shows "OFF DUTY (STANDBY)" when duty status is *unknown*
+  (offline) — the red banner says unknown, the label doesn't.
+
+## 2026-09-19 (5) — Cold-start DB race fixed; Sprint 8 "GPS/route accuracy" measured on the Infinix; Home's "15s" label was wrong
+
+**Bug, fixed, device-verified:** on a cold start with an existing
+session, Home showed "0 Filed today" and "No active emergency
+dispatches" while Profile (mounted later) read the same encrypted DB
+correctly. Bridge logs showed THREE `PRAGMA user_version` reads at
+launch: `openLocalDatabase()` only assigned its module-level `database`
+after several awaits, so Home's two cache reads and the sync scheduler
+all passed the `if (database)` guard and each ran their own
+isConnection/createConnection/migrate — and whichever lost the race got
+an empty result set (no rejection, so Home's catch never fired). Fix in
+`localDatabase.ts`: one in-flight `opening` promise; every concurrent
+caller awaits it. After: one `user_version` read, Home correct on cold
+start (screenshot in `docs/evidence/2026-09-19-device/`). This is the
+same singleton class HANDOFF's "things that bite" #13 warned about.
+
+**Home label vs reality (Rule 6):** the duty card said "Foreground GPS ·
+15s Broadcast" / "15s Sync"; `PatrolLocationService.java` requests
+`UPDATE_INTERVAL_MS = 30000` and the measured interval is 30.8s. Labels
+now say 30s.
+
+**Sprint 8 — GPS/route accuracy, REAL MEASURED (Infinix X6840, stationary
+indoors ~30km south of Pilar, WiFi + GPS, 22:04–22:28Z):**
+- Fix interval (excluding restart gaps): **avg 30.8s** (min 0 — a
+  double post on service restart, max 59s; n=22 gaps).
+- Reported accuracy: **min 20.0m, avg 39.7m, max 202.8m**; 18/23
+  fixes (78%) ≤50m. Positional scatter of the stationary device:
+  **σ 7.3m N/S, 4.2m E/W**.
+- Upload lag `recorded_at → received_at`: **avg 3.0s, max 24s** (the max
+  is the first post after a relaunch).
+- Route (dispatch 70, ORS `car`): **44,244m / 3,027s, 1,043 vertices**
+  vs **29,716m straight-line** (ratio 1.49 — road network, not a
+  straight snap). Rendered correctly on device after the worker fix.
+- NOT measured: accuracy while moving along a known barangay road, and
+  snap-to-route error over a real drive — the device wasn't in Pilar.
+  Those need a Tanod walking a known Dao street; the numbers above are
+  the stationary baseline, not a substitute.
+
+## 2026-09-19 (6) — C7 second run (screen-off), and the 15-minute offline lockout: option B built
+
+**C7 second run, final build (`loggingBehavior: 'none'`), PID 10308,
+22:28:25Z–22:36:13Z:** screen locked via `KEYCODE_SLEEP` at t=0
+(`mWakefulness=Asleep` confirmed), came back on around t≈3min (user
+handling the phone, not the app). Alive at 451s with
+`PatrolLocationService` running and `gps_track` rows every ~30s the
+whole time (track_id 228 → 243). `adb logcat` for the window: no
+`has died` line for `ph.baranguard.tanod`, no `lmkd` kill, no tombstone
+— the only `has died` entries were unrelated Transsion/Play processes.
+Combined with run 1 (405s foreground): **~14 minutes of real patrol GPS
+on the exact device C7 was reported on, no kill.** Still not closed —
+a proper 30+ minute locked-screen run without the phone being handled
+is the remaining test — but "dies ~50s in" is not what this build does.
+
+**Offline lockout — option B, chosen by the user:** `session.ts` gains
+`hasStoredSession()`; `App.tsx`'s `RequireSession` gates on that
+instead of `hasLiveSession()`. Rationale and the alternatives
+considered (A document-only / C longer TTL — touches Rule 9 and the web
+dashboard / D offline re-auth — a credential verifier on the phone,
+contradicts "never revived") are in the comments on both. Security
+unchanged: the server rejects the stale token on every request, and
+`request()`'s 401 path still clears the session and redirects.
+Device verification of the exact sequence — token expired offline →
+cold start shows the cached shell → workstation back → first call 401
+→ Login — is recorded below once observed.
+
+## 2026-09-19 (7) — ARCHITECTURE REVIEW: device sessions (24h sliding / 7-day cap) for the Tanod app; web stays 15 min
+
+**Problem, reproduced on the Infinix:** JWT TTL is 15 min. A Tanod out of
+workstation range >15 min came back, the push for a new dispatch landed
+(FCM needs no token), tapped ACKNOWLEDGE → `POST /notifications/:id/ack`
+401 → Login screen in the middle of an emergency. Sliding renewal hides
+this while in range; it does nothing for the responder who just walked
+back into coverage. Option B (entry (6)) covers the *offline* half —
+this covers the *back in range* half.
+
+**Decision (user-confirmed after weighing four options):**
+- **web** — unchanged, 15-minute sliding. An open dashboard polls
+  `/notifications` every 15s and stores `X-Renewed-Token`, so it never
+  expires while open; it only asks for a login after a closed tab or a
+  sleeping PC — correct for the shared hall PC. (Runbook consequence:
+  the dispatch PC must never sleep — added to SETUP.md.)
+- **device** — a login carrying a well-formed `X-Device-Id`
+  (`and-<uuid>`) AND `role = tanod` gets 24h sliding, hard-capped at
+  `issued_at + 7d`. Sign in once, use it daily, re-enter a password
+  about once a week — never when a push arrives. The cap bounds an
+  *unreported* lost phone to a week without anyone acting.
+- **Why a long token is acceptable here and not in general:**
+  `AuthMiddleware` checks the `auth_session` row on EVERY request, so
+  logout / suspension / deactivation / password change kill a device
+  token on the next call regardless of `exp`. The TTL only changes how
+  long an *un-revoked* session lives. Refresh tokens (the textbook
+  pattern) were rejected as three times the code for the same outcome;
+  offline re-auth (a cached password verifier on the phone) contradicts
+  "an expired/revoked session is never revived."
+
+**Code:** `services/auth/SessionPolicy.php` (kinds, lifetimes, cap —
+constants, not config, same spirit as §11's retention numbers);
+`AuthController::login` picks the kind, stores it, audits it (an enum,
+Rule 8 allow-listed); `AuthMiddleware::maybeRenew` renews on the kind's
+lifetime and applies the cap; migration **0022** adds
+`auth_session.session_kind ENUM('web','device') NOT NULL DEFAULT 'web'`
+(existing rows are web — every pre-0022 session was a 15-minute one).
+Mobile: `apiService.login()` sends `X-Device-Id`.
+
+**Evidence:** new `scripts/verify-device-session.sh`, **20/20** on a
+disposable DB over real HTTP — device vs web vs malformed header vs
+Admin-with-header, 24h/15m expiries, cap applied on renewal (renewed
+expiry lands exactly at `issued_at+7d`, JWT `exp` matches DB, Δ0s), no
+renewal once at the cap, web renews to 15m not 24h, logout → 401 and
+suspension → 401 on a fresh device token. Two of the script's own first
+failures were the script: `UNIX_TIMESTAMP()` on a UTC-stored datetime
+is skewed by the host's +08:00 session zone (use `TIMESTAMPDIFF` from
+`UTC_TIMESTAMP()`), and `/barangays` is a public route (use
+`/notifications` for auth checks). **Every one of the 23 pinned verify
+suites had its migration list extended to 0022** — `login` now inserts
+`session_kind`, so a suite stopped at 0018 would have 500'd at setup,
+exactly the 2026-09-05 lesson in REFERENCE §9. Spot-checked
+`verify-sprint1-auth.sh` 23/23, `verify-second-responder.sh` 22/22,
+`verify-sprint7-pentest-incidents.sh` 68/68 after the change.
+Migration 0022 applied to both real DBs (`baranguard`,
+`baranguard_uiseed`). Master Reference §2 Rule 9 and REFERENCE.md
+(§2 rule 12, migrations line, suite table) amended.
+
+**Device confirmation of the actual login → `session_kind='device'` /
+24h `exp` on the Infinix: pending** — the phone dropped off adb right
+after the APK built (HANDOFF bite #12); recorded below once seen.
+
+## 2026-09-22 — Three of the four device-found "observed, not fixed" mobile bugs fixed (code only, no device to re-verify on)
+
+REMAINING.md C4's "smaller known gaps" list carried four items found on
+the Infinix X6840 2026-09-19 (DEVLOG same-day entry (4)). The push-body
+article/enum one was already fixed on `feature/push-body-incident-label`
+(commit `7e9952a`). Fixed the other three today; **none of these three
+were re-verified on real hardware — no device available this session** —
+static checks only (`tsc --noEmit`, `eslint`, `verify-local-schema.mjs`
+114/114, all clean).
+
+1. **Home's dispatch card stale after a push until relaunch.**
+   `home.tsx` queried `listActiveCachedDispatches()` once in the mount
+   effect only, so a dispatch arriving via push while the app was
+   already open (or backgrounded then resumed) still showed PERIMETER
+   CLEAR while Assignments — which re-queries on its own mount — was
+   correct. Fixed: extracted `refreshActiveDispatches()` and re-run it
+   on `@capacitor/app`'s `appStateChange` (isActive) resume, the same
+   plugin `syncScheduler.ts` already uses for its own foreground trigger.
+   Doesn't cover "push arrives while already foregrounded" (that would
+   need a `pushNotificationReceived` hook too) — deferred since C4 only
+   reported the relaunch-required case.
+2. **System heads-up notification (id 2001) stayed posted after in-app
+   ACKNOWLEDGE.** `setAutoCancel(true)` on `CriticalAlertNotifier` only
+   clears on a direct tap of the tray notification, not on the overlay's
+   own Acknowledge button. Added `CriticalAlertNotifier.cancelFullScreenAlert()`
+   (calls `NotificationManager.cancel(2001)`) and a new
+   `FullScreenAlertPlugin.dismiss()` Capacitor method exposing it;
+   `criticalAlertStore.ts`'s `dismissCriticalAlert()` now calls it
+   (Android-only, best-effort, never blocks the in-app dismiss).
+3. **Duty card said "OFF DUTY (STANDBY)" when status was actually
+   *unknown*** (offline, `getOwnDutyStatus()` failed and `status` stayed
+   `null` — the red `dutyError` banner already said "unknown", the pill
+   label didn't). `home.tsx` now renders "Duty Status Unknown (Offline)"
+   with a new warning-colored `--unknown` pulse/title pair
+   (`app.css`) when `status === null && !loadingStatus`, distinct from
+   the loading state and the real off-duty state.
+
+Not touched: Home's "0 Filed today" `console.warn` diagnostic from the
+same session (C4 says it was unresolved but the cold-start DB race fix
+in entry (5) the same day is the likely actual cause — needs a device
+to confirm, not re-derived here).
+
+Files: `mobile/src/pages/home.tsx`, `mobile/src/services/criticalAlertStore.ts`,
+`mobile/src/services/fullScreenAlert.ts`,
+`mobile/android/app/src/main/java/ph/baranguard/tanod/CriticalAlertNotifier.java`,
+`mobile/android/app/src/main/java/ph/baranguard/tanod/FullScreenAlertPlugin.java`,
+`mobile/src/theme/app.css`.

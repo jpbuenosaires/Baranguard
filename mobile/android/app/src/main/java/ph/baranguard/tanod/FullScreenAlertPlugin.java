@@ -60,6 +60,20 @@ public class FullScreenAlertPlugin extends Plugin {
     }
 
     /**
+     * Cancels the system heads-up notification (id 2001) posted by
+     * `CriticalAlertNotifier`. Called once the Tanod acknowledges the alert
+     * in-app — `setAutoCancel(true)` on the notification itself only
+     * clears it on a direct tap, so an in-app ACKNOWLEDGE otherwise left it
+     * sitting in the tray after the overlay was already gone (found on the
+     * Infinix X6840, 2026-09-19).
+     */
+    @PluginMethod
+    public void dismiss(PluginCall call) {
+        CriticalAlertNotifier.cancelFullScreenAlert(getContext());
+        call.resolve();
+    }
+
+    /**
      * Whether the native Firebase SDK actually initialized in this process
      * — false whenever `google-services.json` was never added to the
      * build (REMAINING.md A4, still open). `deviceIdentity.ts`'s

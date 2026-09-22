@@ -47,6 +47,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { App as CapacitorApp } from '@capacitor/app';
 import {
   IonAlert,
   IonContent,
@@ -187,15 +188,7 @@ const HomePage: React.FC = () => {
       })
       .finally(() => setLoadingStatus(false));
 
-    listActiveCachedDispatches()
-      .then((items) => {
-        setActiveDispatchCount(items.length);
-        setTopDispatch(items[0] ?? null);
-      })
-      .catch(() => {
-        setActiveDispatchCount(0);
-        setTopDispatch(null);
-      });
+    refreshActiveDispatches();
 
     // Query incidents filed today
     listAllLocalIncidents()
@@ -217,6 +210,38 @@ const HomePage: React.FC = () => {
       .catch(() => {
         // Safe fallback
       });
+  }, []);
+
+  /**
+   * C4 (2026-09-19 device session): this card only read the cache once on
+   * mount, so a dispatch that arrived via push while the app was already
+   * open (or backgrounded, then resumed) still showed PERIMETER CLEAR
+   * until a full relaunch — Assignments, which re-queries on its own
+   * mount, was correct the whole time. Re-run on every foreground resume
+   * (below) so the two screens can't disagree for longer than a resume.
+   */
+  function refreshActiveDispatches() {
+    listActiveCachedDispatches()
+      .then((items) => {
+        setActiveDispatchCount(items.length);
+        setTopDispatch(items[0] ?? null);
+      })
+      .catch(() => {
+        setActiveDispatchCount(0);
+        setTopDispatch(null);
+      });
+  }
+
+  // Re-query the dispatch cache whenever the app comes back to the
+  // foreground — covers both "backgrounded then resumed" and a push that
+  // landed while backgrounded, neither of which re-run the mount effect.
+  useEffect(() => {
+    const listenerPromise = CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) refreshActiveDispatches();
+    });
+    return () => {
+      void listenerPromise.then((listener) => listener.remove());
+    };
   }, []);
 
   const PATROL_GPS_DENIED =
@@ -400,16 +425,30 @@ const HomePage: React.FC = () => {
               <div className="tactical-duty-status">
                 <div
                   className={`tactical-duty-pulse ${
-                    status === 'on_duty' ? 'tactical-duty-pulse--on' : 'tactical-duty-pulse--off'
+                    status === 'on_duty'
+                      ? 'tactical-duty-pulse--on'
+                      : status === null && !loadingStatus
+                        ? 'tactical-duty-pulse--unknown'
+                        : 'tactical-duty-pulse--off'
                   }`}
                 />
                 <div className="tactical-duty-text">
                   <span
                     className={`tactical-duty-title ${
-                      status === 'on_duty' ? 'tactical-duty-title--on' : 'tactical-duty-title--off'
+                      status === 'on_duty'
+                        ? 'tactical-duty-title--on'
+                        : status === null && !loadingStatus
+                          ? 'tactical-duty-title--unknown'
+                          : 'tactical-duty-title--off'
                     }`}
                   >
-                    {loadingStatus ? 'Checking Shift…' : status === 'on_duty' ? 'On Active Patrol' : 'Off Duty (Standby)'}
+                    {loadingStatus
+                      ? 'Checking Shift…'
+                      : status === 'on_duty'
+                        ? 'On Active Patrol'
+                        : status === null
+                          ? 'Duty Status Unknown (Offline)'
+                          : 'Off Duty (Standby)'}
                   </span>
                   <span className="tactical-duty-telemetry">
                     {status !== 'on_duty'
