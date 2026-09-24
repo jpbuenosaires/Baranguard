@@ -1,0 +1,30 @@
+# Standalone Android project (sms-gateway app) — same exclusions as
+# mobile/android's own .gitignore, trimmed to what actually applies here
+# (no Capacitor/Cordova artifacts in this project).
+
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+*.class
+
+bin/
+gen/
+out/
+
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc) — machine-specific.
+local.properties
+
+*.log
+
+.idea/
+*.iml
+
+.externalNativeBuild
+.cxx/
+
+*.hprof
