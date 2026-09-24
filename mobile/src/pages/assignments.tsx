@@ -36,7 +36,6 @@ import {
   IonPage,
   IonRefresher,
   IonRefresherContent,
-  IonSpinner,
 } from '@ionic/react';
 import type { RefresherEventDetail } from '@ionic/core';
 import {
@@ -60,6 +59,7 @@ import {
   warningOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
+import { LoadingBlock } from '../components/LoadingBlock';
 import { ApiError, getDispatches } from '../services/apiService';
 import { cacheDispatchesFromServer, isCacheStale, listActiveCachedDispatches } from '../services/db/dispatchRepository';
 import type { DispatchLocalRow } from '../services/db/localSchema';
@@ -427,12 +427,7 @@ const AssignmentsPage: React.FC = () => {
             </div>
           )}
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 64, gap: 12 }}>
-              <IonSpinner name="dots" />
-              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                Loading dispatch assignments…
-              </span>
-            </div>
+            <LoadingBlock label="Loading dispatch assignments…" />
           ) : rows.length === 0 ? (
             <div
               className="card--elevated"

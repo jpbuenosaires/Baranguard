@@ -72,11 +72,11 @@ import {
 import MobileHeader from '../components/MobileHeader';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
 import tacticalFeedback from '../utils/tacticalFeedback';
-import { getOwnDutyStatus, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
+import { getDispatches, getOwnDutyStatus, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
 import { ApiError } from '../services/apiService';
 import { getCurrentPosition } from '../services/geolocation';
 import { enqueueSosItem } from '../services/db/offlineQueueRepository';
-import { listActiveCachedDispatches } from '../services/db/dispatchRepository';
+import { cacheDispatchesFromServer, listActiveCachedDispatches } from '../services/db/dispatchRepository';
 import { listAllLocalIncidents } from '../services/db/incidentRepository';
 import type { DispatchLocalRow } from '../services/db/localSchema';
 import { startPatrolTracking, stopPatrolTracking } from '../services/patrolLocationService';
@@ -213,22 +213,43 @@ const HomePage: React.FC = () => {
   }, []);
 
   /**
-   * C4 (2026-09-19 device session): this card only read the cache once on
-   * mount, so a dispatch that arrived via push while the app was already
-   * open (or backgrounded, then resumed) still showed PERIMETER CLEAR
-   * until a full relaunch — Assignments, which re-queries on its own
-   * mount, was correct the whole time. Re-run on every foreground resume
-   * (below) so the two screens can't disagree for longer than a resume.
+   * C4 (2026-09-19 device session, "fixed" 2026-09-22): this card only
+   * read the cache once on mount, so a dispatch that arrived while the
+   * app was already open (or backgrounded, then resumed) still showed
+   * PERIMETER CLEAR until a full relaunch. The 2026-09-22 fix re-ran this
+   * function on every foreground resume, but only against
+   * `listActiveCachedDispatches()` — the LOCAL `dispatch_local` cache.
+   * That cache is written in exactly one place in this whole app:
+   * `assignments.tsx`'s own `load()`, on that screen's mount. A push
+   * landing while the Tanod stays on Home never touches `dispatch_local`
+   * at all (`criticalAlertStore.ts`'s push listeners only drive the
+   * critical-alert overlay, never the cache), so the "fix" was re-reading
+   * a cache nothing had actually updated — confirmed on a real device
+   * 2026-09-23: a dispatch created while backgrounded did NOT appear on
+   * resume until Assignments was visited separately. Real fix: re-fetch
+   * from the server here too (same `getDispatches()` +
+   * `cacheDispatchesFromServer()` pair `assignments.tsx`'s `load()`
+   * already uses), falling back to the existing cache read on failure —
+   * same offline-tolerant, non-fatal treatment every other network call
+   * on this screen already gets.
    */
   function refreshActiveDispatches() {
-    listActiveCachedDispatches()
-      .then((items) => {
-        setActiveDispatchCount(items.length);
-        setTopDispatch(items[0] ?? null);
-      })
+    getDispatches()
+      .then((entries) => cacheDispatchesFromServer(entries))
       .catch(() => {
-        setActiveDispatchCount(0);
-        setTopDispatch(null);
+        // Offline or unreachable — fall through to whatever's already
+        // cached rather than blanking the card.
+      })
+      .finally(() => {
+        listActiveCachedDispatches()
+          .then((items) => {
+            setActiveDispatchCount(items.length);
+            setTopDispatch(items[0] ?? null);
+          })
+          .catch(() => {
+            setActiveDispatchCount(0);
+            setTopDispatch(null);
+          });
       });
   }
 

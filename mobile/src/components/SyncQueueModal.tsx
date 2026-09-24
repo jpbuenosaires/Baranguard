@@ -33,6 +33,7 @@ import {
 } from '../services/db/offlineQueueRepository';
 import { runSyncPass, type SyncSummary } from '../services/syncService';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { LoadingBlock } from './LoadingBlock';
 
 interface SyncQueueModalProps {
   isOpen: boolean;
@@ -144,9 +145,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
             </div>
 
             {loading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
-                <IonSpinner name="dots" />
-              </div>
+              <LoadingBlock compact />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div className="sync-queue__row">
