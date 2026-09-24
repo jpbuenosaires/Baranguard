@@ -8,6 +8,7 @@
 import { api, window, signIn, cleanup, settle, text, $ } from './harness/render.mjs';
 import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import * as apiClient from '../src/api/apiClient.js';
 
 let n = 0;
 async function boot() {
@@ -27,7 +28,7 @@ describe('router: session gate', () => {
   });
 
   test('an expired session is treated as no session', async () => {
-    window.sessionStorage.setItem('baranguard.session', JSON.stringify({ token: 'x', expiresAt: new Date(Date.now() - 60000).toISOString(), user: { role: 'admin' } }));
+    apiClient.__setSessionForTests({ token: 'x', expiresAt: new Date(Date.now() - 60000).toISOString(), user: { role: 'admin' } });
     const root = await boot();
     assert.ok($('#login-username', root));
   });
@@ -96,7 +97,7 @@ describe('router: public citizen report', () => {
     window.location.hash = '#/citizen-report';
     const root = await boot();
     assert.ok($('#citizen-report-description', root), 'public report form not shown');
-    assert.equal(window.sessionStorage.getItem('baranguard.session'), null);
+    assert.equal(apiClient.getSession(), null);
     for (const call of api.calls) assert.equal(call.headers.authorization, undefined, `${call.path} sent a token from the public page`);
   });
 });

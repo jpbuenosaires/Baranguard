@@ -2,6 +2,7 @@ import { api, window, cleanup, settle, text, click, type, $, assertAccessible, a
 import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderLoginPage } from '../../src/pages/login.js';
+import * as apiClient from '../../src/api/apiClient.js';
 
 afterEach(() => cleanup());
 
@@ -38,7 +39,7 @@ describe('Login (W1)', () => {
     await settle();
     assert.equal(text($('#login-error')), 'Unable to sign in with those credentials.');
     assert.equal(ctx.successes.length, 0);
-    assert.equal(window.sessionStorage.getItem('baranguard.session'), null);
+    assert.equal(apiClient.getSession(), null);
     assert.equal(ctx.user.disabled, false, 'controls must be re-enabled after a failure');
   });
 
