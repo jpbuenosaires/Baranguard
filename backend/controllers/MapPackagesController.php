@@ -6,6 +6,7 @@ namespace Baranguard\Controllers;
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
@@ -109,6 +110,15 @@ final class MapPackagesController
     public static function create(PDO $pdo, array $identity): void
     {
         AuthMiddleware::requireRole($identity, ['admin']);
+
+        // H-11: a request-rate quota, separate from MAX_BYTES/MAX_TOTAL_
+        // BYTES_PER_BARANGAY above — those bound total disk use, this
+        // bounds how often the (relatively expensive: SQLite structure
+        // validation, file move, transactional publish) endpoint can be
+        // hit regardless of file size.
+        if (!RateLimiter::check($pdo, 'map_package_upload:user:' . $identity['user_id'], 3600, 10)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many map-package uploads recently. Please wait before uploading another.');
+        }
 
         $version = $_POST['version'] ?? null;
         if (!is_string($version) || !preg_match(self::VERSION_PATTERN, $version)) {

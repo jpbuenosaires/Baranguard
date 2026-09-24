@@ -6,6 +6,7 @@ namespace Baranguard\Controllers;
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Pdf\SimplePdf;
 use PDO;
@@ -463,6 +464,13 @@ final class ReportsController
     public static function export(PDO $pdo, array $identity): void
     {
         AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+
+        // H-11: exports are the expensive part (CSV/PDF generation), not
+        // the download — this is the generation call, deliberately not
+        // exportDownload() which just streams an already-built file.
+        if (!RateLimiter::check($pdo, 'report_export:user:' . $identity['user_id'], 3600, 20)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many report exports generated recently. Please wait before generating another.');
+        }
 
         $format = Http::query('format') ?? 'csv';
         if (!in_array($format, ['csv', 'pdf'], true)) {
