@@ -522,15 +522,20 @@ html { font-size: 100%; }
   flex-shrink: 0;
   color: var(--color-white);
 }
+/* .icon-badge--brand / --hero now render the real Baranguard logo mark
+   (assets/logo.svg) as an <img> — the mark already carries its own white
+   backing plate and navy fill baked into the file, so these no longer
+   need a gradient/tint background behind a glyph, just sizing + a
+   consistent rounded shape. */
 .icon-badge--brand {
   width: 2.5rem; height: 2.5rem;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  object-fit: cover;
 }
 .icon-badge--hero {
   width: 3.5rem; height: 3.5rem;
   border-radius: var(--radius-xl);
-  background: rgba(255, 255, 255, 0.2);
+  object-fit: cover;
 }
 .icon-badge--feature {
   width: 2.5rem; height: 2.5rem;

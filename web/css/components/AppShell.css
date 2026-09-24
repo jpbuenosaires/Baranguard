@@ -42,8 +42,8 @@
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 0.625rem;
-  background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
-  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .sidebar__wordmark {
@@ -344,29 +344,149 @@
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--color-border);
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: 0.625rem var(--spacing-lg);
+  min-height: 3.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
   box-shadow: 0 1px 3px rgba(15,23,42,0.03);
 }
-.topbar__user {
+
+/* --- Left: Wayfinding & Jurisdiction --- */
+.topbar__context {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+  gap: var(--spacing-sm);
+  min-width: 0;
   flex-shrink: 0;
 }
 
+.topbar__jurisdiction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--color-link);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  white-space: nowrap;
+}
+.topbar__jurisdiction svg {
+  color: var(--color-link);
+  flex-shrink: 0;
+}
+
+.topbar__breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--font-size-sm);
+  min-width: 0;
+}
+
+.topbar__crumb {
+  white-space: nowrap;
+}
+.topbar__crumb--group {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+.topbar__crumb-sep {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.topbar__crumb--current {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.topbar__crumb--detail {
+  color: var(--color-link);
+  font-weight: 500;
+}
+
+.topbar__role-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--color-warning-text);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  margin-left: 0.25rem;
+}
+
+/* --- Center: Universal Command Search (Ctrl + K) --- */
 .topbar__search {
   position: relative;
   flex: 1;
   min-width: 0;
-  max-width: 26.25rem;
+  max-width: 28rem;
+  margin: 0 auto;
 }
-.topbar__search input[type="search"] { margin: 0; }
+.topbar__search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.topbar__search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+.topbar__search input[type="search"] {
+  width: 100%;
+  margin: 0;
+  padding-left: 2.25rem;
+  padding-right: 4.25rem;
+  height: 2.25rem;
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+.topbar__search input[type="search"]::placeholder {
+  color: var(--color-text-tertiary);
+}
+.topbar__search input[type="search"]:focus {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+  outline: none;
+}
+.topbar__search-kbd {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.375rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
 .topbar__search-results {
   position: absolute;
   top: calc(100% + var(--spacing-xs));
@@ -405,6 +525,90 @@
   padding: var(--spacing-md);
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+}
+
+/* --- Right: Operational Status & Controls --- */
+.topbar__user {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.topbar__clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+  flex-shrink: 0;
+}
+.topbar__clock-time {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.topbar__clock-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  animation: clock-pulse 2s infinite ease-in-out;
+  flex-shrink: 0;
+}
+@keyframes clock-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topbar__clock-dot { animation: none; }
+}
+.topbar__clock-digits {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.topbar__clock-shift {
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+
+.topbar__divider {
+  width: 1px;
+  height: 1.5rem;
+  background: var(--color-border);
+  margin: 0 0.125rem;
+  flex-shrink: 0;
+}
+
+.topbar__theme-toggle {
+  color: var(--color-text-secondary);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.topbar__theme-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+.topbar__avatar-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.topbar__avatar-chevron {
+  color: var(--color-text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  transition: transform 0.15s ease;
+}
+.topbar__avatar-button:hover .topbar__avatar-chevron {
+  color: var(--color-text-primary);
 }
 
 .status-badge {
@@ -652,6 +856,8 @@
   .sidebar__scrim.is-open { opacity: 1; pointer-events: auto; }
 
   .topbar { flex-wrap: nowrap; gap: var(--spacing-sm); }
+  .topbar__breadcrumbs { display: none; }
+  .topbar__search-kbd { display: none; }
   .topbar__search-toggle {
     display: inline-flex;
     align-items: center;
@@ -710,11 +916,18 @@
    truncation (the sidebar copy does). Below 900px the name and the badge
    text drop out — the avatar still identifies the user, and the badge
    keeps its coloured dot and its title tooltip. */
+@media (max-width: 1100px) {
+  .topbar__clock-shift { display: none; }
+}
+
 @media (max-width: 900px) {
   .topbar__user-name { display: none; }
   .status-badge__text { display: none; }
   .status-badge { padding: var(--spacing-sm); }
   .topbar__signout-label { display: none; }
+  .topbar__clock { display: none; }
+  .topbar__divider { display: none; }
+  .topbar__crumb--group, .topbar__crumb-sep { display: none; }
 }
 
 /* §2 Rule 6: restore the pre-glass opaque fills on a browser that can't
