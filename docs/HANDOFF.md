@@ -440,6 +440,13 @@ task.
    that needs the user to separately grant "Do Not Disturb access" from
    system settings, a bigger ask than a code change. Decide whether it's
    worth prompting for.
+6. **Two fixes from the 2026-09-24 pre-commit code review, reasoned but
+   not device-verified** (DEVLOG (9)): the `LocalGsmOutboundClient.php`
+   Windows `Start-Process` argument-quoting fix (needs a real send with
+   a `"` in the message/number to confirm) and the
+   `patrolLocationService.ts` permission-request sequencing fix (needs a
+   fresh-install retest to confirm the background-location dialog now
+   reliably surfaces).
 
 **A5, A4 (including its subprocess-timeout gap), C7, and M13's primary
 success path are all closed.** M13's `sms_failed` gap is fixed at the
