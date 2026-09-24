@@ -34,7 +34,7 @@ inbound rule for port 80 (only 8081) — user has the
 
 ---
 
-## H. 2026-09-24 external business-rules audit — 18 of 36 items CLOSED, rest deliberately deferred
+## H. 2026-09-24 external business-rules audit — 19 of 36 items CLOSED, rest deliberately deferred
 
 A 36-finding external audit (4 Critical/22 High/7 Medium/3 Low), run against
 a business-rules catalogue rather than the live code, was reconciled against
@@ -186,8 +186,23 @@ minimum-staffing constraints), H-18 (AI evaluation/provenance — partially
 overlaps A2/A6's already-built eval harnesses), H-19 (contact-number
 consent boundaries), H-21 (offline tile licensing strategy), and M-03
 (incident lifecycle duplicate/invalid/reopened states — same gap as
-H-16). H-05 and H-09 are in progress this session (user-directed, not
-deferred) — see DEVLOG for current status. Full disposition of every one
+H-16). **H-09 CONFIRMED and fixed at the code level** (DEVLOG (16)):
+`mobile_device.device_public_key_pem` (migration 0024) +
+`Baranguard\Lib\DeviceSignature` verify a per-request signature for
+evidence upload / GPS / Tanod dispatch-status-updates; SOS deliberately
+never rejects on a bad signature (same C-01 priority ordering — a real
+emergency must never be lost to a secondary check), only audits it. New
+`DeviceKeyPlugin.java` generates the device's Keystore keypair; wired
+into every high-value mobile write. Backend fully verified
+(`verify-device-signature.sh`, 21/21, real EC keypairs via the openssl
+CLI). **Mobile side is code-complete but NOT device-verified** — no phone
+was attached this session; `./gradlew assembleDebug` succeeds (compiles/
+links) but the actual Keystore generation/signing behavior on real
+hardware is unconfirmed. Needs a device session: install the build,
+confirm a device registers with a real public key, confirm signed
+requests succeed, confirm SOS still works if signing ever fails.
+
+Full disposition of every one
 of the 36 findings — confirmed / partially confirmed / refuted, with
 file-level evidence — lives only in the audit reconciliation itself (not
 re-copied here); ask for it again if picking up more of this audit in a

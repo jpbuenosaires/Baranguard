@@ -15448,3 +15448,89 @@ difficulty — it's that every option needs the deployment owner to answer
 that's not a call to make unilaterally. No code changes for this half;
 it's a scoping deliverable per the user's own explicit request ("start
 scoping the HTTPS deployment in parallel").
+
+## 2026-09-24 (16) — H-09: hardware-backed device identity (full implementation, code-only)
+
+User's decision for H-09 (AskUserQuestion): "full implementation, but no
+testing for this" — build the complete feature (backend verification +
+mobile Keystore signing across every named high-value endpoint), accepted
+up front as device-unverified since no phone was attached this session.
+
+**Backend (fully verified, real disposable-DB tests)**: `migration 0024`
+adds `mobile_device.device_public_key_pem`; `Baranguard\Lib\
+DeviceSignature` verifies `METHOD\nPATH\nDEVICE_ID\nTIMESTAMP` (SHA-256)
+against a device's stored PEM public key via `openssl_verify` — algorithm-
+agnostic (works for the EC key the mobile app generates or any RSA key,
+though only EC is ever actually issued). **Phased rollout, not a hard
+cutover**: `verify()` returns `null` (not `false`) for a device with no
+key on file, so the ~unknown number of already-registered devices on this
+deployment are completely unaffected until each individually upgrades —
+modeled explicitly on §2 Rule 6's "unconfigured is neutral" principle.
+`DevicesController::register()` now accepts an optional
+`device_public_key_pem`, validated with `openssl_pkey_get_public()`
+before ever being stored, and rotates (not silently clobbers) an existing
+key the same way `device_secret_ref` already does via `COALESCE`.
+
+Wired into: `IncidentsController::uploadEvidence()`, `GpsController::
+createItem()` (shared by the direct `POST /gps` path AND `SyncController::
+batch()`'s offline-catch-up replay — the audit named GPS as unprotected on
+both), `DispatchController::applyStatusTransition()` (Tanod-initiated
+calls only — an Admin override already has its own audited path and isn't
+a mobile-device write). **`TanodSosController` is the deliberate
+exception**: it computes and audits the same verification result but
+NEVER rejects on failure — same priority ordering as the audit's own
+C-01 finding ("SOS must not be blocked on GPS"), reasoned through
+explicitly in that controller's new doc comment: a real emergency signal
+must never be lost to a secondary authenticity check.
+
+New suite `verify-device-signature.sh`: 21/21. Real EC P-256 keypairs
+generated with the `openssl` CLI stand in for a device's Keystore key —
+no phone needed to prove the SERVER-side logic is genuine cryptographic
+verification, not a stub: a valid signature succeeds, a garbage signature
+is rejected, a signature made with a DIFFERENT private key is rejected
+(the actual proof this isn't just checking "is a signature present"), a
+10-minute-old timestamp is rejected (replay window), a device with NO key
+on file is completely unaffected, and SOS accepts even a deliberately
+invalid signature while still recording `device_signature_verified:false`
+in `audit_log`. Two real bugs caught and fixed while writing this test:
+Git-Bash `/c/...`-style paths break both native `php.exe` (known gotcha,
+already documented) AND native `curl.exe` in `-F file=@...` uploads (not
+previously documented — added as gotcha material) — both need
+`cygpath -m` first. No regression: `verify-evidence-upload.sh` 19/19,
+`verify-sprint3.sh` 42/42 (GPS), `verify-devices-map-packages.sh` 57/57,
+`verify-w3-w4-dispatch-gis.sh` 38/38, `verify-second-responder.sh` 25/25,
+`verify-sprint4-phase2-3.sh` 70/72 (2 pre-existing unrelated FCM-env
+failures, unchanged).
+
+**Mobile (code-complete, Gradle-verified, device-unverified)**:
+`DeviceKeyPlugin.java` — new local Capacitor plugin, same registration
+pattern as `FullScreenAlertPlugin` — generates an EC P-256 Keystore
+keypair on first use (StrongBox attempted first, silent fallback to
+normal Keystore/TEE on devices without a StrongBox module, which includes
+the Infinix X6840 this project's other native fixes were verified on).
+`deviceKey.ts` is its thin JS edge; `deviceIdentity.ts` gained
+`getDevicePublicKeyPem()`/`signDeviceRequest()`, both fail-open (return
+null, never throw) matching `getFcmToken()`'s existing precedent — a
+device that can't generate/read a key still logs in and works exactly as
+before H-09. `apiService.ts`'s new `deviceAuthHeaders()` helper derives
+the FULL request path (API_BASE_URL's own mount prefix + the route) at
+call time rather than hardcoding `/api/v1`, so a Profile-configured
+custom API base URL (§1) still produces a signature the server's
+`REQUEST_URI`-based check agrees with. Wired into `registerDevice()`
+(sends the key at login), `uploadEvidence()`, `postGps()`, `postSos()`,
+`updateDispatchStatus()`, and `syncBatch()`.
+
+**Verified**: `npx tsc --noEmit` clean, `npm run lint` clean, `npx vite
+build && npx cap sync android` succeeded, `./gradlew assembleDebug`
+BUILD SUCCESSFUL (confirms the new Java compiles/links; does not confirm
+runtime Keystore behavior), `node scripts/verify-local-schema.mjs`
+114/114 (unrelated, confirms no regression). **Not device-verified**:
+whether `KeyGenParameterSpec`/`KeyStore` actually produce a working
+signature on real hardware, whether StrongBox succeeds or falls back on
+the Infinix, and whether the signed requests actually verify end-to-end
+against a real backend from a real phone. Needs a device session before
+this can be marked device-verified, per SPRINTS.md's "prove it, don't
+claim it."
+
+`docs/REMAINING.md` §H updated: 19 of 36 closed (H-09 added — code-level
+close, device-verification still outstanding as its own tracked item).
