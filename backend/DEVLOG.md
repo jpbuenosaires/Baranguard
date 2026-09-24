@@ -15210,3 +15210,63 @@ caveat, same convention already used for `verify-web-wiring.mjs`'s count.
 closed (this pass added 2 fixed — L-01, H-20 — and 2 confirmed-refuted-
 with-evidence — L-02, M-05), 22 remain — all still needing a policy/infra
 decision, not code.
+
+## 2026-09-24 (13) — Fourth audit pass: M-02/M-04 refuted (mostly), M-07
+fixed (map-package storage quota)
+
+Continuing the reconciliation of the 2026-09-24 external audit's remaining
+items, one at a time, each verified against live code before touching
+anything (same discipline as (10)-(12)).
+
+**M-02 (user.is_active/is_suspended can be set to confusing independent
+combinations) — REFUTED.** `backend/migrations/0011_user_suspension.sql`
+documents the three valid states with "deactivating always wins" as the
+tiebreak. `AuthController.php`'s login check tests BOTH flags
+(`is_active !== 1 || is_suspended === 1` both reject), so no combination
+lets a bad session through. `UsersController.php`'s status-toggle endpoint
+enforces exactly one of the two per call and correctly clears
+`suspended_reason`/`suspended_at` on un-suspend. No gap — the audit's
+fear doesn't materialize anywhere it would matter.
+
+**M-04 (hardcoded 4 barangays / dead `lupon` login role) — barangay count
+REFUTED (documented deliberate pilot scope, REFERENCE.md §1), `lupon`
+enum value CONFIRMED harmless but real dead cruft.** `role ENUM(...,
+'lupon')` exists in the baseline schema and `AuthController.php` already
+hard-blocks `role === 'lupon'` from ever logging in; `UsersController`'s
+`CREATABLE_ROLES` also excludes it from user creation. So it can exist in
+the enum but never be assigned via the API and never authenticate even if
+a row somehow had it — genuinely unreachable, not a security gap. Left
+as-is: dropping an ENUM value is a schema change (Rule 9 — new migration,
+not editing 0001), and the value causes no live harm; not worth a
+migration for pure enum hygiene in this pass.
+
+**M-07 (map-package uploads have no storage quota) — REAL GAP, FIXED.**
+`MapPackagesController::create()` already had a 500MB per-file ceiling
+(`MAX_BYTES`) but nothing bounded how many distinct versions a barangay
+could accumulate, and superseded/unpublished package files are never
+deleted (`is_published` just flips to 0 — the row and file both persist
+forever, confirmed no delete/re-publish endpoint exists anywhere in the
+controller). An Admin could upload unlimited 500MB versions with no
+ceiling on total disk use. Added `MAX_TOTAL_BYTES_PER_BARANGAY` (2000MB —
+same "no §5/§6 number given, picked a sane ceiling" reasoning as the
+existing per-file constant) and a `SUM(byte_size)` check before accepting
+a new upload, rejecting with 400 once the barangay's total would exceed
+it. **Deliberately did NOT auto-delete old package files to make room** —
+`map_package` retention is explicitly an open architecture-review
+question (`docs/REMAINING.md` H-15, deferred this session same as the
+other four retention-adjacent findings), so unilaterally purging old
+packages here would be making that call by the back door. The quota is a
+pure accept/reject guard on new uploads, nothing existing is touched.
+
+**Verified for real**, disposable DB, real XAMPP MySQL:
+- `php -l backend/controllers/MapPackagesController.php` — clean.
+- `bash backend/scripts/verify-duty-status-map-upload.sh`: 49/49 (was 46)
+  — new step 16 seeds a fake package row sized to sit exactly at the
+  2000MB quota (no need to actually write a multi-GB fixture — the check
+  only sums the `byte_size` column), then proves: a further real upload
+  for that barangay is rejected 400 and creates no DB row, while a
+  different barangay's own quota is untouched (proving it's per-barangay,
+  not global).
+
+`docs/REMAINING.md` §H updated: 15 of 36 closed (M-07 fixed; M-02
+confirmed-refuted; M-04 confirmed-refuted/negligible), 21 remain.
