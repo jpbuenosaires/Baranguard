@@ -291,6 +291,22 @@ B2_PKG_ID=$(echo "$UPLOAD_B2" | jget package_id)
 expect_eq "$(db_one "SELECT barangay_id FROM offline_map_package WHERE package_id=$B2_PKG_ID;")" "2" "Uploaded package is scoped to the uploader's own barangay_id, not client-supplied"
 expect_eq "$(db_one "SELECT is_published FROM offline_map_package WHERE package_id=$PKG_ID2;")" "1" "Barangay-1's published package is untouched by barangay-2's publish"
 
+step "16. Code-review finding M-07: total per-barangay map-package storage quota"
+# Seed a fake package row that alone sits right at the 2000MB quota for
+# barangay 1 (no need to actually write a multi-GB file — the quota check
+# only sums the `byte_size` column). Any further upload, however small,
+# must now be rejected.
+mysql_exec "$VALDB" <<SQL
+INSERT INTO offline_map_package (barangay_id, version, file_path, checksum_sha256, byte_size, created_by, created_at, is_published)
+VALUES (1, 'quota-filler', 'quota-filler.mbtiles', '$(printf 'a%.0s' {1..64})', 2097152000, (SELECT user_id FROM user WHERE username='dmchk_admin'), UTC_TIMESTAMP(), 0);
+SQL
+QUOTA_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE_URL}/map-packages" -H "Authorization: Bearer $ADMIN_TOKEN" -F "version=2026.09.05" -F "file=@${PKG_DIR}/valid.mbtiles")
+expect_eq "$QUOTA_STATUS" "400" "Upload rejected once the barangay's total map-package storage quota (2000MB) would be exceeded"
+expect_eq "$(db_one "SELECT COUNT(*) FROM offline_map_package WHERE barangay_id=1 AND version='2026.09.05';")" "0" "Rejected upload did not create a DB row"
+# Barangay 2 has its own, mostly-empty quota — untouched by barangay 1's fill.
+QUOTA_B2_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE_URL}/map-packages" -H "Authorization: Bearer $ADMIN2_TOKEN" -F "version=2026.09.06" -F "file=@${PKG_DIR}/valid.mbtiles")
+expect_eq "$QUOTA_B2_STATUS" "201" "Barangay 2's own quota is unaffected by barangay 1's usage (per-barangay, not global)"
+
 echo
 echo "==================== RESULT ===================="
 echo "$PASS passed, $FAIL failed"
