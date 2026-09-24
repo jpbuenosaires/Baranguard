@@ -1,0 +1,34 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace "ph.baranguard.smsgateway"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "ph.baranguard.smsgateway"
+        minSdkVersion 24
+        targetSdkVersion 36
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // No dependencies needed — MainActivity is plain android.app.Activity,
+    // SendSmsReceiver is plain android.content.BroadcastReceiver, both
+    // framework-only. Keeping this app dependency-free avoids exactly the
+    // kind of transitive-version conflict (kotlin-stdlib duplicate classes
+    // via androidx.appcompat) that isn't worth pulling in for a UI this
+    // app doesn't really have.
+}
