@@ -712,11 +712,7 @@
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 50%;
-  background: var(--color-primary);
-  color: var(--color-white);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  object-fit: cover;
   box-shadow: var(--shadow-card);
 }
 

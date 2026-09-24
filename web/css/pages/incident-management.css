@@ -508,14 +508,25 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  margin-top: -4px;
+  margin-top: calc(-1 * var(--spacing-3xs));
 }
 
 .incident-detail-badge {
-  padding: var(--spacing-xs) var(--spacing-sm-md);
-  border-radius: 9999px;
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: var(--spacing-3xs) var(--spacing-sm);
+  border-radius: 999px;
+  font-size: var(--font-size-label);
   font-weight: 600;
+  line-height: 1.2;
+}
+
+.incident-detail-badge svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  flex-shrink: 0;
+  stroke: currentColor;
 }
 
 .incident-detail-badge--critical {
@@ -525,7 +536,7 @@
 
 .incident-detail-badge--high {
   background: var(--tint-warning-bg);
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 /* Classifier mismatch chip — an empty slot collapses to 0 height on its
@@ -555,23 +566,30 @@
 }
 
 .incident-detail-badge--low {
-  background: var(--tint-success-solid);
-  color: var(--color-success);
+  background: var(--tint-success-bg);
+  color: var(--color-success-text);
 }
 
-.incident-detail-badge--active {
+.incident-detail-badge--active,
+.incident-detail-badge--pending {
   background: var(--tint-critical-bg);
   color: var(--color-critical);
 }
 
-.incident-detail-badge--responding {
+.incident-detail-badge--responding,
+.incident-detail-badge--dispatched {
   background: var(--tint-warning-bg);
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .incident-detail-badge--resolved {
   background: var(--tint-success-bg);
-  color: var(--color-success-solid);
+  color: var(--color-success-text);
+}
+
+.incident-detail-badge--closed {
+  background: var(--tint-neutral-bg);
+  color: var(--color-text-secondary);
 }
 
 /* Two-column Info Grid */
