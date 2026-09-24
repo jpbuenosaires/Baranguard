@@ -34,6 +34,8 @@
  * @returns {HTMLElement}
  */
 
+import { escapeHtml } from '../utils/escapeHtml.js';
+
 const VIEW_W = 720;
 const VIEW_H = 240;
 const PAD = { top: 14, right: 14, bottom: 36, left: 42 };
@@ -298,14 +300,14 @@ export function LineChart({ points, series, caption }) {
     // the plot instead of leaving topY at Infinity.
     if (topY === Infinity) topY = PAD.top;
 
-    tooltip.innerHTML = `<div class="line-chart__tooltip-title">${points[i].label}</div>`
+    tooltip.innerHTML = `<div class="line-chart__tooltip-title">${escapeHtml(points[i].label)}</div>`
       + series.map((s, si) => {
         const v = points[i].values[si];
         const valueText = v == null ? 'No data' : String(v);
         return `<div class="line-chart__tooltip-row">`
-          + `<span class="line-chart__tooltip-swatch" style="background:${colors[si]}"></span>`
-          + `<span class="line-chart__tooltip-name">${s.name}</span>`
-          + `<span class="line-chart__tooltip-value">${valueText}</span>`
+          + `<span class="line-chart__tooltip-swatch" style="background:${escapeHtml(colors[si])}"></span>`
+          + `<span class="line-chart__tooltip-name">${escapeHtml(s.name)}</span>`
+          + `<span class="line-chart__tooltip-value">${escapeHtml(valueText)}</span>`
           + `</div>`;
       }).join('');
     tooltip.hidden = false;
@@ -358,11 +360,11 @@ export function LineChart({ points, series, caption }) {
   const tableWrap = document.createElement('div');
   tableWrap.className = 'sr-only';
   const table = document.createElement('table');
-  const head = series.map((s) => `<th scope="col">${s.name}</th>`).join('');
+  const head = series.map((s) => `<th scope="col">${escapeHtml(s.name)}</th>`).join('');
   const body = points.map((p) => (
-    `<tr><td>${p.label}</td>${p.values.map((v) => `<td>${v == null ? 'No data' : v}</td>`).join('')}</tr>`
+    `<tr><td>${escapeHtml(p.label)}</td>${p.values.map((v) => `<td>${v == null ? 'No data' : escapeHtml(v)}</td>`).join('')}</tr>`
   )).join('');
-  table.innerHTML = `<caption>${caption ?? 'Trend'}</caption>`
+  table.innerHTML = `<caption>${escapeHtml(caption ?? 'Trend')}</caption>`
     + `<thead><tr><th scope="col">Date</th>${head}</tr></thead><tbody>${body}</tbody>`;
   tableWrap.appendChild(table);
   host.appendChild(tableWrap);

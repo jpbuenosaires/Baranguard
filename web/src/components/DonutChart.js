@@ -13,6 +13,8 @@
  * @param {{rows: Array<{key:string, label:string, count:number, color:string}>}} props
  * @returns {HTMLElement}
  */
+
+import { escapeHtml } from '../utils/escapeHtml.js';
 export function DonutChart({ rows }) {
   const host = document.createElement('div');
   const total = rows.reduce((sum, r) => sum + r.count, 0);
@@ -97,10 +99,10 @@ export function DonutChart({ rows }) {
     item.className = 'donut-chart__legend-item';
     item.setAttribute('aria-label', `${row.label}: ${row.count} (${pct}%)`);
     item.title = `${row.label}: ${pct}% (${row.count} of ${total})`;
-    item.innerHTML = `<span class="donut-chart__swatch" style="background:${row.color}"></span>`
-      + `<span class="donut-chart__legend-label">${row.label}</span>`
+    item.innerHTML = `<span class="donut-chart__swatch" style="background:${escapeHtml(row.color)}"></span>`
+      + `<span class="donut-chart__legend-label">${escapeHtml(row.label)}</span>`
       + `<span class="donut-chart__legend-value">`
-      + `<span class="donut-chart__legend-count">${row.count}</span>`
+      + `<span class="donut-chart__legend-count">${escapeHtml(row.count)}</span>`
       + `<span class="donut-chart__legend-pct">${pct}%</span>`
       + `</span>`;
 
@@ -173,7 +175,7 @@ export function DonutChart({ rows }) {
   tableWrap.className = 'sr-only';
   const table = document.createElement('table');
   table.innerHTML = `<caption>Breakdown</caption><thead><tr><th scope="col">Category</th><th scope="col">Count</th></tr></thead><tbody>${
-    rows.map((r) => `<tr><td>${r.label}</td><td>${r.count}</td></tr>`).join('')
+    rows.map((r) => `<tr><td>${escapeHtml(r.label)}</td><td>${escapeHtml(r.count)}</td></tr>`).join('')
   }</tbody>`;
   tableWrap.appendChild(table);
 
