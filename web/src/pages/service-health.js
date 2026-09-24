@@ -607,7 +607,45 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     const restoreSnippet = buildTerminalBox('bash backend/scripts/restore-drill.sh');
     restoreCard.append(restoreHeader, restoreField, restoreNote, restoreSnippet);
 
-    drSection.append(backupCard, restoreCard);
+    // Card C: Notification Delivery Reliability (code-review finding
+    // H-20, 2026-09-24) — Rule 12's FCM-retry-then-SMS ladder is a real
+    // bounded retry policy, but nothing surfaced what happens once BOTH
+    // tiers are exhausted for a target. This is that missing signal.
+    const notifCard = document.createElement('div');
+    notifCard.className = 'health-dr-card';
+
+    const notifHeader = document.createElement('div');
+    notifHeader.className = 'health-dr-card__header';
+    const notifTitle = document.createElement('h4');
+    notifTitle.className = 'health-dr-card__title';
+    notifTitle.innerHTML = `${icons.bell(18)}<span>Notification Delivery</span>`;
+
+    const failedCount = Number.isFinite(health.notificationDeliveryFailures24h) ? health.notificationDeliveryFailures24h : 0;
+    const notifBadge = document.createElement('span');
+    notifBadge.className = `health-dr-card__badge ${failedCount === 0 ? 'status-pill--success' : 'status-pill--warning'}`;
+    notifBadge.textContent = failedCount === 0 ? 'All Reaching Recipients' : 'Delivery Gaps Detected';
+    notifHeader.append(notifTitle, notifBadge);
+
+    const notifField = document.createElement('div');
+    notifField.className = 'health-dr-field';
+    const notifLabel = document.createElement('span');
+    notifLabel.className = 'health-dr-label';
+    notifLabel.textContent = 'Fully Undelivered (24h)';
+    const notifValRow = document.createElement('div');
+    notifValRow.className = 'health-dr-value-row';
+    const notifVal = document.createElement('span');
+    notifVal.className = `health-dr-value ${failedCount > 0 ? 'health-dr-value--warn' : ''}`;
+    notifVal.textContent = `${failedCount} notification${failedCount === 1 ? '' : 's'}`;
+    notifValRow.appendChild(notifVal);
+    notifField.append(notifLabel, notifValRow);
+
+    const notifNote = document.createElement('p');
+    notifNote.className = 'health-dr-note';
+    notifNote.textContent = 'Targets where every configured channel (FCM retry, then SMS fallback) failed to deliver — a genuine "nobody was alerted" gap, not a single failed attempt that a fallback still caught.';
+
+    notifCard.append(notifHeader, notifField, notifNote);
+
+    drSection.append(backupCard, restoreCard, notifCard);
     pageContainer.appendChild(drSection);
 
     renderHistory(pageContainer);

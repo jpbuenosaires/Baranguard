@@ -143,6 +143,9 @@ final class SystemHealthController
             // fails). Still null until one has actually run — an honest
             // "never", never a fabricated recent timestamp.
             'restore_test_at' => self::lastRestoreDrillTimestamp(),
+            // H-20: a real count, never fabricated — 0 is the honest
+            // answer when nothing has failed, not a hidden/omitted field.
+            'notification_delivery_failures_24h' => self::notificationDeliveryFailures24h($pdo),
         ]);
     }
 
@@ -360,5 +363,37 @@ final class SystemHealthController
             return null;
         }
         return $matches[1];
+    }
+
+    /**
+     * Code-review finding H-20 (2026-09-24): notification delivery had no
+     * operator-visible failure signal at all — Rule 12's FCM-retry-once-
+     * then-SMS ladder is a real, bounded retry policy (not a gap), but
+     * once BOTH tiers are exhausted, the only trace was a handful of
+     * `notification_delivery` rows with `status='failed'` that nothing
+     * ever surfaced. This counts notification TARGETS (not individual
+     * delivery attempts — a target with a failed FCM try that then
+     * succeeded via SMS is fine, not counted) from the last 24h that have
+     * at least one failed delivery attempt and NO successful one on any
+     * channel — a genuine "nobody was alerted" gap, the actual thing an
+     * operator needs to know about.
+     */
+    private static function notificationDeliveryFailures24h(PDO $pdo): int
+    {
+        $stmt = $pdo->query(
+            "SELECT COUNT(DISTINCT nt.notification_target_id)
+               FROM notification_target nt
+               JOIN notification n ON n.notification_id = nt.notification_id
+              WHERE n.created_at >= (UTC_TIMESTAMP() - INTERVAL 24 HOUR)
+                AND EXISTS (
+                    SELECT 1 FROM notification_delivery nd
+                     WHERE nd.notification_target_id = nt.notification_target_id AND nd.status = 'failed'
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM notification_delivery nd2
+                     WHERE nd2.notification_target_id = nt.notification_target_id AND nd2.status = 'sent'
+                )"
+        );
+        return (int) $stmt->fetchColumn();
     }
 }
