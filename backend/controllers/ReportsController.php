@@ -531,6 +531,14 @@ final class ReportsController
             throw new ApiError(404, 'NOT_FOUND', 'No export has been generated for this barangay yet.');
         }
 
+        // Code-review finding H-06/H-07 (2026-09-24): export() already
+        // audits 'report_exported' at generate time; the actual download
+        // fetch never was. Distinct action string, same rationale as the
+        // Lupon packet's matching fix.
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'report_export_downloaded', 'report', null, [
+            'format' => $format,
+        ]);
+
         $contentType = $format === 'pdf' ? 'application/pdf' : 'text/csv; charset=utf-8';
         header('Content-Type: ' . $contentType);
         header('Content-Length: ' . (string) filesize($path));
