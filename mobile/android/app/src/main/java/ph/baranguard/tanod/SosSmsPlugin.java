@@ -1,6 +1,13 @@
 package ph.baranguard.tanod;
 
 import android.Manifest;
+import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Build;
 import android.telephony.SmsManager;
 import androidx.annotation.NonNull;
 import com.getcapacitor.JSObject;
@@ -12,6 +19,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 /**
  * SosSmsPlugin — G1's third SOS fallback tier (Mobile Improvement Plan
@@ -41,12 +50,31 @@ import java.util.ArrayList;
  * Baranguard is sideloaded (§1: LAN-only, no cloud, not Play-distributed),
  * so a normal runtime grant is sufficient here, same as CAMERA/RECORD_AUDIO
  * elsewhere in this app.
+ *
+ * 2026-09-24 fix (docs/HANDOFF.md M13 section): a malformed
+ * `sos_fallback.backup_contact_number` used to make this silently report
+ * `{sent:true}` while nothing was actually transmitted — `SmsManager`
+ * doesn't synchronously validate the destination address, and a rejected
+ * send left zero trace in `content://sms/sent`/`/failed`/`/outbox`. Two
+ * independent fixes: (1) a format check before ever calling SmsManager,
+ * same PH-mobile-number shape `SettingsController::update()` now enforces
+ * server-side; (2) a real `sentIntent`-based result instead of trusting
+ * `sendTextMessage()`'s synchronous return, which only ever throws for
+ * permission/argument errors, never for a carrier-rejected send. Both are
+ * code-only as of this commit — not yet device-verified for the failure
+ * path (needs airplane-mode/no-SIM testing per docs/HANDOFF.md).
  */
 @CapacitorPlugin(
     name = "SosSms",
     permissions = { @Permission(strings = { Manifest.permission.SEND_SMS }, alias = "sms") }
 )
 public class SosSmsPlugin extends Plugin {
+
+    // Kept in sync by hand with SettingsController::PH_MOBILE_NUMBER_PATTERN
+    // (PHP) — same shape, two languages, no shared code between them.
+    private static final Pattern PH_MOBILE_NUMBER = Pattern.compile("^(\\+63|0)9\\d{9}$");
+
+    private static int sendRequestCounter = 0;
 
     @PluginMethod
     public void sendDirect(PluginCall call) {
@@ -56,12 +84,17 @@ public class SosSmsPlugin extends Plugin {
             call.reject("number and message are both required.");
             return;
         }
+        String trimmedNumber = number.trim();
+        if (!PH_MOBILE_NUMBER.matcher(trimmedNumber).matches()) {
+            call.reject("Invalid phone number format: " + trimmedNumber);
+            return;
+        }
 
         if (getPermissionState("sms") != PermissionState.GRANTED) {
             requestPermissionForAlias("sms", call, "smsPermissionCallback");
             return;
         }
-        doSend(call, number, message);
+        doSend(call, trimmedNumber, message);
     }
 
     @PermissionCallback
@@ -72,9 +105,20 @@ public class SosSmsPlugin extends Plugin {
         }
         String number = call.getString("number");
         String message = call.getString("message");
-        doSend(call, number, message);
+        // sendDirect() already validated the format before requesting the
+        // permission, so number is guaranteed non-null/well-formed here.
+        doSend(call, number.trim(), message);
     }
 
+    /**
+     * `sentIntent` PendingIntents carry the ACTUAL carrier-level submission
+     * result (success, or a specific `SmsManager.RESULT_ERROR_*` code) back
+     * through a locally-registered `BroadcastReceiver` — this is what makes
+     * a real `sms_failed` (vs. a false `sent_by_sms`) possible. One
+     * PendingIntent per message part (multipart messages need every part
+     * to report before the call resolves); the receiver unregisters itself
+     * once the last part's result has arrived.
+     */
     private void doSend(PluginCall call, @NonNull String number, @NonNull String message) {
         try {
             SmsManager smsManager = SmsManager.getDefault();
@@ -83,20 +127,79 @@ public class SosSmsPlugin extends Plugin {
             // handles that split, rather than silently truncating a
             // coordinate off the end of a single-part message.
             ArrayList<String> parts = smsManager.divideMessage(message);
-            if (parts.size() > 1) {
-                smsManager.sendMultipartTextMessage(number, null, parts, null, null);
+            int partCount = Math.max(parts.size(), 1);
+            String action = "ph.baranguard.tanod.SOS_SMS_SENT_" + (sendRequestCounter++) + "_" + System.nanoTime();
+            Context context = getContext();
+
+            AtomicInteger remaining = new AtomicInteger(partCount);
+            AtomicInteger failureCode = new AtomicInteger(Activity.RESULT_OK);
+
+            BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context ctx, Intent intent) {
+                    int result = getResultCode();
+                    if (result != Activity.RESULT_OK) {
+                        failureCode.compareAndSet(Activity.RESULT_OK, result);
+                    }
+                    if (remaining.decrementAndGet() == 0) {
+                        try {
+                            context.unregisterReceiver(this);
+                        } catch (IllegalArgumentException ignored) {
+                            // Already unregistered — harmless.
+                        }
+                        if (failureCode.get() == Activity.RESULT_OK) {
+                            JSObject resolved = new JSObject();
+                            resolved.put("sent", true);
+                            call.resolve(resolved);
+                        } else {
+                            call.reject("SMS send failed: " + describeResult(failureCode.get()));
+                        }
+                    }
+                }
+            };
+
+            IntentFilter filter = new IntentFilter(action);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
             } else {
-                smsManager.sendTextMessage(number, null, message, null, null);
+                context.registerReceiver(receiver, filter);
             }
-            JSObject result = new JSObject();
-            result.put("sent", true);
-            call.resolve(result);
+
+            int piFlags = PendingIntent.FLAG_UPDATE_CURRENT
+                | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_IMMUTABLE : 0);
+            ArrayList<PendingIntent> sentIntents = new ArrayList<>();
+            for (int i = 0; i < partCount; i++) {
+                sentIntents.add(PendingIntent.getBroadcast(context, i, new Intent(action), piFlags));
+            }
+
+            if (parts.size() > 1) {
+                smsManager.sendMultipartTextMessage(number, null, parts, sentIntents, null);
+            } else {
+                smsManager.sendTextMessage(number, null, message, sentIntents.get(0), null);
+            }
         } catch (Exception e) {
             // No airplane-mode/no-SIM/radio-off check beforehand — letting
             // SmsManager itself fail and reporting that failure honestly
             // is simpler and more accurate than trying to predict every
-            // reason a real send can fail.
+            // reason a real send can fail. This catch only ever fires for
+            // synchronous errors (e.g. permission edge cases); the async
+            // sentIntent result above is what catches everything else.
             call.reject("SMS send failed: " + e.getMessage(), e);
+        }
+    }
+
+    private static String describeResult(int resultCode) {
+        switch (resultCode) {
+            case SmsManager.RESULT_ERROR_NO_SERVICE:
+                return "no cellular service";
+            case SmsManager.RESULT_ERROR_RADIO_OFF:
+                return "radio off (airplane mode?)";
+            case SmsManager.RESULT_ERROR_NULL_PDU:
+                return "null PDU";
+            case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
+                return "generic failure";
+            default:
+                return "result code " + resultCode;
         }
     }
 }

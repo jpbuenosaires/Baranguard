@@ -1800,6 +1800,7 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
   font-size: 0.75rem;
   font-weight: 700;
   padding: 6px 14px;
+  min-height: 44px;
   border: none;
   cursor: pointer;
   transition: all 0.2s ease;
