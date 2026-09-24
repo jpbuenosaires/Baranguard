@@ -58,10 +58,12 @@ unresolved P0/P1 reference contradictions.
      use `ReportsController`'s now-fixed per-incident `MIN(arrived_at)`
      definition (F8); the "Raw-PII exposure audit" box starts from
      already-fixed F2/F3/F7 as context, not open findings.
-  -> **Real-device blocker, relevant to "critical notification/SOS
-     fallback tests pass":** `docs/REMAINING.md` C7 (app process dies
-     ~50s into on-duty patrol GPS) is OPEN — treat it as blocking any UAT
-     scenario walking through an on-duty patrol shift until fixed. C6
+  -> **C7 CLOSED 2026-09-24** (`docs/REMAINING.md`) — was never a process
+     death; the real issue (patrol GPS silently stopping while the
+     screen was locked) was root-caused to a missing
+     `ACCESS_BACKGROUND_LOCATION` permission and fixed + device-verified
+     (17 min continuous locked-screen GPS reporting). No longer blocks
+     an on-duty-patrol-shift UAT scenario. C6
      (login stuck over Home) is closed and no longer blocks login-walking
      scenarios.
 
@@ -74,7 +76,7 @@ Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
   [ ] Offline cache durability + duplicate-reconciliation tests
       (needs a real Android device — see docs/REMAINING.md)
   [ ] Notification end-to-end reliability
-      (needs real FCM/Semaphore credentials)
+      (needs real FCM credentials + the local GSM SMS gateway confirmed end-to-end)
   [ ] Sync latency
   [ ] Raw-PII exposure audit
   [ ] GPS/route accuracy
