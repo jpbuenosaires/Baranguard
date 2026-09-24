@@ -23,10 +23,10 @@ import {
   IonContent,
   IonIcon,
   IonPage,
-  IonSpinner,
 } from '@ionic/react';
 import { calendarOutline, locationOutline, swapHorizontalOutline, timeOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
+import { LoadingBlock } from '../components/LoadingBlock';
 import { ApiError, getMyShiftSwapRequests, getMyShifts, requestShiftSwap, type ShiftEntry, type ShiftSwapRequestEntry } from '../services/apiService';
 import { uuid } from '../services/uuid';
 
@@ -96,10 +96,7 @@ const MyShiftsPage: React.FC = () => {
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="app-column">
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 64, gap: 12 }}>
-              <IonSpinner name="dots" />
-              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Loading your schedule…</span>
-            </div>
+            <LoadingBlock label="Loading your schedule…" />
           ) : error ? (
             <div
               style={{

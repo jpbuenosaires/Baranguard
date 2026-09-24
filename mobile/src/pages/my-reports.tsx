@@ -22,7 +22,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { IonContent, IonIcon, IonPage, IonRefresher, IonRefresherContent, IonSpinner } from '@ionic/react';
+import { IonContent, IonIcon, IonPage, IonRefresher, IonRefresherContent } from '@ionic/react';
 import {
   alertCircleOutline,
   checkmarkDoneOutline,
@@ -32,6 +32,7 @@ import {
   timeOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
+import { LoadingBlock } from '../components/LoadingBlock';
 import { deriveSyncState, listAllLocalIncidents, type SyncState } from '../services/db/incidentRepository';
 import type { IncidentLocalRow } from '../services/db/localSchema';
 
@@ -88,12 +89,7 @@ const MyReportsPage: React.FC = () => {
 
         <div className="app-column">
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 64, gap: 12 }}>
-              <IonSpinner name="dots" />
-              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                Loading your reports…
-              </span>
-            </div>
+            <LoadingBlock label="Loading your reports…" />
           ) : rows.length === 0 ? (
             <div
               className="card--elevated"
