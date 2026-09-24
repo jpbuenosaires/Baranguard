@@ -7,7 +7,7 @@ declare(strict_types=1);
  *
  * smsCompose() takes ONLY operator-typed text, by design (§2 Rule 1 —
  * narrative content, raw or redacted, must never reach this prompt, since
- * its output leaves via Semaphore to real phones). This dataset is
+ * its output leaves via the SMS gateway to real phones). This dataset is
  * therefore shaped differently from eval-incidents-v1.json: each record
  * is a synthetic "operator prompt" a records officer might type, not an
  * incident narrative.

@@ -141,9 +141,45 @@ final class NotificationsController
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    public static function acknowledgeAll(PDO $pdo, array $identity): void
+    {
+        // Matches index()'s own "every role may read its own targets" scope
+        // — these are the only roles that ever see the bell (tanod: mobile
+        // SOS/dispatch targets; admin/secretary/punong_barangay: the web
+        // topbar). No other role exists in this system (user.role ENUM).
+        AuthMiddleware::requireRole($identity, ['tanod', 'admin', 'secretary', 'punong_barangay']);
+
+        $pdo->beginTransaction();
+        try {
+            $update = $pdo->prepare(
+                "UPDATE notification_target nt
+                   JOIN notification n ON n.notification_id = nt.notification_id
+                    SET nt.ack_status = 'acknowledged', nt.acknowledged_at = UTC_TIMESTAMP()
+                  WHERE nt.user_id = :user_id
+                    AND n.barangay_id = :barangay_id
+                    AND nt.ack_status = 'pending'"
+            );
+            $update->execute([
+                'user_id' => $identity['user_id'],
+                'barangay_id' => $identity['barangay_id'],
+            ]);
+            $count = $update->rowCount();
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        Http::send(200, [
+            'success' => true,
+            'acknowledged_count' => $count,
+        ]);
+    }
+
+    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function acknowledge(PDO $pdo, array $identity, string $notificationIdParam): void
     {
-        AuthMiddleware::requireRole($identity, ['tanod']);
+        AuthMiddleware::requireRole($identity, ['tanod', 'admin', 'secretary', 'punong_barangay']);
         if (!ctype_digit($notificationIdParam)) {
             throw new ApiError(404, 'NOT_FOUND', 'Notification not found.');
         }
