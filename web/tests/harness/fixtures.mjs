@@ -319,7 +319,7 @@ export function buildRoutes(scenario) {
       .map((i) => ({ incident_id: i.incident_id, incident_type: i.incident_type, status: i.status, priority: i.priority, created_at: i.created_at })) }) },
 
     // --- System ---
-    { method: 'GET', path: '/system/health', handler: () => ok({ api: 'healthy', db: 'healthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'healthy', notification_config: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured', backup_last_success: empty ? null : sqlAgo(600), restore_test_at: null }) },
+    { method: 'GET', path: '/system/health', handler: () => ok({ api: 'healthy', db: 'healthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'healthy', notification_config: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured', backup_last_success: empty ? null : sqlAgo(600), restore_test_at: null, notification_delivery_failures_24h: 0 }) },
     { method: 'GET', path: '/system/health/history', handler: () => ok({ sampling: 'Transitions are recorded only when a probe observed a change.', items: empty ? [] : [
       { recorded_at: sqlAgo(60), db: 'healthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },
       { recorded_at: sqlAgo(600), db: 'unhealthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'unhealthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },

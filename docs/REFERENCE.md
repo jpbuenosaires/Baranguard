@@ -181,10 +181,14 @@ an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 ---
 
-## 5. Endpoints (84 live `/api/v1` routes, all built)
+## 5. Endpoints (91 live `/api/v1` routes, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
+**This number moves as routes change** (code-review finding L-01,
+2026-09-24 — it had drifted to 84 here while the real count was already
+91): run `php backend/scripts/count-routes.php` to check it against
+reality rather than trusting whatever's written here.
 
 **Auth** login · logout · change-password
 **Incidents** list (+`q=` search) · show · create · **update** (`PATCH
