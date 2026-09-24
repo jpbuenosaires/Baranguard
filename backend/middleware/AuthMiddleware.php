@@ -185,6 +185,10 @@ final class AuthMiddleware
     public static function requireRole(array $identity, array $allowedRoles): void
     {
         if (!in_array($identity['role'], $allowedRoles, true)) {
+            self::auditDenial('authorization_denied', $identity, [
+                'attempted_roles' => implode(',', $allowedRoles),
+                'actual_role' => $identity['role'],
+            ]);
             throw new ApiError(403, 'FORBIDDEN', 'This role cannot perform this action.');
         }
     }
@@ -196,10 +200,42 @@ final class AuthMiddleware
     public static function requireTenant(array $identity, int $resourceBarangayId): void
     {
         if ($identity['barangay_id'] !== $resourceBarangayId) {
+            self::auditDenial('tenant_access_denied', $identity, [
+                'requested_barangay_id' => $resourceBarangayId,
+            ]);
             // 404, not 403 — existence of another tenant's resource is
             // itself information the caller isn't entitled to.
             throw new ApiError(404, 'NOT_FOUND', 'Resource not found.');
         }
+    }
+
+    /**
+     * Code-review finding H-06/H-07 (2026-09-24): neither denial above was
+     * ever audited. Both this method's callers are frequently invoked from
+     * INSIDE a controller's own open transaction (e.g.
+     * DispatchController::create()'s requireTenant() call at line ~134) —
+     * writing on the same connection as that transaction would have this
+     * row erased by the controller's own rollBack() in its catch block. So
+     * this uses baranguard_db_fresh() (a new, non-memoized connection),
+     * never the baranguard_db() singleton, specifically so the audit row
+     * commits independently of whatever the caller's transaction does.
+     *
+     * @param array{user_id?:int,barangay_id?:int,role?:string} $identity
+     * @param array<string,mixed> $metadata identifiers/statuses only,
+     *        per Rule 8 — never resource content.
+     */
+    private static function auditDenial(string $action, array $identity, array $metadata): void
+    {
+        $metadata['method_path'] = ($_SERVER['REQUEST_METHOD'] ?? '') . ' ' . (string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+        \Baranguard\Lib\Audit::record(
+            baranguard_db_fresh(),
+            $identity['barangay_id'] ?? null,
+            $identity['user_id'] ?? null,
+            $action,
+            'endpoint',
+            null,
+            $metadata
+        );
     }
 
     private static function maybeRenew(PDO $pdo, int $sessionId, string $jti, int $userId, int $barangayId, string $role, int $currentExpiresAt, string $sessionKind, int $issuedAt): ?string
