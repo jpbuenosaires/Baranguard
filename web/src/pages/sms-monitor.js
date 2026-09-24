@@ -1233,8 +1233,9 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
     function updateCharCounter() {
       const len = composeTextarea.value.length;
-      charCounter.textContent = `${len}/160`;
-      charCounter.classList.toggle('is-warning', len > 160);
+      const seg = getSmsSegmentCount(composeTextarea.value);
+      charCounter.textContent = `${len}/${seg.limit} · ${seg.segments} SMS${seg.segments === 1 ? '' : 's'}${seg.encoding === 'UCS-2' ? ' · Unicode' : ''}`;
+      charCounter.classList.toggle('is-warning', seg.segments > 1);
       charCounter.classList.toggle('is-danger', len > 800);
       sendBtn.disabled = composeTextarea.value.trim() === '';
     }
@@ -1574,16 +1575,16 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
 
   textarea.addEventListener('input', () => {
     const len = textarea.value.length;
-    const seg = getSmsSegmentCount(len);
-    counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}`;
+    const seg = getSmsSegmentCount(textarea.value);
+    counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}${seg.encoding === 'UCS-2' ? ' · Unicode' : ''}`;
     previewBubble.textContent = textarea.value.trim() || 'Your message text will appear here…';
   });
 
   if (initialText) {
     textarea.value = initialText;
     const initialLen = textarea.value.length;
-    const initialSeg = getSmsSegmentCount(initialLen);
-    counterWrap.innerHTML = `${initialLen} / ${initialSeg.limit} chars · ${initialSeg.segments} SMS ${initialSeg.segments === 1 ? 'segment' : 'segments'}`;
+    const initialSeg = getSmsSegmentCount(textarea.value);
+    counterWrap.innerHTML = `${initialLen} / ${initialSeg.limit} chars · ${initialSeg.segments} SMS ${initialSeg.segments === 1 ? 'segment' : 'segments'}${initialSeg.encoding === 'UCS-2' ? ' · Unicode' : ''}`;
     previewBubble.textContent = textarea.value.trim() || 'Your message text will appear here…';
   }
 
@@ -1754,8 +1755,8 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
 
   textarea.addEventListener('input', () => {
     const len = textarea.value.length;
-    const seg = getSmsSegmentCount(len);
-    counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}`;
+    const seg = getSmsSegmentCount(textarea.value);
+    counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}${seg.encoding === 'UCS-2' ? ' · Unicode' : ''}`;
   });
 
   msgField.append(msgLabel, textarea, counterWrap);
@@ -2293,12 +2294,44 @@ function formatRelativeTime(isoString) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function getSmsSegmentCount(length) {
-  if (length <= SMS_SINGLE_LIMIT) {
-    return { segments: 1, limit: SMS_SINGLE_LIMIT };
+// Code-review finding H-22 (2026-09-24): this always assumed the GSM-7
+// default alphabet's 160/153-char limits, regardless of what the message
+// actually contained. Any character outside GSM 03.38's basic set (most
+// emoji, many Unicode punctuation marks, most non-Latin scripts) forces
+// the WHOLE message into UCS-2 encoding, whose real limits are 70 chars
+// single / 67 per concatenated segment — a message showing "1 segment"
+// under the old always-GSM-7 assumption could actually need 2+ once it
+// contains even one such character. Bikol/Filipino text in plain Latin
+// script (including ñ, which IS in the GSM-7 basic set) is unaffected;
+// this matters for curly quotes, em dashes, emoji, or other characters an
+// operator might paste in from elsewhere. Doesn't distinguish the GSM-7
+// EXTENSION table (€, [, ], {, }, ^, ~, \, |, each costing 2 of the 160/153
+// budget) — a smaller, rarer case than the UCS-2 gap this fixes, and
+// still gives a closer estimate than assuming plain GSM-7 for everything.
+// The actual SEND path (LocalGsmOutboundClient.php -> Android's own
+// SmsManager.divideMessage()) already segments correctly regardless —
+// this only fixes the operator-facing estimate shown while composing.
+const GSM7_BASIC_CHARS = new Set(
+  "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà"
+);
+
+function requiresUcs2(text) {
+  for (const ch of text) {
+    if (!GSM7_BASIC_CHARS.has(ch)) return true;
   }
-  const segments = Math.ceil(length / 153);
-  return { segments, limit: segments * 153 };
+  return false;
+}
+
+function getSmsSegmentCount(text) {
+  const length = text.length;
+  const ucs2 = requiresUcs2(text);
+  const singleLimit = ucs2 ? 70 : SMS_SINGLE_LIMIT;
+  const segmentLimit = ucs2 ? 67 : 153;
+  if (length <= singleLimit) {
+    return { segments: 1, limit: singleLimit, encoding: ucs2 ? 'UCS-2' : 'GSM-7' };
+  }
+  const segments = Math.ceil(length / segmentLimit);
+  return { segments, limit: segments * segmentLimit, encoding: ucs2 ? 'UCS-2' : 'GSM-7' };
 }
 
 function renderLoading(container) {
