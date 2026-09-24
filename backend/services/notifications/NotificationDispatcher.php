@@ -51,7 +51,7 @@ final class NotificationDispatcher
      * SAME class the internal `/internal/sms/dispatch-payload` and
      * `/internal/sms/priority-alert` endpoints call, so the SMS-fallback
      * step here and those endpoints share one implementation of "compose,
-     * send via Semaphore, write sms_log" rather than two that could drift.
+     * send outbound, write sms_log" rather than two that could drift.
      */
     public function __construct(?FcmClient $fcm = null, ?SmsGatewayService $smsGateway = null)
     {
@@ -347,7 +347,7 @@ final class NotificationDispatcher
             return;
         }
 
-        // Rule 5: "Critical alerts use the configured Semaphore priority
+        // Rule 5: "Critical alerts use the configured priority SMS
         // path." SOS and priority_alert both count as critical here;
         // ordinary dispatch instructions use the regular endpoint. Delegated
         // to SmsGatewayService — see this class's constructor doc for why.
