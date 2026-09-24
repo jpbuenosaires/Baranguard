@@ -15116,3 +15116,97 @@ databases:
 
 `docs/REMAINING.md` §H updated: 4 of the 30 deferred findings now closed,
 26 remain (all still needing a policy/infra decision, not code).
+
+## 2026-09-24 (12) — L-01/L-02/M-05/H-20: one real gap closed, three fully refuted after verification
+
+User picked L-01, L-02, M-05, H-20 from the remaining 26. Verified each
+against the live code before touching anything — three turned out to
+already be resolved or based on a deliberate, documented decision.
+
+**L-02 — REFUTED, nothing to fix.** All three of the audit's own cited
+sub-items were already resolved in earlier sessions: the `GET /dispatch/
+:id/route` doc comment the audit called "stale" is current and accurate
+(confirmed by reading it directly — it correctly describes the real
+NEVER-500s/keep-stale-route/not-audited behavior); `SmsGatewayService.php`'s
+only "Semaphore" mentions are historical/explanatory ("Semaphore
+removed...", "transport='semaphore' are historical only"), not stale
+claims that it's still in use; grepped `mobile/src/services/apiService.ts`
+and `web/index.html` for a dead `8080` fallback the audit described as
+"misleading" — neither file contains `8080` anywhere, only the correct
+`8081`. All three were fixed during the 2026-09-23/24 GSM migration and
+doc-reconciliation passes; the audit's own source catalogue was simply
+compiled before or without picking up those fixes.
+
+**M-05 — REFUTED, nothing to fix.** Both sub-claims turned out to be
+already-adequate, documented design, not gaps:
+- Route-access audit: `DispatchController::route()`'s own class doc
+  (lines 663-667) already explicitly states it's deliberately NOT
+  audited — Rule 8 forbids raw coordinates in `audit_log`, and a Tanod's
+  position updates repeatedly per assignment (unlike a rare status
+  transition), so even ID-only logging would be operational noise. This
+  is the exact same shape as H-08's reconciliation: a documented
+  architecture decision, not an oversight.
+- Route-cache retention: `dispatch` rows (and their `route_json`/
+  `route_status` columns) are already deleted by
+  `RetentionService::purgeOneIncident()`'s cascade (`DELETE FROM dispatch
+  WHERE incident_id = :id`) when the parent incident is purged — the
+  same pattern every other incident-linked artifact (evidence, blotter
+  records) already uses. No independent retention rule is needed because
+  route data has no independent lifecycle.
+
+**H-20 — CONFIRMED, real gap, fixed.** Rule 12's FCM-retry-once-then-SMS
+ladder is a real, bounded retry policy (not a gap — refutes that part of
+the audit's claim), but once BOTH tiers are exhausted for a target,
+NOTHING surfaced it anywhere: no dead-letter table, no operator-visible
+screen, not even a query anyone had written. Grepped for FCM dead-token
+cleanup too — none exists, but FCM isn't even configured on this
+deployment yet (no funded Firebase project), so that specific sub-gap is
+moot for now and was NOT built speculatively (§2 Rule 6 — no controls
+for a channel that doesn't exist yet).
+
+Fixed the actual, currently-relevant gap: `SystemHealthController::index()`
+now returns `notification_delivery_failures_24h` — a real count (never
+fabricated, 0 is the honest default) of notification TARGETS from the
+last 24h with at least one failed delivery attempt and NO successful
+delivery on any channel — the genuine "nobody was alerted" case, not a
+raw failed-attempt count that would over-count a target whose FCM try
+failed but SMS fallback succeeded. Added a third card ("Notification
+Delivery") to Service Health's existing Disaster Recovery section,
+matching its established `health-dr-card` visual pattern; widened that
+section's CSS grid from a fixed 2-column layout to `auto-fit` so a 3rd
+card reflows instead of leaving an empty cell.
+
+**L-01 — CONFIRMED, real drift, fixed.** REFERENCE.md §5 claimed "84 live
+`/api/v1` routes" — a real count (summing every array `backend/routes/
+*.php` returns, the exact same `glob()`-based method `public/index.php`
+itself uses to build the router) came to **91**, not 84, and not even the
+audit's own already-stale comparison number of "90". Added
+`backend/scripts/count-routes.php` (glob + count, `--detail` for a
+per-file breakdown) so a future session can check this claim against
+reality in one command instead of hand-counting or trusting whatever's
+written. Updated REFERENCE.md's number to 91 with a "this number moves"
+caveat, same convention already used for `verify-web-wiring.mjs`'s count.
+
+**Verified for real**, disposable DBs, real XAMPP MySQL running:
+- `php -l` / `node --check` / `bash -n` on every touched file — clean.
+- `verify-sprint4-phase2-3.sh`: 70/72 (2 pre-existing/unrelated FCM-env
+  failures, same ones documented in (10)) — added 2 new assertions:
+  `notification_delivery_failures_24h` correctly counts all 3 targets
+  this suite's own Rule-12-ladder scenarios exhaust (tanod_a: FCM x2 +
+  SMS all failed; admin: straight-to-SMS failed; tanod_b: NO_CONTACT_
+  NUMBER), AND the endpoint's number matches an independent direct-DB
+  query of the identical logic — proving it's a real query result, not a
+  cached or fabricated number.
+- `cd web/tests && npm test`: 408/408 (was 407) — new test proves the
+  Notification Delivery card renders with the real (0) count from the
+  fixture, not a hidden/omitted field.
+- `node web/scripts/verify-web-wiring.mjs`: 563/563.
+- `verify-devices-map-packages.sh`: 57/57 — no regression from touching
+  `SystemHealthController.php`'s shared health-recording logic.
+- `php backend/scripts/count-routes.php --detail` — confirms 91, matches
+  the number now in REFERENCE.md.
+
+`docs/REMAINING.md` §H updated: 14 of the 36 original audit findings now
+closed (this pass added 2 fixed — L-01, H-20 — and 2 confirmed-refuted-
+with-evidence — L-02, M-05), 22 remain — all still needing a policy/infra
+decision, not code.

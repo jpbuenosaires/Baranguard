@@ -34,7 +34,7 @@ inbound rule for port 80 (only 8081) — user has the
 
 ---
 
-## H. 2026-09-24 external business-rules audit — 10 of 36 items CLOSED, rest deliberately deferred
+## H. 2026-09-24 external business-rules audit — 14 of 36 items CLOSED, rest deliberately deferred
 
 A 36-finding external audit (4 Critical/22 High/7 Medium/3 Low), run against
 a business-rules catalogue rather than the live code, was reconciled against
@@ -70,6 +70,26 @@ actual send path was already correct; only the operator-facing estimate
 was wrong), M-01 (`IncidentsController::nextDisplayId()` now computes
 the year in Asia/Manila, not UTC, matching Rule 11).
 
+**Third pass 2026-09-24 (DEVLOG (12))**: L-01 (REFERENCE.md §5 claimed 84
+routes; a real count — via the new `backend/scripts/count-routes.php`,
+the exact method `public/index.php` itself uses — came to 91, not even
+matching the audit's own already-stale "90" comparison; doc updated with
+a "this number moves" caveat and a script to check it going forward) and
+H-20 (notification delivery had no operator-visible failure signal once
+both FCM and SMS fallback tiers were exhausted — `GET /system/health` now
+returns a real `notification_delivery_failures_24h` count, surfaced as a
+third card on Service Health) were CONFIRMED and fixed. L-02 (the three
+specific "stale comment"/"misleading fallback URL" sub-items the audit
+cited) and M-05 (route access is unaudited by explicit, documented
+design — Rule 8 + noise concerns already reasoned through in
+`DispatchController::route()`'s own class doc; route-cache data is
+already retention-bound via the incident cascade purge, same as every
+other incident-linked artifact) were both REFUTED — already resolved or
+already-adequate design, not gaps. Rule 12's FCM-retry-then-SMS ladder
+itself (the "durable retry" part of H-20's claim) is real and was NOT a
+gap either — only the "what happens after both fail" visibility was
+missing.
+
 **Deliberately NOT started this session** (need a policy call, new
 infrastructure, or an explicit architecture-review sign-off, not just
 code): C-02 (MFA), C-03 (HTTPS/TLS enforcement + locking down the
@@ -80,8 +100,8 @@ H-15 (retention periods for `gps_track`/`duty_status`/`shift_schedule`/
 notifications/`map_package` — REFERENCE.md §11 requires an architecture
 review before setting a retention constant, not a runbook edit), H-16
 (incident duplicate/merge workflow), H-17 (shift minimum-staffing
-constraints), and the remaining ~18 Medium/Low findings (M-06 and M-01
-closed above). Full disposition
+constraints), and the remaining ~14 Medium/Low findings (M-01, M-05,
+M-06, L-01, L-02 closed/refuted above). Full disposition
 of every one of the 36 findings — confirmed / partially confirmed /
 refuted, with file-level evidence — lives only in the audit reconciliation
 itself (not re-copied here); ask for it again if picking up more of this
