@@ -34,7 +34,7 @@ inbound rule for port 80 (only 8081) — user has the
 
 ---
 
-## H. 2026-09-24 external business-rules audit — 15 of 36 items CLOSED, rest deliberately deferred
+## H. 2026-09-24 external business-rules audit — 18 of 36 items CLOSED, rest deliberately deferred
 
 A 36-finding external audit (4 Critical/22 High/7 Medium/3 Low), run against
 a business-rules catalogue rather than the live code, was reconciled against
@@ -105,23 +105,42 @@ pilot scope, §1) — the `lupon` enum value is confirmed real but harmless
 dead cruft (unreachable via login or user-creation, left as-is rather
 than spending a migration on pure enum hygiene).
 
+**Fifth pass 2026-09-24 (DEVLOG (14))**: user picked H-05/H-09/H-11/H-12/
+H-13/H-14 from the remaining list and answered up front on the ones
+needing a decision (AskUserQuestion) before any code. H-11 (no abuse
+budget on AI jobs/evidence/GPS/exports/map-packages/SMS broadcast), H-12
+(citizen-report abuse protection is IP-only — fixed with duplicate-
+content detection + a per-barangay aggregate limit, explicitly WITHOUT a
+CAPTCHA/third-party per the user's choice), and H-13/L-03 (transparency
+endpoint published properly: real rate limit, Cache-Control, and a web
+page) were all CONFIRMED and fixed in this pass. New shared
+`rate_limit_counter` table (migration 0023) + `Baranguard\Lib\
+RateLimiter` — no generic "N per window" mechanism existed before this.
+H-05 (session-storage redesign) and H-09 (hardware-backed device keys)
+were also picked but are large enough to be tracked separately — see
+below/DEVLOG for their own status once done. H-14 (privacy governance)
+is explicitly not code and was deferred to a separate conversation.
+
 **Deliberately NOT started this session** (need a policy call, new
 infrastructure, or an explicit architecture-review sign-off, not just
 code): C-02 (MFA), C-03 (HTTPS/TLS enforcement + locking down the
 mobile/web API-base-URL override — this is the same open item as F1
-above, not a new one), H-05 (web JWT storage), H-09 (device authenticity
-beyond the self-reported `X-Device-Id`), H-14 (privacy governance/PIA/DPO),
-H-15 (retention periods for `gps_track`/`duty_status`/`shift_schedule`/
-notifications/`map_package` — REFERENCE.md §11 requires an architecture
-review before setting a retention constant, not a runbook edit), H-16
-(incident duplicate/merge workflow), H-17 (shift minimum-staffing
-constraints), and the remaining ~13 Medium/Low findings (M-01, M-02,
-M-04, M-05, M-06, M-07, L-01, L-02 closed/refuted above). Full disposition
-of every one of the 36 findings — confirmed / partially confirmed /
-refuted, with file-level evidence — lives only in the audit reconciliation
-itself (not re-copied here); ask for it again if picking up more of this
-audit in a future session, since re-deriving it from scratch would be
-wasted work already done once.
+above, not a new one), H-14 (privacy governance/PIA/DPO), H-15 (retention
+periods for `gps_track`/`duty_status`/`shift_schedule`/notifications/
+`map_package` — REFERENCE.md §11 requires an architecture review before
+setting a retention constant, not a runbook edit), H-16 (incident
+duplicate/merge workflow — same underlying gap as M-03), H-17 (shift
+minimum-staffing constraints), H-18 (AI evaluation/provenance — partially
+overlaps A2/A6's already-built eval harnesses), H-19 (contact-number
+consent boundaries), H-21 (offline tile licensing strategy), and M-03
+(incident lifecycle duplicate/invalid/reopened states — same gap as
+H-16). H-05 and H-09 are in progress this session (user-directed, not
+deferred) — see DEVLOG for current status. Full disposition of every one
+of the 36 findings — confirmed / partially confirmed / refuted, with
+file-level evidence — lives only in the audit reconciliation itself (not
+re-copied here); ask for it again if picking up more of this audit in a
+future session, since re-deriving it from scratch would be wasted work
+already done once.
 
 ---
 

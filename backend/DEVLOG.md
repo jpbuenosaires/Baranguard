@@ -15270,3 +15270,106 @@ pure accept/reject guard on new uploads, nothing existing is touched.
 
 `docs/REMAINING.md` §H updated: 15 of 36 closed (M-07 fixed; M-02
 confirmed-refuted; M-04 confirmed-refuted/negligible), 21 remain.
+
+## 2026-09-24 (14) — Fifth audit pass: H-11, H-12, H-13/L-03 implemented
+(user-directed scope: H-05/H-09 in the same request, tracked separately
+below since they're each substantial enough for their own entry)
+
+User picked six specific findings to work through (H-05, H-09, H-11,
+H-12, H-13, H-14) after being shown the full remaining-findings list, then
+answered up-front on the ones that needed a decision before code could
+start (AskUserQuestion): H-05 — do the in-memory-token interim fix now
+AND start scoping HTTPS in parallel; H-09 — full implementation, code-only
+this session (no device to test on); H-12 — code-only hardening, no
+CAPTCHA/third-party; H-13/L-03 — publish the endpoint properly. H-14 was
+flagged as not-code (PIA/DPO/governance) and left for a separate,
+non-coding conversation.
+
+This entry covers H-11/H-12/H-13 — the three that were fully implementable
+and verifiable in one pass. H-05 and H-09 are large enough (session-storage
+redesign + HTTPS scoping; hardware-backed device keys across mobile+
+backend) to warrant their own DEVLOG entries once done.
+
+**New shared infrastructure**: `backend/migrations/0023_rate_limit_counter.sql`
++ `backend/lib/RateLimiter.php` — a fixed-window counter table
+(`limiter_key`, `window_start`, `request_count`), because no generic
+"N per window" mechanism existed anywhere in the codebase before this
+(the two existing patterns — `AuthController`'s lockout counters on the
+`user` row, `CitizenReportsController`'s `audit_log`-count IP throttle —
+are both special-cased to one entity and don't generalize to an arbitrary
+key). Applied to both real databases (`baranguard`, `baranguard_uiseed`)
+as root, and to all 24 disposable-DB verify-*.sh scripts' migration
+chains (mechanical, since every suite applies its full chain per
+REFERENCE.md's own "never pin a suite to a partial schema" lesson).
+
+**H-13/L-03 — public transparency endpoint, CONFIRMED and fixed.** The
+audit's own framing was right: no rate limit, no caching, no web page, no
+product decision. Decision made: publish it for real.
+`PublicReportsController::transparency()` now enforces a 30-req/5-min
+per-IP limit via `RateLimiter` and sets `Cache-Control: public,
+max-age=300`. Added `web/src/pages/transparency.js` (new `#/transparency`
+hash route, same zero-config pattern as `#/citizen-report`), a
+`getPublicTransparency()` wrapper in `apiClient.js`, and a link from the
+citizen-report portal. Server data rendered via `textContent` only.
+New suite `verify-public-transparency.sh`: 17/17, including proving the
+429 actually triggers at request 31 and persists across different
+`barangay_id` values (the limiter is IP-keyed, not per-barangay, by
+design).
+
+**H-11 — no abuse budget on AI jobs/evidence/GPS/exports/map-packages/SMS
+broadcast, CONFIRMED and fixed.** Wired `RateLimiter::check()` into: all
+four `AiToolsController` tools plus `AiDraftController`'s redact/
+extraction/translate/regenerate-summary (one shared `ai_job:user:` key —
+30/hour, since extraction piggybacks on redact's single job-creation
+event); `IncidentsController::uploadEvidence()` (60/hour per Tanod);
+`GpsController::create()` — the DIRECT real-time POST /gps path only,
+deliberately NOT `createItem()`'s shared core (300/5min per user) —
+`createItem()` is also `SyncController::batch()`'s replay path for
+offline-queued points, and rate-limiting THAT would punish a Tanod
+legitimately catching up on hours of backlogged points, exactly the
+offline-first behavior §2 exists to protect; `ReportsController::export()`
+— the generation call, not `exportDownload()`'s streaming (20/hour per
+user); `MapPackagesController::create()` — a request-RATE quota (10/hour),
+separate from the existing size-based `MAX_BYTES`/`MAX_TOTAL_BYTES_
+PER_BARANGAY` constants added for M-07; `SmsController::broadcast()` —
+per-barangay, not per-user (5/hour), since one broadcast already fans out
+to a barangay's whole audience.
+
+**H-12 — citizen-report abuse protection is IP-only, CONFIRMED and
+fixed, explicitly WITHOUT a CAPTCHA/third-party service** (user's
+explicit choice). Two new layers in `CitizenReportsController::submit()`,
+both checked directly against `citizen_report` (not `audit_log` — this
+table has none of the "don't bloat a 7-year-retention table with public
+traffic" constraint that blocks reusing that pattern for §1's transparency
+endpoint): (1) duplicate-content detection — the same
+(`barangay_id`, normalized `description`) resubmitted within 60 minutes
+-> 409, catching a botnet spreading identical text across many IPs, which
+the IP limit alone cannot; (2) a per-barangay aggregate limit — 50
+accepted reports/hour -> 429, catching a distributed flood against one
+barangay that no single IP or single duplicate text would trip. The
+existing per-IP window (3/15min) was reviewed and deliberately left
+unchanged (already tight) rather than retuned.
+
+**Verified for real**, disposable DBs, real XAMPP MySQL:
+- `php -l` on every touched controller — clean.
+- `verify-public-transparency.sh`: 17/17 (new).
+- `verify-ai-tools.sh`: 63/63, no regression.
+- `verify-evidence-upload.sh`: 19/19, `verify-sprint3.sh`: 42/42 (GPS),
+  `verify-w2-reports.sh`: 31/31, `verify-duty-status-map-upload.sh`:
+  49/49, `verify-f9-sms-broadcast-idempotency-index.sh`: 15/15,
+  `verify-sprint4-phase2-3.sh`: 70/72 (same 2 pre-existing unrelated
+  FCM-env failures as every prior pass) — no regression from any new
+  quota.
+- `verify-sprint1-remaining.sh`: 39/39 (was 35) — new steps 9b/9c prove
+  H-12's two new controls trigger for real (409 duplicate, 429
+  aggregate), each fully cleaned up (both the `citizen_report` row and
+  its `audit_log` ledger row) so they leave zero footprint on step 11's
+  pre-existing exact inbox-count assertions.
+- `verify-b2-pentest-remaining-resources.sh`: 59/59, no regression.
+- `node web/scripts/verify-web-wiring.mjs`: 569/569 (was 563).
+- `cd web/tests && npm test`: 408/408, no regression.
+
+`docs/REMAINING.md` §H updated: 18 of 36 closed (H-11, H-12, H-13/L-03
+added this pass — L-03 counted together with H-13 since they're the same
+underlying gap), 18 remain (including H-05/H-09, still in progress this
+session, and H-14, deferred to a non-coding conversation).
