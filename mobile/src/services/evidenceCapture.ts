@@ -5,11 +5,16 @@
  *
  * Deliberately mirrors `localDatabase.ts`'s split: this file is the thin
  * platform edge (Capacitor Camera / Filesystem / voice-recorder plugin
- * calls), while `evidenceRepository.ts` owns the SQLite write. Nothing
- * here has ever executed on a device — same NOT DEVICE-VERIFIED caveat as
- * the rest of this local-storage layer (no Android SDK in this
- * environment; see DEVLOG.md). Built and type-checked against each
- * plugin's documented contract, not assumed to work.
+ * calls), while `evidenceRepository.ts` owns the SQLite write.
+ * Device-verified 2026-09-23 on the Infinix X6840 (A1 #3): photo capture
+ * worked first try; voice recording did NOT — `stopVoiceRecording()` was
+ * calling `Filesystem.stat()`/`readFile()` on the voice-recorder plugin's
+ * own returned `path` with no `directory` option, but that `path` is
+ * relative to `Directory.Data`, not an absolute URI (confirmed by reading
+ * `capacitor-voice-recorder`'s `VoiceRecorder.java`, not assumed) — fixed
+ * by passing `directory: Directory.Data` through and returning `stat.uri`
+ * instead of the plugin's raw relative path. Re-verify on device before
+ * closing A1 #3.
  *
  * Every captured file lands under `Directory.Data` (§5/§9: app-private,
  * deleted on uninstall — never the public Documents/gallery directory),
@@ -189,10 +194,21 @@ export async function stopVoiceRecording(): Promise<StagedAttachment> {
   const { path, mimeType, recordDataBase64 } = result.value;
 
   if (path) {
-    const stat = await Filesystem.stat({ path });
-    const read = await Filesystem.readFile({ path });
+    // capacitor-voice-recorder's own VoiceRecorder.java (stopRecording())
+    // returns `path` RELATIVE to the `directory` passed to startRecording()
+    // (here always Directory.Data — see startVoiceRecording() above), e.g.
+    // "evidence/recording-xxxx.aac" — never a full URI, despite this file's
+    // header comment previously assuming otherwise. Confirmed on a real
+    // device 2026-09-23: omitting `directory` here made Filesystem.stat()
+    // treat that relative string as already-absolute and fail with "stat
+    // failed: evidence/recording-... does not exist". `stat.uri` (a real
+    // absolute URI) is what gets returned, not the plugin's own relative
+    // `path` — same convention capturePhoto() and the base64 fallback below
+    // already follow.
+    const stat = await Filesystem.stat({ path, directory: Directory.Data });
+    const read = await Filesystem.readFile({ path, directory: Directory.Data });
     const sha256 = await sha256OfBase64(typeof read.data === 'string' ? read.data : '');
-    return { type: 'voice', filePath: path, mimeType: mimeType || 'audio/aac', byteSize: stat.size, sha256 };
+    return { type: 'voice', filePath: stat.uri, mimeType: mimeType || 'audio/aac', byteSize: stat.size, sha256 };
   }
 
   // No `path` means the plugin fell back to an in-memory base64 recording

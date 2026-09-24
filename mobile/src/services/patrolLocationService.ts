@@ -28,6 +28,8 @@ import { ensureLocationPermission } from './geolocation';
 export interface PatrolLocationPlugin {
   start(): Promise<{ started: boolean }>;
   stop(): Promise<{ stopped: boolean }>;
+  requestBatteryOptimizationExemption(): Promise<{ alreadyExempt: boolean; dialogShown?: boolean }>;
+  requestBackgroundLocationPermission(): Promise<{ granted: boolean }>;
 }
 
 const PatrolLocation = registerPlugin<PatrolLocationPlugin>('PatrolLocation');
@@ -44,6 +46,42 @@ export async function startPatrolTracking(): Promise<boolean> {
   try {
     if (!(await ensureLocationPermission())) return false;
     const result = await PatrolLocation.start();
+    if (result.started) {
+      // Best-effort, never blocks going on duty — C7 (docs/REMAINING.md):
+      // shows the OS's own battery-optimization-exemption dialog so a
+      // locked-screen shift is less likely to have this foreground service
+      // killed by Doze/App Standby. No-ops once already exempt, so this
+      // only prompts again on a future duty start if the Tanod declined.
+      //
+      // Awaited (not fire-and-forget) before the background-location
+      // request below: both resolve through the same host Activity, and a
+      // code review found that firing them in the same tick could race
+      // the battery-exemption dialog's Activity transition against the
+      // background-location permission launcher trying to use that same,
+      // mid-transition Activity — silently dropping the background-
+      // location prompt (not yet device-retested).
+      await PatrolLocation.requestBatteryOptimizationExemption().catch(() => undefined);
+      // C7's actual 2026-09-24 root-cause finding: a location-type
+      // foreground service still needs ACCESS_BACKGROUND_LOCATION to keep
+      // receiving fixes once the app itself is no longer in the
+      // foreground (screen locked) — declaring the service type alone
+      // isn't enough. Requested as a genuinely separate call from FINE/
+      // COARSE (`ensureLocationPermission()` above), per Android's own
+      // documented requirement. Best-effort, same as the battery-
+      // exemption call above — a Tanod who declines still goes on duty,
+      // just with a real (not fabricated) risk that patrol GPS won't
+      // survive a locked screen. The result is still captured (not fully
+      // discarded) so a denial at least reaches device logs — otherwise
+      // a repeat of C7's original "GPS silently stops" symptom would have
+      // no diagnostic trail pointing at the real cause.
+      PatrolLocation.requestBackgroundLocationPermission()
+        .then((permissionResult) => {
+          if (!permissionResult.granted) {
+            console.warn('[patrolLocationService] ACCESS_BACKGROUND_LOCATION denied — patrol GPS may stop once the screen locks (see C7, docs/REMAINING.md).');
+          }
+        })
+        .catch(() => undefined);
+    }
     return result.started === true;
   } catch {
     return false;
