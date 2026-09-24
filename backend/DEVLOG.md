@@ -15373,3 +15373,78 @@ unchanged (already tight) rather than retuned.
 added this pass — L-03 counted together with H-13 since they're the same
 underlying gap), 18 remain (including H-05/H-09, still in progress this
 session, and H-14, deferred to a non-coding conversation).
+
+## 2026-09-24 (15) — H-05: web JWT out of sessionStorage; C-03/F1 HTTPS scoped
+
+User's decision for H-05 (AskUserQuestion): "do both now" — ship the
+in-memory-token interim fix immediately, and start scoping the HTTPS
+deployment (C-03) in parallel so cookie-based auth can follow once it
+lands. This entry covers both halves.
+
+**The fix.** `web/src/api/apiClient.js` previously kept the JWT/expiry/
+user object in `sessionStorage` under `baranguard.session`. Any script
+running in the page's origin — including an XSS payload — can read
+`sessionStorage` directly; escaping/sanitizing server data (§6's
+`escapeHtml` rule) prevents a script from being INJECTED, but does
+nothing once one already has run. Replaced with a plain module-level
+variable (`inMemorySession`), never written to any `Storage` object.
+`readSession()`/`writeSession()`/`clearSession()` now operate on that
+variable; `getSession()`/`isAuthenticated()` are unchanged from the
+caller's perspective.
+
+**Disclosed tradeoff, not hidden**: a page reload now signs the user out
+— `sessionStorage` previously survived one within the same tab (a closed
+tab always died, per §2 Rule 12's own "closed tab/sleeping PC does"
+language; only "still-open tab, hit F5" behavior changes). Considered and
+rejected: a second "refresh token" stashed in `localStorage`/
+`sessionStorage` to auto-restore after reload — that would just be
+exactly as readable by the same XSS, and arguably a worse credential
+(no natural expiry tied to activity, unlike the existing 15-minute
+sliding window). The actually-correct fix is an HttpOnly+Secure+SameSite
+cookie the browser attaches automatically and JS can never read at all —
+but that needs `SameSite=None` to work across the web (`:80`) and API
+(`:8081`) origins, which browsers only allow over HTTPS. That's C-03,
+not done yet (see below) — so this is a deliberate interim step matching
+the audit's own second suggested option ("or keep access tokens only in
+memory with a secure refresh mechanism" — the "secure refresh mechanism"
+half doesn't exist yet because it depends on C-03).
+
+**Test harness impact**: `render.mjs`'s `signIn()` and several tests
+(`router.test.mjs`, `login.test.mjs`, `apiClient.test.mjs`) previously
+poked `window.sessionStorage` directly to simulate an authenticated
+state — the whole point of the fix is that this data no longer lives
+there. Added `apiClient.js`'s `__setSessionForTests()` (clearly marked
+test-only, real app code never calls it) for the harness to seed/clear
+in-memory state directly; updated every test that read/wrote
+`sessionStorage` for the session record to use it or `getSession()`
+instead. `render.mjs`'s `cleanup()` (called via every file's `afterEach`)
+now also resets the in-memory session, since — unlike `sessionStorage`,
+which jsdom's own per-test reset already cleared — a module-level JS
+variable persists across tests in the same process unless explicitly
+cleared.
+
+**Verified for real**:
+- `cd web/tests && npm test`: 408/408, no regression — including the
+  renamed test that now explicitly proves the token is in neither
+  `sessionStorage` NOR `localStorage`.
+- `node web/scripts/verify-web-wiring.mjs`: 569/569.
+- **Manual browser verification** (real Apache + PHP built-in dev stack,
+  not just jsdom): logged in as `admin.dao` against `baranguard_uiseed`,
+  confirmed the dashboard loads normally; `JSON.stringify({sessionStorage:
+  Object.keys(sessionStorage), localStorage: Object.keys(localStorage)})`
+  in devtools returned both empty while authenticated; a hard page reload
+  correctly returned to the login page (tab title "Sign in — Baranguard"),
+  proving the reload-loses-session tradeoff is real and the app degrades
+  to "log in again," not a crash or a stuck state.
+
+**C-03/F1 — HTTPS deployment, SCOPED, not implemented.** Wrote up three
+realistic options in `docs/REMAINING.md` (self-signed cert + manual
+device trust-install; a private CA for easier rotation; a Caddy/nginx
+reverse proxy terminating TLS) plus why a fourth (a real domain + Let's
+Encrypt) doesn't apply to the current LAN-only architecture (§1) unless
+that architecture itself changes. The real blocker isn't implementation
+difficulty — it's that every option needs the deployment owner to answer
+"does this ever get a stable hostname, or stay pure LAN-only" first, and
+that's not a call to make unilaterally. No code changes for this half;
+it's a scoping deliverable per the user's own explicit request ("start
+scoping the HTTPS deployment in parallel").

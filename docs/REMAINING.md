@@ -121,6 +121,58 @@ were also picked but are large enough to be tracked separately — see
 below/DEVLOG for their own status once done. H-14 (privacy governance)
 is explicitly not code and was deferred to a separate conversation.
 
+**H-05 CONFIRMED and fixed** (DEVLOG (15)): the web JWT now lives in an
+in-memory module variable in `apiClient.js`, never written to any Storage
+object — an XSS can no longer exfiltrate it from `sessionStorage`.
+Disclosed tradeoff: a page reload now signs the user out (previously
+survived one within the tab). Real fix (HttpOnly/Secure/SameSite cookie)
+needs C-03/F1's HTTPS to be safe cross-origin — see the scoping below,
+done as the other half of this same user decision ("do both now").
+
+**C-03/F1 — HTTPS deployment, SCOPED this session, not yet implemented**
+(a real infrastructure/domain decision is needed before any of this can
+be built, not just code):
+
+The blocker isn't technical difficulty, it's that every real HTTPS option
+needs an answer to a question only the deployment owner can give: **does
+this system ever get a real, stable hostname**, or does it stay pure
+LAN-only with device IPs that can change? The three realistic paths:
+
+1. **Self-signed cert + manual trust install.** Generate a cert for the
+   workstation's LAN IP or a `.local` mDNS name, install it as trusted on
+   every Tanod phone + every browser that hits the web dashboard. Zero
+   ongoing cost, works fully offline, but every new device needs a manual
+   trust-install step (no CA can vouch for a private IP), and IP changes
+   (DHCP) mean re-issuing. Matches this project's "single workstation,
+   LAN-only" architecture (§1) most closely.
+2. **A local/private CA + provisioning script.** Same trust-install
+   burden as #1 but centralizes cert issuance/rotation instead of a single
+   long-lived self-signed cert — more setup work up front, easier to
+   rotate later. Worth it only if device churn (new Tanod phones) is
+   frequent enough to justify the tooling.
+3. **A reverse proxy (Caddy/nginx) in front of XAMPP**, terminating TLS
+   and forwarding to the existing `:8081` API / `:80` web — decouples "how
+   HTTPS is served" from "how the PHP app runs," and Caddy specifically
+   can automate cert issuance/renewal IF there's a real public domain
+   (option 4). Adds one more moving part to a workstation that's
+   otherwise deliberately simple (§1: "no cloud").
+4. **A real domain + Let's Encrypt** — only possible if this deployment
+   ever gets a public-reachable hostname, which contradicts the current
+   "LAN-only, no fixed public origin" architecture (§1, §2 Rule 7) unless
+   that constraint itself changes. Not applicable to the current
+   deployment model as documented; revisit only if the LAN-only decision
+   is revisited first.
+
+**Decision needed before implementation starts:** does the deployment
+model stay LAN-only forever (→ option 1, cheapest, matches current
+architecture) or is a stable hostname/public reachability coming at some
+point (→ options 3/4 become worth the setup cost)? Also needed:
+`GSM_GATEWAY_ENABLED`'s `adb`-over-USB workflow and the mobile app's
+`network_security_config.xml` cleartext exception (HANDOFF.md/REFERENCE.md
+§8) both assume plain HTTP today — either would need updating once a
+concrete option is picked, which is real mobile-side work, not just a
+server cert.
+
 **Deliberately NOT started this session** (need a policy call, new
 infrastructure, or an explicit architecture-review sign-off, not just
 code): C-02 (MFA), C-03 (HTTPS/TLS enforcement + locking down the
