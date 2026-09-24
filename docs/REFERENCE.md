@@ -159,9 +159,11 @@ message_body/read_at, `message_type` incl. `manual`, legal_hold) ·
 is_active) · `system_settings` (§7 W21 note) · `sms_subscriber`
 (consent-tracked broadcast list — `consent_at`/`consent_source` NOT
 NULL, removal is `opted_out_at` not a DELETE) · `health_check_log`
-(dependency-status CHANGE log, includes `ors_status`).
+(dependency-status CHANGE log, includes `ors_status`) · `rate_limit_counter`
+(fixed-window abuse-budget counter, not a business dataset — no retention/
+legal-hold treatment, see migration 0023's own doc comment).
 
-**Migrations 0001–0022, all applied to both real DBs** (`baranguard`,
+**Migrations 0001–0023, all applied to both real DBs** (`baranguard`,
 `baranguard_uiseed`). On a new machine apply all in order as DBA/root —
 `baranguard_app` has no `ALTER`/`CREATE TABLE` (§8). Notable ones:
 0008 incident party fields · 0009 blotter case_status · 0011 user
@@ -170,7 +172,9 @@ suspension · 0012 system_settings (W21) · 0014 display_id · 0015 ai_tools
 hold + device scrub · 0017 health_check_log · 0018 sms_subscriber ·
 0019 audit_log idempotency index · 0020 health_check_log.ors_status ·
 0021 generic metric columns on `ai_evaluation_run` · 0022
-`auth_session.session_kind` (web/device — see §2 rule 12).
+`auth_session.session_kind` (web/device — see §2 rule 12) · 0023
+`rate_limit_counter` (shared abuse-budget store, `Baranguard\Lib\
+RateLimiter` — code-review findings H-11/H-13).
 
 **FK trap:** `ai_processing_log`, `evidence_attachment`, `blotter_record`
 and `dispatch` are all `ON DELETE RESTRICT` against `incident` — deleting
@@ -439,10 +443,11 @@ controls that do nothing.
 | `verify-sprint1-auth.sh` | 23 |
 | `verify-w2-reports.sh` | 31 |
 | `verify-w3-w4-dispatch-gis.sh` | 38 |
-| `verify-sprint1-remaining.sh` | 35 |
+| `verify-sprint1-remaining.sh` | 39 |
 | `verify-scheduler-fatigue.sh` | 43 |
 | `verify-devices-map-packages.sh` | 57 |
-| `verify-duty-status-map-upload.sh` | 41 |
+| `verify-duty-status-map-upload.sh` | 49 |
+| `verify-public-transparency.sh` | 17 |
 | `verify-sprint4.sh` | 50 |
 | `verify-sprint4-phase2-3.sh` | 70 |
 | `verify-sprint6.sh` | 110 |

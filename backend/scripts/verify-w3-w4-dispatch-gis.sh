@@ -97,7 +97,7 @@ for m in 0003_shift_schedule_nullable_user 0004_blotter_revision 0005_sms_envelo
          0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
          0009_blotter_case_status 0010_incident_location_description 0011_user_suspension \
          0012_system_settings 0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
-         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber 0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind; do
+         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber 0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
 pass "Full migration chain 0001-0018 applied"
