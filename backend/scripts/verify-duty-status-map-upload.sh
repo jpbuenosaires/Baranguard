@@ -206,6 +206,40 @@ CURRENT=$(body_of GET "/duty-status?barangay_id=1" "$ADMIN_TOKEN")
 echo "  current-by-barangay: $CURRENT"
 if echo "$CURRENT" | grep -q '"status":"off_duty"'; then pass "Admin's current-status view shows the latest toggle (off_duty)"; else fail "Current-status view did not reflect the latest toggle"; fi
 
+step "8b. Code-review fix H-02: cannot go off_duty while a dispatch is still active"
+# Back on duty first, then give this Tanod an active dispatch directly via
+# SQL (this suite has no dispatch fixtures of its own).
+CEID_ON=$(uuidgen_php)
+body_of POST /duty-status "$T1_TOKEN" "{\"status\":\"on_duty\",\"client_event_id\":\"$CEID_ON\"}" >/dev/null
+TANOD1_ID=$(db_one "SELECT user_id FROM user WHERE username='dmchk_tanod1';")
+mysql_exec "$VALDB" <<SQL
+INSERT INTO incident (barangay_id, incident_type, priority, raw_narrative, status, source, created_at, updated_at) VALUES
+  (1, 'theft', 'normal', 'RAW-DUTYMAP-CHECK', 'dispatched', 'web', UTC_TIMESTAMP(), UTC_TIMESTAMP());
+SQL
+DUTY_INC_ID=$(db_one "SELECT incident_id FROM incident WHERE raw_narrative='RAW-DUTYMAP-CHECK';")
+DUTY_DISPATCH_REQ=$(uuidgen_php)
+mysql_exec "$VALDB" <<SQL
+INSERT INTO dispatch (incident_id, dispatched_by, tanod_id, priority, route_status, status, dispatched_at, created_client_request_id) VALUES
+  ($DUTY_INC_ID, (SELECT user_id FROM user WHERE username='dmchk_admin'), $TANOD1_ID, 'normal', 'unavailable', 'assigned', UTC_TIMESTAMP(), '$DUTY_DISPATCH_REQ');
+SQL
+
+CEID_OFF_BLOCKED=$(uuidgen_php)
+expect_eq "$(status_of POST /duty-status "$T1_TOKEN" "{\"status\":\"off_duty\",\"client_event_id\":\"$CEID_OFF_BLOCKED\"}")" "409" "Off-duty rejected while a dispatch is still 'assigned'"
+expect_eq "$(db_one "SELECT COUNT(*) FROM duty_status WHERE client_event_id='$CEID_OFF_BLOCKED';")" "0" "The rejected attempt wrote no duty_status row"
+expect_eq "$(db_one "SELECT status FROM duty_status WHERE user_id=$TANOD1_ID ORDER BY changed_at DESC, status_id DESC LIMIT 1;")" "on_duty" "Tanod's current status is still on_duty in the DB, not off_duty"
+
+# Idempotency must survive this new check: retrying an ALREADY-RECORDED
+# off_duty transition (from before any dispatch existed) must still return
+# the original success, not get newly blocked by the active-dispatch check.
+CEID_RETRY=$(uuidgen_php)
+mysql_exec "$VALDB" -e "UPDATE dispatch SET status='completed' WHERE incident_id=$DUTY_INC_ID;"
+FIRST_OFF=$(body_of POST /duty-status "$T1_TOKEN" "{\"status\":\"off_duty\",\"client_event_id\":\"$CEID_RETRY\"}")
+FIRST_OFF_ID=$(echo "$FIRST_OFF" | jget status_id)
+[ -n "$FIRST_OFF_ID" ] && pass "Off-duty succeeds once the dispatch is completed, not just active (status_id=$FIRST_OFF_ID)" || fail "Expected off_duty to succeed once no active dispatch remains"
+mysql_exec "$VALDB" -e "UPDATE dispatch SET status='assigned' WHERE incident_id=$DUTY_INC_ID;"
+RETRY_OFF=$(body_of POST /duty-status "$T1_TOKEN" "{\"status\":\"off_duty\",\"client_event_id\":\"$CEID_RETRY\"}")
+expect_eq "$(echo "$RETRY_OFF" | jget status_id)" "$FIRST_OFF_ID" "Retrying the SAME client_event_id still returns the original success, even with an active dispatch now present (idempotency short-circuits before the new check)"
+
 # ============================================================
 # POST /map-packages
 # ============================================================

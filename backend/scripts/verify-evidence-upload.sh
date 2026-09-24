@@ -215,7 +215,7 @@ REQ_ID_2="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(16));' | sed -E 's/(.{8})(.
 RESP_3=$(curl -s "${BASE_URL}/incidents/${INCIDENT_ID}/evidence" -X POST \
   -H "Authorization: Bearer $TOKEN_OWNER" -H "X-Device-Id: evid-device-owner" \
   -F "file=@/c/gtmp/.evidchk-photo.jpg" \
-  -F "type=voice" -F "sha256=$SHA256" -F "mime_type=audio/aac" -F "client_request_id=$REQ_ID_2")
+  -F "type=photo" -F "sha256=$SHA256" -F "mime_type=image/jpeg" -F "client_request_id=$REQ_ID_2")
 ATTACHMENT_ID_3=$("$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo $d["attachment_id"] ?? "";' <<< "$RESP_3")
 if [ -n "$ATTACHMENT_ID_3" ] && [ "$ATTACHMENT_ID_3" != "$ATTACHMENT_ID_1" ]; then
   pass "A second, distinct client_request_id creates a genuinely new attachment (id=$ATTACHMENT_ID_3)"
@@ -227,6 +227,14 @@ step "12. GET /incidents/:id/evidence now returns both real uploads"
 GET_RESP=$(curl -s "${BASE_URL}/incidents/${INCIDENT_ID}/evidence" -H "Authorization: Bearer $TOKEN_OWNER")
 GET_COUNT=$("$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo count($d["items"] ?? []);' <<< "$GET_RESP")
 expect_eq "$GET_COUNT" "2" "GET /incidents/:id/evidence lists both uploaded attachments"
+
+step "13. A real JPEG lying about being a voice note is rejected by magic-byte validation (H-10)"
+REQ_ID_3="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(16));' | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')"
+BAD_TYPE_STATUS=$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/incidents/${INCIDENT_ID}/evidence" -X POST \
+  -H "Authorization: Bearer $TOKEN_OWNER" -H "X-Device-Id: evid-device-owner" \
+  -F "file=@/c/gtmp/.evidchk-photo.jpg" \
+  -F "type=voice" -F "sha256=$SHA256" -F "mime_type=audio/aac" -F "client_request_id=$REQ_ID_3")
+expect_eq "$BAD_TYPE_STATUS" "400" "Real JPEG bytes claimed as type=voice/audio-aac is rejected (magic-byte mismatch, not the claimed Content-Type)"
 
 echo
 echo "=================================================="
