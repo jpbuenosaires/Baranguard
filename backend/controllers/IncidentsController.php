@@ -6,6 +6,7 @@ namespace Baranguard\Controllers;
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Sms\CitizenUpdateNotifier;
 use Baranguard\Services\Notifications\NotificationService;
@@ -119,6 +120,14 @@ final class IncidentsController
     // per photo — this is headroom for the uncompressed fallback path and
     // longer voice notes, not a target).
     private const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024;
+
+    /**
+     * H-11: per-Tanod evidence-upload abuse budget. No §5/§6 number given;
+     * picked generously — an active scene can plausibly need several
+     * photos/voice notes in a short span, this only stops sustained abuse.
+     */
+    private const EVIDENCE_UPLOAD_RATE_LIMIT_MAX = 60;
+    private const EVIDENCE_UPLOAD_RATE_LIMIT_WINDOW_SECONDS = 3600;
 
     // §6 "radius has a server maximum" for GET /incidents/nearby — not a
     // number the reference states, resolved here (logged in DEVLOG.md):
@@ -683,6 +692,15 @@ final class IncidentsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
         }
         self::assertDeviceOwnership($pdo, $identity, $deviceId);
+
+        if (!RateLimiter::check(
+            $pdo,
+            'evidence_upload:user:' . $identity['user_id'],
+            self::EVIDENCE_UPLOAD_RATE_LIMIT_WINDOW_SECONDS,
+            self::EVIDENCE_UPLOAD_RATE_LIMIT_MAX
+        )) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many evidence uploads recently. Please wait before uploading another.');
+        }
 
         $incidentStmt = $pdo->prepare('SELECT incident_id, barangay_id FROM incident WHERE incident_id = :incident_id');
         $incidentStmt->execute(['incident_id' => $incidentId]);

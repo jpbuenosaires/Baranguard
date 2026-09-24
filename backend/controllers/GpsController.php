@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
@@ -209,6 +210,18 @@ final class GpsController
     public static function create(PDO $pdo, array $identity): void
     {
         AuthMiddleware::requireRole($identity, ['tanod']);
+
+        // H-11: only on the direct real-time path, deliberately NOT inside
+        // createItem() — that method is also the core of SyncController's
+        // batch replay of offline-queued points (§2 Rule 7: offline
+        // capture is durable state), and a Tanod who was out of range for
+        // hours can legitimately sync hundreds of backlogged points in one
+        // batch call. Rate-limiting the direct live-tracking path is the
+        // real target; rate-limiting the offline catch-up path would
+        // punish exactly the offline-first behavior this app is built for.
+        if (!RateLimiter::check($pdo, 'gps_post:user:' . $identity['user_id'], 300, 300)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many GPS updates recently. Please wait before sending another.');
+        }
 
         $body = Http::jsonBody();
         $result = self::createItem($pdo, $identity, $body);

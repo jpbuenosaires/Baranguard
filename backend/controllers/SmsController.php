@@ -6,6 +6,7 @@ namespace Baranguard\Controllers;
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Sms\SmsGatewayService;
 use PDO;
@@ -426,6 +427,14 @@ final class SmsController
     public static function broadcast(PDO $pdo, array $identity): void
     {
         AuthMiddleware::requireRole($identity, ['admin']);
+
+        // H-11: keyed by barangay, not user — a single broadcast already
+        // fans out to every on-duty Tanod/role/subscriber in the barangay,
+        // so the real abuse budget to protect is "how often this barangay's
+        // whole audience gets messaged," not one Admin's personal quota.
+        if (!RateLimiter::check($pdo, 'sms_broadcast:barangay:' . $identity['barangay_id'], 3600, 5)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many broadcasts sent recently for this barangay. Please wait before sending another.');
+        }
 
         $idempotencyKey = Http::header('Idempotency-Key');
         if ($idempotencyKey === null || !preg_match(self::UUID_PATTERN, $idempotencyKey)) {
