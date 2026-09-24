@@ -16,8 +16,35 @@
  */
 import { icons } from './icons.js';
 import { avatarInitials } from './Avatar.js';
-import { Menu, MenuItem } from './Menu.js';
-import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, getAiToolsAvailability } from '../api/apiClient.js';
+import { Menu, MenuItem, MenuDivider } from './Menu.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
+import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getAiToolsAvailability, getBarangays } from '../api/apiClient.js';
+import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
+
+// notification.notification_type values that should play an audible cue
+// the moment they first appear — an SOS or a priority-flagged incident is
+// exactly the case where a dispatcher shouldn't have to be looking at the
+// bell to notice. Plain 'dispatch'/'other' notifications stay silent.
+const AUDIBLE_NOTIFICATION_TYPES = new Set(['sos', 'priority_alert']);
+
+// The four barangays are fixed (REFERENCE.md §1), so one lookup serves
+// every navigation instead of one per AppShell mount.
+let barangaysPromise = null;
+
+// Shared by the topbar jurisdiction chip and the avatar-menu jurisdiction
+// label — both resolve the same user.barangayId to a name and reveal
+// themselves once it's known; previously duplicated near-identically in
+// two places (a code-review finding).
+function applyBarangayName(chipEl, barangayId, { setTitle = false } = {}) {
+  barangaysPromise ??= getBarangays().catch((err) => { barangaysPromise = null; throw err; });
+  barangaysPromise.then((items) => {
+    const name = items.find((b) => b.barangayId === barangayId)?.name;
+    if (!name) return;
+    chipEl.querySelector('span').textContent = `Brgy. ${name}`;
+    if (setTitle) chipEl.title = `Active Jurisdiction: Barangay ${name}`;
+    chipEl.hidden = false;
+  }).catch(() => { /* chip stays hidden rather than guessing a barangay */ });
+}
 
 // notification.notification_type is an ENUM — these are display labels for
 // its four members, not a second source of truth for what types exist.
@@ -75,6 +102,21 @@ document.addEventListener('click', (event) => {
     activeSearchResults.hidden = true;
   }
 });
+
+// Same "AppShell rebuilt from scratch on every navigate()" trap as above —
+// a code-review finding caught that this had been declared as a LOCAL
+// variable inside AppShell(), so the critical-alert sound's "already seen"
+// baseline was silently wiped on every single navigation, not just a real
+// page load. A genuinely new SOS/priority_alert notification arriving
+// around a nav click would get folded into the fresh (post-navigation)
+// baseline and never sound. Module scope persists it across navigations
+// the same way activeSearchHost does; resetOnLogout() below clears it so
+// a different user signing in on the same tab doesn't inherit the
+// previous user's "already seen" state.
+let knownNotificationIds = null;
+function resetNotificationBaselineOnLogout() {
+  knownNotificationIds = null;
+}
 
 
 // §9 role gates: W2 Dashboard and W4 Live Map are Admin + Punong Barangay
@@ -163,6 +205,11 @@ function writeSidebarCollapsed(collapsed) {
  *   mount a PageHeader into it. `content` is the padded scroll area.
  */
 export function AppShell(user, activePage, navigate, onLogout) {
+  const handleLogout = () => {
+    resetNotificationBaselineOnLogout();
+    onLogout();
+  };
+
   const el = document.createElement('div');
   el.className = 'app-shell';
 
@@ -204,7 +251,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
 
   const brand = document.createElement('div');
   brand.className = 'sidebar__brand';
-  brand.innerHTML = `<span class="icon-badge icon-badge--brand" aria-hidden="true">${icons.shield(22)}</span><span class="sidebar__wordmark">BARANGUARD</span>`;
+  brand.innerHTML = `<img class="icon-badge icon-badge--brand" src="assets/logo.svg" alt="" aria-hidden="true"><span class="sidebar__wordmark">BARANGUARD</span>`;
 
   // Collapse toggle (the X / Menu button in the reference's logo row).
   const collapseButton = document.createElement('button');
@@ -340,7 +387,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
   sidebarLogout.innerHTML = icons.logOut(16);
   sidebarLogout.addEventListener('click', (e) => {
     e.stopPropagation();
-    onLogout();
+    handleLogout();
   });
 
   sidebarUser.append(sidebarAvatar, sidebarUserText, sidebarLogout);
@@ -370,6 +417,66 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay (read-only)' };
   const roleLabel = ROLE_LABELS[user.role] ?? user.role;
 
+  // --- Left: Wayfinding & Jurisdiction Context ---
+  const topbarContext = document.createElement('div');
+  topbarContext.className = 'topbar__context';
+
+  const jurisdictionChip = document.createElement('span');
+  jurisdictionChip.className = 'topbar__jurisdiction';
+  jurisdictionChip.innerHTML = `${icons.mapPin(12)}<span></span>`;
+  jurisdictionChip.hidden = true;
+  applyBarangayName(jurisdictionChip, user.barangayId, { setTitle: true });
+
+  // Compute breadcrumb path from activePage and NAV_ITEMS
+  const currentNav = NAV_ITEMS.find((i) => i.key === activePage);
+  let groupTitle = currentNav?.group;
+  let pageTitle = currentNav?.label;
+
+  if (activePage === 'blotter-detail') {
+    groupTitle = 'Operations';
+    pageTitle = 'Incident Management';
+  } else if (activePage === 'ai-review') {
+    groupTitle = 'Operations';
+    pageTitle = 'Incident Management';
+  } else if (!groupTitle && activePage === 'dashboard') {
+    groupTitle = 'Overview';
+    pageTitle = 'Dashboard';
+  } else if (!pageTitle) {
+    pageTitle = activePage.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  const breadcrumbs = document.createElement('nav');
+  breadcrumbs.className = 'topbar__breadcrumbs';
+  breadcrumbs.setAttribute('aria-label', 'Breadcrumb navigation');
+
+  let breadcrumbsHtml = `
+    <span class="topbar__crumb topbar__crumb--group">${groupTitle || 'Overview'}</span>
+    <span class="topbar__crumb-sep" aria-hidden="true">/</span>
+    <span class="topbar__crumb topbar__crumb--current" aria-current="page">${pageTitle}</span>
+  `;
+
+  if (activePage === 'blotter-detail') {
+    breadcrumbsHtml += `
+      <span class="topbar__crumb-sep" aria-hidden="true">/</span>
+      <span class="topbar__crumb topbar__crumb--detail">Blotter Record</span>
+    `;
+  } else if (activePage === 'ai-review') {
+    breadcrumbsHtml += `
+      <span class="topbar__crumb-sep" aria-hidden="true">/</span>
+      <span class="topbar__crumb topbar__crumb--detail">AI Redaction</span>
+    `;
+  }
+
+  if (user.role === 'punong_barangay') {
+    breadcrumbsHtml += `
+      <span class="topbar__role-tag" title="Punong Barangay: Executive Oversight & Monitoring (Read-Only)">Executive</span>
+    `;
+  }
+
+  breadcrumbs.innerHTML = breadcrumbsHtml;
+  topbarContext.append(jurisdictionChip, breadcrumbs);
+  topbar.appendChild(topbarContext);
+
   // Mobile search toggle button (visible on <=768px)
   const mobileSearchBtn = document.createElement('button');
   mobileSearchBtn.type = 'button';
@@ -387,11 +494,28 @@ export function AppShell(user, activePage, navigate, onLogout) {
   searchLabel.className = 'sr-only';
   searchLabel.htmlFor = 'topbar-search';
   searchLabel.textContent = 'Search incidents';
+
+  const searchInputWrap = document.createElement('div');
+  searchInputWrap.className = 'topbar__search-wrap';
+
+  const searchIcon = document.createElement('span');
+  searchIcon.className = 'topbar__search-icon';
+  searchIcon.setAttribute('aria-hidden', 'true');
+  searchIcon.innerHTML = icons.search(15);
+
   const searchInput = document.createElement('input');
   searchInput.id = 'topbar-search';
   searchInput.type = 'search';
-  searchInput.placeholder = 'Search incidents by ID, type, or status…';
+  searchInput.placeholder = 'Search incidents, ID, or status…';
   searchInput.autocomplete = 'off';
+
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.userAgent || '');
+  const searchKbd = document.createElement('kbd');
+  searchKbd.className = 'topbar__search-kbd';
+  searchKbd.textContent = isMac ? '⌘K' : 'Ctrl K';
+  searchKbd.setAttribute('aria-hidden', 'true');
+
+  searchInputWrap.append(searchIcon, searchInput, searchKbd);
 
   const mobileSearchClose = document.createElement('button');
   mobileSearchClose.type = 'button';
@@ -406,7 +530,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const searchResults = document.createElement('div');
   searchResults.className = 'topbar__search-results';
   searchResults.hidden = true;
-  searchHost.append(searchLabel, searchInput, mobileSearchClose, searchResults);
+  searchHost.append(searchLabel, searchInputWrap, mobileSearchClose, searchResults);
 
   mobileSearchBtn.addEventListener('click', () => {
     searchHost.classList.toggle('is-mobile-open');
@@ -414,6 +538,25 @@ export function AppShell(user, activePage, navigate, onLogout) {
       searchInput.focus();
     }
   });
+
+  // Global keyboard shortcut for Ctrl+K / Cmd+K
+  const handleGlobalSearchKeydown = (e) => {
+    if (!searchInput.isConnected) {
+      window.removeEventListener('keydown', handleGlobalSearchKeydown);
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      const activeEl = document.activeElement;
+      const tag = activeEl?.tagName;
+      if (activeEl !== searchInput && (tag === 'INPUT' || tag === 'TEXTAREA' || activeEl?.isContentEditable)) {
+        return;
+      }
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+  };
+  window.addEventListener('keydown', handleGlobalSearchKeydown);
 
   activeSearchHost = searchHost;
   activeSearchResults = searchResults;
@@ -477,7 +620,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
       row.type = 'button';
       row.className = 'topbar__search-result';
       const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
-      row.innerHTML = `<strong>#${item.incidentId} — ${typeLabel}</strong><span class="status-pill status-pill--neutral">${item.status}</span>`;
+      row.innerHTML = `<strong>#${escapeHtml(item.incidentId)} — ${escapeHtml(typeLabel)}</strong><span class="status-pill status-pill--neutral">${escapeHtml(item.status)}</span>`;
       row.addEventListener('click', () => {
         searchResults.hidden = true;
         searchInput.value = '';
@@ -492,26 +635,46 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const topbarUser = document.createElement('div');
   topbarUser.className = 'topbar__user';
 
-  // Theme toggle — every role gets this (unlike the Admin-only status
-  // badge below), since it's a personal display preference, not
-  // operational diagnostics.
-  const themeToggle = document.createElement('button');
-  themeToggle.type = 'button';
-  themeToggle.className = 'icon-btn';
-  const syncThemeToggleIcon = () => {
-    const dark = isCurrentlyDark();
-    themeToggle.innerHTML = dark ? icons.sun(16) : icons.moon(16);
-    themeToggle.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
-    themeToggle.title = themeToggle.getAttribute('aria-label');
+  // Live Philippine Standard Time clock and active shift
+  const clockContainer = document.createElement('div');
+  clockContainer.className = 'topbar__clock';
+  clockContainer.setAttribute('aria-label', 'Live local time and active duty shift');
+
+  const clockTimeRow = document.createElement('div');
+  clockTimeRow.className = 'topbar__clock-time';
+
+  const clockPulse = document.createElement('span');
+  clockPulse.className = 'topbar__clock-dot';
+
+  const clockDigits = document.createElement('span');
+  clockDigits.className = 'topbar__clock-digits';
+
+  const clockShift = document.createElement('div');
+  clockShift.className = 'topbar__clock-shift';
+
+  clockTimeRow.append(clockPulse, clockDigits);
+  clockContainer.append(clockTimeRow, clockShift);
+  topbarUser.appendChild(clockContainer);
+
+  let clockInterval;
+  const updateClock = () => {
+    if (!clockContainer.isConnected) {
+      clearInterval(clockInterval);
+      return;
+    }
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const h12 = hours % 12 || 12;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    clockDigits.textContent = `${h12}:${minutes}:${seconds} ${ampm} PST`;
+
+    const isDay = hours >= 8 && hours < 20;
+    clockShift.textContent = isDay ? 'Day Duty (08:00–20:00)' : 'Night Duty (20:00–08:00)';
   };
-  syncThemeToggleIcon();
-  themeToggle.addEventListener('click', () => {
-    const next = isCurrentlyDark() ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    writeStoredTheme(next);
-    syncThemeToggleIcon();
-  });
-  topbarUser.appendChild(themeToggle);
+  updateClock();
+  clockInterval = setInterval(updateClock, 1000);
 
   // Real system-status badge — GET /system/health (Admin only per §6).
   // Replaces a hardcoded permanently-green "All Systems Operational"
@@ -569,6 +732,32 @@ export function AppShell(user, activePage, navigate, onLogout) {
     }).catch(() => {});
   }
 
+  // Divider between operational metrics (clock + health) and user controls
+  const userDivider = document.createElement('div');
+  userDivider.className = 'topbar__divider';
+  topbarUser.appendChild(userDivider);
+
+  // Theme toggle
+  let onThemeChanged = null;
+  const themeToggle = document.createElement('button');
+  themeToggle.type = 'button';
+  themeToggle.className = 'icon-btn topbar__theme-toggle';
+  const syncThemeToggleIcon = () => {
+    const dark = isCurrentlyDark();
+    themeToggle.innerHTML = dark ? icons.sun(16) : icons.moon(16);
+    themeToggle.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
+    themeToggle.title = themeToggle.getAttribute('aria-label');
+    onThemeChanged?.();
+  };
+  syncThemeToggleIcon();
+  themeToggle.addEventListener('click', () => {
+    const next = isCurrentlyDark() ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    writeStoredTheme(next);
+    syncThemeToggleIcon();
+  });
+  topbarUser.appendChild(themeToggle);
+
   sidebarUserRole.textContent = roleLabel;
 
   // --- Notification bell -------------------------------------------------
@@ -586,9 +775,27 @@ export function AppShell(user, activePage, navigate, onLogout) {
   bellDot.hidden = true;
   bellTrigger.appendChild(bellDot);
 
+  function formatRelativeTime(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffSec = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
+    if (diffSec < 45) return 'Just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  let activeNotificationTab = 'all';
+
   const bellMenu = Menu({
     trigger: bellTrigger,
     label: 'Notifications',
+    panelClass: 'menu__panel--notifications',
     onOpen: () => loadNotifications(),
   });
 
@@ -601,64 +808,347 @@ export function AppShell(user, activePage, navigate, onLogout) {
     );
 
     bellMenu.panel.innerHTML = '';
-    if (result.items.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'menu__empty';
-      empty.textContent = 'Nothing to review right now.';
-      bellMenu.panel.appendChild(empty);
-      return;
-    }
-    for (const item of result.items) {
-      const unread = item.ackStatus === 'pending';
-      let label = NOTIFICATION_LABELS[item.notificationType] ?? item.notificationType;
-      let icon = icons.bell;
 
-      if (item.notificationType === 'sos') {
-        icon = icons.alertTriangle;
-        label = item.sosTanodName
-          ? `Tanod SOS: ${item.sosTanodName}`
-          : (item.sosId ? `Tanod SOS #${item.sosId}` : 'Tanod Emergency SOS');
-      } else if (item.notificationType === 'priority_alert') {
-        icon = icons.alertTriangle;
-        const typeStr = item.incidentType ? (INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType) : 'Incident';
-        const idStr = item.incidentDisplayId || (item.incidentId ? `#${item.incidentId}` : '');
-        label = `Priority Alert: ${typeStr} ${idStr}`.trim();
-      } else if (item.notificationType === 'dispatch') {
-        icon = icons.radio;
-        const typeStr = item.incidentType ? ` (${INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType})` : '';
-        label = `Dispatch: ${item.dispatchTanodName || 'Tanod'}${typeStr}`.trim();
-      } else if (item.dispatchStatus === 'completed') {
-        icon = icons.checkCircle;
-        label = `Dispatch Completed: ${item.dispatchTanodName || 'Tanod'}`;
-      } else if (item.dispatchStatus === 'arrived') {
-        icon = icons.mapPin;
-        label = `Tanod Arrived: ${item.dispatchTanodName || 'Tanod'}`;
-      } else if (item.incidentType) {
-        icon = icons.fileText;
-        const typeStr = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
-        const idStr = item.incidentDisplayId || (item.incidentId ? `#${item.incidentId}` : '');
-        label = `New Incident: ${typeStr} ${idStr}`.trim();
+    const hasCriticalUnread = result.items.some(
+      (item) => item.ackStatus === 'pending' && (item.notificationType === 'sos' || item.notificationType === 'priority_alert')
+    );
+
+    // 1. Header with title, unread count badge, and "Mark all read" button
+    const header = document.createElement('div');
+    header.className = 'notification-panel__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'notification-panel__title-group';
+
+    const title = document.createElement('h3');
+    title.className = 'notification-panel__title';
+    title.textContent = 'Notifications';
+
+    const badge = document.createElement('span');
+    badge.className = 'notification-panel__badge' + (hasCriticalUnread ? ' notification-panel__badge--critical' : '');
+    badge.textContent = result.unreadCount === 0 ? 'All caught up' : `${result.unreadCount} unread`;
+
+    titleGroup.append(title, badge);
+
+    const headerActions = document.createElement('div');
+    headerActions.className = 'notification-panel__header-actions';
+
+    const markAllBtn = document.createElement('button');
+    markAllBtn.type = 'button';
+    markAllBtn.className = 'notification-panel__mark-read';
+    markAllBtn.innerHTML = `${icons.check(14)} Mark all read`;
+    markAllBtn.title = 'Mark all notifications as read';
+    if (result.unreadCount === 0) {
+      markAllBtn.hidden = true;
+    }
+    markAllBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await acknowledgeAllNotifications();
+      } catch {
+        // graceful offline / fallback handling
+      }
+      result.items.forEach((item) => { item.ackStatus = 'acknowledged'; });
+      result.unreadCount = 0;
+      renderNotifications(result);
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'icon-btn notification-panel__close-btn';
+    closeBtn.setAttribute('aria-label', 'Close notifications');
+    closeBtn.title = 'Close notifications';
+    closeBtn.innerHTML = icons.x(16);
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      bellMenu.close({ restoreFocus: true });
+    });
+
+    headerActions.append(markAllBtn, closeBtn);
+    header.append(titleGroup, headerActions);
+
+    // 2. Filter Tabs (All / Unread / Critical)
+    const tabsContainer = document.createElement('div');
+    tabsContainer.className = 'notification-panel__tabs';
+
+    const unreadCount = result.items.filter((i) => i.ackStatus === 'pending').length;
+    const criticalCount = result.items.filter((i) => i.notificationType === 'sos' || i.notificationType === 'priority_alert').length;
+
+    const tabDefs = [
+      { key: 'all', label: `All (${result.items.length})` },
+      { key: 'unread', label: `Unread (${unreadCount})` },
+      { key: 'critical', label: `Critical (${criticalCount})` },
+    ];
+
+    const listContainer = document.createElement('div');
+    listContainer.className = 'notification-panel__list';
+
+    tabDefs.forEach(({ key, label }) => {
+      const tabBtn = document.createElement('button');
+      tabBtn.type = 'button';
+      tabBtn.className = 'notification-panel__tab' + (activeNotificationTab === key ? ' is-active' : '');
+      tabBtn.textContent = label;
+      tabBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        activeNotificationTab = key;
+        tabsContainer.querySelectorAll('.notification-panel__tab').forEach((b) => b.classList.remove('is-active'));
+        tabBtn.classList.add('is-active');
+        renderNotificationCards(listContainer, result);
+      });
+      tabsContainer.appendChild(tabBtn);
+    });
+
+    // 3. Notification Cards List
+    function renderNotificationCards(container, currentResult) {
+      container.innerHTML = '';
+      const filtered = currentResult.items.filter((item) => {
+        if (activeNotificationTab === 'unread') return item.ackStatus === 'pending';
+        if (activeNotificationTab === 'critical') return item.notificationType === 'sos' || item.notificationType === 'priority_alert';
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'notification-panel__empty';
+
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'notification-panel__empty-icon';
+        iconWrap.innerHTML = icons.checkCircle(22);
+
+        const emptyTitle = document.createElement('div');
+        emptyTitle.className = 'notification-panel__empty-title';
+
+        const emptyDesc = document.createElement('div');
+        emptyDesc.className = 'notification-panel__empty-desc';
+
+        if (activeNotificationTab === 'unread') {
+          emptyTitle.textContent = 'All caught up';
+          emptyDesc.textContent = 'You have no unread notifications right now.';
+        } else if (activeNotificationTab === 'critical') {
+          emptyTitle.textContent = 'No critical alerts';
+          emptyDesc.textContent = 'No active emergency SOS or priority alerts recorded.';
+        } else {
+          emptyTitle.textContent = 'No notifications';
+          emptyDesc.textContent = 'Operational alerts and field updates will appear here.';
+        }
+
+        empty.append(iconWrap, emptyTitle, emptyDesc);
+        container.appendChild(empty);
+        return;
       }
 
-      const row = MenuItem({
-        label,
-        icon,
-        description: new Date(item.createdAt).toLocaleString(),
-        onClick: () => {
+      for (const item of filtered) {
+        const unread = item.ackStatus === 'pending';
+        let iconFn = icons.bell;
+        let badgeMod = 'neutral';
+        let category = 'NOTIFICATION';
+        let itemTitle = 'Alert';
+        let code = '';
+        let desc = '';
+
+        if (item.notificationType === 'sos') {
+          iconFn = icons.alertTriangle;
+          badgeMod = 'critical';
+          category = 'TANOD SOS';
+          itemTitle = item.sosTanodName ? `SOS: ${item.sosTanodName}` : (item.sosId ? `Tanod SOS #${item.sosId}` : 'Emergency SOS');
+          code = item.sosId ? `SOS-${item.sosId}` : '';
+          desc = 'Field emergency alert — immediate dispatch required';
+        } else if (item.notificationType === 'priority_alert') {
+          iconFn = icons.alertTriangle;
+          badgeMod = 'warning';
+          category = 'PRIORITY ALERT';
+          itemTitle = item.incidentType ? (INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType) : 'Priority Alert';
+          code = item.incidentDisplayId || (item.incidentId ? `#${item.incidentId}` : '');
+          desc = item.incidentPriority && item.incidentPriority !== 'normal'
+            ? `Urgent alert · Priority ${item.incidentPriority.toUpperCase()}`
+            : 'Priority incident requires attention';
+        } else if (item.notificationType === 'dispatch') {
+          const isDone = item.dispatchStatus === 'completed';
+          const isArrived = item.dispatchStatus === 'arrived';
+          badgeMod = isDone ? 'success' : 'info';
+          category = isDone ? 'DISPATCH COMPLETED' : (isArrived ? 'TANOD ARRIVED' : 'DISPATCH ASSIGNED');
+          iconFn = isDone ? icons.checkCircle : (isArrived ? icons.mapPin : icons.radio);
+          itemTitle = item.dispatchTanodName || 'Tanod Officer';
+          code = item.incidentDisplayId || (item.dispatchId ? `DSP-${item.dispatchId}` : '');
+          desc = item.incidentType ? `Assigned to ${INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType}` : 'Dispatch mission';
+        } else if (item.dispatchStatus === 'completed') {
+          iconFn = icons.checkCircle;
+          badgeMod = 'success';
+          category = 'DISPATCH COMPLETED';
+          itemTitle = item.dispatchTanodName || 'Tanod Officer';
+          code = item.incidentDisplayId || '';
+          desc = 'Dispatch successfully resolved';
+        } else if (item.dispatchStatus === 'arrived') {
+          iconFn = icons.mapPin;
+          badgeMod = 'info';
+          category = 'TANOD ARRIVED';
+          itemTitle = item.dispatchTanodName || 'Tanod Officer';
+          code = item.incidentDisplayId || '';
+          desc = 'Officer arrived at the scene';
+        } else if (item.incidentType) {
+          iconFn = icons.fileText;
+          badgeMod = 'neutral';
+          category = 'NEW INCIDENT';
+          itemTitle = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
+          code = item.incidentDisplayId || (item.incidentId ? `#${item.incidentId}` : '');
+          desc = item.incidentPriority && item.incidentPriority !== 'normal'
+            ? `Logged incident · Priority: ${item.incidentPriority.toUpperCase()}`
+            : '';
+        }
+
+        const card = document.createElement('div');
+        card.className = 'notification-card' + (unread ? ' notification-card--unread' : '');
+        card.setAttribute('role', 'menuitem');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `${category}: ${itemTitle} ${code}, ${unread ? 'unread' : 'read'}`);
+
+        // Left Icon Badge
+        const iconBadge = document.createElement('span');
+        iconBadge.className = `notification-card__icon-badge notification-card__icon-badge--${badgeMod}`;
+        iconBadge.setAttribute('aria-hidden', 'true');
+        iconBadge.innerHTML = iconFn(18);
+        card.appendChild(iconBadge);
+
+        // Content
+        const cardContent = document.createElement('div');
+        cardContent.className = 'notification-card__content';
+
+        // Meta row: category tag + relative time
+        const meta = document.createElement('div');
+        meta.className = 'notification-card__meta';
+
+        const catEl = document.createElement('span');
+        catEl.className = `notification-card__category notification-card__category--${badgeMod}`;
+        catEl.textContent = category;
+
+        const timeEl = document.createElement('span');
+        timeEl.className = 'notification-card__time';
+        timeEl.textContent = formatRelativeTime(item.createdAt);
+        if (item.createdAt) {
+          timeEl.title = new Date(item.createdAt).toLocaleString();
+        }
+        meta.append(catEl, timeEl);
+        cardContent.appendChild(meta);
+
+        // Title row: entity headline + incident code chip
+        const titleRow = document.createElement('div');
+        titleRow.className = 'notification-card__title-row';
+
+        const titleEl = document.createElement('span');
+        titleEl.className = 'notification-card__title';
+        titleEl.textContent = itemTitle;
+        titleRow.appendChild(titleEl);
+
+        if (code) {
+          const codeEl = document.createElement('span');
+          codeEl.className = 'notification-card__code';
+          codeEl.textContent = code;
+          titleRow.appendChild(codeEl);
+        }
+        cardContent.appendChild(titleRow);
+
+        // Description
+        if (desc) {
+          const descEl = document.createElement('span');
+          descEl.className = 'notification-card__desc';
+          descEl.textContent = desc;
+          cardContent.appendChild(descEl);
+        }
+        card.appendChild(cardContent);
+
+        // Unread dot
+        if (unread) {
+          const dot = document.createElement('span');
+          dot.className = 'notification-card__dot';
+          dot.setAttribute('aria-hidden', 'true');
+          card.appendChild(dot);
+        }
+
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            card.click();
+          }
+        });
+
+        card.addEventListener('click', async () => {
+          if (unread) {
+            item.ackStatus = 'acknowledged';
+            card.classList.remove('notification-card--unread');
+            card.querySelector('.notification-card__dot')?.remove();
+            currentResult.unreadCount = Math.max(0, currentResult.unreadCount - 1);
+            bellDot.hidden = currentResult.unreadCount === 0;
+            bellDot.textContent = currentResult.unreadCount > 9 ? '9+' : String(currentResult.unreadCount);
+            bellTrigger.setAttribute(
+              'aria-label',
+              currentResult.unreadCount === 0 ? 'Notifications' : `Notifications, ${currentResult.unreadCount} unread`
+            );
+            try {
+              await acknowledgeNotification(item.notificationId);
+            } catch {
+              // fallback
+            }
+          }
           bellMenu.close();
-          // Follow the notification to the thing it is about.
           if (item.incidentId) navigate('blotter-detail', item.incidentId);
           else if (item.sosId || item.dispatchId) navigate('dispatch');
-        },
-      });
-      if (unread) row.classList.add('notification-item--unread');
-      bellMenu.panel.appendChild(row);
+        });
+
+        container.appendChild(card);
+      }
     }
+
+    renderNotificationCards(listContainer, result);
+
+    // 4. Panel Footer
+    const footer = document.createElement('div');
+    footer.className = 'notification-panel__footer';
+
+    const statusWrap = document.createElement('span');
+    statusWrap.className = 'notification-panel__footer-status';
+    const statusDot = document.createElement('span');
+    statusDot.className = 'notification-panel__footer-dot';
+    const statusText = document.createElement('span');
+    statusText.textContent = 'Live alerts active';
+    statusWrap.append(statusDot, statusText);
+
+    const canAccessDispatch = NAV_ITEMS.find((i) => i.key === 'dispatch')?.roles.includes(user.role);
+    const targetScreen = canAccessDispatch
+      ? { page: 'dispatch', label: 'Go to Dispatch Center' }
+      : { page: 'incident-management', label: 'Go to Incidents' };
+
+    const footerLink = document.createElement('button');
+    footerLink.type = 'button';
+    footerLink.className = 'notification-panel__footer-link';
+    footerLink.textContent = targetScreen.label;
+    footerLink.addEventListener('click', () => {
+      bellMenu.close();
+      navigate(targetScreen.page);
+    });
+
+    footer.append(statusWrap, footerLink);
+
+    bellMenu.panel.append(header, tabsContainer, listContainer, footer);
   }
 
+  // Tracks notification IDs already seen, so the audible cue fires only
+  // for ones that are genuinely NEW since the last poll — `null` means
+  // "haven't established a baseline yet", which keeps the very first
+  // load (a page refresh with existing unread items already sitting
+  // there) silent rather than replaying a chime for old news. Declared at
+  // module scope above (not here) so it survives AppShell() being rebuilt
+  // on every navigation.
   async function loadNotifications() {
     try {
-      renderNotifications(await getNotifications({ limit: 15 }));
+      const result = await getNotifications({ limit: 15 });
+      if (knownNotificationIds) {
+        const hasNewCritical = result.items.some(
+          (item) => !knownNotificationIds.has(item.notificationId) && AUDIBLE_NOTIFICATION_TYPES.has(item.notificationType)
+        );
+        if (hasNewCritical) playCriticalAlertTone();
+      }
+      knownNotificationIds = new Set(result.items.map((item) => item.notificationId));
+      renderNotifications(result);
     } catch {
       // The bell is a convenience; a failed fetch leaves the previous
       // state rather than replacing the panel with an error.
@@ -674,48 +1164,101 @@ export function AppShell(user, activePage, navigate, onLogout) {
   avatarTrigger.type = 'button';
   avatarTrigger.className = 'topbar__avatar-button';
   const userAvatar = document.createElement('span');
+  userAvatar.className = 'topbar__avatar-chip';
   const avatarChevron = document.createElement('span');
+  avatarChevron.className = 'topbar__avatar-chevron';
   avatarChevron.setAttribute('aria-hidden', 'true');
   avatarChevron.innerHTML = icons.chevronDown(14);
   avatarTrigger.append(userAvatar, avatarChevron);
 
-  const avatarMenu = Menu({ trigger: avatarTrigger, label: 'Account' });
+  const avatarMenu = Menu({ trigger: avatarTrigger, label: 'Account', panelClass: 'menu__panel--account' });
 
+  // Overhauled Rich User Identity Header
   const menuHeader = document.createElement('div');
-  menuHeader.className = 'menu__header';
+  menuHeader.className = 'menu__account-header menu__header';
+
+  const menuAvatar = document.createElement('div');
+  menuAvatar.className = 'menu__account-avatar';
+
+  const menuDetails = document.createElement('div');
+  menuDetails.className = 'menu__account-details';
+
   const menuName = document.createElement('div');
-  menuName.className = 'menu__header-name';
-  const menuMeta = document.createElement('div');
-  menuMeta.className = 'menu__header-meta';
-  menuMeta.textContent = roleLabel;
-  menuHeader.append(menuName, menuMeta);
+  menuName.className = 'menu__account-name menu__header-name';
+
+  const menuMetaRow = document.createElement('div');
+  menuMetaRow.className = 'menu__account-meta-row';
+
+  const rolePill = document.createElement('span');
+  rolePill.className = 'menu__account-role-pill';
+  rolePill.textContent = roleLabel;
+
+  const menuJurisdiction = document.createElement('span');
+  menuJurisdiction.className = 'menu__account-jurisdiction';
+  menuJurisdiction.innerHTML = `${icons.mapPin(12)}<span>Loading...</span>`;
+  menuJurisdiction.hidden = true;
+  applyBarangayName(menuJurisdiction, user.barangayId);
+
+  menuMetaRow.append(rolePill, menuJurisdiction);
+
+  const menuStatus = document.createElement('div');
+  menuStatus.className = 'menu__account-status';
+  menuStatus.innerHTML = `<span class="menu__account-status-dot" aria-hidden="true"></span><span>Active Session</span>`;
+
+  menuDetails.append(menuName, menuMetaRow, menuStatus);
+  menuHeader.append(menuAvatar, menuDetails);
   avatarMenu.panel.appendChild(menuHeader);
 
   if (NAV_ITEMS.find((i) => i.key === 'settings')?.roles.includes(user.role)) {
     avatarMenu.panel.appendChild(MenuItem({
       label: 'Settings',
+      description: 'System preferences & profile',
       icon: icons.settings,
       onClick: () => { avatarMenu.close(); navigate('settings'); },
     }));
   }
-  avatarMenu.panel.appendChild(MenuItem({
+
+  const themeAccessory = document.createElement('span');
+  themeAccessory.className = 'menu__item-accessory';
+
+  const themeMenuItem = MenuItem({
     label: isCurrentlyDark() ? 'Switch to light theme' : 'Switch to dark theme',
+    description: 'Toggle interface appearance',
     icon: isCurrentlyDark() ? icons.sun : icons.moon,
-    onClick: () => { avatarMenu.close(); themeToggle.click(); },
-  }));
+    rightAccessory: themeAccessory,
+    onClick: () => {
+      avatarMenu.close();
+      themeToggle.click();
+    },
+  });
+  avatarMenu.panel.appendChild(themeMenuItem);
+
+  onThemeChanged = () => {
+    const dark = isCurrentlyDark();
+    themeAccessory.textContent = dark ? 'Dark' : 'Light';
+    const labelEl = themeMenuItem.querySelector('.menu__item-label');
+    if (labelEl) labelEl.textContent = dark ? 'Switch to light theme' : 'Switch to dark theme';
+    const iconEl = themeMenuItem.querySelector('.menu__item-icon');
+    if (iconEl) iconEl.innerHTML = dark ? icons.sun(16) : icons.moon(16);
+  };
+  onThemeChanged();
+
+  avatarMenu.panel.appendChild(MenuDivider());
 
   // Kept as a real element (not just a menu row) because callers rely on
   // `shell.logoutButton` to disable it while signing out.
   const logoutButton = MenuItem({
     label: 'Sign out',
+    description: 'End current console session',
     icon: icons.logOut,
     danger: true,
-    onClick: () => { avatarMenu.close(); onLogout(); },
+    onClick: () => { avatarMenu.close(); handleLogout(); },
   });
   avatarMenu.panel.appendChild(logoutButton);
 
   const renderUserLabel = (fullName) => {
     userAvatar.innerHTML = avatarInitials(fullName, 32);
+    menuAvatar.innerHTML = avatarInitials(fullName, 40);
     avatarTrigger.setAttribute('aria-label', `Account menu for ${fullName}`);
     menuName.textContent = fullName;
     renderSidebarUser(fullName);

@@ -686,6 +686,20 @@ export async function getNotifications({ limit } = {}) {
 }
 
 /**
+ * POST /notifications/:id/ack — Acknowledge an individual notification.
+ */
+export async function acknowledgeNotification(notificationId) {
+  return request('POST', `/notifications/${notificationId}/ack`, { auth: true });
+}
+
+/**
+ * POST /notifications/ack-all — Acknowledge all pending notifications for the current user.
+ */
+export async function acknowledgeAllNotifications() {
+  return request('POST', '/notifications/ack-all', { auth: true });
+}
+
+/**
  * PATCH /tanod-sos/:id/acknowledge. Built in Sprint 4 but never reachable
  * from the UI until the audit's W3 pass — the Dispatch Center banner
  * reported an SOS and offered no way to act on it.
@@ -979,7 +993,7 @@ export async function getSystemHealth() {
   return {
     api: json.api, db: json.db, ors: json.ors, ollama: json.ollama,
     gsmIngestion: json.gsm_ingestion, notificationConfig: json.notification_config,
-    fcm: json.fcm, smsSemaphore: json.sms_semaphore,
+    fcm: json.fcm, smsGsmGateway: json.sms_gsm_gateway,
     backupLastSuccess: json.backup_last_success, restoreTestAt: json.restore_test_at,
   };
 }
@@ -1004,7 +1018,7 @@ export async function getSystemHealthHistory() {
       ollama: row.ollama,
       gsmIngestion: row.gsm_ingestion,
       fcm: row.fcm,
-      smsSemaphore: row.sms_semaphore,
+      smsGsmGateway: row.sms_gsm_gateway,
     })),
   };
 }
