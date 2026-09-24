@@ -967,3 +967,43 @@
     animation: none;
   }
 }
+
+/* --- Public Transparency Report (H-13/L-03) -------------------------------- */
+.transparency-report-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.transparency-type-list,
+.transparency-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.transparency-type-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: var(--font-size-sm);
+}
+
+.transparency-notes li {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+  padding-left: var(--spacing-sm);
+  position: relative;
+}
+
+.transparency-notes li::before {
+  content: '\2022';
+  position: absolute;
+  left: 0;
+}

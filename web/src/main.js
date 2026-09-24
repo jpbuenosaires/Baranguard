@@ -9,11 +9,12 @@
  *
  * `currentPage` is in-memory only (no URL routing exists yet in this
  * vanilla-JS, no-bundler stack) — a reload always returns to the default
- * page for the role. The one exception is `#/citizen-report` (W19): a
- * hash fragment never reaches the server, so it works as a zero-config
- * public entry point on the same index.html without needing a real
- * server-side route — checked before the session-gated boot() below,
- * since W19 is reachable with no session at all.
+ * page for the role. The two exceptions are `#/citizen-report` (W19) and
+ * `#/transparency` (H-13/L-03): a hash fragment never reaches the server,
+ * so each works as a zero-config public entry point on the same
+ * index.html without needing a real server-side route — checked before
+ * the session-gated boot() below, since both are reachable with no
+ * session at all.
  */
 
 import { getSession, logout } from './api/apiClient.js';
@@ -26,6 +27,7 @@ import { renderAnalyticsPage } from './pages/analytics.js';
 import { renderSettingsPage } from './pages/settings.js';
 import { renderCitizenReportsInboxPage } from './pages/citizen-reports-inbox.js';
 import { renderCitizenReportPage } from './pages/citizen-report.js';
+import { renderTransparencyPage } from './pages/transparency.js';
 import { renderPersonnelPage } from './pages/personnel.js';
 import { renderAiReviewPage } from './pages/ai-review.js';
 import { renderBlotterDetailPage } from './pages/blotter-detail.js';
@@ -249,6 +251,10 @@ function renderUnavailable(root, user) {
 function checkRoute() {
   if (window.location.hash.startsWith('#/citizen-report')) {
     renderCitizenReportPage(document.getElementById('app'));
+  } else if (window.location.hash.startsWith('#/transparency')) {
+    // H-13/L-03: public, no session — same zero-config hash-route pattern
+    // as #/citizen-report above.
+    renderTransparencyPage(document.getElementById('app'));
   } else {
     boot();
   }

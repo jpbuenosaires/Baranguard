@@ -767,6 +767,22 @@ export async function submitCitizenReport({ barangayId, description, contactNumb
   return { reportId: json.report_id, confirmation: json.confirmation };
 }
 
+/** GET /public/transparency?barangay_id= — no auth (H-13/L-03: published deliberately, not an internal endpoint). */
+export async function getPublicTransparency(barangayId) {
+  const json = await request('GET', '/public/transparency', { query: { barangay_id: barangayId }, auth: false });
+  return {
+    barangay: json.barangay,
+    periodMonths: json.period_months,
+    generatedAt: json.generated_at,
+    totalIncidents: json.total_incidents,
+    resolvedIncidents: json.resolved_incidents,
+    resolutionRatePercent: json.resolution_rate_percent,
+    byType: json.by_type.map((row) => ({ type: row.type, label: row.label, incidents: row.incidents })),
+    byMonth: json.by_month.map((row) => ({ month: row.month, incidents: row.incidents })),
+    notes: json.notes,
+  };
+}
+
 /** GET /citizen-reports (W16 inbox — list only, no convert action yet). */
 export async function getCitizenReports({ status, page, limit } = {}) {
   const json = await request('GET', '/citizen-reports', { query: { status, page, limit }, auth: true });
