@@ -52,6 +52,31 @@ use PDO;
  *     column is TEXT, effectively unbounded — this is an abuse-prevention
  *     ceiling on a public unauthenticated endpoint, not a schema limit).
  *     `contact_number` follows the column's own VARCHAR(32).
+ *   - **Layered abuse hardening (code-review finding H-12, 2026-09-24).**
+ *     The per-IP limit above catches one flooding source; two more layers
+ *     were added, explicitly WITHOUT a CAPTCHA/third-party service (a
+ *     deliberate scope decision — this stays dependency-free, matching
+ *     every other control in this class):
+ *       - **Duplicate-content detection.** The same (`barangay_id`,
+ *         normalized `description`) submitted more than once within
+ *         `DUPLICATE_WINDOW_MINUTES` is rejected 409 — this is a distinct
+ *         axis from the IP limit (catches a botnet spreading identical
+ *         text across many IPs, which the IP limit alone cannot). No new
+ *         column: normalized comparison (`LOWER(TRIM(description))`) runs
+ *         at query time against the existing `description` TEXT column,
+ *         which is adequate at this barangay's real submission volume.
+ *       - **Per-barangay aggregate limit.** `PER_BARANGAY_RATE_LIMIT_MAX`
+ *         accepted reports per `PER_BARANGAY_RATE_LIMIT_WINDOW_MINUTES`,
+ *         counted directly against `citizen_report` (not `audit_log` —
+ *         this table already carries `barangay_id`+`submitted_at` and has
+ *         none of the "don't want to bloat a 7-year-retention table with
+ *         public traffic" constraint that applies to
+ *         `PublicReportsController::transparency()`). Catches a
+ *         distributed flood against one barangay that no single IP or
+ *         single duplicate text would trip.
+ *     The existing per-IP window (3 per 15 minutes) was reviewed and left
+ *     unchanged — it was already tight; the two layers above are additive,
+ *     not a retuning of it.
  */
 final class CitizenReportsController
 {
@@ -59,6 +84,10 @@ final class CitizenReportsController
     private const MAX_CONTACT_LENGTH = 32;
     private const RATE_LIMIT_MAX_ATTEMPTS = 3;
     private const RATE_LIMIT_WINDOW_MINUTES = 15;
+    /** H-12: no §5/§6 number given for either; picked generously so real, distinct reports are never blocked. */
+    private const DUPLICATE_WINDOW_MINUTES = 60;
+    private const PER_BARANGAY_RATE_LIMIT_MAX = 50;
+    private const PER_BARANGAY_RATE_LIMIT_WINDOW_MINUTES = 60;
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
     // Same 11-member enum as `incident.incident_type` (§5) — duplicated
@@ -126,6 +155,38 @@ final class CitizenReportsController
         $barangayStmt->execute(['barangay_id' => $barangayId]);
         if ($barangayStmt->fetch(PDO::FETCH_ASSOC) === false) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'barangay_id must be one of the known barangays.');
+        }
+
+        // H-12 layer 1: per-barangay aggregate limit — a distributed flood
+        // against one barangay that no single IP would trip on its own.
+        $barangayVolumeStmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM citizen_report
+              WHERE barangay_id = :barangay_id
+                AND submitted_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :window_minutes MINUTE)'
+        );
+        $barangayVolumeStmt->bindValue('barangay_id', $barangayId, PDO::PARAM_INT);
+        $barangayVolumeStmt->bindValue('window_minutes', self::PER_BARANGAY_RATE_LIMIT_WINDOW_MINUTES, PDO::PARAM_INT);
+        $barangayVolumeStmt->execute();
+        if ((int) $barangayVolumeStmt->fetchColumn() >= self::PER_BARANGAY_RATE_LIMIT_MAX) {
+            throw new ApiError(429, 'RATE_LIMITED', 'This barangay has received an unusually high number of reports recently. Please try again later.');
+        }
+
+        // H-12 layer 2: duplicate-content detection — the same text
+        // resubmitted (from any IP) within the window is almost certainly
+        // a bot/replay, not a second citizen independently typing
+        // byte-identical wording.
+        $duplicateStmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM citizen_report
+              WHERE barangay_id = :barangay_id
+                AND LOWER(TRIM(description)) = LOWER(TRIM(:description))
+                AND submitted_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :window_minutes MINUTE)'
+        );
+        $duplicateStmt->bindValue('barangay_id', $barangayId, PDO::PARAM_INT);
+        $duplicateStmt->bindValue('description', $description);
+        $duplicateStmt->bindValue('window_minutes', self::DUPLICATE_WINDOW_MINUTES, PDO::PARAM_INT);
+        $duplicateStmt->execute();
+        if ((int) $duplicateStmt->fetchColumn() > 0) {
+            throw new ApiError(409, 'CONFLICT', 'A report with this exact description was already submitted recently. If this is a different incident, please add distinguishing details.');
         }
 
         $insertStmt = $pdo->prepare(

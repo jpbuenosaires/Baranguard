@@ -84,7 +84,7 @@ for m in 0003_shift_schedule_nullable_user 0004_blotter_revision 0005_sms_envelo
          0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
          0009_blotter_case_status 0010_incident_location_description 0011_user_suspension \
          0012_system_settings 0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
-         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber 0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind; do
+         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber 0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
 pass "Full migration chain 0001-0018 applied"
@@ -291,6 +291,53 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X P
 CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
   -d '{"barangay_id":1,"description":""}')
 [ "$CODE" = "400" ] && pass "Empty description -> 400" || fail "Empty description -> $CODE (expected 400)"
+
+step "9b. Code-review finding H-12: duplicate-content detection (distinct from the IP rate limit)"
+# The per-IP rate limit checked by submit() is unconditional of barangay
+# (it keys on IP+action only), so ANY accepted submission here — even for
+# barangay 2/3 — would eat into the SAME budget step 10 below depends on,
+# and any inserted citizen_report row would corrupt step 11's exact
+# inbox-count assertions. Every check below is therefore either (a) a
+# REJECTED call (409/429 — rejected before any insert, so it consumes no
+# IP budget and creates no row) or (b) an accepted call that is
+# immediately, fully undone (both the citizen_report row AND its
+# audit_log ledger row) so this test leaves zero footprint on anything
+# downstream. Barangay 2/3 are otherwise untouched by this file.
+mysql_exec "$VALDB" -e "INSERT INTO citizen_report (barangay_id, description, submitted_at) VALUES (2, 'H-12 duplicate detection probe text', UTC_TIMESTAMP());"
+DUP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
+  -d '{"barangay_id":2,"description":"H-12 Duplicate Detection Probe Text"}')
+[ "$DUP_CODE" = "409" ] && pass "Resubmitting the same text (case/whitespace-insensitive) for the same barangay -> 409" || fail "Duplicate submission -> $DUP_CODE (expected 409)"
+mysql_exec "$VALDB" -e "DELETE FROM citizen_report WHERE barangay_id=2 AND description='H-12 duplicate detection probe text';"
+
+DIFF_RESP=$(curl -s -w "\n%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
+  -d '{"barangay_id":3,"description":"H-12 different-text probe, not a duplicate of anything"}')
+DIFFERENT_CODE=$(echo "$DIFF_RESP" | tail -1)
+DIFF_REPORT_ID=$(extract "$(echo "$DIFF_RESP" | head -n -1)" report_id)
+[ "$DIFFERENT_CODE" = "201" ] && pass "Genuinely different text is NOT treated as a duplicate -> 201" || fail "Different text -> $DIFFERENT_CODE (expected 201)"
+mysql_exec "$VALDB" -e "DELETE FROM citizen_report WHERE report_id=$DIFF_REPORT_ID; DELETE FROM audit_log WHERE action='citizen_report_submitted' AND entity_id=$DIFF_REPORT_ID;"
+
+step "9c. Code-review finding H-12: per-barangay aggregate submission limit"
+# Seeded directly for the same reason as 9b — reaching 50 real accepted
+# submissions through the endpoint would also blow through the per-IP
+# limit long before reaching the per-barangay one.
+for i in $(seq 1 50); do
+  mysql_exec "$VALDB" -e "INSERT INTO citizen_report (barangay_id, description, submitted_at) VALUES (2, 'H-12 aggregate filler $i', UTC_TIMESTAMP());"
+done
+AGG_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
+  -d '{"barangay_id":2,"description":"H-12 aggregate limit probe, should be rejected"}')
+[ "$AGG_CODE" = "429" ] && pass "51st report for one barangay within the window -> 429 (per-barangay aggregate limit, independent of IP)" || fail "Aggregate limit -> $AGG_CODE (expected 429)"
+CTRL_RESP=$(curl -s -w "\n%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
+  -d '{"barangay_id":3,"description":"H-12 aggregate limit control, different (near-empty) barangay"}')
+BARANGAY3_CODE=$(echo "$CTRL_RESP" | tail -1)
+CTRL_REPORT_ID=$(extract "$(echo "$CTRL_RESP" | head -n -1)" report_id)
+[ "$BARANGAY3_CODE" = "201" ] && pass "Barangay 3's own aggregate quota is unaffected by barangay 2's volume (per-barangay, not global)" || fail "Control submission -> $BARANGAY3_CODE (expected 201)"
+mysql_exec "$VALDB" -e "DELETE FROM citizen_report WHERE barangay_id=2 AND description LIKE 'H-12 aggregate filler%'; DELETE FROM citizen_report WHERE report_id=$CTRL_REPORT_ID; DELETE FROM audit_log WHERE action='citizen_report_submitted' AND entity_id=$CTRL_REPORT_ID;"
+# The two accepted calls in this block ("different text" in 9b, "control"
+# here) each temporarily counted against the shared per-IP budget — but
+# since that budget IS a live COUNT(*) over audit_log rows (see class doc),
+# deleting their audit_log rows above genuinely restores the budget, not
+# just the visible citizen_report data. Net effect: zero residual state of
+# any kind by the time step 10 runs.
 
 step "10. Rate limiting (3 accepted submissions/15min, then 429)"
 for i in 2 3; do
