@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\RateLimiter;
 use PDO;
 
 /**
@@ -57,24 +58,25 @@ use PDO;
  *      forbids presenting a figure as measured when it isn't. Add it
  *      when F8 is fixed, not before.
  *
- * NOT RATE-LIMITED, STATED PLAINLY RATHER THAN FAKED. The obvious move
- * was to copy `CitizenReportsController::submit()`'s limiter, but that
- * one works by counting the `audit_log` rows its own writes produce, and
- * this endpoint deliberately writes none — one audit row per anonymous
- * page view would flood a table on a 7-year retention clock (§11) with
- * public traffic. An APCu counter was written and then removed: APCu is
- * not loaded on this XAMPP build, so it was a control that looked
- * functional and did nothing, which is precisely what §2 Rule 6 forbids.
- *
- * What actually protects it today is network placement — §2 Rule 7 keeps
- * the API on the LAN, so this is not internet-reachable in a correct
- * deployment. The cost of an unthrottled call is also bounded and
- * read-only: three aggregates over one indexed column, no writes, no
- * per-row work. **If this system is ever deliberately exposed to the
- * public internet, a real limiter becomes a prerequisite and needs its
- * own store** (a small counter table, or APCu/Redis once one exists) —
- * that is a deployment decision, tracked with F1, not something to
- * pretend is already handled.
+ * RATE-LIMITED AND CACHED (code-review findings H-13/L-03, 2026-09-24 —
+ * "publish it properly" was the explicit decision, superseding this
+ * class's earlier "not rate-limited, stated plainly rather than faked"
+ * stance). The earlier reasoning for NOT limiting it is preserved here
+ * because it's still why this couldn't just reuse an existing pattern:
+ * `CitizenReportsController::submit()`'s limiter counts the `audit_log`
+ * rows its own writes produce, and this endpoint still deliberately
+ * writes none (one audit row per anonymous page view would flood a table
+ * on a 7-year retention clock, §11, with public traffic). An APCu counter
+ * was tried once and removed for being a control that looked functional
+ * and did nothing (APCu isn't loaded on this XAMPP build) — §2 Rule 6
+ * forbids exactly that. The real fix was building `rate_limit_counter`
+ * (migration 0023) and `Baranguard\Lib\RateLimiter` as shared,
+ * dependency-free infrastructure, not another fake or per-feature limiter.
+ * Limited per-IP to `RATE_LIMIT_MAX` requests per `RATE_LIMIT_WINDOW_
+ * SECONDS` — no §5/§6 number is given for a public endpoint's traffic
+ * budget; picked generously since a real dashboard/kiosk polling this
+ * page is a legitimate use, not abuse. `Cache-Control` is set to the same
+ * window so a cooperative client/CDN reduces load on its own.
  */
 final class PublicReportsController
 {
@@ -94,6 +96,10 @@ final class PublicReportsController
      *  isolates a single case. */
     private const MONTHS = 6;
 
+    /** H-13: per-IP public rate limit. */
+    private const RATE_LIMIT_MAX = 30;
+    private const RATE_LIMIT_WINDOW_SECONDS = 300;
+
     private const TYPE_LABELS = [
         'theft' => 'Theft / Robbery',
         'physical_injury' => 'Physical Injury',
@@ -111,6 +117,17 @@ final class PublicReportsController
     /** `GET /public/transparency?barangay_id=N` — no authentication. */
     public static function transparency(PDO $pdo): void
     {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $withinBudget = RateLimiter::check(
+            $pdo,
+            'transparency:ip:' . $ip,
+            self::RATE_LIMIT_WINDOW_SECONDS,
+            self::RATE_LIMIT_MAX
+        );
+        if (!$withinBudget) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many requests. Please try again in a few minutes.');
+        }
+
         $barangayIdRaw = Http::query('barangay_id');
         if ($barangayIdRaw === null || !ctype_digit((string) $barangayIdRaw)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'barangay_id is required.');
@@ -162,6 +179,8 @@ final class PublicReportsController
             static fn (array $r): array => ['month' => $r['ym'], 'incidents' => (int) $r['n']],
             $monthStmt->fetchAll(PDO::FETCH_ASSOC) ?: []
         );
+
+        header('Cache-Control: public, max-age=' . self::RATE_LIMIT_WINDOW_SECONDS);
 
         Http::send(200, [
             'barangay' => $barangayName,
