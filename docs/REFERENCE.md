@@ -409,6 +409,8 @@ controls that do nothing.
 - **The app DB user has no `CREATE DATABASE`/`ALTER`/`CREATE TABLE`**
   (correct least-privilege) — migrations need DBA credentials.
 - **Git-Bash `/c/...` paths break native `php.exe`** — `cygpath -m` first.
+  **Native `curl.exe` too** (`-F file=@/c/...` fails with curl exit 26,
+  `%{http_code}` reads `000`) — same fix.
 - **Space in the Windows username breaks Gradle and SDK `.bat` tools** —
   use the short path (`C:\Users\JAYSON~1\...`), `C:\gtmp` for
   `java.io.tmpdir`. **Gradle's daemon JVM follows `JAVA_HOME`, not
@@ -448,6 +450,7 @@ controls that do nothing.
 | `verify-devices-map-packages.sh` | 57 |
 | `verify-duty-status-map-upload.sh` | 49 |
 | `verify-public-transparency.sh` | 17 |
+| `verify-device-signature.sh` | 21 |
 | `verify-sprint4.sh` | 50 |
 | `verify-sprint4-phase2-3.sh` | 70 |
 | `verify-sprint6.sh` | 110 |

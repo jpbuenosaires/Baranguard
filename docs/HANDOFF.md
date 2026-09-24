@@ -22,44 +22,62 @@ Regenerate/Approve clickable when they should be disabled. Two fixes
 (the GSM gateway's Windows quoting, and a mobile permission-request
 race) are reasoned-but-not-device-verified — see DEVLOG (9)'s closing
 note. `web/tests/` renders every page × role in jsdom (`cd web/tests &&
-npm install && npm test`, ~23s): **407/407** — also fixed an unrelated,
+npm install && npm test`, ~23s): **408/408** (moved up from 407 during
+the later H-05 session-storage fix below) — also fixed an unrelated,
 pre-existing bug caught along the way (a notification-panel header never
 appended its title/badge elements). Run the suite after any further web
-change alongside `verify-web-wiring.mjs` (563/563).
+change alongside `verify-web-wiring.mjs` (569/569, moves as screens
+change).
 
 **Also 2026-09-24 — an external 36-finding business-rules audit was
-reconciled against the live code; 15 findings resolved across four
-passes** (`docs/REMAINING.md` §H, `DEVLOG.md` (10)/(11)/(12)/(13)): a
-fabricated blotter case number in the web UI, Punong Barangay still able
-to list blotter records server-side after the screen was removed, a
-Tanod double-booked across two different incidents, off-duty declarable
-with an active dispatch, evidence upload trusting the client's claimed
-file format, audit-log gaps for failed authorization/raw-narrative
-reads/downloads, GPS ingestion with no clock-skew/accuracy plausibility
-bounds, an SMS segment counter that never accounted for UCS-2 encoding,
-blotter/incident display-ID years computed in UTC instead of
-Asia/Manila, a stale route-count doc (claimed 84, real count is 91, now
-checkable via `backend/scripts/count-routes.php`), notification
-delivery having no operator-visible signal once both the FCM and SMS
-fallback tiers were exhausted (`GET /system/health` now reports
-`notification_delivery_failures_24h`, shown on Service Health), and
-map-package uploads having a per-file size ceiling but no total-per-
-barangay storage quota (`MapPackagesController` now rejects a new upload
-once a barangay's total hits 2000MB — deliberately doesn't auto-delete
-old packages, since `map_package` retention is its own open policy
-question, H-15). Several of the audit's own claims turned out to be wrong
-once checked — most notably "no backup/DR exists," which is false (real
-encrypted backups and a genuine restore-drill already exist; only
-scheduling is missing, tracked as C2/B3 below); two others (H-08, M-05)
-asked for changes that
-would have overridden existing, deliberate architecture decisions
-(`GpsController` and `DispatchController::route()` both explain their
-own reasoning in their class docs) — fixed the actual underlying risk
-instead of doing what was literally asked, or confirmed no fix was
-needed at all. Bigger items (MFA, HTTPS/TLS enforcement, session-storage
-redesign, privacy governance, retention-period policy calls) remain
-deliberately not started — see REMAINING.md §H for the full disposition
-of all 36 findings.
+reconciled against the live code; 19 findings resolved across six
+passes** (`docs/REMAINING.md` §H, `DEVLOG.md` (10) through (16)). First
+three passes: a fabricated blotter case number in the web UI, Punong
+Barangay still able to list blotter records server-side after the screen
+was removed, a Tanod double-booked across two different incidents,
+off-duty declarable with an active dispatch, evidence upload trusting
+the client's claimed file format, audit-log gaps for failed
+authorization/raw-narrative reads/downloads, GPS ingestion with no
+clock-skew/accuracy plausibility bounds, an SMS segment counter that
+never accounted for UCS-2 encoding, blotter/incident display-ID years
+computed in UTC instead of Asia/Manila, a stale route-count doc (claimed
+84, real count is 91, now checkable via
+`backend/scripts/count-routes.php`), notification delivery having no
+operator-visible signal once both the FCM and SMS fallback tiers were
+exhausted, and map-package uploads having a per-file size ceiling but no
+total-per-barangay storage quota. **Fifth/sixth passes (user-directed,
+picked from the remaining list and answered up front via
+AskUserQuestion)**: H-11 (abuse-budget quotas — new shared
+`rate_limit_counter`/`RateLimiter` infrastructure — added to AI jobs,
+evidence upload, GPS, report export, map-package upload, SMS broadcast),
+H-12 (citizen-report duplicate-content detection + per-barangay
+aggregate limit, explicitly without a CAPTCHA/third-party per the user's
+choice), H-13/L-03 (public transparency endpoint published properly:
+real rate limit, `Cache-Control`, and a new `#/transparency` web page),
+H-05 (web JWT moved out of `sessionStorage` into an in-memory-only
+variable — a page reload now signs the user out, a disclosed tradeoff
+until C-03/HTTPS lands; `docs/REMAINING.md` now has three scoped HTTPS
+deployment options for whoever picks that up), and H-09 (hardware-backed
+device identity — new `mobile_device.device_public_key_pem` +
+`DeviceSignature` verify a per-request signature on evidence upload/GPS/
+Tanod dispatch updates; SOS deliberately never rejects on a bad
+signature, only audits it, matching the audit's own C-01 safety
+priority; **backend fully verified real, mobile side code-complete but
+NOT device-verified this session** — see "Recommended next step" below).
+Several of the audit's own claims turned out to be wrong once checked —
+most notably "no backup/DR exists," which is false (real encrypted
+backups and a genuine restore-drill already exist; only scheduling is
+missing, tracked as C2/B3 below); two others (H-08, M-05) asked for
+changes that would have overridden existing, deliberate architecture
+decisions (`GpsController` and `DispatchController::route()` both
+explain their own reasoning in their class docs) — fixed the actual
+underlying risk instead of doing what was literally asked, or confirmed
+no fix was needed at all. Remaining items (MFA, HTTPS/TLS
+implementation, privacy governance, retention-period policy calls,
+incident duplicate/merge workflow, shift staffing constraints, AI
+evaluation/provenance, contact-consent boundaries, map-tile licensing)
+remain deliberately not started — see REMAINING.md §H for the full
+disposition of all 36 findings.
 
 **New 2026-09-23/24 — Semaphore removed, replaced by a local GSM
 outbound gateway; C7 root-caused, fixed, AND device-verified working;
@@ -442,6 +460,12 @@ hardware (`eval-kit/README-FOR-FRIEND.md`).
     (`Usf_Hiber` in logcat) separate from stock Android Doze — can
     freeze a backgrounded app within seconds, delaying broadcast/service
     delivery until something unfreezes it (e.g. relaunching).
+21. Git-Bash `/c/...`-style paths break native `curl.exe` too, not just
+    `php.exe` (gotcha #4 already covered php) — `curl -F file=@/c/Users/.../
+    photo.jpg` fails silently with `errormsg: Failed to open/read local
+    data from file` (curl exit 26), giving `%{http_code}` of `000` with no
+    other clue why. `cygpath -m` the path first, same fix as php.exe.
+    Found writing `verify-device-signature.sh` (2026-09-24).
 
 ## Recommended next step
 
@@ -481,6 +505,20 @@ task.
    `patrolLocationService.ts` permission-request sequencing fix (needs a
    fresh-install retest to confirm the background-location dialog now
    reliably surfaces).
+7. **H-09 (device signature) — code-complete, needs a device session**
+   (DEVLOG (16)): install the rebuilt APK on a Tanod device, log in
+   (registers a new Keystore keypair + sends the public key to
+   `POST /devices/register` — confirm `mobile_device.device_public_key_pem`
+   is actually populated, not just that login succeeds), then confirm a
+   real GPS ping / evidence upload / dispatch status update succeeds with
+   the signature headers attached (check `.env`'s PHP error log or a
+   packet capture for `X-Device-Signature` actually being sent, since a
+   silent signing failure degrades to "works exactly like before H-09"
+   with no visible symptom). Also worth confirming StrongBox availability
+   either way (falls back to normal Keystore silently on most devices,
+   including likely the Infinix — not a bug if it falls back, just worth
+   knowing). `./gradlew assembleDebug` succeeded; nothing about the actual
+   Keystore runtime behavior has been confirmed on real hardware.
 
 **A5, A4 (including its subprocess-timeout gap), C7, and M13's primary
 success path are all closed.** M13's `sms_failed` gap is fixed at the
