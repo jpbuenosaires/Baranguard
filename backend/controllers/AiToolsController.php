@@ -6,6 +6,7 @@ namespace Baranguard\Controllers;
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Ai\AiJobQueue;
 use Baranguard\Services\Ai\OllamaClient;
@@ -57,6 +58,19 @@ final class AiToolsController
 {
     /** Longest operator prompt the SMS Composer accepts. */
     private const MAX_TOOL_INPUT = 2000;
+
+    /**
+     * H-11: per-user AI job abuse budget, shared across every AI job
+     * creation path in the app (this file's four tools AND
+     * AiDraftController's redact/extraction/translate/regenerate-summary —
+     * same 'ai_job:user:' key prefix, same numbers, so a user can't work
+     * around the limit by switching which endpoint they hit). No §5/§6
+     * number is given; picked generously since a legitimate Secretary
+     * working a busy shift could plausibly redact/classify/translate a
+     * dozen incidents in an hour.
+     */
+    private const AI_JOB_RATE_LIMIT_MAX = 30;
+    private const AI_JOB_RATE_LIMIT_WINDOW_SECONDS = 3600;
 
     /** `POST /incidents/:id/ai-tools/blotter-assist` — Secretary only. */
     public static function blotterAssist(PDO $pdo, array $identity, string $incidentIdParam): void
@@ -200,6 +214,10 @@ final class AiToolsController
         ?int $incidentId,
         ?string $toolInput
     ): void {
+        if (!RateLimiter::check($pdo, 'ai_job:user:' . $identity['user_id'], self::AI_JOB_RATE_LIMIT_WINDOW_SECONDS, self::AI_JOB_RATE_LIMIT_MAX)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many AI jobs queued recently. Please wait before starting another.');
+        }
+
         $client = new OllamaClient();
         if (!$client->isConfigured()) {
             throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'No AI model is configured for this deployment.');
