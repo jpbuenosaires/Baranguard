@@ -66,8 +66,8 @@ standalone blotter records list were both removed 2026-09-10.
 elsewhere means whichever list context makes clear.
 
 1. **`raw_narrative` never leaves the system** except through the
-   approved AI pipeline. Never to FCM, Semaphore, cloud, logs, terminal
-   output, or audit metadata. **`GET /incidents/:id` is the only endpoint
+   approved AI pipeline. Never to FCM, the SMS gateway, cloud, logs,
+   terminal output, or audit metadata. **`GET /incidents/:id` is the only endpoint
    that returns it, and only to a Secretary** (RA 7160 §394(c) makes the
    Secretary the statutory records custodian — Admin gets *less* here on
    purpose, don't "fix" that). The Blotter Assistant
@@ -258,8 +258,9 @@ operator-typed `prompt` only) · `POST /ai-tools/threat-analysis`
 +`/:phone/resolve`, Admin-only) · `/sms/send` · `/sms/broadcast`
 (Admin-only, Idempotency-Key required, recipient always resolved
 server-side, own-barangay scope only)
-**Settings** `GET/PATCH /system-settings` (Admin-only; `sms_gateway.
-api_key`/`sender_name` + three `general.*` keys only — see §7 W21)
+**Settings** `GET/PATCH /system-settings` (Admin-only; three `general.*`
+keys + `sos_fallback.backup_contact_number` — see §7 W21;
+`sms_gateway.api_key`/`sender_name` REMOVED 2026-09-23 with Semaphore)
 **Internal only** `/internal/sms/*` (6 handlers, loopback + token gated,
 `public/internal.php`)
 
@@ -373,9 +374,13 @@ Resolve action, AI Classifier, multi-responder support).
 > complete a generation, §A2). Model output rendered with `textContent`.
 
 **W21 system settings — narrow, deliberate exception, not a full
-build-out.** Migration 0012 + `SettingsController` cover exactly
-`sms_gateway.api_key`/`sender_name` + three `general.*` display keys,
-masked on read, under explicit user authorization. Does **not** extend
+build-out.** Migration 0012 + `SettingsController` originally covered
+`sms_gateway.api_key`/`sender_name` too; those two keys were REMOVED
+2026-09-23 when Semaphore was replaced by a local GSM gateway (§1) — that
+transport has no cloud credential or configurable sender name, so there
+was nothing left for them to hold. `SettingsController` now covers only
+three `general.*` display keys + `sos_fallback.backup_contact_number`,
+masked on read where applicable, under explicit user authorization. Does **not** extend
 to `DEVICE_SECRET_MASTER_KEY`/`INTERNAL_SERVICE_TOKEN`/`JWT_SECRET`/
 `FCM_SERVICE_ACCOUNT_PATH` — those stay in `.env`/PHP constants, and a
 future session must not "complete" W21 by moving them without the same
@@ -448,11 +453,14 @@ controls that do nothing.
 | `verify-routing.sh` | 23 (real-ORS block SKIPs, not fails, if no key) |
 | `verify-device-session.sh` | 20 |
 | `restore-drill.sh` | 12 (real DB) |
-| `verify-web-wiring.mjs` | 537 (moves as screens change) |
+| `verify-web-wiring.mjs` | 555 (moves as screens change) |
+| `web/tests` (`npm test`) | 405 |
 | `mobile: verify.schema` | 113 |
 
 All use a disposable database + disposable app user + throwaway port,
-never the real `baranguard` database.
+never the real `baranguard` database. `web/tests` needs no backend at
+all: it renders every page in jsdom against a fake `fetch` (one-time
+`npm install` in `web/tests/`; the dashboard itself stays npm-free).
 
 > **Lesson learned the hard way (2026-09-05 to 2026-09-12):** migration
 > 0011 added `user.is_suspended`; every suite that logs in but applies

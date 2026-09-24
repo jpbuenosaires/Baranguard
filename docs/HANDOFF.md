@@ -4,65 +4,309 @@
 never stack banners. Full history: `backend/DEVLOG.md` (grep by
 date/keyword, don't read front to back).
 
-**Last updated: 2026-09-22.**
+**Last updated: 2026-09-24.**
+
+**Web UI/UX overhaul committed 2026-09-24** (was "in progress,
+uncommitted" in the previous snapshot) after a full pre-commit code
+review of the entire accumulated diff (63+ files) — see DEVLOG 2026-09-24
+(9) for the complete list. 14 findings, all fixed at the code level;
+highlights: the critical-alert sound's "already seen" baseline was
+wrongly scoped to reset on every page navigation (not just a real
+refresh), silently defeating the sound feature added earlier the same
+day — fixed by moving it to module scope; `NotificationsController.php`'s
+ack endpoints had a wrong role list (invented roles, missing
+`punong_barangay`); the local GSM gateway's Windows `Start-Process`
+timeout wrapper had a second cross-process-boundary quoting bug beyond
+the one already fixed in (5); `ai-review.js`'s stale-draft state left
+Regenerate/Approve clickable when they should be disabled. Two fixes
+(the GSM gateway's Windows quoting, and a mobile permission-request
+race) are reasoned-but-not-device-verified — see DEVLOG (9)'s closing
+note. `web/tests/` renders every page × role in jsdom (`cd web/tests &&
+npm install && npm test`, ~23s): **407/407** — also fixed an unrelated,
+pre-existing bug caught along the way (a notification-panel header never
+appended its title/badge elements). Run the suite after any further web
+change alongside `verify-web-wiring.mjs` (563/563).
+
+**New 2026-09-23/24 — Semaphore removed, replaced by a local GSM
+outbound gateway; C7 root-caused, fixed, AND device-verified working;
+A4 (including its subprocess-timeout gap)/A5/M13's primary path all
+closed with real device evidence; critical alerts now genuinely play
+sound on both mobile and web; M13's `sms_failed` gap fixed at the code
+level (not yet device-verified — see its own section below).** Explicit
+user decision on Semaphore: its per-SMS cost wasn't worth it for this
+project's actual volume. Full detail: `backend/DEVLOG.md` 2026-09-23
+(3)–(7), 2026-09-24 (1)–(8).
 
 ## Where things stand
 
 Sprints 0–7 complete. Sprint 8 (UAT/evaluation): every device-free box
-was done 2026-09-17/18; 2026-09-19 was the first real device session on
-the Infinix X6840 (the C7 phone) and closed most of what was
-hardware-blocked. Evidence screenshots: `docs/evidence/2026-09-19-device/`.
-Full detail: `backend/DEVLOG.md` 2026-09-19 entries (1)–(7), 2026-09-22.
+was done 2026-09-17/18. Three real device sessions since: 2026-09-19
+(first Infinix session, closed most hardware-blocked items), 2026-09-23
+(second session — A1 down to 1 of 6 open, the three 2026-09-22 fixes
+verified for real, C7 reclassified), 2026-09-24 (A4/A5 local GSM gateway
+confirmed end-to-end including A4's subprocess-timeout fix, C7 root-caused
+and fixed, M13 device-verified, critical-alert sound hardened on mobile
+and web — A1 now fully closed, 6 of 6). Evidence screenshots:
+`docs/evidence/2026-09-19-device/`.
 
 **Branch/remote note (2026-09-22):** `main` had been stale since before
 Sprint 8 while `develop` and feature branches carried all the real work
 (PR #1 merged into `develop`, not `main`). `main` was fast-forwarded to
-catch up (now equal to the former `feature/push-body-incident-label`
-tip). **By explicit user instruction, all work from now on commits and
-pushes directly to `main`** — no more feature branches or PRs. `develop`
-and `feature/push-body-incident-label` still exist on the remote but are
-no longer the active line; don't build on them without asking first.
+catch up. **By explicit user instruction, all work from now on commits
+and pushes directly to `main`** — no more feature branches or PRs.
+`develop` and `feature/push-body-incident-label` still exist on the
+remote but are no longer the active line; don't build on them without
+asking first.
 
 **Credentials**: `baranguard_uiseed` password is `Demo@2026`.
 `tanod.olayvar` is seeded suspended — use `tanod.reyes` (user_id 4),
 `tanod.delacruz`, `tanod.gubaton`, or `tanod.dichoso`. `admin.dao` is
 the Admin. `backend/.env` currently points at `baranguard_uiseed`.
 
-**Confirmed on hardware 2026-09-19 (first time for each):**
-- **FCM push lands** (A4): `google-services.json` baked into the APK,
-  `/system/health` → `fcm: healthy`, a real `POST /dispatch` produced a
-  heads-up + in-app NEW DISPATCH sheet within ~1s, ACKNOWLEDGE wrote
-  `notification_target.acknowledged_at`. M12 PASS.
-- **Route line renders** — root cause was MapLibre 6.x's GeoJSON worker
-  never loading under Vite, not a stale bundle.
-- **C7 did NOT reproduce on the Infinix**: 405s foreground GPS + a
-  screen-off run with `PatrolLocationService` confirmed running and
-  `gps_track` rows every ~30s. Downgraded from 🔴 to 🟡 in REMAINING.md;
-  not closed — a real 30+ min locked-screen run is still outstanding.
-- **A1**: #1 SQLCipher, #2 offline capture survives kill, #4 keystore
-  round-trip, #6 sync drains queue — all PASS. #3 photo/voice and M13
-  SMS badge still open.
-- **A5**: adb reaches the phone, real `content query` shape matches the
-  fixture. One real envelope SMS from a second phone still to send.
-- **GPS/route accuracy** (Sprint 8 box): stationary baseline measured —
-  30.8s interval, 39.7m avg reported accuracy, 3.0s upload lag, route
-  44.2km vs 29.7km straight-line. Moving-along-a-known-street run not
-  done (device wasn't in Pilar).
+## Semaphore removed — local GSM gateway is the new SMS transport
 
-**Device-found bugs — status:**
+**Why**: explicit user decision, 2026-09-23 — Semaphore's per-SMS
+aggregator cost (~₱0.50–0.56/SMS) wasn't justified for this project's
+actual (barangay-scale) volume.
+
+**What replaced it**: the SAME tethered phone that already does GSM
+inbound ingestion (`gsm-ingest-daemon.php`, A5) now also SENDS, via a
+new standalone Android project — `sms-gateway/` (its own Gradle project,
+**not** part of the Capacitor Tanod app in `mobile/`; see its own
+README). A single `BroadcastReceiver` (`SendSmsReceiver.java`) calls
+`SmsManager` directly on the gateway phone's own SIM, triggered by
+`backend/services/notifications/LocalGsmOutboundClient.php` over `adb
+shell am broadcast`. No cloud call, no per-message fee, no API key —
+sends over the phone's own SIM plan.
+
+**Confirmed working end-to-end 2026-09-24**: two independent real SMS
+sends through the actual production class, `correlation_id` verified
+matching between the PHP call and the device's own logcat both times.
+Found and fixed a real bug along the way — `adb shell` re-joins its own
+arguments with a single space before sending to the remote Android
+shell, corrupting multi-word extras (`correlation_id` arrived as
+literally `"unknown"`); fixed by building the whole remote command as
+one already-POSIX-shell-quoted string.
+
+**Setup for a new gateway phone**: see `sms-gateway/README.md` — build,
+`adb install`, `adb shell pm grant ... SEND_SMS`, then **launch the app
+once** (a freshly-installed app is in Android's "stopped" state and
+won't receive even an explicit broadcast until launched), then
+`GSM_GATEWAY_ENABLED=true` in `backend/.env`.
+
+**Known device quirks worth remembering**: this specific Infinix/XOS
+build has its own proprietary background-app-freezer (`Usf_Hiber`,
+logcat tag) separate from stock Android Doze — it can freeze a
+backgrounded app's ability to receive broadcasts within seconds of
+losing foreground/screen focus; a queued broadcast eventually delivers
+once something (e.g. relaunching the app) triggers an unfreeze.
+
+**Subprocess-timeout gap — CLOSED 2026-09-24.** The first `proc_open()`-
+based timeout attempt was confirmed broken on Windows and reverted (see
+gotcha #18 below). A real fix landed later the same day:
+`LocalGsmOutboundClient::runWithTimeout()` now shells out to
+`powershell.exe` (full path), which starts `adb.exe` via .NET's
+`Process.Start()`/`WaitForExit(ms)` — a genuine OS-level timeout with no
+relation to the broken `stream_set_blocking`/`stream_select` approach.
+Device-verified in stages: an isolated `adb shell sleep 30` capped at 3s
+was killed at 4.0s (`exitCode=124`); a real send through the production
+class hit the 12s cap for real and failed with the new timeout message,
+while logcat confirmed the remote broadcast still landed — a "timeout"
+here means "we stopped waiting," not "nothing happened on the phone,"
+and that tradeoff is disclosed in the class's own doc block, not silently
+assumed safe. Full detail: `backend/DEVLOG.md` 2026-09-24 (5).
+
+**What else changed**: `SystemHealthController` (`sms_gsm_gateway`
+JSON field replaces `sms_semaphore`), `SettingsController` (the
+now-vestigial `sms_gateway.api_key`/`sender_name` keys removed — no
+cloud credential or sender name applies to this transport), the Settings
+web page's whole "SMS Gateway" tab removed, `.env.example`
+(`GSM_GATEWAY_ENABLED`/`GSM_GATEWAY_ADB_PATH`/`GSM_GATEWAY_DEVICE_SERIAL`
+replace `SEMAPHORE_API_KEY`/`SEMAPHORE_SENDER_NAME`). `docs/REFERENCE.md`,
+`docs/SETUP.md`, and the Master Reference doc were all reconciled in the
+same pass — see DEVLOG for the full file list.
+
+## C7 — CLOSED 2026-09-24: real fix, device-verified working
+
+2026-09-23's battery-optimization exemption was confirmed granted, then
+a real 35-minute locked-screen run was completed.
+
+- **Process survival: confirmed, no regression.** Same PID the entire
+  run, `PatrolLocationService` present at every 2-minute check — the
+  original C7 hypothesis ("app dies ~50s in") is now settled: it doesn't.
+- **But `gps_track` shows the last real fix landed 4 SECONDS before the
+  screen locked, then nothing for the remaining ~36 minutes.** The
+  foreground service and its notification stay alive and look healthy —
+  but `FusedLocationProviderClient` genuinely stops delivering fixes the
+  moment the screen locks. This is arguably worse than a crash: a crash
+  shows up as a visible gap; this looks fine on every check available
+  (`dumpsys`, the notification tray).
+
+**2026-09-24 — researched properly (Android's own docs), then
+implemented a real fix**: declaring `foregroundServiceType="location"`
+is necessary but NOT sufficient for a service to keep receiving fixes
+once the app itself drops out of the foreground (screen locked) — it
+also needs `ACCESS_BACKGROUND_LOCATION`, which this app never declared
+or requested. Added the manifest permission +
+`PatrolLocationPlugin.requestBackgroundLocationPermission()` (Capacitor
+declarative permission API, matches `VoiceRecorder`'s own pattern) +
+wired into `startPatrolTracking()`. Device-verified GRANTED via
+`dumpsys package` (the permission dialog *looked* like "while using the
+app" to the person watching it, but the actual OS grant state said
+otherwise — trust `dumpsys`, not the dialog's appearance).
+
+**Retest: confirmed working, after correcting an initial misread.** A
+live poll of `gps_track` mid-test appeared to show zero new rows and was
+read as inconclusive (compounded by the phone being indoors, GPS
+provider showing a stale `satellites=0` cached fix) — the monitor was
+stopped early on that basis. **That read was wrong.** Querying
+`gps_track` fresh right after showed a CONTINUOUS chain of real fixes
+spanning the entire locked window — 17 minutes, every ~30-90s, normal
+8-30m accuracy throughout. The live-poll "nothing yet" was a sync-delay
+artifact (the phone's own upload batching), not a real stall. This is
+real, measured evidence the fix works — dramatically different from the
+original 4-second stall. Not proof beyond all doubt (a longer
+outdoor/moving-patrol run would add confidence and is combinable with
+the still-outstanding GPS moving run in REMAINING.md), but the core bug
+is fixed. The recurring `FusedLocation: ... blocked - too close/too
+fast` log lines seen during testing turned out to be a red herring —
+real fixes kept landing despite them.
+
+**Lesson**: when using a mobile app's server-side data as a live test
+signal, remember sync delay is real — "no new rows yet" mid-test is not
+the same as "nothing happened." Re-query after the window closes before
+concluding a negative result. Full finding: DEVLOG 2026-09-23 (7),
+2026-09-24 (2)-(3).
+
+## M13 — SOS SMS fallback badge: device-verified for the success path
+
+`SosSmsPlugin.java` (Android `SmsManager`, G1's third SOS tier) had never
+been device-verified for a completed send. This session set
+`sos_fallback.backup_contact_number` to a real phone (via `PATCH
+/system-settings`), granted `SEND_SMS` up front, logged out/in as
+`tanod.reyes` (required — `refreshSosFallbackContact()` only runs at
+login, not at Live Map mount; `sosFallbackContact.ts`'s docblock wrongly
+claimed otherwise and has since been corrected, DEVLOG 2026-09-24 (5)),
+then went offline (`adb reverse --remove tcp:8081`) and held the Home
+screen's Emergency SOS Backup control.
+
+**Confirmed for real**, not just by the app's own claim: `adb shell
+content query --uri content://sms/sent` showed the exact composed
+emergency message actually sent, and — since the backup number was the
+same device's own SIM — it also round-tripped into that device's own
+Messages app as a second, independent confirmation. `SmsFallbackBadge`
+correctly showed `saved_locally_for_retry` (grey) when the contact
+wasn't yet cached, then `sent_by_sms` (green) once it was. Full detail:
+`backend/DEVLOG.md` 2026-09-24 (4).
+
+**Not exercised at the time**: `sms_pending`/`sms_failed`. A malformed-
+number attempt to force `sms_failed` (2026-09-24) did NOT work and
+revealed a real gap instead: `SmsManager` doesn't synchronously validate
+the destination address, so the app reported `sent_by_sms` while nothing
+was actually transmitted (no trace in `content://sms/sent`/`/failed`/
+`/outbox`) — `sos_fallback.backup_contact_number` had no format
+validation anywhere. `sos_fallback.backup_contact_number` was left set to
+the real number (correct steady-state, not test residue) — the phone was
+re-logged-in twice to pick up the malformed test value then restore the
+real one, since its cache only refreshes at login. DEVLOG 2026-09-24 (7).
+
+**Gap closed at the code level, 2026-09-24 (8) — not yet device-verified.**
+No phone was attached this session, so this is a code-only fix per
+SPRINTS.md's own "prove it, don't claim it" rule — treat it as closed
+only after a real device retest. Two independent fixes: `SettingsController
+::update()` now rejects a malformed `sos_fallback.backup_contact_number`
+with 400 before it can ever reach a phone (tested against the real,
+disposable `baranguard_uiseed` DB — malformed string → 400, a valid PH
+number → 200, empty string to unset → 200). `SosSmsPlugin.java`
+independently re-checks the same PH-mobile-number shape before ever
+calling `SmsManager` (belt-and-suspenders — the setting could in
+principle be set correctly and still arrive malformed some other way),
+and now supplies a real `sentIntent` PendingIntent per message part
+instead of trusting `sendTextMessage()`'s synchronous return, so a
+genuine carrier-level rejection (airplane mode, no SIM, no service) will
+report `sms_failed` for real. `mobile/src/services/sosSms.ts`'s docblock
+corrected — it previously and wrongly claimed the failure path had
+already been verified. `./gradlew assembleDebug` BUILD SUCCESSFUL; `npx
+tsc --noEmit` clean; `php -l` clean. **Still needed**: install on the
+Infinix and confirm (a) a malformed number now rejects immediately
+client-side, and (b) airplane-mode/no-SIM produces a real `sms_failed`
+badge, not just a code-level guarantee.
+
+## Critical notifications now genuinely play sound (2026-09-24)
+
+User-prompted audit found two real, separate gaps — not one.
+
+**Mobile**: the M12 Critical Alert Overlay channel
+(`CriticalAlertNotifier.java`) was `IMPORTANCE_HIGH` with no explicit
+sound/vibration, relying on Android's plain default. Added an
+alarm-usage sound (`RingtoneManager.TYPE_ALARM` +
+`AudioAttributes.USAGE_ALARM`) and an explicit vibration pattern.
+**Channel ID bumped to `baranguard_critical_alert_v2`** — a
+NotificationChannel's sound/vibration is locked by the OS forever once
+first created, so keeping the old ID would have made this fix a silent
+no-op on every device that already has the app installed (including the
+Infinix test phone).
+
+**Web dashboard — a real gap, not a hardening.** There was no audio cue
+at all on an incoming SOS/priority alert; a dispatcher with the tab
+backgrounded had nothing but the topbar bell's badge dot. Added
+`web/src/utils/criticalAlertSound.js` (Web Audio synthesized tone) wired
+into `AppShell.js`'s existing 15s notification poller — a genuinely NEW
+`sos`/`priority_alert` item now plays a tone, tracked by
+`notificationId` so it never fires on already-seen items or on the
+first load after a page refresh.
+
+**Not done**: `setBypassDnd(true)` (letting the alert sound through Do
+Not Disturb) — requires the user to separately grant "Do Not Disturb
+access" from a system settings screen, a bigger ask than this session's
+scope. Flagged, not silently skipped.
+
+**Verified**: mobile — `./gradlew assembleDebug` BUILD SUCCESSFUL,
+installed on the Infinix, user confirmed the Profile → Critical Alert
+test now sounds and vibrates. Web — `verify-web-wiring.mjs` 557/557,
+`web/tests` 397/398 at the time (`maps.test.mjs`'s SOS-marker-clustering
+test failing) — a later full-suite re-run the same day came back
+398/398 clean, so that failure was a flake, not a real regression (see
+DEVLOG 2026-09-24 (8)). Full detail: `backend/DEVLOG.md` 2026-09-24 (6).
+
+## Device-found bugs — status
+
 - Fixed + device-verified 2026-09-19: fresh-install GPS permission gap,
   SQLCipher passphrase/`raw_narrative` in logcat (`loggingBehavior:
   'none'` now), cold-start `openLocalDatabase()` race, "15s" vs real 30s
   label.
-- Fixed 2026-09-22, **code only, not yet device-verified** (no device
-  available that session): Home's dispatch card only refreshed on
-  mount (now also on `appStateChange` resume); system heads-up
-  notification stayed posted after in-app ACKNOWLEDGE (now cancelled via
-  `FullScreenAlertPlugin.dismiss()`); duty card showed OFF DUTY for an
-  actually-*unknown* offline status (now its own "Duty Status Unknown
-  (Offline)" label). Push body "a animal_complaint" grammar was fixed
-  earlier (`7e9952a`). **Next device session should confirm all three**
-  before this bullet is removed.
+- Fixed + device-verified 2026-09-23: the three 2026-09-22 bug fixes
+  (heads-up dismiss on ACKNOWLEDGE, duty-unknown offline label, Home
+  dispatch-card refresh-on-resume). The dispatch-card one turned out to
+  have been **wrongly closed** on 2026-09-22 — it re-ran on every resume
+  exactly as intended, but read a local cache (`dispatch_local`) that
+  nothing but `assignments.tsx`'s own mount ever wrote to, so a dispatch
+  arriving while the Tanod stayed on Home never actually reached the
+  card. Real fix: `refreshActiveDispatches()` now calls `getDispatches()`
+  + `cacheDispatchesFromServer()` first, same pair Assignments already
+  uses. **Lesson**: a "fixed, code only, no device to verify" DEVLOG
+  entry can be wrong in ways `tsc`/Gradle can never catch (a cross-screen
+  data-flow gap, invisible to any type checker) — don't treat one as
+  closed until a device session actually confirms it.
+- Fixed + device-verified 2026-09-23: voice-recording evidence capture
+  (A1 #3) — `stopVoiceRecording()` called `Filesystem.stat()`/`readFile()`
+  on the voice-recorder plugin's own returned `path` with no `directory`
+  option, but that `path` is relative, not absolute.
+- Fixed + verified 2026-09-24: `LocalGsmOutboundClient`'s `adb shell`
+  argument-quoting bug and its subprocess-timeout gap (see above), plus
+  `sosFallbackContact.ts`'s stale docblock claim about Live Map mount.
+- Fixed + device-verified 2026-09-24: `CriticalAlertNotifier`'s missing
+  sound/vibration, and the web dashboard's total lack of an audible cue
+  on new SOS/priority alerts (see above).
+- Found 2026-09-24, fixed at the code level (not yet device-verified):
+  `sos_fallback.backup_contact_number` had no format validation
+  anywhere — a malformed value could make `SmsManager` silently drop a
+  send with zero trace in `content://sms/*`, while the app still
+  reported `sent_by_sms` (false confidence). Found while trying to test
+  M13's `sms_failed` state; see "M13" section above for the two-part fix
+  (server-side validation + `sentIntent`-based real send result).
+- Push body "a animal_complaint" grammar fixed earlier (`7e9952a`),
+  still standing.
 
 **Decision taken (option B, 2026-09-19):** the app shell gates on a
 session *existing*, not on the 15-min JWT being locally unexpired
@@ -135,30 +379,75 @@ hardware (`eval-kit/README-FOR-FRIEND.md`).
     backend over USB (default API base `localhost:8081`); `adb reverse
     --remove tcp:8081` is a clean way to make the workstation
     "unreachable" for offline tests without touching phone settings.
+16. A "fixed, code only, no device to verify on" DEVLOG entry can be
+    wrong in ways `tsc`/Gradle compile can never catch — 2026-09-22's
+    Home dispatch-card refresh fix re-ran on every resume exactly as
+    intended, but read a local cache that nothing else in the app was
+    updating, a cross-screen data-flow gap no type checker sees. Don't
+    treat a code-only fix as closed until a device session actually
+    confirms it (SPRINTS.md's "prove it, don't claim it").
+17. `adb shell <cmd> <arg with spaces>` does NOT preserve multi-word
+    arguments as atomic tokens on the remote Android shell — `adb shell`
+    re-joins its own arguments with plain spaces before sending, so
+    anything with internal spaces gets word-split again remotely unless
+    the ENTIRE remote command is built as one already-shell-quoted
+    string and passed as a single argument. `escapeshellarg()` only
+    protects the LOCAL hop.
+18. PHP's `proc_open()` + `stream_set_blocking(..., false)` for a
+    subprocess timeout does NOT work on Windows — confirmed by direct
+    test (`stream_set_blocking` is a documented no-op for `proc_open`
+    pipes there; `stream_select()` is also unsupported for non-socket
+    streams on Windows). A real Windows subprocess timeout needs a
+    different mechanism (e.g. shelling out to a PowerShell
+    `Start-Process -Wait` wrapper with its own kill timer).
+19. A freshly-installed Android app is in the OS's "stopped" package
+    state and will NOT receive even an explicit targeted broadcast until
+    launched at least once (`adb shell monkey -p <pkg> -c
+    android.intent.category.LAUNCHER 1`).
+20. This Infinix/XOS build has a proprietary background-app-freezer
+    (`Usf_Hiber` in logcat) separate from stock Android Doze — can
+    freeze a backgrounded app within seconds, delaying broadcast/service
+    delivery until something unfreezes it (e.g. relaunching).
 
 ## Recommended next step
 
-Everything below needs either the Infinix X6840 in hand or a human
-decision/credential — nothing left is a pure coding-session task.
+Everything below needs either the Infinix X6840 in hand, a second phone,
+or a human decision/credential — nothing left is a pure coding-session
+task.
 
-1. **A1 #3** — on the phone: Log Incident → Photo Evidence (allow
-   camera), Voice Memo (allow mic), save; then `adb shell run-as
-   ph.baranguard.tanod ls files/evidence/` and pull one file of each to
-   confirm it opens.
-2. **Confirm the three 2026-09-22 code fixes on a real device** (Home
-   dispatch-card refresh, heads-up dismiss, duty-unknown label) — see
-   "Device-found bugs" above.
-3. **A5's last step** — send one real envelope SMS (the fixture's JSON
-   body) from a second phone to the tethered Infinix, then
-   `php backend/scripts/gsm-ingest-daemon.php --once` and check the DB.
-4. **C7 long locked-screen run** — 30+ min screen-off on the Infinix,
-   `adb logcat` for `has died`/`lmkd`/tombstone. If it ever kills,
-   `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` is the fix to try.
-5. **GPS moving run** — a Tanod walking a known Dao street with the app
-   on duty; compare `gps_track` against the road.
-6. **C2 (Task Scheduler wiring)** / **B3 (restore drill)** — need your
+1. **GPS moving run, outdoors** — a Tanod walking a known Dao street with
+   the app on duty; compare `gps_track` against the road. C7's fix is
+   already device-verified working (17 min stationary indoor locked-
+   screen run); this adds outdoor/moving confidence, doesn't need to
+   re-litigate the fix itself.
+2. **C2 (Task Scheduler wiring)** / **B3 (restore drill)** — need your
    schedule/account call and `BACKUP_ENCRYPTION_PASSPHRASE`.
-7. **Hand `eval-kit/` to faster hardware** for the other 7 model tasks.
+3. **Hand `eval-kit/` to faster hardware** for the other 7 model tasks.
+4. **M13's `sms_failed` state — fixed at the code level 2026-09-24 (8),
+   needs a device retest.** The malformed-number gap (`SmsManager`
+   silently dropping a bad send while the app claimed `sent_by_sms`) is
+   closed two ways: `SettingsController::update()` now 400s a malformed
+   `sos_fallback.backup_contact_number` server-side (verified against
+   the real disposable DB), and `SosSmsPlugin.java` independently
+   re-validates the same shape client-side AND now uses a real
+   `sentIntent` result instead of trusting `sendTextMessage()`'s
+   synchronous return — so a genuine carrier rejection (airplane mode,
+   no SIM) should now surface as a real `sms_failed`, not a false
+   `sent`. `./gradlew assembleDebug` succeeded; no phone was attached
+   this session to install and confirm on-device. DEVLOG 2026-09-24 (8).
+5. **Critical-alert DND bypass** — the mobile critical-alert channel now
+   has a real alarm sound/vibration, but does not bypass Do Not Disturb;
+   that needs the user to separately grant "Do Not Disturb access" from
+   system settings, a bigger ask than a code change. Decide whether it's
+   worth prompting for.
+
+**A5, A4 (including its subprocess-timeout gap), C7, and M13's primary
+success path are all closed.** M13's `sms_failed` gap is fixed at the
+code level, pending device confirmation (item 4 above). The
+`maps.test.mjs` "SOS markers are never clustered" failure noted in an
+earlier snapshot did not reproduce on a later full-suite run
+(398/398, 2026-09-24) — treated as a flake, not a real regression; no
+longer on this list.
 
 **F1 (API base URL, reopened)** isn't on this list — nothing currently
 depends on remote access working; LAN-only development/testing both work
@@ -181,13 +470,26 @@ BACKUP_ENCRYPTION_PASSPHRASE=... bash backend/scripts/restore-drill.sh
 # AI worker
 cd backend && php scripts/ai-worker.php --status
 
-# GSM ingestion daemon (once the phone's adb-reachable)
+# GSM ingestion daemon (once the phone's adb-reachable) — inbound
 cd backend && php scripts/gsm-ingest-daemon.php --status
 php scripts/gsm-ingest-daemon.php --once   # one poll
 php scripts/gsm-ingest-daemon.php --daemon # keep polling
 
+# GSM outbound gateway — one-time setup on a new gateway phone
+cd sms-gateway
+export JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot"
+export TMPDIR=C:/gtmp TEMP=C:/gtmp TMP=C:/gtmp
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell pm grant ph.baranguard.smsgateway android.permission.SEND_SMS
+adb shell monkey -p ph.baranguard.smsgateway -c android.intent.category.LAUNCHER 1
+# then set GSM_GATEWAY_ENABLED=true in backend/.env
+
 # Web wiring check — run after ANY web change
 node web/scripts/verify-web-wiring.mjs
+
+# Web render tests (no backend needed; one-time `npm install` in web/tests)
+cd web/tests && npm test
 
 # Mobile static checks — run after ANY mobile change
 cd mobile && npx tsc --noEmit && npm run lint && node scripts/verify-local-schema.mjs
@@ -213,7 +515,7 @@ bash backend/scripts/verify-sprint3.sh
 # Backup/second responder
 bash backend/scripts/verify-second-responder.sh
 
-# Build + install the mobile app onto a connected Android device
+# Build + install the mobile Tanod app onto a connected Android device
 cd mobile && npx vite build && npx cap sync android
 cd android
 export JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot"

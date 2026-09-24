@@ -26,7 +26,8 @@ of writing this doc — not just described from memory.
 
 Not needed for this backend+web setup, and safe to skip for now:
 Android Studio/JDK/Gradle (mobile only), Ollama (AI features degrade to
-`not_configured`, see step 5), an ORS API key, Firebase, Semaphore.
+`not_configured`, see step 5), an ORS API key, Firebase, the GSM SMS
+gateway phone.
 
 ## 2. Clone and start MariaDB
 
@@ -138,7 +139,7 @@ opposite reason — it must survive being out of range.)
 | AI redaction/drafting/tools (Ollama) | `OLLAMA_URL`, `OLLAMA_MODEL` | `GET /system/health` reports `ollama: not_configured`; redaction requests 503 instead of queueing |
 | Turn-by-turn routing | `ORS_API_KEY` | `ors: not_configured`; a dispatch's route stays `route_status: unavailable`, external nav link still works |
 | Push notifications (FCM) | `FCM_SERVICE_ACCOUNT_PATH` | `fcm: not_configured`; notifications fall straight to SMS |
-| SMS gateway (Semaphore) | `SEMAPHORE_API_KEY` | `semaphore: not_configured`; SMS attempts recorded as `failed` (`SEMAPHORE_NOT_CONFIGURED`), not silently dropped |
+| SMS gateway (local GSM, tethered phone) | `GSM_GATEWAY_ENABLED` | `sms_gsm_gateway: not_configured`; SMS attempts recorded as `failed` (`GSM_GATEWAY_NOT_CONFIGURED`), not silently dropped |
 | Remote access beyond your LAN | — | Not built by default (see below) — everything above assumes `localhost`/LAN reachability |
 
 None of these block backend+web development. Every screen has a real
