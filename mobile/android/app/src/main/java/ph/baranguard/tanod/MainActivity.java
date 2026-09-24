@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SosSmsPlugin.class); // Phase 4.3, G1's SOS fallback SMS
         registerPlugin(PatrolLocationPlugin.class); // Phase 4.1, background patrol GPS
         registerPlugin(FullScreenAlertPlugin.class); // Phase 4.2, full-screen critical alert (test trigger)
+        registerPlugin(DeviceKeyPlugin.class); // H-09, hardware-backed device identity keypair
         super.onCreate(savedInstanceState);
     }
 }
