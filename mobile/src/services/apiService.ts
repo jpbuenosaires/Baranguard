@@ -27,7 +27,7 @@
  */
 
 import { Preferences } from '@capacitor/preferences';
-import { getDeviceId } from './deviceIdentity';
+import { getDeviceId, signDeviceRequest } from './deviceIdentity';
 import {
   clearSession,
   emitSessionExpired,
@@ -237,6 +237,40 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload as T;
 }
 
+/**
+ * H-09: builds the X-Device-Id/-Timestamp/-Signature headers for a
+ * high-value mobile write (GPS/SOS/dispatch-status/evidence/sync-batch).
+ *
+ * `routePath` is the route's OWN path (e.g. `/gps`), with no `/api/v1`
+ * mount prefix — but the server signs against `$_SERVER['REQUEST_URI']`
+ * (`DeviceSignature::verifyOrReject()`), which is the FULL request path
+ * the webserver actually saw, prefix included. Deriving that prefix from
+ * `API_BASE_URL`'s own pathname (rather than hardcoding `/api/v1`) keeps
+ * this correct even when a Tanod's Profile screen points the app at a
+ * differently-mounted backend (§1's documented runtime override).
+ *
+ * Signing failure (or a pre-upgrade device with no Keystore key) yields a
+ * device-id-only header set, same as before H-09 — see
+ * `signDeviceRequest()`'s own doc for why this never blocks the request.
+ */
+async function deviceAuthHeaders(method: string, routePath: string, deviceId: string): Promise<Record<string, string>> {
+  let fullPath = routePath;
+  try {
+    fullPath = new URL(API_BASE_URL).pathname.replace(/\/+$/, '') + routePath;
+  } catch {
+    // Malformed API_BASE_URL is an existing, separately-handled condition
+    // elsewhere (setApiBaseUrlOverride() validates it) — fall back to the
+    // bare route path rather than throwing on a mobile write.
+  }
+  const signed = await signDeviceRequest(method, fullPath, deviceId);
+  const headers: Record<string, string> = { 'X-Device-Id': deviceId };
+  if (signed) {
+    headers['X-Device-Timestamp'] = signed.timestamp;
+    headers['X-Device-Signature'] = signed.signature;
+  }
+  return headers;
+}
+
 function safeJsonParse(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -320,6 +354,8 @@ export async function registerDevice(params: {
   deviceId: string;
   fcmToken: string | null;
   appVersion?: string;
+  /** H-09: this install's Keystore public key, or undefined/null on a device that can't generate one (never blocks registration). */
+  devicePublicKeyPem?: string | null;
 }): Promise<DeviceRegistration> {
   const json = await request<{ device_id: string; registered: boolean; message_encryption_key?: string }>(
     '/devices/register',
@@ -330,6 +366,7 @@ export async function registerDevice(params: {
         fcm_token: params.fcmToken,
         platform: 'android', // §5 mobile_device.platform is ENUM('android')
         app_version: params.appVersion,
+        device_public_key_pem: params.devicePublicKeyPem ?? null,
       },
     }
   );
@@ -485,8 +522,16 @@ export async function postSos(params: {
   dispatchId?: number | null;
   fallbackChannel?: 'app' | 'sms';
 }): Promise<SosResult> {
+  // H-09: best-effort device auth headers — the server NEVER rejects an
+  // SOS over a missing/bad signature (TanodSosController's own doc:
+  // "a real emergency signal must never be lost to a secondary
+  // authenticity check"), it only logs the anomaly. Attaching these here
+  // is purely additive audit value, never a condition for the SOS itself.
+  const deviceId = await getDeviceId();
+  const headers = await deviceAuthHeaders('POST', '/tanod-sos', deviceId);
   const json = await request<{ sos_id: number; status: string; received_at: string }>('/tanod-sos', {
     method: 'POST',
+    headers,
     body: {
       latitude: params.latitude,
       longitude: params.longitude,
@@ -645,9 +690,15 @@ export async function updateDispatchStatus(
   dispatchId: number,
   status: 'en_route' | 'arrived' | 'completed'
 ): Promise<{ dispatchId: number; status: DispatchStatus; updatedAt: string }> {
+  // H-09: server verifies this only for a Tanod-initiated call (never an
+  // Admin override) and only when this device has a key on file — see
+  // DispatchController::applyStatusTransition()'s own doc.
+  const path = `/dispatch/${dispatchId}/status`;
+  const deviceId = await getDeviceId();
+  const headers = await deviceAuthHeaders('PATCH', path, deviceId);
   const json = await request<{ dispatch_id: number; status: DispatchStatus; updated_at: string }>(
-    `/dispatch/${dispatchId}/status`,
-    { method: 'PATCH', body: { status } }
+    path,
+    { method: 'PATCH', headers, body: { status } }
   );
   return { dispatchId: json.dispatch_id, status: json.status, updatedAt: json.updated_at };
 }
@@ -702,8 +753,14 @@ export async function postGps(point: {
   dispatchId?: number | null;
   clientEventId: string;
 }): Promise<{ trackId: number; receivedAt: string }> {
+  // H-09: signature verification applies here AND to syncBatch()'s replay
+  // of queued points (both go through GpsController::createItem()) — see
+  // syncBatch() below for why it attaches the same headers to that call.
+  const deviceId = await getDeviceId();
+  const headers = await deviceAuthHeaders('POST', '/gps', deviceId);
   const json = await request<{ track_id: number; received_at: string }>('/gps', {
     method: 'POST',
+    headers,
     body: {
       latitude: point.latitude,
       longitude: point.longitude,
@@ -863,11 +920,15 @@ export async function uploadEvidence(
   form.append('client_request_id', item.clientRequestId);
   if (item.originalFilename) form.append('original_filename', item.originalFilename);
 
+  // H-09: same headers every other high-value write attaches — see
+  // deviceAuthHeaders()'s own doc for the /api/v1-prefix reasoning.
+  const deviceHeaders = await deviceAuthHeaders('POST', `/incidents/${incidentServerId}/evidence`, deviceId);
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}/incidents/${incidentServerId}/evidence`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${session.token}`, 'X-Device-Id': deviceId },
+      headers: { Authorization: `Bearer ${session.token}`, ...deviceHeaders },
       body: form,
     });
   } catch {
@@ -977,10 +1038,16 @@ export async function syncBatch(params: {
   dispatchStatusUpdates?: SyncDispatchStatusItem[];
   sosItems?: SyncSosItem[];
 }): Promise<SyncBatchResult[]> {
+  // H-09: one signature covers the whole batch — GpsController::
+  // createItem()/DispatchController::applyStatusTransition()/
+  // TanodSosController::createItem() all read X-Device-Id/-Signature off
+  // this single /sync/batch request's headers, not per-item.
+  const headers = await deviceAuthHeaders('POST', '/sync/batch', params.deviceId);
   const json = await request<{
     results: { client_event_id: string; server_id: number | null; status: string; reason?: string }[];
   }>('/sync/batch', {
     method: 'POST',
+    headers,
     body: {
       device_id: params.deviceId,
       incidents: params.incidents ?? [],
