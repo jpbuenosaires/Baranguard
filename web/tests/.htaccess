@@ -1,0 +1,5 @@
+# web/tests/ is dev-only tooling (test code + its own node_modules), never
+# part of the served dashboard. It sits inside web/ only so the tests can
+# import ../src/ by relative path; nothing here should be reachable over
+# the LAN through Apache.
+Require all denied
