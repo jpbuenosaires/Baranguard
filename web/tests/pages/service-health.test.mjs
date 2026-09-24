@@ -35,4 +35,13 @@ describe('Service Health behaviour', () => {
     await settle();
     assert.match(text($('.page-content')), /never/i);
   });
+
+  test('notification delivery reliability card shows the real count, not a hidden/omitted field (H-20)', async () => {
+    mountPage(renderServiceHealthPage, { role: 'admin' });
+    await settle();
+    const body = text($('.page-content'));
+    assert.match(body, /Notification Delivery/, 'the new H-20 card is rendered');
+    assert.match(body, /All Reaching Recipients/, '0 fully-undelivered targets is the honest, healthy state from the fixture');
+    assert.match(body, /0 notifications/, 'the real count (0) is shown, not hidden');
+  });
 });
