@@ -21,7 +21,6 @@ import {
   IonContent,
   IonIcon,
   IonPage,
-  IonSpinner,
 } from '@ionic/react';
 import {
   checkmarkOutline,
@@ -32,6 +31,7 @@ import {
   shieldCheckmarkOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
+import { LoadingBlock } from '../components/LoadingBlock';
 import { deriveSyncState, getLocalIncident, type SyncState } from '../services/db/incidentRepository';
 import type { IncidentLocalRow } from '../services/db/localSchema';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
@@ -104,9 +104,7 @@ const IncidentSubmittedPage: React.FC = () => {
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="app-column">
           {loading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
-              <IonSpinner name="dots" />
-            </div>
+            <LoadingBlock />
           ) : !row ? (
             <div
               className="card--elevated"

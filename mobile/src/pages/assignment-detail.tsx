@@ -72,6 +72,7 @@ import {
 import LiveMapCanvas, { type FocusTarget, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import ActiveStepCard from '../components/ActiveStepCard';
 import MobileHeader from '../components/MobileHeader';
+import { LoadingBlock } from '../components/LoadingBlock';
 import { ApiError, getDispatchRoute, updateDispatchStatus, type NearbyIncident, type RouteData } from '../services/apiService';
 import {
   applyLocalStatusChange,
@@ -424,9 +425,7 @@ const AssignmentDetailPage: React.FC = () => {
         style={{ '--background': 'var(--color-bg)' }}
       >
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
-            <IonSpinner name="dots" />
-          </div>
+          <LoadingBlock />
         ) : !row ? (
           <div className="card--elevated" style={{ textAlign: 'center', padding: '32px 16px', marginTop: '24px' }}>
             <p style={{ color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
