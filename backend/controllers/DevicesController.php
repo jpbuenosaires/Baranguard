@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
+use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Sms\DeviceSecretVault;
@@ -48,6 +49,15 @@ use PDO;
  *   - **`fcm_token` is never echoed back** in any response, and never
  *     written to audit metadata (§6 "Returns no FCM token"; Rule 17
  *     allows identifiers/statuses only).
+ *   - **`device_public_key_pem` (optional, code-review finding H-09,
+ *     2026-09-24) — a hardware-backed device identity, phased in.** If the
+ *     body includes it, it is validated (`DeviceSignature::
+ *     isValidPublicKeyPem()`) and stored; `Baranguard\Lib\DeviceSignature`
+ *     then verifies a per-request signature on evidence upload / GPS / SOS
+ *     / Tanod dispatch-status-update for any device that has one on file.
+ *     Omitting it is not an error — see `DeviceSignature`'s own doc for why
+ *     this is a phased rollout, not a hard requirement, on an app that
+ *     already has devices registered without a keypair.
  *   - **`fcm_token` is OPTIONAL, not required — explicit decision,
  *     2026-09-13.** §6's literal body shape names it, but this deployment
  *     has no real Firebase project (REMAINING.md A4) and never has, so
@@ -107,6 +117,7 @@ final class DevicesController
         $fcmToken = $body['fcm_token'] ?? null;
         $platform = $body['platform'] ?? null;
         $appVersion = $body['app_version'] ?? null;
+        $devicePublicKeyPem = $body['device_public_key_pem'] ?? null;
 
         if (!is_string($deviceId) || !preg_match(self::DEVICE_ID_PATTERN, $deviceId)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'device_id must be 8-64 characters of A-Z a-z 0-9 . _ : or -.');
@@ -126,6 +137,11 @@ final class DevicesController
         }
         if ($appVersion !== null && (!is_string($appVersion) || strlen($appVersion) > 64)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'app_version must be a string of at most 64 characters.');
+        }
+        if ($devicePublicKeyPem !== null) {
+            if (!is_string($devicePublicKeyPem) || !DeviceSignature::isValidPublicKeyPem($devicePublicKeyPem)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'device_public_key_pem must be a valid PEM-encoded EC or RSA public key.');
+            }
         }
 
         $ownershipStmt = $pdo->prepare('SELECT user_id, device_secret_ref FROM mobile_device WHERE device_id = :device_id LIMIT 1');
@@ -168,9 +184,9 @@ final class DevicesController
 
             $pdo->prepare(
                 "INSERT INTO mobile_device
-                    (device_id, user_id, platform, fcm_token, device_secret_ref, app_version, last_seen_at, is_active, created_at)
+                    (device_id, user_id, platform, fcm_token, device_secret_ref, device_public_key_pem, app_version, last_seen_at, is_active, created_at)
                  VALUES
-                    (:device_id, :user_id, 'android', :fcm_token, :device_secret_ref, :app_version, UTC_TIMESTAMP(), 1, UTC_TIMESTAMP())
+                    (:device_id, :user_id, 'android', :fcm_token, :device_secret_ref, :device_public_key_pem, :app_version, UTC_TIMESTAMP(), 1, UTC_TIMESTAMP())
                  ON DUPLICATE KEY UPDATE
                     -- An empty incoming token (push still unconfigured, or
                     -- this attempt just couldn't get one) must never erase
@@ -185,12 +201,18 @@ final class DevicesController
                     -- deactivation timestamp: it is active again, so its
                     -- §11 retention clock is not running.
                     deactivated_at = NULL,
-                    device_secret_ref = COALESCE(device_secret_ref, VALUES(device_secret_ref))"
+                    device_secret_ref = COALESCE(device_secret_ref, VALUES(device_secret_ref)),
+                    -- H-09: a NEW non-null key rotates it (app reinstall
+                    -- generates a fresh Keystore key); omitting it on a
+                    -- later call never silently strips protection already
+                    -- in place, same COALESCE precedent as device_secret_ref.
+                    device_public_key_pem = COALESCE(VALUES(device_public_key_pem), device_public_key_pem)"
             )->execute([
                 'device_id' => $deviceId,
                 'user_id' => $identity['user_id'],
                 'fcm_token' => $fcmToken,
                 'device_secret_ref' => $wrappedSecret,
+                'device_public_key_pem' => $devicePublicKeyPem,
                 'app_version' => $appVersion,
             ]);
 
@@ -207,6 +229,7 @@ final class DevicesController
                     'app_version' => $appVersion,
                     'deactivated_previous_devices' => $deactivatedCount,
                     'message_encryption_key_provisioned' => $needsSecretProvisioning,
+                    'device_key_provisioned' => $devicePublicKeyPem !== null,
                 ]
             );
 
