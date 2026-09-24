@@ -41,9 +41,15 @@ const ACCOUNT_SECTIONS = [
 
 const SYSTEM_SECTIONS = [
   { key: 'general', label: 'General', subLabel: 'Municipal & jurisdiction branding', icon: icons.shield },
-  { key: 'sms-gateway', label: 'SMS Gateway', subLabel: 'Semaphore integration & credentials', icon: icons.messageSquare },
   { key: 'sos-fallback', label: 'SOS Fallback', subLabel: 'Backup contact for total-outage SOS', icon: icons.alertTriangle },
 ];
+// SMS Gateway tab REMOVED 2026-09-23 when Semaphore was replaced by a local
+// GSM gateway (explicit user decision — cost). That transport has no cloud
+// credential and no configurable sender name (messages come from the
+// gateway phone's own number), so there's nothing left for a settings card
+// to hold — leaving one would be exactly the "control that looks
+// functional and does nothing" §2 Rule 6 forbids. See
+// backend/controllers/SettingsController.php's own note.
 
 /**
  * @param {HTMLElement} root
@@ -148,9 +154,6 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
     } else if (activeSection === 'general') {
       panel.appendChild(buildLoadingCard('General'));
       loadSystemSettingsInto(panel, buildGeneralCard);
-    } else if (activeSection === 'sms-gateway') {
-      panel.appendChild(buildLoadingCard('SMS Gateway'));
-      loadSystemSettingsInto(panel, buildSmsGatewayCard);
     } else if (activeSection === 'sos-fallback') {
       panel.appendChild(buildLoadingCard('SOS Fallback'));
       loadSystemSettingsInto(panel, buildSosFallbackCard);
@@ -181,7 +184,12 @@ async function loadSystemSettingsInto(panel, buildCard) {
     block.setAttribute('role', 'alert');
     const text = document.createElement('p');
     text.textContent = err instanceof ApiClientError ? err.message : 'Could not load system settings.';
-    block.appendChild(text);
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'primary';
+    retry.textContent = 'Try again';
+    retry.addEventListener('click', () => loadSystemSettingsInto(panel, buildCard));
+    block.append(text, retry);
     panel.appendChild(block);
   }
 }
@@ -622,8 +630,16 @@ function buildAppearanceCard(role) {
     showToast(`Theme switched to ${mode} mode.`, { variant: 'info' });
   };
 
-  lightCard.addEventListener('click', () => applyTheme('light'));
-  darkCard.addEventListener('click', () => applyTheme('dark'));
+  // role="button" divs don't get Enter/Space activation for free.
+  for (const [card, mode] of [[lightCard, 'light'], [darkCard, 'dark']]) {
+    card.addEventListener('click', () => applyTheme(mode));
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        applyTheme(mode);
+      }
+    });
+  }
 
   syncThemeCards();
   themeGrid.append(lightCard, darkCard);
@@ -791,158 +807,13 @@ function buildGeneralCard(settings) {
 }
 
 /**
- * 5. SMS Gateway Card (Admin Only)
- */
-function buildSmsGatewayCard(settings) {
-  const card = document.createElement('div');
-  card.className = 'settings-card';
-
-  // Header
-  const headerEl = document.createElement('div');
-  headerEl.className = 'settings-card__header';
-  headerEl.innerHTML = `
-    <div class="settings-card__title-wrap">
-      <span class="settings-card__icon">${icons.messageSquare(20)}</span>
-      <div>
-        <h3 class="settings-card__title">SMS Gateway Integration</h3>
-        <p class="settings-card__subtitle">Semaphore SMS broadcast provider credentials and Sender ID</p>
-      </div>
-    </div>
-  `;
-  card.appendChild(headerEl);
-
-  const bodyEl = document.createElement('div');
-  bodyEl.className = 'settings-card__body';
-
-  // Provider Status Box
-  const providerBox = document.createElement('div');
-  providerBox.className = 'settings-gateway-status-box';
-  providerBox.innerHTML = `
-    <div style="display:flex; align-items:center; gap:0.625rem;">
-      <span style="color:var(--color-primary);">${icons.radio(18)}</span>
-      <div>
-        <div style="font-size:var(--font-size-sm); font-weight:700; color:var(--color-text-primary);">Semaphore SMS Gateway</div>
-        <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">Direct cellular carrier route for Philippine mobile networks</div>
-      </div>
-    </div>
-    <span class="status-pill ${settings['sms_gateway.api_key'] ? 'status-pill--success' : 'status-pill--neutral'}">
-      ${settings['sms_gateway.api_key'] ? 'API KEY CONFIGURED' : 'USING .ENV FALLBACK'}
-    </span>
-  `;
-  bodyEl.appendChild(providerBox);
-
-  const form = document.createElement('form');
-  form.className = 'settings-form';
-  form.noValidate = true;
-
-  // Sender Name
-  const senderField = document.createElement('div');
-  senderField.className = 'settings-field';
-  const senderLabel = document.createElement('label');
-  senderLabel.className = 'settings-label';
-  senderLabel.htmlFor = 'settings-sms-sender';
-  senderLabel.textContent = 'Registered Sender ID';
-
-  const senderInput = document.createElement('input');
-  senderInput.id = 'settings-sms-sender';
-  senderInput.type = 'text';
-  senderInput.className = 'settings-input';
-  senderInput.placeholder = 'e.g. BARANGUARD (must match registered Semaphore sender)';
-  senderInput.value = settings['sms_gateway.sender_name'] || '';
-
-  const previewChip = document.createElement('div');
-  previewChip.className = 'settings-sender-preview-chip';
-  const updatePreview = () => {
-    previewChip.innerHTML = `${icons.phone(12)}<span>Citizen phone preview: <strong>${senderInput.value.trim() || 'SEMAPHORE'}</strong></span>`;
-  };
-  updatePreview();
-  senderInput.addEventListener('input', updatePreview);
-
-  senderField.append(senderLabel, senderInput, previewChip);
-
-  // API Key
-  const apiKeyField = document.createElement('div');
-  apiKeyField.className = 'settings-field';
-  const apiKeyLabel = document.createElement('label');
-  apiKeyLabel.className = 'settings-label';
-  apiKeyLabel.htmlFor = 'settings-sms-api-key';
-  apiKeyLabel.textContent = 'Semaphore API Key (Secret)';
-
-  const apiKeyWrap = document.createElement('div');
-  apiKeyWrap.className = 'settings-input-wrap';
-
-  const apiKeyInput = document.createElement('input');
-  apiKeyInput.id = 'settings-sms-api-key';
-  apiKeyInput.type = 'password';
-  apiKeyInput.className = 'settings-input settings-input--with-toggle';
-  apiKeyInput.placeholder = '••••••••';
-  apiKeyInput.value = settings['sms_gateway.api_key'] || '';
-
-  const apiKeyToggle = document.createElement('button');
-  apiKeyToggle.type = 'button';
-  apiKeyToggle.className = 'settings-pwd-toggle';
-  apiKeyToggle.setAttribute('aria-label', 'Toggle API key visibility');
-  apiKeyToggle.innerHTML = icons.eye(16);
-
-  let isKeyVisible = false;
-  apiKeyToggle.addEventListener('click', () => {
-    isKeyVisible = !isKeyVisible;
-    apiKeyInput.type = isKeyVisible ? 'text' : 'password';
-    apiKeyToggle.innerHTML = isKeyVisible ? icons.eyeOff(16) : icons.eye(16);
-  });
-
-  apiKeyWrap.append(apiKeyInput, apiKeyToggle);
-
-  const apiKeyNote = document.createElement('span');
-  apiKeyNote.className = 'settings-help-text';
-  apiKeyNote.textContent = settings['sms_gateway.api_key']
-    ? 'A key is currently active (masked above). Leave unchanged to preserve it, or enter a new API key to replace it.'
-    : 'No key is saved in system settings. Outbound SMS relies on SEMAPHORE_API_KEY in backend/.env, if configured.';
-
-  apiKeyField.append(apiKeyLabel, apiKeyWrap, apiKeyNote);
-
-  const submitButton = document.createElement('button');
-  submitButton.type = 'submit';
-  submitButton.className = 'primary';
-  submitButton.style.cssText = 'width: fit-content; min-width: 140px; margin-top: 0.25rem;';
-  submitButton.textContent = 'Save Gateway Settings';
-
-  form.append(senderField, apiKeyField, submitButton);
-  bodyEl.appendChild(form);
-  card.appendChild(bodyEl);
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    submitButton.disabled = true;
-    submitButton.textContent = 'Saving…';
-
-    try {
-      await updateSystemSettings({
-        'sms_gateway.sender_name': senderInput.value.trim(),
-        'sms_gateway.api_key': apiKeyInput.value,
-      });
-
-      showToast('SMS Gateway settings saved successfully.', { variant: 'success' });
-    } catch (err) {
-      const message = err instanceof ApiClientError ? err.message : 'Could not save SMS Gateway settings.';
-      showToast(message, { variant: 'error' });
-    } finally {
-      submitButton.disabled = false;
-      submitButton.textContent = 'Save Gateway Settings';
-    }
-  });
-
-  return card;
-}
-
-/**
- * 6. SOS Fallback Card (Admin Only) — G1's third SOS fallback tier
+ * 5. SOS Fallback Card (Admin Only) — G1's third SOS fallback tier
  * (Mobile Improvement Plan Phase 4.3): the one destination a Tanod's
  * phone SMSes DIRECTLY (own SIM, no gateway) when both the direct app
  * POST and the workstation itself are confirmed unreachable. A single
- * non-secret phone number, same `system_settings` override W21 already
- * established for the SMS Gateway keys above — explicit user decision,
- * 2026-09-13 (see `SettingsController::KEYS`'s own comment).
+ * non-secret phone number, part of the same `system_settings` override
+ * W21 established — explicit user decision, 2026-09-13 (see
+ * `SettingsController::KEYS`'s own comment).
  */
 function buildSosFallbackCard(settings) {
   const card = document.createElement('div');

@@ -80,6 +80,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
   searchInput.type = 'search';
   searchInput.className = 'personnel-search-input';
   searchInput.placeholder = 'Search by name or username…';
+  searchInput.setAttribute('aria-label', 'Search users');
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value.trim().toLowerCase();
     renderFilteredList();
@@ -377,7 +378,7 @@ function buildCreateModal(onSuccess, onCancel) {
   passwordInput.id = 'modal-password';
   passwordInput.type = 'password';
   passwordInput.className = 'personnel-form-input';
-  passwordInput.placeholder = 'At least 12 characters, mixed case + a digit';
+  passwordInput.placeholder = 'Enter a strong password';
   passwordInput.required = true;
   passwordInput.style.cssText = 'width: 100%; padding-right: 2.5rem;';
 
@@ -394,10 +395,17 @@ function buildCreateModal(onSuccess, onCancel) {
   });
 
   passWrap.append(passwordInput, passToggle);
+  // The character-rule reminder used to live only in the placeholder, which
+  // vanishes the moment the user starts typing — exactly when they'd need
+  // it to know why a submit was rejected (§13: don't rely on a message
+  // that's gone before the mistake happens).
+  const passRuleHint = document.createElement('span');
+  passRuleHint.className = 'personnel-form-hint';
+  passRuleHint.textContent = 'At least 12 characters, with mixed case and a digit.';
   const passHint = document.createElement('span');
   passHint.className = 'personnel-form-hint';
   passHint.textContent = 'Account holder will use this password to sign in initially.';
-  passwordField.append(passwordLabel, passWrap, passHint);
+  passwordField.append(passwordLabel, passWrap, passRuleHint, passHint);
 
   // Role
   const roleField = document.createElement('div');
@@ -539,7 +547,7 @@ function renderUserCell(row, key, viewer, reload) {
       if (!row.contactNumber) {
         return '<span class="text-tertiary">—</span>';
       }
-      return row.contactNumber;
+      return document.createTextNode(row.contactNumber);
     }
 
     case 'status': {

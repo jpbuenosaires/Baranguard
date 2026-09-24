@@ -753,11 +753,20 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
         renderThreadPlaceholder();
       }
     } catch (err) {
+      // Never fall through to renderContactList()'s "No SMS conversations
+      // recorded." — an outage must not read as a quiet inbox, or an
+      // incoming emergency SMS could be missed.
       allConversations = [];
       selectedPhone = null;
-      renderContactList();
       renderThreadPlaceholder();
-      showToast(err instanceof ApiClientError ? err.message : 'Could not load conversations.', { variant: 'error' });
+      const listHost = contactPane._listHost;
+      if (listHost) {
+        renderError(
+          listHost,
+          err instanceof ApiClientError ? err.message : 'Could not load conversations.',
+          loadConversations,
+        );
+      }
     }
   }
 
@@ -779,6 +788,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
     searchInput.type = 'search';
     searchInput.className = 'sms-search-input';
     searchInput.placeholder = 'Search messages…';
+    searchInput.setAttribute('aria-label', 'Search conversations');
 
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';
@@ -1194,6 +1204,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
     const composeTextarea = document.createElement('textarea');
     composeTextarea.className = 'sms-compose-textarea';
     composeTextarea.placeholder = 'I-type ang inyong mensahe dito...';
+    composeTextarea.setAttribute('aria-label', 'Reply message');
     composeTextarea.rows = 2;
     // Where the AI composer's "Use this draft" delivers to.
     composeTextareaRef = composeTextarea;
