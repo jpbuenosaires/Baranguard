@@ -28,14 +28,14 @@
 
 let menuSeq = 0;
 
-export function Menu({ trigger, label, align = 'right', onOpen }) {
+export function Menu({ trigger, label, align = 'right', panelClass = '', onOpen }) {
   const id = `menu-${++menuSeq}`;
 
   const el = document.createElement('div');
   el.className = 'menu';
 
   const panel = document.createElement('div');
-  panel.className = 'menu__panel' + (align === 'left' ? ' menu__panel--left' : '');
+  panel.className = ('menu__panel' + (align === 'left' ? ' menu__panel--left' : '') + (panelClass ? ` ${panelClass}` : '')).trim();
   panel.id = id;
   panel.setAttribute('role', 'menu');
   panel.setAttribute('aria-label', label);
@@ -127,9 +127,9 @@ export function Menu({ trigger, label, align = 'right', onOpen }) {
  * A single row inside a Menu panel. Returns a real <button role="menuitem">
  * so it is focusable and announced correctly.
  *
- * @param {{label: string, icon?: (size:number)=>string, description?: string, onClick: () => void, danger?: boolean}} props
+ * @param {{label: string, icon?: (size:number)=>string, description?: string, rightAccessory?: HTMLElement, onClick: () => void, danger?: boolean}} props
  */
-export function MenuItem({ label, icon, description, onClick, danger = false }) {
+export function MenuItem({ label, icon, description, rightAccessory, onClick, danger = false }) {
   const item = document.createElement('button');
   item.type = 'button';
   item.className = 'menu__item' + (danger ? ' menu__item--danger' : '');
@@ -144,6 +144,7 @@ export function MenuItem({ label, icon, description, onClick, danger = false }) 
   const text = document.createElement('span');
   text.className = 'menu__item-text';
   const labelEl = document.createElement('span');
+  labelEl.className = 'menu__item-label';
   labelEl.textContent = label;
   text.appendChild(labelEl);
   if (description) {
@@ -153,6 +154,20 @@ export function MenuItem({ label, icon, description, onClick, danger = false }) 
     text.appendChild(descEl);
   }
   item.appendChild(text);
+  if (rightAccessory) {
+    item.appendChild(rightAccessory);
+  }
   item.addEventListener('click', onClick);
   return item;
+}
+
+/**
+ * An accessible visual divider row inside a Menu panel.
+ * @returns {HTMLHRElement}
+ */
+export function MenuDivider() {
+  const hr = document.createElement('hr');
+  hr.className = 'menu__divider';
+  hr.setAttribute('role', 'separator');
+  return hr;
 }
