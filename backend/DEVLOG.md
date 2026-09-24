@@ -14924,3 +14924,106 @@ reasoned fixes against documented platform behavior, not blind
 guesses, but per SPRINTS.md's "prove it, don't claim it" they stay
 logged as code-only until a real device/gateway-phone session confirms
 them.
+
+## 2026-09-24 (10) — External business-rules audit reconciled against the live code; 6 "quick win" findings fixed and verified end-to-end
+
+An external audit (36 findings against a business-rules catalogue, not the
+live code) was reconciled by three Explore passes before touching anything.
+Most Critical/High claims were real, but a few were wrong: **C-04 ("no
+backup/DR at all") is REFUTED** — `backend/scripts/backup.sh` and
+`restore-drill.sh` already do real encrypted backups and a genuine
+restore-and-verify test (row-count fingerprinting, legal-hold awareness,
+FK-count checks); the only actual gap is scheduling, already tracked as
+REMAINING.md item C2. Evidence-hash validation is REFUTED as a gap (it's
+already server-recomputed) — only magic-byte format checking was missing.
+Login/logout audit coverage is REFUTED as a gap — only failed-authorization
+and raw-narrative-read events weren't audited. The user scoped this session
+to the 6 confirmed, code-only, no-policy-decision-needed fixes; bigger items
+(MFA, HTTPS/TLS + endpoint lockdown, session-storage redesign, hardware
+device attestation, privacy governance/PIA, retention-period policy calls,
+duplicate/merge workflows) are explicitly deferred, not started.
+
+1. **H-04 (web UI fabricates a blotter case number)** —
+   `web/src/pages/blotter-detail.js` had `` `BLT-2026-${blotterId}` ``
+   hardcoded in 3 places, synthesizing a look-alike official case number
+   whenever `display_id` wasn't yet set. Replaced with a literal
+   `'Not yet assigned'` string in all three.
+2. **H-03 (`GET /blotter` still lists for Punong Barangay)** —
+   `BlotterController::index()`'s role list included `punong_barangay`,
+   even though the list SCREEN was removed from the web UI 2026-09-10 and
+   REFERENCE.md §3/§7 both say PB has no blotter list. The server-side gate
+   was never tightened to match. Fixed to `['admin', 'secretary']`.
+3. **H-01 (a Tanod with an active dispatch can be double-booked on a
+   DIFFERENT incident)** — `DispatchController::create()`'s only
+   anti-double-assignment guard was scoped to the SAME incident; a Tanod
+   already `assigned`/`en_route`/`arrived` on incident A could still be
+   assigned to incident B. Added a second guard checking for any OTHER
+   active dispatch by that tanod_id, hard 409 reject, no admin-override
+   escape hatch for this pass (the sanctioned "multi-responder" feature —
+   several Tanods on ONE incident — is untouched and orthogonal).
+4. **H-02 (off-duty can be declared while a dispatch is still active)** —
+   `DutyStatusController::applyToggle()` never checked for an active
+   dispatch before writing `off_duty`. Added the same check, placed AFTER
+   the idempotent-retry short-circuit so a replayed `client_event_id`
+   still returns the original success rather than getting newly blocked.
+5. **H-10 (evidence upload trusts the client's claimed MIME type)** —
+   `IncidentsController::uploadEvidence()` already recomputes sha256
+   server-side (not a gap), but never checked the file's real format.
+   Added a per-`type` (photo/voice) magic-byte allow-list via `finfo`,
+   rejecting on allow-list violation only (not claimed-vs-detected
+   mismatch — ADTS-vs-MP4-boxed AAC is genuinely ambiguous to sniff, so a
+   strict-match check would false-positive on real voice notes). NOT
+   malware scanning or EXIF stripping — separate, larger audit items.
+6. **H-06/H-07 (audit gaps: failed authorization, raw-narrative reads,
+   downloads)** — `AuthMiddleware::requireRole()`/`requireTenant()` never
+   audited a denial; `IncidentsController::show()` never audited the one
+   `raw_narrative` disclosure; the Lupon packet and report-export download
+   handlers were audited only at GENERATE time, never at actual download.
+   The tricky part: several `requireRole()`/`requireTenant()` call sites
+   fire from INSIDE an already-open transaction (e.g.
+   `DispatchController::create()`'s tenant check, after its `FOR UPDATE`
+   lock) — auditing on the request's own `$pdo` would get erased by that
+   controller's own `rollBack()`. Added `baranguard_db_fresh()` (a new,
+   deliberately non-memoized connection, `backend/config/db.php`) so the
+   two denial-audit writes commit independently of the caller's
+   transaction. `raw_narrative_viewed` and the two new download-audit
+   calls use the normal `$pdo` (both run outside any transaction).
+
+**Verified for real, not just claimed** (all against disposable DBs, real
+XAMPP MySQL/Apache already running this session, never the real
+`baranguard`/`baranguard_uiseed` databases):
+- `php -l` on every touched PHP file — clean.
+- `verify-second-responder.sh`: 25/25 (was 22/22) — added 3 assertions
+  proving a Tanod active on one incident is rejected for a second, and
+  that the existing same-incident/multi-responder behavior is unchanged.
+- `verify-duty-status-map-upload.sh`: 46/46 (was 41/41) — added 5
+  assertions proving off-duty is blocked with an active dispatch, the
+  rejected attempt writes no row, and — critically — that retrying an
+  already-recorded off-duty transition still succeeds even once a new
+  active dispatch exists (idempotency intact).
+- `verify-evidence-upload.sh`: 19/19 (was 16/18 before the fixture fix —
+  step 11 had been claiming `type=voice` for actual JPEG bytes, which the
+  new magic-byte check correctly started rejecting; fixed the fixture to
+  claim `photo`/`image/jpeg`, matching what it actually is) — added a new
+  step 13 proving a real JPEG lying about being a voice note is rejected.
+- `verify-sprint7-pentest-incidents.sh`: 69/69 (was 68/68) — added the PB
+  403-on-`GET /blotter` assertion.
+- `verify-sprint7-audit.sh`: 57/57 (was 52/52) — added assertions for all
+  four new audit actions, including the critical one: a cross-tenant
+  `POST /dispatch` (which fires `requireTenant()` inside an open
+  transaction) still leaves a `tenant_access_denied` row in the DB after
+  the controller's own rollback — proving the `baranguard_db_fresh()`
+  fix actually works, not just that it compiles. (One ordering bug found
+  and fixed while adding this: the new cross-tenant-dispatch test was
+  originally placed BEFORE the existing "barangay 2 admin sees none of
+  barangay 1's audit rows" check, and gave barangay 2's own admin a
+  legitimate self-scoped audit row that broke that check's stale
+  assumption "barangay 2 has done nothing yet" — reordered, not a real
+  security regression.)
+- `verify-w3-w4-dispatch-gis.sh`: 38/38, `verify-ai-tools.sh`: 63/63,
+  `verify-b2-pentest-remaining-resources.sh`: 59/59 — no regressions.
+- `node web/scripts/verify-web-wiring.mjs`: 563/563.
+- `cd web/tests && npm test`: 407/407.
+
+`docs/REMAINING.md` and `docs/HANDOFF.md` updated with the reconciled
+audit findings and this fix list.

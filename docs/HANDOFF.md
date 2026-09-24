@@ -27,6 +27,22 @@ pre-existing bug caught along the way (a notification-panel header never
 appended its title/badge elements). Run the suite after any further web
 change alongside `verify-web-wiring.mjs` (563/563).
 
+**Also 2026-09-24 — an external 36-finding business-rules audit was
+reconciled against the live code and its 6 confirmed "quick win" items
+fixed** (`docs/REMAINING.md` §H, `DEVLOG.md` (10)): a fabricated blotter
+case number in the web UI, Punong Barangay still able to list blotter
+records server-side after the screen was removed, a Tanod double-booked
+across two different incidents, off-duty declarable with an active
+dispatch, evidence upload trusting the client's claimed file format, and
+audit-log gaps for failed authorization/raw-narrative reads/downloads.
+Several of the audit's own Critical claims turned out to be wrong once
+checked — most notably "no backup/DR exists," which is false (real
+encrypted backups and a genuine restore-drill already exist; only
+scheduling is missing, tracked as C2/B3 below). Bigger items (MFA,
+HTTPS/TLS enforcement, session-storage redesign, privacy governance,
+retention-period policy calls) were deliberately not started — see
+REMAINING.md §H for the full disposition of all 36 findings.
+
 **New 2026-09-23/24 — Semaphore removed, replaced by a local GSM
 outbound gateway; C7 root-caused, fixed, AND device-verified working;
 A4 (including its subprocess-timeout gap)/A5/M13's primary path all

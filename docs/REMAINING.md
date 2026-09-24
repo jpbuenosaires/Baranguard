@@ -34,6 +34,49 @@ inbound rule for port 80 (only 8081) — user has the
 
 ---
 
+## H. 2026-09-24 external business-rules audit — 6 "quick win" items CLOSED, rest deliberately deferred
+
+A 36-finding external audit (4 Critical/22 High/7 Medium/3 Low), run against
+a business-rules catalogue rather than the live code, was reconciled against
+the actual implementation before any fix landed — see `DEVLOG.md`
+2026-09-24 (10) for the full reconciliation and every fix's verification
+evidence. Several of the audit's own claims were wrong once checked: **C-04
+("no backup/DR at all") is REFUTED** — `backend/scripts/backup.sh` and
+`restore-drill.sh` already do real encrypted backups and a genuine
+restore-and-verify test; the only real gap is scheduler wiring, already
+tracked below as C2/B3. Evidence-hash validation and login/logout audit
+coverage were also refuted as gaps (both already exist) — only narrower
+sub-parts of those findings were real.
+
+**Closed, code-only, verified end-to-end against disposable DBs**: H-04
+(fabricated blotter case number in `blotter-detail.js`), H-03 (`GET
+/blotter` still allowed Punong Barangay server-side after the list screen
+was removed from the web UI), H-01 (a Tanod with an active dispatch could
+be double-booked onto a different incident), H-02 (off-duty could be
+declared while a dispatch was still active), H-10 (evidence upload trusted
+the client's claimed MIME type — magic-byte validation added), H-06/H-07
+(audit gaps: failed authorization, the one raw-narrative read, and Lupon
+packet/report-export downloads were unaudited).
+
+**Deliberately NOT started this session** (need a policy call, new
+infrastructure, or an explicit architecture-review sign-off, not just
+code): C-02 (MFA), C-03 (HTTPS/TLS enforcement + locking down the
+mobile/web API-base-URL override — this is the same open item as F1
+above, not a new one), H-05 (web JWT storage), H-09 (device authenticity
+beyond the self-reported `X-Device-Id`), H-14 (privacy governance/PIA/DPO),
+H-15 (retention periods for `gps_track`/`duty_status`/`shift_schedule`/
+notifications/`map_package` — REFERENCE.md §11 requires an architecture
+review before setting a retention constant, not a runbook edit), H-16
+(incident duplicate/merge workflow), H-17 (shift minimum-staffing
+constraints), and the remaining ~20 Medium/Low findings. Full disposition
+of every one of the 36 findings — confirmed / partially confirmed /
+refuted, with file-level evidence — lives only in the audit reconciliation
+itself (not re-copied here); ask for it again if picking up more of this
+audit in a future session, since re-deriving it from scratch would be
+wasted work already done once.
+
+---
+
 ## A. Blocked on hardware/accounts — start these first
 
 ### ✅ A1. Android device — 6 of 6 PASSED on the Infinix X6840 (2026-09-19/24) — DONE
