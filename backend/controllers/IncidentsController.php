@@ -538,6 +538,11 @@ final class IncidentsController
             $payload['complainant_name'] = $incident['complainant_name'];
             $payload['respondent_name'] = $incident['respondent_name'];
             $payload['complainant_contact_number'] = $incident['complainant_contact_number'];
+
+            // Code-review finding H-06/H-07 (2026-09-24): this, the one
+            // raw-narrative disclosure in the system, was never audited.
+            // Identifiers only, per Rule 8 — never the narrative itself.
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'raw_narrative_viewed', 'incident', $incidentId, []);
         }
 
         Http::send(200, $payload);
@@ -748,6 +753,30 @@ final class IncidentsController
         $serverSha256 = hash_file('sha256', $tmpPath);
         if (!hash_equals($serverSha256, strtolower($clientSha256))) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'sha256 does not match the uploaded bytes.');
+        }
+
+        // Code-review finding H-10 (2026-09-24): the sha256 check above
+        // only proves the bytes weren't corrupted in transit — it says
+        // nothing about whether they're actually a photo/voice-note file
+        // at all, since `mime_type` above is taken as-is from the client.
+        // Real per-type format check via magic bytes (finfo), not the
+        // claimed Content-Type. Rejects on allow-list violation only, not
+        // on a claimed-vs-detected mismatch: ADTS-vs-MP4-boxed AAC is
+        // genuinely ambiguous to magic-byte sniffing depending on the
+        // recording device/OS, so a strict equality check would risk
+        // false-positive rejection of real evidence. Not malware scanning
+        // or EXIF stripping — those are separate, larger audit items.
+        $allowedMimeByType = [
+            'photo' => ['image/jpeg', 'image/png'],
+            'voice' => ['audio/aac', 'audio/x-hx-aac-adts', 'audio/mp4', 'video/mp4'],
+        ];
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo !== false ? finfo_file($finfo, $tmpPath) : false;
+        if ($finfo !== false) {
+            finfo_close($finfo);
+        }
+        if ($detectedMime === false || !in_array($detectedMime, $allowedMimeByType[$type], true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'The uploaded file is not a recognized format for this evidence type.');
         }
 
         $baseDir = self::evidenceStorageDir();

@@ -77,7 +77,7 @@ function openPrintModal(incident, blotter, evidence) {
   modal.style.width = '95%';
 
   const hasBlotter = Boolean(blotter?.displayId || blotter?.blotterId);
-  const entryId = blotter?.displayId || (blotter?.blotterId ? `BLT-2026-${String(blotter.blotterId).padStart(3, '0')}` : (incident?.displayId || `#${incident.incidentId}`));
+  const entryId = blotter?.displayId || (blotter?.blotterId ? 'Not yet assigned' : (incident?.displayId || `#${incident.incidentId}`));
   const entryLabel = hasBlotter ? 'BLOTTER ENTRY NO.' : 'INCIDENT REFERENCE NO.';
   const incidentDate = new Date(incident.createdAt).toLocaleDateString('en-US', {
     month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -308,7 +308,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     content.innerHTML = '';
 
     const hasBlotter = Boolean(blotter?.displayId || blotter?.blotterId);
-    const blotterDisplayId = blotter?.displayId || (blotter?.blotterId ? `BLT-2026-${String(blotter.blotterId).padStart(3, '0')}` : null);
+    const blotterDisplayId = blotter?.displayId || (blotter?.blotterId ? 'Not yet assigned' : null);
     const incidentDisplayId = incident?.displayId || `#${incident?.incidentId || incidentId}`;
 
     // Update Page Header Title & Subtitle based on statutory lifecycle
@@ -454,7 +454,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     card.className = 'card case-hero';
 
     const hasBlotter = Boolean(blotter?.displayId || blotter?.blotterId);
-    const blotterDisplayId = blotter?.displayId || (blotter?.blotterId ? `BLT-2026-${String(blotter.blotterId).padStart(3, '0')}` : null);
+    const blotterDisplayId = blotter?.displayId || (blotter?.blotterId ? 'Not yet assigned' : null);
     const incidentDisplayId = incident?.displayId || `#${incident.incidentId}`;
 
     // Header Row: Type + Icon + Badges

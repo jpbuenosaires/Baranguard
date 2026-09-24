@@ -83,17 +83,20 @@ final class BlotterController
      * IS NOT NULL` clause documents that invariant rather than doing real
      * filtering work.
      *
-     * Roles: Admin/Secretary/PB, same as `showByIncident()` minus Tanod —
-     * a Tanod's only legitimate blotter access is a specific record they
-     * reported or were dispatched on (already gated in `show()`/
-     * `showByIncident()`), not a browsable ledger of every finalized case
-     * in the barangay.
+     * Roles: Admin/Secretary only. Punong Barangay was removed from this
+     * gate 2026-09-24 (code-review finding H-03) — REFERENCE.md §3/§7 say
+     * PB has no blotter LIST (the web list screen was removed 2026-09-10),
+     * but this server-side role check was never tightened to match, so a
+     * PB session could still call this endpoint directly. PB's individual-
+     * incident blotter access (`show()`/`showByIncident()`) is untouched —
+     * only the browsable ledger of every finalized case is now Admin/
+     * Secretary only.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
     public static function index(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'punong_barangay']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         $barangayId = $identity['barangay_id'];
 
         $page = max(1, (int) (Http::query('page') ?? '1'));
@@ -814,6 +817,15 @@ final class BlotterController
         if (!is_file($path)) {
             throw new ApiError(404, 'NOT_FOUND', 'No packet has been generated for this incident yet.');
         }
+
+        // Code-review finding H-06/H-07 (2026-09-24): generate() already
+        // audits 'lupon_packet_generated', but the actual download fetch —
+        // arguably the more sensitive event, since this is the full
+        // approved narrative — never was. Distinct action string so the
+        // two are never conflated in the audit trail.
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'lupon_packet_downloaded', 'blotter_record', (int) $context['blotter_id'], [
+            'incident_id' => (int) $context['incident_id'],
+        ]);
 
         header('Content-Type: application/pdf');
         header('Content-Length: ' . (string) filesize($path));

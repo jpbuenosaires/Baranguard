@@ -152,6 +152,26 @@ final class DutyStatusController
             ];
         }
 
+        // Code-review finding H-02 (2026-09-24): nothing here checked
+        // whether the caller had an active dispatch before letting them go
+        // off_duty, so live rosters and actual field coverage could
+        // silently diverge. Checked only for a genuinely NEW status change
+        // (after the idempotent-retry return above), so replaying an
+        // already-recorded off_duty transition via the same client_event_id
+        // still short-circuits to the original success rather than
+        // re-running this check.
+        if ($status === 'off_duty') {
+            $activeDispatchStmt = $pdo->prepare(
+                "SELECT 1 FROM dispatch
+                 WHERE tanod_id = :tanod_id AND status IN ('assigned','en_route','arrived')
+                 LIMIT 1"
+            );
+            $activeDispatchStmt->execute(['tanod_id' => $identity['user_id']]);
+            if ($activeDispatchStmt->fetch(PDO::FETCH_ASSOC) !== false) {
+                throw new ApiError(409, 'CONFLICT', 'Cannot go off duty while a dispatch is still active.');
+            }
+        }
+
         $insertStmt = $pdo->prepare(
             "INSERT INTO duty_status (user_id, status, channel, client_event_id, changed_at)
              VALUES (:user_id, :status, :channel, :client_event_id, UTC_TIMESTAMP())"
