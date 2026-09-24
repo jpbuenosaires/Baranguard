@@ -67,7 +67,7 @@ export function renderLoginPage(root, onSuccess) {
       <div class="login-hero__brand">
         <span class="login-hero__brand-mark">
           <span class="login-hero__brand-pulse" aria-hidden="true"></span>
-          <span class="icon-badge icon-badge--hero">${icons.shield(30)}</span>
+          <img class="icon-badge icon-badge--hero" src="assets/logo.svg" alt="Baranguard logo">
         </span>
         <span class="login-hero__wordmark">BARANGUARD</span>
       </div>
@@ -96,7 +96,7 @@ export function renderLoginPage(root, onSuccess) {
 
   const mobileBrand = document.createElement('div');
   mobileBrand.className = 'login-card__mobile-brand';
-  mobileBrand.innerHTML = `<span class="icon-badge icon-badge--brand">${icons.shield(18)}</span><span>BARANGUARD</span>`;
+  mobileBrand.innerHTML = `<img class="icon-badge icon-badge--brand" src="assets/logo.svg" alt="" aria-hidden="true"><span>BARANGUARD</span>`;
 
   const brand = document.createElement('div');
   brand.className = 'login-card__brand';

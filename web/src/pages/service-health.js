@@ -37,6 +37,7 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
+import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 
 const REFRESH_MS = 30000;
 
@@ -145,13 +146,13 @@ const DEPENDENCIES = [
     description: 'Aggregated push and SMS transport routing readiness',
     icon: icons.bell,
     probeType: 'Aggregate Routing Check',
-    probeDetail: 'Passes if either FCM or Semaphore SMS transport is configured',
-    configKey: 'FCM_SERVICE_ACCOUNT_PATH or SEMAPHORE_API_KEY',
+    probeDetail: 'Passes if either FCM or the local GSM SMS gateway is configured',
+    configKey: 'FCM_SERVICE_ACCOUNT_PATH or GSM_GATEWAY_ENABLED',
     impacted: [
       'Multi-channel emergency escalation to tanods and desk officers',
       'Automated panic broadcast triggers',
     ],
-    runbook: '# Ensure at least one notification transport is configured:\n# Configure FCM_SERVICE_ACCOUNT_PATH or SEMAPHORE_API_KEY in backend/.env',
+    runbook: '# Ensure at least one notification transport is configured:\n# Configure FCM_SERVICE_ACCOUNT_PATH or set GSM_GATEWAY_ENABLED=true in backend/.env',
   },
   {
     key: 'fcm',
@@ -169,19 +170,19 @@ const DEPENDENCIES = [
     runbook: '# Download service-account.json from Firebase Console:\nFCM_SERVICE_ACCOUNT_PATH=path/to/firebase-credentials.json\n# Set in backend/.env',
   },
   {
-    key: 'smsSemaphore',
+    key: 'smsGsmGateway',
     domain: 'communications',
-    label: 'Semaphore SMS Gateway',
-    description: 'Outbound citizen alert and broadcast SMS gateway provider',
+    label: 'GSM SMS Gateway',
+    description: 'Outbound citizen alert and broadcast SMS via the tethered gateway phone’s own SIM',
     icon: icons.messageSquare,
-    probeType: 'API Secret Probe',
-    probeDetail: 'Validates SEMAPHORE_API_KEY credential presence',
-    configKey: 'SEMAPHORE_API_KEY',
+    probeType: 'Config Flag Probe',
+    probeDetail: 'Validates GSM_GATEWAY_ENABLED is explicitly set to true',
+    configKey: 'GSM_GATEWAY_ENABLED',
     impacted: [
       'Barangay emergency broadcast SMS alerts to resident phone lists (W7)',
       'Two-way citizen communication replies from SMS Monitor',
     ],
-    runbook: '# Register on Semaphore.co and set API key in backend/.env:\nSEMAPHORE_API_KEY=your_semaphore_key',
+    runbook: '# Install the sms-gateway/ companion app on the tethered phone,\n# grant SEND_SMS (adb shell pm grant), then set in backend/.env:\nGSM_GATEWAY_ENABLED=true',
   },
 ];
 
@@ -670,7 +671,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       ['ollama', 'Local AI (Ollama)'],
       ['gsmIngestion', 'GSM ingestion'],
       ['fcm', 'Push (FCM)'],
-      ['smsSemaphore', 'SMS (Semaphore)'],
+      ['smsGsmGateway', 'SMS (GSM gateway)'],
     ];
 
     const list = document.createElement('ul');
@@ -909,30 +910,9 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 }
 
 function renderLoading(container) {
-  container.innerHTML = '';
-  const wrap = document.createElement('div');
-  wrap.className = 'stack';
-  wrap.setAttribute('role', 'status');
-  wrap.setAttribute('aria-label', 'Checking operational service health');
-  for (let i = 0; i < 4; i++) {
-    const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton skeleton--block';
-    wrap.appendChild(skeleton);
-  }
-  container.appendChild(wrap);
+  renderLoadingSkeleton({ container, count: 4, ariaLabel: 'Checking operational service health' });
 }
 
 function renderError(container, message, onRetry) {
-  container.innerHTML = '';
-  const block = document.createElement('div');
-  block.className = 'card state-block state-block--error';
-  block.setAttribute('role', 'alert');
-  const text = document.createElement('p');
-  text.textContent = message;
-  const retryButton = document.createElement('button');
-  retryButton.className = 'primary';
-  retryButton.textContent = 'Retry Diagnostics';
-  retryButton.addEventListener('click', onRetry);
-  block.append(text, retryButton);
-  container.appendChild(block);
+  renderErrorState({ container, message, onRetry, retryLabel: 'Retry Diagnostics' });
 }

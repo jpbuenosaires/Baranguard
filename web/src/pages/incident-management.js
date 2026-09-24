@@ -324,6 +324,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   searchInput.type = 'search';
   searchInput.className = 'incident-search-input';
   searchInput.placeholder = 'Search incidents…';
+  searchInput.setAttribute('aria-label', 'Search incidents');
 
   let searchDebounce = null;
   searchInput.addEventListener('input', () => {
@@ -365,7 +366,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     { value: 'critical', label: 'Critical' },
     { value: 'high', label: 'High' },
     { value: 'normal', label: 'Medium' },
-    { value: 'low', label: 'Low' },
   ];
   for (const opt of priorityOptions) {
     const el = document.createElement('option');
@@ -389,7 +389,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     { value: 'pending', label: 'Active' },
     { value: 'dispatched', label: 'Responding' },
     { value: 'resolved', label: 'Resolved' },
-    { value: 'closed', label: 'Closed' },
   ];
   for (const opt of statusOptions) {
     const el = document.createElement('option');
@@ -398,12 +397,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     statusSelect.appendChild(el);
   }
   statusSelect.addEventListener('change', () => {
-    const val = statusSelect.value;
-    if (val === 'closed') {
-      statusFilter = 'resolved';
-    } else {
-      statusFilter = val || undefined;
-    }
+    statusFilter = statusSelect.value || undefined;
     currentPage = 1;
     load();
   });
@@ -785,7 +779,17 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     const statBadge = document.createElement('span');
     statBadge.className = `incident-detail-badge incident-detail-badge--${row.status}`;
-    statBadge.textContent = statLabel;
+
+    let statIconSvg = icons.alertTriangle(13);
+    if (row.status === 'dispatched') {
+      statIconSvg = icons.radio(13);
+    } else if (row.status === 'resolved') {
+      statIconSvg = icons.checkCircle(13);
+    } else if (row.status === 'closed') {
+      statIconSvg = icons.check(13);
+    }
+
+    statBadge.innerHTML = `${statIconSvg} <span>${escapeHtml(statLabel)}</span>`;
 
     badgesRow.append(prioBadge, statBadge);
     rightPanel.appendChild(badgesRow);
@@ -1282,7 +1286,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     lPrio.textContent = 'Priority';
     const selPrio = document.createElement('select');
     selPrio.className = 'incident-form-select';
-    for (const [v, l] of [['normal', 'Medium / Normal'], ['high', 'High'], ['critical', 'Critical'], ['low', 'Low']]) {
+    for (const [v, l] of [['normal', 'Medium / Normal'], ['high', 'High'], ['critical', 'Critical']]) {
       const opt = document.createElement('option');
       opt.value = v;
       opt.textContent = l;
@@ -1464,7 +1468,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     lPrio.textContent = 'Priority';
     const selPrio = document.createElement('select');
     selPrio.className = 'incident-form-select';
-    for (const [v, l] of [['normal', 'Medium / Normal'], ['high', 'High'], ['critical', 'Critical'], ['low', 'Low']]) {
+    for (const [v, l] of [['normal', 'Medium / Normal'], ['high', 'High'], ['critical', 'Critical']]) {
       const opt = document.createElement('option');
       opt.value = v;
       opt.textContent = l;
