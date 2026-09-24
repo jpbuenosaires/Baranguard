@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Permission granted headlessly via `adb shell pm grant` at install
+         time (see README) — no in-app runtime-permission UI is needed
+         since this app is never operated by touch, only by the
+         workstation over adb (same trust boundary gsm-ingest-daemon.php
+         already relies on for the READ side of this same phone). -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
+    <application
+        android:allowBackup="false"
+        android:label="Baranguard SMS Gateway"
+        android:icon="@android:drawable/sym_action_chat"
+        android:theme="@android:style/Theme.Material.Light">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="Baranguard SMS Gateway">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Triggered from the workstation via `adb shell am broadcast`,
+             action ph.baranguard.smsgateway.SEND, explicit component
+             target (SendSmsReceiver), with string extras to/body/correlation_id.
+             Explicit component target, not an implicit broadcast —
+             works from adb regardless of Android version's implicit-
+             broadcast restrictions. exported=true is required for adb
+             shell (a different UID) to reach it at all; there is no
+             other caller on this phone that could reach it, and the
+             workstation side is the only thing that ever sends this
+             broadcast — same physical-adb-access trust boundary as
+             gsm-ingest-daemon.php's read side. -->
+        <receiver
+            android:name=".SendSmsReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="ph.baranguard.smsgateway.SEND" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
