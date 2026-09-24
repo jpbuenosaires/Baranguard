@@ -13899,3 +13899,1028 @@ Files: `mobile/src/pages/home.tsx`, `mobile/src/services/criticalAlertStore.ts`,
 `mobile/android/app/src/main/java/ph/baranguard/tanod/CriticalAlertNotifier.java`,
 `mobile/android/app/src/main/java/ph/baranguard/tanod/FullScreenAlertPlugin.java`,
 `mobile/src/theme/app.css`.
+
+## 2026-09-23 — Web render test suite (`web/tests/`): 405 tests, 21 real defects found
+
+User asked for a web test suite "that covers all". Architecture decision
+confirmed with the user first (the web app is deliberately npm-free and
+had no test runner): **Node's built-in `node:test` + jsdom**, isolated in
+`web/tests/` with its own `package.json` so the shipped dashboard stays
+dependency-free. `web/tests/.htaccess` denies it to Apache. Chosen over
+Playwright because the two bugs hit that same day (AppShell's
+`clockInterval` TDZ, and an unclosed JSDoc comment in ai-review.js that
+silently commented out four functions) were both runtime ReferenceErrors
+on render — invisible to `node --check` and `verify-web-wiring.mjs`,
+caught only by executing the page, which this does in seconds with no
+backend or database.
+
+How it works: `global fetch` is replaced (`harness/fakeApi.mjs`) — the
+app's only path to the server — so the real `apiClient.js` runs against
+wire-format fixtures (`harness/fixtures.mjs`: snake_case, bare SQL UTC
+datetimes, enums from the migrations). The fake server mirrors the rules
+pages depend on, notably only a Secretary token receiving `raw_narrative`
+(§2 Rule 1). Any request with no fixture fails the test (catches wrong
+endpoint paths). Scenarios: populated / empty / error / xss (every
+free-text field carries a markup canary). `harness/pageSuite.mjs` gives
+every page × allowed role the same six checks: renders with no runtime
+error or `undefined`/`NaN`/`Invalid Date` text; shows a loading state;
+empty ≠ error; server failure → error state whose Retry recovers; no
+server text becomes markup; every control labelled/named. Plus per-page
+role and workflow tests, component tests (DataTable, ConfirmDialog, Menu,
+charts, maps, AiToolPanel healthy/down/not-configured, AppShell nav per
+role), apiClient contract tests, and main.js routing. One jsdom document
+per test file (DateRangePicker binds `document` listeners at import time);
+`node --test` isolates files by process.
+
+Run: `cd web/tests && npm install && npm test` (~18s). Result: 405 tests,
+379 pass, **21 fail — every one a real defect**, 5 `todo` (known gaps).
+The suite was kept strict rather than tuned green; app code was NOT
+changed in this entry. Findings:
+
+- **XSS, server text into innerHTML (5):** gis-live-tracking.js:473
+  (`title="Call ${fullName}"` + `tel:`), user-management.js:549 (contact
+  number returned as a raw renderCell string), map-packages.js:194
+  (`v${pkg.version}`), settings.js:856 (SMS sender name), and ai-review.js
+  location line (new in the uncommitted W8 redesign). The first four
+  pre-date the redesign — the 2026-09-12 "all 11 fixed" audit missed them.
+- **SMS Monitor shows "No SMS conversations recorded." when
+  GET /sms/conversations FAILS** — an outage reads as a quiet inbox; an
+  Admin could miss incoming emergency SMS. Its Live Feed error is also not
+  announced (no role=alert).
+- **Settings General / SMS Gateway error state has no Retry**
+  (settings.js:172-186) — §6 requires error-with-retry.
+- **Hardcoded "Brgy. Dao"** (§2 Rule 6): AppShell topbar jurisdiction
+  chip (every barangay's users see Dao) and ai-review.js location fallback.
+- **Incident Management filters offer `low` priority and `closed`
+  status** — neither exists in the schema, so they can never match.
+- **Settings theme cards** are `div role="button" tabindex="0"` with only
+  a click listener — Enter/Space do nothing for keyboard users.
+- **8 screens have inputs labelled only by placeholder:** Dispatch
+  Center, Incident Management and Personnel search boxes, SMS reply box,
+  AI Review draft + Involved Parties fields + translate select, blotter
+  amend party fields.
+- `todo` (documented, not failing): CSV export has no formula-injection
+  guard (`=`/`+`/`-`/`@` cells); Bar/Donut/Line charts and topbar search
+  results interpolate labels/enums into innerHTML — latent only, every
+  current caller passes code-controlled values.
+
+Also noted: REFERENCE.md §7's W21 list omits `sos_fallback.backup_contact_number`,
+which SettingsController.php does allow — doc drift, not a code bug.
+
+## 2026-09-23 (2) — All 21 defects from the web test suite fixed, plus the 5 latent ones; suite 405/405
+
+User: "fix all of them". Every fix is in presentation code only — no
+endpoint, schema or role change.
+
+- **XSS (5):** escaped/`textContent` at gis-live-tracking.js (call link
+  title/aria-label/`tel:`), user-management.js (contact cell is now a text
+  node), map-packages.js (stat-card value), settings.js (sender-name
+  preview built once, filled via `textContent`), ai-review.js (location +
+  source lines).
+- **SMS Monitor outage-as-empty-inbox:** `loadConversations()`'s catch now
+  renders a real error block with Retry in the contact list instead of
+  falling through to "No SMS conversations recorded."
+- **Settings General/SMS Gateway:** error block gained a "Try again"
+  button that re-runs `loadSystemSettingsInto()`.
+- **Hardcoded "Brgy. Dao":** AppShell's jurisdiction chip now resolves the
+  signed-in user's own barangay via `GET /barangays` (one module-cached
+  lookup; chip stays hidden if it fails rather than guessing). ai-review's
+  location fallback is now "No location recorded".
+- **Incident Management:** removed `low` priority (from the filter AND the
+  create/edit forms, where the server would have rejected it) and the
+  `closed` status option + its silent remap to `resolved`.
+- **Keyboard:** Settings theme cards and Live Map personnel cards
+  (`div role="button"`) now handle Enter/Space. The other four
+  role="button" divs in the app already did.
+- **Labels:** aria-label on the Dispatch/Incident/Users/Fatigue/SMS search
+  boxes, SMS reply box, AI draft textarea and translate select; real
+  `for`/`id` pairs on AI Review's Involved Parties fields and the blotter
+  finalize/amend party fields (unique ids per build, since both forms use
+  `buildPartyFields`).
+- **Latent (former `todo`s):** `exportRowsToCsv` prefixes `'` to STRING
+  cells starting with `= + - @` tab/CR (numbers untouched); Bar/Donut/Line
+  charts escape labels, captions, colours and values in their innerHTML
+  templates; AppShell search results escape id/type/status.
+
+REFERENCE.md §5/§7 now list `sos_fallback.backup_contact_number` (it was
+already in SettingsController's allow-list). Verified: `npm test` in
+web/tests 405/405, 0 todo; `verify-web-wiring.mjs` 555/555. Not checked in
+a real browser this session — the user does visual checks themselves.
+
+## 2026-09-23 (3) — C7: battery-optimization exemption added (code only, not device-verified — did not reproduce the kill on the Infinix)
+
+REMAINING.md's C7 entry names `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` as
+"the leading fix to try" if a long locked-screen run ever shows the
+patrol-GPS foreground service getting killed. The 405s foreground run on
+2026-09-19 did NOT reproduce the kill, so this is preemptive prep for the
+next device session, not a confirmed-bug fix — logged as a deliberate
+scope decision, user-requested, not something Sprint 8's "verification,
+not new features" rule was silently bent for.
+
+**What changed:**
+- `AndroidManifest.xml`: added
+  `android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (a normal
+  permission — grants nothing by itself, only lets the app show the OS's
+  own exemption dialog).
+- `PatrolLocationPlugin.java`: new `requestBatteryOptimizationExemption()`
+  method. Checks `PowerManager.isIgnoringBatteryOptimizations()` first
+  (no-op if already exempt, and below API 23 where Doze doesn't exist);
+  otherwise launches `Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
+  via the foreground Activity. A launch failure (some OEM ROMs block this
+  intent outright) resolves rather than rejects — best-effort, matches
+  every other native-plugin edge in this app.
+- `patrolLocationService.ts`: `startPatrolTracking()` now fires this
+  request (fire-and-forget, `.catch(() => undefined)`) right after
+  `PatrolLocation.start()` succeeds, so it's tied to the exact moment
+  background tracking actually starts (going on duty), not a separate UI
+  control. Never blocks or delays going on duty — same non-fatal
+  treatment this function already gives every other patrol-tracking edge.
+
+Disclosed, not silent: this shows a real OS system dialog the Tanod can
+approve or deny, same honesty standard `PatrolLocationService`'s own
+persistent notification already follows (§2 Rule 6).
+
+**Verified:** `npx tsc --noEmit` clean (mobile). `./gradlew
+compileDebugJavaWithJavac` — BUILD SUCCESSFUL, `app:compileDebugJavaWithJavac`
+ran with no errors. **Not verified:** the actual OS dialog on a real
+device, or whether it measurably changes C7's outcome — needs the next
+Infinix session (a long locked-screen run was already the outstanding
+step regardless).
+
+## 2026-09-23 (4) — Real Infinix X6840 device session: C7 fix device-verified, A1 #3 (photo/voice evidence) found a real bug, fixed and closed
+
+Second device session today, same Infinix X6840 as 2026-09-19, connected
+via USB adb (`adb reverse tcp:8081 tcp:8081` for the phone to reach this
+workstation's backend). Rebuilt and installed a fresh APK first
+(`npx vite build && npx cap sync android && ./gradlew assembleDebug &&
+adb install -r`) so the device actually had today's C7 fix and the
+2026-09-22 bug fixes, not the stale build from an earlier session.
+
+**C7 prep (battery-optimization exemption) — device-verified working:**
+went on duty, the OS's ignore-battery-optimizations dialog appeared,
+allowed it. Confirmed via `adb shell dumpsys deviceidle whitelist` —
+`ph.baranguard.tanod` is listed. `dumpsys activity services` confirmed
+`PatrolLocationService` running as a real foreground service;
+`dumpsys notification` confirmed the disclosed "Patrol Tracking"
+notification is live. This only proves the exemption mechanism works —
+it does NOT prove C7's original kill (never reproduced, see 2026-09-19
+(6)) is actually prevented; that still needs the 30+ min locked-screen
+run.
+
+**A1 #3 (photo/voice evidence) — real bug found and fixed:**
+Photo capture worked first try (permission prompt → capture → save,
+141KB/46KB jpgs). Voice memo FAILED on first attempt: "stat failed:
+evidence/recording-... does not exist" surfaced in the UI. Root cause,
+confirmed by reading `capacitor-voice-recorder`'s own
+`VoiceRecorder.java` (not assumed): `stopRecording()` returns `path`
+RELATIVE to the `directory` option passed to `startRecording()` (here
+always `Directory.Data`) — e.g. `"evidence/recording-xxxx.aac"` — never
+an absolute URI. `evidenceCapture.ts`'s `stopVoiceRecording()` was
+calling `Filesystem.stat({ path })`/`readFile({ path })` with no
+`directory` option, so Capacitor's Filesystem plugin treated that
+relative string as already-absolute and threw exactly the error seen on
+screen. Fixed: pass `directory: Directory.Data` through both calls, and
+return `stat.uri` (a real absolute URI) instead of the plugin's raw
+relative `path`, matching the convention every other branch in this file
+already follows. Also corrected this file's header comment, which
+previously (wrongly) claimed the returned path was always a full URI.
+
+Rebuilt, reinstalled (`adb install -r`, app data/session preserved),
+retried — voice memo now saves cleanly. Pulled all evidence files off
+the device (`adb shell run-as ph.baranguard.tanod cat
+files/evidence/<name>`) and verified real magic bytes: `FFD8FFE0...JFIF`
+on both jpgs, `FFF1...` (ADTS/AAC sync word, matches the plugin's
+`AAC_ADTS` output format) on all four `.aac` recordings — 2 photos
+(141447/45874 bytes), 4 recordings (8428–76679 bytes) captured across
+both the buggy and fixed builds. A1 #3 is now closed with real evidence,
+not just "the UI didn't error."
+
+**Files changed:** `mobile/src/services/evidenceCapture.ts` (the fix +
+header comment correction). `AndroidManifest.xml` /
+`PatrolLocationPlugin.java` / `patrolLocationService.ts` were already
+changed earlier today for C7 prep (DEVLOG 2026-09-23 (3)) — this session
+is what device-verified that change.
+
+**Verified:** `npx tsc --noEmit` clean both before and after the fix;
+`./gradlew assembleDebug` BUILD SUCCESSFUL both times; real device
+install + relaunch, no crash (`logcat` clean for the app's pid).
+
+## 2026-09-23 (5) — Real Infinix device session, part 2: Home's "dispatch card refreshes on resume" fix (2026-09-22) was incomplete — found, fixed, device-verified
+
+Continuing the 2026-09-23 device session (DEVLOG (3)/(4)). Verified the
+other two 2026-09-22 code-only fixes for real:
+
+**Heads-up dismiss on ACKNOWLEDGE — confirmed working.** Created a real
+critical test incident (INC-2026-121) via the API as Admin, dispatched it
+to `tanod.reyes` (`POST /dispatch`, dispatch_id 73) — real FCM push sent
+(`notification_delivery` row, `fcm`/`sent` 15:00:42Z). Phone showed the
+heads-up + in-app NEW DISPATCH sheet; tapped ACKNOWLEDGE ALERT.
+`notification_target.acknowledged_at` = 15:01:07Z confirms the server
+side; `adb shell dumpsys notification --noredact` confirmed no
+`NotificationRecord` remains on the `baranguard_critical_alert` channel
+afterward — only the ongoing `baranguard_patrol` foreground-service
+notification. `FullScreenAlertPlugin.dismiss()` genuinely cancels the
+system notification, not just the in-app overlay.
+
+**Home dispatch-card refresh-on-resume — FOUND BROKEN, then fixed.**
+Backgrounded the app (Home button, not force-stop), created a second
+test dispatch (INC-2026-122, dispatch_id 74) via the API, resumed the
+app: the dispatch card did NOT update — user had to separately visit
+Assignments before Home reflected it. Root cause: the 2026-09-22 fix
+(`home.tsx`'s `appStateChange` listener calling `refreshActiveDispatches()`
+on resume) only re-read `listActiveCachedDispatches()` — the LOCAL
+`dispatch_local` SQLite cache. That cache is written in exactly one
+place in the entire app: `assignments.tsx`'s own `load()`, on that
+screen's mount (`cacheDispatchesFromServer`). A push landing while the
+Tanod stays on Home never touches `dispatch_local` —
+`criticalAlertStore.ts`'s push listeners only drive the critical-alert
+overlay, never the cache. So the 2026-09-22 fix correctly re-ran on every
+resume, but against a cache nothing else was updating — the DEVLOG entry
+that closed it as fixed was wrong; it was never actually
+device-exercised (no device was available that session).
+
+**Real fix** (`mobile/src/pages/home.tsx`): `refreshActiveDispatches()`
+now calls `getDispatches()` (server, own-tanod-scoped) and
+`cacheDispatchesFromServer()` first — same pair `assignments.tsx`'s
+`load()` already uses — falling back to the existing cache-only read on
+failure (offline-tolerant, non-fatal, same pattern every other network
+call on this screen follows). Rebuilt, reinstalled, retested: backgrounded
+the app, created a third test dispatch (INC-2026-123, dispatch_id 75),
+resumed — Home's dispatch card updated correctly this time, no
+Assignments visit needed.
+
+**Test incidents created this session** (INC-2026-121/122/123,
+dispatch_id 73/74/75) are real rows in `baranguard_uiseed`, clearly
+labeled as test data in `location_description`/`raw_narrative` — left in
+place, same as any other UAT/dev-session test record in this seed DB.
+
+**Files changed:** `mobile/src/pages/home.tsx` (real fix).
+
+**Verified:** `npx tsc --noEmit` clean. `./gradlew assembleDebug` BUILD
+SUCCESSFUL. Real device: background → server-side dispatch created →
+resume → card updates, confirmed by the user directly on the Infinix
+X6840, not inferred from logs alone.
+
+**Lesson, worth remembering beyond this bug:** a "fixed" entry logged
+without a device to verify against (2026-09-22's note said exactly this:
+"code only, no device to re-verify on") can be wrong in a way static
+checks (`tsc`, Gradle compile) cannot catch — the bug here was a data-flow
+gap between two screens' caches, invisible to any type checker. Don't
+trust a code-only fix as closed until a device session actually confirms
+it; SPRINTS.md's own "prove it, don't claim it" rule applies exactly here.
+
+## 2026-09-23 (6) — A5 closed: real envelope SMS sent from a second phone, ingested and correctly rejected
+
+Final A5 step, same device session (DEVLOG (3)-(5)). Sent the fixed test
+envelope (`backend/storage/gsm-test-envelope.json`) as a plain SMS body
+from a second phone to the tethered Infinix X6840's own SIM number.
+Confirmed landing in the phone's real inbox via `adb shell content query
+--uri content://sms/inbox` (`_id=361`, sender `+639651993135`, body byte-
+identical to the fixture). Ran `php scripts/gsm-ingest-daemon.php --once`
+for real (not `--source=<file>`): it read that row, forwarded it to
+`/internal/sms/*`, and got REJECTED — "expired/replayed/unknown
+device/tampered — indistinguishable by design." Expected and correct:
+this fixture's `message_id` was already in `sms_envelope_replay` from the
+2026-09-18 `sms-envelope-build.php` stand-in test, and its `expiry`
+(2026-09-18T10:11:24Z) is long past. `gsm-ingest-state.json` advanced to
+`last_id: 361` — won't reprocess it.
+
+This is a real proof of the security behavior, not a null result: a
+genuinely stale/replayed envelope, delivered over a REAL SMS channel
+(second phone → carrier → Infinix's SIM → adb → daemon → backend), was
+correctly and indistinguishably rejected end-to-end. A5 is now closed —
+every piece of the GSM ingestion path (adb reachability, `content query`
+parsing, the daemon's forward logic, the backend's envelope validation)
+has been exercised against real hardware and a real carrier SMS, not
+just the `--source=` file-replay test path.
+
+## 2026-09-23 (7) — C7 30+ min locked-screen run: process survives, but GPS reporting silently STOPS at lock time — a real, different bug than C7 as originally framed
+
+Full 35-minute locked-screen run on the Infinix X6840 (same session as
+(3)-(6)), with the 2026-09-23 battery-optimization exemption already
+granted and confirmed. Monitor script polled `pidof`/`dumpsys activity
+services` every 2 minutes throughout.
+
+**Process survival: CONFIRMED, no regression.** Same PID (17908) for the
+entire 35 minutes; `PatrolLocationService` present in `dumpsys activity
+services` at every single check; screen confirmed `mWakefulness=Asleep`
+throughout. C7 as originally described ("app process dies ~50s into
+patrol GPS") still does NOT reproduce — consistent with 2026-09-19's
+405s foreground run.
+
+**But: `gps_track` shows the LAST row recorded was `track_id=311` at
+`15:20:58 UTC` — 4 SECONDS before the screen locked at `15:21:02 UTC`
+(`mWakefulness=Asleep` first observed then). Zero GPS rows for the
+remaining ~36 minutes of the run, right through when the monitor
+finished at `15:57:34 UTC`.** This is a genuinely different failure mode
+than C7's original hypothesis: the foreground service and its
+"Patrol Tracking" notification stay alive and LOOK healthy (this is
+exactly what would fool a glance at `dumpsys` or the notification
+tray), but the actual `FusedLocationProviderClient.requestLocationUpdates`
+callback stops firing the moment the screen locks. Operationally this is
+worse than a clean process death: a process death would eventually show
+up as a stale "last seen" gap an operator might notice; a service that
+stays "running" while producing zero fixes gives false confidence that
+patrol tracking is working.
+
+`adb logcat` during the window shows recurring `FusedLocation: (REDACTED)
+location delivery to %s blocked - too close` / `blocked - too fast`
+messages at roughly 30s intervals throughout — consistent with our own
+30s `LocationRequest` interval, though the destination package is
+redacted in this log line so this is circumstantial, not proof it's
+specifically our app being throttled (could be Android's system-level
+fused-location dedup/batching affecting requests generally under Doze).
+Battery-optimization whitelisting (this session's earlier fix) and
+Android's location-throttling-under-Doze restrictions are SEPARATE
+subsystems — being exempt from the former does not exempt an app from
+the latter.
+
+**Renamed/reclassified, not closed**: the real open item going forward
+is "patrol GPS silently stops reporting fixes while the screen is
+locked, even though the foreground service keeps running" — not "the
+process gets killed." `docs/REMAINING.md`'s C7 entry updated accordingly.
+Leading fix candidates for the NEXT session to try, none implemented
+yet: (a) `PRIORITY_HIGH_ACCURACY` + a passive/significant-motion trigger
+instead of a fixed 30s interval, which Doze is known to defer more
+aggressively; (b) requesting a WakeLock alongside the foreground service
+(the service itself doesn't currently hold one); (c) Android's
+`setMaxWaitTime`/batching APIs, which behave differently under Doze than
+a plain fixed-interval request. This needs research against Android's
+actual Doze/location-batching documentation before picking one, not a
+guess implemented blind.
+
+**Not touched this session** — deliberately left as a real, confirmed
+finding for the next session to fix, since guessing at a fix for a
+just-discovered bug without researching Android's Doze/location APIs
+properly would risk exactly the kind of blind fix this codebase's own
+discipline (§2 Rule 6, SPRINTS.md "prove it, don't claim it") argues
+against.
+
+## 2026-09-24 (1) — A4/A5 local GSM outbound gateway: end-to-end device-verified, one real quoting bug found and fixed, one attempted hardening reverted as broken
+
+Continuing 2026-09-23's Semaphore removal (DEVLOG (3)-(7)) once the C7
+locked-screen test finished and the Infinix was free again.
+
+**Real end-to-end send, twice, both confirmed via matching `correlation_id`
+in device logcat:**
+1. First attempt with the FRESHLY-INSTALLED gateway app: no delivery at
+   all — Android's per-package "stopped" state blocks even an explicit
+   broadcast until the app has been launched once. Fixed by adding this
+   step to `sms-gateway/README.md`'s setup instructions (was already
+   implicit in my own manual testing, now documented).
+2. Second attempt, still no delivery — logcat showed
+   `Usf_Hiber/stateManager: freeze uid: ... ph.baranguard.smsgateway` 4
+   seconds after launch: this Infinix/XOS (Transsion) build has its own
+   proprietary background-app-freezer, separate from stock Android Doze,
+   that suspends a backgrounded app's ability to receive broadcasts.
+   Woke the screen and relaunched — the broadcast queued while frozen
+   and delivered once the app's own foreground activity triggered an
+   unfreeze (`reason:executingComponent`).
+3. Third attempt: delivered and processed (`SUBMITTED` → `RESULT
+   status=sent` in logcat), but `correlation_id` arrived as literally
+   `"unknown"` on the receiver side instead of the real generated value.
+
+**Real bug found and fixed**: `adb shell` re-joins ALL of its own
+arguments with a single space and sends that as ONE string for the
+REMOTE Android shell to parse — it does NOT preserve individual
+multi-word arguments as atomic tokens the way a normal local `exec()`
+would. `LocalGsmOutboundClient::dispatch()` was using PHP's
+`escapeshellarg()` per-token, which only protects the LOCAL hop (this
+workstation's shell invoking `adb.exe`) — the `body`/`correlation_id`
+extras then got word-split AGAIN by the remote shell, corrupting
+`correlation_id` specifically. Fixed: the entire `am broadcast ...`
+command is now built as ONE already-POSIX-shell-quoted string (new
+`posixShellQuote()` helper, single-quote wrapping) and passed to `adb
+shell` as a single argument, so the remote shell parses it correctly.
+Re-tested twice for real through the actual `LocalGsmOutboundClient::send()`
+class (not a manual reproduction) — `correlation_id` now matches exactly
+between the PHP call and the device's own logcat, both times.
+
+**Attempted, then reverted: a real subprocess timeout.** `exec()` has no
+timeout at all, and `am broadcast` here blocks until the receiver's
+`goAsync()` `finish()` — itself gated on the SMS's own carrier
+sent-confirmation callback, observed taking up to ~60s under this
+phone's freeze/unfreeze churn — meaning a stuck gateway could hang
+whatever request triggered this call (this transport backs the SOS
+fallback ladder). Built a `proc_open()` + non-blocking-pipes timeout
+wrapper, including a `bypass_shell` fix for a suspected Windows
+`cmd.exe`-wrapping issue with `proc_terminate()`. **Tested directly
+(not assumed): both attempts failed.** A standalone test against `adb
+shell sleep 30` capped at a 3s timeout still took the full 30.3s —
+confirmed root cause: PHP's `stream_set_blocking($pipes[n], false)` is a
+documented no-op for `proc_open` pipes on Windows, so
+`stream_get_contents()` blocks exactly like plain `exec()` until the
+child produces output or exits. `stream_select()` is also documented as
+unsupported for non-socket streams on Windows, so that isn't a fallback
+either. Reverted `runWithTimeout()` to plain `exec()` rather than ship a
+timeout that silently doesn't work — the method and its doc comments are
+explicit that this is NOT enforced, so a future session doesn't
+mistakenly trust it. A real fix needs a different mechanism (e.g. a
+PowerShell `Start-Process -Wait` wrapper with its own kill timer) — not
+attempted this session; logged as an open item.
+
+**Files changed:** `backend/services/notifications/LocalGsmOutboundClient.php`
+(quoting fix + timeout attempt/revert), `sms-gateway/README.md` (documented
+the stopped-state launch-once step this session's testing surfaced).
+
+**Verified:** `php -l` clean throughout every edit. Two independent real
+end-to-end sends through the actual production class, both with
+correlation_id confirmed matching between the PHP call site and the
+device's own logcat output — not inferred, directly observed.
+
+A4 and A5 are both now genuinely closed with real device evidence, not
+just code review.
+
+## 2026-09-24 (2) — C7 research + a real candidate fix implemented: ACCESS_BACKGROUND_LOCATION was missing; device-verified as granted, but the retest itself was inconclusive (indoors, no GPS sky visibility)
+
+Researched Android's Doze/background-location documentation properly
+(not guessing) before touching code, per the standing instruction after
+2026-09-23 (7)'s finding. Confirmed from Android's own developer docs:
+declaring `foregroundServiceType="location"` on a service is necessary
+but NOT sufficient for it to keep receiving location callbacks once the
+app itself drops out of the foreground (screen locked) — the app also
+needs `ACCESS_BACKGROUND_LOCATION`, requested as a genuinely SEPARATE
+runtime call from FINE/COARSE (Android silently grants neither if both
+are requested together, documented behavior since Android 11). This
+codebase's manifest declared the foreground-service-type correctly but
+never requested `ACCESS_BACKGROUND_LOCATION` at all — a real, credible
+gap, not a guess.
+
+**Implemented:**
+- `AndroidManifest.xml`: added `ACCESS_BACKGROUND_LOCATION`.
+- `PatrolLocationPlugin.java`: new `requestBackgroundLocationPermission()`,
+  using Capacitor's declarative permission API (`@Permission` alias +
+  `requestPermissionForAlias`/`@PermissionCallback`), matching the
+  existing `VoiceRecorder` plugin's own pattern in this codebase. No-ops
+  below API 29 (permission doesn't exist there).
+- `patrolLocationService.ts`: `startPatrolTracking()` fires this
+  best-effort, right after the existing battery-optimization-exemption
+  call, same non-fatal treatment.
+
+**Verified:** `tsc --noEmit` clean, `./gradlew assembleDebug` BUILD
+SUCCESSFUL. Installed on the Infinix X6840, went on duty for real —
+`adb shell dumpsys package ph.baranguard.tanod` confirmed
+`ACCESS_BACKGROUND_LOCATION: granted=true` (the user's own read of the
+permission dialog said "while using the app," but the actual OS grant
+state says otherwise — dumpsys is the authoritative source here, not
+what a dialog looked like).
+
+**Retest was INCONCLUSIVE, not a clean pass or fail.** Ran a live
+locked-screen check with real-time monitoring (`dumpsys location`,
+`dumpsys activity services`, `gps_track`) — service ran fine
+(`isForeground=true`, stable for 5+ minutes), and `dumpsys location`
+confirmed the app's GPS request was genuinely and correctly registered
+system-side (`WorkSource{... ph.baranguard.tanod}`, `HIGH_ACCURACY,
+@+30s0ms`) — contradicts a software-level block, which was the leading
+concern after seeing recurring `FusedLocation: ... blocked - too
+close/too fast` log lines during the check. But zero new `gps_track`
+rows landed during the check, and the phone was confirmed to be INDOORS
+— the GPS provider's cached last fix showed `satellites=0, maxCn0=0`,
+meaning the hardware itself likely had no sky visibility, which alone
+would explain zero fixes regardless of any software fix. This is NOT
+the same test conditions as 2026-09-19/23's runs (which got real fixes
+right up to the lock moment, then stopped — a pattern indoors GPS-
+starvation alone doesn't produce, since that would fail before locking
+too, not just after).
+
+**Still needed**: a locked-screen retest with real GPS sky visibility
+(outdoors or near a window) to know whether this fix actually resolves
+the original stall, or whether the OEM-level `FusedLocation ... blocked`
+pattern is a separate, still-unaddressed issue. Genuinely open — not
+claimed as fixed.
+
+## 2026-09-24 (3) — C7 retest correction: the fix DID work — 17 minutes of continuous locked-screen GPS reporting, confirmed via the database, not the live poll
+
+Correction to 2026-09-24 (2)'s "inconclusive" call. The live monitor's
+own polling loop was checked mid-run and appeared to show zero new
+`gps_track` rows through ~274s elapsed, which — combined with the phone
+being indoors and the GPS provider's STALE cached last-fix showing
+`satellites=0` — was read as inconclusive, and the monitor was stopped
+early.
+
+**That read was wrong — a sync-delay artifact, not a real stall.**
+Querying `gps_track` directly after stopping the monitor shows a
+CONTINUOUS chain of real rows from `20:45:34` UTC (when duty/lock began)
+through `21:01:47` UTC (checked live, screen freshly unlocked, service
+still running) — **17 minutes of uninterrupted locked-screen GPS
+reporting**, every ~30-90s, all with normal 8-30m accuracy. The mobile
+app's own sync path apparently batches/delays before the server sees new
+rows, so polling `gps_track` in near-real-time during the monitor
+undercounted what had actually already landed. Querying it fresh
+afterward told the true story.
+
+**This is real, measured evidence the 2026-09-23 (7) stall is fixed** —
+not proof beyond all doubt (a longer, outdoor, moving-patrol run would
+strengthen confidence further, and is still worth doing per
+docs/REMAINING.md), but a dramatically different, positive outcome
+compared to the original bug's 4-second stall. The `ACCESS_BACKGROUND_
+LOCATION` fix (2026-09-24 (2)) is the most credible explanation
+available — it directly targets the documented mechanism, was absent
+before, and the retest immediately after adding it shows exactly the
+behavior its absence should have caused.
+
+**Lesson for future sessions**: when checking a mobile app's server-side
+data as a live progress signal, remember there can be a real sync delay
+between the device producing data and the server persisting it — a
+"no new rows yet" read mid-test is not the same as "nothing happened",
+especially for a feature (GPS sync) that may intentionally batch. Query
+again after the test window closes before concluding a negative result.
+
+## 2026-09-24 (4) — M13 SOS SMS fallback: real device-to-device SMS confirmed end-to-end, all three badge states exercised
+
+Sprint 8 cut: M13 (SMS Fallback Confirmation badge), the "trigger SOS
+fallback through the mobile UI and watch the badge" item HANDOFF.md
+already had queued. `SosSmsPlugin.java` (Android `SmsManager`, G1's third
+SOS tier) had never been device-verified for a completed send —
+`sosSms.ts`'s own docblock said so explicitly. This session did it for
+real, with the user's explicit authorization for a live SMS to their own
+number (09351676069).
+
+**Setup**: `PATCH /system-settings` (admin.dao) set
+`sos_fallback.backup_contact_number` to the user's own phone. `adb shell
+pm grant ph.baranguard.tanod android.permission.SEND_SMS` granted the
+runtime permission up front rather than fighting the system dialog
+blind. Logged out and back in as `tanod.reyes` on the connected Infinix
+device — required because `refreshSosFallbackContact()` only runs at
+login (its own docblock's claim that Live Map's mount also refreshes it
+is STALE/wrong, see below), so the number set mid-session was not yet
+cached.
+
+**Test 1 (contact not yet cached)**: `adb reverse --remove tcp:8081`
+(HANDOFF's documented way to make the workstation unreachable over USB
+without touching phone settings), then held the Home screen's Emergency
+SOS Backup control 2s and confirmed. Correctly fell through to
+`saved_locally_for_retry` (grey badge) with the toast "No backup SMS
+contact configured" — proving the badge's honest-fallback path works
+when the number genuinely isn't cached yet, not a bug.
+
+**Test 2 (after re-login)**: same offline setup, same SOS hold+confirm.
+`SmsFallbackBadge` went `saved_locally_for_retry` → **`sent_by_sms`**
+(green pill), toast "Workstation unreachable — emergency SMS sent
+directly to backup contact." Confirmed for real, not just by the app's
+own claim: `adb shell content query --uri content://sms/sent` (built as
+one already-shell-quoted string per HANDOFF gotcha #17 — the bare
+`--sort "date DESC"` form fails with `[ERROR] Unsupported argument:
+DESC` because `adb shell` re-splits its own arguments) showed the exact
+composed message (`BARANGUARD EMERGENCY SOS / Tanod: Jomar Reyes (Brgy
+Dao) / Location: ... / Map: ... / Time: ...`) actually sent to
+09351676069 at 2026-09-24 04:59:43 local. Since the backup number was
+the same device's own SIM, the sent message also round-tripped into that
+device's own Messages app as a self-thread — a second, independent
+confirmation the send was real (SIM-level), not just a plugin resolving
+its promise.
+
+**Found and corrected one stale doc claim**: `sosFallbackContact.ts`'s
+docblock says `refreshSosFallbackContact()` runs "opportunistically...
+login, and Live Map's own mount" — grepping the actual call sites shows
+it is called ONLY from `login.tsx`. Not fixed this session (out of
+scope for a UAT cut per SPRINTS.md rule 1), but worth a follow-up: either
+the comment is describing a Live Map refresh that was never built, or
+one was removed without updating the doc. Flagged in REMAINING.md-style
+terms here rather than guessing which is true.
+
+**Not exercised this session**: `sms_pending`/`sms_failed` states (both
+real, typed, reachable per the state machine — `sms_pending` is set
+synchronously before the native call resolves, `sms_failed` only on a
+native rejection e.g. no SIM/airplane mode/radio off). Forcing a failure
+would need airplane-mode toggling mid-test or a malformed number: not
+attempted, since the success path was the one still unverified and the
+plugin's `doSend()` failure branch is a straightforward `catch` with no
+separate logic to validate.
+
+**Cleanup**: `adb reverse tcp:8081 tcp:8081` restored before ending the
+session. `sos_fallback.backup_contact_number` was LEFT SET to the user's
+real number in `baranguard_uiseed` (not reset to empty) — deliberate,
+since a real backup contact configured is the correct steady-state for
+this feature, not test residue to undo. Two real `tanod_sos` rows landed
+from this session's two SOS raises (`sos_id 3`, fallback_channel `app`,
+synced after reconnect) — real test data in a disposable-by-design
+seed DB (`baranguard_uiseed`), not the production `baranguard` database.
+
+**M13 status**: real device evidence obtained for the `saved_locally_for_
+retry` and `sent_by_sms` states, and for the "no contact configured"
+edge case. `sms_pending`/`sms_failed` remain code-reviewed-only. Overall:
+M13 moves from "code exists, unverified" to "device-verified for the
+primary success path."
+
+## 2026-09-24 (5) — A4's known subprocess-timeout gap: real fix, using a genuinely different mechanism (PowerShell + .NET Process.WaitForExit), device-verified working
+
+2026-09-24 (1)'s reverted `proc_open()` timeout attempt is now properly
+fixed — a real, different mechanism, not the same broken approach
+retried.
+
+**Mechanism**: `LocalGsmOutboundClient::runWithTimeout()` now shells out
+to `powershell.exe` (full path — bare `powershell.exe` isn't reliably on
+PATH from PHP's own `exec()` context under Apache/XAMPP, confirmed by a
+real "is not recognized" failure before fixing), which starts `adb.exe`
+via .NET's `System.Diagnostics.Process` (`Start-Process`) and waits with
+`Process.WaitForExit(ms)` — a genuine OS-level timeout completely
+unrelated to the `stream_set_blocking`/`stream_select` limitations that
+broke the earlier `proc_open()` attempt. PHP's own `exec()` call on
+`powershell.exe` has no timeout either, but that's fine: `powershell.exe`
+itself always returns once its own `WaitForExit()` resolves (success or
+kill), so the outer call is bounded transitively. `-EncodedCommand`
+(base64 of UTF-16LE script text) and `Start-Process -ArgumentList
+<array>` are used throughout instead of hand-built quoted strings —
+deliberately, since this session already found two real bugs from
+cross-process shell requoting (`adb shell`'s own arg-rejoining
+behavior); base64-encoding sidesteps that class of bug rather than
+risking a third.
+
+**Verified in stages, each with a real test, not assumed:**
+1. Isolated: `adb shell sleep 30` capped at a 3s timeout → killed in
+   4.0s, `exitCode=124` (the sentinel `TIMEOUT_EXIT_CODE`). Confirms the
+   kill mechanism actually works, unlike the reverted attempt.
+2. Isolated: `adb devices` (fast, real command) through the same wrapper
+   → succeeded normally in 0.5s, `exitCode=0`, real output. Confirms the
+   wrapper doesn't break the success path.
+3. Real end-to-end sends through the actual `LocalGsmOutboundClient::send()`
+   — multiple attempts, mixed results, all explainable and none a
+   regression:
+   - One send returned FAILED at 12.6s with the new timeout message —
+     the 12s cap fired for real on a real send, proving the timeout is
+     live in production code, not just the isolated test.
+   - Checked logcat afterward: the device-side `SUBMITTED` line still
+     landed at the same timestamp the PHP call gave up — confirms
+     killing the LOCAL wait does NOT cancel the REMOTE broadcast already
+     in flight; a "timeout" failure here means "we stopped waiting to
+     find out," not "nothing happened on the phone." Real tradeoff, not
+     a silent lie — the exception message says exactly this.
+   - Root cause of the slow/delayed runs: this Infinix/XOS build's
+     `Usf_Hiber` background-app-freezer (already documented,
+     HANDOFF.md gotcha #20) intermittently delays broadcast delivery to
+     `sms-gateway`'s receiver by up to ~60s — an OEM-level device
+     behavior, not a bug in this session's code. Confirmed by triggering
+     the SAME broadcast manually via bare `adb shell` (no PHP/PowerShell
+     involved at all) and seeing the identical stall until the gateway
+     app was brought to the foreground once, which reliably unstuck
+     delivery — same fix as observed earlier in the session (DEVLOG
+     2026-09-24 (1)).
+
+**12s is a real, disclosed tradeoff, not tuned to this device's worst
+case.** It keeps an SOS-triggering HTTP request from hanging a full
+minute, at the cost of occasionally reporting "failed" for a send that
+may still complete on the phone a bit later, on this specific
+aggressively-freezing OEM. Documented in the class's own doc block and
+`BROADCAST_TIMEOUT_SECONDS`'s comment; not silently assumed correct.
+
+**Also fixed this session**: `mobile/src/services/sosFallbackContact.ts`'s
+stale docblock (found during 2026-09-24 (4)'s M13 testing) — corrected
+to state `refreshSosFallbackContact()` only runs at login, not also at
+Live Map mount as it previously (wrongly) claimed.
+
+**Files changed**: `backend/services/notifications/LocalGsmOutboundClient.php`
+(new timeout mechanism), `mobile/src/services/sosFallbackContact.ts`
+(doc fix only, no behavior change).
+
+**Verified**: `php -l` clean. Real device tests as described above —
+timeout kill proven, success path proven unaffected, remote-send
+continuation after a local kill proven, root cause of delivery delay
+identified and attributed correctly (OEM freeze, not this fix).
+
+## 2026-09-24 (6) — Critical notifications now genuinely play sound: mobile channel hardened + a real gap closed on web (there was none at all)
+
+User-prompted audit ("when notification it should have sound especially
+the critical once right?") turned up two real, separate gaps rather than
+one.
+
+**Mobile (`CriticalAlertNotifier.java`)**: the M12 Critical Alert Overlay
+channel was created `IMPORTANCE_HIGH` with no explicit sound/vibration —
+it relied on Android's per-channel default (a normal notification
+`USAGE_NOTIFICATION` tone, no vibration pattern set). Added an
+alarm-usage sound (`RingtoneManager.TYPE_ALARM` + `AudioAttributes.
+USAGE_ALARM`/`CONTENT_TYPE_SONIFICATION`) and an explicit insistent
+vibration pattern (`{0, 400, 200, 400, 200, 400}`), plus light. **Bumped
+the channel ID to `baranguard_critical_alert_v2`** — a NotificationChannel's
+sound/vibration/importance are locked by the OS the instant it's first
+created and can never be changed by the app afterward (only the user can,
+from system settings), so leaving the old ID would have made this fix a
+silent no-op on every device (including the Infinix test phone) that
+already has the app installed with the original channel.
+
+**Web dashboard — a real gap, not a hardening**: grepped `web/src` for
+any audio cue on an incoming SOS/priority alert and found NONE. A
+dispatcher (Admin/Secretary/PB) with the tab backgrounded had no way to
+notice a new SOS beyond the topbar bell's badge dot. Added
+`web/src/utils/criticalAlertSound.js` (Web Audio synthesized 3-tone
+pattern, no asset file — same technique as mobile's
+`tacticalFeedback.ts`, kept as an independent copy since the two apps
+share no JS runtime) and wired it into `AppShell.js`'s existing 15s
+background notification poller (`loadNotifications()`): a NEW
+`sos`/`priority_alert` item (tracked by `notificationId`, diffed against
+the previous poll) now plays the tone. Deliberately silent on the very
+first load after a page refresh — an old already-unread item sitting
+there isn't "new," and firing on it every refresh would train dispatchers
+to ignore the sound. Deliberately scoped to `sos`/`priority_alert` only —
+plain `dispatch`/`other` notifications stay silent, matching how the bell
+already visually distinguishes them.
+
+**Known, disclosed limitation (not fixed, browser-enforced)**: browsers
+block `AudioContext` until the page has had at least one user gesture
+(click/keypress) since load. A dashboard tab left completely untouched
+since it was opened may play its very first alert silently. Nothing
+recoverable from JS — most real dispatcher workflows involve enough
+clicking around the UI that this is unlikely to matter in practice, but
+it's a real edge case, not swept under the rug.
+
+**Not done**: `channel.setBypassDnd(true)` (would let the alert sound
+through Do Not Disturb) was deliberately NOT added — bypassing DND
+requires the user to separately grant "Do Not Disturb access" via a
+system settings screen the app cannot request inline the way a normal
+runtime permission works, which is a bigger ask than this session's scope
+covered. Flagged for a future session, not silently skipped.
+
+**Files changed**: `mobile/android/app/src/main/java/ph/baranguard/tanod/
+CriticalAlertNotifier.java`, `web/src/utils/criticalAlertSound.js` (new),
+`web/src/components/AppShell.js`.
+
+**Verified**: `./gradlew assembleDebug` BUILD SUCCESSFUL, installed on
+the Infinix device, user confirmed the critical-alert test (Profile →
+Critical Alert) now sounds and vibrates. `node web/scripts/verify-web-
+wiring.mjs` 557/557. `web/tests` 397/398 (the one failure,
+`maps.test.mjs`'s SOS-marker-clustering test, is pre-existing and
+unrelated — part of the already-uncommitted UI overhaul, not touched by
+this change).
+
+## 2026-09-24 (7) — M13's sms_failed state: attempted, found a real gap instead of a clean test result
+
+Attempted to force `SmsFallbackBadge`'s `sms_failed` state (the one
+state 2026-09-24 (4) didn't exercise) using a malformed
+`sos_fallback.backup_contact_number` (`"###invalid###"`, PATCHed as
+Admin, phone re-logged-in to refresh its cache per the same
+login-only-refresh behavior noted in (4)/(5)). Workstation made
+unreachable (`adb reverse --remove tcp:8081`), SOS raised.
+
+**Result: the badge showed `sent_by_sms` (green), not `sms_failed`.**
+Investigated why — `SmsManager.sendTextMessage()`/`sendMultipartTextMessage()`
+do NOT synchronously validate the destination address format; a garbage
+string doesn't throw, so `SosSmsPlugin.doSend()`'s try/catch never
+fires and the plugin call resolves `{sent: true}` exactly as it would
+for a real send.
+
+**More concerning: checked `content://sms/sent`, `/failed`, and
+`/outbox` on-device afterward — NO row exists anywhere for
+`"###invalid###"`.** Not sent, not failed, not queued. The OS silently
+dropped the malformed send attempt at some layer below `SmsManager`'s
+synchronous API, with zero trace — worse than a clean failure, because
+the app told the Tanod "sent by SMS" (green badge, real confidence)
+when nothing was actually transmitted to anyone. This is a real,
+narrow gap: `sos_fallback.backup_contact_number` has no format
+validation anywhere in the stack (`SettingsController::KEYS` just caps
+it at 32 chars, no pattern check), so a badly-typed number in that one
+Settings field could silently defeat this entire fallback tier while
+still reporting success.
+
+**Not fixed this session** — out of scope for what was asked (M13's
+untested states), and a real fix (phone-number format validation on
+that setting, and/or checking `SmsManager`'s send result via a
+`sentIntent`/`PendingIntent` instead of trusting the synchronous call
+completing without exception) deserves its own consideration rather
+than a rushed patch. Logged in `docs/REMAINING.md` as a new, real
+finding.
+
+**`sms_failed` remains genuinely untested** — a malformed number is now
+confirmed NOT to be a way to trigger it; forcing it for real needs
+airplane mode or no-SIM conditions (a real radio-level failure), which
+is a more invasive test not attempted this session.
+
+**Cleanup**: `sos_fallback.backup_contact_number` restored to the real
+number (`09351676069`) via `PATCH /system-settings`, phone logged out/in
+twice (once to pick up the malformed test value, once more to restore
+the real one) so its local cache isn't left holding the malformed test
+number.
+
+## 2026-09-24 (8) — M13's sms_failed gap closed at the code level: server-side format validation + a real sentIntent-based send result
+
+Follow-up to (7). Two independent fixes, both aimed at the same root
+cause — `sos_fallback.backup_contact_number` had no format validation
+anywhere, and `SosSmsPlugin.doSend()` trusted `SmsManager`'s synchronous
+return as proof of a real send.
+
+**1. Server-side format validation** —
+`SettingsController::PH_MOBILE_NUMBER_PATTERN` (`/^(\+63|0)9\d{9}$/`)
+now gates `sos_fallback.backup_contact_number` in `update()`: a
+malformed value is rejected with 400 VALIDATION_ERROR before it can
+ever reach a phone. Empty string (to unset) still passes. Verified for
+real against the actual endpoint on the real, disposable
+`baranguard_uiseed` DB (not just `php -l`):
+- `"###invalid###"` → `400 {"error":{"code":"VALIDATION_ERROR",...}}`
+- `"09171234567"` → `200`, value round-trips in the settings response
+- `""` → `200`, unsets cleanly
+
+**2. Client-side format validation + real send-result checking** —
+`SosSmsPlugin.java` (mobile) independently re-checks the same
+PH-mobile-number shape (`PH_MOBILE_NUMBER` Pattern, hand-kept in sync
+with the PHP one — no shared code between Java and PHP) before ever
+calling `SmsManager`, rejecting immediately if it doesn't match. This
+is belt-and-suspenders, not redundant: the setting could in principle
+be correct server-side and still arrive malformed some other way, and
+a client-side reject is instant instead of waiting on a network round
+trip.
+
+More importantly, `doSend()` no longer passes `null` for `sentIntent`.
+It now builds one `PendingIntent` per message part (`divideMessage()`
+already existed for multipart SOS texts), registers a local
+`BroadcastReceiver` for a per-call unique action string, and waits for
+every part's actual result code before resolving or rejecting the
+Capacitor call — `RESULT_OK` across all parts resolves `{sent:true}`
+exactly as before; anything else (`RESULT_ERROR_NO_SERVICE`,
+`RESULT_ERROR_RADIO_OFF`, `RESULT_ERROR_GENERIC_FAILURE`, etc.) now
+rejects with a real reason. This is the actual mechanism that makes a
+genuine `sms_failed` possible — the old code had no way to ever produce
+it because it never checked past the synchronous call. Uses
+`Context.RECEIVER_NOT_EXPORTED` on API 33+ (Tiramisu) per the modern
+`registerReceiver` requirement; `PendingIntent.FLAG_IMMUTABLE` on API
+31+ (S) per the same modern requirement.
+
+`mobile/src/services/sosSms.ts`'s docblock corrected — it previously
+and wrongly claimed "The failure path ... was verified separately the
+same day," which (7) shows was never true; it now describes the actual
+history (attempted, found a gap, fixed at the code level, still needs a
+device retest).
+
+**Verified**:
+- `npx tsc --noEmit` — clean.
+- `php -l backend/controllers/SettingsController.php` — clean.
+- `./gradlew assembleDebug` (mobile/android) — BUILD SUCCESSFUL, confirms
+  `SosSmsPlugin.java` compiles (new imports: `android.app.Activity`,
+  `android.app.PendingIntent`, `android.content.BroadcastReceiver`,
+  `Context`, `Intent`, `IntentFilter`, `android.os.Build`,
+  `java.util.concurrent.atomic.AtomicInteger`, `java.util.regex.Pattern`).
+- Live `PATCH /system-settings` round-trip against `baranguard_uiseed`
+  (see above) — malformed/valid/empty all behave as intended.
+
+**NOT device-verified** — no phone was attached this session
+(`adb devices -l` returned nothing). Per SPRINTS.md's "prove it, don't
+claim it," this is logged as code-only, not closed. Still needed before
+calling M13 fully done: install on the Infinix and confirm (a) a
+malformed backup number now rejects immediately client-side (or 400s if
+somehow set server-side first), and (b) a real send failure — airplane
+mode or no-SIM — now produces an actual `sms_failed` badge instead of a
+false `sent_by_sms`.
+
+**Also re-checked**: the previous session's snapshot in `HANDOFF.md`
+claimed `web/tests` was 397/398 with `maps.test.mjs`'s SOS-clustering
+test failing. Re-ran the full suite (`cd web/tests && npm test`) fresh
+this session: **398/398, all green**, `maps.test.mjs` included. Ran the
+same single-file test in isolation too — also green. Whatever caused
+the earlier failure did not reproduce; treated as a flake (e.g. cross-
+test state leakage in a full run under different load/timing) rather
+than a real regression. No code change was needed or made. `docs/
+REMAINING.md` and `docs/HANDOFF.md` updated to reflect this — it is no
+longer listed as an open item.
+
+## 2026-09-24 (9) — Pre-commit code review of the whole uncommitted session diff (63+ files): 14 findings, fixed
+
+Before committing the accumulated session's work, ran a full xhigh-effort
+multi-angle review (10 finder angles across 6 parallel agents, each
+independently verified against the actual code) of every uncommitted
+file. 14 findings survived verification; all fixed at the code level
+this session. In severity order:
+
+1. **`web/src/components/AppShell.js`** — the new critical-alert-sound
+   "already seen" baseline (`knownNotificationIds`) was a variable local
+   to `AppShell()`, which the file's own comments already document is
+   rebuilt from scratch on every page navigation (`main.js`'s `boot()`).
+   A genuinely new SOS/priority_alert notification arriving around a nav
+   click was silently folded into the fresh post-navigation baseline and
+   never sounded — defeating the whole point of the sound feature added
+   earlier today (6). Fixed by moving it to module scope (same pattern
+   `activeSearchHost`/`barangaysPromise` already use for exactly this
+   reason), with a `resetNotificationBaselineOnLogout()` hook wired into
+   both logout call sites so a different user signing in on the same tab
+   doesn't inherit the previous user's "seen" state.
+2. **`backend/services/notifications/LocalGsmOutboundClient.php`** —
+   `runWithTimeout()`'s `Start-Process -ArgumentList @(...)` passes a
+   PowerShell ARRAY, which Windows PowerShell 5.1 silently space-joins
+   into one command-line string before `CreateProcess` ever runs — so
+   `adb.exe` re-parses that joined string with its OWN Windows argv
+   rules (`CommandLineToArgvW`), which know nothing about the PowerShell
+   single-quotes each element was wrapped in. A `"` in a message body or
+   phone number could shift/corrupt token boundaries — the same class of
+   cross-process-boundary requoting bug (5) already found and fixed at
+   the `adb shell` hop, just not caught at this one. Fixed by adding
+   `windowsArgQuote()` (the standard Windows/CRT argv-quoting algorithm)
+   and building ONE already-Windows-quoted string, handed to
+   `-ArgumentList` as a single string instead of an array — nothing left
+   for `Start-Process` to (mis)join. **Not yet device-retested** with a
+   message containing an embedded `"` — the reasoning is sound (verified
+   against documented `Start-Process`/`CommandLineToArgvW` behavior) but
+   per SPRINTS.md this stays code-only until confirmed on the real
+   gateway phone.
+3. Same file, `pollForResult()` — used a plain, unbounded `exec()` (up
+   to 10 attempts), unlike the broadcast call right before it which (5)
+   specifically rewrote to have a real enforced timeout. A frozen/dropped
+   adb connection during the poll phase could hang the SOS-triggering
+   request indefinitely. Fixed by routing each poll attempt through the
+   same `runWithTimeout()` wrapper with a new `POLL_TIMEOUT_SECONDS = 3`
+   cap.
+4. **`backend/controllers/NotificationsController.php`** —
+   `acknowledge()`/`acknowledgeAll()`'s role allow-list was
+   `['tanod','admin','dispatcher','captain','secretary','superadmin']`:
+   three of those roles don't exist anywhere in this system (`user.role`
+   ENUM is admin/secretary/tanod/punong_barangay/lupon), while
+   `punong_barangay` — who `index()`'s own docblock says can read the
+   bell — was missing. A PB clicking a notification or "Mark all read"
+   got a silent 403 (swallowed by `AppShell.js`'s catch), reverting to
+   unread on the next poll. Fixed to `['tanod','admin','secretary',
+   'punong_barangay']`.
+5. **`mobile/src/services/patrolLocationService.ts`** —
+   `requestBatteryOptimizationExemption()` and
+   `requestBackgroundLocationPermission()` fired un-awaited in the same
+   tick, both resolving through the same host Activity; the first
+   launches a Settings screen that begins pausing MainActivity right as
+   the second's permission launcher tries to use that same, mid-
+   transition Activity — risking the actual C7 fix never getting
+   prompted. Fixed by awaiting the battery-exemption call before firing
+   the background-location request. Also: the background-location
+   result was being fully discarded (`.catch(() => undefined)` with no
+   `.then()`), so a Tanod's denial left no diagnostic trail for a repeat
+   of C7's "GPS silently stops" symptom — now logged via `console.warn`
+   on denial. **Not device-retested.**
+6. **`web/src/pages/ai-review.js`** — `syncActionState()` returned early
+   when `draft` was `null` (the "approved incident, no active draft"
+   state), leaving Regenerate/Approve at their default enabled state;
+   clicking either threw on `draft.draftVersion`/
+   `draft.draftRedactedNarrative` being null and showed a generic
+   "Could not approve/regenerate" toast instead of a real reason. Fixed
+   by handling the null-draft case explicitly: both buttons disabled,
+   reason text set to why.
+7. **`backend/scripts/verify-sprint4-phase2-3.sh`** — three assertions
+   still expected the pre-rename `"sms_semaphore":"not_configured"` and
+   `SEMAPHORE_NOT_CONFIGURED` failure_reason strings that (1)/(3) renamed
+   to `sms_gsm_gateway`/`GSM_GATEWAY_NOT_CONFIGURED` back on 2026-09-23.
+   Fixed and **re-ran for real** against a disposable DB: 68/70 passed —
+   the 2 remaining failures are pre-existing and unrelated (this
+   workstation's `backend/.env` now has a real `FCM_SERVICE_ACCOUNT_PATH`
+   configured, so `fcm` reports `healthy` instead of the suite's assumed
+   `not_configured` — an environment-drift issue, not a code defect, and
+   out of scope for this fix).
+8. **`mobile/android/.../CriticalAlertNotifier.java`** — the old
+   (pre-2026-09-24, silent) `baranguard_critical_alert` channel and the
+   new `baranguard_critical_alert_v2` channel were both titled "Critical
+   Alerts" with no distinguishing name; a user could mute the wrong one
+   from system settings. Fixed by renaming the new channel's display
+   name to "Critical Alerts (Sound & Vibration)" — the old channel is
+   left alone (per its own doc comment, deleting it was already a
+   deliberate no-benefit-here decision).
+9. **`web/src/pages/incident-management.js`** — a status badge's
+   `innerHTML` assignment used `STATUS_DISPLAY_LABELS[row.status] ||
+   row.status` unescaped, replacing what was previously a safe
+   `textContent` assignment — reintroducing the interpolate-into-
+   innerHTML pattern the 2026-09-07 audit fixed at 11 other sites. Not
+   exploitable against today's ENUM values, but fixed with `escapeHtml()`
+   as defense-in-depth per REFERENCE.md §6.
+10. **`web/src/pages/ai-review.js`** — the wholesale rewrite kept its own
+    hand-rolled loading/error DOM construction instead of adopting the
+    new shared `web/src/components/AsyncState.js` that `service-health.js`
+    and `blotter-detail.js` were migrated to use in the same diff.
+    `AsyncState.js`'s own doc explicitly allows incremental adoption "as
+    pages are touched" — this page was touched. Migrated.
+11. **`web/css/components/AppShell.css` / `web/css/pages/ai-review.css`**
+    — new rules referenced `var(--color-primary-light, #60a5fa)`, a
+    token that is never defined anywhere in `base.css`, so the fallback
+    hex was silently ALWAYS what rendered — plus a few `var(--color-
+    success[-text], #10b981)` fallbacks that were merely redundant (the
+    real tokens exist). Fixed: the dead-token cases now use
+    `var(--color-link)` (REFERENCE.md §6: "Use --color-link ... for
+    primary-colored text") and `var(--color-warning-text)`; the
+    redundant-fallback cases had the dead fallback stripped.
+12. **`web/src/components/AppShell.js`** — the topbar jurisdiction chip
+    and the avatar-menu jurisdiction label duplicated the same barangay-
+    name-lookup-and-apply logic almost verbatim. Extracted into a shared
+    `applyBarangayName()`.
+13. `mobile/src/services/sosSms.ts`'s docblock, flagged by one review
+    pass as falsely claiming the failure path was verified — checked
+    directly against the file and found ALREADY correct (fixed earlier
+    the same day, see (8)/(7) above); no change needed, false positive.
+
+**Also found and fixed in passing, while re-running `web/tests` to
+verify fix #1 above**: `AppShell.js`'s notification-panel header builder
+created `title`/`badge` elements and a `titleGroup` container but never
+actually appended `title`/`badge` INTO `titleGroup` — an unrelated,
+pre-existing bug from earlier in this session's AppShell rewrite, caught
+because it broke `AppShell.test.mjs`'s "renders the overhauled
+notification panel with header, tabs, and cards" test (only surfaced as
+a NEW failure once (1) above made the notification baseline module-
+scoped and persistent across the test file's many `mountShell()` calls,
+which changed the sound/render timing enough to expose it). Fixed with
+one line: `titleGroup.append(title, badge);`.
+
+**Verified**:
+- `php -l` on both touched PHP files — clean.
+- `bash backend/scripts/verify-sprint4-phase2-3.sh` against a disposable
+  DB — 68/70 (2 pre-existing/unrelated FCM-env failures, see #7 above).
+- `node web/scripts/verify-web-wiring.mjs` — 563/563.
+- `cd web/tests && npm test` — **407/407, all green** (was 406/407 before
+  the `titleGroup` fix above).
+- `cd mobile && npx tsc --noEmit` — clean.
+- `cd mobile && npm run lint` — clean.
+
+**Not device-verified this session** (no phone attached): the
+`LocalGsmOutboundClient.php` Windows-quoting fix (#2) and the
+`patrolLocationService.ts` permission-sequencing fix (#5). Both are
+reasoned fixes against documented platform behavior, not blind
+guesses, but per SPRINTS.md's "prove it, don't claim it" they stay
+logged as code-only until a real device/gateway-phone session confirms
+them.
