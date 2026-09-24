@@ -93,6 +93,24 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- C7 research finding, 2026-09-24 (docs/REMAINING.md): declaring
+         `foregroundServiceType="location"` on PatrolLocationService is
+         necessary but NOT sufficient on its own — Android's own docs are
+         explicit that a location-type foreground service only keeps
+         delivering fixes once the app itself is no longer in the
+         foreground (screen locked) when the app ALSO holds
+         ACCESS_BACKGROUND_LOCATION; without it, `FusedLocationProviderClient`
+         callbacks are subject to background-location throttling (docs
+         say "a few times per hour" — a 35-minute locked-screen run
+         producing exactly zero fixes, as observed 2026-09-23, is
+         consistent with that, not with a crash or a Doze/battery-
+         optimization issue, which was separately ruled out the same
+         session). Requested via a SEPARATE runtime dialog, never in the
+         same request as FINE/COARSE — Android silently grants NEITHER
+         permission if both are requested together (Google's own
+         documented behavior since Android 11). -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <!-- @capacitor/camera's own CameraPlugin.kt declares a CAMERA permission
          alias it requests at runtime; neither plugin's own AAR manifest
          declares these, so the app manifest must (confirmed by reading
@@ -128,6 +146,16 @@
          SecurityException at startForeground(), not a silent no-op. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- C7 (docs/REMAINING.md): a locked-screen patrol shift is exactly what
+         Doze/App Standby targets even for a running foreground service on
+         some OEM battery managers. This permission only lets the app SHOW
+         the OS's own "ignore battery optimizations" system dialog
+         (PatrolLocationPlugin.requestBatteryOptimizationExemption) — it
+         grants nothing by itself; the user still approves or denies the
+         real OS prompt, same disclosed-not-silent discipline as everything
+         else patrol tracking does. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Mobile Improvement Plan Phase 4.2: lets CriticalAlertNotifier's
          notification launch CriticalAlertActivity immediately (waking a
