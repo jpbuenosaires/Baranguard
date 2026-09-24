@@ -296,6 +296,7 @@ case "$DL_BODY" in
   *"Baranguard incident report"*) pass "Download returns the real generated CSV";;
   *) fail "Download did not return the expected CSV: $(echo "$DL_BODY" | head -c 120)";;
 esac
+expect_audit "report_export_downloaded" "downloading the report export (H-06/H-07, distinct from the generate-time audit above)"
 case "$DL_BODY" in
   *"$SECRET_NARRATIVE"*) fail "EXPORT LEAK: the raw narrative is inside the exported CSV";;
   *) pass "Export contains aggregate counts only — no narrative text";;
@@ -314,15 +315,45 @@ for role_token in "$SEC_TOKEN" "$TANOD_TOKEN" "$PB_TOKEN"; do
   CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/audit-log" -H "Authorization: Bearer $role_token")
   expect_eq "$CODE" "403" "Non-Admin is refused the audit log (§9 W17: Admin only)"
 done
+expect_audit "authorization_denied" "the three 403s just above (H-06/H-07)"
 
 FILTERED=$(curl -s "$BASE_URL/audit-log?action=dispatch_created" -H "Authorization: Bearer $ADMIN_TOKEN" \
   | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $a=array_unique(array_column($d["items"]??[], "action")); echo implode(",", $a);')
 expect_eq "$FILTERED" "dispatch_created" "action filter returns only that action"
 
-# Tenant scoping: barangay 2's Admin must not see barangay 1's trail.
+# Tenant scoping: barangay 2's Admin must not see barangay 1's trail. Must
+# run BEFORE step 7b below gives barangay 2's own admin a legitimate
+# self-scoped audit row of its own (a tenant_access_denied entry, correctly
+# attributed to barangay 2 — not a cross-tenant leak, but it would make
+# this specific "barangay 2 has done nothing" assumption stale if run after).
 B2_TOTAL=$(curl -s "$BASE_URL/audit-log?limit=100" -H "Authorization: Bearer $(token_for s7a_admin2 "$TEST_PW")" \
   | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $n=0; foreach($d["items"]??[] as $i){ if(($i["action"]??"")!=="login_success") $n++; } echo $n;')
 expect_eq "$B2_TOTAL" "0" "Cross-tenant: barangay 2 Admin sees none of barangay 1's audit rows"
+
+# --------------------------------------------------------------------------
+step "7b. New H-06/H-07 audit events: raw-narrative read, and denial-audit survives a rollback"
+# --------------------------------------------------------------------------
+# Secretary reading the incident triggers the one raw_narrative disclosure.
+curl -s "$BASE_URL/incidents/$INCIDENT_ID" -H "Authorization: Bearer $SEC_TOKEN" >/dev/null
+expect_audit "raw_narrative_viewed" "a Secretary calling GET /incidents/:id (the one raw_narrative disclosure)"
+
+# The critical case: DispatchController::create() calls requireTenant()
+# INSIDE an open transaction (after FOR UPDATE-locking the incident) — a
+# naive audit write on the request's own $pdo would be erased by the
+# controller's own rollBack() in its catch block. Barangay 2's admin
+# attempting to dispatch against barangay 1's incident hits exactly that
+# code path.
+ADMIN2_TOKEN=$(token_for s7a_admin2 "$TEST_PW")
+CROSS_TENANT_DISPATCH=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/dispatch" \
+  -H "Authorization: Bearer $ADMIN2_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"incident_id\":$INCIDENT_ID,\"tanod_id\":$TANOD_ID,\"request_id\":\"$($PHP_BIN -r 'echo bin2hex(random_bytes(16));' | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')\"}")
+expect_eq "$CROSS_TENANT_DISPATCH" "404" "Cross-tenant POST /dispatch (inside an open transaction) is still 404, never 403 (Rule 2)"
+TENANT_DENIED_COUNT=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='tenant_access_denied';")
+if [ "${TENANT_DENIED_COUNT:-0}" -ge 1 ]; then
+  pass "Rule 17: 'tenant_access_denied' audit row SURVIVED the controller's own transaction rollback (H-06/H-07 fix's whole point)"
+else
+  fail "NO 'tenant_access_denied' audit row — the fresh-connection fix isn't working, or the row was rolled back with the transaction"
+fi
 
 # No write surface exists at all — the defining property of the audit log.
 for method in POST PATCH DELETE PUT; do

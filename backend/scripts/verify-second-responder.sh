@@ -174,6 +174,22 @@ step "6. A Tanod cannot be double-assigned to the same incident"
 REQ3=$(uuid)
 expect_eq "$(status_of POST "/dispatch" "$ADMIN_TOKEN" "{\"incident_id\":$INC1,\"tanod_id\":$TANOD_A,\"request_id\":\"$REQ3\"}")" "409" "Tanod Alpha already active on this incident -> 409"
 
+step "6b. Code-review fix H-01: a Tanod already active on ONE incident cannot be assigned to a DIFFERENT incident"
+mysql_exec "$VALDB" <<SQL
+INSERT INTO incident (barangay_id, incident_type, priority, raw_narrative, status, source, created_at, updated_at) VALUES
+  (1, 'theft', 'normal', 'RAW-2RESP-CHECK-INC2', 'pending', 'web', UTC_TIMESTAMP(), UTC_TIMESTAMP());
+SQL
+INC2=$(mysql_exec -N -s "$VALDB" -e "SELECT incident_id FROM incident WHERE raw_narrative='RAW-2RESP-CHECK-INC2';")
+REQ4=$(uuid)
+CROSS_INCIDENT_STATUS=$(status_of POST "/dispatch" "$ADMIN_TOKEN" "{\"incident_id\":$INC2,\"tanod_id\":$TANOD_A,\"request_id\":\"$REQ4\"}")
+expect_eq "$CROSS_INCIDENT_STATUS" "409" "Tanod Alpha (active on INC1) rejected for INC2 — was previously only blocked for the SAME incident"
+INC2_DISPATCH_COUNT=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM dispatch WHERE incident_id=$INC2;")
+expect_eq "$INC2_DISPATCH_COUNT" "0" "No dispatch row was created on INC2 for the rejected attempt"
+# Tanod Bravo (active only on INC1 alongside Alpha, per step 5) is likewise
+# unavailable for a brand new incident — same rule, different tanod.
+REQ5=$(uuid)
+expect_eq "$(status_of POST "/dispatch" "$ADMIN_TOKEN" "{\"incident_id\":$INC2,\"tanod_id\":$TANOD_B,\"request_id\":\"$REQ5\"}")" "409" "Tanod Bravo (also active on INC1) is likewise rejected for INC2"
+
 step "7. GET /incidents/:id returns BOTH responders in a real dispatches[] array"
 DETAIL=$(body_of GET "/incidents/$INC1" "$ADMIN_TOKEN")
 DISPATCH_COUNT_IN_RESPONSE=$("$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo count($d["dispatches"] ?? []);' <<< "$DETAIL")
