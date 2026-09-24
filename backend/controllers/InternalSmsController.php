@@ -5,7 +5,6 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Http;
-use Baranguard\Services\Notifications\SemaphoreClient;
 use Baranguard\Services\Sms\EnvelopeException;
 use Baranguard\Services\Sms\SmsGatewayService;
 use PDO;
@@ -48,8 +47,8 @@ use PDO;
  * pre-composed `{phone_number,message,incident_id?,dispatch_id?}` rather
  * than re-deriving message text from an id — composing that text is
  * `NotificationDispatcher`'s job (already exercised end-to-end via SOS/
- * dispatch creation); these two endpoints exist so the "send via
- * Semaphore, write sms_log" half of that path is independently curl-able
+ * dispatch creation); these two endpoints exist so the "send outbound,
+ * write sms_log" half of that path is independently curl-able
  * and testable in isolation, per §6 listing them as real endpoints. They
  * are NOT the production trigger for outbound SMS — see `SmsGatewayService`
  * and `NotificationDispatcher`'s own docs for why the actual automation

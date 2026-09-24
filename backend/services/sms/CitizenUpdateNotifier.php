@@ -30,11 +30,11 @@ use PDO;
  *
  * BEST-EFFORT, ALWAYS. Neither notification may ever fail the operation
  * that triggered it. A conversion is a records action and a resolution
- * is an operational one; a courtesy text failing — because Semaphore is
- * unconfigured, the number is wrong, or the gateway is down — must not
- * roll either back. Every entry point here swallows its own errors and
- * the caller is not told, because there is nothing the caller could
- * usefully do differently.
+ * is an operational one; a courtesy text failing — because the local GSM
+ * gateway is unconfigured, the number is wrong, or the gateway phone is
+ * unreachable — must not roll either back. Every entry point here
+ * swallows its own errors and the caller is not told, because there is
+ * nothing the caller could usefully do differently.
  *
  * IDEMPOTENT BY DETERMINISTIC CORRELATION. Each event derives a stable
  * `correlation_id` from its own identity, and a matching row already in
@@ -42,9 +42,9 @@ use PDO;
  * an incident that somehow passes through `resolved` twice, cannot text
  * the same resident twice about the same thing.
  *
- * WITHOUT SEMAPHORE CREDENTIALS (this workstation's normal state,
- * `docs/REMAINING.md` A4) `sendOutbound()` still writes the `sms_log`
- * row and marks it `failed` / `SEMAPHORE_NOT_CONFIGURED`. That is the
+ * WITHOUT THE GSM GATEWAY CONFIGURED (`GSM_GATEWAY_ENABLED` unset —
+ * `docs/REMAINING.md` A4) `sendOutbound()` still writes the `sms_log` row
+ * and marks it `failed` / `GSM_GATEWAY_NOT_CONFIGURED`. That is the
  * honest outcome and it is what makes this testable here: the intent,
  * recipient and body are all recorded truthfully, and nothing claims a
  * message was delivered when no gateway exists to deliver it.
