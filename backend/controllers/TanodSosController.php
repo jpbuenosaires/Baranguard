@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
+use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Services\Notifications\NotificationDispatcher;
 use Baranguard\Services\Notifications\NotificationService;
@@ -141,6 +142,33 @@ final class TanodSosController
      */
     public static function createItem(PDO $pdo, array $identity, array $item): array
     {
+        // H-09: deliberately NEVER hard-rejects an SOS, unlike every other
+        // caller of DeviceSignature — this is the one write in the whole
+        // system where a false rejection (a clock-skewed device, a
+        // transient signing bug, a not-yet-upgraded app) is categorically
+        // worse than accepting an unverified one. Same priority ordering
+        // as the audit's own C-01 finding ("SOS must not be blocked on
+        // GPS"): a real emergency signal must never be lost to a secondary
+        // authenticity check. A failed/missing verification is recorded
+        // (audit metadata + error_log) for operator visibility, not used
+        // to drop the SOS.
+        $deviceId = Http::header('X-Device-Id');
+        $deviceSignatureVerified = null;
+        if (is_string($deviceId) && $deviceId !== '') {
+            $deviceSignatureVerified = DeviceSignature::verify(
+                $pdo,
+                $deviceId,
+                $identity['user_id'],
+                $_SERVER['REQUEST_METHOD'] ?? '',
+                parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '',
+                Http::header('X-Device-Timestamp'),
+                Http::header('X-Device-Signature')
+            );
+            if ($deviceSignatureVerified === false) {
+                error_log('[baranguard] SOS device signature verification FAILED for device_id=' . $deviceId . ' user_id=' . $identity['user_id'] . ' — SOS accepted anyway (never blocked on this check).');
+            }
+        }
+
         $latitude = $item['latitude'] ?? null;
         $longitude = $item['longitude'] ?? null;
         $dispatchId = $item['dispatch_id'] ?? null;
@@ -244,6 +272,7 @@ final class TanodSosController
             // are deliberately NOT audited — they are a person's location.
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'tanod_sos_raised', 'tanod_sos', $sosId, [
                 'fallback_channel' => $fallbackChannel,
+                'device_signature_verified' => $deviceSignatureVerified,
             ]);
 
             $readBack = $pdo->prepare('SELECT status, received_at FROM tanod_sos WHERE sos_id = :sos_id');

@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
+use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
@@ -692,6 +693,9 @@ final class IncidentsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
         }
         self::assertDeviceOwnership($pdo, $identity, $deviceId);
+        // H-09: no-op for a device that hasn't upgraded to a Keystore
+        // keypair yet — see DeviceSignature's own doc.
+        DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
 
         if (!RateLimiter::check(
             $pdo,
