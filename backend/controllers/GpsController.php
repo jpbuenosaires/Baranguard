@@ -62,6 +62,12 @@ final class GpsController
     private const MAX_LIMIT = 100;
     private const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+    // Code-review findings H-08/M-06 (2026-09-24) — see createItem()'s own
+    // comment for the reasoning. Neither number is specified anywhere in
+    // the reference; both are this session's own engineering judgment,
+    // logged as a resolved decision rather than an exhaustive study.
+    private const MAX_FUTURE_SKEW_SECONDS = 300; // 5 minutes — allows minor clock/NTP drift, not a wrong clock.
+    private const MAX_PLAUSIBLE_ACCURACY_M = 50000.0; // 50km — comfortably above any real device reading; anything beyond is a garbage value, not just "imprecise".
 
     /**
      * @param array{user_id:int,barangay_id:int,role:string} $identity
@@ -239,13 +245,31 @@ final class GpsController
         if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'latitude/longitude are out of range.');
         }
-        if (!is_numeric($accuracyM) || (float) $accuracyM < 0) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'accuracy_m must be a non-negative number.');
+        // Code-review findings H-08/M-06 (2026-09-24): range checks alone
+        // let through a technically-valid-but-useless reading — an
+        // absurd accuracy value, or (the real risk behind H-08's "client
+        // clock" concern) a recorded_at from the future, which can only
+        // mean the device's clock is wrong or the value was tampered
+        // with. This does NOT change is_stale/age_seconds to use
+        // received_at instead of recorded_at — that's a deliberate,
+        // documented decision (see this class's own doc block: staleness
+        // measures position age, not network delay) — it guards the
+        // INPUT those fields are computed from instead. Deliberately NOT
+        // rejecting an old recorded_at: this app is offline-first (§2),
+        // and a Tanod's queued points syncing hours later after
+        // regaining connectivity is expected, legitimate traffic, not a
+        // clock problem.
+        if (!is_numeric($accuracyM) || (float) $accuracyM < 0 || (float) $accuracyM > self::MAX_PLAUSIBLE_ACCURACY_M) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'accuracy_m must be a non-negative number no greater than ' . self::MAX_PLAUSIBLE_ACCURACY_M . '.');
         }
         if (!is_string($recordedAtRaw) || strtotime($recordedAtRaw) === false) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'recorded_at must be a valid timestamp.');
         }
-        $recordedAt = gmdate('Y-m-d H:i:s', (int) strtotime($recordedAtRaw));
+        $recordedAtTimestamp = (int) strtotime($recordedAtRaw);
+        if ($recordedAtTimestamp > time() + self::MAX_FUTURE_SKEW_SECONDS) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'recorded_at cannot be in the future.');
+        }
+        $recordedAt = gmdate('Y-m-d H:i:s', $recordedAtTimestamp);
 
         $dispatchIdInt = null;
         if ($dispatchId !== null) {

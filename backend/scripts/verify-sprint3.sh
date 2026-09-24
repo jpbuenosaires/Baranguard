@@ -217,6 +217,27 @@ DP_OWN_BODY="{\"latitude\":13.0,\"longitude\":123.7,\"accuracy_m\":10,\"recorded
 CODE_OWN_DISPATCH=$(code_for POST "$BASE_URL/gps" "$TANOD" "$DP_OWN_BODY")
 expect_eq "$CODE_OWN_DISPATCH" "201" "dispatch_id belonging to the CALLER'S OWN active dispatch is accepted"
 
+# Code-review findings H-08/M-06 (2026-09-24): implausible accuracy and a
+# future-dated recorded_at (only explainable by a wrong/tampered device
+# clock) are now rejected; a genuinely OLD recorded_at (a legitimate
+# offline-queued point syncing late) must still be accepted — this app is
+# offline-first by design, and rejecting stale-but-honest points would
+# break that.
+BAD_ACCURACY_BODY="{\"latitude\":13.0,\"longitude\":123.7,\"accuracy_m\":999999,\"recorded_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"client_event_id\":\"$(uuid)\"}"
+expect_eq "$(code_for POST "$BASE_URL/gps" "$TANOD" "$BAD_ACCURACY_BODY")" "400" "An implausible accuracy_m (999999) is rejected"
+
+FUTURE_TS=$(date -u -d "+10 minutes" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)
+FUTURE_BODY="{\"latitude\":13.0,\"longitude\":123.7,\"accuracy_m\":10,\"recorded_at\":\"$FUTURE_TS\",\"client_event_id\":\"$(uuid)\"}"
+expect_eq "$(code_for POST "$BASE_URL/gps" "$TANOD" "$FUTURE_BODY")" "400" "recorded_at 10 minutes in the future is rejected (H-08: only a wrong/tampered clock explains this)"
+
+SLIGHT_FUTURE_TS=$(date -u -d "+1 minute" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)
+SLIGHT_FUTURE_BODY="{\"latitude\":13.0,\"longitude\":123.7,\"accuracy_m\":10,\"recorded_at\":\"$SLIGHT_FUTURE_TS\",\"client_event_id\":\"$(uuid)\"}"
+expect_eq "$(code_for POST "$BASE_URL/gps" "$TANOD" "$SLIGHT_FUTURE_BODY")" "201" "A 1-minute future skew (normal clock/NTP drift) is still accepted"
+
+OLD_TS=$(date -u -d "-2 days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-2d +%Y-%m-%dT%H:%M:%SZ)
+OLD_BODY="{\"latitude\":13.0,\"longitude\":123.7,\"accuracy_m\":10,\"recorded_at\":\"$OLD_TS\",\"client_event_id\":\"$(uuid)\"}"
+expect_eq "$(code_for POST "$BASE_URL/gps" "$TANOD" "$OLD_BODY")" "201" "A 2-day-old recorded_at (legitimate offline-queued sync) is still accepted — offline-first is not broken"
+
 # ============================================================
 step "2. PATCH /dispatch/:id/status — forward-only state machine"
 # ============================================================

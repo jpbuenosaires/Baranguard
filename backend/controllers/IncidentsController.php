@@ -1352,9 +1352,19 @@ final class IncidentsController
      */
     public static function nextDisplayId(PDO $pdo, int $barangayId, string $prefix, string $table = 'incident', string $dateColumn = 'created_at'): string
     {
-        $year = (int) gmdate('Y');
+        // Code-review finding M-01 (2026-09-24): this used gmdate('Y') and
+        // YEAR($dateColumn) directly against the UTC-stored column — both
+        // UTC, so internally consistent, but disagreeing with what's
+        // Rule 11's actual requirement: display-facing values use
+        // Asia/Manila, never UTC. Around New Year (Manila is UTC+8, so
+        // Manila's Jan 1 starts while UTC is still Dec 31) this could
+        // stamp a case number with the wrong year. Fixed +08:00 offset,
+        // same pattern PublicReportsController's month-bucketing already
+        // uses (Rule 11: never CONVERT_TZ(), which needs tz tables this
+        // stock XAMPP install doesn't load).
+        $year = (int) (new \DateTimeImmutable('now', new \DateTimeZone('Asia/Manila')))->format('Y');
         $countStmt = $pdo->prepare(
-            "SELECT COUNT(*) FROM {$table} WHERE barangay_id = :barangay_id AND YEAR({$dateColumn}) = :year"
+            "SELECT COUNT(*) FROM {$table} WHERE barangay_id = :barangay_id AND YEAR(DATE_ADD({$dateColumn}, INTERVAL 8 HOUR)) = :year"
         );
         $countStmt->execute(['barangay_id' => $barangayId, 'year' => $year]);
         $seq = (int) $countStmt->fetchColumn() + 1;
