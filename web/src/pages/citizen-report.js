@@ -290,7 +290,16 @@ function renderForm(card, barangays, onReset) {
     submitButton
   );
 
-  card.append(header, emergencyBanner, form);
+  const footer = document.createElement('p');
+  footer.className = 'note';
+  footer.style.textAlign = 'center';
+  footer.style.marginTop = 'var(--spacing-md)';
+  const transparencyLink = document.createElement('a');
+  transparencyLink.href = '#/transparency';
+  transparencyLink.textContent = 'View this barangay’s public transparency report';
+  footer.appendChild(transparencyLink);
+
+  card.append(header, emergencyBanner, form, footer);
 
   // Submit Handler
   form.addEventListener('submit', async (event) => {
