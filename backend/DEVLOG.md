@@ -15027,3 +15027,92 @@ XAMPP MySQL/Apache already running this session, never the real
 
 `docs/REMAINING.md` and `docs/HANDOFF.md` updated with the reconciled
 audit findings and this fix list.
+
+## 2026-09-24 (11) — 4 more audit findings closed: GPS clock-skew validation, SMS segment math, Asia/Manila display-ID year
+
+User picked H-08, H-22, M-01, M-06 from the 30 findings deferred in (10).
+Each verified against the actual code before touching anything.
+
+**H-08 reconciliation — did NOT do what the audit literally asked, and
+that's deliberate.** The audit's suggested fix was "use server received_at
+instead of client recorded_at for is_stale/age_seconds." `GpsController`'s
+own class doc already documents this as a RESOLVED, deliberate decision:
+staleness measures how old the *position* is, not network/queue delay —
+overriding it would go against an explicit prior architecture call, not
+fix an oversight. The audit's real underlying concern — a bad device
+clock corrupting that calculation — is legitimate, and it's the exact
+same root cause as M-06's "no plausibility bounds" finding. Fixed both
+together at the actual point of risk: `GpsController::createItem()` now
+rejects `accuracy_m` over 50km (a real device never reports that) and
+`recorded_at` more than 5 minutes in the future (a legitimate GPS fix can
+never be from the future — that's unambiguously a wrong or tampered
+clock). Deliberately did NOT reject an old `recorded_at` — this app is
+offline-first (§2), and a Tanod's queued points syncing hours or days
+late after regaining connectivity is expected, legitimate traffic, not a
+clock problem; rejecting it would break real offline durability to guard
+against a risk that doesn't apply there. Both thresholds (5 min future
+skew, 50km accuracy ceiling) are this session's own engineering judgment,
+not specified anywhere in the reference — logged as resolved decisions.
+
+**H-22 (SMS segment math)** — `web/src/pages/sms-monitor.js`'s three
+character counters (main SMS Monitor composer, the reply-compose bar in
+Conversations, and the Broadcast composer) all assumed the GSM-7 default
+alphabet's 160/153-char limits regardless of what the message actually
+contained. Any character outside GSM 03.38's basic set (most emoji, many
+Unicode punctuation marks like curly quotes/em dashes, non-Latin scripts)
+forces the WHOLE message into UCS-2 encoding, whose real limits are
+70/67 — a message showing "1 segment" under the old assumption could
+silently need 2+ once it contained even one such character, understating
+both segment count and real send cost. Added `requiresUcs2()` (checks
+every character against the actual GSM-7 basic charset) and made
+`getSmsSegmentCount()` pick the right limit pair based on that, plus
+surface the encoding in the counter text (`· Unicode`) when it applies.
+Does NOT separately account for the GSM-7 EXTENSION table (€, [, ], {,
+}, ^, ~, \, |, each costing 2 of the 160/153 budget) — a smaller, rarer
+gap than the one this fixes, noted in the function's own comment rather
+than silently left undocumented. The actual SEND path
+(`LocalGsmOutboundClient.php` -> Android's own `SmsManager.
+divideMessage()`) already segments correctly regardless of this bug —
+only the operator-facing estimate while composing was wrong.
+
+**M-01 (display-ID year uses UTC, not Asia/Manila)** —
+`IncidentsController::nextDisplayId()` used `gmdate('Y')` for the label
+and `YEAR($dateColumn)` (a UTC-stored column) for the sequence-count
+filter — both UTC, internally consistent with each other, but
+disagreeing with Rule 11's actual requirement that display-facing values
+use Asia/Manila. Around New Year (Manila is UTC+8, so Manila's Jan 1
+starts while UTC is still Dec 31 afternoon) this could stamp a case
+number with the wrong year. Fixed to `Asia/Manila` via PHP's
+`DateTimeImmutable` for the label, and `DATE_ADD($dateColumn, INTERVAL 8
+HOUR)` for the SQL-side year filter — the same fixed-+08:00-offset
+pattern `PublicReportsController`'s month-bucketing already uses, since
+Rule 11 forbids `CONVERT_TZ()` (needs tz tables this stock XAMPP install
+doesn't load). Verified the actual math directly (not just "looks right"):
+an incident timestamped 2026-12-31 18:00 UTC — already 2027-01-01 02:00
+in Manila — now correctly yields display-ID year 2027 instead of 2026,
+and the PHP-side and SQL-side computations agree.
+
+**Verified for real**, all against disposable DBs, real XAMPP MySQL
+running (had stopped between sessions — restarted via
+`mysql_start.bat`), never the real `baranguard`/`baranguard_uiseed`
+databases:
+- `php -l` / `node --check` / `bash -n` on every touched file — clean.
+- `verify-sprint3.sh`: 42/42 (was 38/38) — added 4 assertions: implausible
+  accuracy (999999) rejected, a 10-minute-future `recorded_at` rejected,
+  a 1-minute future skew (normal clock drift) still accepted, and a
+  2-day-old `recorded_at` (legitimate offline-queued sync) still
+  accepted — proving the fix closes the real gap without breaking
+  offline durability.
+- `verify-sprint7-pentest-incidents.sh`: 69/69, `verify-ai-tools.sh`:
+  63/63, `verify-w3-w4-dispatch-gis.sh`: 38/38, `verify-sprint7-audit.sh`:
+  57/57 — no regressions from touching `GpsController.php`/
+  `IncidentsController.php` again.
+- `node web/scripts/verify-web-wiring.mjs`: 563/563.
+- `cd web/tests && npm test`: 407/407.
+- Direct PHP check of the Asia/Manila year math at the actual New Year
+  boundary condition (see above) — a live HTTP test can't exercise that
+  boundary without faking server time, so this was checked directly
+  instead of skipped.
+
+`docs/REMAINING.md` §H updated: 4 of the 30 deferred findings now closed,
+26 remain (all still needing a policy/infra decision, not code).

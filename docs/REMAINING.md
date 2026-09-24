@@ -34,7 +34,7 @@ inbound rule for port 80 (only 8081) — user has the
 
 ---
 
-## H. 2026-09-24 external business-rules audit — 6 "quick win" items CLOSED, rest deliberately deferred
+## H. 2026-09-24 external business-rules audit — 10 of 36 items CLOSED, rest deliberately deferred
 
 A 36-finding external audit (4 Critical/22 High/7 Medium/3 Low), run against
 a business-rules catalogue rather than the live code, was reconciled against
@@ -58,6 +58,18 @@ the client's claimed MIME type — magic-byte validation added), H-06/H-07
 (audit gaps: failed authorization, the one raw-narrative read, and Lupon
 packet/report-export downloads were unaudited).
 
+**Also closed 2026-09-24, second pass (DEVLOG (11))**: H-08 + M-06
+(fixed TOGETHER — same root cause: `GpsController::createItem()` now
+rejects implausible `accuracy_m` and a future-dated `recorded_at`; did
+NOT swap `is_stale`/`age_seconds` to `received_at` as H-08 literally
+suggested, since using `recorded_at` there is an existing, deliberate,
+documented architecture decision, not an oversight — see DEVLOG for the
+full reconciliation), H-22 (SMS segment counter in `sms-monitor.js` now
+detects GSM-7 vs UCS-2 and uses the right 160/153 vs 70/67 limits — the
+actual send path was already correct; only the operator-facing estimate
+was wrong), M-01 (`IncidentsController::nextDisplayId()` now computes
+the year in Asia/Manila, not UTC, matching Rule 11).
+
 **Deliberately NOT started this session** (need a policy call, new
 infrastructure, or an explicit architecture-review sign-off, not just
 code): C-02 (MFA), C-03 (HTTPS/TLS enforcement + locking down the
@@ -68,7 +80,8 @@ H-15 (retention periods for `gps_track`/`duty_status`/`shift_schedule`/
 notifications/`map_package` — REFERENCE.md §11 requires an architecture
 review before setting a retention constant, not a runbook edit), H-16
 (incident duplicate/merge workflow), H-17 (shift minimum-staffing
-constraints), and the remaining ~20 Medium/Low findings. Full disposition
+constraints), and the remaining ~18 Medium/Low findings (M-06 and M-01
+closed above). Full disposition
 of every one of the 36 findings — confirmed / partially confirmed /
 refuted, with file-level evidence — lives only in the audit reconciliation
 itself (not re-copied here); ask for it again if picking up more of this

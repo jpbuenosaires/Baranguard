@@ -28,18 +28,25 @@ appended its title/badge elements). Run the suite after any further web
 change alongside `verify-web-wiring.mjs` (563/563).
 
 **Also 2026-09-24 — an external 36-finding business-rules audit was
-reconciled against the live code and its 6 confirmed "quick win" items
-fixed** (`docs/REMAINING.md` §H, `DEVLOG.md` (10)): a fabricated blotter
+reconciled against the live code; 10 findings fixed across two passes**
+(`docs/REMAINING.md` §H, `DEVLOG.md` (10)/(11)): a fabricated blotter
 case number in the web UI, Punong Barangay still able to list blotter
 records server-side after the screen was removed, a Tanod double-booked
 across two different incidents, off-duty declarable with an active
-dispatch, evidence upload trusting the client's claimed file format, and
-audit-log gaps for failed authorization/raw-narrative reads/downloads.
+dispatch, evidence upload trusting the client's claimed file format,
+audit-log gaps for failed authorization/raw-narrative reads/downloads,
+GPS ingestion with no clock-skew/accuracy plausibility bounds, an SMS
+segment counter that never accounted for UCS-2 encoding, and blotter/
+incident display-ID years computed in UTC instead of Asia/Manila.
 Several of the audit's own Critical claims turned out to be wrong once
 checked — most notably "no backup/DR exists," which is false (real
 encrypted backups and a genuine restore-drill already exist; only
-scheduling is missing, tracked as C2/B3 below). Bigger items (MFA,
-HTTPS/TLS enforcement, session-storage redesign, privacy governance,
+scheduling is missing, tracked as C2/B3 below); another (H-08) asked for
+a change that would have overridden an existing, deliberate architecture
+decision (`GpsController`'s own doc explains why staleness intentionally
+uses the device's own timestamp) — fixed the actual underlying risk
+(clock tampering) instead of doing what was literally asked. Bigger items
+(MFA, HTTPS/TLS enforcement, session-storage redesign, privacy governance,
 retention-period policy calls) were deliberately not started — see
 REMAINING.md §H for the full disposition of all 36 findings.
 
