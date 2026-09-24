@@ -34,7 +34,7 @@ inbound rule for port 80 (only 8081) — user has the
 
 ---
 
-## H. 2026-09-24 external business-rules audit — 14 of 36 items CLOSED, rest deliberately deferred
+## H. 2026-09-24 external business-rules audit — 15 of 36 items CLOSED, rest deliberately deferred
 
 A 36-finding external audit (4 Critical/22 High/7 Medium/3 Low), run against
 a business-rules catalogue rather than the live code, was reconciled against
@@ -90,6 +90,21 @@ itself (the "durable retry" part of H-20's claim) is real and was NOT a
 gap either — only the "what happens after both fail" visibility was
 missing.
 
+**Fourth pass 2026-09-24 (DEVLOG (13))**: M-07 (map-package uploads had a
+500MB per-file ceiling but no total-per-barangay quota, and superseded
+package files are never deleted — added a 2000MB total-per-barangay quota
+that rejects new uploads once hit; deliberately does NOT auto-delete old
+packages, since `map_package` retention is itself H-15's open question)
+was CONFIRMED and fixed. M-02 (user.is_active/is_suspended could in
+theory land in a confusing combination) was REFUTED — the login check
+already tests both flags and the status-toggle endpoint enforces exactly
+one change per call, migration 0011's own doc comment already states
+"deactivating always wins." M-04 (hardcoded 4 barangays / dead `lupon`
+login role) was REFUTED for the barangay half (documented deliberate
+pilot scope, §1) — the `lupon` enum value is confirmed real but harmless
+dead cruft (unreachable via login or user-creation, left as-is rather
+than spending a migration on pure enum hygiene).
+
 **Deliberately NOT started this session** (need a policy call, new
 infrastructure, or an explicit architecture-review sign-off, not just
 code): C-02 (MFA), C-03 (HTTPS/TLS enforcement + locking down the
@@ -100,8 +115,8 @@ H-15 (retention periods for `gps_track`/`duty_status`/`shift_schedule`/
 notifications/`map_package` — REFERENCE.md §11 requires an architecture
 review before setting a retention constant, not a runbook edit), H-16
 (incident duplicate/merge workflow), H-17 (shift minimum-staffing
-constraints), and the remaining ~14 Medium/Low findings (M-01, M-05,
-M-06, L-01, L-02 closed/refuted above). Full disposition
+constraints), and the remaining ~13 Medium/Low findings (M-01, M-02,
+M-04, M-05, M-06, M-07, L-01, L-02 closed/refuted above). Full disposition
 of every one of the 36 findings — confirmed / partially confirmed /
 refuted, with file-level evidence — lives only in the audit reconciliation
 itself (not re-copied here); ask for it again if picking up more of this
