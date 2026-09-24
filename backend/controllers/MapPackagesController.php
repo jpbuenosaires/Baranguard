@@ -53,9 +53,13 @@ use PDO;
  *     moved into permanent storage after validation passes, and is
  *     deleted if the transaction rolls back, so a failed publish never
  *     leaves an orphaned file.
- *   - **500MB size ceiling** — no §6/§5 number is given for a barangay
- *     basemap package; picked as a sane ceiling for hosting on a local
- *     XAMPP workstation disk, not a documented requirement.
+ *   - **500MB per-file ceiling, 2000MB total per barangay** — no §6/§5
+ *     number is given for a barangay basemap package; picked as a sane
+ *     ceiling for hosting on a local XAMPP workstation disk, not a
+ *     documented requirement. The total quota (code-review finding M-07,
+ *     2026-09-24) only rejects new uploads once hit — it does not delete
+ *     old package files, since map_package retention is an open policy
+ *     question (`docs/REMAINING.md` H-15).
  *   - **Version string**: same charset as other identifier fields in this
  *     codebase (`device_id`, etc.) — `[A-Za-z0-9._-]{1,64}` — rather than
  *     accepting arbitrary bytes into a value that becomes part of a
@@ -86,6 +90,21 @@ final class MapPackagesController
     private const VERSION_PATTERN = '/^[A-Za-z0-9._-]{1,64}$/';
     private const MAX_BYTES = 500 * 1024 * 1024;
 
+    /**
+     * Total per-barangay ceiling — code-review finding M-07 (2026-09-24):
+     * the per-file cap above bounded a single upload but nothing bounded
+     * how many distinct versions a barangay could accumulate, and old
+     * (superseded, unpublished) package files are never deleted, so
+     * uploads alone could grow disk usage without limit. No §5/§6 number
+     * is given (same situation as MAX_BYTES); picked to allow a handful of
+     * recent versions per barangay. This only stops accepting NEW uploads
+     * once the ceiling is hit — it does not reclaim space itself, since
+     * deciding whether/when to purge old map packages is an open retention
+     * policy question (`docs/REMAINING.md` H-15), not something to resolve
+     * unilaterally here.
+     */
+    private const MAX_TOTAL_BYTES_PER_BARANGAY = 2000 * 1024 * 1024;
+
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
     {
@@ -114,6 +133,19 @@ final class MapPackagesController
         }
         if ($byteSize > self::MAX_BYTES) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'File exceeds the maximum package size (500MB).');
+        }
+
+        $existingTotalStmt = $pdo->prepare(
+            'SELECT COALESCE(SUM(byte_size), 0) FROM offline_map_package WHERE barangay_id = :barangay_id'
+        );
+        $existingTotalStmt->execute(['barangay_id' => $identity['barangay_id']]);
+        $existingTotal = (int) $existingTotalStmt->fetchColumn();
+        if ($existingTotal + $byteSize > self::MAX_TOTAL_BYTES_PER_BARANGAY) {
+            throw new ApiError(
+                400,
+                'VALIDATION_ERROR',
+                'This barangay has reached its total map-package storage quota (2000MB). A database administrator must remove old package rows/files before another can be uploaded.'
+            );
         }
 
         self::validateMbtilesStructure($tmpPath);
