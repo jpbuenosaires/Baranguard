@@ -221,7 +221,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
       const val = document.createElement('span');
       val.className = `stat-card__value stat-card__value--${item.tone}`;
-      val.innerHTML = `${item.icon}<span>${item.value}</span>`;
+      val.innerHTML = `${item.icon}<span>${escapeHtml(item.value)}</span>`;
 
       const lbl = document.createElement('span');
       lbl.className = 'stat-card__label';

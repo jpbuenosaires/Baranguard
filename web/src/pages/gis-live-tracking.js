@@ -95,7 +95,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
   // Standard Page Header
   const pageHeader = PageHeader({
-    title: 'Live Tracking',
+    title: 'Live Map',
     subtitle: 'Real-time GPS tracking and Tanod responder deployment',
     icon: icons.map,
   });
@@ -470,7 +470,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
         const contactNumber = tanodUser?.contactNumber;
         const callBtnHtml = contactNumber
-          ? `<a href="tel:${contactNumber}" class="gis-personnel-card__phone-btn" title="Call ${g.fullName}" aria-label="Call ${g.fullName}" onclick="event.stopPropagation()">${icons.phone(16)}</a>`
+          ? `<a href="tel:${escapeHtml(contactNumber)}" class="gis-personnel-card__phone-btn" title="Call ${escapeHtml(g.fullName)}" aria-label="Call ${escapeHtml(g.fullName)}" onclick="event.stopPropagation()">${icons.phone(16)}</a>`
           : `<span class="gis-personnel-card__phone-btn" style="opacity:0.3;" title="No phone on file">${icons.phone(16)}</span>`;
 
         card.innerHTML = `
@@ -503,6 +503,11 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
           if (g.latitude && g.longitude) {
             liveMap?.flyTo(Number(g.latitude), Number(g.longitude));
           }
+        });
+        card.addEventListener('keydown', (event) => {
+          if (event.target !== card || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          card.click();
         });
 
         personnelListEl.appendChild(card);
