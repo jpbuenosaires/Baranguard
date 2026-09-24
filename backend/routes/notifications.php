@@ -17,5 +17,6 @@ use Baranguard\Controllers\NotificationsController;
 
 return [
     ['GET', '#^/notifications$#', [NotificationsController::class, 'index'], true],
+    ['POST', '#^/notifications/ack-all$#', [NotificationsController::class, 'acknowledgeAll'], true],
     ['POST', '#^/notifications/(\d+)/ack$#', [NotificationsController::class, 'acknowledge'], true],
 ];

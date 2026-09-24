@@ -20,7 +20,12 @@ use PDO;
  * Deliberately SMALL relative to the mockup that prompted it. Every key
  * here is either (a) pure organizational metadata with no behavioral
  * claim, or (b) genuinely wired into real enforcement elsewhere in this
- * codebase (`sms_gateway.*` -> `SmsGatewayService::resolveSemaphore()`).
+ * codebase. `sms_gateway.sender_name`/`sms_gateway.api_key` were REMOVED
+ * 2026-09-23 when Semaphore was replaced with a local GSM gateway (see
+ * `LocalGsmOutboundClient`'s own doc): that transport has no cloud
+ * credential and no configurable sender name, so there was nothing left
+ * for those two keys to hold — leaving them would have been exactly the
+ * "control that looks functional and does nothing" §2 Rule 6 forbids.
  * Several mockup-proposed sections — Notifications toggles, GIS
  * staleness/map-default overrides, Backup & Data, most of "Security"
  * (password/lockout policy) — are deliberately NOT built here: most of
@@ -45,8 +50,6 @@ final class SettingsController
         'general.system_name' => ['default' => 'BARANGUARD', 'max' => 100, 'secret' => false],
         'general.municipality' => ['default' => 'Pilar, Sorsogon', 'max' => 100, 'secret' => false],
         'general.region' => ['default' => 'Region V (Bicol)', 'max' => 100, 'secret' => false],
-        'sms_gateway.sender_name' => ['default' => '', 'max' => 32, 'secret' => false],
-        'sms_gateway.api_key' => ['default' => '', 'max' => 255, 'secret' => true],
         // G1 (Mobile Improvement Plan Phase 4.3) — the third SOS fallback
         // tier's destination: a human backup contact the mobile app SMSes
         // DIRECTLY (own SIM, no gateway) when both the direct app POST and
@@ -62,6 +65,18 @@ final class SettingsController
 
     /** Placeholder echoed back for a secret whose real value is already set — never a real key. */
     private const SECRET_MASK = '••••••••';
+
+    /**
+     * PH mobile-number shape for `sos_fallback.backup_contact_number` —
+     * added 2026-09-24 after M13 device testing found this key had NO
+     * format validation anywhere in the stack: a malformed value made
+     * `SmsManager` on the mobile side silently drop the SOS fallback send
+     * (no exception, no trace in content://sms/*) while the app still
+     * reported `sent_by_sms` (false confidence). `SosSmsPlugin.java`
+     * enforces the same shape independently (Java can't share this PHP
+     * pattern) — kept in sync deliberately, not via shared code.
+     */
+    private const PH_MOBILE_NUMBER_PATTERN = '/^(\+63|0)9\d{9}$/';
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
@@ -113,6 +128,9 @@ final class SettingsController
             if (mb_strlen($trimmed) > $meta['max']) {
                 throw new ApiError(400, 'VALIDATION_ERROR', "{$key} must be at most {$meta['max']} characters.");
             }
+            if ($key === 'sos_fallback.backup_contact_number' && $trimmed !== '' && !preg_match(self::PH_MOBILE_NUMBER_PATTERN, $trimmed)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', "{$key} must be a PH mobile number in 09XXXXXXXXX or +639XXXXXXXXX format.");
+            }
             $writes[$key] = $trimmed;
         }
 
@@ -156,7 +174,8 @@ final class SettingsController
 
     /**
      * Real, UNMASKED single-key lookup for internal (non-HTTP) callers —
-     * e.g. `SmsGatewayService::resolveSemaphore()`. Never exposed over
+     * e.g. `TanodSosController::fallbackContact()`'s read of
+     * `sos_fallback.backup_contact_number`. Never exposed over
      * HTTP itself; `index()` above is the only HTTP-facing read of this
      * table, and it always masks secrets. Returns the key's default when
      * no row has been saved yet (an Admin who never opened Settings gets
