@@ -234,6 +234,21 @@ expect_eq "$NC_REASON" "NO_CONTACT_NUMBER" "SMS attempt failed with NO_CONTACT_N
 SMSLOG_FOR_C=$(db_one "SELECT COUNT(*) FROM sms_log WHERE created_at >= UTC_TIMESTAMP() - INTERVAL 1 MINUTE AND message_type='sos' AND status='failed' AND failure_reason='NO_CONTACT_NUMBER';")
 expect_eq "$SMSLOG_FOR_C" "0" "NO_CONTACT_NUMBER never reaches SmsGatewayService, so no sms_log row is written for it (correct — nothing was actually attempted against a gateway)"
 
+step "6b. Code-review finding H-20: GET /system/health now counts fully-undelivered notification targets"
+# Targets A (tanod_a), B (admin), and C (tanod_b) above each exhausted
+# every configured channel with zero 'sent' rows — exactly the "nobody
+# was alerted" case this new health field exists to surface.
+HEALTH2=$(body_of GET /system/health "$ADMIN")
+FAILED_24H=$(echo "$HEALTH2" | jget notification_delivery_failures_24h)
+[ -n "$FAILED_24H" ] && [ "$FAILED_24H" -ge 3 ] 2>/dev/null \
+  && pass "notification_delivery_failures_24h counts all 3 fully-exhausted targets ($FAILED_24H)" \
+  || fail "Expected notification_delivery_failures_24h >= 3, got '$FAILED_24H'"
+# A target with at least one successful delivery must NEVER be counted,
+# even if it also had earlier failed attempts (e.g. FCM fails, SMS
+# succeeds) — verify directly against the query's own logic in the DB.
+DB_FAILED_COUNT=$(db_one "SELECT COUNT(DISTINCT nt.notification_target_id) FROM notification_target nt JOIN notification n ON n.notification_id = nt.notification_id WHERE n.created_at >= (UTC_TIMESTAMP() - INTERVAL 24 HOUR) AND EXISTS (SELECT 1 FROM notification_delivery nd WHERE nd.notification_target_id = nt.notification_target_id AND nd.status='failed') AND NOT EXISTS (SELECT 1 FROM notification_delivery nd2 WHERE nd2.notification_target_id = nt.notification_target_id AND nd2.status='sent');")
+expect_eq "$FAILED_24H" "$DB_FAILED_COUNT" "The endpoint's count matches a direct DB query of the same logic, not a fabricated/cached number"
+
 step "7. Dispatch creation also triggers the ladder (not just SOS)"
 mysql_exec "$VALDB" <<SQL
 INSERT INTO incident (barangay_id, incident_type, priority, raw_narrative, status, source, latitude, longitude, created_at, updated_at)

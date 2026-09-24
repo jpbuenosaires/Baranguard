@@ -995,6 +995,7 @@ export async function getSystemHealth() {
     gsmIngestion: json.gsm_ingestion, notificationConfig: json.notification_config,
     fcm: json.fcm, smsGsmGateway: json.sms_gsm_gateway,
     backupLastSuccess: json.backup_last_success, restoreTestAt: json.restore_test_at,
+    notificationDeliveryFailures24h: json.notification_delivery_failures_24h,
   };
 }
 
