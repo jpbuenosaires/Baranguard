@@ -6,6 +6,7 @@ namespace Baranguard\Controllers;
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Ai\AiJobQueue;
 use Baranguard\Services\Ai\OllamaClient;
@@ -68,6 +69,14 @@ use PDO;
 final class AiDraftController
 {
     /** §6 translate body: `{target_language:"en"|"fil"|"bcl"}`. */
+    /**
+     * H-11: per-user AI job abuse budget, shared with AiToolsController's
+     * four tools — same 'ai_job:user:' key prefix and same numbers, so the
+     * limit applies to total AI jobs queued regardless of which endpoint.
+     */
+    private const AI_JOB_RATE_LIMIT_MAX = 30;
+    private const AI_JOB_RATE_LIMIT_WINDOW_SECONDS = 3600;
+
     private const TRANSLATION_LANGUAGES = ['en', 'fil', 'bcl'];
 
     /**
@@ -89,6 +98,9 @@ final class AiDraftController
     public static function redact(PDO $pdo, array $identity, string $incidentIdParam): void
     {
         AuthMiddleware::requireRole($identity, ['secretary']);
+        if (!RateLimiter::check($pdo, 'ai_job:user:' . $identity['user_id'], self::AI_JOB_RATE_LIMIT_WINDOW_SECONDS, self::AI_JOB_RATE_LIMIT_MAX)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many AI jobs queued recently. Please wait before starting another.');
+        }
         $incident = self::loadIncident($pdo, $identity, $incidentIdParam);
         $incidentId = (int) $incident['incident_id'];
 
@@ -327,6 +339,9 @@ final class AiDraftController
     public static function translate(PDO $pdo, array $identity, string $incidentIdParam): void
     {
         AuthMiddleware::requireRole($identity, ['secretary']);
+        if (!RateLimiter::check($pdo, 'ai_job:user:' . $identity['user_id'], self::AI_JOB_RATE_LIMIT_WINDOW_SECONDS, self::AI_JOB_RATE_LIMIT_MAX)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many AI jobs queued recently. Please wait before starting another.');
+        }
         $incident = self::loadIncident($pdo, $identity, $incidentIdParam);
         $incidentId = (int) $incident['incident_id'];
 
@@ -398,6 +413,9 @@ final class AiDraftController
     public static function regenerateSummary(PDO $pdo, array $identity, string $incidentIdParam): void
     {
         AuthMiddleware::requireRole($identity, ['secretary']);
+        if (!RateLimiter::check($pdo, 'ai_job:user:' . $identity['user_id'], self::AI_JOB_RATE_LIMIT_WINDOW_SECONDS, self::AI_JOB_RATE_LIMIT_MAX)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many AI jobs queued recently. Please wait before starting another.');
+        }
         $incident = self::loadIncident($pdo, $identity, $incidentIdParam);
         $incidentId = (int) $incident['incident_id'];
 
