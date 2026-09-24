@@ -151,7 +151,7 @@ final class SmsController
     }
 
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
-    private const MAX_MESSAGE_LENGTH = 918; // matches SemaphoreClient's own multi-part SMS ceiling.
+    private const MAX_MESSAGE_LENGTH = 918; // six 153-char GSM-7 segments — well under LocalGsmOutboundClient's own higher backstop ceiling.
 
     /**
      * GET /sms/conversations — 2026-09-05 UX pass, deliberate rescoping of

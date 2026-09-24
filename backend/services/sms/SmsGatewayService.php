@@ -6,11 +6,10 @@ namespace Baranguard\Services\Sms;
 use Baranguard\Controllers\DutyStatusController;
 use Baranguard\Controllers\GpsController;
 use Baranguard\Controllers\IncidentsController;
-use Baranguard\Controllers\SettingsController;
 use Baranguard\Controllers\TanodSosController;
 use Baranguard\Lib\Audit;
-use Baranguard\Services\Notifications\SemaphoreClient;
-use Baranguard\Services\Notifications\SemaphoreException;
+use Baranguard\Services\Notifications\GsmGatewayException;
+use Baranguard\Services\Notifications\LocalGsmOutboundClient;
 use PDO;
 
 /**
@@ -55,35 +54,32 @@ final class SmsGatewayService
     private DeviceSecretVault $vault;
     // Null unless explicitly injected (tests only, per a full search of
     // this codebase's own call sites) — the real, default case resolves
-    // lazily in `resolveSemaphore()` below, because that's the first
-    // point a `$pdo` is available to check `system_settings`.
-    private ?SemaphoreClient $semaphoreOverride;
+    // lazily in `resolveOutboundClient()` below.
+    private ?LocalGsmOutboundClient $outboundClientOverride;
 
-    public function __construct(?EnvelopeCrypto $crypto = null, ?DeviceSecretVault $vault = null, ?SemaphoreClient $semaphore = null)
+    public function __construct(?EnvelopeCrypto $crypto = null, ?DeviceSecretVault $vault = null, ?LocalGsmOutboundClient $outboundClient = null)
     {
         $this->crypto = $crypto ?? new EnvelopeCrypto();
         $this->vault = $vault ?? new DeviceSecretVault();
-        $this->semaphoreOverride = $semaphore;
+        $this->outboundClientOverride = $outboundClient;
     }
 
     /**
-     * 2026-09-05 UX pass — Settings-first, `.env`-fallback resolution of
-     * the SMS gateway client. This is the one piece of the deliberate
-     * W21-override (migration 0012's own comment) that's actually wired
-     * into real behavior rather than just stored: a value saved via
-     * `PATCH /system-settings` genuinely changes which Semaphore
-     * account/sender name outbound SMS uses, the next call. An unset
-     * setting (empty string) falls through to `SemaphoreClient`'s own
-     * `.env` default exactly as before this pass existed.
+     * 2026-09-23: Semaphore removed (explicit user decision — a paid
+     * per-SMS aggregator cost too much for this project's actual volume;
+     * see DEVLOG.md). Outbound now goes through the same tethered phone
+     * `gsm-ingest-daemon.php` already reads INBOUND SMS off —
+     * `LocalGsmOutboundClient`'s own doc block has the full mechanism.
+     * `system_settings`' former `sms_gateway.api_key`/`sender_name` keys
+     * are gone with it: this transport has no cloud credential and no
+     * configurable sender name (messages come from the gateway phone's
+     * own number), so there was nothing left for that Settings card to
+     * hold — `GSM_GATEWAY_ENABLED`/`GSM_GATEWAY_ADB_PATH` are `.env`-only
+     * ops configuration, not something an Admin toggles per barangay.
      */
-    private function resolveSemaphore(PDO $pdo): SemaphoreClient
+    private function resolveOutboundClient(): LocalGsmOutboundClient
     {
-        if ($this->semaphoreOverride !== null) {
-            return $this->semaphoreOverride;
-        }
-        $apiKey = SettingsController::get($pdo, 'sms_gateway.api_key');
-        $senderName = SettingsController::get($pdo, 'sms_gateway.sender_name');
-        return new SemaphoreClient($apiKey !== '' ? $apiKey : null, $senderName !== '' ? $senderName : null);
+        return $this->outboundClientOverride ?? new LocalGsmOutboundClient();
     }
 
     // --- Inbound: /internal/sms/incident-fallback -------------------------
@@ -349,18 +345,18 @@ final class SmsGatewayService
         ?string $correlationId = null,
         ?int $reportId = null
     ): array {
-        $semaphore = $this->resolveSemaphore($pdo);
+        $gateway = $this->resolveOutboundClient();
 
-        if (!$semaphore->isConfigured()) {
-            $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'failed', null, 'SEMAPHORE_NOT_CONFIGURED', $correlationId);
-            return ['status' => 'failed', 'log_id' => $logId, 'failure_reason' => 'SEMAPHORE_NOT_CONFIGURED'];
+        if (!$gateway->isConfigured()) {
+            $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'failed', null, 'GSM_GATEWAY_NOT_CONFIGURED', $correlationId);
+            return ['status' => 'failed', 'log_id' => $logId, 'failure_reason' => 'GSM_GATEWAY_NOT_CONFIGURED'];
         }
 
         try {
-            $result = $priority ? $semaphore->sendPriority($phoneNumber, $message) : $semaphore->send($phoneNumber, $message);
+            $result = $priority ? $gateway->sendPriority($phoneNumber, $message) : $gateway->send($phoneNumber, $message);
             $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'sent', $result['gateway_message_id'], null, $correlationId);
             return ['status' => 'sent', 'log_id' => $logId, 'gateway_message_id' => $result['gateway_message_id']];
-        } catch (SemaphoreException $e) {
+        } catch (GsmGatewayException $e) {
             $reason = mb_strlen($e->getMessage()) > 255 ? mb_substr($e->getMessage(), 0, 254) . '…' : $e->getMessage();
             $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'failed', null, $reason, $correlationId);
             return ['status' => 'failed', 'log_id' => $logId, 'failure_reason' => $reason];
@@ -373,12 +369,19 @@ final class SmsGatewayService
         // text is now persisted for every NEW outbound send, going
         // forward only (rows from before this migration stay NULL,
         // never backfilled with a guess — §2 Rule 6).
+        // transport is 'gsm_modem' for every outbound row since 2026-09-23
+        // (Semaphore removed) — the SAME tethered phone `gsm-ingest-daemon.php`
+        // reads inbound SMS off, now sending too. Older rows with
+        // transport='semaphore' are historical only; that enum value is
+        // deliberately left in place rather than migrated (§2 Rule 9 — no
+        // new numbered migration was worth it just to rename a retired
+        // value on rows nothing writes anymore).
         $stmt = $pdo->prepare(
             "INSERT INTO sms_log
                 (incident_id, dispatch_id, report_id, barangay_id, receiver_number, transport, message_type, direction,
                  gateway_message_id, status, sent_at, failure_reason, message_body, correlation_id, created_at)
              VALUES
-                (:incident_id, :dispatch_id, :report_id, :barangay_id, :receiver_number, 'semaphore', :message_type, 'outbound',
+                (:incident_id, :dispatch_id, :report_id, :barangay_id, :receiver_number, 'gsm_modem', :message_type, 'outbound',
                  :gateway_message_id, :status, :sent_at, :failure_reason, :message_body, :correlation_id, UTC_TIMESTAMP())"
         );
         $stmt->execute([

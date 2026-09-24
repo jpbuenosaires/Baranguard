@@ -79,7 +79,14 @@ final class SystemHealthController
         }
 
         $fcmStatus = self::envConfiguredStatus('FCM_SERVICE_ACCOUNT_PATH');
-        $smsStatus = self::envConfiguredStatus('SEMAPHORE_API_KEY');
+        // 2026-09-23: Semaphore removed, replaced by the local GSM
+        // gateway (`LocalGsmOutboundClient`) — 'healthy' means the
+        // deployment has explicitly opted in (GSM_GATEWAY_ENABLED=true),
+        // not merely that SOME value is set, since 'false' is itself a
+        // meaningful, valid value here (unlike an API key, where any
+        // non-empty string was a real key). Same fcm/sms "presence, not a
+        // live probe" pattern as before — see this class's own doc block.
+        $smsStatus = baranguard_env('GSM_GATEWAY_ENABLED') === 'true' ? 'healthy' : 'not_configured';
         $orsStatus = self::orsStatus();
         $ollamaStatus = self::ollamaStatus();
         $gsmStatus = self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN');
@@ -109,16 +116,21 @@ final class SystemHealthController
             // will accept anything (see public/internal.php).
             'gsm_ingestion' => $gsmStatus,
             // Fine-grained per-transport status (Sprint 4). `fcm` and
-            // `sms_semaphore` are each independently truthful about
+            // `sms_gsm_gateway` are each independently truthful about
             // configuration presence — NEITHER is a live reachability
             // probe the way `ollama` is: there is no cheap, side-effect-free
-            // way to "ping" FCM/Semaphore without actually sending
+            // way to "ping" FCM/the gateway phone without actually sending
             // something, so both stay at the coarser not_configured/healthy
             // distinction that `ollama` itself used before Sprint 5's
             // upgrade to a real probe. Same honest-not-fabricated principle,
             // just without a free probe to make it more precise.
+            // RENAMED 2026-09-23 (was `sms_semaphore`) when Semaphore was
+            // replaced by the local GSM gateway — a real rename, not
+            // additive, since calling this "semaphore" would now be false.
+            // Every consumer (web/src/pages/service-health.js,
+            // web/tests/harness/fixtures.mjs) was updated in the same pass.
             'fcm' => $fcmStatus,
-            'sms_semaphore' => $smsStatus,
+            'sms_gsm_gateway' => $smsStatus,
             // Kept for the existing web topbar tooltip (AppShell.js) —
             // additive, not a breaking rename.
             'notification_config' => ($fcmStatus === 'healthy' || $smsStatus === 'healthy') ? 'healthy' : 'not_configured',
@@ -174,7 +186,7 @@ final class SystemHealthController
                 'ollama' => $r['ollama_status'],
                 'gsm_ingestion' => $r['gsm_status'],
                 'fcm' => $r['fcm_status'],
-                'sms_semaphore' => $r['sms_status'],
+                'sms_gsm_gateway' => $r['sms_status'],
             ], $rows),
             // Said in the payload, not just in the UI, so any consumer of
             // this endpoint inherits the caveat rather than having to
