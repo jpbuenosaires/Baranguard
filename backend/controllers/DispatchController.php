@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
+use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Notifications\NotificationDispatcher;
@@ -540,6 +541,18 @@ final class DispatchController
     {
         if (!is_string($newStatus) || !in_array($newStatus, ['en_route', 'arrived', 'completed'], true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of: en_route, arrived, completed.');
+        }
+
+        // H-09: Tanod-initiated updates only — an Admin override already
+        // goes through its own audited `override_reason` path (see this
+        // method's own doc) and isn't a mobile-device write at all.
+        // Optional/no-op for a device with no header or no key on file yet
+        // — see DeviceSignature's own phased-rollout doc.
+        if ($identity['role'] === 'tanod') {
+            $deviceId = Http::header('X-Device-Id');
+            if (is_string($deviceId) && $deviceId !== '') {
+                DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
+            }
         }
 
         $pdo->beginTransaction();

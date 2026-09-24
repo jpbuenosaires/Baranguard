@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
@@ -240,6 +241,17 @@ final class GpsController
      */
     public static function createItem(PDO $pdo, array $identity, array $item): array
     {
+        // H-09: optional today — neither the direct POST /gps path nor
+        // SyncController::batch() currently send X-Device-Id for GPS at
+        // all (confirmed gap the audit found: "GPS ingestion... has NO
+        // device-id check whatsoever"). A device with no header, or one
+        // that hasn't upgraded to a Keystore keypair yet, is unaffected;
+        // see DeviceSignature's own doc for the phased-rollout reasoning.
+        $deviceId = Http::header('X-Device-Id');
+        if (is_string($deviceId) && $deviceId !== '') {
+            DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
+        }
+
         $latitude = $item['latitude'] ?? null;
         $longitude = $item['longitude'] ?? null;
         $accuracyM = $item['accuracy_m'] ?? null;
