@@ -47,7 +47,7 @@
   background: linear-gradient(90deg, var(--color-critical-solid) 0%, color-mix(in srgb, var(--color-critical-solid) 80%, black) 100%);
   color: var(--color-white);
   padding: 0.6875rem 1.25rem;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -97,12 +97,12 @@
 }
 
 .dispatch-priority-alert__btn--resolve {
-  background: #15803d;
+  background: var(--color-success-solid);
   color: var(--color-white);
 }
 
 .dispatch-priority-alert__btn--resolve:hover {
-  background: #166534;
+  background: var(--color-success-text);
   color: var(--color-white);
 }
 
@@ -479,7 +479,7 @@
   background: var(--color-critical-solid);
   color: var(--color-white);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 0.8125rem 1.25rem;
   font-weight: 700;
   font-size: 0.9375rem;
@@ -557,7 +557,7 @@
   background: var(--color-surface);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: var(--radius-sm);
   padding: var(--spacing-2xs) 0.875rem;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -578,7 +578,7 @@
   background: var(--color-primary);
   color: var(--color-white);
   border: none;
-  border-radius: var(--radius-sm, 8px);
+  border-radius: var(--radius-sm);
   padding: var(--spacing-2xs) 0.875rem;
   font-size: 0.8125rem;
   font-weight: 600;
