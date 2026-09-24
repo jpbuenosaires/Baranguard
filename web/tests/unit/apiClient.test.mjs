@@ -12,7 +12,7 @@ import * as client from '../../src/api/apiClient.js';
 const { ApiClientError } = client;
 afterEach(() => cleanup());
 
-const session = () => JSON.parse(window.sessionStorage.getItem('baranguard.session'));
+const session = () => client.getSession();
 
 function fakeJwt(expSeconds) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -20,11 +20,12 @@ function fakeJwt(expSeconds) {
 }
 
 describe('session', () => {
-  test('login stores the token, expiry and mapped user in sessionStorage (not localStorage)', async () => {
+  test('login stores the token/expiry/mapped user in memory, and NEVER in any Storage object (H-05)', async () => {
     const user = await client.login('admin.dao', 'Correct-Horse-9');
     assert.deepEqual(user, { userId: 1, fullName: 'Ramon Elcano', role: 'admin', barangayId: 1 });
     assert.equal(session().token, 'test-token-admin');
-    assert.equal(window.localStorage.length, 0, 'a shared workstation session must die with the tab');
+    assert.equal(window.sessionStorage.length, 0, 'the token must not be readable via sessionStorage (XSS exfiltration risk, H-05)');
+    assert.equal(window.localStorage.length, 0, 'a shared workstation session must die with the tab, and never touch localStorage either');
     const [call] = api.callsTo('POST', '/auth/login');
     assert.equal(call.headers.authorization, undefined, 'login must not send a bearer token');
   });
@@ -35,14 +36,13 @@ describe('session', () => {
   });
 
   test('an expired session is treated as signed out and removed', () => {
-    window.sessionStorage.setItem('baranguard.session', JSON.stringify({ token: 't', expiresAt: new Date(Date.now() - 1000).toISOString(), user: {} }));
+    client.__setSessionForTests({ token: 't', expiresAt: new Date(Date.now() - 1000).toISOString(), user: {} });
     assert.equal(client.getSession(), null);
     assert.equal(client.isAuthenticated(), false);
-    assert.equal(window.sessionStorage.getItem('baranguard.session'), null);
   });
 
-  test('a corrupt stored session is ignored rather than crashing', () => {
-    window.sessionStorage.setItem('baranguard.session', '{not json');
+  test('a malformed session shape is ignored rather than crashing', () => {
+    client.__setSessionForTests({ notAValidSessionShape: true });
     assert.equal(client.getSession(), null);
   });
 

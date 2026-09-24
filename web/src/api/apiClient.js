@@ -13,13 +13,33 @@
  * (`http://baranguard.local/api/v1`) by setting that global before this
  * module runs; see web/README-serving.md.
  *
- * Session storage: resolved decision (logged in DEVLOG.md) — the JWT and
- * its expiry/user info live in `sessionStorage`, not `localStorage`. This
- * is a shared-workstation CAD-style system (§8 tone); a session that dies
- * with the tab is the safer default for that context, and it still
- * survives an accidental page reload within the same tab. No httpOnly
- * cookie option exists because there's no server-side session cookie
- * mechanism built — the API is a stateless bearer-token JSON API per §6.
+ * Session storage: code-review finding H-05 (2026-09-24) — the JWT used
+ * to live in `sessionStorage`. Escaping/sanitizing server data (§6's
+ * `escapeHtml` rule) defends against XSS INJECTING a script, but does
+ * nothing once one has run: any `sessionStorage` value is readable by
+ * ANY script executing in the page's origin, so a real XSS on this page
+ * could exfiltrate the bearer token directly. Fixed by moving the token
+ * to a plain in-memory module variable — never written to any Storage
+ * object at all, so there is nothing there for a script to read even in
+ * that scenario.
+ *
+ * The real cost, disclosed rather than hidden: a page reload now signs
+ * the user out, where sessionStorage previously survived one. The
+ * "right" fix — an HttpOnly, Secure, SameSite cookie the browser attaches
+ * automatically and JS can never read — needs real HTTPS to set
+ * `SameSite=None` safely across the web (`:80`) and API (`:8081`) origins,
+ * which is C-03, not yet done. Faking a client-side "silent refresh" via
+ * a second token stored in `localStorage`/`sessionStorage` would not
+ * actually fix anything — that refresh token would be exactly as
+ * readable by the same XSS, and arguably worse (a longer-lived credential
+ * instead of one capped by the existing 15-minute sliding window, §2
+ * Rule 12). So this is a deliberate interim tradeoff, not the final
+ * state: revisit once C-03 lands.
+ *
+ * The already-open dashboard's own 15s poller (`AppShell.js`) still keeps
+ * a session alive indefinitely via the existing `X-Renewed-Token` sliding
+ * mechanism below — this change affects only what survives a reload,
+ * not a session's normal lifetime while the tab stays open.
  *
  * snake_case <-> camelCase (§4): this file hand-maps each endpoint's known
  * *structural* field names rather than deep-recursively converting every
@@ -35,8 +55,6 @@
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8080/api/v1';
 const BASE_URL = (typeof window !== 'undefined' && window.BARANGUARD_API_BASE_URL) || DEFAULT_BASE_URL;
 
-const SESSION_KEY = 'baranguard.session';
-
 export class ApiClientError extends Error {
   constructor(status, code, message) {
     super(message);
@@ -46,32 +64,29 @@ export class ApiClientError extends Error {
   }
 }
 
-// --- Session storage ------------------------------------------------------
+// --- Session storage (H-05: in-memory only, see the file doc above) -------
+
+let inMemorySession = null;
 
 function readSession() {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.token !== 'string' || typeof parsed.expiresAt !== 'string') {
-      return null;
-    }
-    if (new Date(parsed.expiresAt).getTime() <= Date.now()) {
-      sessionStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-    return parsed;
-  } catch {
+  if (!inMemorySession) return null;
+  if (
+    typeof inMemorySession.token !== 'string' ||
+    typeof inMemorySession.expiresAt !== 'string' ||
+    new Date(inMemorySession.expiresAt).getTime() <= Date.now()
+  ) {
+    inMemorySession = null;
     return null;
   }
+  return inMemorySession;
 }
 
 function writeSession(session) {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  inMemorySession = session;
 }
 
 function clearSession() {
-  sessionStorage.removeItem(SESSION_KEY);
+  inMemorySession = null;
 }
 
 export function getSession() {
@@ -80,6 +95,16 @@ export function getSession() {
 
 export function isAuthenticated() {
   return readSession() !== null;
+}
+
+/**
+ * Test-only. Real app code never calls this — page-render tests need to
+ * seed an authenticated in-memory state without performing a real
+ * login() round trip against the fake API. See web/tests/harness/
+ * render.mjs's signIn().
+ */
+export function __setSessionForTests(session) {
+  inMemorySession = session;
 }
 
 // --- Low-level request helper ----------------------------------------------

@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { resetDom, jsdomErrors, window } from './env.mjs';
 import { api } from './fakeApi.mjs';
 import { XSS } from './fixtures.mjs';
+import { __setSessionForTests } from '../../src/api/apiClient.js';
 
 export { api, XSS };
 export { window };
@@ -62,14 +63,14 @@ export const USERS = {
   tanod: { userId: 4, fullName: 'Jose Reyes', role: 'tanod', barangayId: 1 },
 };
 
-/** Writes the same sessionStorage record apiClient.login() writes. */
+/** Seeds the same in-memory session shape apiClient.login() would write. */
 export function signIn(role, overrides = {}) {
   const user = { ...USERS[role], ...overrides };
-  window.sessionStorage.setItem('baranguard.session', JSON.stringify({
+  __setSessionForTests({
     token: `test-token-${role}`,
     expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     user,
-  }));
+  });
   return user;
 }
 
@@ -120,6 +121,7 @@ export function cleanup() {
   liveIntervals.clear();
   api.reset();
   resetDom();
+  __setSessionForTests(null);
   captured.consoleErrors.length = 0;
   captured.consoleWarnings.length = 0;
   captured.uncaught.length = 0;
