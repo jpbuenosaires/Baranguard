@@ -56,6 +56,7 @@ export function renderFatigueFlagsTab(container, user, onCountsChanged) {
   searchInput.type = 'search';
   searchInput.className = 'personnel-search-input';
   searchInput.placeholder = 'Search by tanod name or calculation basis…';
+  searchInput.setAttribute('aria-label', 'Search fatigue flags');
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value.trim().toLowerCase();
     renderFiltered();

@@ -46,6 +46,9 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { AiToolPanel } from '../components/AiToolPanel.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
+
+let partyFieldSeq = 0;
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -73,7 +76,9 @@ function openPrintModal(incident, blotter, evidence) {
   modal.style.maxWidth = '780px';
   modal.style.width = '95%';
 
-  const blotterDisplayId = blotter?.displayId || incident?.displayId || `BLT-2026-${String(incident.incidentId).padStart(3, '0')}`;
+  const hasBlotter = Boolean(blotter?.displayId || blotter?.blotterId);
+  const entryId = blotter?.displayId || (blotter?.blotterId ? `BLT-2026-${String(blotter.blotterId).padStart(3, '0')}` : (incident?.displayId || `#${incident.incidentId}`));
+  const entryLabel = hasBlotter ? 'BLOTTER ENTRY NO.' : 'INCIDENT REFERENCE NO.';
   const incidentDate = new Date(incident.createdAt).toLocaleDateString('en-US', {
     month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
@@ -103,8 +108,8 @@ function openPrintModal(incident, blotter, evidence) {
 
       <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;padding:0.75rem 1rem;border-radius:6px;margin-bottom:1.25rem;">
         <div>
-          <span style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;">BLOTTER ENTRY NO.</span>
-          <p style="margin:0;font-size:1.05rem;font-weight:800;color:#0f172a;font-family:monospace;">${escapeHtml(blotterDisplayId)}</p>
+          <span style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;">${entryLabel}</span>
+          <p style="margin:0;font-size:1.05rem;font-weight:800;color:#0f172a;font-family:monospace;">${escapeHtml(entryId)}</p>
         </div>
         <div style="text-align:right;">
           <span style="font-size:0.75rem;color:#64748b;font-weight:600;text-transform:uppercase;">DATE & TIME LOGGED</span>
@@ -213,8 +218,8 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
   root.appendChild(shell.el);
 
   const pageHeader = PageHeader({
-    title: `Blotter Entry — Incident #${incidentId}`,
-    subtitle: 'Incident record, timeline, and blotter finalization',
+    title: `Incident Record — #${incidentId}`,
+    subtitle: 'Incident particulars, response timeline, and blotter intake',
     icon: icons.fileText,
   });
   header.appendChild(pageHeader.el);
@@ -277,32 +282,11 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
   // --- States (§8: Loading / Empty / Error / Populated) ---
 
   function renderLoading() {
-    content.innerHTML = '';
-    const wrap = document.createElement('div');
-    wrap.className = 'stack';
-    wrap.setAttribute('role', 'status');
-    wrap.setAttribute('aria-label', 'Loading blotter entry');
-    for (let i = 0; i < 3; i++) {
-      const skeleton = document.createElement('div');
-      skeleton.className = 'skeleton skeleton--block';
-      wrap.appendChild(skeleton);
-    }
-    content.appendChild(wrap);
+    renderLoadingSkeleton({ container: content, count: 3, ariaLabel: 'Loading blotter entry' });
   }
 
   function renderError(message) {
-    content.innerHTML = '';
-    const block = document.createElement('div');
-    block.className = 'card state-block state-block--error';
-    block.setAttribute('role', 'alert');
-    const text = document.createElement('p');
-    text.textContent = message;
-    const retry = document.createElement('button');
-    retry.className = 'primary';
-    retry.textContent = 'Try again';
-    retry.addEventListener('click', load);
-    block.append(text, retry);
-    content.appendChild(block);
+    renderErrorState({ container: content, message, onRetry: load });
   }
 
   /**
@@ -323,16 +307,24 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     stopAssistant();
     content.innerHTML = '';
 
-    const blotterDisplayId = blotter?.displayId || incident?.displayId || `BLT-2026-${String(incidentId).padStart(3, '0')}`;
+    const hasBlotter = Boolean(blotter?.displayId || blotter?.blotterId);
+    const blotterDisplayId = blotter?.displayId || (blotter?.blotterId ? `BLT-2026-${String(blotter.blotterId).padStart(3, '0')}` : null);
+    const incidentDisplayId = incident?.displayId || `#${incident?.incidentId || incidentId}`;
 
-    // Update Page Header Title & Subtitle
+    // Update Page Header Title & Subtitle based on statutory lifecycle
     const titleBlock = pageHeader.el.querySelector('.page-header__title');
     if (titleBlock) {
-      titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Blotter Entry — ${blotterDisplayId}`;
+      if (hasBlotter) {
+        titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Blotter Entry — <span class="page-header__id-pill font-mono">${escapeHtml(blotterDisplayId)}</span>`;
+      } else {
+        titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record — <span class="page-header__id-pill font-mono">${escapeHtml(incidentDisplayId)}</span>`;
+      }
     }
     const subtitleBlock = pageHeader.el.querySelector('.page-header__subtitle');
     if (subtitleBlock) {
-      subtitleBlock.textContent = 'Official Barangay Blotter Ledger · Katarungang Pambarangay §394';
+      subtitleBlock.textContent = hasBlotter
+        ? 'Official Barangay Blotter Ledger · Katarungang Pambarangay §394'
+        : 'Incident particulars, response timeline, and blotter intake';
     }
 
     // Refresh Action Buttons in Page Header
@@ -461,7 +453,9 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     const card = document.createElement('div');
     card.className = 'card case-hero';
 
-    const blotterDisplayId = blotter?.displayId || incident?.displayId || `BLT-2026-${String(incident.incidentId).padStart(3, '0')}`;
+    const hasBlotter = Boolean(blotter?.displayId || blotter?.blotterId);
+    const blotterDisplayId = blotter?.displayId || (blotter?.blotterId ? `BLT-2026-${String(blotter.blotterId).padStart(3, '0')}` : null);
+    const incidentDisplayId = incident?.displayId || `#${incident.incidentId}`;
 
     // Header Row: Type + Icon + Badges
     const headerRow = document.createElement('div');
@@ -483,29 +477,43 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     const badges = document.createElement('div');
     badges.className = 'case-hero__badges';
 
-    const idBadge = document.createElement('span');
-    idBadge.className = 'blotter-id-badge';
-    idBadge.innerHTML = `${icons.fileText(14)} ${blotterDisplayId}`;
-    idBadge.title = 'Statutory Blotter Reference ID';
+    const badgesToAppend = [];
 
-    const incidentBadge = document.createElement('span');
-    incidentBadge.className = 'blotter-id-badge blotter-id-badge--incident';
-    incidentBadge.innerHTML = `#${incident.incidentId}`;
-    incidentBadge.title = `Incident System ID #${incident.incidentId}`;
+    if (hasBlotter) {
+      // Official Blotter Reference ID
+      const blotterBadge = document.createElement('span');
+      blotterBadge.className = 'blotter-id-badge';
+      blotterBadge.innerHTML = `${icons.fileText(13)} <span>${escapeHtml(blotterDisplayId)}</span>`;
+      blotterBadge.title = 'Statutory Blotter Reference ID';
+      badgesToAppend.push(blotterBadge);
+
+      // Originating Incident Reference
+      const incidentBadge = document.createElement('span');
+      incidentBadge.className = 'blotter-id-badge blotter-id-badge--incident';
+      incidentBadge.innerHTML = `<span>Ref: ${escapeHtml(incidentDisplayId)}</span>`;
+      incidentBadge.title = `Originating Incident ID ${escapeHtml(incidentDisplayId)}`;
+      badgesToAppend.push(incidentBadge);
+    } else {
+      // Unfinalized Incident: Single clear primary Incident ID badge (no duplicate #123)
+      const incidentBadge = document.createElement('span');
+      incidentBadge.className = 'blotter-id-badge';
+      incidentBadge.innerHTML = `${icons.fileText(13)} <span>${escapeHtml(incidentDisplayId)}</span>`;
+      incidentBadge.title = `Incident Reference ID ${escapeHtml(incidentDisplayId)}`;
+      badgesToAppend.push(incidentBadge);
+    }
 
     const statusPill = document.createElement('span');
     statusPill.className = `status-pill ${STATUS_PILL_CLASS[incident.status] || 'status-pill--neutral'}`;
-    statusPill.textContent = `INCIDENT: ${(incident.status || 'unknown').toUpperCase()}`;
-
-    const badgesToAppend = [idBadge, incidentBadge, statusPill];
+    statusPill.textContent = (incident.status || 'unknown').toUpperCase();
+    badgesToAppend.push(statusPill);
 
     if (blotter?.caseStatus) {
       badgesToAppend.push(buildCaseStatusPill(blotter.caseStatus));
     }
 
     const priorityPill = document.createElement('span');
-    priorityPill.className = `status-pill ${incident.priority === 'urgent' ? 'status-pill--pending' : 'status-pill--neutral'}`;
-    priorityPill.textContent = `PRIORITY: ${incident.priority.toUpperCase()}`;
+    priorityPill.className = `status-pill ${incident.priority === 'urgent' || incident.priority === 'critical' ? 'status-pill--critical' : incident.priority === 'high' ? 'status-pill--warning' : 'status-pill--neutral'}`;
+    priorityPill.textContent = `${(incident.priority || 'normal').toUpperCase()} PRIORITY`;
     badgesToAppend.push(priorityPill);
 
     badges.append(...badgesToAppend);
@@ -598,7 +606,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     // Channel
     const channelTile = document.createElement('div');
     channelTile.className = 'meta-tile';
-    const channelLabel = incident.source === 'app' ? '📱 Mobile App' : incident.source === 'walkin' ? '🚶 Walk-in Desk' : '📞 Hotline Call';
+    const channelLabel = incident.source === 'app' ? 'Mobile App' : incident.source === 'walkin' ? 'Walk-in Desk' : 'Hotline Call';
     channelTile.innerHTML = `
       <div class="meta-tile__icon">${icons.phone(16)}</div>
       <div class="meta-tile__content">
@@ -1006,23 +1014,38 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     const finalized = Boolean(blotter && blotter.finalizedAt);
 
     if (!approved) {
-      const heading = document.createElement('h3');
-      heading.className = 'doc-card__title';
-      heading.textContent = 'Blotter Record Finalization';
-      card.appendChild(heading);
+      const lockCard = document.createElement('div');
+      lockCard.className = 'card blotter-compliance-callout';
 
-      const note = document.createElement('p');
-      note.className = 'note';
-      note.style.margin = '0.5rem 0 1rem 0';
-      note.textContent =
-        'This incident has no approved redaction yet, so its blotter entry cannot be finalized. '
-        + 'Approve the AI redaction first to comply with RA 10173 privacy regulations.';
-      const link = document.createElement('button');
-      link.className = 'primary';
-      link.textContent = 'Go to AI Redaction Review';
-      link.addEventListener('click', () => navigate('ai-review', incidentId));
-      card.append(note, link);
-      return card;
+      lockCard.innerHTML = `
+        <div class="blotter-compliance-callout__header">
+          <div class="blotter-compliance-callout__icon">
+            ${icons.shield(22)}
+          </div>
+          <div class="blotter-compliance-callout__titles">
+            <h3 class="blotter-compliance-callout__title">Blotter Record Finalization Locked</h3>
+            <p class="blotter-compliance-callout__sub">Statutory Requirement: RA 10173 Data Privacy Compliance</p>
+          </div>
+        </div>
+        <p class="blotter-compliance-callout__body">
+          This incident has no approved redaction yet. Under Republic Act 10173 and Katarungang Pambarangay guidelines, blotter records cannot be permanently committed to the official ledger until PII and sensitive identifiers have been formally reviewed and approved by the Barangay Secretary.
+        </p>
+        <div class="blotter-compliance-callout__footer">
+          <div class="blotter-compliance-callout__badge">
+            <span class="blotter-compliance-callout__dot" aria-hidden="true"></span>
+            <span>Prerequisite: AI Redaction Approval Required</span>
+          </div>
+          <button class="primary" id="goto-ai-review-btn">
+            <span>Go to AI Redaction Review</span> <span aria-hidden="true">&rarr;</span>
+          </button>
+        </div>
+      `;
+
+      lockCard.querySelector('#goto-ai-review-btn').addEventListener('click', () => {
+        navigate('ai-review', incidentId);
+      });
+
+      return lockCard;
     }
 
     if (!finalized) {
@@ -1102,9 +1125,9 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       <div style="flex:1;min-width:0;">
         <h4 class="resolution-badge-card__title">Case Closed & Resolved</h4>
         <p class="resolution-badge-card__desc">This incident was officially closed and resolved. Permanent statutory retention policies apply under Republic Act 7160 Section 394.</p>
-        <div style="margin-top:0.45rem;padding-top:0.45rem;border-top:1px solid var(--color-success);display:flex;flex-direction:column;gap:0.25rem;font-size:0.75rem;color:var(--color-text-secondary);">
-          ${formattedResDate ? `<span>🕒 <strong>Resolution Logged:</strong> ${formattedResDate}</span>` : ''}
-          <span>🛡️ <strong>Dispatch Status:</strong> All active dispatches cleared</span>
+        <div class="resolution-badge-card__meta">
+          ${formattedResDate ? `<span><strong>Resolution Logged:</strong> ${formattedResDate}</span>` : ''}
+          <span><strong>Dispatch Status:</strong> All active dispatches cleared</span>
         </div>
       </div>
     `;
@@ -1224,24 +1247,31 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
    * the elements to append into the caller's own form.
    */
   function buildPartyFields({ complainantName, respondentName, complainantContactNumber }) {
+    const idPrefix = `blotter-party-${++partyFieldSeq}`;
     const complainantLabel = document.createElement('label');
     complainantLabel.className = 'label';
+    complainantLabel.htmlFor = `${idPrefix}-complainant`;
     complainantLabel.textContent = 'Complainant name (optional)';
     const complainantInput = document.createElement('input');
+    complainantInput.id = `${idPrefix}-complainant`;
     complainantInput.type = 'text';
     complainantInput.value = complainantName || '';
 
     const respondentLabel = document.createElement('label');
     respondentLabel.className = 'label';
+    respondentLabel.htmlFor = `${idPrefix}-respondent`;
     respondentLabel.textContent = 'Respondent name (optional)';
     const respondentInput = document.createElement('input');
+    respondentInput.id = `${idPrefix}-respondent`;
     respondentInput.type = 'text';
     respondentInput.value = respondentName || '';
 
     const contactLabel = document.createElement('label');
     contactLabel.className = 'label';
+    contactLabel.htmlFor = `${idPrefix}-contact`;
     contactLabel.textContent = 'Contact number (optional)';
     const contactInput = document.createElement('input');
+    contactInput.id = `${idPrefix}-contact`;
     contactInput.type = 'tel';
     contactInput.value = complainantContactNumber || '';
 

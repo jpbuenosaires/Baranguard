@@ -51,6 +51,8 @@ import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
+import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -193,6 +195,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       render();
       startPollingIfPending();
     } catch (err) {
+      console.error('Error loading AI review:', err);
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading this incident.';
       renderError(message);
     }
@@ -201,32 +204,11 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
   // --- States (§8: Loading / Empty / Error / Populated on every screen) ---
 
   function renderLoading() {
-    content.innerHTML = '';
-    const wrap = document.createElement('div');
-    wrap.className = 'stack';
-    wrap.setAttribute('role', 'status');
-    wrap.setAttribute('aria-label', 'Loading AI draft');
-    for (let i = 0; i < 4; i++) {
-      const skeleton = document.createElement('div');
-      skeleton.className = 'skeleton skeleton--block';
-      wrap.appendChild(skeleton);
-    }
-    content.appendChild(wrap);
+    renderLoadingSkeleton({ container: content, count: 4, ariaLabel: 'Loading AI draft' });
   }
 
   function renderError(message) {
-    content.innerHTML = '';
-    const block = document.createElement('div');
-    block.className = 'card state-block state-block--error';
-    block.setAttribute('role', 'alert');
-    const text = document.createElement('p');
-    text.textContent = message;
-    const retry = document.createElement('button');
-    retry.className = 'primary';
-    retry.textContent = 'Try again';
-    retry.addEventListener('click', load);
-    block.append(text, retry);
-    content.appendChild(block);
+    renderErrorState({ container: content, message, onRetry: load });
   }
 
   function buildWorkflowStepper() {
@@ -236,6 +218,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
     const step1Done = Boolean(draft && draft.status === 'completed');
     const step1Running = Boolean(draft && (draft.status === 'queued' || draft.status === 'processing'));
+    const step1Active = !step1Done && !step1Running;
 
     const step2Active = step1Done && !incident.redactionApprovedAt;
     const step2Done = step1Done && (incident.redactionApprovedAt || (!edited && !draft?.draftSummaryStale));
@@ -250,26 +233,34 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       {
         num: '1',
         label: 'Intake Redaction',
-        state: step1Done ? 'done' : step1Running ? 'running' : 'pending',
+        sub: step1Done ? 'Draft Ready' : step1Running ? 'Processing…' : 'Awaiting Run',
+        state: step1Done ? 'done' : step1Running ? 'running' : 'active',
       },
       {
         num: '2',
         label: 'Review & Edit',
+        sub: step2Done ? 'Verified' : step2Active ? 'Active Review' : 'Side-by-Side Diff',
         state: step2Done ? 'done' : step2Active ? 'active' : 'pending',
       },
       {
         num: '3',
         label: 'Summary Sync',
+        sub: step3Warning ? 'Sync Required' : step3Done ? 'In Sync' : 'Entity Check',
         state: step3Warning ? 'warning' : step3Done ? 'done' : 'pending',
       },
       {
         num: '4',
         label: 'Approve & Commit',
+        sub: step4Done ? 'Approved' : step4Ready ? 'Ready to Seal' : 'Permanent Seal',
         state: step4Done ? 'done' : step4Ready ? 'active' : 'pending',
       },
     ];
 
-    for (const s of steps) {
+    const track = document.createElement('div');
+    track.className = 'ai-review__stepper-track';
+
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
       const item = document.createElement('div');
       item.className = `ai-review__step ai-review__step--${s.state}`;
 
@@ -280,257 +271,150 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       else if (s.state === 'running') icon.innerHTML = `<span class="is-spinning">${icons.repeat(14)}</span>`;
       else icon.textContent = s.num;
 
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'ai-review__step-content';
+
       const label = document.createElement('span');
       label.className = 'ai-review__step-label';
       label.textContent = s.label;
 
-      item.append(icon, label);
-      nav.appendChild(item);
+      const sub = document.createElement('span');
+      sub.className = 'ai-review__step-sub';
+      sub.textContent = s.sub;
+
+      contentDiv.append(label, sub);
+      item.append(icon, contentDiv);
+      track.appendChild(item);
+
+      if (i < steps.length - 1) {
+        const connector = document.createElement('div');
+        connector.className = `ai-review__step-connector ${steps[i].state === 'done' ? 'is-done' : ''}`;
+        track.appendChild(connector);
+      }
     }
 
+    nav.appendChild(track);
     return nav;
   }
 
   function render() {
     content.innerHTML = '';
-    content.appendChild(buildWorkflowStepper());
-    content.appendChild(buildIncidentSummary());
+    const layout = document.createElement('div');
+    layout.className = 'ai-review-layout';
+
+    layout.appendChild(buildWorkflowStepper());
+    layout.appendChild(buildIncidentSummary());
 
     if (!draft) {
-      content.appendChild(buildNoDraftState());
-      // Post-approval tools stay reachable even with no draft — an
-      // incident approved earlier still needs translation and its packet.
-      if (incident.redactionApprovedAt) content.appendChild(buildPostApprovalPanel());
+      layout.appendChild(buildNoDraftState());
+      if (incident.redactionApprovedAt) layout.appendChild(buildActionsDock());
+      content.appendChild(layout);
       return;
     }
 
-    content.appendChild(buildDraftMeta());
-    content.appendChild(buildSideBySide());
-    content.appendChild(buildActions());
-    content.appendChild(buildPostApprovalPanel());
+    layout.appendChild(buildSideBySide());
+    layout.appendChild(buildSecondarySection());
+    layout.appendChild(buildActionsDock());
+    content.appendChild(layout);
   }
 
   /**
    * §9 W8: "Once approved, translation and Lupon packet are available only
    * when their prerequisites are met."
-   *
-   * Both controls are always VISIBLE once a redaction is approved, and
-   * disabled with the specific missing prerequisite named — §8 forbids a
-   * dead control with no explanation, and the packet's second prerequisite
-   * (a finalized blotter) lives on a different screen, so silently
-   * disabling it would leave the Secretary with no idea what to do next.
    */
-  function buildPostApprovalPanel() {
-    const card = document.createElement('div');
-    card.className = 'card';
-
-    const heading = document.createElement('h3');
-    heading.textContent = 'After approval';
-    card.appendChild(heading);
-
-    if (!incident.redactionApprovedAt) {
-      const note = document.createElement('p');
-      note.className = 'note';
-      note.textContent = 'Translation and the Lupon packet become available once the redaction is approved.';
-      card.appendChild(note);
-      return card;
-    }
-
-    // --- Translation ---
-    const translateRow = document.createElement('div');
-    translateRow.className = 'ai-review__actions';
-
-    const languageLabel = document.createElement('label');
-    languageLabel.className = 'sr-only';
-    languageLabel.htmlFor = 'ai-translate-language';
-    languageLabel.textContent = 'Target language';
-    const languageSelect = document.createElement('select');
-    languageSelect.id = 'ai-translate-language';
-    for (const [value, label] of [['en', 'English'], ['fil', 'Filipino'], ['bcl', 'Bikol']]) {
-      const option = document.createElement('option');
-      option.value = value;
-      option.textContent = label;
-      languageSelect.appendChild(option);
-    }
-
-    const translateButton = document.createElement('button');
-    translateButton.className = 'ghost';
-    translateButton.textContent = 'Queue translation';
-    translateButton.addEventListener('click', async () => {
-      translateButton.disabled = true;
-      try {
-        const result = await translateAiDraft(incidentId, languageSelect.value);
-        // Rule 16: Bikol is unvalidated until a real evaluation run says
-        // otherwise. Surface that instead of quietly returning it.
-        showToast(
-          result.languageValidated
-            ? 'Translation queued.'
-            : 'Translation queued. Bikol output is not yet validated for quality — review it before relying on it.',
-          { variant: result.languageValidated ? 'info' : 'error' }
-        );
-      } catch (err) {
-        showToast(err instanceof ApiClientError ? err.message : 'Could not queue the translation.', { variant: 'error' });
-      } finally {
-        translateButton.disabled = false;
-      }
-    });
-
-    translateRow.append(languageLabel, languageSelect, translateButton);
-    card.appendChild(translateRow);
-
-    // --- Lupon packet ---
-    const packetRow = document.createElement('div');
-    packetRow.className = 'ai-review__actions';
-
-    const packetButton = document.createElement('button');
-    packetButton.className = 'ghost';
-    packetButton.textContent = 'Generate Lupon packet';
-    packetButton.addEventListener('click', async () => {
-      packetButton.disabled = true;
-      packetButton.textContent = 'Generating…';
-      try {
-        await generateLuponPacket(incidentId);
-        showToast('Lupon packet generated.', { variant: 'success' });
-        packetNote.textContent = 'Packet ready.';
-        downloadLink.hidden = false;
-      } catch (err) {
-        // The likeliest failure is "no finalized blotter yet", which is
-        // fixed on W7 — say that rather than just echoing a 409.
-        showToast(
-          err instanceof ApiClientError ? err.message : 'Could not generate the packet.',
-          { variant: 'error' }
-        );
-      } finally {
-        packetButton.disabled = false;
-        packetButton.textContent = 'Generate Lupon packet';
-      }
-    });
-
-    // 2026-09-06 fix: was a plain `<a href target="_blank">` pointing
-    // straight at the API URL — this app has no session cookie (JWT lives
-    // only in sessionStorage), so a plain browser navigation attaches no
-    // Authorization header and the download 401'd on every click. Now a
-    // real button: an authenticated fetch returns a Blob, which becomes a
-    // real download via a synthetic `<a download>` click — same pattern
-    // `downloadReportExport()`/statistical-reports.js's Export buttons
-    // already use correctly.
-    const downloadLink = document.createElement('button');
-    downloadLink.type = 'button';
-    downloadLink.className = 'ghost';
-    const downloadIdleLabel = 'Download packet';
-    downloadLink.textContent = downloadIdleLabel;
-    downloadLink.hidden = true;
-    downloadLink.addEventListener('click', async () => {
-      downloadLink.disabled = true;
-      downloadLink.textContent = 'Downloading…';
-      try {
-        const blob = await downloadLuponPacket(incidentId);
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = `lupon-packet-incident-${incidentId}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(blobUrl);
-      } catch (err) {
-        showToast(err instanceof ApiClientError ? err.message : 'Could not download the packet.', { variant: 'error' });
-      } finally {
-        downloadLink.disabled = false;
-        downloadLink.textContent = downloadIdleLabel;
-      }
-    });
-
-    packetRow.append(packetButton, downloadLink);
-    card.appendChild(packetRow);
-
-    const packetNote = document.createElement('p');
-    packetNote.className = 'note';
-    packetNote.textContent =
-      'The packet needs a finalized blotter entry as well as the approved redaction. Finalize it on the blotter entry screen.';
-    card.appendChild(packetNote);
-
-    return card;
-  }
-
   function buildIncidentSummary() {
     const card = document.createElement('div');
-    card.className = 'card';
-    const row = document.createElement('div');
-    row.className = 'ai-review__meta';
+    card.className = 'card ai-review__briefing';
 
-    const title = document.createElement('h3');
+    const leftCol = document.createElement('div');
+    leftCol.className = 'ai-review__briefing-main';
+
+    const iconBadge = document.createElement('div');
+    iconBadge.className = 'ai-review__briefing-icon';
+    iconBadge.setAttribute('aria-hidden', 'true');
+    iconBadge.innerHTML = icons.fileText(24);
+
+    const info = document.createElement('div');
+    info.className = 'ai-review__briefing-info';
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'ai-review__briefing-title-row';
+
+    const title = document.createElement('h2');
+    title.className = 'ai-review__briefing-title';
     title.textContent = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
-    row.appendChild(title);
 
-    if (incident.redactionApprovedAt) {
-      const pill = document.createElement('span');
-      pill.className = 'status-pill status-pill--success';
-      pill.textContent = 'Redaction approved';
-      row.appendChild(pill);
-    }
-    card.appendChild(row);
+    const idBadge = document.createElement('span');
+    idBadge.className = 'ai-review__id-badge';
+    idBadge.textContent = incident.displayId || `#INC-${incident.incidentId}`;
 
-    const meta = document.createElement('p');
-    meta.className = 'note';
-    meta.textContent = `Logged ${new Date(incident.createdAt).toLocaleString()} · status ${incident.status}`;
-    card.appendChild(meta);
-    return card;
-  }
-
-  function buildNoDraftState() {
-    const block = document.createElement('div');
-    block.className = 'card state-block';
-    const heading = document.createElement('h3');
-    heading.textContent = 'No AI draft yet';
-    const text = document.createElement('p');
-    text.textContent =
-      'Running redaction queues a job for the local model. It is processed by the worker on this workstation, so the draft appears here once that finishes — it does not happen instantly.';
-    const button = document.createElement('button');
-    button.className = 'primary';
-    button.textContent = 'Run redaction';
-    button.addEventListener('click', () => runRedaction(button));
-    block.append(heading, text, button);
-    return block;
-  }
-
-  function buildDraftMeta() {
-    const card = document.createElement('div');
-    card.className = 'card';
-    const row = document.createElement('div');
-    row.className = 'ai-review__meta';
+    const priorityPill = document.createElement('span');
+    const priority = (incident.priority || 'medium').toLowerCase();
+    priorityPill.className = `status-pill status-pill--${priority === 'critical' ? 'critical' : priority === 'high' ? 'warning' : 'info'}`;
+    priorityPill.textContent = `${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority`;
 
     const statusPill = document.createElement('span');
-    statusPill.className = `status-pill ${STATUS_PILL_CLASS[draft.status] || 'status-pill--neutral'}`;
-    statusPill.textContent = draft.status;
-    row.appendChild(statusPill);
+    statusPill.className = `status-pill ${incident.redactionApprovedAt ? 'status-pill--success' : 'status-pill--pending'}`;
+    statusPill.textContent = incident.redactionApprovedAt ? 'Redaction Approved' : `Status: ${incident.status}`;
 
-    const version = document.createElement('span');
-    version.className = 'note';
-    version.textContent = `Draft v${draft.draftVersion}`;
-    row.appendChild(version);
+    titleRow.append(title, idBadge, priorityPill, statusPill);
 
-    // §8: the badge names the REAL self-hosted model from the row.
-    const model = document.createElement('span');
-    model.className = 'note';
-    model.textContent = `Model: ${draft.modelVersion}`;
-    row.appendChild(model);
+    if (draft) {
+      const draftPill = document.createElement('span');
+      draftPill.className = `status-pill ${STATUS_PILL_CLASS[draft.status] || 'status-pill--neutral'}`;
+      draftPill.textContent = `${(draft.status || 'unknown').toUpperCase()} v${draft.draftVersion}`;
+      titleRow.appendChild(draftPill);
 
-    card.appendChild(row);
-
-    if (draft.draftSummaryStale) {
-      const warn = document.createElement('p');
-      warn.className = 'state-block--error';
-      warn.setAttribute('role', 'status');
-      warn.textContent =
-        'The summary is stale for the current draft text. Regenerate it before approving — approval is blocked until then.';
-      card.appendChild(warn);
+      if (draft.draftSummaryStale) {
+        const stalePill = document.createElement('span');
+        stalePill.className = 'status-pill status-pill--warning';
+        stalePill.textContent = 'Summary Stale';
+        titleRow.appendChild(stalePill);
+      }
     }
 
-    if (draft.status === 'failed' && draft.errorCode) {
+    const metaRow = document.createElement('div');
+    metaRow.className = 'ai-review__briefing-meta';
+
+    const timeSpan = document.createElement('span');
+    timeSpan.innerHTML = `${icons.clock(13)} <span>Logged ${new Date(incident.createdAt).toLocaleString()}</span>`;
+
+    const locSpan = document.createElement('span');
+    const locText = incident.locationDescription || (incident.latitude && incident.longitude ? `${incident.latitude}, ${incident.longitude}` : 'No location recorded');
+    locSpan.innerHTML = `${icons.mapPin(13)} <span>${escapeHtml(locText)}</span>`;
+
+    const sourceSpan = document.createElement('span');
+    sourceSpan.innerHTML = `${icons.shield(13)} <span>${escapeHtml(incident.source ? incident.source.toUpperCase() : 'DESK')} Intake</span>`;
+
+    metaRow.append(timeSpan, locSpan, sourceSpan);
+
+    if (draft) {
+      const modelSpan = document.createElement('span');
+      modelSpan.innerHTML = `${icons.sparkles(13)} <span>Model: <code style="font-family:var(--font-mono);font-size:0.76rem;background:var(--tint-neutral-bg);padding:0.08rem 0.35rem;border-radius:4px;border:1px solid var(--color-border);">${escapeHtml(draft.modelVersion || 'Local Ollama')}</code></span>`;
+      metaRow.appendChild(modelSpan);
+    }
+
+    info.append(titleRow, metaRow);
+    leftCol.append(iconBadge, info);
+
+    // Right: Privacy compliance badge
+    const privacyBadge = document.createElement('div');
+    privacyBadge.className = 'ai-review__privacy-badge';
+    privacyBadge.innerHTML = `
+      <div class="ai-review__privacy-icon">${icons.lock(16)}</div>
+      <div class="ai-review__privacy-text">
+        <strong>RA 10173 Compliant</strong>
+        <span>100% Local Ollama • Zero Cloud Egress</span>
+      </div>
+    `;
+
+    card.append(leftCol, privacyBadge);
+
+    if (draft && draft.status === 'failed' && draft.errorCode) {
       const err = document.createElement('p');
       err.className = 'state-block--error';
       err.setAttribute('role', 'alert');
+      err.style.margin = 'var(--spacing-xs) 0 0 0';
       err.textContent = `The AI job failed (${draft.errorCode}). Re-run redaction to try again.`;
       card.appendChild(err);
     }
@@ -538,36 +422,127 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     return card;
   }
 
+  function buildNoDraftState() {
+    const container = document.createElement('div');
+    container.className = 'ai-review__pre-studio';
+
+    // Left Column: Raw Narrative Preview
+    const leftCard = document.createElement('div');
+    leftCard.className = 'card ai-review__narrative-card';
+
+    const leftHeader = document.createElement('div');
+    leftHeader.className = 'ai-review__card-header';
+    leftHeader.innerHTML = `
+      <div class="ai-review__card-title">
+        <span class="ai-review__card-icon">${icons.fileText(16)}</span>
+        <h3>Original Reported Narrative</h3>
+      </div>
+      <span class="status-pill status-pill--critical">Restricted Access • Contains PII</span>
+    `;
+
+    const rawBlock = document.createElement('pre');
+    rawBlock.className = 'narrative-block ai-review__narrative-preview';
+    rawBlock.textContent = incident.rawNarrative || 'No raw narrative text logged for this incident.';
+
+    const leftFooter = document.createElement('div');
+    leftFooter.className = 'ai-review__card-footer';
+    const charCount = incident.rawNarrative ? incident.rawNarrative.length : 0;
+    leftFooter.innerHTML = `
+      <span>Length: ${charCount} characters</span>
+      <span class="ai-review__footer-note">${icons.alertTriangle(12)} Unredacted — personal names and contact details must be sanitized before blotter entry.</span>
+    `;
+
+    leftCard.append(leftHeader, rawBlock, leftFooter);
+
+    // Right Column: Automated Redaction Engine Studio
+    const rightCard = document.createElement('div');
+    rightCard.className = 'card ai-review__engine-card';
+
+    const rightHeader = document.createElement('div');
+    rightHeader.className = 'ai-review__card-header';
+    rightHeader.innerHTML = `
+      <div class="ai-review__card-title">
+        <span class="ai-review__card-icon ai-review__card-icon--ai">${icons.sparkles(16)}</span>
+        <h3>Automated Redaction Engine</h3>
+      </div>
+      <span class="status-pill status-pill--info">Ollama Local Pipeline</span>
+    `;
+
+    const engineDesc = document.createElement('p');
+    engineDesc.className = 'note';
+    engineDesc.textContent = 'Queues an on-premises worker to scrub personal identifiable information (PII) per statutory standards and extract legal blotter entities.';
+
+    const specsList = document.createElement('div');
+    specsList.className = 'ai-review__specs-list';
+    specsList.innerHTML = `
+      <div class="ai-review__spec-item">
+        <span class="ai-review__spec-label">Target Model:</span>
+        <span class="ai-review__spec-val">Llama-SEA-LION-v3.5-8B-R</span>
+      </div>
+      <div class="ai-review__spec-item">
+        <span class="ai-review__spec-label">Sanitizes:</span>
+        <span class="ai-review__spec-val">Full Names, Phone Numbers, Exact Addresses</span>
+      </div>
+      <div class="ai-review__spec-item">
+        <span class="ai-review__spec-label">Extracts:</span>
+        <span class="ai-review__spec-val">Complainant, Respondent & Contact metadata</span>
+      </div>
+    `;
+
+    const actionWrap = document.createElement('div');
+    actionWrap.className = 'ai-review__engine-action';
+
+    const runBtn = document.createElement('button');
+    runBtn.type = 'button';
+    runBtn.className = 'primary ai-review__run-btn';
+    runBtn.innerHTML = `${icons.sparkles(16)} <span>Run AI Redaction Now</span>`;
+    runBtn.addEventListener('click', () => runRedaction(runBtn));
+
+    actionWrap.appendChild(runBtn);
+    rightCard.append(rightHeader, engineDesc, specsList, actionWrap);
+
+    container.append(leftCard, rightCard);
+    return container;
+  }
+
+
+
   function buildSideBySide() {
     const layout = document.createElement('div');
-    layout.className = 'split-panel';
+    layout.className = 'ai-review__studio-grid';
 
     // Left: the original narrative. Read-only — this is the record of what
     // was actually reported and must never be editable from this screen.
     const rawCard = document.createElement('div');
-    rawCard.className = 'card';
-    const rawHeading = document.createElement('h3');
-    rawHeading.textContent = 'Original narrative';
+    rawCard.className = 'card ai-review__studio-card';
+
+    const rawHeader = document.createElement('div');
+    rawHeader.className = 'ai-review__studio-card-header';
+    rawHeader.innerHTML = `
+      <div class="ai-review__studio-card-title">
+        <span class="ai-review__card-icon">${icons.fileText(16)}</span>
+        <h3>Original Reported Narrative</h3>
+      </div>
+      <span class="status-pill status-pill--critical">Restricted Access • Secretary</span>
+    `;
+
     const rawNote = document.createElement('p');
     rawNote.className = 'note';
-    rawNote.textContent = 'Read-only. Visible to the Secretary only.';
+    rawNote.style.margin = '0 0 var(--spacing-xs) 0';
+    rawNote.textContent = 'Read-only original record from intake. Redacted spans are highlighted below.';
+
     const rawText = document.createElement('pre');
     rawText.className = 'narrative-block';
-    // Never innerHTML with the raw string — this is unredacted reported
-    // text. renderRedactionDiff builds nodes with textContent per token.
+    rawText.style.minHeight = '14rem';
     if (incident.rawNarrative && draft.draftRedactedNarrative) {
       rawText.appendChild(renderRedactionDiff(incident.rawNarrative, draft.draftRedactedNarrative));
     } else {
       rawText.textContent = incident.rawNarrative ?? '(not available)';
     }
 
-    // audit W8: this is the screen where a person certifies that personal
-    // information has been removed before it becomes a permanent record,
-    // and it presented two plain blocks of prose — finding what changed
-    // was a manual character-by-character read. The removed spans are now
-    // marked in the original, and a count states what to check for.
     const summaryLine = document.createElement('p');
     summaryLine.className = 'note redaction-summary';
+    summaryLine.style.marginTop = 'var(--spacing-xs)';
     if (incident.rawNarrative && draft.draftRedactedNarrative) {
       const placeholders = draft.draftRedactedNarrative.match(/\[[A-Z_]+\]/g) ?? [];
       const byKind = placeholders.reduce((acc, p) => { acc[p] = (acc[p] ?? 0) + 1; return acc; }, {});
@@ -575,36 +550,106 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       summaryLine.textContent = placeholders.length === 0
         ? 'The draft contains no redaction placeholders — check that nothing identifying was missed.'
         : `${placeholders.length} identifier${placeholders.length === 1 ? '' : 's'} removed: ${parts.join(', ')}. Highlighted below.`;
+    } else {
+      summaryLine.textContent = 'Awaiting draft completion to compute identifier diff.';
     }
-    rawCard.append(rawHeading, rawNote, summaryLine, rawText);
+    rawCard.append(rawHeader, rawNote, rawText, summaryLine);
 
     // Right: the editable draft.
     const draftCard = document.createElement('div');
-    draftCard.className = 'card';
-    const draftHeading = document.createElement('h3');
-    draftHeading.textContent = 'Redaction draft';
+    draftCard.className = 'card ai-review__studio-card';
+
+    const isPending = draft.status === 'queued' || draft.status === 'processing';
+
+    const draftHeader = document.createElement('div');
+    draftHeader.className = 'ai-review__studio-card-header';
+    draftHeader.innerHTML = `
+      <div class="ai-review__studio-card-title">
+        <span class="ai-review__card-icon ai-review__card-icon--ai">${icons.sparkles(16)}</span>
+        <h3>Redacted Narrative Draft</h3>
+      </div>
+      <span class="status-pill ${STATUS_PILL_CLASS[draft.status] || 'status-pill--neutral'}">${(draft.status || 'draft').toUpperCase()}</span>
+    `;
+
     const draftNote = document.createElement('p');
     draftNote.className = 'note';
-    draftNote.textContent = 'Edit if needed, then regenerate the summary before approving.';
+    draftNote.style.margin = '0 0 var(--spacing-xs) 0';
+    draftNote.textContent = isPending
+      ? 'The AI worker is actively scrubbing PII and sensitive identifiers...'
+      : 'Review and edit if needed. Any edits will require summary regeneration before approval.';
+
+    draftCard.append(draftHeader, draftNote);
+
+    if (isPending) {
+      const processingBanner = document.createElement('div');
+      processingBanner.className = 'ai-review__processing-banner';
+      processingBanner.innerHTML = `
+        <span class="is-spinning">${icons.repeat(16)}</span>
+        <span><strong>AI Redaction in Progress:</strong> Local Ollama engine is processing incident narrative...</span>
+      `;
+      draftCard.appendChild(processingBanner);
+    }
 
     const textarea = document.createElement('textarea');
     textarea.id = 'ai-draft-narrative';
-    textarea.rows = 16;
+    textarea.setAttribute('aria-label', 'Redacted narrative draft');
+    textarea.rows = 12;
     textarea.classList.add('textarea--resizable');
+    textarea.placeholder = isPending ? 'Draft is currently generating in background worker…' : 'Enter redacted narrative…';
     textarea.value = draft.draftRedactedNarrative ?? '';
-    textarea.disabled = draft.status === 'queued' || draft.status === 'processing';
+    textarea.disabled = isPending;
+    textarea.style.minHeight = '14rem';
     textarea.addEventListener('input', () => {
       edited = textarea.value !== (draft.draftRedactedNarrative ?? '');
       syncActionState();
     });
-    draftCard.append(draftHeading, draftNote, textarea);
 
-    const summaryHeading = document.createElement('h3');
-    summaryHeading.textContent = 'Summary';
+    draftCard.appendChild(textarea);
+
+    layout.append(rawCard, draftCard);
+    draftTextarea = textarea;
+    return layout;
+  }
+
+  function buildSecondarySection() {
+    const layout = document.createElement('div');
+    layout.className = 'ai-review__secondary-grid';
+
+    // Left: Official Blotter Summary
+    const summaryCard = document.createElement('div');
+    summaryCard.className = 'card ai-review__studio-card';
+
+    const isPending = draft.status === 'queued' || draft.status === 'processing';
+
+    const summaryHeader = document.createElement('div');
+    summaryHeader.className = 'ai-review__studio-card-header';
+    summaryHeader.innerHTML = `
+      <div class="ai-review__studio-card-title">
+        <span class="ai-review__card-icon">${icons.fileText(16)}</span>
+        <h3>Official Blotter Summary</h3>
+      </div>
+    `;
+    if (draft.draftSummaryStale || edited) {
+      const staleBadge = document.createElement('span');
+      staleBadge.className = 'status-pill status-pill--warning';
+      staleBadge.textContent = 'Sync Required';
+      summaryHeader.appendChild(staleBadge);
+    }
+    summaryCard.appendChild(summaryHeader);
+
+    const summaryNote = document.createElement('p');
+    summaryNote.className = 'note';
+    summaryNote.style.margin = '0 0 var(--spacing-xs) 0';
+    summaryNote.textContent = 'Concise factual summary synthesized for the Katarungang Pambarangay ledger.';
+    summaryCard.appendChild(summaryNote);
+
     const summaryText = document.createElement('pre');
     summaryText.className = 'narrative-block';
-    summaryText.textContent = draft.draftSummary ?? '(not generated yet)';
-    draftCard.append(summaryHeading, summaryText);
+    summaryText.style.minHeight = '9rem';
+    summaryText.textContent = isPending
+      ? 'Summary will generate once the redaction draft completes…'
+      : (draft.draftSummary ?? '(not generated yet)');
+    summaryCard.appendChild(summaryText);
 
     if (draft.draftSummaryStale || edited) {
       const inlineRegen = document.createElement('div');
@@ -614,16 +659,18 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       regenBtn.className = 'ghost';
       regenBtn.style.fontSize = 'var(--font-size-xs)';
       regenBtn.innerHTML = `${icons.repeat(14)} <span>Sync / Regenerate Summary</span>`;
-      regenBtn.disabled = draft.status === 'queued' || draft.status === 'processing';
+      regenBtn.disabled = isPending;
       regenBtn.addEventListener('click', () => runRegenerate(regenBtn));
       inlineRegen.appendChild(regenBtn);
-      draftCard.appendChild(inlineRegen);
+      summaryCard.appendChild(inlineRegen);
     }
 
-    draftCard.appendChild(buildExtractionSection());
+    // Right: Involved Parties / Entity Extraction
+    const extractionCard = document.createElement('div');
+    extractionCard.className = 'card ai-review__studio-card';
+    extractionCard.appendChild(buildExtractionSection());
 
-    layout.append(rawCard, draftCard);
-    draftTextarea = textarea;
+    layout.append(summaryCard, extractionCard);
     return layout;
   }
 
@@ -638,9 +685,15 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     const wrap = document.createElement('div');
     wrap.className = 'form-stack';
 
-    const heading = document.createElement('h3');
-    heading.textContent = 'Complainant / Respondent';
-    wrap.appendChild(heading);
+    const header = document.createElement('div');
+    header.className = 'ai-review__studio-card-header';
+    header.innerHTML = `
+      <div class="ai-review__studio-card-title">
+        <span class="ai-review__card-icon">${icons.users(16)}</span>
+        <h3>Involved Parties (KP Law)</h3>
+      </div>
+    `;
+    wrap.appendChild(header);
 
     if (!extractionDraft) {
       const note = document.createElement('p');
@@ -659,6 +712,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     const hasApproved = incident.complainantName != null || incident.respondentName != null || incident.complainantContactNumber != null;
     const note = document.createElement('p');
     note.className = 'note';
+    note.style.margin = '0 0 var(--spacing-xs) 0';
     note.textContent = hasApproved
       ? 'Showing the last saved values. Edit and save again to change them.'
       : 'AI-drafted from the original narrative. Review and edit before saving — leave a field blank if it does not apply.';
@@ -670,29 +724,53 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     const baseRespondent = (hasApproved ? incident.respondentName : extractionDraft.draftRespondentName) ?? '';
     const baseContact = (hasApproved ? incident.complainantContactNumber : extractionDraft.draftComplainantContactNumber) ?? '';
 
+    const grid = document.createElement('div');
+    grid.className = 'ai-review__extraction-grid';
+
+    // Complainant
+    const compWrap = document.createElement('div');
     const complainantLabel = document.createElement('label');
     complainantLabel.className = 'label';
+    complainantLabel.htmlFor = 'ai-extract-complainant';
     complainantLabel.textContent = 'Complainant name';
     const complainantInput = document.createElement('input');
+    complainantInput.id = 'ai-extract-complainant';
     complainantInput.type = 'text';
+    complainantInput.placeholder = pending ? 'Extracting…' : 'Enter complainant name';
     complainantInput.value = baseComplainant;
     complainantInput.disabled = pending;
+    compWrap.append(complainantLabel, complainantInput);
 
-    const respondentLabel = document.createElement('label');
-    respondentLabel.className = 'label';
-    respondentLabel.textContent = 'Respondent name';
-    const respondentInput = document.createElement('input');
-    respondentInput.type = 'text';
-    respondentInput.value = baseRespondent;
-    respondentInput.disabled = pending;
-
+    // Contact
+    const contactWrap = document.createElement('div');
     const contactLabel = document.createElement('label');
     contactLabel.className = 'label';
+    contactLabel.htmlFor = 'ai-extract-contact';
     contactLabel.textContent = 'Contact number';
     const contactInput = document.createElement('input');
+    contactInput.id = 'ai-extract-contact';
     contactInput.type = 'tel';
+    contactInput.placeholder = pending ? 'Extracting…' : 'e.g. 0917-123-4567';
     contactInput.value = baseContact;
     contactInput.disabled = pending;
+    contactWrap.append(contactLabel, contactInput);
+
+    grid.append(compWrap, contactWrap);
+
+    // Respondent (full width)
+    const respWrap = document.createElement('div');
+    respWrap.style.marginTop = 'var(--spacing-sm)';
+    const respondentLabel = document.createElement('label');
+    respondentLabel.className = 'label';
+    respondentLabel.htmlFor = 'ai-extract-respondent';
+    respondentLabel.textContent = 'Respondent name';
+    const respondentInput = document.createElement('input');
+    respondentInput.id = 'ai-extract-respondent';
+    respondentInput.type = 'text';
+    respondentInput.placeholder = pending ? 'Extracting…' : 'Enter respondent name';
+    respondentInput.value = baseRespondent;
+    respondentInput.disabled = pending;
+    respWrap.append(respondentLabel, respondentInput);
 
     extractionInputs = {
       complainant: complainantInput,
@@ -712,7 +790,8 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.className = 'ghost';
-    saveButton.textContent = pending ? 'Extraction still running…' : 'Save';
+    saveButton.style.marginTop = 'var(--spacing-sm)';
+    saveButton.textContent = pending ? 'Extraction still running…' : 'Save Parties';
     saveButton.disabled = pending;
     saveButton.addEventListener('click', () => {
       extractionEdited = false;
@@ -723,42 +802,146 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       });
     });
 
-    wrap.append(complainantLabel, complainantInput, respondentLabel, respondentInput, contactLabel, contactInput, saveButton);
+    wrap.append(grid, respWrap, saveButton);
     return wrap;
   }
 
-  function buildActions() {
-    const card = document.createElement('div');
-    card.className = 'card';
-    const row = document.createElement('div');
-    row.className = 'ai-review__actions';
+  function buildActionsDock() {
+    const dock = document.createElement('div');
+    dock.className = 'card ai-review__action-dock';
+
+    // Left group: Primary workflow actions
+    const leftGroup = document.createElement('div');
+    leftGroup.className = 'ai-review__action-dock-left';
 
     const rerunButton = document.createElement('button');
     rerunButton.className = 'ghost';
-    rerunButton.textContent = 'Re-run redaction';
+    rerunButton.innerHTML = `${icons.repeat(14)} Re-run redaction`;
     rerunButton.addEventListener('click', () => runRedaction(rerunButton));
 
     const regenButton = document.createElement('button');
     regenButton.className = 'ghost';
-    regenButton.textContent = 'Regenerate summary';
+    regenButton.innerHTML = `${icons.sparkles(14)} Regenerate summary`;
     regenButton.addEventListener('click', () => runRegenerate(regenButton));
 
     const approveButton = document.createElement('button');
     approveButton.className = 'primary';
-    approveButton.textContent = 'Approve redaction';
+    approveButton.innerHTML = `${icons.check(14)} Approve & Commit Redaction`;
     approveButton.addEventListener('click', () => runApprove(approveButton));
 
-    row.append(rerunButton, regenButton, approveButton);
-    card.appendChild(row);
+    leftGroup.append(rerunButton, regenButton, approveButton);
 
-    const reason = document.createElement('p');
-    reason.className = 'note';
+    const reason = document.createElement('span');
+    reason.className = 'ai-review__action-reason';
     reason.id = 'ai-approve-reason';
-    card.appendChild(reason);
+    leftGroup.appendChild(reason);
+
+    // Right group: Post-approval tools
+    const rightGroup = document.createElement('div');
+    rightGroup.className = 'ai-review__action-dock-right';
+
+    const isApproved = Boolean(incident.redactionApprovedAt);
+
+    const postLabel = document.createElement('span');
+    postLabel.className = 'ai-review__dock-sublabel';
+    postLabel.textContent = isApproved ? 'Post-Approval:' : 'Post-Approval (Locked):';
+    rightGroup.appendChild(postLabel);
+
+    const packetButton = document.createElement('button');
+    packetButton.className = 'ghost';
+    packetButton.disabled = !isApproved;
+    packetButton.title = isApproved ? 'Generate Lupon conciliation dossier' : 'Requires approved redaction first';
+    packetButton.innerHTML = `${icons.fileText(14)} Lupon Packet`;
+    packetButton.addEventListener('click', async () => {
+      packetButton.disabled = true;
+      packetButton.textContent = 'Generating…';
+      try {
+        await generateLuponPacket(incidentId);
+        showToast('Lupon packet generated.', { variant: 'success' });
+        downloadLink.hidden = false;
+      } catch (err) {
+        showToast(err instanceof ApiClientError ? err.message : 'Could not generate the packet.', { variant: 'error' });
+      } finally {
+        packetButton.disabled = false;
+        packetButton.innerHTML = `${icons.fileText(14)} Lupon Packet`;
+      }
+    });
+
+    const downloadLink = document.createElement('button');
+    downloadLink.type = 'button';
+    downloadLink.className = 'ghost';
+    downloadLink.hidden = true;
+    downloadLink.innerHTML = `${icons.fileText(14)} Download PDF`;
+    downloadLink.addEventListener('click', async () => {
+      downloadLink.disabled = true;
+      downloadLink.textContent = 'Downloading…';
+      try {
+        const blob = await downloadLuponPacket(incidentId);
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `lupon-packet-incident-${incidentId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        showToast(err instanceof ApiClientError ? err.message : 'Could not download the packet.', { variant: 'error' });
+      } finally {
+        downloadLink.disabled = false;
+        downloadLink.innerHTML = `${icons.fileText(14)} Download PDF`;
+      }
+    });
+
+    const translateWrap = document.createElement('div');
+    translateWrap.style.display = 'inline-flex';
+    translateWrap.style.alignItems = 'center';
+    translateWrap.style.gap = '0.35rem';
+
+    const languageSelect = document.createElement('select');
+    languageSelect.id = 'ai-translate-language';
+    languageSelect.setAttribute('aria-label', 'Translation language');
+    languageSelect.disabled = !isApproved;
+    languageSelect.style.height = '2.1rem';
+    languageSelect.style.fontSize = '0.78rem';
+    for (const [value, label] of [['en', 'English'], ['fil', 'Filipino'], ['bcl', 'Bikol']]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      languageSelect.appendChild(option);
+    }
+
+    const translateButton = document.createElement('button');
+    translateButton.className = 'ghost';
+    translateButton.disabled = !isApproved;
+    translateButton.style.padding = '0.25rem 0.55rem';
+    translateButton.style.fontSize = '0.78rem';
+    translateButton.textContent = 'Translate';
+    translateButton.addEventListener('click', async () => {
+      translateButton.disabled = true;
+      try {
+        const result = await translateAiDraft(incidentId, languageSelect.value);
+        showToast(
+          result.languageValidated
+            ? 'Translation queued.'
+            : 'Translation queued. Bikol output is not yet validated for quality — review it before relying on it.',
+          { variant: result.languageValidated ? 'info' : 'error' }
+        );
+      } catch (err) {
+        showToast(err instanceof ApiClientError ? err.message : 'Could not queue the translation.', { variant: 'error' });
+      } finally {
+        translateButton.disabled = false;
+      }
+    });
+
+    translateWrap.append(languageSelect, translateButton);
+    rightGroup.append(packetButton, downloadLink, translateWrap);
+
+    dock.append(leftGroup, rightGroup);
 
     actionRefs = { rerunButton, regenButton, approveButton, reason };
     syncActionState();
-    return card;
+    return dock;
   }
 
   /**
@@ -767,8 +950,24 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
    * no explanation".
    */
   function syncActionState() {
-    if (!actionRefs || !draft) return;
+    if (!actionRefs) return;
     const { regenButton, approveButton, reason } = actionRefs;
+
+    // A code-review finding caught that returning early here (when an
+    // incident is already approved and has no active draft) left both
+    // buttons at their default enabled state — clicking either threw on
+    // `draft.draftVersion`/`draft.draftRedactedNarrative` being null and
+    // surfaced only a generic "Could not approve/regenerate" toast,
+    // instead of the real reason this dock is meant to always show (§8
+    // "never a dead control with no explanation").
+    if (!draft) {
+      regenButton.disabled = true;
+      approveButton.disabled = true;
+      reason.textContent = incident.redactionApprovedAt
+        ? 'This incident already has an approved redaction.'
+        : 'No AI draft exists yet for this incident.';
+      return;
+    }
 
     const pending = draft.status === 'queued' || draft.status === 'processing';
     regenButton.disabled = pending;
