@@ -179,6 +179,26 @@ final class DispatchController
                 throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on this incident.');
             }
 
+            // Code-review finding H-01 (2026-09-24): the check above only
+            // catches the SAME tanod being double-assigned to the SAME
+            // incident — it did nothing to stop a Tanod who already has an
+            // active dispatch on a DIFFERENT incident from being assigned
+            // here too. That's a real double-booking gap, not the
+            // sanctioned multi-responder feature above (which is about one
+            // INCIDENT accepting several different Tanods, not one Tanod
+            // covering several incidents at once). Hard reject, no admin-
+            // override escape hatch for this pass.
+            $otherActiveStmt = $pdo->prepare(
+                "SELECT 1 FROM dispatch
+                 WHERE tanod_id = :tanod_id AND incident_id != :incident_id
+                   AND status IN ('assigned','en_route','arrived')
+                 LIMIT 1"
+            );
+            $otherActiveStmt->execute(['tanod_id' => $tanodId, 'incident_id' => $incidentId]);
+            if ($otherActiveStmt->fetch(PDO::FETCH_ASSOC) !== false) {
+                throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on a different incident.');
+            }
+
             $insertStmt = $pdo->prepare(
                 'INSERT INTO dispatch
                     (incident_id, dispatched_by, tanod_id, priority, route_json, route_status, status, dispatched_at, created_client_request_id)
