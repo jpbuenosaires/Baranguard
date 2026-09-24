@@ -51,7 +51,7 @@ import {
   registerDevice,
   setApiBaseUrlOverride,
 } from '../services/apiService';
-import { getDeviceId, getFcmToken } from '../services/deviceIdentity';
+import { getDeviceId, getDevicePublicKeyPem, getFcmToken } from '../services/deviceIdentity';
 import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
 import { refreshSosFallbackContact } from '../services/sosFallbackContact';
@@ -245,7 +245,11 @@ async function runPostLoginSetup(barangayId: number): Promise<void> {
     // NOT "faking" push reachability — null is sent honestly, and the
     // server stores it as an empty token, which NotificationDispatcher
     // already reads as "fall through to SMS" (Rule 12).
-    const registration = await registerDevice({ deviceId: await getDeviceId(), fcmToken });
+    // H-09: best-effort — a device that can't generate/read a Keystore key
+    // (or isn't Android) still registers and works exactly as before this
+    // finding, just without the stronger per-request signature guarantee.
+    const devicePublicKeyPem = await getDevicePublicKeyPem();
+    const registration = await registerDevice({ deviceId: await getDeviceId(), fcmToken, devicePublicKeyPem });
     // Sprint 4 Phase 3: present ONLY on this device_id's first-ever
     // registration — see DevicesController.php's own doc. Stored once,
     // never re-fetched (there is nowhere else to get it from — the

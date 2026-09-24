@@ -14,6 +14,7 @@ import { Preferences } from '@capacitor/preferences';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import FullScreenAlert from './fullScreenAlert';
+import DeviceKey from './deviceKey';
 
 const DEVICE_ID_KEY = 'baranguard.deviceId';
 /** 8s is generous for a registration round-trip against Google's servers
@@ -38,6 +39,57 @@ export async function getDeviceId(): Promise<string> {
   const deviceId = generateDeviceId();
   await Preferences.set({ key: DEVICE_ID_KEY, value: deviceId });
   return deviceId;
+}
+
+/**
+ * H-09: this install's hardware-backed device identity public key, or
+ * null when unavailable (web platform, or the native Keystore call
+ * failed for any reason). NEVER THROWS, same "unavailable is a legitimate
+ * outcome on the offline-first login path" precedent as `getFcmToken()`
+ * above — a device that can't generate a key must still be able to
+ * register and work, just without H-09's stronger guarantee (the server
+ * treats a device with no key on file as not-yet-upgraded, not invalid;
+ * see DeviceSignature.php's own doc).
+ */
+export async function getDevicePublicKeyPem(): Promise<string | null> {
+  if (Capacitor.getPlatform() !== 'android') {
+    return null;
+  }
+  try {
+    const { publicKeyPem } = await DeviceKey.getPublicKey();
+    return publicKeyPem || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * H-09: signs `METHOD\nPATH\nDEVICE_ID\nTIMESTAMP` with this device's
+ * Keystore private key — the exact canonical string
+ * `Baranguard\Lib\DeviceSignature::canonicalMessage()` recomputes
+ * server-side. `path` must be the request path only (no query string),
+ * matching what `parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)`
+ * produces server-side. Returns null (never throws) on any failure —
+ * callers attach the returned headers only when this succeeds; omitting
+ * them is the same "not upgraded yet" state a device with no key produces
+ * server-side, never a hard failure.
+ */
+export async function signDeviceRequest(
+  method: string,
+  path: string,
+  deviceId: string
+): Promise<{ timestamp: string; signature: string } | null> {
+  if (Capacitor.getPlatform() !== 'android') {
+    return null;
+  }
+  try {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const payload = `${method.toUpperCase()}\n${path}\n${deviceId}\n${timestamp}`;
+    const { signature } = await DeviceKey.sign({ payload });
+    return signature ? { timestamp, signature } : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
