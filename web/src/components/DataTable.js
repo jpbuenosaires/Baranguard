@@ -314,7 +314,11 @@ export function exportRowsToCsv(columns, rows, filename) {
   if (rows.length === 0) return 0;
   const exportable = columns.filter((c) => typeof c.csvValue === 'function');
   const escapeCell = (value) => {
-    const text = value === null || value === undefined ? '' : String(value);
+    let text = value === null || value === undefined ? '' : String(value);
+    // CSV injection: a citizen-typed "=HYPERLINK(...)" would run as a live
+    // formula in Excel. Only strings are neutralised — a real negative
+    // number stays a number.
+    if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
     // RFC 4180: quote any field containing a comma, quote, or newline;
     // double up embedded quotes.
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;

@@ -22,6 +22,8 @@
  * @returns {HTMLElement}
  */
 
+import { escapeHtml } from '../utils/escapeHtml.js';
+
 const VIEW_W = 720;
 const VIEW_H = 220;
 const PAD = { top: 14, right: 10, bottom: 32, left: 34 };
@@ -138,9 +140,9 @@ export function BarChart({ bars, colorVar = '--chart-line-1', caption }) {
   const tableWrap = document.createElement('div');
   tableWrap.className = 'sr-only';
   const table = document.createElement('table');
-  table.innerHTML = `<caption>${caption ?? 'Bar chart'}</caption>`
+  table.innerHTML = `<caption>${escapeHtml(caption ?? 'Bar chart')}</caption>`
     + `<thead><tr><th scope="col">Label</th><th scope="col">Value</th></tr></thead>`
-    + `<tbody>${bars.map((b) => `<tr><td>${b.label}</td><td>${b.value}</td></tr>`).join('')}</tbody>`;
+    + `<tbody>${bars.map((b) => `<tr><td>${escapeHtml(b.label)}</td><td>${escapeHtml(b.value)}</td></tr>`).join('')}</tbody>`;
   tableWrap.appendChild(table);
   host.appendChild(tableWrap);
 
