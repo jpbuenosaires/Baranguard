@@ -9,13 +9,26 @@
  * dependency scan — the Java class is registered directly in
  * `MainActivity.onCreate()` instead.
  *
- * NOT DEVICE-VERIFIED for an actual completed send (same disclosure this
- * codebase already gives every native-plugin edge — see
- * `deviceIdentity.ts`'s `getFcmToken()`): the permission-request path and
- * plugin registration were exercised on a real device, but a real SMS
- * send has a real-world cost and notifies a real phone, so this session
- * did not trigger one against an arbitrary number without the user
- * choosing a test number first.
+ * DEVICE-VERIFIED 2026-09-24 (DEVLOG entry (4)): a real completed send
+ * was confirmed end-to-end with the user's explicit authorization
+ * against their own number — `adb shell content query --uri
+ * content://sms/sent` showed the exact composed message actually sent,
+ * and it also round-tripped into the same device's own Messages app as
+ * a second, independent confirmation.
+ *
+ * The failure path is NOT yet device-verified. A same-day attempt to
+ * force it with a malformed number did NOT throw as expected — it
+ * revealed a real gap instead: `SmsManager.sendTextMessage()` doesn't
+ * synchronously validate the destination address, so the app reported
+ * `sent: true` while nothing was transmitted and there was zero trace
+ * in `content://sms/sent`/`/failed`/`/outbox` (DEVLOG entry (7)). Fixed
+ * the same way twice on the native side (`SosSmsPlugin.java`): a format
+ * check before ever calling `SmsManager`, and a real `sentIntent`-based
+ * result instead of trusting the synchronous return. Both fixes are
+ * code-only as of this comment — still needs a device retest (a
+ * malformed number should now reject immediately; a real `sms_failed`
+ * still needs airplane-mode/no-SIM testing to force a genuine carrier
+ * rejection).
  */
 
 import { registerPlugin } from '@capacitor/core';

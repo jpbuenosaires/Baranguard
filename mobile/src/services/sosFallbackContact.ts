@@ -7,10 +7,16 @@
  * would ALSO fail — the whole point of this fallback tier is that the
  * workstation is confirmed unreachable. So the number has to already be
  * on the device before the emergency happens. `refreshSosFallbackContact()`
- * is called opportunistically while online (login, and Live Map's own
- * mount, mirroring how `ensureMapPackageDownloaded()` refreshes its own
- * cache); `getCachedSosFallbackContact()` is what `home.tsx`'s SOS
- * handler actually reads from, entirely offline.
+ * is called opportunistically while online — ONLY at login (`login.tsx`).
+ * Corrected 2026-09-24: this comment previously also claimed "Live Map's
+ * own mount" refreshes it too, mirroring `ensureMapPackageDownloaded()`'s
+ * pattern — found stale during M13 device testing (grepped every call
+ * site, only login.tsx calls this). No Live Map refresh was ever wired
+ * up; if a mid-session change to the backup number should reach the
+ * cache faster than "wait for next login," that is a real, separate
+ * feature decision, not something this fix silently adds.
+ * `getCachedSosFallbackContact()` is what `home.tsx`'s SOS handler
+ * actually reads from, entirely offline.
  */
 
 import { Preferences } from '@capacitor/preferences';
