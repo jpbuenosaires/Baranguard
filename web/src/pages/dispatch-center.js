@@ -332,6 +332,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       searchInputEl.type = 'text';
       searchInputEl.className = 'dispatch-queue-search-inline__input';
       searchInputEl.placeholder = 'Search by ID, type, tanod, or location…';
+      searchInputEl.setAttribute('aria-label', 'Search the emergency queue');
       searchInputEl.value = searchQuery;
       searchInputEl.addEventListener('input', (e) => {
         searchQuery = e.target.value.toLowerCase().trim();

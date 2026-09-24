@@ -71,7 +71,7 @@ function renderForm(card, barangays, onReset) {
   header.className = 'citizen-portal-header';
   header.innerHTML = `
     <div class="citizen-portal-brand">
-      <div class="citizen-portal-badge">${icons.shield(22)}</div>
+      <img class="citizen-portal-badge" src="assets/logo.svg" alt="" aria-hidden="true">
       <span class="citizen-portal-wordmark">BARANGUARD</span>
     </div>
     <h1 class="citizen-portal-title">Public Incident Report</h1>
