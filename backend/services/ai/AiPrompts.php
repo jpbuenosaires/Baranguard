@@ -253,7 +253,7 @@ final class AiPrompts
      * SMS Composer — drafts an alert/advisory message.
      *
      * TAKES ONLY OPERATOR-TYPED TEXT. NEVER A NARRATIVE, RAW OR REDACTED.
-     * Its output is destined for Semaphore, an external gateway, and §2
+     * Its output is destined for the SMS gateway, and §2
      * Rule 1 forbids narrative content leaving the system through any
      * channel but the approved pipeline. The controller enforces this by
      * having no parameter that could carry an incident's text; this

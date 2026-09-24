@@ -169,10 +169,10 @@ expect_eq "$KEY1B" "" "Re-registration does NOT re-return message_encryption_key
 SECRETREF1B=$(db_one "SELECT device_secret_ref FROM mobile_device WHERE device_id='$DEV1';")
 expect_eq "$SECRETREF1B" "$SECRETREF1" "Re-registration keeps the EXACT SAME wrapped secret (verified in DB, not just the response)"
 
-step "3. GET /system/health reports fcm/sms_semaphore as not_configured, gsm_ingestion as healthy"
+step "3. GET /system/health reports fcm/sms_gsm_gateway as not_configured, gsm_ingestion as healthy"
 HEALTH=$(body_of GET /system/health "$ADMIN")
 expect_contains "$HEALTH" '"fcm":"not_configured"' "fcm: not_configured (no service account on this machine)"
-expect_contains "$HEALTH" '"sms_semaphore":"not_configured"' "sms_semaphore: not_configured (no Semaphore account)"
+expect_contains "$HEALTH" '"sms_gsm_gateway":"not_configured"' "sms_gsm_gateway: not_configured (GSM_GATEWAY_ENABLED unset on this test run)"
 expect_contains "$HEALTH" '"gsm_ingestion":"healthy"' "gsm_ingestion: healthy (INTERNAL_SERVICE_TOKEN is set)"
 
 # ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ expect_eq "$FCM_BOTH_FAILED" "2" "Both FCM attempts failed with FCM_NOT_CONFIGUR
 SMS_ATTEMPTS=$(db_one "SELECT COUNT(*) FROM notification_delivery WHERE notification_target_id=$TARGET_A_ID AND channel='sms';")
 expect_eq "$SMS_ATTEMPTS" "1" "Exactly 1 SMS delivery row after both FCM attempts failed (Rule 12's 'then SMS on second failure')"
 SMS_FAILED_REASON=$(db_one "SELECT failure_reason FROM notification_delivery WHERE notification_target_id=$TARGET_A_ID AND channel='sms';")
-expect_eq "$SMS_FAILED_REASON" "SEMAPHORE_NOT_CONFIGURED" "SMS attempt correctly failed with SEMAPHORE_NOT_CONFIGURED (a real contact_number WAS found, so it got this far)"
+expect_eq "$SMS_FAILED_REASON" "GSM_GATEWAY_NOT_CONFIGURED" "SMS attempt correctly failed with GSM_GATEWAY_NOT_CONFIGURED (a real contact_number WAS found, so it got this far)"
 
 SMS_LOG_ROW=$(db_one "SELECT COUNT(*) FROM sms_log WHERE direction='outbound' AND message_type='sos' AND barangay_id=1;")
 # dispatchAll() is synchronous and processes EVERY target of the SOS before
@@ -386,8 +386,8 @@ INBOUND_LOG_COUNT=$(db_one "SELECT COUNT(*) FROM sms_log WHERE direction='inboun
 # ---------------------------------------------------------------------------
 step "19. Internal outbound endpoints (dispatch-payload, priority-alert) — direct, isolated test"
 OUT1_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$INTERNAL_URL/sms/dispatch-payload" -H "X-Internal-Token: $INTERNAL_SERVICE_TOKEN" -H "Content-Type: application/json" -d "{\"phone_number\":\"+639170000002\",\"message\":\"test\",\"barangay_id\":1}")
-expect_eq "$OUT1_STATUS" "502" "dispatch-payload with Semaphore unconfigured -> 502 (failed outcome, not a crash)"
-OUT1_LOG=$(db_one "SELECT COUNT(*) FROM sms_log WHERE direction='outbound' AND message_type='dispatch' AND failure_reason='SEMAPHORE_NOT_CONFIGURED';")
+expect_eq "$OUT1_STATUS" "502" "dispatch-payload with the GSM gateway unconfigured -> 502 (failed outcome, not a crash)"
+OUT1_LOG=$(db_one "SELECT COUNT(*) FROM sms_log WHERE direction='outbound' AND message_type='dispatch' AND failure_reason='GSM_GATEWAY_NOT_CONFIGURED';")
 [ "$OUT1_LOG" -ge "1" ] 2>/dev/null && pass "dispatch-payload wrote an sms_log row for the attempt" || fail "No sms_log row from dispatch-payload"
 
 MISSING_PHONE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$INTERNAL_URL/sms/priority-alert" -H "X-Internal-Token: $INTERNAL_SERVICE_TOKEN" -H "Content-Type: application/json" -d "{\"message\":\"test\",\"barangay_id\":1}")
