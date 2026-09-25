@@ -81,4 +81,5 @@ export const icons = {
   rotateCcw: (size = 20) => svg('<path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>', size),
   check: (size = 20) => svg('<polyline points="20 6 9 17 4 12"/>', size),
   info: (size = 20) => svg('<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>', size),
+  arrowRight: (size = 20) => svg('<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>', size),
 };

@@ -39,7 +39,7 @@
    the ring is one conic-gradient. */
 .donut-chart__hole {
   position: absolute;
-  inset: 1.375rem;
+  inset: 1.45rem;
   background: var(--color-surface);
   border-radius: 50%;
   display: flex;
@@ -47,28 +47,30 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
 }
 .donut-chart__total {
-  font-size: 1.625rem;
-  font-weight: 700;
+  font-size: 1.75rem;
+  font-weight: 800;
   color: var(--color-text-primary);
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 .donut-chart__total-label {
   font-size: 0.625rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  margin-top: var(--spacing-xs);
+  margin-top: 0.25rem;
 }
-/* Legend runs two-up with neatly left-aligned swatch and label, plus right-aligned count and pct */
+/* Legend runs two-up with structured micro-tile cards */
 .donut-chart__legend {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.25rem var(--spacing-md);
+  gap: 0.35rem 0.5rem;
   min-width: 15rem;
   flex: 1;
 }
@@ -76,27 +78,30 @@
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: var(--spacing-sm);
+  justify-content: space-between;
+  gap: 0.5rem;
   font: inherit;
   font-size: var(--font-size-sm);
   color: inherit;
-  background: none;
-  border: none;
+  background: color-mix(in srgb, var(--color-bg) 60%, var(--color-surface));
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: var(--spacing-2xs) var(--spacing-sm);
+  padding: 0.3rem 0.55rem;
   margin: 0;
   cursor: pointer;
   min-height: auto;
   min-width: 0;
   width: 100%;
   text-align: left;
-  transition: background-color .15s ease, opacity .15s ease;
+  transition: all .15s ease;
 }
 .donut-chart__legend-item:hover,
 .donut-chart__legend-item.is-active,
 .donut-chart__legend-item:focus-visible {
-  background: var(--tint-neutral-bg, var(--color-bg));
+  background: var(--surface-card-hover);
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
 .donut-chart__legend-item:hover .donut-chart__legend-label,
 .donut-chart__legend-item.is-active .donut-chart__legend-label {
@@ -112,11 +117,12 @@
   height: 0.625rem;
   border-radius: 50%;
   flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
   transition: transform .15s ease;
 }
 .donut-chart__legend-item:hover .donut-chart__swatch,
 .donut-chart__legend-item.is-active .donut-chart__swatch {
-  transform: scale(1.25);
+  transform: scale(1.3);
 }
 .donut-chart__legend-label {
   color: var(--color-text-secondary);
@@ -130,21 +136,72 @@
 }
 .donut-chart__legend-value {
   display: inline-flex;
-  align-items: baseline;
-  gap: var(--spacing-xs);
+  align-items: center;
+  gap: 0.25rem;
   margin-left: auto;
   flex-shrink: 0;
 }
 .donut-chart__legend-count {
   font-size: var(--font-size-label);
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-primary);
 }
 .donut-chart__legend-pct {
   font-size: 0.6875rem;
-  color: var(--color-text-tertiary);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
+  padding: 0.05rem 0.35rem;
+  border-radius: 9999px;
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* Category Summary Footer (Clamps to bottom for perfect parity with By Status) */
+.category-summary-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+  margin-top: auto;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-subtle);
+  width: 100%;
+}
+
+.category-summary-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg) 60%, var(--color-surface));
+  border: 1px solid var(--border-subtle);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.category-summary-tile:hover {
+  background: var(--surface-card-hover);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-subtle));
+}
+
+.category-summary-tile__val {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.25;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.category-summary-tile__sub {
+  font-size: 0.6875rem;
+  color: var(--color-text-secondary);
+  line-height: 1.2;
 }
 
 /* Cursor-following tooltip for hovering the ring's own colored arc */

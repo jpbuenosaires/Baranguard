@@ -110,7 +110,7 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
     pageHeader.actions.innerHTML = '';
     body.innerHTML = '';
     if (activeTab === 'reports') {
-      renderReportsTab(body, pageHeader, user);
+      renderReportsTab(body, pageHeader, user, navigate);
     } else if (activeTab === 'heatmap') {
       renderHeatmapTab(body, pageHeader, user);
     } else if (activeTab === 'threat') {

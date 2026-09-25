@@ -32,7 +32,7 @@
  */
 
 import { getReportsSummary, getIncidents, getDutyStatus, getUsers, getTanodSos, getBarangays, logout, ApiClientError } from '../api/apiClient.js';
-import { KpiCard } from '../components/KpiCard.js';
+import { KpiCard, KpiHeroCard } from '../components/KpiCard.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
 import { LineChart } from '../components/LineChart.js';
 import { DonutChart } from '../components/DonutChart.js';
@@ -51,13 +51,19 @@ const INCIDENT_TYPE_LABELS = {
   medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
-// §8 "Adopted UI reference": categorical chart palette, cycled since §5
-// fixes incident_type to exactly these 11 enum members.
-const INCIDENT_TYPE_COLORS = [
-  'var(--chart-cat-1)', 'var(--chart-cat-2)', 'var(--chart-cat-3)', 'var(--chart-cat-4)',
-  'var(--chart-cat-5)', 'var(--chart-cat-6)', 'var(--chart-cat-7)', 'var(--chart-cat-8)',
-  'var(--chart-cat-1)', 'var(--chart-cat-2)', 'var(--chart-cat-3)',
-];
+const INCIDENT_TYPE_COLORS = {
+  theft: 'var(--cat-theft)',
+  physical_injury: 'var(--cat-injury)',
+  disturbance: 'var(--cat-disturbance)',
+  domestic_dispute: 'var(--cat-dispute)',
+  vandalism: 'var(--cat-vandalism)',
+  traffic_incident: 'var(--cat-traffic)',
+  fire: 'var(--cat-fire)',
+  medical_emergency: 'var(--cat-medical)',
+  missing_person: 'var(--cat-missing)',
+  animal_complaint: 'var(--cat-animal)',
+  other: 'var(--cat-other)',
+};
 const STATUS_LABELS = { pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved' };
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success' };
 const DUTY_STATUS_LABELS = { on_duty: 'On Duty', responding: 'Responding', off_duty: 'Off Duty' };
@@ -277,47 +283,67 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
   const isStale = oldestUrgentMinutes !== null && oldestUrgentMinutes >= STALE_URGENT_MINUTES;
   const isCritical = openSosCount > 0 || hasCriticalOrHighPending;
   const banner = document.createElement('div');
-  banner.className = `attention-banner attention-banner--${isCritical ? 'critical' : 'warning'}`;
+  banner.className = `attention-banner attention-banner--${isCritical ? 'critical' : 'warning'} attention-banner--compact`;
   banner.setAttribute('role', isCritical ? 'alert' : 'status');
-  banner.innerHTML = `<span aria-hidden="true">${icons.alertTriangle(22)}</span>`;
 
-  const text = document.createElement('span');
-  text.className = 'attention-banner__text';
+  const lead = document.createElement('div');
+  lead.className = 'attention-banner__lead';
+
+  const badge = document.createElement('div');
+  badge.className = 'attention-banner__badge';
+  badge.setAttribute('aria-hidden', 'true');
+  badge.innerHTML = isCritical ? icons.alertCircle(18) : icons.alertTriangle(18);
+  if (isCritical) {
+    const pulseDot = document.createElement('span');
+    pulseDot.className = 'attention-banner__pulse-dot';
+    badge.appendChild(pulseDot);
+  }
+  lead.appendChild(badge);
+
+  const textGroup = document.createElement('div');
+  textGroup.className = 'attention-banner__text-group';
+
   const parts = [];
   if (openSosCount > 0) parts.push(openSosCount === 1 ? '1 Tanod SOS alert' : `${openSosCount} Tanod SOS alerts`);
   if (pendingCount > 0) parts.push(pendingCount === 1 ? '1 incident pending dispatch' : `${pendingCount} incidents pending dispatch`);
-  text.textContent = `${parts.join(' and ')} — needs attention.`;
-  banner.appendChild(text);
 
-  // The escalation line. Only appears when there IS an urgent incident
-  // still waiting, and the number in it is always the real measured wait
-  // of the oldest one — never a bucket or a rounded-up "over N minutes".
+  const title = document.createElement('span');
+  title.className = 'attention-banner__title';
+  title.textContent = parts.join(' and ');
+
+  const detail = document.createElement('span');
+  detail.className = 'attention-banner__detail';
+  detail.textContent = isCritical ? 'Needs immediate response' : 'Needs attention';
+
+  textGroup.append(title, detail);
+  lead.appendChild(textGroup);
+  banner.appendChild(lead);
+
+  const actions = document.createElement('div');
+  actions.className = 'attention-banner__actions';
+
   if (oldestUrgentMinutes !== null) {
-    const escalation = document.createElement('span');
-    escalation.className = `attention-banner__escalation${isStale ? ' attention-banner__escalation--stale' : ''}`;
+    const chip = document.createElement('span');
+    chip.className = `attention-banner__chip${isStale ? ' attention-banner__chip--stale' : ''}`;
     const waited = oldestUrgentMinutes < 60
-      ? `${oldestUrgentMinutes} min`
+      ? `${oldestUrgentMinutes}m`
       : `${Math.floor(oldestUrgentMinutes / 60)}h ${oldestUrgentMinutes % 60}m`;
-    escalation.textContent = isStale
-      ? `Oldest high/critical incident has waited ${waited} with no Tanod dispatched.`
-      : `Oldest high/critical incident waiting ${waited}.`;
-    if (isStale) escalation.setAttribute('role', 'alert');
-    banner.appendChild(escalation);
+    chip.innerHTML = `<span aria-hidden="true">${icons.clock(13)}</span><span>${isStale ? 'Waited ' + waited : 'Waiting ' + waited}</span>`;
+    if (isStale) chip.setAttribute('role', 'alert');
+    actions.appendChild(chip);
   }
 
-  // Dispatch Center is Admin-only (§7) — Punong Barangay is read-only
-  // oversight and has no screen to act on this from, so it sees the same
-  // informational banner with no button rather than one that would just
-  // bounce them back to their own default page.
   if (role === 'admin') {
     const goButton = document.createElement('button');
     goButton.type = 'button';
     goButton.className = 'attention-banner__btn';
-    goButton.textContent = 'Go to Dispatch Center';
+    goButton.setAttribute('aria-label', 'Go to Dispatch Center');
+    goButton.innerHTML = `<span>Dispatch Now</span><span class="attention-banner__btn-icon" aria-hidden="true">${icons.arrowRight(14)}</span>`;
     goButton.addEventListener('click', () => navigate('dispatch'));
-    banner.appendChild(goButton);
+    actions.appendChild(goButton);
   }
 
+  banner.appendChild(actions);
   host.appendChild(banner);
 }
 
@@ -336,7 +362,7 @@ async function loadDeltas(container, dateFrom, dateTo, summary) {
     // into a percentage; a prior period of zero has no percentage, and
     // KpiCard falls back to the raw difference in that case.
     kpiGrid.children[0]?.setDelta?.(summary.totalIncidents - prevSummary.totalIncidents, prevSummary.totalIncidents);
-    kpiGrid.children[1]?.setDelta?.(summary.resolvedCount - prevSummary.resolvedCount, prevSummary.resolvedCount);
+    kpiGrid.children[0]?.setResolvedDelta?.(summary.resolvedCount - prevSummary.resolvedCount, prevSummary.resolvedCount);
   } catch {
     // No previous-period data (e.g. barangay has no history before this
     // range) — the KPI cards already rendered without a delta, which is
@@ -449,20 +475,14 @@ function renderPopulated(container, summary, navigate, role) {
   const grid = document.createElement('div');
   grid.className = 'kpi-grid';
   grid.append(
-    // §4.4 — sparkline built from summary.trend[].count, a real per-day
-    // series that genuinely measures "incidents created," matching this
-    // KPI exactly. `Resolved` deliberately has none — see KpiCard.js's
-    // own doc for why that series doesn't describe it.
-    KpiCard({
-      label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue',
+    KpiHeroCard({
+      label: 'Total Incidents',
+      value: summary.totalIncidents,
+      icon: icons.bell,
+      accent: 'blue',
+      resolvedCount: summary.resolvedCount,
       sparkline: summary.trend.map((day) => day.count),
-      description: 'Every incident reported in the selected date range, regardless of status.',
-    }),
-    // Resolved going UP is unambiguously good; Total Incidents has no
-    // inherent good direction so it deliberately gets no `trend`.
-    KpiCard({
-      label: 'Resolved Cases', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green', trend: 'up-good',
-      description: 'Incidents in this range whose current status is Resolved.',
+      description: 'Every incident reported in the selected date range, alongside resolution progress and trend activity.',
     }),
     KpiCard({
       label: 'Avg. Response Time',
@@ -472,13 +492,26 @@ function renderPopulated(container, summary, navigate, role) {
       accent: 'orange',
       // Faster response is better, so a NEGATIVE delta is the good one.
       trend: 'down-good',
+      badgeChip: {
+        text: 'Target < 20m',
+        tone: summary.avgResponseTimeMinutes !== null && summary.avgResponseTimeMinutes <= 20 ? 'positive' : 'warning',
+      },
+      footerNote: 'Incident reported to Tanod arrival',
       description: 'Average time from an incident being reported to a Tanod’s dispatch marked Arrived. Incidents with no arrival yet aren’t counted.',
     }),
     // No period-over-period delta here — this is a live current-state
     // snapshot (§9), not a range-bucketed count, so "vs previous period"
     // isn't a meaningful comparison for it.
     KpiCard({
-      label: 'Tanods On Duty', value: summary.activeTanods, icon: icons.users, accent: 'teal',
+      label: 'Tanods On Duty',
+      value: summary.activeTanods,
+      icon: icons.users,
+      accent: 'teal',
+      badgeChip: {
+        text: 'Live Roster',
+        tone: 'live',
+      },
+      footerNote: 'Currently active or responding',
       description: 'Tanods currently marked On Duty or Responding, right now — not scoped to the date range above.',
     })
   );
@@ -517,7 +550,8 @@ function renderPopulated(container, summary, navigate, role) {
   recentCard.appendChild(cardHeader(
     'Recent Incidents', 'Newest six reports', icons.fileText,
     'The six most recently reported incidents, regardless of the date range above.',
-    { label: 'View all incidents', onClick: () => navigate('incident-management') }
+    { label: 'View all incidents', onClick: () => navigate('incident-management') },
+    { text: '6 newest' }
   ));
   const recentHost = document.createElement('div');
   recentHost.setAttribute('data-recent-incidents', '');
@@ -529,7 +563,8 @@ function renderPopulated(container, summary, navigate, role) {
   dutyCard.appendChild(cardHeader(
     'Tanods On Duty', 'Current shift roster', icons.users,
     'Every Tanod’s current shift status, live — not scoped to the date range above.',
-    { label: 'View Personnel', onClick: () => navigate('personnel') }
+    { label: 'View Personnel', onClick: () => navigate('personnel') },
+    { text: 'Live Roster', tone: 'live' }
   ));
   const dutyHost = document.createElement('div');
   dutyHost.setAttribute('data-tanods-on-duty', '');
@@ -561,13 +596,19 @@ function renderPopulated(container, summary, navigate, role) {
  * "top right of the card" real estate the user asked "View all" to move
  * into, so this reuses that slot rather than adding a second control.
  */
-function cardHeader(title, subtitle, icon, description, viewAll) {
+function cardHeader(title, subtitle, icon, description, viewAll, chip) {
   const el = document.createElement('div');
   el.className = 'card-header';
   const titles = document.createElement('div');
   const h = document.createElement('h3');
   h.className = 'card-header__title report-section-title';
   h.append(title);
+  if (chip) {
+    const chipEl = document.createElement('span');
+    chipEl.className = `card-header__chip ${chip.tone ? `card-header__chip--${chip.tone}` : ''}`;
+    chipEl.textContent = chip.text;
+    h.appendChild(chipEl);
+  }
   if (description) h.appendChild(InfoTip(description));
   const sub = document.createElement('p');
   sub.className = 'card-header__subtitle';
@@ -625,18 +666,34 @@ function renderRecentIncidentsTable(host, items, navigate) {
     onRowClick: (row) => navigate('blotter-detail', row.incidentId),
     renderCell: (row, key) => {
       switch (key) {
-        case 'id':
-          return `#${row.incidentId}`;
-        case 'type':
-          return INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType;
+        case 'id': {
+          const badge = document.createElement('span');
+          badge.className = 'incident-id-badge';
+          badge.textContent = `#${row.incidentId}`;
+          return badge;
+        }
+        case 'type': {
+          const typeEl = document.createElement('span');
+          typeEl.style.fontWeight = '500';
+          typeEl.textContent = INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType;
+          return typeEl;
+        }
         case 'status': {
           const span = document.createElement('span');
           span.className = `status-pill ${STATUS_PILL_CLASS[row.status] || 'status-pill--neutral'}`;
           span.textContent = row.status;
           return span;
         }
-        case 'date':
-          return new Date(row.createdAt).toLocaleDateString();
+        case 'date': {
+          const dateEl = document.createElement('span');
+          dateEl.className = 'incident-date-cell';
+          const d = new Date(row.createdAt);
+          dateEl.textContent = isNaN(d.getTime())
+            ? row.createdAt
+            : d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+          dateEl.title = row.createdAt;
+          return dateEl;
+        }
         default:
           return '';
       }
@@ -652,16 +709,39 @@ function renderTanodsOnDutyList(host, roster) {
     return;
   }
   const list = document.createElement('div');
-  list.className = 'stack tanods-roster-scroll';
+  list.className = 'tanods-roster-scroll';
   for (const tanod of roster) {
     const row = document.createElement('div');
-    row.className = 'row-between breakdown-row';
-    const left = document.createElement('span');
-    left.className = 'avatar-row';
-    left.innerHTML = `${avatarInitials(tanod.fullName, 24)}${escapeHtml(tanod.fullName)}`;
+    row.className = 'row-between breakdown-row tanod-roster-item';
+
+    const left = document.createElement('div');
+    left.className = 'tanod-roster-item__left';
+
+    const avatarWrap = document.createElement('div');
+    avatarWrap.className = 'tanod-avatar-wrap';
+    avatarWrap.innerHTML = `
+      ${avatarInitials(tanod.fullName, 32)}
+      <span class="tanod-avatar-pip tanod-avatar-pip--${tanod.status}" aria-hidden="true"></span>
+    `;
+
+    const info = document.createElement('div');
+    info.className = 'tanod-roster-item__info';
+
+    const name = document.createElement('span');
+    name.className = 'tanod-roster-item__name';
+    name.textContent = tanod.fullName;
+
+    const role = document.createElement('span');
+    role.className = 'tanod-roster-item__role';
+    role.textContent = 'Barangay Tanod';
+
+    info.append(name, role);
+    left.append(avatarWrap, info);
+
     const pill = document.createElement('span');
     pill.className = `status-pill ${DUTY_STATUS_PILL_CLASS[tanod.status] || 'status-pill--neutral'}`;
     pill.textContent = DUTY_STATUS_LABELS[tanod.status] || tanod.status;
+
     row.append(left, pill);
     list.appendChild(row);
   }
@@ -671,14 +751,60 @@ function renderTanodsOnDutyList(host, roster) {
 function renderIncidentTypeDonutCard(counts, navigate) {
   const card = document.createElement('div');
   card.className = 'card';
-  const rows = Object.entries(counts).map(([key, count], i) => ({
-    key, count, label: INCIDENT_TYPE_LABELS[key] || key, color: INCIDENT_TYPE_COLORS[i % INCIDENT_TYPE_COLORS.length],
+
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const entries = Object.entries(counts);
+  const rows = entries.map(([key, count]) => ({
+    key,
+    count,
+    label: INCIDENT_TYPE_LABELS[key] || key,
+    color: INCIDENT_TYPE_COLORS[key] || 'var(--cat-other)',
   }));
-  card.append(cardHeader(
-    'Incident Types', 'Distribution by category', icons.activity,
-    'How incidents in this range break down by category, out of the 11 fixed incident types.',
-    { label: 'View all reports', onClick: () => navigate('analytics') }
-  ), DonutChart({ rows }));
+
+  let topCat = { key: 'None', count: 0, label: 'None' };
+  let activeCatsCount = 0;
+  for (const [key, count] of entries) {
+    if (count > 0) activeCatsCount++;
+    if (count > topCat.count) {
+      topCat = { key, count, label: INCIDENT_TYPE_LABELS[key] || key };
+    }
+  }
+  const topCatPct = total > 0 ? Math.round((topCat.count / total) * 100) : 0;
+
+  card.append(
+    cardHeader(
+      'Incident Types',
+      'Distribution by category',
+      icons.activity,
+      'How incidents in this range break down by category, out of the 11 fixed incident types.',
+      { label: 'View all reports', onClick: () => navigate('analytics') },
+      { text: `${total} Incidents` }
+    ),
+    DonutChart({ rows })
+  );
+
+  if (total > 0) {
+    const footer = document.createElement('div');
+    footer.className = 'category-summary-footer';
+    footer.innerHTML = `
+      <div class="category-summary-tile">
+        <span class="category-summary-tile__val">
+          <span class="summary-tile-pip" style="background:${INCIDENT_TYPE_COLORS[topCat.key] || 'var(--color-primary)'};" aria-hidden="true"></span>
+          Top: ${escapeHtml(topCat.label)} (${topCat.count})
+        </span>
+        <span class="category-summary-tile__sub">${topCatPct}% of all incidents</span>
+      </div>
+      <div class="category-summary-tile">
+        <span class="category-summary-tile__val">
+          <span class="summary-tile-pip" style="background:var(--chart-cat-8, #8B5CF6);" aria-hidden="true"></span>
+          ${activeCatsCount} Active ${activeCatsCount === 1 ? 'Category' : 'Categories'}
+        </span>
+        <span class="category-summary-tile__sub">Out of 11 classified types</span>
+      </div>
+    `;
+    card.appendChild(footer);
+  }
+
   return card;
 }
 
@@ -694,14 +820,16 @@ function renderQuickActionsCard(navigate) {
   card.className = 'card';
   card.appendChild(cardHeader(
     'Quick Actions', 'Common next steps', icons.plus,
-    'Shortcuts to the most common tasks — nothing here does anything a full sidebar screen doesn’t already do.'
+    'Shortcuts to the most common tasks — nothing here does anything a full sidebar screen doesn’t already do.',
+    null,
+    { text: '4 Shortcuts' }
   ));
 
   const ACTIONS = [
-    { label: 'Log an Incident', icon: icons.alertTriangle, page: 'incident-management' },
-    { label: 'Dispatch Center', icon: icons.radio, page: 'dispatch' },
-    { label: 'Message a Resident', icon: icons.messageSquare, page: 'sms-log' },
-    { label: 'Analytics', icon: icons.barChart, page: 'analytics' },
+    { label: 'Log an Incident', sub: 'New blotter & intake', icon: icons.alertTriangle, tone: 'amber', page: 'incident-management' },
+    { label: 'Dispatch Center', sub: 'Live tracking & roster', icon: icons.radio, tone: 'blue', page: 'dispatch' },
+    { label: 'Message a Resident', sub: 'Resident SMS broadcast', icon: icons.messageSquare, tone: 'cyan', page: 'sms-log' },
+    { label: 'Analytics', sub: 'Reports, trends & heatmap', icon: icons.barChart, tone: 'violet', page: 'analytics' },
   ];
   const grid = document.createElement('div');
   grid.className = 'quick-actions-grid';
@@ -709,8 +837,17 @@ function renderQuickActionsCard(navigate) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'quick-action-tile';
-    button.innerHTML = `<span class="quick-action-tile__icon" aria-hidden="true">${action.icon(20)}</span>`
-      + `<span>${action.label}</span>`;
+    button.setAttribute('aria-label', action.label);
+    button.innerHTML = `
+      <div class="quick-action-tile__header">
+        <span class="quick-action-tile__badge quick-action-tile__badge--${action.tone}" aria-hidden="true">${action.icon(20)}</span>
+        <span class="quick-action-tile__arrow" aria-hidden="true">${icons.arrowUpRight(14)}</span>
+      </div>
+      <div class="quick-action-tile__body">
+        <span class="quick-action-tile__title">${action.label}</span>
+        <span class="quick-action-tile__sub">${action.sub}</span>
+      </div>
+    `;
     button.addEventListener('click', () => navigate(action.page));
     grid.appendChild(button);
   }
@@ -721,17 +858,44 @@ function renderQuickActionsCard(navigate) {
 function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
   const card = document.createElement('div');
   card.className = 'card';
+
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+
   card.appendChild(cardHeader(
     title, 'Incidents in the selected range', icons.barChart,
     'How incidents in this range break down by pending, dispatched, or resolved.',
-    { label: 'View all reports', onClick: () => navigate('analytics') }
+    { label: 'View all reports', onClick: () => navigate('analytics') },
+    total > 0 ? { text: `${total} Total` } : null
   ));
+
+  // Multi-Segment Top Proportional Pipeline Strip
+  if (total > 0) {
+    const pipelineBar = document.createElement('div');
+    pipelineBar.className = 'pipeline-stacked-bar';
+    pipelineBar.setAttribute('aria-hidden', 'true');
+    for (const [key, count] of Object.entries(counts)) {
+      if (count > 0) {
+        const seg = document.createElement('div');
+        const pct = ((count / total) * 100).toFixed(1);
+        seg.className = `pipeline-stacked-segment pipeline-stacked-segment--${key}`;
+        seg.style.width = `${pct}%`;
+        seg.title = `${labels[key] || key}: ${count} (${pct}%)`;
+        pipelineBar.appendChild(seg);
+      }
+    }
+    card.appendChild(pipelineBar);
+  }
 
   const list = document.createElement('div');
   list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    const item = document.createElement('div');
+    item.className = 'breakdown-item';
+
     const row = document.createElement('div');
-    row.className = 'row-between breakdown-row';
+    row.className = 'breakdown-row';
+
     const label = document.createElement('span');
     const pillClass = pillClasses[key];
     if (pillClass) {
@@ -739,13 +903,52 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
     } else {
       label.textContent = labels[key] || key;
     }
+
     const value = document.createElement('span');
-    value.className = 'breakdown-row__value';
-    value.textContent = String(count);
+    value.className = 'breakdown-row__metrics';
+    value.innerHTML = `<span class="breakdown-row__value">${count}</span> <span class="breakdown-row__pct">${pct}%</span>`;
     row.append(label, value);
-    list.appendChild(row);
+
+    const track = document.createElement('div');
+    track.className = 'breakdown-progress-track';
+    const fill = document.createElement('div');
+    fill.className = `breakdown-progress-fill breakdown-progress-fill--${key}`;
+    fill.style.width = `${pct}%`;
+    track.appendChild(fill);
+
+    item.append(row, track);
+    list.appendChild(item);
   }
   card.appendChild(list);
+
+  // Operational Pipeline Summary Footer (Balances card height with Quick Actions)
+  if (total > 0) {
+    const activeCount = (counts.pending || 0) + (counts.dispatched || 0);
+    const activePct = Math.round((activeCount / total) * 100);
+    const resolvedCount = counts.resolved || 0;
+    const resolvedPct = Math.round((resolvedCount / total) * 100);
+
+    const footer = document.createElement('div');
+    footer.className = 'breakdown-summary-footer';
+    footer.innerHTML = `
+      <div class="breakdown-summary-tile">
+        <span class="breakdown-summary-tile__val">
+          <span class="summary-tile-pip" style="background:#3B82F6;" aria-hidden="true"></span>
+          ${activeCount} Active in Field
+        </span>
+        <span class="breakdown-summary-tile__sub">${activePct}% of total workload</span>
+      </div>
+      <div class="breakdown-summary-tile">
+        <span class="breakdown-summary-tile__val">
+          <span class="summary-tile-pip" style="background:#16A34A;" aria-hidden="true"></span>
+          ${resolvedCount} Closed & Resolved
+        </span>
+        <span class="breakdown-summary-tile__sub">${resolvedPct}% clearance rate</span>
+      </div>
+    `;
+    card.appendChild(footer);
+  }
+
   return card;
 }
 

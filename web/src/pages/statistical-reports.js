@@ -28,14 +28,14 @@
 
 import { getReportsSummary, exportReport, downloadReportExport, getBlotterList, getCitizenReports, ApiClientError } from '../api/apiClient.js';
 import { showToast } from '../components/Toast.js';
-import { KpiCard } from '../components/KpiCard.js';
+import { KpiCard, KpiHeroCard } from '../components/KpiCard.js';
 import { LineChart } from '../components/LineChart.js';
 import { BarChart } from '../components/BarChart.js';
 import { DonutChart } from '../components/DonutChart.js';
-import { StatStrip } from '../components/StatStrip.js';
 import { InfoTip } from '../components/Tooltip.js';
 import { icons } from '../components/icons.js';
 import { DateRangePicker, manilaTodayIso } from '../components/DateRangePicker.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 // 12-hour clock labels for the by-hour bar chart's 24 buckets.
 const HOUR_LABELS = Array.from({ length: 24 }, (_, h) => {
@@ -53,11 +53,19 @@ const INCIDENT_TYPE_LABELS = {
 };
 // §8 "Adopted UI reference": categorical chart palette, cycled since §5
 // fixes incident_type to exactly these 11 enum members.
-const INCIDENT_TYPE_COLORS = [
-  'var(--chart-cat-1)', 'var(--chart-cat-2)', 'var(--chart-cat-3)', 'var(--chart-cat-4)',
-  'var(--chart-cat-5)', 'var(--chart-cat-6)', 'var(--chart-cat-7)', 'var(--chart-cat-8)',
-  'var(--chart-cat-1)', 'var(--chart-cat-2)', 'var(--chart-cat-3)',
-];
+const INCIDENT_TYPE_COLORS = {
+  theft: 'var(--cat-theft)',
+  physical_injury: 'var(--cat-injury)',
+  disturbance: 'var(--cat-disturbance)',
+  domestic_dispute: 'var(--cat-dispute)',
+  vandalism: 'var(--cat-vandalism)',
+  traffic_incident: 'var(--cat-traffic)',
+  fire: 'var(--cat-fire)',
+  medical_emergency: 'var(--cat-medical)',
+  missing_person: 'var(--cat-missing)',
+  animal_complaint: 'var(--cat-animal)',
+  other: 'var(--cat-other)',
+};
 const STATUS_LABELS = { pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved' };
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success' };
 // Same wording/tones as blotter-list.js's own CASE_STATUS_LABELS/
@@ -83,13 +91,19 @@ function formatHourRange(h) {
   return `${startH}:00 ${startPeriod} – ${endH}:00 ${endPeriod}`;
 }
 
-function cardHeader(title, subtitle, icon, description) {
+function cardHeader(title, subtitle, icon, description, viewAll, chip) {
   const el = document.createElement('div');
   el.className = 'card-header';
   const titles = document.createElement('div');
   const h = document.createElement('h3');
   h.className = 'card-header__title report-section-title';
   h.append(title);
+  if (chip) {
+    const chipEl = document.createElement('span');
+    chipEl.className = `card-header__chip ${chip.tone ? `card-header__chip--${chip.tone}` : ''}`;
+    chipEl.textContent = chip.text;
+    h.appendChild(chipEl);
+  }
   if (description) h.appendChild(InfoTip(description));
   if (subtitle) {
     const sub = document.createElement('p');
@@ -100,8 +114,18 @@ function cardHeader(title, subtitle, icon, description) {
     titles.append(h);
   }
 
-  if (icon) {
-    const corner = document.createElement('span');
+  let corner;
+  if (viewAll) {
+    corner = document.createElement('button');
+    corner.type = 'button';
+    corner.className = 'card-header__action-btn';
+    corner.innerHTML = `<span>${escapeHtml(viewAll.label)}</span> ${icons.arrowUpRight(14)}`;
+    corner.setAttribute('aria-label', viewAll.label);
+    corner.title = viewAll.label;
+    corner.addEventListener('click', viewAll.onClick);
+    el.append(titles, corner);
+  } else if (icon) {
+    corner = document.createElement('span');
     corner.className = 'card-header__icon';
     corner.setAttribute('aria-hidden', 'true');
     corner.innerHTML = icon(18);
@@ -131,7 +155,7 @@ function shortDate(iso) {
   return `${months[Number(m) - 1]} ${Number(d)}`;
 }
 
-export function renderReportsTab(container, pageHeader, user) {
+export function renderReportsTab(container, pageHeader, user, navigate) {
   // 2026-09-06 UI/UX audit: was a copy of the Admin Dashboard's ~120-line
   // picker (one of five that had drifted apart). Now the shared component.
   // Unlike the dashboard this screen has no "server default range" to
@@ -200,9 +224,9 @@ export function renderReportsTab(container, pageHeader, user) {
     }
     try {
       const summary = await getReportsSummary({ dateFrom, dateTo });
-      renderReport(body, summary, user.role);
+      renderReport(body, summary, user.role, navigate);
       loadCaseStatusBreakdown(body);
-      if (user.role === 'admin') loadCitizenReportsConversion(body);
+      if (user.role === 'admin') loadCitizenReportsConversion(body, navigate);
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong generating the report.';
       renderError(body, message, () => load(dateFrom, dateTo));
@@ -236,7 +260,7 @@ function renderError(container, message, onRetry) {
   container.appendChild(block);
 }
 
-function renderReport(container, summary, role) {
+function renderReport(container, summary, role, navigate) {
   container.innerHTML = '';
 
   const isEmpty = summary.totalIncidents === 0;
@@ -252,18 +276,42 @@ function renderReport(container, summary, role) {
   }
 
   const kpiGrid = document.createElement('div');
-  kpiGrid.className = 'kpi-grid dashboard-row';
+  kpiGrid.className = 'kpi-grid';
   kpiGrid.append(
-    KpiCard({ label: 'Total Incidents', value: summary.totalIncidents, icon: icons.bell, accent: 'blue' }),
-    KpiCard({ label: 'Resolved', value: summary.resolvedCount, icon: icons.checkCircle, accent: 'green' }),
+    KpiHeroCard({
+      label: 'Total Incidents',
+      value: summary.totalIncidents,
+      icon: icons.bell,
+      accent: 'blue',
+      resolvedCount: summary.resolvedCount,
+      sparkline: summary.trend?.map((day) => day.count),
+      description: 'Every incident reported in the selected date range, alongside resolution progress and trend activity.',
+    }),
     KpiCard({
       label: 'Avg. Response Time',
       value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
       emptyText: 'No arrivals yet',
       icon: icons.clock,
       accent: 'orange',
+      badgeChip: {
+        text: 'Target < 20m',
+        tone: summary.avgResponseTimeMinutes !== null && summary.avgResponseTimeMinutes <= 20 ? 'positive' : 'warning',
+      },
+      footerNote: 'Incident reported to Tanod arrival',
+      description: 'Average time from an incident being reported to Tanod arrival across resolved/dispatched incidents.',
     }),
-    KpiCard({ label: 'Active Tanods', value: summary.activeTanods, icon: icons.users, accent: 'teal' })
+    KpiCard({
+      label: 'Active Tanods',
+      value: summary.activeTanods,
+      icon: icons.users,
+      accent: 'teal',
+      badgeChip: {
+        text: 'Live Roster',
+        tone: 'live',
+      },
+      footerNote: 'Currently marked On Duty or Responding',
+      description: 'Tanods currently marked On Duty or Responding right now.',
+    })
   );
 
   const insightsCard = document.createElement('div');
@@ -373,14 +421,19 @@ function renderReport(container, summary, role) {
   if (role === 'admin') {
     const citizenCard = document.createElement('div');
     citizenCard.className = 'card';
+    citizenCard.setAttribute('data-citizen-card', '');
     citizenCard.appendChild(cardHeader(
       'Citizen Reports',
       'All submitted reports, all time',
       icons.messageSquare,
-      'Conversion tracking from citizen submissions into blotter records — not scoped to the date range above.'
+      'Conversion tracking from citizen submissions into blotter records — not scoped to the date range above.',
+      navigate ? { label: 'Review Inbox', onClick: () => navigate('citizen-reports') } : null
     ));
     const citizenHost = document.createElement('div');
     citizenHost.setAttribute('data-citizen-conversion-host', '');
+    citizenHost.style.display = 'flex';
+    citizenHost.style.flexDirection = 'column';
+    citizenHost.style.flex = '1';
     citizenHost.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton skeleton--block' }));
     citizenCard.append(citizenHost);
     crossDomainGrid.appendChild(citizenCard);
@@ -499,9 +552,10 @@ function renderCaseStatusList(host, counts) {
  * count is derived from two cheap `limit:1` calls (only `.total` is
  * used from each) rather than fetching every report just to count them.
  */
-async function loadCitizenReportsConversion(container) {
+async function loadCitizenReportsConversion(container, navigate) {
   const host = container.querySelector('[data-citizen-conversion-host]');
   if (!host) return;
+  const card = container.querySelector('[data-citizen-card]');
   try {
     const [allResult, unconvertedResult] = await Promise.all([
       getCitizenReports({ limit: 1 }),
@@ -510,6 +564,22 @@ async function loadCitizenReportsConversion(container) {
     const totalReports = allResult.total;
     const unconverted = unconvertedResult.total;
     const converted = Math.max(0, totalReports - unconverted);
+
+    if (card) {
+      const headerTitle = card.querySelector('.card-header__title');
+      if (headerTitle && !headerTitle.querySelector('.card-header__chip')) {
+        const chipEl = document.createElement('span');
+        chipEl.className = `card-header__chip ${unconverted > 0 ? 'card-header__chip--warning' : ''}`;
+        chipEl.textContent = unconverted > 0 ? `${unconverted} Pending` : `${totalReports} Total`;
+        const tip = headerTitle.querySelector('.tooltip-wrap');
+        if (tip) {
+          headerTitle.insertBefore(chipEl, tip);
+        } else {
+          headerTitle.appendChild(chipEl);
+        }
+      }
+    }
+
     renderCitizenConversion(host, { totalReports, converted, unconverted });
   } catch {
     host.innerHTML = '<p class="note">Could not load citizen report data.</p>';
@@ -522,33 +592,198 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
     host.innerHTML = '<p class="note">No citizen reports submitted yet.</p>';
     return;
   }
-  const pct = Math.round((converted / totalReports) * 100);
-  host.appendChild(StatStrip({
-    items: [
-      { label: 'Submitted', value: totalReports },
-      { label: 'Converted', value: converted, tone: 'success' },
-      { label: 'Awaiting Review', value: unconverted, tone: unconverted > 0 ? 'warning' : 'default' },
-      { label: 'Conversion Rate', value: `${pct}%` },
-    ],
-  }));
+  const convertedPct = Math.round((converted / totalReports) * 100);
+  const unconvertedPct = totalReports > 0 ? Math.round((unconverted / totalReports) * 100) : 0;
+
+  const container = document.createElement('div');
+  container.className = 'citizen-conversion-body';
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.flex = '1';
+  container.style.height = '100%';
+
+  // Multi-Segment Top Proportional Pipeline Strip
+  const pipelineBar = document.createElement('div');
+  pipelineBar.className = 'pipeline-stacked-bar';
+  pipelineBar.style.marginBottom = 'var(--spacing-md)';
+  pipelineBar.setAttribute('aria-hidden', 'true');
+  if (converted > 0) {
+    const seg = document.createElement('div');
+    const pct = ((converted / totalReports) * 100).toFixed(1);
+    seg.className = 'pipeline-stacked-segment pipeline-stacked-segment--resolved';
+    seg.style.width = `${pct}%`;
+    seg.title = `Converted: ${converted} (${convertedPct}%)`;
+    pipelineBar.appendChild(seg);
+  }
+  if (unconverted > 0) {
+    const seg = document.createElement('div');
+    const pct = ((unconverted / totalReports) * 100).toFixed(1);
+    seg.className = 'pipeline-stacked-segment pipeline-stacked-segment--pending';
+    seg.style.width = `${pct}%`;
+    seg.title = `Awaiting Review: ${unconverted} (${unconvertedPct}%)`;
+    pipelineBar.appendChild(seg);
+  }
+  container.appendChild(pipelineBar);
+
+  // Conversion Efficiency Hero Banner
+  const heroBanner = document.createElement('div');
+  heroBanner.className = 'conversion-hero-banner';
+  heroBanner.innerHTML = `
+    <div class="conversion-hero-banner__left">
+      <span class="conversion-hero-banner__badge ${convertedPct >= 50 ? 'conversion-hero-banner__badge--success' : 'conversion-hero-banner__badge--warning'}" aria-hidden="true">
+        ${icons.trendingUp(16)}
+      </span>
+      <div class="conversion-hero-banner__text">
+        <span class="conversion-hero-banner__title">Intake Conversion Efficiency</span>
+        <span class="conversion-hero-banner__caption">${converted} of ${totalReports} submissions formalized into blotters</span>
+      </div>
+    </div>
+    <div class="conversion-hero-banner__right">
+      <span class="conversion-hero-banner__val">${convertedPct}%</span>
+      <span class="conversion-hero-banner__rate-label">Clearance</span>
+    </div>
+  `;
+  container.appendChild(heroBanner);
+
+  // Structured Conversion Stage Rows with Progress Tracks
+  const list = document.createElement('div');
+  list.className = 'stack';
+  list.style.marginTop = 'var(--spacing-sm)';
+
+  const stages = [
+    {
+      label: 'Converted to Blotter',
+      pillClass: 'status-pill--success',
+      fillClass: 'breakdown-progress-fill--resolved',
+      count: converted,
+      pct: convertedPct,
+    },
+    {
+      label: 'Awaiting Triage & Review',
+      pillClass: 'status-pill--pending',
+      fillClass: 'breakdown-progress-fill--pending',
+      count: unconverted,
+      pct: unconvertedPct,
+    },
+  ];
+
+  for (const stage of stages) {
+    const item = document.createElement('div');
+    item.className = 'breakdown-item';
+
+    const row = document.createElement('div');
+    row.className = 'breakdown-row';
+
+    const label = document.createElement('span');
+    label.innerHTML = `<span class="status-pill ${stage.pillClass}">${stage.label}</span>`;
+
+    const metrics = document.createElement('span');
+    metrics.className = 'breakdown-row__metrics';
+    metrics.innerHTML = `<span class="breakdown-row__value">${stage.count}</span> <span class="breakdown-row__pct">${stage.pct}%</span>`;
+    row.append(label, metrics);
+
+    const track = document.createElement('div');
+    track.className = 'breakdown-progress-track';
+    const fill = document.createElement('div');
+    fill.className = `breakdown-progress-fill ${stage.fillClass}`;
+    fill.style.width = `${stage.pct}%`;
+    track.appendChild(fill);
+
+    item.append(row, track);
+    list.appendChild(item);
+  }
+  container.appendChild(list);
+
+  // Clamped Operational Summary Footer
+  const footer = document.createElement('div');
+  footer.className = 'category-summary-footer';
+  footer.innerHTML = `
+    <div class="category-summary-tile">
+      <span class="category-summary-tile__val">
+        <span class="summary-tile-pip" style="background:#F59E0B;" aria-hidden="true"></span>
+        ${unconverted} Pending Action
+      </span>
+      <span class="category-summary-tile__sub">${unconvertedPct}% awaiting triage</span>
+    </div>
+    <div class="category-summary-tile">
+      <span class="category-summary-tile__val">
+        <span class="summary-tile-pip" style="background:#16A34A;" aria-hidden="true"></span>
+        ${converted} Formalized
+      </span>
+      <span class="category-summary-tile__sub">Verified into legal blotter</span>
+    </div>
+  `;
+  container.appendChild(footer);
+
+  host.appendChild(container);
 }
 
 function renderIncidentTypeDonutCard(counts) {
   const card = document.createElement('div');
   card.className = 'card';
-  const rows = Object.entries(counts).map(([key, count], i) => ({
-    key, count, label: INCIDENT_TYPE_LABELS[key] || key, color: INCIDENT_TYPE_COLORS[i % INCIDENT_TYPE_COLORS.length],
+
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const entries = Object.entries(counts);
+  const rows = entries.map(([key, count]) => ({
+    key,
+    count,
+    label: INCIDENT_TYPE_LABELS[key] || key,
+    color: INCIDENT_TYPE_COLORS[key] || 'var(--cat-other)',
   }));
+
+  let topCat = { key: 'None', count: 0, label: 'None' };
+  let activeCatsCount = 0;
+  for (const [key, count] of entries) {
+    if (count > 0) activeCatsCount++;
+    if (count > topCat.count) {
+      topCat = { key, count, label: INCIDENT_TYPE_LABELS[key] || key };
+    }
+  }
+  const topCatPct = total > 0 ? Math.round((topCat.count / total) * 100) : 0;
+
   card.append(
-    cardHeader('By Incident Type', 'Distribution by category', icons.activity, 'Breakdown of incidents across categories for this date range.'),
+    cardHeader(
+      'By Incident Type',
+      'Distribution by category',
+      icons.activity,
+      'Breakdown of incidents across categories for this date range.',
+      null,
+      { text: `${total} Incidents` }
+    ),
     DonutChart({ rows })
   );
+
+  if (total > 0) {
+    const footer = document.createElement('div');
+    footer.className = 'category-summary-footer';
+    footer.innerHTML = `
+      <div class="category-summary-tile">
+        <span class="category-summary-tile__val">
+          <span class="summary-tile-pip" style="background:${INCIDENT_TYPE_COLORS[topCat.key] || 'var(--color-primary)'};" aria-hidden="true"></span>
+          Top: ${escapeHtml(topCat.label)} (${topCat.count})
+        </span>
+        <span class="category-summary-tile__sub">${topCatPct}% of all incidents</span>
+      </div>
+      <div class="category-summary-tile">
+        <span class="category-summary-tile__val">
+          <span class="summary-tile-pip" style="background:var(--chart-cat-8, #8B5CF6);" aria-hidden="true"></span>
+          ${activeCatsCount} Active ${activeCatsCount === 1 ? 'Category' : 'Categories'}
+        </span>
+        <span class="category-summary-tile__sub">Out of 11 classified types</span>
+      </div>
+    `;
+    card.appendChild(footer);
+  }
+
   return card;
 }
 
 function renderBreakdownCard(title, counts, labels, pillClasses) {
   const card = document.createElement('div');
   card.className = 'card';
+
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+
   card.appendChild(cardHeader(
     title,
     'Breakdown by resolution stage',
@@ -556,7 +791,24 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     'Distribution of incidents across pending, dispatched, and resolved stages.'
   ));
 
-  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  // Multi-Segment Top Proportional Pipeline Strip
+  if (total > 0) {
+    const pipelineBar = document.createElement('div');
+    pipelineBar.className = 'pipeline-stacked-bar';
+    pipelineBar.setAttribute('aria-hidden', 'true');
+    for (const [key, count] of Object.entries(counts)) {
+      if (count > 0) {
+        const seg = document.createElement('div');
+        const pct = ((count / total) * 100).toFixed(1);
+        seg.className = `pipeline-stacked-segment pipeline-stacked-segment--${key}`;
+        seg.style.width = `${pct}%`;
+        seg.title = `${labels[key] || key}: ${count} (${pct}%)`;
+        pipelineBar.appendChild(seg);
+      }
+    }
+    card.appendChild(pipelineBar);
+  }
+
   const list = document.createElement('div');
   list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
@@ -565,7 +817,8 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     item.className = 'breakdown-item';
 
     const row = document.createElement('div');
-    row.className = 'row-between breakdown-row';
+    row.className = 'breakdown-row';
+
     const label = document.createElement('span');
     const pillClass = pillClasses[key];
     if (pillClass) {
@@ -573,16 +826,16 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     } else {
       label.textContent = labels[key] || key;
     }
+
     const value = document.createElement('span');
-    value.className = 'breakdown-row__value';
-    value.innerHTML = `<strong>${count}</strong> <span class="breakdown-row__pct">(${pct}%)</span>`;
+    value.className = 'breakdown-row__metrics';
+    value.innerHTML = `<span class="breakdown-row__value">${count}</span> <span class="breakdown-row__pct">${pct}%</span>`;
     row.append(label, value);
 
     const track = document.createElement('div');
     track.className = 'breakdown-progress-track';
     const fill = document.createElement('div');
-    fill.className = 'breakdown-progress-fill';
-    if (pillClass) fill.classList.add(`breakdown-progress-fill--${key}`);
+    fill.className = `breakdown-progress-fill breakdown-progress-fill--${key}`;
     fill.style.width = `${pct}%`;
     track.appendChild(fill);
 
@@ -590,5 +843,34 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     list.appendChild(item);
   }
   card.appendChild(list);
+
+  // Operational Pipeline Summary Footer
+  if (total > 0) {
+    const activeCount = (counts.pending || 0) + (counts.dispatched || 0);
+    const activePct = Math.round((activeCount / total) * 100);
+    const resolvedCount = counts.resolved || 0;
+    const resolvedPct = Math.round((resolvedCount / total) * 100);
+
+    const footer = document.createElement('div');
+    footer.className = 'breakdown-summary-footer';
+    footer.innerHTML = `
+      <div class="breakdown-summary-tile">
+        <span class="breakdown-summary-tile__val">
+          <span class="summary-tile-pip" style="background:#3B82F6;" aria-hidden="true"></span>
+          ${activeCount} Active in Field
+        </span>
+        <span class="breakdown-summary-tile__sub">${activePct}% of total workload</span>
+      </div>
+      <div class="breakdown-summary-tile">
+        <span class="breakdown-summary-tile__val">
+          <span class="summary-tile-pip" style="background:#16A34A;" aria-hidden="true"></span>
+          ${resolvedCount} Closed & Resolved
+        </span>
+        <span class="breakdown-summary-tile__sub">${resolvedPct}% clearance rate</span>
+      </div>
+    `;
+    card.appendChild(footer);
+  }
+
   return card;
 }
