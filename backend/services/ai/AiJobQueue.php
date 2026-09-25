@@ -40,6 +40,20 @@ use PDO;
 final class AiJobQueue
 {
     /**
+     * H-18 (2026-09-24 external audit, docs/REMAINING.md §H): a
+     * provenance chain needs to tell "the model changed" apart from "the
+     * prompt contract changed" when reviewing an old draft — `model_version`
+     * alone can't. One flat version for now, since there is exactly one
+     * prompt template per task type today and no per-task versioning
+     * infrastructure; bump this string whenever any task's prompt wording
+     * changes, the same way `model_version` is bumped for a model swap.
+     * Stamped at COMPLETION time (alongside the actual `model_version`),
+     * not at enqueue time, for the same reason `$actualModelVersion` is:
+     * it records what really ran, not what was requested.
+     */
+    public const PROMPT_TEMPLATE_VERSION = 'v1';
+
+    /**
      * Creates a new redaction pipeline run for an incident, superseding
      * whatever draft was previously current.
      *
@@ -229,6 +243,7 @@ final class AiJobQueue
                     draft_respondent_name = :respondent_name,
                     draft_complainant_contact_number = :contact_number,
                     model_version = :model_version,
+                    prompt_template_version = :prompt_template_version,
                     status = 'completed',
                     error_code = NULL,
                     processed_at = UTC_TIMESTAMP()
@@ -239,6 +254,7 @@ final class AiJobQueue
             'respondent_name' => $respondentName,
             'contact_number' => $contactNumber,
             'model_version' => $actualModelVersion,
+            'prompt_template_version' => self::PROMPT_TEMPLATE_VERSION,
             'log_id' => $logId,
         ]);
     }
@@ -356,6 +372,7 @@ final class AiJobQueue
             "UPDATE ai_processing_log
                 SET tool_output = :output,
                     model_version = :model_version,
+                    prompt_template_version = :prompt_template_version,
                     status = 'completed',
                     error_code = NULL,
                     processed_at = UTC_TIMESTAMP()
@@ -366,6 +383,7 @@ final class AiJobQueue
             // Rule 16: the model the run ACTUALLY used, as reported by the
             // server — not the one requested at enqueue time.
             'model_version' => $actualModelVersion,
+            'prompt_template_version' => self::PROMPT_TEMPLATE_VERSION,
             'log_id' => $logId,
         ]);
     }
@@ -517,6 +535,7 @@ final class AiJobQueue
                     draft_summary = :summary,
                     draft_summary_stale = :stale,
                     model_version = :model_version,
+                    prompt_template_version = :prompt_template_version,
                     status = 'completed',
                     error_code = NULL,
                     processed_at = UTC_TIMESTAMP()
@@ -529,6 +548,7 @@ final class AiJobQueue
             // Rule 16: record the model version the run ACTUALLY used, as
             // reported by the server, not merely the one requested.
             'model_version' => $actualModelVersion,
+            'prompt_template_version' => self::PROMPT_TEMPLATE_VERSION,
             'log_id' => $logId,
         ]);
     }
@@ -587,6 +607,7 @@ final class AiJobQueue
                 SET draft_summary = :summary,
                     draft_summary_stale = 0,
                     model_version = :model_version,
+                    prompt_template_version = :prompt_template_version,
                     status = 'completed',
                     error_code = NULL,
                     processed_at = UTC_TIMESTAMP()
@@ -595,6 +616,7 @@ final class AiJobQueue
         $stmt->execute([
             'summary' => $draftSummary,
             'model_version' => $actualModelVersion,
+            'prompt_template_version' => self::PROMPT_TEMPLATE_VERSION,
             'log_id' => $logId,
         ]);
     }
@@ -609,6 +631,7 @@ final class AiJobQueue
             "UPDATE ai_processing_log
                 SET translated_text = :translated_text,
                     model_version = :model_version,
+                    prompt_template_version = :prompt_template_version,
                     status = 'completed',
                     error_code = NULL,
                     processed_at = UTC_TIMESTAMP()
@@ -617,6 +640,7 @@ final class AiJobQueue
         $stmt->execute([
             'translated_text' => $translatedText,
             'model_version' => $actualModelVersion,
+            'prompt_template_version' => self::PROMPT_TEMPLATE_VERSION,
             'log_id' => $logId,
         ]);
     }

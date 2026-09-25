@@ -99,7 +99,29 @@ use PDO;
  */
 final class IncidentsController
 {
-    private const INCIDENT_STATUSES = ['pending', 'dispatched', 'resolved'];
+    private const INCIDENT_STATUSES = [
+        'pending', 'dispatched', 'resolved',
+        'duplicate', 'invalid', 'cancelled', 'reopened',
+    ];
+
+    /**
+     * H-16/M-03 (2026-09-24 external audit, docs/REMAINING.md §H): legal
+     * transitions for the four lifecycle-correction states. Forward-only
+     * within each branch, same discipline as blotter's own case_status —
+     * a terminal state (resolved/cancelled/invalid/duplicate) can only be
+     * left via 'reopened', never jumped directly to another terminal
+     * state, so there is always one unambiguous "this was reconsidered"
+     * event in the audit trail instead of a silent state swap.
+     */
+    private const LIFECYCLE_TRANSITIONS = [
+        'pending' => ['duplicate', 'invalid', 'cancelled'],
+        'dispatched' => ['duplicate', 'invalid', 'cancelled'],
+        'resolved' => ['reopened'],
+        'cancelled' => ['reopened'],
+        'invalid' => ['reopened'],
+        'duplicate' => ['reopened'],
+        'reopened' => ['duplicate', 'invalid', 'cancelled'],
+    ];
     private const INCIDENT_PRIORITIES = ['normal', 'high', 'critical'];
     /**
      * Was `public` so BlotterController's walk-in entry could validate
@@ -1169,6 +1191,173 @@ final class IncidentsController
         }
 
         Http::send(200, ['incident_id' => $incidentId, 'status' => 'resolved']);
+    }
+
+    /**
+     * `PATCH /incidents/:id/lifecycle` — Secretary only. H-16/M-03
+     * (2026-09-24 external audit): the incident lifecycle had no way to
+     * record a duplicate report, an invalid one, a cancellation, or a
+     * case reopened after being closed. Kept SEPARATE from
+     * `updateStatus()` above (Admin-only, dispatch-driven "resolved")
+     * because these four are a records-custodian judgment call — the
+     * same reasoning that makes blotter finalize/amend Secretary-only
+     * (§3) — not an operational dispatch outcome.
+     *
+     * MERGE = LINK, NOT DELETE (user decision, 2026-09-26; migration
+     * 0025's own header). Marking an incident `duplicate` requires
+     * `duplicate_of_incident_id`, which must point at a DIFFERENT,
+     * same-barangay incident. Nothing about the target incident is
+     * touched — no FK is repointed, no evidence/dispatch/blotter row
+     * moves — a human follows the pointer, that's the entire feature.
+     *
+     * Refuses while any dispatch is still open, same guard
+     * `updateStatus()` uses: closing a case out from under a Tanod who
+     * is actively responding is exactly the kind of silent-state-change
+     * §2's audit rules exist to prevent.
+     *
+     * Idempotency-Key required (§2 Rule 3), replayed off `audit_log`
+     * exactly like `update()` above — there is no dedicated idempotency
+     * column for a status transition.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function updateLifecycle(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['secretary']);
+        if (!ctype_digit($incidentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+
+        $idempotencyKey = Http::header('Idempotency-Key');
+        if ($idempotencyKey === null || !preg_match(self::UUID_PATTERN, $idempotencyKey)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Idempotency-Key header must be a UUID.');
+        }
+
+        $body = Http::jsonBody();
+        $toStatus = $body['status'] ?? null;
+        $allowedTargets = ['duplicate', 'invalid', 'cancelled', 'reopened'];
+        if (!is_string($toStatus) || !in_array($toStatus, $allowedTargets, true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of: ' . implode(', ', $allowedTargets) . '.');
+        }
+
+        $duplicateOfId = $body['duplicate_of_incident_id'] ?? null;
+        if ($toStatus === 'duplicate') {
+            if (!is_int($duplicateOfId) && !(is_string($duplicateOfId) && ctype_digit($duplicateOfId))) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'duplicate_of_incident_id is required when status is "duplicate".');
+            }
+            $duplicateOfId = (int) $duplicateOfId;
+            if ($duplicateOfId === $incidentId) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'An incident cannot be a duplicate of itself.');
+            }
+        } elseif ($duplicateOfId !== null) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'duplicate_of_incident_id is only valid when status is "duplicate".');
+        }
+
+        $stmt = $pdo->prepare('SELECT incident_id, barangay_id, status FROM incident WHERE incident_id = :id');
+        $stmt->execute(['id' => $incidentId]);
+        $incident = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        // Cross-tenant is 404, never 403 (Rule 2).
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+        // Idempotency replay (§2 Rule 3) — same shape as update()'s own,
+        // scoped to this action so a replayed 'reopened' can never be
+        // confused with a replayed 'invalid' on the same incident.
+        $replayStmt = $pdo->prepare(
+            "SELECT metadata_json FROM audit_log
+             WHERE barangay_id = :barangay_id AND action = 'incident_lifecycle_changed' AND entity_id = :entity_id
+               AND idempotency_key = :idempotency_key
+             LIMIT 1"
+        );
+        $replayStmt->execute([
+            'barangay_id' => $identity['barangay_id'],
+            'entity_id' => $incidentId,
+            'idempotency_key' => $idempotencyKey,
+        ]);
+        $priorMetadataJson = $replayStmt->fetchColumn();
+        if ($priorMetadataJson !== false) {
+            $prior = json_decode((string) $priorMetadataJson, true);
+            Http::send(200, [
+                'incident_id' => $incidentId,
+                'status' => $prior['to_status'] ?? $toStatus,
+                'duplicate_of_incident_id' => $prior['duplicate_of_incident_id'] ?? null,
+            ]);
+            return;
+        }
+
+        $fromStatus = $incident['status'];
+        $legalTargets = self::LIFECYCLE_TRANSITIONS[$fromStatus] ?? [];
+        if (!in_array($toStatus, $legalTargets, true)) {
+            throw new ApiError(
+                409,
+                'CONFLICT',
+                "An incident in '{$fromStatus}' status cannot be moved to '{$toStatus}'."
+            );
+        }
+
+        if ($toStatus !== 'reopened') {
+            $openStmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM dispatch
+                 WHERE incident_id = :id AND status IN ('assigned','en_route','arrived')"
+            );
+            $openStmt->execute(['id' => $incidentId]);
+            if ((int) $openStmt->fetchColumn() > 0) {
+                throw new ApiError(409, 'CONFLICT', 'Cannot change the lifecycle of an incident that still has an active dispatch.');
+            }
+        }
+
+        if ($toStatus === 'duplicate') {
+            $targetStmt = $pdo->prepare('SELECT incident_id FROM incident WHERE incident_id = :id AND barangay_id = :barangay_id');
+            $targetStmt->execute(['id' => $duplicateOfId, 'barangay_id' => $identity['barangay_id']]);
+            if ($targetStmt->fetch(PDO::FETCH_ASSOC) === false) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'duplicate_of_incident_id must reference an existing incident in the same barangay.');
+            }
+        }
+
+        $pdo->beginTransaction();
+        try {
+            // Reopening clears any prior duplicate pointer — a case being
+            // reconsidered is no longer simply "the same as that other
+            // one" by default; a Secretary who still believes so can mark
+            // it duplicate again with a (possibly different) target.
+            $newDuplicateOfId = $toStatus === 'duplicate' ? $duplicateOfId : null;
+
+            $pdo->prepare(
+                'UPDATE incident
+                    SET status = :status,
+                        duplicate_of_incident_id = :duplicate_of_incident_id,
+                        lifecycle_changed_by = :lifecycle_changed_by,
+                        lifecycle_changed_at = UTC_TIMESTAMP(),
+                        updated_at = UTC_TIMESTAMP()
+                  WHERE incident_id = :id'
+            )->execute([
+                'status' => $toStatus,
+                'duplicate_of_incident_id' => $newDuplicateOfId,
+                'lifecycle_changed_by' => $identity['user_id'],
+                'id' => $incidentId,
+            ]);
+
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_lifecycle_changed', 'incident', $incidentId, [
+                'from_status' => $fromStatus,
+                'to_status' => $toStatus,
+                'duplicate_of_incident_id' => $newDuplicateOfId,
+                'idempotency_key' => $idempotencyKey,
+            ]);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        Http::send(200, [
+            'incident_id' => $incidentId,
+            'status' => $toStatus,
+            'duplicate_of_incident_id' => $newDuplicateOfId,
+        ]);
     }
 
     /**
