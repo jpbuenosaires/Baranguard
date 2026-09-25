@@ -167,13 +167,30 @@ html { font-size: 100%; }
   --tint-neutral-bg: #F3F4F6;
   --tint-success-solid: #DCFCE7;
 
-  /* Categorical chart palette (DonutChart.js) — the source's documented
-     7-colour sequence; slot 8 is an extra so 11 incident types don't
-     repeat too early. */
-  --chart-cat-1: var(--color-primary); --chart-cat-2: var(--color-success);
-  --chart-cat-3: var(--color-warning); --chart-cat-4: var(--color-critical);
-  --chart-cat-5: var(--color-info);    --chart-cat-6: #8B5CF6;
-  --chart-cat-7: var(--color-accent);  --chart-cat-8: #DB2777;
+  /* Categorical chart palette (DonutChart.js) — 11 distinct tokens for all 11 incident types */
+  --chart-cat-1: #2563EB;  /* Theft: Blue */
+  --chart-cat-2: #E11D48;  /* Physical Injury: Rose */
+  --chart-cat-3: #D97706;  /* Disturbance: Amber */
+  --chart-cat-4: #DC2626;  /* Domestic Dispute: Red */
+  --chart-cat-5: #0D9488;  /* Vandalism: Teal */
+  --chart-cat-6: #EA580C;  /* Traffic Incident: Orange */
+  --chart-cat-7: #B91C1C;  /* Fire: Deep Red */
+  --chart-cat-8: #DB2777;  /* Medical Emergency: Pink */
+  --chart-cat-9: #7C3AED;  /* Missing Person: Purple */
+  --chart-cat-10: #16A34A; /* Animal Complaint: Emerald */
+  --chart-cat-11: #64748B; /* Other: Slate */
+
+  --cat-theft: var(--chart-cat-1);
+  --cat-injury: var(--chart-cat-2);
+  --cat-disturbance: var(--chart-cat-3);
+  --cat-dispute: var(--chart-cat-4);
+  --cat-vandalism: var(--chart-cat-5);
+  --cat-traffic: var(--chart-cat-6);
+  --cat-fire: var(--chart-cat-7);
+  --cat-medical: var(--chart-cat-8);
+  --cat-missing: var(--chart-cat-9);
+  --cat-animal: var(--chart-cat-10);
+  --cat-other: var(--chart-cat-11);
 
   /* Line-series colours for LineChart. Separate from the categorical
      palette above because a line has to hold its own against the CHART
@@ -283,6 +300,46 @@ html { font-size: 100%; }
   --glow-critical: 0 0 24px rgba(220,38,38,0.3);
   --shadow-card-hover: 0 16px 32px -8px rgba(15,23,42,0.12), 0 4px 8px -2px rgba(15,23,42,0.08);
   --transition-spring: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ─── DESIGN TOKEN SYSTEM: SURFACES, TYPOGRAPHY, STATUS & PRESENCE ──── */
+  --surface-card: var(--color-surface);
+  --surface-card-subtle: var(--color-bg);
+  --surface-card-hover: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
+  --border-subtle: var(--color-border);
+  --shadow-card-subtle: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+
+  --type-card-title: 1rem;
+  --type-card-subtitle: 0.8125rem;
+  --type-table-th: 0.6875rem;
+  --type-mono-id: 0.8125rem;
+  --type-personnel-name: 0.875rem;
+  --type-personnel-sub: 0.75rem;
+  --type-badge-pill: 0.6875rem;
+
+  --status-pending-text: var(--color-warning-text);
+  --status-pending-bg: var(--tint-warning-bg);
+  --status-pending-border: color-mix(in srgb, var(--color-warning) 30%, transparent);
+
+  --status-dispatched-text: var(--pill-info-text);
+  --status-dispatched-bg: var(--tint-info-bg);
+  --status-dispatched-border: color-mix(in srgb, var(--color-accent) 30%, transparent);
+
+  --status-onduty-text: var(--pill-success-text);
+  --status-onduty-bg: var(--tint-success-bg);
+  --status-onduty-border: color-mix(in srgb, var(--color-success) 30%, transparent);
+
+  --status-responding-text: #0E7490;
+  --status-responding-bg: color-mix(in srgb, var(--color-info) 14%, transparent);
+  --status-responding-border: color-mix(in srgb, var(--color-info) 30%, transparent);
+
+  --status-offduty-text: var(--color-text-secondary);
+  --status-offduty-bg: var(--tint-neutral-bg);
+  --status-offduty-border: color-mix(in srgb, var(--color-border) 60%, transparent);
+
+  --pad-card-body: var(--spacing-lg);
+  --pad-table-cell-y: 0.625rem;
+  --pad-table-cell-x: 0.875rem;
+  --pad-roster-item: 0.5rem 0.625rem;
 }
 
 /* Dark palette — only the tokens that actually need a different value in
@@ -387,6 +444,10 @@ html { font-size: 100%; }
     --shadow-card: var(--dark-shadow-card);
     --shadow-elevated: var(--dark-shadow-elevated);
     --shadow-floating: var(--dark-shadow-floating);
+    --status-responding-text: #38BDF8;
+    --status-responding-bg: color-mix(in srgb, #38BDF8 18%, var(--dark-surface));
+    --status-responding-border: color-mix(in srgb, #38BDF8 35%, transparent);
+    --shadow-card-subtle: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 }
 :root[data-theme="dark"] {
@@ -427,6 +488,10 @@ html { font-size: 100%; }
   --shadow-card: var(--dark-shadow-card);
   --shadow-elevated: var(--dark-shadow-elevated);
   --shadow-floating: var(--dark-shadow-floating);
+  --status-responding-text: #38BDF8;
+  --status-responding-bg: color-mix(in srgb, #38BDF8 18%, var(--dark-surface));
+  --status-responding-border: color-mix(in srgb, #38BDF8 35%, transparent);
+  --shadow-card-subtle: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 * {
@@ -772,6 +837,8 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 /* --- Cards / surfaces -------------------------------------------------- */
 
 .card {
+  display: flex;
+  flex-direction: column;
   /* Glassmorphism (moderate scope — see the token comment above):
      translucent fill + backdrop blur over the page's brand-tinted wash,
      with a light hairline border for the "edge catching light" cue.
@@ -814,8 +881,20 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-md);
 }
-.card-header__title { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-text-primary); }
-.card-header__subtitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-top: var(--spacing-3xs); }
+.card-header__title {
+  font-size: var(--type-card-title, var(--font-size-lg));
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.card-header__subtitle {
+  font-size: var(--type-card-subtitle, var(--font-size-sm));
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-3xs);
+}
 .card-header__icon { color: var(--color-primary); flex-shrink: 0; }
 /* Icon-only "View all" variant (2026-09-06 UX pass) — same slot, but a
    real button rather than a decorative span, since it navigates. */
@@ -882,6 +961,7 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 /* Vertical rhythm between the dashboard's stacked rows — replaces the
    per-row `style.marginTop = '16px'` those grids used to carry. */
 .dashboard-row { margin-top: var(--spacing-md); }
+.dashboard-row:first-child { margin-top: 0; }
 .dashboard-freshness { font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Breakdown list rows (By Status, Tanods On Duty) — replaces the
    per-row `style.fontSize` / `style.fontWeight` those loops used to set. */
@@ -1285,13 +1365,19 @@ html, body, .status-pill,
 }
 
 .status-pill {
-  display: inline-block;
-  padding: 0.375rem var(--spacing-sm-md);
-  border-radius: 999px;
-  font-size: var(--font-size-label);
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.625rem;
+  border-radius: 9999px;
+  font-size: var(--type-badge-pill, 0.6875rem);
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
 }
 .status-pill::before {
   content: '';
@@ -1299,43 +1385,48 @@ html, body, .status-pill,
   width: 0.375rem;
   height: 0.375rem;
   border-radius: 50%;
-  margin-right: var(--spacing-xs);
   background: currentColor;
   flex-shrink: 0;
 }
 /* Text color deliberately NOT var(--color-warning) (#D97706) here — that
    only reaches ~3.2:1 against --tint-warning-bg, failing WCAG AA.
-   --color-warning-text (amber-800, #92400E in light mode) keeps the same
-   hue family at ~5.2:1, a dedicated token rather than darkening
-   --color-warning globally (which also backs icon badges/KPI accents
-   where the contrast requirement is different — white text/icon on a
-   solid orange background, not this text-on-tint case). Promoted from a
-   hardcoded hex to a real token (§6.4) specifically so dark mode can
-   define its own readable value instead of inheriting a light-only one. */
-.status-pill--pending { background: var(--tint-warning-bg); color: var(--color-warning-text); box-shadow: 0 0 8px rgba(217,119,6,0.15); }
-.status-pill--info { background: var(--tint-info-bg); color: var(--pill-info-text); box-shadow: 0 0 8px rgba(8,145,178,0.15); }
-.status-pill--success { background: var(--tint-success-bg); color: var(--pill-success-text); box-shadow: 0 0 8px rgba(22,163,74,0.15); }
-.status-pill--neutral { background: var(--tint-neutral-bg); color: var(--pill-neutral-text); }
-.status-pill--critical { background: var(--tint-critical-bg); color: var(--pill-critical-text); box-shadow: 0 0 8px rgba(220,38,38,0.2); }
-/* `--warning` is a deliberate alias of `--pending`'s treatment, not a
-   sixth colour: they are the same amber semantic tier, and W20's backup
-   card reaches for the name "warning" while queues reach for "pending".
-   Added 2026-09-12 because service-health.js was already using this
-   class and NOTHING defined it — the "No Backup Taken" badge, the single
-   most alarming disaster-recovery state on that screen, was rendering
-   with no fill at all. `verify-web-wiring.mjs` could not catch it: the
-   class name is assembled inside a ternary in a template literal, which
-   its static extraction cannot see. */
-.status-pill--warning { background: var(--tint-warning-bg); color: var(--color-warning-text); box-shadow: 0 0 8px rgba(217,119,6,0.15); }
-/* Left-border accent on critical pills specifically — a stronger visual
-   scan cue for the one status that actually needs to jump out in a list
-   (§8's status-pill spec doesn't call for this on the other four, and
-   adding it everywhere would dilute exactly the signal this is for). */
-.status-pill--critical { border-left: 3px solid var(--color-critical); padding-left: calc(var(--spacing-sm-md) - 2px); }
-/* Opt-in pulse for a genuinely time-sensitive critical pill (e.g. an
-   active SOS row) — a class, not baked into .status-pill--critical
-   itself, so an ordinary "this incident was critical" historical record
-   in a blotter list doesn't pulse forever. */
+   --color-warning-text keeps the same hue family at ~5.2:1. */
+.status-pill--pending,
+.status-pill--warning {
+  background: var(--status-pending-bg, var(--tint-warning-bg));
+  color: var(--status-pending-text, var(--color-warning-text));
+  border-color: var(--status-pending-border, color-mix(in srgb, var(--color-warning) 30%, transparent));
+}
+.status-pill--info,
+.status-pill--dispatched {
+  background: var(--status-dispatched-bg, var(--tint-info-bg));
+  color: var(--status-dispatched-text, var(--pill-info-text));
+  border-color: var(--status-dispatched-border, color-mix(in srgb, var(--color-accent) 30%, transparent));
+}
+.status-pill--success,
+.status-pill--on_duty {
+  background: var(--status-onduty-bg, var(--tint-success-bg));
+  color: var(--status-onduty-text, var(--pill-success-text));
+  border-color: var(--status-onduty-border, color-mix(in srgb, var(--color-success) 30%, transparent));
+}
+.status-pill--responding {
+  background: var(--status-responding-bg, color-mix(in srgb, var(--color-info) 14%, transparent));
+  color: var(--status-responding-text, #0E7490);
+  border-color: var(--status-responding-border, color-mix(in srgb, var(--color-info) 30%, transparent));
+}
+.status-pill--neutral,
+.status-pill--off_duty {
+  background: var(--status-offduty-bg, var(--tint-neutral-bg));
+  color: var(--status-offduty-text, var(--pill-neutral-text));
+  border-color: var(--status-offduty-border, color-mix(in srgb, var(--color-border) 60%, transparent));
+}
+.status-pill--critical {
+  background: var(--tint-critical-bg);
+  color: var(--pill-critical-text);
+  border-color: color-mix(in srgb, var(--color-critical) 30%, transparent);
+  border-left: 3px solid var(--color-critical);
+  padding-left: calc(0.625rem - 2px);
+}
 .status-pill--critical.is-urgent { animation: urgent-pulse 2s ease-in-out infinite; }
 @keyframes urgent-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }
@@ -1385,6 +1476,24 @@ html, body, .status-pill,
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg);
+}
+.two-col-grid > .card {
+  height: 100%;
+}
+
+/* Operational / Card summary footers clamp to the bottom of cards across all grid cells */
+.card-footer,
+.breakdown-summary-footer,
+.category-summary-footer {
+  margin-top: auto;
+}
+
+.summary-tile-pip {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 .dashboard-row { margin-bottom: var(--spacing-xl); }
 

@@ -8,12 +8,6 @@
    1. Tab Switcher Navigation
    ========================================================================== */
 
-.page-tabs-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  margin-bottom: var(--spacing-sm);
-}
 
 
 /* ==========================================================================

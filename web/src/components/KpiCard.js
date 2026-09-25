@@ -45,24 +45,35 @@ import { InfoTip } from './Tooltip.js';
 export function KpiCard({
   label, value, emptyText = '—', icon, accent,
   delta, previousValue, trend, deltaLabel = 'vs previous period', sparkline, description,
+  badgeChip, footerNote,
 }) {
   const el = document.createElement('div');
   el.className = 'card kpi-card';
 
   const isEmpty = value === null || value === undefined;
 
-  // Header row: icon badge on the left, delta on the right — the card
-  // convention from the supplied reference. Always built (even without an
-  // icon) so the delta has a stable place to land when it arrives a
-  // request later than the rest of the card.
+  // Header row: icon badge on the left, delta or status chip on the right
   const header = document.createElement('div');
   header.className = 'kpi-card__header';
   if (icon) {
     header.innerHTML = `<span class="icon-badge icon-badge--kpi accent-${accent || 'blue'}">${icon(22)}</span>`;
   }
+
   const deltaEl = document.createElement('span');
   deltaEl.className = 'kpi-card__delta';
-  header.appendChild(deltaEl);
+
+  if (badgeChip) {
+    const chipEl = document.createElement('span');
+    chipEl.className = `kpi-card__chip kpi-card__chip--${badgeChip.tone || 'neutral'}`;
+    if (badgeChip.tone === 'live') {
+      chipEl.innerHTML = `<span class="kpi-card__chip-dot"></span><span>${badgeChip.text}</span>`;
+    } else {
+      chipEl.textContent = badgeChip.text;
+    }
+    header.appendChild(chipEl);
+  } else {
+    header.appendChild(deltaEl);
+  }
   el.appendChild(header);
 
   const valueEl = document.createElement('div');
@@ -72,15 +83,16 @@ export function KpiCard({
   const labelEl = document.createElement('div');
   labelEl.className = 'kpi-card__label';
   labelEl.append(label);
-  // 2026-09-05 dashboard UX pass: a one-sentence definition of what this
-  // figure actually counts, shown on hover/focus — "Avg. Response Time"
-  // or "Resolved Cases" isn't self-explanatory without knowing the exact
-  // server-side definition behind it.
   if (description) labelEl.appendChild(InfoTip(description));
 
-  // Value above label, per the reference — the figure is what the eye
-  // should land on first, the label is its caption.
   el.append(valueEl, labelEl);
+
+  if (footerNote) {
+    const noteEl = document.createElement('div');
+    noteEl.className = 'kpi-card__footer-note';
+    noteEl.textContent = footerNote;
+    el.appendChild(noteEl);
+  }
 
   if (!isEmpty && Array.isArray(sparkline) && sparkline.length >= 2) {
     el.appendChild(buildSparkline(sparkline, accent));
@@ -92,9 +104,6 @@ export function KpiCard({
       deltaEl.className = 'kpi-card__delta';
       return;
     }
-    // Percentage where a prior figure is known, absolute otherwise. A
-    // prior period of zero has no percentage (division by zero is not
-    // "+100%"), so those fall back to the raw difference.
     const asPercent = typeof previousValue === 'number' && previousValue > 0
       ? Math.round((d / previousValue) * 100)
       : null;
@@ -103,11 +112,6 @@ export function KpiCard({
     deltaEl.textContent = `${sign}${magnitude}${asPercent === null ? '' : '%'}`;
     deltaEl.title = `${sign}${Math.abs(d)} ${deltaLabel}`;
 
-    // Colour by the metric's OWN good direction, not blanket green-up.
-    // The reference tints "+12% Total Incidents" green; more incidents is
-    // not good news, and colouring it so would encode a judgement the
-    // data doesn't support. `trend` is passed by the caller as
-    // 'up-good' | 'down-good' | omitted for genuinely neutral metrics.
     let tone = 'neutral';
     if (d !== 0 && (trend === 'up-good' || trend === 'down-good')) {
       const isGood = trend === 'up-good' ? d > 0 : d < 0;
@@ -117,12 +121,134 @@ export function KpiCard({
   };
   applyDelta(delta, previousValue);
 
-  // audit W2: the dashboard used to REPLACE this whole card once the
-  // previous-period request resolved, which made both delta-bearing cards
-  // visibly blink after the page had already settled. Exposing a mutator
-  // lets the caller fill the delta in place on the node that is already
-  // on screen.
   el.setDelta = applyDelta;
+
+  return el;
+}
+
+/**
+ * KpiHeroCard — Primary operational hero card combining total incident volume,
+ * resolution rate progress bar, and 30-day activity trend sparkline.
+ */
+export function KpiHeroCard({
+  label = 'Total Incidents',
+  value,
+  emptyText = '—',
+  icon,
+  accent = 'blue',
+  delta,
+  previousValue,
+  deltaLabel = 'vs previous period',
+  resolvedCount = 0,
+  sparkline,
+  description,
+}) {
+  const el = document.createElement('div');
+  el.className = 'card kpi-card kpi-card--hero';
+
+  const isEmpty = value === null || value === undefined;
+
+  const header = document.createElement('div');
+  header.className = 'kpi-card__header';
+  if (icon) {
+    header.innerHTML = `<span class="icon-badge icon-badge--kpi accent-${accent || 'blue'}">${icon(22)}</span>`;
+  }
+  const deltaEl = document.createElement('span');
+  deltaEl.className = 'kpi-card__delta';
+  header.appendChild(deltaEl);
+  el.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'kpi-hero__body';
+
+  const primaryGroup = document.createElement('div');
+  primaryGroup.className = 'kpi-hero__primary';
+
+  const valueEl = document.createElement('div');
+  valueEl.className = 'kpi-card__value' + (isEmpty ? ' empty' : '');
+  valueEl.textContent = isEmpty ? emptyText : String(value);
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'kpi-card__label';
+  labelEl.append(label);
+  if (description) labelEl.appendChild(InfoTip(description));
+  primaryGroup.append(valueEl, labelEl);
+
+  const resGroup = document.createElement('div');
+  resGroup.className = 'kpi-hero__resolution';
+
+  const totalNum = typeof value === 'number' ? value : parseInt(value, 10) || 0;
+  const resNum = typeof resolvedCount === 'number' ? resolvedCount : parseInt(resolvedCount, 10) || 0;
+  const ratePct = totalNum > 0 ? Math.round((resNum / totalNum) * 100) : 0;
+  const pendingNum = Math.max(0, totalNum - resNum);
+
+  const resHeader = document.createElement('div');
+  resHeader.className = 'kpi-hero__res-header';
+  resHeader.innerHTML = `
+    <span class="kpi-hero__res-count">
+      <svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16 9"/></svg>
+      <span>${resNum} Resolved</span>
+    </span>
+    <span class="kpi-hero__res-rate">${ratePct}% rate</span>
+  `;
+
+  const progBar = document.createElement('div');
+  progBar.className = 'kpi-hero__progress-bar';
+  progBar.innerHTML = `<div class="kpi-hero__progress-fill" style="width: ${ratePct}%"></div>`;
+
+  const resSub = document.createElement('div');
+  resSub.className = 'kpi-hero__res-sub';
+  resSub.textContent = `${pendingNum} pending action or dispatch`;
+
+  resGroup.append(resHeader, progBar, resSub);
+  body.append(primaryGroup, resGroup);
+  el.appendChild(body);
+
+  if (!isEmpty && Array.isArray(sparkline) && sparkline.length >= 2) {
+    el.appendChild(buildSparkline(sparkline, accent));
+  }
+
+  const applyDelta = (d, previousValue) => {
+    if (isEmpty || d === undefined || d === null) {
+      deltaEl.textContent = '';
+      deltaEl.className = 'kpi-card__delta';
+      return;
+    }
+    const asPercent = typeof previousValue === 'number' && previousValue > 0
+      ? Math.round((d / previousValue) * 100)
+      : null;
+    const sign = d > 0 ? '+' : d < 0 ? '−' : '±';
+    const magnitude = Math.abs(asPercent ?? d);
+    deltaEl.textContent = `${sign}${magnitude}${asPercent === null ? '' : '%'}`;
+    deltaEl.title = `${sign}${Math.abs(d)} ${deltaLabel}`;
+
+    let tone = 'neutral';
+    if (d !== 0) {
+      tone = d > 0 ? 'neutral' : 'positive';
+    }
+    deltaEl.className = `kpi-card__delta kpi-card__delta--${tone}`;
+  };
+  applyDelta(delta, previousValue);
+
+  const applyResolvedDelta = (d, prevResolved) => {
+    if (d === undefined || d === null) return;
+    const sign = d > 0 ? '+' : d < 0 ? '−' : '±';
+    const asPercent = typeof prevResolved === 'number' && prevResolved > 0
+      ? Math.round((d / prevResolved) * 100)
+      : null;
+    const mag = Math.abs(asPercent ?? d);
+    let deltaPill = resHeader.querySelector('.kpi-hero__res-delta');
+    if (!deltaPill) {
+      deltaPill = document.createElement('span');
+      deltaPill.className = 'kpi-hero__res-delta';
+      resHeader.insertBefore(deltaPill, resHeader.querySelector('.kpi-hero__res-rate'));
+    }
+    deltaPill.textContent = `${sign}${mag}${asPercent === null ? '' : '%'}`;
+    deltaPill.title = `${sign}${Math.abs(d)} resolved vs previous period`;
+  };
+
+  el.setDelta = applyDelta;
+  el.setResolvedDelta = applyResolvedDelta;
 
   return el;
 }

@@ -1,97 +1,331 @@
 /**
  * KpiCard.css — co-located with KpiCard.js (used by W2 Dashboard, W9
- * Statistical Reports). Split out of base.css during the 2026-09-02
- * responsive/density pass. KPI numbers use the dedicated --font-size-3xl
- * (30px) token, not the page-title 2xl token they were briefly merged
- * with in that pass — the design reference keeps these two sizes
- * distinct; see base.css's token comment for the full correction.
+ * Statistical Reports). Redesigned with Layout A: "Hero Volume + Companion Telemetry"
+ * hierarchy (Asymmetric 1.85fr 1fr 1fr grid, luminous dual-tone badges,
+ * resolution rate progress bar, and status capsule chips).
  */
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--spacing-lg);
   margin-bottom: var(--spacing-lg);
+  align-items: stretch;
 }
-/* Stagger the 4 KPI cards' entry instead of all appearing at once —
-   scoped to .kpi-grid specifically (not every .card everywhere) so this
-   doesn't compound with .page-content's own fade-in on every other card
-   in the app. nth-child delays cap at the 4th; a 5th card (none exist
-   today) would just inherit the 4th's delay rather than needing a new
-   rule. */
+
+/* Fallback if 4 plain cards are rendered without a hero card */
+.kpi-grid:has(> :nth-child(4):not(.kpi-card--hero)):not(:has(.kpi-card--hero)) {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* Stagger card entry */
 .kpi-grid .card {
   opacity: 0;
   animation: kpi-card-enter .35s ease-out forwards;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 .kpi-grid .card:nth-child(1) { animation-delay: 0ms; }
 .kpi-grid .card:nth-child(2) { animation-delay: 60ms; }
 .kpi-grid .card:nth-child(3) { animation-delay: 120ms; }
 .kpi-grid .card:nth-child(n+4) { animation-delay: 180ms; }
+
 @keyframes kpi-card-enter {
   from { opacity: 0; transform: translateY(0.75rem) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-/* Reference card convention: icon badge and delta share a top row, then
-   the figure, then its caption. `justify-content: space-between` puts the
-   delta hard right even when there is no icon (the header is always built,
-   so the delta has a stable slot to land in when it arrives late). */
+
 .kpi-card__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-md);
-  min-height: 3rem;
+  min-height: 2.75rem;
 }
+
+/* Luminous Dual-Tone Icon Badges */
+.kpi-card .icon-badge--kpi {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+}
+
+.kpi-card:hover .icon-badge--kpi {
+  transform: scale(1.05);
+}
+
+.kpi-card .icon-badge--kpi.accent-blue {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+.kpi-card .icon-badge--kpi.accent-green {
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
+}
+
+.kpi-card .icon-badge--kpi.accent-orange {
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: #D97706;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
+}
+
+.kpi-card .icon-badge--kpi.accent-teal {
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info);
+  border: 1px solid color-mix(in srgb, var(--color-info) 28%, transparent);
+}
+
+[data-theme="dark"] .kpi-card .icon-badge--kpi.accent-blue {
+  background: rgba(59, 130, 246, 0.16);
+  color: #60A5FA;
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.18);
+}
+
+[data-theme="dark"] .kpi-card .icon-badge--kpi.accent-green {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ADE80;
+  border-color: rgba(34, 197, 94, 0.35);
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.18);
+}
+
+[data-theme="dark"] .kpi-card .icon-badge--kpi.accent-orange {
+  background: rgba(245, 158, 11, 0.16);
+  color: #FBBF24;
+  border-color: rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.18);
+}
+
+[data-theme="dark"] .kpi-card .icon-badge--kpi.accent-teal {
+  background: rgba(20, 184, 166, 0.16);
+  color: #2DD4BF;
+  border-color: rgba(20, 184, 166, 0.35);
+  box-shadow: 0 0 14px rgba(20, 184, 166, 0.18);
+}
+
 .kpi-card__value {
   font-size: var(--font-size-3xl);
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 .kpi-card__value.empty { color: var(--color-text-secondary); font-size: var(--font-size-lg); font-weight: 500; }
-/* Caption under the figure — sentence case, not the uppercase .label
-   treatment, matching the reference. */
+
 .kpi-card__label {
   margin-top: var(--spacing-xs);
   font-size: var(--font-size-sm);
+  font-weight: 500;
   color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
 }
-.kpi-card__delta {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+
+/* Delta & Status Capsule Chips */
+.kpi-card__delta,
+.kpi-card__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.625rem;
+  border-radius: 9999px;
+  line-height: 1.2;
   white-space: nowrap;
 }
-/* Coloured by the metric's own good direction — see KpiCard.js. Neutral is
-   the default so a metric with no inherent good direction (Total Incidents)
-   never implies one. */
-.kpi-card__delta--neutral { color: var(--color-text-tertiary); }
-.kpi-card__delta--positive { color: var(--color-success-text); }
-.kpi-card__delta--negative { color: var(--color-critical); }
 
-/* §4.4 of the UI/UX review — inline sparkline under a KPI value. Fixed
-   height, full card width; the polyline itself carries no fill, only a
-   2px stroke, and stroke-width is set in user units (vector-effect below)
-   so the line reads the same weight whether the SVG is stretched wide or
-   narrow. */
-.kpi-card__sparkline { margin-top: var(--spacing-sm); height: 1.75rem; }
+.kpi-card__delta--positive {
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
+}
+
+.kpi-card__delta--negative {
+  background: color-mix(in srgb, var(--color-critical) 14%, transparent);
+  color: var(--color-critical);
+  border: 1px solid color-mix(in srgb, var(--color-critical) 28%, transparent);
+}
+
+.kpi-card__delta--neutral {
+  background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent);
+  color: var(--color-text-secondary);
+  border: 1px solid color-mix(in srgb, var(--color-border) 40%, transparent);
+}
+
+/* Contextual Chips */
+.kpi-card__chip--positive {
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
+}
+
+.kpi-card__chip--warning {
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  color: #D97706;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
+}
+
+.kpi-card__chip--live {
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+  color: var(--color-info);
+  border: 1px solid color-mix(in srgb, var(--color-info) 28%, transparent);
+}
+
+.kpi-card__chip-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  animation: pulse-beacon 1.5s infinite;
+}
+
+/* Footer note */
+.kpi-card__footer-note {
+  margin-top: var(--spacing-sm);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  line-height: 1.25;
+}
+
+/* ==========================================================================
+   Primary Hero Card (Layout A)
+   ========================================================================== */
+
+.kpi-card--hero {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--glass-border);
+}
+
+.kpi-card--hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-accent) 0%, var(--color-success) 100%);
+}
+
+.kpi-hero__body {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) 1fr;
+  align-items: center;
+  gap: var(--spacing-xl);
+  margin-top: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+}
+
+.kpi-hero__primary {
+  display: flex;
+  flex-direction: column;
+}
+
+.kpi-hero__resolution {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-left: var(--spacing-lg);
+  border-left: 1px solid var(--color-border);
+}
+
+.kpi-hero__res-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.kpi-hero__res-count {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--color-success-text);
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.kpi-hero__res-rate {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-success-text);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.kpi-hero__res-delta {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success) 24%, transparent);
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  line-height: 1.2;
+}
+
+.kpi-hero__progress-bar {
+  width: 100%;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-border) 60%, transparent);
+  overflow: hidden;
+  position: relative;
+}
+
+.kpi-hero__progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-success) 0%, color-mix(in srgb, var(--color-success) 80%, var(--color-accent)) 100%);
+  border-radius: 9999px;
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kpi-hero__res-sub {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* Inline sparkline */
+.kpi-card__sparkline {
+  margin-top: var(--spacing-sm);
+  height: 2rem;
+  width: 100%;
+}
 .kpi-card__sparkline svg { width: 100%; height: 100%; display: block; }
-.kpi-card__sparkline-line { stroke-width: 2; vector-effect: non-scaling-stroke; }
+.kpi-card__sparkline-line { stroke-width: 2.2; vector-effect: non-scaling-stroke; }
 .kpi-card__sparkline-line--blue { stroke: var(--color-accent); }
 .kpi-card__sparkline-line--green { stroke: var(--color-success); }
 .kpi-card__sparkline-line--orange { stroke: var(--color-warning); }
 .kpi-card__sparkline-line--teal { stroke: var(--color-info); }
 
-/* ─── Premium polish (UI/UX improvement pass) ─────────────────────────── */
+/* Card Polish & Micro-interactions */
 .kpi-grid .card {
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border-color: var(--glass-border);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
 }
 .kpi-grid .card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-card-hover);
+  border-color: color-mix(in srgb, var(--color-border) 70%, var(--color-text-primary));
 }
 .kpi-grid .card:focus-visible,
 .kpi-card:focus-visible {
@@ -113,20 +347,34 @@
 .kpi-card__value {
   animation: count-up 0.4s ease-out;
 }
-.kpi-card__delta--positive {
-  text-shadow: 0 0 12px rgba(22,163,74,0.15);
-}
-.kpi-card__delta--negative {
-  text-shadow: 0 0 12px rgba(220,38,38,0.15);
+
+/* Responsive Breakpoints */
+@media (max-width: 1024px) {
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .kpi-grid .kpi-card--hero {
+    grid-column: 1 / -1;
+  }
 }
 
-@media (max-width: 1024px) {
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 768px) {
-  .kpi-grid { grid-template-columns: 1fr; }
+@media (max-width: 640px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .kpi-hero__body {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-md);
+  }
+  .kpi-hero__resolution {
+    padding-left: 0;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--spacing-sm);
+  }
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .kpi-grid .card { border-color: var(--color-border); }
 }
+
