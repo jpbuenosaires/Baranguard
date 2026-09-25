@@ -90,7 +90,7 @@ for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_u
          0016_retention_hold_and_device_scrub \
          0017_health_check_log \
          0018_sms_subscriber \
-         0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key 0025_incident_lifecycle_states; do
+         0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key 0025_incident_lifecycle_states 0026_sos_no_fix_fallback; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
 pass "Migrations 0001-0022 applied"
