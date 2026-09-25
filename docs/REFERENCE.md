@@ -141,7 +141,9 @@ tanod_sos → notification → notification_target → notification_delivery`.
 **Key tables:** `incident` (raw_narrative NULLable, redacted_narrative,
 legal_hold, raw_narrative_purged_at, complainant_name/respondent_name/
 complainant_contact_number — Secretary-only, location_description,
-display_id) · `dispatch` · `evidence_attachment` (files outside web
+display_id, status incl. duplicate/invalid/cancelled/reopened since
+migration 0025, duplicate_of_incident_id/lifecycle_changed_by/
+lifecycle_changed_at) · `dispatch` · `evidence_attachment` (files outside web
 root, legal_hold) · `blotter_record` + `blotter_revision` (party fields
 shared with Admin/PB once finalized; case_status enum
 active/under_investigation/settled/resolved, forward-only past `active`,
@@ -163,7 +165,7 @@ NULL, removal is `opted_out_at` not a DELETE) · `health_check_log`
 (fixed-window abuse-budget counter, not a business dataset — no retention/
 legal-hold treatment, see migration 0023's own doc comment).
 
-**Migrations 0001–0023, all applied to both real DBs** (`baranguard`,
+**Migrations 0001–0026, all applied to both real DBs** (`baranguard`,
 `baranguard_uiseed`). On a new machine apply all in order as DBA/root —
 `baranguard_app` has no `ALTER`/`CREATE TABLE` (§8). Notable ones:
 0008 incident party fields · 0009 blotter case_status · 0011 user
@@ -174,7 +176,12 @@ hold + device scrub · 0017 health_check_log · 0018 sms_subscriber ·
 0021 generic metric columns on `ai_evaluation_run` · 0022
 `auth_session.session_kind` (web/device — see §2 rule 12) · 0023
 `rate_limit_counter` (shared abuse-budget store, `Baranguard\Lib\
-RateLimiter` — code-review findings H-11/H-13).
+RateLimiter` — code-review findings H-11/H-13) · 0024
+`mobile_device.device_public_key_pem` (H-09 device-signature keys) · 0025
+incident lifecycle states/merge linkage + `ai_processing_log.
+prompt_template_version` (H-16/M-03, H-18) · 0026 `tanod_sos` nullable
+latitude/longitude + `location_source`/`location_recorded_at` (C-01 SOS
+no-fix fallback).
 
 **FK trap:** `ai_processing_log`, `evidence_attachment`, `blotter_record`
 and `dispatch` are all `ON DELETE RESTRICT` against `incident` — deleting
@@ -185,7 +192,7 @@ an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 ---
 
-## 5. Endpoints (91 live `/api/v1` routes, all built)
+## 5. Endpoints (92 live `/api/v1` routes, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -198,10 +205,12 @@ reality rather than trusting whatever's written here.
 **Incidents** list (+`q=` search) · show · create · **update** (`PATCH
 /incidents/:id`) · nearby · evidence (GET+POST — Tanod-only multipart,
 tenant+device+tanod-access checked server-side) · status (flips a linked
-finalized blotter's case_status to `resolved`) · blotter · finalize ·
-amend (+optional case_status transition) · lupon-packet (+download) ·
-redact · ai-draft (+approve, regenerate-summary, translate,
-extraction+approve)
+finalized blotter's case_status to `resolved`) · **lifecycle** (`PATCH
+/incidents/:id/lifecycle`, Secretary-only — `duplicate`/`invalid`/
+`cancelled`/`reopened`, H-16/M-03, migration 0025; see the note below) ·
+blotter · finalize · amend (+optional case_status transition) ·
+lupon-packet (+download) · redact · ai-draft (+approve,
+regenerate-summary, translate, extraction+approve)
 
 > `PATCH /incidents/:id` is an **operational-correction endpoint, NOT a
 > narrative editor**: Admin+Secretary may set `priority`/`incident_type`/
@@ -210,6 +219,18 @@ extraction+approve)
 > `raw_narrative`/`redacted_narrative` is a hard 400 (Rule 4 keeps
 > `ai-draft/approve` the sole writer). `Idempotency-Key` required. Audit
 > metadata records changed field **names**, never values (Rule 8).
+
+> `PATCH /incidents/:id/lifecycle` is **Secretary-only, separate from
+> Admin-only `.../status`** — a records-custodian judgment call
+> (duplicate/invalid/cancelled/reopened), not a dispatch outcome, same
+> reasoning as blotter finalize/amend. Forward-only per state: a terminal
+> state (`resolved`/`cancelled`/`invalid`/`duplicate`) can only be left
+> via `reopened`, never jumped straight to another terminal state.
+> **`duplicate` requires `duplicate_of_incident_id`; MERGE MEANS LINK, NOT
+> DELETE** — the target incident is completely untouched (no row moves,
+> no FK repointed), both incidents stay independently queryable and
+> retained on their own clock. Blocked while any dispatch is still open,
+> same guard `.../status` uses. `Idempotency-Key` required.
 
 **Dispatch** list (tanod_name joined) · create · cancel · status ·
 route (`GET /dispatch/:id/route`)
@@ -232,8 +253,19 @@ route (`GET /dispatch/:id/route`)
 > coordinates).
 
 **GPS** live · history · post · `/sync/batch`
-**Scheduling** shifts (list/create/update) · swap requests · fatigue flags
+**Scheduling** shifts (list/create/update — min 1 on-duty Tanod per
+barangay/shift + 8h minimum rest, both hard-blocked, H-17) · swap
+requests (same H-17 guards apply on approval) · fatigue flags
 **Notifications/SOS** notifications · ack · tanod-sos (+ack/resolve)
+
+> `POST /tanod-sos` **never rejects on a missing GPS fix** (C-01,
+> migration 0026, §2 Rule 27). Live coordinates are used when sent;
+> missing coordinates fall back to the Tanod's most recent `gps_track` row
+> (`location_source='last_known'`, `location_recorded_at` = that fix's OWN
+> timestamp); with no `gps_track` row at all the SOS is still created
+> (`location_source='no_fix'`, `latitude`/`longitude` NULL). Sending only
+> ONE of latitude/longitude is still a 400 — a different failure mode from
+> sending neither.
 **Devices/Map** register (`fcm_token` optional) · deactivate ·
 map-packages (get/upload/download)
 **Reports** summary · heatmap · nav-counts · export (+download, response

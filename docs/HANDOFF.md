@@ -4,7 +4,63 @@
 never stack banners. Full history: `backend/DEVLOG.md` (grep by
 date/keyword, don't read front to back).
 
-**Last updated: 2026-09-24.**
+**Last updated: 2026-09-26.**
+
+**2026-09-26 — seventh audit pass: 5 of the 7 remaining `docs/REMAINING.md`
+§H items + M-03 closed in one session** (user explicitly picked "all the
+H items and M-03," decisions gathered up front via AskUserQuestion, same
+pattern as the fifth/sixth passes). H-15 (retention for gps_track/
+duty_status/shift_schedule/notification — 1 year each, researched
+against the National Archives of the Philippines' Daily Time Record
+schedule, not guessed), H-16/M-03 (new Secretary-only `PATCH
+/incidents/:id/lifecycle` — duplicate/invalid/cancelled/reopened states,
+merge-as-link-not-delete, migration 0025), H-17 (shift minimum-staffing +
+8h rest, hard-blocked per explicit user decision), H-19 (contact-number
+consent — scope clarification, no code change needed), and H-21 (offline
+tile licensing — already ODbL-compliant, no code change needed) are all
+CLOSED, each with real disposable-DB verification (85/85, 30/30, 47/47
+across three suites — see `backend/DEVLOG.md` 2026-09-26 (17) for the
+full breakdown). H-14 (privacy governance) got three new docs
+(`docs/DATA_INVENTORY.md`, `docs/PRIVACY_IMPACT_ASSESSMENT.md`,
+`docs/PRIVACY_NOTICES.md`) with DPO designation explicitly flagged as a
+barangay-council action no coding session can complete. H-18 (AI
+provenance) got a real `prompt_template_version` column and stamping
+(migration 0025), with the actual eval-harness runs still waiting on a
+friend's hardware exactly as before.
+
+**Same session, immediately after — C-01 CLOSED too.** User picked C-01
+next (deferred C-02/MFA for later). Migration 0026 makes
+`tanod_sos.latitude`/`longitude` nullable and adds
+`location_source`/`location_recorded_at`. `POST /tanod-sos` no longer
+hard-rejects a missing GPS fix: falls back to the Tanod's most recent
+`gps_track` row (`last_known`, with that fix's OWN timestamp) or, with no
+fix at all, still creates the SOS (`no_fix`, null coordinates) — the
+alert is never blocked, per §2 Rule 27. `verify-sprint4.sh` extended with
+8 new assertions, 57/58 (the 1 failure is pre-existing and unrelated —
+see below). Also fixed one incidental regression the SAME session's
+earlier H-17 work caused in `verify-sprint7-audit.sh`'s swap-approval
+fixture (H-17's new coverage guard correctly blocked its release-to-
+unassigned pattern; fixed by naming an explicit target instead) — back to
+57/57. Full detail: `backend/DEVLOG.md` 2026-09-26 (18).
+
+**`docs/REMAINING.md` now has only C-02 and C-03 open** — every other
+finding from the 36-finding 2026-09-24 audit is closed or explicitly
+deferred with a named reason. No web UI changes this session (backend/
+policy only); `web/tests` and `verify-web-wiring.mjs` were not re-run
+since nothing web-facing changed.
+
+**Follow-up, same session — investigated and resolved: the "Admin
+bypasses Tanod-only ack" item above was a stale test, not a bug.**
+`NotificationsController::acknowledge()`'s role list
+(`tanod`/`admin`/`secretary`/`punong_barangay`) is correct and was fixed
+on purpose in 2026-09-24 (9) — the ack endpoint is ownership-scoped
+(`nt.user_id = caller`), not role-gated, matching the mobile Tanod bell
+and web topbar bell reading the same `notification_target` rows. The
+failing test's Admin caller was a genuine SOS fan-out target (Rule 27
+targets Admin + on-duty Tanods) acknowledging their own row — correct
+behavior, not a privilege escalation. Fixed `verify-sprint4.sh`'s
+assertion to match reality instead of the code; 59/59. No production
+code changed. Full reasoning: `backend/DEVLOG.md` 2026-09-26 (19).
 
 **Web UI/UX overhaul committed 2026-09-24** (was "in progress,
 uncommitted" in the previous snapshot) after a full pre-commit code
@@ -31,7 +87,9 @@ change).
 
 **Also 2026-09-24 — an external 36-finding business-rules audit was
 reconciled against the live code; 19 findings resolved across six
-passes** (`docs/REMAINING.md` §H, `DEVLOG.md` (10) through (16)). First
+passes, then 6 more (H-15, H-16, M-03, H-17, H-19, H-21) in a seventh
+pass 2026-09-26 — 25 of 36 closed** (`docs/REMAINING.md` §H, `DEVLOG.md`
+(10) through (17)). First
 three passes: a fabricated blotter case number in the web UI, Punong
 Barangay still able to list blotter records server-side after the screen
 was removed, a Tanod double-booked across two different incidents,

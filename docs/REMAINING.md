@@ -177,16 +177,7 @@ server cert.
 infrastructure, or an explicit architecture-review sign-off, not just
 code): C-02 (MFA), C-03 (HTTPS/TLS enforcement + locking down the
 mobile/web API-base-URL override — this is the same open item as F1
-above, not a new one), H-14 (privacy governance/PIA/DPO), H-15 (retention
-periods for `gps_track`/`duty_status`/`shift_schedule`/notifications/
-`map_package` — REFERENCE.md §11 requires an architecture review before
-setting a retention constant, not a runbook edit), H-16 (incident
-duplicate/merge workflow — same underlying gap as M-03), H-17 (shift
-minimum-staffing constraints), H-18 (AI evaluation/provenance — partially
-overlaps A2/A6's already-built eval harnesses), H-19 (contact-number
-consent boundaries), H-21 (offline tile licensing strategy), and M-03
-(incident lifecycle duplicate/invalid/reopened states — same gap as
-H-16). **H-09 CONFIRMED and fixed at the code level** (DEVLOG (16)):
+above, not a new one). **H-09 CONFIRMED and fixed at the code level** (DEVLOG (16)):
 `mobile_device.device_public_key_pem` (migration 0024) +
 `Baranguard\Lib\DeviceSignature` verify a per-request signature for
 evidence upload / GPS / Tanod dispatch-status-updates; SOS deliberately
@@ -201,6 +192,136 @@ links) but the actual Keystore generation/signing behavior on real
 hardware is unconfirmed. Needs a device session: install the build,
 confirm a device registers with a real public key, confirm signed
 requests succeed, confirm SOS still works if signing ever fails.
+
+**Seventh pass, 2026-09-26 (user picked "all the H items and M-03" in
+one session, with decisions answered up front via AskUserQuestion) — 5 of
+7 remaining H items + M-03 CONFIRMED and fixed; 2 explicitly out of a
+coding session's scope:**
+
+- **H-15 (retention periods) CLOSED.** Researched the actual standard
+  rather than guessing: the National Archives of the Philippines' 2023
+  General Records Disposition Schedule sets Daily Time Records at 1 year;
+  the NPC's own GPS-tracking guidance says only "as long as necessary for
+  the purpose," no fixed number. `gps_track`/`duty_status`/
+  `shift_schedule`/`notification` all got a 1-year retention constant
+  (`RetentionService::purgeGpsTracks()` etc., migration-free — no schema
+  change needed, same pattern every existing rule already uses).
+  `map_package` deliberately got NO time-based retention — governed by
+  the per-barangay storage quota already added for M-07/H-21 instead, not
+  a second competing rule. Real deletion (not just a dry run) verified
+  against `verify-sprint7-retention.sh`'s disposable DB with seeded
+  400-day/300-day boundary rows — 8 new assertions, all passing. Shift
+  schedules needed their own two-table cascade
+  (`fatigue_flag`/`shift_swap_request`, both `ON DELETE RESTRICT`), same
+  shape as `purgeOneIncident()`'s 5-table cascade, scaled down.
+- **H-16/M-03 (incident duplicate/merge, lifecycle states) CLOSED.**
+  Migration 0025 widens `incident.status` with `duplicate`/`invalid`/
+  `cancelled`/`reopened` and adds `duplicate_of_incident_id`/
+  `lifecycle_changed_by`/`lifecycle_changed_at`. New Secretary-only
+  `PATCH /incidents/:id/lifecycle` (`IncidentsController::updateLifecycle()`),
+  deliberately separate from the existing Admin-only `updateStatus()`
+  ("resolved") — a records-custodian judgment call, not a dispatch
+  outcome, same reasoning that makes blotter finalize/amend
+  Secretary-only. Forward-only transition table (a terminal state can
+  only be left via `reopened`, never jumped straight to another terminal
+  state). **Merge = link, not delete** (explicit user decision): marking
+  an incident `duplicate` requires `duplicate_of_incident_id` pointing at
+  a different, same-barangay incident; nothing about the target is
+  touched, no row moves, no FK is repointed — both incidents stay
+  independently queryable and retained on their own clock. Blocked while
+  an active dispatch exists, same guard `updateStatus()` uses.
+  Idempotency-Key required, replayed off `audit_log`. New standalone
+  `verify-h16-incident-lifecycle.sh`, 30/30 passing, including the
+  merge-as-link assertions, the open-dispatch guard, cross-tenant 404,
+  and idempotency replay. **Not done this session**: no web UI affordance
+  for this endpoint yet (Incident Management's detail pane has no button
+  wired to it) — the backend/policy gap is closed, but a Secretary must
+  currently call the endpoint directly (or via a future UI session) to
+  use it.
+- **H-17 (shift minimum-staffing/rest constraints) CLOSED.** User
+  decision: at least 1 Tanod on duty per barangay per shift, 8h minimum
+  rest, hard-blocked (409/422) rather than a warning.
+  `ShiftsController::assertMinRest()`/`assertMinCoverage()`, wired into
+  `create()`/`update()` and `ShiftSwapRequestsController::update()`'s
+  approval path (both the reassignment branch and the
+  release-to-unassigned branch, which is the one that can actually zero
+  out coverage). `verify-scheduler-fatigue.sh` extended with 6 new
+  assertions proving both directions: unassigning the ONLY covering
+  shift is blocked, unassigning one of TWO covering shifts succeeds, and
+  unassigning the last remaining one is blocked again. 47/47 passing (up
+  from 41/41 pre-existing).
+- **H-19 (contact-number consent boundaries) CLOSED as a scope
+  clarification, no code change.** User decision: keep
+  `incident.complainant_contact_number` (case data under RA 7160,
+  Secretary-only per Rule 1's raw-narrative-adjacent protection) entirely
+  separate from `sms_subscriber`'s consent tracking (`consent_at`/
+  `consent_source`, migration 0018) — the finding was really "these two
+  numbers looked like the same kind of thing and weren't," not a missing
+  control. Documented in `docs/DATA_INVENTORY.md` §1/§3.
+- **H-21 (offline tile licensing) CLOSED — already compliant, no code
+  change.** User decision: stay on OSM. Checked `web/src/components/
+  LiveMap.js`/`HeatmapMap.js` directly — both already carry the required
+  ODbL attribution (`&copy; OpenStreetMap contributors`, linked to the
+  copyright page) and the map component's own class doc already
+  documents the "online raster, real attribution, moderate use" decision.
+  The audit finding was a missing licensing DECISION, not a missing
+  attribution string; documented in `docs/DATA_INVENTORY.md`/this file.
+- **H-14 (privacy governance) partially closed — documents drafted, DPO
+  designation still open.** User decision: draft the documents now.
+  Three new files: `docs/DATA_INVENTORY.md` (RA 10173 records-of-
+  processing inventory, derived from the real schema), `docs/
+  PRIVACY_IMPACT_ASSESSMENT.md` (risk table covering every category in
+  the inventory, explicitly flagging C-02/C-03 as NOT mitigated by
+  anything in it), `docs/PRIVACY_NOTICES.md` (plain-language notices for
+  a citizen reporter / Tanod / SMS subscriber — text only, no UI screen
+  renders them yet). **Formally designating a DPO is a barangay council
+  action** (a Sangguniang Barangay resolution or equivalent) that no
+  coding session can complete — flagged in both new docs as the one
+  genuinely open piece of H-14.
+- **H-18 (AI evaluation/provenance) partially closed — provenance chain
+  landed, eval runs still need hardware.** `ai_processing_log.model_version`
+  already existed but recorded nothing about which PROMPT contract
+  produced a given draft, so a later prompt-wording change couldn't be
+  told apart from a model change when reviewing an old row. Migration
+  0025 adds `prompt_template_version`, stamped at all five completion
+  points in `AiJobQueue.php` alongside the existing `model_version`
+  stamp. **The other half of H-18 — a real eval harness run tied to
+  golden cases, prompt-injection tests — is unchanged**: A2/A6's
+  8-task eval harness already exists, only redaction has a real run
+  (98.26% recall / 75.88% precision), and the other 7 tasks still need a
+  friend's faster hardware (`eval-kit/README-FOR-FRIEND.md`) — this is
+  the same standing item as HANDOFF.md's "Recommended next step" #3, not
+  a new one.
+
+**Eighth pass, 2026-09-26 — C-01 CLOSED.** User picked C-01 next
+(explicitly deferred C-02 for this session). Migration 0026 makes
+`tanod_sos.latitude`/`longitude` nullable and adds `location_source`
+ENUM('live','last_known','no_fix') + `location_recorded_at`.
+`TanodSosController::createItem()` no longer hard-rejects a missing GPS
+fix (§2 Rule 27's "SOS must never be silently suppressed" now actually
+holds): live coordinates are used as before; a missing pair falls back to
+the Tanod's most recent `gps_track` row (tagged `last_known`, carrying
+that FIX's own `recorded_at`, not "now" — a dispatcher can tell a live
+position from a stale one); with no `gps_track` row at all, the SOS is
+still created with `location_source='no_fix'` and NULL coordinates — the
+alert is never blocked. Providing only ONE of latitude/longitude is still
+a 400 (a different failure mode than providing neither). Verified for
+real: `verify-sprint4.sh` extended with a new step 4b (8 assertions —
+no_fix creation+fan-out, last_known fallback with the fix's own
+timestamp, partial-coordinate rejection), 58/58 total (1 pre-existing,
+unrelated failure — `NotificationsController`'s Tanod-ack role check
+returning 200 instead of 403 for an Admin caller — was already present
+before this session and is untouched by C-01; flagged separately, not
+fixed as part of this pass). `NotificationDispatcher`'s SOS message
+formatting already handled null coordinates gracefully (`formatLocation()`
+was already null-safe) — no change needed there. Also re-ran and fixed
+one incidental regression from the SAME session's earlier H-17 work: a
+swap-approval fixture in `verify-sprint7-audit.sh` released a shift to
+unassigned as its only way to exercise the `swap_request_resolved` audit
+action, which H-17's new coverage guard now correctly blocks (422) since
+it was the shift's only coverage — fixed by naming an explicit
+`target_user_id` instead, `verify-sprint7-audit.sh` back to 57/57. C-02
+(MFA) and C-03 (HTTPS) remain the only two open Critical findings.
 
 Full disposition of every one
 of the 36 findings — confirmed / partially confirmed / refuted, with
