@@ -74,8 +74,8 @@ final class TanodSosController
         $total = (int) $countStmt->fetchColumn();
 
         $stmt = $pdo->prepare(
-            "SELECT sos_id, user_id, dispatch_id, latitude, longitude, triggered_at, received_at,
-                    status, acknowledged_at, resolved_at
+            "SELECT sos_id, user_id, dispatch_id, latitude, longitude, location_source, location_recorded_at,
+                    triggered_at, received_at, status, acknowledged_at, resolved_at
              FROM tanod_sos
              WHERE {$whereSql}
              ORDER BY triggered_at DESC
@@ -94,8 +94,11 @@ final class TanodSosController
                 'sos_id' => (int) $row['sos_id'],
                 'user_id' => (int) $row['user_id'],
                 'dispatch_id' => $row['dispatch_id'] !== null ? (int) $row['dispatch_id'] : null,
-                'latitude' => (float) $row['latitude'],
-                'longitude' => (float) $row['longitude'],
+                // C-01: nullable now — a 'no_fix' SOS has neither.
+                'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
+                'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
+                'location_source' => $row['location_source'],
+                'location_recorded_at' => $row['location_recorded_at'],
                 'triggered_at' => $row['triggered_at'],
                 'received_at' => $row['received_at'],
                 'status' => $row['status'],
@@ -178,19 +181,54 @@ final class TanodSosController
         if (!is_string($clientEventId) || !preg_match(self::UUID_PATTERN, $clientEventId)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'client_event_id must be a UUID.');
         }
-        // §5 tanod_sos.latitude/longitude are NOT NULL — an SOS without a
-        // position is still worth recording, but the schema forbids it, so
-        // this is a hard requirement rather than a silent null.
-        if (!is_numeric($latitude) || !is_numeric($longitude)) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude and longitude are required.');
-        }
-        $lat = (float) $latitude;
-        $lng = (float) $longitude;
-        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude/longitude are out of range.');
-        }
         if (!in_array($fallbackChannel, ['app', 'sms'], true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', "fallback_channel must be 'app' or 'sms'.");
+        }
+
+        // C-01 (2026-09-24 external audit): a missing/invalid GPS fix must
+        // NEVER block an SOS (§2 Rule 27, same priority ordering as H-09's
+        // "never reject on a bad device signature" above). A position is
+        // still required in SHAPE if the caller sends one (garbage
+        // coordinates are still rejected), but its ABSENCE now falls back
+        // to the Tanod's own last-known `gps_track` fix, then to
+        // `location_source='no_fix'` with NULL coordinates as the final
+        // fallback — migration 0026 made both columns nullable for exactly
+        // this. `location_recorded_at` is the ORIGINAL timestamp of
+        // whichever fix is actually being used, never simply "now", so a
+        // dispatcher can tell a live position from a stale one.
+        $hasCoordinates = $latitude !== null || $longitude !== null;
+        if ($hasCoordinates && (!is_numeric($latitude) || !is_numeric($longitude))) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude and longitude must both be numeric when provided.');
+        }
+        $lat = null;
+        $lng = null;
+        $locationSource = 'no_fix';
+        $locationRecordedAt = null;
+        if ($hasCoordinates) {
+            $lat = (float) $latitude;
+            $lng = (float) $longitude;
+            if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'latitude/longitude are out of range.');
+            }
+            $locationSource = 'live';
+            $locationRecordedAt = gmdate('Y-m-d H:i:s');
+        } else {
+            $lastFixStmt = $pdo->prepare(
+                'SELECT latitude, longitude, recorded_at FROM gps_track
+                 WHERE user_id = :user_id
+                 ORDER BY recorded_at DESC
+                 LIMIT 1'
+            );
+            $lastFixStmt->execute(['user_id' => $identity['user_id']]);
+            $lastFix = $lastFixStmt->fetch(PDO::FETCH_ASSOC);
+            if ($lastFix !== false) {
+                $lat = (float) $lastFix['latitude'];
+                $lng = (float) $lastFix['longitude'];
+                $locationSource = 'last_known';
+                $locationRecordedAt = $lastFix['recorded_at'];
+            }
+            // else: no gps_track row exists at all — location_source stays
+            // 'no_fix', $lat/$lng stay NULL. The SOS is still created.
         }
 
         // §5 UNIQUE(user_id, client_event_id) — a retried SOS (the app
@@ -241,11 +279,11 @@ final class TanodSosController
         try {
             $insertStmt = $pdo->prepare(
                 "INSERT INTO tanod_sos
-                    (user_id, barangay_id, dispatch_id, latitude, longitude, triggered_at, received_at,
-                     status, client_event_id, fallback_channel)
+                    (user_id, barangay_id, dispatch_id, latitude, longitude, location_source, location_recorded_at,
+                     triggered_at, received_at, status, client_event_id, fallback_channel)
                  VALUES
-                    (:user_id, :barangay_id, :dispatch_id, :latitude, :longitude, UTC_TIMESTAMP(), UTC_TIMESTAMP(),
-                     'active', :client_event_id, :fallback_channel)"
+                    (:user_id, :barangay_id, :dispatch_id, :latitude, :longitude, :location_source, :location_recorded_at,
+                     UTC_TIMESTAMP(), UTC_TIMESTAMP(), 'active', :client_event_id, :fallback_channel)"
             );
             $insertStmt->execute([
                 'user_id' => $identity['user_id'],
@@ -253,6 +291,8 @@ final class TanodSosController
                 'dispatch_id' => $dispatchIdInt,
                 'latitude' => $lat,
                 'longitude' => $lng,
+                'location_source' => $locationSource,
+                'location_recorded_at' => $locationRecordedAt,
                 'client_event_id' => $clientEventId,
                 'fallback_channel' => $fallbackChannel,
             ]);
@@ -273,6 +313,10 @@ final class TanodSosController
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'tanod_sos_raised', 'tanod_sos', $sosId, [
                 'fallback_channel' => $fallbackChannel,
                 'device_signature_verified' => $deviceSignatureVerified,
+                // location_source is a status, not a coordinate — allowed
+                // under Rule 8/17's allow-list; the coordinates themselves
+                // are still never audited.
+                'location_source' => $locationSource,
             ]);
 
             $readBack = $pdo->prepare('SELECT status, received_at FROM tanod_sos WHERE sos_id = :sos_id');

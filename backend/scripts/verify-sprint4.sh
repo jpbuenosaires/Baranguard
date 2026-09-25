@@ -89,7 +89,7 @@ for m in 0003_shift_schedule_nullable_user 0004_blotter_revision 0005_sms_envelo
          0006_sms_log_barangay 0008_incident_party_fields \
          0009_blotter_case_status 0010_incident_location_description 0011_user_suspension \
          0012_system_settings 0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
-         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber 0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key; do
+         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber 0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key 0025_incident_lifecycle_states 0026_sos_no_fix_fallback; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
 pass "Full migration chain 0001-0018 applied"
@@ -194,6 +194,37 @@ SOS_REPLAY=$(body_of POST /tanod-sos "$RAISER" "{\"latitude\":12.9186,\"longitud
 expect_eq "$(echo "$SOS_REPLAY" | jget sos_id)" "$SOS_ID" "Replay with the same client_event_id returns the ORIGINAL sos_id"
 expect_eq "$(db_one "SELECT COUNT(*) FROM tanod_sos;")" "1" "No duplicate SOS row was created"
 expect_eq "$(db_one "SELECT COUNT(*) FROM notification WHERE sos_id IS NOT NULL;")" "1" "Replay did NOT raise a second alarm"
+
+step "4b. C-01 — SOS is never blocked on a missing GPS fix"
+RAISER_USER_ID=$(db_one "SELECT user_id FROM user WHERE username='s4_tanod_sos';")
+
+# No latitude/longitude at all, and no prior gps_track row for this user
+# -> the SOS must still be CREATED (Rule 27), with location_source='no_fix'.
+CE_NOFIX=$(uuid)
+SOS_NOFIX=$(body_of POST /tanod-sos "$RAISER" "{\"client_event_id\":\"$CE_NOFIX\"}")
+echo "  response: $SOS_NOFIX"
+NOFIX_ID=$(echo "$SOS_NOFIX" | jget sos_id)
+expect_eq "$(echo "$SOS_NOFIX" | jget status)" "active" "no_fix SOS still created and active (never blocked)"
+expect_eq "$(db_one "SELECT location_source FROM tanod_sos WHERE sos_id=$NOFIX_ID;")" "no_fix" "location_source='no_fix' when there is no coordinate and no gps_track fix"
+expect_eq "$(db_one "SELECT latitude IS NULL AND longitude IS NULL FROM tanod_sos WHERE sos_id=$NOFIX_ID;")" "1" "latitude/longitude are NULL for a no_fix SOS"
+expect_eq "$(db_one "SELECT COUNT(*) FROM notification WHERE sos_id=$NOFIX_ID;")" "1" "no_fix SOS still fanned out normally"
+
+# Seed a gps_track fix for this Tanod, then raise a second no-coordinate SOS
+# -> must fall back to that fix, tagged 'last_known', with the FIX's own
+# timestamp (not "now").
+FIX_RECORDED_AT=$(db_one "SELECT DATE_FORMAT(DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 MINUTE), '%Y-%m-%d %H:%i:%s');")
+mysql_exec "$VALDB" -e "INSERT INTO gps_track (user_id, latitude, longitude, accuracy_m, recorded_at, received_at, client_event_id) VALUES ($RAISER_USER_ID, 12.7000, 123.5000, 8.0, '$FIX_RECORDED_AT', UTC_TIMESTAMP(), '$(uuid)');" >/dev/null
+
+CE_LASTKNOWN=$(uuid)
+SOS_LASTKNOWN=$(body_of POST /tanod-sos "$RAISER" "{\"client_event_id\":\"$CE_LASTKNOWN\"}")
+LASTKNOWN_ID=$(echo "$SOS_LASTKNOWN" | jget sos_id)
+expect_eq "$(db_one "SELECT location_source FROM tanod_sos WHERE sos_id=$LASTKNOWN_ID;")" "last_known" "location_source='last_known' once a gps_track fix exists"
+expect_eq "$(db_one "SELECT latitude FROM tanod_sos WHERE sos_id=$LASTKNOWN_ID;")" "12.7000000" "latitude comes from the gps_track fix, not a live value"
+expect_eq "$(db_one "SELECT location_recorded_at FROM tanod_sos WHERE sos_id=$LASTKNOWN_ID;")" "$FIX_RECORDED_AT" "location_recorded_at is the FIX's own timestamp, not 'now'"
+
+# Providing ONE of latitude/longitude but not the other is still a
+# malformed request (distinct from providing NEITHER) -> still 400.
+expect_eq "$(status_of POST /tanod-sos "$RAISER" "{\"latitude\":12.9,\"client_event_id\":\"$(uuid)\"}")" "400" "Partial coordinates (latitude only) still rejected as malformed"
 
 step "5. Acknowledge / resolve"
 expect_eq "$(status_of PATCH "/tanod-sos/$SOS_ID/acknowledge" "$RAISER")" "403" "Tanod cannot acknowledge"
