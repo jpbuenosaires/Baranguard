@@ -463,6 +463,49 @@ REACT_CLEARED=$(db_one "SELECT deactivated_at IS NULL AND is_active = 1 FROM mob
 expect_eq "$REACT_CLEARED" "1" "re-registering the device CLEARS deactivated_at (clock stops)"
 
 # --------------------------------------------------------------------------
+step "11. H-15 — gps_track / duty_status / shift_schedule / notification (1-year retention)"
+# --------------------------------------------------------------------------
+# Seeded AFTER step 9's full run so these are untouched by it. One row
+# just inside the 365-day window, one just outside, per table — same
+# boundary-testing shape as every other rule in this suite.
+S7_ADMIN_ID=$(db_one "SELECT user_id FROM user WHERE username='s7_admin';")
+S7_TANOD_ID=$(db_one "SELECT user_id FROM user WHERE username='s7_tanod';")
+
+mysql_exec "$VALDB" <<SQL
+INSERT INTO gps_track (user_id, latitude, longitude, accuracy_m, recorded_at, received_at) VALUES
+  ($S7_TANOD_ID, 12.9, 123.9, 10.0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY), UTC_TIMESTAMP()),
+  ($S7_TANOD_ID, 12.9, 123.9, 10.0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 300 DAY), UTC_TIMESTAMP());
+
+INSERT INTO duty_status (user_id, status, channel, changed_at) VALUES
+  ($S7_TANOD_ID, 'on_duty', 'app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY)),
+  ($S7_TANOD_ID, 'on_duty', 'app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 300 DAY));
+
+INSERT INTO shift_schedule (barangay_id, user_id, start_at, end_at, created_by) VALUES
+  (1, $S7_TANOD_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 401 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY), $S7_ADMIN_ID),
+  (1, $S7_TANOD_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 301 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 300 DAY), $S7_ADMIN_ID);
+
+INSERT INTO notification (barangay_id, notification_type, created_by, created_at) VALUES
+  (1, 'other', $S7_ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY)),
+  (1, 'other', $S7_ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 300 DAY));
+SQL
+pass "Seeded 2 rows each (400d old / 300d old) across gps_track, duty_status, shift_schedule, notification"
+
+H15_OUT="$(run_job --only=gps_track,duty_status,shift_schedule,notification)"
+expect_contains "$H15_OUT" "gps_track: purged 1" "gps_track: exactly the 400-day row purged"
+expect_contains "$H15_OUT" "duty_status: purged 1" "duty_status: exactly the 400-day row purged"
+expect_contains "$H15_OUT" "shift_schedule: purged 1" "shift_schedule: exactly the 400-day row purged"
+expect_contains "$H15_OUT" "notification: purged 1" "notification: exactly the 400-day row purged"
+
+GPS_LEFT=$(db_one "SELECT COUNT(*) FROM gps_track WHERE user_id=$S7_TANOD_ID;")
+expect_eq "$GPS_LEFT" "1" "gps_track: the 300-day row survived"
+DUTY_LEFT=$(db_one "SELECT COUNT(*) FROM duty_status WHERE user_id=$S7_TANOD_ID;")
+expect_eq "$DUTY_LEFT" "1" "duty_status: the 300-day row survived"
+SHIFT_LEFT=$(db_one "SELECT COUNT(*) FROM shift_schedule WHERE user_id=$S7_TANOD_ID;")
+expect_eq "$SHIFT_LEFT" "1" "shift_schedule: the 300-day row survived"
+NOTIF_LEFT=$(db_one "SELECT COUNT(*) FROM notification WHERE barangay_id=1 AND notification_type='other';")
+expect_eq "$NOTIF_LEFT" "1" "notification: the 300-day row survived"
+
+# --------------------------------------------------------------------------
 echo
 echo "=================================================="
 echo "PASSED: $PASS   FAILED: $FAIL"
