@@ -241,13 +241,27 @@ expect_eq "$(echo "$RES" | jget status)" "resolved" "Resolve sets status"
 expect_eq "$(status_of PATCH "/tanod-sos/$SOS_ID/resolve" "$ADMIN")" "409" "Re-resolving is 409"
 expect_eq "$(status_of PATCH "/tanod-sos/$SOS_ID/acknowledge" "$ADMIN")" "409" "Acknowledging a resolved SOS is 409"
 
-step "6. POST /notifications/:id/ack"
+step "6. POST /notifications/:id/ack — ownership-scoped, not role-gated"
 CE2=$(uuid)
 SOS2=$(body_of POST /tanod-sos "$RAISER" "{\"latitude\":12.92,\"longitude\":123.67,\"client_event_id\":\"$CE2\"}")
 SOS2_ID=$(echo "$SOS2" | jget sos_id)
 N2=$(db_one "SELECT notification_id FROM notification WHERE sos_id=$SOS2_ID;")
-expect_eq "$(status_of POST "/notifications/$N2/ack" "$ADMIN" '{}')" "403" "Admin cannot use the Tanod ack endpoint"
-expect_eq "$(status_of POST "/notifications/$N2/ack" "$OFFDUTY" '{}')" "404" "A Tanod who is not a target gets 404"
+# Admin genuinely IS a target of N2 (Rule 27 fans an SOS out to Admin +
+# other on-duty Tanods, confirmed in step 3's own "Admin was targeted"
+# assertion above), and acknowledge()/acknowledgeAll() deliberately allow
+# EVERY role to ack its OWN notification_target row -- mobile Tanod:
+# SOS/dispatch targets; web Admin/Secretary/PB: the topbar bell, per
+# index()'s own docblock. This was fixed 2026-09-24 (DEVLOG (9)) after a
+# code review found the role list had invented three nonexistent roles
+# while omitting punong_barangay entirely -- a PB clicking a notification
+# got a silent 403. This assertion used to expect 403 here, which tested
+# the OLD (buggy) role list rather than the endpoint's real, ownership-
+# scoped design; the actual boundary this endpoint enforces is ownership
+# (nt.user_id = caller), not role -- proven by the very next assertion.
+ADMIN_ACK=$(body_of POST "/notifications/$N2/ack" "$ADMIN" '{}')
+expect_contains "$ADMIN_ACK" '"success":true' "Admin CAN acknowledge their own SOS-fan-out target (ownership-scoped, not role-gated)"
+expect_eq "$(db_one "SELECT ack_status FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$N2 AND u.username='s4_admin';")" "acknowledged" "Admin's own ack_status recorded"
+expect_eq "$(status_of POST "/notifications/$N2/ack" "$OFFDUTY" '{}')" "404" "A Tanod who is NOT a target gets 404 (the real boundary is ownership, not role)"
 # Rule 24: acknowledgment is NOT a transport record — captured BEFORE the
 # ack call, not asserted as a global zero. Since Sprint 4 Phase 2 wired
 # NotificationDispatcher into SOS/dispatch creation, delivery rows now
