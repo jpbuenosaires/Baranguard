@@ -55,6 +55,14 @@ final class ShiftsController
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
 
+    /**
+     * H-17 (2026-09-24 external audit, docs/REMAINING.md §H), user
+     * decision 2026-09-26: "at least 1 Tanod on duty per barangay per
+     * shift, 8h minimum rest" — a hard block (409/422), not a warning,
+     * per that decision.
+     */
+    public const MIN_REST_HOURS = 8;
+
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
     {
@@ -93,6 +101,7 @@ final class ShiftsController
         try {
             self::assertTanodEligible($pdo, $userId, $identity['barangay_id']);
             self::assertNoOverlap($pdo, $userId, $startAt, $endAt, null);
+            self::assertMinRest($pdo, $userId, $startAt, $endAt, null);
 
             $insertStmt = $pdo->prepare(
                 'INSERT INTO shift_schedule (barangay_id, user_id, patrol_zone, start_at, end_at, created_by, client_request_id)
@@ -240,6 +249,12 @@ final class ShiftsController
             if ($newUserId !== null) {
                 self::assertTanodEligible($pdo, $newUserId, $identity['barangay_id']);
                 self::assertNoOverlap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
+                self::assertMinRest($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
+            } elseif ($oldUserId !== null) {
+                // H-17: unassigning this shift (user_id -> null) is the
+                // one edit that can leave a barangay with zero coverage —
+                // check it BEFORE the UPDATE below commits it.
+                self::assertMinCoverage($pdo, (int) $row['barangay_id'], $newStartAt, $newEndAt, $shiftId);
             }
 
             $pdo->prepare(
@@ -319,6 +334,64 @@ final class ShiftsController
         $stmt->execute($params);
         if ($stmt->fetch(PDO::FETCH_ASSOC) !== false) {
             throw new ApiError(409, 'CONFLICT', 'This Tanod already has an overlapping shift.');
+        }
+    }
+
+    /**
+     * H-17: rejects an assignment that would leave this Tanod with less
+     * than `MIN_REST_HOURS` between two shifts. Deliberately called AFTER
+     * `assertNoOverlap()` in every caller — a true overlap is already
+     * rejected with its own, more specific message by the time this runs,
+     * so this only ever fires for two shifts that are close but not
+     * overlapping.
+     */
+    public static function assertMinRest(PDO $pdo, int $userId, \DateTimeImmutable $startAt, \DateTimeImmutable $endAt, ?int $excludeShiftId): void
+    {
+        $restStart = $startAt->modify('-' . self::MIN_REST_HOURS . ' hours');
+        $restEnd = $endAt->modify('+' . self::MIN_REST_HOURS . ' hours');
+
+        $sql = 'SELECT shift_id FROM shift_schedule
+                WHERE user_id = :user_id AND start_at < :rest_end AND end_at > :rest_start';
+        $params = [
+            'user_id' => $userId,
+            'rest_start' => $restStart->format('Y-m-d H:i:s'),
+            'rest_end' => $restEnd->format('Y-m-d H:i:s'),
+        ];
+        if ($excludeShiftId !== null) {
+            $sql .= ' AND shift_id != :exclude_id';
+            $params['exclude_id'] = $excludeShiftId;
+        }
+        $stmt = $pdo->prepare($sql . ' FOR UPDATE');
+        $stmt->execute($params);
+        if ($stmt->fetch(PDO::FETCH_ASSOC) !== false) {
+            throw new ApiError(409, 'CONFLICT', 'This Tanod would have less than ' . self::MIN_REST_HOURS . ' hours of rest between shifts.');
+        }
+    }
+
+    /**
+     * H-17: rejects releasing a shift to "unassigned" (or shrinking its
+     * assignment away) when doing so would leave zero on-duty Tanod
+     * covering that barangay for that time window. Checked against every
+     * OTHER assigned shift for the same barangay/window — a barangay with
+     * a second Tanod still covering the same slot is unaffected.
+     */
+    public static function assertMinCoverage(PDO $pdo, int $barangayId, \DateTimeImmutable $startAt, \DateTimeImmutable $endAt, int $excludeShiftId): void
+    {
+        $stmt = $pdo->prepare(
+            'SELECT shift_id FROM shift_schedule
+             WHERE barangay_id = :barangay_id AND shift_id != :exclude_id
+               AND user_id IS NOT NULL
+               AND start_at < :end_at AND end_at > :start_at
+             LIMIT 1'
+        );
+        $stmt->execute([
+            'barangay_id' => $barangayId,
+            'exclude_id' => $excludeShiftId,
+            'start_at' => $startAt->format('Y-m-d H:i:s'),
+            'end_at' => $endAt->format('Y-m-d H:i:s'),
+        ]);
+        if ($stmt->fetch(PDO::FETCH_ASSOC) === false) {
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'This would leave the barangay with zero on-duty Tanod during this shift window.');
         }
     }
 
