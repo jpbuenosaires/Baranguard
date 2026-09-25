@@ -45,6 +45,24 @@ use PDO;
  *                          purgeOfflineQueue()'s own doc.
  *   backups                explicitly OUT of scope for a database job —
  *                          see the class-level note at the bottom.
+ *   gps_track              1 year from recorded_at (H-15, 2026-09-24
+ *                          external audit + 2026-09-26 architecture-
+ *                          review sign-off — see docs/REMAINING.md §H).
+ *                          No legal_hold column; this is operational
+ *                          telemetry, not an evidentiary record.
+ *   duty_status             1 year from changed_at — same H-15 sign-off,
+ *                          mirrors the National Archives of the
+ *                          Philippines' Daily Time Record retention
+ *                          period (1 year), the closest real-world
+ *                          analog for an attendance/on-duty log.
+ *   shift_schedule          1 year from end_at — same H-15 sign-off,
+ *                          same DTR analog. Purges its two RESTRICT
+ *                          dependents (fatigue_flag, shift_swap_request)
+ *                          in the same per-row transaction, same shape
+ *                          as purgeOneIncident()'s cascade below.
+ *   notification            1 year from created_at — same H-15 sign-off,
+ *                          matches the existing sms_log default for
+ *                          comparable dispatch/alert transport records.
  *
  * RESOLVED DECISIONS (logged in DEVLOG.md; don't reopen without review):
  *
@@ -115,6 +133,11 @@ final class RetentionService
     public const AI_TOOL_JOB_DAYS = 90;           // AI Tools jobs, which have no incident
     public const AUDIT_LOG_DAYS = 2557;           // aligned with blotter retention
     public const DEVICE_DEACTIVATED_DAYS = 90;
+    // H-15 (2026-09-24 external audit; sign-off 2026-09-26 — see class doc).
+    public const GPS_TRACK_DAYS = 365;
+    public const DUTY_STATUS_DAYS = 365;
+    public const SHIFT_SCHEDULE_DAYS = 365;
+    public const NOTIFICATION_DAYS = 365;
 
     /** Every rule name this service knows, in the order a full run applies them. */
     public const RULES = [
@@ -124,6 +147,10 @@ final class RetentionService
         'ai_processing_log',
         'ai_tool_job',
         'mobile_device',
+        'gps_track',
+        'duty_status',
+        'shift_schedule',
+        'notification',
         'audit_log',
         'incident_records',
     ];
@@ -170,6 +197,10 @@ final class RetentionService
                 'ai_processing_log' => $this->purgeAiProcessingLogs(),
                 'ai_tool_job' => $this->purgeAiToolJobs(),
                 'mobile_device' => $this->scrubDeactivatedDevices(),
+                'gps_track' => $this->purgeGpsTracks(),
+                'duty_status' => $this->purgeDutyStatuses(),
+                'shift_schedule' => $this->purgeShiftSchedules(),
+                'notification' => $this->purgeNotifications(),
                 'audit_log' => $this->purgeAuditLog(),
                 'incident_records' => $this->purgeExpiredIncidentRecords(),
             };
@@ -519,6 +550,125 @@ final class RetentionService
 
         $this->audit('retention_device_secrets_scrubbed', 'mobile_device', ['scrubbed' => $purged]);
         $this->note("mobile_device: scrubbed secrets on {$purged} (rows retained for provenance)");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible];
+    }
+
+    // ------------------------------------------------------------------
+    // H-15 — gps_track / duty_status / shift_schedule / notification
+    // (2026-09-24 external audit; 1-year retention signed off 2026-09-26
+    // — see class doc for the sourcing). None of these four have a
+    // legal_hold column: they are operational telemetry/transport
+    // records, not the evidentiary record itself (that's the incident/
+    // blotter/evidence chain, already on its own 7-year clock).
+    // ------------------------------------------------------------------
+
+    /** @return array{purged:int, held:int, eligible:int} */
+    public function purgeGpsTracks(): array
+    {
+        $where = 'recorded_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+        $params = ['days' => self::GPS_TRACK_DAYS];
+
+        $eligible = $this->countWhere('gps_track', $where, $params);
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("gps_track: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $stmt = $this->pdo->prepare("DELETE FROM gps_track WHERE {$where}");
+        $stmt->execute($params);
+        $purged = $stmt->rowCount();
+
+        $this->audit('retention_gps_track_purged', 'gps_track', ['purged' => $purged]);
+        $this->note("gps_track: purged {$purged}");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible];
+    }
+
+    /** @return array{purged:int, held:int, eligible:int} */
+    public function purgeDutyStatuses(): array
+    {
+        $where = 'changed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+        $params = ['days' => self::DUTY_STATUS_DAYS];
+
+        $eligible = $this->countWhere('duty_status', $where, $params);
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("duty_status: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $stmt = $this->pdo->prepare("DELETE FROM duty_status WHERE {$where}");
+        $stmt->execute($params);
+        $purged = $stmt->rowCount();
+
+        $this->audit('retention_duty_status_purged', 'duty_status', ['purged' => $purged]);
+        $this->note("duty_status: purged {$purged}");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible];
+    }
+
+    /**
+     * `fatigue_flag` and `shift_swap_request` are both ON DELETE RESTRICT
+     * against `shift_schedule` (§5), so an old shift can't simply be
+     * deleted — same RESTRICT shape `purgeOneIncident()` already handles,
+     * scaled down to a two-table cascade instead of five. One transaction
+     * per shift so a failure on one row never blocks the rest of the run.
+     *
+     * @return array{purged:int, held:int, eligible:int, failed?:int}
+     */
+    public function purgeShiftSchedules(): array
+    {
+        $where = 'end_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+        $params = ['days' => self::SHIFT_SCHEDULE_DAYS];
+
+        $stmt = $this->pdo->prepare("SELECT shift_id FROM shift_schedule WHERE {$where}");
+        $stmt->execute($params);
+        $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $eligible = count($ids);
+
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("shift_schedule: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $purged = 0;
+        $failed = 0;
+        foreach ($ids as $shiftId) {
+            $shiftId = (int) $shiftId;
+            $this->pdo->beginTransaction();
+            try {
+                $this->exec('DELETE FROM fatigue_flag WHERE shift_id = :id', $shiftId);
+                $this->exec('DELETE FROM shift_swap_request WHERE shift_id = :id', $shiftId);
+                $this->exec('DELETE FROM shift_schedule WHERE shift_id = :id', $shiftId);
+                $this->pdo->commit();
+                $purged++;
+            } catch (\Throwable $e) {
+                $this->pdo->rollBack();
+                $failed++;
+                $this->note("shift_schedule #{$shiftId}: purge failed and was rolled back — " . $e->getMessage());
+            }
+        }
+
+        $this->audit('retention_shift_schedule_purged', 'shift_schedule', ['purged' => $purged, 'failed' => $failed]);
+        $this->note("shift_schedule: purged {$purged}, {$failed} failed (with dependent fatigue_flag/shift_swap_request rows)");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible, 'failed' => $failed];
+    }
+
+    /** @return array{purged:int, held:int, eligible:int} */
+    public function purgeNotifications(): array
+    {
+        $where = 'created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+        $params = ['days' => self::NOTIFICATION_DAYS];
+
+        $eligible = $this->countWhere('notification', $where, $params);
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("notification: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $stmt = $this->pdo->prepare("DELETE FROM notification WHERE {$where}");
+        $stmt->execute($params);
+        $purged = $stmt->rowCount();
+
+        $this->audit('retention_notification_purged', 'notification', ['purged' => $purged]);
+        $this->note("notification: purged {$purged}");
         return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible];
     }
 
