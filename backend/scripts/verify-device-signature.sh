@@ -88,7 +88,7 @@ trap cleanup EXIT
 step "0. Connectivity"
 mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || { fail "Could not connect"; exit 1; }
 
-step "1. Disposable schema (full migration chain incl. 0024) + accounts"
+step "1. Disposable schema (full migration chain incl. 0025) + accounts"
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 baseline applied" || fail "0001 apply failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "0002 barangays seeded" || fail "0002 seed failed"
@@ -98,10 +98,10 @@ for m in 0003_shift_schedule_nullable_user 0004_blotter_revision 0005_sms_envelo
          0012_system_settings 0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
          0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber \
          0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics \
-         0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key; do
+         0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key 0025_incident_lifecycle_states; do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Full migration chain 0001-0024 applied"
+pass "Full migration chain 0001-0025 applied"
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
 HASH=$("$PHP_BIN" -r "echo password_hash('$TEST_PW', PASSWORD_ARGON2ID);")
