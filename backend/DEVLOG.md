@@ -15534,3 +15534,292 @@ claim it."
 
 `docs/REMAINING.md` §H updated: 19 of 36 closed (H-09 added — code-level
 close, device-verification still outstanding as its own tracked item).
+
+## 2026-09-26 (17) — Seventh audit pass: 5 of 7 remaining H items + M-03 closed in one session (user picked "all the H items and M-03")
+
+User explicitly requested a multi-box session across the remaining audit
+items (a deliberate exception to SPRINTS.md's one-cut discipline, same
+as the fifth/sixth passes) — decisions gathered up front via
+AskUserQuestion before any code, per the pattern the fifth pass already
+established.
+
+**H-15 (retention periods for gps_track/duty_status/shift_schedule/
+notification/map_package) — researched, not guessed.** User asked for
+"the standard" rather than picking a preset. Web research: the National
+Archives of the Philippines' 2023 General Records Disposition Schedule
+sets Daily Time Records at 1 year; the NPC's own GPS-tracking guidance
+gives no fixed number, only "as long as necessary for the purpose."
+Landed on 1 year flat for the first four (matches this project's own
+existing 1-year precedent for citizen_report/sms_log/AI-Tools-jobs), and
+explicitly NO time-based rule for map_package — it's governed by the
+per-barangay storage quota already added for M-07/H-21 instead, not a
+second competing rule.
+
+Implementation: four new RetentionService methods
+(purgeGpsTracks/purgeDutyStatuses/purgeShiftSchedules/
+purgeNotifications), four new constants, added to RULES/runAll().
+shift_schedule needed a two-table cascade first (fatigue_flag,
+shift_swap_request, both ON DELETE RESTRICT — same shape
+purgeOneIncident() already uses for its 5-table incident cascade, scaled
+down, one transaction per shift). No migration needed — these are
+executable constants exactly like every other rule in this file, per the
+class's own "not config" doctrine.
+
+Verified for REAL, not just a dry run: extended
+verify-sprint7-retention.sh with a new step 11 that seeds a 400-day-old
+and a 300-day-old row in each of the four tables (after the suite's own
+full-run step, so they're untouched by it), runs
+--only=gps_track,duty_status,shift_schedule,notification, and confirms
+exactly the 400-day rows are gone and the 300-day rows survive. 8 new
+assertions, 85/85 total (up from 76/76).
+
+**H-16/M-03 (incident duplicate/merge, lifecycle states) — full
+implementation.** Migration 0025 widens incident.status with
+duplicate/invalid/cancelled/reopened and adds
+duplicate_of_incident_id/lifecycle_changed_by/lifecycle_changed_at. New
+IncidentsController::updateLifecycle() behind PATCH
+/incidents/:id/lifecycle — Secretary-only, deliberately SEPARATE from
+the existing Admin-only updateStatus() ("resolved"): this is a
+records-custodian judgment call, the same reasoning that already makes
+blotter finalize/amend Secretary-only, not an operational dispatch
+outcome. Forward-only transition table (LIFECYCLE_TRANSITIONS): a
+terminal state (resolved/cancelled/invalid/duplicate) can only be left
+via reopened, never jumped straight to a different terminal state —
+always one unambiguous "this was reconsidered" event in the audit trail.
+
+MERGE = LINK, NOT DELETE — explicit user decision, asked up front.
+Marking an incident duplicate requires duplicate_of_incident_id pointing
+at a different, same-barangay incident; nothing about the target
+incident is touched (no row moves, no FK repointed) — a human follows
+the pointer, that's the entire feature. ON DELETE SET NULL on the new FK
+so a later 7-year purge of the target incident doesn't get blocked
+(RESTRICT) or silently break the pointer's meaning (CASCADE). Reopening
+an incident clears its own duplicate pointer (a case being reconsidered
+is no longer simply "the same as that other one" by default). Blocked
+while any dispatch is still open, same guard updateStatus() already
+uses. Idempotency-Key required, replayed off audit_log exactly like
+update()'s own pattern.
+
+New route registered (backend/routes/incidents.php) — live route count
+92 (verified via backend/scripts/count-routes.php, REFERENCE.md §5
+updated). New standalone verify-h16-incident-lifecycle.sh: 30/30 passing
+— role gating (Admin/Tanod both 403), missing/malformed Idempotency-Key,
+the full transition table including the illegal-repeat case (409), the
+duplicate-requires-target/no-self-duplicate/target-must-exist
+validation, the merge-as-link assertions (target untouched, both
+incidents still independently queryable), the open-dispatch guard,
+Idempotency-Key replay (returns the ORIGINAL outcome even when the
+replay's body differs), and cross-tenant 404 vs. same-tenant 200.
+
+Not done this session: no web UI affordance for the new endpoint yet —
+Incident Management's detail pane has no button wired to it. The
+backend/policy gap is closed; using it today means calling the endpoint
+directly.
+
+**H-17 (shift minimum-staffing/rest constraints) — full implementation.**
+User decision: at least 1 Tanod on duty per barangay per shift, 8h
+minimum rest, hard-blocked (409/422) rather than a warning — a
+deliberate departure from this project's usual "warn, don't silently
+block" preference, because the user explicitly asked for a hard rule
+here. ShiftsController::assertMinRest() (rejects an assignment that
+would leave under 8h between two of the same Tanod's shifts, checked
+AFTER assertNoOverlap() so a true overlap keeps its own more specific
+message) and assertMinCoverage() (rejects releasing a shift to
+unassigned when no OTHER assigned shift covers the same barangay/window).
+Wired into ShiftsController::create()/update() and
+ShiftSwapRequestsController::update()'s approval path — both the named-
+target reassignment branch and the release-to-unassigned branch, which
+is the one that can actually zero out coverage.
+
+Extended verify-scheduler-fatigue.sh's existing PATCH /shifts/:id
+unassign test (which had assumed unassign always succeeds — it no longer
+does, correctly): now proves the block fires on the ONLY covering shift,
+creates a second covering shift for a different Tanod, proves unassign
+then succeeds, and proves the block re-fires once that second shift is
+the last one standing — then cleans up the extra shift directly via SQL
+so it can't skew the fatigue-threshold test that follows (a subtle trap:
+the cover shift's own request_id collided with the fatigue test's
+hardcoded UUID on a first draft, which would have silently returned the
+wrong shift via idempotency replay — caught before running, fixed by
+using a distinct UUID). 47/47 passing (up from 41/41; the 2 pre-existing
+failures were the old test's now-outdated "unassign always succeeds"
+assumption, not a bug in the new code).
+
+**H-19 (contact-number consent boundaries) — closed as a scope
+clarification, no code change.** User decision: keep
+incident.complainant_contact_number (case data under RA 7160,
+Secretary-only per Rule 1's raw-narrative-adjacent protection) separate
+from sms_subscriber's consent tracking. The audit finding conflated two
+different kinds of phone number; there was no missing control, just an
+undocumented boundary. Documented in the new docs/DATA_INVENTORY.md.
+
+**H-21 (offline tile licensing) — closed, already compliant, no code
+change.** User decision: stay on OpenStreetMap. Checked
+web/src/components/LiveMap.js/HeatmapMap.js directly rather than
+assuming: both already carry the ODbL-required attribution (OpenStreetMap
+contributors, linked to the copyright page), and LiveMap.js's own class
+doc already documents the "online raster tiles, real attribution,
+moderate use" architecture decision. The audit finding was a missing
+licensing DECISION on record, not a missing attribution string — now
+documented in docs/DATA_INVENTORY.md and this file.
+
+**H-14 (privacy governance) — documents drafted, DPO designation
+explicitly left open.** User decision: draft the documents now. Three
+new files: docs/DATA_INVENTORY.md (RA 10173 records-of-processing
+inventory derived from the actual schema, not invented),
+docs/PRIVACY_IMPACT_ASSESSMENT.md (a risk table covering every category
+in the inventory, explicitly stating that C-02/no-MFA and C-03/no-TLS
+are NOT mitigated by anything in this PIA — those stay open, on record,
+not quietly implied-fixed by having a PIA at all),
+docs/PRIVACY_NOTICES.md (plain-language notices for a citizen reporter /
+Tanod / SMS subscriber — text only; no screen renders these yet, that
+would be a UI task). Formally designating a DPO is a barangay council
+action (a Sangguniang Barangay resolution or equivalent) — flagged in
+both new docs as the one piece of H-14 that cannot be closed from a
+coding session, the same way C2/B3 (Task Scheduler wiring, restore
+drill) can't be.
+
+**H-18 (AI evaluation/provenance) — provenance chain landed, eval runs
+unchanged.** ai_processing_log.model_version already existed but
+recorded nothing about which PROMPT contract produced a draft, so a
+later prompt-wording change couldn't be told apart from a model change
+when reviewing an old row. Migration 0025 adds prompt_template_version;
+AiJobQueue::PROMPT_TEMPLATE_VERSION (flat 'v1' for now — there is exactly
+one prompt template per task type today, no per-task versioning
+infrastructure yet) is stamped at all five completion points
+(completeExtraction/completeToolJob/completeRedaction/completeSummary/
+completeTranslation) alongside the existing model_version stamp. The
+other half of H-18 — a real eval harness run tied to golden cases,
+prompt-injection tests — is genuinely unchanged: A2/A6's 8-task harness
+already exists, only redaction has a real run (98.26% recall / 75.88%
+precision), the other 7 still need a friend's faster hardware. Not
+claiming this closed; it's the same standing item HANDOFF.md already
+tracks.
+
+**Schema**: migration 0025 (incident lifecycle columns +
+ai_processing_log.prompt_template_version), applied to both real DBs
+(baranguard, baranguard_uiseed) as root, and added to all 26
+disposable-DB verify scripts' migration chains (same bulk pattern as the
+0024 rollout two sessions ago).
+
+**Verified real, not just parsed**: php -l clean on every touched file;
+verify-scheduler-fatigue.sh 47/47; verify-sprint7-retention.sh 85/85; new
+verify-h16-incident-lifecycle.sh 30/30; count-routes.php confirms 92 live
+routes. Not run this session: web/tests, verify-web-wiring.mjs (no web
+files were touched — every change this session was backend-only).
+
+docs/REMAINING.md §H updated: only C-01/C-02/C-03 remain genuinely open
+now, all three already scoped with what each one actually needs (C-01 is
+pure code, C-02/C-03 need policy/infrastructure decisions).
+
+## 2026-09-26 (18) — C-01 closed: SOS no longer blocked on a missing GPS fix
+
+User picked C-01 next in the same session, explicitly deferring C-02
+(MFA) for later.
+
+Migration 0026 makes tanod_sos.latitude/longitude nullable and adds
+location_source ENUM('live','last_known','no_fix') +
+location_recorded_at. TanodSosController::createItem() previously hard-
+rejected any SOS with a missing/invalid coordinate pair — directly
+contradicting §2 Rule 27 ("SOS must have a local/offline fallback path; a
+missing input must never silently suppress a personal-safety emergency").
+
+User-decided fallback order: live coordinates when sent; missing
+coordinates fall back to the Tanod's most recent gps_track row
+(location_source='last_known', location_recorded_at = that FIX's own
+recorded_at, never "now" — a dispatcher needs to tell a live position
+from a stale one); with no gps_track row at all, the SOS is still created
+with location_source='no_fix' and NULL coordinates — the alert is NEVER
+blocked on location, same priority ordering as H-09's "SOS never rejects
+on a bad device signature, only audits it." Sending only ONE of
+latitude/longitude is still a 400 (a genuinely malformed request,
+different from sending neither). location_source is added to the SOS
+audit metadata (a status, not a coordinate — allowed under Rule 8/17's
+allow-list).
+
+NotificationDispatcher's SOS message formatting needed no change —
+formatLocation() was already null-safe (checked before assuming so).
+
+Verified for real: verify-sprint4.sh extended with a new step 4b (8
+assertions: no_fix creation + fan-out, last_known fallback carrying the
+fix's own timestamp not "now", partial-coordinate still-400 case),
+57/58 (see below for the 1 failure). Also verified no regression against
+verify-w3-w4-dispatch-gis.sh (38/38), verify-device-signature.sh (21/21,
+including its own "SOS never rejects on a bad signature" step),
+verify-sprint7-audit.sh (57/57 after a fixture fix below), and a
+forward+rollback test of migration 0026 on a throwaway DB.
+
+**One pre-existing, unrelated failure found and left alone, not fixed as
+part of this pass**: verify-sprint4.sh's step 6 ("Admin cannot use the
+Tanod ack endpoint — expected 403, got 200") fails against
+NotificationsController.php, a file untouched this entire session
+(confirmed via `git diff --stat` — no session changes to it). Flagged for
+a separate look, not silently ignored.
+
+**One incidental regression from this SAME session's earlier H-17 work,
+found and fixed while re-running suites for this pass**:
+verify-sprint7-audit.sh's swap-approval fixture released a shift to
+unassigned as its only way to exercise the swap_request_resolved audit
+action — H-17's coverage guard (added earlier this session) now correctly
+blocks that (422), since it was the shift's only coverage. Fixed by
+naming an explicit target_user_id (a second seeded Tanod) instead of
+releasing to unassigned; verify-sprint7-audit.sh back to 57/57. Lesson
+repeated from H-17's own scheduler-fatigue fix earlier the same session:
+a hard-blocking rule added mid-session can retroactively break an
+existing fixture that assumed the old, more permissive behavior — worth
+re-running every suite that touches the changed endpoint, not just the
+one being extended.
+
+Schema: migration 0026, applied to both real DBs (baranguard,
+baranguard_uiseed) as root, added to all 27 disposable-DB verify
+scripts' migration chains.
+
+docs/REMAINING.md updated: C-01 CLOSED. Only C-02 (MFA) and C-03 (HTTPS)
+remain open Critical findings — both explicitly deferred, need a policy/
+infrastructure decision before any code.
+
+## 2026-09-26 (19) — Investigated the "Admin bypasses Tanod-only ack" finding flagged in (18): test was wrong, not the code
+
+Follow-up on 2026-09-26 (18)'s flagged item: verify-sprint4.sh step 6
+expected `POST /notifications/:id/ack` to return 403 for an Admin caller
+and got 200 instead.
+
+Root cause: `NotificationsController::acknowledge()`'s role allow-list is
+`['tanod','admin','secretary','punong_barangay']` — this is CORRECT,
+current, and was fixed ON PURPOSE two sessions ago (2026-09-24 (9), the
+pre-commit code review pass): the previous list was
+`['tanod','admin','dispatcher','captain','secretary','superadmin']`,
+which invented three roles that don't exist in `user.role`'s ENUM while
+omitting `punong_barangay` entirely — a real bug (a PB clicking a
+notification got a silently-swallowed 403). `index()`'s own docblock
+already documents why every role needs ack access: the mobile Tanod bell
+(SOS/dispatch targets) and the web topbar bell (Admin/Secretary/PB) are
+the SAME feature reading the SAME `notification_target` rows, just from
+different clients.
+
+The test's scenario made this doubly clear once traced through: `N2` is
+an SOS notification, and Rule 27's SOS fan-out targets Admin + other
+on-duty Tanods (confirmed by step 3's own "Admin was targeted (1)"
+assertion earlier in the same file) — the Admin calling `ack` on N2 is
+not "using the Tanod endpoint," it is a genuinely targeted recipient
+acknowledging THEIR OWN `notification_target` row. The query that
+resolves the row (`WHERE nt.user_id = :user_id AND ...`) is the real
+access boundary, and it is ownership-scoped, not role-scoped by design —
+proven by the very next assertion in the same test (`$OFFDUTY`, who is
+NOT a target of N2, correctly gets 404).
+
+**Conclusion: (c) from the investigation brief — the test's expectation
+was stale, not the code.** It predated 2026-09-24 (9)'s role-list fix and
+was never updated to match. Fixed `verify-sprint4.sh` step 6: renamed to
+"ownership-scoped, not role-gated," replaced the wrong 403 assertion with
+two real ones (Admin's own ack succeeds and is recorded, matching the
+existing pattern the rest of the file already uses for DB-verified
+assertions) and kept the OFFDUTY-gets-404 assertion, which is the
+assertion that actually proves the access boundary. 59/59 (up from
+57/58 — the fix added 1 net assertion and turned the false failure into
+two true passes). Checked every other verify script for the same
+endpoint (`grep -rl "notifications/.*ack"`) — only `verify-sprint4.sh`
+exercises it, so no other fixture needed the same fix.
+
+No production code changed — `NotificationsController.php` is untouched,
+confirmed correct as it stands.
