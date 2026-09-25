@@ -198,13 +198,39 @@ CODE=$(echo "$RESP" | tail -1)
 DB_ZONE=$(mysql_exec -N -s "$VALDB" -e "SELECT patrol_zone FROM shift_schedule WHERE shift_id=$SHIFT_ID;")
 [ "$DB_ZONE" = "Zone B Updated" ] && pass "patrol_zone actually persisted (verified in DB)" || fail "DB patrol_zone='$DB_ZONE'"
 
+# H-17 (2026-09-24 external audit): unassigning the ONLY shift covering
+# this barangay/window must now be blocked (422) -- confirm the block
+# fires BEFORE adding a second covering shift, then confirm unassign
+# succeeds once real coverage exists, then confirm the block re-fires
+# once that second shift is the last one standing.
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shifts/${SHIFT_ID}" -X PATCH -d '{"user_id":null,"version":2}')
-[ "$CODE" = "200" ] && pass "Unassign (user_id:null) -> 200" || fail "Unassign -> $CODE (expected 200)"
+[ "$CODE" = "422" ] && pass "H-17: unassign the ONLY covering shift -> 422 (zero on-duty Tanod blocked)" || fail "Unassign with no other coverage -> $CODE (expected 422)"
+DB_USER=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM shift_schedule WHERE shift_id=$SHIFT_ID;")
+[ "$DB_USER" = "$TANOD2_ID" ] && pass "shift_schedule.user_id unchanged in the DB after the blocked unassign" || fail "DB user_id='$DB_USER' (expected $TANOD2_ID, unchanged)"
+
+COVER_RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  "${BASE_URL}/shifts" -X POST -d "{\"user_id\":$TANOD1_ID,\"patrol_zone\":\"Zone B Cover\",\"start_at\":\"$START_T\",\"end_at\":\"$END_T\",\"request_id\":\"ffffffff-6666-4fff-8fff-ffffffffffff\"}")
+COVER_SHIFT_ID=$(extract "$COVER_RESP" shift_id)
+[ -n "$COVER_SHIFT_ID" ] && pass "Second overlapping shift created for tanod1 (now covering the same window)" || fail "Cover shift create failed: $COVER_RESP"
+
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  "${BASE_URL}/shifts/${SHIFT_ID}" -X PATCH -d '{"user_id":null,"version":2}')
+[ "$CODE" = "200" ] && pass "Unassign (user_id:null) -> 200 once another shift still covers the window" || fail "Unassign -> $CODE (expected 200)"
 # mysql -N -s prints the literal text "NULL" for a NULL column (verified
 # directly), not an empty string -- compare against that, not -z.
 DB_USER=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM shift_schedule WHERE shift_id=$SHIFT_ID;")
 [ "$DB_USER" = "NULL" ] && pass "shift_schedule.user_id is actually NULL in the DB after unassign" || fail "DB user_id='$DB_USER' (expected NULL)"
+
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  "${BASE_URL}/shifts/${COVER_SHIFT_ID}" -X PATCH -d '{"user_id":null,"version":1}')
+[ "$CODE" = "422" ] && pass "H-17: unassigning the LAST remaining covering shift -> 422 again" || fail "Unassign last cover -> $CODE (expected 422)"
+
+# Remove the H-17 cover shift outright (not just unassign it) so it can't
+# skew tanod1's rolling 7-day fatigue total in step 7 below -- this is a
+# tomorrow-dated shift outside that window in practice, but cleaning it
+# up directly removes any doubt rather than relying on that timing.
+mysql_exec "$VALDB" -e "DELETE FROM fatigue_flag WHERE shift_id=$COVER_SHIFT_ID; DELETE FROM shift_schedule WHERE shift_id=$COVER_SHIFT_ID;" >/dev/null
 
 # ============================================================
 # Fatigue — pushing tanod1 over the 56h threshold

@@ -248,25 +248,26 @@ final class ShiftSwapRequestsController
                     throw new ApiError(409, 'CONFLICT', 'The requester is no longer assigned to this shift.');
                 }
 
+                // Explicit UTC default: these are naive DB round-trip
+                // strings (no offset of their own), same reasoning as
+                // ShiftsController::parseTimestamp()'s own doc.
+                $utc = new \DateTimeZone('UTC');
+                $shiftStartAt = new \DateTimeImmutable($row['start_at'], $utc);
+                $shiftEndAt = new \DateTimeImmutable($row['end_at'], $utc);
+
                 if ($targetUserId !== null) {
                     ShiftsController::assertTanodEligible($pdo, $targetUserId, (int) $row['barangay_id']);
-                    // Explicit UTC default: these are naive DB round-trip
-                    // strings (no offset of their own), same reasoning as
-                    // ShiftsController::parseTimestamp()'s own doc.
-                    $utc = new \DateTimeZone('UTC');
-                    ShiftsController::assertNoOverlap(
-                        $pdo,
-                        $targetUserId,
-                        new \DateTimeImmutable($row['start_at'], $utc),
-                        new \DateTimeImmutable($row['end_at'], $utc),
-                        $shiftId
-                    );
+                    ShiftsController::assertNoOverlap($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
+                    ShiftsController::assertMinRest($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
                     $pdo->prepare('UPDATE shift_schedule SET user_id = :user_id, version = version + 1, updated_at = UTC_TIMESTAMP() WHERE shift_id = :shift_id')
                         ->execute(['user_id' => $targetUserId, 'shift_id' => $shiftId]);
                     FatigueCalculator::recalculate($pdo, (int) $row['requesting_user_id'], $shiftId);
                     FatigueCalculator::recalculate($pdo, $targetUserId, $shiftId);
                 } else {
-                    // No named target: release to unassigned — see class doc.
+                    // No named target: release to unassigned — see class
+                    // doc. H-17: this is the release-to-unassigned edit
+                    // that can leave a barangay with zero coverage.
+                    ShiftsController::assertMinCoverage($pdo, (int) $row['barangay_id'], $shiftStartAt, $shiftEndAt, $shiftId);
                     $pdo->prepare('UPDATE shift_schedule SET user_id = NULL, version = version + 1, updated_at = UTC_TIMESTAMP() WHERE shift_id = :shift_id')
                         ->execute(['shift_id' => $shiftId]);
                 }
