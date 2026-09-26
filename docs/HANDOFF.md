@@ -4,9 +4,66 @@
 never stack banners. Full history: `backend/DEVLOG.md` (grep by
 date/keyword, don't read front to back).
 
-**Last updated: 2026-09-26.**
+**Last updated: 2026-09-27.**
 
-**2026-09-26, latest — blotter workflow UX redesign: one page, three
+**2026-09-27, latest — shared print-preview modal + statutory PDF
+overhaul (found uncommitted, committed as-is), plus a blotter-workflow
+clarity fix (DEVLOG (1)).** Two unrelated pieces landed in one commit
+(`0058be7`): substantial print/PDF work that was already sitting
+uncommitted in the working tree at the start of this session — not
+authored in this session, committed after re-verifying it, since no
+DEVLOG entry existed for it yet — and a UX fix done this session.
+
+*Print/PDF piece (not authored this session):* a new
+`PrintPreviewModal.js` (`openPrintPreviewModal()`) is now the one shared
+A4 print preview across Blotter Detail, Statistical Reports, Audit Log,
+Citizen Report, and Public Transparency. `SimplePdf.php` gained new
+composable primitives (masthead, meta bar, KPI grid, party cards,
+two-column fields, callout sections, centered signatures) so
+server-generated PDFs (Lupon packet, statistical report, PB digest)
+visually match the new on-screen `.print-sheet__*` layout — the Lupon
+packet PDF specifically now includes case status, an evidence inventory,
+and both Secretary + Punong Barangay signatures. PDF/CSV downloads
+(`reports/export/download`, `reports/digest/download`,
+`lupon-packet/.../download`) now send no-cache headers, and the matching
+`apiClient.js` fetches pass `cache: 'no-store'`, fixing stale-cached-PDF
+re-downloads after amending a record. **Not browser-verified this
+session** — only static checks (syntax/lint/wiring/tests) were re-run;
+nobody clicked through an actual print preview or opened a freshly
+generated PDF to visually confirm the new layout. If a print/PDF issue
+surfaces, start there.
+
+*Blotter-workflow clarity fix (this session):* not every incident
+should become a blotter — some are legitimately closed as report-only,
+a Secretary's deliberate call via `finalize`. The Blotter tab and its
+`BlotterWorkflow.js` stepper used to render as if "finalize" were still
+pending even for an incident already closed (resolved/cancelled/
+invalid/duplicate) with no blotter — no way to tell "not decided yet"
+from "decided: report only." Fixed with a **derived-only** status
+(`web/src/utils/blotterStatus.js` — no new field/column/endpoint):
+`finalized` / `closed_no_blotter` / `awaiting_decision` / `not_started`,
+computed from data that already exists. The stepper now shows "Closed —
+no blotter record needed" instead of a live progression for a closed
+incident; the Blotter tab shows the same honest status to every viewer,
+with the finalize form still reachable behind an explicit "This
+incident still needs a blotter entry" toggle for the rare override case.
+Two ideas were explicitly raised and dropped: a blotter status column/
+filter on the incident list (user wants the list incident-only), and a
+separate "Blotter" nav/screen listing converted incidents (dropped after
+flagging that `docs/REFERENCE.md` §7 documents this as a **legal**
+constraint, not a design preference — DILG BIMSS/KPIS is the mandated
+case ledger).
+
+**Verified this session**: `node --check`/`php -l` clean on every
+touched file, `verify-web-wiring.mjs` 586/586 (up from 564/2-failing —
+the print/PDF work happened to also fix both pre-existing
+`admin-dashboard.js`/`statistical-reports.js` CSS failures, confirmed by
+re-running, not assumed), `web/tests` 402/402 (up from 399). Browser-
+verified the blotter-workflow fix live as `secretary.dao` against real
+`baranguard_uiseed` demo data across all three non-finalized derived
+states. Full detail: `backend/DEVLOG.md` 2026-09-27 (1).
+
+**2026-09-26 — blotter workflow UX redesign: one page, three
 in-case tabs, no more page-hopping (DEVLOG (38)).** User feedback
 ("the blotter workflow is confusing") led with a clarifying
 AskUserQuestion round (per CLAUDE.md) before any code, landing on: merge
@@ -761,6 +818,16 @@ hardware (`eval-kit/README-FOR-FRIEND.md`).
     data from file` (curl exit 26), giving `%{http_code}` of `000` with no
     other clue why. `cygpath -m` the path first, same fix as php.exe.
     Found writing `verify-device-signature.sh` (2026-09-24).
+
+## Print/PDF visual verification still outstanding
+
+The 2026-09-27 print-preview modal + PDF overhaul (DEVLOG (1)) passed
+every static check (syntax, wiring, tests) but nobody has actually opened
+the print preview or a freshly generated PDF (Lupon packet, statistical
+report, PB digest) to visually confirm the new masthead/meta-bar/
+signature layout renders correctly — this is a pure coding-session
+browser-verification task, unlike the hardware-blocked items below. Do
+this before trusting the new layout for a real handout.
 
 ## Recommended next step
 
