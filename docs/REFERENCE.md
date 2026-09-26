@@ -19,8 +19,17 @@ system, not a demo. Single workstation, LAN-only, no cloud.
 **API base URL — C-03 in progress, 2026-09-26.** A persistent Cloudflare
 Named Tunnel now fronts both the web dashboard and the API on a real,
 Cloudflare-registered domain: `https://baranguardph.win` (web) and
-`https://api.baranguardph.win` (API), tunnel name `baranguard`, config at
-`~/.cloudflared/config.yml` on the workstation. This replaces the
+`https://api.baranguardph.win` (API), tunnel name `baranguard-main`
+(id `eeaa890d-a1dd-49aa-bc9b-3baff21a2e9d` — renamed from the original
+`baranguard` tunnel 2026-09-26 when the tunnel was moved to a different
+machine than the one it was first set up on; the original tunnel's
+credentials never left that machine, so this one is a fresh tunnel with
+DNS re-routed via `--overwrite-dns`, not a copy — see `DEVLOG.md` 2026-
+09-26 (28)), config at `~/.cloudflared/config.yml` **on whichever machine
+is currently running it — confirm which one that is before assuming
+REFERENCE.md's "the workstation" means this session's machine** (entry
+(27) found a dev/staging machine with no `cloudflared` at all, entry (28)
+is where it actually got set up). This replaces the
 private-mesh VPN (closed 2026-09-13, decommissioned 2026-09-15) and the
 Cloudflare Quick Tunnel testing-only exception that followed it (random
 hostname, no Cloudflare-side auth, never a production path — see
@@ -37,6 +46,19 @@ via `setApiBaseUrlOverride()`; web: a `?api_base=` query param or
 `localStorage`) for whatever address is actually correct on a given day.
 `backend/.env`'s `CORS_ALLOWED_ORIGIN` includes `https://baranguardph.win`
 alongside the local dev origins.
+
+**IMPORTANT, disclosed deliberately**: as of 2026-09-26 (28), the machine
+currently running this tunnel has `backend/.env` pointed at
+`baranguard_uiseed` (the demo/seed database), NOT the real production
+`baranguard` database — a deliberate, explicit user decision (infra set
+up first, database switch deferred). **Anyone who visits
+`baranguardph.win`/`api.baranguardph.win` right now sees demo data, not
+real citizen/incident records.** Don't treat the tunnel being live as
+proof real data is exposed publicly, and don't treat it as "done" for
+C-03's real purpose (Tanod/Secretary/PB reaching real operational data)
+until `backend/.env` is deliberately repointed — check `DB_NAME` in
+`backend/.env` before assuming which database current public traffic
+actually reaches.
 
 **Not yet done** (so C-03 is NOT closed in `docs/REMAINING.md` yet):
 the tunnel is currently a manually-started process, not installed as the
