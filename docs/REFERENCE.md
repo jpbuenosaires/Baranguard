@@ -500,7 +500,24 @@ controls that do nothing.
   `java.io.tmpdir`. **Gradle's daemon JVM follows `JAVA_HOME`, not
   `java` on PATH** — `./gradlew --stop` then re-export before building.
 - **XAMPP MySQL isn't always running:** `tasklist //FI "IMAGENAME eq mysqld.exe"`,
-  start with `cmd //c "C:\xampp\mysql_start.bat"`.
+  start with `cmd //c "C:\xampp\mysql_start.bat"`. **Don't trust
+  `mysqld.exe` running as proof it's XAMPP's** — this machine also has
+  an unrelated `MySQL80` Windows service on port 3306; check the actual
+  listening port against `backend/.env`'s `DB_PORT` (XAMPP's own MariaDB
+  is 3307 here, per `my.ini`). Same trap for the `mysql` CLIENT: `command
+  -v mysql` can resolve to that other install's client ahead of
+  `C:\xampp\mysql\bin\mysql.exe` on PATH, and even XAMPP's own client is
+  an old Oct-2023 build that can't load `caching_sha2_password` for a
+  root/DBA login on some servers — use the full path explicitly, or
+  `mysql -u root -h 127.0.0.1 -P 3307` to be sure which server you're
+  hitting.
+- **XAMPP's Apache PHP was upgraded 2026-09-26** (was 8.0.30, which
+  can't load the backend's 8.1+ `readonly` properties) — `C:\xampp\php`
+  is now a copy of `C:\php-8.3.13`, and a new `Listen 8081`/
+  `<VirtualHost *:8081>` vhost in `httpd-vhosts.conf` (DocumentRoot
+  `backend/public`) serves the API through Apache, matching
+  `backend/scripts/README-serving.md` Option A for real. Old PHP kept at
+  `C:\xampp\php-8.0.30-backup`. See `backend/DEVLOG.md` 2026-09-26 (32).
 - **Browser tool:** a backgrounded tab can show a stale screenshot while
   the DOM is already correct. Prefer `read_page`/`get_page_text`.
 - **Case-sensitivity in test assertions** — `.status-pill` etc. render

@@ -6,7 +6,36 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
-**2026-09-26, latest — Secretary blotter workflow UX pass (web only).**
+**2026-09-26, latest — XAMPP's Apache PHP upgraded 8.0.30 → 8.3.13; API
+now served by Apache on :8081 for real, not a standalone `php -S`
+workaround.** Prompted by "Could not reach the Baranguard server" after
+running `Start Baranguard.bat`: the launcher had never actually started
+anything on :8081 (real gap, fixed first with a standalone-PHP
+workaround since Apache's own PHP was 8.0 and can't load the backend's
+8.1+ `readonly` properties), and separately a `MySQL80` Windows service
+on this machine's port 3306 was tricking the launcher's process-name
+check into skipping XAMPP's own MariaDB on 3307. Both fixed in
+`start-baranguard.ps1` first, then user asked for the PHP version itself
+fixed rather than kept worked around: `C:\xampp\php` is now a copy of
+`C:\php-8.3.13` (user's choice — already proven on this machine, over
+downloading a separate 8.2 build), XAMPP's own `php.ini` carried over
+onto it, old PHP kept at `C:\xampp\php-8.0.30-backup` for rollback. New
+`Listen 8081`/`<VirtualHost *:8081>` vhost added to
+`httpd-vhosts.conf` (DocumentRoot `backend/public`), matching what
+`backend/scripts/README-serving.md` Option A already described as "how
+this will actually run." Verified for real: `Server: Apache/2.4.58 ...
+PHP/8.3.13` in the error log, real 200s with real barangay data at both
+`localhost:8081` and `https://api.baranguardph.win`,
+`verify-json-contracts.php` 50/50 live through Apache,
+`verify-web-wiring.mjs` 562/562 (same 2 pre-existing unrelated
+failures). Not re-run: the `mysql`-root-DBA verify suites (`verify-
+sprint1-auth.sh` etc.) — this shell's `mysql` client resolution is a
+pre-existing, separate environment gap (an unrelated `MySQL Server 8.0`
+install ahead on PATH; XAMPP's own `mysql.exe` client is too old for
+root's `caching_sha2_password` plugin) unrelated to this PHP swap. Full
+detail: `backend/DEVLOG.md` 2026-09-26 (31), (32).
+
+**2026-09-26, earlier — Secretary blotter workflow UX pass (web only).**
 W7/W8 now share a 4-stage progress bar (`BlotterWorkflow.js`) with one
 "Next step"; finalize has a GOV.UK-style check-your-entry step; amend is
 collapsed behind "Amend this entry"; W8's Lupon packet no longer offers
