@@ -6,6 +6,15 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
+**2026-09-26, latest — Secretary blotter workflow UX pass (web only).**
+W7/W8 now share a 4-stage progress bar (`BlotterWorkflow.js`) with one
+"Next step"; finalize has a GOV.UK-style check-your-entry step; amend is
+collapsed behind "Amend this entry"; W8's Lupon packet no longer offers
+itself before the entry is finalized (it could only fail). No backend
+change. `web/tests` 399/399. Not browser-verified: the finalize check
+step on a real approved-but-unfinalized incident (jsdom only). Full
+detail: `backend/DEVLOG.md` 2026-09-26 (30).
+
 **2026-09-26, later still — a real bug in the AI Tools removal commit
 found and fixed, plus AI queue visibility added.** After the AI Tools
 removal (migrations 0027/0028) was committed, the user reported the AI

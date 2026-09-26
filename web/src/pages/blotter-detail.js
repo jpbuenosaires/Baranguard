@@ -32,10 +32,9 @@ import {
   getBlotterForIncident,
   getIncidentEvidence,
   resolveIncident,
+  getAiDraft,
   finalizeBlotter,
   amendBlotter,
-  generateLuponPacket,
-  downloadLuponPacket,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -46,6 +45,7 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
+import { BlotterWorkflow, getBlotterWorkflowState, generateAndDownloadLuponPacket } from '../components/BlotterWorkflow.js';
 
 let partyFieldSeq = 0;
 
@@ -229,17 +229,11 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
   backButton.addEventListener('click', () => navigate(listPage));
   pageHeader.actions.appendChild(backButton);
 
-  if (isSecretary) {
-    const reviewButton = document.createElement('button');
-    reviewButton.className = 'ghost';
-    reviewButton.textContent = 'Review AI redaction';
-    reviewButton.addEventListener('click', () => navigate('ai-review', incidentId));
-    pageHeader.actions.appendChild(reviewButton);
-  }
-
   let incident = null;
   let blotter = null;
   let evidence = [];
+  /** Secretary only — its AI summary pre-fills the finalize form. */
+  let aiDraft = null;
 
   load();
 
@@ -257,6 +251,12 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       // timeline's dispatch stages come from getIncident() above, NOT from
       // GET /dispatch, which a Secretary may not call at all (403).
       evidence = await getIncidentEvidence(incidentId).catch(() => []);
+      // The AI summary the Secretary already reviewed on W8 is the natural
+      // starting text for the blotter summary. Enrichment only — without
+      // it the form falls back to the approved redacted narrative.
+      aiDraft = isSecretary && incident.redactionApprovedAt && !blotter?.finalizedAt
+        ? await getAiDraft(incidentId).catch(() => null)
+        : null;
       render();
     } catch (err) {
       renderError(err instanceof ApiClientError ? err.message : 'Something went wrong loading this entry.');
@@ -329,69 +329,16 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     actionsGroup.appendChild(printButton);
 
 
-    if (isSecretary) {
+    // Secretary: the workflow bar below carries the "what next" action,
+    // so the header only keeps a way back to the (already approved)
+    // redaction for reference. The Lupon packet moved out of the header
+    // into its own card, next to the record it is generated from.
+    if (isSecretary && incident.redactionApprovedAt) {
       const reviewButton = document.createElement('button');
       reviewButton.className = 'ghost';
-      reviewButton.textContent = 'Review AI redaction';
+      reviewButton.textContent = 'View AI redaction';
       reviewButton.addEventListener('click', () => navigate('ai-review', incidentId));
       actionsGroup.appendChild(reviewButton);
-
-      if (blotter?.finalizedAt) {
-        // A shortcut so the Secretary doesn't need to return to W8
-        // (ai-review.js) just to get the packet — approve (W8) -> finalize
-        // (W7) -> packet is available right here once finalized.
-        const luponPacketBtn = document.createElement('button');
-        luponPacketBtn.className = 'ghost';
-        luponPacketBtn.innerHTML = `${icons.fileText(16)} Lupon Packet`;
-        luponPacketBtn.title = 'Generate official Katarungang Pambarangay Lupon conciliation dossier';
-
-        const downloadPacketBtn = document.createElement('button');
-        downloadPacketBtn.className = 'ghost';
-        downloadPacketBtn.innerHTML = `${icons.fileText(16)} Download PDF`;
-        downloadPacketBtn.hidden = true;
-
-        luponPacketBtn.addEventListener('click', async () => {
-          luponPacketBtn.disabled = true;
-          luponPacketBtn.textContent = 'Generating…';
-          try {
-            await generateLuponPacket(incidentId);
-            showToast('Lupon conciliation packet ready.', { variant: 'success' });
-            downloadPacketBtn.hidden = false;
-          } catch (err) {
-            showToast(err instanceof ApiClientError ? err.message : 'Could not generate Lupon packet.', { variant: 'error' });
-          } finally {
-            luponPacketBtn.disabled = false;
-            luponPacketBtn.innerHTML = `${icons.fileText(16)} Lupon Packet`;
-          }
-        });
-
-        // The generate endpoint has no browser-navigable URL to hand back
-        // (Bearer-token-only API, no session cookie) — download via an
-        // authenticated fetch()->Blob, same fix ai-review.js already
-        // applies to this exact same endpoint.
-        downloadPacketBtn.addEventListener('click', async () => {
-          downloadPacketBtn.disabled = true;
-          downloadPacketBtn.textContent = 'Downloading…';
-          try {
-            const blob = await downloadLuponPacket(incidentId);
-            const blobUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            link.download = `lupon-packet-incident-${incidentId}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(blobUrl);
-          } catch (err) {
-            showToast(err instanceof ApiClientError ? err.message : 'Could not download the packet.', { variant: 'error' });
-          } finally {
-            downloadPacketBtn.disabled = false;
-            downloadPacketBtn.innerHTML = `${icons.fileText(16)} Download PDF`;
-          }
-        });
-
-        actionsGroup.append(luponPacketBtn, downloadPacketBtn);
-      }
     }
 
     pageHeader.actions.appendChild(actionsGroup);
@@ -410,6 +357,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     // 2. Official Blotter Record (The core statutory record, placed prominently)
     if (isSecretary) {
       main.appendChild(buildBlotterPanel());
+      if (blotter?.finalizedAt) main.appendChild(buildLuponPacketCard());
     } else if (blotter) {
       main.appendChild(buildReadOnlyBlotter());
     }
@@ -430,7 +378,44 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     aside.appendChild(buildLegalGuide());
 
     layout.append(main, aside);
+    if (isSecretary) {
+      content.appendChild(BlotterWorkflow({
+        state: getBlotterWorkflowState({ incident, draft: aiDraft, blotter }),
+        currentScreen: 'blotter-detail',
+        onNavigate: (page) => navigate(page, incidentId),
+      }));
+    }
     content.appendChild(layout);
+  }
+
+  /**
+   * Lupon packet — only once the entry is finalized (the server's own
+   * prerequisite, BlotterController::luponPacket()). One action instead
+   * of the old Generate-then-Download pair in the page header.
+   */
+  function buildLuponPacketCard() {
+    const card = document.createElement('div');
+    card.className = 'card doc-card';
+    card.id = 'blotter-packet';
+    card.tabIndex = -1;
+
+    const heading = document.createElement('h3');
+    heading.className = 'doc-card__title';
+    heading.textContent = 'Lupon packet';
+
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.textContent = 'Only needed if this case is referred to the Lupon Tagapamayapa for conciliation. '
+      + 'Creates an audited PDF of the finalized entry (approved redacted text only) for the Lupon.';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ghost';
+    button.innerHTML = `${icons.download(16)} Generate & download Lupon packet`;
+    button.addEventListener('click', () => generateAndDownloadLuponPacket(incidentId, button));
+
+    card.append(heading, note, button);
+    return card;
   }
 
   /**
@@ -993,59 +978,75 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     return card;
   }
 
-  /** The Secretary's finalize/amend panel — the point of this screen. */
+  /**
+   * The Secretary's finalize/amend panel — the point of this screen.
+   *
+   * 2026-09-26 UX pass (GOV.UK "check answers" + error-message patterns):
+   *   - not approved yet → a short, plain explanation and ONE button to
+   *     the step that unblocks it (was a legal-heavy callout);
+   *   - not finalized → a two-view form: enter details, then CHECK them
+   *     (summary list with Change links) before the irreversible
+   *     "Finalize blotter entry" — replacing a generic confirm dialog;
+   *   - finalized → the record plus a readable summary list; the
+   *     amendment form stays collapsed behind "Amend this entry" instead
+   *     of always sitting open under every finalized record.
+   */
   function buildBlotterPanel() {
     const card = document.createElement('div');
     card.className = 'card doc-card';
+    card.id = 'blotter-finalize';
+    card.tabIndex = -1;
 
     const approved = Boolean(incident.redactionApprovedAt);
     const finalized = Boolean(blotter && blotter.finalizedAt);
 
     if (!approved) {
-      const lockCard = document.createElement('div');
-      lockCard.className = 'card blotter-compliance-callout';
-
-      lockCard.innerHTML = `
-        <div class="blotter-compliance-callout__header">
-          <div class="blotter-compliance-callout__icon">
-            ${icons.shield(22)}
-          </div>
-          <div class="blotter-compliance-callout__titles">
-            <h3 class="blotter-compliance-callout__title">Blotter Record Finalization Locked</h3>
-            <p class="blotter-compliance-callout__sub">Statutory Requirement: RA 10173 Data Privacy Compliance</p>
-          </div>
-        </div>
-        <p class="blotter-compliance-callout__body">
-          This incident has no approved redaction yet. Under Republic Act 10173 and Katarungang Pambarangay guidelines, blotter records cannot be permanently committed to the official ledger until PII and sensitive identifiers have been formally reviewed and approved by the Barangay Secretary.
-        </p>
-        <div class="blotter-compliance-callout__footer">
-          <div class="blotter-compliance-callout__badge">
-            <span class="blotter-compliance-callout__dot" aria-hidden="true"></span>
-            <span>Prerequisite: AI Redaction Approval Required</span>
-          </div>
-          <button class="primary" id="goto-ai-review-btn">
-            <span>Go to AI Redaction Review</span> <span aria-hidden="true">&rarr;</span>
-          </button>
-        </div>
-      `;
-
-      lockCard.querySelector('#goto-ai-review-btn').addEventListener('click', () => {
-        navigate('ai-review', incidentId);
-      });
-
-      return lockCard;
-    }
-
-    if (!finalized) {
+      const header = document.createElement('div');
+      header.className = 'doc-card__header';
       const heading = document.createElement('h3');
       heading.className = 'doc-card__title';
-      heading.textContent = 'Finalize Blotter Record';
-      card.appendChild(heading);
-      card.appendChild(buildFinalizeForm());
+      heading.textContent = 'Finalize blotter entry';
+      const pill = document.createElement('span');
+      pill.className = 'status-pill status-pill--neutral';
+      pill.textContent = 'Not available yet';
+      header.append(heading, pill);
+
+      const body = document.createElement('p');
+      body.style.margin = '0';
+      body.textContent = 'The narrative still contains names, phone numbers, and addresses. '
+        + 'Approve the AI redaction first — then you can finalize the blotter entry here.';
+
+      const why = document.createElement('p');
+      why.className = 'note';
+      why.style.margin = '0';
+      why.textContent = 'Why: under the Data Privacy Act (RA 10173), personal details are removed and checked by the Secretary before an entry is recorded.';
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'primary';
+      button.style.alignSelf = 'flex-start';
+      button.innerHTML = `<span>Review AI redaction</span> ${icons.arrowRight(16)}`;
+      button.addEventListener('click', () => navigate('ai-review', incidentId));
+
+      const stack = document.createElement('div');
+      stack.className = 'form-stack';
+      stack.append(body, why, button);
+      card.append(header, stack);
       return card;
     }
 
-    // Finalized: read-only current text plus the amendment form
+    if (!finalized) {
+      const header = document.createElement('div');
+      header.className = 'doc-card__header';
+      const heading = document.createElement('h3');
+      heading.className = 'doc-card__title';
+      heading.textContent = 'Finalize blotter entry';
+      header.appendChild(heading);
+      card.append(header, buildFinalizeForm());
+      return card;
+    }
+
+    // Finalized: the record as a readable summary, amendment on demand.
     const header = document.createElement('div');
     header.className = 'doc-card__header';
 
@@ -1059,7 +1060,6 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
     const actions = document.createElement('div');
     actions.className = 'doc-card__actions';
-
     const copyBtn = document.createElement('button');
     copyBtn.className = 'btn-copy';
     copyBtn.innerHTML = `${icons.fileText(14)} Copy Summary`;
@@ -1072,29 +1072,21 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     header.append(titleGroup, actions);
     card.appendChild(header);
 
-    const revision = document.createElement('p');
-    revision.className = 'note';
-    revision.style.margin = '0.25rem 0 0.5rem 0';
-    revision.textContent = `Finalized as revision ${blotter.revisionNo}. Amending creates an audited revision; previous versions are preserved in the permanent statutory register.`;
-
     const current = document.createElement('div');
     current.className = 'doc-blockquote doc-blockquote--blotter';
     current.textContent = blotter.narrativeSummary;
+    card.appendChild(current);
 
-    const amendSection = document.createElement('div');
-    amendSection.style.marginTop = '1.25rem';
-    amendSection.style.borderTop = '1px solid var(--color-border)';
-    amendSection.style.paddingTop = '1rem';
+    card.appendChild(buildSummaryList([
+      { key: 'Blotter number', value: blotter.displayId },
+      { key: 'Complainant', value: blotter.complainantName },
+      { key: 'Contact number', value: blotter.complainantContactNumber },
+      { key: 'Respondent', value: blotter.respondentName },
+      { key: 'Finalized', value: formatDateTime(blotter.finalizedAt) },
+      ...(blotter.amendedAt ? [{ key: 'Last amended', value: formatDateTime(blotter.amendedAt) }] : []),
+    ]));
 
-    const amendHeading = document.createElement('h4');
-    amendHeading.style.margin = '0 0 0.75rem 0';
-    amendHeading.style.fontSize = '0.95rem';
-    amendHeading.style.color = 'var(--color-text-primary)';
-    amendHeading.textContent = 'Amend Blotter Record';
-
-    amendSection.append(amendHeading, buildAmendForm());
-
-    card.append(revision, current, amendSection);
+    card.appendChild(buildAmendSection());
     return card;
   }
 
@@ -1159,109 +1151,386 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     return pill;
   }
 
+  function formatDateTime(value) {
+    if (!value) return null;
+    return new Date(value).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  /**
+   * GOV.UK-style summary list. rows: {key, value, onChange?, changeLabel?}.
+   * Every value is set via textContent (server data, never innerHTML).
+   */
+  function buildSummaryList(rows) {
+    const list = document.createElement('dl');
+    list.className = 'blotter-summary-list';
+    for (const row of rows) {
+      const item = document.createElement('div');
+      item.className = 'blotter-summary-list__row';
+
+      const key = document.createElement('dt');
+      key.className = 'blotter-summary-list__key';
+      key.textContent = row.key;
+
+      const value = document.createElement('dd');
+      value.className = 'blotter-summary-list__value';
+      const text = typeof row.value === 'string' ? row.value.trim() : row.value;
+      if (text) {
+        value.textContent = text;
+      } else {
+        value.classList.add('blotter-summary-list__value--empty');
+        value.textContent = 'Not provided';
+      }
+
+      const action = document.createElement('dd');
+      action.style.margin = '0';
+      if (row.onChange) {
+        const change = document.createElement('button');
+        change.type = 'button';
+        change.className = 'blotter-link-btn';
+        change.textContent = 'Change';
+        change.setAttribute('aria-label', `Change ${row.changeLabel || row.key.toLowerCase()}`);
+        change.addEventListener('click', row.onChange);
+        action.appendChild(change);
+      }
+
+      item.append(key, value, action);
+      list.appendChild(item);
+    }
+    return list;
+  }
+
+  /**
+   * One labelled form field with hint + inline error message (GOV.UK
+   * error-message pattern: the error sits next to the field it's about,
+   * not only in a toast that disappears).
+   */
+  function buildField({ id, label, hint, control }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'blotter-field';
+
+    const labelEl = document.createElement('label');
+    labelEl.className = 'label';
+    labelEl.htmlFor = id;
+    labelEl.textContent = label;
+    wrap.appendChild(labelEl);
+
+    const hintEl = document.createElement('p');
+    hintEl.className = 'blotter-field__hint';
+    hintEl.id = `${id}-hint`;
+    hintEl.textContent = hint || '';
+    hintEl.hidden = !hint;
+    wrap.appendChild(hintEl);
+
+    const errorEl = document.createElement('p');
+    errorEl.className = 'blotter-field__error';
+    errorEl.id = `${id}-error`;
+    errorEl.hidden = true;
+    wrap.appendChild(errorEl);
+
+    control.id = id;
+    const describe = (withError) => {
+      const ids = [];
+      if (!hintEl.hidden) ids.push(hintEl.id);
+      if (withError) ids.push(errorEl.id);
+      if (ids.length) control.setAttribute('aria-describedby', ids.join(' '));
+      else control.removeAttribute('aria-describedby');
+    };
+    describe(false);
+    wrap.appendChild(control);
+
+    return {
+      el: wrap,
+      setHint(text) {
+        hintEl.textContent = text;
+        hintEl.hidden = !text;
+        describe(!errorEl.hidden);
+      },
+      setError(message) {
+        errorEl.hidden = !message;
+        errorEl.textContent = message || '';
+        wrap.classList.toggle('blotter-field--error', Boolean(message));
+        if (message) control.setAttribute('aria-invalid', 'true');
+        else control.removeAttribute('aria-invalid');
+        describe(Boolean(message));
+      },
+    };
+  }
+
+  /** Error summary at the top of a form, linking to each bad field. */
+  function showErrorSummary(box, errors) {
+    box.innerHTML = '';
+    box.hidden = errors.length === 0;
+    if (errors.length === 0) return;
+    const title = document.createElement('h4');
+    title.className = 'blotter-error-summary__title';
+    title.textContent = 'There is a problem';
+    const list = document.createElement('ul');
+    for (const { fieldId, message } of errors) {
+      const li = document.createElement('li');
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'blotter-link-btn';
+      link.textContent = message;
+      link.addEventListener('click', () => document.getElementById(fieldId)?.focus());
+      li.appendChild(link);
+      list.appendChild(li);
+    }
+    box.append(title, list);
+    box.focus?.();
+  }
+
+  function newErrorSummary() {
+    const box = document.createElement('div');
+    box.className = 'blotter-error-summary';
+    box.setAttribute('role', 'alert');
+    box.tabIndex = -1;
+    box.hidden = true;
+    return box;
+  }
+
   function buildFinalizeForm() {
+    const container = document.createElement('div');
+
+    // Starting text: the AI summary the Secretary already reviewed on W8
+    // (only if it's in sync with the approved draft), else the approved
+    // redacted narrative. The server writes only what is submitted — this
+    // is a starting point, never a mechanical copy.
+    const aiSummary = aiDraft && aiDraft.status === 'completed' && !aiDraft.draftSummaryStale && aiDraft.draftSummary?.trim()
+      ? aiDraft.draftSummary.trim()
+      : null;
+    const redacted = (incident.redactedNarrative || '').trim();
+    let source = aiSummary ? 'ai' : 'redacted';
+    let lastPrefill = aiSummary || redacted;
+
+    // --- View 1: enter details ---
     const form = document.createElement('form');
     form.className = 'form-stack';
     form.noValidate = true;
 
-    const label = document.createElement('label');
-    label.className = 'label';
-    label.htmlFor = 'blotter-finalize-summary';
-    label.textContent = 'Blotter summary';
+    const intro = document.createElement('p');
+    intro.className = 'note';
+    intro.style.margin = '0';
+    intro.textContent = 'Everything below is pre-filled from the redaction you approved. Correct anything that is wrong, then continue — you will see the whole entry once more before it is recorded.';
 
-    const note = document.createElement('p');
-    note.className = 'note';
-    note.textContent =
-      'This is the Secretary’s own record of the incident, informed by the approved redaction. '
-      + 'Once finalized it cannot be overwritten — only amended, with a reason.';
+    const errorSummary = newErrorSummary();
 
-    const textarea = document.createElement('textarea');
-    textarea.id = 'blotter-finalize-summary';
-    textarea.rows = 6;
-    textarea.required = true;
-    textarea.classList.add('textarea--resizable');
-    // Pre-fill from the approved redaction as a starting point, since the
-    // Secretary is writing a summary OF that text.
-    textarea.value = incident.redactedNarrative || '';
-
-    const { fields: partyFields, elements: partyElements } = buildPartyFields({
+    const party = buildPartyFields({
       complainantName: incident.complainantName,
       respondentName: incident.respondentName,
       complainantContactNumber: incident.complainantContactNumber,
-    });
+    }, 'Pre-filled from the approved AI extraction. Check spellings against the complainant’s statement. Leave a field blank if it is unknown.');
 
-    const submit = document.createElement('button');
-    submit.type = 'submit';
-    submit.className = 'primary';
-    submit.textContent = 'Finalize Blotter Record';
+    const summaryFieldset = document.createElement('fieldset');
+    summaryFieldset.className = 'blotter-fieldset';
+    const summaryLegend = document.createElement('legend');
+    summaryLegend.className = 'blotter-fieldset__legend';
+    summaryLegend.textContent = 'What happened';
 
-    form.append(label, note, textarea, ...partyElements, submit);
+    const textarea = document.createElement('textarea');
+    textarea.rows = 7;
+    textarea.required = true;
+    textarea.classList.add('textarea--resizable');
+    textarea.value = lastPrefill;
 
-    form.addEventListener('submit', async (event) => {
+    const summaryField = buildField({ id: 'blotter-finalize-summary', label: 'Blotter summary', control: textarea });
+    const refreshHint = () => summaryField.setHint(
+      (source === 'ai'
+        ? 'Pre-filled with the AI summary you reviewed. '
+        : 'Pre-filled with the approved redacted narrative — shorten it as needed. ')
+      + 'Write a short factual account: what happened, when, and where. Keep names and contact numbers out — they belong in the party fields above.'
+    );
+    refreshHint();
+
+    const meta = document.createElement('div');
+    meta.className = 'blotter-field__meta';
+    const count = document.createElement('span');
+    const updateCount = () => { count.textContent = `${textarea.value.trim().length} characters`; };
+    updateCount();
+    textarea.addEventListener('input', updateCount);
+    meta.appendChild(count);
+
+    if (aiSummary && redacted && aiSummary !== redacted) {
+      const swap = document.createElement('button');
+      swap.type = 'button';
+      swap.className = 'blotter-link-btn';
+      const swapLabel = () => (source === 'ai' ? 'Start from the full redacted narrative instead' : 'Start from the AI summary instead');
+      swap.textContent = swapLabel();
+      swap.addEventListener('click', async () => {
+        if (textarea.value.trim() !== lastPrefill) {
+          const ok = await confirmDialog({
+            title: 'Replace your edits?',
+            description: 'The summary text you typed will be replaced.',
+            confirmLabel: 'Replace',
+            cancelLabel: 'Keep my text',
+          });
+          if (!ok) return;
+        }
+        source = source === 'ai' ? 'redacted' : 'ai';
+        lastPrefill = source === 'ai' ? aiSummary : redacted;
+        textarea.value = lastPrefill;
+        swap.textContent = swapLabel();
+        refreshHint();
+        updateCount();
+        textarea.focus();
+      });
+      meta.appendChild(swap);
+    }
+    summaryField.el.appendChild(meta);
+    summaryFieldset.append(summaryLegend, summaryField.el);
+
+    const continueBtn = document.createElement('button');
+    continueBtn.type = 'submit';
+    continueBtn.className = 'primary';
+    continueBtn.innerHTML = `<span>Continue to check entry</span> ${icons.arrowRight(16)}`;
+    const formActions = document.createElement('div');
+    formActions.className = 'blotter-form-actions';
+    formActions.appendChild(continueBtn);
+
+    form.append(intro, errorSummary, party.element, summaryFieldset, formActions);
+
+    // --- View 2: check before finalizing ---
+    const review = document.createElement('div');
+    review.className = 'form-stack';
+    review.hidden = true;
+
+    function showEdit(focusId) {
+      review.hidden = true;
+      form.hidden = false;
+      const target = focusId ? document.getElementById(focusId) : null;
+      (target || textarea).focus();
+    }
+
+    function showReview() {
+      const values = party.fields();
+      review.innerHTML = '';
+
+      const heading = document.createElement('h4');
+      heading.style.margin = '0';
+      heading.tabIndex = -1;
+      heading.textContent = 'Check the entry before finalizing';
+
+      const list = buildSummaryList([
+        { key: 'Complainant', value: values.complainantName, onChange: () => showEdit(party.ids.complainant), changeLabel: 'complainant name' },
+        { key: 'Contact number', value: values.complainantContactNumber, onChange: () => showEdit(party.ids.contact), changeLabel: 'contact number' },
+        { key: 'Respondent', value: values.respondentName, onChange: () => showEdit(party.ids.respondent), changeLabel: 'respondent name' },
+        { key: 'Blotter summary', value: textarea.value.trim(), onChange: () => showEdit('blotter-finalize-summary'), changeLabel: 'blotter summary' },
+      ]);
+
+      const warning = document.createElement('div');
+      warning.className = 'blotter-warning';
+      warning.innerHTML = `<span aria-hidden="true">${icons.alertTriangle(18)}</span>`;
+      const warningText = document.createElement('p');
+      const strong = document.createElement('strong');
+      strong.textContent = 'This cannot be undone. ';
+      warningText.append(strong, document.createTextNode(
+        'Finalizing records this entry in the barangay blotter and assigns its permanent blotter number. '
+        + 'After that it can only be amended with a written reason, and every earlier version is kept.'
+      ));
+      warning.appendChild(warningText);
+
+      const finalizeBtn = document.createElement('button');
+      finalizeBtn.type = 'button';
+      finalizeBtn.className = 'primary';
+      const finalizeLabel = `${icons.check(16)} <span>Finalize blotter entry</span>`;
+      finalizeBtn.innerHTML = finalizeLabel;
+
+      const backBtn = document.createElement('button');
+      backBtn.type = 'button';
+      backBtn.className = 'ghost';
+      backBtn.textContent = 'Back to editing';
+      backBtn.addEventListener('click', () => showEdit());
+
+      finalizeBtn.addEventListener('click', async () => {
+        finalizeBtn.disabled = true;
+        backBtn.disabled = true;
+        finalizeBtn.textContent = 'Finalizing…';
+        try {
+          await finalizeBlotter(incidentId, { narrativeSummary: textarea.value.trim(), ...party.fields() });
+          showToast('Blotter entry finalized and numbered.', { variant: 'success' });
+          await load();
+        } catch (err) {
+          finalizeBtn.disabled = false;
+          backBtn.disabled = false;
+          finalizeBtn.innerHTML = finalizeLabel;
+          showToast(err instanceof ApiClientError ? err.message : 'Could not finalize the entry.', { variant: 'error' });
+        }
+      });
+
+      const actions = document.createElement('div');
+      actions.className = 'blotter-form-actions';
+      actions.append(finalizeBtn, backBtn);
+
+      review.append(heading, list, warning, actions);
+      form.hidden = true;
+      review.hidden = false;
+      heading.focus();
+    }
+
+    form.addEventListener('submit', (event) => {
       event.preventDefault();
       const summary = textarea.value.trim();
-      if (!summary) {
-        showToast('Enter a blotter summary before finalizing.', { variant: 'error' });
-        return;
-      }
-      const confirmed = await confirmDialog({
-        title: 'Finalize this blotter entry?',
-        description: 'A finalized entry cannot be overwritten. Later changes require an audited amendment with a reason.',
-        confirmLabel: 'Finalize',
-        cancelLabel: 'Keep editing',
-      });
-      if (!confirmed) return;
-
-      submit.disabled = true;
-      submit.textContent = 'Finalizing…';
-      try {
-        await finalizeBlotter(incidentId, { narrativeSummary: summary, ...partyFields() });
-        showToast('Blotter entry finalized.', { variant: 'success' });
-        await load();
-      } catch (err) {
-        submit.disabled = false;
-        submit.textContent = 'Finalize Blotter Record';
-        showToast(err instanceof ApiClientError ? err.message : 'Could not finalize the entry.', { variant: 'error' });
-      }
+      const errors = summary ? [] : [{ fieldId: 'blotter-finalize-summary', message: 'Enter a blotter summary' }];
+      summaryField.setError(summary ? null : 'Enter a blotter summary');
+      showErrorSummary(errorSummary, errors);
+      if (errors.length === 0) showReview();
     });
 
-    return form;
+    container.append(form, review);
+    return container;
   }
 
   /**
-   * Shared Complainant/Respondent/Contact input trio (§ migration 0008) —
-   * used identically by finalize and amend. Returns a `fields()` getter
-   * (reads the live input values at submit time, not at build time) and
-   * the elements to append into the caller's own form.
+   * Shared Complainant/Contact/Respondent inputs (§ migration 0008) —
+   * used by finalize and amend, grouped as one fieldset. Returns a
+   * `fields()` getter (reads live values at submit time), the fieldset
+   * element, and the input ids (for "Change" links). maxLength mirrors
+   * BlotterController::parsePartyFields() (255 / 32).
    */
-  function buildPartyFields({ complainantName, respondentName, complainantContactNumber }) {
+  function buildPartyFields({ complainantName, respondentName, complainantContactNumber }, hint) {
     const idPrefix = `blotter-party-${++partyFieldSeq}`;
-    const complainantLabel = document.createElement('label');
-    complainantLabel.className = 'label';
-    complainantLabel.htmlFor = `${idPrefix}-complainant`;
-    complainantLabel.textContent = 'Complainant name (optional)';
+
+    const fieldset = document.createElement('fieldset');
+    fieldset.className = 'blotter-fieldset';
+    const legend = document.createElement('legend');
+    legend.className = 'blotter-fieldset__legend';
+    legend.textContent = 'Parties involved';
+    fieldset.appendChild(legend);
+    if (hint) {
+      const hintEl = document.createElement('p');
+      hintEl.className = 'blotter-field__hint';
+      hintEl.textContent = hint;
+      fieldset.appendChild(hintEl);
+    }
+
     const complainantInput = document.createElement('input');
-    complainantInput.id = `${idPrefix}-complainant`;
     complainantInput.type = 'text';
+    complainantInput.maxLength = 255;
+    complainantInput.autocomplete = 'off';
     complainantInput.value = complainantName || '';
 
-    const respondentLabel = document.createElement('label');
-    respondentLabel.className = 'label';
-    respondentLabel.htmlFor = `${idPrefix}-respondent`;
-    respondentLabel.textContent = 'Respondent name (optional)';
+    const contactInput = document.createElement('input');
+    contactInput.type = 'tel';
+    contactInput.maxLength = 32;
+    contactInput.autocomplete = 'off';
+    contactInput.placeholder = 'e.g. 0917 123 4567';
+    contactInput.value = complainantContactNumber || '';
+
     const respondentInput = document.createElement('input');
-    respondentInput.id = `${idPrefix}-respondent`;
     respondentInput.type = 'text';
+    respondentInput.maxLength = 255;
+    respondentInput.autocomplete = 'off';
     respondentInput.value = respondentName || '';
 
-    const contactLabel = document.createElement('label');
-    contactLabel.className = 'label';
-    contactLabel.htmlFor = `${idPrefix}-contact`;
-    contactLabel.textContent = 'Contact number (optional)';
-    const contactInput = document.createElement('input');
-    contactInput.id = `${idPrefix}-contact`;
-    contactInput.type = 'tel';
-    contactInput.value = complainantContactNumber || '';
+    const grid = document.createElement('div');
+    grid.className = 'blotter-field__grid';
+    grid.append(
+      buildField({ id: `${idPrefix}-complainant`, label: 'Complainant name (optional)', control: complainantInput }).el,
+      buildField({ id: `${idPrefix}-contact`, label: 'Complainant contact number (optional)', control: contactInput }).el,
+      buildField({ id: `${idPrefix}-respondent`, label: 'Respondent name (optional)', control: respondentInput }).el,
+    );
+    fieldset.appendChild(grid);
 
     return {
       fields: () => ({
@@ -1269,35 +1538,71 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
         respondentName: respondentInput.value.trim(),
         complainantContactNumber: contactInput.value.trim(),
       }),
-      elements: [complainantLabel, complainantInput, respondentLabel, respondentInput, contactLabel, contactInput],
+      element: fieldset,
+      ids: {
+        complainant: `${idPrefix}-complainant`,
+        contact: `${idPrefix}-contact`,
+        respondent: `${idPrefix}-respondent`,
+      },
     };
   }
 
-  function buildAmendForm() {
+  /**
+   * "Amend this entry" — collapsed until asked for. The form is built up
+   * front (hidden) so what the Secretary typed survives Cancel/reopen.
+   */
+  function buildAmendSection() {
+    const section = document.createElement('div');
+    section.className = 'form-stack';
+    section.id = 'blotter-amend';
+    section.style.marginTop = 'var(--spacing-md)';
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'ghost';
+    toggle.style.alignSelf = 'flex-start';
+    toggle.innerHTML = `${icons.edit(16)} <span>Amend this entry</span>`;
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', 'blotter-amend-form');
+
+    const form = buildAmendForm(() => {
+      form.hidden = true;
+      toggle.hidden = false;
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.focus();
+    });
+    form.id = 'blotter-amend-form';
+    form.hidden = true;
+
+    toggle.addEventListener('click', () => {
+      form.hidden = false;
+      toggle.hidden = true;
+      toggle.setAttribute('aria-expanded', 'true');
+      form.querySelector('select, textarea')?.focus();
+    });
+
+    section.append(toggle, form);
+    return section;
+  }
+
+  function buildAmendForm(onCancel) {
     const form = document.createElement('form');
     form.className = 'form-stack';
     form.noValidate = true;
+    form.style.borderTop = '1px solid var(--color-border)';
+    form.style.paddingTop = 'var(--spacing-md)';
 
-    const summaryLabel = document.createElement('label');
-    summaryLabel.className = 'label';
-    summaryLabel.htmlFor = 'blotter-amend-summary';
-    summaryLabel.textContent = 'Amended summary';
-    const summaryInput = document.createElement('textarea');
-    summaryInput.id = 'blotter-amend-summary';
-    summaryInput.rows = 6;
-    summaryInput.required = true;
-    summaryInput.classList.add('textarea--resizable');
-    summaryInput.value = blotter.narrativeSummary;
+    const heading = document.createElement('h4');
+    heading.style.margin = '0';
+    heading.textContent = `Amend blotter entry (creates revision ${blotter.revisionNo + 1})`;
 
-    const reasonLabel = document.createElement('label');
-    reasonLabel.className = 'label';
-    reasonLabel.htmlFor = 'blotter-amend-reason';
-    reasonLabel.textContent = 'Reason for amendment';
-    const reasonInput = document.createElement('input');
-    reasonInput.id = 'blotter-amend-reason';
-    reasonInput.type = 'text';
-    reasonInput.required = true;
-    reasonInput.placeholder = 'e.g. Corrected the date of the incident';
+    const intro = document.createElement('p');
+    intro.className = 'note';
+    intro.style.margin = '0';
+    intro.textContent = 'Change only what needs correcting. The current version stays on record and can still be retrieved.';
+
+    const errorSummary = newErrorSummary();
+    form.append(heading, intro, errorSummary);
 
     // case_status (migration 0009, 2026-09-05 UX pass) — forward-only,
     // matching BlotterController::amend()'s own enforcement exactly:
@@ -1311,17 +1616,11 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     const forwardOptions = Object.keys(CASE_STATUS_LABELS).filter((key) => CASE_STATUS_RANK[key] > currentRank);
 
     let caseStatusSelect = null;
-    let caseStatusLabel = null;
     if (forwardOptions.length > 0) {
-      caseStatusLabel = document.createElement('label');
-      caseStatusLabel.className = 'label';
-      caseStatusLabel.htmlFor = 'blotter-amend-case-status';
-      caseStatusLabel.textContent = 'Case status (optional)';
       caseStatusSelect = document.createElement('select');
-      caseStatusSelect.id = 'blotter-amend-case-status';
       const keepOption = document.createElement('option');
       keepOption.value = '';
-      keepOption.textContent = `Keep current (${blotter.caseStatus.replace('_', ' ')})`;
+      keepOption.textContent = `Keep current (${(blotter.caseStatus || 'active').replace('_', ' ')})`;
       caseStatusSelect.appendChild(keepOption);
       for (const key of forwardOptions) {
         const option = document.createElement('option');
@@ -1329,37 +1628,74 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
         option.textContent = `Move to: ${CASE_STATUS_LABELS[key]}`;
         caseStatusSelect.appendChild(option);
       }
+      form.appendChild(buildField({
+        id: 'blotter-amend-case-status',
+        label: 'Case status',
+        hint: 'Moves forward only. “Resolved” is set automatically when the incident itself is resolved.',
+        control: caseStatusSelect,
+      }).el);
     }
 
-    const { fields: partyFields, elements: partyElements } = buildPartyFields({
+    const summaryInput = document.createElement('textarea');
+    summaryInput.rows = 6;
+    summaryInput.required = true;
+    summaryInput.classList.add('textarea--resizable');
+    summaryInput.value = blotter.narrativeSummary;
+    const summaryField = buildField({ id: 'blotter-amend-summary', label: 'Blotter summary', control: summaryInput });
+    form.appendChild(summaryField.el);
+
+    const party = buildPartyFields({
       complainantName: blotter.complainantName,
       respondentName: blotter.respondentName,
       complainantContactNumber: blotter.complainantContactNumber,
     });
+    form.appendChild(party.element);
+
+    const reasonInput = document.createElement('input');
+    reasonInput.type = 'text';
+    reasonInput.required = true;
+    reasonInput.placeholder = 'e.g. Respondent’s name was misspelled at intake';
+    const reasonField = buildField({
+      id: 'blotter-amend-reason',
+      label: 'Reason for amendment',
+      hint: 'Required. Saved with the revision in the audit trail.',
+      control: reasonInput,
+    });
+    form.appendChild(reasonField.el);
 
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'primary';
     submit.textContent = 'Save amendment';
-
-    form.append(summaryLabel, summaryInput, ...partyElements);
-    if (caseStatusSelect) form.append(caseStatusLabel, caseStatusSelect);
-    form.append(reasonLabel, reasonInput, submit);
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'ghost';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', onCancel);
+    const actions = document.createElement('div');
+    actions.className = 'blotter-form-actions';
+    actions.append(submit, cancel);
+    form.appendChild(actions);
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const summary = summaryInput.value.trim();
       const reason = reasonInput.value.trim();
-      if (!summary || !reason) {
-        // The server requires both; saying so here avoids a pointless 400.
-        showToast('An amendment needs both a summary and a reason.', { variant: 'error' });
-        return;
-      }
+      // The server requires both; saying so here, next to the field,
+      // avoids a pointless 400.
+      const errors = [];
+      if (!summary) errors.push({ fieldId: 'blotter-amend-summary', message: 'Enter a blotter summary' });
+      if (!reason) errors.push({ fieldId: 'blotter-amend-reason', message: 'Enter the reason for this amendment' });
+      summaryField.setError(summary ? null : 'Enter a blotter summary');
+      reasonField.setError(reason ? null : 'Enter the reason for this amendment');
+      showErrorSummary(errorSummary, errors);
+      if (errors.length > 0) return;
+
       const confirmed = await confirmDialog({
-        title: `Amend blotter revision ${blotter.revisionNo}?`,
+        title: `Save revision ${blotter.revisionNo + 1}?`,
         description: 'This creates an audited revision. The current text is preserved and remains retrievable.',
-        confirmLabel: 'Amend',
-        cancelLabel: 'Cancel',
+        confirmLabel: 'Save amendment',
+        cancelLabel: 'Keep editing',
       });
       if (!confirmed) return;
 
@@ -1369,7 +1705,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
         await amendBlotter(incidentId, {
           narrativeSummary: summary,
           reason,
-          ...partyFields(),
+          ...party.fields(),
           caseStatus: caseStatusSelect?.value || undefined,
         });
         showToast('Amendment saved.', { variant: 'success' });
