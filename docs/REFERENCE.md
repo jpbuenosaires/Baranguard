@@ -61,11 +61,13 @@ until `backend/.env` is deliberately repointed — check `DB_NAME` in
 actually reaches.
 
 **Not yet done** (so C-03 is NOT closed in `docs/REMAINING.md` yet):
-the tunnel is currently a manually-started process, not installed as the
-Windows service (`cloudflared service install`, needs an Administrator
-terminal — a one-time step only the workstation's owner can run) that
-would survive a reboot; and there is still **no Cloudflare Access policy
-in front of either hostname** — `api.baranguardph.win` is reachable by
+the tunnel now runs as a real Windows service (`cloudflared`,
+`AUTO_START`, done 2026-09-26 (29) — survives a reboot; getting there
+needed directly setting the service's `binPath` via `sc.exe config`,
+since `cloudflared service install` alone never seeds a working config
+for a locally-managed tunnel, see DEVLOG for the full diagnosis) but
+there is still **no Cloudflare Access policy in front of either
+hostname** — `api.baranguardph.win` is reachable by
 anyone with the URL, same exposure shape the Quick Tunnel had, just with
 a stable address instead of a rotating one (§2 Rule 7 still holds for
 anything meant to stay non-public). C-02 (MFA) was explicitly deferred

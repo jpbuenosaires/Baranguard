@@ -16500,3 +16500,68 @@ actual `baranguard_uiseed` seed data.
 Docs updated in the same pass: `docs/REFERENCE.md` §1 (tunnel
 name/id, the demo-data disclosure), `docs/HANDOFF.md` (F1/C-03 section
 rewritten — this supersedes entry (27)'s "not this machine" conclusion).
+
+## 2026-09-26 (29) — cloudflared installed as a real Windows service, real fix needed beyond the obvious command
+
+User asked to run `cloudflared service install` for real. This session
+has no Administrator prompt, so it went through UAC instead:
+`Start-Process -Verb RunAs` triggers a real elevation dialog on this
+machine's actual screen, which the user approved each time this pass
+needed it (five separate elevated invocations, chained where possible to
+minimize prompts).
+
+**`cloudflared service install` alone was NOT enough — found this by
+testing, not by trusting the exit code.** After the plain install
+command returned success, `curl` still returned real `200`s only because
+the ORIGINAL foreground `cloudflared tunnel run baranguard-main` process
+from entry (28) was still alive. Killing that foreground process (a
+deliberate test, not an accident) dropped both hostnames to `502`,
+proving the freshly "installed" service wasn't actually serving anything.
+
+**Root cause, found via Windows Event Viewer's Application log, not
+guessed**: every service start logged `Cloudflared service arguments:
+[C:\Program Files (x86)\cloudflared\cloudflared.exe]` — zero arguments,
+every time, regardless of what was passed to `service install` (tried
+plain `service install`, then `--config <path> service install` — same
+empty-args result both times). `cloudflared service install`'s own
+`--help` confirms why: its only documented parameter is an optional
+`[TOKEN]` for *remotely-managed* tunnels; it has no flag at all for
+seeding a *locally-managed* tunnel's config path. Writing the real
+`config.yml` content directly into `%ProgramFiles(x86)%\cloudflared\
+config.yml` (where the service was defaulting to a `logDirectory:`-only
+stub) didn't stick either — cloudflared's own Windows service startup
+overwrites that file, unconditionally, back to a fresh default stub on
+every start; confirmed twice by watching it revert right after a real
+service restart.
+
+**Real fix**: `sc.exe config cloudflared binPath= "<cloudflared.exe>"
+--config "C:\Users\danilyn\.cloudflared\config.yml" tunnel run
+baranguard-main"` — directly overriding the service's registered command
+line to explicitly pass `--config` and `tunnel run <name>`, the same way
+the interactive CLI is invoked, instead of relying on whatever bare-exe
+default `service install` registers. Hit the exact `sc.exe`
+`binPath=`-with-embedded-quotes PowerShell-argument-splitting problem
+this project's own gotchas list already warns about for other native
+exes (`curl.exe`, `php.exe` — see REFERENCE.md §8 #21/#4) — same fix
+applied: route the whole command through `cmd /c` as one literal string
+instead of letting PowerShell's array-based argument passing mangle it.
+
+Also hit, along the way: `sc.exe stop`/`sc.exe delete` repeatedly left
+the service stuck (`STOP_PENDING`/"marked for deletion" forever) because
+the underlying process wasn't actually responding to SCM control
+messages — worked around each time by force-killing the specific PID
+directly (`Get-Process -Name cloudflared | Where SessionId -eq 0`, the
+Services-session one, never the interactive one) rather than waiting on
+a stop that would never complete on its own.
+
+**Verified for real, the same way entry (28) did**: killed every
+`cloudflared.exe` process, confirmed via `tasklist` that exactly ONE
+remained (PID 34880, `Services` session, i.e. the service and nothing
+else), then `curl`'d both hostnames — real `200`s, real content (the
+actual four barangays again). This is the service alone doing the work,
+not a leftover foreground process.
+
+**`docs/HANDOFF.md`'s F1/C-03 next-step #1 (`cloudflared service
+install`) is now genuinely done** — the tunnel will survive this
+machine rebooting. Next-step #2 (Cloudflare Zero Trust / Access policy)
+remains open; nobody has done that yet.

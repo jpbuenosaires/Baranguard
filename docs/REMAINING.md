@@ -371,6 +371,35 @@ single-workstation-outage risk stands as an accepted, disclosed
 limitation, not a resolved one. SOS retains its own workstation-
 independent fallback (§2 Rule 27's direct-SMS path) regardless.
 
+**Tenth pass, 2026-09-26, same day — tunnel moved to this machine,
+service install DONE.** Turned out the machine the ninth pass ran on was
+a different box than the one running this session; user confirmed THIS
+machine is the real production workstation and the tunnel should run
+here instead. Did not reuse the original tunnel's credentials (an
+attempt to fetch its connector token was correctly blocked as sensitive
+credential access) — created a fresh tunnel (`baranguard-main`) with its
+own locally-generated credentials, re-routed both hostnames' DNS to it
+via `--overwrite-dns`, verified live with real `curl` calls. Then
+installed it as a real Windows service for real — `cloudflared service
+install` alone silently produces a non-functional service for a
+locally-managed tunnel (confirmed via Windows Event Viewer: it always
+registers with zero arguments, and a hand-written config file gets
+overwritten back to a stub on every service start); the actual fix was
+setting the service's `binPath` directly via `sc.exe config` to include
+`--config`/`tunnel run` explicitly. **Item (1) from the ninth pass's
+"not done" list is now closed** — verified by killing every
+`cloudflared.exe` process, confirming exactly one remained (the
+service), and getting real `200`s with real content from both hostnames.
+Item (2) (Cloudflare Access policy) is still open. **New disclosure,
+not present in the ninth pass**: this machine's `backend/.env` points at
+`baranguard_uiseed` (the demo/seed DB), not the real production database
+— by explicit user choice, deferred rather than switched. The public
+tunnel currently serves demo data, not real citizen/incident records;
+don't conflate "the tunnel is live" with "real data is exposed." The
+original `baranguard` tunnel is now orphaned (no DNS points to it) but
+was not deleted. Full detail: `backend/DEVLOG.md` 2026-09-26 (27), (28),
+(29).
+
 Full disposition of every one
 of the 36 findings — confirmed / partially confirmed / refuted, with
 file-level evidence — lives only in the audit reconciliation itself (not
