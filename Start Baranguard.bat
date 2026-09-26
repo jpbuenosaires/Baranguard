@@ -1,0 +1,3 @@
+@echo off
+title Baranguard - Starting...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0backend\scripts\start-baranguard.ps1"

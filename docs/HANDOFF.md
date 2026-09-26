@@ -740,13 +740,21 @@ bash backend/scripts/setup-env.sh
 bash mobile/scripts/setup-android-platform.sh
 ```
 
-**Keep Apache/MySQL/the Cloudflare tunnel/the AI worker running across
-reboots** — none of the four start themselves by default, so a restart
-takes all of them down until someone starts them by hand (hit this
-directly 2026-09-26, twice: once for Apache/MySQL/cloudflared, again
-separately when a user's redaction sat doing nothing because nobody had
-started `ai-worker.php` at all). From an elevated PowerShell prompt,
-once:
+**Day-to-day: double-click `Start Baranguard.bat`** (repo root — copy a
+shortcut to the Desktop) to start Apache/MySQL/the AI worker (whichever
+of the three isn't already running — safe to click more than once, never
+starts a duplicate worker) and open the dashboard. No admin rights
+needed. This is the practical answer for "the redaction isn't doing
+anything" — check that this was run today. See DEVLOG 2026-09-26 (26).
+
+**For true zero-click power-on autostart instead** (needs a one-time
+Administrator prompt, and does NOT replace the double-click launcher —
+pick one): Apache/MySQL/the Cloudflare tunnel/the AI worker don't start
+themselves by default, so a reboot takes all four down until someone
+starts them (hit this directly 2026-09-26: once for Apache/MySQL/
+cloudflared, again separately when a user's redaction sat doing nothing
+because nobody had started `ai-worker.php` at all). From an elevated
+PowerShell prompt, once:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File backend\scripts\install-autostart-services.ps1
@@ -756,13 +764,12 @@ Idempotent, installs Apache2.4/MySQL/cloudflared as real auto-starting
 services AND registers `BaranguardAiWorker` as a Scheduled Task
 (`ai-worker.php --daemon`, starts at boot as SYSTEM, no login needed,
 self-restarting) — prints an uninstall cheat-sheet for all four. See
-docs/SETUP.md stage 5. **Not yet run this session** — needs an
-Administrator prompt this session doesn't have; `ai-worker.php --daemon`
-was started manually in the meantime so today's queue keeps draining,
-but that manual start will NOT survive a reboot until this script is
-actually run. `ai-worker.php`'s own `--daemon` mode also had a real bug
-fixed in the same pass: it used to exit entirely (not just skip a job)
-if Ollama was ever unavailable for too long — see DEVLOG 2026-09-26 (25).
+docs/SETUP.md stage 5. **Not run this session** — needs an Administrator
+prompt this session doesn't have; the double-click launcher above is the
+one actually in use. `ai-worker.php`'s own `--daemon` mode also had a
+real bug fixed in the same pass as this script: it used to exit entirely
+(not just skip a job) if Ollama was ever unavailable for too long — see
+DEVLOG 2026-09-26 (25).
 
 Neither the retention job nor the restore drill is scheduled — both are
 CLI-only by design; wiring to Task Scheduler is an outstanding runbook step

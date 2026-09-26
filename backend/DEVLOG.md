@@ -16307,3 +16307,44 @@ Verified: `php -l` clean on `ai-worker.php`; the updated `.ps1` parses
 without executing; the fixed daemon confirmed running via `tasklist` and
 its own output (recovered 1 stale `processing` row, claimed the next
 queued job). No web/DB changes this entry — worker + ops script only.
+
+## 2026-09-26 (26) — A simpler, non-elevated double-click launcher, since entry (25)'s Scheduled Task needs an Administrator prompt this user doesn't want to deal with day-to-day
+
+User's follow-up on (25): "the auto start should be double click file only
+... not literally when laptop on it will auto-start right?" — correctly
+distinguishing two different things and asking for the simpler one. The
+Scheduled Task from (25) is still there for whoever wants true zero-click
+(needs a one-time elevated run), but the practical day-to-day answer
+requested here is a plain double-click launcher needing no admin rights
+at all.
+
+Added `Start Baranguard.bat` at the repo root (most discoverable —
+easy to copy a shortcut to the Desktop) which calls
+`backend/scripts/start-baranguard.ps1`. That script, run as the ordinary
+logged-in user, no elevation:
+1. Starts Apache via `C:\xampp\apache_start.bat` if `httpd.exe` isn't
+   already running.
+2. Starts MySQL via `C:\xampp\mysql_start.bat` if `mysqld.exe` isn't
+   already running.
+3. Starts `ai-worker.php --daemon` (hidden window) if a process with
+   that exact command line isn't already running — checked via
+   `Get-CimInstance Win32_Process` filtering `CommandLine`, specifically
+   to avoid ever starting a second daemon racing the first one over the
+   same queue (same reasoning `AiJobQueue::requeueStaleProcessing()`'s own
+   doc gives for why two workers isn't safe on this schema without a
+   `claimed_at` column).
+4. Opens `http://localhost/baranguard/web/` in the default browser.
+
+Every step is a no-op if that piece is already running, so double-
+clicking this more than once (or clicking it when everything's already
+up) is always safe — confirmed for real: ran it once with Apache/MySQL/
+the worker all already up (from entry (25)'s manual start), got three
+`[OK] ... already running` lines and no new processes; ran the actual
+`.bat` file itself the same way afterward, `tasklist` before/after showed
+the exact same two `php.exe` processes (the dev server + the one daemon)
+both times — no duplicate daemon ever got spawned.
+
+Not touched: entry (25)'s Scheduled Task registration in
+`install-autostart-services.ps1` — kept as-is for anyone who later wants
+true power-on autostart with zero interaction, clearly documented now as
+the OTHER option, not this one.
