@@ -35,6 +35,7 @@ import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
+import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
 const PAGE_SIZE = 25;
@@ -210,6 +211,133 @@ function exportAuditLogsToCsv(items) {
 }
 
 /**
+ * Opens an A4 Print Preview Modal for the current Audit Log compliance excerpt.
+ */
+function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabel, actionLabel, searchQuery, user }) {
+  if (!items || items.length === 0) {
+    showToast('No audit log entries available to preview.', { variant: 'info' });
+    return;
+  }
+
+  const printedAt = new Date().toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const preparedBy = user?.fullName || 'System Administrator';
+  const scopeDesc = [categoryLabel || 'All Categories', actionLabel || 'All Actions'].join(' · ');
+
+  const rowsHtml = items.map((item) => {
+    const actor = item.actorUsername
+      ? `${item.actorUsername} (#${item.actorUserId ?? '—'})`
+      : (item.actorUserId ? `User #${item.actorUserId}` : 'SYSTEM');
+    const actionText = ACTION_LABELS[item.action] || (item.action || '').replace(/_/g, ' ');
+    const entityText = item.entityType
+      ? `${item.entityType}${item.entityId ? ` #${item.entityId}` : ''}`
+      : '—';
+    const metaEntries = item.metadataJson && typeof item.metadataJson === 'object'
+      ? Object.entries(item.metadataJson).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('; ')
+      : '—';
+
+    return `
+      <tr>
+        <td>#${escapeHtml(String(item.auditId))}</td>
+        <td>${escapeHtml(item.createdAt || '—')}</td>
+        <td>${escapeHtml(actor)}</td>
+        <td>${escapeHtml(actionText)}</td>
+        <td>${escapeHtml(entityText)}</td>
+        <td>${escapeHtml(metaEntries || '—')}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const sheetHtml = `
+    <div class="print-sheet__header">
+      <p class="print-sheet__republic">Republic of the Philippines</p>
+      <p class="print-sheet__office">Barangay Administrative &amp; Data Protection Compliance Record</p>
+      <h3 class="print-sheet__title">Immutable System Audit Trail Excerpt</h3>
+      <p class="print-sheet__subline">Covering ${escapeHtml(dateFrom)} to ${escapeHtml(dateTo)}${searchQuery ? ` · Filtered by "${escapeHtml(searchQuery)}"` : ''}</p>
+      <div>
+        <span class="print-sheet__badge print-sheet__badge--finalized">Write-Once Statutory Audit Record (§5 / §9 W17)</span>
+      </div>
+    </div>
+
+    <div class="print-sheet__meta-bar">
+      <div class="print-sheet__meta-cell">
+        <div class="print-sheet__meta-label">Period Covered</div>
+        <div class="print-sheet__meta-val">${escapeHtml(dateFrom)} — ${escapeHtml(dateTo)}</div>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <div class="print-sheet__meta-label">Filter Scope</div>
+        <div class="print-sheet__meta-val">${escapeHtml(scopeDesc)}</div>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <div class="print-sheet__meta-label">Entries in Excerpt</div>
+        <div class="print-sheet__meta-val">${escapeHtml(String(items.length))} of ${escapeHtml(String(totalItems))} total</div>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <div class="print-sheet__meta-label">Exported By</div>
+        <div class="print-sheet__meta-val">${escapeHtml(preparedBy)}</div>
+      </div>
+    </div>
+
+    <div class="print-sheet__section">
+      <h4 class="print-sheet__section-title">Recorded System &amp; Administrative Events</h4>
+      <table class="print-sheet__table">
+        <thead>
+          <tr>
+            <th>Audit ID</th>
+            <th>Timestamp (UTC)</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Target Entity</th>
+            <th>Metadata Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="print-sheet__section">
+      <h4 class="print-sheet__section-title">Statutory Compliance &amp; Retention Notice</h4>
+      <div class="print-sheet__narrative">Audit log entries in Baranguard are write-once and tamper-evident. No user or administrator has edit or delete privileges over this table; automated retention pruning occurs strictly after the 7-year statutory retention horizon expires.</div>
+    </div>
+
+    <div class="print-sheet__signatures">
+      <div class="print-sheet__sig-box">
+        <div class="print-sheet__sig-line">${escapeHtml(preparedBy)}</div>
+        <div class="print-sheet__sig-role">Prepared &amp; Exported By</div>
+      </div>
+      <div class="print-sheet__sig-box">
+        <div class="print-sheet__sig-line">Punong Barangay / Data Protection Officer</div>
+        <div class="print-sheet__sig-role">Attested By</div>
+      </div>
+    </div>
+
+    <div class="print-sheet__footer">
+      <span>Generated via Baranguard Audit Compliance Console · ${escapeHtml(printedAt)}</span>
+      <span>RA 10173 &amp; Statutory Audit Trail Compliance</span>
+    </div>
+  `;
+
+  openPrintPreviewModal({
+    title: 'Printable Audit Trail Excerpt',
+    subtitle: `${dateFrom} to ${dateTo} · ${items.length} entries`,
+    sheetId: 'printable-audit-sheet',
+    sheetHtml,
+    extraActions: [
+      {
+        label: 'Export CSV',
+        icon: icons.download(15),
+        className: 'ghost',
+        onClick: () => exportAuditLogsToCsv(items),
+      },
+    ],
+  });
+}
+
+/**
  * @param {HTMLElement} root
  * @param {{fullName:string, role:string}} user
  * @param {() => void} onLoggedOut
@@ -226,11 +354,37 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
-  // Page Header with Export CSV action
+  // Page Header with Preview & Print Excerpt + Export CSV actions
   const pageHeader = PageHeader({
     title: 'Audit Log',
     subtitle: 'Immutable record of administrative actions & system events',
     icon: icons.shield,
+  });
+
+  const previewPrintBtn = document.createElement('button');
+  previewPrintBtn.type = 'button';
+  previewPrintBtn.id = 'preview-audit-print-btn';
+  previewPrintBtn.className = 'ghost';
+  previewPrintBtn.style.cssText = 'display: inline-flex; align-items: center; gap: 0.5rem;';
+  previewPrintBtn.innerHTML = `${icons.printer(16)}<span>Preview &amp; Print Excerpt</span>`;
+  previewPrintBtn.addEventListener('click', () => {
+    const filtered = filterItemsBySearch(currentItems);
+    const categoryLabel = activeFilterCategory && CATEGORIES[activeFilterCategory]
+      ? CATEGORIES[activeFilterCategory].label
+      : 'All Categories';
+    const actionLabel = actionSelect.value
+      ? (ACTION_LABELS[actionSelect.value] || actionSelect.value)
+      : 'All Actions';
+    openAuditPrintModal({
+      items: filtered,
+      totalItems: totalAuditItems,
+      dateFrom: activeDateFrom,
+      dateTo: activeDateTo,
+      categoryLabel,
+      actionLabel,
+      searchQuery,
+      user,
+    });
   });
 
   const exportBtn = document.createElement('button');
@@ -238,8 +392,8 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   exportBtn.className = 'ghost';
   exportBtn.style.cssText = 'display: inline-flex; align-items: center; gap: 0.5rem;';
   exportBtn.innerHTML = `${icons.download(16)}<span>Export CSV</span>`;
-  exportBtn.addEventListener('click', () => exportAuditLogsToCsv(currentItems));
-  pageHeader.actions.appendChild(exportBtn);
+  exportBtn.addEventListener('click', () => exportAuditLogsToCsv(filterItemsBySearch(currentItems)));
+  pageHeader.actions.append(previewPrintBtn, exportBtn);
 
   header.appendChild(pageHeader.el);
 

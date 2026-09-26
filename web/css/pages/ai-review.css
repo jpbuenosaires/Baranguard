@@ -80,7 +80,7 @@
 }
 
 /* ==========================================================================
-   Incident Briefing Hero Banner
+   Compact AI Pipeline Status Strip (Non-redundant)
    ========================================================================== */
 
 .ai-review__briefing {
@@ -89,66 +89,30 @@
   justify-content: space-between;
   gap: var(--spacing-md);
   flex-wrap: wrap;
-  padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--radius-xl);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
 }
 
 .ai-review__briefing-main {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
-  min-width: 0;
-}
-
-.ai-review__briefing-icon {
-  width: 3rem;
-  height: 3rem;
-  border-radius: var(--radius-lg);
-  background: rgba(37, 99, 235, 0.12);
-  color: var(--color-link);
-  border: 1px solid rgba(59, 130, 246, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.ai-review__briefing-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
 .ai-review__briefing-title-row {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
   flex-wrap: wrap;
-}
-
-.ai-review__briefing-title {
-  margin: 0;
-  font-size: var(--font-size-md);
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.ai-review__id-badge {
-  font-family: var(--font-mono, monospace);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  padding: 0.125rem 0.5rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
 }
 
 .ai-review__briefing-meta {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
   font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   flex-wrap: wrap;
@@ -158,36 +122,33 @@
   align-items: center;
   gap: 0.3125rem;
 }
+.ai-review__briefing-meta code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--tint-neutral-bg);
+  padding: 0.08rem 0.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
 
 .ai-review__privacy-badge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: 0.5rem 0.875rem;
-  border-radius: var(--radius-lg);
-  background: var(--tint-success-bg, rgba(16, 185, 129, 0.08));
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background: var(--tint-success-bg);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-success-text);
   flex-shrink: 0;
 }
 
 .ai-review__privacy-icon {
   color: var(--color-success);
-  display: flex;
+  display: inline-flex;
   align-items: center;
-}
-
-.ai-review__privacy-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.25;
-}
-.ai-review__privacy-text strong {
-  font-size: var(--font-size-xs);
-  color: var(--color-success-text);
-}
-.ai-review__privacy-text span {
-  font-size: 0.6875rem;
-  color: var(--color-text-secondary);
 }
 
 /* ==========================================================================
@@ -330,7 +291,7 @@
 .ai-review-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
   width: 100%;
 }
 
@@ -341,7 +302,7 @@
 .ai-review__studio-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
   align-items: stretch;
   width: 100%;
 }
@@ -356,7 +317,7 @@
 .ai-review__studio-card {
   display: flex;
   flex-direction: column;
-  padding: 1.25rem 1.4rem;
+  padding: 1rem 1.2rem;
   border-radius: var(--radius-xl);
   min-width: 0;
 }
@@ -371,13 +332,18 @@
   box-sizing: border-box;
 }
 
+.ai-review__summary-block {
+  min-height: 4.5rem;
+  max-height: 8.5rem;
+}
+
 .ai-review__studio-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
   flex-wrap: wrap;
-  margin-bottom: var(--spacing-sm-md);
+  margin-bottom: var(--spacing-xs);
 }
 
 .ai-review__studio-card-title {
@@ -397,8 +363,8 @@
 .ai-review__secondary-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--spacing-lg);
-  align-items: stretch;
+  gap: var(--spacing-md);
+  align-items: start;
   width: 100%;
 }
 
@@ -482,12 +448,15 @@
   }
 }
 
-
 /* Extraction 2-column form rows */
 .ai-review__extraction-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
+}
+
+.ai-review__extraction-grid > :nth-child(3) {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 600px) {

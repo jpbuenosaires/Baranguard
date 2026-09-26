@@ -1016,3 +1016,14 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+.attention-banner--compact {
+  padding: 0.4375rem 0.875rem;
+}
+
+.citizen-conversion-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+

@@ -37,4 +37,23 @@ describe('Analytics behaviour', () => {
     assert.ok(source, 'no GeoJSON source was added to the heatmap');
     assert.equal(source.data.features.length, 3, 'the 3 incidents with coordinates should be plotted; the one without must be skipped');
   });
+
+  test('Preview & Print opens the Statistical Report A4 print preview sheet', async () => {
+    const ctx = mountPage(renderAnalyticsPage, { role: 'admin' });
+    await settle();
+    const previewBtn = ctx.root.querySelector('#preview-report-print-btn');
+    assert.ok(previewBtn, 'Preview & Print button should be rendered on the Reports tab');
+    click(previewBtn);
+    await settle();
+
+    const sheet = document.querySelector('#printable-report-sheet');
+    assert.ok(sheet, 'Printable statistical report A4 sheet should be mounted');
+    assert.ok(document.body.classList.contains('has-print-modal'), 'body should have has-print-modal while preview is open');
+    assert.match(text(sheet), /BARANGAY INCIDENT & PEACEKEEPING STATISTICAL REPORT/i);
+
+    const closeBtn = document.querySelector('#close-print-modal');
+    click(closeBtn);
+    assert.ok(!document.body.classList.contains('has-print-modal'), 'closing modal should remove has-print-modal');
+  });
 });
+

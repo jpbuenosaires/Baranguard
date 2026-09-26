@@ -828,6 +828,8 @@ final class BlotterController
         ]);
 
         header('Content-Type: application/pdf');
+        header('Cache-Control: no-store, no-cache, must-revalidate');
+        header('Pragma: no-cache');
         header('Content-Length: ' . (string) filesize($path));
         header('Content-Disposition: attachment; filename="lupon-packet-incident-' . (int) $context['incident_id'] . '.pdf"');
         readfile($path);
@@ -848,14 +850,26 @@ final class BlotterController
         $incidentId = (int) $incidentIdParam;
 
         $stmt = $pdo->prepare(
-            'SELECT i.incident_id, i.barangay_id, i.incident_type, i.status, i.created_at,
+            "SELECT i.incident_id, i.barangay_id, i.incident_type, i.status, i.created_at,
+                    i.display_id AS incident_display_id,
+                    i.location_description, i.latitude, i.longitude,
+                    i.complainant_name AS incident_complainant_name,
+                    i.respondent_name AS incident_respondent_name,
+                    i.complainant_contact_number AS incident_contact_number,
                     i.redacted_narrative, i.redaction_approved_at,
-                    b.blotter_id, b.narrative_summary, b.finalized_at, b.revision_no, b.amended_at,
-                    bar.name AS barangay_name, bar.municipality, bar.province
+                    b.blotter_id, b.display_id AS blotter_display_id, b.case_status,
+                    b.complainant_name, b.respondent_name, b.complainant_contact_number,
+                    b.narrative_summary, b.finalized_at, b.revision_no, b.amended_at,
+                    bar.name AS barangay_name, bar.municipality, bar.province,
+                    sec.full_name AS secretary_name,
+                    (SELECT u.full_name FROM user u
+                     WHERE u.barangay_id = i.barangay_id AND u.role = 'punong_barangay' AND u.is_active = 1
+                     LIMIT 1) AS pb_name
              FROM incident i
              JOIN barangay bar ON bar.barangay_id = i.barangay_id
              LEFT JOIN blotter_record b ON b.incident_id = i.incident_id
-             WHERE i.incident_id = :incident_id'
+             LEFT JOIN user sec ON sec.user_id = b.recorded_by
+             WHERE i.incident_id = :incident_id"
         );
         $stmt->execute(['incident_id' => $incidentId]);
         $context = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -873,6 +887,12 @@ final class BlotterController
             throw new ApiError(409, 'CONFLICT', 'This incident has no finalized blotter record yet.');
         }
 
+        $evStmt = $pdo->prepare(
+            'SELECT type, original_filename FROM evidence_attachment WHERE incident_id = :incident_id ORDER BY uploaded_at ASC'
+        );
+        $evStmt->execute(['incident_id' => $incidentId]);
+        $context['evidence_rows'] = $evStmt->fetchAll(PDO::FETCH_ASSOC);
+
         return $context;
     }
 
@@ -880,51 +900,151 @@ final class BlotterController
     private static function buildPacketPdf(array $context): string
     {
         $incidentId = (int) $context['incident_id'];
+        $blotterId = (int) $context['blotter_id'];
+        $revisionNo = (int) $context['revision_no'];
         $barangay = (string) $context['barangay_name'];
+        $municipality = (string) $context['municipality'];
+        $province = (string) $context['province'];
 
-        $pdf = SimplePdf::create("Lupon Case Packet - Incident #{$incidentId}")
-            ->heading('LUPONG TAGAPAMAYAPA — CASE PACKET', 15.0)
-            ->paragraph(sprintf(
-                'Barangay %s, %s, %s',
-                $barangay,
-                (string) $context['municipality'],
-                (string) $context['province']
-            ))
-            ->rule()
-            ->keyValue('Incident number', '#' . $incidentId)
-            ->keyValue('Incident type', str_replace('_', ' ', (string) $context['incident_type']))
-            ->keyValue('Reported', self::formatManilaTime((string) $context['created_at']))
-            ->keyValue('Blotter record', '#' . (int) $context['blotter_id'])
-            ->keyValue('Blotter revision', (string) (int) $context['revision_no'])
-            ->keyValue('Finalized', self::formatManilaTime((string) $context['finalized_at']));
+        $blotterDisplayId = !empty($context['blotter_display_id'])
+            ? (string) $context['blotter_display_id']
+            : ('#' . $blotterId);
+        $incidentDisplayId = !empty($context['incident_display_id'])
+            ? (string) $context['incident_display_id']
+            : ('#' . $incidentId);
+        $entryIdWithRev = $blotterDisplayId . ' (Rev. ' . $revisionNo . ')';
 
-        if ($context['amended_at'] !== null) {
-            $pdf->keyValue('Last amended', self::formatManilaTime((string) $context['amended_at']));
+        $caseStatus = strtoupper(str_replace('_', ' ', (string) ($context['case_status'] ?? 'active')));
+        $incidentType = ucwords(str_replace('_', ' ', (string) $context['incident_type']));
+        $finalizedTime = self::formatManilaTime((string) $context['finalized_at']);
+        $reportedTime = self::formatManilaTime((string) $context['created_at']);
+        $verificationCode = self::formatVerificationCode(self::packetDigest($context));
+
+        $complainantName = trim((string) ($context['complainant_name'] ?? $context['incident_complainant_name'] ?? ''));
+        if ($complainantName === '') {
+            $complainantName = 'Not recorded';
+        }
+        $contactNumber = trim((string) ($context['complainant_contact_number'] ?? $context['incident_contact_number'] ?? ''));
+        if ($contactNumber === '') {
+            $contactNumber = 'Not recorded';
+        }
+        $respondentName = trim((string) ($context['respondent_name'] ?? $context['incident_respondent_name'] ?? ''));
+        if ($respondentName === '') {
+            $respondentName = 'Not recorded';
         }
 
-        $pdf->keyValue('Redaction approved', self::formatManilaTime((string) $context['redaction_approved_at']))
-            ->rule()
-            ->heading('BLOTTER SUMMARY', 12.0)
-            ->paragraph((string) $context['narrative_summary'])
-            ->heading('APPROVED INCIDENT NARRATIVE', 12.0)
-            ->paragraph((string) $context['redacted_narrative'])
-            ->rule()
-            ->paragraph(
-                'This packet contains the human-approved redacted narrative and the '
-                . 'finalized blotter summary for the case above. Personal identifiers have '
-                . 'been removed under the Data Privacy Act (RA 10173); placeholders such as '
-                . '[NAME] and [ADDRESS] mark where identifying details were withheld.'
+        $secretaryName = !empty($context['secretary_name'])
+            ? (string) $context['secretary_name']
+            : 'Barangay Desk Officer';
+        $pbName = !empty($context['pb_name'])
+            ? (string) $context['pb_name']
+            : 'PUNONG BARANGAY / LUPON CHAIRPERSON';
+
+        $locationText = trim((string) ($context['location_description'] ?? ''));
+        if ($locationText === '') {
+            if ($context['latitude'] !== null && $context['longitude'] !== null) {
+                $locationText = sprintf('%.5f, %.5f', (float) $context['latitude'], (float) $context['longitude']);
+            } else {
+                $locationText = 'No location recorded';
+            }
+        }
+
+        $evRows = is_array($context['evidence_rows'] ?? null) ? $context['evidence_rows'] : [];
+        if (count($evRows) > 0) {
+            $evLabels = array_map(
+                static fn(array $r): string => !empty($r['original_filename']) ? (string) $r['original_filename'] : (string) $r['type'],
+                $evRows
+            );
+            $evCount = count($evRows);
+            $evidenceText = sprintf(
+                '%d attachment%s on file (%s)',
+                $evCount,
+                $evCount === 1 ? '' : 's',
+                implode(', ', $evLabels)
+            );
+        } else {
+            $evidenceText = 'No attachments logged';
+        }
+
+        $pdf = SimplePdf::create("Lupon Case Packet - {$blotterDisplayId}")
+            // 1. Masthead matching `.print-sheet__masthead`
+            ->center('REPUBLIC OF THE PHILIPPINES', 8.0, true, [0.28, 0.33, 0.41], 11.0)
+            ->center(sprintf('PROVINCE OF %s · MUNICIPALITY OF %s · BARANGAY %s', strtoupper($province), strtoupper($municipality), strtoupper($barangay)), 7.5, false, [0.28, 0.33, 0.41], 12.0)
+            ->center('OFFICE OF THE LUPONG TAGAPAMAYAPA', 13.5, true, [0.12, 0.23, 0.43], 17.0)
+            ->pillBadge('BARANGAY ELECTRONIC BLOTTER & CASE RECORD', 7.5, 20.0)
+            ->rule(1.5, [0.12, 0.23, 0.43], 12.0)
+
+            // 2. 4-Column Meta Bar matching `.print-sheet__meta-bar`
+            ->metaBar([
+                ['label' => 'Blotter Entry No.', 'value' => $entryIdWithRev],
+                ['label' => 'Classification', 'value' => $incidentType],
+                ['label' => 'Case Status', 'value' => $caseStatus],
+                ['label' => 'Finalized', 'value' => $finalizedTime],
+            ], 42.0)
+
+            // 3. 2-Column Parties Grid matching `.print-sheet__parties`
+            ->partyCards(
+                [
+                    'role' => 'Complainant / Reporting Party',
+                    'name' => $complainantName,
+                    'sub' => 'Contact: ' . $contactNumber,
+                ],
+                [
+                    'role' => 'Respondent / Subject of Inquiry',
+                    'name' => $respondentName,
+                    'sub' => 'Recording Officer: ' . $secretaryName,
+                ],
+                58.0
             )
-            ->keyValue('Verification code', self::formatVerificationCode(self::packetDigest($context)))
-            ->paragraph(
-                'To verify this printed copy: regenerate the packet for this incident in '
-                . 'Baranguard and compare the verification code above. The code is derived '
-                . 'from the case content itself, so it stays the same on every regeneration '
-                . 'of an unchanged record — a code that no longer matches means the record '
-                . 'was amended after this copy was printed, or this copy did not come from '
-                . 'this system. It is an integrity check, not a signature.'
+
+            // 4. 2-Column Field Boxes matching `.print-sheet__grid-2col`
+            ->twoColFields(
+                ['label' => 'Incident Location', 'value' => $locationText],
+                ['label' => 'Evidence Inventory', 'value' => $evidenceText],
+                44.0
             )
-            ->paragraph('Generated ' . self::formatManilaTime(gmdate('Y-m-d H:i:s')) . ' (Asia/Manila).');
+
+            // 5. Official Blotter Summary Callout Box matching `.print-sheet__section`
+            ->calloutSection('Official Blotter Summary', (string) $context['narrative_summary'], 9.0)
+
+            // 6. Approved Redacted Narrative Callout Box matching `.print-sheet__section`
+            ->calloutSection('Approved Redacted Narrative (RA 10173 Compliant)', (string) $context['redacted_narrative'], 9.0)
+
+            // 7. Originating Incident & SHA-256 Verification Bar
+            ->twoColFields(
+                [
+                    'label' => 'Originating Incident & Audit',
+                    'value' => sprintf('%s · Reported %s', $incidentDisplayId, $reportedTime),
+                ],
+                [
+                    'label' => 'SHA-256 Verification Code',
+                    'value' => $verificationCode,
+                ],
+                46.0
+            )
+
+            // 8. Centered Dual Signatures matching `.print-sheet__signatures`
+            ->centeredSignatures(
+                strtoupper($secretaryName),
+                'Barangay Secretary / Recording Officer',
+                strtoupper($pbName),
+                'Punong Barangay / Lupon Chairperson',
+                56.0
+            )
+
+            // 9. Footer Notice matching `.print-sheet__footer`
+            ->rule(0.5, [0.80, 0.84, 0.88], 8.0)
+            ->center(
+                sprintf(
+                    'Official Lupon Tagapamayapa packet generated from Baranguard (%s Asia/Manila) · Verification Code: %s',
+                    self::formatManilaTime(gmdate('Y-m-d H:i:s')),
+                    $verificationCode
+                ),
+                7.2,
+                false,
+                [0.28, 0.33, 0.41],
+                11.0
+            );
 
         return $pdf->render();
     }
