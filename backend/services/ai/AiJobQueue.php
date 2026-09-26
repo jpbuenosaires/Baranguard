@@ -221,8 +221,8 @@ final class AiJobQueue
         }
 
         $rowStmt = $pdo->prepare(
-            'SELECT log_id, incident_id, barangay_id, pipeline_run_id, task_type, model_version, target_language,
-                    draft_redacted_narrative, draft_version, tool_input, status, created_at
+            'SELECT log_id, incident_id, pipeline_run_id, task_type, model_version, target_language,
+                    draft_redacted_narrative, draft_version, status, created_at
              FROM ai_processing_log WHERE log_id = :log_id'
         );
         $rowStmt->execute(['log_id' => (int) $logId]);
@@ -410,8 +410,8 @@ final class AiJobQueue
             }
 
             $rowStmt = $pdo->prepare(
-                'SELECT log_id, incident_id, barangay_id, pipeline_run_id, task_type, model_version, target_language,
-                        draft_redacted_narrative, draft_version, tool_input, status, created_at
+                'SELECT log_id, incident_id, pipeline_run_id, task_type, model_version, target_language,
+                        draft_redacted_narrative, draft_version, status, created_at
                  FROM ai_processing_log WHERE log_id = :log_id'
             );
             $rowStmt->execute(['log_id' => (int) $logId]);
@@ -631,6 +631,64 @@ final class AiJobQueue
         $stmt->bindValue(':minutes', $olderThanMinutes, PDO::PARAM_INT);
         $stmt->execute();
         return $stmt->rowCount();
+    }
+
+    /**
+     * A read-only queue snapshot for operational visibility — backs
+     * `GET /system/ai-queue` (Admin + Secretary). Before this, the ONLY
+     * way to see the queue at all was `ai-worker.php --status`/`--daemon`
+     * in a terminal someone happened to be watching, which meant a
+     * stalled or crash-looping worker (e.g. Ollama's GPU backend dying on
+     * load) was invisible until a job had been "queued" for suspiciously
+     * long. Allow-listed fields only, same spirit as Rule 8: log_id,
+     * task_type, incident_id, created_at — never narrative content.
+     *
+     * `createdAt` on a `processing` row is honestly labelled as when the
+     * job was ENQUEUED, not when the model call actually started — §5 has
+     * no `claimed_at` column (see `requeueStaleProcessing()`'s own note on
+     * why that's an accepted limitation for this single-worker
+     * deployment), so this reports the same approximation rather than
+     * inventing a start time it doesn't have.
+     *
+     * Response keys are snake_case, matching this API's normal JSON
+     * convention (the web client maps them to camelCase itself, same as
+     * every other endpoint — see apiClient.js's getAiQueueStatus()).
+     *
+     * @return array{
+     *   depth: array{queued:int,processing:int,completed:int,failed:int},
+     *   oldest_queued: array{log_id:int,task_type:string,incident_id:int,created_at:string}|null,
+     *   processing: list<array{log_id:int,task_type:string,incident_id:int,created_at:string}>
+     * }
+     */
+    public static function queueSnapshot(PDO $pdo): array
+    {
+        $oldestStmt = $pdo->query(
+            "SELECT log_id, task_type, incident_id, created_at FROM ai_processing_log
+             WHERE status = 'queued' ORDER BY created_at ASC, log_id ASC LIMIT 1"
+        );
+        $oldestRow = $oldestStmt === false ? false : $oldestStmt->fetch(PDO::FETCH_ASSOC);
+
+        $processingStmt = $pdo->query(
+            "SELECT log_id, task_type, incident_id, created_at FROM ai_processing_log
+             WHERE status = 'processing' ORDER BY created_at ASC, log_id ASC"
+        );
+        $processingRows = $processingStmt === false ? [] : $processingStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        return [
+            'depth' => self::depth($pdo),
+            'oldest_queued' => $oldestRow === false ? null : [
+                'log_id' => (int) $oldestRow['log_id'],
+                'task_type' => (string) $oldestRow['task_type'],
+                'incident_id' => (int) $oldestRow['incident_id'],
+                'created_at' => (string) $oldestRow['created_at'],
+            ],
+            'processing' => array_map(static fn(array $r): array => [
+                'log_id' => (int) $r['log_id'],
+                'task_type' => (string) $r['task_type'],
+                'incident_id' => (int) $r['incident_id'],
+                'created_at' => (string) $r['created_at'],
+            ], $processingRows),
+        ];
     }
 
     /** @return array{queued:int,processing:int,completed:int,failed:int} */

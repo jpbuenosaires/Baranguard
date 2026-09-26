@@ -6,6 +6,34 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
+**2026-09-26, later still — a real bug in the AI Tools removal commit
+found and fixed, plus AI queue visibility added.** After the AI Tools
+removal (migrations 0027/0028) was committed, the user reported the AI
+queue was invisible and jobs seemed to take too long. Running the worker
+for real (not just `php -l`) immediately surfaced a genuine break:
+`AiJobQueue::claimNextQueuedJob()`/`claimSiblingJob()` still selected
+`barangay_id`/`tool_input`, both dropped by 0028 — the worker could not
+claim a single job. Fixed. Separately, `%LOCALAPPDATA%\Ollama\
+server.log` showed the REAL cause of the slowness: this workstation's
+Ollama GPU backend crashes on roughly half of cold model loads (`CUDA
+error: shared object initialization failed`), which `OllamaClient.php`
+correctly treats as "unavailable" and the worker requeues-and-stops on —
+so one flaky crash silently halted the whole queue until someone noticed
+and reran it by hand, which is what let a job's elapsed time balloon to
+as long as an hour even though no single generation call ever took more
+than ~24s. User declined touching the GPU driver; `OllamaClient::
+generate()` now retries a crashed load up to 3 times (4s apart) inside
+one job before falling back to the existing requeue-and-stop. New `GET
+/system/ai-queue` (Admin+Secretary) plus a Service Health panel and a
+Secretary topbar tooltip give real queue visibility for the first time —
+previously the only way to see `ai_processing_log` at all was
+`ai-worker.php --status`/`--daemon` in a terminal. Full detail,
+including the real Ollama log timestamps and a second real bug found
+during browser verification (a `NaNm ago` date-parsing double-`Z` bug):
+`backend/DEVLOG.md` 2026-09-26 (24). GPU/CUDA driver instability itself
+remains unresolved — the retry only papers over it, by explicit user
+choice this session.
+
 **2026-09-26, same day, later — C-03 (remote access) IN PROGRESS, real
 requirement change.** User needs Tanod/Secretary/PB to reach the system
 off the barangay LAN — reverses the "stay LAN-only" assumption C-03 was

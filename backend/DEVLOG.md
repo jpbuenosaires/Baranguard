@@ -16153,3 +16153,100 @@ schema map, §5 endpoints, §6 design system, §7 screens) already carried
 this change's description going into this session; this entry is the
 DEVLOG record that should have shipped alongside it and didn't until
 now — logged per SPRINTS.md's own "log deviations in DEVLOG.md" rule.
+
+## 2026-09-26 (24) — Real bug in the just-committed migration 0028 cleanup, found by actually running the worker; AI queue visibility added; a real GPU/Ollama crash root-caused
+
+User reported two things after entry (23) was committed: no way to see
+the AI job queue at all, and jobs "taking too long" even though running
+the same model manually in `ollama run` felt fast. Investigated by
+actually running the worker rather than guessing.
+
+**Found immediately: `ai-worker.php` couldn't claim a job at all.**
+`AiJobQueue::claimNextQueuedJob()`/`claimSiblingJob()` still selected
+`barangay_id`/`tool_input` — both dropped from `ai_processing_log` by
+entry (23)'s own migration 0028. `php -l` is a syntax check, not a
+schema check, so this shipped straight through that entry's own
+verification and would have broken the worker on any deployment with
+0028 applied the moment someone next ran it. Fixed both queries to drop
+the removed columns; confirmed by actually claiming and completing a
+real queued job afterward.
+
+**Real root cause of the slowness, found in `%LOCALAPPDATA%\Ollama\
+server.log`, not assumed:** this workstation's Ollama GPU (CUDA) backend
+crashes on roughly half of cold model loads — `CUDA error: shared object
+initialization failed`, the `llama-server` subprocess exiting with a
+stack-buffer-overrun status (`0xc0000409`), which Ollama surfaces to the
+API caller as a plain HTTP 500. Ten real `/api/generate` calls logged
+over one afternoon: five succeeded (14–24s, normal generation time for
+this 8B model), five failed the same way (17–24s, one hit the full 5-
+minute timeout). `OllamaClient.php` correctly treats a 500 as "Ollama
+unavailable" (Rule 15) and the worker requeues-and-STOPS on it — meaning
+one flaky GPU crash silently halted the entire queue until a human
+noticed and reran the worker by hand, which is what made a job's
+`created_at`→`processed_at` gap balloon to as much as an hour (real
+example: job 5, incident 19, 03:49:59→04:50:39) even though no single
+generation call ever ran anywhere near that long. Running `ollama run`
+manually "felt fine" because each manual attempt was just another
+50/50 coin flip that happened to land on a working load — same failure
+mode, no different code path, pure survivorship bias in what the user
+noticed.
+
+Asked the user how to handle it (AskUserQuestion): GPU driver work was
+explicitly declined ("I don't know, maybe just how it usually works in
+command prompt") — read as "make the app retry like a person re-running
+the command would," not "leave the GPU alone and eat the failures."
+Implemented in `OllamaClient::generate()`: up to 3 attempts, 4s apart,
+entirely inside one job's model call, before the existing
+requeue-and-stop behavior kicks in — adds at most ~8s to a genuinely-down
+service, and turns a ~50% single-attempt failure rate into a ~12.5%
+chance of exhausting all three (0.5³). Deliberately NOT touched: forcing
+CPU-only inference, GPU driver reinstall/update — infra decisions outside
+what the user asked for this session.
+
+**Second ask: real queue visibility, since there genuinely was none** —
+`ai-worker.php --status`/`--daemon` in a terminal was the ONLY way to see
+`ai_processing_log` at all. Added `AiJobQueue::queueSnapshot()` (depth
+counts + the oldest queued job + every row currently `processing`,
+allow-listed fields only — log_id/task_type/incident_id/created_at,
+never narrative, same boundary as Rule 8's audit allow-list even though
+this isn't audit_log) behind a new `GET /system/ai-queue`
+(`SystemHealthController::aiQueue()`, Admin + Secretary — same access as
+the existing `ollama-status` endpoint, same reasoning: Secretary is the
+role that actually runs this pipeline). Web side: a new "AI Job Queue"
+panel on Service Health (Admin, `service-health.js`) with live counts and
+which job (if any) is processing; the Secretary topbar AI badge's tooltip
+(no Service Health page for that role) now folds in `queued`/`processing`
+counts too — fixed a real race in that change along the way, where two
+independent `getOllamaStatus()`/`getAiQueueStatus()` `.then()` calls could
+clobber each other's contribution to the same `title` depending on
+resolution order; combined via `Promise.all` instead.
+
+**A second real bug found and fixed during browser verification**: the
+new queue panel's "enqueued Nm ago" showed `NaNm ago`. Cause:
+`apiClient.js`'s `reviveUtcTimestamps` already converts every bare SQL
+datetime in a response to an ISO `...Z` string (see its own doc block —
+this is a codebase-wide fix from a prior session, not new), so
+`created_at` arrives already `Z`-suffixed; the new code additionally
+appended `+ 'Z'` before parsing, producing a doubled suffix `new
+Date()` can't parse. Fixed by dropping the redundant append.
+
+**Migration**: none — this session touched only application code, no
+schema change.
+
+**Verified for real**: `php -l` clean on every touched file;
+`verify-eval-scorers.php` 33/33; `web/tests` 395/395 (fixture added for
+the new endpoint, `web/tests/harness/fixtures.mjs`); `verify-web-
+wiring.mjs` 547 passing (same 2 pre-existing unrelated failures as
+entry (23), confirmed via `git stash`, not a regression); a real queued
+job claimed and completed end-to-end after the column fix
+(incident 18, 73.3s); the new Service Health panel and Secretary topbar
+tooltip both checked live in-browser as `admin.dao`/`secretary.dao`
+against the real `baranguard_uiseed` data (4 queued / 0 processing / 7
+completed / 0 failed, oldest-queued age rendering correctly after the
+NaN fix, zero console errors either role).
+
+**Not done**: the GPU/CUDA driver issue itself is unresolved — the
+retry only papers over it, per the user's explicit choice this session.
+If it gets worse (all 3 retries starting to fail routinely), revisit
+forcing CPU-only inference or a GPU driver update, both previously
+declined as out of scope here.

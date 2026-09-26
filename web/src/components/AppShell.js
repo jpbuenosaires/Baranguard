@@ -18,7 +18,7 @@ import { icons } from './icons.js';
 import { avatarInitials } from './Avatar.js';
 import { Menu, MenuItem, MenuDivider } from './Menu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
-import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getOllamaStatus, getBarangays } from '../api/apiClient.js';
+import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getOllamaStatus, getAiQueueStatus, getBarangays } from '../api/apiClient.js';
 import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
 
 // notification.notification_type values that should play an audible cue
@@ -729,18 +729,33 @@ export function AppShell(user, activePage, navigate, onLogout) {
     aiBadge.style.display = 'none';
     topbarUser.appendChild(aiBadge);
 
-    getOllamaStatus().then(({ ollama }) => {
+    // Queue depth folded into the same tooltip — Secretary has no Service
+    // Health page (Admin-only, §7), so this ambient tooltip is the only
+    // "is anything stuck" signal available to the role that actually
+    // enqueues these jobs. Before GET /system/ai-queue existed, the only
+    // way to see this at all was `ai-worker.php --status` on the
+    // workstation itself. Both calls are awaited together (rather than
+    // two independent `.then()`s) so whichever resolves last doesn't
+    // clobber the other's contribution to `aiBadge.title`.
+    Promise.all([
+      getOllamaStatus().catch(() => ({ ollama: null })),
+      getAiQueueStatus().catch(() => null),
+    ]).then(([{ ollama }, q]) => {
       aiBadge.style.display = 'inline-flex';
       const isOk = ollama === 'healthy';
       const isWarn = ollama === 'unhealthy';
       aiBadge.className = `topbar__ai-badge topbar__ai-badge--${isOk ? 'ok' : isWarn ? 'warn' : 'neutral'}`;
       aiBadge.querySelector('.topbar__ai-text').textContent = isOk ? 'AI Ready' : isWarn ? 'AI Offline' : 'AI Inactive';
-      aiBadge.title = isOk
+      const baseTitle = isOk
         ? 'Local Ollama AI model is online and ready.'
         : isWarn
           ? 'Local AI model is not responding. AI drafting is paused.'
           : 'No local AI model is configured on this workstation.';
-    }).catch(() => {});
+      const queuedNote = q && q.depth.queued > 0
+        ? ` · Queue: ${q.depth.queued} waiting, ${q.depth.processing} processing`
+        : '';
+      aiBadge.title = baseTitle + queuedNote;
+    });
   }
 
   // Divider between operational metrics (clock + health) and user controls

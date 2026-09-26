@@ -978,6 +978,25 @@ export async function getOllamaStatus() {
   return { ollama: json.ollama };
 }
 
+/**
+ * GET /system/ai-queue — Admin + Secretary. Before this endpoint existed
+ * there was no way to see the AI job queue (`ai_processing_log`) at all
+ * without shelling into `ai-worker.php --status`/`--daemon` on the
+ * workstation itself — this surfaces the same counts plus which job, if
+ * any, is currently claimed. Allow-listed fields only, same as the
+ * server side: log_id/task_type/incident_id/created_at, never narrative.
+ */
+export async function getAiQueueStatus() {
+  const json = await request('GET', '/system/ai-queue', { auth: true });
+  const mapJob = (row) => ({ logId: row.log_id, taskType: row.task_type, incidentId: row.incident_id, createdAt: row.created_at });
+  return {
+    depth: json.depth,
+    oldestQueued: json.oldest_queued ? mapJob(json.oldest_queued) : null,
+    processing: (json.processing ?? []).map(mapJob),
+    ollama: json.ollama,
+  };
+}
+
 /** GET /system/health — Admin only. Coarse status per dependency; see SystemHealthController.php. */
 export async function getSystemHealth() {
   const json = await request('GET', '/system/health', { auth: true });
