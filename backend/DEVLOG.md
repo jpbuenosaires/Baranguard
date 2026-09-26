@@ -17184,3 +17184,107 @@ polling now only starts once you've actually switched to it.
 
 Not touched: any backend code or endpoint (this was 100% a frontend
 reorganization — every API contract W7/W8 already used is unchanged).
+
+## 2026-09-27 (1) — Shared print-preview modal + statutory PDF overhaul (in-progress work found uncommitted, committed as-is); blotter-workflow clarity fix
+
+Two unrelated pieces of work landed in the same commit (`0058be7`):
+substantial print/PDF work that was already sitting uncommitted in the
+working tree when this session started (not authored in this session —
+committed as-is after verification, since no DEVLOG entry existed for it
+yet), and a UX fix for the incident-to-blotter workflow done in this
+session. Recorded together here since they shipped together; treat the
+"real numbers"/verification claims below as applying to what was
+actually re-run this session, not as first-hand authorship of the
+print/PDF piece.
+
+**Print/PDF work (found uncommitted, not authored this session):**
+
+- New `web/src/components/PrintPreviewModal.js` — one shared A4
+  print-preview modal (`openPrintPreviewModal()`), replacing whatever
+  print handling each of Blotter Detail, Statistical Reports, Audit Log,
+  Citizen Report, and Public Transparency had before. Mounts a
+  `.print-sheet` node directly under `document.body` so `@media print`
+  can isolate it, and unlocks the SPA's `height:100%; overflow:hidden`
+  shell via a `body.has-print-modal` class while open.
+- `backend/services/pdf/SimplePdf.php` gained new composable primitives
+  (`pillBadge`, `metaBar`, `kpiGrid`, `partyCards`, `twoColFields`,
+  `calloutSection`, `centeredSignatures`) so server-generated PDFs
+  visually match the new `.print-sheet__*` on-screen layout instead of
+  the old plain heading/keyValue/paragraph style.
+- `BlotterController::luponPacket()`'s PDF was rebuilt on those
+  primitives: now includes case status, a 2-column parties grid (with
+  contact/recording-officer sub-lines), an evidence inventory pulled
+  from `evidence_attachment` (a new query added to `packetContext()`),
+  the originating incident reference, and centered dual signatures
+  (Secretary + Punong Barangay, PB name resolved via a new
+  `pb_name` subquery keyed on `role = 'punong_barangay'`). The
+  verification-code mechanism (SHA-256 digest of case content, an
+  integrity check not a signature — unchanged in concept) is preserved.
+- `ReportsController`'s statistical-report and PB-digest PDFs got the
+  same masthead/meta-bar/KPI-grid treatment.
+- `ReportsController::exportDownload()`/`digestDownload()` and
+  `BlotterController::luponPacketDownload()` now send
+  `Cache-Control: no-store, no-cache, must-revalidate` + `Pragma:
+  no-cache`; the matching `apiClient.js` download functions
+  (`downloadReportExport`, `downloadReportsDigest`, `downloadLuponPacket`)
+  now pass `cache: 'no-store'` on the `fetch()` call — fixes a class of
+  bug where a re-download after amending/re-finalizing a record could
+  serve a stale cached PDF instead of the current one.
+- `admin-dashboard.js`'s PB-digest card on the Admin dashboard was
+  restyled into a tile-based manifest (coverage window / last generated /
+  included sections) instead of a single line of text.
+
+**Blotter-workflow clarity fix (this session — see the plan behind it
+in-conversation, not re-derived here):** not every incident is meant to
+become a blotter — some are legitimately closed as a report only, a
+Secretary's deliberate judgment call via `POST /incidents/:id/finalize`.
+The gap: the Blotter tab and its `BlotterWorkflow.js` stepper always
+rendered as if "finalize" were still a live pending step, even for an
+incident already resolved/cancelled/invalid/duplicate with no blotter —
+no way to tell "not decided yet" from "decided: report only." Fixed with
+a **derived-only** status (`web/src/utils/blotterStatus.js`, no new
+field/column/endpoint): `finalized` / `closed_no_blotter` /
+`awaiting_decision` / `not_started`, computed from
+`incident.status` + `incident.redactionApprovedAt` + blotter existence.
+`BlotterWorkflow.js`'s stepper now short-circuits to "Closed — no
+blotter record needed" instead of the normal 4-stage progression for a
+closed, never-finalized incident; `blotter-detail.js`'s Blotter tab shows
+the same derived state to every viewer instead of a flat "No blotter
+entry yet" note, with the finalize form still reachable behind an
+explicit "This incident still needs a blotter entry" toggle for the rare
+case a closed incident genuinely still needs one (the server itself has
+no status precondition on finalize, so this is a UI framing choice, not
+a new restriction). The resolve-confirmation dialog
+(`buildAdminResolvePanel`) now says so explicitly when resolving an
+incident that has an approved redaction but no blotter yet.
+
+Two ideas were raised and deliberately dropped before implementing,
+worth recording so a future session doesn't re-propose them cold: a
+"Blotter" column/filter on the incident list (dropped — incident list
+stays incident-only, per explicit user direction), and a separate
+"Blotter" nav item/screen listing converted incidents (dropped after
+flagging that `docs/REFERENCE.md` §7 documents the removed W6 Electronic
+Blotter list as a **legal** constraint — DILG BIMSS/KPIS is the mandated
+case ledger, not a design preference to be quietly re-added).
+
+**Verified this session**: `node --check` clean on every touched JS
+file; `php -l` clean on `BlotterController.php`/`ReportsController.php`/
+`SimplePdf.php`; `node web/scripts/verify-web-wiring.mjs` 586/586 (up
+from the 564/2-failing baseline noted in the previous HANDOFF snapshot —
+the print/PDF work's own changes happened to fix both pre-existing
+`admin-dashboard.js`/`statistical-reports.js` CSS-class failures too,
+confirmed by re-running, not assumed); `web/tests` 402/402 (up from 399,
+3 new/updated specs). Browser-verified the blotter-workflow fix live as
+`secretary.dao` against real `baranguard_uiseed` demo data: INC-2026-010
+(resolved, never finalized) now shows "Closed — no blotter" on both the
+stepper and the Blotter tab, with the override toggle correctly revealing
+the redaction-required note; INC-2026-018 (already finalized) renders
+unaffected; INC-2026-019 (redaction not yet approved) still shows the
+original "Not available yet" messaging. **Not independently
+browser-verified this session**: the print-preview modal itself and the
+regenerated PDF layouts (Lupon packet, statistical report, PB digest) —
+static checks (syntax/lint/wiring/tests) pass, but nobody this session
+clicked through an actual print preview or opened a freshly generated
+PDF to visually confirm the new masthead/meta-bar/signature layout
+renders correctly. If this surfaces as a problem later, that's the first
+place to look.
