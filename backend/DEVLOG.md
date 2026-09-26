@@ -16824,3 +16824,55 @@ files clean.
 identical fix, same confidence as the two that were run for real —
 `verify-sprint1-auth.sh`/`verify-sprint0.sh` already prove the pattern
 works; re-running all 26 for their own sake wasn't this session's ask).
+
+## 2026-09-26 (34) — "why is AI offline?": Apache's mod_php silently had no ext-curl, so /system/ollama-status always reported unhealthy
+
+User asked why the dashboard shows AI offline right after (32)'s PHP
+upgrade. `ai-worker.php --status` (CLI) said Ollama reachable, model
+present — genuinely healthy — but `GET /system/ollama-status` through
+Apache consistently returned `unhealthy`, and `SystemHealthController::
+ollamaStatus()` swallows the real exception into that one word (§6:
+never leak error detail), so the API gave no clue why.
+
+**Root-caused with a temporary diagnostic script** (`public/_diag_ollama
+.php`/`_diag2.php`, written, curled, deleted — never committed): under
+Apache's `apache2handler` SAPI, `function_exists('curl_init')` was
+FALSE and `get_loaded_extensions()` didn't include `curl` at all, even
+though the exact same `C:\xampp\php\php.ini` (confirmed via
+`php_ini_loaded_file()`) has `extension=curl` and the CLI `php.exe`
+loads it fine. `C:\xampp\php\logs\php_error_log` (PHP's OWN error log,
+separate from Apache's `httpd` error.log — easy to miss) had the real
+line: `PHP Startup: Unable to load dynamic library 'curl' ... The
+specified module could not be found`.
+
+**Why**: classic Windows DLL search-order gap. `deplister.exe
+ext/php_curl.dll` (bundled with the PHP zip) lists its real
+dependencies — `libcrypto-3-x64.dll`, `libssl-3-x64.dll`,
+`libssh2.dll`, `nghttp2.dll` — all present in `C:\xampp\php` (where CLI
+`php.exe` runs from, so the CLI finds them via its own directory). But
+Apache's process is `httpd.exe` in `C:\xampp\apache\bin`, and Windows'
+DLL search order for an implicitly-loaded dependency starts from the
+CALLING EXECUTABLE's directory, not the DLL's — `apache\bin` has
+same-NAMED copies of those four DLLs (bundled for `mod_ssl` etc.), but
+built differently, so php_curl.dll's dependency resolution against them
+fails. This gap has likely existed since (32)'s PHP swap but was masked
+until now: PHP 8.0.30's `mod_php` either didn't hit this (no
+`libcurl.dll`-style dependency in that older build) or the whole
+request path never got far enough to matter before Sprint 4's `readonly`
+fatal errors.
+
+**Fix**: `httpd-xampp.conf` gained four `LoadFile` directives (same
+pattern the file already used for `php8ts.dll`/`libpq.dll`/
+`libsqlite3.dll`) pointing at `C:/xampp/php/`'s own copies of the four
+dependency DLLs, placed BEFORE `LoadModule php_module` — this loads the
+correct versions into the process first, so `php_curl.dll`'s implicit
+dependency lookups resolve against them instead of `apache/bin`'s
+incompatible same-named copies.
+
+**Verified for real**: restarted Apache, confirmed via
+`GET /system/ollama-status` → `{"ollama":"healthy"}` and
+`GET /system/health` → `"ollama":"healthy"` (was `"unhealthy"`); no new
+"Unable to load dynamic library" lines in `php_error_log` after the
+restart. Re-ran `verify-json-contracts.php` (50/50) and
+`verify-web-wiring.mjs` (562/562, same 2 pre-existing unrelated
+failures) to confirm nothing else regressed from the Apache restart.

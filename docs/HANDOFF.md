@@ -6,7 +6,30 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
-**2026-09-26, latest — the mysql-client PATH/port gap noted below is now
+**2026-09-26, latest — "why is AI offline?": (32)'s PHP upgrade had
+silently broken `ext-curl` under Apache, fixed.** Real, user-reported
+symptom right after the PHP-8.3.13 swap: dashboard AI badge said
+offline, `GET /system/ollama-status` returned `unhealthy`, while
+`ai-worker.php --status` (CLI) correctly said Ollama was reachable —
+the two disagreed because Apache's `mod_php` genuinely had no `curl`
+extension loaded (`function_exists('curl_init')` false under
+`apache2handler`, confirmed with a temporary diagnostic script, never
+committed), even though the same `php.ini` and CLI `php.exe` load it
+fine. Cause: `php_curl.dll`'s real dependency DLLs live in
+`C:\xampp\php` (where CLI runs from), but Apache is `httpd.exe` in
+`C:\xampp\apache\bin`, which has same-named-but-incompatible copies of
+those same four DLLs — Windows resolves against the wrong ones and the
+load fails silently (real error only in `C:\xampp\php\logs\
+php_error_log`, not Apache's own error.log). Fixed with four `LoadFile`
+directives in `C:\xampp\apache\conf\extra\httpd-xampp.conf` (**not
+git-tracked — lives outside the repo, re-add if PHP is ever swapped
+again**), same pattern already used there for `php8ts.dll`. Verified for
+real: `GET /system/ollama-status` → `{"ollama":"healthy"}`,
+`verify-json-contracts.php` 50/50, `verify-web-wiring.mjs` 562/562 (same
+2 pre-existing unrelated failures) after an Apache restart. Full detail:
+`backend/DEVLOG.md` 2026-09-26 (34).
+
+**2026-09-26, earlier — the mysql-client PATH/port gap noted below is now
 fixed, not just documented.** All 29 `backend/scripts/*.sh` that talk to
 MariaDB directly (every `verify-*.sh` plus `bootstrap-db.sh`/`restore-
 drill.sh`) shared one copy-pasted `find_bin()` that checked `command -v
