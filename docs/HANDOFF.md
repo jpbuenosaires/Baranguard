@@ -6,7 +6,29 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
-**2026-09-26, latest — W21 web UI for the incident lifecycle endpoint
+**2026-09-26, latest — Periodic PB digest CLOSED (REMAINING.md §G).**
+Content half already existed (`GET /reports/export?format=pdf`);
+periodic half was blocked on C2, now closed. New
+`ReportsController::generateDigest()` (CLI-only, no HTTP generate route
+— same discipline as `retention-job.php`/`ai-worker.php`) reuses
+`buildSummaryPdf()` to write a per-barangay PDF, triggered weekly Monday
+06:00 by a new `BaranguardPbDigest` Scheduled Task running
+`scripts/generate-pb-digest.php`. Two new read-only endpoints
+(`GET /reports/digest`, `GET /reports/digest/download`, Admin+PB) back a
+new "Weekly Digest" card on the Punong Barangay dashboard — fills the
+second status-row column that was previously empty for that role (Quick
+Actions is Admin-only; read-only fits PB's oversight role). Verified
+end-to-end: ran the CLI script for real (4 real PDFs, real `%PDF-1.4`
+bytes), triggered the Scheduled Task via `Start-ScheduledTask`
+(`LastTaskResult`=0), hit both endpoints with real `curl` calls as a real
+Punong Barangay account, then browser-verified the card renders and a
+real click-through download succeeds (confirmed via
+`read_network_requests`, not just "no error shown"). `verify-json-
+contracts.php` 50/50, `verify-w2-reports.sh` 31/31, `verify-web-wiring.mjs`
+568/568 (same 2 pre-existing unrelated failures), `web/tests` 399/399.
+Full detail: `backend/DEVLOG.md` 2026-09-26 (37).
+
+**2026-09-26, earlier — W21 web UI for the incident lifecycle endpoint
 (H-16/M-03) CLOSED.** Backend/policy for `PATCH /incidents/:id/lifecycle`
 existed since an earlier session (migration 0025), but nothing in the
 web app called it. `blotter-detail.js` now has a Secretary-only "Case
@@ -975,10 +997,13 @@ powershell -ExecutionPolicy Bypass -File backend\scripts\install-scheduled-backu
 ```
 
 Registers `BaranguardBackupRetention` (daily 02:00 — `backup.sh` then
-`retention-job.php` for real) and `BaranguardRestoreDrill` (weekly Sunday
-03:00 — `restore-drill.sh`), both reading `backend/.env`'s
-`BACKUP_ENCRYPTION_PASSPHRASE` themselves. Logs land in
-`backend/backups/scheduled-logs/`.
+`retention-job.php` for real), `BaranguardRestoreDrill` (weekly Sunday
+03:00 — `restore-drill.sh`), and `BaranguardPbDigest` (weekly Monday
+06:00 — `generate-pb-digest.php`, the periodic PB digest). The first two
+read `backend/.env`'s `BACKUP_ENCRYPTION_PASSPHRASE` themselves; the
+digest job needs no secret, just `backend/.env`'s ordinary DB_* values
+(already read via `config/env.php` like any other PHP CLI script here).
+Logs land in `backend/backups/scheduled-logs/`.
 
 ## Conventions
 

@@ -556,6 +556,126 @@ final class ReportsController
     }
 
     /**
+     * The periodic PB digest (REMAINING.md §G) — CLI-only, same
+     * "no HTTP surface for a background job" discipline as
+     * `retention-job.php`/`ai-worker.php` (§2 Rule 5's reasoning applies
+     * here too: this runs unattended on a schedule, not on a request).
+     * Called from `scripts/generate-pb-digest.php` via
+     * `install-scheduled-backup-jobs.ps1`'s sibling task, never over HTTP.
+     *
+     * Reuses `buildSummaryPdf()` byte-for-byte — the digest is exactly
+     * the same aggregate-only PDF a PB can already generate by hand via
+     * `GET /reports/export?format=pdf`, just produced on a timer instead
+     * of a click, and written to a SEPARATE path (`digestPath()`, not
+     * `exportPath()`) so a scheduled digest run can never clobber an
+     * Admin's or PB's own just-generated manual export, or vice versa.
+     * `identity['user_id'] = null` signals "unattended" to
+     * `buildSummaryPdf()`'s generator-name block above.
+     *
+     * Writes a small sidecar `.meta.json` (`generated_at`/`date_from`/
+     * `date_to`) next to the PDF — `digestMeta()` below reads it rather
+     * than trusting the PDF file's own mtime, which a filesystem restore/
+     * copy could make misleading.
+     */
+    public static function generateDigest(PDO $pdo, int $barangayId, \DateTimeImmutable $from, \DateTimeImmutable $to): void
+    {
+        $manila = new \DateTimeZone('Asia/Manila');
+        $identity = ['user_id' => null, 'barangay_id' => $barangayId, 'role' => 'system'];
+        $content = self::buildSummaryPdf($pdo, $identity, $from, $to, $manila);
+
+        $path = self::digestPath($barangayId);
+        $directory = dirname($path);
+        if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) {
+            throw new \RuntimeException("Digest storage is not writable: {$directory}");
+        }
+        if (file_put_contents($path, $content) === false) {
+            throw new \RuntimeException("Could not write digest file: {$path}");
+        }
+
+        $meta = [
+            'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'date_from' => $from->format('Y-m-d'),
+            'date_to' => $to->format('Y-m-d'),
+        ];
+        file_put_contents(self::digestMetaPath($barangayId), json_encode($meta, JSON_PRETTY_PRINT));
+    }
+
+    /**
+     * `GET /reports/digest` — Admin + Punong Barangay, same role list as
+     * `export()`. Reports whether a periodic digest exists for the
+     * CALLER's own barangay (never a parameter, same non-guessable-by-
+     * construction pattern `exportDownload()` uses) — `available: false`
+     * is a neutral, honest answer (§2 Rule 6) for a fresh install where
+     * the scheduled job hasn't run yet, not an error.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function digestMeta(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+
+        $metaPath = self::digestMetaPath((int) $identity['barangay_id']);
+        if (!is_file(self::digestPath((int) $identity['barangay_id'])) || !is_file($metaPath)) {
+            Http::send(200, ['available' => false]);
+            return;
+        }
+        $meta = json_decode((string) file_get_contents($metaPath), true);
+        if (!is_array($meta)) {
+            Http::send(200, ['available' => false]);
+            return;
+        }
+        Http::send(200, [
+            'available' => true,
+            'generated_at' => $meta['generated_at'] ?? null,
+            'date_from' => $meta['date_from'] ?? null,
+            'date_to' => $meta['date_to'] ?? null,
+        ]);
+    }
+
+    /**
+     * `GET /reports/digest/download` — streams the caller's own
+     * barangay's latest periodic digest PDF. Same tenant-by-construction
+     * and independent-recheck-on-download reasoning as
+     * `exportDownload()`'s own doc block.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function digestDownload(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+
+        $path = self::digestPath((int) $identity['barangay_id']);
+        if (!is_file($path)) {
+            throw new ApiError(404, 'NOT_FOUND', 'No periodic digest has been generated for this barangay yet.');
+        }
+
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'report_digest_downloaded', 'report', null, []);
+
+        header('Content-Type: application/pdf');
+        header('Content-Length: ' . (string) filesize($path));
+        header('Content-Disposition: attachment; filename="baranguard-pb-digest-barangay-' . $identity['barangay_id'] . '.pdf"');
+        readfile($path);
+        exit;
+    }
+
+    private static function digestPath(int $barangayId): string
+    {
+        $base = baranguard_env('REPORT_EXPORT_DIR');
+        $directory = ($base !== false && trim((string) $base) !== '')
+            ? rtrim((string) $base, '/\\')
+            : dirname(__DIR__) . '/storage/report-exports';
+        // A sibling directory to the interactive export files, not the
+        // same one -- see generateDigest()'s own doc for why they must
+        // never share a path.
+        return $directory . '/digest/barangay-' . $barangayId . '.pdf';
+    }
+
+    private static function digestMetaPath(int $barangayId): string
+    {
+        return dirname(self::digestPath($barangayId)) . '/barangay-' . $barangayId . '.meta.json';
+    }
+
+    /**
      * Shared by buildSummaryCsv()/buildSummaryPdf() — one query, the same
      * counting rules `GET /reports/summary` uses (every enum member
      * present at 0, every calendar day in range present at 0), so neither
@@ -739,12 +859,22 @@ final class ReportsController
         $municipality = (string) ($brgy['municipality'] ?? 'Municipality');
         $province = (string) ($brgy['province'] ?? 'Province');
 
-        // Fetch Desk Officer / Generator Name and Role
-        $genStmt = $pdo->prepare('SELECT full_name, role FROM user WHERE user_id = :uid LIMIT 1');
-        $genStmt->execute([':uid' => $identity['user_id']]);
-        $genRow = $genStmt->fetch(PDO::FETCH_ASSOC);
-        $generatorName = !empty($genRow['full_name']) ? (string) $genRow['full_name'] : 'Desk Officer';
-        $generatorRole = self::humanizeRole((string) ($genRow['role'] ?? $identity['role']));
+        // Fetch Desk Officer / Generator Name and Role. A null user_id
+        // means this was generated unattended (generateDigest() below,
+        // the periodic PB digest's CLI path) -- say so honestly rather
+        // than reusing the interactive fallback ("Desk Officer" implies a
+        // human who couldn't be looked up, which isn't what happened
+        // here; §2 Rule 6 bars fabricating an identity either way).
+        if ($identity['user_id'] === null) {
+            $generatorName = 'Automated scheduled digest';
+            $generatorRole = 'System';
+        } else {
+            $genStmt = $pdo->prepare('SELECT full_name, role FROM user WHERE user_id = :uid LIMIT 1');
+            $genStmt->execute([':uid' => $identity['user_id']]);
+            $genRow = $genStmt->fetch(PDO::FETCH_ASSOC);
+            $generatorName = !empty($genRow['full_name']) ? (string) $genRow['full_name'] : 'Desk Officer';
+            $generatorRole = self::humanizeRole((string) ($genRow['role'] ?? $identity['role']));
+        }
 
         // Fetch Punong Barangay (Captain) for attestation
         $pbStmt = $pdo->prepare(

@@ -23,4 +23,12 @@ return [
     ['GET', '#^/reports/nav-counts$#', [ReportsController::class, 'navCounts'], true],
     ['GET', '#^/reports/export$#', [ReportsController::class, 'export'], true],
     ['GET', '#^/reports/export/download$#', [ReportsController::class, 'exportDownload'], true],
+    // Periodic PB digest (REMAINING.md §G) -- read-only meta + download
+    // for whatever scripts/generate-pb-digest.php last produced on its
+    // own schedule. No generate route here on purpose: generation is
+    // CLI-only (ReportsController::generateDigest()'s own doc explains
+    // why), same as retention-job.php/ai-worker.php having no HTTP
+    // trigger either.
+    ['GET', '#^/reports/digest$#', [ReportsController::class, 'digestMeta'], true],
+    ['GET', '#^/reports/digest/download$#', [ReportsController::class, 'digestDownload'], true],
 ];

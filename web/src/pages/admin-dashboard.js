@@ -31,7 +31,8 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getReportsSummary, getIncidents, getDutyStatus, getUsers, getTanodSos, getBarangays, logout, ApiClientError } from '../api/apiClient.js';
+import { getReportsSummary, getIncidents, getDutyStatus, getUsers, getTanodSos, getBarangays, getReportsDigest, downloadReportsDigest, logout, ApiClientError } from '../api/apiClient.js';
+import { showToast } from '../components/Toast.js';
 import { KpiCard, KpiHeroCard } from '../components/KpiCard.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
 import { LineChart } from '../components/LineChart.js';
@@ -200,6 +201,7 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
       loadRecentIncidents(body, navigate);
       loadTanodsOnDuty(body, user.barangayId, user.role);
       loadAttentionBanner(body, navigate, user.role, summary.byStatus.pending || 0);
+      if (user.role === 'punong_barangay') loadPbDigest(body);
     } catch (err) {
       const message = err instanceof ApiClientError
         ? err.message
@@ -409,6 +411,58 @@ async function loadTanodsOnDuty(container, barangayId, role) {
   }
 }
 
+/**
+ * Punong Barangay's Weekly Digest card. `available: false` (no scheduled
+ * run yet) is rendered plainly, not as an error — §2 Rule 6's own
+ * `not_configured`-is-neutral reasoning applies here too.
+ */
+async function loadPbDigest(container) {
+  const host = container.querySelector('[data-pb-digest]');
+  if (!host) return;
+  try {
+    const digest = await getReportsDigest();
+    if (!digest.available) {
+      host.innerHTML = '<p class="note">No digest has been generated yet. The first weekly digest will appear here after it runs.</p>';
+      return;
+    }
+    host.innerHTML = '';
+    const meta = document.createElement('p');
+    meta.className = 'note';
+    const generated = new Date(digest.generatedAt).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    meta.textContent = `Covers ${digest.dateFrom} to ${digest.dateTo}. Generated ${generated}.`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ghost';
+    const idleHtml = `${icons.download(16)} <span>Download PDF</span>`;
+    button.innerHTML = idleHtml;
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      button.innerHTML = `<span class="is-spinning" aria-hidden="true">${icons.repeat(14)}</span><span>Downloading…</span>`;
+      try {
+        const blob = await downloadReportsDigest();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = 'baranguard-weekly-digest.pdf';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        showToast(err instanceof ApiClientError ? err.message : 'Could not download the digest.', { variant: 'error' });
+      } finally {
+        button.disabled = false;
+        button.innerHTML = idleHtml;
+      }
+    });
+    host.append(meta, button);
+  } catch {
+    host.innerHTML = '<p class="note">Could not load the weekly digest.</p>';
+  }
+}
+
 function renderLoading(container) {
   container.innerHTML = '';
   const grid = document.createElement('div');
@@ -583,7 +637,29 @@ function renderPopulated(container, summary, navigate, role) {
   // Punong Barangay is read-only oversight (§3, no write action anywhere
   // on this screen already), so it keeps the single-column status card
   // exactly as before rather than gaining a card of actions it can't use.
-  if (role === 'admin') statusRow.append(renderQuickActionsCard(navigate));
+  if (role === 'admin') {
+    statusRow.append(renderQuickActionsCard(navigate));
+  } else if (role === 'punong_barangay') {
+    // Fills the same previously-empty second column the comment above
+    // used to describe as "a card of actions it can't use" — the
+    // periodic PB digest (REMAINING.md section G) is read-only, so it
+    // fits PB's oversight-only role exactly. Loaded async by
+    // loadPbDigest(), same skeleton-then-fill pattern as the Tanods On
+    // Duty panel below.
+    const digestCard = document.createElement('div');
+    digestCard.className = 'card';
+    digestCard.appendChild(cardHeader(
+      'Weekly Digest', 'Auto-generated barangay summary', icons.fileText,
+      'A PDF summary of this barangay’s incident activity, regenerated automatically once a week — the same content GET /reports/export?format=pdf produces on demand, just on a timer.',
+      null,
+      { text: 'PDF' }
+    ));
+    const digestHost = document.createElement('div');
+    digestHost.setAttribute('data-pb-digest', '');
+    digestHost.innerHTML = '<div class="skeleton skeleton--line"></div>';
+    digestCard.appendChild(digestHost);
+    statusRow.append(digestCard);
+  }
 
   container.append(grid, chartsGrid, breakdownGrid, statusRow);
 }
