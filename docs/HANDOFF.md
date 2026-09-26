@@ -671,17 +671,29 @@ independently confirmed dead). Ask before deleting it if it comes up —
 that's a one-way action on an object neither this session nor the prior
 one fully investigated.
 
-Still open, same as before:
-1. `cloudflared service install` from an **Administrator** terminal —
-   this session doesn't have one. The tunnel is currently a manually-
-   started foreground process (started via this session's background
-   Bash tool) — it will NOT survive this machine rebooting, sleeping, or
-   the terminal it's running in being closed.
+**Step 1 (`cloudflared service install`) is DONE as of entry (29), same
+day.** The tunnel now runs as a real Windows service (`AUTO_START`,
+`LocalSystem`) and survives a reboot. Getting there needed more than the
+bare install command — `service install` never actually seeds a working
+config for a locally-managed tunnel (confirmed via Windows Event Viewer:
+every service start logged zero arguments, and a hand-written
+`config.yml` kept getting silently overwritten back to a stub on every
+restart). Real fix: `sc.exe config cloudflared binPath=` was set
+directly to `cloudflared.exe --config "C:\Users\danilyn\.cloudflared\
+config.yml" tunnel run baranguard-main`, routed through `cmd /c` to dodge
+a PowerShell/native-exe quoting fight (same class of gotcha as
+REFERENCE.md §8's existing `curl.exe`/`php.exe` entries — worth adding
+there too if this bites again). Verified for real: killed every
+`cloudflared.exe` process, confirmed via `tasklist` exactly one remained
+(the service), then got real `200`s with real content from both
+hostnames — the service alone is doing the work.
+
+**Still open:**
 2. Enable **Zero Trust** in the Cloudflare dashboard (pick a team name,
    one-time) so an Access policy (email-OTP gate) can go in front of
    `api.baranguardph.win` — right now anyone with the URL can reach it.
 
-Full detail: `docs/DEVLOG.md` 2026-09-26 (28). Full ordered backlog with
+Full detail: `docs/DEVLOG.md` 2026-09-26 (28), (29). Full ordered backlog with
 reasoning: `docs/REMAINING.md`.
 
 ## Operational quick reference
