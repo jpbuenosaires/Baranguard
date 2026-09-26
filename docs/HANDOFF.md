@@ -641,8 +641,13 @@ longer on this list.
 and IS now on this list.** User needs Tanod/Secretary/PB reachable off
 the LAN. A Cloudflare Named Tunnel is live on a real registered domain
 (`baranguardph.win` / `api.baranguardph.win`) — see `docs/DEVLOG.md`
-2026-09-26 (20) for the full build. Two concrete next steps, both need
-you specifically (not a coding-session task):
+2026-09-26 (20) for the full build. **These two steps must be run ON THE
+BARANGAY-OFFICE PRODUCTION WORKSTATION specifically — confirmed
+2026-09-26 (27) that a dev/staging machine (`backend/.env` pointed at
+`baranguard_uiseed`, not the real `baranguard` DB) has no trace of
+`cloudflared` at all, and is NOT the same box the tunnel runs on. Don't
+re-investigate a "missing" cloudflared install as a bug if you hit this
+again on a dev machine — it's expected.**
 1. Run `cloudflared service install` from an **Administrator** terminal
    — installs the tunnel as a Windows service so it survives a reboot;
    right now it's a manually-started process.
