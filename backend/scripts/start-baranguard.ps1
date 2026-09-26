@@ -1,6 +1,6 @@
 # Baranguard - one-click startup, run by double-clicking "Start
 # Baranguard.bat" at the repo root. Starts Apache/MySQL (if not already
-# running), starts the AI worker daemon (if not already running), then
+# running), starts the API server on :8081 and the AI worker daemon (if not already running), then
 # opens the web dashboard in the default browser.
 #
 # This is a MANUAL launcher -- it does NOT make anything start just
@@ -43,27 +43,58 @@ if (Get-Process httpd -ErrorAction SilentlyContinue) {
     }
 }
 
-# 2. MySQL
-if (Get-Process mysqld -ErrorAction SilentlyContinue) {
-    Write-Host "[OK] MySQL is already running."
+# 2. MySQL. Checked by the port backend/.env's DB_PORT names, NOT by
+# process name: a machine can have an unrelated MySQL (e.g. a MySQL80
+# Windows service on 3306) whose mysqld.exe would otherwise make this
+# skip starting XAMPP's MariaDB, leaving the API with no database.
+$dbPort = 3306
+$envFile = Join-Path $backendDir ".env"
+if (Test-Path $envFile) {
+    $portLine = Select-String -Path $envFile -Pattern '^\s*DB_PORT\s*=\s*(\d+)' | Select-Object -First 1
+    if ($portLine) { $dbPort = [int]$portLine.Matches[0].Groups[1].Value }
+}
+function Test-DbListening { [bool](Get-NetTCPConnection -LocalPort $dbPort -State Listen -ErrorAction SilentlyContinue) }
+if (Test-DbListening) {
+    Write-Host "[OK] MySQL is already running (port $dbPort)."
 } else {
-    Write-Host "Starting MySQL..."
+    Write-Host "Starting MySQL (port $dbPort)..."
     Start-Process -FilePath "C:\xampp\mysql_start.bat" -WindowStyle Hidden
-    Start-Sleep -Seconds 3
-    if (Get-Process mysqld -ErrorAction SilentlyContinue) {
+    Start-Sleep -Seconds 4
+    if (Test-DbListening) {
         Write-Host "[OK] MySQL started."
     } else {
         Write-Host "[!!] MySQL did not start -- open the XAMPP Control Panel and check for errors."
     }
 }
 
-# 3. AI worker daemon
+$phpCmd = Get-Command php.exe -ErrorAction SilentlyContinue
+$phpExe = if ($phpCmd) { $phpCmd.Source } else { "C:\php-8.3.13\php.exe" }
+
+# 3. API server on :8081. XAMPP's own Apache here runs PHP 8.0, which
+# can't load the backend (it uses 8.1+ `readonly` properties), so the
+# API runs on the standalone PHP's built-in server instead. The web
+# dashboard (from localhost) and the Cloudflare tunnel's
+# api.baranguardph.win ingress both expect it at localhost:8081.
+if (Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue) {
+    Write-Host "[OK] API server is already running."
+} elseif (Test-Path $phpExe) {
+    Write-Host "Starting API server..."
+    Start-Process -FilePath $phpExe -ArgumentList "-S","127.0.0.1:8081" -WorkingDirectory (Join-Path $backendDir "public") -WindowStyle Hidden
+    Start-Sleep -Seconds 2
+    if (Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue) {
+        Write-Host "[OK] API server started."
+    } else {
+        Write-Host "[!!] API server did not start -- the dashboard will say it can't reach the server."
+    }
+} else {
+    Write-Host "[!!] Could not find php.exe -- the API server can't start."
+}
+
+# 4. AI worker daemon
 if (Test-AiWorkerRunning) {
     Write-Host "[OK] AI worker is already running."
 } else {
     Write-Host "Starting AI worker..."
-    $phpCmd = Get-Command php.exe -ErrorAction SilentlyContinue
-    $phpExe = if ($phpCmd) { $phpCmd.Source } else { "C:\php-8.3.13\php.exe" }
     if (Test-Path $phpExe) {
         Start-Process -FilePath $phpExe -ArgumentList "scripts\ai-worker.php","--daemon" -WorkingDirectory $backendDir -WindowStyle Hidden
         Write-Host "[OK] AI worker started."
@@ -72,7 +103,7 @@ if (Test-AiWorkerRunning) {
     }
 }
 
-# 4. Open the dashboard
+# 5. Open the dashboard
 Write-Host ""
 Write-Host "Opening the dashboard..."
 Start-Sleep -Seconds 1
