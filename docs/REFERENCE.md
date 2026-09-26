@@ -66,11 +66,20 @@ the tunnel now runs as a real Windows service (`cloudflared`,
 needed directly setting the service's `binPath` via `sc.exe config`,
 since `cloudflared service install` alone never seeds a working config
 for a locally-managed tunnel, see DEVLOG for the full diagnosis) but
-there is still **no Cloudflare Access policy in front of either
-hostname** — `api.baranguardph.win` is reachable by
-anyone with the URL, same exposure shape the Quick Tunnel had, just with
-a stable address instead of a rotating one (§2 Rule 7 still holds for
-anything meant to stay non-public). C-02 (MFA) was explicitly deferred
+there is still **no Cloudflare Access policy anywhere** —
+`api.baranguardph.win` is reachable by anyone with the URL, same
+exposure shape the Quick Tunnel had, just with a stable address instead
+of a rotating one (§2 Rule 7 still holds for anything meant to stay
+non-public). **If this gets picked up: scope any Access policy to the
+web dashboard host (`baranguardph.win`) only, never the API** —
+confirmed 2026-09-26 (29, continued) that several API endpoints are
+intentionally public (citizen report submission, the transparency
+report, `GET /barangays`) and that Access's browser-redirect email-OTP
+flow doesn't work for the mobile app's programmatic API calls; gating
+`api.baranguardph.win` would break real functionality, not just add
+security. This was explicitly deferred by the user after the scoping
+correction, not attempted and abandoned — see DEVLOG for the exact
+dashboard steps already worked out. C-02 (MFA) was explicitly deferred
 by the user in the same session this was set up. Also unresolved: this
 whole mechanism assumes the workstation itself is powered on and
 reachable — a workstation outage still takes the whole system down
