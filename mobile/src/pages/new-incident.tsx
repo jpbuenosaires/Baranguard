@@ -460,7 +460,7 @@ const NewIncidentPage: React.FC = () => {
                     <div className="recording-live-dot" />
                     <span>Recording voice note: {formatTimer(recordDuration)}</span>
                   </div>
-                  <IonButton size="small" color="danger" fill="solid" onClick={handleToggleVoice}>
+                  <IonButton className="btn-touch-compact" color="danger" fill="solid" onClick={handleToggleVoice}>
                     Finish
                   </IonButton>
                 </div>

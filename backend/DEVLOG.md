@@ -15922,3 +15922,83 @@ direct-device-SMS path, unaffected by any of this).
 `docs/REFERENCE.md` §1 and `docs/REMAINING.md`'s C-03 entry both
 rewritten to reflect this real state — in progress, not closed, with the
 three specific remaining gaps named.
+
+## 2026-09-26 (21) — Mobile UI/UX audit: 8 real touch-target violations found and fixed, verified live in-browser
+
+User asked for a UI/UX audit of the mobile app with no phone available.
+Ran the Vite dev server (`.claude/launch.json`'s `baranguard-mobile`
+config) in the Browser pane at mobile viewport sizes (375x812, then
+360x740 for a narrower Android baseline) and logged in as a real seeded
+Tanod (`tanod.reyes`) to reach the authenticated screens for real —
+static code reading alone would have missed most of this, since every
+finding below came from measuring actual rendered `getBoundingClientRect()`
+sizes, not reading JSX.
+
+**Root cause found once, present in 7 places**: Ionic's `size="small"`
+IonButton variant hardcodes a shadow-internal `.button-small` height
+(measured ~21-27px across instances) that does NOT honor the
+`--min-height` CSS custom property — confirmed by direct test (the
+custom prop computed correctly at the host element, but the internal
+`.button-native`'s resolved `min-height` stayed at the small value
+regardless). Apple HIG and Material Design both set 44px as the minimum
+mobile touch target; every one of these measured well under that.
+
+Fix, applied consistently: drop `size="small"` entirely and use a new
+shared `.btn-touch-compact` class (`height: 44px`, smaller `font-size`)
+instead — verified this actually reaches 44px where the custom-property
+approach didn't. Fixed:
+- login.tsx: "Workstation Address" link button (27px → 44px)
+- profile.tsx: "Ping Barangay Workstation" (27px → 44px), "Save &
+  Reconnect" / "Reset Default" in the connection-settings drawer, "Clear
+  Old Synced Evidence"
+- my-shifts.tsx: "Request Swap"
+- new-incident.tsx: the voice-recording "Finish" button
+
+**Other real touch-target violations found (not the size="small" bug,
+each its own custom `<button>`/CSS)**:
+- login.tsx's password show/hide toggle: 28x28 → 44x44
+  (`.mobile-login-password-toggle`)
+- assignments.tsx's offline-banner "Retry"/dismiss buttons: 72x21 and
+  24x24 → both 44x44 (`.dispatch-offline-btn`/`.dispatch-offline-dismiss`)
+- profile.tsx's "Copy" device-ID button: 65x21 → 65x44
+  (`.profile-copy-btn`)
+- profile.tsx's "Workstation Address" drawer toggle: 310x25 → 310x44
+  (`.profile-drawer-toggle`)
+- new-incident.tsx's "Tag GPS Fix"/"Pick on Map": 138x40 → 138x44
+  (`.intake-btn-action`, close but still under the line)
+- live-map.tsx's MapLibre zoom +/- controls: MapLibre's own stock
+  29x29 default → 44x44 via a new global override
+  (`.maplibregl-ctrl-group > button`). Pinch-to-zoom is the primary
+  gesture on touch, but the buttons are still on-screen and tappable.
+
+**Real responsive-layout bug found, not just a touch-target one**:
+home.tsx's 3-column shift-telemetry strip ("Active Patrol" / "HQ Radar"
+/ "Today") fit fine at 375px+ but started `text-overflow: ellipsis`
+truncating "30s Sync" to "30s S…" and "0 Filed" to "0 Fil…" at 360px —
+a common Android CSS-width baseline (many budget devices at 720x1600
+physical). Fixed with a `@media (max-width: 370px)` rule trimming icon
+size/gap/font-size just enough to reclaim the ~15-18px needed, rather
+than changing the strip's design at the widths where it already fit.
+
+**Investigated and correctly NOT changed** (a legitimate finding would
+have been a false one): the accessibility-tree tool used to probe the
+login form's Username/Password fields reported them as unlabeled — but
+direct DOM inspection showed Ionic's real, standard, screen-reader-
+compatible pattern (`aria-labelledby` pointing at an `aria-hidden="true"`
+label element, which per WAI-ARIA spec is still used for accessible-name
+computation regardless of the referenced element's own hidden state).
+The gap was in the probing tool, not the app. Also checked and confirmed
+NOT a bug: the SOS panel on Home appeared to overlap the bottom tab bar
+at scroll position 0 on a 375x812 viewport — scrolling to the bottom
+showed it clears the tab bar with room to spare; this is normal
+below-the-fold content on a page taller than one screen, not a defect.
+
+Verified: `npx tsc --noEmit` clean, `npm run lint` clean,
+`node scripts/verify-local-schema.mjs` 114/114 (unrelated, confirms no
+regression) — all re-run after every fix, not just once at the end.
+Every fix re-measured live in the browser after applying (not assumed
+from the CSS alone) to confirm it actually reached 44px, given the
+`--min-height` custom-property surprise on the first attempt.
+
+Not committed yet this pass — held for the user to review/commit in
+phases per this session's established pattern.

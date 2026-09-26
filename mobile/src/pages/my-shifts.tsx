@@ -135,7 +135,7 @@ const MyShiftsPage: React.FC = () => {
                     {pendingSwap ? (
                       <span className={`status-pill ${SWAP_STATUS_PILL[pendingSwap.status]}`}>SWAP REQUEST PENDING</span>
                     ) : (
-                      <IonButton fill="outline" size="small" onClick={() => setSwapTarget(shift)}>
+                      <IonButton fill="outline" className="btn-touch-compact" onClick={() => setSwapTarget(shift)}>
                         <IonIcon icon={swapHorizontalOutline} slot="start" />
                         Request Swap
                       </IonButton>

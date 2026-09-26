@@ -18,7 +18,6 @@ import {
   IonToast,
 } from '@ionic/react';
 import {
-  alertCircleOutline,
   calendarOutline,
   checkmarkOutline,
   chevronDownOutline,
@@ -30,7 +29,6 @@ import {
   serverOutline,
   shieldCheckmarkOutline,
   syncOutline,
-  volumeHighOutline,
   wifiOutline,
   colorPaletteOutline,
   moonOutline,
@@ -38,7 +36,6 @@ import {
   phonePortraitOutline,
 } from 'ionicons/icons';
 import { TextField } from '../components/FormFields';
-import FullScreenAlert from '../services/fullScreenAlert';
 import MobileHeader from '../components/MobileHeader';
 import NotificationDiagnostics from '../components/NotificationDiagnostics';
 import { checkHealth, getApiBaseUrl, hasApiBaseUrlOverride, logout, setApiBaseUrlOverride } from '../services/apiService';
@@ -229,22 +226,6 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  const handleTestChimes = () => {
-    tacticalFeedback.onSosFired();
-    setToastMessage('Tactical audio chime & emergency vibration test dispatched.');
-  };
-
-  const handleTestFullScreenAlert = async () => {
-    try {
-      await FullScreenAlert.showTest({
-        title: 'Test Critical Alert',
-        body: 'This is a test of the full-screen emergency alert (Phase 4.2).',
-      });
-    } catch {
-      setToastMessage('Could not show the full-screen alert test.');
-    }
-  };
-
   const handleSignOut = async () => {
     try {
       await logout();
@@ -412,10 +393,10 @@ const ProfilePage: React.FC = () => {
 
             <IonButton
               fill="outline"
-              size="small"
               expand="block"
               disabled={pinging}
               onClick={pingWorkstation}
+              className="btn-touch-compact"
               style={{ fontWeight: 700, marginBottom: '6px' }}
             >
               {pinging ? <IonSpinner name="dots" /> : 'Ping Barangay Workstation'}
@@ -437,7 +418,7 @@ const ProfilePage: React.FC = () => {
                 <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                   <IonButton
                     fill="outline"
-                    size="small"
+                    className="btn-touch-compact"
                     style={{ flex: 1, fontWeight: 700 }}
                     disabled={savingBaseUrl || !baseUrlInput.trim()}
                     onClick={handleSaveBaseUrl}
@@ -447,7 +428,7 @@ const ProfilePage: React.FC = () => {
                   {hasApiBaseUrlOverride() && (
                     <IonButton
                       fill="clear"
-                      size="small"
+                      className="btn-touch-compact"
                       color="medium"
                       disabled={savingBaseUrl}
                       onClick={handleResetBaseUrl}
@@ -538,7 +519,7 @@ const ProfilePage: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <IonButton fill="outline" size="small" expand="block" disabled={pruning} onClick={handlePruneEvidence} style={{ fontWeight: 600 }}>
+                    <IonButton fill="outline" className="btn-touch-compact" expand="block" disabled={pruning} onClick={handlePruneEvidence} style={{ fontWeight: 600 }}>
                       {pruning ? <IonSpinner name="dots" /> : 'Clear Old Synced Evidence (30+ days)'}
                     </IonButton>
                   </div>
@@ -557,29 +538,6 @@ const ProfilePage: React.FC = () => {
             </div>
 
             <NotificationDiagnostics />
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px' }}>
-              <IonButton
-                fill="outline"
-                color="medium"
-                size="small"
-                onClick={handleTestChimes}
-                style={{ fontWeight: 700 }}
-              >
-                <IonIcon icon={volumeHighOutline} slot="start" />
-                Audio & Haptics
-              </IonButton>
-              <IonButton
-                fill="outline"
-                color="danger"
-                size="small"
-                onClick={handleTestFullScreenAlert}
-                style={{ fontWeight: 700 }}
-              >
-                <IonIcon icon={alertCircleOutline} slot="start" />
-                Critical Alert
-              </IonButton>
-            </div>
           </div>
 
           {/* Module 6: Secure Terminal Sign Out */}
