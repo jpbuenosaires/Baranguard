@@ -16416,3 +16416,18 @@ since the two live possibilities (this is a different machine than the
 one entry (20) actually ran on, vs. the tunnel was somehow uninstalled
 since) call for different next steps and only the user can say which.
 No action taken on C-03 pending that answer.
+
+**Answered: this IS a different machine.** User confirmed this laptop is
+a dev/staging machine, not the barangay-office production workstation
+the Cloudflare tunnel actually runs on — consistent with `backend/.env`
+here pointing at `baranguard_uiseed` (the demo/seed DB), not the real
+`baranguard` production database. **Worth remembering for future
+sessions**: §1's "single workstation, LAN-only" architecture describes
+the PRODUCTION deployment, not necessarily the machine a given coding
+session is running on — don't assume they're the same box just because
+this repo's working copy is present. C-03's remaining steps
+(`cloudflared service install`, Cloudflare Zero Trust / Access policy)
+must be run ON that production workstation, which this session has no
+access to — not something to attempt here. GPU-preference fix (this same
+entry, above) stands on its own merits for THIS machine's local Ollama
+setup regardless.
