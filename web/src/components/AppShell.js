@@ -436,13 +436,15 @@ export function AppShell(user, activePage, navigate, onLogout) {
   let groupTitle = currentNav?.group;
   let pageTitle = currentNav?.label;
 
-  if (activePage === 'blotter-detail') {
-    groupTitle = 'Operations';
-    pageTitle = 'Incident Management';
-  } else if (activePage === 'ai-review') {
-    groupTitle = 'Operations';
-    pageTitle = 'Incident Management';
-  } else if (!groupTitle && activePage === 'dashboard') {
+  // The dedicated 'blotter-detail'/'ai-review' branches this block used
+  // to have here were dead code — renderBlotterDetailPage() has always
+  // called AppShell(user, listPage, ...) with 'dashboard'/'incident-
+  // management' as activePage (so the SIDEBAR highlights correctly), not
+  // the literal string 'blotter-detail', and 'ai-review' as a standalone
+  // page no longer exists at all (2026-09-27 tab merge, DEVLOG (38)).
+  // Removed rather than left to bit-rot further; `pageTitle` already
+  // correctly falls through to "Incident Management" via `currentNav`.
+  if (!groupTitle && activePage === 'dashboard') {
     groupTitle = 'Overview';
     pageTitle = 'Dashboard';
   } else if (!pageTitle) {
@@ -458,18 +460,6 @@ export function AppShell(user, activePage, navigate, onLogout) {
     <span class="topbar__crumb-sep" aria-hidden="true">/</span>
     <span class="topbar__crumb topbar__crumb--current" aria-current="page">${pageTitle}</span>
   `;
-
-  if (activePage === 'blotter-detail') {
-    breadcrumbsHtml += `
-      <span class="topbar__crumb-sep" aria-hidden="true">/</span>
-      <span class="topbar__crumb topbar__crumb--detail">Blotter Record</span>
-    `;
-  } else if (activePage === 'ai-review') {
-    breadcrumbsHtml += `
-      <span class="topbar__crumb-sep" aria-hidden="true">/</span>
-      <span class="topbar__crumb topbar__crumb--detail">AI Redaction</span>
-    `;
-  }
 
   if (user.role === 'punong_barangay') {
     breadcrumbsHtml += `

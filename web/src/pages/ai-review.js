@@ -1,10 +1,12 @@
 /**
- * ai-review.js — W8 AI Redaction Review (§9): "Secretary only. Side-by-side
+ * ai-review.js — the Redaction tab of the case workspace (formerly a
+ * standalone W8 page, folded in 2026-09-27 — see DEVLOG (38) and
+ * `blotter-detail.js`'s own doc for why). "Secretary only. Side-by-side
  * raw vs draft. Displays draft_version, model version, status, and stale
  * warning. Editing requires regeneration using the matching version.
  * Approval requires exact current version equality."
  *
- * EVERY VALUE ON THIS SCREEN COMES FROM A REAL `ai_processing_log` ROW.
+ * EVERY VALUE ON THIS TAB COMES FROM A REAL `ai_processing_log` ROW.
  * §8's exclusions call out the Figma mockup's "AI Assistant" panel by name:
  * it shows hardcoded output behind a `setTimeout` fake spinner, with
  * invented confidence scores (94%, 95%, a 78/100 "risk score") and a
@@ -17,19 +19,25 @@
  *   - the "generating" state is driven by real polling of the server's
  *     own `status` field, not a timer.
  *
- * WHY THIS SCREEN HAS NO SIDEBAR ENTRY: W8 is a per-incident detail view
- * and cannot render without an incident id, so a nav item would be a link
- * to a broken screen. It is reached from incident detail's "Review AI
- * redaction" button (Secretary only), and reports 'incident-management'
- * as the active nav item so the shell stays coherent.
+ * NOT its own route/page anymore: `renderRedactionTab()` mounts into a
+ * `body` container the shared case-workspace shell (`blotter-detail.js`)
+ * already owns — no AppShell, no PageHeader, no back button of its own.
+ * `switchTab()`/`refreshWorkflowBar()` are handed down by that shell so
+ * this tab never needs a full `navigate()` to move between "stages" or
+ * to keep the shared workflow stepper in sync with its own local state
+ * (`edited`, freshly-polled `draft`).
  *
  * The pipeline is asynchronous by design (§2 Rule 15 — the API never calls
  * Ollama, only the worker does), so redaction and summary regeneration
- * both come back `queued`. This page polls `GET /incidents/:id/ai-draft`
- * until the server reports `completed` or `failed`. Polling stops on
- * navigate away via the returned `stop` handle.
+ * both come back `queued`. This tab polls `GET /incidents/:id/ai-draft`
+ * until the server reports `completed` or `failed`. Polling stops when
+ * the shell switches away from this tab or unmounts — via the returned
+ * `stop` handle, same contract the old standalone page had.
  *
- * kebab-case filename per §4.
+ * kebab-case filename per §4 — kept as `ai-review.js` even though the
+ * page it named is gone, same precedent `analytics.js`'s tabs set
+ * (`statistical-reports.js`/`historical-heatmap.js` kept their own
+ * pre-merge names too).
  */
 
 import {
@@ -42,17 +50,13 @@ import {
   approveExtraction,
   translateAiDraft,
   getBlotterForIncident,
-  logout,
   ApiClientError,
 } from '../api/apiClient.js';
-import { AppShell } from '../components/AppShell.js';
-import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
-import { BlotterWorkflow, getBlotterWorkflowState, generateAndDownloadLuponPacket } from '../components/BlotterWorkflow.js';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -73,54 +77,23 @@ const INCIDENT_TYPE_LABELS = {
 };
 
 /**
- * @param {HTMLElement} root
+ * @param {HTMLElement} body container the shell already mounted for this tab
  * @param {{fullName:string, role:string}} user
- * @param {() => void} onLoggedOut
- * @param {(page: string, param?: any) => void} navigate
  * @param {number} incidentId
+ * @param {{switchTab: (tab: string, anchor?: string) => void, refreshWorkflowBar: (overrides?: {incident?: object, draft?: object|null, blotter?: object|null, edited?: boolean}) => void}} shell
  * @returns {{stop: () => void}}
  */
-export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId) {
-  root.innerHTML = '';
-
-  // W6's blotter list was removed 2026-09-10 (DILG BIMSS/KPIS owns the
-  // case ledger). This screen is only ever opened from incident detail's
-  // "Review AI redaction" button, so it reports that flow's nav item and
-  // goes back to the incident it came from rather than to a list.
-  const shell = AppShell(user, 'incident-management', navigate, async () => {
-    shell.logoutButton.disabled = true;
-    stopPolling();
-    await logout();
-    onLoggedOut();
-  });
-  const { header, content } = shell;
-  root.appendChild(shell.el);
-
-  const pageHeader = PageHeader({
-    title: `AI Redaction Review — Incident #${incidentId}`,
-    subtitle: 'Review the AI draft against the original narrative, then approve it',
-    icon: icons.fileText,
-  });
-  header.appendChild(pageHeader.el);
-
-  const backButton = document.createElement('button');
-  backButton.className = 'ghost';
-  backButton.textContent = '← Back to incident record';
-  backButton.addEventListener('click', () => {
-    stopPolling();
-    navigate('blotter-detail', incidentId);
-  });
-  pageHeader.actions.appendChild(backButton);
+export function renderRedactionTab(body, user, incidentId, { switchTab, refreshWorkflowBar }) {
+  const content = body;
+  content.innerHTML = '';
 
   let pollTimer = null;
   let incident = null;
   let draft = null;
   /** Independent of `draft` above — see AiJobQueue's own extraction docblock. */
   let extractionDraft = null;
-  /** Blotter record (null until finalized) — drives the workflow bar and the Lupon packet gate. */
+  /** Blotter record (null until finalized) — drives the shared workflow bar and the Lupon packet gate. */
   let blotter = null;
-  /** The mounted workflow bar, swapped in place when local edit state changes. */
-  let workflowEl = null;
   /** Tracks whether the Secretary has edited the draft text away from what the server holds. */
   let edited = false;
   let extractionInputs = { complainant: null, respondent: null, contact: null };
@@ -248,36 +221,16 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     renderErrorState({ container: content, message, onRetry: load });
   }
 
-  /**
-   * The whole blotter workflow (redact → approve → finalize → Lupon
-   * packet), shared with W7 — see components/BlotterWorkflow.js for why
-   * it replaced this screen's own four-step redaction-only stepper.
-   */
-  function buildWorkflowStepper() {
-    workflowEl = BlotterWorkflow({
-      state: getBlotterWorkflowState({ incident, draft, blotter, edited }),
-      currentScreen: 'ai-review',
-      onNavigate: (page) => {
-        stopPolling();
-        navigate(page, incidentId);
-      },
-    });
-    return workflowEl;
-  }
-
-  function refreshWorkflowStepper() {
-    if (!workflowEl || !workflowEl.isConnected) return;
-    const previous = workflowEl;
-    previous.replaceWith(buildWorkflowStepper());
-  }
-
   function render() {
     content.innerHTML = '';
     elapsedEl = null;
     const layout = document.createElement('div');
     layout.className = 'ai-review-layout';
 
-    layout.appendChild(buildWorkflowStepper());
+    // The shared workflow stepper now lives once, above the tab bar, in
+    // the shell (blotter-detail.js) — this tab only keeps it in sync via
+    // refreshWorkflowBar(), never renders its own copy.
+    refreshWorkflowBar({ incident, draft, blotter, edited });
     layout.appendChild(buildIncidentSummary());
 
     if (!draft) {
@@ -838,18 +791,20 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     postLabel.textContent = isApproved ? 'After approval:' : 'After approval (locked):';
     rightGroup.appendChild(postLabel);
 
-    // The server only builds a packet from a FINALIZED blotter entry
-    // (BlotterController::luponPacket()); enabling this on approval alone
-    // offered a control that could only fail.
+    // The Lupon packet control itself moved to the Blotter tab (2026-09-27
+    // tab merge, DEVLOG (38)) — it only ever worked once the entry was
+    // finalized there anyway, and duplicating it here just meant two
+    // copies to keep in sync. This is a shortcut to that tab, not a
+    // second copy of the control.
     const packetButton = document.createElement('button');
     packetButton.type = 'button';
     packetButton.className = 'ghost';
     packetButton.disabled = !isFinalized;
     packetButton.title = isFinalized
-      ? 'Generate and download the Lupon conciliation packet'
-      : 'Finalize the blotter entry first (on the incident record)';
+      ? 'Go to the Blotter tab to generate the Lupon conciliation packet'
+      : 'Finalize the blotter entry first (on the Blotter tab)';
     packetButton.innerHTML = `${icons.download(14)} Lupon packet`;
-    packetButton.addEventListener('click', () => generateAndDownloadLuponPacket(incidentId, packetButton));
+    packetButton.addEventListener('click', () => switchTab('blotter', 'blotter-packet'));
 
     const translateWrap = document.createElement('div');
     translateWrap.style.display = 'inline-flex';
@@ -939,7 +894,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
     approveButton.disabled = blockedBecause !== null;
     reason.textContent = blockedBecause ?? 'Approving saves this text as the incident’s redacted narrative. Next, you finalize the blotter entry.';
-    refreshWorkflowStepper();
+    refreshWorkflowBar({ incident, draft, blotter, edited });
   }
 
   // --- Actions ---
@@ -1012,12 +967,12 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
         draftVersion: draft.draftVersion,
       });
       showToast('Redaction approved. Next: finalize the blotter entry.', { variant: 'success' });
-      // §9's documented flow is approve (W8) -> finalize (W7) -> packet
-      // (W8); returning here automatically saves the Secretary the manual
-      // "Back to Incident" click that used to follow every approval, since
-      // finalizing on W7 is always the very next step.
+      // §9's documented flow is redact/approve -> finalize -> packet;
+      // switching tabs here automatically saves the Secretary the manual
+      // click that used to follow every approval (a full page nav to W7),
+      // since finalizing on the Blotter tab is always the very next step.
       stopPolling();
-      navigate('blotter-detail', incidentId);
+      switchTab('blotter');
     } catch (err) {
       button.disabled = false;
       if (err instanceof ApiClientError && err.status === 409) {

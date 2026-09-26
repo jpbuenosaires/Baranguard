@@ -130,6 +130,7 @@ export function describePage(config) {
           test('stop() clears the page\'s polling timers', async () => {
             const ctx = mountPage(render, { role, param });
             await settle();
+            if (openDataView) { await openDataView(ctx); await settle(); }
             const before = activeIntervalCount();
             ctx.handle.stop();
             assert.ok(activeIntervalCount() < before, 'stop() left every interval running');

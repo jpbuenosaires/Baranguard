@@ -1,28 +1,44 @@
 /**
- * blotter-detail.js — W7 Electronic Blotter Detail (§9).
+ * blotter-detail.js — the case workspace: the app's single per-incident
+ * detail view (§9's W7), now the shared shell for THREE in-case tabs —
+ * Incident / Redaction / Blotter — one URL, no full page navigation
+ * between them.
  *
- * "Roles: Secretary (full incl. raw), others per §7. Evidence access
- * follows the same ownership policy as the API. Finalized blotter data is
- * read-only until an explicit amendment workflow. A real status/timestamp
- * timeline (created_at, dispatched_at, arrived_at, redaction_approved_at,
- * finalized_at), never a scripted one."
+ * 2026-09-27 REDESIGN (DEVLOG (38)), replacing the two-screen split this
+ * file's own comment used to insist on keeping separate: a user-reported
+ * "the blotter workflow is confusing" session found the real cause was
+ * this record and its AI redaction step (formerly a standalone W8 page,
+ * `ai-review.js`) living on two different page loads, connected only by
+ * a shared progress bar (`BlotterWorkflow.js`) that could tell you WHERE
+ * to go next but still made you go there via a full re-render — and that
+ * "when does an incident actually become a blotter" was never a clearly
+ * labelled moment, just a card that appeared mid-scroll once you'd
+ * clicked through the right buttons. Both are fixed by three tabs on ONE
+ * page, sharing one data load, with the workflow stepper's "Next step"
+ * button now switching tabs instead of navigating:
  *
- * This screen is where the Secretary FINALIZES and AMENDS the blotter.
- * Those two endpoints existed and were verified before this page did, but
- * nothing in the app called them — an endpoint with no caller is not a
- * feature. This closes that.
+ *   - **Incident** — dossier, narrative, evidence, timeline, legal
+ *     guide, and (Admin) the incident-resolution control. Every role
+ *     that reaches this page gets this tab.
+ *   - **Redaction** — `ai-review.js`'s content (redact, regenerate,
+ *     approve, translate), unchanged in substance, now mounted as a tab
+ *     via its exported `renderRedactionTab()`. Secretary only, matching
+ *     what the old standalone page already restricted.
+ *   - **Blotter** — finalize/amend (Secretary) or a read-only summary
+ *     (Admin/Punong Barangay, if one exists), the Lupon packet control,
+ *     and the W21 lifecycle actions (mark duplicate/invalid/cancelled/
+ *     reopened). An explicit tab titled "Blotter" is itself the answer
+ *     to "when does this become a blotter" — it's the one place that
+ *     says so, instead of an unlabelled mid-page card.
  *
- * WHAT LIVES WHERE (§9 splits these deliberately, so don't merge them):
- *   - W7 (this screen): the blotter record — finalize, amend, timeline.
- *   - W8 (ai-review.js): the AI draft — redact, regenerate, approve,
- *     translate, and the Lupon packet.
- * A "Review AI redaction" link connects the two for the Secretary, since
- * the real workflow runs approve (W8) -> finalize (W7) -> packet (W8).
- *
- * The action panel is driven entirely by REAL server state — whether the
- * incident has an approved redaction, and whether a blotter record exists
- * and is finalized. It never guesses, and when an action is unavailable it
- * says which prerequisite is missing rather than hiding the control (§8).
+ * STILL TRUE, unchanged by the redesign: the standalone blotter records
+ * list (W6) stays removed (DILG BIMSS/KPIS is the mandated Katarungang
+ * Pambarangay ledger — see docs/REFERENCE.md §1). Nothing here lists or
+ * browses blotters; this is still only reachable per-incident, and the
+ * 'blotter-detail' route key survives (all ~12 `navigate()` call sites
+ * are unchanged). The action panels are still driven entirely by REAL
+ * server state (§8) — never guessed, and an unavailable action says
+ * which prerequisite is missing rather than hiding the control.
  *
  * kebab-case filename per §4.
  */
@@ -47,6 +63,13 @@ import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 import { BlotterWorkflow, getBlotterWorkflowState, generateAndDownloadLuponPacket } from '../components/BlotterWorkflow.js';
+import { renderRedactionTab } from './ai-review.js';
+
+const TABS = [
+  { key: 'incident', label: 'Incident' },
+  { key: 'redaction', label: 'Redaction', secretaryOnly: true },
+  { key: 'blotter', label: 'Blotter' },
+];
 
 let partyFieldSeq = 0;
 
@@ -211,6 +234,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
   const shell = AppShell(user, listPage, navigate, async () => {
     shell.logoutButton.disabled = true;
+    if (redactionHandle) redactionHandle.stop();
     await logout();
     onLoggedOut();
   });
@@ -230,11 +254,129 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
   backButton.addEventListener('click', () => navigate(listPage));
   pageHeader.actions.appendChild(backButton);
 
+  // The shared workflow stepper (Secretary only) sits above the tab bar —
+  // one instance for the whole case, not one per tab. `stepperHost` is
+  // cleared and re-filled by refreshWorkflowBar() rather than replaced,
+  // so it never loses its place in `content`.
+  const stepperHost = document.createElement('div');
+  content.appendChild(stepperHost);
+
+  const tabBar = document.createElement('div');
+  tabBar.className = 'page-tabs-bar';
+  const tabRow = document.createElement('div');
+  tabRow.className = 'page-tabs';
+  const tabButtons = {};
+  tabBar.appendChild(tabRow);
+  content.appendChild(tabBar);
+
+  const body = document.createElement('div');
+  content.appendChild(body);
+
   let incident = null;
   let blotter = null;
   let evidence = [];
-  /** Secretary only — its AI summary pre-fills the finalize form. */
+  /** Secretary only — its AI summary pre-fills the finalize form and feeds the workflow stepper. */
   let aiDraft = null;
+  let activeTab = 'incident';
+  /** Set only while the Redaction tab is mounted, so leaving it stops that tab's own polling. */
+  let redactionHandle = null;
+
+  function availableTabs() {
+    return TABS.filter((tab) => !tab.secretaryOnly || isSecretary);
+  }
+
+  function buildTabBar() {
+    tabRow.innerHTML = '';
+    for (const key of Object.keys(tabButtons)) delete tabButtons[key];
+    for (const tab of availableTabs()) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'page-tab';
+      btn.textContent = tab.label;
+      btn.addEventListener('click', () => switchTab(tab.key));
+      tabButtons[tab.key] = btn;
+      tabRow.appendChild(btn);
+    }
+    syncTabButtons();
+  }
+
+  function syncTabButtons() {
+    for (const [key, btn] of Object.entries(tabButtons)) btn.classList.toggle('is-active', key === activeTab);
+  }
+
+  /**
+   * Switches tabs with NO full page navigation (2026-09-27 redesign,
+   * DEVLOG (38)) — this is the fix for "bouncing between two pages" that
+   * prompted it. 'incident'/'blotter' share this file's own `incident`/
+   * `blotter`/`evidence`/`aiDraft` state and re-fetch it fresh via
+   * load() on every switch (cheap, and guarantees a tab never shows data
+   * made stale by something the Redaction tab just changed); 'redaction'
+   * manages its own independent load/poll cycle entirely (renderRedactionTab's
+   * own `stop` handle is tracked here so switching away or logging out
+   * always stops its polling — same contract the old standalone page had).
+   *
+   * `anchor`, when given (from the workflow stepper's "Next step" button),
+   * scrolls/focuses that element once the target tab has rendered — the
+   * same behaviour BlotterWorkflow.js used to do itself for a "same
+   * screen" click, now correct for every stage since there is only one
+   * screen.
+   */
+  async function switchTab(key, anchor) {
+    if (!availableTabs().some((tab) => tab.key === key)) key = 'incident';
+    if (activeTab === 'redaction' && key !== 'redaction' && redactionHandle) {
+      redactionHandle.stop();
+      redactionHandle = null;
+    }
+    activeTab = key;
+    syncTabButtons();
+    if (key === 'redaction') {
+      renderActiveTab();
+    } else {
+      await load();
+    }
+    if (anchor) {
+      requestAnimationFrame(() => {
+        const target = document.getElementById(anchor);
+        if (!target) return;
+        target.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+        const focusable = target.querySelector('input, textarea, select, button:not([disabled])');
+        (focusable || target).focus?.({ preventScroll: true });
+      });
+    }
+  }
+
+  /**
+   * Re-renders the shared stepper. Overrides let whichever tab is
+   * currently the freshest source of truth (the Redaction tab, while
+   * it's mounted, has its own just-polled `draft`/local `edited` state
+   * this shell never sees otherwise) report it without forcing a full
+   * shell reload on every poll tick.
+   */
+  function refreshWorkflowBar(overrides = {}) {
+    stepperHost.innerHTML = '';
+    if (!isSecretary || !incident) return;
+    stepperHost.appendChild(BlotterWorkflow({
+      state: getBlotterWorkflowState({
+        incident: overrides.incident ?? incident,
+        draft: overrides.draft !== undefined ? overrides.draft : aiDraft,
+        blotter: overrides.blotter ?? blotter,
+        edited: overrides.edited ?? false,
+      }),
+      activeTab,
+      onNavigate: switchTab,
+    }));
+  }
+
+  function renderActiveTab() {
+    body.innerHTML = '';
+    if (activeTab === 'redaction' && isSecretary) {
+      redactionHandle = renderRedactionTab(body, user, incidentId, { switchTab, refreshWorkflowBar });
+    } else if (activeTab === 'blotter') {
+      renderBlotterTab(body);
+    } else {
+      renderIncidentTab(body);
+    }
+  }
 
   load();
 
@@ -252,13 +394,16 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       // timeline's dispatch stages come from getIncident() above, NOT from
       // GET /dispatch, which a Secretary may not call at all (403).
       evidence = await getIncidentEvidence(incidentId).catch(() => []);
-      // The AI summary the Secretary already reviewed on W8 is the natural
-      // starting text for the blotter summary. Enrichment only — without
-      // it the form falls back to the approved redacted narrative.
-      aiDraft = isSecretary && incident.redactionApprovedAt && !blotter?.finalizedAt
-        ? await getAiDraft(incidentId).catch(() => null)
-        : null;
-      render();
+      // Always fetched for a Secretary now (2026-09-27), not only once
+      // approved+unfinalized as before — the shared workflow stepper
+      // needs real draft status (queued/processing/failed) at EVERY
+      // stage to be accurate, and the old conditional fetch meant the
+      // stepper's first two stages silently showed "Not started" while a
+      // redaction job was actually running, on this tab specifically.
+      // The finalize-form prefill below still only USES it when approved
+      // and unfinalized — this only widens when it's fetched.
+      aiDraft = isSecretary ? await getAiDraft(incidentId).catch(() => null) : null;
+      renderShell();
     } catch (err) {
       renderError(err instanceof ApiClientError ? err.message : 'Something went wrong loading this entry.');
     }
@@ -275,27 +420,23 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
   }
 
   /**
-   * Two columns rather than six full-width cards stacked down the page,
-   * which left the record itself narrow and the timeline stranded below
-   * the fold. `.split-panel` is the existing utility for exactly this and
-   * already collapses to one column at 1024px.
-   *
-   * Left is the record and the work done on it; right is context —
-   * when things happened, and the Admin action that isn't part of the
-   * Secretary's blotter workflow.
+   * Runs after every successful load(): refreshes the page title/subtitle
+   * (an incident becomes a "Blotter Entry" once finalized), the tab bar,
+   * the shared stepper, and whichever tab is currently active. Rebuilds
+   * `content` from scratch around `stepperHost`/`tabBar`/`body` — those
+   * three elements themselves are never replaced, only their contents,
+   * so DOM identity survives a reload (nothing else depends on that
+   * today, but it matches the discipline the rest of this file already
+   * uses for `pageHeader`).
    */
-  /**
-   * Two columns rather than six full-width cards stacked down the page.
-   * Left is the record and work done on it; right is context and audit trail.
-   */
-  function render() {
+  function renderShell() {
     content.innerHTML = '';
+    content.append(stepperHost, tabBar, body);
 
     const hasBlotter = Boolean(blotter?.displayId || blotter?.blotterId);
     const blotterDisplayId = blotter?.displayId || (blotter?.blotterId ? 'Not yet assigned' : null);
     const incidentDisplayId = incident?.displayId || `#${incident?.incidentId || incidentId}`;
 
-    // Update Page Header Title & Subtitle based on statutory lifecycle
     const titleBlock = pageHeader.el.querySelector('.page-header__title');
     if (titleBlock) {
       if (hasBlotter) {
@@ -311,16 +452,15 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
         : 'Incident particulars, response timeline, and blotter intake';
     }
 
-    // Refresh Action Buttons in Page Header
     pageHeader.actions.innerHTML = '';
     const actionsGroup = document.createElement('div');
     actionsGroup.className = 'blotter-detail-header-actions';
 
-    const backButton = document.createElement('button');
-    backButton.className = 'ghost';
-    backButton.textContent = `← Back to ${listLabel}`;
-    backButton.addEventListener('click', () => navigate(listPage));
-    actionsGroup.appendChild(backButton);
+    const headerBackButton = document.createElement('button');
+    headerBackButton.className = 'ghost';
+    headerBackButton.textContent = `← Back to ${listLabel}`;
+    headerBackButton.addEventListener('click', () => navigate(listPage));
+    actionsGroup.appendChild(headerBackButton);
 
     const printButton = document.createElement('button');
     printButton.className = 'ghost';
@@ -329,21 +469,19 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     printButton.addEventListener('click', () => openPrintModal(incident, blotter, evidence));
     actionsGroup.appendChild(printButton);
 
-
-    // Secretary: the workflow bar below carries the "what next" action,
-    // so the header only keeps a way back to the (already approved)
-    // redaction for reference. The Lupon packet moved out of the header
-    // into its own card, next to the record it is generated from.
-    if (isSecretary && incident.redactionApprovedAt) {
-      const reviewButton = document.createElement('button');
-      reviewButton.className = 'ghost';
-      reviewButton.textContent = 'View AI redaction';
-      reviewButton.addEventListener('click', () => navigate('ai-review', incidentId));
-      actionsGroup.appendChild(reviewButton);
-    }
-
     pageHeader.actions.appendChild(actionsGroup);
 
+    buildTabBar();
+    refreshWorkflowBar();
+    renderActiveTab();
+  }
+
+  /**
+   * Incident tab: dossier, narrative, evidence, timeline, legal guide,
+   * and (Admin) the incident-resolution control — everything that isn't
+   * specifically about the blotter RECORD (that's the Blotter tab).
+   */
+  function renderIncidentTab(container) {
     const layout = document.createElement('div');
     layout.className = 'split-panel';
 
@@ -352,44 +490,53 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     const aside = document.createElement('div');
     aside.className = 'blotter-detail__aside';
 
-    // 1. Unified Case Dossier (Incident Type, Badges, Involved Parties, and 2x2 Meta)
     main.appendChild(buildDossierCard());
-
-    // 2. Official Blotter Record (The core statutory record, placed prominently)
-    if (isSecretary) {
-      main.appendChild(buildBlotterPanel());
-      if (blotter?.finalizedAt) main.appendChild(buildLuponPacketCard());
-    } else if (blotter) {
-      main.appendChild(buildReadOnlyBlotter());
-    }
-
-    // 3. Approved Redacted Narrative (RA 10173 compliant)
     main.appendChild(buildNarrative());
-
-    // 4. Digital Evidence & Chain of Custody (Slim banner if empty)
     main.appendChild(buildEvidence());
 
-    // Aside Column: Resolution Status Card first, then Stepped Timeline, then Legal Guide
     if (incident.status === 'resolved') {
       aside.appendChild(buildResolvedStatusCard());
     } else if (user.role === 'admin') {
       aside.appendChild(buildAdminResolvePanel());
     }
-    if (isSecretary) {
-      aside.appendChild(buildLifecycleCard());
-    }
     aside.appendChild(buildTimeline());
     aside.appendChild(buildLegalGuide());
 
     layout.append(main, aside);
+    container.appendChild(layout);
+  }
+
+  /**
+   * Blotter tab: the official record itself — finalize/amend for a
+   * Secretary, a read-only summary for anyone else who can see one, the
+   * Lupon packet, and the W21 lifecycle actions. This tab EXISTING,
+   * clearly labelled, is itself the answer to "when does an incident
+   * become a blotter" — see this file's own class doc.
+   */
+  function renderBlotterTab(container) {
+    const layout = document.createElement('div');
+    layout.className = 'split-panel';
+
+    const main = document.createElement('div');
+    main.className = 'blotter-detail__main';
+    const aside = document.createElement('div');
+    aside.className = 'blotter-detail__aside';
+
     if (isSecretary) {
-      content.appendChild(BlotterWorkflow({
-        state: getBlotterWorkflowState({ incident, draft: aiDraft, blotter }),
-        currentScreen: 'blotter-detail',
-        onNavigate: (page) => navigate(page, incidentId),
-      }));
+      main.appendChild(buildBlotterPanel());
+      if (blotter?.finalizedAt) main.appendChild(buildLuponPacketCard());
+      aside.appendChild(buildLifecycleCard());
+    } else if (blotter) {
+      main.appendChild(buildReadOnlyBlotter());
+    } else {
+      const note = document.createElement('div');
+      note.className = 'card';
+      note.innerHTML = `<h3>No blotter entry yet</h3><p class="note">This incident has not been recorded in the barangay blotter. A Secretary finalizes it into one from this same tab.</p>`;
+      main.appendChild(note);
     }
-    content.appendChild(layout);
+
+    layout.append(main, aside);
+    container.appendChild(layout);
   }
 
   /**
@@ -1030,7 +1177,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       button.className = 'primary';
       button.style.alignSelf = 'flex-start';
       button.innerHTML = `<span>Review AI redaction</span> ${icons.arrowRight(16)}`;
-      button.addEventListener('click', () => navigate('ai-review', incidentId));
+      button.addEventListener('click', () => switchTab('redaction'));
 
       const stack = document.createElement('div');
       stack.className = 'form-stack';
@@ -1877,4 +2024,16 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
     return form;
   }
+
+  // The Redaction tab polls while a job is queued/processing (its own
+  // `renderRedactionTab()` doc explains why); this shell must stop that
+  // on a full unmount too, not just on switching tabs away from it —
+  // same `{stop}` contract main.js's boot() already expects from this
+  // page (it used to cite a since-removed "AI Blotter Assistant" for the
+  // reason; this is the real one now).
+  return {
+    stop() {
+      if (redactionHandle) redactionHandle.stop();
+    },
+  };
 }

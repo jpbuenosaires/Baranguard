@@ -430,7 +430,8 @@ defect — verify by reading every interpolation site, not by script.
 **Built:** W1 login · W2 dashboard · W3 dispatch (map markers,
 assign-from-map; queues group multiple active dispatches on one
 incident into one card) · W4 GIS · W7 incident detail (routed
-`blotter-detail`; case_status transition control) · W8 AI review ·
+`blotter-detail`; case_status transition control; now a 3-tab case
+workspace — Incident/Redaction/Blotter, see the note below) ·
 Analytics (tabbed Reports/Heatmap, Admin+PB) · Personnel
 (tabbed Users/Scheduler/Swap requests/Fatigue flags — only Fatigue is
 PB-visible) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
@@ -448,7 +449,25 @@ Resolve action, multi-responder support).
 > `blotter-detail` route key (~12 `navigate()` sites use it). Back
 > button is role-aware. **Role consequence**: Punong Barangay has no
 > list-of-cases screen anymore — reach is dashboard + Analytics +
-> individual incident detail.
+> individual incident detail. **Nothing here re-adds a browsable list —
+> still a strict per-incident-only reach, per the DILG BIMSS constraint
+> above** (the 2026-09-27 tab redesign below folds W8 IN, it doesn't add
+> a new list screen).
+
+> **2026-09-27 UX redesign: W7 and the former standalone W8 merged into
+> one 3-tab case workspace** (DEVLOG (38)), prompted by real user
+> feedback that the old two-page split (redact/approve on a separate W8
+> page, finalize/Lupon packet on W7) was confusing. **W8 "AI Redaction
+> Review" is no longer its own route** — it is now the **Redaction** tab
+> of `blotter-detail.js`, alongside a new **Incident** tab (dossier,
+> narrative, evidence, timeline — previously undifferentiated content on
+> W7 itself) and a **Blotter** tab (finalize/amend, Lupon packet, W21
+> lifecycle actions — previously mixed into the same single W7 scroll).
+> Tab switching is instant, no page navigation; the shared workflow
+> stepper (`BlotterWorkflow.js`) drives it. Every reference elsewhere in
+> this doc to "W8 AI review" as a screen now means the Redaction tab —
+> the redaction/extraction/summary/translation pipeline itself and its
+> endpoints are completely unchanged, only where it's mounted moved.
 
 > **The AI Tools screen and its four assistants — AI Classifier
 > (Incident Management), AI Blotter Assistant (incident detail), AI

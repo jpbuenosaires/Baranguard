@@ -6,7 +6,38 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
-**2026-09-26, latest — Periodic PB digest CLOSED (REMAINING.md §G).**
+**2026-09-26, latest — blotter workflow UX redesign: one page, three
+in-case tabs, no more page-hopping (DEVLOG (38)).** User feedback
+("the blotter workflow is confusing") led with a clarifying
+AskUserQuestion round (per CLAUDE.md) before any code, landing on: merge
+the old two-page split (a standalone W8 "AI Review" page + W7's incident
+detail) into ONE page with in-page tabs — **Incident / Redaction /
+Blotter** — using the exact same `.page-tabs` pattern `analytics.js`
+already proved for merging Reports/Heatmap. `ai-review.js` is no longer
+a route; its content is now `renderRedactionTab()`, mounted into the
+shared shell `blotter-detail.js` now owns. The shared workflow stepper
+(`BlotterWorkflow.js`) now switches tabs instead of navigating pages —
+instant, no reload. "Blotter" being an explicit always-visible tab is
+itself the fix for "when does this become a blotter" (previously an
+unlabelled mid-scroll card). A real accuracy bug found and fixed along
+the way: the shell used to only fetch the AI draft once already
+approved, so its own copy of the stepper silently showed "Not started"
+for a job that was actually running. **Verified live in the browser**,
+not just rewritten unit tests: opened a real incident, confirmed an
+instant zero-reload tab switch via the stepper's "Review AI redaction"
+button, approved a real redaction, watched it auto-switch to Blotter
+with the finalize form pre-filled, finalized for real (`POST
+/incidents/18/finalize` → 201, title updated live to "Blotter Entry —
+BLT-2026-010"), confirmed the W21 lifecycle card sits on the same
+Blotter tab, and checked the network log end-to-end for zero unexpected
+errors. `verify-web-wiring.mjs` 559/559 (down from 568 — expected, not a
+regression, this consolidated checks from 3 route-level files into 2),
+`web/tests` 399/399 (three test files updated for the new tab structure,
+plus a small `pageSuite.mjs` harness improvement). Backend untouched —
+100% a frontend reorganization. Full detail: `backend/DEVLOG.md`
+2026-09-26 (38).
+
+**2026-09-26, earlier — Periodic PB digest CLOSED (REMAINING.md §G).**
 Content half already existed (`GET /reports/export?format=pdf`);
 periodic half was blocked on C2, now closed. New
 `ReportsController::generateDigest()` (CLI-only, no HTTP generate route
