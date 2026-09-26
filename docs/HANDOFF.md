@@ -6,6 +6,29 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
+**2026-09-26, same day, later — C-03 (remote access) IN PROGRESS, real
+requirement change.** User needs Tanod/Secretary/PB to reach the system
+off the barangay LAN — reverses the "stay LAN-only" assumption C-03 was
+scoped under earlier the same day. Registered `baranguardph.win`
+(Cloudflare Registrar, informed of and accepting the TLD's spam-
+reputation risk) and stood up a Cloudflare Named Tunnel, verified LIVE
+with real HTTP calls (real barangay data returned, real dashboard HTML
+served, real browser screenshot) — not just configured and assumed
+working. `web/index.html` auto-detects its API base from whatever
+hostname it's opened on; `mobile/src/services/apiService.ts`'s default
+now points at the real domain, with a new gitignored `mobile/.env.local`
+keeping local dev pointed at the workstation. **Two things still need
+YOU specifically** — see the F1/C-03 section below for exactly what.
+Also, in the same stretch: removed Profile's "Test Chimes"/"Critical
+Alert" test buttons and a stray debug log from `mobile/` (user request,
+unrelated to C-03 itself). **A real, important question got asked and
+answered**: does any of this help if the workstation itself is off?
+No — cloud/redundant hosting was floated as the fix and explicitly
+rejected by the user after real tradeoffs were surfaced (cost, the GSM
+gateway's physical-phone dependency, RA 7160 data-sovereignty). That
+risk is accepted and disclosed, not solved. Full detail:
+`backend/DEVLOG.md` 2026-09-26 (20).
+
 **2026-09-26 — seventh audit pass: 5 of the 7 remaining `docs/REMAINING.md`
 §H items + M-03 closed in one session** (user explicitly picked "all the
 H items and M-03," decisions gathered up front via AskUserQuestion, same
@@ -586,11 +609,19 @@ earlier snapshot did not reproduce on a later full-suite run
 (398/398, 2026-09-24) — treated as a flake, not a real regression; no
 longer on this list.
 
-**F1 (API base URL, reopened)** isn't on this list — nothing currently
-depends on remote access working; LAN-only development/testing both work
-via `docs/SETUP.md`. Revisit only if a real persistent remote-access
-requirement comes back (a Cloudflare Named Tunnel + Access policy would
-be the natural next architecture).
+**F1/C-03 (API base URL / HTTPS) — the requirement came back 2026-09-26,
+and IS now on this list.** User needs Tanod/Secretary/PB reachable off
+the LAN. A Cloudflare Named Tunnel is live on a real registered domain
+(`baranguardph.win` / `api.baranguardph.win`) — see `docs/DEVLOG.md`
+2026-09-26 (20) for the full build. Two concrete next steps, both need
+you specifically (not a coding-session task):
+1. Run `cloudflared service install` from an **Administrator** terminal
+   — installs the tunnel as a Windows service so it survives a reboot;
+   right now it's a manually-started process.
+2. Enable **Zero Trust** in your Cloudflare dashboard (pick a team name,
+   one-time), so a Cloudflare Access policy (email-OTP gate) can be put
+   in front of `api.baranguardph.win` — right now anyone with that URL
+   can reach it, no login gate ahead of the app's own.
 
 Full ordered backlog with reasoning: `docs/REMAINING.md`.
 
