@@ -34,7 +34,12 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-3306}"
+# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
+# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
+# port (an unrelated MySQL80 service owns 3306 here; see
+# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
+XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
 XAMPP_MYSQL_PASSWORD="${XAMPP_MYSQL_PASSWORD:-}"
 VALDB="baranguard_devsig_check"
@@ -49,10 +54,16 @@ echo "Baranguard device signature (H-09) validation — $(date -u +%Y-%m-%dT%H:%
 
 find_bin() {
   local name="$1"
-  if command -v "$name" >/dev/null 2>&1; then command -v "$name"; return; fi
+  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
+  # (and possibly others) has an unrelated same-named binary earlier on
+  # PATH -- a separate MySQL Server install whose client can silently
+  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
+  # that `command -v` would otherwise prefer over the XAMPP install
+  # these scripts are meant for. PATH is now only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done
+  if command -v "$name" >/dev/null 2>&1; then command -v "$name"; return; fi
   echo ""
 }
 MYSQL_BIN="$(find_bin mysql)"

@@ -16780,3 +16780,47 @@ suite is needed again.
 **Not done**: PHP-CLI-vs-Apache version parity for other tools on this
 machine (mobile build scripts, etc.) — unaffected, they already used
 `C:\php-8.3.13` directly.
+
+## 2026-09-26 (33) — mysql client PATH/port resolution fixed across all 29 verify scripts
+
+Follow-up to (32)'s note "not re-run — pre-existing environment gap." User
+asked to actually fix it rather than leave it as a caveat.
+
+**Root cause, confirmed with direct tests, was two separate bugs
+stacking**: `find_bin()` (copy-pasted identically into 29 scripts —
+every `verify-*.sh`/`bootstrap-db.sh`/`restore-drill.sh`) checked
+`command -v "$name"` BEFORE the explicit `/c/xampp/mysql/bin/` path, so
+on this machine — which also has an unrelated `MySQL Server 8.0` client
+earlier on PATH — every script silently used the WRONG `mysql.exe`. Sepa-
+rately, every script defaulted `XAMPP_MYSQL_PORT` to 3306, the stock
+XAMPP port, but this machine's actual XAMPP MariaDB runs on 3307 (an
+unrelated `MySQL80` Windows service owns 3306 here — same fact (31)
+already found for the launcher). Confirmed each bug independently:
+`/c/xampp/mysql/bin/mysql.exe -P 3307 -u root` connects fine (no
+password, no plugin error); the same client against port 3306 (i.e.
+MySQL80) fails with `Plugin caching_sha2_password could not be loaded`
+because that old MariaDB-era client doesn't ship that plugin.
+
+**Fix, applied identically to all 29 scripts** (verified byte-identical
+before patching, via a small Python script — not by hand, given the
+count): `find_bin()` now tries the explicit XAMPP path FIRST and falls
+back to `command -v` only if that's missing, so PATH ordering can no
+longer shadow the intended binary. `XAMPP_MYSQL_PORT` now defaults to
+`backend/.env`'s own `DB_PORT` (falling back to 3306 if `.env` is
+missing or unset) instead of a hardcoded stock guess — same fix pattern
+already used for `start-baranguard.ps1` in (31). Both `XAMPP_MYSQL_HOST`/
+`XAMPP_MYSQL_PORT`/etc. env-var overrides still work exactly as before
+for a machine with a real root password or different layout.
+
+**Verified for real, not just diffed**: ran `verify-sprint1-auth.sh`
+(23/23) and `verify-sprint0.sh` (19/19) with ZERO env var overrides —
+first time either has passed on this machine without hand-setting
+`XAMPP_MYSQL_PORT=3307` first. Both logs confirm `Using mysql:
+/c/xampp/mysql/bin/mysql.exe` (not the MySQL80 client) and `Using php:
+/c/xampp/php/php.exe (8.3.13)`. `bash -n` syntax-checked all 29 patched
+files clean.
+
+**Not re-run this session**: the other 26 patched suites (H2/whitespace-
+identical fix, same confidence as the two that were run for real —
+`verify-sprint1-auth.sh`/`verify-sprint0.sh` already prove the pattern
+works; re-running all 26 for their own sake wasn't this session's ask).
