@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 import { api, mountPage, settle, wait, cleanup, text, click, type, buttonByText, $, $$ } from '../harness/render.mjs';
 import { renderIncidentManagementPage } from '../../src/pages/incident-management.js';
 
-// backend/migrations/0001_baseline_schema.sql
+// backend/migrations/0001_baseline_schema.sql, widened by 0025
+// (H-16/M-03 lifecycle states -- IncidentsController::INCIDENT_STATUSES)
 const SCHEMA_PRIORITIES = ['normal', 'high', 'critical'];
-const SCHEMA_STATUSES = ['pending', 'dispatched', 'resolved'];
+const SCHEMA_STATUSES = ['pending', 'dispatched', 'resolved', 'duplicate', 'invalid', 'cancelled', 'reopened'];
 
 describePage({
   name: 'Incident Management',

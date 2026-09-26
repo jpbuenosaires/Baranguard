@@ -435,6 +435,7 @@ final class IncidentsController
                     i.location_description, i.display_id,
                     i.raw_narrative, i.redacted_narrative, i.redaction_approved_at, i.redaction_approved_by,
                     i.complainant_name, i.respondent_name, i.complainant_contact_number,
+                    i.duplicate_of_incident_id, i.lifecycle_changed_by, i.lifecycle_changed_at,
                     d.dispatched_at, d.arrived_at,
                     EXISTS (
                         SELECT 1 FROM dispatch da
@@ -534,6 +535,21 @@ final class IncidentsController
             'synced_at' => $incident['synced_at'],
             'location_description' => $incident['location_description'],
             'display_id' => $incident['display_id'],
+            // H-16/M-03 lifecycle state (migration 0025) -- added
+            // 2026-09-26 alongside the W21 web UI for
+            // `PATCH /incidents/:id/lifecycle`; previously set by that
+            // endpoint but never read back by show(), so the UI had no
+            // way to display "duplicate of #N" or who/when changed it
+            // after the initiating request's own response was gone.
+            // `lifecycle_changed_by` is a raw user id, same disclosure
+            // level as `reported_by`/`redaction_approved_by` above.
+            'duplicate_of_incident_id' => $incident['duplicate_of_incident_id'] !== null
+                ? (int) $incident['duplicate_of_incident_id']
+                : null,
+            'lifecycle_changed_by' => $incident['lifecycle_changed_by'] !== null
+                ? (int) $incident['lifecycle_changed_by']
+                : null,
+            'lifecycle_changed_at' => $incident['lifecycle_changed_at'],
             // The approved redaction is readable by every role §7 allows
             // to view an incident — approval is what makes it shareable.
             'redacted_narrative' => $incident['redacted_narrative'],

@@ -242,11 +242,14 @@ coding session's scope:**
   Idempotency-Key required, replayed off `audit_log`. New standalone
   `verify-h16-incident-lifecycle.sh`, 30/30 passing, including the
   merge-as-link assertions, the open-dispatch guard, cross-tenant 404,
-  and idempotency replay. **Not done this session**: no web UI affordance
-  for this endpoint yet (Incident Management's detail pane has no button
-  wired to it) — the backend/policy gap is closed, but a Secretary must
-  currently call the endpoint directly (or via a future UI session) to
-  use it.
+  and idempotency replay. **Web UI affordance — DONE 2026-09-26 (W21,
+  DEVLOG (36)).** `blotter-detail.js` now has a Secretary-only "Case
+  lifecycle" card (duplicate/invalid/cancelled/reopened, forward-only,
+  duplicate-link cross-navigation) — browser-verified live against real
+  disposable data, not just unit-tested. `IncidentsController::show()`
+  also gained the three lifecycle fields it had never returned (a real
+  gap found while wiring this — the endpoint's own immediate response
+  carried them, but a page reload lost them entirely).
 - **H-17 (shift minimum-staffing/rest constraints) CLOSED.** User
   decision: at least 1 Tanod on duty per barangay per shift, 8h minimum
   rest, hard-blocked (409/422) rather than a warning.

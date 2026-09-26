@@ -32,6 +32,7 @@ import {
   getBlotterForIncident,
   getIncidentEvidence,
   resolveIncident,
+  updateIncidentLifecycle,
   getAiDraft,
   finalizeBlotter,
   amendBlotter,
@@ -42,7 +43,7 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
-import { confirmDialog } from '../components/ConfirmDialog.js';
+import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 import { BlotterWorkflow, getBlotterWorkflowState, generateAndDownloadLuponPacket } from '../components/BlotterWorkflow.js';
@@ -373,6 +374,9 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       aside.appendChild(buildResolvedStatusCard());
     } else if (user.role === 'admin') {
       aside.appendChild(buildAdminResolvePanel());
+    }
+    if (isSecretary) {
+      aside.appendChild(buildLifecycleCard());
     }
     aside.appendChild(buildTimeline());
     aside.appendChild(buildLegalGuide());
@@ -1088,6 +1092,160 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
 
     card.appendChild(buildAmendSection());
     return card;
+  }
+
+  // Mirrors IncidentsController::LIFECYCLE_TRANSITIONS exactly (H-16/M-03,
+  // migration 0025) -- UI-only convenience for which buttons to show; the
+  // server is still the real enforcement point, so a stale client copy
+  // here only means a button that would 409, not a bypass.
+  const LIFECYCLE_TRANSITIONS = {
+    pending: ['duplicate', 'invalid', 'cancelled'],
+    dispatched: ['duplicate', 'invalid', 'cancelled'],
+    resolved: ['reopened'],
+    cancelled: ['reopened'],
+    invalid: ['reopened'],
+    duplicate: ['reopened'],
+    reopened: ['duplicate', 'invalid', 'cancelled'],
+  };
+  const LIFECYCLE_ACTION_META = {
+    duplicate: {
+      label: 'Mark as duplicate',
+      icon: icons.copy,
+      description: 'Links this incident to another that already covers it. MERGE MEANS LINK, NOT DELETE — the other incident is untouched and both stay independently retained.',
+    },
+    invalid: {
+      label: 'Mark invalid',
+      icon: icons.alertTriangle,
+      description: 'Marks this incident as not a valid report. It can be reopened later if that turns out to be wrong.',
+    },
+    cancelled: {
+      label: 'Cancel this incident',
+      icon: icons.x,
+      description: 'Cancels this incident. It can be reopened later if needed.',
+    },
+    reopened: {
+      label: 'Reopen this case',
+      icon: icons.rotateCcw,
+      description: 'Reopens this case for further action.',
+    },
+  };
+
+  /**
+   * W21: the web UI for `PATCH /incidents/:id/lifecycle` (H-16/M-03),
+   * Secretary-only — the backend/policy side of this has existed since
+   * migration 0025, but nothing in the web app ever called it (a
+   * Secretary had to hit the endpoint directly). Card shows only the
+   * legal targets from the incident's CURRENT status (forward-only, same
+   * table the server enforces), disables every target except `reopened`
+   * while a dispatch is still active (same guard the server applies),
+   * and surfaces the duplicate link / last-change timestamp once set.
+   */
+  function buildLifecycleCard() {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Case lifecycle';
+    card.appendChild(heading);
+
+    if (incident.status === 'duplicate' && incident.duplicateOfIncidentId) {
+      const note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = `Linked as a duplicate of incident #${incident.duplicateOfIncidentId}.`;
+      card.appendChild(note);
+      const viewLink = document.createElement('button');
+      viewLink.className = 'ghost';
+      viewLink.textContent = 'View the linked incident';
+      viewLink.addEventListener('click', () => navigate('blotter-detail', incident.duplicateOfIncidentId));
+      card.appendChild(viewLink);
+    }
+
+    const legalTargets = LIFECYCLE_TRANSITIONS[incident.status] || [];
+    if (legalTargets.length === 0) {
+      const note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = 'No lifecycle action is available from this status.';
+      card.appendChild(note);
+      return card;
+    }
+
+    const activeDispatch = incident.hasActiveDispatch;
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'blotter-form-actions';
+
+    for (const target of legalTargets) {
+      const meta = LIFECYCLE_ACTION_META[target];
+      const button = document.createElement('button');
+      button.className = 'ghost';
+      button.innerHTML = `${meta.icon(16)} ${escapeHtml(meta.label)}`;
+
+      const blockedByDispatch = target !== 'reopened' && activeDispatch;
+      button.disabled = blockedByDispatch;
+      if (blockedByDispatch) {
+        button.title = 'A dispatch is still active. Complete or cancel it first.';
+      }
+
+      button.addEventListener('click', () => runLifecycleAction(target, meta));
+      actionsRow.appendChild(button);
+    }
+    card.appendChild(actionsRow);
+
+    if (activeDispatch && legalTargets.some((t) => t !== 'reopened')) {
+      const reason = document.createElement('p');
+      reason.className = 'note';
+      reason.textContent = 'A dispatch is still active. Complete or cancel it before changing the lifecycle (reopening is exempt).';
+      card.appendChild(reason);
+    }
+
+    if (incident.lifecycleChangedAt) {
+      const meta = document.createElement('p');
+      meta.className = 'note';
+      meta.textContent = `Last lifecycle change: ${formatDateTime(incident.lifecycleChangedAt)}.`;
+      card.appendChild(meta);
+    }
+
+    return card;
+  }
+
+  async function runLifecycleAction(target, meta) {
+    if (target === 'duplicate') {
+      await promptText({
+        title: meta.label,
+        description: `${meta.description} Enter the incident id this is a duplicate of (same barangay only).`,
+        label: 'Duplicate of incident #',
+        placeholder: 'e.g. 42',
+        inputType: 'number',
+        confirmLabel: meta.label,
+        onConfirmAsync: async (value) => {
+          const duplicateOfIncidentId = Number.parseInt(value, 10);
+          if (!Number.isInteger(duplicateOfIncidentId) || duplicateOfIncidentId <= 0) {
+            throw new Error('Enter a valid incident id.');
+          }
+          if (duplicateOfIncidentId === incident.incidentId) {
+            throw new Error('An incident cannot be a duplicate of itself.');
+          }
+          await updateIncidentLifecycle(incidentId, {
+            status: 'duplicate',
+            duplicateOfIncidentId,
+            idempotencyKey: crypto.randomUUID(),
+          });
+          showToast(`Marked as a duplicate of incident #${duplicateOfIncidentId}.`, { variant: 'success' });
+          await load();
+        },
+      });
+      return;
+    }
+
+    await confirmDialog({
+      title: `${meta.label}?`,
+      description: meta.description,
+      confirmLabel: meta.label,
+      onConfirmAsync: async () => {
+        await updateIncidentLifecycle(incidentId, { status: target, idempotencyKey: crypto.randomUUID() });
+        showToast(target === 'reopened' ? 'Incident reopened.' : `Incident marked ${target}.`, { variant: 'success' });
+        await load();
+      },
+    });
   }
 
   function buildResolvedStatusCard() {

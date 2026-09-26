@@ -1,10 +1,11 @@
 /**
  * ConfirmDialog.js — reusable modal dialogs (§3.2 of the UI/UX review).
  *
- * Two exports, one implementation:
+ * Three exports, one implementation:
  *
  *   confirmDialog()  -> Promise<boolean>   yes/no confirmation
  *   promptSelect()   -> Promise<string|null>  pick one option, or null
+ *   promptText()     -> Promise<string|null>  free-text/number input, or null
  *
  * `confirmDialog()` returns a Promise<boolean> specifically so a call
  * site's existing `if (!confirm(...)) return;` becomes
@@ -164,12 +165,13 @@ export function confirmDialog({ title, description, confirmLabel = 'Confirm', ca
  * }} options
  * @returns {Promise<string|null>} the chosen option's value, or null if cancelled
  */
-export function promptSelect({ title, description, label, options, confirmLabel = 'Confirm', cancelLabel = 'Cancel' }) {
+export function promptSelect({ title, description, label, options, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirmAsync }) {
   let select = null;
   return openDialog({
     title, description, confirmLabel, cancelLabel, danger: false,
     cancelValue: null,
     resolveValue: () => (select ? select.value : null),
+    onConfirmAsync,
     buildBody: (dialog) => {
       const field = document.createElement('div');
       field.className = 'form-stack confirm-dialog__field';
@@ -188,6 +190,45 @@ export function promptSelect({ title, description, label, options, confirmLabel 
       field.append(labelEl, select);
       dialog.appendChild(field);
       return select;
+    },
+  });
+}
+
+/**
+ * A dialog that asks the user to type a value. Added for W21's incident
+ * lifecycle "mark as duplicate" action, which needs a target incident id
+ * alongside the confirmation — `onConfirmAsync` is the validation/submit
+ * hook: throwing inside it (client-side or a server 400/409/404) shows
+ * the message inline and keeps the dialog open, same as confirmDialog's.
+ *
+ * @param {{
+ *   title: string, description?: string, label: string, placeholder?: string,
+ *   inputType?: string, confirmLabel?: string, cancelLabel?: string,
+ *   onConfirmAsync?: (value: string) => Promise<any>
+ * }} options
+ * @returns {Promise<string|null>} the typed value, or null if cancelled
+ */
+export function promptText({ title, description, label, placeholder, inputType = 'text', confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirmAsync }) {
+  let input = null;
+  return openDialog({
+    title, description, confirmLabel, cancelLabel, danger: false,
+    cancelValue: null,
+    resolveValue: () => (input ? input.value.trim() : null),
+    onConfirmAsync,
+    buildBody: (dialog) => {
+      const field = document.createElement('div');
+      field.className = 'form-stack confirm-dialog__field';
+      const labelEl = document.createElement('label');
+      labelEl.className = 'label';
+      labelEl.htmlFor = 'confirm-dialog-input';
+      labelEl.textContent = label;
+      input = document.createElement('input');
+      input.type = inputType;
+      input.id = 'confirm-dialog-input';
+      if (placeholder) input.placeholder = placeholder;
+      field.append(labelEl, input);
+      dialog.appendChild(field);
+      return input;
     },
   });
 }

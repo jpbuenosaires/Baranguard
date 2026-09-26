@@ -1301,6 +1301,11 @@ export async function getIncident(incidentId) {
     syncedAt: json.synced_at,
     locationDescription: json.location_description,
     displayId: json.display_id,
+    // H-16/M-03 lifecycle state (migration 0025) -- duplicate/invalid/
+    // cancelled/reopened, set by updateIncidentLifecycle() below.
+    duplicateOfIncidentId: json.duplicate_of_incident_id ?? null,
+    lifecycleChangedBy: json.lifecycle_changed_by ?? null,
+    lifecycleChangedAt: json.lifecycle_changed_at ?? null,
     rawNarrative: json.raw_narrative ?? null,
     redactedNarrative: json.redacted_narrative,
     redactionApprovedAt: json.redaction_approved_at,
@@ -1695,6 +1700,35 @@ export async function resolveIncident(incidentId) {
     auth: true,
   });
   return { incidentId: json.incident_id, status: json.status };
+}
+
+/**
+ * PATCH /incidents/:id/lifecycle — Secretary only (H-16/M-03, migration
+ * 0025). Records a records-custodian judgment call: `duplicate` (requires
+ * `duplicateOfIncidentId`, a same-barangay incident id — MERGE MEANS
+ * LINK, NOT DELETE, nothing about the target incident changes),
+ * `invalid`, `cancelled`, or `reopened`. Forward-only per
+ * IncidentsController::LIFECYCLE_TRANSITIONS — a 409 means the current
+ * status can't legally reach the requested one. Blocked (409) while any
+ * dispatch is still active, except `reopened`, which the server
+ * deliberately exempts from that guard.
+ *
+ * `idempotencyKey` is the required UUID (Idempotency-Key header) — same
+ * contract as updateIncident(): generate one per user-initiated submit.
+ */
+export async function updateIncidentLifecycle(incidentId, { status, duplicateOfIncidentId, idempotencyKey }) {
+  const body = { status };
+  if (status === 'duplicate') body.duplicate_of_incident_id = duplicateOfIncidentId;
+  const json = await request('PATCH', `/incidents/${incidentId}/lifecycle`, {
+    body,
+    auth: true,
+    idempotencyKey,
+  });
+  return {
+    incidentId: json.incident_id,
+    status: json.status,
+    duplicateOfIncidentId: json.duplicate_of_incident_id ?? null,
+  };
 }
 
 // --- Map packages (W18) ------------------------------------------------------

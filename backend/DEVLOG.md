@@ -16946,3 +16946,75 @@ earlier `--dry-run` had predicted.
 boxes it named. Not touched this session: the AI-worker/Apache/MySQL/
 cloudflared autostart script (`install-autostart-services.ps1`) still
 needs its own elevated run separately, unrelated to this pair.
+
+## 2026-09-26 (36) — W21: web UI for the incident lifecycle endpoint (H-16/M-03), closed
+
+`docs/REMAINING.md`'s last remaining genuinely-open item with no
+hardware/decision blocker: `PATCH /incidents/:id/lifecycle` (H-16/M-03,
+migration 0025) has existed since 2026-09-26's seventh audit pass, but
+nothing in the web app ever called it — a Secretary had to hit the
+endpoint directly. User picked this over the PB digest (which needed a
+delivery-mechanism decision first — see (37)).
+
+**Backend, a real small gap found while wiring the UI**: `IncidentsController::show()`
+never returned `duplicate_of_incident_id`/`lifecycle_changed_by`/
+`lifecycle_changed_at` in its JSON, even though `updateLifecycle()` had
+been writing them since migration 0025 — the endpoint's own IMMEDIATE
+response carried the new state, but a page reload lost it entirely since
+there was no way to read it back. Added all three to `show()`'s SELECT
+and JSON payload (`lifecycle_changed_by` at the same raw-id disclosure
+level as `reported_by`/`redaction_approved_by`, already on that
+response).
+
+**Web**: `blotter-detail.js` gets a new Secretary-only "Case lifecycle"
+card (aside column, alongside the existing Admin resolve panel/resolved-
+status card, never conflicting since roles are mutually exclusive per
+session). Renders only the LEGAL targets from the incident's current
+status (a client-side copy of `IncidentsController::LIFECYCLE_TRANSITIONS`,
+commented as UI-convenience only — the server is still the real
+enforcement point), disables every non-`reopened` target while a
+dispatch is active (mirrors the server's own guard), and shows the
+duplicate-link note + "View the linked incident" cross-navigation +
+last-change timestamp once set. `apiClient.js` gets `updateIncidentLifecycle()`
+(Idempotency-Key, same contract as `updateIncident()`) and three new
+mapped fields on `getIncident()`.
+
+**New reusable primitive**: `ConfirmDialog.js` gets `promptText()`
+(free-text/number input in a dialog, `onConfirmAsync` for inline
+validation/submit errors) — `promptSelect()` already existed for
+picking one of several options, but "mark as duplicate" needs a typed
+target incident id too. Also threaded `onConfirmAsync` through
+`promptSelect()` itself for the same reason, a one-line addition with no
+behavior change for existing callers.
+
+**Found and fixed a second real gap while browser-testing**: the
+Incident List (`incident-management.js`) had no label/icon/color/filter-
+option for any of the 4 new statuses — they rendered as raw lowercase
+text (`duplicate`, `cancelled`) with the same alert-triangle icon as an
+active incident, and the status filter dropdown couldn't select them at
+all (a control with no way back to what it set — §2 Rule 6 territory).
+Added display labels, distinct icons (copy/x/rotateCcw), CSS color
+variants (muted/tertiary for the three terminal states, matching
+`--closed`'s existing treatment; critical/attention color for `reopened`,
+matching `--pending`), and the 4 missing filter options.
+
+**Verified for real, live in the browser as `secretary.dao`** (not just
+unit tests): cancelled a real pending incident (INC-2026-021, disposable
+`baranguard_uiseed` data), confirmed the workflow correctly narrowed to
+only "Reopen this case" afterward; marked a second incident (INC-2026-022)
+as a duplicate of a third (INC-2026-020), confirmed client-side self-
+reference validation ("An incident cannot be a duplicate of itself")
+kept the dialog open with an inline error, then confirmed the real
+submission, the "Linked as a duplicate of incident #20" note, and that
+clicking through to incident #20 showed it completely untouched (MERGE
+MEANS LINK, NOT DELETE, proven live not just asserted). Confirmed the
+Incident List badge/filter fixes render correctly and that filtering by
+`status=duplicate` round-trips to the server and returns exactly the one
+real row. `verify-h16-incident-lifecycle.sh` 30/30,
+`verify-json-contracts.php` 50/50 (both re-run after the `show()`
+change), `verify-web-wiring.mjs` 564/564 (up from 562, same 2
+pre-existing unrelated failures), `web/tests` 399/399 — one test's own
+`SCHEMA_STATUSES` constant was stale (predated migration 0025, the exact
+class of bug §2 Rule 6's "no control that does nothing" test exists to
+catch — the FIX here was updating that constant to match the real
+schema, not weakening the test).
