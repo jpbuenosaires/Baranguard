@@ -16348,3 +16348,71 @@ Not touched: entry (25)'s Scheduled Task registration in
 `install-autostart-services.ps1` — kept as-is for anyone who later wants
 true power-on autostart with zero interaction, clearly documented now as
 the OTHER option, not this one.
+
+## 2026-09-26 (27) — The GPU/CUDA crash root-caused for real: Windows GPU selection, not a driver problem
+
+Revisited the GPU crash entries (24)/(25) flagged as unresolved. This
+workstation is a laptop with hybrid graphics — `NVIDIA GeForce RTX 4050
+Laptop GPU` + `Intel(R) UHD Graphics` (confirmed via `Get-CimInstance
+Win32_VideoController`; NVIDIA driver dated 2026-08-24, not stale).
+Checked `HKCU:\Software\Microsoft\DirectX\UserGpuPreferences` — neither
+`ollama.exe`, `ollama app.exe`, nor the actual CUDA worker process
+(`lib\ollama\llama-server.exe`, confirmed present and matching the
+`llama-server-cuda_v13` path in every crash log line from (24)) had an
+explicit GPU preference set. On a hybrid-graphics laptop, "let Windows
+decide" can inconsistently schedule a workload between the iGPU and
+dGPU — a very plausible match for a crash that failed roughly half the
+time rather than consistently.
+
+**Fix**: set `GpuPreference=2` (High performance / force the dedicated
+NVIDIA GPU) in that same registry key for all three executables — a
+per-user (`HKCU`), fully reversible setting, no admin rights, no driver
+reinstall, no `OLLAMA_NUM_GPU`/CPU-only fallback needed. Restarted
+`ollama app.exe` (which respawns `ollama.exe`) so the new preference
+actually takes effect for a fresh process.
+
+**Verified for real, not assumed fixed**: forced 8 consecutive COLD model
+loads (`ollama stop` before each `POST /api/generate`, so every one had
+to reload from disk and re-initialise CUDA, the exact condition that
+crashed roughly half the time in entries (24)/(25)). **8/8 succeeded**,
+13–19s each, `grep -c "CUDA error" server.log` came back **0** for the
+whole test window. Before this fix, the same test would be expected to
+show ~4 crashes out of 8 based on the day's earlier real numbers (5/10
+failed in entry (24)'s original investigation). Small sample, but a
+clean sweep after a change that directly targets the mechanism (GPU
+scheduling ambiguity) is much stronger evidence than the retry-logic
+workaround from (24), which only reduced the IMPACT of the crash without
+touching its cause.
+
+**Downgraded, not removed**: entry (24)'s `OllamaClient::generate()`
+retry (3 attempts, 4s apart) is left in place as a safety net — this fix
+is one config change on one laptop's GPU driver stack verified over 8
+samples, not a guarantee the crash can never recur (a Windows/driver
+update could reset the preference, or another hybrid-graphics edge case
+could surface). If it holds up over real usage, the retry logic simply
+never fires; it costs nothing to leave it.
+
+**Reversal, if ever needed**: delete the three value entries under
+`HKCU:\Software\Microsoft\DirectX\UserGpuPreferences` (or delete the
+whole key if nothing else added entries to it — BlueStacks already had
+its own two entries there before this change, so don't delete the key
+wholesale without checking).
+
+## 2026-09-26 (27, continued) — cloudflared is NOT installed on this machine at all: a real discrepancy with C-03's documented state
+
+Went to run `cloudflared service install` (HANDOFF.md's "Recommended
+next step" #1 for C-03) and found no trace of `cloudflared` anywhere on
+this machine — no binary under `Program Files` or any user profile, no
+`~/.cloudflared/config.yml`, no Windows service, no running process,
+`sc query cloudflared` returns "does not exist as an installed service".
+`backend/.env` has no live `CORS_ALLOWED_ORIGIN`/tunnel entries beyond a
+commented-out placeholder.
+
+This directly contradicts REFERENCE.md §1 / HANDOFF.md / DEVLOG entry
+2026-09-26 (20)'s claim of a Cloudflare Named Tunnel "verified LIVE with
+real HTTP calls" on `baranguardph.win`/`api.baranguardph.win`. **Not
+resolved this session** — flagged to the user rather than guessed at,
+since the two live possibilities (this is a different machine than the
+one entry (20) actually ran on, vs. the tunnel was somehow uninstalled
+since) call for different next steps and only the user can say which.
+No action taken on C-03 pending that answer.
