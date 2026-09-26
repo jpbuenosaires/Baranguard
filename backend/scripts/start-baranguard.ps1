@@ -1,7 +1,8 @@
 # Baranguard - one-click startup, run by double-clicking "Start
-# Baranguard.bat" at the repo root. Starts Apache/MySQL (if not already
-# running), starts the API server on :8081 and the AI worker daemon (if not already running), then
-# opens the web dashboard in the default browser.
+# Baranguard.bat" at the repo root. Starts Apache (which now also serves
+# the API on :8081 -- see below) and MySQL if not already running, starts
+# the AI worker daemon if not already running, then opens the web
+# dashboard in the default browser.
 #
 # This is a MANUAL launcher -- it does NOT make anything start just
 # because the laptop is powered on. For that (no double-click, no login
@@ -68,26 +69,19 @@ if (Test-DbListening) {
 }
 
 $phpCmd = Get-Command php.exe -ErrorAction SilentlyContinue
-$phpExe = if ($phpCmd) { $phpCmd.Source } else { "C:\php-8.3.13\php.exe" }
+$phpExe = if ($phpCmd) { $phpCmd.Source } else { "C:\xampp\php\php.exe" }
 
-# 3. API server on :8081. XAMPP's own Apache here runs PHP 8.0, which
-# can't load the backend (it uses 8.1+ `readonly` properties), so the
-# API runs on the standalone PHP's built-in server instead. The web
-# dashboard (from localhost) and the Cloudflare tunnel's
-# api.baranguardph.win ingress both expect it at localhost:8081.
+# 3. API server on :8081 -- now served by XAMPP's own Apache via the
+# vhost in httpd-vhosts.conf (DocumentRoot backend/public), now that
+# XAMPP's php.exe was upgraded to 8.3.13 (2026-09-27, was 8.0.30 and
+# couldn't load the backend's 8.1+ `readonly` properties). Apache step 1
+# above starts this together with :80; this is just a listen check, no
+# separate process to launch. The web dashboard (from localhost) and the
+# Cloudflare tunnel's api.baranguardph.win ingress both expect it here.
 if (Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue) {
-    Write-Host "[OK] API server is already running."
-} elseif (Test-Path $phpExe) {
-    Write-Host "Starting API server..."
-    Start-Process -FilePath $phpExe -ArgumentList "-S","127.0.0.1:8081" -WorkingDirectory (Join-Path $backendDir "public") -WindowStyle Hidden
-    Start-Sleep -Seconds 2
-    if (Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue) {
-        Write-Host "[OK] API server started."
-    } else {
-        Write-Host "[!!] API server did not start -- the dashboard will say it can't reach the server."
-    }
+    Write-Host "[OK] API server (port 8081) is up."
 } else {
-    Write-Host "[!!] Could not find php.exe -- the API server can't start."
+    Write-Host "[!!] API server (port 8081) is not listening -- check C:\xampp\apache\conf\extra\httpd-vhosts.conf and Apache's error log."
 }
 
 # 4. AI worker daemon

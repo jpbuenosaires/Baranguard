@@ -16724,3 +16724,59 @@ with the four barangays both at `localhost:8081` and via
 process afterwards (the one started before MariaDB was up had exited).
 Caveat: PHP's built-in server is single-threaded — fine for one
 dashboard, not a long-term production server.
+
+## 2026-09-26 (32) — XAMPP's Apache PHP upgraded 8.0.30 → 8.3.13; API now served by Apache on :8081, not a standalone `php -S`
+
+Follow-up to (31): that entry worked around XAMPP's Apache running PHP
+8.0 (can't load the backend's 8.1+ `readonly` properties) by having the
+launcher start the backend on a separate standalone PHP's built-in
+server. User asked to fix this properly instead of keep working around
+it.
+
+**What changed**: `C:\xampp\php` (was PHP 8.0.30 NTS... actually ZTS,
+Apache Lounge build) replaced with a copy of `C:\php-8.3.13` (same
+compiler/architecture/thread-safety as the old one, so it drops in
+without an Apache-module mismatch) — user's explicit choice over
+downloading a separate 8.2 build, since 8.3.13 is already what the API
+and AI worker run on via CLI, and it's already proven itself on this
+machine. Old `C:\xampp\php` kept as `C:\xampp\php-8.0.30-backup` (not
+deleted — a real rollback path if this ever needs undoing). XAMPP's own
+`php.ini` (extensions, `upload_tmp_dir`, `browscap`, `pear`, etc.) was
+kept and copied onto the new PHP, not replaced by the standalone
+install's own minimal `php.ini` — that one instead saved alongside as
+`php.ini-standalone-8.3.13` for reference. Confirmed the extensions the
+API needs (`pdo_mysql`, `openssl`, `fileinfo`, `mbstring`, `curl`) all
+load under the new build via `-m`.
+
+**New vhost**: `httpd-vhosts.conf` gained `Listen 8081` +
+`<VirtualHost *:8081>` with `DocumentRoot backend/public` (matches
+`README-serving.md` Option A, which the docs already described as "how
+this will actually run" — it just wasn't actually wired up on this
+machine yet).
+
+**Launcher updated again**: `start-baranguard.ps1`'s step 3 no longer
+spawns a standalone `php -S` process — Apache now serves :8081 as part
+of starting Apache itself, so the step is just a listen check.
+
+**Verified for real**, not just `php -v`: restarted Apache, hit
+`GET /api/v1/barangays` at both `http://localhost:8081` and
+`https://api.baranguardph.win` — real 200s with the four real barangays,
+`Server: Apache/2.4.58 ... PHP/8.3.13` confirmed in the error log.
+`php backend/scripts/verify-json-contracts.php` — 50/50 real HTTP calls
+through Apache (login, authenticated reads, 401s, 404s) all pass.
+`node web/scripts/verify-web-wiring.mjs` — 562/562, same 2 pre-existing
+unrelated failures as before (admin-dashboard/statistical-reports CSS
+classes, noted in HANDOFF.md already).
+
+**Not re-run**: `verify-sprint1-auth.sh` and friends that need a `mysql`
+root/DBA connection — this shell's `mysql` client resolves to an
+unrelated `MySQL Server 8.0` install on PATH ahead of XAMPP's, and even
+pointed at XAMPP's own `mysql.exe` (an old Oct-2023 client), root login
+fails with `Plugin caching_sha2_password could not be loaded` — a
+pre-existing environment gap unrelated to this PHP swap, not something
+this session's task touched. Worth fixing separately if a DBA-credential
+suite is needed again.
+
+**Not done**: PHP-CLI-vs-Apache version parity for other tools on this
+machine (mobile build scripts, etc.) — unaffected, they already used
+`C:\php-8.3.13` directly.
