@@ -16565,3 +16565,49 @@ not a leftover foreground process.
 install`) is now genuinely done** — the tunnel will survive this
 machine rebooting. Next-step #2 (Cloudflare Zero Trust / Access policy)
 remains open; nobody has done that yet.
+
+## 2026-09-26 (29, continued) — Zero Trust/Access scoped correctly, then explicitly deferred
+
+User asked to proceed with next-step #2. Before handing over dashboard
+instructions, checked whether the documented plan ("Access policy in
+front of `api.baranguardph.win`") actually made sense to implement as
+literally written — it didn't:
+
+- `GET /api/v1/barangays` (confirmed via the earlier `curl` test in entry
+  (28)) and other citizen-facing endpoints (public report submission,
+  the transparency report) are intentionally public, no auth. An Access
+  gate on the whole API host would have blocked legitimate public
+  traffic, not just intruders.
+- Cloudflare Access's email-OTP flow is a browser redirect. The mobile
+  Tanod app and the web dashboard both call the API programmatically
+  (fetch/XHR with a JWT) — that kind of traffic generally can't complete
+  an interactive OTP challenge, so this could have locked out the real
+  app too.
+
+Re-scoped with the user: Access should gate the **web dashboard host
+only** (`baranguardph.win`), not the API. This has a nice side effect —
+Tanods on mobile never touch this hostname, so they're completely
+unaffected either way.
+
+Explained the actual mechanics before handing over steps, since the user
+asked a fair question ("what's the use of this?" then "can other
+devices/the Punong Barangay access it?"): Access ties to the
+**authenticated person's email**, not a device or network — anyone on
+the policy's allow-list can reach the dashboard from any device once
+their email is added, and anyone not listed is blocked before the
+Baranguard login page even loads, regardless of device.
+
+Walked through the concrete dashboard steps (enable Zero Trust with a
+team name at `one.dash.cloudflare.com` → Access → Applications → Self-
+hosted app for `baranguardph.win` → an Allow policy listing specific
+staff emails) — chosen over the API-token/curl alternative specifically
+so no Cloudflare credential ever needed to pass through this session.
+
+**User chose to skip it for now** rather than commit to a specific
+staff email list on the spot. Nothing was created in the Cloudflare
+dashboard — Zero Trust may or may not even be enabled on the account
+yet. This is a deliberate deferral, not an oversight: the correct
+scoping (web dashboard only) should be remembered even if
+`REMAINING.md`/`REFERENCE.md`'s older wording still says "either
+hostname" — don't let a future session re-implement the broader,
+API-breaking version because the docs elsewhere say something vaguer.

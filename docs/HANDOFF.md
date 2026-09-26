@@ -688,10 +688,29 @@ there too if this bites again). Verified for real: killed every
 (the service), then got real `200`s with real content from both
 hostnames — the service alone is doing the work.
 
-**Still open:**
-2. Enable **Zero Trust** in the Cloudflare dashboard (pick a team name,
-   one-time) so an Access policy (email-OTP gate) can go in front of
-   `api.baranguardph.win` — right now anyone with the URL can reach it.
+**Still open, explicitly deferred (not forgotten) — 2026-09-26 (29,
+continued).** Went to set up Zero Trust/Access and corrected the plan
+first: the original wording ("Access policy in front of
+`api.baranguardph.win`") would have been a mistake to implement literally
+— confirmed `GET /api/v1/barangays` and other citizen-facing endpoints
+are intentionally public with no auth, and Access's email-OTP flow is
+browser-redirect-based, which the mobile app's programmatic API calls
+can't complete. Gating the whole API host would have broken real
+citizen-facing features and likely the mobile app too. Re-scoped with
+the user to **the web dashboard host only** (`baranguardph.win`), which
+doesn't touch the API at all — Tanods on mobile are unaffected either
+way. Walked through the exact dashboard steps (Zero Trust team name →
+Access Application for `baranguardph.win` → an Allow policy listing
+specific staff emails) and confirmed Access ties to the PERSON'S EMAIL,
+not the device, so anyone on the allowed list can reach the dashboard
+from any device once added — but **the user chose to skip this for now**
+rather than commit to an email allow-list on the spot. Nothing was
+created in the Cloudflare dashboard. Revisit whenever ready — the actual
+steps are recorded here and in `docs/DEVLOG.md` 2026-09-26 (29,
+continued) so this doesn't need to be re-derived from scratch, and the
+scoping correction (web dashboard only, not the API) should carry over
+even if a future session's `REMAINING.md`/`REFERENCE.md` wording still
+says "either hostname."
 
 Full detail: `docs/DEVLOG.md` 2026-09-26 (28), (29). Full ordered backlog with
 reasoning: `docs/REMAINING.md`.
