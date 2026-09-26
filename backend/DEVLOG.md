@@ -16002,3 +16002,97 @@ from the CSS alone) to confirm it actually reached 44px, given the
 
 Not committed yet this pass — held for the user to review/commit in
 phases per this session's established pattern.
+
+## 2026-09-26 (22) — New-machine setup automation: 3 real scripts + a Windows-service autostart script, all verified for real
+
+User asked for a plan first (entered plan mode), then approved a
+two-part scope after two rounds of feedback: (1) turn docs/SETUP.md's
+manual copy-paste steps into real scripts wherever automatable, not just
+a better-written guide, and (2) fix the exact "services don't survive a
+reboot" gap hit directly earlier this session (Apache/MySQL/cloudflared
+all found down after a restart). A third round of feedback resolved how
+scripts should collect values only a human can supply (a domain, an API
+key): interactive `read -p` prompts, matching `bootstrap-admin.js`'s
+existing pattern, not a new web UI.
+
+**New: `backend/scripts/setup-env.sh`** — replaces the old manual
+".env.example copy + hand-generate 3 secrets + paste DB values" sequence.
+Interactive: prompts for DB_NAME/DB_USER/DB_PASSWORD unless already set
+as env vars (chains cleanly after bootstrap-db.sh's own printed output),
+always auto-generates JWT_SECRET/INTERNAL_SERVICE_TOKEN/
+DEVICE_SECRET_MASTER_KEY (no meaningful human value to ask for there),
+and prompts once per optional integration (ORS_API_KEY,
+FCM_SERVICE_ACCOUNT_PATH — validates the file actually exists before
+accepting it, GSM_GATEWAY_ENABLED) rather than silently leaving them
+unset with no explanation. `--non-interactive` flag for scripting/CI.
+Refuses to touch an existing `backend/.env`. Verified for real against a
+throwaway sandbox mirroring the real repo layout (not the real .env):
+non-interactive path, full interactive path via piped stdin, and the
+refuse-to-overwrite guard all confirmed working, generated secrets
+confirmed to be real 64-hex-char (32-byte) values, not placeholders.
+
+**New: `backend/scripts/setup-cloudflare-tunnel.sh [domain]`** — turns
+this session's earlier manual Cloudflare Named Tunnel sequence (`tunnel
+create`, hand-writing `config.yml`, two `tunnel route dns` calls) into
+one idempotent script. Prompts for the domain if not passed as an
+argument. Assumes `cloudflared tunnel login` already ran (inherently
+interactive/browser-based, stays manual). Verified for real, twice: a
+fresh conceptual run's logic against the already-existing `baranguard`
+tunnel (reuse-if-exists branch), and — more importantly — actually
+RE-RAN it against the real, currently-live `baranguardph.win` tunnel
+from earlier this session to prove idempotency for real: no errors, no
+duplicate resources, and both `https://baranguardph.win/baranguard/web/`
+and `https://api.baranguardph.win/api/v1/barangays` still returned 200
+immediately after.
+
+**New: `mobile/scripts/setup-android-platform.sh`** — automates
+`mobile/README.md`'s "Not done yet" step (npm install, `cap add
+android`, `cap sync`). Checks for an installed Android SDK first (clear
+error instead of a confusing Gradle failure if Android Studio isn't
+installed yet — that installer itself stays manual, not scriptable).
+Skips `cap add android` if `mobile/android/` already exists. Verified
+for real on this actual workstation: found the real SDK path, correctly
+skipped `npm install` (already present) and `cap add android` (already
+added — this repo's own history added/rebuilt it several times), and
+ran a REAL `npx cap sync android` that actually completed (all 10
+Capacitor plugins synced, real Gradle-adjacent output, not a dry run).
+
+**New: `backend/scripts/install-autostart-services.ps1`** — installs
+Apache2.4, MySQL, and cloudflared as real Windows services (`httpd.exe
+-k install`, `mysqld.exe --install`, `cloudflared service install`),
+set to auto-start, idempotent, must run from an elevated prompt (checks
+for Administrator and refuses early otherwise), prints an uninstall
+cheat-sheet since a service install changes how these get stopped
+afterward. **Found and fixed a real bug before it ever shipped**: the
+first draft wouldn't parse at all under Windows PowerShell 5.1 — traced
+to em-dashes in comments/strings corrupting the byte stream when the
+file (written as plain UTF-8, no BOM) got read back using the legacy
+codepage 5.1 defaults to for un-BOM'd scripts; fixed by removing every
+non-ASCII character from the file (verified with `LC_ALL=C grep`, not
+just visually). Also caught `Get-Date -AsUTC`, a PowerShell 7.3+-only
+parameter that would have failed at runtime on this environment's actual
+5.1 — replaced with `[DateTime]::UtcNow.ToString('o')`. Verified for
+real: the file now parses cleanly via
+`[System.Management.Automation.Language.Parser]::ParseFile()`, and the
+Administrator-check refusal path was actually run (not elevated) and
+correctly exited 1 with a clear message rather than failing partway
+through a real service install. The actual elevated install itself
+still needs the user — confirmed earlier this session that SCM access
+genuinely requires a real Administrator token this session can't obtain.
+
+**Docs**: `docs/SETUP.md` restructured from "backend+web only" into a
+5-stage walkthrough (backend+web / mobile / SMS gateway / remote access
+/ autostart), each optional stage pointing at its own focused doc rather
+than duplicating it, with the new scripts replacing the old copy-paste
+command blocks. Fixed two stale claims along the way: the "migrations
+0001..0021" prose (the actual mechanism, a glob, was already correct at
+runtime — only the doc text lagged; same fix applied to
+`bootstrap-db.sh`'s own header comment, which said "0001..0022"), and a
+mis-citation ("CLAUDE.md §8" where the actual gotcha lives in
+`docs/REFERENCE.md` §8, caught and fixed in both the doc and the
+script's own echoed output). `docs/HANDOFF.md`'s "Operational quick
+reference" gained the four new one-liner commands plus the autostart
+paragraph.
+
+Not committed yet — held for the user to review/commit, same as the
+rest of this session's work.

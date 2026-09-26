@@ -696,10 +696,38 @@ adb shell monkey -p ph.baranguard.tanod -c android.intent.category.LAUNCHER 1
 # Check whether a Cloudflare Quick Tunnel is currently running (temporary
 # remote testing only — see REFERENCE.md §1; not a production access path)
 tasklist //FI "IMAGENAME eq cloudflared.exe"
+
+# Set up the real, persistent Cloudflare Named Tunnel (C-03) — idempotent,
+# safe to re-run. Needs `cloudflared tunnel login` already done once
+# (interactive/browser-based, not scripted). See docs/SETUP.md stage 4.2.
+bash backend/scripts/setup-cloudflare-tunnel.sh yourdomain.win
+
+# One-time backend/.env generation for a fresh machine — interactive,
+# auto-generates the three required secrets, asks about each optional
+# integration. See docs/SETUP.md stage 1.4.
+bash backend/scripts/setup-env.sh
+
+# One-time mobile Android platform setup for a fresh machine (SDK must
+# already be installed). See docs/SETUP.md stage 2.
+bash mobile/scripts/setup-android-platform.sh
 ```
 
+**Keep Apache/MySQL/the Cloudflare tunnel running across reboots** — none
+of the three are Windows services by default, so a restart takes all
+three down until someone starts them by hand (hit this directly
+2026-09-26). From an elevated PowerShell prompt, once:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File backend\scripts\install-autostart-services.ps1
+```
+
+Idempotent, installs Apache2.4/MySQL/cloudflared as real auto-starting
+services, prints an uninstall cheat-sheet. See docs/SETUP.md stage 5.
+
 Neither the retention job nor the restore drill is scheduled — both are
-CLI-only by design; wiring to Task Scheduler is an outstanding runbook step.
+CLI-only by design; wiring to Task Scheduler is an outstanding runbook step
+(same category of gap the script above closes for Apache/MySQL/cloudflared,
+not yet extended to these two).
 
 ## Conventions
 
