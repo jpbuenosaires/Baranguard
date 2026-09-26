@@ -197,6 +197,13 @@ export function buildRoutes(scenario) {
     { method: 'GET', path: '/reports/nav-counts', handler: () => ok({ pending_incidents: empty ? 0 : 2, unconverted_citizen_reports: empty ? 0 : 2, pending_swap_requests: empty ? 0 : 1, unacknowledged_fatigue_flags: empty ? 0 : 1 }) },
     { method: 'GET', path: '/reports/export', handler: ({ query }) => ok({ file_url: `/reports/export/download?format=${query.format || 'csv'}`, format: query.format || 'csv', generated_at: sqlAgo(0) }) },
     { method: 'GET', path: '/reports/export/download', handler: () => ({ status: 200, raw: 'incident_id,type\r\n901,theft\r\n', headers: { 'Content-Type': 'text/csv' } }) },
+    // Periodic PB digest (REMAINING.md section G, DEVLOG (37)) -- no
+    // generate fixture on purpose, same as the real API: generation is
+    // CLI-only, GET /reports/digest is read-only.
+    { method: 'GET', path: '/reports/digest', handler: () => ok(empty
+      ? { available: false }
+      : { available: true, generated_at: sqlAgo(1), date_from: '2026-09-19', date_to: '2026-09-26' }) },
+    { method: 'GET', path: '/reports/digest/download', handler: () => ({ status: 200, raw: '%PDF-1.4 fixture', headers: { 'Content-Type': 'application/pdf' } }) },
 
     // --- Users ---
     { method: 'GET', path: '/users', handler: ({ query }) => ok(paginate(users.filter((u) => !query.role || u.role === query.role), query)) },

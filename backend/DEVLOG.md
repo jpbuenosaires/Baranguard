@@ -17018,3 +17018,74 @@ pre-existing unrelated failures), `web/tests` 399/399 — one test's own
 class of bug §2 Rule 6's "no control that does nothing" test exists to
 catch — the FIX here was updating that constant to match the real
 schema, not weakening the test).
+
+## 2026-09-26 (37) — Periodic PB digest, closed for real (REMAINING.md §G)
+
+The other half of `docs/REMAINING.md`'s "Periodic PB digest" item —
+content half already existed (`GET /reports/export?format=pdf`),
+periodic half was blocked on C2 (now closed, (35)). User picked
+"scheduled PDF saved locally" over SMS-summary or real SMTP email (this
+project stays LAN-only/no-cloud, §1) when asked up front.
+
+**Backend**: `ReportsController::generateDigest($pdo, $barangayId,
+$from, $to)` — a new public static wrapper reusing `buildSummaryPdf()`
+byte-for-byte, writing to a SEPARATE path (`digest/barangay-{id}.pdf` +
+a `.meta.json` sidecar) from the interactive `export()`'s own file, so a
+scheduled run can never clobber a human's just-generated manual export
+or vice versa. `identity['user_id'] = null` signals "unattended" —
+`buildSummaryPdf()`'s generator-name block now says "Automated scheduled
+digest / System" instead of reusing the interactive fallback ("Desk
+Officer" implies a real person who couldn't be looked up, which isn't
+what happened here — §2 Rule 6). Two new read-only endpoints, same role
+list as `export()` (Admin + Punong Barangay): `GET /reports/digest`
+(meta — `available: false` is a neutral, honest state for a fresh
+install, not an error) and `GET /reports/digest/download` (streams the
+PDF, audited as `report_digest_downloaded`). **Deliberately no HTTP
+generate route** — same "no endpoint triggers this" discipline
+`retention-job.php`/`ai-worker.php` already follow (§2 Rule 5's
+reasoning applies to any unattended job, not just the AI pipeline).
+
+**New CLI script**: `scripts/generate-pb-digest.php` — loads
+`backend/.env` itself (no bash/curl wrapper needed, unlike the backup/
+restore-drill jobs), reads the real `barangay` table (never a hardcoded
+1-4, even though §1 currently fixes it that way), defaults to a 7-day
+window. `scheduled-pb-digest.ps1` + a third entry in
+`install-scheduled-backup-jobs.ps1`: `BaranguardPbDigest`, weekly Monday
+06:00 (the 7-day default window means each digest's range starts
+exactly where the previous one's ended, no gap/overlap).
+
+**Web**: a new "Weekly Digest" card on the dashboard
+(`admin-dashboard.js`), Punong-Barangay-only, filling the SAME
+previously-empty second column a 2026-09-06 comment already described as
+"a card of actions it can't use" for PB (Quick Actions is Admin-only) —
+read-only fits PB's oversight role exactly. Shows the covered date range
++ generated timestamp, a Download PDF button (Blob-based, same pattern
+`downloadReportExport()` already used — this API is Bearer-token-only,
+so a plain `<a href>` can't carry the Authorization header). New
+`apiClient.js` functions `getReportsDigest()`/`downloadReportsDigest()`.
+
+**Verified for real, end to end, not just unit-tested**: ran
+`generate-pb-digest.php` directly first — 4 real PDFs written (`%PDF-1.4`
+magic bytes confirmed), 4 real `.meta.json` sidecars. Registered the
+Scheduled Task and triggered it via `Start-ScheduledTask` (not just
+running the `.ps1` by hand) — `LastTaskResult`=0, `NextRunTime` correctly
+next Monday 06:00. Hit both new endpoints with real `curl` calls as
+`kapitan.dao` (a real Punong Barangay account): `GET /reports/digest` →
+real meta, `GET /reports/digest/download` → real 200 with the actual PDF
+bytes; confirmed Secretary gets 403 (role gate works); confirmed the
+`report_digest_downloaded` audit row landed for real in `audit_log`.
+**Then browser-verified live**: logged in as `kapitan.dao`, confirmed
+the Weekly Digest card renders in the dashboard's second column with the
+correct date range and timestamp, clicked "Download PDF" for real,
+confirmed via `read_network_requests` that both the meta and download
+calls returned real 200s, zero console errors.
+
+`verify-json-contracts.php` 50/50, `verify-w2-reports.sh` 31/31 (both
+re-run after the `ReportsController.php` change),
+`verify-web-wiring.mjs` 568/568 (up from 564, same 2 pre-existing
+unrelated failures), `web/tests` 399/399 (one test needed a new fixture
+for `GET /reports/digest`, added — not a workaround, the real API needs
+one too).
+
+**`docs/REMAINING.md` §G's "Periodic PB digest" is now fully closed** —
+both halves.

@@ -1,10 +1,14 @@
-# Baranguard - registers the two Scheduled Tasks Sprint 8's C2 box asks
-# for ("nothing is scheduled" -- docs/REMAINING.md section C / "Current
-# priority" item 2), paired with a real B3 restore-drill run done in the
-# same session (see backend/DEVLOG.md 2026-09-26 (35)).
+# Baranguard - registers the Scheduled Tasks C2 box asks for ("nothing
+# is scheduled" -- docs/REMAINING.md section C / "Current priority" item
+# 2), paired with a real B3 restore-drill run (backend/DEVLOG.md
+# 2026-09-26 (35)), plus the periodic PB digest (section G, (37)) since
+# it's the same "needs a Scheduled Task" shape.
 #
-#   BaranguardBackupRetention  daily 02:00  -> scheduled-backup-and-retention.ps1
+#   BaranguardBackupRetention  daily 02:00      -> scheduled-backup-and-retention.ps1
 #   BaranguardRestoreDrill     weekly Sun 03:00 -> scheduled-restore-drill.ps1
+#   BaranguardPbDigest         weekly Mon 06:00 -> scheduled-pb-digest.ps1 (7-day
+#                              window, so each digest's range starts exactly where
+#                              the previous one's ended)
 #
 # Deliberately NOT elevated / NOT SYSTEM, unlike install-autostart-
 # services.ps1's AI-worker task. Both underlying scripts need
@@ -63,17 +67,23 @@ Write-Step "2. Weekly restore drill (Sunday 03:00)"
 $weeklyTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At "03:00"
 Install-BaranguardTask "BaranguardRestoreDrill" "scheduled-restore-drill.ps1" $weeklyTrigger
 
+Write-Step "3. Weekly PB digest (Monday 06:00)"
+$digestTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "06:00"
+Install-BaranguardTask "BaranguardPbDigest" "scheduled-pb-digest.ps1" $digestTrigger
+
 Write-Step "Summary"
-Get-ScheduledTask -TaskName "BaranguardBackupRetention", "BaranguardRestoreDrill" -ErrorAction SilentlyContinue |
+Get-ScheduledTask -TaskName "BaranguardBackupRetention", "BaranguardRestoreDrill", "BaranguardPbDigest" -ErrorAction SilentlyContinue |
     Select-Object TaskName, State | Format-Table -AutoSize
 Write-Host "$pass passed, $fail failed."
 Write-Host ""
-Write-Host "Logs land in backend\backups\scheduled-logs\. To run either job right now instead of waiting:"
+Write-Host "Logs land in backend\backups\scheduled-logs\. To run any job right now instead of waiting:"
 Write-Host '  Start-ScheduledTask -TaskName "BaranguardBackupRetention"'
 Write-Host '  Start-ScheduledTask -TaskName "BaranguardRestoreDrill"'
-Write-Host "To remove either task:"
+Write-Host '  Start-ScheduledTask -TaskName "BaranguardPbDigest"'
+Write-Host "To remove any task:"
 Write-Host '  Unregister-ScheduledTask -TaskName "BaranguardBackupRetention" -Confirm:$false'
 Write-Host '  Unregister-ScheduledTask -TaskName "BaranguardRestoreDrill" -Confirm:$false'
+Write-Host '  Unregister-ScheduledTask -TaskName "BaranguardPbDigest" -Confirm:$false'
 Write-Host ""
 Write-Host "These only run while a user is logged on (no elevation was needed to register" -ForegroundColor Yellow
 Write-Host "them) -- matches this project's existing 'the dispatch PC must never sleep'" -ForegroundColor Yellow

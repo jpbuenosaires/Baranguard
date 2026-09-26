@@ -626,7 +626,7 @@ obsolete (its use case no longer exists post-F7).
 - ✅ Health-check history (state-change log, not a time series), backup-staleness W20 badge (was defined nowhere in CSS — fixed) — both done.
 - ✅ Closing-the-loop SMS to citizen reporters, two-way SMS console, barangay-wide advisory broadcast (consent-tracked, `sms_subscriber`) — all done.
 - ✅ Aggregated public transparency report (`GET /public/transparency`, counts only, categories <5 pooled) — done. **Genuinely open policy question, not resolved by any fix**: whether a response-time figure belongs in a *public* report at all (unrelated to F8's now-fixed double-count).
-- **Periodic PB digest — content half already exists** (`GET /reports/export?format=pdf`), periodic half blocked on C2 (nothing is scheduled).
+- ✅ **Periodic PB digest — DONE 2026-09-26.** Both halves now closed: a new `ReportsController::generateDigest()` (CLI-only, no HTTP trigger, same discipline as retention/AI-worker jobs) reuses `buildSummaryPdf()` to write a per-barangay PDF weekly via a new `BaranguardPbDigest` Scheduled Task (Monday 06:00); `GET /reports/digest`/`GET /reports/digest/download` (Admin+PB) let the dashboard show it. A new "Weekly Digest" card on the Punong Barangay dashboard fills the second status-row column that was previously empty for that role. Verified end-to-end including a real browser download. See `backend/DEVLOG.md` 2026-09-26 (37).
 - ✅ Client-side photo compression — done alongside F4.
 
 ---

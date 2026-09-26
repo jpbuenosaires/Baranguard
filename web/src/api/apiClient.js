@@ -1156,6 +1156,57 @@ export async function downloadReportExport({ format = 'csv' } = {}) {
   return response.blob();
 }
 
+/**
+ * GET /reports/digest — the periodic PB digest (REMAINING.md section G).
+ * Read-only: there is deliberately no matching "generate" call here —
+ * generation is CLI-only (`scripts/generate-pb-digest.php`, run on a
+ * schedule), same as retention/AI-worker jobs having no HTTP trigger.
+ * `available: false` is a normal, honest state (a fresh install where
+ * the scheduled job hasn't run yet), not an error.
+ */
+export async function getReportsDigest() {
+  const json = await request('GET', '/reports/digest', { auth: true });
+  if (!json.available) return { available: false };
+  return {
+    available: true,
+    generatedAt: json.generated_at,
+    dateFrom: json.date_from,
+    dateTo: json.date_to,
+  };
+}
+
+/**
+ * GET /reports/digest/download — streams the latest periodic digest PDF.
+ * Same Blob-download reasoning as `downloadReportExport()` above (this
+ * API is Bearer-token-only, so a plain `<a href>`/`window.open()` can't
+ * carry the Authorization header).
+ */
+export async function downloadReportsDigest() {
+  const session = readSession();
+  if (!session) {
+    throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
+  }
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/reports/digest/download`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+  } catch {
+    throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
+  }
+  if (!response.ok) {
+    let message = 'Could not download the digest.';
+    try {
+      const body = await response.json();
+      message = body?.error?.message || message;
+    } catch {
+      // Response wasn't JSON — keep the generic message.
+    }
+    throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
+  }
+  return response.blob();
+}
+
 // --- SMS Monitor conversations/compose/broadcast (2026-09-05 UX pass) ------
 // See SmsController.php's own class doc for the deliberate rescoping this
 // represents. `GET /sms/logs` below is UNCHANGED (still no phone numbers);
