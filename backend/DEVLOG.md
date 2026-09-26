@@ -16250,3 +16250,60 @@ retry only papers over it, per the user's explicit choice this session.
 If it gets worse (all 3 retries starting to fail routinely), revisit
 forcing CPU-only inference or a GPU driver update, both previously
 declined as out of scope here.
+
+## 2026-09-26 (25) — AI worker now actually auto-starts: a real --daemon bug fixed, plus a Scheduled Task
+
+Immediate trigger: the user ran a real redaction from the web UI (AI
+Redaction Review, incident #21) and it sat on "Processing..." doing
+nothing, because nobody had started `ai-worker.php` at all — confirmed
+via `tasklist` (only the dev server's `php.exe` was running) and
+`--status` (6 queued, 0 processing). Started `--daemon` manually to
+unblock it. User's follow-up was the real point: "there should be no
+--daemon, it will start automatically right? no need for restarting
+something" — correctly rejecting "just run this command" as an answer.
+
+**Found a second real bug while building the fix**: `--daemon` mode did
+NOT actually mean "keep running forever." `ai-worker.php`'s catch block
+for `OllamaUnavailableException` called `break` unconditionally,
+regardless of `--daemon`, so once entry (24)'s retry-inside-`generate()`
+logic was exhausted (or Ollama was down for longer than that), the ENTIRE
+daemon process exited — silently, with no crash, just an early "Done."
+This is exactly the "why is nothing happening" failure mode the user hit,
+just from a different trigger (worker never started vs. worker started
+then quietly stopped). Fixed: in `--daemon` mode, `OllamaUnavailableException`
+now requeues the job and `sleep(15); continue;` instead of breaking — the
+daemon waits out an Ollama outage instead of ending itself. One-shot/
+`--max`/`--once` invocations keep the old stop-on-unavailable behavior,
+since those aren't meant to sit and wait.
+
+**Auto-start**: extended `install-autostart-services.ps1` (from entry
+(22), which already handles Apache2.4/MySQL/cloudflared) with a fourth
+step registering `BaranguardAiWorker` as a Windows Scheduled Task —
+`php.exe scripts\ai-worker.php --daemon`, triggered `AtStartup`, running
+as `SYSTEM` (`LogonType ServiceAccount`), so it starts with no user login
+required, same practical guarantee a native Windows service gives. PHP
+has no built-in service wrapper the way `httpd.exe -k install`/`mysqld.exe
+--install`/`cloudflared service install` do, so Task Scheduler is the
+mechanism here, not a new one — `ExecutionTimeLimit` set to zero (the
+default 3-day cap would otherwise kill a deliberately-forever daemon) and
+`RestartCount 999`/`RestartInterval 1 minute` as a safety net for
+anything outside the daemon's own resilience (e.g. this task firing at
+boot before the MySQL service above has finished starting — the daemon
+will just fatal on the DB connection and Task Scheduler restarts it a
+minute later). The script also starts the task immediately after
+registering it, so today's queue doesn't wait for the next reboot.
+
+**Not run by this session**: `install-autostart-services.ps1` needs an
+elevated (Administrator) PowerShell prompt, which this session doesn't
+have — same limitation as when it was first written (entry (22)). Its
+new step 4 was parse-checked (`[ScriptBlock]::Create`) but not executed;
+the user needs to re-run the script themselves for the Scheduled Task to
+actually exist. Until then, `ai-worker.php --daemon` was started manually
+in the background so today's queue keeps draining — it recovered the one
+job left `processing` by the killed pre-fix daemon and picked up where it
+left off.
+
+Verified: `php -l` clean on `ai-worker.php`; the updated `.ps1` parses
+without executing; the fixed daemon confirmed running via `tasklist` and
+its own output (recovered 1 stale `processing` row, claimed the next
+queued job). No web/DB changes this entry — worker + ops script only.

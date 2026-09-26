@@ -28,7 +28,14 @@ declare(strict_types=1);
  *   php scripts/ai-worker.php               drain every queued job, then exit
  *   php scripts/ai-worker.php --once        run at most one job
  *   php scripts/ai-worker.php --max=5       run at most five
- *   php scripts/ai-worker.php --daemon      keep polling (Ctrl-C to stop)
+ *   php scripts/ai-worker.php --daemon      keep polling forever (Ctrl-C to
+ *                                          stop) — including through a
+ *                                          stretch where Ollama is down or
+ *                                          crash-looping, which is
+ *                                          requeue-and-wait here, never
+ *                                          exit; a one-shot/--max/--once
+ *                                          run still stops on that, since
+ *                                          it isn't meant to sit and wait
  *   php scripts/ai-worker.php --status      print queue depth and exit
  *   php scripts/ai-worker.php --recover     requeue jobs stuck in `processing`
  *
@@ -151,9 +158,27 @@ do {
         }
     } catch (OllamaUnavailableException $e) {
         // Rule 15: the service wasn't reachable — the job is fine, the
-        // workstation wasn't. Put it back exactly as it was and stop;
-        // hammering a down service just burns the queue's ordering.
+        // workstation wasn't. Put it back exactly as it was.
         AiJobQueue::requeue($pdo, $logId);
+        if ($options['daemon']) {
+            // "Daemon mode" has to actually mean "keeps running" — including
+            // through a stretch where Ollama is down or crash-looping (this
+            // workstation's GPU backend does exactly that intermittently,
+            // even after OllamaClient's own retries are exhausted; see
+            // DEVLOG 2026-09-26). Breaking here would silently end the one
+            // process this system relies on to drain the queue at all,
+            // needing a human to notice and restart it — exactly the
+            // "why is nothing happening" failure mode this is meant to
+            // prevent. Wait longer than the normal empty-queue poll (5s)
+            // since hammering a down service is still wasteful, then go
+            // back to polling.
+            out("[job {$logId}] Ollama unavailable — job requeued, waiting to retry.");
+            out('  ' . $e->getMessage());
+            sleep(15);
+            continue;
+        }
+        // A one-shot/--max/--once run isn't meant to sit and wait — stop
+        // this invocation, leaving the job queued for the next one.
         out("[job {$logId}] Ollama unavailable — job requeued, worker stopping.");
         out('  ' . $e->getMessage());
         break;
