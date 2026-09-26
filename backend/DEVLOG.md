@@ -16697,3 +16697,30 @@ list/amend collapse + empty-reason error summary; not-started incident
 real browser**: the finalize check-step on an approved-but-unfinalized
 incident — none was at hand, and finalizing would have mutated the demo
 DB; covered by the jsdom test only.
+
+## 2026-09-26 (31) — "Could not reach the Baranguard server" after Start Baranguard.bat: launcher never started the API
+
+User ran `Start Baranguard.bat`; the web login said it couldn't reach the
+server. Two real gaps in `backend/scripts/start-baranguard.ps1`, both on
+this machine's actual setup:
+
+1. **Nothing ever started the API on :8081.** The launcher started
+   Apache/MySQL/the AI worker only; earlier sessions had run `php -S` by
+   hand. XAMPP's Apache here is PHP **8.0.30**, which can't load the
+   backend (8.1+ `readonly` in `ApiError.php`/`SimplePdf.php`), so an
+   Apache vhost isn't an option on this box. Launcher now starts
+   `C:\php-8.3.13\php.exe -S 127.0.0.1:8081` from `backend/public`
+   (skipped if :8081 already listens) — this is also what the tunnel's
+   `api.baranguardph.win → localhost:8081` ingress needs.
+2. **MySQL detection was by process name.** This machine also runs an
+   unrelated `MySQL80` Windows service on 3306; its `mysqld.exe` made the
+   launcher skip XAMPP's MariaDB (my.ini `port=3307`, `.env`
+   `DB_PORT=3307`), so the API 500'd with no database. Check is now "is
+   `.env`'s `DB_PORT` listening". MySQL80 left untouched.
+
+Verified by running the launcher for real: `GET /api/v1/barangays` → 200
+with the four barangays both at `localhost:8081` and via
+`https://api.baranguardph.win`; exactly one `ai-worker.php --daemon`
+process afterwards (the one started before MariaDB was up had exited).
+Caveat: PHP's built-in server is single-threaded — fine for one
+dashboard, not a long-term production server.
