@@ -164,10 +164,10 @@ const LoginPage: React.FC = () => {
 
                 <IonButton
                   fill="clear"
-                  size="small"
                   type="button"
                   expand="block"
                   disabled={busy}
+                  className="mobile-login-workstation-btn btn-touch-compact"
                   onClick={() => {
                     setServerUrlValue(getApiBaseUrl());
                     setServerUrlMessage('Only change this if told to by an administrator.');

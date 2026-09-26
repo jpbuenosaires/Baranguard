@@ -1114,18 +1114,23 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
   margin-right: var(--spacing-sm);
 }
 .mobile-login-password-toggle {
+  /* Mobile touch-target minimum (Apple HIG 44x44pt / Material 48x48dp):
+     the icon stays visually small, but the tappable area doesn't. */
   position: absolute;
-  right: 12px;
+  right: 4px;
   top: 50%;
   transform: translateY(-50%);
   background: transparent;
   border: none;
   color: var(--color-text-tertiary);
-  padding: var(--spacing-xs);
-  cursor: pointer;
-  z-index: 10;
+  padding: 0;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
 }
 .mobile-login-password-toggle:focus-visible {
   outline: 2px solid var(--color-accent);
@@ -1148,6 +1153,23 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
   font-weight: 700;
   height: 48px;
   box-shadow: var(--shadow-fab);
+}
+/* Shared fix for IonButton's size="small" variant: its shadow-internal
+   .button-small rule hardcodes a ~27px height and does not honor the
+   --min-height custom property (confirmed by measuring both), so every
+   "small" IonButton in this app falls below the 44px mobile touch-
+   target minimum. Apply this class INSTEAD of size="small" (never
+   both — size="small"'s own shadow rule wins over this class either
+   way): same compact font-size, but a real 44px tappable height. */
+.btn-touch-compact {
+  height: 44px;
+  --min-height: 44px;
+  font-size: 0.8125rem;
+}
+
+.mobile-login-workstation-btn {
+  /* Sizing itself comes from the shared .btn-touch-compact class. */
+  margin-top: var(--spacing-xs);
 }
 
 /* Sync Queue Modal */
@@ -1255,6 +1277,16 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
 [data-theme="dark"] .mapboxgl-ctrl-group {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
+}
+
+/* MapLibre's stock zoom +/- buttons default to 29x29 — below the 44px
+   mobile touch-target minimum. Pinch-to-zoom is the primary gesture on
+   a touch device, but these buttons are still on-screen and tappable,
+   so they get the same minimum as everything else on this screen. */
+.maplibregl-ctrl-group > button,
+.mapboxgl-ctrl-group > button {
+  width: 44px !important;
+  height: 44px !important;
 }
 
 /* ====================================================================
@@ -1581,12 +1613,13 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
 }
 
 .intake-btn-action {
+  /* Touch-target minimum (44px) — was 40px. */
   --border-radius: var(--radius-md);
   font-weight: 600;
   text-transform: none;
   font-size: var(--font-size-sm);
   margin: 0;
-  height: 40px;
+  height: 44px;
 }
 
 /* Media Dock */
@@ -2060,6 +2093,29 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
   margin-top: 1px;
 }
 
+/* Narrow-phone fix (360px CSS width — a common Android baseline, e.g.
+   many budget devices at 720x1600 physical): the 3-column strip's text
+   fit fine at 375px+ but started ellipsis-truncating "30s Sync"/"0
+   Filed" at 360px. Trims icon size/gap/font just enough to reclaim the
+   ~15-18px needed, rather than changing the strip's design at normal
+   widths where it already fits. */
+@media (max-width: 370px) {
+  .tactical-shift-icon-wrap {
+    width: 24px;
+    height: 24px;
+    font-size: 0.85rem;
+  }
+  .tactical-shift-metric {
+    gap: 6px;
+  }
+  .tactical-shift-value {
+    font-size: 0.7rem;
+  }
+  .tactical-shift-label {
+    font-size: 0.58rem;
+  }
+}
+
 /* --- Full-Width Anchored Tactical SOS Panel --- */
 .tactical-sos-panel {
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(220, 38, 38, 0.03) 100%);
@@ -2282,13 +2338,21 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
 }
 
 .dispatch-offline-btn {
+  /* Touch-target minimum (44px, Apple HIG/Material): the visible pill
+     stays compact, but padding pushes the tappable box up to 44px tall
+     rather than the ~21px this measured at before. */
   background: rgba(245, 158, 11, 0.22);
   border: 1px solid rgba(245, 158, 11, 0.5);
   border-radius: var(--radius-sm);
   color: #fbbf24;
   font-size: 0.72rem;
   font-weight: 600;
-  padding: 4px 8px;
+  padding: 0 12px;
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2300,11 +2364,13 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
 }
 
 .dispatch-offline-dismiss {
+  /* Same touch-target minimum as .dispatch-offline-btn above. */
   background: none;
   border: none;
   color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  padding: 2px;
+  min-height: 44px;
+  min-width: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2863,13 +2929,16 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
 }
 
 .profile-copy-btn {
+  /* Touch-target minimum (44px) — visible pill stays compact, padding
+     carries the tappable box up from the ~21px this measured before. */
   background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   color: var(--color-white);
   font-size: 0.7rem;
   font-weight: 700;
-  padding: 4px 10px;
+  padding: 0 10px;
+  min-height: 44px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -2993,14 +3062,16 @@ ion-tab-button.mobile-tab-button--fab::part(native) {
 
 /* Collapsible Settings Drawer */
 .profile-drawer-toggle {
+  /* Touch-target minimum (44px) — measured 25px before. */
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  min-height: 44px;
   background: transparent;
   border: none;
   border-top: 1px solid var(--color-border);
-  padding: 10px 2px 2px;
+  padding: 2px;
   margin-top: 8px;
   font-size: 0.75rem;
   font-weight: 700;
