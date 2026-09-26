@@ -16431,3 +16431,72 @@ must be run ON that production workstation, which this session has no
 access to — not something to attempt here. GPU-preference fix (this same
 entry, above) stands on its own merits for THIS machine's local Ollama
 setup regardless.
+
+## 2026-09-26 (28) — C-03 moved here for real: this machine now runs the Cloudflare tunnel, verified live
+
+User reversed entry (27)'s conclusion: "no run it also here, cause this
+will serve as the actual production." Set it up for real, not assumed.
+
+**Found the existing `baranguard` tunnel was still live** — `cloudflared
+tunnel list` (after authenticating this machine) showed it with active
+connections (`2xmnl05, 1xsin07, 1xsin13`), meaning something, somewhere,
+was still connected to it. Asked the user rather than guess: confirmed
+"stale/dead" (not independently verified further — see the standing note
+below) and confirmed leaving `backend/.env` on `baranguard_uiseed` for
+now rather than switching to the real production DB.
+
+**Installed `cloudflared` via winget** (`Cloudflare.cloudflared`,
+explicit user permission obtained first) — landed at `C:\Program Files
+(x86)\cloudflared\cloudflared.exe`, not on this session's PATH by
+default (winget updates machine/user PATH, not an already-open shell).
+Ran `cloudflared tunnel login` — genuinely interactive, the user
+completed the browser authorization; `cert.pem` confirmed written after.
+
+**Did NOT reuse the existing tunnel's credentials.** Tried
+`cloudflared tunnel token baranguard` (the standard way to run an
+existing Named Tunnel from a new host without its original local
+credentials file) and it was blocked by a safety guardrail
+("Credential Materialization") — extracting an existing tunnel's
+connector token is treated as sensitive credential access, correctly.
+Did not attempt to work around it. Instead: created a **brand-new**
+tunnel, `baranguard-main` (id `eeaa890d-a1dd-49aa-bc9b-3baff21a2e9d`),
+which generates fresh credentials locally as a normal part of tunnel
+creation — not extracting anything from the old one. Wrote
+`~/.cloudflared/config.yml` with the same ingress rules the original
+setup used (`baranguardph.win` -> `:80`, `api.baranguardph.win` ->
+`:8081`). Routed both hostnames to the new tunnel with
+`cloudflared tunnel route dns --overwrite-dns`, since they were already
+CNAME'd to the old tunnel ID.
+
+**Verified live for real**: `cloudflared tunnel run baranguard-main`
+registered 3 connections (`sin11`, `mnl05` x2) within 2 seconds.
+`curl https://baranguardph.win/baranguard/web/` and
+`curl https://api.baranguardph.win/api/v1/barangays` both returned real
+`200`s; response bodies checked, not just status codes — the real
+`<title>Baranguard</title>` and the real four barangays (Dao,
+Binanuahan, Marifosque, Banuyo) came back, matching this machine's
+actual `baranguard_uiseed` seed data.
+
+**Explicitly NOT done, disclosed rather than assumed**:
+- The tunnel is a manually-started foreground process (this session's
+  background Bash tool) — will not survive a reboot, sleep, or that
+  process/terminal closing. `cloudflared service install` still needs an
+  elevated prompt this session doesn't have.
+- No Cloudflare Access/Zero Trust policy — `api.baranguardph.win` is
+  still reachable by anyone with the URL.
+- `backend/.env` still points at `baranguard_uiseed` — **the public
+  tunnel currently serves DEMO data, not real citizen/incident records**,
+  by explicit user choice this session. REFERENCE.md §1 now says this
+  loudly on purpose, since "the tunnel is live" and "real data is
+  exposed" are NOT the same fact and a future session (or the user
+  themselves, months later) could easily conflate them.
+- The original `baranguard` tunnel (id `28c3134b-1a35-4c85-971a-
+  0fb18f262493`) still exists in the account, now orphaned (no DNS
+  points to it), not deleted. Its "active connections" were assumed
+  stale per the user's call in the moment, not independently confirmed
+  by, say, checking whether another machine somewhere is still trying to
+  serve traffic through it. Worth a real check before ever deleting it.
+
+Docs updated in the same pass: `docs/REFERENCE.md` §1 (tunnel
+name/id, the demo-data disclosure), `docs/HANDOFF.md` (F1/C-03 section
+rewritten — this supersedes entry (27)'s "not this machine" conclusion).

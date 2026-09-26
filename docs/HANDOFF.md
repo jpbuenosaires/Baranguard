@@ -638,25 +638,51 @@ earlier snapshot did not reproduce on a later full-suite run
 longer on this list.
 
 **F1/C-03 (API base URL / HTTPS) — the requirement came back 2026-09-26,
-and IS now on this list.** User needs Tanod/Secretary/PB reachable off
-the LAN. A Cloudflare Named Tunnel is live on a real registered domain
-(`baranguardph.win` / `api.baranguardph.win`) — see `docs/DEVLOG.md`
-2026-09-26 (20) for the full build. **These two steps must be run ON THE
-BARANGAY-OFFICE PRODUCTION WORKSTATION specifically — confirmed
-2026-09-26 (27) that a dev/staging machine (`backend/.env` pointed at
-`baranguard_uiseed`, not the real `baranguard` DB) has no trace of
-`cloudflared` at all, and is NOT the same box the tunnel runs on. Don't
-re-investigate a "missing" cloudflared install as a bug if you hit this
-again on a dev machine — it's expected.**
-1. Run `cloudflared service install` from an **Administrator** terminal
-   — installs the tunnel as a Windows service so it survives a reboot;
-   right now it's a manually-started process.
-2. Enable **Zero Trust** in your Cloudflare dashboard (pick a team name,
-   one-time), so a Cloudflare Access policy (email-OTP gate) can be put
-   in front of `api.baranguardph.win` — right now anyone with that URL
-   can reach it, no login gate ahead of the app's own.
+and IS now on this list. Superseded again, same day: this machine now
+runs the tunnel.** Earlier the same day, entry (27) found this machine
+had no `cloudflared` at all and concluded it must be a separate
+dev/staging box from wherever the original tunnel ran. **User then
+clarified: this machine IS meant to be the production workstation going
+forward.** Entry (28) set it up here for real — not a copy of the
+original tunnel (its credentials never left the other machine and
+weren't fetched, deliberately, per a safety guardrail on extracting an
+existing tunnel's connector token): a brand-new tunnel, `baranguard-main`
+(id `eeaa890d-a1dd-49aa-bc9b-3baff21a2e9d`), created locally on this
+machine, with `baranguardph.win`/`api.baranguardph.win` DNS re-routed to
+it via `--overwrite-dns`. **Verified live with real HTTP calls from this
+machine**: `curl` returned real `200`s and real content — the actual
+four barangays from `GET /api/v1/barangays`, the real dashboard
+`<title>`, not just a status code check.
 
-Full ordered backlog with reasoning: `docs/REMAINING.md`.
+**Read this before assuming real data is exposed publicly**:
+`backend/.env` on this machine is still pointed at `baranguard_uiseed`
+(the demo/seed DB) — a deliberate, explicit choice this session (set up
+the infrastructure first, defer the database switch). Anyone hitting
+`baranguardph.win` right now sees DEMO data. Don't flip `DB_NAME` to the
+real `baranguard` database without the user explicitly asking for that
+— it's a separate, consequential decision from standing up the tunnel
+itself, and REFERENCE.md §1 says so explicitly now too.
+
+**The original `baranguard` tunnel (id `28c3134b-1a35-4c85-971a-
+0fb18f262493`) still exists in the Cloudflare account, now orphaned** —
+no DNS points to it anymore, but it was never deleted (its earlier
+"active connections" were assumed stale per the user's own call, not
+independently confirmed dead). Ask before deleting it if it comes up —
+that's a one-way action on an object neither this session nor the prior
+one fully investigated.
+
+Still open, same as before:
+1. `cloudflared service install` from an **Administrator** terminal —
+   this session doesn't have one. The tunnel is currently a manually-
+   started foreground process (started via this session's background
+   Bash tool) — it will NOT survive this machine rebooting, sleeping, or
+   the terminal it's running in being closed.
+2. Enable **Zero Trust** in the Cloudflare dashboard (pick a team name,
+   one-time) so an Access policy (email-OTP gate) can go in front of
+   `api.baranguardph.win` — right now anyone with the URL can reach it.
+
+Full detail: `docs/DEVLOG.md` 2026-09-26 (28). Full ordered backlog with
+reasoning: `docs/REMAINING.md`.
 
 ## Operational quick reference
 
