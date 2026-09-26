@@ -340,6 +340,20 @@
   color: var(--color-text-tertiary);
 }
 
+/* H-16/M-03 lifecycle states (migration 0025). Duplicate/invalid/
+   cancelled are terminal/off-the-active-queue states, same muted
+   treatment as --closed above; reopened is back in play, so it gets the
+   same attention color as --pending/--active. */
+.incident-status-indicator--duplicate,
+.incident-status-indicator--invalid,
+.incident-status-indicator--cancelled {
+  color: var(--color-text-tertiary);
+}
+
+.incident-status-indicator--reopened {
+  color: var(--color-critical);
+}
+
 /* Row Action Eye Button */
 .incident-row-eye {
   /* Icon-only circular affordance, deliberately outside the

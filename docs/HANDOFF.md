@@ -6,7 +6,36 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
-**2026-09-26, latest — C2 (backup/retention scheduling) and B3 (real
+**2026-09-26, latest — W21 web UI for the incident lifecycle endpoint
+(H-16/M-03) CLOSED.** Backend/policy for `PATCH /incidents/:id/lifecycle`
+existed since an earlier session (migration 0025), but nothing in the
+web app called it. `blotter-detail.js` now has a Secretary-only "Case
+lifecycle" card — duplicate/invalid/cancelled/reopened, forward-only per
+the server's own transition table, disabled while a dispatch is active
+(except reopening), a "Mark as duplicate" flow that asks for the target
+incident id inline with real validation, and a cross-navigation link to
+whatever it's linked as a duplicate of. **A real backend gap found while
+wiring this**: `IncidentsController::show()` had never returned
+`duplicate_of_incident_id`/`lifecycle_changed_by`/`lifecycle_changed_at`
+— the endpoint's own immediate response after a lifecycle change carried
+them, but reloading the page lost them entirely. Fixed. **A second real
+gap found live-testing in the browser**: the Incident List had no label/
+icon/color/filter-option for any of the 4 new statuses — they rendered
+as raw lowercase text with a misleading alert-triangle icon, and
+couldn't be filtered to at all. Fixed alongside. New reusable
+`ConfirmDialog.promptText()` primitive (free-text input in a dialog,
+alongside the existing `promptSelect()`). Verified live in the browser
+as `secretary.dao` against real disposable `baranguard_uiseed` data —
+cancelled a real incident, marked a second as a duplicate of a third,
+confirmed the "merge means link, not delete" contract by clicking
+through to the target and finding it completely untouched.
+`verify-h16-incident-lifecycle.sh` 30/30, `verify-json-contracts.php`
+50/50, `verify-web-wiring.mjs` 564/564 (up from 562, same 2 pre-existing
+unrelated failures), `web/tests` 399/399 (one test's own `SCHEMA_STATUSES`
+constant was stale — fixed to match the real schema, not weakened). Full
+detail: `backend/DEVLOG.md` 2026-09-26 (36).
+
+**2026-09-26, earlier — C2 (backup/retention scheduling) and B3 (real
 restore drill) both CLOSED.** `docs/REMAINING.md`'s "Current priority"
 item 2. Generated a real `BACKUP_ENCRYPTION_PASSPHRASE` (added to
 `backend/.env`, gitignored, plus a placeholder + explanation in

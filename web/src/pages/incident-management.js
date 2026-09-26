@@ -49,6 +49,12 @@ const STATUS_DISPLAY_LABELS = {
   dispatched: 'Responding',
   resolved: 'Resolved',
   closed: 'Closed',
+  // H-16/M-03 lifecycle states (migration 0025) -- set via W21's Case
+  // lifecycle card on blotter-detail.js, never invented here.
+  duplicate: 'Duplicate',
+  invalid: 'Invalid',
+  cancelled: 'Cancelled',
+  reopened: 'Reopened',
 };
 
 const PAGE_SIZE = 15;
@@ -361,6 +367,12 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     { value: 'pending', label: 'Active' },
     { value: 'dispatched', label: 'Responding' },
     { value: 'resolved', label: 'Resolved' },
+    // H-16/M-03 lifecycle states -- otherwise a Secretary could set them
+    // (W21's Case lifecycle card) but never filter the list back to them.
+    { value: 'duplicate', label: 'Duplicate' },
+    { value: 'invalid', label: 'Invalid' },
+    { value: 'cancelled', label: 'Cancelled' },
+    { value: 'reopened', label: 'Reopened' },
   ];
   for (const opt of statusOptions) {
     const el = document.createElement('option');
@@ -569,6 +581,12 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
           iconSvg = icons.radio(14);
         } else if (stat === 'resolved') {
           iconSvg = icons.checkCircle(14);
+        } else if (stat === 'duplicate') {
+          iconSvg = icons.copy(14);
+        } else if (stat === 'cancelled' || stat === 'invalid') {
+          iconSvg = icons.x(14);
+        } else if (stat === 'reopened') {
+          iconSvg = icons.rotateCcw(14);
         }
 
         indicator.innerHTML = `${iconSvg} <span>${label}</span>`;
