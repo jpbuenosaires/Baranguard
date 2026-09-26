@@ -4,6 +4,21 @@ import assert from 'node:assert/strict';
 import { api, mountPage, settle, cleanup, text, click, type, buttonByText, $, $$ } from '../harness/render.mjs';
 import { renderBlotterDetailPage } from '../../src/pages/blotter-detail.js';
 
+// 2026-09-27 tab merge (DEVLOG (38)): the finalize/amend panel, Lupon
+// packet, and lifecycle actions all moved off the default (Incident) tab
+// onto a separate "Blotter" tab, and the old standalone AI Review page
+// is now a "Redaction" tab on this same page — same idiom
+// settings.test.mjs's `openSection()` already uses for its own in-page
+// sections. The tab bar itself only exists once the page has finished
+// its initial load (renderShell()'s own doc explains why) — pageSuite.mjs's
+// generic loading/error-state tests call `openDataView` during states
+// where there is genuinely no tab bar yet, so this is a no-op then
+// rather than a failed click() assertion.
+const openTab = (label) => async (ctx) => {
+  const btn = buttonByText(new RegExp(`^${label}$`, 'i'), ctx.root);
+  if (btn) click(btn);
+};
+
 describePage({
   name: 'Incident detail (W7, dispatched incident)',
   render: renderBlotterDetailPage,
@@ -20,6 +35,7 @@ describePage({
   param: 903,
   heading: /^Blotter Entry — BLT-2026-051/,
   expectText: ['Verbal altercation, settled amicably.'],
+  openDataView: openTab('Blotter'),
 });
 
 describe('Incident detail behaviour', () => {
@@ -52,8 +68,11 @@ describe('Incident detail behaviour', () => {
   }
 
   test('case status can only move forward (no "active" or "resolved" in the amend picker)', async () => {
-    mountPage(renderBlotterDetailPage, { role: 'secretary', param: 903 });
+    const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 903 });
     await settle();
+    await openTab('Blotter')(ctx);
+    await settle();
+    click(buttonByText(/amend this entry/i, ctx.root));
     const options = [...$('#blotter-amend-case-status').options].map((o) => o.value).filter(Boolean);
     assert.deepEqual(options.sort(), ['settled', 'under_investigation']);
   });
@@ -61,6 +80,9 @@ describe('Incident detail behaviour', () => {
   test('an amendment needs a reason and posts to /blotter/amend', async () => {
     const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 903 });
     await settle();
+    await openTab('Blotter')(ctx);
+    await settle();
+    click(buttonByText(/amend this entry/i, ctx.root));
     const form = $('#blotter-amend-case-status').closest('form') ?? ctx.root;
     const reason = $$('textarea, input[type="text"]', form).find((el) => /reason/i.test(`${el.id} ${el.name} ${el.getAttribute('aria-label') || ''} ${el.labels?.[0]?.textContent || ''} ${el.placeholder}`));
     assert.ok(reason, 'no reason field on the amendment form');
@@ -74,12 +96,21 @@ describe('Incident detail behaviour', () => {
     assert.equal(call.body.reason, 'Respondent name misspelled at intake.');
   });
 
-  test('without an approved redaction, the Secretary is sent to AI Review first', async () => {
+  test('without an approved redaction, the Secretary is sent to the Redaction tab first', async () => {
     const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 901 });
+    await settle();
+    await openTab('Blotter')(ctx);
     await settle();
     assert.match(text(ctx.root), /Approve the AI redaction first/i);
     click(buttonByText(/review ai redaction/i, ctx.root));
-    assert.deepEqual(ctx.navigations.at(-1), { page: 'ai-review', param: 901 });
+    await settle();
+    // A tab switch, not a page navigate() — this used to assert
+    // ctx.navigations landed on a separate 'ai-review' route; there is no
+    // such route anymore (2026-09-27 tab merge, DEVLOG (38)), so the real
+    // assertion is that the Redaction tab is now the active one and its
+    // own content (the raw-narrative panel) is on screen.
+    assert.equal(ctx.navigations.length, 0, 'switching tabs must not be a page navigate()');
+    assert.match(text(ctx.root), /Original Reported Narrative/i);
   });
 
   test('finalizing goes through a check-your-entry step before anything is sent', async () => {
@@ -90,6 +121,8 @@ describe('Incident detail behaviour', () => {
       complainant_name: 'Ana Cruz', respondent_name: null, complainant_contact_number: null, dispatches: [],
     } }));
     const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 778 });
+    await settle();
+    await openTab('Blotter')(ctx);
     await settle();
     const summary = $('#blotter-finalize-summary', ctx.root);
     assert.ok(summary, 'no finalize summary field');
@@ -116,6 +149,8 @@ describe('Incident detail behaviour', () => {
 
   test('the amendment form stays collapsed until "Amend this entry"', async () => {
     const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 903 });
+    await settle();
+    await openTab('Blotter')(ctx);
     await settle();
     const form = $('#blotter-amend-form', ctx.root);
     assert.ok(form?.hidden, 'amend form should start collapsed');

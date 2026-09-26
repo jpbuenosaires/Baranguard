@@ -1,13 +1,16 @@
 /**
  * BlotterWorkflow.js — the Secretary's end-to-end blotter progress bar,
- * shared by W8 (ai-review.js) and W7 (blotter-detail.js).
+ * shared by the Redaction and Blotter tabs of `blotter-detail.js`'s
+ * single case workspace.
  *
- * WHY THIS EXISTS (2026-09-26 UX pass): the blotter workflow spans two
- * screens — redact + approve on W8, finalize + Lupon packet on W7 — but
- * each screen only ever described its own half. W8 had a four-step
- * stepper of internal sub-states ("Summary Sync", "Permanent Seal") that
- * ended at approval, and W7 had no progress indicator at all, so the
- * Secretary never saw the whole job or where they were in it.
+ * WHY THIS EXISTS (2026-09-26 UX pass, revised 2026-09-27): the blotter
+ * workflow used to span two full page navigations — redact + approve on
+ * a separate W8 page, finalize + Lupon packet on W7 — and each screen
+ * only ever described its own half, forcing a Secretary to lose their
+ * place jumping between them. 2026-09-27's tab merge (DEVLOG (38))
+ * folded both into one page with in-case tabs, so a stage's `screen` is
+ * now a TAB KEY ('redaction'/'blotter') the shared shell switches to,
+ * not a page `navigate()` target.
  *
  * Modelled on the GOV.UK Design System's task list component/"complete
  * multiple tasks" pattern: every stage has a plain-language name and a
@@ -17,7 +20,8 @@
  *
  * Every status is derived from REAL server state (incident, AI draft,
  * blotter record) — never guessed (§2 Rule 6). The only client-side input
- * is `edited` (unsaved textarea edits on W8), which the server can't know.
+ * is `edited` (unsaved textarea edits on the Redaction tab), which the
+ * server can't know.
  */
 
 import { generateLuponPacket, downloadLuponPacket, ApiClientError } from '../api/apiClient.js';
@@ -63,10 +67,10 @@ export function getBlotterWorkflowState({ incident, draft = null, blotter = null
   const packet = finalized ? 'available' : 'blocked';
 
   const stages = [
-    { key: 'redact', title: 'Remove personal details', screen: 'ai-review', anchor: 'ai-review-start', status: redact },
-    { key: 'approve', title: 'Check & approve redaction', screen: 'ai-review', anchor: 'ai-review-actions', status: approve },
-    { key: 'finalize', title: 'Finalize blotter entry', screen: 'blotter-detail', anchor: 'blotter-finalize', status: finalize },
-    { key: 'packet', title: 'Lupon packet (if referred)', screen: 'blotter-detail', anchor: 'blotter-packet', status: packet },
+    { key: 'redact', title: 'Remove personal details', tab: 'redaction', anchor: 'ai-review-start', status: redact },
+    { key: 'approve', title: 'Check & approve redaction', tab: 'redaction', anchor: 'ai-review-actions', status: approve },
+    { key: 'finalize', title: 'Finalize blotter entry', tab: 'blotter', anchor: 'blotter-finalize', status: finalize },
+    { key: 'packet', title: 'Lupon packet (if referred)', tab: 'blotter', anchor: 'blotter-packet', status: packet },
   ];
 
   let next;
@@ -92,12 +96,12 @@ export function getBlotterWorkflowState({ incident, draft = null, blotter = null
 /**
  * @param {{
  *   state: ReturnType<typeof getBlotterWorkflowState>,
- *   currentScreen: 'ai-review'|'blotter-detail',
- *   onNavigate: (page: string) => void,
+ *   activeTab: 'incident'|'redaction'|'blotter',
+ *   onNavigate: (tab: string, anchor: string) => void,
  * }} options
  * @returns {HTMLElement}
  */
-export function BlotterWorkflow({ state, currentScreen, onNavigate }) {
+export function BlotterWorkflow({ state, activeTab, onNavigate }) {
   const section = document.createElement('section');
   section.className = 'card blotter-flow';
   section.setAttribute('aria-label', 'Blotter workflow progress');
@@ -141,7 +145,7 @@ export function BlotterWorkflow({ state, currentScreen, onNavigate }) {
 
     const where = document.createElement('span');
     where.className = 'blotter-flow__where';
-    where.textContent = stage.screen === 'ai-review' ? 'AI redaction review' : 'Incident record';
+    where.textContent = stage.tab === 'redaction' ? 'Redaction tab' : 'Blotter tab';
 
     body.append(title, tag, where);
     item.append(marker, body);
@@ -167,19 +171,7 @@ export function BlotterWorkflow({ state, currentScreen, onNavigate }) {
     button.className = 'primary blotter-flow__next-btn';
     button.innerHTML = `<span></span> ${icons.arrowRight(16)}`;
     button.querySelector('span').textContent = state.next.actionLabel;
-    button.addEventListener('click', () => {
-      if (currentStage.screen !== currentScreen) {
-        onNavigate(currentStage.screen);
-        return;
-      }
-      // Same screen: bring the control into view and move focus there,
-      // so keyboard and screen-reader users land where the work is.
-      const target = document.getElementById(currentStage.anchor);
-      if (!target) return;
-      target.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-      const focusable = target.querySelector('input, textarea, select, button:not([disabled])');
-      (focusable || target).focus?.({ preventScroll: true });
-    });
+    button.addEventListener('click', () => onNavigate(currentStage.tab, currentStage.anchor));
     next.appendChild(button);
   }
   section.appendChild(next);

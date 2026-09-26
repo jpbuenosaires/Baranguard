@@ -17089,3 +17089,98 @@ one too).
 
 **`docs/REMAINING.md` §G's "Periodic PB digest" is now fully closed** —
 both halves.
+
+## 2026-09-26 (38) — Blotter workflow UX redesign: one page, three in-case tabs, no more page-hopping
+
+User feedback, unprompted: "the blotter workflow [is] too confusing" —
+asked to think it through, not just patch something. Root-caused with
+the user via AskUserQuestion before writing any code (per CLAUDE.md's
+"confirm architectural decisions with the user"): three distinct pain
+points, all real —
+
+1. **Bouncing between two pages.** Redaction (a standalone W8 page,
+   `ai-review.js`) and finalize/Lupon packet (W7, `blotter-detail.js`)
+   were two full page loads connected only by a shared progress bar
+   (`BlotterWorkflow.js`, itself only 2026-09-26's own earlier session's
+   addition) that could say WHERE to go next but still made the
+   Secretary go there via a full re-render, losing scroll position and
+   local UI state every time.
+2. **Unclear when an incident "becomes" a blotter.** No explicit
+   moment — a blotter record was created invisibly the first time
+   Finalize was clicked, with no labelled place that said so.
+3. **Too much on one page.** W7 stacked dossier, narrative, evidence,
+   timeline, the blotter panel, and lifecycle actions in one long scroll.
+
+**Fix, confirmed with the user before building (in-page tabs, one URL,
+no more page navigation)**: found `analytics.js` already had the exact
+right precedent — it merged two other former standalone screens (W9
+Reports / W5 Heatmap) into `.page-tabs` years earlier, `renderXTab(body,
+pageHeader, ...)` functions swapped into one shared shell. Applied the
+same shape here:
+
+- **`blotter-detail.js`** is now the shell for THREE tabs — Incident /
+  Redaction / Blotter — sharing one data load (`incident`/`blotter`/
+  `evidence`/`aiDraft`), re-fetched fresh on every tab switch (cheap,
+  and guarantees a tab can never show data a different tab's action just
+  made stale — e.g. approving on Redaction always leaves Blotter fresh).
+  "Blotter" being an explicit, always-visible tab is itself the direct
+  answer to pain point 2 — no more unlabelled mid-scroll card.
+- **`ai-review.js`** is no longer a route. Its content became
+  `renderRedactionTab(body, user, incidentId, {switchTab,
+  refreshWorkflowBar})` — same substance (redact/regenerate/approve/
+  translate, real 3s polling with a real elapsed-time counter), just
+  mounted into the shell's own body instead of owning its own AppShell/
+  PageHeader. Its own Lupon-packet button became a "go to the Blotter
+  tab" shortcut instead of a duplicate control (the real one lives on
+  Blotter now, where it always actually worked from).
+- **`BlotterWorkflow.js`**'s stepper stages now target TAB KEYS
+  (`redaction`/`blotter`) instead of page names, and its "Next step"
+  button always calls a `switchTab(tab, anchor)` callback — no more
+  "same screen: scroll, different screen: navigate()" branching, since
+  there's only one screen now. One stepper instance renders once, above
+  the tab bar, kept in sync by `refreshWorkflowBar()` (the Redaction
+  tab's own freshly-polled `draft`/local `edited` state can override
+  what the shell shows without forcing a full reload on every 3s tick).
+- **`main.js`**/**`AppShell.js`**: the `'ai-review'` route/role entry/
+  import is gone. Along the way, found and removed real dead code in
+  `AppShell.js`'s breadcrumb logic — `activePage === 'blotter-detail'`/
+  `'ai-review'` branches that could never fire, since `blotter-detail.js`
+  has always called `AppShell(user, listPage, ...)` with `listPage`
+  ('dashboard'/'incident-management'), never the literal route name, and
+  `ai-review.js` hardcoded `'incident-management'` too.
+- A real backend-adjacent gap found and fixed WHILE unifying the
+  stepper: `blotter-detail.js` used to fetch `aiDraft` only when already
+  approved+unfinalized, so its OWN copy of the stepper (before this
+  merge) silently showed "Not started" for a redaction job that was
+  actually queued/running/failed — `ai-review.js`'s own stepper never
+  had this bug (it always fetched `draft`). Now always fetched for a
+  Secretary, matching the accurate behavior.
+
+**Verified for real, live in the browser as `secretary.dao`** (not just
+the rewritten unit tests): opened a real dispatched incident (#18), used
+the stepper's "Review AI redaction" button — confirmed an INSTANT tab
+switch with zero page reload (network log shows no new HTML/JS document
+fetch, only the same API calls a page load would make), watched the
+stepper update live from "Ready" to "Completed" after clicking "Approve
+redaction", confirmed it auto-switched to the Blotter tab with the
+finalize form pre-filled, ran the check-your-entry step, finalized for
+real (`POST /incidents/18/finalize` → 201, page title changed to
+"Blotter Entry — BLT-2026-010" live), and confirmed the Case lifecycle
+card (W21) sits right there on the same Blotter tab. Checked
+`read_network_requests` end to end: every 404 seen (`GET /incidents/18/
+blotter` before finalize existed) is the documented normal "not yet"
+state, not a real error; zero unexpected console errors.
+
+`node --check` clean on all 5 touched JS files. `verify-web-wiring.mjs`
+559/559 (down from 568 — expected, this consolidated three route-level
+files' worth of checks into two, not a regression; same 2 pre-existing
+unrelated failures). `web/tests` 399/399 — `blotter-detail.test.mjs`/
+`ai-review.test.mjs`/`router.test.mjs` all needed updating for the new
+tab structure (an `openTab()` helper, same `openSection()` idiom
+`settings.test.mjs` already used for its own in-page sections); also
+extended `pageSuite.mjs`'s shared `polls` test to honor `openDataView`
+too, matching every other test block in that file, since a tab's
+polling now only starts once you've actually switched to it.
+
+Not touched: any backend code or endpoint (this was 100% a frontend
+reorganization — every API contract W7/W8 already used is unchanged).
