@@ -525,6 +525,28 @@ controls that do nothing.
   `backend/public`) serves the API through Apache, matching
   `backend/scripts/README-serving.md` Option A for real. Old PHP kept at
   `C:\xampp\php-8.0.30-backup`. See `backend/DEVLOG.md` 2026-09-26 (32).
+- **That PHP upgrade silently broke `ext-curl` under Apache specifically
+  (fixed same day, (34))** — a real symptom: the dashboard's AI badge
+  showed offline, `/system/ollama-status` said `unhealthy`, while
+  `ai-worker.php --status` (CLI) correctly said Ollama was reachable.
+  Cause: `php_curl.dll`'s real dependency DLLs (`libcrypto-3-x64.dll`/
+  `libssl-3-x64.dll`/`libssh2.dll`/`nghttp2.dll`, confirmed via
+  `C:\xampp\php\deplister.exe ext\php_curl.dll`) live in `C:\xampp\php`,
+  which CLI `php.exe` finds fine (its own directory), but Apache's
+  process is `httpd.exe` in `C:\xampp\apache\bin` — which has
+  same-NAMED but differently-built copies of those four DLLs — so
+  Windows' DLL search order resolves `php_curl.dll`'s dependencies
+  against the WRONG copies and the load silently fails. The real error
+  only shows in **`C:\xampp\php\logs\php_error_log`** (PHP's own log,
+  separate from Apache's `httpd\logs\error.log` — easy to miss), as
+  `PHP Startup: Unable to load dynamic library 'curl' ... module could
+  not be found`. **Fix (not git-tracked — lives outside the repo)**:
+  `C:\xampp\apache\conf\extra\httpd-xampp.conf` has four `LoadFile`
+  directives for those DLLs from `C:/xampp/php/`, placed BEFORE
+  `LoadModule php_module`, same pattern the file already used for
+  `php8ts.dll`. **If XAMPP's Apache PHP is ever swapped again, re-add
+  these** — nothing in `git status` will flag their loss. See
+  `backend/DEVLOG.md` 2026-09-26 (34).
 - **Browser tool:** a backgrounded tab can show a stale screenshot while
   the DOM is already correct. Prefer `read_page`/`get_page_text`.
 - **Case-sensitivity in test assertions** — `.status-pill` etc. render
