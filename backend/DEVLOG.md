@@ -16876,3 +16876,73 @@ incompatible same-named copies.
 restart. Re-ran `verify-json-contracts.php` (50/50) and
 `verify-web-wiring.mjs` (562/562, same 2 pre-existing unrelated
 failures) to confirm nothing else regressed from the Apache restart.
+
+## 2026-09-26 (35) — B3 (real restore drill) + C2 (backup/retention scheduling) both closed for real
+
+User picked these two specifically off REMAINING.md's "Current priority"
+list. Neither had a `BACKUP_ENCRYPTION_PASSPHRASE` anywhere before this
+session — generated one (`php -r 'echo bin2hex(random_bytes(32));'`,
+same method as every other secret in `.env`) and added it to
+`backend/.env` (gitignored) and a blank placeholder + explanation to
+`.env.example`.
+
+**B3 — ran `restore-drill.sh` for real.** 12/12: fresh encrypted backup
+taken, checksum verified, restored into a disposable
+`baranguard_uiseed_drill` database, fingerprinted against live (30
+tables, every row count matching, 66 FKs, the 4 barangay rows byte-
+identical), recorded in `.last-restore-drill`. Confirmed via a real
+`GET /system/health` call (not just reading the marker file):
+`restore_test_at`/`backup_last_success` both populated for the first
+time ever on this machine — W20 no longer shows "Never".
+
+**C2 — two new Scheduled Tasks, registered WITHOUT elevation.** Checked
+first: a bare `Register-ScheduledTask` call succeeds under this session's
+ordinary (non-admin) user — unlike `install-autostart-services.ps1`'s
+AI-worker task, this doesn't need `-Principal`/SYSTEM/`-RunLevel
+Highest`, so no Administrator prompt was needed (that earlier assumption
+in REMAINING.md/HANDOFF.md, "needs a human at the keyboard for
+elevation," turned out to be more caution than the actual OS requires
+for a task that only needs to run while the user is logged on — which
+this workstation already must be, per the existing "must never sleep"
+JWT-polling requirement).
+
+New files: `scheduled-backup-and-retention.ps1` (daily 02:00 —
+`backup.sh` then `retention-job.php` for real, no `--dry-run`, since a
+`--dry-run` was run and read by hand first this same session before any
+scheduling happened) and `scheduled-restore-drill.ps1` (weekly Sunday
+03:00 — `restore-drill.sh`), both reading `DB_*`/
+`BACKUP_ENCRYPTION_PASSPHRASE` out of `backend/.env` with a targeted
+`Select-String` (never a blanket `set -a; . .env`, which would invert
+`config/env.php`'s own "already-set env var wins" precedence rule —
+REFERENCE.md §8), logging to `backend/backups/scheduled-logs/` (already
+covered by the existing `backups/` gitignore entry). A third script,
+`install-scheduled-backup-jobs.ps1`, registers both tasks idempotently
+(unregisters and re-registers if already present).
+
+**A real bug found and fixed along the way, not by inspection — by
+actually running the wrapper**: `backup.sh`'s legal-hold pruning-floor
+query selected `created_at` from `citizen_report`, a column that table
+has never had (it uses `submitted_at`) — every backup-pruning run since
+this script was written has failed closed with `Unknown column
+'created_at'` and silently skipped pruning every single time. Fixed the
+column name, and separately added `sms_log` (has its own `legal_hold` +
+`created_at`, confirmed via `DESCRIBE`) to the hold-floor query, which
+never covered it at all. Re-ran the wrapper after the fix: pruning now
+completes with no warning.
+
+**Verified for real, not just by diff**: ran both wrapper scripts
+directly first, then registered the tasks, then used
+`Start-ScheduledTask` (triggering through the actual OS scheduler
+mechanism, not just re-running the `.ps1` by hand) and confirmed
+`Get-ScheduledTaskInfo`'s `LastTaskResult` = 0 for both, with correct
+`NextRunTime` (tomorrow 02:00 for the daily job, next Sunday 03:00 for
+the weekly one). The scheduled `retention-job.php` run for real against
+`baranguard_uiseed` purged 82 `raw_narrative` rows past their 30-day
+window (demo data, not production — `.env`'s `DB_NAME` is still
+`baranguard_uiseed`, see REFERENCE.md §1) — matched exactly what the
+earlier `--dry-run` had predicted.
+
+**docs/REMAINING.md's "Current priority" item 2 is now closed** — both
+boxes it named. Not touched this session: the AI-worker/Apache/MySQL/
+cloudflared autostart script (`install-autostart-services.ps1`) still
+needs its own elevated run separately, unrelated to this pair.
