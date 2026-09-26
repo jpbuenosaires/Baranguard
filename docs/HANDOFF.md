@@ -740,17 +740,29 @@ bash backend/scripts/setup-env.sh
 bash mobile/scripts/setup-android-platform.sh
 ```
 
-**Keep Apache/MySQL/the Cloudflare tunnel running across reboots** — none
-of the three are Windows services by default, so a restart takes all
-three down until someone starts them by hand (hit this directly
-2026-09-26). From an elevated PowerShell prompt, once:
+**Keep Apache/MySQL/the Cloudflare tunnel/the AI worker running across
+reboots** — none of the four start themselves by default, so a restart
+takes all of them down until someone starts them by hand (hit this
+directly 2026-09-26, twice: once for Apache/MySQL/cloudflared, again
+separately when a user's redaction sat doing nothing because nobody had
+started `ai-worker.php` at all). From an elevated PowerShell prompt,
+once:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File backend\scripts\install-autostart-services.ps1
 ```
 
 Idempotent, installs Apache2.4/MySQL/cloudflared as real auto-starting
-services, prints an uninstall cheat-sheet. See docs/SETUP.md stage 5.
+services AND registers `BaranguardAiWorker` as a Scheduled Task
+(`ai-worker.php --daemon`, starts at boot as SYSTEM, no login needed,
+self-restarting) — prints an uninstall cheat-sheet for all four. See
+docs/SETUP.md stage 5. **Not yet run this session** — needs an
+Administrator prompt this session doesn't have; `ai-worker.php --daemon`
+was started manually in the meantime so today's queue keeps draining,
+but that manual start will NOT survive a reboot until this script is
+actually run. `ai-worker.php`'s own `--daemon` mode also had a real bug
+fixed in the same pass: it used to exit entirely (not just skip a job)
+if Ollama was ever unavailable for too long — see DEVLOG 2026-09-26 (25).
 
 Neither the retention job nor the restore drill is scheduled — both are
 CLI-only by design; wiring to Task Scheduler is an outstanding runbook step
