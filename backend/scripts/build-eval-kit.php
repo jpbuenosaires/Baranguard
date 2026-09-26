@@ -75,22 +75,22 @@ copyGenerated($backendDir, $evalKitDir, [
     'services/ai/RegexRedactor.php',
     'services/eval/RedactionScorer.php',
     'services/eval/ExtractionScorer.php',
-    'services/eval/ClassificationScorer.php',
     'services/eval/ChecklistScorer.php',
     'scripts/ai-evaluate.php',
     'config/autoload.php',
 ]);
 
-// Fixtures: the three input datasets a friend's run reads. NOT the
+// Fixtures: the input dataset(s) a friend's run reads. NOT the
 // checkpoint/results/log files ai-evaluate.php produces while running —
 // those are the friend's own local run state, never part of the package
 // they received (and already gitignored on the backend/ side for the
-// same reason).
+// same reason). eval-sms-prompts-v1.json and eval-threat-stats-v1.json
+// were removed with sms_compose/threat_analysis (migration 0027).
 $fixturesDir = $backendDir . '/fixtures';
 if (!is_dir($evalKitDir . '/fixtures')) {
     mkdir($evalKitDir . '/fixtures', 0777, true);
 }
-foreach (['eval-incidents-v1.json', 'eval-sms-prompts-v1.json', 'eval-threat-stats-v1.json', 'redaction-eval-sample.json'] as $fixture) {
+foreach (['eval-incidents-v1.json', 'redaction-eval-sample.json'] as $fixture) {
     $src = $fixturesDir . '/' . $fixture;
     if (!is_file($src)) {
         fwrite(STDERR, "Fixture not found, skipping: {$fixture}\n");

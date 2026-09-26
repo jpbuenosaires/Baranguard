@@ -24,7 +24,6 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/config/autoload.php';
 
 use Baranguard\Services\Eval\ChecklistScorer;
-use Baranguard\Services\Eval\ClassificationScorer;
 use Baranguard\Services\Eval\ExtractionScorer;
 use Baranguard\Services\Eval\RedactionScorer;
 
@@ -98,21 +97,6 @@ check('ExtractionScorer: wrong respondent name -> respondent=false', $s['respond
 $out = "Complainant: Juan Cruz\nRespondent: Someone Invented\nContact: ";
 $s = ExtractionScorer::score('Juan Cruz', '', '', $out);
 check('ExtractionScorer: hallucinated respondent when gold is blank -> false', $s['respondent'] === false);
-
-// --- ClassificationScorer --------------------------------------------------
-
-$out = "Type: fire\nPriority: critical\nReason: A fire was reported.";
-$s = ClassificationScorer::score('fire', 'critical', $out);
-check('ClassificationScorer: exact type+priority match', $s['typeMatch'] && $s['priorityMatch']);
-
-$out = "Type: theft\nPriority: high\nReason: Something.";
-$s = ClassificationScorer::score('fire', 'critical', $out);
-check('ClassificationScorer: wrong type+priority -> both false', !$s['typeMatch'] && !$s['priorityMatch']);
-
-// Case-insensitivity, since the prompt doesn't force the model's letter-casing.
-$out = "Type: FIRE\nPriority: Critical\nReason: x";
-$s = ClassificationScorer::score('fire', 'critical', $out);
-check('ClassificationScorer: case-insensitive match', $s['typeMatch'] && $s['priorityMatch']);
 
 // --- ChecklistScorer ---------------------------------------------------------
 

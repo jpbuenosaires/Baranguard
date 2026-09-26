@@ -19,7 +19,6 @@ import {
   broadcastSms,
   getSmsLogs,
   getUsers,
-  queueSmsCompose,
   getSmsSubscribers,
   addSmsSubscriber,
   optOutSmsSubscriber,
@@ -32,7 +31,6 @@ import { DataTable, exportRowsToCsv } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
-import { AiToolPanel } from '../components/AiToolPanel.js';
 import { icons } from '../components/icons.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
 import { avatarInitials } from '../components/Avatar.js';
@@ -174,7 +172,6 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   root.innerHTML = '';
 
   let liveFeedTimer = null;
-  let composerStop = null;
   const shell = AppShell(user, 'sms-log', navigate, async () => {
     shell.logoutButton.disabled = true;
     stopAllPolling();
@@ -265,19 +262,8 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
     liveFeedTimer = null;
   }
 
-  /**
-   * The AI composer panel lives in the Conversations tab's feed pane and
-   * polls its own job. Switching tabs wipes `body`, which does NOT clear
-   * that interval — so it is torn down alongside the feed timer.
-   */
-  function stopComposerPanel() {
-    if (composerStop) composerStop();
-    composerStop = null;
-  }
-
   function stopAllPolling() {
     stopLiveFeedPolling();
-    stopComposerPanel();
   }
 
   function updateUnreadBadge(unreadTotal) {
@@ -303,7 +289,6 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
         body, pageHeader, user,
         (timer) => { liveFeedTimer = timer; },
         updateUnreadBadge, navigate, initialPhone,
-        (fn) => { composerStop = fn; },
       );
     } else if (activeTab === 'subscribers') {
       renderSubscribersTab(body);
@@ -552,7 +537,7 @@ function renderSubscribersTab(container) {
 // Conversations Tab
 // ============================================================
 
-function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, onUnreadChanged, navigate, initialPhone, registerComposerStop) {
+function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, onUnreadChanged, navigate, initialPhone) {
   // Page Header Actions
   const actionsWrap = document.createElement('div');
   actionsWrap.style.cssText = 'display: flex; align-items: center; gap: 0.5rem;';
@@ -610,55 +595,6 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   loadStatStrip();
   loadLiveFeed(feedPane, onSelectFeedPhone);
   setLiveFeedTimer(setInterval(() => loadLiveFeed(feedPane, onSelectFeedPhone), LIVE_FEED_POLL_MS));
-
-  // AI SMS Composer — above the live feed in the right-hand pane.
-  //
-  // Mounted AFTER the first loadLiveFeed() call on purpose: that call
-  // wipes feedPane to build its skeleton, but only while `.sms-feed-list`
-  // is absent, so later polls leave this panel alone.
-  //
-  // The panel drafts text and nothing else — it has no send button by
-  // design. Sending stays on the existing audited path, where the
-  // recipient is resolved server-side and never taken from client input.
-  const composerPanel = AiToolPanel({
-    collapsible: true,
-    startCollapsed: true,
-    tool: {
-      label: 'AI Message Composer',
-      hint: 'Describe the situation and get a short Filipino/Taglish advisory to edit and send. This tool never reads incident narratives.',
-      input: 'text',
-      inputLabel: 'What do you need to tell residents?',
-      placeholder: 'e.g. baha sa Purok 3, iwasan ang daan',
-      maxLength: 2000,
-      emptyText: 'Describe a situation above to get a draft advisory.',
-      isSms: true,
-      run: (value) => queueSmsCompose(value),
-    },
-    footerActions: [
-      {
-        label: 'Use in Conversation',
-        onClick: (output) => {
-          if (!composeTextareaRef) {
-            showToast('Select or open a conversation on the left first to apply this draft.', { variant: 'info' });
-            if (contactPane._searchInput) contactPane._searchInput.focus();
-            return;
-          }
-          composeTextareaRef.value = output;
-          composeTextareaRef.dispatchEvent(new Event('input', { bubbles: true }));
-          composeTextareaRef.focus();
-          showToast('Draft moved to conversation message box — review before sending.', { variant: 'success' });
-        },
-      },
-      {
-        label: 'Use in Broadcast',
-        onClick: (output) => {
-          openBroadcastModal(output);
-        },
-      },
-    ],
-  });
-  feedPane.insertBefore(composerPanel.el, feedPane.firstChild);
-  if (registerComposerStop) registerComposerStop(composerPanel.stop);
 
   function onSelectFeedPhone(phone) {
     if (!phone) return;

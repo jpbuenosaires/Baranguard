@@ -958,74 +958,24 @@ export async function search(q) {
   }));
 }
 
-// ---------------------------------------------------------------------
-// AI Tools (migration 0015) — the four assistants on the AI Tools screen.
-//
-// Every one of these is asynchronous: the API only ever enqueues (§2 Rule
-// 5 — nothing in the request path talks to Ollama), so each returns a
-// `jobId` the caller polls with getAiToolJob() until it leaves `queued`/
-// `processing`. Same contract W8's redaction draft already has.
-// ---------------------------------------------------------------------
+// The AI Tools screen (migration 0015: four assistants; narrowed to the
+// Incident Classifier by migration 0027; removed entirely by migration
+// 0028 after a real runaway-generation failure showed classification
+// wasn't reliable enough to keep) had its client functions
+// (getAiToolsAvailability, queueIncidentClassification, getAiToolJob) and
+// AiToolPanel.js — the component that rendered them — here. None remain.
 
 /**
- * GET /ai-tools/availability — is a working model behind these tools?
- * One of 'healthy' | 'unhealthy' | 'not_configured'. Drives the screen's
- * honest unavailable banner (§2 Rule 6); `unhealthy` is a normal 200.
+ * GET /system/ollama-status — Admin + Secretary. Replaces
+ * getAiToolsAvailability() (removed with the AI Tools screen, migration
+ * 0028) as the topbar AI badge's data source (AppShell.js) — Secretary
+ * still runs real AI jobs (the redaction pipeline) and benefits from an
+ * ambient "is the model up" signal; Punong Barangay no longer has any
+ * AI-consuming feature to justify one, so this doesn't extend to that role.
  */
-export async function getAiToolsAvailability() {
-  const json = await request('GET', '/ai-tools/availability', { auth: true });
+export async function getOllamaStatus() {
+  const json = await request('GET', '/system/ollama-status', { auth: true });
   return { ollama: json.ollama };
-}
-
-/** POST /incidents/:id/ai-tools/blotter-assist — Secretary only. */
-export async function queueBlotterAssist(incidentId) {
-  const json = await request('POST', `/incidents/${incidentId}/ai-tools/blotter-assist`, { auth: true });
-  return { jobId: json.job_id, taskType: json.task_type, status: json.status };
-}
-
-/** POST /incidents/:id/ai-tools/classify — Admin + Secretary. 409 if no approved redaction. */
-export async function queueIncidentClassification(incidentId) {
-  const json = await request('POST', `/incidents/${incidentId}/ai-tools/classify`, { auth: true });
-  return { jobId: json.job_id, taskType: json.task_type, status: json.status };
-}
-
-/**
- * POST /ai-tools/sms-compose — Admin only.
- *
- * `prompt` is operator-typed text and is the ONLY input. There is
- * deliberately no incident parameter: the draft is bound for an external
- * SMS gateway, and §2 Rule 1 does not permit narrative text to leave the
- * system that way. Don't add one.
- */
-export async function queueSmsCompose(prompt) {
-  const json = await request('POST', '/ai-tools/sms-compose', { body: { prompt }, auth: true });
-  return { jobId: json.job_id, taskType: json.task_type, status: json.status };
-}
-
-/** POST /ai-tools/threat-analysis — Admin + Punong Barangay. Scope is the caller's own barangay, server-side. */
-export async function queueThreatAnalysis(payload = null) {
-  const options = { auth: true };
-  if (payload && typeof payload === 'object') {
-    options.body = payload;
-  }
-  const json = await request('POST', '/ai-tools/threat-analysis', options);
-  return { jobId: json.job_id, taskType: json.task_type, status: json.status };
-}
-
-/** GET /ai-tools/jobs/:id — poll one tool job. Only the requester can read it. */
-export async function getAiToolJob(jobId) {
-  const json = await request('GET', `/ai-tools/jobs/${jobId}`, { auth: true });
-  return {
-    jobId: json.job_id,
-    taskType: json.task_type,
-    incidentId: json.incident_id,
-    status: json.status,
-    output: json.output,
-    errorCode: json.error_code,
-    modelVersion: json.model_version,
-    createdAt: json.created_at,
-    processedAt: json.processed_at,
-  };
 }
 
 /** GET /system/health — Admin only. Coarse status per dependency; see SystemHealthController.php. */

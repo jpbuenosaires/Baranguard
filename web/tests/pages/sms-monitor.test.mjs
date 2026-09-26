@@ -67,11 +67,4 @@ describe('SMS Monitor behaviour', () => {
     assert.match(text(), /Gateway rejected the sender name/, 'a failed send must show its reason');
   });
 
-  test('the AI Message Composer has no send button — sending stays a human, audited action', async () => {
-    const ctx = mountPage(renderSmsMonitorPage, { role: 'admin' });
-    await settle();
-    const panel = $$('.ai-panel', ctx.root).find((p) => /message composer/i.test(text(p)));
-    assert.ok(panel, 'AI Message Composer panel missing');
-    assert.equal(buttonByText(/^send/i, panel), undefined);
-  });
 });

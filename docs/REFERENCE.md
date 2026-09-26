@@ -88,11 +88,7 @@ elsewhere means whichever list context makes clear.
    terminal output, or audit metadata. **`GET /incidents/:id` is the only endpoint
    that returns it, and only to a Secretary** (RA 7160 §394(c) makes the
    Secretary the statutory records custodian — Admin gets *less* here on
-   purpose, don't "fix" that). The Blotter Assistant
-   (`POST /incidents/:id/ai-tools/blotter-assist`) is a second reader,
-   Secretary-only for the same reason, redacting as it drafts. The
-   Incident Classifier reads only the APPROVED redacted narrative —
-   that's what makes it safe for Admin.
+   purpose, don't "fix" that).
 2. **Every protected endpoint verifies role + tenant + ownership
    server-side.** No client-side check is a security boundary.
    Cross-tenant is **404, never 403** (403 confirms the resource exists).
@@ -104,12 +100,14 @@ elsewhere means whichever list context makes clear.
    the draft (never raw) → Secretary review → approve. Only
    `POST /incidents/:id/ai-draft/approve` may commit
    `incident.redacted_narrative`. Draft edits use exact `draft_version`
-   equality (stale → 409). **The four AI Tools assistants are NOT part
-   of this pipeline** — they write `ai_processing_log.tool_output` only,
-   never a record; output is text a human reads and retypes (§7).
+   equality (stale → 409). The AI Tools screen (Blotter Assistant, SMS
+   Composer, Threat Analyzer, then Incident Classifier) that used to sit
+   outside this pipeline was removed in full — migrations 0027/0028; see
+   AiPrompts.php's own note for why (peripheral helpers, then a real
+   runaway-generation reliability failure for the Classifier).
 5. **The API never calls Ollama.** It only enqueues; `scripts/ai-worker.php`
    is the only process that talks to the model. No external AI fallback
-   under any failure mode. Covers the AI Tools endpoints too.
+   under any failure mode.
 6. **No demo/prototype tells.** No fabricated statistics, hardcoded
    identities, confidence numbers not backed by a real
    `ai_evaluation_run`, controls that look functional and do nothing, or
@@ -145,7 +143,7 @@ elsewhere means whichever list context makes clear.
 |---|---|
 | **Admin** | Full operations: dispatch, GPS, scheduler, users, devices, audit log, service health, exports. **Cannot** touch blotter finalize/amend, Lupon packet, or any AI draft. |
 | **Secretary** | Records custodian: only reader of `raw_narrative`; only role that may run the AI pipeline, approve a redaction, finalize/amend a blotter, or generate a Lupon packet. |
-| **Punong Barangay** | Read-only oversight: dashboard, map, heatmap, analytics, fatigue, Threat Analyzer. No evidence files, no AI drafts, no writes, no blotter LIST (individual incidents still reachable from dashboard). |
+| **Punong Barangay** | Read-only oversight: dashboard, map, heatmap, analytics, fatigue. No evidence files, no AI drafts, no writes, no blotter LIST (individual incidents still reachable from dashboard). |
 | **Tanod** | Mobile only. Own incidents/dispatches/shifts. Web login succeeds but lands on an honest "no screen" page. |
 | **Lupon** | **No system account at all.** Receives the generated PDF packet. |
 
@@ -168,10 +166,12 @@ active/under_investigation/settled/resolved, forward-only past `active`,
 `resolved` set only by an incident status change) · `citizen_report`
 (legal_hold) · `duty_status` · `gps_track` · `shift_schedule` (user_id
 nullable) · `shift_swap_request` · `fatigue_flag` · `ai_processing_log`
-(IS the AI job queue; `task_type` incl. `extraction` + 4 AI Tools types;
-`incident_id` NULLable — `sms_compose`/`threat_analysis` have no
-incident, use `barangay_id`/`requested_by_user_id`/`tool_input`/
-`tool_output` instead) · `ai_evaluation_run` · `sms_log` (barangay_id,
+(IS the AI job queue; `task_type` enum `summarization`/`redaction`/
+`translation`/`extraction` only — the AI Tools screen's types
+(`blotter_assist`/`sms_compose`/`threat_analysis`/`classification`) and
+the `barangay_id`/`requested_by_user_id`/`tool_input`/`tool_output`
+columns they used were removed in full, migrations 0027/0028;
+`incident_id` is NOT NULL again, matching pre-0015) · `ai_evaluation_run` · `sms_log` (barangay_id,
 message_body/read_at, `message_type` incl. `manual`, legal_hold) ·
 `sms_envelope_replay` · `audit_log` (write-once except retention) ·
 `offline_queue` · `auth_session` · `map_package` · `user`
@@ -289,28 +289,29 @@ map-packages (get/upload/download)
 **Reports** summary · heatmap · nav-counts · export (+download, response
 time is per-incident `MIN(arrived_at)`, de-duplicated)
 **Ops** `/audit-log` · `/system/health` (+`/history`, Admin-only) ·
-`/search` · `/barangays` · `/users` (list `q=`, last_login_at,
-is_suspended; suspend/unsuspend + is_active toggle) ·
-`/citizen-reports` (+`/:id/convert`, list `status=`) · `/duty-status` ·
-`/blotter` (list `q=`, `status=`, case_status, display_id,
-location_description)
-**AI Tools** (Secretary-only unless noted) `POST
-/incidents/:id/ai-tools/blotter-assist` · `POST
-/incidents/:id/ai-tools/classify` (Admin+Secretary, reads only approved
-redaction, 409 if none) · `POST /ai-tools/sms-compose` (Admin-only,
-operator-typed `prompt` only) · `POST /ai-tools/threat-analysis`
-(Admin+PB, aggregate counts only, own barangay; optional
-`{days}`/`{from,to}`) · `GET /ai-tools/jobs/:id` (owner+tenant scoped) ·
-`GET /ai-tools/availability` (all three roles)
+`/system/ollama-status` (Admin+Secretary — the topbar AI badge's data
+source, since `/system/health` itself stays Admin-only) · `/search` ·
+`/barangays` · `/users` (list `q=`, last_login_at, is_suspended;
+suspend/unsuspend + is_active toggle) · `/citizen-reports`
+(+`/:id/convert`, list `status=`) · `/duty-status` · `/blotter` (list
+`q=`, `status=`, case_status, display_id, location_description)
 
 > **`POST /blotter` (walk-in entry) was REMOVED 2026-09-10** — a walk-in
 > with no prior incident is exactly a DILG BIMSS/KPIS case (§1). The
 > rest of the blotter family (finalize/amend/lupon-packet) is untouched
 > — it's incident-originated, BIMSS has no dispatch layer to feed it.
 >
-> **AI Tools write nothing** — each enqueues an `ai_processing_log` row,
-> the screen polls `GET /ai-tools/jobs/:id`. No standalone AI Tools
-> screen — each is embedded in its host screen via `AiToolPanel.js`.
+> **The AI Tools screen (`/ai-tools/*`, `AiToolsController.php`,
+> `AiToolPanel.js`) was REMOVED IN FULL** (migrations 0027/0028) — first
+> narrowed from four assistants to just the Incident Classifier
+> (peripheral helpers not tied to the statutory redaction pipeline; the
+> Blotter Assistant in particular duplicated a BIMSS records function),
+> then removed entirely after a real runaway-generation failure (the
+> model blew past the 4096-token context window and hit the 300s
+> timeout on a classification job) showed it wasn't reliable enough to
+> keep. The redaction/extraction/summary/translation pipeline below
+> (`/incidents/:id/redact`, `/ai-draft/*`) is unaffected — that's a
+> separate, still-live system.
 
 **SMS** `/sms/logs` (read-only) · `/sms/conversations` (+`/:phone/messages`,
 +`/:phone/resolve`, Admin-only) · `/sms/send` · `/sms/broadcast`
@@ -349,10 +350,10 @@ Shared components: `AppShell` · `PageHeader` · `DataTable` (+CSV export,
 pagination) · `KpiCard` · `LineChart` (treats `null` as a genuine gap,
 not zero) · `BarChart` · `DonutChart` · `LiveMap` · `Menu` · `Toast` ·
 `ConfirmDialog` (+`promptSelect`) · `StatStrip` · `Avatar` ·
-`DateRangePicker` · `icons` · `AiToolPanel` (one local-AI assistant
-embedded in a host screen, returns `{el, stop}` — a host MUST call
-`stop()` before wiping the panel's DOM; availability probe is
-module-cached; the app's only shared collapsible primitive).
+`DateRangePicker` · `icons`. (`AiToolPanel` — the AI Tools screen's
+shared embeddable panel — was removed along with that screen, migration
+0028; it had no caller left once the Incident Classifier, its last user,
+was retired.)
 
 **Shared CSS entities — use these, don't re-roll them:**
 
@@ -391,13 +392,13 @@ defect — verify by reading every interpolation site, not by script.
 assign-from-map; queues group multiple active dispatches on one
 incident into one card) · W4 GIS · W7 incident detail (routed
 `blotter-detail`; case_status transition control) · W8 AI review ·
-Analytics (tabbed Reports/Heatmap/Threat Analyzer, Admin+PB) · Personnel
+Analytics (tabbed Reports/Heatmap, Admin+PB) · Personnel
 (tabbed Users/Scheduler/Swap requests/Fatigue flags — only Fatigue is
 PB-visible) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
 settings (+General/SMS Gateway, Admin-only) · W16 citizen inbox
 (+Convert to Incident) · W17 audit log · W18 map package management ·
 W19 public report · W20 service health · Incident Management (search,
-Resolve action, AI Classifier, multi-responder support).
+Resolve action, multi-responder support).
 **Mobile:** M1–M7, M12, M13.
 
 > **W6 Electronic Blotter (records list) was REMOVED 2026-09-10** — DILG
@@ -410,26 +411,20 @@ Resolve action, AI Classifier, multi-responder support).
 > list-of-cases screen anymore — reach is dashboard + Analytics +
 > individual incident detail.
 
-> **AI assistants live in their host screens, not a standalone AI
-> screen** (an operator is mid-task and wants help with THAT task):
-> - **AI Classifier** — Incident Management detail pane, collapsed by
->   default, auto-runs once per incident per visit once an approved
->   redaction exists, surfaces a chip only when its suggestion disagrees
->   with what's recorded. *Apply in Edit* preselects type/priority; a
->   human still saves.
-> - **AI Blotter Assistant** — incident detail, Secretary-only branch,
->   framed as a draft to transcribe into DILG BIMSS/KPIS; writes nothing.
-> - **AI Message Composer** — SMS Monitor › Conversations. *Use this
->   draft* fills the compose textarea; no send button — sending stays
->   audited.
-> - **Threat Analyzer** — Analytics › third tab, explicit
->   "describes what was recorded, not a forecast" label. 7/30/90-day
->   preset or custom range.
->
-> Every panel polls every 3s (API only enqueues) and shows a real
-> probe-driven unavailable banner + disables Generate when the model is
-> unreachable (§2 Rule 6 — not hypothetical, this workstation cannot
-> complete a generation, §A2). Model output rendered with `textContent`.
+> **The AI Tools screen and its four assistants — AI Classifier
+> (Incident Management), AI Blotter Assistant (incident detail), AI
+> Message Composer (SMS Monitor › Conversations), Threat Analyzer
+> (Analytics) — were REMOVED IN FULL** (migrations 0027/0028), along
+> with `AiToolPanel.js`, the shared embeddable panel that rendered each
+> one. First narrowed to just the Classifier (the other three were
+> peripheral helpers not tied to the statutory redaction pipeline; the
+> Blotter Assistant duplicated a BIMSS records function), then the
+> Classifier itself was retired after a real runaway-generation failure
+> (model blew past the 4096-token context window, hit the 300s timeout)
+> showed it wasn't reliable enough to keep. The redaction/extraction/
+> summary/translation pipeline (W8 AI review) is a separate system and
+> is unaffected — it still polls every 3s and shows a real probe-driven
+> unavailable banner when the model is unreachable (§2 Rule 6).
 
 **W21 system settings — narrow, deliberate exception, not a full
 build-out.** Migration 0012 + `SettingsController` originally covered
@@ -507,7 +502,6 @@ controls that do nothing.
 | `verify-sprint7-retention.sh` | 76 |
 | `verify-sprint7-audit.sh` | 52 |
 | `verify-sprint7-pentest-incidents.sh` | 68 |
-| `verify-ai-tools.sh` | 63 |
 | `verify-b2-pentest-remaining-resources.sh` | 59 |
 | `verify-sprint3.sh` | 38 |
 | `verify-f9-sms-broadcast-idempotency-index.sh` | 15 |
@@ -516,7 +510,7 @@ controls that do nothing.
 | `verify-device-session.sh` | 20 |
 | `restore-drill.sh` | 12 (real DB) |
 | `verify-web-wiring.mjs` | 555 (moves as screens change) |
-| `web/tests` (`npm test`) | 405 |
+| `web/tests` (`npm test`) | 395 |
 | `mobile: verify.schema` | 113 |
 
 All use a disposable database + disposable app user + throwaway port,

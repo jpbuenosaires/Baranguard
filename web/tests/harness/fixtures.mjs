@@ -173,17 +173,6 @@ export function buildRoutes(scenario) {
 
   const trendDays = empty ? [] : Array.from({ length: 30 }, (_, i) => ({ date: dateAgo(29 - i), count: (i * 7) % 5, resolved: (i * 3) % 3 }));
 
-  // Job id -> task type, so GET /ai-tools/jobs/:id returns a plausible output.
-  // task_type values per migration 0015.
-  const jobTypes = { 5001: 'classification', 5002: 'blotter_assist', 5003: 'sms_compose', 5004: 'threat_analysis' };
-  const jobOutput = {
-    classification: 'Type: theft\nPriority: critical',
-    blotter_assist: t('DRAFT BLOTTER ENTRY: A theft was reported near the market.'),
-    sms_compose: t('Paalala: may pulong sa barangay hall bukas ng 9AM.'),
-    threat_analysis: t('Theft reports rose in Purok 3 over the period. This describes what was recorded, not a forecast.'),
-  };
-  const queued = (jobId) => ({ status: 202, body: { job_id: jobId, task_type: jobTypes[jobId], status: 'queued' } });
-
   const routes = [
     // --- Auth ---
     { method: 'POST', path: '/auth/login', handler: ({ body }) => {
@@ -249,17 +238,6 @@ export function buildRoutes(scenario) {
     { method: 'GET', path: '/incidents/:id/ai-draft/extraction', handler: ({ params }) => (empty || Number(params.id) === 904 ? notFound('No extraction yet.') : ok({ log_id: 9200 + Number(params.id), incident_id: Number(params.id), pipeline_run_id: 'run-x', draft_complainant_name: t('Juan Santos'), draft_respondent_name: null, draft_complainant_contact_number: '09175550101', draft_version: 1, status: 'completed', error_code: null })) },
     { method: 'POST', path: '/incidents/:id/ai-draft/extraction/approve', handler: ({ params, body }) => ok({ incident_id: Number(params.id), complainant_name: body.complainant_name, respondent_name: body.respondent_name, complainant_contact_number: body.complainant_contact_number }) },
 
-    // --- AI tools ---
-    { method: 'GET', path: '/ai-tools/availability', handler: () => ok({ ollama: 'healthy' }) },
-    { method: 'POST', path: '/incidents/:id/ai-tools/classify', handler: () => queued(5001) },
-    { method: 'POST', path: '/incidents/:id/ai-tools/blotter-assist', handler: () => queued(5002) },
-    { method: 'POST', path: '/ai-tools/sms-compose', handler: () => queued(5003) },
-    { method: 'POST', path: '/ai-tools/threat-analysis', handler: () => queued(5004) },
-    { method: 'GET', path: '/ai-tools/jobs/:id', handler: ({ params }) => {
-      const taskType = jobTypes[Number(params.id)] ?? 'classification';
-      return ok({ job_id: Number(params.id), task_type: taskType, incident_id: null, status: 'completed', output: jobOutput[taskType], error_code: null, model_version: 'aisingapore/Llama-SEA-LION-v3.5-8B-R', created_at: sqlAgo(1), processed_at: sqlAgo(0) });
-    } },
-
     // --- Dispatch / GPS / SOS / duty ---
     { method: 'GET', path: '/dispatch', handler: ({ query }) => {
       let rows = dispatches;
@@ -320,6 +298,9 @@ export function buildRoutes(scenario) {
 
     // --- System ---
     { method: 'GET', path: '/system/health', handler: () => ok({ api: 'healthy', db: 'healthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'healthy', notification_config: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured', backup_last_success: empty ? null : sqlAgo(600), restore_test_at: null, notification_delivery_failures_24h: 0 }) },
+    // Admin + Secretary — replaces the removed /ai-tools/availability
+    // (migration 0028) as the topbar AI badge's data source for Secretary.
+    { method: 'GET', path: '/system/ollama-status', handler: () => ok({ ollama: 'healthy' }) },
     { method: 'GET', path: '/system/health/history', handler: () => ok({ sampling: 'Transitions are recorded only when a probe observed a change.', items: empty ? [] : [
       { recorded_at: sqlAgo(60), db: 'healthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },
       { recorded_at: sqlAgo(600), db: 'unhealthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'unhealthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },

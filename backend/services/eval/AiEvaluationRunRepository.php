@@ -15,11 +15,12 @@ namespace Baranguard\Services\Eval;
  * Migration 0021 added `metric_a_name`/`metric_a_value`/`metric_b_name`/
  * `metric_b_value` alongside the original `precision_score`/
  * `recall_score` so tasks that aren't precision/recall-shaped
- * (classification's accuracy, summary/blotter-assist/sms-compose/
- * threat-analysis's compliance rate, translation's human rating) have
- * somewhere self-describing to go, without overloading what
- * precision_score/recall_score mean for `redaction`/`extraction`, which
- * keep writing those two columns exactly as before.
+ * (summary's checklist pass rate, translation's human rating — and,
+ * historically, classification's accuracy before it and the AI Tools
+ * screen it lived on were removed, migration 0028) have somewhere
+ * self-describing to go, without overloading what precision_score/
+ * recall_score mean for `redaction`/`extraction`, which keep writing
+ * those two columns exactly as before.
  */
 final class AiEvaluationRunRepository
 {

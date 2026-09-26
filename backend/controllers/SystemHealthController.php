@@ -150,6 +150,26 @@ final class SystemHealthController
     }
 
     /**
+     * `GET /system/ollama-status` — Admin + Secretary. The same coarse
+     * Ollama probe `index()` uses, on its own, for the one non-Admin role
+     * that actually runs AI jobs (the redaction/extraction/summary/
+     * translation pipeline) and therefore benefits from an ambient
+     * "is the model up right now" signal in the topbar (AppShell.js) —
+     * `index()` itself stays Admin-only (§9: workstation plumbing, not
+     * incident oversight).
+     *
+     * Replaces `GET /ai-tools/availability`, removed along with the AI
+     * Tools screen (migration 0028) — that screen served Punong Barangay
+     * too, but PB has no AI-consuming feature left to justify this ping
+     * for them, so this endpoint doesn't extend to that role.
+     */
+    public static function ollamaStatusOnly(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+        Http::send(200, ['ollama' => self::ollamaStatus()]);
+    }
+
+    /**
      * `GET /system/health/history` — Admin only. The transitions behind
      * the snapshot `index()` returns.
      *
@@ -264,15 +284,14 @@ final class SystemHealthController
      * exposes credentials, tokens, internal filesystem paths, or raw
      * data"); the coarse status is the whole contract.
      *
-     * PUBLIC so `AiToolsController::availability()` can reuse it. This
-     * endpoint is Admin-only but the AI Tools screen serves Secretary and
-     * Punong Barangay too, and those roles need the same honest answer to
-     * avoid offering a Generate button that cannot work (§2 Rule 6).
-     * Sharing the probe keeps one implementation rather than a second copy
-     * that can drift; the coarse status is safe for any authenticated role
-     * precisely because it carries no detail.
+     * Was PUBLIC so the AI Tools screen's `availability` endpoint could
+     * reuse it (that screen served Secretary/Punong Barangay too, and
+     * needed the same honest answer to avoid offering a Generate button
+     * that couldn't work — §2 Rule 6). That screen is gone (migration
+     * 0028); narrowed back to private since this class is now the only
+     * caller.
      */
-    public static function ollamaStatus(): string
+    private static function ollamaStatus(): string
     {
         $client = new OllamaClient();
         if (!$client->isConfigured()) {

@@ -157,11 +157,22 @@ final class AiJobQueue
      * edits these fields before they're approved onto `incident`, the
      * same review shape redaction's draft already has.
      *
+     * `$sharedPipelineRunId` — when the caller is enqueueing this alongside
+     * a redaction run on the same narrative (the only real caller today,
+     * `AiDraftController::redact()`), pass that redaction job's
+     * `pipeline_run_id` so both rows carry the same value. This is what
+     * lets the worker recognise them as a claimable pair and run one
+     * combined model call instead of two (see `claimSiblingJob()` and
+     * `AiPrompts::redactionAndExtraction()`) — the column is only an
+     * indexed key (not unique), so two rows sharing it is fine. Omit it
+     * (or pass null) for a standalone extraction row with no redaction
+     * sibling; a fresh id is generated as before.
+     *
      * @return array{log_id:int,pipeline_run_id:string,status:string}
      */
-    public static function enqueueExtraction(PDO $pdo, int $incidentId, string $modelVersion): array
+    public static function enqueueExtraction(PDO $pdo, int $incidentId, string $modelVersion, ?string $sharedPipelineRunId = null): array
     {
-        $pipelineRunId = self::uuid();
+        $pipelineRunId = $sharedPipelineRunId ?? self::uuid();
 
         $stmt = $pdo->prepare(
             "INSERT INTO ai_processing_log
@@ -176,6 +187,47 @@ final class AiJobQueue
         ]);
 
         return ['log_id' => (int) $pdo->lastInsertId(), 'pipeline_run_id' => $pipelineRunId, 'status' => 'queued'];
+    }
+
+    /**
+     * Atomically claims the still-queued sibling of a just-claimed job,
+     * matched by `pipeline_run_id` + `task_type` — the pairing
+     * `enqueueExtraction()`'s `$sharedPipelineRunId` sets up. Same
+     * compare-and-set pattern as `claimNextQueuedJob()` (MariaDB-10.4-safe,
+     * no `FOR UPDATE SKIP LOCKED`); returns null if no queued sibling
+     * exists (nothing to pair with — legacy row, already claimed by
+     * another worker, or a standalone enqueue) so the caller can fall back
+     * to running the two prompts separately.
+     */
+    public static function claimSiblingJob(PDO $pdo, string $pipelineRunId, string $taskType): ?array
+    {
+        $candidateStmt = $pdo->prepare(
+            "SELECT log_id FROM ai_processing_log
+             WHERE pipeline_run_id = :pipeline_run_id AND task_type = :task_type AND status = 'queued'
+             LIMIT 1"
+        );
+        $candidateStmt->execute(['pipeline_run_id' => $pipelineRunId, 'task_type' => $taskType]);
+        $logId = $candidateStmt->fetchColumn();
+        if ($logId === false) {
+            return null;
+        }
+
+        $claimStmt = $pdo->prepare(
+            "UPDATE ai_processing_log SET status = 'processing' WHERE log_id = :log_id AND status = 'queued'"
+        );
+        $claimStmt->execute(['log_id' => (int) $logId]);
+        if ($claimStmt->rowCount() !== 1) {
+            return null; // Lost the race to another worker.
+        }
+
+        $rowStmt = $pdo->prepare(
+            'SELECT log_id, incident_id, barangay_id, pipeline_run_id, task_type, model_version, target_language,
+                    draft_redacted_narrative, draft_version, tool_input, status, created_at
+             FROM ai_processing_log WHERE log_id = :log_id'
+        );
+        $rowStmt->execute(['log_id' => (int) $logId]);
+        $row = $rowStmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
     }
 
     /**
@@ -259,134 +311,12 @@ final class AiJobQueue
         ]);
     }
 
-    /**
-     * The four AI Tools task types (migration 0015), and which of them
-     * have a parent incident.
-     *
-     * `TOOL_TASK_REQUIRES_INCIDENT` IS THE PHP HALF OF AN INVARIANT THE
-     * DATABASE CANNOT HOLD. 0015's own header explains why there is no
-     * table CHECK: MariaDB 10.4 rejects one on `notification`'s entity
-     * matrix with ERROR 1901 (§5), so this codebase enforces that shape
-     * of rule in PHP by standing decision, not by oversight.
-     */
-    public const TOOL_TASK_TYPES = ['blotter_assist', 'classification', 'sms_compose', 'threat_analysis'];
-    public const TOOL_TASK_REQUIRES_INCIDENT = [
-        'blotter_assist' => true,
-        'classification' => true,
-        'sms_compose' => false,
-        'threat_analysis' => false,
-    ];
-
-    /**
-     * Queues one AI Tools job.
-     *
-     * Independent like `enqueueTranslation()`, deliberately: an operator
-     * may generate several SMS drafts for one situation and compare them,
-     * so a new run neither supersedes nor is superseded by an earlier
-     * one. There is no `draft_version` here for the same reason — nothing
-     * approves a tool job onto a record, so there is no stale-edit race
-     * for a version to guard.
-     *
-     * `$barangayId` is always required, including for the two
-     * incident-scoped tools. With `incident_id` nullable since 0015 it is
-     * the only thing that scopes a job to a tenant, and §2 Rule 2 wants
-     * that check available server-side without a join back to `incident`.
-     *
-     * @return array{log_id:int,pipeline_run_id:string,status:string}
-     */
-    public static function enqueueToolJob(
-        PDO $pdo,
-        string $taskType,
-        ?int $incidentId,
-        int $barangayId,
-        int $requestedByUserId,
-        ?string $toolInput,
-        string $modelVersion
-    ): array {
-        if (!in_array($taskType, self::TOOL_TASK_TYPES, true)) {
-            throw new \InvalidArgumentException("Unknown AI tool task type: {$taskType}");
-        }
-        if (self::TOOL_TASK_REQUIRES_INCIDENT[$taskType] && $incidentId === null) {
-            throw new \InvalidArgumentException("Task type {$taskType} requires an incident.");
-        }
-        if (!self::TOOL_TASK_REQUIRES_INCIDENT[$taskType] && $incidentId !== null) {
-            throw new \InvalidArgumentException("Task type {$taskType} must not carry an incident.");
-        }
-
-        $pipelineRunId = self::uuid();
-
-        $stmt = $pdo->prepare(
-            "INSERT INTO ai_processing_log
-                (incident_id, barangay_id, requested_by_user_id, pipeline_run_id, task_type,
-                 model_version, tool_input, status, created_at)
-             VALUES
-                (:incident_id, :barangay_id, :requested_by, :pipeline_run_id, :task_type,
-                 :model_version, :tool_input, 'queued', UTC_TIMESTAMP())"
-        );
-        $stmt->execute([
-            'incident_id' => $incidentId,
-            'barangay_id' => $barangayId,
-            'requested_by' => $requestedByUserId,
-            'pipeline_run_id' => $pipelineRunId,
-            'task_type' => $taskType,
-            'model_version' => $modelVersion,
-            'tool_input' => $toolInput,
-        ]);
-
-        return ['log_id' => (int) $pdo->lastInsertId(), 'pipeline_run_id' => $pipelineRunId, 'status' => 'queued'];
-    }
-
-    /**
-     * One tool job by id, for the polling endpoint.
-     *
-     * Returns `barangay_id` and `requested_by_user_id` so the caller can
-     * apply Rule 2's tenant check (and 404, never 403, on a miss) without
-     * a second query. Deliberately does NOT return `incident_id`'s
-     * narrative or any joined incident column — a tool job's output is
-     * the only content this endpoint has any business returning.
-     *
-     * @return array<string,mixed>|null
-     */
-    public static function toolJobById(PDO $pdo, int $logId): ?array
-    {
-        $stmt = $pdo->prepare(
-            "SELECT log_id, incident_id, barangay_id, requested_by_user_id, pipeline_run_id,
-                    task_type, model_version, tool_input, tool_output, status, error_code,
-                    processed_at, created_at
-             FROM ai_processing_log
-             WHERE log_id = :log_id AND task_type IN ('blotter_assist','classification','sms_compose','threat_analysis')"
-        );
-        $stmt->execute(['log_id' => $logId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : $row;
-    }
-
-    /** Records a completed tool run. */
-    public static function completeToolJob(
-        PDO $pdo,
-        int $logId,
-        string $output,
-        string $actualModelVersion
-    ): void {
-        $stmt = $pdo->prepare(
-            "UPDATE ai_processing_log
-                SET tool_output = :output,
-                    model_version = :model_version,
-                    prompt_template_version = :prompt_template_version,
-                    status = 'completed',
-                    error_code = NULL,
-                    processed_at = UTC_TIMESTAMP()
-              WHERE log_id = :log_id"
-        );
-        $stmt->execute([
-            'output' => $output,
-            // Rule 16: the model the run ACTUALLY used, as reported by the
-            // server — not the one requested at enqueue time.
-            'model_version' => $actualModelVersion,
-            'prompt_template_version' => self::PROMPT_TEMPLATE_VERSION,
-            'log_id' => $logId,
-        ]);
-    }
+    // The AI Tools job-queue infra (migration 0015: enqueueToolJob(),
+    // toolJobById(), completeToolJob(), TOOL_TASK_TYPES,
+    // TOOL_TASK_REQUIRES_INCIDENT) was removed by migration 0028, along
+    // with `classification` — the last tool type using it — once a real
+    // runaway-generation failure on this workstation showed classification
+    // wasn't reliable enough to keep. See AiPrompts.php's own note.
 
     /**
      * The incident's CURRENT redaction/summary draft — the one

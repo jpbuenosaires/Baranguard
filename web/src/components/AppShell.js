@@ -18,7 +18,7 @@ import { icons } from './icons.js';
 import { avatarInitials } from './Avatar.js';
 import { Menu, MenuItem, MenuDivider } from './Menu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
-import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getAiToolsAvailability, getBarangays } from '../api/apiClient.js';
+import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getOllamaStatus, getBarangays } from '../api/apiClient.js';
 import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
 
 // notification.notification_type values that should play an audible cue
@@ -156,13 +156,17 @@ const NAV_ITEMS = [
   // tabbed screen — see pages/analytics.js. Same role pair both already
   // had, so no per-tab gating needed there (unlike Personnel below).
   { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart, group: 'Records & Reporting' },
-  // There is deliberately NO "AI Tools" entry. The four local-model
-  // assistants (migration 0015) live inside the screens where their work
-  // happens — Classifier in Incident Management, Blotter Assistant in
-  // incident detail, SMS Composer in SMS Monitor, Threat Analyzer as an
-  // Analytics tab — via components/AiToolPanel.js. A standalone AI screen
-  // shipped and was dissolved the same day (2026-09-10): an operator is
-  // mid-task and wants help with that task, not a detour to an AI menu.
+  // There is deliberately NO "AI Tools" entry. The original four
+  // local-model assistants (migration 0015) lived inside the screens
+  // where their work happened — Classifier in Incident Management,
+  // Blotter Assistant in incident detail, SMS Composer in SMS Monitor,
+  // Threat Analyzer as an Analytics tab — rather than behind a standalone
+  // AI menu (one shipped and was dissolved the same day, 2026-09-10: an
+  // operator is mid-task and wants help with that task, not a detour).
+  // All four, and the AiToolPanel.js component that rendered them, were
+  // since removed (migrations 0027/0028) — this note is kept for the
+  // navigation-design rationale, in case a future AI tool faces the same
+  // "standalone screen vs. embedded" choice.
 
   // 2026-09-05 merge of what used to be four separate nav items (Shift
   // Scheduler/Swap Requests/Fatigue Flags/User Management) into one
@@ -711,14 +715,21 @@ export function AppShell(user, activePage, navigate, onLogout) {
       statusBadge.className = 'status-badge status-badge--down';
       statusBadge.querySelector('.status-badge__text').textContent = 'Status unavailable';
     });
-  } else if (user.role === 'secretary' || user.role === 'punong_barangay') {
+  } else if (user.role === 'secretary') {
+    // Punong Barangay dropped from this branch: Threat Analyzer (their one
+    // AI-consuming feature) was removed with the AI Tools screen
+    // (migration 0028), leaving nothing this badge would inform for that
+    // role. Secretary still runs real AI jobs (redaction/extraction/
+    // summary/translation), so the ambient "is the model up" signal
+    // stays — backed by GET /system/ollama-status now, not the removed
+    // AI Tools availability endpoint.
     const aiBadge = document.createElement('div');
     aiBadge.className = 'topbar__ai-badge topbar__ai-badge--neutral';
     aiBadge.innerHTML = `<span class="topbar__ai-dot"></span><span class="topbar__ai-icon" aria-hidden="true">${icons.sparkles(12)}</span><span class="topbar__ai-text">AI Ready</span>`;
     aiBadge.style.display = 'none';
     topbarUser.appendChild(aiBadge);
 
-    getAiToolsAvailability().then(({ ollama }) => {
+    getOllamaStatus().then(({ ollama }) => {
       aiBadge.style.display = 'inline-flex';
       const isOk = ollama === 'healthy';
       const isWarn = ollama === 'unhealthy';
