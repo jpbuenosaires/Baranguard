@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Ai\AiJobQueue;
 use Baranguard\Services\Ai\OllamaClient;
 use Baranguard\Services\Ai\OllamaException;
 use Baranguard\Services\Ai\OllamaUnavailableException;
@@ -167,6 +168,22 @@ final class SystemHealthController
     {
         AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         Http::send(200, ['ollama' => self::ollamaStatus()]);
+    }
+
+    /**
+     * `GET /system/ai-queue` — Admin + Secretary, same access as
+     * `ollamaStatusOnly()` and for the same reason: Secretary is the role
+     * that actually runs the AI pipeline, and until this endpoint existed
+     * there was no way to see the job queue (`ai_processing_log`) at all
+     * without shelling into `ai-worker.php --status`/`--daemon` on the
+     * workstation itself. Counts + allow-listed identifiers only
+     * (AiJobQueue::queueSnapshot()'s own doc explains the fields) — never
+     * narrative content, same boundary every other AI endpoint keeps.
+     */
+    public static function aiQueue(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+        Http::send(200, AiJobQueue::queueSnapshot($pdo) + ['ollama' => self::ollamaStatus()]);
     }
 
     /**

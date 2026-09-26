@@ -248,6 +248,12 @@
   gap: var(--spacing-sm-md);
 }
 
+.health-ai-queue-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+}
+
 .health-service-card {
   display: flex;
   flex-direction: column;

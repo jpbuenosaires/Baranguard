@@ -3,8 +3,9 @@ declare(strict_types=1);
 
 /**
  * Route table for /system/* (§6 "System health" section, §9 W20).
- * Admin only, local-only diagnostics — except `ollama-status`, Admin +
- * Secretary (see SystemHealthController::ollamaStatusOnly()'s own doc).
+ * Admin only, local-only diagnostics — except `ollama-status`/`ai-queue`,
+ * Admin + Secretary (see SystemHealthController::ollamaStatusOnly()'s and
+ * ::aiQueue()'s own docs).
  */
 
 use Baranguard\Controllers\SystemHealthController;
@@ -16,4 +17,5 @@ return [
     // path second matches how every other table here reads.
     ['GET', '#^/system/health/history$#', [SystemHealthController::class, 'history'], true],
     ['GET', '#^/system/ollama-status$#', [SystemHealthController::class, 'ollamaStatusOnly'], true],
+    ['GET', '#^/system/ai-queue$#', [SystemHealthController::class, 'aiQueue'], true],
 ];

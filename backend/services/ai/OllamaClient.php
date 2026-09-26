@@ -38,6 +38,22 @@ final class OllamaClient
     private const PING_TIMEOUT_SECONDS = 3;
     private const DEFAULT_GENERATE_TIMEOUT_SECONDS = 300;
 
+    /**
+     * A model LOAD can crash transiently on this workstation's GPU
+     * backend — confirmed in Ollama's own server.log ("CUDA error: shared
+     * object initialization failed", the llama-server subprocess exiting
+     * with a stack-overrun status) on roughly half of cold loads, with a
+     * fresh load attempt right after usually succeeding within seconds.
+     * Retrying inside `generate()` a few times, close together, mirrors
+     * what re-running `ollama run` by hand does — without the WORKER
+     * giving up on the whole queue over a one-off driver hiccup. 3
+     * attempts / 4s apart adds at most ~8s to a genuinely-down service
+     * before it requeues (Rule 15 is unchanged: retries exhausted still
+     * means requeue, never fail the job).
+     */
+    private const GENERATE_RETRY_ATTEMPTS = 3;
+    private const GENERATE_RETRY_DELAY_SECONDS = 4;
+
     private string $baseUrl;
     private string $model;
     private int $generateTimeout;
@@ -134,12 +150,28 @@ final class OllamaClient
             throw new OllamaUnavailableException('Ollama is not configured (set OLLAMA_URL and OLLAMA_MODEL).');
         }
 
-        $payload = $this->request('POST', '/api/generate', [
-            'model' => $this->model,
-            'prompt' => $prompt,
-            'stream' => false,
-            'options' => ['temperature' => 0.1],
-        ], $this->generateTimeout);
+        $payload = null;
+        $lastUnavailable = null;
+        for ($attempt = 1; $attempt <= self::GENERATE_RETRY_ATTEMPTS; $attempt++) {
+            try {
+                $payload = $this->request('POST', '/api/generate', [
+                    'model' => $this->model,
+                    'prompt' => $prompt,
+                    'stream' => false,
+                    'options' => ['temperature' => 0.1],
+                ], $this->generateTimeout);
+                $lastUnavailable = null;
+                break;
+            } catch (OllamaUnavailableException $e) {
+                $lastUnavailable = $e;
+                if ($attempt < self::GENERATE_RETRY_ATTEMPTS) {
+                    sleep(self::GENERATE_RETRY_DELAY_SECONDS);
+                }
+            }
+        }
+        if ($lastUnavailable !== null) {
+            throw $lastUnavailable;
+        }
 
         $text = $payload['response'] ?? null;
         if (!is_string($text) || trim($text) === '') {

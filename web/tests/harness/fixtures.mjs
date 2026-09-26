@@ -301,6 +301,14 @@ export function buildRoutes(scenario) {
     // Admin + Secretary — replaces the removed /ai-tools/availability
     // (migration 0028) as the topbar AI badge's data source for Secretary.
     { method: 'GET', path: '/system/ollama-status', handler: () => ok({ ollama: 'healthy' }) },
+    // Admin + Secretary — queue-visibility panel (Service Health) and the
+    // Secretary topbar AI badge's tooltip both call this.
+    { method: 'GET', path: '/system/ai-queue', handler: () => ok({
+      depth: { queued: empty ? 0 : 2, processing: empty ? 0 : 1, completed: 5, failed: 0 },
+      oldest_queued: empty ? null : { log_id: 15, task_type: 'redaction', incident_id: 20, created_at: sqlAgo(600) },
+      processing: empty ? [] : [{ log_id: 13, task_type: 'redaction', incident_id: 18, created_at: sqlAgo(120) }],
+      ollama: 'healthy',
+    }) },
     { method: 'GET', path: '/system/health/history', handler: () => ok({ sampling: 'Transitions are recorded only when a probe observed a change.', items: empty ? [] : [
       { recorded_at: sqlAgo(60), db: 'healthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },
       { recorded_at: sqlAgo(600), db: 'unhealthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'unhealthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },

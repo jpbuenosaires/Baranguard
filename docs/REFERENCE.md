@@ -290,9 +290,15 @@ map-packages (get/upload/download)
 time is per-incident `MIN(arrived_at)`, de-duplicated)
 **Ops** `/audit-log` · `/system/health` (+`/history`, Admin-only) ·
 `/system/ollama-status` (Admin+Secretary — the topbar AI badge's data
-source, since `/system/health` itself stays Admin-only) · `/search` ·
-`/barangays` · `/users` (list `q=`, last_login_at, is_suspended;
-suspend/unsuspend + is_active toggle) · `/citizen-reports`
+source, since `/system/health` itself stays Admin-only) ·
+`/system/ai-queue` (Admin+Secretary — `AiJobQueue::queueSnapshot()`:
+queue depth + oldest-queued job + whichever job is currently
+`processing`, allow-listed fields only, never narrative; backs the
+Service Health "AI Job Queue" panel and the Secretary topbar AI badge's
+tooltip — before this there was no way to see `ai_processing_log` at all
+without `ai-worker.php --status`/`--daemon` on the workstation itself) ·
+`/search` · `/barangays` · `/users` (list `q=`, last_login_at,
+is_suspended; suspend/unsuspend + is_active toggle) · `/citizen-reports`
 (+`/:id/convert`, list `status=`) · `/duty-status` · `/blotter` (list
 `q=`, `status=`, case_status, display_id, location_description)
 

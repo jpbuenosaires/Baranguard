@@ -32,7 +32,7 @@
  * kebab-case filename per §4.
  */
 
-import { getSystemHealth, getSystemHealthHistory, logout, ApiClientError } from '../api/apiClient.js';
+import { getSystemHealth, getSystemHealthHistory, getAiQueueStatus, logout, ApiClientError } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
@@ -531,6 +531,13 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     pageContainer.appendChild(domainsContainer);
 
+    // 3.5 AI Job Queue — until this existed, the ONLY way to see the
+    // queue (`ai_processing_log`) at all was `ai-worker.php --status`/
+    // `--daemon` in a terminal someone happened to be watching, so a
+    // stalled or crash-looping worker was invisible from the web
+    // dashboard. Backed by GET /system/ai-queue (AiJobQueue::queueSnapshot()).
+    pageContainer.appendChild(renderAiQueueSection());
+
     // 4. Disaster Recovery & Business Continuity Hub (§5/§9 W20)
     const drSection = document.createElement('div');
     drSection.className = 'health-dr-section';
@@ -649,6 +656,77 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     pageContainer.appendChild(drSection);
 
     renderHistory(pageContainer);
+  }
+
+  /**
+   * AI Job Queue panel — its own async load/error handling, same pattern
+   * `renderHistory()` below uses, since `GET /system/ai-queue` is a
+   * separate call from `GET /system/health` and shouldn't block or be
+   * blocked by the rest of this page's render.
+   */
+  function renderAiQueueSection() {
+    const section = document.createElement('div');
+    section.className = 'health-domain-group';
+
+    const sectionHeader = document.createElement('div');
+    sectionHeader.className = 'health-domain-header';
+    sectionHeader.innerHTML = `<h4 class="health-domain-header__title"><span class="health-domain-header__icon">${icons.inbox(16)}</span><span>AI Job Queue</span></h4>`;
+    section.appendChild(sectionHeader);
+
+    const body = document.createElement('div');
+    body.className = 'health-ai-queue-body';
+    body.innerHTML = '<p class="health-service-card__desc">Loading queue status…</p>';
+    section.appendChild(body);
+
+    getAiQueueStatus().then((q) => {
+      body.innerHTML = '';
+
+      const strip = document.createElement('div');
+      strip.className = 'stat-card-grid';
+      [
+        { label: 'Queued', value: q.depth.queued, tone: q.depth.queued > 0 ? 'neutral' : 'success' },
+        { label: 'Processing', value: q.depth.processing, tone: 'neutral' },
+        { label: 'Completed', value: q.depth.completed, tone: 'success' },
+        { label: 'Failed', value: q.depth.failed, tone: q.depth.failed > 0 ? 'critical' : 'success' },
+      ].forEach((item) => {
+        const card = document.createElement('div');
+        card.className = 'stat-card';
+        card.innerHTML = `<span class="stat-card__value stat-card__value--${item.tone}">${item.value}</span><span class="stat-card__label">${item.label}</span>`;
+        strip.appendChild(card);
+      });
+      body.appendChild(strip);
+
+      const jobLine = (job, label) => {
+        // job.createdAt already went through apiClient.js's reviveUtcTimestamps
+        // (a bare SQL datetime -> ISO 'Z' string), so no further conversion
+        // is needed here — appending another 'Z' would double it and parse
+        // as NaN.
+        const ageMinutes = Math.max(0, Math.round((Date.now() - new Date(job.createdAt).getTime()) / 60000));
+        const p = document.createElement('p');
+        p.className = 'health-service-card__desc';
+        p.textContent = `${label}: ${job.taskType} for incident #${job.incidentId} — enqueued ${ageMinutes}m ago (log #${job.logId})`;
+        return p;
+      };
+
+      if (q.processing.length > 0) {
+        q.processing.forEach((job) => body.appendChild(jobLine(job, 'Currently processing')));
+      } else if (q.depth.queued > 0) {
+        body.appendChild((() => {
+          const p = document.createElement('p');
+          p.className = 'health-service-card__desc';
+          p.textContent = 'Nothing is currently processing — the worker (ai-worker.php) is not running right now, so queued jobs will wait until it is.';
+          return p;
+        })());
+      }
+
+      if (q.oldestQueued) {
+        body.appendChild(jobLine(q.oldestQueued, 'Oldest queued'));
+      }
+    }).catch(() => {
+      body.innerHTML = '<p class="health-service-card__desc">Could not load queue status.</p>';
+    });
+
+    return section;
   }
 
   /**
