@@ -389,7 +389,7 @@ Shared components: `AppShell` · `PageHeader` · `DataTable` (+CSV export,
 pagination) · `KpiCard` · `LineChart` (treats `null` as a genuine gap,
 not zero) · `BarChart` · `DonutChart` · `LiveMap` · `Menu` · `Toast` ·
 `ConfirmDialog` (+`promptSelect`) · `StatStrip` · `Avatar` ·
-`DateRangePicker` · `icons`. (`AiToolPanel` — the AI Tools screen's
+`DateRangePicker` · `BlotterWorkflow` (Secretary's 4-stage blotter progress bar, shared by W7/W8 — DEVLOG 2026-09-26 (30)) · `icons`. (`AiToolPanel` — the AI Tools screen's
 shared embeddable panel — was removed along with that screen, migration
 0028; it had no caller left once the Incident Classifier, its last user,
 was retired.)
@@ -548,8 +548,8 @@ controls that do nothing.
 | `verify-routing.sh` | 23 (real-ORS block SKIPs, not fails, if no key) |
 | `verify-device-session.sh` | 20 |
 | `restore-drill.sh` | 12 (real DB) |
-| `verify-web-wiring.mjs` | 555 (moves as screens change) |
-| `web/tests` (`npm test`) | 395 |
+| `verify-web-wiring.mjs` | 562 (moves as screens change; 2 pre-existing failures in admin-dashboard/statistical-reports as of 2026-09-26) |
+| `web/tests` (`npm test`) | 399 |
 | `mobile: verify.schema` | 113 |
 
 All use a disposable database + disposable app user + throwaway port,

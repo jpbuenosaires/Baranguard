@@ -27,13 +27,13 @@ describe('AI Redaction Review behaviour', () => {
   test('a stale summary is flagged before approval (pipeline order, Rule 4)', async () => {
     mountPage(renderAiReviewPage, { role: 'secretary', param: 901 });
     await settle();
-    assert.match(text(), /Summary Stale|Sync Required/i);
+    assert.match(text(), /Summary out of date/i);
   });
 
   test('approval is blocked while the summary is out of sync with the draft', async () => {
     const ctx = mountPage(renderAiReviewPage, { role: 'secretary', param: 901 });
     await settle();
-    const approve = buttonByText(/approve & commit/i, ctx.root);
+    const approve = buttonByText(/^approve redaction$/i, ctx.root);
     assert.ok(approve, 'no approve control');
     assert.equal(approve.disabled, true, 'Approve must be disabled while the summary is stale');
     click(approve);
@@ -51,7 +51,7 @@ describe('AI Redaction Review behaviour', () => {
     } }));
     const ctx = mountPage(renderAiReviewPage, { role: 'secretary', param: 901 });
     await settle();
-    click(buttonByText(/approve & commit/i, ctx.root));
+    click(buttonByText(/^approve redaction$/i, ctx.root));
     await settle();
     const dialog = $('[role="alertdialog"]');
     if (dialog) { click($$('button', dialog).at(-1)); await settle(); }
@@ -92,6 +92,25 @@ describe('AI Redaction Review behaviour', () => {
     await settle();
     assert.equal(api.callsTo('POST', '/incidents/:id/ai-draft/translate').length, 1);
     assert.match(text(), /not (yet )?validated|unvalidated/i, 'the Bikol caveat (a toast) must be shown');
+  });
+
+  test('the Lupon packet stays disabled until the blotter entry is finalized (server prerequisite)', async () => {
+    const ctx = mountPage(renderAiReviewPage, { role: 'secretary', param: 901 });
+    await settle();
+    assert.equal(buttonByText(/lupon packet/i, ctx.root).disabled, true);
+    cleanup();
+    const ctx2 = mountPage(renderAiReviewPage, { role: 'secretary', param: 903 });
+    await settle();
+    assert.equal(buttonByText(/lupon packet/i, ctx2.root).disabled, false);
+  });
+
+  test('the workflow bar shows all four stages and the next step', async () => {
+    const ctx = mountPage(renderAiReviewPage, { role: 'secretary', param: 901 });
+    await settle();
+    const steps = $$('.blotter-flow__step', ctx.root).map((el) => text(el));
+    assert.equal(steps.length, 4);
+    assert.match(steps[2], /Finalize blotter entry[\s\S]*Cannot start yet/);
+    assert.match(text($('.blotter-flow__next', ctx.root)), /summary is out of date/i);
   });
 
   test('the location line never falls back to a hard-coded barangay', async () => {

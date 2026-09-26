@@ -77,9 +77,50 @@ describe('Incident detail behaviour', () => {
   test('without an approved redaction, the Secretary is sent to AI Review first', async () => {
     const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 901 });
     await settle();
-    assert.match(text(ctx.root), /AI Redaction Approval Required/i);
+    assert.match(text(ctx.root), /Approve the AI redaction first/i);
     click(buttonByText(/review ai redaction/i, ctx.root));
     assert.deepEqual(ctx.navigations.at(-1), { page: 'ai-review', param: 901 });
+  });
+
+  test('finalizing goes through a check-your-entry step before anything is sent', async () => {
+    api.on('GET', '/incidents/:id', ({ params }) => ({ status: 200, body: {
+      incident_id: Number(params.id), barangay_id: 1, reported_by: 4, incident_type: 'theft', priority: 'normal', status: 'pending', source: 'web',
+      latitude: null, longitude: null, created_at: '2026-09-20 01:00:00', synced_at: null, location_description: null, display_id: 'INC-2026-778',
+      raw_narrative: 'RAW', redacted_narrative: '[PERSON] reported a stolen bicycle.', redaction_approved_at: '2026-09-21 01:00:00', redaction_approved_by: 2,
+      complainant_name: 'Ana Cruz', respondent_name: null, complainant_contact_number: null, dispatches: [],
+    } }));
+    const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 778 });
+    await settle();
+    const summary = $('#blotter-finalize-summary', ctx.root);
+    assert.ok(summary, 'no finalize summary field');
+    type(summary, '');
+    click(buttonByText(/continue to check entry/i, ctx.root));
+    await settle();
+    assert.match(text(ctx.root), /There is a problem/);
+    assert.equal(summary.getAttribute('aria-invalid'), 'true');
+
+    type(summary, 'A bicycle was reported stolen near the plaza.');
+    click(buttonByText(/continue to check entry/i, ctx.root));
+    await settle();
+    assert.match(text(ctx.root), /Check the entry before finalizing/);
+    assert.match(text(ctx.root), /Ana Cruz/);
+    assert.equal(api.callsTo('POST', '/incidents/:id/finalize').length, 0, 'nothing may be sent before the Secretary confirms');
+
+    click(buttonByText(/^finalize blotter entry$/i, ctx.root));
+    await settle();
+    const [call] = api.callsTo('POST', '/incidents/:id/finalize');
+    assert.ok(call, 'finalize was not sent');
+    assert.equal(call.body.narrative_summary, 'A bicycle was reported stolen near the plaza.');
+    assert.equal(call.body.complainant_name, 'Ana Cruz');
+  });
+
+  test('the amendment form stays collapsed until "Amend this entry"', async () => {
+    const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 903 });
+    await settle();
+    const form = $('#blotter-amend-form', ctx.root);
+    assert.ok(form?.hidden, 'amend form should start collapsed');
+    click(buttonByText(/amend this entry/i, ctx.root));
+    assert.equal(form.hidden, false);
   });
 
   test('a missing blotter record (404) is normal, not an error', async () => {

@@ -1005,12 +1005,16 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       actionsRow.appendChild(resolvedBtn);
     }
 
-    // Secondary Action Button (Smart Create / View Blotter)
+    // Secondary action: open the incident record (W7). The label used to
+    // guess "View Blotter" vs "Create Blotter" from `row.status` plus a
+    // `detail.blotterId` the incident payload never carries — so a
+    // resolved incident with no blotter entry claimed one existed, and
+    // Admins were offered "Create Blotter", which only a Secretary can
+    // do. W7's workflow bar now shows the real blotter state.
     const blotterBtn = document.createElement('button');
     blotterBtn.type = 'button';
     blotterBtn.className = 'btn-action-blotter';
-    const isBlotterCreated = row.status === 'resolved' || Boolean(detail.blotterId);
-    blotterBtn.innerHTML = `${icons.fileText(16)} <span>${isBlotterCreated ? 'View Blotter' : 'Create Blotter'}</span>`;
+    blotterBtn.innerHTML = `${icons.fileText(16)} <span>${isSecretary ? 'Open blotter workflow' : 'Open incident record'}</span>`;
     blotterBtn.addEventListener('click', () => {
       navigate('blotter-detail', row.incidentId);
     });

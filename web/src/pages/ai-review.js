@@ -41,8 +41,7 @@ import {
   approveAiDraft,
   approveExtraction,
   translateAiDraft,
-  generateLuponPacket,
-  downloadLuponPacket,
+  getBlotterForIncident,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -53,6 +52,7 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { BlotterWorkflow, getBlotterWorkflowState, generateAndDownloadLuponPacket } from '../components/BlotterWorkflow.js';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -105,7 +105,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
   const backButton = document.createElement('button');
   backButton.className = 'ghost';
-  backButton.textContent = '← Back to Incident';
+  backButton.textContent = '← Back to incident record';
   backButton.addEventListener('click', () => {
     stopPolling();
     navigate('blotter-detail', incidentId);
@@ -117,6 +117,10 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
   let draft = null;
   /** Independent of `draft` above — see AiJobQueue's own extraction docblock. */
   let extractionDraft = null;
+  /** Blotter record (null until finalized) — drives the workflow bar and the Lupon packet gate. */
+  let blotter = null;
+  /** The mounted workflow bar, swapped in place when local edit state changes. */
+  let workflowEl = null;
   /** Tracks whether the Secretary has edited the draft text away from what the server holds. */
   let edited = false;
   let extractionInputs = { complainant: null, respondent: null, contact: null };
@@ -216,10 +220,13 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     try {
       // The drafts legitimately may not exist (404 → null); the incident
       // must exist, so its failure is a real error.
-      [incident, draft, extractionDraft] = await Promise.all([
+      [incident, draft, extractionDraft, blotter] = await Promise.all([
         getIncident(incidentId),
         getAiDraft(incidentId),
         getExtractionDraft(incidentId),
+        // 404 -> null is normal (not finalized yet); any other failure
+        // only costs the workflow bar its last two stages' accuracy.
+        getBlotterForIncident(incidentId).catch(() => null),
       ]);
       edited = false;
       render();
@@ -241,90 +248,27 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     renderErrorState({ container: content, message, onRetry: load });
   }
 
+  /**
+   * The whole blotter workflow (redact → approve → finalize → Lupon
+   * packet), shared with W7 — see components/BlotterWorkflow.js for why
+   * it replaced this screen's own four-step redaction-only stepper.
+   */
   function buildWorkflowStepper() {
-    const nav = document.createElement('nav');
-    nav.className = 'ai-review__stepper';
-    nav.setAttribute('aria-label', 'Redaction workflow progress');
-
-    const step1Done = Boolean(draft && draft.status === 'completed');
-    const step1Running = Boolean(draft && (draft.status === 'queued' || draft.status === 'processing'));
-    const step1Active = !step1Done && !step1Running;
-
-    const step2Active = step1Done && !incident.redactionApprovedAt;
-    const step2Done = step1Done && (incident.redactionApprovedAt || (!edited && !draft?.draftSummaryStale));
-
-    const step3Warning = Boolean(draft && (draft.draftSummaryStale || edited));
-    const step3Done = Boolean(draft && !draft.draftSummaryStale && !edited && draft.draftSummary);
-
-    const step4Done = Boolean(incident.redactionApprovedAt);
-    const step4Ready = step1Done && !step3Warning && !step4Done;
-
-    const steps = [
-      {
-        num: '1',
-        label: 'Intake Redaction',
-        sub: step1Done ? 'Draft Ready' : step1Running ? 'Processing…' : 'Awaiting Run',
-        state: step1Done ? 'done' : step1Running ? 'running' : 'active',
+    workflowEl = BlotterWorkflow({
+      state: getBlotterWorkflowState({ incident, draft, blotter, edited }),
+      currentScreen: 'ai-review',
+      onNavigate: (page) => {
+        stopPolling();
+        navigate(page, incidentId);
       },
-      {
-        num: '2',
-        label: 'Review & Edit',
-        sub: step2Done ? 'Verified' : step2Active ? 'Active Review' : 'Side-by-Side Diff',
-        state: step2Done ? 'done' : step2Active ? 'active' : 'pending',
-      },
-      {
-        num: '3',
-        label: 'Summary Sync',
-        sub: step3Warning ? 'Sync Required' : step3Done ? 'In Sync' : 'Entity Check',
-        state: step3Warning ? 'warning' : step3Done ? 'done' : 'pending',
-      },
-      {
-        num: '4',
-        label: 'Approve & Commit',
-        sub: step4Done ? 'Approved' : step4Ready ? 'Ready to Seal' : 'Permanent Seal',
-        state: step4Done ? 'done' : step4Ready ? 'active' : 'pending',
-      },
-    ];
+    });
+    return workflowEl;
+  }
 
-    const track = document.createElement('div');
-    track.className = 'ai-review__stepper-track';
-
-    for (let i = 0; i < steps.length; i++) {
-      const s = steps[i];
-      const item = document.createElement('div');
-      item.className = `ai-review__step ai-review__step--${s.state}`;
-
-      const icon = document.createElement('span');
-      icon.className = 'ai-review__step-icon';
-      if (s.state === 'done') icon.innerHTML = icons.check(14);
-      else if (s.state === 'warning') icon.innerHTML = icons.alertCircle(14);
-      else if (s.state === 'running') icon.innerHTML = `<span class="is-spinning">${icons.repeat(14)}</span>`;
-      else icon.textContent = s.num;
-
-      const contentDiv = document.createElement('div');
-      contentDiv.className = 'ai-review__step-content';
-
-      const label = document.createElement('span');
-      label.className = 'ai-review__step-label';
-      label.textContent = s.label;
-
-      const sub = document.createElement('span');
-      sub.className = 'ai-review__step-sub';
-      sub.textContent = s.sub;
-
-      contentDiv.append(label, sub);
-      item.append(icon, contentDiv);
-      track.appendChild(item);
-
-      if (i < steps.length - 1) {
-        const connector = document.createElement('div');
-        connector.className = `ai-review__step-connector ${steps[i].state === 'done' ? 'is-done' : ''}`;
-        track.appendChild(connector);
-      }
-    }
-
-    nav.appendChild(track);
-    return nav;
+  function refreshWorkflowStepper() {
+    if (!workflowEl || !workflowEl.isConnected) return;
+    const previous = workflowEl;
+    previous.replaceWith(buildWorkflowStepper());
   }
 
   function render() {
@@ -399,7 +343,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       if (draft.draftSummaryStale) {
         const stalePill = document.createElement('span');
         stalePill.className = 'status-pill status-pill--warning';
-        stalePill.textContent = 'Summary Stale';
+        stalePill.textContent = 'Summary out of date';
         titleRow.appendChild(stalePill);
       }
     }
@@ -522,6 +466,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
     const actionWrap = document.createElement('div');
     actionWrap.className = 'ai-review__engine-action';
+    actionWrap.id = 'ai-review-start';
 
     const runBtn = document.createElement('button');
     runBtn.type = 'button';
@@ -667,13 +612,13 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     summaryHeader.innerHTML = `
       <div class="ai-review__studio-card-title">
         <span class="ai-review__card-icon">${icons.fileText(16)}</span>
-        <h3>Official Blotter Summary</h3>
+        <h3>AI-suggested summary</h3>
       </div>
     `;
     if (draft.draftSummaryStale || edited) {
       const staleBadge = document.createElement('span');
       staleBadge.className = 'status-pill status-pill--warning';
-      staleBadge.textContent = 'Sync Required';
+      staleBadge.textContent = 'Out of date';
       summaryHeader.appendChild(staleBadge);
     }
     summaryCard.appendChild(summaryHeader);
@@ -681,7 +626,9 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     const summaryNote = document.createElement('p');
     summaryNote.className = 'note';
     summaryNote.style.margin = '0 0 var(--spacing-xs) 0';
-    summaryNote.textContent = 'Concise factual summary synthesized for the Katarungang Pambarangay ledger.';
+    summaryNote.textContent = (draft.draftSummaryStale || edited)
+      ? 'The draft changed after this summary was written. Refresh it so the summary matches the text you are approving.'
+      : 'A short factual summary written from the draft. It becomes the starting text when you finalize the blotter entry — you can still edit it there.';
     summaryCard.appendChild(summaryNote);
 
     const summaryText = document.createElement('pre');
@@ -699,7 +646,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       regenBtn.type = 'button';
       regenBtn.className = 'ghost';
       regenBtn.style.fontSize = 'var(--font-size-xs)';
-      regenBtn.innerHTML = `${icons.repeat(14)} <span>Sync / Regenerate Summary</span>`;
+      regenBtn.innerHTML = `${icons.repeat(14)} <span>Regenerate summary from the edited draft</span>`;
       regenBtn.disabled = isPending;
       regenBtn.addEventListener('click', () => runRegenerate(regenBtn));
       inlineRegen.appendChild(regenBtn);
@@ -850,6 +797,8 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
   function buildActionsDock() {
     const dock = document.createElement('div');
     dock.className = 'card ai-review__action-dock';
+    dock.id = 'ai-review-actions';
+    dock.tabIndex = -1;
 
     // Left group: Primary workflow actions
     const leftGroup = document.createElement('div');
@@ -867,7 +816,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
     const approveButton = document.createElement('button');
     approveButton.className = 'primary';
-    approveButton.innerHTML = `${icons.check(14)} Approve & Commit Redaction`;
+    approveButton.innerHTML = `${icons.check(14)} Approve redaction`;
     approveButton.addEventListener('click', () => runApprove(approveButton));
 
     leftGroup.append(rerunButton, regenButton, approveButton);
@@ -882,57 +831,25 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     rightGroup.className = 'ai-review__action-dock-right';
 
     const isApproved = Boolean(incident.redactionApprovedAt);
+    const isFinalized = Boolean(blotter?.finalizedAt);
 
     const postLabel = document.createElement('span');
     postLabel.className = 'ai-review__dock-sublabel';
-    postLabel.textContent = isApproved ? 'Post-Approval:' : 'Post-Approval (Locked):';
+    postLabel.textContent = isApproved ? 'After approval:' : 'After approval (locked):';
     rightGroup.appendChild(postLabel);
 
+    // The server only builds a packet from a FINALIZED blotter entry
+    // (BlotterController::luponPacket()); enabling this on approval alone
+    // offered a control that could only fail.
     const packetButton = document.createElement('button');
+    packetButton.type = 'button';
     packetButton.className = 'ghost';
-    packetButton.disabled = !isApproved;
-    packetButton.title = isApproved ? 'Generate Lupon conciliation dossier' : 'Requires approved redaction first';
-    packetButton.innerHTML = `${icons.fileText(14)} Lupon Packet`;
-    packetButton.addEventListener('click', async () => {
-      packetButton.disabled = true;
-      packetButton.textContent = 'Generating…';
-      try {
-        await generateLuponPacket(incidentId);
-        showToast('Lupon packet generated.', { variant: 'success' });
-        downloadLink.hidden = false;
-      } catch (err) {
-        showToast(err instanceof ApiClientError ? err.message : 'Could not generate the packet.', { variant: 'error' });
-      } finally {
-        packetButton.disabled = false;
-        packetButton.innerHTML = `${icons.fileText(14)} Lupon Packet`;
-      }
-    });
-
-    const downloadLink = document.createElement('button');
-    downloadLink.type = 'button';
-    downloadLink.className = 'ghost';
-    downloadLink.hidden = true;
-    downloadLink.innerHTML = `${icons.fileText(14)} Download PDF`;
-    downloadLink.addEventListener('click', async () => {
-      downloadLink.disabled = true;
-      downloadLink.textContent = 'Downloading…';
-      try {
-        const blob = await downloadLuponPacket(incidentId);
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = `lupon-packet-incident-${incidentId}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(blobUrl);
-      } catch (err) {
-        showToast(err instanceof ApiClientError ? err.message : 'Could not download the packet.', { variant: 'error' });
-      } finally {
-        downloadLink.disabled = false;
-        downloadLink.innerHTML = `${icons.fileText(14)} Download PDF`;
-      }
-    });
+    packetButton.disabled = !isFinalized;
+    packetButton.title = isFinalized
+      ? 'Generate and download the Lupon conciliation packet'
+      : 'Finalize the blotter entry first (on the incident record)';
+    packetButton.innerHTML = `${icons.download(14)} Lupon packet`;
+    packetButton.addEventListener('click', () => generateAndDownloadLuponPacket(incidentId, packetButton));
 
     const translateWrap = document.createElement('div');
     translateWrap.style.display = 'inline-flex';
@@ -976,7 +893,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     });
 
     translateWrap.append(languageSelect, translateButton);
-    rightGroup.append(packetButton, downloadLink, translateWrap);
+    rightGroup.append(packetButton, translateWrap);
 
     dock.append(leftGroup, rightGroup);
 
@@ -1017,11 +934,12 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
     if (incident.redactionApprovedAt) blockedBecause = 'This incident already has an approved redaction.';
     else if (pending) blockedBecause = 'The AI job is still running.';
     else if (draft.status !== 'completed') blockedBecause = 'The draft is not complete.';
-    else if (draft.draftSummaryStale) blockedBecause = 'The summary is stale — regenerate it first.';
-    else if (edited) blockedBecause = 'You have unsaved edits — regenerate the summary to apply them.';
+    else if (draft.draftSummaryStale) blockedBecause = 'The summary is out of date — regenerate it first.';
+    else if (edited) blockedBecause = 'You edited the draft — regenerate the summary to save your edits.';
 
     approveButton.disabled = blockedBecause !== null;
-    reason.textContent = blockedBecause ?? 'Approving commits this text as the incident’s permanent redacted narrative.';
+    reason.textContent = blockedBecause ?? 'Approving saves this text as the incident’s redacted narrative. Next, you finalize the blotter entry.';
+    refreshWorkflowStepper();
   }
 
   // --- Actions ---
@@ -1093,7 +1011,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
         approvedNarrative: draft.draftRedactedNarrative,
         draftVersion: draft.draftVersion,
       });
-      showToast('Redaction approved.', { variant: 'success' });
+      showToast('Redaction approved. Next: finalize the blotter entry.', { variant: 'success' });
       // §9's documented flow is approve (W8) -> finalize (W7) -> packet
       // (W8); returning here automatically saves the Secretary the manual
       // "Back to Incident" click that used to follow every approval, since

@@ -16611,3 +16611,89 @@ scoping (web dashboard only) should be remembered even if
 `REMAINING.md`/`REFERENCE.md`'s older wording still says "either
 hostname" — don't let a future session re-implement the broader,
 API-breaking version because the docs elsewhere say something vaguer.
+
+## 2026-09-26 (30) — Secretary blotter workflow UX pass (W7 + W8), web only
+
+User request: the Secretary's blotter-creation flow was confusing; make it
+friendlier and follow recognised standards. A deliberate out-of-menu
+session (not a Sprint 8 box), web UI only — **no new routes, fields,
+roles, or state transitions**; every status shown comes from existing
+server state.
+
+**Standards used**: GOV.UK Design System — task list / "complete multiple
+tasks" (one status tag per stage, incomplete stages coloured, completed
+ones neutral), "check answers" (review everything with Change links
+before an irreversible submit; the button names the action), and error
+messages/error summary (errors next to the field, summary at the top
+linking to each). Plus Nielsen's visibility-of-system-status /
+recognition-over-recall.
+
+**What was confusing (found by reading the code, not assumed)**:
+1. The job spans two screens (redact+approve on W8, finalize+packet on
+   W7) but neither showed the whole job. W8's own 4-step stepper
+   ("Summary Sync", "Permanent Seal") ended at approval.
+2. W8's dock enabled "Lupon Packet" as soon as the redaction was
+   approved, but `BlotterController::luponPacket()` requires a
+   FINALIZED blotter — a control that could only fail.
+3. The packet was two buttons (Generate, then a Download that appeared
+   later), duplicated on W7's header and W8's dock.
+4. W8 titled the AI summary "Official Blotter Summary", but W7's
+   finalize form pre-filled the full redacted narrative instead — two
+   different "summaries".
+5. The amendment form sat permanently open under every finalized record.
+6. Finalize = one textarea + a generic confirm dialog; validation only
+   via toasts.
+7. Incident Management's secondary button guessed "View Blotter" vs
+   "Create Blotter" from `row.status === 'resolved' || detail.blotterId`
+   — `blotterId` is never in the incident payload, so a resolved
+   incident with no blotter claimed one existed, and Admins were offered
+   "Create Blotter" (Secretary-only).
+
+**What changed**:
+- New `web/src/components/BlotterWorkflow.js` (+ `css/components/
+  BlotterWorkflow.css`, linked in `index.html`): a 4-stage bar (Remove
+  personal details → Check & approve redaction → Finalize blotter entry
+  → Lupon packet (if referred)) with a single "Next step" line + button,
+  shown on both W7 (Secretary only) and W8. Also
+  `generateAndDownloadLuponPacket()` — one action replacing the pairs.
+- W7 (`blotter-detail.js`): not-approved state is now a short plain
+  explanation + one "Review AI redaction" button. Finalize is two views:
+  enter (parties fieldset + "What happened" summary, char count, inline
+  errors, pre-filled with the reviewed AI summary when it's in sync,
+  else the approved redacted narrative, with a switch) → check (summary
+  list with Change links, "This cannot be undone" warning, "Finalize
+  blotter entry"). Finalized record shows a summary list; amendment is
+  collapsed behind "Amend this entry" (Cancel keeps typed text), with
+  inline errors. Lupon packet moved out of the header into its own card.
+  W7 now also fetches `GET /incidents/:id/ai-draft` for the Secretary
+  (existing route, enrichment only, `.catch(() => null)`).
+- W8 (`ai-review.js`): old stepper replaced by the shared bar (loads
+  `GET /incidents/:id/blotter`, 404 → null); plain-language labels
+  ("Approve redaction", "Summary out of date", "AI-suggested summary");
+  Lupon packet gated on `blotter.finalizedAt`; approve toast names the
+  next step.
+- Incident Management: button is now "Open blotter workflow"
+  (Secretary) / "Open incident record" (others) — no guessed state.
+- Removed now-unused CSS: `.ai-review__stepper*`/`__step*`,
+  `.blotter-compliance-callout*`.
+
+**Real bug caught in the browser, not by tests**: `.form-stack {display:
+flex}` and `button {display: inline-flex}` override the `[hidden]`
+attribute, so the "collapsed" amend form rendered open. jsdom applies no
+CSS, so `web/tests` passed regardless. Fixed with explicit `[hidden]`
+rules in `BlotterWorkflow.css`; confirmed `display: none` via computed
+style in the real browser.
+
+**Verified**: `web/tests` 399/399 (4 new: finalize check step sends
+nothing until confirmed + inline error; amend form starts collapsed; W8
+packet disabled until finalized; W8 bar shows 4 stages + next step; 3
+existing assertions updated for renamed labels). `verify-web-wiring.mjs`
+562 passed / 2 failed — both failures pre-existing and in untouched files
+(`admin-dashboard.js`, `statistical-reports.js`; 3 failures before this
+change). Real browser pass against `baranguard_uiseed` as
+`secretary.dao`: finalized incident (INC-2026-022) bar/summary
+list/amend collapse + empty-reason error summary; not-started incident
+(INC-2026-021) on W7 and W8, dark and light mode. **Not exercised in the
+real browser**: the finalize check-step on an approved-but-unfinalized
+incident — none was at hand, and finalizing would have mutated the demo
+DB; covered by the jsdom test only.
