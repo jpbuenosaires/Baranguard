@@ -549,6 +549,8 @@ final class ReportsController
 
         $contentType = $format === 'pdf' ? 'application/pdf' : 'text/csv; charset=utf-8';
         header('Content-Type: ' . $contentType);
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
         header('Content-Length: ' . (string) filesize($path));
         header('Content-Disposition: attachment; filename="baranguard-report-barangay-' . $identity['barangay_id'] . '.' . $format . '"');
         readfile($path);
@@ -652,6 +654,8 @@ final class ReportsController
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'report_digest_downloaded', 'report', null, []);
 
         header('Content-Type: application/pdf');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
         header('Content-Length: ' . (string) filesize($path));
         header('Content-Disposition: attachment; filename="baranguard-pb-digest-barangay-' . $identity['barangay_id'] . '.pdf"');
         readfile($path);
@@ -928,28 +932,37 @@ final class ReportsController
         $nowManila = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))
             ->setTimezone($manila)
             ->format('d M Y, g:i A');
-        $rangeLabel = $from->format('d M Y') . ' to ' . $to->format('d M Y') . ' (Asia/Manila)';
+        $rangeShort = $from->format('M j, Y') . ' - ' . $to->format('M j, Y');
 
         $pdf = SimplePdf::create("Baranguard Statistical Report - Barangay {$barangayName}")
-            // 1. Official Republic Header
-            ->center('REPUBLIC OF THE PHILIPPINES', 8.5, false, [0.35, 0.40, 0.48], 11.0)
-            ->center('PROVINCE OF ' . strtoupper($province), 8.5, false, [0.35, 0.40, 0.48], 11.0)
-            ->center('MUNICIPALITY OF ' . strtoupper($municipality), 8.5, false, [0.35, 0.40, 0.48], 11.0)
-            ->center('BARANGAY ' . strtoupper($barangayName), 11.0, true, [0.10, 0.16, 0.28], 15.0)
-            ->center('OFFICE OF THE LUPONG TAGAPAMAYAPA & BARANGAY PEACEKEEPING ACTION TEAM', 7.5, true, [0.22, 0.32, 0.50], 12.0)
-            ->rule(1.5, [0.12, 0.23, 0.43], 6.0)
-            ->rule(0.5, [0.70, 0.75, 0.82], 8.0)
+            // 1. Official Masthead matching .print-sheet__masthead
+            ->center('REPUBLIC OF THE PHILIPPINES', 8.0, true, [0.28, 0.33, 0.41], 11.5)
+            ->center('PROVINCE OF ' . strtoupper($province) . '  ·  MUNICIPALITY OF ' . strtoupper($municipality), 7.5, true, [0.35, 0.40, 0.48], 11.5)
+            ->center('BARANGAY ' . strtoupper($barangayName) . ' — PEACEKEEPING & OPERATIONS DESK', 12.0, true, [0.118, 0.227, 0.431], 15.5)
+            ->pillBadge('BARANGAY INCIDENT & PEACEKEEPING STATISTICAL REPORT', 7.5, 18.0)
+            ->rule(1.5, [0.118, 0.227, 0.431], 12.0)
 
-            // 2. Title Banner
-            ->banner('INCIDENT & PEACEKEEPING OPERATIONS STATISTICAL REPORT', 9.5, [0.12, 0.23, 0.43], [1.0, 1.0, 1.0], 20.0, 24.0)
+            // 2. 4-Column Meta Bar matching .print-sheet__meta-bar
+            ->metaBar([
+                [
+                    'label' => 'Report Reference',
+                    'value' => "BRGY-{$barangayId}-RPT",
+                ],
+                [
+                    'label' => 'Coverage Period',
+                    'value' => $rangeShort,
+                ],
+                [
+                    'label' => 'Prepared By',
+                    'value' => $generatorName,
+                ],
+                [
+                    'label' => 'Date Generated',
+                    'value' => $nowManila,
+                ],
+            ], 42.0)
 
-            // 3. Report Metadata
-            ->keyValue('Reporting Coverage', $rangeLabel)
-            ->keyValue('Prepared By', "{$generatorName} ({$generatorRole})")
-            ->keyValue('Report Generated', "{$nowManila} (Ref: BRGY-{$barangayId}-RPT)")
-            ->spacer(6.0)
-
-            // 4. Executive KPI Grid (4 Metrics)
+            // 3. 4-Column Executive KPI Grid matching .print-sheet__kpi-grid
             ->kpiGrid([
                 [
                     'label' => 'Total Incidents',
@@ -972,65 +985,88 @@ final class ReportsController
                     'sub' => 'Active peacekeeping unit',
                 ],
             ], 48.0)
-            ->spacer(8.0)
 
-            // 5. Operational Highlights
-            ->subheading('OPERATIONAL HIGHLIGHTS & PATTERNS', 10.0)
-            ->keyValue('Leading Incident Category', self::humanizeEnum($topType) . " ({$topCount} cases, {$topShare}% of total)")
-            ->keyValue('Peak Incident Hours', $peakHourStr)
-            ->keyValue('Highest Activity Date', $busiestCount > 0 ? "{$busiestDate} ({$busiestCount} cases logged)" : 'Evenly distributed / No incidents')
-            ->keyValue('Active Caseload Requiring Action', "{$activeLoad} ongoing cases (Pending/Dispatched/Investigating)")
-            ->spacer(8.0)
+            // 4. Operational Highlights in 2-Column Field Boxes matching .print-sheet__grid-2col
+            ->twoColFields(
+                [
+                    'label' => 'Leading Incident Category',
+                    'value' => self::humanizeEnum($topType) . " ({$topCount} cases, {$topShare}% of total)",
+                ],
+                [
+                    'label' => 'Peak Reporting Hours',
+                    'value' => $peakHourStr,
+                ],
+                42.0
+            )
+            ->twoColFields(
+                [
+                    'label' => 'Highest Activity Date',
+                    'value' => $busiestCount > 0 ? "{$busiestDate} ({$busiestCount} cases logged)" : 'Evenly distributed / No incidents',
+                ],
+                [
+                    'label' => 'Active Caseload Requiring Action',
+                    'value' => "{$activeLoad} ongoing cases (Pending / Dispatched)",
+                ],
+                44.0
+            )
 
-            // 6. Section 1: Classification of Incidents Table
-            ->subheading('1. CLASSIFICATION OF REPORTED INCIDENTS', 10.0)
-            ->tableHeader(['Incident Classification / Type', 'Recorded Cases', 'Percentage Share'], [0.55, 0.22, 0.23], ['left', 'right', 'right'], 8.5, 18.0);
+            // 5. Section 1: Classification of Incidents Table
+            ->subheading('1. CLASSIFICATION OF REPORTED INCIDENTS', 9.5)
+            ->tableHeader(['Incident Classification / Type', 'Recorded Cases', 'Percentage Share'], [0.56, 0.22, 0.22], ['left', 'right', 'right'], 8.2, 18.0);
 
         foreach ($byType as $type => $count) {
             $shareStr = $total > 0 ? sprintf('%.1f%%', ($count / $total) * 100) : '0.0%';
-            $pdf->tableRow([self::humanizeEnum($type), (string) $count, $shareStr], [0.55, 0.22, 0.23], ['left', 'right', 'right']);
+            $pdf->tableRow([self::humanizeEnum($type), (string) $count, $shareStr], [0.56, 0.22, 0.22], ['left', 'right', 'right']);
         }
-        $pdf->tableRow(['TOTAL INCIDENTS RECORDED', (string) $total, '100.0%'], [0.55, 0.22, 0.23], ['left', 'right', 'right'], true, true)
-            ->spacer(10.0)
+        $pdf->tableRow(['TOTAL INCIDENTS RECORDED', (string) $total, '100.0%'], [0.56, 0.22, 0.22], ['left', 'right', 'right'], true, true)
+            ->spacer(8.0)
 
-            // 7. Section 2: Case Disposition & Status Breakdown Table
-            ->subheading('2. CASE DISPOSITION & RESOLUTION BREAKDOWN', 10.0)
-            ->tableHeader(['Case Disposition / Status', 'Case Count', 'Resolution Share'], [0.55, 0.22, 0.23], ['left', 'right', 'right'], 8.5, 18.0);
+            // 6. Section 2: Case Disposition & Status Breakdown Table
+            ->subheading('2. CASE DISPOSITION & RESOLUTION BREAKDOWN', 9.5)
+            ->tableHeader(['Case Disposition / Status', 'Case Count', 'Resolution Share'], [0.56, 0.22, 0.22], ['left', 'right', 'right'], 8.2, 18.0);
 
         foreach ($byStatus as $status => $count) {
             $statusShareStr = $total > 0 ? sprintf('%.1f%%', ($count / $total) * 100) : '0.0%';
-            $pdf->tableRow([self::humanizeEnum($status), (string) $count, $statusShareStr], [0.55, 0.22, 0.23], ['left', 'right', 'right']);
+            $pdf->tableRow([self::humanizeEnum($status), (string) $count, $statusShareStr], [0.56, 0.22, 0.22], ['left', 'right', 'right']);
         }
-        $pdf->tableRow(['TOTAL CASES PROCESSED', (string) $total, '100.0%'], [0.55, 0.22, 0.23], ['left', 'right', 'right'], true, true)
-            ->spacer(10.0)
+        $pdf->tableRow(['TOTAL CASES PROCESSED', (string) $total, '100.0%'], [0.56, 0.22, 0.22], ['left', 'right', 'right'], true, true)
+            ->spacer(8.0)
 
-            // 8. Section 3: Daily Activity Flow Table
-            ->subheading('3. DAILY INCIDENT FLOW', 10.0)
-            ->tableHeader(['Date (YYYY-MM-DD)', 'Day of Week', 'Daily Cases', 'Cumulative Cases'], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right'], 8.5, 18.0);
+            // 7. Section 3: Daily Activity Flow Table
+            ->subheading('3. DAILY INCIDENT FLOW', 9.5)
+            ->tableHeader(['Date (YYYY-MM-DD)', 'Day of Week', 'Daily Cases', 'Cumulative Cases'], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right'], 8.2, 18.0);
 
         $cumCount = 0;
+        $compactZeroRows = count($byDay) > 31 && $total > 0;
+        $omittedZeroDays = 0;
         foreach ($byDay as $date => $count) {
             $cumCount += $count;
+            if ($compactZeroRows && $count === 0) {
+                $omittedZeroDays++;
+                continue;
+            }
             $dayOfWeek = (new \DateTimeImmutable($date))->format('l');
             $pdf->tableRow([$date, $dayOfWeek, (string) $count, (string) $cumCount], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right']);
         }
+        if ($omittedZeroDays > 0) {
+            $pdf->tableRow(["({$omittedZeroDays} zero-incident days omitted)", '-', '0', (string) $cumCount], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right']);
+        }
         $pdf->tableRow(['PERIOD TOTAL', '-', (string) $total, (string) $total], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right'], true, true)
-            ->spacer(12.0)
-
-            // 9. Attestation & Dual Sign-Off Block
-            ->paragraph(
-                'OFFICIAL ATTESTATION: I hereby certify under oath that the statistics, incident counts, and operational performance indicators set forth in this summary report are faithfully compiled from official records logged within the Baranguard Incident Management System for the stated period.',
-                7.8
-            )
             ->spacer(10.0)
-            ->signatureBlock(
-                'PREPARED BY (DESK OFFICER):',
-                $generatorName,
+
+            // 8. Official Attestation Callout Box & Centered Dual Sign-Off
+            ->calloutSection(
+                'OFFICIAL ATTESTATION & DATA PRIVACY COMPLIANCE (RA 10173)',
+                'I hereby certify under oath that the statistics, incident counts, and operational performance indicators set forth in this summary report are faithfully compiled from official records logged within the Baranguard Incident Management System for the stated coverage period. In compliance with Republic Act No. 10173, this report contains aggregate operational metrics only and withholds all personally identifiable information.',
+                8.5
+            )
+            ->spacer(8.0)
+            ->centeredSignatures(
+                strtoupper($generatorName),
                 $generatorRole,
-                'ATTESTED & APPROVED BY:',
-                $pbName,
-                'PUNONG BARANGAY',
-                58.0
+                strtoupper($pbName),
+                'Punong Barangay · Attested & Approved',
+                60.0
             );
 
         return $pdf->render();

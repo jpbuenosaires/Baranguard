@@ -257,35 +257,13 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     const leftCol = document.createElement('div');
     leftCol.className = 'ai-review__briefing-main';
 
-    const iconBadge = document.createElement('div');
-    iconBadge.className = 'ai-review__briefing-icon';
-    iconBadge.setAttribute('aria-hidden', 'true');
-    iconBadge.innerHTML = icons.fileText(24);
-
-    const info = document.createElement('div');
-    info.className = 'ai-review__briefing-info';
-
     const titleRow = document.createElement('div');
     titleRow.className = 'ai-review__briefing-title-row';
 
-    const title = document.createElement('h2');
-    title.className = 'ai-review__briefing-title';
-    title.textContent = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
-
-    const idBadge = document.createElement('span');
-    idBadge.className = 'ai-review__id-badge';
-    idBadge.textContent = incident.displayId || `#INC-${incident.incidentId}`;
-
-    const priorityPill = document.createElement('span');
-    const priority = (incident.priority || 'medium').toLowerCase();
-    priorityPill.className = `status-pill status-pill--${priority === 'critical' ? 'critical' : priority === 'high' ? 'warning' : 'info'}`;
-    priorityPill.textContent = `${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority`;
-
     const statusPill = document.createElement('span');
-    statusPill.className = `status-pill ${incident.redactionApprovedAt ? 'status-pill--success' : 'status-pill--pending'}`;
-    statusPill.textContent = incident.redactionApprovedAt ? 'Redaction Approved' : `Status: ${incident.status}`;
-
-    titleRow.append(title, idBadge, priorityPill, statusPill);
+    statusPill.className = `status-pill ${incident.redactionApprovedAt ? 'status-pill--success' : 'status-pill--info'}`;
+    statusPill.textContent = incident.redactionApprovedAt ? 'Redaction Approved' : 'AI Redaction Pipeline';
+    titleRow.appendChild(statusPill);
 
     if (draft) {
       const draftPill = document.createElement('span');
@@ -304,36 +282,19 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     const metaRow = document.createElement('div');
     metaRow.className = 'ai-review__briefing-meta';
 
-    const timeSpan = document.createElement('span');
-    timeSpan.innerHTML = `${icons.clock(13)} <span>Logged ${new Date(incident.createdAt).toLocaleString()}</span>`;
-
-    const locSpan = document.createElement('span');
-    const locText = incident.locationDescription || (incident.latitude && incident.longitude ? `${incident.latitude}, ${incident.longitude}` : 'No location recorded');
-    locSpan.innerHTML = `${icons.mapPin(13)} <span>${escapeHtml(locText)}</span>`;
-
-    const sourceSpan = document.createElement('span');
-    sourceSpan.innerHTML = `${icons.shield(13)} <span>${escapeHtml(incident.source ? incident.source.toUpperCase() : 'DESK')} Intake</span>`;
-
-    metaRow.append(timeSpan, locSpan, sourceSpan);
-
     if (draft) {
       const modelSpan = document.createElement('span');
-      modelSpan.innerHTML = `${icons.sparkles(13)} <span>Model: <code style="font-family:var(--font-mono);font-size:0.76rem;background:var(--tint-neutral-bg);padding:0.08rem 0.35rem;border-radius:4px;border:1px solid var(--color-border);">${escapeHtml(draft.modelVersion || 'Local Ollama')}</code></span>`;
+      modelSpan.innerHTML = `${icons.sparkles(13)} <span>Model: <code>${escapeHtml(draft.modelVersion || 'Local Ollama')}</code></span>`;
       metaRow.appendChild(modelSpan);
     }
 
-    info.append(titleRow, metaRow);
-    leftCol.append(iconBadge, info);
+    leftCol.append(titleRow, metaRow);
 
-    // Right: Privacy compliance badge
     const privacyBadge = document.createElement('div');
     privacyBadge.className = 'ai-review__privacy-badge';
     privacyBadge.innerHTML = `
-      <div class="ai-review__privacy-icon">${icons.lock(16)}</div>
-      <div class="ai-review__privacy-text">
-        <strong>RA 10173 Compliant</strong>
-        <span>100% Local Ollama • Zero Cloud Egress</span>
-      </div>
+      <span class="ai-review__privacy-icon">${icons.lock(13)}</span>
+      <span>RA 10173 • Local Ollama</span>
     `;
 
     card.append(leftCol, privacyBadge);
@@ -365,7 +326,7 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
         <span class="ai-review__card-icon">${icons.fileText(16)}</span>
         <h3>Original Reported Narrative</h3>
       </div>
-      <span class="status-pill status-pill--critical">Restricted Access • Contains PII</span>
+      <span class="status-pill status-pill--critical">Contains PII</span>
     `;
 
     const rawBlock = document.createElement('pre');
@@ -376,8 +337,8 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     leftFooter.className = 'ai-review__card-footer';
     const charCount = incident.rawNarrative ? incident.rawNarrative.length : 0;
     leftFooter.innerHTML = `
-      <span>Length: ${charCount} characters</span>
-      <span class="ai-review__footer-note">${icons.alertTriangle(12)} Unredacted — personal names and contact details must be sanitized before blotter entry.</span>
+      <span>${charCount} characters</span>
+      <span class="ai-review__footer-note">${icons.alertTriangle(12)} Unredacted — sanitize personal details before blotter entry.</span>
     `;
 
     leftCard.append(leftHeader, rawBlock, leftFooter);
@@ -398,22 +359,18 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
 
     const engineDesc = document.createElement('p');
     engineDesc.className = 'note';
-    engineDesc.textContent = 'Queues an on-premises worker to scrub personal identifiable information (PII) per statutory standards and extract legal blotter entities.';
+    engineDesc.textContent = 'Scrubs personal identifiable information (PII) and extracts complainant/respondent entities on-device.';
 
     const specsList = document.createElement('div');
     specsList.className = 'ai-review__specs-list';
     specsList.innerHTML = `
       <div class="ai-review__spec-item">
-        <span class="ai-review__spec-label">Target Model:</span>
-        <span class="ai-review__spec-val">Llama-SEA-LION-v3.5-8B-R</span>
-      </div>
-      <div class="ai-review__spec-item">
         <span class="ai-review__spec-label">Sanitizes:</span>
-        <span class="ai-review__spec-val">Full Names, Phone Numbers, Exact Addresses</span>
+        <span class="ai-review__spec-val">Names, Phone Numbers, Addresses</span>
       </div>
       <div class="ai-review__spec-item">
         <span class="ai-review__spec-label">Extracts:</span>
-        <span class="ai-review__spec-val">Complainant, Respondent & Contact metadata</span>
+        <span class="ai-review__spec-val">Complainant, Respondent & Contact</span>
       </div>
     `;
 
@@ -434,14 +391,11 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     return container;
   }
 
-
-
   function buildSideBySide() {
     const layout = document.createElement('div');
     layout.className = 'ai-review__studio-grid';
 
-    // Left: the original narrative. Read-only — this is the record of what
-    // was actually reported and must never be editable from this screen.
+    // Left: the original narrative (read-only).
     const rawCard = document.createElement('div');
     rawCard.className = 'card ai-review__studio-card';
 
@@ -452,37 +406,32 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
         <span class="ai-review__card-icon">${icons.fileText(16)}</span>
         <h3>Original Reported Narrative</h3>
       </div>
-      <span class="status-pill status-pill--critical">Restricted Access • Secretary</span>
+      <span class="status-pill status-pill--neutral">Read-only</span>
     `;
 
-    const rawNote = document.createElement('p');
-    rawNote.className = 'note';
-    rawNote.style.margin = '0 0 var(--spacing-xs) 0';
-    rawNote.textContent = 'Read-only original record from intake. Redacted spans are highlighted below.';
+    const summaryLine = document.createElement('p');
+    summaryLine.className = 'note redaction-summary';
+    if (incident.rawNarrative && draft.draftRedactedNarrative) {
+      const placeholders = draft.draftRedactedNarrative.match(/\[[A-Z_]+\]/g) ?? [];
+      const byKind = placeholders.reduce((acc, p) => { acc[p] = (acc[p] ?? 0) + 1; return acc; }, {});
+      const parts = Object.entries(byKind).map(([kind, n]) => `${n} ${kind.slice(1, -1).toLowerCase().replace('_', ' ')}`);
+      summaryLine.textContent = placeholders.length === 0
+        ? 'No redaction placeholders found — verify no personal identifiers were missed.'
+        : `${placeholders.length} identifier${placeholders.length === 1 ? '' : 's'} removed (${parts.join(', ')}), highlighted below.`;
+    } else {
+      summaryLine.textContent = 'Awaiting draft completion to compute identifier diff.';
+    }
 
     const rawText = document.createElement('pre');
     rawText.className = 'narrative-block';
-    rawText.style.minHeight = '14rem';
+    rawText.style.minHeight = '10.5rem';
     if (incident.rawNarrative && draft.draftRedactedNarrative) {
       rawText.appendChild(renderRedactionDiff(incident.rawNarrative, draft.draftRedactedNarrative));
     } else {
       rawText.textContent = incident.rawNarrative ?? '(not available)';
     }
 
-    const summaryLine = document.createElement('p');
-    summaryLine.className = 'note redaction-summary';
-    summaryLine.style.marginTop = 'var(--spacing-xs)';
-    if (incident.rawNarrative && draft.draftRedactedNarrative) {
-      const placeholders = draft.draftRedactedNarrative.match(/\[[A-Z_]+\]/g) ?? [];
-      const byKind = placeholders.reduce((acc, p) => { acc[p] = (acc[p] ?? 0) + 1; return acc; }, {});
-      const parts = Object.entries(byKind).map(([kind, n]) => `${n} ${kind.slice(1, -1).toLowerCase().replace('_', ' ')}`);
-      summaryLine.textContent = placeholders.length === 0
-        ? 'The draft contains no redaction placeholders — check that nothing identifying was missed.'
-        : `${placeholders.length} identifier${placeholders.length === 1 ? '' : 's'} removed: ${parts.join(', ')}. Highlighted below.`;
-    } else {
-      summaryLine.textContent = 'Awaiting draft completion to compute identifier diff.';
-    }
-    rawCard.append(rawHeader, rawNote, rawText, summaryLine);
+    rawCard.append(rawHeader, summaryLine, rawText);
 
     // Right: the editable draft.
     const draftCard = document.createElement('div');
@@ -504,8 +453,8 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     draftNote.className = 'note';
     draftNote.style.margin = '0 0 var(--spacing-xs) 0';
     draftNote.textContent = isPending
-      ? 'The AI worker is actively scrubbing PII and sensitive identifiers...'
-      : 'Review and edit if needed. Any edits will require summary regeneration before approval.';
+      ? 'Scrubbing PII and sensitive identifiers…'
+      : 'Edit if needed. Edits require regenerating the summary before approval.';
 
     draftCard.append(draftHeader, draftNote);
 
@@ -516,7 +465,7 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
         <div style="display:flex;align-items:center;gap:var(--spacing-sm);width:100%;">
           <span class="is-spinning">${icons.repeat(16)}</span>
           <span>
-            <strong>AI Redaction in Progress:</strong> Local Ollama engine is processing incident narrative...
+            <strong>AI Redaction in Progress:</strong> Processing incident narrative…
             <span class="ai-review__processing-elapsed" aria-live="polite"></span>
           </span>
         </div>
@@ -532,12 +481,12 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     const textarea = document.createElement('textarea');
     textarea.id = 'ai-draft-narrative';
     textarea.setAttribute('aria-label', 'Redacted narrative draft');
-    textarea.rows = 12;
+    textarea.rows = 9;
     textarea.classList.add('textarea--resizable');
     textarea.placeholder = isPending ? 'Draft is currently generating in background worker…' : 'Enter redacted narrative…';
     textarea.value = draft.draftRedactedNarrative ?? '';
     textarea.disabled = isPending;
-    textarea.style.minHeight = '14rem';
+    textarea.style.minHeight = '10.5rem';
     textarea.addEventListener('input', () => {
       edited = textarea.value !== (draft.draftRedactedNarrative ?? '');
       syncActionState();
@@ -580,13 +529,12 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     summaryNote.className = 'note';
     summaryNote.style.margin = '0 0 var(--spacing-xs) 0';
     summaryNote.textContent = (draft.draftSummaryStale || edited)
-      ? 'The draft changed after this summary was written. Refresh it so the summary matches the text you are approving.'
-      : 'A short factual summary written from the draft. It becomes the starting text when you finalize the blotter entry — you can still edit it there.';
+      ? 'Draft changed — regenerate this summary so it matches the text you are approving.'
+      : 'Pre-fills the blotter summary when you finalize the entry.';
     summaryCard.appendChild(summaryNote);
 
     const summaryText = document.createElement('pre');
-    summaryText.className = 'narrative-block';
-    summaryText.style.minHeight = '9rem';
+    summaryText.className = 'narrative-block ai-review__summary-block';
     summaryText.textContent = isPending
       ? 'Summary will generate once the redaction draft completes…'
       : (draft.draftSummary ?? '(not generated yet)');
@@ -599,7 +547,7 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
       regenBtn.type = 'button';
       regenBtn.className = 'ghost';
       regenBtn.style.fontSize = 'var(--font-size-xs)';
-      regenBtn.innerHTML = `${icons.repeat(14)} <span>Regenerate summary from the edited draft</span>`;
+      regenBtn.innerHTML = `${icons.repeat(14)} <span>Regenerate summary from draft</span>`;
       regenBtn.disabled = isPending;
       regenBtn.addEventListener('click', () => runRegenerate(regenBtn));
       inlineRegen.appendChild(regenBtn);
@@ -615,13 +563,6 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     return layout;
   }
 
-  /**
-   * Complainant/Respondent/Contact — Electronic Blotter follow-up.
-   * Independent of the redaction draft next to it (own endpoint, own
-   * draft_version, own Save action) — same relationship translation
-   * already has to redaction on this same screen. All three fields are
-   * optional; a blank input saves as null, meaning "cleared"/"none".
-   */
   function buildExtractionSection() {
     const wrap = document.createElement('div');
     wrap.className = 'form-stack';
@@ -634,39 +575,22 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
         <h3>Involved Parties (KP Law)</h3>
       </div>
     `;
-    wrap.appendChild(header);
 
     if (!extractionDraft) {
+      wrap.appendChild(header);
       const note = document.createElement('p');
       note.className = 'note';
-      note.textContent = 'No extraction draft yet — it queues alongside redaction and appears here once the worker finishes.';
+      note.textContent = 'Queues alongside redaction and appears here once the worker finishes.';
       wrap.appendChild(note);
       return wrap;
     }
 
-    // Once ANY field has been approved at least once, prefer the
-    // approved values on `incident` over the raw draft — otherwise a
-    // Secretary who edits and saves sees their own edit "revert" to the
-    // AI's original suggestion on the next load, which looks like the
-    // save silently failed even though it didn't (the draft row itself
-    // is never rewritten by approve — only `incident` is).
     const hasApproved = incident.complainantName != null || incident.respondentName != null || incident.complainantContactNumber != null;
-    const note = document.createElement('p');
-    note.className = 'note';
-    note.style.margin = '0 0 var(--spacing-xs) 0';
-    note.textContent = hasApproved
-      ? 'Showing the last saved values. Edit and save again to change them.'
-      : 'AI-drafted from the original narrative. Review and edit before saving — leave a field blank if it does not apply.';
-    wrap.appendChild(note);
-
     const pending = extractionDraft.status === 'queued' || extractionDraft.status === 'processing';
 
     const baseComplainant = (hasApproved ? incident.complainantName : extractionDraft.draftComplainantName) ?? '';
     const baseRespondent = (hasApproved ? incident.respondentName : extractionDraft.draftRespondentName) ?? '';
     const baseContact = (hasApproved ? incident.complainantContactNumber : extractionDraft.draftComplainantContactNumber) ?? '';
-
-    const grid = document.createElement('div');
-    grid.className = 'ai-review__extraction-grid';
 
     // Complainant
     const compWrap = document.createElement('div');
@@ -696,11 +620,8 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     contactInput.disabled = pending;
     contactWrap.append(contactLabel, contactInput);
 
-    grid.append(compWrap, contactWrap);
-
-    // Respondent (full width)
+    // Respondent
     const respWrap = document.createElement('div');
-    respWrap.style.marginTop = 'var(--spacing-sm)';
     const respondentLabel = document.createElement('label');
     respondentLabel.className = 'label';
     respondentLabel.htmlFor = 'ai-extract-respondent';
@@ -731,8 +652,9 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.className = 'ghost';
-    saveButton.style.marginTop = 'var(--spacing-sm)';
-    saveButton.textContent = pending ? 'Extraction still running…' : 'Save Parties';
+    saveButton.style.fontSize = 'var(--font-size-xs)';
+    saveButton.style.padding = '0.28rem 0.65rem';
+    saveButton.textContent = pending ? 'Extracting…' : 'Save Parties';
     saveButton.disabled = pending;
     saveButton.addEventListener('click', () => {
       extractionEdited = false;
@@ -743,7 +665,22 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
       });
     });
 
-    wrap.append(grid, respWrap, saveButton);
+    header.appendChild(saveButton);
+    wrap.appendChild(header);
+
+    const note = document.createElement('p');
+    note.className = 'note';
+    note.style.margin = '0 0 var(--spacing-xs) 0';
+    note.textContent = hasApproved
+      ? 'Saved party names. Edit and save to update.'
+      : 'AI-drafted from narrative. Leave blank if not applicable.';
+    wrap.appendChild(note);
+
+    const grid = document.createElement('div');
+    grid.className = 'ai-review__extraction-grid';
+    grid.append(compWrap, contactWrap, respWrap);
+
+    wrap.appendChild(grid);
     return wrap;
   }
 
@@ -757,29 +694,29 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
     const leftGroup = document.createElement('div');
     leftGroup.className = 'ai-review__action-dock-left';
 
-    const rerunButton = document.createElement('button');
-    rerunButton.className = 'ghost';
-    rerunButton.innerHTML = `${icons.repeat(14)} Re-run redaction`;
-    rerunButton.addEventListener('click', () => runRedaction(rerunButton));
+    const approveButton = document.createElement('button');
+    approveButton.className = 'primary';
+    approveButton.innerHTML = `${icons.check(14)} Approve redaction`;
+    approveButton.addEventListener('click', () => runApprove(approveButton));
 
     const regenButton = document.createElement('button');
     regenButton.className = 'ghost';
     regenButton.innerHTML = `${icons.sparkles(14)} Regenerate summary`;
     regenButton.addEventListener('click', () => runRegenerate(regenButton));
 
-    const approveButton = document.createElement('button');
-    approveButton.className = 'primary';
-    approveButton.innerHTML = `${icons.check(14)} Approve redaction`;
-    approveButton.addEventListener('click', () => runApprove(approveButton));
+    const rerunButton = document.createElement('button');
+    rerunButton.className = 'ghost';
+    rerunButton.innerHTML = `${icons.repeat(14)} Re-run redaction`;
+    rerunButton.addEventListener('click', () => runRedaction(rerunButton));
 
-    leftGroup.append(rerunButton, regenButton, approveButton);
+    leftGroup.append(approveButton, regenButton, rerunButton);
 
     const reason = document.createElement('span');
     reason.className = 'ai-review__action-reason';
     reason.id = 'ai-approve-reason';
     leftGroup.appendChild(reason);
 
-    // Right group: Post-approval tools
+    // Right group: Post-approval utilities
     const rightGroup = document.createElement('div');
     rightGroup.className = 'ai-review__action-dock-right';
 
@@ -788,14 +725,9 @@ export function renderRedactionTab(body, user, incidentId, { switchTab, refreshW
 
     const postLabel = document.createElement('span');
     postLabel.className = 'ai-review__dock-sublabel';
-    postLabel.textContent = isApproved ? 'After approval:' : 'After approval (locked):';
+    postLabel.textContent = isApproved ? 'Utilities:' : 'Locked until approved:';
     rightGroup.appendChild(postLabel);
 
-    // The Lupon packet control itself moved to the Blotter tab (2026-09-27
-    // tab merge, DEVLOG (38)) — it only ever worked once the entry was
-    // finalized there anyway, and duplicating it here just meant two
-    // copies to keep in sync. This is a shortcut to that tab, not a
-    // second copy of the control.
     const packetButton = document.createElement('button');
     packetButton.type = 'button';
     packetButton.className = 'ghost';

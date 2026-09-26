@@ -26,7 +26,7 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getReportsSummary, exportReport, downloadReportExport, getBlotterList, getCitizenReports, ApiClientError } from '../api/apiClient.js';
+import { getReportsSummary, exportReport, downloadReportExport, getBlotterList, getCitizenReports, getBarangays, ApiClientError } from '../api/apiClient.js';
 import { showToast } from '../components/Toast.js';
 import { KpiCard, KpiHeroCard } from '../components/KpiCard.js';
 import { LineChart } from '../components/LineChart.js';
@@ -35,6 +35,7 @@ import { DonutChart } from '../components/DonutChart.js';
 import { InfoTip } from '../components/Tooltip.js';
 import { icons } from '../components/icons.js';
 import { DateRangePicker, manilaTodayIso } from '../components/DateRangePicker.js';
+import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
 // 12-hour clock labels for the by-hour bar chart's 24 buckets.
@@ -100,7 +101,8 @@ function cardHeader(title, subtitle, icon, description, viewAll, chip) {
   h.append(title);
   if (chip) {
     const chipEl = document.createElement('span');
-    chipEl.className = `card-header__chip ${chip.tone ? `card-header__chip--${chip.tone}` : ''}`;
+    chipEl.className = 'card-header__chip';
+    if (chip.tone) chipEl.classList.add('card-header__chip--' + chip.tone);
     chipEl.textContent = chip.text;
     h.appendChild(chipEl);
   }
@@ -145,7 +147,7 @@ function cardHeader(title, subtitle, icon, description, viewAll, chip) {
  *
  * @param {HTMLElement} container tab body to render into
  * @param {ReturnType<import('../components/PageHeader.js').PageHeader>} pageHeader shared page header (for the Export CSV action)
- * @param {{fullName:string, role:string}} user
+ * @param {{fullName:string, role:string, barangayId?:number}} user
  */
 /** "2026-09-04" -> "Sep 4", for chart tick labels. */
 function shortDate(iso) {
@@ -155,7 +157,249 @@ function shortDate(iso) {
   return `${months[Number(m) - 1]} ${Number(d)}`;
 }
 
+/**
+ * Opens an A4 Printable Statistical Report Preview modal that mirrors
+ * the server-generated Statistical Report PDF 1-for-1.
+ */
+function openStatisticalReportPrintModal(summary, range, user, barangayInfo, triggerExport) {
+  const total = summary.totalIncidents || 0;
+  const resolvedCount = summary.resolvedCount || 0;
+  const resolutionRate = total > 0 ? ((resolvedCount / total) * 100).toFixed(1) : '0.0';
+  const avgResp = summary.avgResponseTimeMinutes !== null && summary.avgResponseTimeMinutes !== undefined
+    ? `${summary.avgResponseTimeMinutes} min`
+    : 'N/A';
+
+  const busiestDay = summary.trend && summary.trend.length > 0
+    ? summary.trend.reduce((best, day) => (day.count > best.count ? day : best), summary.trend[0])
+    : { date: range.to || manilaTodayIso(), count: 0 };
+
+  const topType = Object.entries(summary.byIncidentType || {}).reduce(
+    (best, [key, count]) => (count > best.count ? { key, count } : best),
+    { key: null, count: 0 }
+  );
+  const topTypeLabel = topType.key ? (INCIDENT_TYPE_LABELS[topType.key] || topType.key) : 'None';
+  const topTypeShare = total > 0 ? ((topType.count / total) * 100).toFixed(1) : '0.0';
+
+  let peakHour = { hour: 0, count: 0 };
+  (summary.byHour || []).forEach((count, hour) => {
+    if (count > peakHour.count) peakHour = { hour, count };
+  });
+  const peakHourStr = peakHour.count > 0
+    ? `${formatHourRange(peakHour.hour)} (${peakHour.count} ${peakHour.count === 1 ? 'incident' : 'incidents'})`
+    : 'No incidents recorded';
+
+  const activeLoad = (summary.byStatus?.pending || 0) + (summary.byStatus?.dispatched || 0);
+  const nowStr = new Date().toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  const generatorName = user?.fullName || 'Barangay Desk Officer';
+  const generatorRole = user?.role === 'punong_barangay'
+    ? 'Punong Barangay'
+    : 'Barangay Administrator / Desk Officer';
+  const refCode = `BRGY-${user?.barangayId || 1}-RPT`;
+
+  const sublineHtml = barangayInfo
+    ? `<p class="print-sheet__subline">Province of ${escapeHtml(barangayInfo.province)} · Municipality of ${escapeHtml(barangayInfo.municipality)}</p>`
+    : '';
+  const officeHeading = barangayInfo
+    ? `BARANGAY ${escapeHtml(barangayInfo.name.toUpperCase())} — PEACEKEEPING &amp; OPERATIONS DESK`
+    : 'BARANGAY PEACEKEEPING &amp; OPERATIONS DESK';
+
+  const typeRowsHtml = Object.entries(summary.byIncidentType || {}).map(([typeKey, count]) => {
+    const share = total > 0 ? ((count / total) * 100).toFixed(1) + '%' : '0.0%';
+    const label = INCIDENT_TYPE_LABELS[typeKey] || typeKey;
+    return `
+      <tr>
+        <td>${escapeHtml(label)}</td>
+        <td class="print-sheet__table-num">${escapeHtml(String(count))}</td>
+        <td class="print-sheet__table-num">${escapeHtml(share)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const statusRowsHtml = Object.entries(summary.byStatus || {}).map(([statusKey, count]) => {
+    const share = total > 0 ? ((count / total) * 100).toFixed(1) + '%' : '0.0%';
+    const label = STATUS_LABELS[statusKey] || statusKey;
+    return `
+      <tr>
+        <td>${escapeHtml(label)}</td>
+        <td class="print-sheet__table-num">${escapeHtml(String(count))}</td>
+        <td class="print-sheet__table-num">${escapeHtml(share)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const sheetHtml = `
+    <div class="print-sheet__masthead">
+      <p class="print-sheet__republic">Republic of the Philippines</p>
+      ${sublineHtml}
+      <h2 class="print-sheet__office">${officeHeading}</h2>
+      <p class="print-sheet__doctype">BARANGAY INCIDENT &amp; PEACEKEEPING STATISTICAL REPORT</p>
+    </div>
+
+    <div class="print-sheet__meta-bar">
+      <div class="print-sheet__meta-cell">
+        <span class="print-sheet__label">Report Reference</span>
+        <strong class="print-sheet__mono">${escapeHtml(refCode)}</strong>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <span class="print-sheet__label">Coverage Period</span>
+        <strong>${escapeHtml(range.from)} to ${escapeHtml(range.to)}</strong>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <span class="print-sheet__label">Prepared By</span>
+        <strong>${escapeHtml(generatorName)}</strong>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <span class="print-sheet__label">Date Generated</span>
+        <strong>${escapeHtml(nowStr)}</strong>
+      </div>
+    </div>
+
+    <div class="print-sheet__kpi-grid">
+      <div class="print-sheet__kpi-card">
+        <span class="print-sheet__label">Total Incidents</span>
+        <p class="print-sheet__kpi-val">${escapeHtml(String(total))}</p>
+        <p class="print-sheet__kpi-sub">Logged during coverage</p>
+      </div>
+      <div class="print-sheet__kpi-card">
+        <span class="print-sheet__label">Resolution Rate</span>
+        <p class="print-sheet__kpi-val">${escapeHtml(resolutionRate)}%</p>
+        <p class="print-sheet__kpi-sub">${escapeHtml(String(resolvedCount))} of ${escapeHtml(String(total))} resolved</p>
+      </div>
+      <div class="print-sheet__kpi-card">
+        <span class="print-sheet__label">Avg Response Time</span>
+        <p class="print-sheet__kpi-val">${escapeHtml(avgResp)}</p>
+        <p class="print-sheet__kpi-sub">Dispatch to arrival</p>
+      </div>
+      <div class="print-sheet__kpi-card">
+        <span class="print-sheet__label">Tanod Force</span>
+        <p class="print-sheet__kpi-val">${escapeHtml(String(summary.activeTanods ?? 0))}</p>
+        <p class="print-sheet__kpi-sub">Active peacekeeping unit</p>
+      </div>
+    </div>
+
+    <div class="print-sheet__grid-2col">
+      <div class="print-sheet__field-box">
+        <span class="print-sheet__label">Leading Incident Category</span>
+        <p class="print-sheet__field-val">${escapeHtml(topTypeLabel)} (${escapeHtml(String(topType.count))} cases, ${escapeHtml(topTypeShare)}% of total)</p>
+      </div>
+      <div class="print-sheet__field-box">
+        <span class="print-sheet__label">Peak Reporting Hours</span>
+        <p class="print-sheet__field-val">${escapeHtml(peakHourStr)}</p>
+      </div>
+    </div>
+
+    <div class="print-sheet__grid-2col">
+      <div class="print-sheet__field-box">
+        <span class="print-sheet__label">Highest Activity Date</span>
+        <p class="print-sheet__field-val">${busiestDay.count > 0 ? `${escapeHtml(busiestDay.date)} (${escapeHtml(String(busiestDay.count))} cases logged)` : 'Evenly distributed / No incidents'}</p>
+      </div>
+      <div class="print-sheet__field-box">
+        <span class="print-sheet__label">Active Caseload Requiring Action</span>
+        <p class="print-sheet__field-val">${escapeHtml(String(activeLoad))} ongoing cases (Pending / Dispatched)</p>
+      </div>
+    </div>
+
+    <div class="print-sheet__section">
+      <span class="print-sheet__label">1. Classification of Reported Incidents</span>
+      <table class="print-sheet__table">
+        <thead>
+          <tr>
+            <th>Incident Classification / Type</th>
+            <th class="print-sheet__table-num">Recorded Cases</th>
+            <th class="print-sheet__table-num">Percentage Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${typeRowsHtml}
+          <tr class="print-sheet__table-total">
+            <td>TOTAL INCIDENTS RECORDED</td>
+            <td class="print-sheet__table-num">${escapeHtml(String(total))}</td>
+            <td class="print-sheet__table-num">100.0%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="print-sheet__section">
+      <span class="print-sheet__label">2. Case Disposition &amp; Resolution Breakdown</span>
+      <table class="print-sheet__table">
+        <thead>
+          <tr>
+            <th>Case Disposition / Status</th>
+            <th class="print-sheet__table-num">Case Count</th>
+            <th class="print-sheet__table-num">Resolution Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${statusRowsHtml}
+          <tr class="print-sheet__table-total">
+            <td>TOTAL CASES PROCESSED</td>
+            <td class="print-sheet__table-num">${escapeHtml(String(total))}</td>
+            <td class="print-sheet__table-num">100.0%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="print-sheet__section">
+      <span class="print-sheet__label">Official Attestation &amp; Data Privacy Compliance (RA 10173)</span>
+      <div class="print-sheet__narrative">I hereby certify under oath that the statistics, incident counts, and operational performance indicators set forth in this summary report are faithfully compiled from official records logged within the Baranguard Incident Management System for the stated coverage period. In compliance with Republic Act No. 10173, this report contains aggregate operational metrics only and withholds all personally identifiable information.</div>
+    </div>
+
+    <div class="print-sheet__signatures">
+      <div class="print-sheet__sig-col">
+        <div class="print-sheet__sig-line"></div>
+        <p class="print-sheet__sig-name">${escapeHtml(generatorName.toUpperCase())}</p>
+        <p class="print-sheet__sig-role">${escapeHtml(generatorRole)}</p>
+      </div>
+      <div class="print-sheet__sig-col">
+        <div class="print-sheet__sig-line"></div>
+        <p class="print-sheet__sig-name">HON. PUNONG BARANGAY</p>
+        <p class="print-sheet__sig-role">Punong Barangay · Attested &amp; Approved</p>
+      </div>
+    </div>
+
+    <p class="print-sheet__footer">
+      Official Statistical Summary Excerpt (${escapeHtml(range.from)} to ${escapeHtml(range.to)}) · Generated ${escapeHtml(nowStr)} from the Baranguard Operations Console.
+    </p>
+  `;
+
+  openPrintPreviewModal({
+    title: 'Printable Statistical & Operations Report',
+    subtitle: `Formatted A4 summary (${range.from} to ${range.to}) • Aggregate RA 10173-compliant dataset`,
+    sheetId: 'printable-report-sheet',
+    sheetHtml,
+    extraActions: [
+      {
+        label: 'Export CSV',
+        icon: icons.download(16),
+        className: 'ghost',
+        onClick: (btn) => triggerExport('csv', btn, 'Export CSV', icons.download(16)),
+      },
+      {
+        label: 'Download Official PDF',
+        icon: icons.fileText(16),
+        className: 'ghost',
+        onClick: (btn) => triggerExport('pdf', btn, 'Download Official PDF', icons.fileText(16)),
+      },
+    ],
+  });
+}
+
 export function renderReportsTab(container, pageHeader, user, navigate) {
+  let latestSummary = null;
+  let barangayInfo = null;
+
+  if (user?.barangayId) {
+    getBarangays().then((rows) => {
+      barangayInfo = rows.find((b) => b.barangayId === user.barangayId) || null;
+    }).catch(() => {
+      // Best-effort header enrichment for the printable sheet
+    });
+  }
+
   // 2026-09-06 UI/UX audit: was a copy of the Admin Dashboard's ~120-line
   // picker (one of five that had drifted apart). Now the shared component.
   // Unlike the dashboard this screen has no "server default range" to
@@ -167,41 +411,57 @@ export function renderReportsTab(container, pageHeader, user, navigate) {
     onChange: ({ from, to }) => load(from, to),
   });
 
+  async function triggerExport(format, button, label, iconSvg) {
+    const idleHtml = `<span aria-hidden="true">${iconSvg}</span><span>${escapeHtml(label)}</span>`;
+    button.disabled = true;
+    button.innerHTML = `<span class="is-spinning" aria-hidden="true">${icons.repeat(14)}</span><span>Exporting…</span>`;
+    try {
+      const range = rangePicker.getState();
+      await exportReport({ dateFrom: range.from, dateTo: range.to, format });
+      const blob = await downloadReportExport({ format });
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `baranguard-report-${range.from}-to-${range.to}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+      showToast('Export generated. This action was recorded in the audit log.', { variant: 'success' });
+    } catch (err) {
+      showToast(err instanceof ApiClientError ? err.message : 'Could not generate the export.', { variant: 'error' });
+    } finally {
+      button.disabled = false;
+      button.innerHTML = idleHtml;
+    }
+  }
+
   function buildExportButton(format, label, iconSvg) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'ghost';
-    const idleHtml = `<span aria-hidden="true">${iconSvg}</span><span>${label}</span>`;
-    button.innerHTML = idleHtml;
-    button.addEventListener('click', async () => {
-      button.disabled = true;
-      button.innerHTML = `<span class="is-spinning" aria-hidden="true">${icons.repeat(14)}</span><span>Exporting…</span>`;
-      try {
-        const range = rangePicker.getState();
-        await exportReport({ dateFrom: range.from, dateTo: range.to, format });
-        const blob = await downloadReportExport({ format });
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = `baranguard-report.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(blobUrl);
-        showToast('Export generated. This action was recorded in the audit log.', { variant: 'success' });
-      } catch (err) {
-        showToast(err instanceof ApiClientError ? err.message : 'Could not generate the export.', { variant: 'error' });
-      } finally {
-        button.disabled = false;
-        button.innerHTML = idleHtml;
-      }
-    });
+    button.innerHTML = `<span aria-hidden="true">${iconSvg}</span><span>${escapeHtml(label)}</span>`;
+    button.addEventListener('click', () => triggerExport(format, button, label, iconSvg));
     return button;
   }
+
+  const previewPrintButton = document.createElement('button');
+  previewPrintButton.type = 'button';
+  previewPrintButton.className = 'ghost';
+  previewPrintButton.id = 'preview-report-print-btn';
+  previewPrintButton.innerHTML = `<span aria-hidden="true">${icons.printer(16)}</span><span>Preview &amp; Print</span>`;
+  previewPrintButton.addEventListener('click', () => {
+    if (!latestSummary) {
+      showToast('Report data is still loading. Please wait a moment.', { variant: 'info' });
+      return;
+    }
+    openStatisticalReportPrintModal(latestSummary, rangePicker.getState(), user, barangayInfo, triggerExport);
+  });
 
   const exportGroup = document.createElement('div');
   exportGroup.className = 'export-btn-group';
   exportGroup.append(
+    previewPrintButton,
     buildExportButton('csv', 'Export CSV', icons.download(16)),
     buildExportButton('pdf', 'Export PDF', icons.fileText(16))
   );
@@ -224,6 +484,7 @@ export function renderReportsTab(container, pageHeader, user, navigate) {
     }
     try {
       const summary = await getReportsSummary({ dateFrom, dateTo });
+      latestSummary = summary;
       renderReport(body, summary, user.role, navigate);
       loadCaseStatusBreakdown(body);
       if (user.role === 'admin') loadCitizenReportsConversion(body, navigate);

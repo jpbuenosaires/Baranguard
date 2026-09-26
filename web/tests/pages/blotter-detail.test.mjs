@@ -214,5 +214,47 @@ describe('Incident detail behaviour', () => {
     assert.ok(incidentBadge, 'originating incident reference badge missing');
     assert.match(text(incidentBadge), /Ref: (INC-2026-903|#903)/);
   });
+
+  test('Lupon Conciliation Packet card and Printable Excerpt sheet render clean, PII-safe records', async () => {
+    const ctx = mountPage(renderBlotterDetailPage, { role: 'secretary', param: 903 });
+    await settle();
+    await openTab('Blotter')(ctx);
+    await settle();
+
+    const packetCard = $('#blotter-packet', ctx.root);
+    assert.ok(packetCard, 'Lupon Conciliation Packet card should render for finalized blotter');
+    assert.equal($$('.lupon-packet-tile', packetCard).length, 4, 'expected 4 manifest tiles in Lupon packet card');
+    assert.match(text(packetCard), /BLT-2026-051/);
+    assert.match(text(packetCard), /SHA-256 Verified/);
+
+    const previewBtn = buttonByText(/preview printable excerpt/i, packetCard);
+    assert.ok(previewBtn, 'expected Preview printable excerpt button');
+    click(previewBtn);
+    await settle();
+
+    const sheet = $('#printable-blotter-sheet');
+    assert.ok(sheet, 'expected printable blotter sheet modal to open');
+    assert.ok(document.body.classList.contains('has-print-modal'), 'expected body.has-print-modal while print modal is open');
+    assert.match(text(sheet), /OFFICE OF THE LUPONG TAGAPAMAYAPA/);
+    assert.match(text(sheet), /BLT-2026-051/);
+    assert.doesNotMatch(text(sheet), /RAW-NARRATIVE/, 'printable sheet must never leak unredacted narrative');
+    assert.doesNotMatch(text(sheet), /Municipality of Pilar/, 'printable sheet must never hardcode a fake municipality');
+
+    let printCalled = 0;
+    const origPrint = window.print;
+    window.print = () => { printCalled += 1; };
+    try {
+      const doPrintBtn = $('#do-print-btn');
+      assert.ok(doPrintBtn, 'expected Print working copy button (#do-print-btn)');
+      click(doPrintBtn);
+      assert.equal(printCalled, 1, 'expected clicking Print working copy to invoke window.print()');
+    } finally {
+      window.print = origPrint;
+    }
+
+    const closeBtn = $('#close-print-modal');
+    if (closeBtn) click(closeBtn);
+    assert.equal(document.body.classList.contains('has-print-modal'), false, 'expected body.has-print-modal to be removed on close');
+  });
 });
 

@@ -27,6 +27,7 @@
 import { generateLuponPacket, downloadLuponPacket, ApiClientError } from '../api/apiClient.js';
 import { icons } from './icons.js';
 import { showToast } from './Toast.js';
+import { TERMINAL_INCIDENT_STATUSES } from '../utils/blotterStatus.js';
 
 const STATUS_TEXT = {
   done: 'Completed',
@@ -39,119 +40,238 @@ const STATUS_TEXT = {
   blocked: 'Cannot start yet',
 };
 
+const INCIDENT_STATUS_TAG = {
+  pending: 'Pending',
+  dispatched: 'Dispatched',
+  resolved: 'Resolved',
+  cancelled: 'Cancelled',
+  invalid: 'Invalid',
+  duplicate: 'Duplicate',
+  reopened: 'Reopened',
+};
+
 /**
  * @param {{incident: object, draft?: object|null, blotter?: object|null, edited?: boolean}} input
- * @returns {{stages: Array<{key:string,title:string,screen:string,anchor:string,status:string}>, next: {message:string, actionLabel:string|null, stageKey:string|null}}}
+ * @returns {{closed?: boolean, stages: Array<{key:string,tab:string,title:string,anchor:string|null,status:string,tag:string,secretaryOnly?:boolean}>, next: {message:string, actionLabel:string|null, stageKey:string|null, tab:string|null, anchor:string|null}}}
  */
 export function getBlotterWorkflowState({ incident, draft = null, blotter = null, edited = false }) {
   const approved = Boolean(incident?.redactionApprovedAt);
   const finalized = Boolean(blotter?.finalizedAt);
+  const isClosedWithoutBlotter = !finalized && TERMINAL_INCIDENT_STATUSES.includes(incident?.status);
+
+  const incidentTag = INCIDENT_STATUS_TAG[incident?.status] || 'Logged';
+
   const draftStatus = draft?.status ?? null;
   const draftPending = draftStatus === 'queued' || draftStatus === 'processing';
   const draftDone = draftStatus === 'completed';
   const summaryOutOfDate = Boolean(draft?.draftSummaryStale) || edited;
 
-  let redact;
-  if (approved || draftDone) redact = 'done';
-  else if (draftPending) redact = 'running';
-  else if (draftStatus === 'failed') redact = 'failed';
-  else redact = 'todo';
+  let redactionStatus;
+  let redactionTag;
+  let redactionAnchor = 'ai-review-actions';
+  if (approved) {
+    redactionStatus = 'done';
+    redactionTag = 'Approved';
+  } else if (draftPending) {
+    redactionStatus = 'running';
+    redactionTag = 'In progress';
+    redactionAnchor = 'ai-review-start';
+  } else if (draftStatus === 'failed') {
+    redactionStatus = 'failed';
+    redactionTag = 'Failed';
+    redactionAnchor = 'ai-review-start';
+  } else if (draftDone && summaryOutOfDate) {
+    redactionStatus = 'attention';
+    redactionTag = 'Summary out of date';
+  } else if (draftDone) {
+    redactionStatus = 'ready';
+    redactionTag = 'Ready to review';
+  } else {
+    redactionStatus = 'todo';
+    redactionTag = 'Not started';
+    redactionAnchor = 'ai-review-start';
+  }
 
-  let approve;
-  if (approved) approve = 'done';
-  else if (draftDone && summaryOutOfDate) approve = 'attention';
-  else if (draftDone) approve = 'ready';
-  else approve = 'blocked';
-
-  const finalize = finalized ? 'done' : approved ? 'ready' : 'blocked';
-  const packet = finalized ? 'available' : 'blocked';
+  let blotterStatus;
+  let blotterTag;
+  let blotterAnchor = 'blotter-finalize';
+  if (finalized) {
+    blotterStatus = 'done';
+    blotterTag = 'Finalized';
+    blotterAnchor = 'blotter-packet';
+  } else if (isClosedWithoutBlotter) {
+    blotterStatus = 'blocked';
+    blotterTag = 'No blotter needed';
+  } else if (approved) {
+    blotterStatus = 'ready';
+    blotterTag = 'Ready to finalize';
+  } else {
+    blotterStatus = 'blocked';
+    blotterTag = STATUS_TEXT.blocked;
+  }
 
   const stages = [
-    { key: 'redact', title: 'Remove personal details', tab: 'redaction', anchor: 'ai-review-start', status: redact },
-    { key: 'approve', title: 'Check & approve redaction', tab: 'redaction', anchor: 'ai-review-actions', status: approve },
-    { key: 'finalize', title: 'Finalize blotter entry', tab: 'blotter', anchor: 'blotter-finalize', status: finalize },
-    { key: 'packet', title: 'Lupon packet (if referred)', tab: 'blotter', anchor: 'blotter-packet', status: packet },
+    { key: 'incident', tab: 'incident', title: 'Incident', anchor: null, status: 'done', tag: incidentTag },
+    { key: 'redaction', tab: 'redaction', title: 'Redaction', anchor: redactionAnchor, status: redactionStatus, tag: redactionTag, secretaryOnly: true },
+    { key: 'blotter', tab: 'blotter', title: 'Blotter', anchor: blotterAnchor, status: blotterStatus, tag: blotterTag },
   ];
 
+  if (isClosedWithoutBlotter) {
+    return {
+      closed: true,
+      stages,
+      next: {
+        stageKey: null,
+        tab: null,
+        anchor: null,
+        actionLabel: null,
+        message: 'This incident was closed without becoming a blotter entry. No further blotter action is needed.',
+      },
+    };
+  }
+
   let next;
-  if (redact === 'todo') {
-    next = { stageKey: 'redact', actionLabel: 'Run AI redaction', message: 'Run the AI redaction. It drafts a copy of the narrative with names, phone numbers, and addresses removed.' };
-  } else if (redact === 'running') {
-    next = { stageKey: 'redact', actionLabel: 'View progress', message: 'The AI is drafting the redaction on this workstation. You can leave — it keeps running, and the draft will be waiting here.' };
-  } else if (redact === 'failed') {
-    next = { stageKey: 'redact', actionLabel: 'Run it again', message: 'The AI redaction failed. Run it again; if it keeps failing, check the AI badge in the top bar.' };
-  } else if (approve === 'attention') {
-    next = { stageKey: 'approve', actionLabel: 'Review AI redaction', message: 'The draft changed, so the AI summary is out of date. Refresh the summary, then approve.' };
-  } else if (approve === 'ready') {
-    next = { stageKey: 'approve', actionLabel: 'Review AI redaction', message: 'Compare the AI draft with the original narrative, fix anything it missed, then approve it.' };
-  } else if (finalize === 'ready') {
-    next = { stageKey: 'finalize', actionLabel: 'Go to the finalize form', message: 'Check the parties and summary, then finalize to record the entry and assign its blotter number.' };
+  if (redactionStatus === 'todo') {
+    next = {
+      stageKey: 'redaction',
+      tab: 'redaction',
+      anchor: 'ai-review-start',
+      actionLabel: 'Run AI redaction',
+      message: 'Run the AI redaction to draft a copy of the narrative with personal names, phone numbers, and addresses removed.',
+    };
+  } else if (redactionStatus === 'running') {
+    next = {
+      stageKey: 'redaction',
+      tab: 'redaction',
+      anchor: 'ai-review-start',
+      actionLabel: 'View progress',
+      message: 'The AI is drafting the redaction in the background. You can stay here or come back when it finishes.',
+    };
+  } else if (redactionStatus === 'failed') {
+    next = {
+      stageKey: 'redaction',
+      tab: 'redaction',
+      anchor: 'ai-review-start',
+      actionLabel: 'Retry AI redaction',
+      message: 'The AI redaction failed. Run it again; if it keeps failing, check the AI badge in the top bar.',
+    };
+  } else if (redactionStatus === 'attention') {
+    next = {
+      stageKey: 'redaction',
+      tab: 'redaction',
+      anchor: 'ai-review-actions',
+      actionLabel: 'Review AI redaction',
+      message: 'The draft changed, so the AI summary is out of date. Regenerate the summary, then approve.',
+    };
+  } else if (redactionStatus === 'ready') {
+    next = {
+      stageKey: 'redaction',
+      tab: 'redaction',
+      anchor: 'ai-review-actions',
+      actionLabel: 'Review AI redaction',
+      message: 'Compare the AI draft with the original narrative, fix anything it missed, then approve it.',
+    };
+  } else if (blotterStatus === 'ready') {
+    next = {
+      stageKey: 'blotter',
+      tab: 'blotter',
+      anchor: 'blotter-finalize',
+      actionLabel: 'Go to the finalize form',
+      message: 'Check the parties and summary, then finalize to record the entry and assign its blotter number.',
+    };
   } else {
-    next = { stageKey: 'packet', actionLabel: null, message: 'This blotter entry is finalized. Generate a Lupon packet only if the case is referred for conciliation. To correct the entry, use “Amend this entry”.' };
+    next = {
+      stageKey: 'blotter',
+      tab: 'blotter',
+      anchor: 'blotter-packet',
+      actionLabel: null,
+      message: 'Blotter entry finalized. Generate a Lupon packet on the Blotter tab if referred for conciliation, or use “Amend this entry” to make a correction.',
+    };
   }
 
   return { stages, next };
 }
 
 /**
+ * Combined Stepped Tab Bar + Contextual Next-Step Banner.
+ * Replaces the separate 4-card progress tracker and 3-button tab bar with
+ * a single, cohesive navigation header.
+ *
  * @param {{
  *   state: ReturnType<typeof getBlotterWorkflowState>,
  *   activeTab: 'incident'|'redaction'|'blotter',
- *   onNavigate: (tab: string, anchor: string) => void,
+ *   onNavigate: (tab: string, anchor?: string) => void,
+ *   isSecretary?: boolean,
  * }} options
  * @returns {HTMLElement}
  */
-export function BlotterWorkflow({ state, activeTab, onNavigate }) {
-  const section = document.createElement('section');
+export function BlotterWorkflow({ state, activeTab, onNavigate, isSecretary = true }) {
+  const section = document.createElement('nav');
   section.className = 'card blotter-flow';
-  section.setAttribute('aria-label', 'Blotter workflow progress');
+  section.setAttribute('aria-label', 'Case workspace steps');
 
-  const heading = document.createElement('h3');
-  heading.className = 'blotter-flow__heading';
-  heading.textContent = 'Blotter workflow';
-  section.appendChild(heading);
-
-  const list = document.createElement('ol');
+  const visibleStages = state.stages.filter((stage) => !stage.secretaryOnly || isSecretary);
+  const list = document.createElement('div');
   list.className = 'blotter-flow__steps';
+  list.setAttribute('role', 'tablist');
 
   const currentKey = state.next.stageKey;
-  state.stages.forEach((stage, index) => {
-    const item = document.createElement('li');
-    item.className = `blotter-flow__step blotter-flow__step--${stage.status}`;
-    if (stage.key === currentKey && stage.status !== 'available') {
-      item.classList.add('blotter-flow__step--current');
-      item.setAttribute('aria-current', 'step');
+  visibleStages.forEach((stage, index) => {
+    const isActive = stage.tab === activeTab;
+    const isCurrentStep = isSecretary && !state.closed && stage.key === currentKey;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    btn.setAttribute('aria-label', stage.title);
+    btn.className = `page-tab blotter-flow__step blotter-flow__step--${stage.status}`;
+    if (isActive) btn.classList.add('is-active');
+    if (isCurrentStep) {
+      btn.classList.add('blotter-flow__step--current');
+      btn.setAttribute('aria-current', 'step');
     }
 
     const marker = document.createElement('span');
     marker.className = 'blotter-flow__marker';
     marker.setAttribute('aria-hidden', 'true');
-    if (stage.status === 'done') marker.innerHTML = icons.check(14);
-    else if (stage.status === 'running') marker.innerHTML = `<span class="is-spinning">${icons.repeat(14)}</span>`;
-    else if (stage.status === 'attention' || stage.status === 'failed') marker.innerHTML = icons.alertCircle(14);
-    else if (stage.status === 'blocked') marker.innerHTML = icons.lock(12);
-    else marker.textContent = String(index + 1);
+    if (!isSecretary) {
+      marker.innerHTML = stage.tab === 'incident' ? icons.fileText(14) : icons.shield(14);
+    } else if (stage.status === 'done') {
+      marker.innerHTML = icons.check(13);
+    } else if (stage.status === 'running') {
+      marker.innerHTML = `<span class="is-spinning">${icons.repeat(13)}</span>`;
+    } else if (stage.status === 'attention' || stage.status === 'failed') {
+      marker.innerHTML = icons.alertCircle(13);
+    } else if (stage.status === 'blocked') {
+      marker.innerHTML = icons.lock(12);
+    } else {
+      marker.textContent = String(index + 1);
+    }
 
     const body = document.createElement('span');
     body.className = 'blotter-flow__body';
 
     const title = document.createElement('span');
     title.className = 'blotter-flow__title';
-    title.textContent = stage.title;
+    title.textContent = isSecretary ? `${index + 1}. ${stage.title}` : stage.title;
 
     const tag = document.createElement('span');
     tag.className = `blotter-flow__tag blotter-flow__tag--${stage.status}`;
-    tag.textContent = STATUS_TEXT[stage.status];
+    tag.textContent = (!isSecretary && stage.key === 'blotter')
+      ? (stage.status === 'done' ? 'Recorded' : 'Pending')
+      : stage.tag;
 
-    const where = document.createElement('span');
-    where.className = 'blotter-flow__where';
-    where.textContent = stage.tab === 'redaction' ? 'Redaction tab' : 'Blotter tab';
-
-    body.append(title, tag, where);
-    item.append(marker, body);
-    list.appendChild(item);
+    body.append(title, tag);
+    btn.append(marker, body);
+    btn.addEventListener('click', () => onNavigate(stage.tab));
+    list.appendChild(btn);
   });
   section.appendChild(list);
+
+  if (!isSecretary) {
+    return section;
+  }
 
   const next = document.createElement('div');
   next.className = 'blotter-flow__next';
@@ -160,18 +280,18 @@ export function BlotterWorkflow({ state, activeTab, onNavigate }) {
   const nextText = document.createElement('p');
   nextText.className = 'blotter-flow__next-text';
   const strong = document.createElement('strong');
-  strong.textContent = 'Next step: ';
+  strong.textContent = state.closed ? 'Closed — no blotter: ' : 'Next step: ';
   nextText.append(strong, document.createTextNode(state.next.message));
   next.appendChild(nextText);
 
-  const currentStage = state.stages.find((s) => s.key === currentKey);
-  if (state.next.actionLabel && currentStage) {
+  // Only show the navigation CTA button if the user is NOT already on the target tab.
+  if (state.next.actionLabel && state.next.tab && state.next.tab !== activeTab) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'primary blotter-flow__next-btn';
-    button.innerHTML = `<span></span> ${icons.arrowRight(16)}`;
+    button.innerHTML = `<span></span> ${icons.arrowRight(15)}`;
     button.querySelector('span').textContent = state.next.actionLabel;
-    button.addEventListener('click', () => onNavigate(currentStage.tab, currentStage.anchor));
+    button.addEventListener('click', () => onNavigate(state.next.tab, state.next.anchor));
     next.appendChild(button);
   }
   section.appendChild(next);

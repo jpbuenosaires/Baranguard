@@ -1139,6 +1139,7 @@ export async function downloadReportExport({ format = 'csv' } = {}) {
   try {
     response = await fetch(`${BASE_URL}/reports/export/download?format=${encodeURIComponent(format)}`, {
       headers: { Authorization: `Bearer ${session.token}` },
+      cache: 'no-store',
     });
   } catch {
     throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
@@ -1190,6 +1191,7 @@ export async function downloadReportsDigest() {
   try {
     response = await fetch(`${BASE_URL}/reports/digest/download`, {
       headers: { Authorization: `Bearer ${session.token}` },
+      cache: 'no-store',
     });
   } catch {
     throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
@@ -1702,6 +1704,7 @@ export async function downloadLuponPacket(incidentId) {
   try {
     response = await fetch(`${BASE_URL}/incidents/${incidentId}/lupon-packet/download`, {
       headers: { Authorization: `Bearer ${session.token}` },
+      cache: 'no-store',
     });
   } catch {
     throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');

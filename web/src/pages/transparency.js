@@ -17,6 +17,9 @@
  */
 
 import { getPublicTransparency, getBarangays, ApiClientError } from '../api/apiClient.js';
+import { icons } from '../components/icons.js';
+import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 /** @param {HTMLElement} root */
 export function renderTransparencyPage(root) {
@@ -116,11 +119,12 @@ export function renderTransparencyPage(root) {
 
     card.append(header, pickerLabel, picker, reportContainer);
 
-    picker.addEventListener('change', () => loadReport(Number(picker.value), reportContainer));
-    loadReport(Number(picker.value), reportContainer);
+    const getSelectedBarangayName = () => picker.options[picker.selectedIndex]?.text || 'Barangay Watch';
+    picker.addEventListener('change', () => loadReport(Number(picker.value), reportContainer, getSelectedBarangayName()));
+    loadReport(Number(picker.value), reportContainer, getSelectedBarangayName());
   }
 
-  async function loadReport(barangayId, container) {
+  async function loadReport(barangayId, container, barangayName) {
     container.innerHTML = '';
     const loading = document.createElement('div');
     loading.className = 'state-block';
@@ -130,7 +134,7 @@ export function renderTransparencyPage(root) {
 
     try {
       const report = await getPublicTransparency(barangayId);
-      renderReport(container, report);
+      renderReport(container, report, barangayName);
     } catch (err) {
       container.innerHTML = '';
       const block = document.createElement('div');
@@ -145,19 +149,36 @@ export function renderTransparencyPage(root) {
       const retryButton = document.createElement('button');
       retryButton.className = 'primary';
       retryButton.textContent = 'Retry';
-      retryButton.addEventListener('click', () => loadReport(barangayId, container));
+      retryButton.addEventListener('click', () => loadReport(barangayId, container, barangayName));
       block.append(text, retryButton);
       container.appendChild(block);
     }
   }
 
-  function renderReport(container, report) {
+  function renderReport(container, report, barangayName) {
     container.innerHTML = '';
+
+    const topBar = document.createElement('div');
+    topBar.className = 'row-between';
+    topBar.style.flexWrap = 'wrap';
+    topBar.style.gap = 'var(--spacing-sm)';
 
     const periodNote = document.createElement('p');
     periodNote.className = 'note';
+    periodNote.style.margin = '0';
     periodNote.textContent = `Covers the last ${report.periodMonths} months, as of ${report.generatedAt} UTC.`;
-    container.appendChild(periodNote);
+
+    const printBtn = document.createElement('button');
+    printBtn.type = 'button';
+    printBtn.id = 'print-transparency-btn';
+    printBtn.className = 'ghost';
+    printBtn.innerHTML = `${icons.printer(15)} <span>Print Summary</span>`;
+    printBtn.addEventListener('click', () => {
+      openTransparencyPrintModal(report, barangayName);
+    });
+
+    topBar.append(periodNote, printBtn);
+    container.appendChild(topBar);
 
     const statGrid = document.createElement('div');
     statGrid.className = 'stat-card-grid';
@@ -252,4 +273,109 @@ export function renderTransparencyPage(root) {
     el.style.height = '10rem';
     return el;
   }
+
+  function openTransparencyPrintModal(report, barangayName) {
+    const officeLabel = barangayName || 'Barangay Watch';
+    const resRateStr = report.resolutionRatePercent === null ? '—' : `${report.resolutionRatePercent}%`;
+    const typeRowsHtml = (report.byType || []).map((row) => `
+      <tr>
+        <td>${escapeHtml(row.label)}</td>
+        <td class="print-sheet__table-num">${escapeHtml(String(row.incidents))}</td>
+      </tr>
+    `).join('');
+    const monthRowsHtml = (report.byMonth || []).map((row) => `
+      <tr>
+        <td>${escapeHtml(row.month)}</td>
+        <td class="print-sheet__table-num">${escapeHtml(String(row.incidents))}</td>
+      </tr>
+    `).join('');
+    const notesText = (report.notes || []).map((n) => `• ${n}`).join('\n');
+
+    const sheetHtml = `
+      <div class="print-sheet__header">
+        <p class="print-sheet__republic">Republic of the Philippines</p>
+        <p class="print-sheet__office">${escapeHtml(officeLabel)}</p>
+        <h3 class="print-sheet__title">Public Incident Transparency Summary</h3>
+        <p class="print-sheet__subline">Covers the last ${escapeHtml(String(report.periodMonths))} months · As of ${escapeHtml(String(report.generatedAt))} UTC</p>
+        <div>
+          <span class="print-sheet__badge print-sheet__badge--finalized">Anonymized Public Record (RA 10173 Compliant)</span>
+        </div>
+      </div>
+
+      <div class="print-sheet__kpi-grid">
+        <div class="print-sheet__kpi-card">
+          <div class="print-sheet__meta-label">Total Incidents</div>
+          <div class="print-sheet__kpi-val">${escapeHtml(String(report.totalIncidents))}</div>
+          <div class="print-sheet__kpi-sub">Last ${escapeHtml(String(report.periodMonths))} months</div>
+        </div>
+        <div class="print-sheet__kpi-card">
+          <div class="print-sheet__meta-label">Resolved Cases</div>
+          <div class="print-sheet__kpi-val">${escapeHtml(String(report.resolvedIncidents))}</div>
+          <div class="print-sheet__kpi-sub">Closed / settled</div>
+        </div>
+        <div class="print-sheet__kpi-card">
+          <div class="print-sheet__meta-label">Resolution Rate</div>
+          <div class="print-sheet__kpi-val">${escapeHtml(resRateStr)}</div>
+          <div class="print-sheet__kpi-sub">Community resolution</div>
+        </div>
+        <div class="print-sheet__kpi-card">
+          <div class="print-sheet__meta-label">Categories Tracked</div>
+          <div class="print-sheet__kpi-val">${escapeHtml(String((report.byType || []).length))}</div>
+          <div class="print-sheet__kpi-sub">Pooled for privacy</div>
+        </div>
+      </div>
+
+      ${typeRowsHtml ? `
+        <div class="print-sheet__section">
+          <h4 class="print-sheet__section-title">Incidents by Category</h4>
+          <table class="print-sheet__table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th class="print-sheet__table-num">Recorded Incidents</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${typeRowsHtml}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+
+      ${monthRowsHtml ? `
+        <div class="print-sheet__section">
+          <h4 class="print-sheet__section-title">Incidents by Month</h4>
+          <table class="print-sheet__table">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th class="print-sheet__table-num">Recorded Incidents</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${monthRowsHtml}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+
+      <div class="print-sheet__section">
+        <h4 class="print-sheet__section-title">Privacy &amp; Methodology Notes</h4>
+        <div class="print-sheet__narrative">${escapeHtml(notesText)}</div>
+      </div>
+
+      <div class="print-sheet__footer">
+        <span>Published via Baranguard Public Transparency Portal · ${escapeHtml(String(report.generatedAt))} UTC</span>
+        <span>Aggregate &amp; Anonymized Data Only</span>
+      </div>
+    `;
+
+    openPrintPreviewModal({
+      title: 'Public Transparency Summary',
+      subtitle: `${officeLabel} · Last ${report.periodMonths} months`,
+      sheetId: 'printable-transparency-sheet',
+      sheetHtml,
+    });
+  }
 }
+

@@ -1,7 +1,7 @@
 import { describePage } from '../harness/pageSuite.mjs';
 import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, mountPage, settle, cleanup, text, type, $ } from '../harness/render.mjs';
+import { api, mountPage, settle, cleanup, text, type, click, $ } from '../harness/render.mjs';
 import { renderAuditLogPage } from '../../src/pages/audit-log.js';
 
 describePage({
@@ -36,4 +36,23 @@ describe('Audit Log behaviour', () => {
     await settle();
     assert.equal($('select[aria-label="Filter by date range"]').value, '7');
   });
+
+  test('Preview & Print Excerpt opens the A4 compliance audit sheet', async () => {
+    const ctx = mountPage(renderAuditLogPage, { role: 'admin' });
+    await settle();
+    const previewBtn = ctx.root.querySelector('#preview-audit-print-btn');
+    assert.ok(previewBtn, 'Preview & Print Excerpt button should be present in header');
+    click(previewBtn);
+    await settle();
+
+    const sheet = document.querySelector('#printable-audit-sheet');
+    assert.ok(sheet, 'Printable audit sheet should be mounted');
+    assert.ok(document.body.classList.contains('has-print-modal'), 'body should have has-print-modal while preview is open');
+    assert.match(text(sheet), /Immutable System Audit Trail Excerpt/i);
+
+    const closeBtn = document.querySelector('#close-print-modal');
+    click(closeBtn);
+    assert.ok(!document.body.classList.contains('has-print-modal'), 'closing modal should remove has-print-modal');
+  });
 });
+

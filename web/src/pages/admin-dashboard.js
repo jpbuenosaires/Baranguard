@@ -426,16 +426,34 @@ async function loadPbDigest(container) {
       return;
     }
     host.innerHTML = '';
-    const meta = document.createElement('p');
-    meta.className = 'note';
     const generated = new Date(digest.generatedAt).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
-    meta.textContent = `Covers ${digest.dateFrom} to ${digest.dateTo}. Generated ${generated}.`;
+
+    const manifest = document.createElement('div');
+    manifest.className = 'lupon-packet-manifest';
+    manifest.innerHTML = `
+      <div class="lupon-packet-tile">
+        <span class="lupon-packet-tile__label">Coverage Window</span>
+        <span class="lupon-packet-tile__value">Covers ${escapeHtml(digest.dateFrom)} to ${escapeHtml(digest.dateTo)}</span>
+      </div>
+      <div class="lupon-packet-tile">
+        <span class="lupon-packet-tile__label">Last Generated</span>
+        <span class="lupon-packet-tile__value">${escapeHtml(generated)}</span>
+      </div>
+      <div class="lupon-packet-tile">
+        <span class="lupon-packet-tile__label">Included Sections</span>
+        <span class="lupon-packet-tile__value">4-KPI Summary · 11 Categories · Daily Log</span>
+      </div>
+    `;
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'lupon-packet-actions';
+    actionsRow.style.marginTop = 'var(--spacing-sm)';
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'ghost';
-    const idleHtml = `${icons.download(16)} <span>Download PDF</span>`;
+    button.className = 'primary';
+    const idleHtml = `${icons.download(16)} <span>Download Weekly Digest PDF</span>`;
     button.innerHTML = idleHtml;
     button.addEventListener('click', async () => {
       button.disabled = true;
@@ -445,7 +463,7 @@ async function loadPbDigest(container) {
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.download = 'baranguard-weekly-digest.pdf';
+        link.download = `baranguard-weekly-digest-${digest.dateFrom}-to-${digest.dateTo}.pdf`;
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -457,7 +475,8 @@ async function loadPbDigest(container) {
         button.innerHTML = idleHtml;
       }
     });
-    host.append(meta, button);
+    actionsRow.appendChild(button);
+    host.append(manifest, actionsRow);
   } catch {
     host.innerHTML = '<p class="note">Could not load the weekly digest.</p>';
   }
@@ -681,7 +700,8 @@ function cardHeader(title, subtitle, icon, description, viewAll, chip) {
   h.append(title);
   if (chip) {
     const chipEl = document.createElement('span');
-    chipEl.className = `card-header__chip ${chip.tone ? `card-header__chip--${chip.tone}` : ''}`;
+    chipEl.className = 'card-header__chip';
+    if (chip.tone) chipEl.classList.add(`card-header__chip--${chip.tone}`);
     chipEl.textContent = chip.text;
     h.appendChild(chipEl);
   }

@@ -61,8 +61,9 @@ describe('Redaction tab behaviour', () => {
   test('the shared workflow bar shows the Redaction tab is where "approve" happens', async () => {
     const ctx = await mountOnRedactionTab(901);
     const steps = $$('.blotter-flow__step', ctx.root).map((el) => text(el));
-    assert.equal(steps.length, 4);
-    assert.match(steps[2], /Finalize blotter entry[\s\S]*Cannot start yet/);
+    assert.equal(steps.length, 3);
+    assert.match(steps[1], /Redaction[\s\S]*Summary out of date/);
+    assert.match(steps[2], /Blotter[\s\S]*Cannot start yet/);
     assert.match(text($('.blotter-flow__next', ctx.root)), /summary is out of date/i);
   });
 

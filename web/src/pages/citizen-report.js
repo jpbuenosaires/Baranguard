@@ -9,6 +9,8 @@
 
 import { submitCitizenReport, getBarangays, ApiClientError } from '../api/apiClient.js';
 import { icons } from '../components/icons.js';
+import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const QUICK_TOPICS = [
   { label: '🚨 Emergency', tag: '[Emergency]' },
@@ -370,6 +372,10 @@ function renderSuccess(card, reportId, barangayName, onReset) {
     <p class="note" style="margin: 0;">Save this number to reference your report with barangay officials.</p>
   `;
 
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'lupon-packet-actions';
+  actionsRow.style.justifyContent = 'center';
+
   const copyButton = document.createElement('button');
   copyButton.type = 'button';
   copyButton.className = 'ghost';
@@ -385,7 +391,18 @@ function renderSuccess(card, reportId, barangayName, onReset) {
       copyButton.textContent = 'Select and copy above';
     }
   });
-  receiptBox.appendChild(copyButton);
+
+  const printSlipButton = document.createElement('button');
+  printSlipButton.type = 'button';
+  printSlipButton.id = 'print-citizen-receipt-btn';
+  printSlipButton.className = 'ghost';
+  printSlipButton.innerHTML = `${icons.printer(16)} Print Reference Slip`;
+  printSlipButton.addEventListener('click', () => {
+    openCitizenReceiptPrintModal(reportId, barangayName);
+  });
+
+  actionsRow.append(copyButton, printSlipButton);
+  receiptBox.appendChild(actionsRow);
 
   // 3-Step Next Steps Timeline
   const nextSteps = document.createElement('div');
@@ -394,7 +411,7 @@ function renderSuccess(card, reportId, barangayName, onReset) {
     <h4 style="font-size: var(--font-size-sm); font-weight: 700; margin: 0; color: var(--color-text-primary);">What Happens Next:</h4>
     <div class="citizen-step-row">
       <div class="citizen-step-bullet">1</div>
-      <div><strong>Logged & Queued:</strong> Your report is now in the desk officer's triage inbox.</div>
+      <div><strong>Logged &amp; Queued:</strong> Your report is now in the desk officer's triage inbox.</div>
     </div>
     <div class="citizen-step-row">
       <div class="citizen-step-bullet">2</div>
@@ -430,3 +447,67 @@ function renderSuccess(card, reportId, barangayName, onReset) {
   block.append(iconBadge, title, subtitle, receiptBox, nextSteps, followUpNote, returnButton);
   card.appendChild(block);
 }
+
+function openCitizenReceiptPrintModal(reportId, barangayName) {
+  const submittedAt = new Date().toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const officeLabel = barangayName || 'Barangay Operations Desk';
+
+  const sheetHtml = `
+    <div class="print-sheet__header">
+      <p class="print-sheet__republic">Republic of the Philippines</p>
+      <p class="print-sheet__office">${escapeHtml(officeLabel)}</p>
+      <h3 class="print-sheet__title">Citizen Incident Report Acknowledgment Slip</h3>
+      <p class="print-sheet__subline">Official Intake Receipt · Reference #REF-${escapeHtml(String(reportId))}</p>
+      <div>
+        <span class="print-sheet__badge print-sheet__badge--finalized">Received &amp; Queued for Desk Triage</span>
+      </div>
+    </div>
+
+    <div class="print-sheet__meta-bar">
+      <div class="print-sheet__meta-cell">
+        <div class="print-sheet__meta-label">Reference No.</div>
+        <div class="print-sheet__meta-val">#REF-${escapeHtml(String(reportId))}</div>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <div class="print-sheet__meta-label">Receiving Barangay</div>
+        <div class="print-sheet__meta-val">${escapeHtml(officeLabel)}</div>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <div class="print-sheet__meta-label">Timestamp</div>
+        <div class="print-sheet__meta-val">${escapeHtml(submittedAt)}</div>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <div class="print-sheet__meta-label">Intake Channel</div>
+        <div class="print-sheet__meta-val">Public Web Portal (W19)</div>
+      </div>
+    </div>
+
+    <div class="print-sheet__section">
+      <h4 class="print-sheet__section-title">What Happens Next</h4>
+      <div class="print-sheet__narrative">1. Logged &amp; Queued: Your report is now in the desk officer's triage inbox.
+2. Triage Review: A duty officer evaluates severity, category, and potential hazard.
+3. Tanod Coordination: Responders or patrol units are dispatched if on-site intervention is necessary.</div>
+    </div>
+
+    <div class="print-sheet__section">
+      <h4 class="print-sheet__section-title">Important Guidance for Residents</h4>
+      <div class="print-sheet__narrative">Please keep your reference number (#REF-${escapeHtml(String(reportId))}) when following up in person or by phone with barangay officials. Do not submit duplicate reports for the same incident. For immediate life-threatening emergencies, always call 911 or your local emergency hotline directly.</div>
+    </div>
+
+    <div class="print-sheet__footer">
+      <span>Generated via Baranguard Public Incident Intake Portal · ${escapeHtml(submittedAt)}</span>
+      <span>Reference #REF-${escapeHtml(String(reportId))}</span>
+    </div>
+  `;
+
+  openPrintPreviewModal({
+    title: 'Citizen Report Reference Slip',
+    subtitle: `#REF-${reportId} · ${officeLabel}`,
+    sheetId: 'printable-citizen-receipt-sheet',
+    sheetHtml,
+  });
+}
+

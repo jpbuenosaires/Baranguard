@@ -241,6 +241,144 @@ final class SimplePdf
         return $this;
     }
 
+    /** Centered navy pill badge matching `.print-sheet__doctype` in the preview modal. */
+    public function pillBadge(string $text, float $size = 7.5, float $leading = 20.0): self
+    {
+        $this->elements[] = [
+            'type' => 'pill_badge',
+            'text' => $text,
+            'size' => $size,
+            'leading' => $leading,
+        ];
+        return $this;
+    }
+
+    /**
+     * Unified 4-column horizontal metadata bar matching `.print-sheet__meta-bar`.
+     *
+     * @param array<int, array{label:string, value:string}> $items
+     */
+    public function metaBar(array $items, float $leading = 42.0): self
+    {
+        $this->elements[] = [
+            'type' => 'meta_bar',
+            'items' => $items,
+            'leading' => $leading,
+        ];
+        return $this;
+    }
+
+    /**
+     * Two side-by-side Party cards with left accent borders matching `.print-sheet__parties`.
+     *
+     * @param array{role:string, name:string, sub:string} $left
+     * @param array{role:string, name:string, sub:string} $right
+     */
+    public function partyCards(array $left, array $right, float $leading = 58.0): self
+    {
+        $this->elements[] = [
+            'type' => 'party_cards',
+            'left' => $left,
+            'right' => $right,
+            'leading' => $leading,
+        ];
+        return $this;
+    }
+
+    /**
+     * Two side-by-side light-slate field boxes matching `.print-sheet__grid-2col`.
+     *
+     * @param array{label:string, value:string} $left
+     * @param array{label:string, value:string} $right
+     */
+    public function twoColFields(array $left, array $right, float $leading = 44.0): self
+    {
+        $this->elements[] = [
+            'type' => 'two_col_fields',
+            'left' => $left,
+            'right' => $right,
+            'leading' => $leading,
+        ];
+        return $this;
+    }
+
+    /**
+     * Uppercase muted label + bordered callout box with a navy left accent bar,
+     * matching `.print-sheet__section` + `.print-sheet__narrative`.
+     */
+    public function calloutSection(string $label, string $body, float $size = 9.0): self
+    {
+        $usableWidth = self::PAGE_WIDTH - (2 * self::MARGIN) - 24.0;
+        $maxChars = max(12, (int) floor($usableWidth / ($size * self::AVG_ADVANCE_RATIO)));
+
+        $lines = [];
+        foreach (preg_split('/\R/u', trim($body)) ?: [$body] as $para) {
+            if (trim($para) === '') {
+                $lines[] = '';
+                continue;
+            }
+            $words = preg_split('/\s+/u', trim($para)) ?: [];
+            $current = '';
+            foreach ($words as $word) {
+                while (mb_strlen($word) > $maxChars) {
+                    if ($current !== '') {
+                        $lines[] = $current;
+                        $current = '';
+                    }
+                    $lines[] = mb_substr($word, 0, $maxChars);
+                    $word = mb_substr($word, $maxChars);
+                }
+                $candidate = $current === '' ? $word : $current . ' ' . $word;
+                if (mb_strlen($candidate) <= $maxChars) {
+                    $current = $candidate;
+                } else {
+                    if ($current !== '') {
+                        $lines[] = $current;
+                    }
+                    $current = $word;
+                }
+            }
+            if ($current !== '') {
+                $lines[] = $current;
+            }
+        }
+        if ($lines === []) {
+            $lines = [''];
+        }
+
+        $lineStep = $size * 1.48;
+        $boxHeight = max(28.0, (count($lines) * $lineStep) + 16.0);
+        $totalLeading = 13.0 + $boxHeight + 10.0;
+
+        $this->elements[] = [
+            'type' => 'callout_section',
+            'label' => $label,
+            'lines' => $lines,
+            'size' => $size,
+            'lineStep' => $lineStep,
+            'boxHeight' => $boxHeight,
+            'leading' => $totalLeading,
+        ];
+        return $this;
+    }
+
+    /** Centered two-column signature block matching `.print-sheet__signatures`. */
+    public function centeredSignatures(
+        string $leftName,
+        string $leftRole,
+        string $rightName,
+        string $rightRole,
+        float $leading = 62.0
+    ): self {
+        $this->elements[] = [
+            'type' => 'centered_signatures',
+            'left' => ['name' => $leftName, 'role' => $leftRole],
+            'right' => ['name' => $rightName, 'role' => $rightRole],
+            'leading' => $leading,
+        ];
+        return $this;
+    }
+
     /**
      * Renders the finished document as PDF bytes.
      *
@@ -372,7 +510,7 @@ final class SimplePdf
             $stream .= sprintf(
                 "q 0.38 0.44 0.54 rg BT /%s 7.50 Tf %.2f 809.00 Td (%s) Tj ET Q\n",
                 self::FONT_BOLD, self::MARGIN,
-                self::escape(self::toWinAnsi('BARANGUARD INCIDENT REPORT SYSTEM | STATISTICAL SUMMARY'))
+                self::escape(self::toWinAnsi('BARANGUARD OFFICIAL RECORD | ' . strtoupper($this->title)))
             );
             // Header text right
             $rightHdr = 'OFFICIAL COPY';
@@ -433,8 +571,8 @@ final class SimplePdf
                     $font = (string) ($elem['font'] ?? self::FONT_REGULAR);
                     $color = $elem['color'] ?? [0.10, 0.15, 0.22];
                     $text = (string) $elem['text'];
-                    $textW = mb_strlen($text) * $size * self::AVG_ADVANCE_RATIO;
-                    $x = max(self::MARGIN, (self::PAGE_WIDTH - $textW) / 2);
+                    $textW = self::estimateWidth($text, $size, $font === self::FONT_BOLD);
+                    $x = max(self::MARGIN, (self::PAGE_WIDTH - $textW) / 2.0);
                     $baseline = $y - $size;
                     $stream .= sprintf(
                         "q %.2f %.2f %.2f rg BT /%s %.2f Tf %.2f %.2f Td (%s) Tj ET Q\n",
@@ -635,9 +773,11 @@ final class SimplePdf
                         // Card big value (middle)
                         $valY = $boxY + 16.0;
                         $valText = (string) ($card['value'] ?? '0');
+                        $valLen = mb_strlen($valText);
+                        $valFontSize = $valLen > 16 ? 8.50 : ($valLen > 11 ? 10.50 : 14.50);
                         $stream .= sprintf(
-                            "q 0.08 0.16 0.32 rg BT /%s 14.50 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                            self::FONT_BOLD,
+                            "q 0.08 0.16 0.32 rg BT /%s %.2f Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_BOLD, $valFontSize,
                             $currX + 8.0, $valY,
                             self::escape(self::toWinAnsi($valText))
                         );
@@ -718,6 +858,254 @@ final class SimplePdf
                     $y -= $leading;
                     break;
 
+                case 'pill_badge':
+                    $text = (string) ($elem['text'] ?? '');
+                    $size = (float) ($elem['size'] ?? 7.5);
+                    $textW = self::estimateWidth($text, $size, true);
+                    $pillW = $textW + 24.0;
+                    $pillH = 15.0;
+                    $pillX = (self::PAGE_WIDTH - $pillW) / 2.0;
+                    $pillY = $y - $pillH;
+
+                    // Navy pill fill (#1E3A6E)
+                    $stream .= sprintf(
+                        "q 0.12 0.23 0.43 rg %.2f %.2f %.2f %.2f re f Q\n",
+                        $pillX, $pillY, $pillW, $pillH
+                    );
+                    $baseline = $pillY + (($pillH - $size) / 2.0) + 1.5;
+                    $tx = (self::PAGE_WIDTH - $textW) / 2.0;
+                    $stream .= sprintf(
+                        "q 1.00 1.00 1.00 rg BT /%s %.2f Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                        self::FONT_BOLD, $size, $tx, $baseline,
+                        self::escape(self::toWinAnsi($text))
+                    );
+                    $y -= $leading;
+                    break;
+
+                case 'meta_bar':
+                    $items = (array) ($elem['items'] ?? []);
+                    $count = max(1, count($items));
+                    $barH = 34.0;
+                    $boxY = $y - $barH;
+                    $colW = $contentWidth / $count;
+
+                    // Subtle slate background (#F8FAFC) + border (#CBD5E1)
+                    $stream .= sprintf(
+                        "q 0.97 0.98 0.99 rg %.2f %.2f %.2f %.2f re f Q\n",
+                        self::MARGIN, $boxY, $contentWidth, $barH
+                    );
+                    $stream .= sprintf(
+                        "q 0.75 w 0.80 0.84 0.88 RG %.2f %.2f %.2f %.2f re s Q\n",
+                        self::MARGIN, $boxY, $contentWidth, $barH
+                    );
+
+                    foreach ($items as $idx => $item) {
+                        $cx = self::MARGIN + ($idx * $colW) + 10.0;
+                        $lbl = strtoupper((string) ($item['label'] ?? ''));
+                        $val = (string) ($item['value'] ?? '');
+
+                        // Uppercase muted label
+                        $stream .= sprintf(
+                            "q 0.28 0.33 0.41 rg BT /%s 6.80 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_BOLD, $cx, $boxY + 21.5,
+                            self::escape(self::toWinAnsi($lbl))
+                        );
+
+                        // Bold value (navy for first cell, dark ink for others)
+                        $vc = $idx === 0 ? [0.12, 0.23, 0.43] : [0.06, 0.09, 0.16];
+                        $stream .= sprintf(
+                            "q %.2f %.2f %.2f rg BT /%s 8.80 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            $vc[0], $vc[1], $vc[2],
+                            self::FONT_BOLD, $cx, $boxY + 8.5,
+                            self::escape(self::toWinAnsi($val))
+                        );
+                    }
+                    $y -= $leading;
+                    break;
+
+                case 'party_cards':
+                    $left = (array) ($elem['left'] ?? []);
+                    $right = (array) ($elem['right'] ?? []);
+                    $gap = 12.0;
+                    $cardW = ($contentWidth - $gap) / 2.0;
+                    $cardH = 50.0;
+                    $boxY = $y - $cardH;
+
+                    $pair = [
+                        ['x' => self::MARGIN, 'data' => $left, 'accent' => [0.12, 0.23, 0.43]],
+                        ['x' => self::MARGIN + $cardW + $gap, 'data' => $right, 'accent' => [0.28, 0.33, 0.41]],
+                    ];
+                    foreach ($pair as $p) {
+                        $cx = $p['x'];
+                        $d = $p['data'];
+                        $ac = $p['accent'];
+
+                        // White card + border + left accent bar
+                        $stream .= sprintf(
+                            "q 1.00 1.00 1.00 rg %.2f %.2f %.2f %.2f re f Q\n",
+                            $cx, $boxY, $cardW, $cardH
+                        );
+                        $stream .= sprintf(
+                            "q 0.75 w 0.80 0.84 0.88 RG %.2f %.2f %.2f %.2f re s Q\n",
+                            $cx, $boxY, $cardW, $cardH
+                        );
+                        $stream .= sprintf(
+                            "q %.2f %.2f %.2f rg %.2f %.2f 3.50 %.2f re f Q\n",
+                            $ac[0], $ac[1], $ac[2], $cx, $boxY, $cardH
+                        );
+
+                        // Role label
+                        $stream .= sprintf(
+                            "q 0.28 0.33 0.41 rg BT /%s 6.80 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_BOLD, $cx + 10.0, $boxY + 37.5,
+                            self::escape(self::toWinAnsi(strtoupper((string) ($d['role'] ?? ''))))
+                        );
+                        // Party name
+                        $stream .= sprintf(
+                            "q 0.06 0.09 0.16 rg BT /%s 10.20 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_BOLD, $cx + 10.0, $boxY + 22.5,
+                            self::escape(self::toWinAnsi((string) ($d['name'] ?? '')))
+                        );
+                        // Sub-line
+                        $stream .= sprintf(
+                            "q 0.28 0.33 0.41 rg BT /%s 7.80 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_REGULAR, $cx + 10.0, $boxY + 9.0,
+                            self::escape(self::toWinAnsi((string) ($d['sub'] ?? '')))
+                        );
+                    }
+                    $y -= $leading;
+                    break;
+
+                case 'two_col_fields':
+                    $left = (array) ($elem['left'] ?? []);
+                    $right = (array) ($elem['right'] ?? []);
+                    $gap = 12.0;
+                    $boxW = ($contentWidth - $gap) / 2.0;
+                    $boxH = 36.0;
+                    $boxY = $y - $boxH;
+
+                    $pair = [
+                        ['x' => self::MARGIN, 'data' => $left],
+                        ['x' => self::MARGIN + $boxW + $gap, 'data' => $right],
+                    ];
+                    foreach ($pair as $p) {
+                        $cx = $p['x'];
+                        $d = $p['data'];
+
+                        $stream .= sprintf(
+                            "q 0.97 0.98 0.99 rg %.2f %.2f %.2f %.2f re f Q\n",
+                            $cx, $boxY, $boxW, $boxH
+                        );
+                        $stream .= sprintf(
+                            "q 0.75 w 0.80 0.84 0.88 RG %.2f %.2f %.2f %.2f re s Q\n",
+                            $cx, $boxY, $boxW, $boxH
+                        );
+
+                        $stream .= sprintf(
+                            "q 0.28 0.33 0.41 rg BT /%s 6.80 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_BOLD, $cx + 10.0, $boxY + 23.0,
+                            self::escape(self::toWinAnsi(strtoupper((string) ($d['label'] ?? ''))))
+                        );
+
+                        $valText = (string) ($d['value'] ?? '');
+                        if (mb_strlen($valText) > 52) {
+                            $valText = mb_substr($valText, 0, 49) . '...';
+                        }
+                        $stream .= sprintf(
+                            "q 0.06 0.09 0.16 rg BT /%s 8.60 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_REGULAR, $cx + 10.0, $boxY + 9.5,
+                            self::escape(self::toWinAnsi($valText))
+                        );
+                    }
+                    $y -= $leading;
+                    break;
+
+                case 'callout_section':
+                    $label = strtoupper((string) ($elem['label'] ?? ''));
+                    $lines = (array) ($elem['lines'] ?? []);
+                    $size = (float) ($elem['size'] ?? 9.0);
+                    $lineStep = (float) ($elem['lineStep'] ?? ($size * 1.48));
+                    $boxH = (float) ($elem['boxHeight'] ?? 32.0);
+
+                    // Section label above box
+                    $lblY = $y - 9.0;
+                    $stream .= sprintf(
+                        "q 0.28 0.33 0.41 rg BT /%s 7.20 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                        self::FONT_BOLD, self::MARGIN, $lblY,
+                        self::escape(self::toWinAnsi($label))
+                    );
+
+                    $boxY = $y - 13.0 - $boxH;
+                    // Box background (#F8FAFC) + border (#CBD5E1) + left navy strip (#1E3A6E)
+                    $stream .= sprintf(
+                        "q 0.97 0.98 0.99 rg %.2f %.2f %.2f %.2f re f Q\n",
+                        self::MARGIN, $boxY, $contentWidth, $boxH
+                    );
+                    $stream .= sprintf(
+                        "q 0.75 w 0.80 0.84 0.88 RG %.2f %.2f %.2f %.2f re s Q\n",
+                        self::MARGIN, $boxY, $contentWidth, $boxH
+                    );
+                    $stream .= sprintf(
+                        "q 0.12 0.23 0.43 rg %.2f %.2f 3.00 %.2f re f Q\n",
+                        self::MARGIN, $boxY, $boxH
+                    );
+
+                    $lineY = $boxY + $boxH - 11.0 - ($size * 0.45);
+                    foreach ($lines as $ln) {
+                        if ($ln !== '') {
+                            $stream .= sprintf(
+                                "q 0.06 0.09 0.16 rg BT /%s %.2f Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                                self::FONT_REGULAR, $size, self::MARGIN + 11.0, $lineY,
+                                self::escape(self::toWinAnsi((string) $ln))
+                            );
+                        }
+                        $lineY -= $lineStep;
+                    }
+
+                    $y -= $leading;
+                    break;
+
+                case 'centered_signatures':
+                    $left = (array) ($elem['left'] ?? []);
+                    $right = (array) ($elem['right'] ?? []);
+                    $colW = 210.0;
+                    $leftX = self::MARGIN + 10.0;
+                    $rightX = self::PAGE_WIDTH - self::MARGIN - $colW - 10.0;
+                    $lineY = $y - 24.0;
+
+                    foreach ([['x' => $leftX, 'd' => $left], ['x' => $rightX, 'd' => $right]] as $sig) {
+                        $sx = $sig['x'];
+                        $sd = $sig['d'];
+
+                        // Signature line
+                        $stream .= sprintf(
+                            "q 0.85 w 0.06 0.09 0.16 RG %.2f %.2f m %.2f %.2f l S Q\n",
+                            $sx, $lineY, $sx + $colW, $lineY
+                        );
+
+                        // Centered bold name
+                        $nameStr = (string) ($sd['name'] ?? '');
+                        $nameW = self::estimateWidth($nameStr, 8.5, true);
+                        $nx = $sx + max(0.0, ($colW - $nameW) / 2.0);
+                        $stream .= sprintf(
+                            "q 0.06 0.09 0.16 rg BT /%s 8.50 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_BOLD, $nx, $lineY - 11.5,
+                            self::escape(self::toWinAnsi($nameStr))
+                        );
+
+                        // Centered muted role
+                        $roleStr = (string) ($sd['role'] ?? '');
+                        $roleW = self::estimateWidth($roleStr, 7.2, false);
+                        $rx = $sx + max(0.0, ($colW - $roleW) / 2.0);
+                        $stream .= sprintf(
+                            "q 0.28 0.33 0.41 rg BT /%s 7.20 Tf %.2f %.2f Td (%s) Tj ET Q\n",
+                            self::FONT_REGULAR, $rx, $lineY - 21.5,
+                            self::escape(self::toWinAnsi($roleStr))
+                        );
+                    }
+                    $y -= $leading;
+                    break;
+
                 default:
                     $y -= $leading;
                     break;
@@ -725,6 +1113,35 @@ final class SimplePdf
         }
 
         return $stream;
+    }
+
+    /**
+     * Estimates Helvetica string width in points by character class so
+     * centered uppercase headings, pill badges, and mixed-case lines
+     * center accurately without embedding a full metrics table.
+     */
+    private static function estimateWidth(string $text, float $size, bool $bold = false): float
+    {
+        $ems = 0.0;
+        $chars = preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        foreach ($chars as $ch) {
+            if ($ch === ' ' || $ch === '.' || $ch === ',' || $ch === ':' || $ch === ';' || $ch === '\'' || $ch === '!' || $ch === '|') {
+                $ems += 0.28;
+            } elseif ($ch === '-' || $ch === '(' || $ch === ')' || $ch === '/') {
+                $ems += 0.33;
+            } elseif ($ch === 'I' || $ch === 'J' || $ch === 'l' || $ch === 'i' || $ch === 't' || $ch === 'f' || $ch === 'r') {
+                $ems += 0.34;
+            } elseif ($ch === 'M' || $ch === 'W' || $ch === 'm' || $ch === 'w') {
+                $ems += 0.82;
+            } elseif ($ch >= 'A' && $ch <= 'Z') {
+                $ems += 0.67;
+            } elseif ($ch >= '0' && $ch <= '9') {
+                $ems += 0.56;
+            } else {
+                $ems += 0.52;
+            }
+        }
+        return $ems * $size * ($bold ? 1.05 : 1.0);
     }
 
     /**
