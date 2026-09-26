@@ -16096,3 +16096,60 @@ paragraph.
 
 Not committed yet — held for the user to review/commit, same as the
 rest of this session's work.
+
+## 2026-09-26 (23) — AI Tools screen retired in full: Classifier removed, migrations 0027/0028
+
+Follow-through on the narrowing already logged 2026-09-10 (2): that pass
+cut the AI Tools screen from four assistants down to one (the Incident
+Classifier), on the reasoning that Blotter Assistant/SMS Composer/Threat
+Analyzer were peripheral helpers not tied to the statutory redaction
+pipeline (and Blotter Assistant specifically duplicated a BIMSS records
+function, §1). The Classifier itself is now retired too, after a real
+runaway-generation failure on this workstation: a classification job blew
+past Ollama's 4096-token context window and hit the 300s timeout — not a
+one-off flake, enough to call the tool unreliable for its one remaining
+use case.
+
+**Two new migrations, not edits to 0015/0027** (§2 Rule 9): `0027_remove_
+unused_ai_tools.sql` narrows `ai_processing_log.task_type` to drop
+`blotter_assist`/`sms_compose`/`threat_analysis`; `0028_remove_ai_tools_
+screen.sql` drops `classification` too plus 0015's now-orphaned
+`barangay_id`/`requested_by_user_id`/`tool_input`/`tool_output` columns,
+FKs, and index, and restores `incident_id NOT NULL` — undoing 0015 in
+full now that zero tool types are left to need a NULL-incident row. Both
+migrations guard with a throwaway stored procedure that `SIGNAL`s and
+refuses if any real row still uses what's being dropped, rather than
+risk MariaDB's default `sql_mode` silently truncating an ENUM value on a
+live row.
+
+**Code deleted outright, not just unrouted**: `AiToolsController.php`,
+`routes/ai-tools.php`, `ClassificationScorer.php` (both `backend/` and
+`eval-kit/`'s generated copy), `generate-eval-sms-prompts.php`/
+`generate-eval-threat-stats.php` and their fixtures, `verify-ai-tools.sh`,
+the web `AiToolPanel.js`/`.css` shared panel and its three component
+tests, and `web/src/pages/threat-analysis.js`. `AiPrompts.php`,
+`AiJobQueue.php`, and every caller of the removed panel (`ai-review.js`,
+`analytics.js`, `blotter-detail.js`, `gis-live-tracking.js`,
+`incident-management.js`, `sms-monitor.js`) had their AI Tools wiring
+cut. `build-eval-kit.php`/`eval-kit/` regenerated to match (4 of the old
+`.bat` launchers dropped, `run-evaluation-classification.bat` among
+them). `SystemHealthController`/`routes/system.php` separately gained
+`GET /system/ollama-status` (Admin+Secretary) in the same pass — the
+topbar AI-status badge's real data source now that the AI Tools screen
+that used to expose Ollama's status is gone.
+
+**Verified before commit, not assumed**: `php -l` clean on every
+surviving changed PHP file (backend + eval-kit); `verify-eval-scorers.php`
+33/33 (the untouched scorer classes plus `RedactionScorer`'s changes);
+`web/tests` 395/395 (down from the pre-removal count, expected — the
+three deleted `AiToolPanel` tests account for the drop); `verify-web-
+wiring.mjs` 545 passing, the same 2 pre-existing unrelated failures
+(`admin-dashboard.js`/`statistical-reports.js` template-literal false
+positives) present on `main` before this diff, confirmed via `git stash`
+— not a regression this change introduced.
+
+Docs reconciled in the same commit: `docs/REFERENCE.md` (§2 Rule 4, §4
+schema map, §5 endpoints, §6 design system, §7 screens) already carried
+this change's description going into this session; this entry is the
+DEVLOG record that should have shipped alongside it and didn't until
+now — logged per SPRINTS.md's own "log deviations in DEVLOG.md" rule.

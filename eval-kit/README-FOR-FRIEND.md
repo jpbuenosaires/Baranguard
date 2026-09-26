@@ -57,34 +57,29 @@ files — that's it.
    for `evaluation-results-*.txt` and `evaluation-log-*.txt` in this
    folder. Just send those two files back (email, chat, whatever's easy).
 
-## The other 7 things this AI model does (optional, and a bigger ask)
+## The other 3 things this AI model does (optional, and a bigger ask)
 
 The double-click `run-evaluation.bat` only tests ONE thing — redaction
 (removing personal info) — because it's the most important one and the
 one most worth everyone's patience. The same AI model also writes case
-summaries, translates records, pulls out complainant/respondent/contact
-details, classifies incidents, drafts a formal blotter entry, composes
-SMS alerts, and analyzes incident patterns.
+summaries, translates records, and pulls out complainant/respondent/
+contact details.
 
 **Only do this after `run-evaluation.bat` has finished at least its
 first smoke test successfully** (it's what confirms PHP/Ollama are set
-up right). Each of the 7 has its OWN double-click file, so you can do
+up right). Each of the 3 has its OWN double-click file, so you can do
 them one at a time, in any order, whenever you have time — closing one
 never affects the others:
 
 - `run-evaluation-summary.bat`
 - `run-evaluation-extraction.bat`
-- `run-evaluation-classification.bat`
-- `run-evaluation-blotter-assist.bat`
 - `run-evaluation-translation.bat`
-- `run-evaluation-sms-compose.bat` (much smaller set, 35 records — quick)
-- `run-evaluation-threat-analysis.bat` (much smaller set, 25 records — quick)
 
-The first five run against the same 350-record set redaction did, so
-expect each one to take roughly as long as that run did. Same as before:
-safe to close any of these windows at any point and double-click that
-SAME file again later — it remembers exactly where that one task left
-off. Each writes its own `evaluation-results-<task>-*.txt` /
+All three run against the same 350-record set redaction did, so expect
+each one to take roughly as long as that run did. Same as before: safe
+to close any of these windows at any point and double-click that SAME
+file again later — it remembers exactly where that one task left off.
+Each writes its own `evaluation-results-<task>-*.txt` /
 `evaluation-log-<task>-*.txt` files when it finishes — send back
 whichever ones you've run, alongside the main redaction files.
 
@@ -94,11 +89,7 @@ each `.bat` file's real command (run from inside this folder) is:
 ```
 php scripts\ai-evaluate.php --task=summary --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
 php scripts\ai-evaluate.php --task=extraction --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
-php scripts\ai-evaluate.php --task=classification --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
-php scripts\ai-evaluate.php --task=blotter-assist --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
 php scripts\ai-evaluate.php --task=translation --translate-to=fil --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=120 --resume --save-results
-php scripts\ai-evaluate.php --task=sms-compose --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=60 --resume --save-results
-php scripts\ai-evaluate.php --task=threat-analysis --engine=model --dry-run --verbose --batch-size=20 --rest-seconds=60 --resume --save-results
 ```
 
 ## Is my computer okay to run this on?

@@ -163,163 +163,75 @@ final class AiPrompts
         PROMPT;
     }
 
-    // ------------------------------------------------------------------
-    // AI Tools (migration 0015). None is covered by PROMPT_VERSION — that
-    // constant tracks redaction/summary wording because that is what
-    // `ai-evaluate.php`'s dataset run measures, and none of these four is
-    // measured by any harness yet. Say so plainly rather than implying an
-    // evaluated number exists (§2 Rule 6).
-    // ------------------------------------------------------------------
-
     /**
-     * AI Blotter Assistant — drafts a formal case write-up a Secretary can
-     * re-key into DILG BIMSS/KPIS, which is the mandated Katarungang
-     * Pambarangay ledger.
+     * Combined redaction + extraction — one model call producing both
+     * outputs that `redaction()` and `extraction()` above produce
+     * separately. `POST /incidents/:id/redact` always enqueues both jobs
+     * together against the same `raw_narrative` (see AiDraftController),
+     * so the worker's common case is "run both right now" — this halves
+     * the number of round trips (and the duplicated prompt-eval cost of
+     * feeding the same narrative to the model twice) for that case.
      *
-     * TAKES RAW NARRATIVE AND MUST THEREFORE REDACT AS IT WRITES. This is
-     * the second prompt ever given `raw_narrative` (redaction() is the
-     * other), and it exists because the handoff draft has to read as a
-     * finished entry rather than as a placeholder-riddled excerpt. Its
-     * output still goes only to a Secretary — the sole role §2 Rule 1
-     * allows to see raw text at all — so the redaction here protects the
-     * document once it leaves the screen, not the reader in front of it.
+     * Not a replacement for either prompt: `redaction()`/`extraction()`
+     * stay in place for the worker's fallback path (used when a sibling
+     * job can't be claimed together, e.g. an older queued row from before
+     * this existed, or a lost claim race with another worker process).
+     *
+     * Redaction and extraction want opposite things from the same names
+     * (one erases them, the other needs them verbatim) — kept as two
+     * clearly delimited sections rather than asking the model to reconcile
+     * that itself, since a compound instruction with no structural
+     * separation is more likely to bleed one task's output into the
+     * other's on an 8B local model.
+     *
+     * Not covered by `PROMPT_VERSION` (redaction()'s own wording is
+     * unchanged, so evaluation runs scored against it are unaffected) and
+     * not covered by any evaluation harness yet, same as `extraction()`.
      */
-    public static function blotterAssist(string $rawNarrative, string $incidentType): string
+    public static function redactionAndExtraction(string $rawNarrative): string
     {
         $placeholders = implode(', ', self::PLACEHOLDERS);
 
         return <<<PROMPT
-        You are a records officer for a Philippine barangay. Draft a formal blotter entry from the incident narrative below, so it can be transcribed into the barangay's official case record.
+        You are a records officer for a Philippine barangay. You have two separate tasks on the same incident narrative below. Complete both, and keep them in two clearly separate sections exactly as instructed — do not let one task's rules affect the other.
 
-        Rules you must follow:
-        - Write 3 to 6 sentences in formal, factual language suitable for an official record.
-        - State what happened, when, where in general terms, who was involved by role, and what action the barangay took.
+        TASK 1 — Redact the narrative for storage under the Data Privacy Act (RA 10173):
         - Replace every piece of identifying information with one of these exact placeholders: {$placeholders}
-        - Never invent a detail that is not in the narrative. Do not speculate about motive, fault, guilt, or outcome.
-        - Do not recommend a penalty, a settlement, or any legal conclusion. That is for the Lupon to decide, not for this draft.
-        - Write in the same language as the narrative below. Do not translate.
+        - Replace personal names of complainants, respondents, witnesses, and bystanders with [NAME]. Keep official roles (tanod, barangay captain, secretary) as plain words.
+        - Replace house numbers, street names, purok/sitio names, and any other precise location that identifies a household with [ADDRESS]. Keep the barangay name and general landmarks.
+        - Replace phone numbers with [PHONE], email addresses with [EMAIL], government or company ID numbers with [ID_NUMBER], birth dates with [DATE_OF_BIRTH], vehicle plate numbers with [PLATE_NUMBER], and bank or social media account identifiers with [ACCOUNT].
+        - Keep everything else exactly as written: the sequence of events, times, incident type, injuries, property involved, and the language the narrative is written in. Do not translate, summarise, shorten, or reword.
+        - If there is no identifying information at all, return the narrative unchanged.
 
-        The recorded incident type is: {$incidentType}
+        TASK 2 — Identify the real complainant, respondent, and contact number from the SAME narrative (use the ACTUAL names here, never a placeholder):
+        - "Complainant" is the person who reported the incident or is the aggrieved party. "Respondent" is the person the complaint is against, if any.
+        - Only use names and numbers that actually appear in the narrative. Never invent, guess, or infer one that is not written there.
+        - A narrative may have no identifiable respondent at all (for example a fire or an animal complaint) — that is expected, leave it blank.
 
-        Return ONLY the draft entry text. Do not add a preamble, explanation, notes, or quotation marks.
+        Return EXACTLY this format and nothing else — no preamble, no explanation, no extra commentary:
+        ===REDACTED===
+        <the redacted narrative from TASK 1>
+        ===ENTITIES===
+        Complainant: <name or blank>
+        Respondent: <name or blank>
+        Contact: <phone number or blank>
 
         Narrative:
         {$rawNarrative}
         PROMPT;
     }
 
-    /**
-     * Incident Classifier — suggests a type and priority for an incident.
-     *
-     * DELIBERATELY READS THE REDACTED NARRATIVE, NOT THE RAW ONE. That is
-     * what keeps its output safe for an Admin to see: an Admin may run
-     * this tool, and §2 Rule 1 puts raw text out of their reach. Feeding
-     * it raw narrative would quietly turn an Admin-visible tool into a
-     * raw-text leak.
-     *
-     * The output is a SUGGESTION for a human to accept or ignore — it is
-     * never written to `incident` by any automatic path.
-     */
-    public static function classification(string $redactedNarrative, string $currentType, string $currentPriority): string
-    {
-        return <<<PROMPT
-        You are assisting a barangay dispatcher in the Philippines. Read the already-redacted incident narrative below and suggest how it should be classified.
-
-        Choose the incident type from exactly this list: theft, physical_injury, disturbance, domestic_dispute, vandalism, traffic_incident, fire, medical_emergency, missing_person, animal_complaint, other
-
-        Choose the priority from exactly this list: normal, high, critical
-        - critical means there is an immediate threat to life or a fire in progress.
-        - high means injury, an ongoing confrontation, or a situation likely to escalate.
-        - normal is everything else.
-
-        Rules you must follow:
-        - Base your answer only on what the narrative says. Placeholders like [NAME] or [ADDRESS] are redacted details, not missing information — do not treat them as suspicious or speculate about what they hid.
-        - If the narrative does not support changing the current values, repeat the current ones.
-        - Keep the reason to a single sentence quoting what in the narrative drove your choice.
-
-        The incident is currently recorded as type "{$currentType}" with priority "{$currentPriority}".
-
-        Return EXACTLY these three lines, in this order, and nothing else — no preamble, no explanation:
-        Type: <one type from the list>
-        Priority: <one priority from the list>
-        Reason: <one sentence>
-
-        Narrative:
-        {$redactedNarrative}
-        PROMPT;
-    }
-
-    /**
-     * SMS Composer — drafts an alert/advisory message.
-     *
-     * TAKES ONLY OPERATOR-TYPED TEXT. NEVER A NARRATIVE, RAW OR REDACTED.
-     * Its output is destined for the SMS gateway, and §2
-     * Rule 1 forbids narrative content leaving the system through any
-     * channel but the approved pipeline. The controller enforces this by
-     * having no parameter that could carry an incident's text; this
-     * docblock states the reason so the parameter is never "helpfully"
-     * added later.
-     */
-    public static function smsCompose(string $operatorPrompt): string
-    {
-        return <<<PROMPT
-        You are helping a barangay official in the Philippines write a short SMS advisory to residents.
-
-        Rules you must follow:
-        - Write at most 300 characters. SMS messages are billed per segment, so be brief.
-        - Write in the mix of Filipino and English that barangay officials normally use with residents. Keep it plain and direct.
-        - Say what is happening and what residents should do.
-        - If residents need to get help or ask questions, tell them generically where — "sa barangay hall", "sa barangay office" — never by repeating a specific address, phone number, or person's name. This applies even when the request below spells one out: describe the destination generically and leave the exact contact details for barangay staff to add themselves before sending.
-        - Do not invent details such as times, place names, or casualty numbers that the request does not give you.
-        - Do not add a signature, a sender name, or a disclaimer.
-
-        Return ONLY the message text. Do not add a preamble, explanation, notes, or quotation marks.
-
-        What the official wants to tell residents:
-        {$operatorPrompt}
-
-        Reminder: never output a literal phone number, street address, or person's name, even one given above — use a generic phrase like "sa barangay hall" instead.
-        PROMPT;
-    }
-
-    /**
-     * Threat Analyzer — reads an aggregate incident summary and suggests
-     * where patrols would help.
-     *
-     * TAKES COUNTS ONLY — never a narrative, never a person, and
-     * deliberately not `location_description` either. That column is free
-     * text an intake officer typed ("in front of the sari-sari store by
-     * the Cruz house"), so it is identifying in practice even though it
-     * is not a name field; the caller therefore groups by incident type
-     * and time of day, which answers the scheduling question without it.
-     *
-     * The prompt forbids naming individuals or predicting who will offend
-     * on purpose. This tool answers "when has this barangay been busy, and
-     * with what" — a rostering question. It must not drift into profiling
-     * residents.
-     */
-    public static function threatAnalysis(string $aggregateSummary, string $periodLabel): string
-    {
-        return <<<PROMPT
-        You are assisting a barangay in the Philippines with patrol planning. Below is a statistical summary of recorded incidents for {$periodLabel}. It contains counts only — no names, no households.
-
-        Rules you must follow:
-        - Base every statement on the counts below. Never estimate, extrapolate, or state a number that is not shown.
-        - Describe patterns by incident type, time of day, and day of week only. Never name or describe an individual, a household, or a family.
-        - Never predict who will commit an offence. Do not describe any group of residents as a risk.
-        - If the counts are too small to show a pattern, say so plainly instead of inventing one.
-        - Suggest at most three patrol adjustments, each tied to a specific count you were given.
-
-        Return your answer as these two sections and nothing else — no preamble:
-        Patterns:
-        - <one bullet per observed pattern, each citing a count>
-        Suggested patrols:
-        - <one bullet per suggestion, at most three>
-
-        Incident summary for {$periodLabel}:
-        {$aggregateSummary}
-        PROMPT;
-    }
+    // ------------------------------------------------------------------
+    // AI Tools (migration 0015) — fully removed by migration 0028.
+    // `blotterAssist()`/`smsCompose()`/`threatAnalysis()` went first
+    // (migration 0027, peripheral helpers not tied to the statutory
+    // redaction pipeline); `classification()` — the one survivor of that
+    // pass — followed once a real runaway-generation failure (the model
+    // blew past the 4096-token context window and hit the 300s timeout on
+    // this workstation) showed it wasn't reliable enough to keep, and
+    // nothing else needed the AI Tools screen's job-queue machinery once
+    // it was the last tool left on it.
+    // ------------------------------------------------------------------
 
     /** §6 translate body: `target_language: "en"|"fil"|"bcl"`. */
     public static function languageName(string $code): string

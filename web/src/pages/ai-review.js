@@ -129,21 +129,51 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
    */
   let draftTextarea = null;
   let actionRefs = null;
+  /**
+   * When the currently-pending job was first observed as queued/processing
+   * by THIS browser tab (not a server timestamp — the API doesn't expose
+   * one for this). Powers the elapsed-time readout; ticks every second
+   * independent of the 3s poll so the counter doesn't visibly stall.
+   * Never reset to a fabricated "estimated remaining" figure — only a real
+   * clock counting up, per §8's no-invented-numbers rule.
+   */
+  let pendingSince = null;
+  let tickTimer = null;
+  let elapsedEl = null;
 
   function stopPolling() {
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
     }
+    if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+    pendingSince = null;
   }
 
   function isPending(d) {
     return d && (d.status === 'queued' || d.status === 'processing');
   }
 
+  function formatElapsed(ms) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function tickElapsed() {
+    if (!elapsedEl || pendingSince == null) return;
+    elapsedEl.textContent = formatElapsed(Date.now() - pendingSince);
+  }
+
   function startPollingIfPending() {
     stopPolling();
     if (!isPending(draft) && !isPending(extractionDraft)) return;
+    pendingSince = Date.now();
+    tickTimer = setInterval(tickElapsed, 1000);
     pollTimer = setInterval(async () => {
       try {
         // Independent jobs (§ migration 0008) — refresh whichever is
@@ -299,6 +329,7 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
 
   function render() {
     content.innerHTML = '';
+    elapsedEl = null;
     const layout = document.createElement('div');
     layout.className = 'ai-review-layout';
 
@@ -584,10 +615,20 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
       const processingBanner = document.createElement('div');
       processingBanner.className = 'ai-review__processing-banner';
       processingBanner.innerHTML = `
-        <span class="is-spinning">${icons.repeat(16)}</span>
-        <span><strong>AI Redaction in Progress:</strong> Local Ollama engine is processing incident narrative...</span>
+        <div style="display:flex;align-items:center;gap:var(--spacing-sm);width:100%;">
+          <span class="is-spinning">${icons.repeat(16)}</span>
+          <span>
+            <strong>AI Redaction in Progress:</strong> Local Ollama engine is processing incident narrative...
+            <span class="ai-review__processing-elapsed" aria-live="polite"></span>
+          </span>
+        </div>
+        <div class="ai-review__progress-track" role="progressbar" aria-label="AI job in progress" aria-valuetext="Processing">
+          <div class="ai-review__progress-fill"></div>
+        </div>
       `;
       draftCard.appendChild(processingBanner);
+      elapsedEl = processingBanner.querySelector('.ai-review__processing-elapsed');
+      tickElapsed();
     }
 
     const textarea = document.createElement('textarea');
@@ -1053,7 +1094,12 @@ export function renderAiReviewPage(root, user, onLoggedOut, navigate, incidentId
         draftVersion: draft.draftVersion,
       });
       showToast('Redaction approved.', { variant: 'success' });
-      await load();
+      // §9's documented flow is approve (W8) -> finalize (W7) -> packet
+      // (W8); returning here automatically saves the Secretary the manual
+      // "Back to Incident" click that used to follow every approval, since
+      // finalizing on W7 is always the very next step.
+      stopPolling();
+      navigate('blotter-detail', incidentId);
     } catch (err) {
       button.disabled = false;
       if (err instanceof ApiClientError && err.status === 409) {

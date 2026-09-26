@@ -276,12 +276,11 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       // Floating Live Activity Widget (Top-Right of Map)
       //
       // The header is a single real <button> — the only interactive
-      // element — carrying `aria-expanded` itself, same pattern
-      // AiToolPanel.js uses (see that file's own note on why a button
-      // nested inside a role="button" header, each with its own handler,
-      // is fragile: it needs stopPropagation/preventDefault to avoid a
-      // double-toggle rather than just not having two interactive
-      // elements in the first place).
+      // element — carrying `aria-expanded` itself, rather than a button
+      // nested inside a role="button" header with each carrying its own
+      // handler: that shape is fragile (it needs stopPropagation/
+      // preventDefault to avoid a double-toggle) compared to just not
+      // having two interactive elements in the first place.
       const activityWidget = document.createElement('div');
       activityWidget.className = 'gis-floating-activity';
       activityWidget.innerHTML = `

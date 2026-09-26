@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ============================================
-echo  Baranguard AI Evaluation - Task 1/7: Case summaries
+echo  Baranguard AI Evaluation - Task 1/3: Case summaries
 echo ============================================
 echo.
 echo This tests how well the AI writes short case summaries from an
@@ -125,7 +125,7 @@ echo.
 echo You can safely close this window at any point. Just double-click
 echo this file again later - it picks up exactly where it left off
 echo AUTOMATICALLY (no need to click through this message again), without
-echo repeating work or affecting the other 6 tasks at all.
+echo repeating work or affecting the other 2 tasks at all.
 echo ============================================
 echo.
 pause

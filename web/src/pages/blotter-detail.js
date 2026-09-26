@@ -35,7 +35,7 @@ import {
   finalizeBlotter,
   amendBlotter,
   generateLuponPacket,
-  queueBlotterAssist,
+  downloadLuponPacket,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -44,7 +44,6 @@ import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
-import { AiToolPanel } from '../components/AiToolPanel.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 
@@ -242,22 +241,7 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
   let blotter = null;
   let evidence = [];
 
-  // render() rebuilds `content` wholesale and runs several times per
-  // visit, so the assistant panel is remounted each time. Wiping the DOM
-  // does not clear its poll interval — stop the previous one first.
-  let assistantPanel = null;
-  function stopAssistant() {
-    if (assistantPanel) {
-      assistantPanel.stop();
-      assistantPanel = null;
-    }
-  }
-
   load();
-
-  // The AI Blotter Assistant polls; main.js calls this on the next
-  // navigation so the interval cannot outlive the page.
-  return { stop: stopAssistant };
 
   async function load() {
     renderLoading();
@@ -304,7 +288,6 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
    * Left is the record and work done on it; right is context and audit trail.
    */
   function render() {
-    stopAssistant();
     content.innerHTML = '';
 
     const hasBlotter = Boolean(blotter?.displayId || blotter?.blotterId);
@@ -354,17 +337,26 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       actionsGroup.appendChild(reviewButton);
 
       if (blotter?.finalizedAt) {
+        // A shortcut so the Secretary doesn't need to return to W8
+        // (ai-review.js) just to get the packet — approve (W8) -> finalize
+        // (W7) -> packet is available right here once finalized.
         const luponPacketBtn = document.createElement('button');
         luponPacketBtn.className = 'ghost';
         luponPacketBtn.innerHTML = `${icons.fileText(16)} Lupon Packet`;
         luponPacketBtn.title = 'Generate official Katarungang Pambarangay Lupon conciliation dossier';
+
+        const downloadPacketBtn = document.createElement('button');
+        downloadPacketBtn.className = 'ghost';
+        downloadPacketBtn.innerHTML = `${icons.fileText(16)} Download PDF`;
+        downloadPacketBtn.hidden = true;
+
         luponPacketBtn.addEventListener('click', async () => {
           luponPacketBtn.disabled = true;
           luponPacketBtn.textContent = 'Generating…';
           try {
-            const res = await generateLuponPacket(incidentId);
+            await generateLuponPacket(incidentId);
             showToast('Lupon conciliation packet ready.', { variant: 'success' });
-            if (res?.fileUrl) window.open(res.fileUrl, '_blank');
+            downloadPacketBtn.hidden = false;
           } catch (err) {
             showToast(err instanceof ApiClientError ? err.message : 'Could not generate Lupon packet.', { variant: 'error' });
           } finally {
@@ -372,7 +364,33 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
             luponPacketBtn.innerHTML = `${icons.fileText(16)} Lupon Packet`;
           }
         });
-        actionsGroup.appendChild(luponPacketBtn);
+
+        // The generate endpoint has no browser-navigable URL to hand back
+        // (Bearer-token-only API, no session cookie) — download via an
+        // authenticated fetch()->Blob, same fix ai-review.js already
+        // applies to this exact same endpoint.
+        downloadPacketBtn.addEventListener('click', async () => {
+          downloadPacketBtn.disabled = true;
+          downloadPacketBtn.textContent = 'Downloading…';
+          try {
+            const blob = await downloadLuponPacket(incidentId);
+            const blobUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = `lupon-packet-incident-${incidentId}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(blobUrl);
+          } catch (err) {
+            showToast(err instanceof ApiClientError ? err.message : 'Could not download the packet.', { variant: 'error' });
+          } finally {
+            downloadPacketBtn.disabled = false;
+            downloadPacketBtn.innerHTML = `${icons.fileText(16)} Download PDF`;
+          }
+        });
+
+        actionsGroup.append(luponPacketBtn, downloadPacketBtn);
       }
     }
 
@@ -392,36 +410,6 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     // 2. Official Blotter Record (The core statutory record, placed prominently)
     if (isSecretary) {
       main.appendChild(buildBlotterPanel());
-
-      // 2b. AI Blotter Assistant — Secretary only, because it reads
-      // `raw_narrative` and §2 Rule 1 makes the Secretary its only
-      // reader. It drafts text to TRANSCRIBE INTO DILG BIMSS/KPIS, which
-      // is the mandated Katarungang Pambarangay ledger — this panel does
-      // not write anything into Baranguard's own record. Collapsed by
-      // default; it is a handoff step, not part of reading the case.
-      assistantPanel = AiToolPanel({
-        collapsible: true,
-        startCollapsed: true,
-        tool: {
-          label: 'AI Blotter Assistant',
-          hint: 'Drafts a formal case entry from this incident, redacted, for you to transcribe into DILG BIMSS (KPIS). Nothing here is saved to Baranguard — copy the draft when it is ready.',
-          input: 'none',
-          emptyText: 'Generate a draft entry for BIMSS/KPIS transcription.',
-          run: () => queueBlotterAssist(incidentId),
-        },
-        footerActions: [{
-          label: 'Copy for BIMSS',
-          onClick: async (output) => {
-            try {
-              await navigator.clipboard.writeText(output);
-              showToast('Draft copied. Ready to paste into DILG BIMSS/KPIS.', { variant: 'success' });
-            } catch {
-              showToast('Could not copy automatically — please select and copy the text.', { variant: 'error' });
-            }
-          },
-        }],
-      });
-      main.appendChild(assistantPanel.el);
     } else if (blotter) {
       main.appendChild(buildReadOnlyBlotter());
     }

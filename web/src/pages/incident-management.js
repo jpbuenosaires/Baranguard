@@ -10,7 +10,7 @@
 import {
   getIncidents, createIncident, getIncident, updateIncident, getUsers,
   getDutyStatus, getDispatches, updateIncidentStatus, getBarangays, sendSms,
-  queueIncidentClassification, logout, ApiClientError,
+  logout, ApiClientError,
 } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
@@ -19,7 +19,6 @@ import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
-import { AiToolPanel } from '../components/AiToolPanel.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
 const INCIDENT_TYPE_LABELS = {
@@ -161,24 +160,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   let currentOfficerContact = null;
   let activeViewMode = 'detail'; // 'detail', 'new', 'edit'
 
-  /**
-   * The AI Classifier panel currently mounted in the detail pane, and the
-   * suggestion the operator asked to apply.
-   *
-   * `stopClassifier()` MUST run before any `rightPanel.innerHTML = ''`.
-   * Wiping the DOM does not clear the panel's poll interval, and this
-   * pane is rebuilt on every row click — so forgetting it leaks one timer
-   * per incident the operator looks at.
-   *
-   * Declared up here with the rest of the page state, NOT next to
-   * stopClassifier(): `let` is not hoisted, and the page's return
-   * statement sits at the bottom of a long function, so a declaration
-   * further down would leave these in the temporal dead zone for every
-   * caller that runs before it.
-   */
-  let classifierPanel = null;
-  let pendingClassification = null;
-
   function handleKeyDown(event) {
     const tag = event.target?.tagName?.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable) {
@@ -230,15 +211,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   }
 
   window.addEventListener('keydown', handleKeyDown);
-
-  /**
-   * Incidents the Classifier has already auto-run for once this page
-   * visit, so reselecting the same row (or the list refreshing under it)
-   * does not queue a duplicate background job every time the detail
-   * pane remounts. Cleared implicitly on navigation away from this page
-   * (a fresh page instance gets a fresh Set).
-   */
-  const autoClassifiedIncidentIds = new Set();
 
   // Cached Lookups
   const barangayNameById = new Map();
@@ -637,15 +609,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     if (idx > -1 && rows[idx]) rows[idx].classList.add('is-selected');
   }
 
-  function stopClassifier() {
-    if (classifierPanel) {
-      classifierPanel.stop();
-      classifierPanel = null;
-    }
-  }
-
   function closeDetailPane() {
-    stopClassifier();
     selectedIncidentId = null;
     currentDetail = null;
     activeViewMode = 'detail';
@@ -659,7 +623,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
   // --- Select Incident & Load Details ---
   async function selectIncident(row) {
-    stopClassifier();
     selectedIncidentId = row.incidentId;
     activeViewMode = 'detail';
     layout.classList.add('has-detail');
@@ -695,7 +658,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   }
 
   function renderRightPane() {
-    stopClassifier();
     if (activeViewMode === 'new') {
       layout.classList.add('has-detail');
       renderNewIncidentForm();
@@ -793,80 +755,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     badgesRow.append(prioBadge, statBadge);
     rightPanel.appendChild(badgesRow);
-
-    // 2a. Classifier mismatch chip — populated only if an auto-run (or a
-    // manual regenerate) disagrees with what is already on record. Stays
-    // empty otherwise, deliberately: a suggestion that matches what intake
-    // already picked is not worth an operator's attention (§2 Rule 6 —
-    // no control/notice that fires without real signal behind it).
-    const mismatchSlot = document.createElement('div');
-    mismatchSlot.className = 'incident-classifier-mismatch-slot';
-    rightPanel.appendChild(mismatchSlot);
-
-    function renderClassificationMismatch(parsed) {
-      mismatchSlot.innerHTML = '';
-      if (!parsed) return;
-      const typeDiffers = parsed.incidentType && parsed.incidentType !== row.incidentType;
-      const prioDiffers = parsed.priority && parsed.priority !== prioKey;
-      if (!typeDiffers && !prioDiffers) return;
-
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'status-pill status-pill--info incident-classifier-mismatch-chip';
-      const bits = [];
-      if (typeDiffers) bits.push(INCIDENT_TYPE_LABELS[parsed.incidentType] || parsed.incidentType);
-      if (prioDiffers) bits.push(`${PRIORITY_LABELS[parsed.priority] || parsed.priority} priority`);
-      chip.innerHTML = `${icons.sparkles(13)} <span>AI suggests: ${bits.join(' · ')}</span>`;
-      chip.title = 'Open the AI Classifier to review and apply';
-      chip.addEventListener('click', () => {
-        const toggle = classifierPanel?.el.querySelector('.ai-panel__toggle');
-        if (toggle?.getAttribute('aria-expanded') === 'false') toggle.click();
-        classifierPanel?.el.scrollIntoView({ block: 'nearest' });
-      });
-      mismatchSlot.appendChild(chip);
-    }
-
-    // 2b. AI Classifier — directly under the badges it comments on.
-    //
-    // Collapsed by default: this pane is already dense, and the tool is
-    // an aid for the cases where intake got the type or priority wrong,
-    // not something to read on every incident. Admin and Secretary both
-    // reach this screen and both may run the classifier, so there is no
-    // extra gate here — the server enforces its own regardless.
-    const hasApprovedRedaction = Boolean(detail?.redactionApprovedAt || detail?.redactedNarrative);
-    const shouldAutoClassify = hasApprovedRedaction && !autoClassifiedIncidentIds.has(row.incidentId);
-    if (shouldAutoClassify) autoClassifiedIncidentIds.add(row.incidentId);
-    classifierPanel = AiToolPanel({
-      collapsible: true,
-      startCollapsed: true,
-      tool: {
-        label: 'AI Classifier',
-        hint: 'Suggests a type and priority from the approved redacted narrative. The incident needs an approved redaction first.',
-        input: 'none',
-        emptyText: 'Run the classifier to get a suggested type and priority for this incident.',
-        disabled: !hasApprovedRedaction,
-        disabledTitle: 'Redaction Approval Required',
-        disabledReason: user.role === 'secretary'
-          ? 'Approve the redaction in AI Redaction Review first before classifying.'
-          : 'The Secretary must review and approve this incident’s AI redaction before it can be classified.',
-        run: () => queueIncidentClassification(row.incidentId),
-        autoRun: shouldAutoClassify,
-      },
-      onResult: (output) => renderClassificationMismatch(parseClassification(output)),
-      footerActions: [{
-        label: 'Apply in Edit',
-        onClick: (output) => {
-          pendingClassification = parseClassification(output);
-          if (!pendingClassification) {
-            showToast('Could not read a type and priority from that answer.', { variant: 'error' });
-            return;
-          }
-          activeViewMode = 'edit';
-          renderRightPane();
-        },
-      }],
-    });
-    rightPanel.appendChild(classifierPanel.el);
 
     // 3. Two-Column Info Grid
     const infoGrid = document.createElement('div');
@@ -1381,33 +1269,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   }
 
   // --- Render Edit Incident Form ---
-  /**
-   * Reads the `Type:` / `Priority:` lines AiPrompts::classification() asks
-   * the model for. Tolerant of case and of a missing/extra line, and
-   * validates both values against the enums rather than trusting them —
-   * a model that answers "Type: arson" must not put an invalid value into
-   * a select, and `PATCH /incidents/:id` would reject it anyway.
-   *
-   * @returns {{incidentType:string, priority:string}|null}
-   */
-  function parseClassification(output) {
-    const types = Object.keys(INCIDENT_TYPE_LABELS);
-    const priorities = ['normal', 'high', 'critical'];
-    let incidentType = null;
-    let priority = null;
-
-    for (const line of String(output).split(/\r?\n/)) {
-      const [rawLabel, ...rest] = line.split(':');
-      if (rest.length === 0) continue;
-      const label = rawLabel.trim().toLowerCase();
-      const val = rest.join(':').trim().toLowerCase();
-      if (label === 'type' && types.includes(val)) incidentType = val;
-      if (label === 'priority' && priorities.includes(val)) priority = val;
-    }
-
-    return incidentType || priority ? { incidentType, priority } : null;
-  }
-
   function renderEditIncidentForm(row, detail) {
     rightPanel.innerHTML = '';
 
@@ -1433,17 +1294,13 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const form = document.createElement('form');
     form.className = 'form-stack';
 
-    // A pending AI Classifier suggestion, if the operator pressed "Apply
-    // in Edit". Consumed once — reopening the form later should show the
-    // record's own values, not a stale suggestion.
-    const suggestion = pendingClassification;
-    pendingClassification = null;
-
     // Incident Type. `PATCH /incidents/:id` has always accepted
     // `incident_type` (Admin + Secretary) but this form never exposed it,
     // so a mis-typed intake could only be corrected through the database.
-    // Added 2026-09-10 with the AI Classifier, whose main output is a type
-    // suggestion that would otherwise have nowhere to land.
+    // Added 2026-09-10 for manual correction (originally alongside the AI
+    // Classifier, whose suggestion could prefill these; the Classifier was
+    // removed in migration 0028, but the manual-correction capability it
+    // was built on top of stands on its own).
     const gType = document.createElement('div');
     gType.className = 'incident-form-group';
     const lType = document.createElement('label');
@@ -1455,7 +1312,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       const opt = document.createElement('option');
       opt.value = v;
       opt.textContent = l;
-      if (v === (suggestion?.incidentType || detail.incidentType || row.incidentType)) opt.selected = true;
+      if (v === (detail.incidentType || row.incidentType)) opt.selected = true;
       selType.appendChild(opt);
     }
     gType.append(lType, selType);
@@ -1472,7 +1329,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       const opt = document.createElement('option');
       opt.value = v;
       opt.textContent = l;
-      if (v === (suggestion?.priority || row.priority)) opt.selected = true;
+      if (v === row.priority) opt.selected = true;
       selPrio.appendChild(opt);
     }
     gPrio.append(lPrio, selPrio);
@@ -1823,7 +1680,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
   function stop() {
     window.removeEventListener('keydown', handleKeyDown);
-    stopClassifier();
   }
 
   return { stop };

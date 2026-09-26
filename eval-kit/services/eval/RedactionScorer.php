@@ -84,9 +84,9 @@ final class RedactionScorer
 
     /**
      * Mechanically substitutes each ground-truth entity with its
-     * placeholder — the "gold redacted" text that summary/translation/
-     * classification read instead of a model-produced redaction, per
-     * Rule 16 ("summary generation never reads raw text"). Longest-text-
+     * placeholder — the "gold redacted" text that summary/translation
+     * read instead of a model-produced redaction, per Rule 16 ("summary
+     * generation never reads raw text"). Longest-text-
      * first avoids one entity's text corrupting another that contains it
      * as a substring (e.g. a NAME that is itself a substring of a longer
      * ADDRESS string).

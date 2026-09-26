@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * ai-evaluate.php — scores one of the local model's 8 prompt types
+ * ai-evaluate.php — scores one of the local model's prompt types
  * against a ground-truth dataset and records the result in
  * `ai_evaluation_run` (§5).
  *
@@ -11,9 +11,21 @@ declare(strict_types=1);
  * too (byte-identical, hand-maintained — see build-eval-kit.php, which
  * now generates that copy instead). This version generalizes the SAME
  * pacing/resume/checkpoint/save-results machinery (untouched below —
- * it was already task-agnostic) across all 8 `--task` values. See the
+ * it was already task-agnostic) across every `--task` value. See the
  * plan this session wrote (researched methodology + provisional targets
  * per task) for why each task is scored the way it is below.
+ *
+ * NARROWED 2026-09-26 (migration 0027): `blotter-assist`, `sms-compose`,
+ * and `threat-analysis` were removed along with the app-side tools they
+ * evaluated — see AiPrompts.php's own note on why. Their dataset
+ * generators (`generate-eval-sms-prompts.php`,
+ * `generate-eval-threat-stats.php`) and fixtures were deleted with them.
+ *
+ * NARROWED AGAIN (migration 0028): `classification` — the AI Tools
+ * screen's last surviving tool — was retired after a real
+ * runaway-generation failure on this workstation (the model blew past
+ * the 4096-token context window and hit the 300s timeout), which made it
+ * unreliable enough to remove rather than keep evaluating.
  *
  * TWO ENGINES for `--task=redaction` only (no other task has a
  * meaningful non-model baseline):
@@ -26,13 +38,10 @@ declare(strict_types=1);
  * Usage (from backend/):
  *   php scripts/ai-evaluate.php --task=redaction --engine=baseline --dry-run
  *   php scripts/ai-evaluate.php --task=redaction --engine=model --limit=5
- *   php scripts/ai-evaluate.php --task=classification --engine=model --limit=5
- *   php scripts/ai-evaluate.php --task=sms-compose --engine=model --dataset=fixtures/eval-sms-prompts-v1.json
  *
  * Options:
- *   --task=redaction|summary|translation|extraction|blotter-assist|
- *          classification|sms-compose|threat-analysis
- *                             which of the 8 prompt types to score (default: redaction)
+ *   --task=redaction|summary|translation|extraction
+ *                             which prompt type to score (default: redaction)
  *   --engine=baseline|model   redaction only — which redactor to score (default: baseline)
  *   --translate-to=fil|bcl    translation only — target language (default: fil)
  *   --dataset=<path>          dataset JSON (default: the task's own fixture — see TASK_DEFAULTS)
@@ -94,7 +103,6 @@ use Baranguard\Services\Ai\OllamaException;
 use Baranguard\Services\Ai\OllamaUnavailableException;
 use Baranguard\Services\Ai\RegexRedactor;
 use Baranguard\Services\Eval\ChecklistScorer;
-use Baranguard\Services\Eval\ClassificationScorer;
 use Baranguard\Services\Eval\ExtractionScorer;
 use Baranguard\Services\Eval\RedactionScorer;
 
@@ -103,13 +111,7 @@ const TASK_DEFAULTS = [
     'summary' => 'fixtures/eval-incidents-v1.json',
     'translation' => 'fixtures/eval-incidents-v1.json',
     'extraction' => 'fixtures/eval-incidents-v1.json',
-    'blotter-assist' => 'fixtures/eval-incidents-v1.json',
-    'classification' => 'fixtures/eval-incidents-v1.json',
-    'sms-compose' => 'fixtures/eval-sms-prompts-v1.json',
-    'threat-analysis' => 'fixtures/eval-threat-stats-v1.json',
 ];
-const BLOTTER_ASSIST_DENYLIST = ['guilty', 'liable', 'must pay', 'penalty', 'settlement', 'sentenced'];
-const SMS_DENYLIST = ['regards', 'sincerely', 'sent by', 'signed,', '- barangay'];
 
 $options = parseArguments($argv);
 $task = $options['task'];
@@ -382,27 +384,6 @@ function buildPrompt(string $task, array $record, string $translateTo): ?string
                 return null;
             }
             return AiPrompts::translation(RedactionScorer::deriveGoldRedacted((string) $record['narrative'], $record['entities'] ?? []), $translateTo);
-        case 'blotter-assist':
-            if (!isset($record['narrative'])) {
-                return null;
-            }
-            return AiPrompts::blotterAssist((string) $record['narrative'], (string) ($record['incident_type'] ?? 'other'));
-        case 'classification':
-            if (!isset($record['narrative'])) {
-                return null;
-            }
-            $goldRedacted = RedactionScorer::deriveGoldRedacted((string) $record['narrative'], $record['entities'] ?? []);
-            return AiPrompts::classification($goldRedacted, (string) ($record['incident_type'] ?? ''), (string) ($record['priority'] ?? ''));
-        case 'sms-compose':
-            if (!isset($record['prompt'])) {
-                return null;
-            }
-            return AiPrompts::smsCompose((string) $record['prompt']);
-        case 'threat-analysis':
-            if (!isset($record['aggregate_summary'])) {
-                return null;
-            }
-            return AiPrompts::threatAnalysis((string) $record['aggregate_summary'], (string) ($record['period_label'] ?? 'the recorded period'));
         default:
             return null;
     }
@@ -422,9 +403,6 @@ function scoreOne(string $task, array $record, string $output): array
                 $output
             );
 
-        case 'classification':
-            return ClassificationScorer::score((string) ($record['incident_type'] ?? ''), (string) ($record['priority'] ?? ''), $output);
-
         case 'summary': {
             $goldRedacted = RedactionScorer::deriveGoldRedacted((string) $record['narrative'], $record['entities'] ?? []);
             $checks = [
@@ -440,47 +418,6 @@ function scoreOne(string $task, array $record, string $output): array
             return ChecklistScorer::summarize($checks);
         }
 
-        case 'blotter-assist': {
-            $entityTexts = array_map(static fn ($e) => is_array($e) ? (string) ($e['text'] ?? '') : (string) $e, $record['entities'] ?? []);
-            $leaks = RedactionScorer::countLeaks($output, $entityTexts);
-            $checks = [
-                'no_pii_leaked' => $leaks['leakCount'] === 0,
-                'length_3_to_6_sentences' => ChecklistScorer::sentenceCountInRange($output, 3, 6),
-                'no_legal_conclusion_language' => ChecklistScorer::noDenylistTerms($output, BLOTTER_ASSIST_DENYLIST),
-            ];
-            $summary = ChecklistScorer::summarize($checks);
-            $summary['leaked'] = $leaks['leaked'];
-            return $summary;
-        }
-
-        case 'sms-compose': {
-            $decoy = $record['planted_pii'] ?? null;
-            $leaks = $decoy !== null ? RedactionScorer::countLeaks($output, [(string) $decoy]) : ['leakCount' => 0, 'leaked' => []];
-            $checks = [
-                'within_300_chars' => ChecklistScorer::charCountAtMost($output, 300),
-                'no_planted_pii_leaked' => $leaks['leakCount'] === 0,
-                'no_signature' => ChecklistScorer::noDenylistTerms($output, SMS_DENYLIST),
-                'mentions_given_facts' => ChecklistScorer::mentionsAllFacts($output, $record['given_facts'] ?? []),
-            ];
-            $summary = ChecklistScorer::summarize($checks);
-            $summary['leaked'] = $leaks['leaked'];
-            return $summary;
-        }
-
-        case 'threat-analysis': {
-            $grounding = ChecklistScorer::numbersAreGrounded($output, $record['counts'] ?? []);
-            $checks = [
-                'has_both_section_headers' => ChecklistScorer::containsAllHeaders($output, ['Patterns:', 'Suggested patrols:']),
-                'numbers_grounded_in_input' => $grounding['ok'],
-                'at_most_3_patrol_suggestions' => ChecklistScorer::bulletCount(
-                    substr($output, (int) max(0, mb_stripos($output, 'Suggested patrols:')))
-                ) <= 3,
-            ];
-            $summary = ChecklistScorer::summarize($checks);
-            $summary['fabricated'] = $grounding['fabricated'];
-            return $summary;
-        }
-
         default:
             return [];
     }
@@ -491,7 +428,6 @@ function newTotals(string $task): array
     return match ($task) {
         'redaction' => ['tp' => 0, 'fn' => 0, 'fp' => 0],
         'extraction' => ['complainant' => 0, 'respondent' => 0, 'contact' => 0],
-        'classification' => ['typeMatch' => 0, 'priorityMatch' => 0],
         default => ['passed' => 0, 'total' => 0], // every checklist-scored task
     };
 }
@@ -509,10 +445,6 @@ function foldResult(string $task, array &$totals, array $result): void
             $totals['respondent'] += ($result['respondent'] ?? false) ? 1 : 0;
             $totals['contact'] += ($result['contact'] ?? false) ? 1 : 0;
             break;
-        case 'classification':
-            $totals['typeMatch'] += ($result['typeMatch'] ?? false) ? 1 : 0;
-            $totals['priorityMatch'] += ($result['priorityMatch'] ?? false) ? 1 : 0;
-            break;
         default:
             $totals['passed'] += $result['passed'] ?? 0;
             $totals['total'] += $result['total'] ?? 0;
@@ -525,7 +457,6 @@ function recordFailedSomething(string $task, array $result): bool
     return match ($task) {
         'redaction' => ($result['fn'] ?? 0) > 0,
         'extraction' => !($result['complainant'] ?? true) || !($result['respondent'] ?? true) || !($result['contact'] ?? true),
-        'classification' => !($result['typeMatch'] ?? true) || !($result['priorityMatch'] ?? true),
         default => ($result['failed'] ?? []) !== [],
     };
 }
@@ -535,7 +466,6 @@ function formatRecordLine(string $task, string $id, array $result): string
     return match ($task) {
         'redaction' => sprintf('[%s] tp=%d fn=%d fp=%d%s', $id, $result['tp'], $result['fn'], $result['fp'], $result['leaked'] === [] ? '' : ' LEAKED: ' . implode(' | ', $result['leaked'])),
         'extraction' => sprintf('[%s] complainant=%s respondent=%s contact=%s', $id, $result['complainant'] ? 'ok' : 'MISS', $result['respondent'] ? 'ok' : 'MISS', $result['contact'] ? 'ok' : 'MISS'),
-        'classification' => sprintf('[%s] type=%s priority=%s', $id, $result['typeMatch'] ? 'ok' : 'MISS', $result['priorityMatch'] ? 'ok' : 'MISS'),
         default => sprintf('[%s] %d/%d checks passed%s', $id, $result['passed'] ?? 0, $result['total'] ?? 0, ($result['failed'] ?? []) === [] ? '' : ' FAILED: ' . implode(', ', $result['failed'])),
     };
 }
@@ -580,21 +510,7 @@ function finalizeMetrics(string $task, array $totals, int $scored): array
                 'metricBName' => 'overall_field_accuracy', 'metricBValue' => $overall,
             ];
         }
-        case 'classification': {
-            $typeAcc = $scored > 0 ? $totals['typeMatch'] / $scored : null;
-            $prioAcc = $scored > 0 ? $totals['priorityMatch'] / $scored : null;
-            return [
-                'lines' => [
-                    'Type accuracy:     ' . formatScore($typeAcc) . '   (provisional target >= 85%)',
-                    'Priority accuracy: ' . formatScore($prioAcc) . '   (provisional target >= 80%)',
-                ],
-                'notes' => sprintf('type_accuracy=%.4f priority_accuracy=%.4f', $typeAcc ?? -1, $prioAcc ?? -1),
-                'meetsTarget' => $typeAcc !== null ? ($typeAcc >= 0.85 && $prioAcc >= 0.80) : null,
-                'metricAName' => 'type_accuracy', 'metricAValue' => $typeAcc,
-                'metricBName' => 'priority_accuracy', 'metricBValue' => $prioAcc,
-            ];
-        }
-        default: { // every ChecklistScorer-based task: summary, translation, blotter-assist, sms-compose, threat-analysis
+        default: { // every ChecklistScorer-based task: summary, translation
             $rate = $totals['total'] > 0 ? $totals['passed'] / $totals['total'] : null;
             $label = $task === 'translation' ? 'Placeholder-preservation rate' : 'Mechanical compliance rate';
             $target = $task === 'translation' ? null : 0.90;

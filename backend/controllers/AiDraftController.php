@@ -70,9 +70,10 @@ final class AiDraftController
 {
     /** §6 translate body: `{target_language:"en"|"fil"|"bcl"}`. */
     /**
-     * H-11: per-user AI job abuse budget, shared with AiToolsController's
-     * four tools — same 'ai_job:user:' key prefix and same numbers, so the
-     * limit applies to total AI jobs queued regardless of which endpoint.
+     * H-11: per-user AI job abuse budget. Same 'ai_job:user:' key prefix
+     * the now-removed AI Tools screen's endpoints used (migration
+     * 0015/0027/0028) — kept the same convention in case a future tool
+     * reuses it.
      */
     private const AI_JOB_RATE_LIMIT_MAX = 30;
     private const AI_JOB_RATE_LIMIT_WINDOW_SECONDS = 3600;
@@ -131,9 +132,12 @@ final class AiDraftController
         // Electronic Blotter follow-up (migration 0008): one Secretary
         // action starts both pipelines — the user's own description of
         // this feature was "automatically", not a second manual trigger.
-        // Independent of redaction (own task_type, own rows), so a
-        // failure here never blocks or is blocked by the redaction job.
-        AiJobQueue::enqueueExtraction($pdo, $incidentId, $client->model());
+        // Independent of redaction (own task_type, own rows, own
+        // approval), so a failure here never blocks or is blocked by the
+        // redaction job. Sharing the redaction job's pipeline_run_id lets
+        // the worker claim both together and run one combined model call
+        // (AiPrompts::redactionAndExtraction()) instead of two.
+        AiJobQueue::enqueueExtraction($pdo, $incidentId, $client->model(), $job['pipeline_run_id']);
 
         // Rule 17 audit metadata is allow-listed: identifiers/statuses
         // only. Never the narrative, never any draft text.
