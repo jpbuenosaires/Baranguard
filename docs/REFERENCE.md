@@ -16,27 +16,45 @@ Offline-first, locally hosted Barangay Intelligence and Emergency
 Dispatch System for four barangays in Pilar, Sorsogon. Production
 system, not a demo. Single workstation, LAN-only, no cloud.
 
-**API base URL — reopened 2026-09-15.** A private-mesh VPN briefly gave
-both mobile and web one fixed remote hostname (closed 2026-09-13,
-decommissioned 2026-09-15 — see `DEVLOG.md` for both entries); nothing
-persistent replaces it now. The base architecture (§1) is plain LAN
-reachability: `mobile/src/services/apiService.ts`'s `DEFAULT_API_BASE_URL`
-and `web/index.html`'s `window.BARANGUARD_API_BASE_URL` both default to
-`http://localhost:8081/api/v1`, and each has its own runtime override
-(mobile: Profile's connection-settings card via `setApiBaseUrlOverride()`;
-web: a `?api_base=` query param or `localStorage`, see `web/index.html`'s
-own note) for whatever address is actually correct on the day. For
-temporary remote testing only — never a production access path — a
-Cloudflare Quick Tunnel (`cloudflared tunnel --url http://localhost:8081`)
-can front the API: its hostname is random, changes every run, and has no
-Cloudflare-side authentication in front of it, so anyone who obtains that
-URL can reach the API (§2 Rule 7 still holds for anything meant to stay
-non-public; this is a deliberate, disclosed exception for short-lived
-testing, not a resolution of it). `backend/.env`'s `CORS_ALLOWED_ORIGIN`
-stays a real multi-origin allow-list (not a wildcard) once more than one
-origin needs access — see `backend/public/index.php`'s CORS block. A
-real persistent remote-access mechanism is an open item again
-(`docs/REMAINING.md` §F, F1).
+**API base URL — C-03 in progress, 2026-09-26.** A persistent Cloudflare
+Named Tunnel now fronts both the web dashboard and the API on a real,
+Cloudflare-registered domain: `https://baranguardph.win` (web) and
+`https://api.baranguardph.win` (API), tunnel name `baranguard`, config at
+`~/.cloudflared/config.yml` on the workstation. This replaces the
+private-mesh VPN (closed 2026-09-13, decommissioned 2026-09-15) and the
+Cloudflare Quick Tunnel testing-only exception that followed it (random
+hostname, no Cloudflare-side auth, never a production path — see
+`DEVLOG.md` for all three). `web/index.html`'s `window.
+BARANGUARD_API_BASE_URL` now auto-derives `api.<hostname>` when NOT
+opened from localhost/127.0.0.1, so the web dashboard needs zero manual
+setup from any of these hostnames. `mobile/src/services/apiService.ts`'s
+`DEFAULT_API_BASE_URL` now defaults to `https://api.baranguardph.win/api/v1`
+at build time (a fresh install/release APK just works off any network);
+local dev overrides this per-machine via a gitignored `mobile/.env.local`
+(`VITE_API_BASE_URL=http://localhost:8081/api/v1`). Both platforms keep
+their runtime override too (mobile: Profile's connection-settings card
+via `setApiBaseUrlOverride()`; web: a `?api_base=` query param or
+`localStorage`) for whatever address is actually correct on a given day.
+`backend/.env`'s `CORS_ALLOWED_ORIGIN` includes `https://baranguardph.win`
+alongside the local dev origins.
+
+**Not yet done** (so C-03 is NOT closed in `docs/REMAINING.md` yet):
+the tunnel is currently a manually-started process, not installed as the
+Windows service (`cloudflared service install`, needs an Administrator
+terminal — a one-time step only the workstation's owner can run) that
+would survive a reboot; and there is still **no Cloudflare Access policy
+in front of either hostname** — `api.baranguardph.win` is reachable by
+anyone with the URL, same exposure shape the Quick Tunnel had, just with
+a stable address instead of a rotating one (§2 Rule 7 still holds for
+anything meant to stay non-public). C-02 (MFA) was explicitly deferred
+by the user in the same session this was set up. Also unresolved: this
+whole mechanism assumes the workstation itself is powered on and
+reachable — a workstation outage still takes the whole system down
+except SOS, which has its own device-local SMS fallback independent of
+the workstation entirely (§2 Rule 27); a real fix for THAT is a
+power/connectivity-resilience question (UPS, backup internet), not
+something this tunnel setup solves, and cloud-hosting as an alternative
+was explicitly considered and rejected by the user in the same session.
 
 **Stack:** PHP 8.2 serves all of `/api/v1/*` (Node is CLI tooling only).
 MariaDB 10.4 via XAMPP. Web: vanilla JS, no bundler, no npm step (hand-

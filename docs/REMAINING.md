@@ -133,6 +133,15 @@ done as the other half of this same user decision ("do both now").
 (a real infrastructure/domain decision is needed before any of this can
 be built, not just code):
 
+> **Superseded 2026-09-26 (ninth pass, below) — the decision this section
+> asks for has been made** (a stable hostname is coming, not LAN-only
+> forever), and the actual path taken is a 5th option not enumerated
+> below: a Cloudflare Named Tunnel, which needs no port-forwarding, no
+> local cert issuance/rotation, and no reverse-proxy process of its own
+> (Cloudflare terminates TLS at their edge). The reasoning below for
+> options 1-4 is kept for historical context in case Cloudflare itself
+> ever needs to be reconsidered, but is not the live plan.
+
 The blocker isn't technical difficulty, it's that every real HTTPS option
 needs an answer to a question only the deployment owner can give: **does
 this system ever get a real, stable hostname**, or does it stay pure
@@ -322,6 +331,45 @@ action, which H-17's new coverage guard now correctly blocks (422) since
 it was the shift's only coverage — fixed by naming an explicit
 `target_user_id` instead, `verify-sprint7-audit.sh` back to 57/57. C-02
 (MFA) and C-03 (HTTPS) remain the only two open Critical findings.
+
+**Ninth pass, 2026-09-26 — C-03 IN PROGRESS, not yet closed.** User
+answered the option-4 question from the scoping above: a stable hostname
+is coming after all (Tanod/Secretary/PB need to reach the system off the
+LAN), reversing the earlier "stay LAN-only" assumption. User registered
+a real domain (`baranguardph.win`, Cloudflare Registrar) and added it to
+a new Cloudflare account. Built end-to-end and verified live: a
+Cloudflare Named Tunnel (`baranguard`) with DNS routes for
+`baranguardph.win` (web) and `api.baranguardph.win` (API), both
+confirmed serving real content over real Cloudflare TLS (`curl` +
+browser test, not just "tunnel started"); `backend/.env`'s
+`CORS_ALLOWED_ORIGIN` updated (and a stale leftover Tailscale entry from
+the old mesh-VPN era cleaned out); `web/index.html` now auto-derives
+`api.<hostname>` as its API base whenever opened from anywhere other
+than localhost — verified live in-browser, no manual `?api_base=` link
+needed; `mobile/src/services/apiService.ts`'s `DEFAULT_API_BASE_URL`
+now defaults to the real domain too, with a new gitignored
+`mobile/.env.local` overriding it back to `localhost:8081` for local dev
+only. `docs/REFERENCE.md` §1 updated with the full picture.
+
+**Explicitly NOT done yet, so this is not a close**: (1) the tunnel is a
+manually-started process, not the Windows service
+(`cloudflared service install`) that would survive a reboot — needs an
+Administrator terminal, which only the workstation's owner can run; (2)
+**no Cloudflare Access policy exists yet** — `api.baranguardph.win` is
+currently reachable by anyone with the URL, structurally the same
+exposure the Quick Tunnel had, just with a stable address instead of a
+rotating one (§2 Rule 7 still applies); (3) `.win` was chosen with the
+user fully informed it's a heavily spam/phish-abused TLD (>50% blocklist
+rate in industry data) — a real, disclosed risk of browser/security-
+software warnings down the line, accepted knowingly rather than
+defaulted into. **Also raised and resolved in the same session**: moving
+to redundant/cloud hosting was considered as a fix for "the whole system
+goes down if the workstation is off" and explicitly rejected by the user
+(cost, the GSM gateway's physical hardware dependency, and RA 7160
+data-sovereignty questions were all flagged before the rejection) — the
+single-workstation-outage risk stands as an accepted, disclosed
+limitation, not a resolved one. SOS retains its own workstation-
+independent fallback (§2 Rule 27's direct-SMS path) regardless.
 
 Full disposition of every one
 of the 36 findings — confirmed / partially confirmed / refuted, with

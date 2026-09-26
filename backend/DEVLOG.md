@@ -15823,3 +15823,102 @@ exercises it, so no other fixture needed the same fix.
 
 No production code changed — `NotificationsController.php` is untouched,
 confirmed correct as it stands.
+
+## 2026-09-26 (20) — C-03 in progress: Cloudflare Named Tunnel stood up and verified live, cloud-hosting alternative explicitly rejected
+
+Same session, next item after C-01. User's requirement changed the
+earlier LAN-only assumption: Tanod/Secretary/PB need to reach the system
+even off the barangay LAN. Walked through the real options before
+building anything:
+
+- Domain cost was a real constraint ("no budget"). Free options
+  researched: eu.org (works with Cloudflare, but volunteer-reviewed
+  approval can take days to months — not reliable if access is needed
+  soon) and Tailscale (this project's OWN former private-mesh VPN,
+  de-branded in `docs/REFERENCE.md`/DEVLOG per a 2026-09-15 user
+  instruction to scrub the vendor name — free at this team's size,
+  no domain needed, but was dropped in favor of Cloudflare that same
+  day for reasons the DEVLOG entry itself doesn't state as cost).
+- User accepted a small one-time cost instead and registered
+  `baranguardph.win` directly through Cloudflare Registrar
+  ($4.18 register / $5.18/yr renew). Flagged before AND after
+  registration that `.win` (like `.bid`, `.xyz`, `.club`, `.online`,
+  `.top`, `.tech`) is a TLD with an industry-documented >50% blocklist
+  rate — a real, disclosed risk of browser/security-software warnings,
+  not a hypothetical one. User chose to proceed anyway, informed.
+
+**Built and verified live, not just configured:**
+- `cloudflared tunnel login` (user-authorized via browser), `cloudflared
+  tunnel create baranguard` (id `28c3134b-1a35-4c85-971a-0fb18f262493`),
+  config at `~/.cloudflared/config.yml` routing `baranguardph.win` →
+  `localhost:80` (web) and `api.baranguardph.win` → `localhost:8081`
+  (API), DNS routes added via `cloudflared tunnel route dns`.
+- Ran the tunnel and confirmed with real HTTP calls: `GET
+  https://api.baranguardph.win/api/v1/barangays` returned the real 4
+  seeded barangays (Dao/Binanuahan/Marifosque/Banuyo), not a stub or
+  error page; `GET https://baranguardph.win/baranguard/web/` served the
+  real dashboard HTML.
+- `backend/.env`'s `CORS_ALLOWED_ORIGIN`: added `https://baranguardph.win`,
+  removed a stale leftover Tailscale hostname from the old mesh-VPN era
+  that had never been cleaned up (that file isn't git-tracked, so it
+  survived the 2026-09-15 de-branding pass, which only touched tracked
+  files). Verified live with a real `Origin` header round-trip, not just
+  read the config back.
+- `web/index.html`: `AUTO_DEFAULT` now derives `api.<hostname>` from
+  `window.location` whenever NOT on localhost/127.0.0.1, replacing the
+  flat `LOCAL_DEFAULT` fallback — verified live in the browser pane
+  (`window.BARANGUARD_API_BASE_URL` read back as
+  `"https://api.baranguardph.win/api/v1"` after navigating to the real
+  URL with zero query params), plus a real login-screen screenshot.
+- `mobile/src/services/apiService.ts`: `DEFAULT_API_BASE_URL` changed
+  from `http://localhost:8081/api/v1` to
+  `https://api.baranguardph.win/api/v1` (explicit user decision — "go
+  for 2" after the tradeoff was laid out). New `mobile/.env.local`
+  (confirmed already covered by `.gitignore`, never committed) sets
+  `VITE_API_BASE_URL=http://localhost:8081/api/v1` so this machine's own
+  dev builds keep targeting the workstation directly. Verified for real
+  with Vite's own `loadEnv()`, not assumed: confirmed it resolves to
+  `http://localhost:8081/api/v1` locally.
+- Mobile cleanup requested in the same stretch: removed Profile's "Audio
+  & Haptics"/"Critical Alert" test buttons
+  (`handleTestChimes`/`handleTestFullScreenAlert`) and their
+  now-unused imports (`FullScreenAlert`, `volumeHighOutline`,
+  `alertCircleOutline`) — kept `NotificationDiagnostics` (real read-only
+  permission-status info, not a test action). Deleted a stray
+  `.c7-retest.log` debug leftover. `tsc --noEmit` and `npm run lint`
+  both clean after every mobile change this session.
+
+**Explicitly NOT done — this is IN PROGRESS, not closed:**
+1. `cloudflared service install` needs an elevated (Administrator)
+   terminal — cannot be run from this session's regular-user shell
+   (`Cannot establish a connection to the service control manager:
+   Access is denied.`, confirmed by trying). Without it, the tunnel is
+   a manually-started background process tied to this session and does
+   not survive a reboot.
+2. **No Cloudflare Access policy exists** — `api.baranguardph.win` is
+   reachable by anyone with the URL right now, same shape of exposure
+   the old Quick Tunnel had (§2 Rule 7 still applies). Needs Zero Trust
+   enabled in the dashboard (a one-time click, user's account) before an
+   Access policy can be built.
+3. C-02 (MFA) stays explicitly deferred, by the user's own choice, even
+   though C-03 going live makes it more relevant, not less.
+
+**A real architectural question surfaced and was resolved, not just
+technical work**: raised directly by the user — "the accident will
+happen even [if] the workstation is off, right?" — correctly identifying
+that NONE of the tunnel/domain work solves origin availability, only
+reachability when the origin is already up. Cloud/redundant hosting was
+discussed as the fix, with real tradeoffs surfaced before any commitment:
+recurring cost (contradicts the "no budget" constraint that drove the
+whole domain search), the GSM SMS gateway's hard dependency on a
+physically tethered phone (cannot move to a cloud VM), and RA 7160
+data-sovereignty questions for barangay case records on third-party
+infrastructure. **User's explicit call: abandon the cloud-hosting
+direction entirely.** The single-workstation-outage risk stands as an
+accepted, disclosed limitation — not solved, not silently ignored
+either. SOS keeps its own independent fallback regardless (§2 Rule 27's
+direct-device-SMS path, unaffected by any of this).
+
+`docs/REFERENCE.md` §1 and `docs/REMAINING.md`'s C-03 entry both
+rewritten to reflect this real state — in progress, not closed, with the
+three specific remaining gaps named.

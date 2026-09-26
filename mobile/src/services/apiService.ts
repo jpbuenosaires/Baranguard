@@ -39,31 +39,36 @@ import {
 } from './session';
 
 /**
- * The workstation's API base URL. §2 Rule 7: locally hosted, no PUBLIC
- * internet exposure — the base architecture is plain LAN reachability
- * (a Tanod's phone on the same barangay WiFi as the workstation), which
- * is what this build-time default assumes.
+ * The API base URL a fresh install talks to before any Profile override.
  *
- * A private-mesh VPN (approved-device-only, never exposing the API on
- * the open internet) was adopted 2026-09-13 for the case where a Tanod
- * is out on patrol on mobile data rather than barangay WiFi, then
- * decommissioned 2026-09-15 — see DEVLOG.md for both entries. No
- * equivalent always-on remote-access mechanism replaces it today. For
- * temporary remote testing only, a Cloudflare Quick Tunnel
- * (`cloudflared tunnel --url http://localhost:8081`) can front the API —
- * its hostname is random and changes every run, is NOT gated by any
- * Cloudflare-side authentication, and must never be treated as a
- * production access path (see DEVLOG.md 2026-09-15). Whatever address is
- * current goes through `setApiBaseUrlOverride()` below at RUNTIME from
- * Profile, never hardcoded here for everyone: `VITE_API_BASE_URL` sets
- * only the BUILD-time default (Mobile Improvement Plan Phase 1.3).
+ * C-03 (2026-09-26): a persistent Cloudflare Named Tunnel replaces the
+ * private-mesh VPN (adopted 2026-09-13, decommissioned 2026-09-15 — see
+ * DEVLOG.md for both) and the Cloudflare Quick Tunnel testing-only
+ * exception that followed it (random hostname, no Cloudflare-side auth,
+ * never a production path — DEVLOG.md 2026-09-15). `baranguardph.win` /
+ * `api.baranguardph.win` are real, stable, Cloudflare-DNS-backed
+ * hostnames, so the BUILD-time default now points there directly rather
+ * than assuming same-LAN reachability — a shipped release APK works for
+ * a Tanod off barangay WiFi with zero manual setup.
+ *
+ * Local development still needs the workstation directly: create
+ * `mobile/.env.local` (gitignored, never committed, never shipped) with
+ * `VITE_API_BASE_URL=http://localhost:8081/api/v1` to override this
+ * default for your own dev builds only — see that file's own comment.
+ *
+ * Whatever address is current can still be changed at RUNTIME from
+ * Profile via `setApiBaseUrlOverride()` below, for the rare case a
+ * different address is actually correct on a given day (§2 Rule 7 still
+ * holds: no client-side check here is a security boundary — the API's
+ * own auth/tenant checks are what actually gate access, this is only
+ * "where do I send the request").
  * Deliberately NOT built: mDNS/subnet-broadcast auto-discovery — a manual
  * override already covers "the address changed," and client-isolated
  * barangay WiFi routers commonly block the multicast/broadcast traffic
  * auto-discovery would need anyway.
  */
 const DEFAULT_API_BASE_URL: string =
-  (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8081/api/v1';
+  (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'https://api.baranguardph.win/api/v1';
 
 const API_BASE_URL_OVERRIDE_KEY = 'baranguard.apiBaseUrlOverride';
 

@@ -158,9 +158,19 @@
     //      that's fine for handing a temporary link to a specific test
     //      device, but it is NOT a production access path; see
     //      DEVLOG.md 2026-09-15).
-    //   3. LOCAL_DEFAULT, for the common case of opening this page on the
-    //      same machine or LAN as the API.
-    const LOCAL_DEFAULT = 'http://localhost:8081/api/v1';
+    //   3. AUTO_DEFAULT, derived from wherever this page was actually
+    //      opened from — localhost/LAN falls back to the local API;
+    //      opened from the real public hostname (C-03's Cloudflare Named
+    //      Tunnel, baranguardph.win) auto-targets the matching
+    //      api.<hostname> without anyone ever needing to type a
+    //      `?api_base=` link by hand. That link mechanism still exists
+    //      for the rare case a different address is needed (e.g. a
+    //      temporary Quick Tunnel for testing — see DEVLOG.md
+    //      2026-09-15 — which has no stable hostname to auto-detect).
+    const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const AUTO_DEFAULT = isLocalHost
+      ? 'http://localhost:8081/api/v1'
+      : `${window.location.protocol}//api.${window.location.hostname}/api/v1`;
     const STORAGE_KEY = 'baranguard.apiBaseUrlOverride';
     (function resolveApiBaseUrl() {
       const params = new URLSearchParams(window.location.search);
@@ -176,7 +186,7 @@
       }
       let stored = null;
       try { stored = window.localStorage.getItem(STORAGE_KEY); } catch (e) { /* private mode etc. */ }
-      window.BARANGUARD_API_BASE_URL = stored || LOCAL_DEFAULT;
+      window.BARANGUARD_API_BASE_URL = stored || AUTO_DEFAULT;
     })();
   </script>
 </head>
