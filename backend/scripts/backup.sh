@@ -72,19 +72,30 @@ echo "[backup] Pruning backups older than ${BACKUP_RETENTION_DAYS} days ..."
 # docblock says this is deliberately NOT its job (it only purges DB rows).
 # Each backup is a single full-DB dump named
 # ${DB_NAME}_<TIMESTAMP>.sql.enc, so the fix is file-level: compute the
-# earliest created_at/uploaded_at among rows CURRENTLY under legal_hold
-# across every table that carries the column (incident, citizen_report,
-# evidence_attachment). Any backup timestamped on/after that floor could
-# contain the held record and must survive pruning regardless of age;
-# anything strictly older than the floor predates the record and prunes
-# normally.
+# earliest created_at/uploaded_at/submitted_at among rows CURRENTLY under
+# legal_hold across every table that carries the column (incident,
+# citizen_report, evidence_attachment, sms_log). Any backup timestamped
+# on/after that floor could contain the held record and must survive
+# pruning regardless of age; anything strictly older than the floor
+# predates the record and prunes normally.
+#
+# Real bug fixed 2026-09-26 (DEVLOG (35)): this query used to select
+# `created_at` from `citizen_report`, which has never had that column
+# (it uses `submitted_at` -- see migration 0001/its own schema) -- every
+# run failed closed with "Unknown column 'created_at'" and silently
+# skipped pruning, every time, since the day this script was written.
+# Caught running the FIRST real scheduled-backup dry run, not by
+# inspection. Also added `sms_log` (has its own `legal_hold` +
+# `created_at` per REFERENCE.md's schema map) to the floor, which this
+# query never covered at all.
 set +e
 HOLD_FLOOR="$(MYSQL_PWD="$DB_PASSWORD" mysql \
   --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" -N -B "$DB_NAME" -e "
     SELECT MIN(created_at) FROM (
       SELECT created_at FROM incident WHERE legal_hold = 1
-      UNION ALL SELECT created_at FROM citizen_report WHERE legal_hold = 1
+      UNION ALL SELECT submitted_at AS created_at FROM citizen_report WHERE legal_hold = 1
       UNION ALL SELECT uploaded_at AS created_at FROM evidence_attachment WHERE legal_hold = 1
+      UNION ALL SELECT created_at FROM sms_log WHERE legal_hold = 1
     ) AS held;
   " 2>&1)"
 HOLD_QUERY_STATUS=$?

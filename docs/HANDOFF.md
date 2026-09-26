@@ -6,7 +6,32 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
-**2026-09-26, latest — "why is AI offline?": (32)'s PHP upgrade had
+**2026-09-26, latest — C2 (backup/retention scheduling) and B3 (real
+restore drill) both CLOSED.** `docs/REMAINING.md`'s "Current priority"
+item 2. Generated a real `BACKUP_ENCRYPTION_PASSPHRASE` (added to
+`backend/.env`, gitignored, plus a placeholder + explanation in
+`.env.example`) — nothing had one before this session. **B3**: ran
+`restore-drill.sh` for real, 12/12, confirmed via a live `GET
+/system/health` call that `restore_test_at`/`backup_last_success` are
+now populated (W20 no longer shows "Never"). **C2**: turned out NOT to
+need an Administrator prompt after all — confirmed a bare
+`Register-ScheduledTask` succeeds under this session's ordinary user for
+a task that only needs to run while logged on, which this workstation
+already must be per the existing "must never sleep" requirement. Two new
+tasks, both verified firing for real via `Start-ScheduledTask`
+(`LastTaskResult`=0): `BaranguardBackupRetention` (daily 02:00) and
+`BaranguardRestoreDrill` (weekly Sunday 03:00). **Found and fixed a real
+bug along the way**: `backup.sh`'s legal-hold pruning query referenced
+`citizen_report.created_at`, a column that table has never had (it's
+`submitted_at`) — every prune had silently failed closed since the
+script was written; also added `sms_log` (has its own `legal_hold`) to
+the hold-floor query, which never covered it. The scheduled
+`retention-job.php` run purged 82 `raw_narrative` rows for real against
+the demo `baranguard_uiseed` DB (not production), matching what a
+`--dry-run` read by hand first had predicted. Full detail:
+`backend/DEVLOG.md` 2026-09-26 (35).
+
+**2026-09-26, earlier — "why is AI offline?": (32)'s PHP upgrade had
 silently broken `ext-curl` under Apache, fixed.** Real, user-reported
 symptom right after the PHP-8.3.13 swap: dashboard AI badge said
 offline, `GET /system/ollama-status` returned `unhealthy`, while
@@ -912,10 +937,19 @@ real bug fixed in the same pass as this script: it used to exit entirely
 (not just skip a job) if Ollama was ever unavailable for too long — see
 DEVLOG 2026-09-26 (25).
 
-Neither the retention job nor the restore drill is scheduled — both are
-CLI-only by design; wiring to Task Scheduler is an outstanding runbook step
-(same category of gap the script above closes for Apache/MySQL/cloudflared,
-not yet extended to these two).
+**The retention job and restore drill are now BOTH scheduled** (2026-09-26
+(35)) via a separate script — unlike the one above, this one did NOT need
+an elevated prompt:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File backend\scripts\install-scheduled-backup-jobs.ps1
+```
+
+Registers `BaranguardBackupRetention` (daily 02:00 — `backup.sh` then
+`retention-job.php` for real) and `BaranguardRestoreDrill` (weekly Sunday
+03:00 — `restore-drill.sh`), both reading `backend/.env`'s
+`BACKUP_ENCRYPTION_PASSPHRASE` themselves. Logs land in
+`backend/backups/scheduled-logs/`.
 
 ## Conventions
 

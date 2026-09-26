@@ -574,7 +574,7 @@ run against the 7 new tasks yet (same friend's-hardware step as A2); human-rated
 
 - ✅ **B1. Browser-verify every screen** — DONE 2026-09-13. Every screen renders real data, zero console errors, against real `baranguard_uiseed` data.
 - ✅ **B2. Pen-test dispatch/shifts/citizen-reports/SMS** — DONE 2026-09-13, 59/59 (`verify-b2-pentest-remaining-resources.sh`). Incidents already had 68/68.
-- 🟠 **B3. Run the restore drill with your own passphrase** — still shows "Never" on W20 (drill itself proven 12/12, just needs a real run): `BACKUP_ENCRYPTION_PASSPHRASE=your-passphrase bash backend/scripts/restore-drill.sh`
+- ✅ **B3. Restore drill — DONE 2026-09-26.** Real run, 12/12: fresh encrypted backup, checksum verified, restored into a disposable `_drill` database, fingerprinted against live (30 tables, every row count matching, 66 FKs). `GET /system/health`'s `restore_test_at`/`backup_last_success` confirmed populated — W20 no longer shows "Never". Now also runs weekly on its own via C2's `BaranguardRestoreDrill` scheduled task.
 - ✅ **B4. Sprint 3 backend verification** — DONE 2026-09-13, 38/38. Found and fixed a real bug: `GET /incidents/nearby` 500'd on every call (reused named PDO param under native prepares) since the day it was built — nothing static or previously-dynamic had ever caught it.
 - ✅ **B5. Non-Admin roles in a browser** — DONE 2026-09-13. Found and fixed a real bug: PB's dashboard "Tanods On Duty" panel 403'd unconditionally (called an Admin-only endpoint for both roles).
 
@@ -583,7 +583,7 @@ run against the 7 new tasks yet (same friend's-hardware step as A2); human-rated
 ## C. Real gaps in shipped behaviour
 
 - ✅ **C1. Backup file expiry** — DONE. Refuses to prune any backup file at/after the earliest active legal-hold timestamp; fails closed.
-- 🟠 **C2. Nothing is scheduled** — `retention-job.php`/`restore-drill.sh` are CLI-only by design; wiring to Windows Task Scheduler needs a human at the keyboard (system-settings change, not a coding-session action).
+- ✅ **C2. Scheduling — DONE 2026-09-26.** Turned out NOT to need an Administrator prompt after all (a bare `Register-ScheduledTask` succeeds under an ordinary user for a task that only needs to run while logged on, which this workstation already must be). Two new Scheduled Tasks, registered and verified firing for real via `Start-ScheduledTask` (`LastTaskResult`=0 both): `BaranguardBackupRetention` (daily 02:00 — `backup.sh` then `retention-job.php` for real) and `BaranguardRestoreDrill` (weekly Sunday 03:00 — `restore-drill.sh`). Found and fixed a real bug along the way: `backup.sh`'s legal-hold pruning query had referenced a `citizen_report.created_at` column that table has never had (it's `submitted_at`) — every prune had silently failed closed since the script was written. See `backend/DEVLOG.md` 2026-09-26 (35).
 - ✅ **C3. Mobile SOS button** — DONE, code-complete. Online-first via `apiService.postSos()`, offline fallback queues and drains through `/sync/batch`. Device-unverified (A1).
 - **C4. Smaller known gaps**:
   - ✅ LineChart null-vs-zero data gap — DONE 2026-09-13.
@@ -644,7 +644,7 @@ hardware they need.
 ## Current priority
 
 1. **GPS moving run, outdoors** — a Tanod walking a known Dao street with the app on duty, comparing `gps_track` against the road. Can double as further confidence-building on C7's fix (already device-verified working for a 17-min stationary locked-screen indoor run, 2026-09-24) — a longer/moving/outdoor run only strengthens that, doesn't need to re-litigate it.
-2. **C2** (scheduler wiring) + **B3** (real restore-drill passphrase) — quick, both need a human at the keyboard for the final step.
+2. ~~C2 (scheduler wiring) + B3 (real restore-drill passphrase)~~ — **both DONE 2026-09-26**, see sections B/C above.
 3. **A2/A6** — hand `eval-kit/` to a friend's hardware for the other 7 model tasks (the redaction `ai_evaluation_run` row is done, 2026-09-18).
 4. **M13's `sms_failed` — fixed at the code level 2026-09-24, still needs a device retest.** The gap found the same day (a malformed backup number made `SmsManager` silently drop the send while the app reported `sent_by_sms` — false confidence, zero trace in `content://sms/*`) is now closed two ways: `SettingsController::update()` rejects a malformed `sos_fallback.backup_contact_number` with 400 before it can ever reach the phone (verified against the real, disposable `baranguard_uiseed` DB — malformed → 400, valid PH number → 200, empty-to-unset → 200); `SosSmsPlugin.java` independently re-checks the same PH-mobile-number shape before ever calling `SmsManager`, AND now uses a real `sentIntent`-based result instead of trusting the synchronous return, so a genuine carrier-level rejection (airplane mode, no SIM, no service) will report `sms_failed` for real instead of a false `sent`. `./gradlew assembleDebug` BUILD SUCCESSFUL. **Not yet device-verified** — no phone was attached this session; still needs an on-device retest (malformed number should reject immediately client-side too; airplane-mode/no-SIM should now produce a real `sms_failed`).
 5. **Two fixes from the 2026-09-24 pre-commit code review, both reasoned-but-not-device-verified** (DEVLOG 2026-09-24 (9)):
