@@ -113,10 +113,16 @@ fi
 
 find_bin() {
   local name="$1"
-  if command -v "$name" >/dev/null 2>&1; then command -v "$name"; return; fi
+  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
+  # (and possibly others) has an unrelated same-named binary earlier on
+  # PATH -- a separate MySQL Server install whose client can silently
+  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
+  # that `command -v` would otherwise prefer over the XAMPP install
+  # these scripts are meant for. PATH is now only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done
+  if command -v "$name" >/dev/null 2>&1; then command -v "$name"; return; fi
   echo ""
 }
 MYSQL_BIN="$(find_bin mysql)"

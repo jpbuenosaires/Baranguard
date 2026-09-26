@@ -504,13 +504,20 @@ controls that do nothing.
   `mysqld.exe` running as proof it's XAMPP's** — this machine also has
   an unrelated `MySQL80` Windows service on port 3306; check the actual
   listening port against `backend/.env`'s `DB_PORT` (XAMPP's own MariaDB
-  is 3307 here, per `my.ini`). Same trap for the `mysql` CLIENT: `command
-  -v mysql` can resolve to that other install's client ahead of
-  `C:\xampp\mysql\bin\mysql.exe` on PATH, and even XAMPP's own client is
-  an old Oct-2023 build that can't load `caching_sha2_password` for a
-  root/DBA login on some servers — use the full path explicitly, or
-  `mysql -u root -h 127.0.0.1 -P 3307` to be sure which server you're
-  hitting.
+  is 3307 here, per `my.ini`). Same trap for the `mysql` CLIENT: bare
+  `command -v mysql` can resolve to that other install's client ahead of
+  `C:\xampp\mysql\bin\mysql.exe` on PATH, and pointed at the wrong
+  server (that other install, on 3306) even XAMPP's own client fails
+  with `caching_sha2_password could not be loaded` — an old-client-vs-
+  new-server plugin gap, not a broken client (it works fine against
+  XAMPP's real MariaDB on 3307). **Fixed 2026-09-26 (33) in all 29
+  `backend/scripts/*.sh` that talk to MariaDB directly**: their shared
+  `find_bin()` now tries the explicit XAMPP path before falling back to
+  `command -v`, and `XAMPP_MYSQL_PORT` now defaults to `backend/.env`'s
+  own `DB_PORT` instead of a hardcoded 3306 guess — verified by running
+  `verify-sprint1-auth.sh`/`verify-sprint0.sh` clean with zero env var
+  overrides. Any NEW script written the same way should copy this
+  pattern, not the old `command -v`-first one.
 - **XAMPP's Apache PHP was upgraded 2026-09-26** (was 8.0.30, which
   can't load the backend's 8.1+ `readonly` properties) — `C:\xampp\php`
   is now a copy of `C:\php-8.3.13`, and a new `Listen 8081`/

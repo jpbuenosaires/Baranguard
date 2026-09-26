@@ -6,7 +6,25 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-26.**
 
-**2026-09-26, latest — XAMPP's Apache PHP upgraded 8.0.30 → 8.3.13; API
+**2026-09-26, latest — the mysql-client PATH/port gap noted below is now
+fixed, not just documented.** All 29 `backend/scripts/*.sh` that talk to
+MariaDB directly (every `verify-*.sh` plus `bootstrap-db.sh`/`restore-
+drill.sh`) shared one copy-pasted `find_bin()` that checked `command -v
+mysql` before the explicit `/c/xampp/mysql/bin/` path, so on this
+machine (an unrelated MySQL Server 8.0 client sits earlier on PATH) they
+silently used the wrong client; separately they all defaulted
+`XAMPP_MYSQL_PORT` to the stock 3306 instead of this machine's real 3307
+(same fact 2026-09-26 (31) found for the launcher). Fixed identically
+across all 29 (Python-scripted, not by hand — verified byte-identical
+first): `find_bin()` now tries the XAMPP path first, port now defaults
+from `backend/.env`'s own `DB_PORT`. Verified for real: `verify-sprint1-
+auth.sh` (23/23) and `verify-sprint0.sh` (19/19) both pass with **zero
+env var overrides**, first time either has on this machine, logs
+confirming `Using mysql: /c/xampp/mysql/bin/mysql.exe`. The other 27
+patched scripts share the identical fix but weren't individually re-run
+this session. Full detail: `backend/DEVLOG.md` 2026-09-26 (33).
+
+**2026-09-26, earlier — XAMPP's Apache PHP upgraded 8.0.30 → 8.3.13; API
 now served by Apache on :8081 for real, not a standalone `php -S`
 workaround.** Prompted by "Could not reach the Baranguard server" after
 running `Start Baranguard.bat`: the launcher had never actually started
