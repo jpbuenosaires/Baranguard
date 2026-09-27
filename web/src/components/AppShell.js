@@ -500,7 +500,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const searchInput = document.createElement('input');
   searchInput.id = 'topbar-search';
   searchInput.type = 'search';
-  searchInput.placeholder = 'Search incidents, ID, or status…';
+  searchInput.placeholder = 'Search incidents or jump to screen…';
   searchInput.autocomplete = 'off';
 
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.userAgent || '');
@@ -526,6 +526,100 @@ export function AppShell(user, activePage, navigate, onLogout) {
   searchResults.hidden = true;
   searchHost.append(searchLabel, searchInputWrap, mobileSearchClose, searchResults);
 
+  // Build role-gated Quick Jump targets (screens + deep-linked tabs)
+  const quickJumpTargets = [
+    ...NAV_ITEMS.filter((item) => item.roles.includes(user.role)).map((item) => ({
+      page: item.key,
+      param: undefined,
+      label: item.label,
+      group: item.group || 'Overview',
+      icon: item.icon,
+      keywords: `${item.label} ${item.key} ${item.group || ''}`.toLowerCase(),
+    })),
+  ];
+  if (user.role === 'admin' || user.role === 'punong_barangay') {
+    quickJumpTargets.push({
+      page: 'analytics',
+      param: 'heatmap',
+      label: 'Analytics › Historical Heatmap',
+      group: 'Records & Reporting',
+      icon: icons.map,
+      keywords: 'analytics historical heatmap hotspot map spatial',
+    });
+  }
+  if (user.role === 'admin') {
+    quickJumpTargets.push(
+      {
+        page: 'personnel',
+        param: 'scheduler',
+        label: 'Personnel › Shift Scheduler',
+        group: 'Personnel',
+        icon: icons.calendar,
+        keywords: 'personnel shift scheduler duty roster patrol schedule',
+      },
+      {
+        page: 'personnel',
+        param: 'swaps',
+        label: 'Personnel › Swap Requests',
+        group: 'Personnel',
+        icon: icons.users,
+        keywords: 'personnel shift swap requests',
+      },
+      {
+        page: 'personnel',
+        param: 'fatigue',
+        label: 'Personnel › Fatigue Flags',
+        group: 'Personnel',
+        icon: icons.activity,
+        keywords: 'personnel fatigue flags overwork',
+      },
+    );
+  }
+
+  function createJumpButton(target) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'topbar__search-jump-item';
+
+    const left = document.createElement('span');
+    left.className = 'topbar__search-jump-left';
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'topbar__search-jump-icon';
+    iconSpan.setAttribute('aria-hidden', 'true');
+    iconSpan.innerHTML = target.icon ? target.icon(15) : icons.layoutDashboard(15);
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'topbar__search-jump-title';
+    titleSpan.textContent = target.label;
+
+    left.append(iconSpan, titleSpan);
+
+    const badge = document.createElement('span');
+    badge.className = 'topbar__search-jump-badge';
+    badge.textContent = target.group;
+
+    btn.append(left, badge);
+    btn.addEventListener('click', () => {
+      searchResults.hidden = true;
+      searchInput.value = '';
+      navigate(target.page, target.param);
+    });
+    return btn;
+  }
+
+  function renderQuickJumpPalette() {
+    searchResults.innerHTML = '';
+    const header = document.createElement('div');
+    header.className = 'topbar__search-section-label';
+    header.textContent = 'Quick Jump to Screen';
+    searchResults.appendChild(header);
+    for (const target of quickJumpTargets.slice(0, 8)) {
+      searchResults.appendChild(createJumpButton(target));
+    }
+    searchResults.hidden = false;
+  }
+
   mobileSearchBtn.addEventListener('click', () => {
     searchHost.classList.toggle('is-mobile-open');
     if (searchHost.classList.contains('is-mobile-open')) {
@@ -548,6 +642,9 @@ export function AppShell(user, activePage, navigate, onLogout) {
       e.preventDefault();
       searchInput.focus();
       searchInput.select();
+      if (searchInput.value.trim().length === 0) {
+        renderQuickJumpPalette();
+      }
     }
   };
   window.addEventListener('keydown', handleGlobalSearchKeydown);
@@ -575,12 +672,12 @@ export function AppShell(user, activePage, navigate, onLogout) {
       return;
     }
     if (event.key === 'ArrowDown' && !searchResults.hidden) {
-      const first = searchResults.querySelector('.topbar__search-result');
+      const first = searchResults.querySelector('.topbar__search-result, .topbar__search-jump-item');
       if (first) { event.preventDefault(); first.focus(); }
     }
   });
   searchResults.addEventListener('keydown', (event) => {
-    const items = [...searchResults.querySelectorAll('.topbar__search-result')];
+    const items = [...searchResults.querySelectorAll('.topbar__search-result, .topbar__search-jump-item')];
     const i = items.indexOf(document.activeElement);
     if (event.key === 'Escape') { searchResults.hidden = true; searchInput.focus(); return; }
     if (event.key === 'ArrowDown' && i > -1 && i < items.length - 1) { event.preventDefault(); items[i + 1].focus(); }
@@ -595,6 +692,9 @@ export function AppShell(user, activePage, navigate, onLogout) {
     // empty or stale, with nothing to say a request was in flight.
     searchResults.innerHTML = '<div class="topbar__search-empty">Searching…</div>';
     searchResults.hidden = false;
+    const qLower = q.toLowerCase();
+    const matchedPages = quickJumpTargets.filter((t) => t.keywords.includes(qLower));
+
     let results;
     try {
       results = await apiSearch(q);
@@ -604,25 +704,44 @@ export function AppShell(user, activePage, navigate, onLogout) {
     }
     // A slower earlier request must not overwrite a newer query's results.
     if (searchInput.value.trim() !== q) return;
-    if (results.length === 0) {
+    if (results.length === 0 && matchedPages.length === 0) {
       searchResults.innerHTML = '<div class="topbar__search-empty">No matching incidents.</div>';
       return;
     }
     searchResults.innerHTML = '';
-    for (const item of results) {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'topbar__search-result';
-      const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
-      row.innerHTML = `<strong>#${escapeHtml(item.incidentId)} — ${escapeHtml(typeLabel)}</strong><span class="status-pill status-pill--neutral">${escapeHtml(item.status)}</span>`;
-      row.addEventListener('click', () => {
-        searchResults.hidden = true;
-        searchInput.value = '';
-        // blotter-detail takes the id and is the app's only per-incident
-        // detail view, so a search result opens the incident itself.
-        navigate('blotter-detail', item.incidentId);
-      });
-      searchResults.appendChild(row);
+
+    if (results.length > 0) {
+      const incHeader = document.createElement('div');
+      incHeader.className = 'topbar__search-section-label';
+      incHeader.textContent = `Incidents (${results.length})`;
+      searchResults.appendChild(incHeader);
+
+      for (const item of results) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'topbar__search-result';
+        const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
+        row.innerHTML = `<strong>#${escapeHtml(item.incidentId)} — ${escapeHtml(typeLabel)}</strong><span class="status-pill status-pill--neutral">${escapeHtml(item.status)}</span>`;
+        row.addEventListener('click', () => {
+          searchResults.hidden = true;
+          searchInput.value = '';
+          // blotter-detail takes the id and is the app's only per-incident
+          // detail view, so a search result opens the incident itself.
+          navigate('blotter-detail', item.incidentId);
+        });
+        searchResults.appendChild(row);
+      }
+    }
+
+    if (matchedPages.length > 0) {
+      const navHeader = document.createElement('div');
+      navHeader.className = 'topbar__search-section-label';
+      navHeader.textContent = 'Jump to Screen';
+      searchResults.appendChild(navHeader);
+
+      for (const target of matchedPages) {
+        searchResults.appendChild(createJumpButton(target));
+      }
     }
   }
 

@@ -124,7 +124,7 @@ class FakeLngLatBounds {
 }
 
 class FakePopup {
-  constructor(options = {}) { this.options = options; this.content = null; }
+  constructor(options = {}) { this.options = options; this.content = null; this.handlers = {}; }
   setDOMContent(node) { this.content = node; return this; }
   setHTML(html) { this.content = html; return this; }
   setText(text) { this.content = text; return this; }
@@ -132,6 +132,8 @@ class FakePopup {
   addTo() { return this; }
   remove() { return this; }
   isOpen() { return false; }
+  on(event, fn) { (this.handlers[event] ??= []).push(fn); return this; }
+  off(event, fn) { if (this.handlers[event]) this.handlers[event] = this.handlers[event].filter((f) => f !== fn); return this; }
 }
 
 class FakeMarker {
@@ -187,7 +189,14 @@ class FakeMap {
   setPaintProperty() { return this; }
   setFilter() { return this; }
   fitBounds(bounds) { this.lastFit = bounds; this.fire('moveend'); return this; }
-  flyTo(options) { this.lastFly = options; return this; }
+  flyTo(options) {
+    this.lastFly = options;
+    if (options?.zoom != null) this.zoom = options.zoom;
+    if (options?.center != null) this.center = options.center;
+    this.fire('moveend');
+    this.fire('zoomend');
+    return this;
+  }
   easeTo(options) { this.lastFly = options; return this; }
   jumpTo(options) { this.lastFly = options; return this; }
   setCenter(center) { this.center = center; return this; }

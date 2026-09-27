@@ -10,13 +10,14 @@
  * - Interactive StatStrip and filter bar with search and status chips
  */
 
-import { getUsers, getShifts, createShift, updateShift, ApiClientError } from '../api/apiClient.js';
+import { getUsers, getShifts, createShift, updateShift, getBarangays, ApiClientError } from '../api/apiClient.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 
 const SCHEDULE_COLUMNS = [
   { key: 'status', label: 'Status' },
@@ -30,9 +31,11 @@ const SCHEDULE_COLUMNS = [
  * Personnel > Scheduler tab.
  *
  * @param {HTMLElement} container tab body to render into
- * @param {{fullName:string, role:string}} user
+ * @param {{fullName:string, role:string, barangayId?:number}} user
+ * @param {ReturnType<import('../components/PageHeader.js').PageHeader>} [pageHeader]
+ * @param {{searchQuery?: string}} [initialData]
  */
-export function renderSchedulerTab(container, user) {
+export function renderSchedulerTab(container, user, pageHeader, initialData) {
   // Stat Strip Host
   const statStripHost = document.createElement('div');
   container.appendChild(statStripHost);
@@ -52,8 +55,34 @@ export function renderSchedulerTab(container, user) {
 
   let tanods = [];
   let shifts = [];
+  let barangayName = 'Barangay Peacekeeping Watch';
   let selectedStatus = 'all';
-  let searchQuery = '';
+  let searchQuery = initialData?.searchQuery ? initialData.searchQuery.trim().toLowerCase() : '';
+
+  if (pageHeader && pageHeader.actions) {
+    const printBtn = document.createElement('button');
+    printBtn.type = 'button';
+    printBtn.id = 'preview-schedule-print-btn';
+    printBtn.className = 'ghost';
+    printBtn.innerHTML = `${icons.printer(15)} <span>Preview & Print Schedule</span>`;
+    printBtn.addEventListener('click', () => {
+      openSchedulePrintModal({
+        shifts: getFilteredShifts(),
+        allShifts: shifts,
+        tanods,
+        selectedStatus,
+        searchQuery,
+        user,
+        barangayName,
+      });
+    });
+    pageHeader.actions.appendChild(printBtn);
+  }
+
+  getBarangays().then((list) => {
+    const found = list.find((b) => b.barangayId === (user?.barangayId ?? 1)) || list[0];
+    if (found) barangayName = `Barangay ${found.name}`;
+  }).catch(() => {});
 
   load();
 
@@ -68,7 +97,7 @@ export function renderSchedulerTab(container, user) {
       shifts = shiftsRes.items;
 
       renderStatStrip();
-      const newFormPane = buildNewShiftForm(tanods, load);
+      const newFormPane = buildNewShiftForm(tanods, load, shifts);
       layout.replaceChild(newFormPane, formPane);
       formPane = newFormPane;
 
@@ -158,6 +187,9 @@ export function renderSchedulerTab(container, user) {
   searchInput.type = 'search';
   searchInput.className = 'personnel-search-input';
   searchInput.placeholder = 'Search by tanod or patrol zone…';
+  if (initialData?.searchQuery) {
+    searchInput.value = initialData.searchQuery;
+  }
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value.trim().toLowerCase();
     renderShiftsTable();
@@ -297,7 +329,7 @@ export function renderSchedulerTab(container, user) {
             button.textContent = 'Edit Shift';
             button.addEventListener('click', (event) => {
               event.stopPropagation();
-              openEditModal(shift, tanods, load);
+              openEditModal(shift, tanods, load, shifts);
             });
             return button;
           }
@@ -347,10 +379,110 @@ function formatShiftTimeRange(startAt, endAt) {
   return `${s.toLocaleDateString([], dateOpts)} ${s.toLocaleTimeString([], timeOpts)} – ${e.toLocaleDateString([], dateOpts)} ${e.toLocaleTimeString([], timeOpts)}`;
 }
 
+const FATIGUE_THRESHOLD_HOURS = 56.0;
+
+/**
+ * Calculates total scheduled shift hours for a tanod in the 7-day rolling window ending at targetEndAt.
+ * Mirrors backend FatigueCalculator logic: window = [end_at - 7 days, end_at).
+ */
+function calculateTanodHoursInWindow(shifts, userId, targetEndAt, excludeShiftId = null) {
+  if (!userId || !targetEndAt || !Array.isArray(shifts)) return 0;
+  const end = new Date(targetEndAt).getTime();
+  if (isNaN(end)) return 0;
+  const windowStart = end - (7 * 24 * 60 * 60 * 1000);
+
+  let sum = 0;
+  for (const s of shifts) {
+    if (s.userId !== userId) continue;
+    if (excludeShiftId && s.shiftId === excludeShiftId) continue;
+    const sStart = new Date(s.startAt).getTime();
+    const sEnd = new Date(s.endAt).getTime();
+    if (isNaN(sStart) || isNaN(sEnd) || sEnd <= sStart) continue;
+    if (sStart >= windowStart && sStart < end) {
+      sum += (sEnd - sStart) / (1000 * 60 * 60);
+    }
+  }
+  return Math.round(sum * 10) / 10;
+}
+
+/**
+ * Computes projected rolling hours if the given shift is assigned.
+ */
+function previewShiftFatigue(shifts, userId, startAt, endAt, excludeShiftId = null) {
+  if (!userId || !startAt || !endAt || !Array.isArray(shifts)) return null;
+  const s = new Date(startAt).getTime();
+  const e = new Date(endAt).getTime();
+  if (isNaN(s) || isNaN(e) || e <= s) return null;
+
+  const shiftDuration = (e - s) / (1000 * 60 * 60);
+  const priorHours = calculateTanodHoursInWindow(shifts, userId, endAt, excludeShiftId);
+  const projectedHours = priorHours + shiftDuration;
+  const overBy = projectedHours - FATIGUE_THRESHOLD_HOURS;
+
+  let status = 'safe';
+  if (projectedHours > FATIGUE_THRESHOLD_HOURS) {
+    status = 'critical';
+  } else if (projectedHours >= 48) {
+    status = 'caution';
+  }
+
+  return {
+    shiftDuration,
+    priorHours,
+    projectedHours,
+    overBy,
+    status,
+  };
+}
+
+function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod') {
+  if (!preview) {
+    calloutEl.hidden = true;
+    calloutEl.innerHTML = '';
+    return;
+  }
+
+  calloutEl.hidden = false;
+  if (preview.status === 'critical') {
+    calloutEl.className = 'scheduler-fatigue-callout scheduler-fatigue-callout--critical';
+    calloutEl.innerHTML = `
+      <div class="scheduler-fatigue-callout__title">
+        <span style="display:flex;align-items:center;">${icons.batteryWarning(16)}</span>
+        <span>Fatigue Safety Warning: Exceeds Safe Limit</span>
+      </div>
+      <div class="scheduler-fatigue-callout__desc">
+        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${tanodName}'s 7-day schedule to <strong>${preview.projectedHours.toFixed(1)} hrs</strong> (+${preview.overBy.toFixed(1)}h over the 56h threshold). A fatigue safety flag will be triggered.
+      </div>
+    `;
+  } else if (preview.status === 'caution') {
+    calloutEl.className = 'scheduler-fatigue-callout scheduler-fatigue-callout--warning';
+    calloutEl.innerHTML = `
+      <div class="scheduler-fatigue-callout__title">
+        <span style="display:flex;align-items:center;">${icons.alertTriangle(16)}</span>
+        <span>Approaching Weekly Safety Limit</span>
+      </div>
+      <div class="scheduler-fatigue-callout__desc">
+        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${tanodName} to <strong>${preview.projectedHours.toFixed(1)} hrs / 56h max</strong> (${(FATIGUE_THRESHOLD_HOURS - preview.projectedHours).toFixed(1)}h remaining before safety limit).
+      </div>
+    `;
+  } else {
+    calloutEl.className = 'scheduler-fatigue-callout scheduler-fatigue-callout--success';
+    calloutEl.innerHTML = `
+      <div class="scheduler-fatigue-callout__title">
+        <span style="display:flex;align-items:center;">${icons.checkCircle(16)}</span>
+        <span>Schedule Capacity: Safe</span>
+      </div>
+      <div class="scheduler-fatigue-callout__desc">
+        Projected 7-day schedule: <strong>${preview.projectedHours.toFixed(1)} hrs / 56h max</strong> (within safe operational limits).
+      </div>
+    `;
+  }
+}
+
 /**
  * Builds the right-hand form for creating a new shift with preset buttons.
  */
-function buildNewShiftForm(tanods, onCreated) {
+function buildNewShiftForm(tanods, onCreated, shifts = []) {
   const card = document.createElement('div');
   card.className = 'card';
 
@@ -391,6 +523,7 @@ function buildNewShiftForm(tanods, onCreated) {
     btn.innerHTML = `${p.label}<small>${p.hours}</small>`;
     btn.addEventListener('click', () => {
       applyPreset(p.type, startInput, endInput);
+      updateFormFatiguePreview();
     });
     presetsRow.appendChild(btn);
   });
@@ -406,9 +539,11 @@ function buildNewShiftForm(tanods, onCreated) {
   tanodSelect.id = 'scheduler-new-tanod';
   tanodSelect.className = 'personnel-form-select';
   for (const t of tanods) {
+    const currentHours = calculateTanodHoursInWindow(shifts, t.userId, new Date().toISOString());
     const option = document.createElement('option');
     option.value = String(t.userId);
-    option.textContent = t.fullName;
+    const badge = currentHours > FATIGUE_THRESHOLD_HOURS ? ' [Over Limit]' : (currentHours >= 48 ? ' [Near Limit]' : '');
+    option.textContent = `${t.fullName} (${currentHours.toFixed(1)}h scheduled${badge})`;
     tanodSelect.appendChild(option);
   }
 
@@ -444,6 +579,23 @@ function buildNewShiftForm(tanods, onCreated) {
   endInput.className = 'personnel-form-input';
   endInput.required = true;
 
+  // Proactive Fatigue Preview Callout
+  const fatigueCallout = document.createElement('div');
+  fatigueCallout.className = 'scheduler-fatigue-callout';
+  fatigueCallout.hidden = true;
+
+  const updateFormFatiguePreview = () => {
+    const selectedUserId = Number(tanodSelect.value);
+    const selectedTanod = tanods.find((t) => t.userId === selectedUserId);
+    const tanodName = selectedTanod ? selectedTanod.fullName : 'this Tanod';
+    const preview = previewShiftFatigue(shifts, selectedUserId, startInput.value, endInput.value);
+    updateFatigueCalloutElement(fatigueCallout, preview, tanodName);
+  };
+
+  tanodSelect.addEventListener('change', updateFormFatiguePreview);
+  startInput.addEventListener('input', updateFormFatiguePreview);
+  endInput.addEventListener('input', updateFormFatiguePreview);
+
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
@@ -457,6 +609,7 @@ function buildNewShiftForm(tanods, onCreated) {
     zoneLabel, zoneInput,
     startLabel, startInput,
     endLabel, endInput,
+    fatigueCallout,
     submitButton
   );
   card.append(heading, form);
@@ -498,6 +651,7 @@ function buildNewShiftForm(tanods, onCreated) {
       zoneInput.value = '';
       startInput.value = '';
       endInput.value = '';
+      fatigueCallout.hidden = true;
       onCreated();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Could not create this shift.';
@@ -537,7 +691,7 @@ function applyPreset(type, startInput, endInput) {
 /**
  * Edit Shift Modal
  */
-function openEditModal(shift, tanods, onSaved) {
+function openEditModal(shift, tanods, onSaved, shifts = []) {
   const overlay = document.createElement('div');
   overlay.className = 'personnel-modal-overlay';
 
@@ -582,9 +736,11 @@ function openEditModal(shift, tanods, onSaved) {
   unassignedOpt.textContent = 'Unassigned';
   tanodSelect.appendChild(unassignedOpt);
   for (const t of tanods) {
+    const currentHours = calculateTanodHoursInWindow(shifts, t.userId, new Date().toISOString(), shift.shiftId);
     const opt = document.createElement('option');
     opt.value = String(t.userId);
-    opt.textContent = t.fullName;
+    const badge = currentHours > FATIGUE_THRESHOLD_HOURS ? ' [Over Limit]' : (currentHours >= 48 ? ' [Near Limit]' : '');
+    opt.textContent = `${t.fullName} (${currentHours.toFixed(1)}h scheduled${badge})`;
     if (t.userId === shift.userId) opt.selected = true;
     tanodSelect.appendChild(opt);
   }
@@ -627,7 +783,32 @@ function openEditModal(shift, tanods, onSaved) {
   endField.append(endLabel, endInput);
 
   grid.append(tanodField, zoneField, startField, endField);
-  body.appendChild(grid);
+
+  // Proactive Fatigue Preview Callout in Edit Modal
+  const fatigueCallout = document.createElement('div');
+  fatigueCallout.className = 'scheduler-fatigue-callout';
+  fatigueCallout.hidden = true;
+
+  const updateEditFatiguePreview = () => {
+    const selectedUserId = Number(tanodSelect.value);
+    if (!selectedUserId) {
+      fatigueCallout.hidden = true;
+      fatigueCallout.innerHTML = '';
+      return;
+    }
+    const selectedTanod = tanods.find((t) => t.userId === selectedUserId);
+    const tanodName = selectedTanod ? selectedTanod.fullName : 'this Tanod';
+    const preview = previewShiftFatigue(shifts, selectedUserId, startInput.value, endInput.value, shift.shiftId);
+    updateFatigueCalloutElement(fatigueCallout, preview, tanodName);
+  };
+
+  tanodSelect.addEventListener('change', updateEditFatiguePreview);
+  startInput.addEventListener('input', updateEditFatiguePreview);
+  endInput.addEventListener('input', updateEditFatiguePreview);
+
+  updateEditFatiguePreview();
+
+  body.append(grid, fatigueCallout);
 
   // Footer
   const footer = document.createElement('div');
@@ -723,3 +904,169 @@ function renderError(container, message, onRetry) {
   block.append(text, retryButton);
   container.appendChild(block);
 }
+
+function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, searchQuery, user, barangayName }) {
+  const now = Date.now();
+  let activeCount = 0;
+  let upcomingCount = 0;
+  for (const s of allShifts) {
+    const start = new Date(s.startAt).getTime();
+    const end = new Date(s.endAt).getTime();
+    if (now >= start && now <= end) activeCount += 1;
+    else if (now < start) upcomingCount += 1;
+  }
+
+  const filterDesc = selectedStatus === 'all'
+    ? (searchQuery ? `Filtered ("${searchQuery}")` : 'All Scheduled Shifts')
+    : `${selectedStatus.toUpperCase()}${searchQuery ? ` ("${searchQuery}")` : ''}`;
+
+  const shiftRowsHtml = shifts.length > 0
+    ? shifts.map((shift) => {
+        const tanod = tanods.find((t) => t.userId === shift.userId);
+        const tanodName = tanod ? tanod.fullName : 'Unassigned';
+        const status = getShiftStatus(shift.startAt, shift.endAt);
+        const duration = formatDuration(shift.startAt, shift.endAt).replace(/^Duration:\s*/i, '') || '—';
+        return `
+          <tr>
+            <td class="print-sheet__table--mono">#${escapeHtml(String(shift.shiftId))}</td>
+            <td><strong>${escapeHtml(tanodName)}</strong></td>
+            <td>${escapeHtml(shift.patrolZone || 'General Patrol')}</td>
+            <td>${escapeHtml(formatShiftTimeRange(shift.startAt, shift.endAt))}</td>
+            <td class="print-sheet__table--right">${escapeHtml(duration)}</td>
+            <td>${escapeHtml(status.label)}</td>
+          </tr>
+        `;
+      }).join('')
+    : `<tr><td colspan="6" style="text-align:center;color:#64748b;">No shifts match the selected schedule filter.</td></tr>`;
+
+  const activeTanods = tanods.filter((t) => t.isActive !== false && !t.isSuspended);
+  const rosterRowsHtml = activeTanods.length > 0
+    ? activeTanods.map((t) => `
+        <tr>
+          <td><strong>${escapeHtml(t.fullName)}</strong></td>
+          <td class="print-sheet__table--mono">${escapeHtml(t.username || '—')}</td>
+          <td class="print-sheet__table--mono">${escapeHtml(t.contactNumber || '—')}</td>
+          <td>Active Duty</td>
+        </tr>
+      `).join('')
+    : `<tr><td colspan="4" style="text-align:center;color:#64748b;">No active Tanod personnel records loaded.</td></tr>`;
+
+  const generatedStamp = new Date().toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  const sheetHtml = `
+    <div class="print-sheet__header">
+      <img src="assets/logo.svg" alt="" width="44" height="44" class="print-sheet__header-logo" aria-hidden="true" />
+      <div class="print-sheet__header-text">
+        <p style="margin:0;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#475569;">Republic of the Philippines · Province of Sorsogon · Municipality of Pilar</p>
+        <h1 class="print-sheet__doc-title">BARANGAY TANOD DUTY ROSTER &amp; PATROL SCHEDULE</h1>
+        <p class="print-sheet__doc-subtitle">${escapeHtml(barangayName)} · Official Bulletin-Board Peacekeeping Schedule</p>
+      </div>
+    </div>
+
+    <div class="print-sheet__meta-bar">
+      <div class="print-sheet__meta-cell">
+        <span class="print-sheet__meta-label">Schedule View</span>
+        <span class="print-sheet__meta-val">${escapeHtml(filterDesc)}</span>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <span class="print-sheet__meta-label">Shifts Listed</span>
+        <span class="print-sheet__meta-val print-sheet__meta-val--mono">${shifts.length} of ${allShifts.length}</span>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <span class="print-sheet__meta-label">Generated On</span>
+        <span class="print-sheet__meta-val">${escapeHtml(generatedStamp)}</span>
+      </div>
+      <div class="print-sheet__meta-cell">
+        <span class="print-sheet__meta-label">Prepared By</span>
+        <span class="print-sheet__meta-val">${escapeHtml(user?.fullName || 'Barangay Administrator')}</span>
+      </div>
+    </div>
+
+    <div class="print-sheet__kpi-grid">
+      <div class="print-sheet__kpi-card">
+        <span class="print-sheet__kpi-val">${allShifts.length}</span>
+        <span class="print-sheet__kpi-lbl">Total Scheduled Shifts</span>
+      </div>
+      <div class="print-sheet__kpi-card">
+        <span class="print-sheet__kpi-val print-sheet__kpi-val--success">${activeCount}</span>
+        <span class="print-sheet__kpi-lbl">Active Now</span>
+      </div>
+      <div class="print-sheet__kpi-card">
+        <span class="print-sheet__kpi-val print-sheet__kpi-val--info">${upcomingCount}</span>
+        <span class="print-sheet__kpi-lbl">Upcoming Shifts</span>
+      </div>
+      <div class="print-sheet__kpi-card">
+        <span class="print-sheet__kpi-val">${activeTanods.length}</span>
+        <span class="print-sheet__kpi-lbl">Active Tanod Roster</span>
+      </div>
+    </div>
+
+    <div class="print-sheet__section">
+      <h2 class="print-sheet__section-title">1. Patrol Shift Assignments</h2>
+      <table class="print-sheet__table">
+        <thead>
+          <tr>
+            <th>Shift ID</th>
+            <th>Assigned Tanod</th>
+            <th>Patrol Zone / Sector</th>
+            <th>Duty Window (Start — End)</th>
+            <th class="print-sheet__table--right">Duration</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${shiftRowsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="print-sheet__section">
+      <h2 class="print-sheet__section-title">2. Active Tanod Personnel Contact Directory</h2>
+      <table class="print-sheet__table">
+        <thead>
+          <tr>
+            <th>Tanod Full Name</th>
+            <th>System Callsign / Username</th>
+            <th>Contact Number</th>
+            <th>Roster Standing</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rosterRowsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="print-sheet__signatures">
+      <div class="print-sheet__sig-box">
+        <div class="print-sheet__sig-line"></div>
+        <div class="print-sheet__sig-name">${escapeHtml(user?.fullName || 'Chief Tanod / Admin Officer')}</div>
+        <div class="print-sheet__sig-role">Prepared By · Barangay Peacekeeping Coordinator</div>
+      </div>
+      <div class="print-sheet__sig-box">
+        <div class="print-sheet__sig-line"></div>
+        <div class="print-sheet__sig-name">Punong Barangay</div>
+        <div class="print-sheet__sig-role">Noted &amp; Approved For Posting</div>
+      </div>
+    </div>
+
+    <div class="print-sheet__footer">
+      <span>BARANGUARD Peacekeeping Operations · Official Bulletin Copy</span>
+      <span>Printed ${escapeHtml(generatedStamp)}</span>
+    </div>
+  `;
+
+  openPrintPreviewModal({
+    title: 'Tanod Duty Roster & Shift Schedule — Print Preview',
+    subtitle: 'A4 Bulletin-Board Schedule · Ready for Posting or PDF Archiving',
+    sheetId: 'printable-schedule-sheet',
+    sheetHtml,
+  });
+}
+

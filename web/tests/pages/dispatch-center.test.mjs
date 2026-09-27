@@ -72,6 +72,34 @@ describe('Dispatch Center behaviour', () => {
     assert.match(String(call.body.request_id), UUID);
   });
 
+  test('adding a second responder from a dispatched incident card sends POST /dispatch', async () => {
+    // Provide an additional active on-duty Tanod (user 7) who is not yet assigned to incident 902
+    api.on('GET', '/duty-status', () => ({ status: 200, body: { items: [
+      { user_id: 4, status: 'on_duty', channel: 'app', changed_at: '2026-01-01 00:00:00' },
+      { user_id: 7, status: 'on_duty', channel: 'app', changed_at: '2026-01-01 00:00:00' },
+    ] } }));
+    api.on('GET', '/users', () => ({ status: 200, body: { items: [
+      { user_id: 4, full_name: 'Jose Reyes', role: 'tanod', is_active: 1 },
+      { user_id: 5, full_name: 'Maria Dela Cruz', role: 'tanod', is_active: 1 },
+      { user_id: 7, full_name: 'Ana Dichoso', role: 'tanod', is_active: 1 },
+    ], total: 3 } }));
+
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    const addBtn = buttonByText(/add responder/i, ctx.root);
+    assert.ok(addBtn, 'dispatched incident should render an Add Responder button');
+    assert.equal(addBtn.disabled, false, 'Add Responder button should be enabled when eligible Tanods exist');
+    click(addBtn);
+    await settle();
+    const dialog = $('[role="alertdialog"], [role="dialog"]');
+    assert.ok(dialog, 'Add Responder should open a picker');
+    const confirm = $$('button', dialog).filter((b) => !b.disabled).at(-1);
+    click(confirm);
+    await settle();
+    const calls = api.callsTo('POST', '/dispatch');
+    assert.ok(calls.length >= 1, 'POST /dispatch was sent for second responder');
+  });
+
   test('live Tanod positions are plotted on the map', async () => {
     mountPage(renderDispatchCenterPage, { role: 'admin' });
     await settle();

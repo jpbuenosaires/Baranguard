@@ -42,7 +42,7 @@
  */
 
 import {
-  getGpsLive, getTanodSos, getDutyStatus, getDispatches, getUsers, logout, ApiClientError,
+  getGpsLive, getTanodSos, getDutyStatus, getDispatches, getUsers, getIncidents, logout, ApiClientError,
 } from '../api/apiClient.js';
 import { LiveMap, formatAge } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
@@ -124,6 +124,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   let personnelListEl = null;
   let mapSubtitleEl = null;
   let floatingActivityListEl = null;
+  let legendWidgetEl = null;
 
   load(true);
   timer = setInterval(() => load(false), POLL_INTERVAL_MS);
@@ -136,16 +137,17 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   async function load(showLoadingState) {
     if (showLoadingState && !layoutEl) renderLoading(body);
     try {
-      const [gpsItems, sosItems, dutyStatuses, dispatchesRes, usersRes] = await Promise.all([
+      const [gpsItems, sosItems, dutyStatuses, dispatchesRes, usersRes, incidentsRes] = await Promise.all([
         getGpsLive(user.barangayId),
         getTanodSos({}).catch(() => []),
         getDutyStatus(user.barangayId).catch(() => []),
         getDispatches({ limit: 100 }).catch(() => ({ items: [] })),
         isAdmin ? getUsers({ role: 'tanod', limit: 100 }).catch(() => ({ items: [] })) : Promise.resolve(null),
+        getIncidents({ limit: 100 }).catch(() => ({ items: [] })),
       ]);
       if (usersRes) tanodRosterById = new Map(usersRes.items.map((u) => [u.userId, u]));
       const openSos = sosItems.filter((s) => s.status !== 'resolved');
-      renderPopulated(body, gpsItems, openSos, dutyStatuses, dispatchesRes.items);
+      renderPopulated(body, gpsItems, openSos, dutyStatuses, dispatchesRes.items, incidentsRes?.items || []);
     } catch (err) {
       if (showLoadingState && !layoutEl) {
         const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading live tracking.';
@@ -154,7 +156,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     }
   }
 
-  function renderPopulated(container, gpsItems, openSos, dutyStatuses, dispatches) {
+  function renderPopulated(container, gpsItems, openSos, dutyStatuses, dispatches, incidents = []) {
     const onDutyIds = new Set(dutyStatuses.filter((d) => d.status === 'on_duty').map((d) => d.userId));
     const activeDispatches = dispatches.filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status));
     const dispatchedMap = new Map();
@@ -237,9 +239,13 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       const layersBtn = document.createElement('button');
       layersBtn.type = 'button';
       layersBtn.className = 'gis-map-tool-btn';
-      layersBtn.title = 'Map Layers';
-      layersBtn.setAttribute('aria-label', 'Map Layers');
+      layersBtn.title = 'Reset Map Layers';
+      layersBtn.setAttribute('aria-label', 'Reset Map Layers');
       layersBtn.innerHTML = icons.layers(16);
+      layersBtn.addEventListener('click', () => {
+        liveMap?.resetLayers();
+        renderCurrentRosterAndMap();
+      });
 
       const zoomInBtn = document.createElement('button');
       zoomInBtn.type = 'button';
@@ -257,14 +263,25 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       zoomOutBtn.innerHTML = icons.zoomOut(16);
       zoomOutBtn.addEventListener('click', () => liveMap?.zoomOut());
 
-      const myLocationBtn = document.createElement('button');
-      myLocationBtn.type = 'button';
-      myLocationBtn.className = 'gis-map-primary-btn';
-      myLocationBtn.innerHTML = `${icons.compass(15)}<span>My Location</span>`;
-      myLocationBtn.title = 'Centre and fit all responders and incidents';
-      myLocationBtn.addEventListener('click', () => liveMap?.fitAll());
+      const fitAllBtn = document.createElement('button');
+      fitAllBtn.type = 'button';
+      fitAllBtn.className = 'gis-map-primary-btn';
+      fitAllBtn.innerHTML = `${icons.mapPin(15)}<span>Fit All</span>`;
+      fitAllBtn.title = 'Fit all responders and incidents into view';
+      fitAllBtn.addEventListener('click', () => liveMap?.fitAll());
 
-      mapActions.append(layersBtn, zoomInBtn, zoomOutBtn, myLocationBtn);
+      const fullscreenBtn = document.createElement('button');
+      fullscreenBtn.type = 'button';
+      fullscreenBtn.className = 'gis-map-tool-btn gis-map-fullscreen-btn';
+      fullscreenBtn.title = 'Toggle Full Screen';
+      fullscreenBtn.innerHTML = `<span>Full Screen</span>`;
+      fullscreenBtn.addEventListener('click', () => {
+        const isFull = mapCard.classList.toggle('is-fullscreen');
+        fullscreenBtn.innerHTML = `<span>${isFull ? 'Exit Full Screen' : 'Full Screen'}</span>`;
+        liveMap?.resize();
+      });
+
+      mapActions.append(layersBtn, zoomInBtn, zoomOutBtn, fitAllBtn, fullscreenBtn);
       mapHeader.append(mapTitleGroup, mapActions);
       mapCard.appendChild(mapHeader);
 
@@ -274,13 +291,6 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       mapCard.appendChild(mapViewport);
 
       // Floating Live Activity Widget (Top-Right of Map)
-      //
-      // The header is a single real <button> — the only interactive
-      // element — carrying `aria-expanded` itself, rather than a button
-      // nested inside a role="button" header with each carrying its own
-      // handler: that shape is fragile (it needs stopPropagation/
-      // preventDefault to avoid a double-toggle) compared to just not
-      // having two interactive elements in the first place.
       const activityWidget = document.createElement('div');
       activityWidget.className = 'gis-floating-activity';
       activityWidget.innerHTML = `
@@ -310,24 +320,9 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       activityHeader.addEventListener('click', toggleCollapse);
 
       // Floating Map Legend Widget (Bottom-Left of Map)
-      const legendWidget = document.createElement('div');
-      legendWidget.className = 'gis-floating-legend';
-      legendWidget.innerHTML = `
-        <div class="gis-floating-legend__title">Map Legend</div>
-        <div class="gis-floating-legend__row">
-          <span class="gis-floating-legend__dot gis-floating-legend__dot--available"></span>
-          <span>Available Tanod</span>
-        </div>
-        <div class="gis-floating-legend__row">
-          <span class="gis-floating-legend__dot gis-floating-legend__dot--dispatched"></span>
-          <span>Dispatched / En Route</span>
-        </div>
-        <div class="gis-floating-legend__row">
-          <span class="gis-floating-legend__dot gis-floating-legend__dot--emergency"></span>
-          <span>Emergency Incident</span>
-        </div>
-      `;
-      mapViewport.appendChild(legendWidget);
+      legendWidgetEl = document.createElement('div');
+      legendWidgetEl.className = 'gis-floating-legend';
+      mapViewport.appendChild(legendWidgetEl);
 
       layoutEl.append(sidebar, mapCard);
       container.appendChild(layoutEl);
@@ -374,11 +369,84 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     const activeFiltersCount = rosterFilter === 'all' ? 0 : 1;
     filterBadgeEl.textContent = activeFiltersCount > 0 ? `${rosterFilter.toUpperCase()} filter active` : 'All filter active';
 
-    mapSubtitleEl.textContent = `Monitoring ${gpsItems.length} field personnel across Pilar barangays`;
+    mapSubtitleEl.innerHTML = `
+      <span class="dispatch-map-live-pill"><span class="dispatch-map-live-dot"></span>Live · 15s sync</span>
+      <span>Monitoring ${gpsItems.length} field personnel across Pilar barangays</span>
+    `;
+
+    const activeIncidents = incidents.filter((i) => i.status === 'pending' || i.status === 'dispatched');
+    const mapIncidents = activeIncidents
+      .filter((i) => i.latitude != null && i.longitude != null)
+      .map((i) => ({
+        incidentId: i.incidentId,
+        displayId: i.displayId || `INC-${i.incidentId}`,
+        latitude: i.latitude,
+        longitude: i.longitude,
+        incidentType: i.incidentType || 'other',
+        typeLabel: i.typeLabel || i.incidentType,
+        priority: i.priority || 'normal',
+        status: i.status,
+        locationText: i.locationDescription || i.location_description || '',
+        elapsedText: i.createdAt ? `Reported ${formatElapsed(i.createdAt)}` : '',
+      }));
 
     renderCurrentRosterAndMap = renderRosterAndMap;
     renderRosterAndMap();
     renderActivityFeed(floatingActivityListEl, dispatches, dutyStatuses, openSos, gpsItems);
+
+    function renderGisLegend(availMapCount, dispMapCount, incMapCount, sosMapCount) {
+      if (!legendWidgetEl || !liveMap) return;
+      const vis = liveMap.getLayerVisibility();
+      const anyHidden = !vis.available || !vis.dispatched || !vis.incident || !vis.sos;
+      legendWidgetEl.innerHTML = '';
+
+      const titleRow = document.createElement('div');
+      titleRow.className = 'legend-title-row';
+
+      const titleEl = document.createElement('span');
+      titleEl.className = 'legend-title';
+      titleEl.textContent = 'Legend';
+      titleRow.appendChild(titleEl);
+
+      if (anyHidden) {
+        const resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'legend-reset-btn';
+        resetBtn.textContent = 'Reset';
+        resetBtn.addEventListener('click', () => {
+          liveMap.resetLayers();
+          renderGisLegend(availMapCount, dispMapCount, incMapCount, sosMapCount);
+        });
+        titleRow.appendChild(resetBtn);
+      }
+      legendWidgetEl.appendChild(titleRow);
+
+      const rows = [
+        { key: 'available', label: 'Available Tanod', dotClass: 'legend-dot--green', count: availMapCount },
+        { key: 'dispatched', label: 'Dispatched', dotClass: 'legend-dot--blue', count: dispMapCount },
+        { key: 'incident', label: 'Incident Pin', dotClass: 'legend-dot--amber', count: incMapCount },
+        { key: 'sos', label: 'Emergency SOS', dotClass: 'legend-dot--red', count: sosMapCount },
+      ];
+
+      for (const row of rows) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `legend-item legend-item-btn${vis[row.key] ? '' : ' is-muted'}`;
+        btn.title = `Click to ${vis[row.key] ? 'hide' : 'show'} ${row.label} pins on map`;
+        btn.innerHTML = `
+          <span class="legend-item__left">
+            <span class="legend-dot ${row.dotClass}"></span>
+            <span>${escapeHtml(row.label)}</span>
+          </span>
+          <span class="legend-count-pill">${row.count}</span>
+        `;
+        btn.addEventListener('click', () => {
+          liveMap.toggleLayer(row.key);
+          renderGisLegend(availMapCount, dispMapCount, incMapCount, sosMapCount);
+        });
+        legendWidgetEl.appendChild(btn);
+      }
+    }
 
     function renderRosterAndMap() {
       const filtered = gpsItems.filter((g) => {
@@ -394,17 +462,49 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       personnelHeaderEl.textContent = `FIELD PERSONNEL (${filtered.length})`;
 
       // Map Markers
-      liveMap.setMarkers(filtered.map((g) => ({
-        userId: g.userId,
-        fullName: g.fullName,
-        latitude: g.latitude,
-        longitude: g.longitude,
-        ageSeconds: g.ageSeconds,
-        isStale: g.isStale,
-        status: dispatchedIds.has(g.userId) ? 'dispatched' : 'available',
-        isDispatched: dispatchedIds.has(g.userId),
-      })));
-      liveMap.setSosMarkers(openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status })));
+      liveMap.setMarkers(filtered.map((g) => {
+        const disp = dispatchedMap.get(g.userId);
+        const hasActiveSos = openSos.some((s) => s.userId === g.userId && s.status !== 'resolved');
+        return {
+          userId: g.userId,
+          fullName: g.fullName,
+          latitude: g.latitude,
+          longitude: g.longitude,
+          ageSeconds: g.ageSeconds,
+          isStale: g.isStale,
+          status: dispatchedIds.has(g.userId) ? 'dispatched' : 'available',
+          isDispatched: dispatchedIds.has(g.userId),
+          hasActiveSos,
+          incidentId: disp?.incidentId || null,
+          incidentCode: disp ? `INC-${String(disp.incidentId).padStart(3, '0')}` : null,
+          onViewIncident: isAdmin ? (incId) => navigate('blotter-detail', incId) : undefined,
+        };
+      }));
+      liveMap.setSosMarkers(openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status, fullName: s.fullName })));
+      liveMap.setIncidentMarkers(mapIncidents, undefined, isAdmin ? (incId) => navigate('blotter-detail', incId) : undefined);
+
+      // Draw dashed tactical connection lines between Dispatched Tanods and their assigned Incident pins
+      const dispatchLinks = [];
+      for (const g of filtered) {
+        const dispatchObj = dispatchedMap.get(g.userId);
+        if (dispatchObj && g.latitude != null && g.longitude != null) {
+          const targetInc = activeIncidents.find((i) => i.incidentId === dispatchObj.incidentId);
+          if (targetInc && targetInc.latitude != null && targetInc.longitude != null) {
+            dispatchLinks.push({
+              fromLng: g.longitude,
+              fromLat: g.latitude,
+              toLng: targetInc.longitude,
+              toLat: targetInc.latitude,
+            });
+          }
+        }
+      }
+      liveMap.setDispatchLinks(dispatchLinks);
+
+      const availMapCount = filtered.filter((g) => !dispatchedIds.has(g.userId)).length;
+      const dispMapCount = filtered.filter((g) => dispatchedIds.has(g.userId)).length;
+      const incMapCount = mapIncidents.length;
+      renderGisLegend(availMapCount, dispMapCount, incMapCount, openSos.length);
 
       // Render Field Personnel Cards
       personnelListEl.innerHTML = '';
@@ -500,7 +600,10 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
           personnelListEl.querySelectorAll('.gis-personnel-card').forEach((c) => c.classList.remove('is-selected'));
           card.classList.add('is-selected');
           if (g.latitude && g.longitude) {
-            liveMap?.flyTo(Number(g.latitude), Number(g.longitude));
+            const found = liveMap?.highlightTanod?.(g.userId, 18.5);
+            if (!found) {
+              liveMap?.flyTo(Number(g.latitude), Number(g.longitude), 18.5);
+            }
           }
         });
         card.addEventListener('keydown', (event) => {

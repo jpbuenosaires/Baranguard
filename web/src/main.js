@@ -27,7 +27,6 @@ import { renderAnalyticsPage } from './pages/analytics.js';
 import { renderSettingsPage } from './pages/settings.js';
 import { renderCitizenReportsInboxPage } from './pages/citizen-reports-inbox.js';
 import { renderCitizenReportPage } from './pages/citizen-report.js';
-import { renderTransparencyPage } from './pages/transparency.js';
 import { renderPersonnelPage } from './pages/personnel.js';
 import { renderBlotterDetailPage } from './pages/blotter-detail.js';
 import { renderSmsMonitorPage } from './pages/sms-monitor.js';
@@ -246,10 +245,6 @@ function renderUnavailable(root, user) {
 function checkRoute() {
   if (window.location.hash.startsWith('#/citizen-report')) {
     renderCitizenReportPage(document.getElementById('app'));
-  } else if (window.location.hash.startsWith('#/transparency')) {
-    // H-13/L-03: public, no session — same zero-config hash-route pattern
-    // as #/citizen-report above.
-    renderTransparencyPage(document.getElementById('app'));
   } else {
     boot();
   }

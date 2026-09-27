@@ -103,6 +103,11 @@ export function LiveMap(container, options = {}) {
   let tanodMarkers = [];
   let sosMarkers = [];
   let incidentMarkers = [];
+  const tanodMarkersById = new Map();
+  const sosMarkersById = new Map();
+  let activeFocusedTanodId = null;
+  let activePopupTanodId = null;
+  let focusTimeoutHandle = null;
   let ready = false;
   // Bug fix (2026-09-05): setMarkers() used to re-fit bounds on every poll
   // (every 15s in both Dispatch Center and GIS), re-centering the map even
@@ -113,16 +118,34 @@ export function LiveMap(container, options = {}) {
   // undefined = setRoute() was never called yet (skip the no-op flush
   // below); null = explicitly cleared; a geometry object = pending draw.
   const pendingRoute = { value: undefined };
+  const pendingLinks = { value: undefined };
   let lastRawMarkers = []; // re-clustered on zoom/move — see recluster() below.
+  let lastRawSosItems = [];
+  let lastSosResolve = null;
+  let lastRawIncidents = [];
+  let lastIncidentAssign = null;
+  let lastIncidentViewBlotter = null;
+  let lastDispatchLinks = [];
+  let lastRouteGeojson = null;
   let reclusterHandle = null;
+
+  const visibleLayers = {
+    available: true,
+    dispatched: true,
+    incident: true,
+    sos: true,
+  };
 
   map.on('load', () => {
     ready = true;
     if (pendingBoundary.value) {
       applyBoundary(map, pendingBoundary.value);
     }
+    if (pendingLinks.value !== undefined) {
+      renderDispatchLinks();
+    }
     if (pendingRoute.value !== undefined) {
-      applyRoute(map, pendingRoute.value);
+      renderRoute();
     }
   });
 
@@ -134,6 +157,19 @@ export function LiveMap(container, options = {}) {
   // intermediate frame would be wasted work and visibly janky.
   map.on('moveend', () => scheduleRecluster());
   map.on('zoomend', () => scheduleRecluster());
+  map.on('click', (e) => {
+    if (e?.originalEvent?.target?.closest?.('.live-map__marker')) {
+      return;
+    }
+    clearTimeout(focusTimeoutHandle);
+    if (activeFocusedTanodId != null) {
+      const entry = tanodMarkersById.get(activeFocusedTanodId);
+      if (entry) entry.el.classList.remove('live-map__marker--focused');
+      activeFocusedTanodId = null;
+    }
+    activePopupTanodId = null;
+  });
+
   function scheduleRecluster() {
     if (!ready || lastRawMarkers.length === 0) return;
     clearTimeout(reclusterHandle);
@@ -143,6 +179,13 @@ export function LiveMap(container, options = {}) {
   function clearMarkers(list) {
     for (const marker of list) marker.remove();
     return [];
+  }
+
+  function shortPersonLabel(fullName) {
+    if (!fullName) return 'Tanod';
+    const parts = String(fullName).trim().split(/\s+/);
+    if (parts.length === 1) return parts[0];
+    return `${parts[0][0]}. ${parts[parts.length - 1]}`;
   }
 
   /**
@@ -161,10 +204,24 @@ export function LiveMap(container, options = {}) {
     const used = new Array(points.length).fill(false);
     for (let i = 0; i < points.length; i++) {
       if (used[i]) continue;
+      // If this marker is the actively focused or popup-active Tanod, isolate it so it is never hidden in a cluster bubble
+      const isTargeted = (activeFocusedTanodId != null && points[i].item.userId === activeFocusedTanodId) ||
+                         (activePopupTanodId != null && points[i].item.userId === activePopupTanodId);
+      if (isTargeted) {
+        groups.push([points[i]]);
+        used[i] = true;
+        continue;
+      }
       const group = [points[i]];
       used[i] = true;
       for (let j = i + 1; j < points.length; j++) {
         if (used[j]) continue;
+        // Don't absorb the focused or popup-active Tanod into this cluster group either
+        const isNeighborTargeted = (activeFocusedTanodId != null && points[j].item.userId === activeFocusedTanodId) ||
+                                   (activePopupTanodId != null && points[j].item.userId === activePopupTanodId);
+        if (isNeighborTargeted) {
+          continue;
+        }
         const dx = points[i].px.x - points[j].px.x;
         const dy = points[i].px.y - points[j].px.y;
         if (Math.sqrt(dx * dx + dy * dy) <= CLUSTER_RADIUS_PX) {
@@ -179,29 +236,112 @@ export function LiveMap(container, options = {}) {
 
   function renderTanodMarkers(markers) {
     tanodMarkers = clearMarkers(tanodMarkers);
+    tanodMarkersById.clear();
     const bounds = new maplibregl.LngLatBounds();
     let hasPoint = false;
 
-    for (const group of clusterByScreenDistance(markers)) {
+    const filteredMarkers = markers.filter((item) => {
+      const isDispatched = item.status === 'dispatched' || item.isDispatched;
+      if (isDispatched && !visibleLayers.dispatched) return false;
+      if (!isDispatched && !visibleLayers.available) return false;
+      return item.latitude != null && item.longitude != null;
+    });
+
+    for (const group of clusterByScreenDistance(filteredMarkers)) {
       if (group.length === 1) {
         const item = group[0].item;
         const el = document.createElement('div');
         const isDispatched = item.status === 'dispatched' || item.isDispatched;
         const markerTypeClass = isDispatched ? ' live-map__marker--dispatched' : ' live-map__marker--available';
-        el.className = 'live-map__marker live-map__marker--tanod' + markerTypeClass + (item.isStale ? ' live-map__marker--stale' : '');
+        const isFocused = activeFocusedTanodId === item.userId;
+        const focusedClass = isFocused ? ' live-map__marker--focused' : '';
+        el.className = 'live-map__marker live-map__marker--tanod' + markerTypeClass + (item.isStale ? ' live-map__marker--stale' : '') + focusedClass;
         el.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'live-map__pin-label';
+        labelEl.textContent = shortPersonLabel(item.fullName);
+        el.appendChild(labelEl);
+
         el.title = `${item.fullName} — ${isDispatched ? 'Dispatched' : 'Available'} · ${formatAge(item.ageSeconds)}${item.isStale ? ' (stale)' : ''}`;
-        // §4.3 — a real popup on click (not just the hover-only `title`
-        // tooltip above, which a touch/keyboard user can't reach at all).
-        const popup = new maplibregl.Popup({ offset: 12, closeButton: false })
-          .setText(`${item.fullName} (${isDispatched ? 'Dispatched' : 'Available'}) — ${formatAge(item.ageSeconds)}${item.isStale ? ' (stale)' : ''}`);
-        // `.setPopup()` wires MapLibre's own built-in click-to-toggle
-        // behavior — no separate click listener needed.
-        const marker = new maplibregl.Marker({ element: el })
+
+        // Rich structured DOM popup for Tanod markers
+        const popupContent = document.createElement('div');
+        popupContent.className = 'live-map__incident-popup';
+
+        const topRow = document.createElement('div');
+        topRow.className = 'live-map__popup-top-row';
+        const heading = document.createElement('div');
+        heading.className = 'live-map__incident-popup-heading';
+        heading.textContent = item.fullName || `Tanod #${item.userId}`;
+        const statusPill = document.createElement('span');
+        statusPill.className = `status-pill ${isDispatched ? 'status-pill--info' : 'status-pill--success'}`;
+        statusPill.textContent = isDispatched ? 'Dispatched' : 'Available';
+        topRow.append(heading, statusPill);
+        if (item.hasActiveSos) {
+          const sosBadge = document.createElement('span');
+          sosBadge.className = 'live-map__popup-sos-badge';
+          sosBadge.textContent = '🚨 SOS ACTIVE';
+          topRow.appendChild(sosBadge);
+        }
+        popupContent.appendChild(topRow);
+
+        const metaEl = document.createElement('div');
+        metaEl.className = 'live-map__popup-meta';
+        const ageText = document.createElement('span');
+        ageText.textContent = `GPS fix: ${formatAge(item.ageSeconds)}${item.isStale ? ' · Stale signal' : ' · Live'}`;
+        metaEl.appendChild(ageText);
+
+        if (isDispatched && item.incidentCode) {
+          const assignedLine = document.createElement('span');
+          assignedLine.className = 'live-map__popup-assigned';
+          assignedLine.textContent = `Responding to ${item.incidentCode}`;
+          metaEl.appendChild(assignedLine);
+        }
+        popupContent.appendChild(metaEl);
+
+        let marker;
+        if (typeof item.onViewIncident === 'function' && item.incidentId) {
+          const viewBtn = document.createElement('button');
+          viewBtn.type = 'button';
+          viewBtn.className = 'ghost live-map__popup-btn';
+          viewBtn.textContent = 'Open Incident Dossier';
+          viewBtn.addEventListener('click', () => {
+            marker?.getPopup()?.remove();
+            item.onViewIncident(item.incidentId);
+          });
+          popupContent.appendChild(viewBtn);
+        }
+
+        el.addEventListener('click', () => {
+          const targetZoom = Math.max(map.getZoom(), 18.5);
+          map.flyTo({ center: [item.longitude, item.latitude], zoom: targetZoom, duration: 500 });
+          applyTanodFocus(item.userId, false);
+        });
+
+        const popup = new maplibregl.Popup({ offset: 18, closeButton: true }).setDOMContent(popupContent);
+        if (typeof popup.on === 'function') {
+          popup.on('open', () => {
+            activePopupTanodId = item.userId;
+          });
+          popup.on('close', () => {
+            if (activePopupTanodId === item.userId) {
+              activePopupTanodId = null;
+            }
+          });
+        }
+        marker = new maplibregl.Marker({ element: el })
           .setLngLat([item.longitude, item.latitude])
           .setPopup(popup)
           .addTo(map);
         tanodMarkers.push(marker);
+        tanodMarkersById.set(item.userId, { marker, popup, el, item });
+
+        if (isFocused || activePopupTanodId === item.userId) {
+          try {
+            if (!popup.isOpen()) marker.togglePopup();
+          } catch {}
+        }
       } else {
         // §4.2/§4.3 — a cluster bubble: shows the count, click zooms in on
         // that group's own bounding box (§4.3's "click-to-zoom").
@@ -215,7 +355,7 @@ export function LiveMap(container, options = {}) {
         el.title = `${group.length} Tanods — click to zoom in`;
         el.addEventListener('click', (event) => {
           event.stopPropagation();
-          map.fitBounds(clusterBounds, { padding: 80, maxZoom: 18, duration: 400 });
+          map.fitBounds(clusterBounds, { padding: 80, maxZoom: 18.5, duration: 400 });
         });
 
         const marker = new maplibregl.Marker({ element: el }).setLngLat(center).addTo(map);
@@ -228,7 +368,9 @@ export function LiveMap(container, options = {}) {
     }
 
     // Re-add SOS markers on top so Tanod markers/clusters never cover them (§9).
-    for (const marker of sosMarkers) marker.addTo(map);
+    if (visibleLayers.sos) {
+      for (const marker of sosMarkers) marker.addTo(map);
+    }
 
     return { bounds, hasPoint };
   }
@@ -243,23 +385,37 @@ export function LiveMap(container, options = {}) {
   }
 
   function setSosMarkers(sosItems, onResolve) {
+    lastRawSosItems = sosItems || [];
+    lastSosResolve = onResolve;
     sosMarkers = clearMarkers(sosMarkers);
-    for (const item of sosItems) {
+    sosMarkersById.clear();
+    if (!visibleLayers.sos) return;
+
+    for (const item of lastRawSosItems) {
       if (item.latitude == null || item.longitude == null) continue;
       const el = document.createElement('div');
       el.className = 'live-map__marker live-map__marker--sos';
       el.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`;
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'live-map__pin-label live-map__pin-label--sos';
+      labelEl.textContent = item.fullName ? `SOS · ${shortPersonLabel(item.fullName)}` : `SOS #${item.sosId}`;
+      el.appendChild(labelEl);
+
       el.title = `SOS Alert #${item.sosId} — ${item.status || 'Active'}`;
 
       const popupContent = document.createElement('div');
       popupContent.className = 'live-map__incident-popup';
+      const topRow = document.createElement('div');
+      topRow.className = 'live-map__popup-top-row';
       const heading = document.createElement('div');
       heading.className = 'live-map__incident-popup-heading';
       heading.textContent = `SOS Alert #${item.sosId}${item.fullName ? ' (' + item.fullName + ')' : ''}`;
       const statusPill = document.createElement('span');
       statusPill.className = 'status-pill status-pill--critical';
       statusPill.textContent = (item.status || 'active').toUpperCase();
-      popupContent.append(heading, statusPill);
+      topRow.append(heading, statusPill);
+      popupContent.appendChild(topRow);
 
       let marker;
       if (onResolve && item.status !== 'resolved') {
@@ -276,64 +432,133 @@ export function LiveMap(container, options = {}) {
         popupContent.appendChild(resolveBtn);
       }
 
-      const popup = new maplibregl.Popup({ offset: 12 }).setDOMContent(popupContent);
+      el.addEventListener('click', () => {
+        const targetZoom = Math.max(map.getZoom(), 18.5);
+        map.flyTo({ center: [item.longitude, item.latitude], zoom: targetZoom, duration: 500 });
+      });
+
+      const popup = new maplibregl.Popup({ offset: 18, closeButton: true }).setDOMContent(popupContent);
       marker = new maplibregl.Marker({ element: el })
         .setLngLat([item.longitude, item.latitude])
         .setPopup(popup)
         .addTo(map);
       sosMarkers.push(marker);
+      sosMarkersById.set(item.sosId, marker);
     }
   }
 
   let incidentMarkersById = new Map();
 
   /**
-   * Pending-incident markers (2026-09-05 UX pass) — Dispatch Center's
-   * queue had no map presence at all before this; a dispatcher had to
-   * cross-reference the table to know where anything actually was.
-   * `onAssign(incidentId)` opens the same Tanod-picker-dialog +
-   * `POST /dispatch` flow the table's own Assign button already uses
-   * (`promptDispatchTanod` in DispatchAction.js) — this is a second
-   * entry point into that one flow, not a new one.
+   * Pending & active incident markers on Dispatch Center's map.
    *
-   * @param {Array<{incidentId:number, latitude:number, longitude:number, incidentType:string, priority:string, typeLabel:string}>} items
+   * @param {Array<{incidentId:number, displayId?:string, latitude:number, longitude:number, incidentType:string, priority:string, typeLabel:string, status?:string, locationText?:string, elapsedText?:string, responderText?:string}>} items
    * @param {(incidentId:number) => void} [onAssign]
+   * @param {(incidentId:number) => void} [onViewBlotter]
    */
-  function setIncidentMarkers(items, onAssign) {
+  function setIncidentMarkers(items, onAssign, onViewBlotter) {
+    lastRawIncidents = items || [];
+    lastIncidentAssign = onAssign;
+    lastIncidentViewBlotter = onViewBlotter;
     incidentMarkers = clearMarkers(incidentMarkers);
     incidentMarkersById.clear();
-    for (const item of items) {
+    if (!visibleLayers.incident) return;
+
+    for (const item of lastRawIncidents) {
       if (item.latitude == null || item.longitude == null) continue;
+
+      const isCritical = item.priority === 'critical';
+      const isDispatched = item.status === 'dispatched';
+      const codeStr = item.displayId || `INC-${String(item.incidentId).padStart(3, '0')}`;
 
       const el = document.createElement('div');
       el.className = 'live-map__marker live-map__marker--incident'
-        + (item.priority === 'critical' ? ' live-map__marker--incident-critical' : '');
-      el.title = `${item.typeLabel || item.incidentType} — ${item.priority} priority`;
+        + (isCritical ? ' live-map__marker--incident-critical' : '')
+        + (isDispatched ? ' live-map__marker--incident-dispatched' : '');
+      el.innerHTML = `<span class="live-map__incident-diamond" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg></span>`;
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'live-map__pin-label live-map__pin-label--incident';
+      labelEl.textContent = codeStr;
+      el.appendChild(labelEl);
+
+      el.title = `${codeStr}: ${item.typeLabel || item.incidentType} — ${item.priority} priority`;
 
       const popupContent = document.createElement('div');
       popupContent.className = 'live-map__incident-popup';
+
+      const topRow = document.createElement('div');
+      topRow.className = 'live-map__popup-top-row';
       const heading = document.createElement('div');
       heading.className = 'live-map__incident-popup-heading';
       heading.textContent = `#${item.incidentId} — ${item.typeLabel || item.incidentType}`;
       const priorityPill = document.createElement('span');
-      priorityPill.className = 'status-pill' + (item.priority === 'critical' ? ' status-pill--critical' : ' status-pill--pending');
+      priorityPill.className = 'status-pill' + (isCritical ? ' status-pill--critical' : isDispatched ? ' status-pill--info' : ' status-pill--pending');
       priorityPill.textContent = item.priority;
-      popupContent.append(heading, priorityPill);
+      topRow.append(heading, priorityPill);
+      popupContent.appendChild(topRow);
+
+      if (item.locationText || item.elapsedText || item.responderText) {
+        const metaEl = document.createElement('div');
+        metaEl.className = 'live-map__popup-meta';
+        if (item.locationText) {
+          const locSpan = document.createElement('span');
+          locSpan.textContent = `📍 ${item.locationText}`;
+          metaEl.appendChild(locSpan);
+        }
+        if (item.elapsedText) {
+          const timeSpan = document.createElement('span');
+          timeSpan.textContent = `⏱ ${item.elapsedText}`;
+          metaEl.appendChild(timeSpan);
+        }
+        if (item.responderText) {
+          const respSpan = document.createElement('span');
+          respSpan.className = 'live-map__popup-assigned';
+          respSpan.textContent = item.responderText;
+          metaEl.appendChild(respSpan);
+        }
+        popupContent.appendChild(metaEl);
+      }
+
+      let marker;
+      const actionsRow = document.createElement('div');
+      actionsRow.className = 'live-map__popup-actions';
 
       if (onAssign) {
         const assignButton = document.createElement('button');
         assignButton.type = 'button';
-        assignButton.className = 'primary';
-        assignButton.textContent = 'Assign';
-        // Real DOM node + addEventListener via setDOMContent, not an
-        // inline handler string via setHTML — same reasoning as every
-        // other interactive control in this codebase.
-        assignButton.addEventListener('click', () => onAssign(item.incidentId));
-        popupContent.appendChild(assignButton);
+        assignButton.className = (isDispatched ? 'ghost' : 'primary') + ' live-map__popup-btn';
+        assignButton.textContent = isDispatched ? '+ Add Responder' : 'Assign';
+        assignButton.addEventListener('click', () => {
+          marker?.getPopup()?.remove();
+          onAssign(item.incidentId);
+        });
+        actionsRow.appendChild(assignButton);
       }
 
-      const popup = new maplibregl.Popup({ offset: 12 }).setDOMContent(popupContent);
-      const marker = new maplibregl.Marker({ element: el })
+      if (onViewBlotter) {
+        const blotterBtn = document.createElement('button');
+        blotterBtn.type = 'button';
+        blotterBtn.className = 'ghost live-map__popup-btn';
+        blotterBtn.textContent = 'View Blotter';
+        blotterBtn.addEventListener('click', () => {
+          marker?.getPopup()?.remove();
+          onViewBlotter(item.incidentId);
+        });
+        actionsRow.appendChild(blotterBtn);
+      }
+
+      if (actionsRow.children.length > 0) {
+        popupContent.appendChild(actionsRow);
+      }
+
+      el.addEventListener('click', () => {
+        const targetZoom = Math.max(map.getZoom(), 18.5);
+        map.flyTo({ center: [item.longitude, item.latitude], zoom: targetZoom, duration: 500 });
+      });
+
+      const popup = new maplibregl.Popup({ offset: 18, closeButton: true }).setDOMContent(popupContent);
+      marker = new maplibregl.Marker({ element: el })
         .setLngLat([item.longitude, item.latitude])
         .setPopup(popup)
         .addTo(map);
@@ -350,6 +575,63 @@ export function LiveMap(container, options = {}) {
     applyBoundary(map, geojson);
   }
 
+  function renderDispatchLinks() {
+    if (!ready || destroyed) return;
+    // Dispatch connection lines connect Dispatched Tanods to Incident pins.
+    // If either Dispatched Tanods or Incidents layer is hidden, the connection lines must disappear.
+    if (!visibleLayers.dispatched || !visibleLayers.incident) {
+      applyDispatchLinks(map, []);
+      return;
+    }
+    applyDispatchLinks(map, lastDispatchLinks);
+  }
+
+  function setDispatchLinks(links) {
+    lastDispatchLinks = Array.isArray(links) ? links : [];
+    if (!ready) {
+      pendingLinks.value = lastDispatchLinks;
+      return;
+    }
+    renderDispatchLinks();
+  }
+
+  function renderRoute() {
+    if (!ready || destroyed) return;
+    if (!visibleLayers.dispatched || !visibleLayers.incident) {
+      applyRoute(map, null);
+      return;
+    }
+    applyRoute(map, lastRouteGeojson);
+  }
+
+  function toggleLayer(layerKey) {
+    if (!(layerKey in visibleLayers)) return visibleLayers;
+    visibleLayers[layerKey] = !visibleLayers[layerKey];
+    renderTanodMarkers(lastRawMarkers);
+    setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewBlotter);
+    setSosMarkers(lastRawSosItems, lastSosResolve);
+    renderDispatchLinks();
+    renderRoute();
+    return { ...visibleLayers };
+  }
+
+  function resetLayers() {
+    visibleLayers.available = true;
+    visibleLayers.dispatched = true;
+    visibleLayers.incident = true;
+    visibleLayers.sos = true;
+    renderTanodMarkers(lastRawMarkers);
+    setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewBlotter);
+    setSosMarkers(lastRawSosItems, lastSosResolve);
+    renderDispatchLinks();
+    renderRoute();
+    return { ...visibleLayers };
+  }
+
+  function getLayerVisibility() {
+    return { ...visibleLayers };
+  }
+
   /**
    * Draws (or updates, or clears) a single road-snapped route line —
    * Dispatch Center's read-only display of a route a Tanod's own mobile
@@ -361,56 +643,96 @@ export function LiveMap(container, options = {}) {
    * special-case "no route."
    */
   function setRoute(geojson) {
+    lastRouteGeojson = geojson;
     if (!ready) {
       pendingRoute.value = geojson;
       return;
     }
-    applyRoute(map, geojson);
+    renderRoute();
   }
 
-  // A real bug caught by this session's own Playwright walkthrough (not
-  // just claimed working): main.js's boot() stops the outgoing page's
-  // poll/map via a stored handle on every navigation, including the one
-  // that follows sign-out — but the outgoing page's own onLogout handler
-  // also stops itself first, for immediate responsiveness. That means
-  // destroy() can legitimately be called twice for the same LiveMap
-  // instance. A second `map.remove()` throws inside MapLibre's own
-  // teardown ("Cannot read properties of undefined (reading 'destroy')")
-  // because it isn't idempotent — so this function has to be, instead of
-  // relying on every caller to invoke it exactly once.
   let destroyed = false;
   function destroy() {
     if (destroyed) return;
     destroyed = true;
     clearTimeout(reclusterHandle);
+    clearTimeout(focusTimeoutHandle);
     clearMarkers(tanodMarkers);
+    tanodMarkersById.clear();
     clearMarkers(sosMarkers);
+    sosMarkersById.clear();
     clearMarkers(incidentMarkers);
     incidentMarkersById.clear();
+    applyDispatchLinks(map, []);
+    applyRoute(map, null);
     map.remove();
   }
 
-  /**
-   * Centre on one point — used by W3's SOS banner ("Show on map") and by
-   * W4's roster rows, so a coordinate the operator can already see in a
-   * list becomes one click away on the map instead of a manual hunt.
-   * Guards on `destroyed` for the same reason destroy() does.
-   */
-  function flyTo(latitude, longitude, zoom = 17) {
+  function flyTo(latitude, longitude, zoom = 18.5) {
     if (destroyed) return;
     map.flyTo({ center: [longitude, latitude], zoom, duration: 600 });
   }
 
-  /**
-   * Focus and open popup for an incident on the map by its ID.
-   * Returns true if the incident marker exists and was highlighted.
-   */
-  function highlightIncident(incidentId) {
+  function highlightTanod(userId, zoom = 18.5) {
     if (destroyed) return false;
-    const marker = incidentMarkersById.get(incidentId);
+    activeFocusedTanodId = userId;
+
+    const raw = lastRawMarkers.find((m) => m.userId === userId);
+    if (!raw || raw.latitude == null || raw.longitude == null) return false;
+
+    // Unhide layer if it was hidden so the Tanod pin is visible
+    const isDispatched = raw.status === 'dispatched' || raw.isDispatched;
+    if (isDispatched && !visibleLayers.dispatched) {
+      visibleLayers.dispatched = true;
+    }
+    if (!isDispatched && !visibleLayers.available) {
+      visibleLayers.available = true;
+    }
+
+    const targetZoom = Math.max(map.getZoom(), zoom);
+    map.flyTo({ center: [Number(raw.longitude), Number(raw.latitude)], zoom: targetZoom, duration: 600 });
+
+    // Re-render immediately so the targeted marker is guaranteed unclustered and focused
+    renderTanodMarkers(lastRawMarkers);
+    applyTanodFocus(userId);
+    return true;
+  }
+
+  function applyTanodFocus(userId, openPopup = true) {
+    clearTimeout(focusTimeoutHandle);
+    activeFocusedTanodId = userId;
+    if (openPopup) {
+      activePopupTanodId = userId;
+    }
+    const entry = tanodMarkersById.get(userId);
+    if (entry) {
+      entry.el.classList.add('live-map__marker--focused');
+      if (openPopup) {
+        try {
+          if (entry.popup && !entry.popup.isOpen()) {
+            entry.marker.togglePopup();
+          }
+        } catch {}
+      }
+    }
+    focusTimeoutHandle = setTimeout(() => {
+      if (entry) entry.el.classList.remove('live-map__marker--focused');
+      if (activeFocusedTanodId === userId) {
+        activeFocusedTanodId = null;
+      }
+    }, 8000);
+  }
+
+  function highlightSos(sosId, zoom = 18.5) {
+    if (destroyed) return false;
+    if (!visibleLayers.sos) {
+      visibleLayers.sos = true;
+    }
+    const marker = sosMarkersById.get(sosId);
     if (!marker) return false;
     const lngLat = marker.getLngLat();
-    map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: 17, duration: 600 });
+    const targetZoom = Math.max(map.getZoom(), zoom);
+    map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: targetZoom, duration: 600 });
     try {
       const popup = marker.getPopup();
       if (popup && !popup.isOpen()) {
@@ -420,9 +742,25 @@ export function LiveMap(container, options = {}) {
     return true;
   }
 
-  /**
-   * Fit map viewport to encompass all current Tanods, SOS alerts, and incidents.
-   */
+  function highlightIncident(incidentId, zoom = 18.5) {
+    if (destroyed) return false;
+    if (!visibleLayers.incident) {
+      visibleLayers.incident = true;
+    }
+    const marker = incidentMarkersById.get(incidentId);
+    if (!marker) return false;
+    const lngLat = marker.getLngLat();
+    const targetZoom = Math.max(map.getZoom(), zoom);
+    map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: targetZoom, duration: 600 });
+    try {
+      const popup = marker.getPopup();
+      if (popup && !popup.isOpen()) {
+        marker.togglePopup();
+      }
+    } catch {}
+    return true;
+  }
+
   function fitAll() {
     if (destroyed) return;
     const bounds = new maplibregl.LngLatBounds();
@@ -442,7 +780,7 @@ export function LiveMap(container, options = {}) {
       count++;
     }
     if (count > 0) {
-      map.fitBounds(bounds, { padding: 48, maxZoom: 16, duration: 600 });
+      map.fitBounds(bounds, { padding: 56, maxZoom: 16, duration: 600 });
     } else {
       map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: 600 });
     }
@@ -456,36 +794,32 @@ export function LiveMap(container, options = {}) {
     if (!destroyed) map.zoomOut();
   }
 
-  /**
-   * Re-measure the canvas after the container's own size changes (the
-   * Dispatch Center collapses/expands its queue pane around the map).
-   * MapLibre only auto-resizes against the *window*, so a container-only
-   * change leaves the canvas at its old size until this is called.
-   */
   function resize() {
     if (!destroyed) map.resize();
   }
 
-  return { setMarkers, setSosMarkers, setIncidentMarkers, setBoundary, setRoute, flyTo, highlightIncident, fitAll, resize, zoomIn, zoomOut, destroy };
+  return {
+    setMarkers,
+    setSosMarkers,
+    setIncidentMarkers,
+    setBoundary,
+    setDispatchLinks,
+    setRoute,
+    toggleLayer,
+    resetLayers,
+    getLayerVisibility,
+    flyTo,
+    highlightTanod,
+    highlightSos,
+    highlightIncident,
+    fitAll,
+    resize,
+    zoomIn,
+    zoomOut,
+    destroy,
+  };
 }
 
-/**
- * MapLibre paint properties need a literal color value, not a live
- * `var(--token)` reference the way a CSS `background` string can use one
- * (see DonutChart.js, which stays theme-safe for free that way) — so this
- * reads the CURRENT computed token value at the moment the map/layer is
- * built. §1.1/dark-mode pass: these three colors are exactly
- * --color-accent/--color-primary/--color-surface-blue, which already have
- * real dark-mode values in base.css; this just resolves them instead of
- * hardcoding the light-mode hex. Known limitation, stated rather than
- * hidden: a theme toggle happening WHILE this page is already open does
- * not repaint an already-built map — the flat `background` layer is only
- * ever visible now as the brief fallback while OSM tiles are still
- * loading (or if they fail to load at all, e.g. no internet on this
- * workstation), not the map's normal appearance, so a stale color until
- * the next page load is an acceptable gap rather than something worth a
- * live `setPaintProperty` listener for.
- */
 function themeToken(name, fallback) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
@@ -511,14 +845,47 @@ function applyBoundary(map, geojson) {
   });
 }
 
-/**
- * Same reused-token color as the boundary line above (`--color-primary`),
- * and the same literal hex `LiveMapCanvas.tsx`'s own `ROUTE_LINE_COLOR`
- * hardcodes on mobile, so a route reads as the same visual language in
- * both apps. No dedicated CSS class exists for this layer, deliberately
- * — MapLibre paint properties can't take a live `var(--token)` the way a
- * CSS `background` can (see `themeToken()`'s own doc comment above).
- */
+function applyDispatchLinks(map, links) {
+  const validLinks = Array.isArray(links)
+    ? links.filter((l) => l && l.fromLng != null && l.fromLat != null && l.toLng != null && l.toLat != null)
+    : [];
+
+  if (validLinks.length === 0) {
+    if (map.getLayer('dispatch-links-layer')) map.removeLayer('dispatch-links-layer');
+    if (map.getSource('dispatch-links')) map.removeSource('dispatch-links');
+    return;
+  }
+  const features = validLinks.map((l) => ({
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [Number(l.fromLng), Number(l.fromLat)],
+        [Number(l.toLng), Number(l.toLat)],
+      ],
+    },
+  }));
+  const data = { type: 'FeatureCollection', features };
+  if (map.getSource('dispatch-links')) {
+    map.getSource('dispatch-links').setData(data);
+    return;
+  }
+  map.addSource('dispatch-links', { type: 'geojson', data });
+  map.addLayer({
+    id: 'dispatch-links-layer',
+    type: 'line',
+    source: 'dispatch-links',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': themeToken('--color-primary', '#2563EB'),
+      'line-width': 2.5,
+      'line-dasharray': [2, 2],
+      'line-opacity': 0.75,
+    },
+  });
+}
+
 function applyRoute(map, geojson) {
   if (!geojson) {
     if (map.getLayer('dispatch-route-line')) map.removeLayer('dispatch-route-line');

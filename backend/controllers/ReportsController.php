@@ -313,7 +313,7 @@ final class ReportsController
         $rangeEndUtc = $to->setTime(0, 0, 0)->modify('+1 day')->setTimezone($utc);
 
         $stmt = $pdo->prepare(
-            'SELECT latitude, longitude
+            'SELECT latitude, longitude, incident_type, priority, status
              FROM incident
              WHERE barangay_id = :barangay_id
                AND created_at >= :range_start AND created_at < :range_end
@@ -331,6 +331,9 @@ final class ReportsController
                 'latitude' => (float) $row['latitude'],
                 'longitude' => (float) $row['longitude'],
                 'weight' => 1,
+                'incident_type' => $row['incident_type'] ?? 'other',
+                'priority' => $row['priority'] ?? 'medium',
+                'status' => $row['status'] ?? 'pending',
             ];
         }, $rows);
 

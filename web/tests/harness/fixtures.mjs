@@ -193,7 +193,7 @@ export function buildRoutes(scenario) {
       by_hour: Array.from({ length: 24 }, (_, h) => (empty ? 0 : (h * 5) % 4)),
       response_time_trend: empty ? [] : trendDays.map((d, i) => ({ date: d.date, avg_minutes: i % 4 === 0 ? null : 15 + (i % 7) })),
     }) },
-    { method: 'GET', path: '/reports/heatmap', handler: () => ok({ items: incidents.filter((i) => i.latitude !== null).map((i) => ({ latitude: i.latitude, longitude: i.longitude, weight: 1 })) }) },
+    { method: 'GET', path: '/reports/heatmap', handler: () => ok({ items: incidents.filter((i) => i.latitude !== null).map((i) => ({ latitude: i.latitude, longitude: i.longitude, weight: 1, incident_type: i.incident_type, priority: i.priority, status: i.status })) }) },
     { method: 'GET', path: '/reports/nav-counts', handler: () => ok({ pending_incidents: empty ? 0 : 2, unconverted_citizen_reports: empty ? 0 : 2, pending_swap_requests: empty ? 0 : 1, unacknowledged_fatigue_flags: empty ? 0 : 1 }) },
     { method: 'GET', path: '/reports/export', handler: ({ query }) => ok({ file_url: `/reports/export/download?format=${query.format || 'csv'}`, format: query.format || 'csv', generated_at: sqlAgo(0) }) },
     { method: 'GET', path: '/reports/export/download', handler: () => ({ status: 200, raw: 'incident_id,type\r\n901,theft\r\n', headers: { 'Content-Type': 'text/csv' } }) },
