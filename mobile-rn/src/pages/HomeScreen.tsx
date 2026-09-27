@@ -22,16 +22,27 @@
  * Unlike the old app, a missing GPS fix does NOT block SOS (C-01, this
  * rebuild's whole reason for existing) — `postSos` already accepts a null
  * location (server falls back to last-known/no-fix per migration 0026).
+ *
+ * UI redesign (2026-09-27, approved mockup): HeroUI Native + Tailwind
+ * (Uniwind) replace the hand-rolled StyleSheet, and the SOS control is now
+ * a press-and-hold ring (RingProgress) that, on completion, opens a
+ * BottomSheet confirm step rather than firing immediately — the user
+ * explicitly asked for BOTH the hold gesture and a confirm step, not one
+ * in place of the other. Every handler below is unchanged from the prior
+ * version; only what renders them changed.
  */
 import { useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
-import { Alert, AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MobileHeader from '../components/MobileHeader';
+import { BottomSheet, Button, Switch, useThemeColor } from 'heroui-native';
+import AppHeader from '../ui/AppHeader';
+import StatusChip from '../ui/StatusChip';
+import RingProgress from '../ui/RingProgress';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
-import { useTheme } from '../theme/ThemeProvider';
 import {
   ApiError,
+  checkHealth,
   getDispatches,
   getOwnDutyStatus,
   postSos,
@@ -39,9 +50,9 @@ import {
   type DutyStatus,
 } from '../services/apiService';
 import { getCurrentPosition } from '../services/geolocation';
-import { enqueueSosItem } from '../services/db/offlineQueueRepository';
+import { enqueueSosItem, listPendingDispatchStatusUpdates, listPendingSosItems } from '../services/db/offlineQueueRepository';
 import { cacheDispatchesFromServer, listActiveCachedDispatches } from '../services/db/dispatchRepository';
-import { listAllLocalIncidents } from '../services/db/incidentRepository';
+import { listAllLocalIncidents, listUnsyncedIncidents } from '../services/db/incidentRepository';
 import type { DispatchLocalRow } from '../services/db/localSchema';
 import { startPatrolTracking, stopPatrolTracking } from '../services/patrolLocationService';
 import { loadSession } from '../services/session';
@@ -59,7 +70,8 @@ const SHIFT_START_KEY = 'baranguard.shiftStartTime';
 const HOLD_DURATION_MS = 2000;
 
 export default function HomeScreen() {
-  const { colors, tokens } = useTheme();
+  const [accent, danger, dangerSoft, success, muted] = useThemeColor(['accent', 'danger', 'danger-soft', 'success', 'muted']);
+
   const [fullName, setFullName] = useState('');
   const [barangayName, setBarangayName] = useState('Dao');
   const [status, setStatus] = useState<DutyStatus | null>(null);
@@ -75,6 +87,9 @@ export default function HomeScreen() {
   const [todayIncidentCount, setTodayIncidentCount] = useState(0);
   const [deskContact, setDeskContact] = useState('0917-000-0000');
 
+  const [isOnline, setIsOnline] = useState<boolean | null>(null);
+  const [queuedCount, setQueuedCount] = useState(0);
+
   const [dutyToast, setDutyToast] = useState<string | null>(null);
   const [raisingSos, setRaisingSos] = useState(false);
   const [sosError, setSosError] = useState<string | null>(null);
@@ -82,6 +97,7 @@ export default function HomeScreen() {
   const [sosFallbackOutcome, setSosFallbackOutcome] = useState<SmsFallbackInput | null>(null);
 
   const [holdProgress, setHoldProgress] = useState(0);
+  const [confirmVisible, setConfirmVisible] = useState(false);
   const holdTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const holdStartTimeRef = useRef<number | null>(null);
 
@@ -96,6 +112,32 @@ export default function HomeScreen() {
     const timer = setTimeout(() => setSosToast(null), 4500);
     return () => clearTimeout(timer);
   }, [sosToast]);
+
+  // Header connection chip: a real probe (Rule 6 — never a fake badge),
+  // same 30s cadence the old MobileHeader used. "Queued" counts what a
+  // Tanod would recognize as "waiting to sync" (incidents, SOS, dispatch
+  // status updates) — GPS points are left out, they turn over every 30s on
+  // their own and would make the header flicker rather than inform.
+  useEffect(() => {
+    let cancelled = false;
+    async function probe() {
+      const [ok, incidents, sos, dispatchUpdates] = await Promise.all([
+        checkHealth(),
+        listUnsyncedIncidents().catch(() => []),
+        listPendingSosItems().catch(() => []),
+        listPendingDispatchStatusUpdates().catch(() => []),
+      ]);
+      if (cancelled) return;
+      setIsOnline(ok);
+      setQueuedCount(incidents.length + sos.length + dispatchUpdates.length);
+    }
+    void probe();
+    const interval = setInterval(probe, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Live shift duration timer — resets the persisted shift-start marker
   // when duty status transitions away from on_duty (a real external-state
@@ -253,7 +295,7 @@ export default function HomeScreen() {
   }
 
   function startHoldSos() {
-    if (raisingSos) return;
+    if (raisingSos || confirmVisible) return;
     holdStartTimeRef.current = Date.now();
     let lastTick = 0;
     holdTimerRef.current = setInterval(() => {
@@ -271,14 +313,10 @@ export default function HomeScreen() {
       if (progress >= 100) {
         cancelHoldSos();
         tacticalFeedback.onSosFired();
-        Alert.alert(
-          'Transmit Emergency SOS?',
-          'This will immediately dispatch emergency backup and broadcast your GPS coordinates to Barangay HQ.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Transmit SOS Now', style: 'destructive', onPress: () => void handleRaiseSos() },
-          ],
-        );
+        // The user asked for the hold gesture AND a confirm step, not
+        // either/or — completing the hold opens this sheet rather than
+        // sending immediately.
+        setConfirmVisible(true);
       }
     }, 20);
   }
@@ -333,6 +371,7 @@ export default function HomeScreen() {
   }
 
   async function handleRaiseSos() {
+    setConfirmVisible(false);
     setSosError(null);
     setRaisingSos(true);
     tacticalFeedback.onSosFired();
@@ -366,265 +405,222 @@ export default function HomeScreen() {
     }
   }
 
-  const initials = fullName
-    ? fullName.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
-    : 'BP';
-
   const dutyOn = status === 'on_duty';
   const dutyUnknown = status === null && !loadingStatus;
+  const holding = holdProgress > 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <MobileHeader />
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* 1. Officer status hub */}
-        <View style={[styles.hub, { backgroundColor: colors.navy, borderRadius: tokens.radius.lg }]}>
-          <View style={styles.hubTop}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.hubName}>{fullName || 'Tanod Officer'}</Text>
-              <View style={styles.hubSubRow}>
-                <Ionicons name="shield-checkmark" size={13} color="rgba(255,255,255,0.75)" />
-                <Text style={styles.hubSub}>Security Responder · Brgy {barangayName}</Text>
-              </View>
-            </View>
-          </View>
+    <View className="flex-1 bg-background">
+      <AppHeader eyebrow={`Barangay ${barangayName} · Tanod`} title={fullName || 'Tanod Officer'}>
+        <StatusChip dotColor={dutyOn ? success : dutyUnknown ? muted : '#94a3b8'} label={loadingStatus ? 'Checking…' : dutyOn ? 'On duty' : 'Off duty'} />
+        <StatusChip
+          icon={<Ionicons name={isOnline === false ? 'cloud-offline-outline' : 'cloud-done-outline'} size={14} color="#ffffff" />}
+          label={isOnline === false ? `Offline · ${queuedCount} queued` : `Online · ${queuedCount} queued`}
+        />
+      </AppHeader>
 
-          <View style={styles.hubDivider} />
-
-          <View style={styles.hubBottom}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-              <View
-                style={[
-                  styles.pulseDot,
-                  { backgroundColor: dutyOn ? '#4ade80' : dutyUnknown ? '#94a3b8' : '#64748b' },
-                ]}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.hubStatusTitle, { color: dutyOn ? '#4ade80' : dutyUnknown ? '#cbd5e1' : '#94a3b8' }]}>
-                  {loadingStatus ? 'Checking Shift…' : dutyOn ? 'On Active Patrol' : status === null ? 'Duty Status Unknown (Offline)' : 'Off Duty (Standby)'}
-                </Text>
-                <Text style={styles.hubStatusSub}>
-                  {!dutyOn ? 'Patrol tracking inactive' : patrolTracking === false ? 'GPS OFF — location permission denied' : 'Foreground GPS · 30s Broadcast'}
-                </Text>
-              </View>
+      <ScrollView className="flex-1" contentInsetAdjustmentBehavior="automatic">
+        <View className="p-4 gap-3.5">
+        {/* 1. Duty status card */}
+        <View className="bg-surface border border-border rounded-[20px] p-4 gap-3.5">
+          <View className="flex-row items-center gap-3">
+            <View className={`w-11 h-11 rounded-2xl items-center justify-center ${dutyOn ? 'bg-success-soft' : 'bg-default'}`}>
+              <Ionicons name="shield-checkmark" size={22} color={dutyOn ? success : muted} />
             </View>
-
-            <Pressable
-              disabled={loadingStatus || toggling}
-              onPress={handleToggleDuty}
-              style={[styles.dutyBtn, { backgroundColor: dutyOn ? 'rgba(220,38,38,0.85)' : '#2563eb', opacity: loadingStatus || toggling ? 0.6 : 1 }]}
-            >
-              <Text style={styles.dutyBtnText}>{toggling ? '...' : dutyOn ? 'Go Off Duty' : 'Go On Duty'}</Text>
-            </Pressable>
+            <View className="flex-1">
+              <Text className="text-[17px] font-bold text-foreground">
+                {loadingStatus ? 'Checking shift…' : dutyOn ? 'On active patrol' : status === null ? 'Duty status unknown (offline)' : 'Off duty'}
+              </Text>
+              <Text className="text-[13px] text-muted">
+                {!dutyOn ? 'Turn on to start your patrol' : patrolTracking === false ? 'GPS off — location permission denied' : 'Sharing location every 30s'}
+              </Text>
+            </View>
+            <Switch isSelected={dutyOn} onSelectedChange={() => void handleToggleDuty()} isDisabled={loadingStatus || toggling} accessibilityLabel="On duty" />
           </View>
 
           {dutyError ? (
-            <View style={styles.hubError}>
-              <Text style={{ color: '#fca5a5', fontSize: 12 }}>{dutyError}</Text>
+            <View className="bg-danger-soft rounded-2xl p-2.5">
+              <Text className="text-danger-soft-foreground text-xs">{dutyError}</Text>
+            </View>
+          ) : null}
+
+          <View className="flex-row border-t border-border pt-3">
+            <HomeStat value={dutyOn ? shiftElapsed : '—'} label="On patrol" />
+            <HomeStat value={dutyOn ? 'Every 30s' : 'Paused'} label="Location sync" />
+            <HomeStat value={String(todayIncidentCount)} label="Filed today" />
+          </View>
+        </View>
+
+        {/* 2. Emergency SOS — press and hold, then confirm */}
+        <View className="items-center gap-2.5 py-1">
+          <Pressable
+            onPressIn={startHoldSos}
+            onPressOut={cancelHoldSos}
+            accessibilityRole="button"
+            accessibilityLabel="SOS. Press and hold for 2 seconds to raise an emergency alert."
+          >
+            <RingProgress size={200} strokeWidth={9} progress={holdProgress / 100} trackColor={dangerSoft} fillColor={danger}>
+              <View className="w-[152px] h-[152px] rounded-full bg-danger items-center justify-center gap-1" style={{ elevation: 10 }}>
+                <Text className="text-white text-[38px] font-extrabold tracking-widest">SOS</Text>
+                <Text className="text-white text-[13px] font-semibold">{raisingSos ? 'Sending…' : holding ? `Keep holding… ${Math.round(holdProgress)}%` : 'Hold 2 seconds'}</Text>
+              </View>
+            </RingProgress>
+          </Pressable>
+          <Text className="text-[13px] text-muted text-center max-w-[280px]">
+            Alerts the barangay desk and every on-duty Tanod. Still sends by SMS when you&apos;re offline.
+          </Text>
+
+          {sosFallbackOutcome ? <SmsFallbackBadge input={sosFallbackOutcome} /> : null}
+          {sosError ? (
+            <View className="bg-danger-soft rounded-2xl p-3 self-stretch">
+              <Text className="text-danger-soft-foreground text-[13px]">{sosError}</Text>
             </View>
           ) : null}
         </View>
 
-        {/* 2. Situational hub */}
+        {/* 3. Active dispatch / perimeter status */}
         {topDispatch ? (
           <Pressable
-            style={[styles.situational, { backgroundColor: colors.tintCriticalBg, borderRadius: tokens.radius.lg }]}
+            className="bg-danger-soft rounded-[20px] p-4 gap-2"
             onPress={() => router.push(`/assignments/${encodeURIComponent(topDispatch.local_id)}`)}
           >
-            <View style={styles.situationalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="alert-circle" size={16} color={colors.critical} />
-                <Text style={{ color: colors.critical, fontSize: 12, fontWeight: '800' }}>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-1.5">
+                <Ionicons name="alert-circle" size={16} color={danger} />
+                <Text className="text-danger-soft-foreground text-xs font-extrabold">
                   ACTIVE DISPATCH #{topDispatch.server_dispatch_id ?? topDispatch.local_id.slice(0, 6)}
                 </Text>
               </View>
-              <View style={{ backgroundColor: colors.critical, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{topDispatch.priority.toUpperCase()}</Text>
+              <View className="bg-danger rounded-full px-2 py-0.5">
+                <Text className="text-white text-[10px] font-extrabold">{topDispatch.priority.toUpperCase()}</Text>
               </View>
             </View>
-            <Text style={{ color: colors.textPrimary, fontSize: 16, fontWeight: '800', marginTop: 8 }}>
+            <Text className="text-foreground text-base font-extrabold">
               {topDispatch.redacted_incident_type ? topDispatch.redacted_incident_type.replace(/_/g, ' ').toUpperCase() : 'INCIDENT REPORTED'}
             </Text>
-            <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+            <Text className="text-muted text-xs">
               Assigned to your unit{activeDispatchCount > 1 ? ` · ${activeDispatchCount} active assignments` : ''} · Tap to navigate.
             </Text>
-            <View style={[styles.navigateBtn, { backgroundColor: colors.critical }]}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>NAVIGATE ROUTE</Text>
+            <View className="flex-row items-center justify-center gap-1.5 bg-danger rounded-2xl py-2.5 mt-1">
+              <Text className="text-white font-extrabold text-[13px]">NAVIGATE ROUTE</Text>
               <Ionicons name="arrow-forward" size={16} color="#fff" />
             </View>
           </Pressable>
         ) : (
-          <View style={[styles.situational, { backgroundColor: colors.tintSuccessBg, borderRadius: tokens.radius.lg }]}>
-            <View style={styles.situationalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="shield-checkmark" size={16} color={colors.success} />
-                <Text style={{ color: colors.success, fontSize: 12, fontWeight: '800' }}>PERIMETER CLEAR · SECTOR {barangayName.toUpperCase()}</Text>
+          <View className="bg-success-soft rounded-[20px] p-4 gap-1.5">
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-1.5">
+                <Ionicons name="shield-checkmark" size={16} color={success} />
+                <Text className="text-success-soft-foreground text-xs font-extrabold">PERIMETER CLEAR · SECTOR {barangayName.toUpperCase()}</Text>
               </View>
-              <View style={{ backgroundColor: colors.success, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>READY</Text>
+              <View className="bg-success rounded-full px-2 py-0.5">
+                <Text className="text-white text-[10px] font-extrabold">READY</Text>
               </View>
             </View>
-            <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 6 }}>No active emergency dispatches in queue.</Text>
+            <Text className="text-muted text-[13px]">No active emergency dispatches in queue.</Text>
           </View>
         )}
 
-        {/* 3. Primary action tiles */}
-        <View style={styles.actionGrid}>
-          <Pressable style={[styles.actionCard, { backgroundColor: colors.surface, borderRadius: tokens.radius.md }]} onPress={() => router.push('/incidents/new')}>
-            <View style={[styles.actionIcon, { backgroundColor: colors.tintInfoBg }]}>
-              <Ionicons name="document-text" size={20} color={colors.primary} />
-            </View>
-            <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>Log Incident</Text>
-            <Text style={{ color: colors.textTertiary, fontSize: 11 }}>Rapid field report intake</Text>
-          </Pressable>
-
-          <Pressable style={[styles.actionCard, { backgroundColor: colors.surface, borderRadius: tokens.radius.md }]} onPress={() => router.push('/(tabs)/map')}>
-            <View style={[styles.actionIcon, { backgroundColor: colors.tintInfoBg }]}>
-              <Ionicons name="map" size={20} color={colors.primary} />
-            </View>
-            <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>Live Radar</Text>
-            <Text style={{ color: colors.textTertiary, fontSize: 11 }}>Team map & telemetry</Text>
-          </Pressable>
-        </View>
-
-        {/* 4. Shift telemetry strip */}
-        <View style={[styles.shiftStrip, { backgroundColor: colors.surface, borderRadius: tokens.radius.md }]}>
-          <ShiftMetric icon="time" value={dutyOn ? shiftElapsed : 'Standby'} label={dutyOn ? 'Active Patrol' : 'Off Duty'} colors={colors} />
-          <ShiftMetric icon="radio" value={dutyOn ? '30s Sync' : 'GPS Idle'} label="HQ Radar" colors={colors} live={dutyOn} />
-          <ShiftMetric icon="document-text" value={`${todayIncidentCount} Filed`} label="Today" colors={colors} />
-        </View>
-
-        {/* 5. Emergency SOS panel */}
-        <View style={[styles.sosPanel, { backgroundColor: colors.navyDeep, borderRadius: tokens.radius.lg }]}>
-          <Pressable
-            onPressIn={startHoldSos}
-            onPressOut={cancelHoldSos}
-            style={styles.sosStrip}
-          >
-            <View style={[styles.sosProgressFill, { width: `${holdProgress}%` }]} />
-            <View style={styles.sosContent}>
-              <View style={styles.sosIconWrap}>
-                <Ionicons name="warning" size={22} color="#fca5a5" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sosTitle}>
-                  {raisingSos ? 'Transmitting SOS…' : holdProgress > 0 ? `Holding (${Math.round(holdProgress)}%)…` : 'EMERGENCY SOS BACKUP'}
-                </Text>
-                <Text style={styles.sosSub}>{holdProgress > 0 ? 'Release to cancel · Keep holding' : 'Press & hold 2s to alert HQ and nearby responders'}</Text>
-              </View>
-              <Text style={styles.sosCountdown}>{raisingSos ? '...' : holdProgress > 0 ? `${Math.round(holdProgress)}%` : 'HOLD 2S'}</Text>
-            </View>
-          </Pressable>
-
-          {sosFallbackOutcome ? (
-            <View style={{ marginTop: 10, alignItems: 'center' }}>
-              <SmsFallbackBadge input={sosFallbackOutcome} />
-            </View>
-          ) : null}
-
-          <View style={styles.speedDialDock}>
-            <View style={styles.speedDialLabel}>
-              <Ionicons name="call" size={12} color="rgba(255,255,255,0.6)" />
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>Direct Emergency Voice Lines</Text>
-            </View>
-            <View style={styles.speedDialGrid}>
-              <SpeedDialButton icon="call" title="Brgy Desk" sub="HQ Dispatch" onPress={() => Linking.openURL(`tel:${deskContact.replace(/[^0-9+]/g, '') || '911'}`)} />
-              <SpeedDialButton icon="shield" title="Police 911" sub="PNP Station" onPress={() => Linking.openURL('tel:911')} />
-              <SpeedDialButton icon="medkit" title="MDRRMO" sub="Rescue / BFP" onPress={() => Linking.openURL('tel:160')} />
-            </View>
+        {/* 4. Quick call */}
+        <View className="gap-2">
+          <Text className="text-foreground text-[15px] font-bold">Quick call</Text>
+          <View className="flex-row gap-2.5">
+            <SpeedDialButton icon="call" title="Brgy Desk" onPress={() => Linking.openURL(`tel:${deskContact.replace(/[^0-9+]/g, '') || '911'}`)} />
+            <SpeedDialButton icon="shield" title="Police 911" onPress={() => Linking.openURL('tel:911')} />
+            <SpeedDialButton icon="medkit" title="MDRRMO" onPress={() => Linking.openURL('tel:160')} />
           </View>
         </View>
 
-        {sosError ? (
-          <View style={{ backgroundColor: colors.tintCriticalBg, borderRadius: tokens.radius.md, padding: 12 }}>
-            <Text style={{ color: colors.pillCriticalText, fontSize: 13 }}>{sosError}</Text>
-          </View>
-        ) : null}
+        {/* 5. Quick links */}
+        <View className="flex-row gap-3">
+          <Pressable className="flex-1 bg-surface border border-border rounded-2xl p-3.5 gap-1.5" onPress={() => router.push('/incidents/new')}>
+            <View className="w-9 h-9 rounded-full bg-accent-soft items-center justify-center">
+              <Ionicons name="document-text" size={18} color={accent} />
+            </View>
+            <Text className="text-foreground text-sm font-bold">Log Incident</Text>
+            <Text className="text-muted text-[11px]">Rapid field report intake</Text>
+          </Pressable>
+          <Pressable className="flex-1 bg-surface border border-border rounded-2xl p-3.5 gap-1.5" onPress={() => router.push('/(tabs)/map')}>
+            <View className="w-9 h-9 rounded-full bg-accent-soft items-center justify-center">
+              <Ionicons name="map" size={18} color={accent} />
+            </View>
+            <Text className="text-foreground text-sm font-bold">Live Map</Text>
+            <Text className="text-muted text-[11px]">Team map & telemetry</Text>
+          </Pressable>
+        </View>
 
-        {dutyToast ? (
-          <View style={[styles.toast, { backgroundColor: colors.success }]}>
-            <Text style={styles.toastText}>{dutyToast}</Text>
-          </View>
-        ) : null}
-        {sosToast ? (
-          <View style={[styles.toast, { backgroundColor: sosToast.startsWith('EMERGENCY') ? colors.critical : colors.warning }]}>
-            <Text style={styles.toastText}>{sosToast}</Text>
-          </View>
-        ) : null}
+        {dutyToast ? <Toast tone="success" text={dutyToast} /> : null}
+        {sosToast ? <Toast tone={sosToast.startsWith('EMERGENCY') ? 'danger' : 'warning'} text={sosToast} /> : null}
+        </View>
       </ScrollView>
+
+      {/* SOS confirm — the second, explicit step the user asked for on top
+          of the hold gesture. `Cancel` and the sheet's own dismiss both
+          just close it; only "Send SOS now" calls handleRaiseSos. */}
+      <BottomSheet isOpen={confirmVisible} onOpenChange={setConfirmVisible}>
+        <BottomSheet.Portal>
+          <BottomSheet.Overlay />
+          <BottomSheet.Content enableDynamicSizing>
+            <View className="p-5 pb-8 gap-4">
+              <View className="flex-row items-center gap-3.5">
+                <View className="w-14 h-14 rounded-2xl bg-danger-soft items-center justify-center">
+                  <Ionicons name="warning" size={26} color={danger} />
+                </View>
+                <View className="flex-1">
+                  <BottomSheet.Title className="text-[20px] font-extrabold text-foreground">Send SOS alert?</BottomSheet.Title>
+                  <Text className="text-muted text-[13px]">This can&apos;t be unsent.</Text>
+                </View>
+              </View>
+              <BottomSheet.Description className="text-foreground text-[15px] leading-5">
+                Your name and location go to the barangay desk and every on-duty Tanod right now.
+              </BottomSheet.Description>
+              <View className="flex-row items-center gap-2.5 p-3 rounded-2xl bg-default">
+                <Ionicons name="chatbox-ellipses-outline" size={18} color={accent} />
+                <Text className="flex-1 text-foreground text-xs">No connection? It&apos;s sent by SMS from this phone instead.</Text>
+              </View>
+              <Button variant="danger" size="lg" onPress={() => void handleRaiseSos()}>
+                Send SOS now
+              </Button>
+              <Button variant="outline" size="lg" onPress={() => setConfirmVisible(false)}>
+                Cancel
+              </Button>
+            </View>
+          </BottomSheet.Content>
+        </BottomSheet.Portal>
+      </BottomSheet>
     </View>
   );
 }
 
-function ShiftMetric({ icon, value, label, colors, live }: { icon: keyof typeof Ionicons.glyphMap; value: string; label: string; colors: ReturnType<typeof useTheme>['colors']; live?: boolean }) {
+function HomeStat({ value, label }: { value: string; label: string }) {
   return (
-    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-      <View style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: live ? colors.tintSuccessBg : colors.tintNeutralBg }}>
-        <Ionicons name={icon} size={14} color={live ? colors.success : colors.textTertiary} />
-      </View>
-      <View>
-        <Text style={{ color: colors.textPrimary, fontSize: 13, fontWeight: '700' }}>{value}</Text>
-        <Text style={{ color: colors.textTertiary, fontSize: 10 }}>{label}</Text>
-      </View>
+    <View className="flex-1 gap-0.5">
+      <Text className="text-foreground text-[17px] font-bold">{value}</Text>
+      <Text className="text-muted text-xs">{label}</Text>
     </View>
   );
 }
 
-function SpeedDialButton({ icon, title, sub, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; sub: string; onPress: () => void }) {
+function SpeedDialButton({ icon, title, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; onPress: () => void }) {
   return (
     <Pressable
-      style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 10, alignItems: 'center', gap: 4 }}
+      className="flex-1 h-[76px] bg-surface border border-border rounded-2xl items-center justify-center gap-1.5"
       onPress={() => {
         tacticalFeedback.onWarning();
         onPress();
       }}
     >
-      <Ionicons name={icon} size={16} color="#fff" />
-      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{title}</Text>
-      <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 9 }}>{sub}</Text>
+      <Ionicons name={icon} size={20} color="#1d4ed8" />
+      <Text className="text-foreground text-[13px] font-semibold">{title}</Text>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: { padding: 16, gap: 14 },
-  hub: { padding: 16 },
-  hubTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  hubName: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  hubSubRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
-  hubSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12 },
-  hubDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.12)', marginVertical: 12 },
-  hubBottom: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  pulseDot: { width: 10, height: 10, borderRadius: 5 },
-  hubStatusTitle: { fontSize: 14, fontWeight: '800' },
-  hubStatusSub: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 2 },
-  dutyBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
-  dutyBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
-  hubError: { marginTop: 10, backgroundColor: 'rgba(220,38,38,0.25)', borderRadius: 8, padding: 8 },
-  situational: { padding: 16 },
-  situationalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  navigateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 10, paddingVertical: 10, marginTop: 12 },
-  actionGrid: { flexDirection: 'row', gap: 12 },
-  actionCard: { flex: 1, padding: 14, gap: 6 },
-  actionIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  actionTitle: { fontSize: 14, fontWeight: '700' },
-  shiftStrip: { flexDirection: 'row', padding: 14, gap: 8 },
-  sosPanel: { padding: 14 },
-  sosStrip: { position: 'relative', overflow: 'hidden', borderRadius: 14, backgroundColor: 'rgba(220,38,38,0.18)', borderWidth: 1, borderColor: 'rgba(220,38,38,0.4)' },
-  sosProgressFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: 'rgba(220,38,38,0.35)' },
-  sosContent: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
-  sosIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(220,38,38,0.3)', alignItems: 'center', justifyContent: 'center' },
-  sosTitle: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  sosSub: { color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 2 },
-  sosCountdown: { color: '#fca5a5', fontWeight: '800', fontSize: 13 },
-  speedDialDock: { marginTop: 14 },
-  speedDialLabel: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  speedDialGrid: { flexDirection: 'row', gap: 8 },
-  toast: { borderRadius: 10, padding: 12 },
-  toastText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-});
+function Toast({ tone, text }: { tone: 'success' | 'danger' | 'warning'; text: string }) {
+  const bg = tone === 'success' ? 'bg-success' : tone === 'danger' ? 'bg-danger' : 'bg-warning';
+  return (
+    <View className={`${bg} rounded-2xl p-3`}>
+      <Text className="text-white text-[13px] font-semibold">{text}</Text>
+    </View>
+  );
+}

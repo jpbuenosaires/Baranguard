@@ -1,8 +1,13 @@
+// Must be imported once, from the app's root component — Expo Router has no
+// App.tsx, so `_layout.tsx` is that root. See global.css's own doc comment.
+import '../../global.css';
 import { useEffect } from 'react';
 import { router, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { HeroUINativeProvider } from 'heroui-native';
 import { ThemeProvider } from '../theme/ThemeProvider';
 import CriticalAlertOverlay from '../components/CriticalAlertOverlay';
 import { onSessionExpired } from '../services/session';
@@ -53,19 +58,31 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <ThemeProvider>
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="login" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="incidents/new" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="incidents/pick-location" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="incidents/[localId]/submitted" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="assignments/[localId]" options={{ presentation: 'modal' }} />
-      </Stack>
-      {/* Outside the Stack/tab router so an SOS/priority alert interrupts whichever screen a Tanod is on. */}
-      <CriticalAlertOverlay />
-    </ThemeProvider>
+    // GestureHandlerRootView is required at the true root for
+    // react-native-gesture-handler (HeroUI Native's Switch/Slider/sheets
+    // depend on it); HeroUINativeProvider supplies HeroUI's toast host and
+    // portal (dialogs/menus render there) to every screen below it.
+    // ThemeProvider stays innermost-of-the-three but still wraps
+    // everything screen-level: it is now the one thing that also drives
+    // Uniwind's theme (see ThemeProvider.tsx), so both the HeroUI/Tailwind
+    // screens and any screen still on the old tokens.ts context agree.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <HeroUINativeProvider>
+        <ThemeProvider>
+          <StatusBar style="light" />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="login" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="incidents/new" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="incidents/pick-location" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="incidents/[localId]/submitted" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="assignments/[localId]" options={{ presentation: 'modal' }} />
+          </Stack>
+          {/* Outside the Stack/tab router so an SOS/priority alert interrupts whichever screen a Tanod is on. */}
+          <CriticalAlertOverlay />
+        </ThemeProvider>
+      </HeroUINativeProvider>
+    </GestureHandlerRootView>
   );
 }
