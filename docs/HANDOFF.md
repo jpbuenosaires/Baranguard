@@ -6,7 +6,54 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-27.**
 
-**2026-09-27, latest — the React Native rebuild (`mobile-rn/`) is
+**2026-09-27, latest — C-03: DNS repointed to THIS machine's tunnel;
+`Start Baranguard.bat` now also starts cloudflared.** This machine (real
+XAMPP, real `backend/.env`, real Apache :8081 vhost) turned out to be the
+actual intended production workstation, but public DNS for
+`baranguardph.win`/`api.baranguardph.win` was pointed at a tunnel
+(`baranguard-main`) running on a **different physical machine**
+(`danilyn`), while this machine still had its own original, now-reusable
+tunnel (`baranguard`, id `28c3134b-...`) sitting orphaned with valid
+credentials already in place. Installed `cloudflared` here (`winget`),
+repointed both hostnames' DNS to this machine's `baranguard` tunnel
+(`--overwrite-dns`), started Apache/MySQL (neither was running), and
+verified for real: `curl` gets real `200`s and real barangay data from
+both `https://baranguardph.win` and `https://api.baranguardph.win`,
+originating from this machine. **`danilyn`'s tunnel is now the orphaned
+one** — not deleted or stopped, just no longer DNS-authoritative; nobody
+has confirmed whether that machine still needs to serve anything.
+
+`backend/scripts/start-baranguard.ps1` (the `Start Baranguard.bat`
+launcher) now also starts the Cloudflare tunnel — checks for a
+`cloudflared` Windows service first, then an already-running process
+(idempotent, confirmed by testing a second run), then starts `cloudflared
+tunnel run` hidden if neither exists, using this machine's own
+`~/.cloudflared/config.yml`. Still NOT done: installing `cloudflared` as
+a real Windows service on this machine (needs an elevated prompt, see
+`install-autostart-services.ps1`) so the tunnel survives a reboot without
+anyone logging in and double-clicking the launcher first — the launcher
+fix only covers "already logged in." Full detail: `backend/DEVLOG.md`
+2026-09-27 (16).
+
+**2026-09-27, earlier — mobile's on-device "Workstation address" override
+UI removed entirely; the app always talks to `api.baranguardph.win`.**
+User call: now that C-03's Cloudflare Tunnel gives the workstation a
+fixed, stable public hostname, the whole reason the override existed
+(DHCP reassigning the LAN IP) no longer applies. Removed the Login
+screen's "Workstation address" button/prompt and Profile's editable
+"Workstation Address" drawer (Profile's ping/latency check stays — it's
+read-only telemetry), and deleted `setApiBaseUrlOverride()`/
+`hasApiBaseUrlOverride()` from `apiService.ts` — `API_BASE_URL` is now a
+fixed constant for the life of an install. The only remaining override is
+`mobile/.env.local`'s build-time `VITE_API_BASE_URL`, for local dev
+builds on this workstation only, never reachable from a running app.
+`docs/REFERENCE.md` §1 updated to match. `npx tsc --noEmit`/`npm run
+lint` clean; **not device-tested** — no phone attached this session, low
+risk (pure UI/config removal, no server contract change), but worth a
+quick look on the Infinix next device session. Full detail: `backend/
+DEVLOG.md` 2026-09-27 (15).
+
+**2026-09-27, earlier — the React Native rebuild (`mobile-rn/`) is
 ABANDONED and DELETED; `mobile/` (Capacitor) is the live app again.**
 Reversed the 2026-09-27 rebuild decision (DEVLOG (3)) the same day it was
 made. The rebuild had reached Phases 0–7 code-complete plus a full HeroUI
@@ -18,12 +65,18 @@ an attempted `@react-native-firebase` install) is deleted from the working
 tree; full history is still recoverable via `git log` on commits before
 this one if it's ever needed again, but it is not part of the live system.
 
-**Known regression this reversal reintroduces**: `mobile/src/pages/
-home.tsx:390-396` still blocks SOS when GPS fails (C-01) — the rebuild
-had fixed this, but that fix no longer exists anywhere. §2 Rule 27 says
-SOS must never be blocked on a missing GPS fix; this needs a small,
-surgical fix directly in `mobile/`, not a rebuild, whenever it's picked
-up.
+**Known regression this reversal reintroduced — FIXED same day, entry
+(14), code-only.** `mobile/src/pages/home.tsx`'s `handleRaiseSos()` used
+to hard-block SOS when `getCurrentPosition()` failed. Now it raises (or
+offline-queues) the SOS with no coordinates instead, matching the
+server's existing migration-0026 fallback (`location_source='no_fix'`/
+`last_known`) — `postSos()`/`SyncSosItem`/`SosQueuePayload` all made
+`latitude`/`longitude` optional, and the SMS-fallback message handles the
+no-fix case instead of crashing on `undefined.toFixed()`. `npx tsc
+--noEmit` and `npm run lint` clean. **Not device-verified** — no phone
+attached this session; retest on the Infinix (kill GPS, raise SOS,
+confirm it still reaches the server/queues instead of showing the old
+blocking error) before treating this as fully closed.
 
 **FCM is now real for `mobile/` (Capacitor), not device-verified yet.**
 A Firebase Android app for `ph.baranguard.tanod` already existed in the

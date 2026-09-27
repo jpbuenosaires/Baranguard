@@ -18208,3 +18208,141 @@ in this environment at all), a real Gradle build, and an actual device
 test confirming a push notification arrives and the full-screen critical
 alert fires. Backend-side FCM sending was already wired and verified
 earlier the same day (DEVLOG (2)).
+
+## 2026-09-27 (14) — C-01 regression fixed: `mobile/`'s SOS no longer blocks on a missing GPS fix
+
+The mobile-RN abandonment (entry (13)) reverted `mobile/` (Capacitor) back
+to being the live app, and with it reintroduced a real regression flagged
+at the time: `home.tsx`'s `handleRaiseSos()` still hard-blocked SOS when
+`getCurrentPosition()` failed ("SOS requires location lock"), directly
+violating §2 Rule 27 ("SOS must never be blocked on a missing GPS fix").
+The backend-side fix for this (migration 0026, `TanodSosController`
+falling back to the Tanod's last known `gps_track` fix or creating the
+SOS with `location_source='no_fix'` and null coordinates) was never
+touched by the RN abandonment — it only ever existed server-side and in
+the now-deleted RN client, so this was a client-only gap.
+
+**Fix, code-only (no phone attached this session):**
+- `apiService.ts`'s `postSos()` — `latitude`/`longitude` are now optional,
+  matching the server contract (its old docblock wrongly claimed they
+  were server-required with no fallback). `SyncSosItem` (the `/sync/batch`
+  item shape) made optional the same way.
+- `offlineQueueRepository.ts`'s `SosQueuePayload` — same, since a
+  GPS-less SOS must queue offline identically to one with a fix.
+- `home.tsx`'s `handleRaiseSos()` — a `getCurrentPosition()` failure no
+  longer returns early; it proceeds with an empty payload (`{}`) instead,
+  so the SOS is raised (or queued, if also offline) exactly like a
+  successful-fix SOS, just without coordinates.
+- `attemptSosSmsFallback()` — the composed backup SMS now says "Location:
+  unavailable (no GPS fix)" and omits the Google Maps link line when
+  there's no fix, instead of calling `.toFixed()` on `undefined` (would
+  have thrown).
+
+**Verified**: `npx tsc --noEmit` clean, `npm run lint` clean (both in
+`mobile/`). **Not device-verified** — no phone attached this session;
+per SPRINTS.md's "prove it, don't claim it," this should be retested on
+the Infinix (kill GPS/permissions, raise SOS, confirm it still reaches
+the server or queues offline instead of showing the old blocking error)
+before being treated as fully closed.
+
+## 2026-09-27 (15) — Removed mobile's on-device "Workstation address" override UI; always api.baranguardph.win
+
+User request, following up on C-03: now that the Cloudflare Named Tunnel
+gives the workstation a fixed, stable hostname, there's no longer a
+legitimate reason for a Tanod's phone to point anywhere else — the
+override existed specifically for a DHCP-reassigned LAN IP, a problem
+that doesn't apply to a stable public hostname.
+
+**Removed entirely:**
+- Login screen's "Workstation address" button + `IonAlert` prompt
+  (`login.tsx`) — a Tanod could previously change the server address from
+  the login screen itself.
+- Profile's "Workstation Address" collapsible drawer (`profile.tsx`) —
+  the text field + Save/Reset buttons under "Workstation LAN Telemetry"
+  (renamed "Server Connection"; the ping/latency check itself stays, it's
+  read-only telemetry, not configuration).
+- `apiService.ts`'s `setApiBaseUrlOverride()`/`hasApiBaseUrlOverride()`
+  and the `Preferences`-backed override key entirely. `API_BASE_URL` is
+  now a plain constant for the life of the install — no runtime mutation
+  path exists anymore.
+
+**Kept:** the build-time-only `mobile/.env.local` /
+`VITE_API_BASE_URL` override for local dev builds on this workstation —
+that's a developer's own build config, never reachable from a running
+app, and unrelated to the on-device UI that was removed. Also kept the
+`EFFECTIVE_API_BASE_URL_KEY` Preferences mirror `PatrolLocationService.
+java` reads natively — still needed since native code can't see a JS
+build-time constant, just simplified to write once at module load since
+the value can no longer change at runtime.
+
+Also relabeled the login-screen offline error ("Cannot reach the
+barangay workstation... barangay network" → "...Baranguard server...
+internet connection") — the old wording assumed same-LAN framing that no
+longer matches how the app actually reaches the server.
+
+`docs/REFERENCE.md` §1 updated to match — the "mobile keeps its runtime
+override too" line was actively wrong the moment this landed.
+
+**Verified**: `npx tsc --noEmit` clean, `npm run lint` clean (both
+`mobile/`). Not device-tested this session (no phone attached) — a
+fresh install/build should simply have no address-editing UI to find;
+worth a quick look on the Infinix next device session, low risk given
+the change is a pure UI/config removal with no server-contract change.
+
+## 2026-09-27 (16) — C-03: DNS repointed to THIS machine's original tunnel; `Start Baranguard.bat` now also starts cloudflared
+
+Real confusion resolved: this machine (the actual production workstation
+— real XAMPP, real `backend/.env`, real Apache vhost for :8081) had
+`~/.cloudflared/config.yml` for the ORIGINAL `baranguard` tunnel (id
+`28c3134b-...`, from entries (20)-(26)), but public DNS for
+`baranguardph.win`/`api.baranguardph.win` was pointed at a DIFFERENT
+tunnel (`baranguard-main`, id `eeaa890d-...`) that a later session set up
+on a **different physical machine** (Windows profile `danilyn`) after
+mistakenly concluding no tunnel existed anywhere reachable. User confirmed
+today: `danilyn`'s machine is a separate computer, not this one, and this
+machine should be the one actually serving production traffic.
+
+**Fix**: `cloudflared` wasn't even installed here (`winget install --id
+Cloudflare.cloudflared -e` — turned out already partially present,
+winget upgraded it to 2026.9.3, landed at `C:\Program Files
+(x86)\cloudflared\cloudflared.exe`, not yet on PATH in existing shells).
+This machine's pre-existing Cloudflare login (`~/.cloudflared/cert.pem`)
+and the original tunnel's credentials (`28c3134b-....json`) were both
+still valid — `cloudflared tunnel list` confirmed both tunnels still
+exist Cloudflare-side, `baranguard-main` with active connections,
+`baranguard` with none (confirming which one DNS was actually using).
+Ran `cloudflared tunnel route dns --overwrite-dns baranguard
+baranguardph.win` and the same for `api.baranguardph.win`, moving both
+CNAMEs from `baranguard-main` to `baranguard`. Started Apache/MySQL via
+`start-baranguard.ps1` (neither was running), ran the tunnel in the
+foreground first to confirm, then killed it and re-ran it through the
+updated launcher (below) — verified with real `curl` calls: both
+hostnames return real `200`s, `GET /api/v1/barangays` returns the real
+four barangays.
+
+**`danilyn`'s `baranguard-main` tunnel is now the orphaned one** — same
+situation the original `baranguard` tunnel was in before today, just
+swapped. Nobody has confirmed whether that other machine still needs to
+serve anything; left untouched (not deleted, not stopped) pending that
+check.
+
+**`backend/scripts/start-baranguard.ps1` updated** (this was the actual
+ask — the double-click launcher didn't touch the tunnel at all before
+this): a new step checks for a `cloudflared` Windows service first (if
+one exists and is running, that's authoritative, nothing to do); failing
+that, checks for an already-running `cloudflared.exe` process (idempotent
+— a second double-click doesn't spawn a duplicate); failing that, locates
+`cloudflared.exe` (PATH or the two standard Program Files locations) and
+starts `cloudflared tunnel run` (no args — reads the tunnel from this
+machine's own `~/.cloudflared/config.yml`, currently `baranguard`)
+hidden, same "ordinary user process, no elevation" philosophy as the
+Apache/MySQL/AI-worker steps already there. Verified idempotent: a second
+run correctly reported "already running" by PID instead of starting a
+second connector.
+
+**Not done, still needs an elevated prompt** (per the existing
+`install-autostart-services.ps1`/HANDOFF guidance, unchanged by this
+entry): installing `cloudflared` as a real Windows service on THIS
+machine so it survives a reboot without anyone double-clicking the
+launcher first. The launcher fix above covers "already logged in, ran
+the launcher" but not "machine just rebooted, nobody's logged in yet."

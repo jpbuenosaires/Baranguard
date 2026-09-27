@@ -16,9 +16,11 @@
  * reports sent; on a network failure it stages the event in
  * `offline_queue_local` (§2 Rule 27's local/offline fallback path) via
  * `enqueueSosItem` and reports queued, never claims delivery it can't
- * back up (§2 Rule 6). Latitude/longitude are server-required — if
- * `getCurrentPosition()` fails, SOS is not sent and the reason is shown;
- * there is no fabricated fallback coordinate.
+ * back up (§2 Rule 6). §2 Rule 27: SOS must never be blocked on a missing
+ * GPS fix. If `getCurrentPosition()` fails, the SOS is still raised
+ * without coordinates — the server (migration 0026) falls back to the
+ * Tanod's last known `gps_track` fix, or records `location_source='no_fix'`
+ * if there is none, but it never rejects the alert for lacking one.
  *
  * Duty toggling also starts/stops `patrolLocationService.ts`'s native
  * foreground GPS service (Mobile Improvement Plan Phase 4.1) 1:1 with
@@ -348,7 +350,7 @@ const HomePage: React.FC = () => {
    * replacement for it. Never throws; every outcome is reported through
    * `sosFallbackOutcome`/`sosToast`, never silently.
    */
-  async function attemptSosSmsFallback(payload: { latitude: number; longitude: number }) {
+  async function attemptSosSmsFallback(payload: { latitude?: number; longitude?: number }) {
     const backupNumber = await getCachedSosFallbackContact();
     if (!backupNumber) {
       setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: false, smsStatus: null });
@@ -360,13 +362,18 @@ const HomePage: React.FC = () => {
     try {
       const session = await loadSession();
       const barangayName = session ? (BARANGAY_NAMES[session.barangayId] ?? `Barangay ${session.barangayId}`) : 'Unknown Barangay';
+      const hasFix = payload.latitude !== undefined && payload.longitude !== undefined;
       const message = [
         'BARANGUARD EMERGENCY SOS',
         `Tanod: ${session?.fullName ?? 'Unknown'} (Brgy ${barangayName})`,
-        `Location: ${payload.latitude.toFixed(5)}, ${payload.longitude.toFixed(5)}`,
-        `Map: https://maps.google.com/?q=${payload.latitude},${payload.longitude}`,
+        hasFix
+          ? `Location: ${payload.latitude!.toFixed(5)}, ${payload.longitude!.toFixed(5)}`
+          : 'Location: unavailable (no GPS fix)',
+        hasFix ? `Map: https://maps.google.com/?q=${payload.latitude},${payload.longitude}` : null,
         `Time: ${new Date().toLocaleString()}`,
-      ].join('\n');
+      ]
+        .filter((line): line is string => line !== null)
+        .join('\n');
 
       await SosSms.sendDirect({ number: backupNumber, message });
       setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: 'sent' });
@@ -387,14 +394,15 @@ const HomePage: React.FC = () => {
     tacticalFeedback.onSosFired();
     const clientEventId = uuid();
     try {
-      let position;
+      let payload: { latitude?: number; longitude?: number } = {};
       try {
-        position = await getCurrentPosition();
+        const position = await getCurrentPosition();
+        payload = { latitude: position.latitude, longitude: position.longitude };
       } catch {
-        setSosError('Could not read device GPS coordinates. SOS requires location lock.');
-        return;
+        // §2 Rule 27: a missing GPS fix must never block the alert — send
+        // without coordinates and let the server fall back (migration 0026).
+        payload = {};
       }
-      const payload = { latitude: position.latitude, longitude: position.longitude };
       try {
         await postSos({ ...payload, clientEventId });
         setSosToast('EMERGENCY SOS TRANSMITTED — Admin dispatch has been alerted.');

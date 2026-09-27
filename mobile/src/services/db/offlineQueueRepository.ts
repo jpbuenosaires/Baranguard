@@ -59,8 +59,8 @@ export async function listPendingDispatchStatusUpdates(): Promise<
 }
 
 export interface SosQueuePayload {
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
   dispatchId?: number | null;
 }
 

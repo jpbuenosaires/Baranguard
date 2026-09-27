@@ -39,107 +39,49 @@ import {
 } from './session';
 
 /**
- * The API base URL a fresh install talks to before any Profile override.
- *
- * C-03 (2026-09-26): a persistent Cloudflare Named Tunnel replaces the
- * private-mesh VPN (adopted 2026-09-13, decommissioned 2026-09-15 — see
- * DEVLOG.md for both) and the Cloudflare Quick Tunnel testing-only
- * exception that followed it (random hostname, no Cloudflare-side auth,
- * never a production path — DEVLOG.md 2026-09-15). `baranguardph.win` /
- * `api.baranguardph.win` are real, stable, Cloudflare-DNS-backed
- * hostnames, so the BUILD-time default now points there directly rather
- * than assuming same-LAN reachability — a shipped release APK works for
- * a Tanod off barangay WiFi with zero manual setup.
+ * The API base URL every install talks to. Not configurable on-device —
+ * removed by explicit decision 2026-09-27 (the "Workstation address" UI
+ * on Login and Profile, and the `setApiBaseUrlOverride()` Preferences
+ * override, both used to let a Tanod point the app at a different
+ * address). Now that C-03's Cloudflare Named Tunnel gives the workstation
+ * a real, stable, Cloudflare-DNS-backed hostname, there is no longer a
+ * legitimate reason for a per-device address to differ — a DHCP-
+ * reassigned LAN IP was the whole reason the override existed, and that
+ * class of problem doesn't apply to a fixed public hostname.
  *
  * Local development still needs the workstation directly: create
  * `mobile/.env.local` (gitignored, never committed, never shipped) with
  * `VITE_API_BASE_URL=http://localhost:8081/api/v1` to override this
  * default for your own dev builds only — see that file's own comment.
- *
- * Whatever address is current can still be changed at RUNTIME from
- * Profile via `setApiBaseUrlOverride()` below, for the rare case a
- * different address is actually correct on a given day (§2 Rule 7 still
- * holds: no client-side check here is a security boundary — the API's
- * own auth/tenant checks are what actually gate access, this is only
- * "where do I send the request").
- * Deliberately NOT built: mDNS/subnet-broadcast auto-discovery — a manual
- * override already covers "the address changed," and client-isolated
- * barangay WiFi routers commonly block the multicast/broadcast traffic
- * auto-discovery would need anyway.
+ * This is the only remaining override mechanism, and it is build-time
+ * only (never reachable from the running app).
  */
-const DEFAULT_API_BASE_URL: string =
+const API_BASE_URL: string =
   (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'https://api.baranguardph.win/api/v1';
 
-const API_BASE_URL_OVERRIDE_KEY = 'baranguard.apiBaseUrlOverride';
-
-let API_BASE_URL: string = DEFAULT_API_BASE_URL;
-
 /**
- * Loads a previously-saved override, if any, replacing the build-time
- * default for the rest of this app launch. Fired once at module load
- * (below) rather than awaited from `App.tsx`'s startup — Preferences
- * reads are fast and this resolves well before a Tanod can type
- * credentials on the login screen, and every function in this file reads
- * the mutable `API_BASE_URL` binding fresh on each call, so a request
- * fired before this resolves just uses the default for that one call
- * rather than failing.
- */
-/**
- * Mirrors the resolved `API_BASE_URL` into Preferences under a SEPARATE,
- * always-current key (distinct from `API_BASE_URL_OVERRIDE_KEY`, which is
- * only ever written when a Tanod explicitly overrides the default) —
- * `PatrolLocationService.java` (Mobile Improvement Plan Phase 4.1) reads
- * this key directly from the SAME "CapacitorStorage" SharedPreferences
- * file to know where to POST background GPS points, since a Vite
- * build-time constant baked into the JS bundle is invisible to native
- * code, and the override key alone would be absent for a device that
- * never customized it.
+ * Mirrors `API_BASE_URL` into Preferences so `PatrolLocationService.java`
+ * (Mobile Improvement Plan Phase 4.1) can read it from the same
+ * "CapacitorStorage" SharedPreferences file to know where to POST
+ * background GPS points — a Vite build-time constant baked into the JS
+ * bundle is invisible to native code. Fired once at module load; the
+ * value itself is now fixed for the life of the install (see
+ * `API_BASE_URL`'s own doc), so this only needs to run once, not on
+ * every launch, but doing so is cheap and keeps this file the single
+ * source of truth for what native code reads.
  */
 const EFFECTIVE_API_BASE_URL_KEY = 'baranguard.effectiveApiBaseUrl';
-async function persistEffectiveApiBaseUrl(): Promise<void> {
+(async () => {
   try {
     await Preferences.set({ key: EFFECTIVE_API_BASE_URL_KEY, value: API_BASE_URL });
   } catch {
     // Best-effort — worst case, the native service falls back to its own hardcoded default.
   }
-}
+})();
 
-async function loadApiBaseUrlOverride(): Promise<void> {
-  try {
-    const { value } = await Preferences.get({ key: API_BASE_URL_OVERRIDE_KEY });
-    if (value) API_BASE_URL = value;
-  } catch {
-    // Keep the build-time default.
-  }
-  await persistEffectiveApiBaseUrl();
-}
-void loadApiBaseUrlOverride();
-
-/** The URL every request in this file is currently using — for Profile's connection settings card to display. */
+/** The URL every request in this file uses. */
 export function getApiBaseUrl(): string {
   return API_BASE_URL;
-}
-
-/** True when a Tanod has saved a runtime override (vs. still using the build-time default). */
-export function hasApiBaseUrlOverride(): boolean {
-  return API_BASE_URL !== DEFAULT_API_BASE_URL;
-}
-
-/**
- * Persists a new workstation base URL and applies it immediately — no
- * app restart needed. Pass `null` to clear the override and revert to the
- * build-time default.
- */
-export async function setApiBaseUrlOverride(url: string | null): Promise<void> {
-  if (url) {
-    const trimmed = url.trim().replace(/\/+$/, '');
-    await Preferences.set({ key: API_BASE_URL_OVERRIDE_KEY, value: trimmed });
-    API_BASE_URL = trimmed;
-  } else {
-    await Preferences.remove({ key: API_BASE_URL_OVERRIDE_KEY });
-    API_BASE_URL = DEFAULT_API_BASE_URL;
-  }
-  await persistEffectiveApiBaseUrl();
 }
 
 export class ApiError extends Error {
@@ -251,8 +193,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
  * (`DeviceSignature::verifyOrReject()`), which is the FULL request path
  * the webserver actually saw, prefix included. Deriving that prefix from
  * `API_BASE_URL`'s own pathname (rather than hardcoding `/api/v1`) keeps
- * this correct even when a Tanod's Profile screen points the app at a
- * differently-mounted backend (§1's documented runtime override).
+ * this correct if a local dev build's `.env.local` ever mounts the API
+ * under a different path than the production `/api/v1`.
  *
  * Signing failure (or a pre-upgrade device with no Keystore key) yields a
  * device-id-only header set, same as before H-09 — see
@@ -263,9 +205,8 @@ async function deviceAuthHeaders(method: string, routePath: string, deviceId: st
   try {
     fullPath = new URL(API_BASE_URL).pathname.replace(/\/+$/, '') + routePath;
   } catch {
-    // Malformed API_BASE_URL is an existing, separately-handled condition
-    // elsewhere (setApiBaseUrlOverride() validates it) — fall back to the
-    // bare route path rather than throwing on a mobile write.
+    // A malformed VITE_API_BASE_URL from a local .env.local — fall back to
+    // the bare route path rather than throwing on a mobile write.
   }
   const signed = await signDeviceRequest(method, fullPath, deviceId);
   const headers: Record<string, string> = { 'X-Device-Id': deviceId };
@@ -516,13 +457,17 @@ export interface SosResult {
  * (UNIQUE(user_id, client_event_id) server-side) — a retry with the same
  * id returns the original row rather than raising a second alarm, the
  * same guarantee an SMS-fallback-correlated SOS relies on (§2 Rule 27).
- * `latitude`/`longitude` are server-required (NOT NULL) — there is no
- * fallback coordinate; a caller that couldn't get a location must not
- * call this.
+ * `latitude`/`longitude` are OPTIONAL (migration 0026, C-01) — §2 Rule 27
+ * says SOS must never be blocked on a missing GPS fix, so a caller that
+ * couldn't get a location must still call this, just without coordinates.
+ * The server falls back to the Tanod's last known `gps_track` fix, or
+ * creates the SOS with null coordinates (`location_source='no_fix'`) if
+ * there is none at all — it never rejects for a missing fix. Sending only
+ * one of the two is still a 400 (a different failure mode from neither).
  */
 export async function postSos(params: {
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
   clientEventId: string;
   dispatchId?: number | null;
   fallbackChannel?: 'app' | 'sms';
@@ -1016,8 +961,8 @@ export interface SyncDispatchStatusItem {
  * fan-out as a live SOS.
  */
 export interface SyncSosItem {
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
   dispatch_id?: number | null;
   fallback_channel?: 'app' | 'sms';
   client_event_id: string;

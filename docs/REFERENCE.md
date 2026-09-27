@@ -16,36 +16,48 @@ Offline-first, locally hosted Barangay Intelligence and Emergency
 Dispatch System for four barangays in Pilar, Sorsogon. Production
 system, not a demo. Single workstation, LAN-only, no cloud.
 
-**API base URL — C-03 in progress, 2026-09-26.** A persistent Cloudflare
-Named Tunnel now fronts both the web dashboard and the API on a real,
-Cloudflare-registered domain: `https://baranguardph.win` (web) and
-`https://api.baranguardph.win` (API), tunnel name `baranguard-main`
-(id `eeaa890d-a1dd-49aa-bc9b-3baff21a2e9d` — renamed from the original
-`baranguard` tunnel 2026-09-26 when the tunnel was moved to a different
-machine than the one it was first set up on; the original tunnel's
-credentials never left that machine, so this one is a fresh tunnel with
-DNS re-routed via `--overwrite-dns`, not a copy — see `DEVLOG.md` 2026-
-09-26 (28)), config at `~/.cloudflared/config.yml` **on whichever machine
-is currently running it — confirm which one that is before assuming
-REFERENCE.md's "the workstation" means this session's machine** (entry
-(27) found a dev/staging machine with no `cloudflared` at all, entry (28)
-is where it actually got set up). This replaces the
-private-mesh VPN (closed 2026-09-13, decommissioned 2026-09-15) and the
+**API base URL — C-03 in progress, resolved onto this machine
+2026-09-27.** A persistent Cloudflare Named Tunnel now fronts both the
+web dashboard and the API on a real, Cloudflare-registered domain:
+`https://baranguardph.win` (web) and `https://api.baranguardph.win`
+(API), tunnel name `baranguard` (id `28c3134b-1a35-4c85-971a-
+0fb18f262493`) — the ORIGINAL tunnel, created on THIS machine 2026-09-25,
+config at `~/.cloudflared/config.yml`. It was briefly orphaned 2026-09-26
+when a different session, running on a **separate physical machine**
+(Windows profile `danilyn`), didn't find `cloudflared` here, assumed no
+tunnel existed anywhere reachable, and stood up a second tunnel
+(`baranguard-main`, id `eeaa890d-...`) there instead, re-routing DNS to
+it. Resolved 2026-09-27: confirmed this machine is the real production
+workstation (real XAMPP, real `backend/.env`, real Apache :8081 vhost) —
+installed `cloudflared` here, re-routed both hostnames' DNS back to this
+machine's original `baranguard` tunnel via `--overwrite-dns`, verified
+live with real `curl` 200s from both hostnames. **`danilyn`'s
+`baranguard-main` tunnel is now the orphaned one** (not deleted — nobody
+has confirmed whether that machine still needs to serve anything; ask
+before touching it). If REFERENCE.md's "the workstation" ever seems
+ambiguous again, check `~/.cloudflared/config.yml`'s `tunnel:` id against
+`cloudflared tunnel list`'s connection count — the one with active
+connections is the one actually serving traffic. This tunnel setup
+replaces the private-mesh VPN (closed 2026-09-13, decommissioned
+2026-09-15) and the
 Cloudflare Quick Tunnel testing-only exception that followed it (random
 hostname, no Cloudflare-side auth, never a production path — see
 `DEVLOG.md` for all three). `web/index.html`'s `window.
 BARANGUARD_API_BASE_URL` now auto-derives `api.<hostname>` when NOT
 opened from localhost/127.0.0.1, so the web dashboard needs zero manual
 setup from any of these hostnames. `mobile/src/services/apiService.ts`'s
-`DEFAULT_API_BASE_URL` now defaults to `https://api.baranguardph.win/api/v1`
+`API_BASE_URL` now defaults to `https://api.baranguardph.win/api/v1`
 at build time (a fresh install/release APK just works off any network);
 local dev overrides this per-machine via a gitignored `mobile/.env.local`
-(`VITE_API_BASE_URL=http://localhost:8081/api/v1`). Both platforms keep
-their runtime override too (mobile: Profile's connection-settings card
-via `setApiBaseUrlOverride()`; web: a `?api_base=` query param or
-`localStorage`) for whatever address is actually correct on a given day.
-`backend/.env`'s `CORS_ALLOWED_ORIGIN` includes `https://baranguardph.win`
-alongside the local dev origins.
+(`VITE_API_BASE_URL=http://localhost:8081/api/v1`). **Mobile's on-device
+runtime override (the "Workstation address" UI on Login and Profile,
+`setApiBaseUrlOverride()`) was REMOVED 2026-09-27** — a fixed, stable
+tunnel hostname removed the DHCP-reassigned-IP problem that override
+existed for; the `.env.local` build-time override above is now the only
+way to point a build anywhere else. Web keeps its own separate runtime
+override (a `?api_base=` query param or `localStorage`, no on-screen UI)
+unchanged. `backend/.env`'s `CORS_ALLOWED_ORIGIN` includes
+`https://baranguardph.win` alongside the local dev origins.
 
 **IMPORTANT, disclosed deliberately**: as of 2026-09-26 (28), the machine
 currently running this tunnel has `backend/.env` pointed at
@@ -60,13 +72,19 @@ until `backend/.env` is deliberately repointed — check `DB_NAME` in
 `backend/.env` before assuming which database current public traffic
 actually reaches.
 
-**Not yet done** (so C-03 is NOT closed in `docs/REMAINING.md` yet):
-the tunnel now runs as a real Windows service (`cloudflared`,
-`AUTO_START`, done 2026-09-26 (29) — survives a reboot; getting there
-needed directly setting the service's `binPath` via `sc.exe config`,
-since `cloudflared service install` alone never seeds a working config
-for a locally-managed tunnel, see DEVLOG for the full diagnosis) but
-there is still **no Cloudflare Access policy anywhere** —
+**Not yet done** (so C-03 is NOT closed in `docs/REMAINING.md` yet): on
+THIS machine, the tunnel is currently only started by
+`start-baranguard.ps1` (the `Start Baranguard.bat` launcher) as an
+ordinary user process — it does NOT yet run as a Windows service here, so
+it won't come back after a reboot until someone logs in and
+double-clicks the launcher. (The real Windows-service install steps
+described in DEVLOG 2026-09-26 (29) — `cloudflared service install` alone
+doesn't seed a working config for a locally-managed tunnel, needs
+`sc.exe config` directly — were done on `danilyn`'s machine, for the
+tunnel that's now orphaned; they still apply verbatim if/when this
+machine gets the same treatment, via `install-autostart-services.ps1`
+from an elevated prompt.) There is also still **no Cloudflare Access
+policy anywhere** —
 `api.baranguardph.win` is reachable by anyone with the URL, same
 exposure shape the Quick Tunnel had, just with a stable address instead
 of a rotating one (§2 Rule 7 still holds for anything meant to stay
