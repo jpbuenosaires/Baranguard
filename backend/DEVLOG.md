@@ -17288,3 +17288,89 @@ clicked through an actual print preview or opened a freshly generated
 PDF to visually confirm the new masthead/meta-bar/signature layout
 renders correctly. If this surfaces as a problem later, that's the first
 place to look.
+
+## 2026-09-27 (2) — ORS and FCM wired up on this machine; two php.ini gaps found and fixed
+
+Service Health showed OpenRouteService, FCM, the GSM SMS gateway and the
+Notification Dispatcher as NOT CONFIGURED. Checked `backend/.env`
+directly: `ORS_API_KEY=` and `FCM_SERVICE_ACCOUNT_PATH=` were present but
+empty, `GSM_GATEWAY_ENABLED=false`. All four badges were telling the
+truth (§2 Rule 6), not bugs.
+
+- **ORS**: user supplied a key, set in `backend/.env`. Verifying it with
+  a real `OrsClient::route()` call surfaced `SSL certificate problem:
+  unable to get local issuer certificate` — the CLI `php.ini`
+  (`C:\php-8.3.13\php.ini`) had `curl.cainfo`/`openssl.cafile`
+  commented out. Apache's own `C:\xampp\php\php.ini` already pointed both
+  at `C:\xampp\apache\bin\curl-ca-bundle.crt`, so only CLI scripts were
+  affected. Set the CLI ini to the same bundle (forward slashes — a
+  first `sed` attempt with backslashes corrupted the lines, restored from
+  backup). Real route fetched; Service Health logged `Routing (ORS) →
+  HEALTHY`.
+- **FCM**: user supplied the `baranguard-acb27` service-account JSON.
+  Saved to `backend/config/firebase-service-account.json`, gitignored
+  (new `.gitignore` entries for it and `mobile/android/app/
+  google-services.json`, confirmed with `git check-ignore`).
+  `FCM_SERVICE_ACCOUNT_PATH` set. Verifying surfaced a second gap:
+  **`extension=openssl` was commented out in BOTH php.ini files** — FCM's
+  RS256 JWT needs `openssl_pkey_get_private()`, while the app's own login
+  JWT is HMAC, which is why nothing had ever hit this. Enabled in both
+  (backups `*.bak-fcm-*`), Apache restarted. A real Google OAuth token
+  was issued (no push sent); Service Health logged `Push (FCM) →
+  HEALTHY`, Notification Dispatcher → HEALTHY.
+- `FcmClient.php`'s class doc still says "NEVER CALLED WITH REAL
+  CREDENTIALS" — stale (a real push landed 2026-09-19); not edited here.
+- **Not git-tracked, re-apply on a new machine**: both php.ini edits,
+  `.env` values, the service-account file.
+- Still open: `mobile/android/app/google-services.json` (needed for the
+  app to register/receive), GSM gateway (needs the tethered phone).
+
+## 2026-09-27 (3) — DECISION: rebuild the Tanod mobile app in React Native (Expo)
+
+**Deliberate deviation from SPRINTS.md's "Sprint 8 is verification, not
+new features"**, taken by explicit user decision and logged here before
+any code, per the standing "log deviations" rule.
+
+**Why**: the research panel will question the mobile stack. A comparison
+this session (Capacitor vs React Native vs Flutter vs native Kotlin)
+found Capacitor's cross-platform value unused — the app is Android-only
+— while its WebView bridge sits exactly where this app needs native
+depth (background GPS, silent SMS, full-screen alarms, Keystore signing).
+React Native removes the WebView and keeps a TypeScript codebase; Expo
+with a dev build is the React Native team's own recommended setup. The
+assistant recommended keeping Capacitor and defending it instead (lower
+timeline risk); the user chose the rebuild. Both positions recorded.
+
+**User decisions**: Expo + dev build, custom native code as Kotlin Expo
+Modules; new `mobile-rn/` folder with `mobile/` kept live until parity;
+the SOS-without-GPS client bug (below) fixed in the rebuild only, the
+current app is NOT hotfixed.
+
+**Defects found by the inventory, fixed in the rebuild (not copied)**:
+1. **C-01 is broken on the client** — `mobile/src/pages/home.tsx:390-396`
+   aborts SOS with "SOS requires location lock" when GPS fails, although
+   the server has accepted fix-less SOS since migration 0026. **Live in
+   the current app today**, by explicit user choice.
+2. **H-09 holes** — `PatrolLocationService.java` posts `/gps` with no
+   `X-Device-Id`/signature, a new `client_event_id` per attempt, and
+   drops failed points.
+3. Live-map GPS gives one point two different `client_event_id`s (direct
+   POST vs local-save fallback) — Rule 3.
+4. Logout never stops patrol tracking or closes the DB.
+5. JWT lives in plain SharedPreferences.
+
+**Guardrails**: zero backend changes; dev applicationId
+`ph.baranguard.tanod.rn` (needs a second Android app registered in
+Firebase and its own `google-services.json`); cutover requires syncing
+everything in the old app first (local rows do not migrate).
+
+**Phases** (each ends with a device gate on the Infinix): 0 scaffold ·
+1 foundations (encrypted DB, session, API client, device key) · 2 auth +
+shell · 3 offline capture + sync · 4 dispatch · 5 patrol location +
+MapLibre/MBTiles · 6 SOS + FCM/critical alert · 7 remaining screens ·
+8 parity checklist + cutover. Full plan kept in the session plan file.
+
+**Environment note (this machine)**: JDK 17 at `JAVA_HOME`, Android
+Studio installed, SDK has build-tools 36 / platform android-37 but **no
+platform-tools (adb)**. Username has no space, so the `JAYSON~1`
+short-path gotcha doesn't apply here.
