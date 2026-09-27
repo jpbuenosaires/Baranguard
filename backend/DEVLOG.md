@@ -17837,3 +17837,51 @@ was written and statically verified only, per the standing "code first,
 build later" instruction. The next build attempt will be the real test of
 whether `PermissionsService`'s API shape and the `AppCompatActivity`
 manifest wiring are actually correct.
+
+## 2026-09-27 (10) — React Native rebuild: Phase 7 (M8/M9 shifts + swap requests, M10 profile diagnostics) — code-complete
+
+Every data-layer function this phase needed (`getMyShifts`,
+`getMyShiftSwapRequests`, `requestShiftSwap`, `listUnsyncedIncidents`/
+`listUnsyncedGpsPoints`/`listPendingDispatchStatusUpdates`/
+`listPendingSosItems`, `runSyncPass`, `getStorageSnapshot`/`formatBytes`/
+`pruneOldSyncedEvidenceFiles`, `getApiBaseUrl`/`hasApiBaseUrlOverride`/
+`setApiBaseUrlOverride`, `checkHealth`) already existed from earlier
+phases — this phase was purely the two missing screens.
+
+**`MyShiftsScreen.tsx`** (M8/M9, new `/shifts` route, pushed from
+Profile) — port of ../mobile's my-shifts.tsx: lists `GET /shifts` (already
+tanod-scoped server-side, §6, no `?user_id=me` needed), a per-shift
+"Request Swap" action (RN modal card + `TextInput` replacing `IonAlert`'s
+inline textarea input), and swap request history. Swap requests are
+raised WITHOUT a `target_user_id` — picking a specific substitute needs
+`GET /users`, Admin-only (§7), so this deliberately asks the desk to
+assign a substitute when reviewing the request, same as the old app.
+
+**`ProfileScreen.tsx`** (M10) built out from Phase 2's session-display-only
+version into the full diagnostics console: workstation LAN telemetry
+(a real `checkHealth()` ping, not a hardcoded status — §2 Rule 6), a
+collapsible workstation-address override card (`setApiBaseUrlOverride`,
+for a DHCP-reassigned workstation IP), real local SQLite counts (cached
+dispatches, unsynced reports/GPS/queued transitions), a manual "Sync All"
+button (`runSyncPass`), and a collapsible storage drawer (real
+file-system-measured evidence/map-package bytes, with a 30-day prune
+action). The "Alert & Audio Verification" section honestly states push
+notification permission is "not available — Firebase push isn't wired up
+in this build yet" rather than faking a permission check the old app's
+`NotificationDiagnostics.tsx` did via `@capacitor/push-notifications`
+(which has no RN equivalent installed) — "Test Full-Screen Alert" (Phase
+6) still exercises the real native path independent of that gap.
+
+**Verified (static only)**: `npx tsc --noEmit` 0 errors, `expo lint` 0
+problems (one `react-hooks/set-state-in-effect` false positive per screen,
+same class already documented in Phases 3/4 — a local `load()`/`loadData()`
+callback reused by a manual retry handler elsewhere in the same file,
+fixed with a justified `eslint-disable-next-line`, not by weakening the
+effect), `npx jest` 3 suites / 37 passed, `expo-doctor` 21/21.
+
+**Where this leaves the rebuild**: Phases 0–7 are now code-complete.
+Phase 8 (device checklist + cutover) is fundamentally not a coding phase
+— it's running the full parity checklist against a real device/emulator,
+switching `applicationId` to `ph.baranguard.tanod`, and retiring `mobile/`
+— so "finish all phases" in the coding sense is now done; what's left
+needs the user's own device-testing involvement.

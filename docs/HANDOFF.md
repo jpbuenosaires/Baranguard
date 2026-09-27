@@ -7,14 +7,17 @@ date/keyword, don't read front to back).
 **Last updated: 2026-09-27.**
 
 **2026-09-27, latest — Tanod app being REBUILT in React Native (Expo).
-Phases 0–6 code-complete; Phase 1's device gate is now REALLY passed —
-first successful build+install on the Pixel_9 emulator, three real bugs
-found and fixed (DEVLOG (3)-(9)).** User decision (the research panel
-will question the Capacitor stack): full rebuild in `mobile-rn/` with
-Expo SDK 57 + dev build + Kotlin Expo Modules. **`mobile/` (Capacitor) is
-still the live app** until `mobile-rn/` passes the same device checklist.
-Zero backend changes. Dev applicationId `ph.baranguard.tanod.rn` so both
-install side by side.
+Phases 0–7 are ALL CODE-COMPLETE. Phase 1's device gate is now REALLY
+passed — first successful build+install on the Pixel_9 emulator, three
+real bugs found and fixed (DEVLOG (3)-(10)).** User decision (the
+research panel will question the Capacitor stack): full rebuild in
+`mobile-rn/` with Expo SDK 57 + dev build + Kotlin Expo Modules.
+**`mobile/` (Capacitor) is still the live app** until `mobile-rn/` passes
+the same device checklist. Zero backend changes. Dev applicationId
+`ph.baranguard.tanod.rn` so both install side by side. **Only Phase 8
+(device checklist + cutover) is left, and it is not a coding phase** —
+"finish all phases" (the user's own instruction this session) is done in
+the coding sense; what remains needs real device-testing time.
 
 - **Done, code only — Phase 0/1 (foundations)**: encrypted DB (expo-sqlite
   + SQLCipher), schema ported byte-identical, session in SecureStore, full
@@ -70,11 +73,20 @@ install side by side.
   critically low on RAM (858 MB free of 7,896 MB total; several Claude
   Code sessions plus an app called "Antigravity" are the main consumers).
   Not a code bug — retry once more host RAM is free.
-- **Next**: Phase 7 (shifts/swap requests/profile diagnostics), then
-  Phase 8 (device checklist + cutover). `sos-sms` and `critical-alert`'s
-  Kotlin have NOT been compiled yet — the next build attempt is the real
-  test of whether their `PermissionsService`/`AppCompatActivity` wiring is
-  correct.
+- **Done, code only — Phase 7 (shifts, profile diagnostics)**:
+  `MyShiftsScreen.tsx` (M8/M9 — shift list, request-swap flow, swap
+  history; new `/shifts` route pushed from Profile), `ProfileScreen.tsx`
+  built out from Phase 2's session-only version into the full M10
+  diagnostics console (real LAN ping, workstation-address override, real
+  local SQLite counts, manual sync, storage drawer with a 30-day evidence
+  prune). Every data-layer function both screens needed already existed
+  from earlier phases — this was purely the two missing screens.
+- **Next**: Phase 8 (device checklist + cutover) — the full parity
+  checklist against a real device/emulator, switching `applicationId` to
+  `ph.baranguard.tanod`, retiring `mobile/`. `sos-sms` and
+  `critical-alert`'s Kotlin have NOT been compiled yet — the next build
+  attempt is the real test of whether their
+  `PermissionsService`/`AppCompatActivity` wiring is correct.
 - **Known live bug in the CURRENT app, left unfixed by user choice**:
   `mobile/src/pages/home.tsx:390-396` blocks SOS when GPS fails (C-01);
   fixed only in the rebuild.
