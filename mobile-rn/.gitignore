@@ -40,5 +40,10 @@ yarn-error.*
 /ios
 /android
 
+# local Expo module Gradle build artifacts (source-only for our own modules)
+modules/*/android/build/
+modules/*/android/.cxx/
+modules/*/android/.gradle/
+
 # Baranguard: per-applicationId Firebase config, never committed
 google-services.json

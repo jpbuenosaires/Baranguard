@@ -16,6 +16,38 @@ const HEX_PASSPHRASE = /^[0-9a-f]{64}$/;
 
 export type LocalDatabase = SQLiteDatabase;
 
+/**
+ * Query-shaped adapter over expo-sqlite's async API. The repository files
+ * under this folder are ported near-verbatim from ../mobile's
+ * @capacitor-community/sqlite versions, which called `db.query()`/`db.run()`
+ * inside explicit `beginTransaction()`/`commitTransaction()`/
+ * `rollbackTransaction()` — this wrapper gives them the same shape over
+ * expo-sqlite (`getAllAsync`/`runAsync`/raw `BEGIN`/`COMMIT`/`ROLLBACK`) so
+ * the SQL and control flow in each repository didn't need rewriting, only
+ * the import.
+ */
+export interface CompatDb {
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ values: T[] }>;
+  run(sql: string, params?: unknown[], _transaction?: boolean): Promise<void>;
+  beginTransaction(): Promise<void>;
+  commitTransaction(): Promise<void>;
+  rollbackTransaction(): Promise<void>;
+}
+
+function toCompatDb(db: SQLiteDatabase): CompatDb {
+  return {
+    async query(sql, params = []) {
+      return { values: await db.getAllAsync(sql, params as (string | number | null)[]) };
+    },
+    async run(sql, params = []) {
+      await db.runAsync(sql, params as (string | number | null)[]);
+    },
+    beginTransaction: () => db.execAsync('BEGIN'),
+    commitTransaction: () => db.execAsync('COMMIT'),
+    rollbackTransaction: () => db.execAsync('ROLLBACK'),
+  };
+}
+
 let database: SQLiteDatabase | null = null;
 /**
  * The one open in flight. Carried over from the old app's 2026-09-19 device
@@ -24,7 +56,11 @@ let database: SQLiteDatabase | null = null;
  */
 let opening: Promise<SQLiteDatabase> | null = null;
 
-export function openLocalDatabase(): Promise<SQLiteDatabase> {
+export async function openLocalDatabase(): Promise<CompatDb> {
+  return toCompatDb(await openRawDatabase());
+}
+
+function openRawDatabase(): Promise<SQLiteDatabase> {
   if (database) return Promise.resolve(database);
   if (!opening) {
     opening = openUncontended().finally(() => {

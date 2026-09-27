@@ -1,18 +1,38 @@
-import { StyleSheet, Text, View } from 'react-native';
+/**
+ * Cold-start session gate. Port of ../mobile/src/App.tsx's
+ * `RequireSession` + the root `/` redirect, combined: expo-router has no
+ * "wrap this whole subtree once" primitive, so the check runs here, once,
+ * and redirects — same one-time-per-mount behavior (not per navigation),
+ * same reasoning: gates on a session EXISTING (`hasStoredSession`), not on
+ * local expiry, so a Tanod out of range still reaches their cached tabs.
+ */
+import { useEffect, useState } from 'react';
+import { Redirect } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
+import { hasStoredSession } from '../services/session';
+import { useTheme } from '../theme/ThemeProvider';
 
-// Phase 0 placeholder. Phase 2 replaces this with the session gate that
-// routes to login or the tab shell.
 export default function Index() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Baranguard</Text>
-      <Text style={styles.subtitle}>React Native rebuild — scaffold</Text>
-    </View>
-  );
-}
+  const { colors } = useTheme();
+  const [state, setState] = useState<'checking' | 'in' | 'out'>('checking');
 
-const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 24, fontWeight: '700' },
-  subtitle: { marginTop: 8, opacity: 0.7 },
-});
+  useEffect(() => {
+    let active = true;
+    hasStoredSession().then((stored) => {
+      if (active) setState(stored ? 'in' : 'out');
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (state === 'checking') {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  return <Redirect href={state === 'in' ? '/(tabs)/home' : '/login'} />;
+}
