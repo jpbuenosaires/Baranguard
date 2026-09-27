@@ -17885,3 +17885,172 @@ Phase 8 (device checklist + cutover) is fundamentally not a coding phase
 switching `applicationId` to `ph.baranguard.tanod`, and retiring `mobile/`
 — so "finish all phases" in the coding sense is now done; what's left
 needs the user's own device-testing involvement.
+
+## 2026-09-27 (11) — React Native rebuild: full UI redesign begins — HeroUI Native + Uniwind foundation wired, M2 Home rebuilt as the flagship screen (mockups approved first)
+
+User asked for a complete UI redesign ("change completely but retaining
+the theme blue"), explicitly wanting a component library researched
+first, a mobile-field-app UX pass, and mockups approved before any code
+— all done via a design-canvas Artifact (Home light/dark, the SOS confirm
+sheet, Assignment detail light/dark) before this entry's work started.
+User's three approvals: **HeroUI Native** (over NativeWind+React Native
+Reusables and React Native Paper — see the plan/mockup conversation for
+the comparison), **hold-to-fill ring AND a confirm dialog** for SOS (not
+either/or — the hold gesture stays, its completion now opens a confirm
+step instead of firing immediately), **light + dark only** (no separate
+sunlight/high-contrast mode).
+
+**Why HeroUI Native**: reached 1.0 stable the same cycle as this
+project's Expo SDK 57 / RN 0.86 pin (its own toolchain already targets
+those versions), ships real compound components (Button, Switch, Chip,
+Card, Dialog, BottomSheet, Toast) themed via Tailwind v4 through Uniwind
+— not a from-scratch design system to hand-roll — and its default
+`--accent` token was already a blue in the same family as ours, so
+adopting it is a re-skin, not a fight with the library's opinions.
+
+**Foundation wired (`mobile-rn/`)**:
+- `metro.config.js` (new) — `withUniwindConfig` wrapping the default Expo
+  Metro config, `cssEntryFile: './global.css'`. Must be the OUTERMOST
+  wrapper (docs.uniwind.dev/quickstart) — no other Metro customization
+  existed to conflict with.
+- `global.css` (new, at the `mobile-rn/` root — Uniwind's app-root marker,
+  imported once from `src/app/_layout.tsx` since Expo Router has no
+  `App.tsx`) — `@import 'tailwindcss'; @import 'uniwind'; @import
+  'heroui-native/styles';` plus a `@layer theme { :root { @variant
+  light {…} @variant dark {…} } }` override block. Read HeroUI's REAL
+  shipped `node_modules/heroui-native/src/styles/{theme,variables}.css`
+  before writing this (not scraped docs — see below) to get the exact
+  variable names (`--accent`, `--danger`, `--warning`, `--success`,
+  `--background`, `--focus`, `--link`) and override them to
+  `theme/tokens.ts`'s existing light/dark palette values — HeroUI's own
+  radius scale (`--radius-2xl`=16px, `--radius-3xl`=24px off a 0.5rem
+  base) already matched the approved mockups' corner rounding exactly,
+  so `--radius` itself was left untouched. Also sets `--font-normal`/
+  `-medium`/`-semibold`/`-bold` to the exact family names
+  `@expo-google-fonts/inter`'s `useFonts()` call already registers
+  (`Inter_400Regular` etc.) — RN can't fake font weights from one file,
+  each weight needs its own loaded family name, and Uniwind's
+  `font-{weight}` utilities read these variables to pick the right one.
+- `src/app/_layout.tsx` — imports `../../global.css` once at the true
+  root; wraps the app in `GestureHandlerRootView` (required at the root
+  for `react-native-gesture-handler`, which HeroUI's Switch/BottomSheet
+  depend on) then `HeroUINativeProvider` (supplies HeroUI's toast host +
+  overlay portal to every screen), with the existing `ThemeProvider`
+  staying innermost so old, not-yet-redesigned screens keep working
+  unchanged off `useTheme()`/`tokens.ts`.
+- `src/theme/ThemeProvider.tsx` — one new `useEffect` calling Uniwind's
+  own `Uniwind.setTheme(preference)` (light/dark/system) whenever the
+  existing persisted preference changes, so there is ONE source of truth
+  driving both old (`tokens.ts`) and new (Tailwind/HeroUI) screens
+  instead of two independent theme toggles that could disagree.
+
+**Real gap found and fixed along the way (not part of the UI work,
+surfaced by `npx jest` after the new installs)**: `jest-expo` failed
+outright with "The React Native Jest preset... has moved to a separate
+package" — `@react-native/jest-preset` was never actually installed as
+its own devDependency even though `jest-expo` (already a devDependency
+since Phase 0) has needed it since a recent RN/jest-expo release. Fixed
+by installing `@react-native/jest-preset@0.86.3` (pinned to the app's own
+RN version) as a devDependency; `npx jest` now passes 3 suites / 37
+tests again, unrelated to anything this session touched otherwise.
+
+**Package installs, done carefully to protect an existing pin**:
+`react-native-gesture-handler`, `react-native-svg`, `@gorhom/bottom-sheet`
+via `npx expo install` (SDK-compatible resolution); `heroui-native`,
+`uniwind`, `tailwindcss`, `tailwind-merge`, `tailwind-variants` via a
+second `npm install --legacy-peer-deps` after the plain `npm install`
+hit a real `ERESOLVE` — `@gorhom/bottom-sheet`'s peer range would have
+let npm silently bump `react-native-reanimated` from the app's pinned
+4.5.1 to 4.7.0, which in turn demands `react-native-worklets` 0.13.x
+against this app's pinned 0.10.1 (SPRINTS.md's "never invent" logic
+applies here too: the 4.5.1/0.10.1 pair is what an earlier session
+recorded as the version actually tested against Expo SDK 57, not a
+version to let npm silently pick). `--legacy-peer-deps` avoided that
+resolution; verified with `node -p require(...).version` on both
+packages before AND after, both calls in this entry, staying at 4.5.1 /
+0.10.1 throughout.
+
+**A real documentation-accuracy lesson, worth repeating**: every
+`WebFetch` summary of heroui.com's own docs pages 404'd or came back
+subtly wrong (one fetch invented `--heroui-accent`-prefixed variable
+names that don't exist anywhere in the real package). The reliable
+source turned out to be the package already sitting in
+`node_modules/heroui-native/src/` — read directly instead of trusted
+from a fetch summary. Don't trust a `WebFetch` result for exact API
+names/CSS variables when the package is already on disk; read the real
+file.
+
+**M2 Home rebuilt** (`src/pages/HomeScreen.tsx`) as the flagship
+redesigned screen — every handler (`handleToggleDuty`, `startHoldSos`/
+`cancelHoldSos`, `handleRaiseSos`, `attemptSosSmsFallback`, the shift
+timer effect, the dispatch-cache refresh-on-resume effect) is BYTE-FOR-
+BYTE the same logic as before; only what renders it changed:
+- New `src/ui/` folder (shared across future screens, not Home-only):
+  `AppHeader.tsx` (the navy field-console header, chips row underneath),
+  `StatusChip.tsx` (small read-only pills — deliberately NOT HeroUI's
+  `Chip`, which is a pressable filter/tag component, wrong semantics for
+  a glanceable status dot), `RingProgress.tsx` (a generic `react-native-
+  svg` circular progress ring, not Home-specific — written for the SOS
+  hold but any future "hold to confirm" control can reuse it).
+- The duty toggle is now HeroUI's `Switch` (was a text `Pressable`) —
+  `onSelectedChange` still round-trips through the same
+  `handleToggleDuty()` that calls `POST /duty-status` first.
+- The SOS control is now `RingProgress` wrapped in a `Pressable`
+  (`onPressIn`/`onPressOut` unchanged) showing hold progress as a filling
+  ring instead of the old horizontal progress bar; on completion it opens
+  a HeroUI `BottomSheet` confirm step (title/description/a real "no
+  connection → SMS" notice/`Send SOS now` + `Cancel` buttons) rather than
+  the old `Alert.alert` — the two-step gesture-then-confirm the user
+  explicitly asked for, not a replacement for either step.
+- The header's "Online/Offline · N queued" chip is a REAL probe (§2 Rule
+  6) — reuses the same `checkHealth()` 30s poll the old `MobileHeader`
+  did, and a genuine combined count from `listUnsyncedIncidents` +
+  `listPendingSosItems` + `listPendingDispatchStatusUpdates` (GPS points
+  deliberately left out — they turn over on their own 30s cadence and
+  would make the header flicker rather than inform, not a real "waiting"
+  signal a Tanod would recognize).
+- Considered and dropped: a notification bell icon in the header (present
+  in the approved mockup) — there is no `getNotifications` list endpoint
+  call or notifications-inbox screen anywhere in `mobile-rn/` yet (only
+  `acknowledgeNotification`, used solely by the M12 critical-alert
+  overlay's Acknowledge button), so a bell button would be exactly the
+  "control that looks functional and does nothing" §2 Rule 6 forbids.
+  Left out of Home's header; revisit once/if a real notifications screen
+  exists to route to.
+- Colors used in RN-only props that can't take a Tailwind `className`
+  (Ionicons' `color` prop, `RingProgress`'s SVG stroke colors) are read
+  via HeroUI's own `useThemeColor(['accent','danger','danger-soft',
+  'success','muted'])` — the exact same CSS tokens the Tailwind classes
+  resolve to, so there is one color source, not the old `tokens.ts`
+  palette duplicated as literal hex strings again.
+
+**Tab bar**: `src/app/(tabs)/_layout.tsx`'s Log Incident tab now renders
+via a custom `tabBarButton` (`ReportTabButton`) — a raised circular
+accent-colored button matching the mockup, `-mt-6` overlap plus a
+`border-background` ring for the "cutout" look. Behavior is unchanged:
+the same `tabPress` listener still intercepts the press and pushes
+`/incidents/new` instead of letting it become the active tab (see the
+file's own pre-existing comment on why).
+
+**Verified (static only this entry — no device/emulator run yet)**:
+`npx tsc --noEmit` 0 errors, `CI=1 npx expo lint` 0 problems (fixed 3
+real `react/no-unescaped-entities` apostrophes and 1 unused-variable
+warning along the way), `npx expo-doctor` 21/21, `npx jest` 3 suites / 37
+passed (after the `@react-native/jest-preset` fix above). **NOT yet
+verified**: an actual build. `react-native-gesture-handler`,
+`react-native-svg` and `@gorhom/bottom-sheet` are all new native
+dependencies — none of the three needs an `app.config.ts` plugin entry
+(pure autolinking, confirmed against each package's own install docs),
+so no `expo prebuild` should be needed, but this has NOT been confirmed
+with a real Gradle build yet. Next session (or later this one) should
+run `npx expo run:android` / an Android Studio sync before trusting Home
+renders correctly on-device — this is a "code exists, unverified" `[~]`
+per SPRINTS.md's own rule, not a claim of a working build.
+
+**What's left of the redesign**: Assignment list/detail, New Incident
+capture, My Reports, Live Map chrome, Profile, My Shifts, and the M12
+critical-alert overlay all still render on the OLD hand-rolled
+`StyleSheet`/`tokens.ts` look — mockups for Assignment detail (light +
+dark) were approved alongside Home's, not yet built. Both systems
+coexist safely in the meantime (`ThemeProvider` still drives both), so
+this is a phased re-skin, not a broken half-migration.

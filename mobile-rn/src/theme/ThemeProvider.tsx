@@ -6,6 +6,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
+import { Uniwind } from 'uniwind';
 import { palettes, tokens, type ColorPalette, type ThemeMode } from './tokens';
 import { prefs } from '../services/storage';
 
@@ -44,6 +45,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   };
 
   const mode: ThemeMode = preference === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : preference;
+
+  // Keeps Uniwind (HeroUI Native + any `className`-styled screen) in sync
+  // with this context's own persisted preference, so there is one source
+  // of truth for theme instead of two independent toggles — a screen
+  // rebuilt on Tailwind classes and one still reading `useTheme()` agree
+  // on light/dark/system at all times.
+  useEffect(() => {
+    Uniwind.setTheme(preference);
+  }, [preference]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({

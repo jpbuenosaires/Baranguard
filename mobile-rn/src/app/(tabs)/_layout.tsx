@@ -12,8 +12,35 @@
  * the tab's own back-stack, tab bar hidden by the modal covering it).
  */
 import { router, Tabs } from 'expo-router';
+import { Pressable, View, type GestureResponderEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useThemeColor } from 'heroui-native';
 import { useTheme } from '../../theme/ThemeProvider';
+
+/**
+ * The Log Incident tab's `tabBarButton` — a raised circular button matching
+ * the approved Home mockup, instead of a same-size icon among the other
+ * four. It still never becomes the "active" tab (see the file's own note
+ * below): `onPress` is provided by expo-router/react-navigation and already
+ * carries the `tabPress` interception below, so this only replaces the
+ * button's LOOK, not its behavior.
+ */
+function ReportTabButton({ onPress }: { onPress?: (e: GestureResponderEvent) => void }) {
+  const accent = useThemeColor('accent');
+  return (
+    <View className="flex-1 items-center">
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel="Report an incident"
+        className="w-[60px] h-[60px] rounded-full items-center justify-center -mt-6 border-4 border-background"
+        style={{ backgroundColor: accent, elevation: 6 }}
+      >
+        <Ionicons name="add" size={28} color="#ffffff" />
+      </Pressable>
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   const { colors } = useTheme();
@@ -24,7 +51,7 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textTertiary,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, height: 64, paddingBottom: 8, paddingTop: 8 },
       }}
     >
       <Tabs.Screen
@@ -44,8 +71,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="log-incident"
         options={{
-          title: 'Log Incident',
-          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" color={color} size={size + 6} />,
+          title: '',
+          tabBarButton: (props) => <ReportTabButton onPress={props.onPress} />,
         }}
         listeners={{
           tabPress: (e) => {
