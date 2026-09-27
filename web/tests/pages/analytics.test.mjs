@@ -55,5 +55,26 @@ describe('Analytics behaviour', () => {
     click(closeBtn);
     assert.ok(!document.body.classList.contains('has-print-modal'), 'closing modal should remove has-print-modal');
   });
+
+  test('the Heatmap tab renders KPI StatStrip, category filter chips, and filters plotted points live', async () => {
+    const ctx = mountPage(renderAnalyticsPage, { role: 'admin' });
+    await settle();
+    click(tab('Heatmap'));
+    await settle();
+
+    assert.match(text(ctx.root), /Mapped Incidents/i);
+    assert.match(text(ctx.root), /Hotspot Category Breakdown/i);
+
+    const chips = $$('.heatmap-chip', ctx.root);
+    assert.ok(chips.length >= 2, 'should render All Categories chip plus incident category chips');
+    const theftChip = chips.find((c) => /Theft/i.test(text(c)));
+    assert.ok(theftChip, 'should render a Theft category filter chip');
+    click(theftChip);
+    await settle();
+
+    const source = maps.flatMap((m) => [...m.sources.values()]).find((s) => s.data?.type === 'FeatureCollection');
+    assert.equal(source.data.features.length, 1, 'clicking Theft chip should filter plotted GeoJSON features to 1');
+  });
 });
+
 

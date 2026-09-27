@@ -120,6 +120,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   // Initialize with requested tab if valid, or first available tab
   const validTabKeys = TABS.map((t) => t.key);
   let activeTab = param && validTabKeys.includes(param) ? param : TABS[0].key;
+  let activeTabData = null;
 
   function syncTabButtons() {
     for (const [key, btn] of Object.entries(tabButtons)) {
@@ -127,9 +128,10 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
     }
   }
 
-  function setActiveTab(key) {
-    if (activeTab === key) return;
+  function setActiveTab(key, tabData = null) {
+    if (activeTab === key && !tabData) return;
     activeTab = key;
+    activeTabData = tabData;
     syncTabButtons();
     renderActiveTab();
   }
@@ -145,14 +147,17 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
       body.style.animation = '';
     }
 
+    const currentTabData = activeTabData;
+    activeTabData = null;
+
     if (activeTab === 'users') {
       renderUsersTab(body, pageHeader, user);
     } else if (activeTab === 'scheduler') {
-      renderSchedulerTab(body, user);
+      renderSchedulerTab(body, user, pageHeader, currentTabData);
     } else if (activeTab === 'swaps') {
       renderSwapRequestsTab(body, user, refreshBadges);
     } else if (activeTab === 'fatigue') {
-      renderFatigueFlagsTab(body, user, refreshBadges);
+      renderFatigueFlagsTab(body, user, refreshBadges, (tabKey, data) => setActiveTab(tabKey, data));
     }
   }
 

@@ -44,9 +44,13 @@ final class FatigueFlagsController
         $total = (int) $countStmt->fetchColumn();
 
         $stmt = $pdo->prepare(
-            'SELECT ff.flag_id, ff.user_id, ff.shift_id, ff.hours_worked_7day, ff.calculation_basis, ff.flagged_at, ff.acknowledged_at
+            'SELECT ff.flag_id, ff.user_id, ff.shift_id, ff.hours_worked_7day, ff.calculation_basis, ff.flagged_at, ff.acknowledged_at,
+                    ff.acknowledged_by, ack_user.full_name AS acknowledged_by_name,
+                    s.patrol_zone AS shift_patrol_zone, s.start_at AS shift_start_at, s.end_at AS shift_end_at
              FROM fatigue_flag ff
              JOIN user u ON u.user_id = ff.user_id
+             LEFT JOIN user ack_user ON ack_user.user_id = ff.acknowledged_by
+             LEFT JOIN shift_schedule s ON s.shift_id = ff.shift_id
              WHERE u.barangay_id = :barangay_id
              ORDER BY ff.hours_worked_7day DESC
              LIMIT :limit OFFSET :offset'
@@ -66,6 +70,11 @@ final class FatigueFlagsController
                 'calculation_basis' => $row['calculation_basis'],
                 'flagged_at' => $row['flagged_at'],
                 'acknowledged_at' => $row['acknowledged_at'],
+                'acknowledged_by' => $row['acknowledged_by'] !== null ? (int) $row['acknowledged_by'] : null,
+                'acknowledged_by_name' => $row['acknowledged_by_name'] ?? null,
+                'shift_patrol_zone' => $row['shift_patrol_zone'] ?? null,
+                'shift_start_at' => $row['shift_start_at'] ?? null,
+                'shift_end_at' => $row['shift_end_at'] ?? null,
             ];
         }, $rows);
 

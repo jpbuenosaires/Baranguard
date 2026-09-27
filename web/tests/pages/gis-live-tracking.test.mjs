@@ -48,7 +48,7 @@ describe('Live Map behaviour', () => {
     ] } }));
     mountPage(renderGisLiveTrackingPage, { role: 'admin' });
     await settle();
-    const tanodMarkers = markerEls().filter((el) => !el.className.includes('--sos') && !el.className.includes('cluster'));
+    const tanodMarkers = markerEls().filter((el) => el.className.includes('--tanod') && !el.className.includes('cluster'));
     assert.equal(tanodMarkers.length, 2, 'both Tanods should render individually once apart');
     const [live, stale] = tanodMarkers;
     assert.notEqual(live.className, stale.className, 'a stale fix must look different from a live one');

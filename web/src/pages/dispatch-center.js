@@ -148,6 +148,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let chipsContainerEl = null;
   let mapCardEl = null;
   let mapViewportEl = null;
+  let mapSummaryPillEl = null;
+  let legendCardEl = null;
   let pollTimer = null;
 
   // Filter state
@@ -378,19 +380,42 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const mapHeader = document.createElement('div');
       mapHeader.className = 'dispatch-map-header';
 
+      const mapTitleWrap = document.createElement('div');
+      mapTitleWrap.className = 'dispatch-map-header__title-wrap';
+
       const mapTitle = document.createElement('h3');
       mapTitle.className = 'dispatch-map-header__title';
       mapTitle.textContent = `Live Map - ${bName || ''}Pilar, Sorsogon`;
 
+      const mapMetaRow = document.createElement('div');
+      mapMetaRow.className = 'dispatch-map-header__meta';
+      const livePill = document.createElement('span');
+      livePill.className = 'dispatch-map-live-pill';
+      livePill.innerHTML = `<span class="dispatch-map-live-dot" aria-hidden="true"></span><span>Live · 15s sync</span>`;
+      mapSummaryPillEl = document.createElement('span');
+      mapSummaryPillEl.className = 'dispatch-map-summary-pill';
+      mapMetaRow.append(livePill, mapSummaryPillEl);
+      mapTitleWrap.append(mapTitle, mapMetaRow);
+
       const mapActions = document.createElement('div');
       mapActions.className = 'dispatch-map-header__actions';
 
-      const recenterBtn = document.createElement('button');
-      recenterBtn.type = 'button';
-      recenterBtn.className = 'btn-recenter';
-      recenterBtn.innerHTML = `${icons.mapPin(14)} <span>Recenter</span>`;
-      recenterBtn.addEventListener('click', () => {
+      const fitAllBtn = document.createElement('button');
+      fitAllBtn.type = 'button';
+      fitAllBtn.className = 'btn-recenter';
+      fitAllBtn.title = 'Fit all active Tanods and Incidents into view';
+      fitAllBtn.innerHTML = `${icons.mapPin(14)} <span>Fit All</span>`;
+      fitAllBtn.addEventListener('click', () => {
         liveMap?.fitAll();
+      });
+
+      const gisJumpBtn = document.createElement('button');
+      gisJumpBtn.type = 'button';
+      gisJumpBtn.className = 'btn-recenter';
+      gisJumpBtn.title = 'Open dedicated GIS Live Tracking console';
+      gisJumpBtn.innerHTML = `${icons.compass(14)} <span>GIS Console</span>`;
+      gisJumpBtn.addEventListener('click', () => {
+        navigate('gis');
       });
 
       const fullscreenBtn = document.createElement('button');
@@ -403,21 +428,15 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         liveMap?.resize();
       });
 
-      mapActions.append(recenterBtn, fullscreenBtn);
-      mapHeader.append(mapTitle, mapActions);
+      mapActions.append(fitAllBtn, gisJumpBtn, fullscreenBtn);
+      mapHeader.append(mapTitleWrap, mapActions);
 
       mapViewportEl = document.createElement('div');
       mapViewportEl.className = 'dispatch-map-viewport';
 
-      const legendCard = document.createElement('div');
-      legendCard.className = 'dispatch-map-legend-card';
-      legendCard.innerHTML = `
-        <div class="legend-title">Legend</div>
-        <div class="legend-item"><span class="legend-dot legend-dot--green"></span> Available Tanod</div>
-        <div class="legend-item"><span class="legend-dot legend-dot--blue"></span> Dispatched</div>
-        <div class="legend-item"><span class="legend-dot legend-dot--red"></span> Emergency</div>
-      `;
-      mapViewportEl.appendChild(legendCard);
+      legendCardEl = document.createElement('div');
+      legendCardEl.className = 'dispatch-map-legend-card';
+      mapViewportEl.appendChild(legendCardEl);
 
       mapCardEl.append(mapHeader, mapViewportEl);
       mapCol.appendChild(mapCardEl);
@@ -462,7 +481,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       alertBtnEl.textContent = 'Locate on Map';
       alertBtnEl.onclick = () => {
         if (urgentSos.latitude != null && urgentSos.longitude != null) {
-          liveMap?.flyTo(Number(urgentSos.latitude), Number(urgentSos.longitude), 18);
+          const found = liveMap?.highlightSos?.(urgentSos.sosId, 18.5);
+          if (!found) {
+            liveMap?.flyTo(Number(urgentSos.latitude), Number(urgentSos.longitude), 18.5);
+          }
         } else {
           liveMap?.fitAll();
         }
@@ -522,35 +544,183 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       </div>
     `;
 
-    // Update LiveMap Pins
-    liveMap.setMarkers(gpsItems.map((g) => ({
-      userId: g.userId, fullName: g.fullName, latitude: g.latitude, longitude: g.longitude,
-      ageSeconds: g.ageSeconds, isStale: g.isStale,
-    })));
+    // Build lookup of which Tanods are currently dispatched to which incident
+    const dispatchByTanodId = new Map();
+    for (const group of activeDispatches) {
+      for (const d of group.dispatches || []) {
+        if (d.tanodId) {
+          dispatchByTanodId.set(d.tanodId, {
+            incidentId: group.incidentId,
+            incidentCode: formatIncidentCode(group),
+            incidentLat: group.latitude,
+            incidentLng: group.longitude,
+          });
+        }
+      }
+    }
+
+    // Update LiveMap Tanod Pins with real Available vs Dispatched status + rich popup metadata
+    liveMap.setMarkers(gpsItems.map((g) => {
+      const activeDisp = dispatchByTanodId.get(g.userId);
+      const hasActiveSos = openSos.some((s) => s.userId === g.userId && s.status !== 'resolved');
+      return {
+        userId: g.userId,
+        fullName: g.fullName,
+        latitude: g.latitude,
+        longitude: g.longitude,
+        ageSeconds: g.ageSeconds,
+        isStale: g.isStale,
+        status: activeDisp ? 'dispatched' : 'available',
+        isDispatched: Boolean(activeDisp),
+        hasActiveSos,
+        incidentId: activeDisp?.incidentId || null,
+        incidentCode: activeDisp?.incidentCode || null,
+        onViewIncident: (incId) => navigate('blotter-detail', incId),
+      };
+    }));
+
     liveMap.setSosMarkers(
       openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status, fullName: s.fullName })),
       handleResolveSingleSos
     );
-    liveMap.setIncidentMarkers(
-      pendingIncidents.map((incident) => ({
+
+    // Combine Pending Incidents + Active Dispatched Incidents with coordinates on the map
+    const mapIncidents = [
+      ...pendingIncidents.map((incident) => ({
         incidentId: incident.incidentId,
+        displayId: formatIncidentCode(incident),
         latitude: incident.latitude,
         longitude: incident.longitude,
         incidentType: incident.incidentType,
         typeLabel: INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType,
         priority: incident.priority,
+        status: 'pending',
+        locationText: incident.locationDescription || incident.location_description || '',
+        elapsedText: incident.createdAt ? `Reported ${formatElapsed(incident.createdAt)}` : '',
       })),
+      ...activeDispatches
+        .filter((group) => group.latitude != null && group.longitude != null)
+        .map((group) => ({
+          incidentId: group.incidentId,
+          displayId: formatIncidentCode(group),
+          latitude: group.latitude,
+          longitude: group.longitude,
+          incidentType: group.incidentType || 'other',
+          typeLabel: INCIDENT_TYPE_LABELS[group.incidentType] || group.incidentType || 'Dispatched Incident',
+          priority: group.priority || 'normal',
+          status: 'dispatched',
+          locationText: group.locationDescription || group.location_description || '',
+          elapsedText: group.dispatchedAt ? `Dispatched ${formatElapsed(group.dispatchedAt)}` : '',
+          responderText: `Assigned: ${(group.dispatches || []).map((d) => d.tanodName || `Tanod #${d.tanodId}`).join(', ')}`,
+        })),
+    ];
+
+    liveMap.setIncidentMarkers(
+      mapIncidents,
       eligibleTanods.length === 0 ? undefined : async (incidentId) => {
-        const incident = pendingIncidents.find((i) => i.incidentId === incidentId);
+        const incident = pendingIncidents.find((i) => i.incidentId === incidentId)
+          || activeDispatches.find((i) => i.incidentId === incidentId);
         if (!incident) return;
-        const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
-        const dispatched = await promptDispatchTanod({ incident, incidentTypeLabel: typeLabel, eligibleTanods, tanodPositions: gpsItems });
+        const assignedIds = new Set((incident.dispatches || []).map((d) => d.tanodId));
+        const availableEligible = eligibleTanods.filter((t) => !assignedIds.has(t.userId));
+        if (availableEligible.length === 0) {
+          showToast('All eligible on-duty Tanods are already assigned to this incident.', { variant: 'info' });
+          return;
+        }
+        const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType || 'Incident';
+        const dispatched = await promptDispatchTanod({
+          incident,
+          incidentTypeLabel: typeLabel,
+          eligibleTanods: availableEligible,
+          tanodPositions: gpsItems,
+        });
         if (dispatched) onQueueChanged();
       },
+      (incidentId) => navigate('blotter-detail', incidentId)
     );
+
+    // Draw dashed tactical connection lines between Dispatched Tanods and their assigned Incident pins
+    const dispatchLinks = [];
+    for (const g of gpsItems) {
+      const activeDisp = dispatchByTanodId.get(g.userId);
+      if (activeDisp && g.latitude != null && g.longitude != null && activeDisp.incidentLat != null && activeDisp.incidentLng != null) {
+        dispatchLinks.push({
+          fromLng: g.longitude,
+          fromLat: g.latitude,
+          toLng: activeDisp.incidentLng,
+          toLat: activeDisp.incidentLat,
+        });
+      }
+    }
+    liveMap.setDispatchLinks(dispatchLinks);
+
+    // Update Map Header Summary Pill & Interactive Legend Counts
+    const availMapCount = gpsItems.filter((g) => !dispatchByTanodId.has(g.userId) && g.latitude != null && g.longitude != null).length;
+    const dispMapCount = gpsItems.filter((g) => dispatchByTanodId.has(g.userId) && g.latitude != null && g.longitude != null).length;
+    const incMapCount = mapIncidents.filter((i) => i.latitude != null && i.longitude != null).length;
+    const sosMapCount = openSos.filter((s) => s.latitude != null && s.longitude != null).length;
+
+    if (mapSummaryPillEl) {
+      mapSummaryPillEl.textContent = `${availMapCount + dispMapCount} Tanods · ${incMapCount} Incidents`;
+    }
+
+    renderInteractiveLegend(availMapCount, dispMapCount, incMapCount, sosMapCount);
 
     // Update Queue Cards view
     updateQueueView();
+  }
+
+  function renderInteractiveLegend(availCount, dispCount, incCount, sosCount) {
+    if (!legendCardEl || !liveMap) return;
+    const vis = liveMap.getLayerVisibility();
+    const anyHidden = !vis.available || !vis.dispatched || !vis.incident || !vis.sos;
+
+    legendCardEl.innerHTML = '';
+    const titleRow = document.createElement('div');
+    titleRow.className = 'legend-title-row';
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'legend-title';
+    titleSpan.textContent = 'Legend';
+    titleRow.appendChild(titleSpan);
+
+    if (anyHidden) {
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className = 'legend-reset-btn';
+      resetBtn.textContent = 'Reset';
+      resetBtn.addEventListener('click', () => {
+        liveMap.resetLayers();
+        renderInteractiveLegend(availCount, dispCount, incCount, sosCount);
+      });
+      titleRow.appendChild(resetBtn);
+    }
+    legendCardEl.appendChild(titleRow);
+
+    const rows = [
+      { key: 'available', label: 'Available Tanod', dotClass: 'legend-dot--green', count: availCount },
+      { key: 'dispatched', label: 'Dispatched', dotClass: 'legend-dot--blue', count: dispCount },
+      { key: 'incident', label: 'Incident Pin', dotClass: 'legend-dot--amber', count: incCount },
+      { key: 'sos', label: 'Emergency SOS', dotClass: 'legend-dot--red', count: sosCount },
+    ];
+
+    for (const row of rows) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `legend-item legend-item-btn${vis[row.key] ? '' : ' is-muted'}`;
+      btn.title = `Click to ${vis[row.key] ? 'hide' : 'show'} ${row.label} pins on map`;
+      btn.innerHTML = `
+        <span class="legend-item__left">
+          <span class="legend-dot ${row.dotClass}"></span>
+          <span>${escapeHtml(row.label)}</span>
+        </span>
+        <span class="legend-count-pill">${row.count}</span>
+      `;
+      btn.addEventListener('click', () => {
+        liveMap.toggleLayer(row.key);
+        renderInteractiveLegend(availCount, dispCount, incCount, sosCount);
+      });
+      legendCardEl.appendChild(btn);
+    }
   }
 
   function updateQueueView() {
@@ -717,7 +887,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
             locateBtn.title = 'Focus on Tanod on live map';
             locateBtn.addEventListener('click', (e) => {
               e.stopPropagation();
-              liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 17);
+              const found = liveMap?.highlightTanod?.(dispatch.tanodId, 18.5);
+              if (!found) {
+                liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 18.5);
+              }
             });
             actionsGroup.appendChild(locateBtn);
           }
@@ -790,27 +963,55 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
           dispatchedInfo.append(nameSpan, actionsGroup);
           dispatchedList.appendChild(dispatchedInfo);
         }
-        card.append(cardHeader, titleRow, locRow, timeRow, dispatchedList);
+
+        const assignedIds = new Set((item.dispatches || []).map((d) => d.tanodId));
+        const unassignedEligible = eligibleTanods.filter((t) => !assignedIds.has(t.userId));
+
+        const addResponderBtn = document.createElement('button');
+        addResponderBtn.type = 'button';
+        addResponderBtn.className = 'queue-incident-card__add-responder-btn';
+        addResponderBtn.innerHTML = `${icons.plus(13)} <span>Add Responder</span>`;
+        addResponderBtn.disabled = unassignedEligible.length === 0;
+        addResponderBtn.title = unassignedEligible.length === 0
+          ? 'All eligible on-duty Tanods are already assigned'
+          : 'Dispatch an additional backup responder to this incident';
+        addResponderBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          addResponderBtn.disabled = true;
+          const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType || 'Incident';
+          const dispatched = await promptDispatchTanod({
+            incident: item,
+            incidentTypeLabel: typeLabel,
+            eligibleTanods: unassignedEligible,
+            tanodPositions: gpsItems,
+          });
+          if (dispatched) {
+            onQueueChanged();
+          } else {
+            addResponderBtn.disabled = unassignedEligible.length === 0;
+          }
+        });
+
+        card.append(cardHeader, titleRow, locRow, timeRow, dispatchedList, addResponderBtn);
       }
 
       // Card Click: Focus on Map
       card.addEventListener('click', () => {
-        if (item.itemStatus === 'pending') {
-          if (item.latitude != null && item.longitude != null) {
-            const found = liveMap?.highlightIncident(item.incidentId);
-            if (!found) {
-              liveMap?.flyTo(Number(item.latitude), Number(item.longitude), 17);
-            }
+        if (item.latitude != null && item.longitude != null) {
+          const found = liveMap?.highlightIncident(item.incidentId, 18.5);
+          if (!found) {
+            liveMap?.flyTo(Number(item.latitude), Number(item.longitude), 18.5);
           }
         } else {
-          // Multiple responders may be on this incident — fly to the
-          // first one with a live GPS fix rather than picking one
-          // arbitrarily by field name.
-          const tanodGps = item.dispatches
+          // Fallback if incident lacks coordinates: fly to first responder with live GPS
+          const tanodGps = (item.dispatches || [])
             .map((d) => gpsItems.find((g) => g.userId === d.tanodId))
             .find((g) => g && g.latitude != null && g.longitude != null);
           if (tanodGps) {
-            liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 17);
+            const found = liveMap?.highlightTanod?.(tanodGps.userId, 18.5);
+            if (!found) {
+              liveMap?.flyTo(Number(tanodGps.latitude), Number(tanodGps.longitude), 18.5);
+            }
           }
         }
       });

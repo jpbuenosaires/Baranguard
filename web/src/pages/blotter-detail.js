@@ -925,15 +925,32 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     }
 
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card doc-card';
 
+    const header = document.createElement('div');
+    header.className = 'doc-card__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'doc-card__title-group';
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'doc-card__icon';
+    iconWrap.innerHTML = icons.fileText(18);
     const heading = document.createElement('h3');
     heading.textContent = `Digital Evidence (${evidence.length})`;
-    card.appendChild(heading);
+    titleGroup.append(iconWrap, heading);
+
+    const badge = document.createElement('span');
+    badge.className = 'status-pill status-pill--info';
+    badge.textContent = 'Chain of Custody Logged';
+
+    header.append(titleGroup, badge);
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'doc-card__body';
 
     const list = document.createElement('div');
-    list.className = 'stack';
-    list.style.gap = '0.5rem';
+    list.className = 'evidence-list';
     for (const item of evidence) {
       const row = document.createElement('div');
       row.className = 'evidence-item';
@@ -944,20 +961,41 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       icon.className = 'evidence-item__icon';
       icon.innerHTML = item.type === 'voice' ? icons.radio(18) : icons.fileText(18);
 
+      const details = document.createElement('div');
+      details.className = 'evidence-item__details';
+
       const title = document.createElement('span');
       title.className = 'evidence-item__title';
       title.textContent = `${item.type === 'voice' ? 'Voice note' : 'Photo'} — ${item.originalFilename}`;
-      left.append(icon, title);
 
       const meta = document.createElement('span');
       meta.className = 'evidence-item__meta';
       const kb = Math.max(1, Math.round(item.byteSize / 1024));
       meta.textContent = `${kb} KB · ${new Date(item.uploadedAt).toLocaleString()}`;
 
-      row.append(left, meta);
+      details.append(title, meta);
+      left.append(icon, details);
+
+      const right = document.createElement('div');
+      right.className = 'evidence-item__right';
+
+      const typeBadge = document.createElement('span');
+      typeBadge.className = 'evidence-type-badge';
+      typeBadge.textContent = item.type === 'voice' ? 'Voice Audio' : 'Photo Attachment';
+      right.appendChild(typeBadge);
+
+      if (item.sha256) {
+        const hashBadge = document.createElement('span');
+        hashBadge.className = 'evidence-hash-badge';
+        hashBadge.textContent = `SHA-256: ${String(item.sha256).slice(0, 10)}…`;
+        right.appendChild(hashBadge);
+      }
+
+      row.append(left, right);
       list.appendChild(row);
     }
-    card.appendChild(list);
+    body.appendChild(list);
+    card.appendChild(body);
 
     return card;
   }
@@ -1067,29 +1105,48 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
    * rows, nothing else.
    */
   function buildAdminResolvePanel() {
-    const card = document.createElement('div');
-    card.className = 'card';
-
     if (incident.status === 'resolved') {
       return buildResolvedStatusCard();
     }
 
-    const heading = document.createElement('h3');
-    heading.textContent = 'Incident resolution';
-    card.appendChild(heading);
+    const card = document.createElement('div');
+    card.className = 'card doc-card';
 
     const activeDispatch = incident.hasActiveDispatch;
-
-    const button = document.createElement('button');
-    button.className = 'primary';
-    button.textContent = 'Mark incident resolved';
-
     let blockedBecause = null;
     if (incident.status !== 'dispatched') {
       blockedBecause = `Only a dispatched incident can be resolved — this one is ${incident.status}.`;
     } else if (activeDispatch) {
       blockedBecause = 'A dispatch is still active. Complete or cancel it before resolving.';
     }
+
+    const header = document.createElement('div');
+    header.className = 'doc-card__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'doc-card__title-group';
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'doc-card__icon';
+    iconWrap.innerHTML = icons.checkCircle(18);
+    const heading = document.createElement('h3');
+    heading.textContent = 'Incident resolution';
+    titleGroup.append(iconWrap, heading);
+
+    const statusPill = document.createElement('span');
+    statusPill.className = blockedBecause === null
+      ? 'status-pill status-pill--success'
+      : 'status-pill status-pill--neutral';
+    statusPill.textContent = blockedBecause === null ? 'Ready to Resolve' : 'Prerequisite Pending';
+
+    header.append(titleGroup, statusPill);
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'doc-card__body';
+
+    const button = document.createElement('button');
+    button.className = 'primary';
+    button.textContent = 'Mark incident resolved';
     button.disabled = blockedBecause !== null;
 
     button.addEventListener('click', async () => {
@@ -1118,15 +1175,19 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       }
     });
 
-    card.appendChild(button);
+    body.appendChild(button);
 
     if (blockedBecause) {
+      const callout = document.createElement('div');
+      callout.className = 'resolve-prerequisite-callout';
       const reason = document.createElement('p');
       reason.className = 'note';
       reason.textContent = blockedBecause;
-      card.appendChild(reason);
+      callout.appendChild(reason);
+      body.appendChild(callout);
     }
 
+    card.appendChild(body);
     return card;
   }
 
@@ -1402,22 +1463,40 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
    */
   function buildLifecycleCard() {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card doc-card';
 
+    const header = document.createElement('div');
+    header.className = 'doc-card__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'doc-card__title-group';
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'doc-card__icon';
+    iconWrap.innerHTML = icons.shield(18);
     const heading = document.createElement('h3');
     heading.textContent = 'Case lifecycle';
-    card.appendChild(heading);
+    titleGroup.append(iconWrap, heading);
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'status-pill status-pill--neutral';
+    statusBadge.textContent = `Status: ${String(incident.status || '').replace(/_/g, ' ').toUpperCase()}`;
+
+    header.append(titleGroup, statusBadge);
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'doc-card__body';
 
     if (incident.status === 'duplicate' && incident.duplicateOfIncidentId) {
       const note = document.createElement('p');
       note.className = 'note';
       note.textContent = `Linked as a duplicate of incident #${incident.duplicateOfIncidentId}.`;
-      card.appendChild(note);
+      body.appendChild(note);
       const viewLink = document.createElement('button');
       viewLink.className = 'ghost';
       viewLink.textContent = 'View the linked incident';
       viewLink.addEventListener('click', () => navigate('blotter-detail', incident.duplicateOfIncidentId));
-      card.appendChild(viewLink);
+      body.appendChild(viewLink);
     }
 
     const legalTargets = LIFECYCLE_TRANSITIONS[incident.status] || [];
@@ -1425,7 +1504,8 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       const note = document.createElement('p');
       note.className = 'note';
       note.textContent = 'No lifecycle action is available from this status.';
-      card.appendChild(note);
+      body.appendChild(note);
+      card.appendChild(body);
       return card;
     }
 
@@ -1448,22 +1528,26 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
       button.addEventListener('click', () => runLifecycleAction(target, meta));
       actionsRow.appendChild(button);
     }
-    card.appendChild(actionsRow);
+    body.appendChild(actionsRow);
 
     if (activeDispatch && legalTargets.some((t) => t !== 'reopened')) {
+      const callout = document.createElement('div');
+      callout.className = 'resolve-prerequisite-callout';
       const reason = document.createElement('p');
       reason.className = 'note';
       reason.textContent = 'A dispatch is still active. Complete or cancel it before changing the lifecycle (reopening is exempt).';
-      card.appendChild(reason);
+      callout.appendChild(reason);
+      body.appendChild(callout);
     }
 
     if (incident.lifecycleChangedAt) {
       const meta = document.createElement('p');
       meta.className = 'note';
       meta.textContent = `Last lifecycle change: ${formatDateTime(incident.lifecycleChangedAt)}.`;
-      card.appendChild(meta);
+      body.appendChild(meta);
     }
 
+    card.appendChild(body);
     return card;
   }
 

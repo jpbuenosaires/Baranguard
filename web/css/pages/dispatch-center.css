@@ -473,6 +473,38 @@
   text-decoration: underline;
 }
 
+.queue-incident-card__add-responder-btn {
+  width: 100%;
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  border-radius: 8px;
+  padding: 0.45rem 0.625rem;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  margin-top: var(--spacing-xs);
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2xs);
+}
+
+.queue-incident-card__add-responder-btn:hover:not(:disabled) {
+  background: var(--tint-info-bg);
+  border-color: var(--color-primary);
+  border-style: solid;
+}
+
+.queue-incident-card__add-responder-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-style: solid;
+  border-color: var(--color-border);
+  color: var(--color-text-tertiary);
+}
+
 /* Bottom New Emergency Report button */
 .btn-new-emergency {
   width: 100%;
@@ -537,7 +569,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
   z-index: 2;
+}
+
+.dispatch-map-header__title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .dispatch-map-header__title {
@@ -545,6 +586,43 @@
   font-weight: 700;
   color: var(--color-text-primary);
   margin: 0;
+  line-height: 1.25;
+}
+
+.dispatch-map-header__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dispatch-map-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--pill-success-text);
+  background: var(--tint-success-bg);
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
+  border-radius: 9999px;
+  padding: 0.125rem 0.5rem;
+  line-height: 1.2;
+}
+
+.dispatch-map-live-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--color-success-solid, #16A34A);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-success) 25%, transparent);
+}
+
+.dispatch-map-summary-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .dispatch-map-header__actions {
@@ -612,12 +690,12 @@
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: var(--pad-panel);
+  padding: 0.75rem;
   box-shadow: var(--shadow-elevated);
-  min-width: 10.5rem;
+  min-width: 12.25rem;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-2xs);
+  gap: 0.25rem;
 }
 
 [data-theme="dark"] .dispatch-map-legend-card {
@@ -626,22 +704,83 @@
   box-shadow: var(--shadow-floating);
 }
 
+.legend-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.125rem;
+  padding: 0 0.25rem;
+}
+
 .legend-title {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: var(--color-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: var(--spacing-3xs);
+  letter-spacing: 0.05em;
+}
+
+.legend-reset-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+.legend-reset-btn:hover {
+  text-decoration: underline;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--spacing-sm);
   font-size: 0.8125rem;
   color: var(--color-text-primary);
   font-weight: 500;
+}
+
+.legend-item-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.25rem 0.375rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.legend-item-btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+}
+
+.legend-item-btn.is-muted {
+  opacity: 0.42;
+  text-decoration: line-through;
+}
+
+.legend-item__left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.legend-count-pill {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  padding: 0.05rem 0.425rem;
+  line-height: 1.25;
 }
 
 .legend-dot {
@@ -651,9 +790,13 @@
   flex-shrink: 0;
 }
 
-.legend-dot--green { background: var(--color-success); }
-.legend-dot--blue { background: var(--color-primary); }
-.legend-dot--red { background: var(--color-critical); }
+.legend-dot--green { background: var(--color-success-solid, #16A34A); }
+.legend-dot--blue { background: var(--color-primary, #2563EB); }
+.legend-dot--amber {
+  background: var(--color-warning-solid, #D97706);
+  border-radius: 3px;
+}
+.legend-dot--red { background: var(--color-critical-solid, #DC2626); }
 
 /* Empty state card for queue */
 .dispatch-empty-card {

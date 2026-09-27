@@ -132,11 +132,17 @@ describe('AppShell controls', () => {
     assert.match(text($('.topbar__search-results')), /Search failed/);
   });
 
-  test('Ctrl+K focuses the search box', async () => {
-    mountShell('admin');
+  test('Ctrl+K focuses the search box and opens role-gated Quick Jump screens', async () => {
+    const ctx = mountShell('admin');
     await settle();
     key(window, 'k', { ctrlKey: true });
     assert.equal(window.document.activeElement, $('#topbar-search'));
+    const jumpItems = $$('.topbar__search-jump-item');
+    assert.ok(jumpItems.length > 0, 'Quick Jump screen items should appear on Ctrl+K');
+    const dispatchJump = jumpItems.find((b) => /Dispatch Center/i.test(text(b)));
+    assert.ok(dispatchJump, 'Admin should see Dispatch Center in Quick Jump');
+    click(dispatchJump);
+    assert.deepEqual(ctx.navigations.at(-1), { page: 'dispatch', param: undefined });
   });
 
   test('sign out calls onLogout', async () => {

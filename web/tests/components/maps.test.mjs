@@ -5,7 +5,10 @@ import assert from 'node:assert/strict';
 import { LiveMap, formatAge } from '../../src/components/LiveMap.js';
 import { HeatmapMap } from '../../src/components/HeatmapMap.js';
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  maps.length = 0;
+});
 function container() {
   const el = window.document.createElement('div');
   window.document.getElementById('app').appendChild(el);
@@ -56,6 +59,87 @@ describe('LiveMap', () => {
     live.setBoundary({ type: 'FeatureCollection', features: [] });
     await settle();
     assert.ok(maps[0].getSource('barangay-boundary'), 'boundary source never added after load');
+  });
+
+  test('dispatch connection lines disappear when dispatched or incident layer is hidden', async () => {
+    const live = LiveMap(container());
+    await settle();
+    const map = maps[0];
+    live.setDispatchLinks([
+      { fromLng: 123.66, fromLat: 12.91, toLng: 123.67, toLat: 12.92 },
+    ]);
+    assert.ok(map.getLayer('dispatch-links-layer'), 'dispatch links layer should exist when visible');
+
+    // Hide dispatched layer -> dispatch line disappears
+    live.toggleLayer('dispatched');
+    assert.equal(map.getLayer('dispatch-links-layer'), undefined, 'dispatch links layer should be removed when dispatched is hidden');
+
+    // Show dispatched layer again -> dispatch line reappears
+    live.toggleLayer('dispatched');
+    assert.ok(map.getLayer('dispatch-links-layer'), 'dispatch links layer should reappear when dispatched is visible');
+
+    // Hide incident layer -> dispatch line disappears
+    live.toggleLayer('incident');
+    assert.equal(map.getLayer('dispatch-links-layer'), undefined, 'dispatch links layer should be removed when incident is hidden');
+
+    // Reset layers -> dispatch line reappears
+    live.resetLayers();
+    assert.ok(map.getLayer('dispatch-links-layer'), 'dispatch links layer should reappear when layers are reset');
+  });
+
+  test('highlightTanod zooms in close and isolates tanod with focused beacon class', async () => {
+    const live = LiveMap(container());
+    await settle();
+    live.setMarkers([
+      { userId: 4, fullName: 'Jose Reyes', latitude: 12.9180, longitude: 123.6670, ageSeconds: 20, isStale: false },
+      { userId: 5, fullName: 'Maria Dela Cruz', latitude: 12.9181, longitude: 123.6671, ageSeconds: 20, isStale: false },
+    ]);
+    await settle();
+    // Initially clustered
+    assert.equal(markerEls().filter((el) => el.className.includes('cluster')).length, 1);
+
+    // Highlighting Jose isolates him with the focused class
+    const success = live.highlightTanod(4);
+    assert.equal(success, true);
+    await settle();
+
+    const focused = markerEls().filter((el) => el.className.includes('live-map__marker--focused'));
+    assert.equal(focused.length, 1);
+  });
+
+  test('clicking a tanod marker zooms the map in close (zoom >= 18.5) and focuses the tanod', async () => {
+    const live = LiveMap(container());
+    await settle();
+    live.setMarkers([
+      { userId: 4, fullName: 'Jose Reyes', latitude: 12.9180, longitude: 123.6670, ageSeconds: 20, isStale: false },
+    ]);
+    await settle();
+    const [map] = maps;
+
+    const tanodMarker = markerEls().find((el) => el.className.includes('live-map__marker--tanod'));
+    assert.ok(tanodMarker, 'tanod marker should be rendered');
+    tanodMarker.click();
+    await settle();
+
+    assert.ok(map.getZoom() >= 18.5, `map zoom should be at least 18.5 after clicking marker, got ${map.getZoom()}`);
+    assert.ok(tanodMarker.className.includes('live-map__marker--focused'), 'tanod marker should be focused');
+  });
+
+  test('clicking an incident marker zooms the map in close (zoom >= 18.5)', async () => {
+    const live = LiveMap(container());
+    await settle();
+    live.setIncidentMarkers([
+      { incidentId: 88, displayId: 'INC-088', latitude: 12.92, longitude: 123.68, incidentType: 'theft', priority: 'high' },
+    ]);
+    await settle();
+    const [map] = maps;
+
+    const incidentMarker = markerEls().find((el) => el.className.includes('live-map__marker--incident'));
+    assert.ok(incidentMarker, 'incident marker should be rendered');
+    incidentMarker.click();
+    await settle();
+
+    assert.ok(map.getZoom() >= 18.5, `map zoom should be at least 18.5 after clicking marker, got ${map.getZoom()}`);
   });
 
   test('destroy() removes the map', async () => {

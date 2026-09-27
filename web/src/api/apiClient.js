@@ -317,7 +317,14 @@ export async function getReportsHeatmap({ dateFrom, dateTo } = {}) {
     query: { date_from: dateFrom, date_to: dateTo },
     auth: true,
   });
-  return json.items.map((row) => ({ latitude: row.latitude, longitude: row.longitude, weight: row.weight }));
+  return json.items.map((row) => ({
+    latitude: row.latitude,
+    longitude: row.longitude,
+    weight: row.weight,
+    incidentType: row.incident_type || 'other',
+    priority: row.priority || 'medium',
+    status: row.status || 'pending',
+  }));
 }
 
 /** GET /reports/nav-counts (§4.1 of the UI/UX review, sidebar badge counts). Admin only. */
@@ -926,6 +933,11 @@ export async function getFatigueFlags({ page, limit } = {}) {
       calculationBasis: row.calculation_basis,
       flaggedAt: row.flagged_at,
       acknowledgedAt: row.acknowledged_at,
+      acknowledgedBy: row.acknowledged_by,
+      acknowledgedByName: row.acknowledged_by_name,
+      shiftPatrolZone: row.shift_patrol_zone,
+      shiftStartAt: row.shift_start_at,
+      shiftEndAt: row.shift_end_at,
     })),
     page: json.page,
     limit: json.limit,
