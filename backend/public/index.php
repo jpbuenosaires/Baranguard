@@ -58,7 +58,15 @@ if ($corsConfig === '*') {
     }
 }
 header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Device-Id');
+// X-Device-Timestamp/X-Device-Signature (H-09, mobile_device.device_public_key_pem)
+// were added to the mobile client's request headers without this allow-list
+// being updated -- a header the client sends that isn't listed here makes
+// the WebView/browser reject the CORS preflight and never send the real
+// request at all, which looks exactly like "server unreachable" client-side
+// even though the server itself never even sees the call. Found 2026-09-28
+// investigating why a real device (signing succeeding for the first time)
+// showed the whole app running off cache.
+header('Access-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Device-Id, X-Device-Timestamp, X-Device-Signature');
 header('Access-Control-Expose-Headers: X-Renewed-Token');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
