@@ -18394,3 +18394,83 @@ serving real `200`s) after cleanup of the test invocation. **Lesson**:
 testing a `.ps1` directly, even end-to-end, does not prove its `.bat`
 wrapper actually reaches it — the failure was entirely in the one line
 connecting the two, invisible to every `.ps1`-level test run so far.
+
+## 2026-09-28 (2) — Real root cause of "phone runs on cache, server unreachable": mobile/.env.local silently leaking into every build
+
+User reported the Tanod app's Profile screen showing "CACHE"/Server
+Connection: OFFLINE/Unreachable, despite the phone having verified real
+internet (WiFi VALIDATED, `ping api.baranguardph.win` succeeding, and the
+phone's own Chrome getting a real 200 with real barangay JSON from
+`https://api.baranguardph.win/api/v1/barangays`) and the tunnel/backend
+both confirmed live from the workstation side. Investigated in stages:
+
+1. **Ruled out network-level failure** — DNS resolves, ICMP reachable,
+   raw HTTPS works fine from the phone's own browser.
+2. **Found and fixed a real, separate bug along the way**: `backend/
+   public/index.php`'s CORS `Access-Control-Allow-Headers` never included
+   `X-Device-Timestamp`/`X-Device-Signature` (H-09's device-signature
+   headers) — a cross-origin request from the Capacitor WebView
+   (`http://localhost`) that includes those headers fails its CORS
+   preflight and never reaches the server at all, looking exactly like
+   "unreachable" client-side. Confirmed via a real `curl -X OPTIONS`
+   preflight simulation before AND after the fix. Real bug, correctly
+   fixed, but turned out NOT to be the cause of THIS symptom, since
+   `checkHealth()`'s plain `fetch()` (Profile's "Ping" button) sends no
+   custom headers at all and was still failing.
+3. **`loggingBehavior: 'debug'` doesn't help here** — it only echoes
+   Capacitor's own plugin-call bridge traffic (`Capacitor/Console` "Msg:
+   {...}" lines), not arbitrary WebView JS/fetch/console activity, so a
+   plain `fetch()` failure is invisible in logcat regardless of this
+   setting. `chrome://inspect` (real Chrome DevTools over USB) would have
+   shown it directly, but the Claude in Chrome extension wasn't connected
+   this session.
+4. **Real fix that found the actual cause**: temporarily changed
+   `checkHealth()`'s catch block to write the caught error into
+   `Preferences` (instead of silently swallowing it) as a one-off
+   diagnostic, rebuilt, reinstalled, had the user tap "Ping" for real,
+   then read it back via `adb shell run-as ph.baranguard.tanod cat
+   shared_prefs/CapacitorStorage.xml`: `TypeError: Failed to fetch`, and
+   `baranguard.effectiveApiBaseUrl` was `http://localhost:8081/api/v1` —
+   NOT the real domain.
+
+**Root cause**: `mobile/.env.local` (gitignored, exists on this
+workstation specifically for LOCAL dev builds per its own comment) sets
+`VITE_API_BASE_URL=http://localhost:8081/api/v1`. Vite auto-loads
+`.env.local` on **every** `vite build` run from this directory — there is
+no way for a bare `npx vite build` to tell "a build for testing on this
+machine" apart from "the real APK about to be installed on a Tanod's
+phone." Every debug APK built and installed on the Infinix earlier this
+session (the SOS/GPS fix, the workstation-address-UI removal) silently
+got `http://localhost:8081` baked in instead of the intended
+`https://api.baranguardph.win/api/v1` — invisible on this workstation
+(where `localhost:8081` is real and correct for dev), but on the phone's
+own WiFi, `http://localhost:8081` means the phone's own loopback, where
+nothing listens. Every single API call failed instantly, which is why
+the ENTIRE app ran off cache, not just one screen — nothing could ever
+reach the server, by definition.
+
+**Real fix**: rebuilt with `VITE_API_BASE_URL=https://api.baranguardph.win/api/v1
+npx vite build` — an explicit process env var beats `.env.local` in
+Vite's own precedence rules. Confirmed the built bundle
+(`dist/assets/index-*.js`) contains `api.baranguardph.win` and zero
+occurrences of `localhost:8081` before installing. Reverted the temporary
+`checkHealth()` diagnostic (confirmed via `git diff` — byte-identical to
+the last commit). Verified end-to-end on the real device: Profile's
+"Ping Baranguard Server" now reports live, confirmed by the user
+directly. A stale `baranguard.apiBaseUrlOverride` Preferences key was
+also found (leftover from before yesterday's override-UI removal,
+harmless — the new code never reads it) but a remote `sed` cleanup hit a
+Git-Bash quoting snag and was abandoned rather than risk corrupting the
+file; it's inert dead data, not worth fighting further.
+
+**Fixed at the source, not just documented**: `docs/HANDOFF.md`'s own
+"Build + install the mobile Tanod app" quick-reference command now sets
+`VITE_API_BASE_URL` explicitly, so this can't recur next time this exact
+runbook is followed. Added as gotcha #22 to `docs/REFERENCE.md` §8.
+
+**Lesson**: a per-machine dev convenience file that Vite auto-loads with
+no opt-in is a trap the moment "build for local testing" and "build the
+real thing" happen on the same machine with the same command — always
+verify a build's actual embedded config (grep the bundle) before trusting
+it went where it was supposed to, don't just trust that changing a
+source-level default was enough.

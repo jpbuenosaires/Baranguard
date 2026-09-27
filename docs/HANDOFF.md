@@ -6,7 +6,43 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-28.**
 
-**2026-09-28 — Start Baranguard.bat: real root cause of "closes
+**2026-09-28, latest — real root cause of "the phone runs on cache,
+server unreachable" found and fixed: `mobile/.env.local` was silently
+leaking into every APK build on this machine.** User reported the Tanod
+app permanently showing "CACHE"/Server Connection OFFLINE despite the
+phone having verified real internet (WiFi validated, DNS/ICMP working,
+the phone's own Chrome getting a real `200` from `api.baranguardph.win`).
+Investigated in stages — ruled out network failure, found and fixed a
+real separate CORS bug along the way (`backend/public/index.php`'s
+`Access-Control-Allow-Headers` was missing `X-Device-Timestamp`/
+`X-Device-Signature`, H-09's headers — a genuine bug, but not the cause
+of this symptom since Profile's health-check `fetch()` sends no custom
+headers), then added a one-off diagnostic (`checkHealth()` temporarily
+writing its caught error to Preferences instead of swallowing it) to find
+the real answer: `TypeError: Failed to fetch` against
+`http://localhost:8081/api/v1` — NOT the real domain. `mobile/.env.local`
+(gitignored, exists on this workstation specifically for local dev
+builds) gets auto-loaded by Vite on **every** `vite build`, with no way
+to distinguish "a build for local testing" from "the real APK going on a
+Tanod's phone" — every debug APK built and installed on the Infinix
+earlier this session (the SOS fix, the workstation-address-UI removal)
+silently got `localhost:8081` baked in instead of the real domain.
+Invisible on this workstation (where that address is genuinely correct),
+fatal on a real device's own WiFi (`localhost` there means the phone
+itself — nothing listens, every single API call fails, the whole app
+runs off cache by definition). **Fixed**: rebuilt with
+`VITE_API_BASE_URL=https://api.baranguardph.win/api/v1` set explicitly
+(confirmed by grepping the built bundle before installing — zero
+`localhost:8081` occurrences), reverted the temporary diagnostic
+(`git diff` confirms byte-identical to the last commit), and — critically
+— fixed `docs/HANDOFF.md`'s own build quick-reference command to set this
+var so the trap can't recur, plus a new gotcha #22 in `docs/REFERENCE.md`
+§8. **Verified live by the user directly**: Profile's "Ping Baranguard
+Server" now reports live. The CORS header fix from earlier in this
+investigation stays in — real bug, worth keeping even though it wasn't
+the actual cause here. Full detail: `backend/DEVLOG.md` 2026-09-28 (2).
+
+**2026-09-28, earlier — Start Baranguard.bat: real root cause of "closes
 instantly" found and fixed.** Yesterday's ReadKey fix inside
 `start-baranguard.ps1` was real but never got a chance to run: this
 machine's system PATH is missing `C:\Windows\System32\
@@ -1133,8 +1169,13 @@ bash backend/scripts/verify-sprint3.sh
 # Backup/second responder
 bash backend/scripts/verify-second-responder.sh
 
-# Build + install the mobile Tanod app onto a connected Android device
-cd mobile && npx vite build && npx cap sync android
+# Build + install the mobile Tanod app onto a connected Android device.
+# VITE_API_BASE_URL MUST be set explicitly here (2026-09-28 gotcha #22
+# below) -- mobile/.env.local exists on this machine for LOCAL dev builds
+# and Vite auto-loads it into EVERY `vite build`, silently baking
+# http://localhost:8081 into an APK meant for a real device unless this
+# env var overrides it (process env beats .env.local in Vite's precedence).
+cd mobile && VITE_API_BASE_URL=https://api.baranguardph.win/api/v1 npx vite build && npx cap sync android
 cd android
 export JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot"
 export TMPDIR=C:/gtmp TEMP=C:/gtmp TMP=C:/gtmp

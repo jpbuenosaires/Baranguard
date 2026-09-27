@@ -613,6 +613,21 @@ controls that do nothing.
 - **A named PDO parameter can only bind ONE placeholder occurrence**
   under native prepares (`ATTR_EMULATE_PREPARES => false`) — bit
   `GET /incidents/nearby` for its whole lifetime, fixed.
+- **`mobile/.env.local`'s `VITE_API_BASE_URL` silently leaks into EVERY
+  `vite build` run on this machine**, not just intentional local dev
+  builds — Vite auto-loads `.env.local` with no opt-in, so a bare `cd
+  mobile && npx vite build` meant to produce the real APK for a Tanod's
+  phone bakes in `http://localhost:8081` instead of the real domain,
+  invisible on this workstation (where that address is correct) but
+  fatal on a real device's own network (`localhost` there means the
+  phone itself — nothing listens, every API call fails instantly, the
+  whole app runs off cache). Always build a real-device APK with
+  `VITE_API_BASE_URL=https://api.baranguardph.win/api/v1` set explicitly
+  (an explicit process env var beats `.env.local` in Vite's precedence) —
+  see HANDOFF.md's own build command. Verify by grepping the built bundle
+  (`dist/assets/index-*.js`) for the real domain before trusting a build,
+  not just the source-level default. Found 2026-09-28 chasing a real
+  device report of the app being permanently offline.
 
 ---
 
