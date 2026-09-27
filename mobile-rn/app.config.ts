@@ -58,6 +58,15 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    'expo-font',
+    'expo-splash-screen',
+    'expo-audio',
+    [
+      'expo-image-picker',
+      {
+        cameraPermission: 'Baranguard needs the camera to attach photo evidence to incident reports.',
+      },
+    ],
     ['expo-sqlite', { useSQLCipher: true }],
     'expo-secure-store',
     [
