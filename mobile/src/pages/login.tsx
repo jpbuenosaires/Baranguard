@@ -24,33 +24,10 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  IonAlert,
-  IonButton,
-  IonContent,
-  IonIcon,
-  IonItem,
-  IonList,
-  IonPage,
-  IonSpinner,
-} from '@ionic/react';
-import {
-  eyeOffOutline,
-  eyeOutline,
-  lockClosedOutline,
-  personOutline,
-  settingsOutline,
-  shield,
-} from 'ionicons/icons';
+import { IonButton, IonContent, IonIcon, IonItem, IonList, IonPage, IonSpinner } from '@ionic/react';
+import { eyeOffOutline, eyeOutline, lockClosedOutline, personOutline, shield } from 'ionicons/icons';
 import { TextField } from '../components/FormFields';
-import {
-  ApiError,
-  getApiBaseUrl,
-  hasApiBaseUrlOverride,
-  login,
-  registerDevice,
-  setApiBaseUrlOverride,
-} from '../services/apiService';
+import { ApiError, login, registerDevice } from '../services/apiService';
 import { getDeviceId, getDevicePublicKeyPem, getFcmToken } from '../services/deviceIdentity';
 import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
@@ -65,11 +42,6 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [serverUrlAlertOpen, setServerUrlAlertOpen] = useState(false);
-  const [serverUrlValue, setServerUrlValue] = useState(getApiBaseUrl());
-  const [serverUrlMessage, setServerUrlMessage] = useState(
-    'Only change this if told to by an administrator.'
-  );
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -91,7 +63,7 @@ const LoginPage: React.FC = () => {
       if (err instanceof ApiError && err.isOffline) {
         // A different fact from bad credentials — say so honestly rather
         // than blaming the user's password.
-        setError('Cannot reach the barangay workstation. Check your connection to the barangay network.');
+        setError('Cannot reach the Baranguard server. Check your internet connection.');
       } else {
         setError(GENERIC_FAILURE);
       }
@@ -161,63 +133,10 @@ const LoginPage: React.FC = () => {
                 >
                   {busy ? <IonSpinner name="dots" /> : 'Sign In to Console'}
                 </IonButton>
-
-                <IonButton
-                  fill="clear"
-                  type="button"
-                  expand="block"
-                  disabled={busy}
-                  className="mobile-login-workstation-btn btn-touch-compact"
-                  onClick={() => {
-                    setServerUrlValue(getApiBaseUrl());
-                    setServerUrlMessage('Only change this if told to by an administrator.');
-                    setServerUrlAlertOpen(true);
-                  }}
-                >
-                  <IonIcon icon={settingsOutline} slot="start" />
-                  Workstation address{hasApiBaseUrlOverride() ? ' (custom)' : ''}
-                </IonButton>
               </form>
             </div>
           </div>
         </div>
-
-        <IonAlert
-          isOpen={serverUrlAlertOpen}
-          onDidDismiss={() => setServerUrlAlertOpen(false)}
-          header="Workstation Address"
-          message={serverUrlMessage}
-          inputs={[
-            {
-              name: 'url',
-              type: 'url',
-              placeholder: 'https://server:8081/api/v1',
-              value: serverUrlValue,
-            },
-          ]}
-          buttons={[
-            { text: 'Cancel', role: 'cancel' },
-            {
-              text: 'Reset to default',
-              handler: () => {
-                void setApiBaseUrlOverride(null);
-              },
-            },
-            {
-              text: 'Save',
-              handler: (data: { url?: string }) => {
-                const trimmed = (data.url ?? '').trim();
-                if (!trimmed) return false;
-                if (!/^https?:\/\//i.test(trimmed)) {
-                  setServerUrlMessage('Enter a full address starting with http:// or https://');
-                  return false;
-                }
-                void setApiBaseUrlOverride(trimmed);
-                return true;
-              },
-            },
-          ]}
-        />
       </IonContent>
     </IonPage>
   );

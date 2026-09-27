@@ -2,8 +2,9 @@
  * profile.tsx — M10 Profile & Tactical Field Diagnostics Console (§9 Mobile).
  *
  * Provides responders with full telemetry on their operational session,
- * device identity, push notification readiness, local SQLite database health,
- * and LAN workstation connectivity.
+ * device identity, push notification readiness, local SQLite database
+ * health, and server connectivity (always `api.baranguardph.win` — no
+ * per-device address override, see apiService.ts's `DEFAULT_API_BASE_URL`).
  */
 
 import React, { useEffect, useState } from 'react';
@@ -35,10 +36,9 @@ import {
   sunnyOutline,
   phonePortraitOutline,
 } from 'ionicons/icons';
-import { TextField } from '../components/FormFields';
 import MobileHeader from '../components/MobileHeader';
 import NotificationDiagnostics from '../components/NotificationDiagnostics';
-import { checkHealth, getApiBaseUrl, hasApiBaseUrlOverride, logout, setApiBaseUrlOverride } from '../services/apiService';
+import { checkHealth, logout } from '../services/apiService';
 import { getDeviceId } from '../services/deviceIdentity';
 import { clearSession, loadSession, type StoredSession } from '../services/session';
 import { listActiveCachedDispatches } from '../services/db/dispatchRepository';
@@ -66,11 +66,6 @@ const ProfilePage: React.FC = () => {
   const [latency, setLatency] = useState<number | null>(null);
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
-  // Workstation connection override (Mobile Improvement Plan Phase 1.3) —
-  // a DHCP-reassigned workstation IP shouldn't require a rebuild to fix.
-  const [baseUrlInput, setBaseUrlInput] = useState(getApiBaseUrl());
-  const [savingBaseUrl, setSavingBaseUrl] = useState(false);
-
   // Local Storage Telemetry
   const [localStats, setLocalStats] = useState({
     dispatches: 0,
@@ -89,7 +84,6 @@ const ProfilePage: React.FC = () => {
   const [pruning, setPruning] = useState(false);
 
   // Drawer toggles for clean tactical layout
-  const [showServerSettings, setShowServerSettings] = useState(false);
   const [showStorageDetails, setShowStorageDetails] = useState(false);
 
   const loadData = async () => {
@@ -98,11 +92,6 @@ const ProfilePage: React.FC = () => {
 
     const devId = await getDeviceId();
     setDeviceId(devId);
-
-    // Reflects a runtime override that may have finished loading from
-    // Preferences after this component's initial render (see
-    // apiService.ts's loadApiBaseUrlOverride()).
-    setBaseUrlInput(getApiBaseUrl());
 
     try {
       const dispatches = await listActiveCachedDispatches();
@@ -160,32 +149,6 @@ const ProfilePage: React.FC = () => {
     window.addEventListener(THEME_CHANGED_EVENT, handleThemeChanged);
     return () => window.removeEventListener(THEME_CHANGED_EVENT, handleThemeChanged);
   }, []);
-
-  const handleSaveBaseUrl = async () => {
-    const trimmed = baseUrlInput.trim();
-    if (!trimmed) return;
-    setSavingBaseUrl(true);
-    try {
-      await setApiBaseUrlOverride(trimmed);
-      setBaseUrlInput(getApiBaseUrl());
-      setToastMessage('Workstation address updated.');
-      await pingWorkstation();
-    } finally {
-      setSavingBaseUrl(false);
-    }
-  };
-
-  const handleResetBaseUrl = async () => {
-    setSavingBaseUrl(true);
-    try {
-      await setApiBaseUrlOverride(null);
-      setBaseUrlInput(getApiBaseUrl());
-      setToastMessage('Reverted to the default workstation address.');
-      await pingWorkstation();
-    } finally {
-      setSavingBaseUrl(false);
-    }
-  };
 
   const handleCopyDeviceId = () => {
     if (!deviceId) return;
@@ -369,7 +332,7 @@ const ProfilePage: React.FC = () => {
             <div className="profile-section-header">
               <div className="profile-section-title">
                 <IonIcon icon={wifiOutline} style={{ fontSize: '1.25rem', color: 'var(--color-primary)' }} />
-                <span>Workstation LAN Telemetry</span>
+                <span>Server Connection</span>
               </div>
               <span className={`status-pill ${isOnline ? 'status-pill--success' : 'status-pill--pending'}`}>
                 {isOnline ? 'ONLINE' : 'OFFLINE'}
@@ -378,7 +341,7 @@ const ProfilePage: React.FC = () => {
 
             <div className="profile-stat-grid">
               <div className="profile-stat-box">
-                <span className="profile-stat-box-label">LAN Latency</span>
+                <span className="profile-stat-box-label">Latency</span>
                 <span className="profile-stat-box-value">
                   {latency !== null ? `${latency} ms` : 'Unreachable'}
                 </span>
@@ -397,48 +360,10 @@ const ProfilePage: React.FC = () => {
               disabled={pinging}
               onClick={pingWorkstation}
               className="btn-touch-compact"
-              style={{ fontWeight: 700, marginBottom: '6px' }}
+              style={{ fontWeight: 700 }}
             >
-              {pinging ? <IonSpinner name="dots" /> : 'Ping Barangay Workstation'}
+              {pinging ? <IonSpinner name="dots" /> : 'Ping Baranguard Server'}
             </IonButton>
-
-            {/* Collapsible Server Address Settings */}
-            <button
-              type="button"
-              className="profile-drawer-toggle"
-              onClick={() => setShowServerSettings(!showServerSettings)}
-            >
-              <span>Workstation Address {hasApiBaseUrlOverride() ? '(Custom Override)' : ''}</span>
-              <IonIcon icon={showServerSettings ? chevronUpOutline : chevronDownOutline} />
-            </button>
-
-            {showServerSettings && (
-              <div className="profile-drawer-content">
-                <TextField label="Workstation LAN URL" value={baseUrlInput} onChange={setBaseUrlInput} autocapitalize="off" />
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                  <IonButton
-                    fill="outline"
-                    className="btn-touch-compact"
-                    style={{ flex: 1, fontWeight: 700 }}
-                    disabled={savingBaseUrl || !baseUrlInput.trim()}
-                    onClick={handleSaveBaseUrl}
-                  >
-                    {savingBaseUrl ? <IonSpinner name="dots" /> : 'Save & Reconnect'}
-                  </IonButton>
-                  {hasApiBaseUrlOverride() && (
-                    <IonButton
-                      fill="clear"
-                      className="btn-touch-compact"
-                      color="medium"
-                      disabled={savingBaseUrl}
-                      onClick={handleResetBaseUrl}
-                    >
-                      Reset Default
-                    </IonButton>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Module 4: Encrypted Offline SQLite & Storage Inspector */}
