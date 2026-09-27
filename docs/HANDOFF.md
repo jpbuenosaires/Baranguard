@@ -6,7 +6,30 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-27.**
 
-**2026-09-27, latest — shared print-preview modal + statutory PDF
+**2026-09-27, latest — Tanod app being REBUILT in React Native (Expo);
+Phases 0–1 done in code, device gate still open (DEVLOG (3), (4)).**
+User decision (the research panel will question the Capacitor stack):
+full rebuild in `mobile-rn/` with Expo SDK 57 + dev build + Kotlin Expo
+Modules. **`mobile/` (Capacitor) is still the live app** until
+`mobile-rn/` passes the same device checklist. Zero backend changes.
+Dev applicationId `ph.baranguard.tanod.rn` so both install side by side.
+
+- **Done (Phase 1, code only)**: encrypted DB (expo-sqlite + SQLCipher),
+  schema ported byte-identical (114/114), session in SecureStore, full
+  API client port, `modules/device-key` Kotlin port. Static checks green
+  (tsc, lint, jest 13/13, expo-doctor 21/21, prebuild manifest checked).
+- **Next, before Phase 2**: compile and run once. Needs the NDK/CMake on
+  this machine (not installed) and the Infinix attached; then prove the
+  Phase 1 gate: DB header not "SQLite format 3", device key registers and
+  the server accepts a signed request.
+- **Known live bug in the CURRENT app, left unfixed by user choice**:
+  `mobile/src/pages/home.tsx:390-396` blocks SOS when GPS fails (C-01);
+  fixed only in the rebuild.
+- Also this session: ORS and FCM wired up on this machine (Service
+  Health 7/8), after fixing two php.ini gaps (CLI `curl.cainfo`,
+  `extension=openssl` in both inis) — not git-tracked, DEVLOG (2).
+
+**2026-09-27, earlier — shared print-preview modal + statutory PDF
 overhaul (found uncommitted, committed as-is), plus a blotter-workflow
 clarity fix (DEVLOG (1)).** Two unrelated pieces landed in one commit
 (`0058be7`): substantial print/PDF work that was already sitting

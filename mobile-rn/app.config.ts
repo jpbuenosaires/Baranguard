@@ -47,6 +47,14 @@ const config: ExpoConfig = {
       'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
       'android.permission.USE_FULL_SCREEN_INTENT',
     ],
+    // Expo's template adds these by default; the old app never had them and
+    // nothing here needs them (files live in app-private storage; alerts use
+    // a full-screen intent, not a draw-over-apps overlay).
+    blockedPermissions: [
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
+    ],
   },
   plugins: [
     'expo-router',
