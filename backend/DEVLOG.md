@@ -17491,3 +17491,176 @@ as "code and build are sound", not as the same evidence bar
 REMAINING.md's device-verification items use elsewhere in this project.
 Not yet done: actually running `npx expo run:android` against the
 emulator — this entry only covers getting the toolchain in place.
+
+## 2026-09-27 (6) — React Native rebuild: Phases 2-4 (auth/shell, offline capture, dispatch) — retroactive entry, code was committed (`49ad44b`) without one
+
+**Process note**: this entry should have been written in the same session
+that committed Phase 2-4 and wasn't — SPRINTS.md's "log deviations before
+ending a session that changed the picture" rule was missed. Writing it
+now, from the commit itself, rather than leaving the gap.
+
+User confirmed the Pixel_9 emulator toolchain (entry (5)) works and
+directed continuing "from phase 2 onwards" without pausing for further
+build/device verification each phase — an explicit standing instruction
+for the rest of this arc: write and statically verify (`tsc`/`expo lint`/
+`jest`) code, defer build/emulator/device checks until told otherwise.
+
+**Phase 2 (auth + shell)**: `theme/tokens.ts` + `ThemeProvider.tsx` (RN
+port of `variables.css`'s light/dark palette, persisted via AsyncStorage);
+`FormFields.tsx`; `LoginScreen.tsx` (M1); root `_layout.tsx` (font
+loading, session-expiry watcher routing back to `/login`); tab shell
+(`(tabs)/_layout.tsx` + Home/Assignments/Map/Profile/Log Incident/Reports
+placeholders — Home's real M2 content, duty status + SOS, is explicitly
+deferred to whichever phase builds SOS, since it needs Phase 6's
+three-tier SOS logic to be meaningful); modal routes for
+`incidents/new`, `incidents/[localId]/submitted`, `assignments/[localId]`.
+
+**Phase 3 (offline capture)**: `db/incidentRepository.ts`,
+`gpsTrackRepository.ts`, `offlineQueueRepository.ts`,
+`dispatchRepository.ts`, `evidenceRepository.ts` ported through the
+`CompatDb` adapter (Phase 1); `evidenceCapture.ts` (`capturePhoto()` +
+`useVoiceRecording()` — a hook, not a plain async-function module, because
+`expo-audio`'s recorder only exists as a hook, `useAudioRecorder`/
+`useAudioRecorderState`, with no imperative constructor outside it);
+`geolocation.ts`, `storageMaintenance.ts`, `mapPackageService.ts`,
+`sosFallbackContact.ts`, `syncService.ts`, `syncScheduler.ts`;
+`utils/tacticalFeedback.ts` rewritten on `expo-haptics` (RN has no Web
+Audio API, which the old app's tone synthesis depended on);
+`NewIncidentScreen.tsx`, `IncidentSubmittedScreen.tsx`,
+`MyReportsScreen.tsx`.
+
+**Phase 4 (dispatch)**: `utils/geo.ts` and `utils/routeProgress.ts` copied
+verbatim (pure math, no platform dependency); `routeProgress.test.ts`
+ported (vitest -> `@jest/globals`); `ActiveStepCard.tsx` (turn-by-turn
+HUD); `AssignmentsScreen.tsx` (M5) and `AssignmentDetailScreen.tsx` (M6) —
+full status-transition/route-fetch/turn-by-turn logic, with a placeholder
+in place of the embedded map (Phase 5 scope, landed in entry (7) below).
+
+**A real cross-file interaction found and fixed this stretch**: the new
+`react-hooks/set-state-in-effect` ESLint rule (React Compiler, active in
+this SDK 57 config) can statically inspect a LOCAL function's body for a
+`setState` call reached from an effect, but not an IMPORTED function's —
+so "fetch on mount by calling a shared, imported loader" reads as a false
+positive. Fixed three different ways depending on the actual pattern:
+inlining the imported call directly in the effect where the loader wasn't
+reused elsewhere (`MyReportsScreen`), converting genuinely-derivable state
+to `useMemo` instead of `useState`+`useEffect` (`AssignmentDetailScreen`'s
+`route` and `navState` — a real anti-pattern the rule correctly caught),
+and a justified `eslint-disable-next-line` with an explanatory comment
+where the effect is a legitimate one-time external-state sync, not
+derivable during render (`AssignmentsScreen`'s pull-to-refresh loader,
+`AssignmentDetailScreen`'s one-shot nav-mode auto-activate on
+`row.status`).
+
+**Verified (static only, per the standing instruction above)**: `npx tsc
+--noEmit` 0 errors, `expo lint` 0 problems, `npx jest` 3 suites / 37
+passed. Not device-verified — no build/emulator run happened for these
+phases; that remains explicitly deferred.
+
+## 2026-09-27 (7) — React Native rebuild: Phase 5 (location + maps) — `patrol-location` Kotlin module, M7 Live Map on MapLibre Native, code-complete
+
+Continuing the standing instruction from (6): code and statically verify,
+no build/device step this session.
+
+**`patrol-location` Kotlin Expo Module** (`modules/patrol-location/`,
+port of `../mobile`'s `PatrolLocationPlugin.java`/`PatrolLocationService.java`)
+— the background-GPS foreground service, plus three fixes over the Java
+original the rebuild plan called for:
+- **H-09 signing**: every `POST /gps` now carries `X-Device-Id` and, when
+  the device-key Keystore alias (`baranguard_device_identity`, created at
+  login by the `device-key` module) already exists,
+  `X-Device-Timestamp`/`X-Device-Signature` too. The service only READS
+  the Keystore entry, never generates one — a foreground service has no
+  Activity to prompt through, so a missing key degrades to
+  `X-Device-Id`-only, the same "not-yet-upgraded device" contract
+  `deviceIdentity.ts` already documents.
+- **Rule 3 (idempotency)**: exactly one `client_event_id` is minted per
+  GPS fix and reused for both the direct POST attempt and the buffered-
+  failure copy — never two ids for one physical point (the Java
+  original's live-map path had this exact double-id bug, fixed
+  separately in Phase 1's `apiService.ts` port).
+- **No more silent drop on POST failure**: a failed point is appended as
+  one JSON line to a private `patrol_failed_points.jsonl` file instead of
+  discarded. `PatrolLocationModule.drainFailedPoints()` reads and clears
+  it; `patrolLocationService.ts`'s new `drainFailedGpsPoints()` folds each
+  point into `gps_track_local` (via `gpsTrackRepository.ts`'s
+  `saveGpsPointLocally()`, extended to accept a caller-supplied
+  `client_event_id` instead of always minting a fresh one) — the SAME
+  offline queue `syncService.ts` already drains via `/sync/batch`. Config
+  (`baseUrl`/`token`/`deviceId`) is written by `start()` into the module's
+  OWN private SharedPreferences file, not the old app's Capacitor-specific
+  one, since the plan called for the service to "get these values
+  directly" rather than parse another framework's storage format.
+- Background-location permission (`ACCESS_BACKGROUND_LOCATION`, C7's
+  actual fix) is requested from the JS side via `expo-location`'s own
+  `getBackgroundPermissionsAsync()`/`requestBackgroundPermissionsAsync()`
+  — no native permission-request code needed in this module at all, unlike
+  the Java original's Capacitor `@Permission` annotation.
+- Record I/O uses the Expo Modules Kotlin API's `Record`/`@Field`/
+  `@OptimizedRecord` pattern (matched against `expo-location`'s and
+  `expo-image-picker`'s own bundled Kotlin source for the correct idiom —
+  primary-constructor `@Field val` properties, not a body-property +
+  secondary-constructor shape, which doesn't get picked up by the
+  framework's reflection).
+
+**M7 Live Map — MapLibre Native, not sql.js**. Installed
+`@maplibre/maplibre-react-native@11.4.0` (peer-compatible with Expo 57/RN
+0.86) plus its config plugin. Confirmed via the library's own GitHub
+discussions (searched, since AGENTS.md's "Expo changes constantly, verify
+against real docs" rule applies just as much to a map library this
+central) that MapLibre Native's Android SDK reads a local `.mbtiles` file
+directly through an `mbtiles://<absolute-path>` tile URL — no
+sql.js/WASM tile reader needed at all, which is what actually retires
+`mbtilesReader.ts`'s approach rather than just porting it.
+`mbtilesMetadata.ts` (new, RN) reads the package's own `metadata` table
+(format/minzoom/maxzoom/bounds) via `expo-sqlite` in read-only mode — safe
+against a SQLCipher-enabled `expo-sqlite` build because SQLCipher only
+encrypts once a `PRAGMA key` is set, which this function never does.
+`LiveMapCanvas.tsx` (RN) ports the old JS component's marker/route/camera
+logic onto `Map`/`Camera`/`RasterSource`/`GeoJSONSource`/`Layer`/`Marker`
+(the v11 API's generic-`Layer`-with-`type`-prop shape, confirmed against
+the library's own `examples/` on GitHub rather than assumed from
+familiarity with the older per-layer-component API). `LiveMapScreen.tsx`
+(M7) ports `live-map.tsx`'s GPS HUD/nearby-incidents/nearby-Tanods radar
+UI, wired to the `map` tab.
+
+**Two Phase 4 map placeholders swapped for the real component**, per the
+plan's own Phase 5 scope note: `AssignmentDetailScreen.tsx`'s briefing and
+turn-by-turn views now render `LiveMapCanvas` (fed the same `route`/
+`navState` already computed there — `NavigationState`'s shape is a
+structural superset of `LiveMapCanvas`'s `routeProgress` prop, passed
+through unchanged), and `NewIncidentScreen.tsx`'s "Pick on Map" button now
+opens a real picker instead of being disabled. The picker
+(`PickLocationScreen.tsx`) is a new `incidents/pick-location` modal route
+rather than an in-page modal component (matching this rebuild's existing
+`incidents/new`/`assignments/[localId]` modal-route pattern) — since
+expo-router has no built-in way to hand a value back from a pushed route,
+`locationPickerBridge.ts` round-trips it as a promise via one module-scope
+pending resolver (this app has no shared-state library, and only one
+picker can ever be open at a time).
+
+**Also fixed, found while running a full `expo-doctor` pass**: a
+pre-existing (Phase 3) missing peer dependency, `expo-asset` (required by
+`expo-audio`, never installed) — `expo-doctor` had never been re-run since
+Phase 1 to catch it. Installed and added to `app.config.ts`'s plugin list;
+`expo-doctor` now 21/21, was 20/21.
+
+**Deliberately not done in Phase 5**: wiring `patrolLocationService.ts`'s
+`start`/`stop` into a duty-status toggle — that lives on Home (M2), which
+this rebuild has not built yet (placeholder only; M2's real content needs
+Phase 6's three-tier SOS logic to be meaningful, per entry (6) above), so
+Phase 5 ships the module and its JS wrapper ready for that hookup rather
+than inventing a premature caller for it.
+
+**Verified (static only, same standing instruction)**: `npx tsc --noEmit`
+0 errors, `expo lint` 0 problems (one React Compiler purity finding fixed
+along the way — `LiveMapScreen.tsx` called `Date.now()` directly during
+render for its "age"/"just copied" labels, which the compiler forbids;
+replaced with a ticking `nowMs` state value), `npx jest` 3 suites / 37
+passed, `expo-doctor` 21/21. The Kotlin side was NOT compiled this
+session (no `./gradlew`/`expo run:android` — build/device verification
+stays explicitly deferred); it was written matching `device-key`'s
+already-working module structure and cross-checked against `expo-location`/
+`expo-image-picker`'s own bundled Kotlin source for the Record-class and
+Module-definition idioms, but a real Gradle build is the only thing that
+proves it compiles.
