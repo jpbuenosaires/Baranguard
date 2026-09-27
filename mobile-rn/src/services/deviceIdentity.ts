@@ -67,10 +67,15 @@ export async function signDeviceRequest(
 }
 
 /**
- * FCM registration token. Phase 6 (React Native Firebase + the
- * critical-alert module) implements this; until then there is no push
- * transport in this app, and null is the documented "don't register a
- * token" outcome login already tolerates — never a placeholder value.
+ * FCM registration token. Still null: `@react-native-firebase/messaging`
+ * isn't installed yet because Firebase can't initialize without a real
+ * `google-services.json` for this app's dev applicationId — the same
+ * external credential gap the old app was blocked on (REMAINING.md A4).
+ * `modules/critical-alert`'s full-screen-alert mechanism is built and
+ * functional (Phase 6) so wiring in a real FCM messaging-service hook is
+ * the only remaining step once that file is provided. null is the
+ * documented "don't register a token" outcome login already tolerates —
+ * never a placeholder value.
  */
 export async function getFcmToken(): Promise<string | null> {
   return null;

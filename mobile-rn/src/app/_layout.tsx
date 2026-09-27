@@ -4,9 +4,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider } from '../theme/ThemeProvider';
+import CriticalAlertOverlay from '../components/CriticalAlertOverlay';
 import { onSessionExpired } from '../services/session';
 import { startSyncScheduler } from '../services/syncScheduler';
 import { pruneOldSyncedEvidenceFiles } from '../services/storageMaintenance';
+import { checkForPendingNativeAlert } from '../services/criticalAlertStore';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -41,6 +43,11 @@ export default function RootLayout() {
   useEffect(() => {
     startSyncScheduler();
     void pruneOldSyncedEvidenceFiles();
+    // M12: picks up an alert CriticalAlertActivity's "Open Baranguard"
+    // button stashed just before this cold launch — see
+    // criticalAlertStore.ts's own doc for why this is the third delivery
+    // path, alongside the (not yet wired) foreground/tapped push listeners.
+    void checkForPendingNativeAlert();
   }, []);
 
   if (!fontsLoaded) return null;
@@ -57,6 +64,8 @@ export default function RootLayout() {
         <Stack.Screen name="incidents/[localId]/submitted" options={{ presentation: 'modal' }} />
         <Stack.Screen name="assignments/[localId]" options={{ presentation: 'modal' }} />
       </Stack>
+      {/* Outside the Stack/tab router so an SOS/priority alert interrupts whichever screen a Tanod is on. */}
+      <CriticalAlertOverlay />
     </ThemeProvider>
   );
 }
