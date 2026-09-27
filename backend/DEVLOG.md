@@ -18346,3 +18346,51 @@ entry): installing `cloudflared` as a real Windows service on THIS
 machine so it survives a reboot without anyone double-clicking the
 launcher first. The launcher fix above covers "already logged in, ran
 the launcher" but not "machine just rebooted, nobody's logged in yet."
+
+## 2026-09-28 (1) — Start Baranguard.bat: real root cause of "window closes instantly" found and fixed
+
+Yesterday's fix (2026-09-27 (16)) added a wait-for-keypress to
+`start-baranguard.ps1`'s own tail end, on the assumption the window was
+closing because of the old fixed 3-second `Start-Sleep`. User reported
+"still the same" after that shipped. Investigated a stale-junction theory
+first (`C:\xampp\htdocs\baranguard` vs `Videos\Baranguard`) — ruled out
+for real: `fsutil reparsepoint query` confirms it's a genuine NTFS mount
+point, and `diff` on `start-baranguard.ps1` from both paths came back
+identical. No stray Desktop copy either (Desktop is empty of Baranguard
+files, only Downloads has unrelated documents).
+
+**Real cause**: `[Environment]::GetEnvironmentVariable('Path','Machine')`
+confirmed this machine's system PATH is missing `C:\Windows\System32\
+WindowsPowerShell\v1.0\` entirely (checked the registry-backed value
+directly, not just this shell's inherited copy). `Start Baranguard.bat`
+called plain `powershell -NoProfile ...` — cmd.exe couldn't resolve
+`powershell.exe` at all, printed "'powershell' is not recognized..." and
+the batch file ended immediately, before `start-baranguard.ps1` ever ran
+a single line. Yesterday's ReadKey fix was real and correct but never
+got a chance to execute, since the script it lives in was never started.
+This was invisible during my own testing because this session's tool
+calls launch PowerShell directly (bypassing the PATH lookup a plain
+`powershell` command in a `.bat` depends on), so every test I ran here
+looked completely healthy.
+
+**Fix, two parts**:
+1. `Start Baranguard.bat` now calls `"%SystemRoot%\System32\
+   WindowsPowerShell\v1.0\powershell.exe"` by its fixed absolute path
+   instead of bare `powershell` — resolves regardless of PATH state.
+2. Added a `pause` (plus an echoed exit code) directly in the `.bat`
+   itself, after the PowerShell call returns — a defense-in-depth
+   safety net independent of `start-baranguard.ps1`'s own internal
+   ReadKey wait. If the PowerShell script ever exits early for any other
+   reason in the future (an unhandled terminating error, PATH gone missing
+   again, etc.), the window still won't vanish before the exit code is
+   readable.
+
+**Verified**: re-ran the actual `.bat` end-to-end (not just the `.ps1`
+directly) via `cmd.exe`, confirmed it now runs the full checklist
+(Apache/MySQL/API/AI worker/tunnel all correctly detected as already
+running) and reaches "Done." Confirmed via `tasklist`/`curl` that nothing
+was disrupted (Apache/MySQL/cloudflared all still up, tunnel still
+serving real `200`s) after cleanup of the test invocation. **Lesson**:
+testing a `.ps1` directly, even end-to-end, does not prove its `.bat`
+wrapper actually reaches it — the failure was entirely in the one line
+connecting the two, invisible to every `.ps1`-level test run so far.

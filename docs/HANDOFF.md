@@ -4,9 +4,26 @@
 never stack banners. Full history: `backend/DEVLOG.md` (grep by
 date/keyword, don't read front to back).
 
-**Last updated: 2026-09-27.**
+**Last updated: 2026-09-28.**
 
-**2026-09-27, latest — C-03: DNS repointed to THIS machine's tunnel;
+**2026-09-28 — Start Baranguard.bat: real root cause of "closes
+instantly" found and fixed.** Yesterday's ReadKey fix inside
+`start-baranguard.ps1` was real but never got a chance to run: this
+machine's system PATH is missing `C:\Windows\System32\
+WindowsPowerShell\v1.0\` entirely (confirmed straight from the registry),
+so the `.bat`'s plain `powershell -NoProfile ...` call failed with "not
+recognized" and the window closed before the script ever started — a
+stale-junction theory was checked first and ruled out (genuine NTFS
+mount point, byte-identical file). Fixed: the `.bat` now calls
+`"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"` by
+absolute path (resolves regardless of PATH), plus added a `pause` +
+echoed exit code directly in the `.bat` itself as a safety net
+independent of the `.ps1`'s own internal wait. Verified by actually
+running the `.bat` end-to-end via `cmd.exe`, not just the `.ps1` directly
+— confirmed it now reaches "Done" with every step correctly detected.
+Full detail: `backend/DEVLOG.md` 2026-09-28 (1).
+
+**2026-09-27 — C-03: DNS repointed to THIS machine's tunnel;
 `Start Baranguard.bat` now also starts cloudflared.** This machine (real
 XAMPP, real `backend/.env`, real Apache :8081 vhost) turned out to be the
 actual intended production workstation, but public DNS for
