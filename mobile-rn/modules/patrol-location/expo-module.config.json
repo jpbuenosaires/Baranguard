@@ -1,6 +1,0 @@
-{
-  "platforms": ["android"],
-  "android": {
-    "modules": ["ph.baranguard.tanod.patrollocation.PatrolLocationModule"]
-  }
-}
