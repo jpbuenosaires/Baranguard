@@ -10,6 +10,17 @@ import type { ExpoConfig } from 'expo/config';
 const appId = process.env.BARANGUARD_APP_ID ?? 'ph.baranguard.tanod.rn';
 const isCutoverBuild = appId === 'ph.baranguard.tanod';
 
+// `npx expo run:android` auto-detects the connected device's ABI and passes
+// `-PreactNativeArchitectures=<abi>` on the CLI, silently limiting the native
+// build to just that one. Android Studio's own Gradle sync has no such
+// override and falls back to gradle.properties' default (all four ABIs) —
+// on a machine whose NDK toolchain has only been exercised for one ABI
+// (this one: x86_64, for the Pixel_9 emulator), the other three fail to
+// configure. Set this for local Android-Studio-driven dev only; leave unset
+// for CLI builds (which already restrict themselves) and for any real
+// device / cutover build, which needs the full ABI set.
+const localBuildArch = process.env.BARANGUARD_LOCAL_BUILD_ARCH;
+
 // Firebase config is per-applicationId and never committed; push stays
 // off (not crashing) until the matching file is dropped in.
 const googleServicesFile = './google-services.json';
@@ -79,6 +90,7 @@ const config: ExpoConfig = {
           // (http://<lan-ip>:8081) must keep working — same trade-off as
           // the old app's network_security_config base-config.
           usesCleartextTraffic: true,
+          ...(localBuildArch ? { buildArchs: [localBuildArch] } : {}),
         },
       },
     ],
