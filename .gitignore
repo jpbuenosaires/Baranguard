@@ -3,6 +3,11 @@
 .env.*
 !.env.example
 
+# Firebase service-account key + Android google-services.json — real
+# credentials, never committed (see backend/.env.example's FCM_* block)
+backend/config/firebase-service-account*.json
+mobile/android/app/google-services.json
+
 # Dependencies
 node_modules/
 /backend/vendor/
