@@ -1,11 +1,13 @@
 /**
  * M10 Profile — Phase 2 gives it real session display, theme toggle, and
  * sign-out; the full diagnostics panel (sync queue, storage, server URL
- * card) lands in Phase 7.
+ * card) lands in Phase 7. Phase 6 adds a "Test Full-Screen Alert" button —
+ * the one way to exercise `modules/critical-alert`'s native path without a
+ * real FCM project (REMAINING.md A4), same as the old app's own Profile.
  *
  * Logout fix (defect 4, DEVLOG 2026-09-27 (3)): the old app's sign-out
- * never closed the local database or stopped patrol tracking. This one
- * closes the DB; stopping patrol tracking is added once Phase 5 builds it.
+ * never closed the local database or stopped patrol tracking. Both now
+ * happen here — DB close since Phase 1, patrol tracking since Phase 5.
  */
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
@@ -15,6 +17,8 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { logout } from '../../services/apiService';
 import { clearSession, loadSession, type StoredSession } from '../../services/session';
 import { closeLocalDatabase } from '../../services/db/localDatabase';
+import { stopPatrolTracking } from '../../services/patrolLocationService';
+import { triggerTestCriticalAlert } from '../../services/criticalAlertStore';
 
 export default function ProfileScreen() {
   const { colors, mode, setPreference } = useTheme();
@@ -37,9 +41,18 @@ export default function ProfileScreen() {
     } catch {
       // Offline sign-out is fine — the server-side session dies on its own TTL.
     }
+    void stopPatrolTracking();
     await clearSession();
     await closeLocalDatabase();
     router.replace('/login');
+  }
+
+  async function handleTestCriticalAlert() {
+    try {
+      await triggerTestCriticalAlert();
+    } catch {
+      Alert.alert('Test alert failed', 'Could not post the test full-screen alert.');
+    }
   }
 
   return (
@@ -62,6 +75,12 @@ export default function ProfileScreen() {
       >
         <Ionicons name="document-text-outline" size={18} color={colors.textPrimary} />
         <Text style={{ color: colors.textPrimary, fontSize: 15, flex: 1 }}>My Reports</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+      </Pressable>
+
+      <Pressable style={[styles.linkRow, { backgroundColor: colors.surface, borderRadius: 16 }]} onPress={handleTestCriticalAlert}>
+        <Ionicons name="warning-outline" size={18} color={colors.warning} />
+        <Text style={{ color: colors.textPrimary, fontSize: 15, flex: 1 }}>Test Full-Screen Alert</Text>
         <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
       </Pressable>
 

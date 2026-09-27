@@ -6,24 +6,21 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-27.**
 
-**2026-09-27, latest — Tanod app being REBUILT in React Native (Expo);
-Phases 0–5 done in CODE ONLY, no build/device step yet (DEVLOG (3)-(7)).**
-User decision (the research panel will question the Capacitor stack):
-full rebuild in `mobile-rn/` with Expo SDK 57 + dev build + Kotlin Expo
-Modules. **`mobile/` (Capacitor) is still the live app** until
-`mobile-rn/` passes the same device checklist. Zero backend changes.
-Dev applicationId `ph.baranguard.tanod.rn` so both install side by side.
-**Standing instruction for this arc** (explicit user direction after the
-emulator toolchain came up working, DEVLOG (5)/(6)): write and statically
-verify code phase by phase; build/emulator/device verification is
-deliberately deferred until the user says to switch focus to it.
+**2026-09-27, latest — Tanod app being REBUILT in React Native (Expo).
+Phases 0–6 code-complete; Phase 1's device gate is now REALLY passed —
+first successful build+install on the Pixel_9 emulator, three real bugs
+found and fixed (DEVLOG (3)-(9)).** User decision (the research panel
+will question the Capacitor stack): full rebuild in `mobile-rn/` with
+Expo SDK 57 + dev build + Kotlin Expo Modules. **`mobile/` (Capacitor) is
+still the live app** until `mobile-rn/` passes the same device checklist.
+Zero backend changes. Dev applicationId `ph.baranguard.tanod.rn` so both
+install side by side.
 
 - **Done, code only — Phase 0/1 (foundations)**: encrypted DB (expo-sqlite
   + SQLCipher), schema ported byte-identical, session in SecureStore, full
   API client port, `modules/device-key` Kotlin port.
 - **Done, code only — Phase 2 (auth/shell)**: login, tab shell, session
-  gate, theme. Home (M2 duty status + SOS) is still a placeholder — its
-  real content needs Phase 6's SOS logic to be meaningful.
+  gate, theme, Profile (session display/theme toggle/sign-out).
 - **Done, code only — Phase 3 (offline capture)**: encrypted local
   capture, photo/voice evidence (`expo-audio`'s hook-only recorder),
   sync engine, My Reports.
@@ -37,16 +34,47 @@ deliberately deferred until the user says to switch focus to it.
   `@maplibre/maplibre-react-native` reading downloaded MBTiles packages
   natively via an `mbtiles://` tile URL (no more sql.js/WASM); the Phase 4
   map placeholders in Assignment Detail and New Incident's "Pick on Map"
-  both now render the real map. **Not wired up**: nothing yet calls
-  `patrolLocationService.ts`'s `start()`/`stop()` — that hookup is Home's
-  duty toggle, still a Phase 2 placeholder (see above).
-- **Next**: Phase 6 (SOS three-tier + `sos-sms`/`critical-alert` Kotlin
-  modules + Firebase push + Home's real M2 content), then Phase 7
-  (shifts/swap requests/profile diagnostics), then Phase 8 (device
-  checklist + cutover). The Kotlin side (device-key AND patrol-location)
-  has never been compiled this arc — `./gradlew`/`npx expo run:android`
-  against the Pixel_9 emulator or the Infinix remains the first real
-  device-verification step, whenever the user says to switch focus there.
+  both now render the real map.
+- **Done, code only — Phase 6 (SOS/Home/alerts)**: real Home screen (M2 —
+  duty toggle wired 1:1 to Phase 5's patrol service, press-and-hold-2s SOS,
+  situational hub, shift telemetry, emergency speed dial); `modules/
+  sos-sms` Kotlin module (G1's third SOS fallback tier — direct device SMS,
+  real carrier-level send result via `sentIntent`, not a false "sent");
+  `modules/critical-alert` Kotlin module (M12 full-screen lock-screen
+  alert, fully functional today via a "Test Full-Screen Alert" button in
+  Profile) + `criticalAlertStore.ts`/`CriticalAlertOverlay.tsx`. **FCM push
+  itself is NOT wired** — `@react-native-firebase/messaging` needs a real
+  `google-services.json` for this app's dev applicationId, which doesn't
+  exist yet (same REMAINING.md A4 gap the old app had); `getFcmToken()`
+  stays null and `isFirebaseAvailable()` honestly reports false until that
+  file is provided.
+- **First real device build succeeded this session** (DEVLOG (8)) — three
+  real bugs, none of them what was initially suspected: (1)
+  `local.properties`'s `sdk.dir` needs forward slashes, backslashes break
+  Java's properties parser; (2) Android Studio's plain Gradle sync builds
+  all 4 CPU ABIs by default (the CLI silently restricts to the connected
+  device's ABI) — fixed properly via a new `app.config.ts`
+  `BARANGUARD_LOCAL_BUILD_ARCH` env-gated override + `expo prebuild
+  --clean`, not a hand-edit of the generated file; (3) the REAL blocker
+  was Android Studio's own "Gradle JDK" project setting defaulting to
+  `jbr-25` (JVM 21+), which prints a harmless console warning AGP's own
+  prefab-packaging step misreads as a build failure — fixed by setting
+  `android/.idea/gradle.xml`'s `gradleJvm` to `#JAVA_HOME` (this machine's
+  JDK 17). Both `device-key` and `patrol-location`'s Kotlin compiled
+  clean and the app installed and ran for real — LoginScreen rendered,
+  and a real sign-in attempt reached the backend. A 4th bug (Metro's
+  default port 8081 colliding with this project's own Apache backend, also
+  on 8081) was found and fixed by running Metro on 8090 instead.
+- **Still open, found but not fixed**: `NativeDatabase.prepareAsync ...
+  out of memory` on the encrypted DB's first statement — this machine is
+  critically low on RAM (858 MB free of 7,896 MB total; several Claude
+  Code sessions plus an app called "Antigravity" are the main consumers).
+  Not a code bug — retry once more host RAM is free.
+- **Next**: Phase 7 (shifts/swap requests/profile diagnostics), then
+  Phase 8 (device checklist + cutover). `sos-sms` and `critical-alert`'s
+  Kotlin have NOT been compiled yet — the next build attempt is the real
+  test of whether their `PermissionsService`/`AppCompatActivity` wiring is
+  correct.
 - **Known live bug in the CURRENT app, left unfixed by user choice**:
   `mobile/src/pages/home.tsx:390-396` blocks SOS when GPS fails (C-01);
   fixed only in the rebuild.

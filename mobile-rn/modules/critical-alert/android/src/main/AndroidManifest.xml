@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- CriticalAlertActivity shows OVER the lock screen — noHistory so it
+         never lingers in the recent-apps stack once dismissed,
+         excludeFromRecents so it never appears there at all (an alert, not
+         a real app screen a Tanod would return to). Port of
+         ../mobile/android/app/src/main/AndroidManifest.xml's equivalent
+         <activity> entry. -->
+    <application>
+        <activity
+            android:name=".CriticalAlertActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+    </application>
+</manifest>
