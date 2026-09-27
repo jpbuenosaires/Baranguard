@@ -17376,6 +17376,7 @@ platform-tools (adb)**. Username has no space, so the `JAYSON~1`
 short-path gotcha doesn't apply here. (Update, later the same session:
 `platform-tools`/`emulator`/`system-images` appeared while work was in
 progress — Android Studio installing components. NDK/CMake still absent.)
+(Second update, same session: NDK/CMake installed — see DEVLOG (5).)
 
 ## 2026-09-27 (4) — React Native rebuild: Phase 0 + Phase 1 (foundations) done, device gate pending
 
@@ -17446,3 +17447,47 @@ format 3", Keystore key generation/signing works, the server accepts a
 signature from the new module — needs a device (the Infinix is on the
 other laptop). Treat every native claim above as code-complete, not
 proven.
+
+## 2026-09-27 (5) — NDK + CMake installed via CLI (sdkmanager); an emulator, not the Infinix, will exercise Phase 1's gate
+
+User chose the emulator (`Pixel_9` AVD, already present) over waiting for
+the Infinix, and asked to install NDK/CMake from the command line rather
+than Android Studio's GUI.
+
+This machine had no `cmdline-tools` (only Android Studio's own bundled
+downloader had ever fetched `platform-tools`/`emulator`/`system-images`
+for it — no standalone `sdkmanager` binary existed to drive from a
+terminal). With explicit permission, downloaded Google's official
+`commandlinetools-win-15859902_latest.zip` (155.7 MB) from
+`dl.google.com/android/repository/`, verified its SHA-256 against the
+value published on developer.android.com before extracting, unpacked to
+`%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest` (the layout
+`sdkmanager` requires), accepted all SDK licenses, deleted the zip after.
+
+**Which versions, and why not a guess**: `rootProject.ext.ndkVersion`
+isn't set as plain text anywhere in the generated `android/build.gradle`
+— it's set programmatically by
+`expo-modules-autolinking`'s `ExpoRootProjectPlugin.kt`
+(`setIfNotExist("ndkVersion") { ... "27.1.12297006" }`), found by
+grepping that plugin's Kotlin source in `node_modules` rather than
+guessing a version and hoping Gradle wouldn't complain. Confirmed
+CMake is genuinely needed, not just NDK: `node_modules/expo-sqlite/
+android/build.gradle` has a real `externalNativeBuild { cmake { path
+"CMakeLists.txt" } }` block — SQLCipher's C source is compiled from the
+amalgamation at build time, not shipped as a prebuilt `.so`. Installed
+`ndk;27.1.12297006` (matches the Expo default exactly) and
+`cmake;3.22.1` (AGP's own long-standing default when no
+`android.cmakeVersion` override is set — none is set here). Both
+verified working directly (`cmake.exe --version`, NDK's
+`source.properties`), not just "sdkmanager said done".
+
+**Consequence for the Phase 1 device gate**: it will now be exercised on
+the `Pixel_9` emulator (Google Play system image, `android-37.2`), not
+the Infinix X6840 — an emulator can prove the SQLCipher build compiles
+and the app boots, but Keystore-backed StrongBox behavior and any
+OEM-specific quirk (the Infinix's own background-app-freezer, its lack
+of StrongBox) are NOT the same as real hardware. Treat an emulator pass
+as "code and build are sound", not as the same evidence bar
+REMAINING.md's device-verification items use elsewhere in this project.
+Not yet done: actually running `npx expo run:android` against the
+emulator — this entry only covers getting the toolchain in place.
