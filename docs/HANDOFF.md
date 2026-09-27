@@ -6,108 +6,42 @@ date/keyword, don't read front to back).
 
 **Last updated: 2026-09-27.**
 
-**2026-09-27, latest — Tanod app's full UI redesign IN PROGRESS on top of
-the already-code-complete Phases 0–7 (DEVLOG (11)).** User asked for a
-complete visual redesign ("change completely but retaining the theme
-blue"), approving mockups (built as a design-canvas Artifact) before any
-code: **HeroUI Native** (+ Uniwind/Tailwind v4) as the component library,
-the SOS control keeps its 2-second hold gesture AND gained a proper
-confirm step (not either/or), light + dark only (no separate sunlight
-mode). Foundation is wired (`metro.config.js`, `global.css` overriding
-HeroUI's tokens to the existing `theme/tokens.ts` blue palette,
-`GestureHandlerRootView` + `HeroUINativeProvider` in the root layout, the
-existing `ThemeProvider` now also drives Uniwind's theme so old and new
-screens agree) and **M2 Home is fully rebuilt** as the flagship screen —
-every handler is unchanged, only the rendering is new (HeroUI `Switch`
-for duty, a `RingProgress` SVG ring + HeroUI `BottomSheet` confirm for
-SOS, a new `src/ui/` shared-component folder). Verified so far: `tsc`/
-`expo lint`/`expo-doctor`/`jest` all clean — **not yet verified on a real
-build**, since this pulled in three new native modules (`react-native-
-gesture-handler`, `react-native-svg`, `@gorhom/bottom-sheet`) that have
-never been through a Gradle build in this project. **Still to redesign**:
-Assignment list/detail, New Incident, My Reports, Live Map chrome,
-Profile, My Shifts, the critical-alert overlay — all still render on the
-old hand-rolled look for now (both systems coexist safely). This sits on
-top of, not instead of, the already-complete coding work below —
-Phases 0–7 were finished in an earlier part of this same session (DEVLOG
-(3)-(10)), and only Phase 8 (device checklist + cutover, not a coding
-phase) plus this redesign remain.
+**2026-09-27, latest — the React Native rebuild (`mobile-rn/`) is
+ABANDONED and DELETED; `mobile/` (Capacitor) is the live app again.**
+Reversed the 2026-09-27 rebuild decision (DEVLOG (3)) the same day it was
+made. The rebuild had reached Phases 0–7 code-complete plus a full HeroUI
+Native + Uniwind UI redesign across every screen (DEVLOG (3)-(12)), and a
+real device build was working on the Infinix — but the user decided to go
+back to Capacitor rather than continue. `mobile-rn/` and everything under
+it (Kotlin native modules, the redesign, an expo-sqlite/SQLCipher bug fix,
+an attempted `@react-native-firebase` install) is deleted from the working
+tree; full history is still recoverable via `git log` on commits before
+this one if it's ever needed again, but it is not part of the live system.
 
-- **Done, code only — Phase 0/1 (foundations)**: encrypted DB (expo-sqlite
-  + SQLCipher), schema ported byte-identical, session in SecureStore, full
-  API client port, `modules/device-key` Kotlin port.
-- **Done, code only — Phase 2 (auth/shell)**: login, tab shell, session
-  gate, theme, Profile (session display/theme toggle/sign-out).
-- **Done, code only — Phase 3 (offline capture)**: encrypted local
-  capture, photo/voice evidence (`expo-audio`'s hook-only recorder),
-  sync engine, My Reports.
-- **Done, code only — Phase 4 (dispatch)**: assignment list/detail,
-  status transitions, route fetch, turn-by-turn HUD.
-- **Done, code only — Phase 5 (location + maps)**: `modules/patrol-
-  location` Kotlin Expo Module (background GPS foreground service — H-09
-  signed, one `client_event_id` per fix, failed points buffered and
-  drained into `gps_track_local` instead of silently dropped, all three
-  fixes over the old Java plugin); M7 Live Map on
-  `@maplibre/maplibre-react-native` reading downloaded MBTiles packages
-  natively via an `mbtiles://` tile URL (no more sql.js/WASM); the Phase 4
-  map placeholders in Assignment Detail and New Incident's "Pick on Map"
-  both now render the real map.
-- **Done, code only — Phase 6 (SOS/Home/alerts)**: real Home screen (M2 —
-  duty toggle wired 1:1 to Phase 5's patrol service, press-and-hold-2s SOS,
-  situational hub, shift telemetry, emergency speed dial); `modules/
-  sos-sms` Kotlin module (G1's third SOS fallback tier — direct device SMS,
-  real carrier-level send result via `sentIntent`, not a false "sent");
-  `modules/critical-alert` Kotlin module (M12 full-screen lock-screen
-  alert, fully functional today via a "Test Full-Screen Alert" button in
-  Profile) + `criticalAlertStore.ts`/`CriticalAlertOverlay.tsx`. **FCM push
-  itself is NOT wired** — `@react-native-firebase/messaging` needs a real
-  `google-services.json` for this app's dev applicationId, which doesn't
-  exist yet (same REMAINING.md A4 gap the old app had); `getFcmToken()`
-  stays null and `isFirebaseAvailable()` honestly reports false until that
-  file is provided.
-- **First real device build succeeded this session** (DEVLOG (8)) — three
-  real bugs, none of them what was initially suspected: (1)
-  `local.properties`'s `sdk.dir` needs forward slashes, backslashes break
-  Java's properties parser; (2) Android Studio's plain Gradle sync builds
-  all 4 CPU ABIs by default (the CLI silently restricts to the connected
-  device's ABI) — fixed properly via a new `app.config.ts`
-  `BARANGUARD_LOCAL_BUILD_ARCH` env-gated override + `expo prebuild
-  --clean`, not a hand-edit of the generated file; (3) the REAL blocker
-  was Android Studio's own "Gradle JDK" project setting defaulting to
-  `jbr-25` (JVM 21+), which prints a harmless console warning AGP's own
-  prefab-packaging step misreads as a build failure — fixed by setting
-  `android/.idea/gradle.xml`'s `gradleJvm` to `#JAVA_HOME` (this machine's
-  JDK 17). Both `device-key` and `patrol-location`'s Kotlin compiled
-  clean and the app installed and ran for real — LoginScreen rendered,
-  and a real sign-in attempt reached the backend. A 4th bug (Metro's
-  default port 8081 colliding with this project's own Apache backend, also
-  on 8081) was found and fixed by running Metro on 8090 instead.
-- **Still open, found but not fixed**: `NativeDatabase.prepareAsync ...
-  out of memory` on the encrypted DB's first statement — this machine is
-  critically low on RAM (858 MB free of 7,896 MB total; several Claude
-  Code sessions plus an app called "Antigravity" are the main consumers).
-  Not a code bug — retry once more host RAM is free.
-- **Done, code only — Phase 7 (shifts, profile diagnostics)**:
-  `MyShiftsScreen.tsx` (M8/M9 — shift list, request-swap flow, swap
-  history; new `/shifts` route pushed from Profile), `ProfileScreen.tsx`
-  built out from Phase 2's session-only version into the full M10
-  diagnostics console (real LAN ping, workstation-address override, real
-  local SQLite counts, manual sync, storage drawer with a 30-day evidence
-  prune). Every data-layer function both screens needed already existed
-  from earlier phases — this was purely the two missing screens.
-- **Next**: Phase 8 (device checklist + cutover) — the full parity
-  checklist against a real device/emulator, switching `applicationId` to
-  `ph.baranguard.tanod`, retiring `mobile/`. `sos-sms` and
-  `critical-alert`'s Kotlin have NOT been compiled yet — the next build
-  attempt is the real test of whether their
-  `PermissionsService`/`AppCompatActivity` wiring is correct.
-- **Known live bug in the CURRENT app, left unfixed by user choice**:
-  `mobile/src/pages/home.tsx:390-396` blocks SOS when GPS fails (C-01);
-  fixed only in the rebuild.
-- Also this arc: ORS and FCM wired up on this machine (Service
-  Health 7/8), after fixing two php.ini gaps (CLI `curl.cainfo`,
-  `extension=openssl` in both inis) — not git-tracked, DEVLOG (2). NDK/
-  CMake installed via CLI for a Pixel_9 emulator build path, DEVLOG (5).
+**Known regression this reversal reintroduces**: `mobile/src/pages/
+home.tsx:390-396` still blocks SOS when GPS fails (C-01) — the rebuild
+had fixed this, but that fix no longer exists anywhere. §2 Rule 27 says
+SOS must never be blocked on a missing GPS fix; this needs a small,
+surgical fix directly in `mobile/`, not a rebuild, whenever it's picked
+up.
+
+**FCM is now real for `mobile/` (Capacitor), not device-verified yet.**
+A Firebase Android app for `ph.baranguard.tanod` already existed in the
+`baranguard-acb27` project; used the service-account credentials already
+at `backend/config/firebase-service-account.json` (a JWT-bearer OAuth
+exchange, same pattern `FcmClient.php` already uses server-side) to call
+the Firebase Management API directly and pull its real `google-services.
+json`, now saved at `mobile/android/app/google-services.json`
+(gitignored, matching that project's own `.gitignore`). `mobile/`'s
+Android Gradle files already had the Google Services plugin wired
+conditionally on that file's presence, and `deviceIdentity.ts`'s
+`getFcmToken()` / `criticalAlertStore.ts`'s `registerCriticalAlertListeners()`
+were already fully implemented and already called from `App.tsx` — this
+was previously untested only for lack of the credential, not missing
+code. Backend-side FCM was already wired and verified earlier the same
+day (DEVLOG (2)). **Not yet done**: `npm install` in `mobile/` (its
+`node_modules` doesn't exist in this environment), a real build, and an
+actual device test that a push arrives and the full-screen alert fires.
 
 **2026-09-27, earlier — shared print-preview modal + statutory PDF
 overhaul (found uncommitted, committed as-is), plus a blotter-workflow
