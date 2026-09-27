@@ -17,13 +17,20 @@ export interface NewGpsPoint {
   /** ISO 8601 UTC string — device capture time. */
   recordedAt: string;
   dispatchId?: number | null;
+  /**
+   * Reuse an id already minted elsewhere (e.g. `PatrolLocationService.kt`
+   * mints one per fix before its own failed POST attempt) instead of
+   * generating a fresh one — Rule 3: one client_event_id per physical point,
+   * never two.
+   */
+  clientEventId?: string;
 }
 
-/** Stages one GPS point locally with a fresh, stable client_event_id. */
+/** Stages one GPS point locally with a fresh (or caller-supplied) stable client_event_id. */
 export async function saveGpsPointLocally(point: NewGpsPoint): Promise<{ localId: string; clientEventId: string }> {
   const db = await openLocalDatabase();
   const localId = uuid();
-  const clientEventId = uuid();
+  const clientEventId = point.clientEventId ?? uuid();
 
   await db.run(
     `INSERT INTO gps_track_local (local_id, dispatch_id, latitude, longitude, accuracy_m, recorded_at, client_event_id, synced)

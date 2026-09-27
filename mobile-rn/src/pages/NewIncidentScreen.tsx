@@ -11,10 +11,10 @@
  * incident itself saves — an attachment can never exist locally without
  * its parent incident row.
  *
- * SCOPE NOTE: "Pick on Map" (the old app's `LocationPickerModal`, backed
- * by `LiveMapCanvas`) is Phase 5 scope (MapLibre RN isn't wired up yet) —
- * disabled here with an honest label rather than faked. "Tag GPS Fix" is
- * unaffected and fully functional.
+ * "Pick on Map" (the old app's `LocationPickerModal`, backed by
+ * `LiveMapCanvas`) landed in Phase 5 as the `incidents/pick-location` modal
+ * route, round-tripped via `locationPickerBridge.ts` — expo-router has no
+ * built-in way to hand a value back from a pushed route.
  */
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
@@ -27,6 +27,7 @@ import { INCIDENT_TYPES, saveIncidentLocally, type IncidentType } from '../servi
 import { saveEvidenceLocally } from '../services/db/evidenceRepository';
 import { capturePhoto, useVoiceRecording, type StagedAttachment } from '../services/evidenceCapture';
 import { getCurrentPosition } from '../services/geolocation';
+import { requestLocationPick } from '../services/locationPickerBridge';
 import { loadSession } from '../services/session';
 import tacticalFeedback from '../utils/tacticalFeedback';
 
@@ -134,6 +135,12 @@ export default function NewIncidentScreen() {
     } finally {
       setAcquiringGps(false);
     }
+  }
+
+  async function handlePickOnMap() {
+    setLocationError(null);
+    const picked = await requestLocationPick(location ? { latitude: location.latitude, longitude: location.longitude } : null);
+    if (picked) setLocation({ latitude: picked.latitude, longitude: picked.longitude, accuracyM: null });
   }
 
   function accuracyPill(accuracyM: number | null): { label: string; tone: 'success' | 'warning' | 'critical' } {
@@ -262,7 +269,7 @@ export default function NewIncidentScreen() {
               onPress={handleTagGps}
               disabled={saving}
             />
-            <ActionButton icon="map-outline" label="Pick on Map (Phase 5)" onPress={() => {}} disabled />
+            <ActionButton icon="map-outline" label="Pick on Map" onPress={handlePickOnMap} disabled={saving} />
           </View>
           {locationError ? <ErrorBanner text={locationError} /> : null}
         </Section>

@@ -7,27 +7,53 @@ date/keyword, don't read front to back).
 **Last updated: 2026-09-27.**
 
 **2026-09-27, latest — Tanod app being REBUILT in React Native (Expo);
-Phases 0–1 done in code, device gate still open (DEVLOG (3), (4)).**
+Phases 0–5 done in CODE ONLY, no build/device step yet (DEVLOG (3)-(7)).**
 User decision (the research panel will question the Capacitor stack):
 full rebuild in `mobile-rn/` with Expo SDK 57 + dev build + Kotlin Expo
 Modules. **`mobile/` (Capacitor) is still the live app** until
 `mobile-rn/` passes the same device checklist. Zero backend changes.
 Dev applicationId `ph.baranguard.tanod.rn` so both install side by side.
+**Standing instruction for this arc** (explicit user direction after the
+emulator toolchain came up working, DEVLOG (5)/(6)): write and statically
+verify code phase by phase; build/emulator/device verification is
+deliberately deferred until the user says to switch focus to it.
 
-- **Done (Phase 1, code only)**: encrypted DB (expo-sqlite + SQLCipher),
-  schema ported byte-identical (114/114), session in SecureStore, full
-  API client port, `modules/device-key` Kotlin port. Static checks green
-  (tsc, lint, jest 13/13, expo-doctor 21/21, prebuild manifest checked).
-- **Next, before Phase 2**: compile and run once. Needs the NDK/CMake on
-  this machine (not installed) and the Infinix attached; then prove the
-  Phase 1 gate: DB header not "SQLite format 3", device key registers and
-  the server accepts a signed request.
+- **Done, code only — Phase 0/1 (foundations)**: encrypted DB (expo-sqlite
+  + SQLCipher), schema ported byte-identical, session in SecureStore, full
+  API client port, `modules/device-key` Kotlin port.
+- **Done, code only — Phase 2 (auth/shell)**: login, tab shell, session
+  gate, theme. Home (M2 duty status + SOS) is still a placeholder — its
+  real content needs Phase 6's SOS logic to be meaningful.
+- **Done, code only — Phase 3 (offline capture)**: encrypted local
+  capture, photo/voice evidence (`expo-audio`'s hook-only recorder),
+  sync engine, My Reports.
+- **Done, code only — Phase 4 (dispatch)**: assignment list/detail,
+  status transitions, route fetch, turn-by-turn HUD.
+- **Done, code only — Phase 5 (location + maps)**: `modules/patrol-
+  location` Kotlin Expo Module (background GPS foreground service — H-09
+  signed, one `client_event_id` per fix, failed points buffered and
+  drained into `gps_track_local` instead of silently dropped, all three
+  fixes over the old Java plugin); M7 Live Map on
+  `@maplibre/maplibre-react-native` reading downloaded MBTiles packages
+  natively via an `mbtiles://` tile URL (no more sql.js/WASM); the Phase 4
+  map placeholders in Assignment Detail and New Incident's "Pick on Map"
+  both now render the real map. **Not wired up**: nothing yet calls
+  `patrolLocationService.ts`'s `start()`/`stop()` — that hookup is Home's
+  duty toggle, still a Phase 2 placeholder (see above).
+- **Next**: Phase 6 (SOS three-tier + `sos-sms`/`critical-alert` Kotlin
+  modules + Firebase push + Home's real M2 content), then Phase 7
+  (shifts/swap requests/profile diagnostics), then Phase 8 (device
+  checklist + cutover). The Kotlin side (device-key AND patrol-location)
+  has never been compiled this arc — `./gradlew`/`npx expo run:android`
+  against the Pixel_9 emulator or the Infinix remains the first real
+  device-verification step, whenever the user says to switch focus there.
 - **Known live bug in the CURRENT app, left unfixed by user choice**:
   `mobile/src/pages/home.tsx:390-396` blocks SOS when GPS fails (C-01);
   fixed only in the rebuild.
-- Also this session: ORS and FCM wired up on this machine (Service
+- Also this arc: ORS and FCM wired up on this machine (Service
   Health 7/8), after fixing two php.ini gaps (CLI `curl.cainfo`,
-  `extension=openssl` in both inis) — not git-tracked, DEVLOG (2).
+  `extension=openssl` in both inis) — not git-tracked, DEVLOG (2). NDK/
+  CMake installed via CLI for a Pixel_9 emulator build path, DEVLOG (5).
 
 **2026-09-27, earlier — shared print-preview modal + statutory PDF
 overhaul (found uncommitted, committed as-is), plus a blotter-workflow

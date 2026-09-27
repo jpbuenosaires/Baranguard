@@ -53,6 +53,7 @@ export default function RootLayout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="incidents/new" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="incidents/pick-location" options={{ presentation: 'modal' }} />
         <Stack.Screen name="incidents/[localId]/submitted" options={{ presentation: 'modal' }} />
         <Stack.Screen name="assignments/[localId]" options={{ presentation: 'modal' }} />
       </Stack>

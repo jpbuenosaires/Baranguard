@@ -1,0 +1,27 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'ph.baranguard.tanod.patrollocation'
+version = '0.1.0'
+
+android {
+  namespace "ph.baranguard.tanod.patrollocation"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // PatrolLocationService references FusedLocationProviderClient directly, not
+  // through any Expo location module — same "library's implementation
+  // dependency isn't on this module's own compile classpath" situation
+  // ../mobile/android/app/build.gradle documents for its own copy of this
+  // dependency. Version pinned to match that file's own pin.
+  implementation "com.google.android.gms:play-services-location:21.3.0"
+}

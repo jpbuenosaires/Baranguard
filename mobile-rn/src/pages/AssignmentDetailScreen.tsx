@@ -15,10 +15,10 @@
  * "Get Route" is an explicit tap, matching the old app's battery/data
  * reasoning and ORS's request-limited free tier.
  *
- * SCOPE NOTE: the embedded live map (`LiveMapCanvas`/MapLibre) is Phase 5
- * scope. This screen has full status/route/turn-by-turn logic now, with a
- * placeholder in place of the map — swapped for the real one once Phase 5
- * lands, per this rebuild's own phase plan.
+ * The embedded live map (`LiveMapCanvas`/MapLibre Native) landed in Phase 5,
+ * fed the same `route`/`navState` this screen already computed for
+ * `ActiveStepCard` — `NavigationState`'s shape is a structural superset of
+ * `LiveMapCanvas`'s `routeProgress` prop, so it's passed through unchanged.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -27,12 +27,14 @@ import { Ionicons } from '@expo/vector-icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import ActiveStepCard from '../components/ActiveStepCard';
+import LiveMapCanvas from '../components/LiveMapCanvas';
 import { useTheme } from '../theme/ThemeProvider';
 import { ApiError, getDispatchRoute, updateDispatchStatus, type RouteData } from '../services/apiService';
 import { applyLocalStatusChange, cacheRouteFetch, getCachedDispatch, isCacheStale, markStatusSynced, nextStatusFor } from '../services/db/dispatchRepository';
 import { enqueueDispatchStatusChange } from '../services/db/offlineQueueRepository';
 import type { DispatchLocalRow } from '../services/db/localSchema';
 import { getCurrentPosition, watchPosition, type DevicePosition } from '../services/geolocation';
+import { loadSession } from '../services/session';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { computeNavigationState, formatRemainingTime, formatNavDistance, type NavigationState } from '../utils/routeProgress';
 import { distanceMeters, formatDistance } from '../utils/geo';
@@ -52,8 +54,19 @@ export default function AssignmentDetailScreen() {
   const [position, setPosition] = useState<DevicePosition | null>(null);
   const [fetchingRoute, setFetchingRoute] = useState(false);
   const [navigationActive, setNavigationActive] = useState(false);
+  const [barangayId, setBarangayId] = useState<number | null>(null);
   const arrivalPromptedRef = useRef(false);
   const autoFetchedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadSession().then((session) => {
+      if (!cancelled && session) setBarangayId(session.barangayId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!note) return;
@@ -240,19 +253,23 @@ export default function AssignmentDetailScreen() {
         ? `${row.latitude!.toFixed(4)}, ${row.longitude!.toFixed(4)}`
         : 'Target location set';
 
-  const mapPlaceholder = (
-    <View style={[styles.mapPlaceholder, { backgroundColor: colors.navyDeep, borderRadius: tokens.radius.md }]}>
-      <Ionicons name="map-outline" size={28} color="rgba(255,255,255,0.5)" />
-      <Text style={styles.mapPlaceholderText}>Live map lands in Phase 5</Text>
-      {hasTarget ? <Text style={styles.mapPlaceholderCoords}>{row.latitude!.toFixed(5)}, {row.longitude!.toFixed(5)}</Text> : null}
-    </View>
-  );
+  const focusTarget = hasTarget ? { latitude: row.latitude!, longitude: row.longitude! } : null;
 
   if (navigationActive) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.navyDeep }}>
         <MobileHeader title={`DISPATCH #${row.server_dispatch_id ?? row.local_id.slice(0, 6)}`} subtitle="Turn-by-Turn Guidance" showBack />
-        <View style={{ height: 200 }}>{mapPlaceholder}</View>
+        <LiveMapCanvas
+          barangayId={barangayId}
+          position={position}
+          incidents={[]}
+          tanods={[]}
+          focusTarget={focusTarget}
+          routeGeometry={route?.geometry ?? null}
+          navigationMode
+          routeProgress={navState}
+          height={220}
+        />
         {navState && route ? <ActiveStepCard navState={navState} steps={route.steps} mode={route.mode} onReroute={handleGetRoute} /> : null}
 
         <View style={styles.floatingControls}>
@@ -359,7 +376,15 @@ export default function AssignmentDetailScreen() {
 
         {hasTarget ? (
           <View style={{ marginBottom: 16 }}>
-            <View style={{ height: 180 }}>{mapPlaceholder}</View>
+            <LiveMapCanvas
+              barangayId={barangayId}
+              position={position}
+              incidents={[]}
+              tanods={[]}
+              focusTarget={focusTarget}
+              routeGeometry={route?.geometry ?? null}
+              height={180}
+            />
             <View style={styles.mapActionsRow}>
               <Pressable onPress={handleGetRoute} disabled={fetchingRoute || !position} style={styles.mapAction}>
                 {fetchingRoute ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="refresh-outline" size={14} color={colors.primary} />}
@@ -453,9 +478,6 @@ const styles = StyleSheet.create({
   stepperRow: { flexDirection: 'row', justifyContent: 'space-between' },
   stepperStep: { alignItems: 'center', gap: 4, flex: 1 },
   stepperNode: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  mapPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
-  mapPlaceholderText: { color: 'rgba(255,255,255,0.6)', fontSize: 12 },
-  mapPlaceholderCoords: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontFamily: 'monospace' },
   mapActionsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, paddingHorizontal: 4 },
   mapAction: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   inlineNote: { padding: 10, marginBottom: 12 },

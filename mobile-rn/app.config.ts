@@ -60,6 +60,7 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-font',
     'expo-splash-screen',
+    'expo-asset',
     'expo-audio',
     [
       'expo-image-picker',
@@ -69,6 +70,7 @@ const config: ExpoConfig = {
     ],
     ['expo-sqlite', { useSQLCipher: true }],
     'expo-secure-store',
+    '@maplibre/maplibre-react-native',
     [
       'expo-build-properties',
       {

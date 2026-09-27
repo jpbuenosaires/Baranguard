@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- A location-type foreground service on API 34+ must declare its type
+         here, matching the FOREGROUND_SERVICE_LOCATION permission declared
+         at the app level (app.config.ts) — the OS refuses to start it
+         otherwise. Port of ../mobile/android/app/src/main/AndroidManifest.xml's
+         equivalent <service> entry. -->
+    <application>
+        <service
+            android:name=".PatrolLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+    </application>
+</manifest>
