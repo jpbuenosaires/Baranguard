@@ -95,15 +95,17 @@ rolled charts, inline SVG icons, vendored MapLibre). Mobile: Ionic React
 9 + Capacitor 8.5, encrypted SQLite (SQLCipher). AI: Llama-SEA-LION-
 v3.5-8B-R via **local Ollama only**.
 
-**Mobile rebuild IN PROGRESS (decided 2026-09-27, DEVLOG (3)):** the
-Tanod app is being rebuilt in **React Native (Expo + dev build, Kotlin
-Expo Modules for custom native code)** in a new `mobile-rn/` folder.
-`mobile/` (Capacitor) stays the live, installable app until `mobile-rn/`
-passes the same device checklist, then it is retired. Zero backend
-changes: the `/api/v1` contract is the spec. Dev applicationId is
-`ph.baranguard.tanod.rn` so both apps can coexist on one phone; it
-switches to `ph.baranguard.tanod` at cutover. Plan and phase gates:
-DEVLOG 2026-09-27 (3).
+**Mobile rebuild ABANDONED same day it was decided (DEVLOG 2026-09-27
+(3), reversed same date).** A React Native (Expo + dev build) rebuild was
+attempted in a `mobile-rn/` folder, reached Phases 0–7 code-complete plus
+a full UI redesign, and had a real device build running — then the user
+chose to go back to **Capacitor**. `mobile-rn/` is deleted; `mobile/`
+(Ionic React + Capacitor) is the one live, installable app, not a
+placeholder pending cutover. Do not restart this rebuild without an
+explicit new decision to do so — see `docs/HANDOFF.md` for what the
+abandoned attempt found (including a real encrypted-SQLite bug that would
+need re-discovering if this is ever revisited) and `backend/DEVLOG.md`
+2026-09-27 (3)-(13) for the full arc.
 
 **Four barangays, fixed:** Dao=1, Binanuahan=2, Marifosque=3, Banuyo=4.
 

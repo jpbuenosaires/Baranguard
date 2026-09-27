@@ -18054,3 +18054,157 @@ critical-alert overlay all still render on the OLD hand-rolled
 dark) were approved alongside Home's, not yet built. Both systems
 coexist safely in the meantime (`ThemeProvider` still drives both), so
 this is a phased re-skin, not a broken half-migration.
+
+## 2026-09-27 (12) — Tanod app redesign finished on every screen; the encrypted local DB turned out never to have worked (unkeyed migration connection) — fixed and device-verified on the Infinix
+
+**Redesign, remainder.** Every screen left over from (11) is now on HeroUI
+Native + Uniwind: Assignments list/detail, New Incident, My Reports, Live
+Map, Profile, My Shifts, Login, Incident Submitted, Pick Location, the
+critical-alert overlay, the tab bar (`useThemeColor` instead of the legacy
+`ThemeProvider` palette) and `FormFields.tsx` (`TextField`/`TextAreaField`
+now wrap HeroUI's real `TextField`/`Input`/`Label`/`TextArea`, checked
+against the package's own docs first; `SelectField` stays a Uniwind chip
+row — HeroUI's `TagGroup` is a `selectedKeys`-Set API built for
+multi-select/removal, a poor fit for a single controlled value).
+`src/ui/AppHeader` gained `showBack`; `MobileHeader.tsx` deleted (no
+importers left). Handlers are unchanged throughout. Bugs caught while
+writing it: HeroUI `Button` takes `isDisabled`, not `disabled`; `Ionicons`
+needs a real color value, not a Tailwind class string (three places).
+
+**Build/run on the real phone.** Android Studio's Gradle JDK had reverted
+to `jbr-25` — the same prefab "restricted method" false failure as (8);
+set back to JDK 17 in the IDE's Gradle settings (not git-tracked).
+`mobile-rn/.env.local` (gitignored): dropped `BARANGUARD_LOCAL_BUILD_ARCH`
+(generated `gradle.properties` was x86_64-only, so the arm64 Infinix
+refused the APK), API base now `http://localhost:8081/api/v1` over `adb
+reverse`, and `RCT_METRO_PORT=8090` so even a bare `npx expo start` stays
+off Apache's 8081 (package.json's `start`/`android` scripts also pass
+`--port 8090`).
+
+**The DB bug — found by chasing device errors that alternated between
+"out of memory" and "file is not a database".** `migrateLocalDatabase`
+used `db.withExclusiveTransactionAsync(...)`. In expo-sqlite 57 that does
+NOT run on `db`'s connection: `Transaction.createAsync` opens a brand-new
+native connection (`useNewConnection: true`) — which never received our
+`PRAGMA key`. So on a fresh install the migrations ran unkeyed and wrote a
+PLAINTEXT schema, which the app's keyed connection then couldn't read.
+Nearly every DB caller wraps reads in `.catch(() => [])`, so the app
+looked healthy while the local store silently didn't work — Phase 0/1's
+"encrypted DB" was never exercised by a real write on a device. The
+earlier "out of memory on the encrypted DB's first statement", attributed
+in (8) to host RAM, is very likely the same failure; not proven, but it
+stopped once this was fixed.
+
+Evidence gathered on the device before changing code: the file header was
+random bytes (encrypted), size exactly 4096 (one page), no `-wal` — the
+keyed connection had written page 1 (after a WAL change I'd made first),
+then the unkeyed migration connection failed on it, and the migrations'
+WAL was discarded.
+
+Fix, `localDatabase.ts` / `passphrase.ts`:
+- Migrations run as `BEGIN EXCLUSIVE … COMMIT` on the SAME keyed
+  connection (ROLLBACK on error). Nothing else can be using it yet —
+  `openUncontended` publishes the connection only after migrating.
+- `openDatabaseAsync(name, { useNewConnection: true })` — expo-sqlite's
+  native side otherwise returns its cached connection after a JS reload
+  ("find opened database for fast refresh"), so `PRAGMA key` would no
+  longer be the first statement on it.
+- `PRAGMA journal_mode = WAL` — a process killed mid-write (Android's
+  low-memory killer on a 3.8 GB phone) can't leave the main file
+  half-written.
+- `getOrCreatePassphrase` reads back what actually persisted instead of
+  returning what it generated, so a reload racing the first launch can't
+  key the file with a passphrase that then gets overwritten.
+
+Verified: `tsc`, `expo lint`, `jest` 37/37, `verify-local-schema.mjs`
+114/114; on the Infinix, after one `pm clear` (the old file was keyed
+inconsistently, unrecoverable by design per `passphrase.ts`), a JS reload
+migrated for real (`-wal` ~136 KB, `-shm` present, no errors), a second
+reload stayed clean (WAL grew to ~152 KB as dispatches were cached), and a
+full force-stop + cold start opened the DB fine — Home rendered the active
+dispatch card straight from the encrypted store. Any other device that ran
+an earlier build needs its app data cleared once.
+
+Not done: clicking through every redesigned screen on the device; the
+`ExpoUIModule` `UnsatisfiedLinkError` seen once during a JS-reload
+teardown (`NativeStatePropsGetter.clearAllContentOriginsImpl`) — reload-
+only, not investigated.
+
+## 2026-09-27 (13) — Mobile-RN rebuild abandoned same day, deleted; reverted to `mobile/` (Capacitor); real google-services.json obtained for FCM
+
+**Reversal.** After (12)'s redesign-completion pass, while chasing FCM
+wiring in `mobile-rn/` (the JS side was straightforward, but the reliable
+background/killed-app path for the full-screen critical alert needed
+either fragile AndroidManifest surgery to override
+`@react-native-firebase/messaging`'s own auto-registered
+`ReactNativeFirebaseMessagingService`, or relying on `setBackgroundMessageHandler`,
+neither verifiable without a real `google-services.json` and another
+native rebuild cycle), the user decided to abandon the React Native
+rebuild entirely and go back to `mobile/` (Capacitor) as the live app —
+confirmed explicitly via two rounds of clarifying questions (scope: "just
+FCM" vs "abandon entirely" → abandon entirely; then whether to commit the
+day's uncommitted mobile-rn work first → no, delete all of it).
+
+**What was deleted, uncommitted.** All of today's uncommitted `mobile-rn/`
+work never reached a commit: the HeroUI Native + Uniwind redesign for
+every remaining screen (Login, Incident Submitted, Pick Location,
+FormFields, Profile, My Shifts, My Reports, Assignments, Assignment
+Detail, Live Map), the real encrypted-SQLite bug fix (migrations running
+on an unkeyed connection — see (12)), the API-base-URL runtime-override
+removal, and an in-progress `@react-native-firebase/app`+`messaging`
+install. `git rm -r mobile-rn && rm -rf mobile-rn` — the directory is
+gone from the working tree. Everything COMMITTED earlier today (the M2
+Home redesign, Phases 0-7, the native Kotlin modules) is still in git
+history on `main` before this point and recoverable via `git log`/
+`git show` if the rebuild is ever picked up again, but is not live.
+
+**Known regression this reopens**: `mobile/src/pages/home.tsx:390-396`
+still hard-blocks SOS when GPS fails (C-01) — fixed only in the now-
+deleted rebuild. §2 Rule 27 requires SOS to never be blocked on a missing
+fix. Needs a small direct fix in `mobile/`, not rediscovered from
+scratch — the fix was: don't require a fix at all, fall back to
+last-known/no-fix, matching what migration 0026 already made the server
+side do.
+
+**FCM, `mobile/` (Capacitor) — real credential obtained, not yet device-
+verified.** `mobile/`'s Android project (a real, persistent native
+project — not Expo's regenerate-on-prebuild kind) already had
+`android/app/build.gradle` conditionally apply the Google Services Gradle
+plugin whenever `google-services.json` is present, and both
+`deviceIdentity.ts`'s `getFcmToken()` and `criticalAlertStore.ts`'s
+`registerCriticalAlertListeners()`/`checkForPendingNativeAlert()` were
+already fully implemented AND already called from `App.tsx` — this was
+previously untested only because no real `google-services.json` existed,
+not missing code (an earlier read of `registerCriticalAlertListeners()`
+mistakenly assumed it was never called; a second, correct grep found it
+already wired at `App.tsx:315-316`).
+
+Obtained the real file WITHOUT the user needing to visit the Firebase
+Console: exchanged the service-account key already at `backend/config/
+firebase-service-account.json` (project `baranguard-acb27`, already used
+server-side by `FcmClient.php`) for an OAuth2 access token via the same
+JWT-bearer flow that class already implements (`openssl_sign` + a
+one-off PHP script, not committed), then called the Firebase Management
+API directly: `GET .../androidApps` confirmed an Android app already
+registered for `ph.baranguard.tanod` (app id
+`1:18306139077:android:6fcf0d5044f61ab8edc1ac`), then `GET .../config`
+returned the real `google-services.json` base64-encoded. Decoded and
+saved to `mobile/android/app/google-services.json` (confirmed gitignored
+by that project's own `.gitignore` before doing anything else with it).
+The temporary OAuth token and the one-off PHP script were deleted after
+use.
+
+**Also flagged, not acted on**: the private key pasted into this
+session's chat by the user should be treated as compromised (it now sits
+in conversation history/logs) and rotated from the Firebase Console
+(Project Settings → Service Accounts) — the existing file at
+`backend/config/firebase-service-account.json` was NOT overwritten with
+it since an identical file (same project) already existed there from
+earlier the same day; whichever key is currently live should still be
+rotated as a precaution.
+
+**Not yet done**: `npm install` in `mobile/` (no `node_modules` present
+in this environment at all), a real Gradle build, and an actual device
+test confirming a push notification arrives and the full-screen critical
+alert fires. Backend-side FCM sending was already wired and verified
+earlier the same day (DEVLOG (2)).

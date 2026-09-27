@@ -495,6 +495,16 @@ actually buzzed**: dispatch 71's critical push landed on the Infinix
 within ~1s of `notification_delivery` 26 `fcm/sent` (DEVLOG 2026-09-19
 (4)).
 
+**2026-09-27 note**: `mobile/android/app/google-services.json` is
+gitignored (a per-machine file, correctly so — it carries a Firebase API
+key), and this machine's checkout didn't have it, which is why
+`mobile-rn/`'s now-deleted doc comments (written on this machine)
+mistakenly described this as still an open gap. Re-obtained it here via
+the Firebase Management API using the existing service-account
+credential rather than re-verified from scratch — see DEVLOG 2026-09-27
+(13). The 2026-09-24 device evidence above still stands; this was a
+missing-local-file problem, not a re-opened one.
+
 **Semaphore REMOVED 2026-09-23** — explicit user decision, a paid
 per-SMS aggregator cost too much for this project's actual volume.
 Replaced by a local GSM gateway: the SAME tethered phone that does GSM
