@@ -37,6 +37,17 @@
  * no offline duty-toggle queue in this codebase (see localSchema.ts's file
  * header for why `duty_status_local` doesn't exist).
  *
+ * TANOD WORKFLOW KINDS (2026-10, contract §6/§9): referrals, availability,
+ * accomplishment entries and school check-ins ride the same chunked, capped,
+ * needs-attention machinery as the older kinds (request keys `referrals`,
+ * `availability`, `accomplishment_entries`, `school_checkins`). They go out
+ * after SOS/dispatch status/incidents and BEFORE the GPS backlog; referrals
+ * are gathered only AFTER the incident chunks have been applied, so a referral
+ * to an incident that synced in this same pass is sent with its fresh server
+ * id (a still-phone-only incident is named by `incident_client_event_id`).
+ * After the pass, school list / availability status are refreshed best-effort
+ * (`workflowRefresh.ts`) — that read direction never affects the summary.
+ *
  * EVIDENCE (Mobile Improvement Plan Phase 3.2, closes F4): drained in a
  * SEPARATE step after the batches above, not folded into them — evidence
  * upload is a per-file multipart POST (`/incidents/:id/evidence`), not
@@ -55,8 +66,12 @@ import {
   uploadEvidence,
   type SyncBatchResult,
   type SyncDispatchStatusItem,
+  type SyncAccomplishmentItem,
+  type SyncAvailabilityItem,
   type SyncGpsItem,
   type SyncIncidentItem,
+  type SyncReferralItem,
+  type SyncSchoolCheckinItem,
   type SyncSosItem,
 } from './apiService';
 import {
@@ -82,6 +97,23 @@ import {
   resetFailedSosItems,
 } from './db/offlineQueueRepository';
 import { cacheDispatchesFromServer, markStatusSynced, revertLocalStatusChange } from './db/dispatchRepository';
+import { listUnsyncedReferrals, markReferralSynced, markReferralSyncFailed } from './db/referralRepository';
+import {
+  listUnsyncedAvailability,
+  markAvailabilitySynced,
+  markAvailabilitySyncFailed,
+  parseLocalWindows,
+} from './db/availabilityRepository';
+import { listUnsyncedEntries, markEntrySynced, markEntrySyncFailed } from './db/accomplishmentRepository';
+import {
+  listUnsyncedSchoolCheckins,
+  markSchoolCheckinCloseFailed,
+  markSchoolCheckinCloseSynced,
+  markSchoolCheckinSynced,
+  markSchoolCheckinSyncFailed,
+} from './db/schoolRepository';
+import { countWorkflowPermanentFailures, resetWorkflowFailures } from './db/workflowSync';
+import { refreshWorkflowCaches } from './workflowRefresh';
 import {
   countPermanentlyFailedEvidence,
   listPendingEvidenceUploads,
@@ -159,7 +191,22 @@ export async function runSyncPass(): Promise<SyncSummary> {
   for (const part of chunk(unsyncedIncidents, SYNC_CHUNK_SIZE)) {
     add(await syncChunk(deviceId, { incidents: part }));
   }
-  // 3. GPS history — least urgent, already capped above.
+  // 3. Tanod workflow records. Referrals are read only NOW, after the
+  //    incident chunks above were applied, so a referral to an incident that
+  //    just synced resolves to its server id (see listUnsyncedReferrals()).
+  for (const part of chunk(await listUnsyncedReferrals(), SYNC_CHUNK_SIZE)) {
+    add(await syncChunk(deviceId, { referrals: part }));
+  }
+  for (const part of chunk(await listUnsyncedAvailability(), SYNC_CHUNK_SIZE)) {
+    add(await syncChunk(deviceId, { availability: part }));
+  }
+  for (const part of chunk(await listUnsyncedEntries(), SYNC_CHUNK_SIZE)) {
+    add(await syncChunk(deviceId, { accomplishments: part }));
+  }
+  for (const part of chunk(await listUnsyncedSchoolCheckins(), SYNC_CHUNK_SIZE)) {
+    add(await syncChunk(deviceId, { schoolCheckins: part }));
+  }
+  // 4. GPS history — least urgent, already capped above.
   for (const part of chunk(unsyncedGps, SYNC_CHUNK_SIZE)) {
     add(await syncChunk(deviceId, { gps: part }));
   }
@@ -194,6 +241,10 @@ export async function runSyncPass(): Promise<SyncSummary> {
     }
   }
 
+  // Read direction, best-effort and throttled: school list + availability
+  // review status. Never throws and never changes the summary below.
+  await refreshWorkflowCaches();
+
   return {
     attempted: totals.attempted,
     succeeded: totals.succeeded,
@@ -210,6 +261,10 @@ interface ChunkInput {
   gps?: Awaited<ReturnType<typeof listUnsyncedGpsPoints>>;
   dispatch?: Awaited<ReturnType<typeof listPendingDispatchStatusUpdates>>;
   sos?: Awaited<ReturnType<typeof listPendingSosItems>>;
+  referrals?: Awaited<ReturnType<typeof listUnsyncedReferrals>>;
+  availability?: Awaited<ReturnType<typeof listUnsyncedAvailability>>;
+  accomplishments?: Awaited<ReturnType<typeof listUnsyncedEntries>>;
+  schoolCheckins?: Awaited<ReturnType<typeof listUnsyncedSchoolCheckins>>;
 }
 
 /** Sends one chunk and applies its per-item results before returning (so a later timeout never un-does it). */
@@ -218,7 +273,13 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
   const gps = input.gps ?? [];
   const dispatch = input.dispatch ?? [];
   const sos = input.sos ?? [];
+  const referrals = input.referrals ?? [];
+  const availability = input.availability ?? [];
+  const accomplishments = input.accomplishments ?? [];
+  const schoolCheckins = input.schoolCheckins ?? [];
 
+  // School link / Annex C-1 fields are sent only when the Tanod filled them in,
+  // so an ordinary incident's payload is byte-for-byte what it was before.
   const incidentItems: SyncIncidentItem[] = incidents.map((row) => ({
     incident_type: row.incident_type,
     raw_narrative: row.raw_narrative,
@@ -226,7 +287,59 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     longitude: row.longitude,
     device_offline_created_at: row.created_offline_at,
     client_event_id: row.client_event_id,
+    ...(row.school_id != null ? { school_id: row.school_id } : {}),
+    ...(row.c1_summary ? { c1_summary: row.c1_summary } : {}),
+    ...(row.c1_action_taken ? { c1_action_taken: row.c1_action_taken } : {}),
+    ...(row.c1_status_notes ? { c1_status_notes: row.c1_status_notes } : {}),
   }));
+
+  const referralItems: SyncReferralItem[] = referrals.map(({ row, incidentId, incidentClientEventId }) => ({
+    ...(incidentId !== null
+      ? { incident_id: incidentId }
+      : incidentClientEventId
+        ? { incident_client_event_id: incidentClientEventId }
+        : {}),
+    referred_to: row.referred_to,
+    ...(row.other_text ? { other_text: row.other_text } : {}),
+    ...(row.contact_name ? { contact_name: row.contact_name } : {}),
+    referred_at: row.referred_at,
+    ...(row.reference_no ? { reference_no: row.reference_no } : {}),
+    client_event_id: row.client_event_id,
+  }));
+
+  const availabilityItems: SyncAvailabilityItem[] = availability.map((row) => ({
+    period_start: row.period_start,
+    period_end: row.period_end,
+    windows: parseLocalWindows(row),
+    client_event_id: row.client_event_id,
+  }));
+
+  const accomplishmentItems: SyncAccomplishmentItem[] = accomplishments.map((row) => ({
+    work_date: row.work_date,
+    accomplishment_text: row.accomplishment_text,
+    // The server requires start/end together or not at all; a lopsided legacy row sends neither.
+    ...(row.start_time && row.end_time ? { start_time: row.start_time, end_time: row.end_time } : {}),
+    duration_minutes: row.duration_minutes,
+    client_event_id: row.client_event_id,
+  }));
+
+  // Contract §7: an unsynced check-in goes out as ONE create item (with any
+  // check-out merged in); an already-synced one is closed by a NEW item that
+  // references it — re-sending the same event id would be answered 'duplicate'.
+  const schoolCheckinItems: SyncSchoolCheckinItem[] = schoolCheckins.map(({ row, kind }) =>
+    kind === 'close'
+      ? {
+          client_event_id: row.checkout_event_id as string,
+          closes_client_event_id: row.client_event_id,
+          checked_out_at: row.checked_out_at as string,
+        }
+      : {
+          school_id: row.school_id,
+          checked_in_at: row.checked_in_at,
+          ...(row.checked_out_at ? { checked_out_at: row.checked_out_at } : {}),
+          client_event_id: row.client_event_id,
+        }
+  );
 
   const gpsItems: SyncGpsItem[] = gps.map((row) => ({
     latitude: row.latitude,
@@ -257,6 +370,10 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     gpsTracks: gpsItems,
     dispatchStatusUpdates: dispatchStatusItems,
     sosItems,
+    referrals: referralItems,
+    availability: availabilityItems,
+    accomplishmentEntries: accomplishmentItems,
+    schoolCheckins: schoolCheckinItems,
   });
 
   const byEventId = new Map<string, SyncBatchResult>(results.map((r) => [r.clientEventId, r]));
@@ -317,6 +434,62 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     }
   }
 
+  for (const { row } of referrals) {
+    const result = byEventId.get(row.client_event_id);
+    if (!result) continue;
+    if (result.status === 'failed') {
+      await markReferralSyncFailed(row.client_event_id, result.reason ?? 'Sync failed.', MAX_SYNC_ATTEMPTS);
+    } else {
+      await markReferralSynced(row.client_event_id, result.serverId);
+    }
+  }
+
+  for (const row of availability) {
+    const result = byEventId.get(row.client_event_id);
+    if (!result) continue;
+    if (result.status === 'failed') {
+      await markAvailabilitySyncFailed(row.client_event_id, result.reason ?? 'Sync failed.', MAX_SYNC_ATTEMPTS);
+    } else {
+      await markAvailabilitySynced(row.client_event_id, result.serverId);
+    }
+  }
+
+  for (const row of accomplishments) {
+    const result = byEventId.get(row.client_event_id);
+    if (!result) continue;
+    if (result.status === 'failed') {
+      await markEntrySyncFailed(row.client_event_id, result.reason ?? 'Sync failed.', MAX_SYNC_ATTEMPTS);
+    } else {
+      await markEntrySynced(row.client_event_id, result.serverId);
+    }
+  }
+
+  for (const { row, kind } of schoolCheckins) {
+    if (kind === 'close') {
+      const closeEventId = row.checkout_event_id as string;
+      const result = byEventId.get(closeEventId);
+      if (!result) continue;
+      if (result.status === 'failed') {
+        await markSchoolCheckinCloseFailed(closeEventId, result.reason ?? 'Sync failed.', MAX_SYNC_ATTEMPTS);
+      } else {
+        await markSchoolCheckinCloseSynced(closeEventId);
+      }
+      continue;
+    }
+    const result = byEventId.get(row.client_event_id);
+    if (!result) continue;
+    if (result.status === 'failed') {
+      await markSchoolCheckinSyncFailed(row.client_event_id, result.reason ?? 'Sync failed.', MAX_SYNC_ATTEMPTS);
+    } else {
+      await markSchoolCheckinSynced(
+        row.client_event_id,
+        result.serverId,
+        row.checked_out_at,
+        result.status === 'duplicate' ? 'duplicate' : 'success'
+      );
+    }
+  }
+
   return {
     attempted: results.length,
     succeeded: results.filter((r) => r.status === 'success').length,
@@ -332,18 +505,36 @@ export interface NeedsAttentionCounts {
   evidence: number;
   /** SOS alerts that exhausted their retries and never reached the server. */
   sos: number;
+  referrals: number;
+  availability: number;
+  accomplishments: number;
+  schoolCheckins: number;
   total: number;
 }
 
 /** Items the automatic sync has given up on — shown as a warning, never hidden. */
 export async function getNeedsAttentionCounts(): Promise<NeedsAttentionCounts> {
-  const [incidents, gps, evidence, sos] = await Promise.all([
+  const [incidents, gps, evidence, sos, referrals, availability, accomplishments, schoolCheckins] = await Promise.all([
     countPermanentlyFailedIncidents(),
     countPermanentlyFailedGpsPoints(),
     countPermanentlyFailedEvidence(),
     countFailedSosItems(),
+    countWorkflowPermanentFailures('referral_local'),
+    countWorkflowPermanentFailures('availability_local'),
+    countWorkflowPermanentFailures('accomplishment_entry_local'),
+    countWorkflowPermanentFailures('school_checkin_local'),
   ]);
-  return { incidents, gps, evidence, sos, total: incidents + gps + evidence + sos };
+  return {
+    incidents,
+    gps,
+    evidence,
+    sos,
+    referrals,
+    availability,
+    accomplishments,
+    schoolCheckins,
+    total: incidents + gps + evidence + sos + referrals + availability + accomplishments + schoolCheckins,
+  };
 }
 
 /** Manual retry: gives every capped item a fresh attempt budget; the caller then runs a pass. */
@@ -352,4 +543,8 @@ export async function retryNeedsAttention(): Promise<void> {
   await resetFailedGpsPoints();
   await resetFailedEvidence();
   await resetFailedSosItems();
+  await resetWorkflowFailures('referral_local');
+  await resetWorkflowFailures('availability_local');
+  await resetWorkflowFailures('accomplishment_entry_local');
+  await resetWorkflowFailures('school_checkin_local');
 }

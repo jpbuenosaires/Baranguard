@@ -47,6 +47,27 @@ export interface NewIncidentInput {
   rawNarrative: string;
   latitude?: number | null;
   longitude?: number | null;
+  /**
+   * Safer School Zones link (contract §7) — a server school id from the cached
+   * `school_local` list. Optional; null for an ordinary incident.
+   */
+  schoolId?: number | null;
+  /**
+   * Annex C-1 fields: SHORT, FACTUAL and NON-IDENTIFYING. They are separate
+   * from `rawNarrative` and must never carry the name of a student or victim
+   * (the screen says so next to the inputs). Max `C1_FIELD_MAX` characters each.
+   */
+  c1Summary?: string | null;
+  c1ActionTaken?: string | null;
+  c1StatusNotes?: string | null;
+}
+
+/** Contract §7: each C-1 field is VARCHAR(500). */
+export const C1_FIELD_MAX = 500;
+
+function blankToNull(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  return trimmed === '' ? null : trimmed;
 }
 
 export interface SavedIncident {
@@ -76,6 +97,11 @@ export async function saveIncidentLocally(input: NewIncidentInput): Promise<Save
   if (!INCIDENT_TYPES.includes(input.incidentType)) {
     throw new Error('Unknown incident type.');
   }
+  for (const value of [input.c1Summary, input.c1ActionTaken, input.c1StatusNotes]) {
+    if ((value ?? '').trim().length > C1_FIELD_MAX) {
+      throw new Error(`Keep each school-incident note under ${C1_FIELD_MAX} characters.`);
+    }
+  }
 
   const db = await openLocalDatabase();
 
@@ -91,8 +117,9 @@ export async function saveIncidentLocally(input: NewIncidentInput): Promise<Save
     await db.run(
       `INSERT INTO incident_local
          (local_id, barangay_id, reported_by, incident_type, priority, raw_narrative,
-          status, source, latitude, longitude, created_offline_at, client_event_id, synced)
-       VALUES (?, ?, ?, ?, 'normal', ?, 'pending', 'app', ?, ?, ?, ?, 0)`,
+          status, source, latitude, longitude, created_offline_at, client_event_id, synced,
+          school_id, c1_summary, c1_action_taken, c1_status_notes)
+       VALUES (?, ?, ?, ?, 'normal', ?, 'pending', 'app', ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
       [
         localId,
         input.barangayId,
@@ -103,6 +130,10 @@ export async function saveIncidentLocally(input: NewIncidentInput): Promise<Save
         input.longitude ?? null,
         createdOfflineAt,
         clientEventId,
+        input.schoolId ?? null,
+        blankToNull(input.c1Summary),
+        blankToNull(input.c1ActionTaken),
+        blankToNull(input.c1StatusNotes),
       ],
       /* transaction */ false
     );

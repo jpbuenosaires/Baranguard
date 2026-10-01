@@ -64,6 +64,7 @@ import {
 import LiveMapCanvas, { type FocusTarget, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import ActiveStepCard from '../components/ActiveStepCard';
 import MobileHeader from '../components/MobileHeader';
+import ReferralPanel from '../components/ReferralPanel';
 import { LoadingBlock } from '../components/LoadingBlock';
 import {
   ApiError,
@@ -864,6 +865,12 @@ const AssignmentDetailPage: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Referral / handoff — records that the Tanod handed the case over; never implies acceptance. */}
+            <ReferralPanel
+              link={{ serverIncidentId: row.server_incident_id }}
+              incidentLabel={`Case #${row.server_incident_id}`}
+            />
 
             {/* Clean Tap-to-Navigate Map Card */}
             {focusTarget && (

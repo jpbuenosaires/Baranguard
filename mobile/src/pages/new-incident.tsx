@@ -43,14 +43,18 @@ import {
   medicalOutline,
   medkitOutline,
   micOutline,
+  schoolOutline,
   shieldCheckmarkOutline,
   stopCircleOutline,
 } from 'ionicons/icons';
 import { Capacitor } from '@capacitor/core';
 import LocationPickerModal from '../components/LocationPickerModal';
 import MobileHeader from '../components/MobileHeader';
-import { INCIDENT_TYPES, saveIncidentLocally, type IncidentType } from '../services/db/incidentRepository';
+import { C1_FIELD_MAX, saveIncidentLocally, type IncidentType } from '../services/db/incidentRepository';
 import { saveEvidenceLocally } from '../services/db/evidenceRepository';
+import { listCachedSchools } from '../services/db/schoolRepository';
+import type { SchoolLocalRow } from '../services/db/localSchema';
+import { refreshSchoolCache } from '../services/workflowRefresh';
 import {
   capturePhoto,
   isRecordingVoice,
@@ -134,10 +138,37 @@ const NewIncidentPage: React.FC = () => {
   const [selfPosition, setSelfPosition] = useState<DevicePosition | null>(null);
   const [barangayId, setBarangayId] = useState<number | null>(null);
 
+  // Safer School Zones: optional link to a cached school + the Annex C-1 notes.
+  const [schools, setSchools] = useState<SchoolLocalRow[]>([]);
+  const [schoolId, setSchoolId] = useState<string>('');
+  const [c1Summary, setC1Summary] = useState('');
+  const [c1ActionTaken, setC1ActionTaken] = useState('');
+  const [c1StatusNotes, setC1StatusNotes] = useState('');
+
   useEffect(() => {
     loadSession().then((session) => {
       if (session) setBarangayId(session.barangayId);
     });
+  }, []);
+
+  // The picker reads the local cache (works offline). If it has never been
+  // filled, try one best-effort fetch — never blocks the form.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let cached = await listCachedSchools();
+        if (cached.length === 0 && (await refreshSchoolCache({ force: true }))) {
+          cached = await listCachedSchools();
+        }
+        if (!cancelled) setSchools(cached);
+      } catch {
+        // Local store unavailable (web preview) — the school block simply stays empty.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -270,6 +301,11 @@ const NewIncidentPage: React.FC = () => {
             rawNarrative: narrative.trim(),
             latitude: location?.latitude ?? null,
             longitude: location?.longitude ?? null,
+            // C-1 notes only travel with a school link (they describe a school incident).
+            schoolId: schoolId ? Number(schoolId) : null,
+            c1Summary: schoolId ? c1Summary : null,
+            c1ActionTaken: schoolId ? c1ActionTaken : null,
+            c1StatusNotes: schoolId ? c1StatusNotes : null,
           });
 
       // The report itself is already durably saved above, so a failed
@@ -539,6 +575,133 @@ const NewIncidentPage: React.FC = () => {
               >
                 {locationError}
               </div>
+            )}
+          </div>
+
+          {/* Section 3b: Safer School Zones link + Annex C-1 notes (optional) */}
+          <div className="intake-block">
+            <div className="intake-block-header">
+              <span className="intake-block-title">
+                <IonIcon icon={schoolOutline} />
+                School Zone (Optional)
+              </span>
+              {schoolId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    tacticalFeedback.onTap();
+                    setSchoolId('');
+                  }}
+                  disabled={saving}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--color-text-tertiary)',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: '2px 4px',
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {schools.length === 0 ? (
+              <span className="wf-hint">
+                No schools saved on this phone yet. Connect once and they will download automatically — you can still
+                submit this report without one.
+              </span>
+            ) : (
+              <div className="wf-field">
+                <label className="wf-label" htmlFor="incident-school">
+                  Incident happened at / near a school
+                </label>
+                <select
+                  id="incident-school"
+                  className="wf-select"
+                  value={schoolId}
+                  onChange={(e) => setSchoolId(e.target.value)}
+                  disabled={saving}
+                >
+                  <option value="">Not a school-zone incident</option>
+                  {schools.map((s) => (
+                    <option key={s.school_id} value={String(s.school_id)}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {schoolId && (
+              <>
+                <div className="wf-banner wf-banner--warning" role="note">
+                  <IonIcon icon={alertCircleOutline} aria-hidden="true" />
+                  <div>
+                    Keep these notes <strong>short and factual</strong>. Do <strong>not</strong> write the names of
+                    students or victims (Walang pangalan ng estudyante o biktima).
+                  </div>
+                </div>
+
+                <div className="wf-field">
+                  <label className="wf-label" htmlFor="c1-summary">
+                    What happened (C-1 summary)
+                  </label>
+                  <textarea
+                    id="c1-summary"
+                    className="intake-textarea-box"
+                    rows={3}
+                    maxLength={C1_FIELD_MAX}
+                    value={c1Summary}
+                    onChange={(e) => setC1Summary(e.target.value)}
+                    disabled={saving}
+                    placeholder="e.g. Altercation between two students at the school gate"
+                  />
+                  <span className="wf-counter">
+                    {c1Summary.length}/{C1_FIELD_MAX}
+                  </span>
+                </div>
+
+                <div className="wf-field">
+                  <label className="wf-label" htmlFor="c1-action">
+                    Action taken
+                  </label>
+                  <textarea
+                    id="c1-action"
+                    className="intake-textarea-box"
+                    rows={2}
+                    maxLength={C1_FIELD_MAX}
+                    value={c1ActionTaken}
+                    onChange={(e) => setC1ActionTaken(e.target.value)}
+                    disabled={saving}
+                    placeholder="e.g. Separated the parties and informed the school guard"
+                  />
+                  <span className="wf-counter">
+                    {c1ActionTaken.length}/{C1_FIELD_MAX}
+                  </span>
+                </div>
+
+                <div className="wf-field">
+                  <label className="wf-label" htmlFor="c1-status">
+                    Status / notes
+                  </label>
+                  <textarea
+                    id="c1-status"
+                    className="intake-textarea-box"
+                    rows={2}
+                    maxLength={C1_FIELD_MAX}
+                    value={c1StatusNotes}
+                    onChange={(e) => setC1StatusNotes(e.target.value)}
+                    disabled={saving}
+                    placeholder="e.g. Situation calm, referred to school principal"
+                  />
+                  <span className="wf-counter">
+                    {c1StatusNotes.length}/{C1_FIELD_MAX}
+                  </span>
+                </div>
+              </>
             )}
           </div>
 

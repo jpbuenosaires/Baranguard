@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import {
+  IonAlert,
   IonButton,
   IonContent,
   IonHeader,
@@ -20,8 +21,11 @@ import {
   closeOutline,
   documentTextOutline,
   navigateOutline,
+  swapHorizontalOutline,
+  timeOutline,
   radioOutline,
   syncOutline,
+  trashOutline,
   warningOutline,
 } from 'ionicons/icons';
 import { ApiError, checkHealth } from '../services/apiService';
@@ -32,6 +36,12 @@ import {
   listPendingDispatchStatusUpdates,
   listPendingSosItems,
 } from '../services/db/offlineQueueRepository';
+import {
+  countWorkflowPending,
+  discardFailedWorkflowRow,
+  listFailedWorkflowRows,
+  type FailedWorkflowRow,
+} from '../services/db/workflowSync';
 import { isSyncAuthBlocked } from '../services/syncScheduler';
 import {
   getNeedsAttentionCounts,
@@ -58,9 +68,14 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
   const [gpsCount, setGpsCount] = useState(0);
   const [dispatchStatusCount, setDispatchStatusCount] = useState(0);
   const [sosCount, setSosCount] = useState(0);
+  const [referralCount, setReferralCount] = useState(0);
+  const [dutyRecordCount, setDutyRecordCount] = useState(0);
   const [syncResult, setSyncResult] = useState<SyncSummary | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState<NeedsAttentionCounts | null>(null);
+  // Permanently failed availability/accomplishment/referral/check-in rows the user may discard.
+  const [failedRows, setFailedRows] = useState<FailedWorkflowRow[]>([]);
+  const [discardTarget, setDiscardTarget] = useState<FailedWorkflowRow | null>(null);
   // True when queued items are waiting on a fresh login, not on connectivity.
   const [reloginRequired, setReloginRequired] = useState(false);
 
@@ -86,7 +101,16 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
       const sos = await listPendingSosItems();
       setSosCount(sos.length);
 
+      setReferralCount(await countWorkflowPending('referral_local'));
+      const [availability, accomplishments, checkins] = await Promise.all([
+        countWorkflowPending('availability_local'),
+        countWorkflowPending('accomplishment_entry_local'),
+        countWorkflowPending('school_checkin_local'),
+      ]);
+      setDutyRecordCount(availability + accomplishments + checkins);
+
       setNeedsAttention(await getNeedsAttentionCounts());
+      setFailedRows(await listFailedWorkflowRows());
       setReloginRequired(isSyncAuthBlocked() || (await loadSession()) === null);
     } catch {
       setIsOnline(false);
@@ -140,7 +164,21 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
     }
   };
 
-  const totalPending = incidentCount + gpsCount + dispatchStatusCount + sosCount;
+  // Deletes ONE capped row from this phone after the user confirmed; the server is not touched.
+  const handleDiscard = async (target: FailedWorkflowRow) => {
+    setDiscardTarget(null);
+    setSyncError(null);
+    try {
+      await discardFailedWorkflowRow(target.table, target.localId);
+      tacticalFeedback.onSuccess();
+    } catch {
+      setSyncError('Could not remove that item from this phone.');
+    } finally {
+      await loadCounts();
+    }
+  };
+
+  const totalPending = incidentCount + gpsCount + dispatchStatusCount + sosCount + referralCount + dutyRecordCount;
   const attentionTotal = needsAttention?.total ?? 0;
 
   return (
@@ -217,6 +255,26 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
 
                 <div className="sync-queue__row">
                   <div className="sync-queue__row-label">
+                    <IonIcon icon={swapHorizontalOutline} style={{ color: 'var(--color-primary)' }} />
+                    <span>Referrals</span>
+                  </div>
+                  <span className={`status-pill ${referralCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
+                    {referralCount}
+                  </span>
+                </div>
+
+                <div className="sync-queue__row">
+                  <div className="sync-queue__row-label">
+                    <IonIcon icon={timeOutline} style={{ color: 'var(--color-primary)' }} />
+                    <span>Availability, Accomplishments & School Check-ins</span>
+                  </div>
+                  <span className={`status-pill ${dutyRecordCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
+                    {dutyRecordCount}
+                  </span>
+                </div>
+
+                <div className="sync-queue__row">
+                  <div className="sync-queue__row-label">
                     <IonIcon icon={warningOutline} style={{ color: 'var(--color-critical)' }} />
                     <span>Emergency SOS Alerts</span>
                   </div>
@@ -253,7 +311,36 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 {needsAttention.incidents > 0 && ` ${needsAttention.incidents} incident report(s).`}
                 {needsAttention.evidence > 0 && ` ${needsAttention.evidence} evidence file(s).`}
                 {needsAttention.gps > 0 && ` ${needsAttention.gps} location point(s).`}
+                {needsAttention.referrals > 0 && ` ${needsAttention.referrals} referral(s).`}
+                {needsAttention.availability + needsAttention.accomplishments + needsAttention.schoolCheckins > 0 &&
+                  ` ${needsAttention.availability + needsAttention.accomplishments + needsAttention.schoolCheckins} availability / accomplishment / school check-in record(s).`}
               </div>
+              {failedRows.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                  {failedRows.map((row) => (
+                    <div
+                      key={`${row.table}:${row.localId}`}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{row.label}</div>
+                        {row.lastError && <div style={{ opacity: 0.85 }}>{row.lastError}</div>}
+                      </div>
+                      <IonButton
+                        size="small"
+                        fill="outline"
+                        color="danger"
+                        disabled={syncing}
+                        aria-label={`Discard ${row.label}`}
+                        onClick={() => setDiscardTarget(row)}
+                      >
+                        <IonIcon icon={trashOutline} slot="start" />
+                        Discard
+                      </IonButton>
+                    </div>
+                  ))}
+                </div>
+              )}
               <IonButton size="small" color="warning" disabled={syncing || !isOnline} onClick={handleRetryFailed}>
                 <IonIcon icon={syncOutline} slot="start" />
                 Retry failed items
@@ -355,6 +442,20 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
           </IonButton>
         </div>
       </IonContent>
+
+      <IonAlert
+        isOpen={discardTarget !== null}
+        onDidDismiss={() => setDiscardTarget(null)}
+        header="Discard this item?"
+        message={`${discardTarget?.label ?? 'This item'} was never accepted by the barangay desk. Discarding removes it from this phone only and cannot be undone.`}
+        buttons={[
+          { text: 'Keep it', role: 'cancel' },
+          { text: 'Discard', role: 'destructive', handler: () => {
+              if (discardTarget) void handleDiscard(discardTarget);
+            },
+          },
+        ]}
+      />
     </IonModal>
   );
 };

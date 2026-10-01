@@ -27,6 +27,7 @@
  */
 
 import { Preferences } from '@capacitor/preferences';
+import type { AvailabilityStatus, AvailabilityWindow, ReferralTarget } from './db/localSchema';
 import { getDeviceId, signDeviceRequest } from './deviceIdentity';
 import {
   clearSession,
@@ -940,6 +941,60 @@ export interface SyncIncidentItem {
   longitude: number | null;
   device_offline_created_at?: string | null;
   client_event_id: string;
+  /** Safer School Zones link + Annex C-1 fields (contract §7) — omitted entirely when not set. */
+  school_id?: number;
+  c1_summary?: string;
+  c1_action_taken?: string;
+  c1_status_notes?: string;
+}
+
+/**
+ * One item's shape for `referrals[]` (contract §5/§6 — same as the POST
+ * /incidents/:id/referrals body). A referral to an incident that only exists
+ * on this phone carries `incident_client_event_id` instead of `incident_id`.
+ */
+export interface SyncReferralItem {
+  incident_id?: number;
+  incident_client_event_id?: string;
+  referred_to: ReferralTarget;
+  other_text?: string;
+  contact_name?: string;
+  referred_at: string;
+  reference_no?: string;
+  client_event_id: string;
+}
+
+/** One item's shape for `availability[]` (contract §3 POST /availability body). */
+export interface SyncAvailabilityItem {
+  period_start: string;
+  period_end: string;
+  windows: AvailabilityWindow[];
+  client_event_id: string;
+}
+
+/** One item's shape for `accomplishment_entries[]` (contract §4 POST /accomplishment-entries body). */
+export interface SyncAccomplishmentItem {
+  work_date: string;
+  accomplishment_text: string;
+  start_time?: string;
+  end_time?: string;
+  duration_minutes: number;
+  client_event_id: string;
+}
+
+/**
+ * One item's shape for `school_checkins[]` (contract §7). A CREATE item
+ * carries `school_id` + `checked_in_at` (+ `checked_out_at` when the check-out
+ * was merged in before the first sync). A CLOSE item for an already-synced
+ * check-in carries a NEW `client_event_id`, `closes_client_event_id` (the
+ * check-in's own event id) and `checked_out_at` — no school/checked-in fields.
+ */
+export interface SyncSchoolCheckinItem {
+  school_id?: number;
+  checked_in_at?: string;
+  checked_out_at?: string;
+  closes_client_event_id?: string;
+  client_event_id: string;
 }
 
 /** One item's shape for `gps_tracks[]` (mirrors POST /gps body). */
@@ -1000,6 +1055,10 @@ export async function syncBatch(params: {
   dutyStatusUpdates?: SyncDutyStatusItem[];
   dispatchStatusUpdates?: SyncDispatchStatusItem[];
   sosItems?: SyncSosItem[];
+  referrals?: SyncReferralItem[];
+  availability?: SyncAvailabilityItem[];
+  accomplishmentEntries?: SyncAccomplishmentItem[];
+  schoolCheckins?: SyncSchoolCheckinItem[];
 }): Promise<SyncBatchResult[]> {
   // H-09: one signature covers the whole batch — GpsController::
   // createItem()/DispatchController::applyStatusTransition()/
@@ -1018,6 +1077,10 @@ export async function syncBatch(params: {
       duty_status_updates: params.dutyStatusUpdates ?? [],
       dispatch_status_updates: params.dispatchStatusUpdates ?? [],
       sos: params.sosItems ?? [],
+      referrals: params.referrals ?? [],
+      availability: params.availability ?? [],
+      accomplishment_entries: params.accomplishmentEntries ?? [],
+      school_checkins: params.schoolCheckins ?? [],
     },
   });
   return json.results.map((r) => ({
@@ -1036,20 +1099,269 @@ export interface ShiftEntry {
   startAt: string;
   endAt: string;
   version: number;
+  /** Contract §3: a Tanod only ever receives `published` rows; null from a server that predates the field. */
+  approvalStatus: 'draft' | 'published' | null;
 }
 
-/** GET /shifts — §6: a tanod caller is forced server-side to their own rows, so this is already "my shifts", no ?user_id=me needed. */
+/**
+ * GET /shifts — §6: a tanod caller is forced server-side to their own rows, so this is already "my shifts", no ?user_id=me needed.
+ * Contract §3: the server also hides `draft` shifts from a Tanod; the client filter below is a second line
+ * of defence so a draft can never be displayed as a real duty, not a security boundary.
+ */
 export async function getMyShifts(): Promise<ShiftEntry[]> {
   const json = await request<{
-    items: { shift_id: number; user_id: number | null; patrol_zone: string | null; start_at: string; end_at: string; version: number }[];
+    items: {
+      shift_id: number;
+      user_id: number | null;
+      patrol_zone: string | null;
+      start_at: string;
+      end_at: string;
+      version: number;
+      approval_status?: 'draft' | 'published' | null;
+    }[];
   }>('/shifts?limit=100');
-  return json.items.map((row) => ({
-    shiftId: row.shift_id,
-    patrolZone: row.patrol_zone,
-    startAt: row.start_at,
-    endAt: row.end_at,
-    version: row.version,
+  return json.items
+    .map((row) => ({
+      shiftId: row.shift_id,
+      patrolZone: row.patrol_zone,
+      startAt: row.start_at,
+      endAt: row.end_at,
+      version: row.version,
+      approvalStatus: row.approval_status ?? null,
+    }))
+    .filter((shift) => shift.approvalStatus !== 'draft');
+}
+
+// --- Tanod workflow (contract docs/FEATURE_CONTRACT_2026-10.md §3-§7) --------
+
+export interface SchoolEntry {
+  schoolId: number;
+  name: string;
+  schoolType: string | null;
+  level: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  isActive: boolean;
+}
+
+interface RawSchool {
+  school_id: number;
+  name: string;
+  school_type?: string | null;
+  level?: string | null;
+  address?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  is_active?: number | boolean | null;
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Accepts either the paginated `{items: [...]}` envelope every list route uses, or a bare array. */
+function listItems<T>(json: unknown): T[] {
+  if (Array.isArray(json)) return json as T[];
+  const items = (json as { items?: unknown } | null)?.items;
+  return Array.isArray(items) ? (items as T[]) : [];
+}
+
+/**
+ * GET /schools — every role incl. tanod, own barangay (contract §7). Staff
+ * contact fields (`focal_person`/`focal_contact`) and remarks are deliberately
+ * NOT mapped: the mobile cache has no use for them. `?active=` is not sent —
+ * the caller filters on `isActive` itself, so a server default can't hide an
+ * entry the cache should know is deactivated.
+ */
+export async function getSchools(): Promise<SchoolEntry[]> {
+  const json = await request<unknown>('/schools?limit=100');
+  return listItems<RawSchool>(json).map((row) => ({
+    schoolId: row.school_id,
+    name: row.name,
+    schoolType: row.school_type ?? null,
+    level: row.level ?? null,
+    address: row.address ?? null,
+    latitude: numberOrNull(row.latitude),
+    longitude: numberOrNull(row.longitude),
+    isActive: row.is_active === undefined || row.is_active === null ? true : Boolean(Number(row.is_active)),
   }));
+}
+
+export interface AvailabilityEntry {
+  availId: number;
+  periodStart: string;
+  periodEnd: string;
+  windows: AvailabilityWindow[];
+  status: AvailabilityStatus;
+  reviewNote: string | null;
+  version: number;
+  clientEventId: string | null;
+}
+
+interface RawAvailability {
+  avail_id: number;
+  period_start: string;
+  period_end: string;
+  windows_json?: AvailabilityWindow[] | string | null;
+  windows?: AvailabilityWindow[] | null;
+  status: AvailabilityStatus;
+  review_note?: string | null;
+  version?: number;
+  client_event_id?: string | null;
+}
+
+function parseWindows(row: RawAvailability): AvailabilityWindow[] {
+  const raw = row.windows ?? row.windows_json;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? (parsed as AvailabilityWindow[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** GET /availability — a tanod caller sees their own rows only (contract §3). */
+export async function getMyAvailability(): Promise<AvailabilityEntry[]> {
+  const json = await request<unknown>('/availability?limit=100');
+  return listItems<RawAvailability>(json).map((row) => ({
+    availId: row.avail_id,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    windows: parseWindows(row),
+    status: row.status,
+    reviewNote: row.review_note ?? null,
+    version: row.version ?? 1,
+    clientEventId: row.client_event_id ?? null,
+  }));
+}
+
+/** Contract §4 `accomplishment_report.status`. */
+export type AccomplishmentReportStatus = 'open' | 'prepared' | 'noted' | 'approved' | 'returned';
+
+export interface AccomplishmentReportSummary {
+  reportId: number;
+  month: string;
+  status: AccomplishmentReportStatus;
+  /** Why an approver sent it back — shown to the Tanod as-is when status is `returned`. */
+  returnReason: string | null;
+  totalMinutes: number | null;
+  flaggedEntries: number | null;
+}
+
+interface RawReport {
+  report_id: number;
+  month: string;
+  status: AccomplishmentReportStatus;
+  return_reason?: string | null;
+  total_minutes?: number | null;
+  total_minutes_confirmed?: number | null;
+  flagged_entries?: number | null;
+  entries?: RawReportEntry[];
+}
+
+interface RawReportEntry {
+  entry_id: number;
+  duration_minutes?: number | null;
+  suggested_duration_minutes?: number | null;
+  duration_flag?: number | boolean | null;
+}
+
+function mapReport(row: RawReport): AccomplishmentReportSummary {
+  return {
+    reportId: row.report_id,
+    month: row.month,
+    status: row.status,
+    returnReason: row.return_reason ?? null,
+    totalMinutes: numberOrNull(row.total_minutes ?? row.total_minutes_confirmed),
+    flaggedEntries: numberOrNull(row.flagged_entries),
+  };
+}
+
+/** GET /accomplishment-reports?month= — a tanod caller sees their own reports only (contract §4). */
+export async function getMyAccomplishmentReports(month?: string): Promise<AccomplishmentReportSummary[]> {
+  const query = month ? `?month=${encodeURIComponent(month)}&limit=100` : '?limit=100';
+  const json = await request<unknown>(`/accomplishment-reports${query}`);
+  return listItems<RawReport>(json).map(mapReport);
+}
+
+export interface AccomplishmentEntryServerView {
+  entryId: number;
+  durationMinutes: number | null;
+  suggestedDurationMinutes: number | null;
+  durationFlag: boolean;
+}
+
+/**
+ * GET /accomplishment-reports/:id — only the per-entry duration fields are
+ * mapped (the entry text is returned to approvers only, per contract §4; the
+ * Tanod's own text stays in `accomplishment_entry_local`).
+ */
+export async function getAccomplishmentReport(
+  reportId: number
+): Promise<{ report: AccomplishmentReportSummary; entries: AccomplishmentEntryServerView[] }> {
+  const json = await request<RawReport>(`/accomplishment-reports/${reportId}`);
+  return {
+    report: mapReport(json),
+    entries: (json.entries ?? []).map((entry) => ({
+      entryId: entry.entry_id,
+      durationMinutes: numberOrNull(entry.duration_minutes),
+      suggestedDurationMinutes: numberOrNull(entry.suggested_duration_minutes),
+      durationFlag: Boolean(Number(entry.duration_flag ?? 0)),
+    })),
+  };
+}
+
+/**
+ * POST /accomplishment-reports/:id/submit — ONLINE-ONLY by contract §4 (not a
+ * sync kind): there is deliberately no offline queue behind this. A second
+ * submit after success is an illegal transition (409), which the caller turns
+ * into a refresh rather than an error.
+ *
+ * The server REQUIRES an `Idempotency-Key` (a UUID) on every report
+ * transition. The caller mints it once per user action and passes the SAME
+ * key on a retry of that action, so a lost response replays the original
+ * outcome instead of colliding; a resubmit after a return is a new action and
+ * gets a new key.
+ */
+export async function submitAccomplishmentReport(reportId: number, idempotencyKey: string): Promise<AccomplishmentReportSummary> {
+  const path = `/accomplishment-reports/${reportId}/submit`;
+  const headers = await deviceAuthHeaders('POST', path, await getDeviceId());
+  headers['Idempotency-Key'] = idempotencyKey;
+  const json = await request<RawReport>(path, { method: 'POST', headers, body: {} });
+  return mapReport(json);
+}
+
+/**
+ * PATCH /accomplishment-entries/:id — tanod own, only while the report is
+ * open/returned (contract §4). The contract does not spell out the PATCH body;
+ * this sends only the editable subset of the POST body's fields. Online only —
+ * an entry that has not synced yet is edited locally instead
+ * (`accomplishmentRepository.updateUnsyncedEntry`). The server requires
+ * `start_time`/`end_time` together or not at all, so a lopsided pair is
+ * refused here rather than sent to be answered with a 400.
+ */
+export async function updateAccomplishmentEntry(
+  entryId: number,
+  fields: {
+    accomplishment_text: string;
+    start_time: string | null;
+    end_time: string | null;
+    duration_minutes: number;
+  }
+): Promise<void> {
+  if ((fields.start_time === null) !== (fields.end_time === null)) {
+    throw new Error('Enter both a start and an end time, or leave both blank.');
+  }
+  const path = `/accomplishment-entries/${entryId}`;
+  const headers = await deviceAuthHeaders('PATCH', path, await getDeviceId());
+  await request<unknown>(path, { method: 'PATCH', headers, body: fields });
 }
 
 /** §5 shift_swap_request.status enum. */
