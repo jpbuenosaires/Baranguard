@@ -33,8 +33,9 @@ namespace Baranguard\Services\Notifications;
  * explicitly `true`; unset/false means `isConfigured()` is false, exactly
  * mirroring how an absent `SEMAPHORE_API_KEY` used to behave — §2 Rule 6,
  * `not_configured` stays neutral, never silently attempted).
- * `GSM_GATEWAY_ADB_PATH` (optional override; same default path
- * `gsm-ingest-daemon.php` hardcodes). `GSM_GATEWAY_DEVICE_SERIAL`
+ * `GSM_GATEWAY_ADB_PATH` (optional override; same auto-detection
+ * `gsm-ingest-daemon.php` uses if unset — see `defaultAdbPath()` below).
+ * `GSM_GATEWAY_DEVICE_SERIAL`
  * (optional; only needed if more than one device is ever attached at
  * once).
  *
@@ -69,7 +70,6 @@ final class LocalGsmOutboundClient
     // longer than this, worst case ~10*(0.7s+3s) if every attempt times out.
     private const POLL_TIMEOUT_SECONDS = 3;
     private const MAX_MESSAGE_LENGTH = 1600; // 10 concatenated GSM-7 SMS segments — generous; SmsManager itself declines to send anything absurd.
-    private const DEFAULT_ADB_PATH = 'C:/Users/JAYSON~1/AppData/Local/Android/Sdk/platform-tools/adb.exe';
     private const POWERSHELL_PATH = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
 
     private bool $enabled;
@@ -79,9 +79,39 @@ final class LocalGsmOutboundClient
     public function __construct(?bool $enabled = null, ?string $adbPath = null, ?string $deviceSerial = null)
     {
         $this->enabled = $enabled ?? (baranguard_env('GSM_GATEWAY_ENABLED') === 'true');
-        $this->adbPath = $adbPath ?? (baranguard_env('GSM_GATEWAY_ADB_PATH') ?: self::DEFAULT_ADB_PATH);
+        $this->adbPath = $adbPath ?? (baranguard_env('GSM_GATEWAY_ADB_PATH') ?: self::defaultAdbPath());
         $deviceSerial = $deviceSerial ?? (baranguard_env('GSM_GATEWAY_DEVICE_SERIAL') ?: null);
         $this->deviceSerial = ($deviceSerial !== null && trim($deviceSerial) !== '') ? $deviceSerial : null;
+    }
+
+    /**
+     * Was a hardcoded `C:/Users/JAYSON~1/...` path — real on the machine it
+     * was written on, silently wrong on every other one (`isConfigured()`
+     * would just report false, with no clue why, since `is_file()` on a
+     * nonexistent path is not an error). Same fallback order as
+     * `gsm-ingest-daemon.php`'s `resolveAdbPath()`: the standard Android
+     * Studio SDK location under LOCALAPPDATA, then ANDROID_HOME/
+     * ANDROID_SDK_ROOT if set, then a bare `adb` relying on PATH.
+     */
+    private static function defaultAdbPath(): string
+    {
+        $localAppData = getenv('LOCALAPPDATA');
+        if ($localAppData !== false && $localAppData !== '') {
+            $candidate = $localAppData . '/Android/Sdk/platform-tools/adb.exe';
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+        foreach (['ANDROID_HOME', 'ANDROID_SDK_ROOT'] as $envVar) {
+            $root = getenv($envVar);
+            if ($root !== false && $root !== '') {
+                $candidate = rtrim($root, '/\\') . '/platform-tools/adb.exe';
+                if (is_file($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+        return 'adb';
     }
 
     public function isConfigured(): bool

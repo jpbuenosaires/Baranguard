@@ -140,13 +140,8 @@ const ActiveStepCard: React.FC<Props> = ({ navState, steps, onReroute }) => {
           <IonIcon icon={icon} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <span className="nav-hud__distance">
-              {formatNavDistance(navState.distanceToNextTurnM)}
-            </span>
-            <span className="nav-hud__stats">
-              · {formatRemainingTime(navState.remainingTimeS)} ({formatNavDistance(navState.remainingDistanceM)})
-            </span>
+          <div className="nav-hud__distance">
+            {formatNavDistance(navState.distanceToNextTurnM)}
           </div>
           <div className="nav-hud__instruction" title={currentStep.instruction}>
             {currentStep.instruction || `Continue on ${currentStep.maneuver}`}
@@ -158,19 +153,7 @@ const ActiveStepCard: React.FC<Props> = ({ navState, steps, onReroute }) => {
             type="button"
             onClick={() => setExpanded(!expanded)}
             aria-label="Toggle upcoming steps"
-            style={{
-              background: 'rgba(255, 255, 255, 0.12)',
-              border: 'none',
-              borderRadius: '50%',
-              width: '32px',
-              height: '32px',
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
+            className="nav-hud__expand-btn"
           >
             <IonIcon icon={expanded ? chevronUp : chevronDown} style={{ fontSize: '1.2rem' }} />
           </button>

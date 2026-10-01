@@ -674,6 +674,96 @@ final class IncidentsController
     }
 
     /**
+     * GET /incidents/:id/evidence/:attachmentId/download — closes the gap
+     * the `evidence()` GET above and `uploadEvidence()` below both
+     * documented as "deliberately not built here": until now the metadata
+     * endpoint listed a photo/voice attachment's filename, size, and hash,
+     * but nothing anywhere (this API or the web dashboard) could actually
+     * serve the bytes, so Admin/Secretary/Tanod all saw a card with no way
+     * to view the picture or play the audio.
+     *
+     * Same role/tenant/ownership shape as the metadata GET — deliberately
+     * not a separate authorization model: if a caller can list an
+     * incident's evidence, they can fetch one of the listed files, and
+     * nothing else. `attachmentId` is looked up scoped to `incidentId` (not
+     * globally) so a guessed/enumerated attachment id from a different
+     * incident can never match.
+     *
+     * `Content-Disposition: inline` (not `attachment`) — this exists to
+     * back an `<img>`/`<audio>` element in the dashboard's evidence panel,
+     * not to force a save-as-file dialog like the map package/report/Lupon
+     * packet downloads do.
+     */
+    public static function downloadEvidence(PDO $pdo, array $identity, string $incidentIdParam, string $attachmentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'tanod']);
+        if (!ctype_digit($incidentIdParam) || !ctype_digit($attachmentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Evidence attachment not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+        $attachmentId = (int) $attachmentIdParam;
+
+        $incidentStmt = $pdo->prepare('SELECT incident_id, barangay_id FROM incident WHERE incident_id = :incident_id');
+        $incidentStmt->execute(['incident_id' => $incidentId]);
+        $incident = $incidentStmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Evidence attachment not found.');
+        }
+        // §6: "same-barangay check applies FIRST" — cross-tenant is 404,
+        // never 403 (Rule 2: a 403 would confirm the incident exists).
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+        if ($identity['role'] === 'tanod' && !self::tanodMayAccess($pdo, $incidentId, $identity['user_id'])) {
+            throw new ApiError(404, 'NOT_FOUND', 'Evidence attachment not found.');
+        }
+
+        $attachmentStmt = $pdo->prepare(
+            'SELECT attachment_id, file_path, mime_type, original_filename
+             FROM evidence_attachment
+             WHERE attachment_id = :attachment_id AND incident_id = :incident_id'
+        );
+        $attachmentStmt->execute(['attachment_id' => $attachmentId, 'incident_id' => $incidentId]);
+        $attachment = $attachmentStmt->fetch(PDO::FETCH_ASSOC);
+        if ($attachment === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Evidence attachment not found.');
+        }
+
+        $absolutePath = self::evidenceStorageDir() . DIRECTORY_SEPARATOR . $attachment['file_path'];
+        if (!is_readable($absolutePath)) {
+            // The row exists but the bytes are gone/unreadable — an
+            // operator problem (manual disk change, not a normal retention
+            // purge, which deletes the whole row via the FK cascade — §4
+            // "FK trap"), not a client one. Don't leak the path.
+            error_log('[baranguard] evidence file missing or unreadable for attachment_id=' . $attachmentId);
+            throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'This evidence file is temporarily unavailable.');
+        }
+
+        // Same audit shape as the metadata GET above (Rule 8: identifiers
+        // and statuses only — never the filename, which is not itself
+        // sensitive but isn't on the audit allow-list either).
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'evidence_downloaded', 'evidence_attachment', $attachmentId, [
+            'incident_id' => $incidentId,
+        ]);
+
+        $safeFilename = str_replace('"', '', (string) $attachment['original_filename']) ?: ('evidence-' . $attachmentId);
+
+        http_response_code(200);
+        header('Content-Type: ' . (string) $attachment['mime_type']);
+        header('Content-Length: ' . (string) filesize($absolutePath));
+        header('Content-Disposition: inline; filename="' . $safeFilename . '"');
+        // Evidence bytes are immutable once uploaded (a new capture is a
+        // new attachment row, never an overwrite) — safe to cache, unlike
+        // the PDF/CSV export endpoints which regenerate on every request.
+        header('Cache-Control: private, max-age=86400');
+
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        readfile($absolutePath);
+        exit;
+    }
+
+    /**
      * POST /incidents/:id/evidence — closes F4 (`docs/REMAINING.md`,
      * `docs/AUDIT_2026-09-07.md`): the master reference documented this
      * contract from the start ("`evidence_attachment`'s schema is real,

@@ -124,16 +124,16 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div className="sync-queue__title">
-                  Workstation LAN Connection
+                  Barangay Desk Connection
                 </div>
                 <div className="sync-queue__subtitle">
                   {isOnline
-                    ? `Active connection (${latencyMs ?? 0}ms latency)`
-                    : 'Workstation unreachable — local cache active'}
+                    ? `Connected (${latencyMs ?? 0}ms)`
+                    : 'Barangay Desk unreachable — saved offline'}
                 </div>
               </div>
               <span className={`status-pill ${isOnline ? 'status-pill--success' : 'status-pill--pending'}`}>
-                {isOnline ? 'CONNECTED' : 'OFFLINE'}
+                {isOnline ? 'Online' : 'Offline'}
               </span>
             </div>
           </div>
@@ -141,7 +141,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
           {/* Pending Queue Breakdown */}
           <div className="card--elevated sync-queue__section">
             <div className="sync-queue__category-label">
-              STAGED RECORDS WAITING TO SYNC ({totalPending})
+              Saved Items Waiting to Sync ({totalPending})
             </div>
 
             {loading ? (
@@ -151,7 +151,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 <div className="sync-queue__row">
                   <div className="sync-queue__row-label">
                     <IonIcon icon={documentTextOutline} style={{ color: 'var(--color-primary)' }} />
-                    <span>Incidents (M3 Local Reports)</span>
+                    <span>Incident Reports</span>
                   </div>
                   <span className={`status-pill ${incidentCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
                     {incidentCount}
@@ -161,7 +161,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 <div className="sync-queue__row">
                   <div className="sync-queue__row-label">
                     <IonIcon icon={navigateOutline} style={{ color: 'var(--color-success)' }} />
-                    <span>GPS Breadcrumbs (M7 Tracking)</span>
+                    <span>Location History</span>
                   </div>
                   <span className={`status-pill ${gpsCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
                     {gpsCount}
@@ -171,7 +171,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 <div className="sync-queue__row">
                   <div className="sync-queue__row-label">
                     <IonIcon icon={radioOutline} style={{ color: 'var(--color-warning)' }} />
-                    <span>Dispatch Status Updates (M6)</span>
+                    <span>Dispatch Status Updates</span>
                   </div>
                   <span className={`status-pill ${dispatchStatusCount > 0 ? 'status-pill--pending' : 'status-pill--neutral'}`}>
                     {dispatchStatusCount}
@@ -181,7 +181,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 <div className="sync-queue__row">
                   <div className="sync-queue__row-label">
                     <IonIcon icon={warningOutline} style={{ color: 'var(--color-critical)' }} />
-                    <span>Emergency SOS Offline Queue</span>
+                    <span>Emergency SOS Alerts</span>
                   </div>
                   <span className={`status-pill ${sosCount > 0 ? 'status-pill--critical is-urgent' : 'status-pill--neutral'}`}>
                     {sosCount}
@@ -209,7 +209,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
             >
               <IonIcon icon={checkmarkCircleOutline} style={{ fontSize: '1.4rem' }} />
               <div>
-                <strong>Sync Completed:</strong> {syncResult.succeeded} uploaded, {syncResult.duplicates} reconciled, {syncResult.failed} failed.
+                <strong>Sync Finished:</strong> {syncResult.succeeded} uploaded, {syncResult.duplicates} synced, {syncResult.failed} failed.
                 {(syncResult.evidenceUploaded > 0 || syncResult.evidenceFailed > 0) && (
                   <>
                     {' '}

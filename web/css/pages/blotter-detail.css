@@ -1407,6 +1407,33 @@
   border: 1px solid var(--color-border);
 }
 
+.evidence-item-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.evidence-item__view-btn {
+  padding: 0.1875rem 0.625rem;
+  font-size: 0.75rem;
+}
+
+.evidence-item__preview:empty {
+  display: none;
+}
+
+.evidence-item__image {
+  display: block;
+  max-width: 100%;
+  max-height: 22rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.evidence-item__audio {
+  width: 100%;
+}
+
 .resolve-prerequisite-callout {
   padding: 0.625rem 0.875rem;
   border-radius: var(--radius-md);

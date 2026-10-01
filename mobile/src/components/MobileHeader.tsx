@@ -27,6 +27,8 @@ interface MobileHeaderProps {
   showBack?: boolean;
   defaultBackHref?: string;
   rightSlot?: React.ReactNode;
+  hideThemeToggle?: boolean;
+  hideStatusIndicator?: boolean;
 }
 
 export const MobileHeader: React.FC<MobileHeaderProps> = ({
@@ -35,6 +37,8 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   showBack = false,
   defaultBackHref = '/tabs/home',
   rightSlot,
+  hideThemeToggle = false,
+  hideStatusIndicator = false,
 }) => {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -70,69 +74,58 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
 
   return (
     <>
-      <IonHeader>
+      <IonHeader className="mobile-header-ion ion-no-border">
         <IonToolbar className="mobile-topbar">
           {showBack && (
             <IonButtons slot="start">
-              <IonBackButton defaultHref={defaultBackHref} color="light" />
+              <IonBackButton defaultHref={defaultBackHref} className="mobile-topbar__back-btn" />
             </IonButtons>
           )}
 
           <div className="mobile-topbar-content">
             <div className="mobile-brand">
               {!showBack && (
-                <div className="mobile-brand__emblem">
-                  <IonIcon icon={shield} />
-                </div>
+                <IonIcon icon={shield} className="mobile-brand__shield-icon" aria-hidden="true" />
               )}
               <div className="mobile-brand__text">
-                <span className="mobile-brand__title">{title || 'BARANGUARD'}</span>
-                <span className="mobile-brand__subtitle">{subtitle || 'Field Console'}</span>
+                <span className="mobile-brand__title">{title || 'Baranguard'}</span>
+                {subtitle && <span className="mobile-brand__subtitle">{subtitle}</span>}
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="mobile-topbar__actions">
               {rightSlot}
-              <button
-                type="button"
-                className="mobile-topbar__theme-toggle"
-                aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-                title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-                onClick={() => {
-                  toggleTheme();
-                  setDark(isCurrentlyDark());
-                }}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.12)',
-                  border: 'none',
-                  borderRadius: '999px',
-                  width: '32px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--color-white)',
-                  cursor: 'pointer',
-                  padding: 0,
-                }}
-              >
-                <IonIcon icon={dark ? sunnyOutline : moonOutline} style={{ fontSize: '1.1rem' }} />
-              </button>
-              <button
-                type="button"
-                className="mobile-topbar__status"
-                aria-label={isOnline ? 'Workstation Connected — tap to inspect sync queue' : 'Offline Mode — tap to inspect sync queue'}
-                title={isOnline ? 'Workstation Connected — tap to inspect queue' : 'Offline Mode — tap to inspect queue'}
-                onClick={() => setShowSyncModal(true)}
-                style={{ cursor: 'pointer', border: 'none' }}
-              >
-                <span
-                  className={`status-indicator-dot ${
-                    isOnline ? 'status-indicator-dot--online' : 'status-indicator-dot--offline'
-                  }`}
-                />
-                <span>{isOnline ? 'LIVE' : 'CACHE'}</span>
-              </button>
+              {!hideThemeToggle && (
+                <button
+                  type="button"
+                  className="mobile-topbar__theme-toggle"
+                  aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+                  title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+                  onClick={() => {
+                    toggleTheme();
+                    setDark(isCurrentlyDark());
+                  }}
+                >
+                  <IonIcon icon={dark ? sunnyOutline : moonOutline} />
+                </button>
+              )}
+              {!hideStatusIndicator && (
+                <button
+                  type="button"
+                  className={`mobile-topbar__status ${isOnline ? 'mobile-topbar__status--online' : 'mobile-topbar__status--offline'}`}
+                  aria-label={isOnline ? 'Workstation Connected — tap to inspect sync queue' : 'Offline Cache Mode — tap to inspect sync queue'}
+                  title={isOnline ? 'Workstation Connected — tap to inspect queue' : 'Offline Cache Mode — tap to inspect queue'}
+                  onClick={() => setShowSyncModal(true)}
+                >
+                  <span
+                    className={`status-indicator-dot ${
+                      isOnline ? 'status-indicator-dot--online' : 'status-indicator-dot--offline'
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="mobile-topbar__status-text">{isOnline ? 'LIVE' : 'CACHE'}</span>
+                </button>
+              )}
             </div>
           </div>
         </IonToolbar>

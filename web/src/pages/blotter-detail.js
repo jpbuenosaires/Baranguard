@@ -47,6 +47,7 @@ import {
   getIncident,
   getBlotterForIncident,
   getIncidentEvidence,
+  downloadEvidenceFile,
   resolveIncident,
   updateIncidentLifecycle,
   getAiDraft,
@@ -952,6 +953,9 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
     const list = document.createElement('div');
     list.className = 'evidence-list';
     for (const item of evidence) {
+      const itemWrap = document.createElement('div');
+      itemWrap.className = 'evidence-item-wrap';
+
       const row = document.createElement('div');
       row.className = 'evidence-item';
 
@@ -991,8 +995,58 @@ export function renderBlotterDetailPage(root, user, onLoggedOut, navigate, incid
         right.appendChild(hashBadge);
       }
 
+      const previewSlot = document.createElement('div');
+      previewSlot.className = 'evidence-item__preview';
+      let objectUrl = null;
+
+      const viewButton = document.createElement('button');
+      viewButton.type = 'button';
+      viewButton.className = 'ghost evidence-item__view-btn';
+      viewButton.textContent = item.type === 'voice' ? 'Play' : 'View';
+
+      viewButton.addEventListener('click', async () => {
+        // Toggle off — collapse the preview and free the blob rather than
+        // leaving it (and, for audio, playback) running in the background.
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          previewSlot.replaceChildren();
+          viewButton.textContent = item.type === 'voice' ? 'Play' : 'View';
+          return;
+        }
+        viewButton.disabled = true;
+        const originalLabel = viewButton.textContent;
+        viewButton.textContent = 'Loading…';
+        try {
+          const blob = await downloadEvidenceFile(item.incidentId, item.attachmentId);
+          objectUrl = URL.createObjectURL(blob);
+          previewSlot.replaceChildren();
+          if (item.type === 'voice') {
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.src = objectUrl;
+            audio.className = 'evidence-item__audio';
+            previewSlot.appendChild(audio);
+          } else {
+            const img = document.createElement('img');
+            img.src = objectUrl;
+            img.alt = item.originalFilename || 'Incident photo evidence';
+            img.className = 'evidence-item__image';
+            previewSlot.appendChild(img);
+          }
+          viewButton.textContent = 'Hide';
+        } catch (err) {
+          viewButton.textContent = originalLabel;
+          showToast(err instanceof ApiClientError ? err.message : 'Could not load this evidence file.', { variant: 'error' });
+        } finally {
+          viewButton.disabled = false;
+        }
+      });
+      right.appendChild(viewButton);
+
       row.append(left, right);
-      list.appendChild(row);
+      itemWrap.append(row, previewSlot);
+      list.appendChild(itemWrap);
     }
     body.appendChild(list);
     card.appendChild(body);
