@@ -47,6 +47,7 @@ import {
   timeOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
+import ReferralPanel from '../components/ReferralPanel';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { deriveSyncState, getLocalIncident, type SyncState } from '../services/db/incidentRepository';
 import { getEvidenceForIncident } from '../services/db/evidenceRepository';
@@ -328,6 +329,12 @@ const IncidentSubmittedPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Referral / handoff — works offline; a phone-only incident is linked by its local id. */}
+              <ReferralPanel
+                link={{ incidentLocalId: row.local_id, serverIncidentId: row.server_incident_id }}
+                incidentLabel={row.server_incident_id !== null ? `Case #${row.server_incident_id}` : 'this report'}
+              />
 
               {/* Ergonomic 2-Row Action Dock */}
               <div className="tactical-receipt-dock">

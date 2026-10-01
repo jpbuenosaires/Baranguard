@@ -24,8 +24,10 @@ import {
   personOutline,
 } from 'ionicons/icons';
 import CriticalAlertOverlay from './components/CriticalAlertOverlay';
+import AccomplishmentsPage from './pages/accomplishments';
 import AssignmentDetailPage from './pages/assignment-detail';
 import AssignmentsPage from './pages/assignments';
+import AvailabilityPage from './pages/availability';
 import HomePage from './pages/home';
 import IncidentSubmittedPage from './pages/incident-submitted';
 import LiveMapPage from './pages/live-map';
@@ -34,10 +36,12 @@ import MyReportsPage from './pages/my-reports';
 import MyShiftsPage from './pages/my-shifts';
 import NewIncidentPage from './pages/new-incident';
 import ProfilePage from './pages/profile';
+import SchoolCheckinPage from './pages/school-checkin';
 import { hasStoredSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
 import { startSosFallbackContactResumeRefresh } from './services/sosFallbackContact';
+import { startSchoolCacheResumeRefresh } from './services/workflowRefresh';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
 import { initThemeListener } from './utils/theme';
 import tacticalFeedback from './utils/tacticalFeedback';
@@ -66,6 +70,7 @@ import '@ionic/react/css/display.css';
 /* Theme variables (§8 design tokens) + shared utility classes */
 import './theme/variables.css';
 import './theme/app.css';
+import './theme/tanod-workflow.css';
 
 setupIonicReact();
 
@@ -221,6 +226,10 @@ const TabbedShell: React.FC = () => {
         <Route path="reports" element={<MyReportsPage />} />
         {/* M8/M9 — reached from Profile, same "not a tab" reasoning as M14 above (used at most twice a week). */}
         <Route path="shifts" element={<MyShiftsPage />} />
+        {/* 2026-10 tanod workflow — reached from My Shifts / Profile, same "not a tab" reasoning as M8/M14. */}
+        <Route path="availability" element={<AvailabilityPage />} />
+        <Route path="accomplishments" element={<AccomplishmentsPage />} />
+        <Route path="school" element={<SchoolCheckinPage />} />
         {/* M7. */}
         <Route path="map" element={<LiveMapPage />} />
         <Route path="profile" element={<ProfilePage />} />
@@ -327,6 +336,7 @@ const App: React.FC = () => {
     void checkForPendingNativeAlert();
     startSyncScheduler();
     startSosFallbackContactResumeRefresh();
+    startSchoolCacheResumeRefresh();
     // Once per cold start, not per sync tick — Phase 3.3's cleanup rule
     // only matters on a 30-day timescale, so there is no benefit to
     // running it more often than the app actually restarts, and every run

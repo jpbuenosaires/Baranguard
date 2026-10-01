@@ -32,6 +32,7 @@ import { getDeviceId, getDevicePublicKeyPem, getFcmToken } from '../services/dev
 import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
 import { refreshSosFallbackContact } from '../services/sosFallbackContact';
+import { refreshSchoolCache } from '../services/workflowRefresh';
 import { notifyLoggedIn } from '../services/syncScheduler';
 
 const GENERIC_FAILURE = 'Unable to sign in with those credentials.';
@@ -193,6 +194,10 @@ async function runPostLoginSetup(barangayId: number): Promise<void> {
   // because the moment it's actually needed is the moment the server is
   // confirmed unreachable. Same non-blocking, non-fatal treatment.
   void refreshSosFallbackContact();
+
+  // School list for the check-in/incident pickers — same reasoning: cached now,
+  // while online, so it works offline. Best-effort and non-blocking.
+  void refreshSchoolCache({ force: true });
 
   // Anything queued while signed out (a 401 mid-shift) can go now.
   notifyLoggedIn();

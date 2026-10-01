@@ -38,6 +38,7 @@ import {
   hourglassOutline,
   alertCircleOutline,
 } from 'ionicons/icons';
+import { useNavigate } from 'react-router-dom';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import {
@@ -97,6 +98,7 @@ function parseShiftTiming(startAt: string, endAt: string): FormattedShiftTime {
 }
 
 const MyShiftsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [shifts, setShifts] = useState<ShiftEntry[]>([]);
   const [swapRequests, setSwapRequests] = useState<ShiftSwapRequestEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -200,6 +202,28 @@ const MyShiftsPage: React.FC = () => {
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="roster-container">
+          {/* Availability entry point — the desk builds the roster from what Tanods submit here. */}
+          <button
+            type="button"
+            className="profile-nav-card"
+            onClick={() => {
+              tacticalFeedback.onTap();
+              navigate('/tabs/availability');
+            }}
+          >
+            <div className="profile-nav-card__icon-box profile-nav-card__icon-box--green">
+              <IonIcon icon={calendarOutline} />
+            </div>
+            <div className="profile-nav-card__body">
+              <div className="profile-nav-card__title-row">
+                <h3 className="profile-nav-card__title">My Availability</h3>
+              </div>
+              <p className="profile-nav-card__sub">
+                Tell the desk which days and hours you can serve. Only shifts the desk has published appear below.
+              </p>
+            </div>
+          </button>
+
           {/* Roster Glance Overview Metric Banner (Dynamic for Schedule vs Swaps) */}
           {!loading && !error && (
             activeTab === 'schedule' ? (
@@ -339,7 +363,7 @@ const MyShiftsPage: React.FC = () => {
                   No Upcoming Shifts
                 </h3>
                 <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', maxWidth: '280px' }}>
-                  No scheduled duties right now. Check back once new shifts are posted by the desk.
+                  No published duties right now. Submit your availability, then check back once the desk publishes the roster.
                 </p>
               </div>
             ) : (

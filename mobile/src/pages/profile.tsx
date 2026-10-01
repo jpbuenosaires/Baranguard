@@ -19,6 +19,7 @@ import {
   copyOutline,
   documentTextOutline,
   logOutOutline,
+  schoolOutline,
   notificationsOutline,
   shieldCheckmarkOutline,
   syncOutline,
@@ -265,6 +266,39 @@ const ProfilePage: React.FC = () => {
                 </div>
                 <p className="profile-nav-card__sub">
                   View scheduled patrol assignments, shift hours, and request replacements.
+                </p>
+              </div>
+            </button>
+          </div>
+
+          {/* 2026-10 tanod workflow: accomplishment report + school check-in */}
+          <div className="profile-prominent-nav">
+            <button type="button" className="profile-nav-card" onClick={() => navigate('/tabs/accomplishments')}>
+              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--blue">
+                <IonIcon icon={documentTextOutline} />
+              </div>
+              <div className="profile-nav-card__body">
+                <div className="profile-nav-card__title-row">
+                  <h3 className="profile-nav-card__title">My Accomplishments</h3>
+                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                </div>
+                <p className="profile-nav-card__sub">
+                  Log what you did each day and submit your monthly accomplishment report.
+                </p>
+              </div>
+            </button>
+
+            <button type="button" className="profile-nav-card" onClick={() => navigate('/tabs/school')}>
+              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--green">
+                <IonIcon icon={schoolOutline} />
+              </div>
+              <div className="profile-nav-card__body">
+                <div className="profile-nav-card__title-row">
+                  <h3 className="profile-nav-card__title">School Check-in</h3>
+                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                </div>
+                <p className="profile-nav-card__sub">
+                  Check in and out when posted at a school (Safer School Zones). Works offline.
                 </p>
               </div>
             </button>

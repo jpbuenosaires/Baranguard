@@ -56,7 +56,9 @@ import { getCurrentPosition } from '../services/geolocation';
 import { countFailedSosItems, enqueueSosItem } from '../services/db/offlineQueueRepository';
 import { cacheDispatchesFromServer, listActiveCachedDispatches } from '../services/db/dispatchRepository';
 import { listAllLocalIncidents } from '../services/db/incidentRepository';
-import type { DispatchLocalRow } from '../services/db/localSchema';
+import { getOpenSchoolCheckin } from '../services/db/schoolRepository';
+import { formatManilaTime } from '../utils/manilaTime';
+import type { DispatchLocalRow, SchoolCheckinLocalRow } from '../services/db/localSchema';
 import { startPatrolTracking, stopPatrolTracking } from '../services/patrolLocationService';
 import { loadSession } from '../services/session';
 import { getCachedSosFallbackContact } from '../services/sosFallbackContact';
@@ -80,6 +82,8 @@ const HomePage: React.FC = () => {
   const [activeDispatchCount, setActiveDispatchCount] = useState<number>(0);
   const [topDispatch, setTopDispatch] = useState<DispatchLocalRow | null>(null);
   const [confirmingOffDuty, setConfirmingOffDuty] = useState(false);
+  // An open school check-in (Safer School Zones) — a Tanod who forgets to check out sees it here.
+  const [openSchoolCheckin, setOpenSchoolCheckin] = useState<SchoolCheckinLocalRow | null>(null);
 
   // Shift Telemetry State
   const [shiftStartTime, setShiftStartTime] = useState<number | null>(() => {
@@ -198,6 +202,14 @@ const HomePage: React.FC = () => {
         // Handled
       }
     }
+
+    getOpenSchoolCheckin()
+      .then((open) => {
+        if (!cancelled) setOpenSchoolCheckin(open);
+      })
+      .catch(() => {
+        // Local store unavailable — no strip rather than a false one.
+      });
 
     loadSession().then((session) => {
       if (cancelled || !session) return;
@@ -474,6 +486,24 @@ const HomePage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {openSchoolCheckin && (
+            <div className="wf-strip" role="status">
+              <span>
+                At {openSchoolCheckin.school_name} since {formatManilaTime(openSchoolCheckin.checked_in_at)}
+              </span>
+              <button
+                type="button"
+                className="wf-btn wf-btn--small"
+                onClick={() => {
+                  tacticalFeedback.onTap();
+                  navigate('/tabs/school');
+                }}
+              >
+                Check out
+              </button>
+            </div>
+          )}
 
           {/* 2. Mission Hero Card */}
           {topDispatch ? (

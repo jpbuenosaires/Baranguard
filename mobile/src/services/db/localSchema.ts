@@ -50,7 +50,7 @@
  * unsynced field captures, which Rule 2 ("offline capture is durable
  * until reconciliation") forbids.
  */
-export const LOCAL_SCHEMA_VERSION = 5;
+export const LOCAL_SCHEMA_VERSION = 6;
 
 /** Statements for schema version 1 (Sprint 2 baseline cut). */
 const MIGRATION_001_BASELINE: readonly string[] = [
@@ -285,6 +285,136 @@ const MIGRATION_005_SYNC_FAILURE_CAPS: readonly string[] = [
 ];
 
 /**
+ * Statements for schema version 6 (2026-10 tanod workflow build; contract
+ * `docs/FEATURE_CONTRACT_2026-10.md` §9): availability submission,
+ * accomplishment-report entries, incident referrals, school check-in/out,
+ * the read-only school cache, and the Safer School Zones link/Annex C-1
+ * fields on `incident_local`.
+ *
+ * The four write tables follow `incident_local`/`gps_track_local`'s pattern:
+ * a stable `client_event_id` minted at first save (never regenerated on
+ * retry), `synced` + `sync_attempts` + `permanent_failure` for the same
+ * retry-cap / needs-attention behaviour as the existing kinds, and rows are
+ * never deleted by sync (Rule 7). `school_local` is a read-only cache of
+ * `GET /schools`; it carries no school staff contact data and nothing about
+ * students (the contract forbids student data of any kind).
+ *
+ * `referral_local.incident_local_id` lets a Tanod refer an incident that has
+ * only ever existed on this phone: at sync time the referral is sent with
+ * `incident_client_event_id` instead of `incident_id` (contract §5/§6).
+ * `school_checkin_local` closes a check-in per contract §7: if the check-in
+ * has NOT synced yet, `checked_out_at` is merged into the single create item;
+ * if it already synced, a NEW item `{client_event_id: checkout_event_id,
+ * closes_client_event_id: client_event_id, checked_out_at}` is queued
+ * (`checkout_pending = 1`) — re-sending the same event id would be answered
+ * 'duplicate' by the server's ledger and the check-out lost. `school_name` is
+ * denormalised so history still reads correctly if the cached school list
+ * changes.
+ */
+const MIGRATION_006_TANOD_WORKFLOW: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS availability_local (
+    local_id            TEXT    NOT NULL PRIMARY KEY,
+    server_avail_id     INTEGER NULL,
+    period_start        TEXT    NOT NULL,
+    period_end          TEXT    NOT NULL,
+    windows_json        TEXT    NOT NULL,
+    status              TEXT    NOT NULL DEFAULT 'submitted',
+    review_note         TEXT    NULL,
+    version             INTEGER NOT NULL DEFAULT 1,
+    created_offline_at  TEXT    NOT NULL,
+    client_event_id     TEXT    NOT NULL UNIQUE,
+    synced              INTEGER NOT NULL DEFAULT 0,
+    last_sync_error     TEXT    NULL,
+    sync_attempts       INTEGER NOT NULL DEFAULT 0,
+    permanent_failure   INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_availability_local_period
+     ON availability_local (period_start, period_end)`,
+  `CREATE INDEX IF NOT EXISTS idx_availability_local_unsynced
+     ON availability_local (synced, created_offline_at)`,
+
+  `CREATE TABLE IF NOT EXISTS accomplishment_entry_local (
+    local_id                    TEXT    NOT NULL PRIMARY KEY,
+    server_entry_id             INTEGER NULL,
+    report_month                TEXT    NOT NULL,
+    work_date                   TEXT    NOT NULL,
+    accomplishment_text         TEXT    NOT NULL,
+    start_time                  TEXT    NULL,
+    end_time                    TEXT    NULL,
+    duration_minutes            INTEGER NOT NULL,
+    suggested_duration_minutes  INTEGER NULL,
+    duration_flag               INTEGER NOT NULL DEFAULT 0,
+    created_offline_at          TEXT    NOT NULL,
+    client_event_id             TEXT    NOT NULL UNIQUE,
+    synced                      INTEGER NOT NULL DEFAULT 0,
+    last_sync_error             TEXT    NULL,
+    sync_attempts               INTEGER NOT NULL DEFAULT 0,
+    permanent_failure           INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_accomplishment_local_month
+     ON accomplishment_entry_local (report_month, work_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_accomplishment_local_unsynced
+     ON accomplishment_entry_local (synced, created_offline_at)`,
+
+  `CREATE TABLE IF NOT EXISTS referral_local (
+    local_id            TEXT    NOT NULL PRIMARY KEY,
+    server_referral_id  INTEGER NULL,
+    incident_local_id   TEXT    NULL,
+    server_incident_id  INTEGER NULL,
+    referred_to         TEXT    NOT NULL,
+    other_text          TEXT    NULL,
+    contact_name        TEXT    NULL,
+    reference_no        TEXT    NULL,
+    referred_at         TEXT    NOT NULL,
+    created_offline_at  TEXT    NOT NULL,
+    client_event_id     TEXT    NOT NULL UNIQUE,
+    synced              INTEGER NOT NULL DEFAULT 0,
+    last_sync_error     TEXT    NULL,
+    sync_attempts       INTEGER NOT NULL DEFAULT 0,
+    permanent_failure   INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_referral_local_unsynced
+     ON referral_local (synced, created_offline_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_referral_local_incident
+     ON referral_local (incident_local_id, server_incident_id)`,
+
+  `CREATE TABLE IF NOT EXISTS school_checkin_local (
+    local_id            TEXT    NOT NULL PRIMARY KEY,
+    server_checkin_id   INTEGER NULL,
+    school_id           INTEGER NOT NULL,
+    school_name         TEXT    NOT NULL,
+    checked_in_at       TEXT    NOT NULL,
+    checked_out_at      TEXT    NULL,
+    checkout_event_id   TEXT    NULL,
+    checkout_pending    INTEGER NOT NULL DEFAULT 0,
+    client_event_id     TEXT    NOT NULL UNIQUE,
+    synced              INTEGER NOT NULL DEFAULT 0,
+    last_sync_error     TEXT    NULL,
+    sync_attempts       INTEGER NOT NULL DEFAULT 0,
+    permanent_failure   INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_school_checkin_local_unsynced
+     ON school_checkin_local (synced, checked_in_at)`,
+
+  `CREATE TABLE IF NOT EXISTS school_local (
+    school_id   INTEGER NOT NULL PRIMARY KEY,
+    name        TEXT    NOT NULL,
+    school_type TEXT    NULL,
+    level       TEXT    NULL,
+    address     TEXT    NULL,
+    latitude    REAL    NULL,
+    longitude   REAL    NULL,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    cached_at   TEXT    NOT NULL
+  )`,
+
+  `ALTER TABLE incident_local ADD COLUMN school_id INTEGER NULL`,
+  `ALTER TABLE incident_local ADD COLUMN c1_summary TEXT NULL`,
+  `ALTER TABLE incident_local ADD COLUMN c1_action_taken TEXT NULL`,
+  `ALTER TABLE incident_local ADD COLUMN c1_status_notes TEXT NULL`,
+];
+
+/**
  * Ordered migrations. Index 0 takes the DB from user_version 0 -> 1,
  * index 1 takes it 1 -> 2, and so on. Append only — never edit a
  * released entry (same rule as the backend's completed migration files).
@@ -295,6 +425,7 @@ export const LOCAL_MIGRATIONS: readonly (readonly string[])[] = [
   MIGRATION_003_DISPATCH_GPS_SYNC,
   MIGRATION_004_EVIDENCE_SYNC_TRACKING,
   MIGRATION_005_SYNC_FAILURE_CAPS,
+  MIGRATION_006_TANOD_WORKFLOW,
 ];
 
 /** Every table this cut is responsible for, for assertions/diagnostics. */
@@ -306,6 +437,11 @@ export const LOCAL_TABLES = [
   'dispatch_local',
   'gps_track_local',
   'offline_queue_local',
+  'availability_local',
+  'accomplishment_entry_local',
+  'referral_local',
+  'school_checkin_local',
+  'school_local',
 ] as const;
 
 export type LocalTableName = (typeof LOCAL_TABLES)[number];
@@ -341,6 +477,12 @@ export interface IncidentLocalRow {
   sync_attempts: number;
   /** 0/1 — set once the retry cap is hit; excluded from automatic sync until a manual retry (migration 5). */
   permanent_failure: number;
+  /** Safer School Zones link (migration 6) — server school id from the cached school list, or null. */
+  school_id: number | null;
+  /** Annex C-1 short factual non-identifying summary (migration 6). Never victim/student names. */
+  c1_summary: string | null;
+  c1_action_taken: string | null;
+  c1_status_notes: string | null;
 }
 
 export interface MobileDeviceLocalRow {
@@ -447,4 +589,124 @@ export interface OfflineQueueLocalRow {
   sync_attempts: number;
   last_attempt_at: string | null;
   reconciliation_status: 'pending' | 'success' | 'duplicate' | 'failed';
+}
+
+// --- Migration 6 row types (tanod workflow, 2026-10) ------------------------
+
+/** Contract §3 `tanod_availability.status`. */
+export type AvailabilityStatus = 'submitted' | 'accepted' | 'revised';
+
+/** One availability window — Manila local date + HH:MM times (contract §3). */
+export interface AvailabilityWindow {
+  date: string;
+  start: string;
+  end: string;
+}
+
+export interface AvailabilityLocalRow {
+  local_id: string;
+  server_avail_id: number | null;
+  /** YYYY-MM-DD, Manila local date. */
+  period_start: string;
+  period_end: string;
+  /** JSON-encoded `AvailabilityWindow[]`. */
+  windows_json: string;
+  status: AvailabilityStatus;
+  review_note: string | null;
+  version: number;
+  created_offline_at: string;
+  client_event_id: string;
+  synced: number;
+  last_sync_error: string | null;
+  sync_attempts: number;
+  permanent_failure: number;
+}
+
+export interface AccomplishmentEntryLocalRow {
+  local_id: string;
+  server_entry_id: number | null;
+  /** YYYY-MM of `work_date` (Manila). */
+  report_month: string;
+  /** YYYY-MM-DD, Manila local date. */
+  work_date: string;
+  accomplishment_text: string;
+  /** HH:MM or null. */
+  start_time: string | null;
+  end_time: string | null;
+  /** The Tanod's CONFIRMED duration, 1..1440. */
+  duration_minutes: number;
+  /** Server-computed from on_duty intervals; null until the entry has synced and been read back. */
+  suggested_duration_minutes: number | null;
+  /** 0/1 — server flag, set when confirmed vs suggested differ by more than the server's margin. */
+  duration_flag: number;
+  created_offline_at: string;
+  client_event_id: string;
+  synced: number;
+  last_sync_error: string | null;
+  sync_attempts: number;
+  permanent_failure: number;
+}
+
+/** Contract §5 `incident_referral.referred_to`. */
+export type ReferralTarget =
+  | 'pnp'
+  | 'bfp'
+  | 'ambulance_ems'
+  | 'barangay_official'
+  | 'vaw_desk'
+  | 'social_welfare'
+  | 'higher_lgu'
+  | 'doh'
+  | 'dpwh'
+  | 'other';
+
+export interface ReferralLocalRow {
+  local_id: string;
+  server_referral_id: number | null;
+  /** Set for a referral raised against an incident captured on this phone. */
+  incident_local_id: string | null;
+  /** Set for a referral raised against a dispatch's server incident. */
+  server_incident_id: number | null;
+  referred_to: ReferralTarget;
+  other_text: string | null;
+  /** The receiving unit/official — never a citizen. */
+  contact_name: string | null;
+  reference_no: string | null;
+  referred_at: string;
+  created_offline_at: string;
+  client_event_id: string;
+  synced: number;
+  last_sync_error: string | null;
+  sync_attempts: number;
+  permanent_failure: number;
+}
+
+export interface SchoolCheckinLocalRow {
+  local_id: string;
+  server_checkin_id: number | null;
+  school_id: number;
+  school_name: string;
+  checked_in_at: string;
+  checked_out_at: string | null;
+  /** Event id of the separate "close" sync item; set only when the check-in had already synced before check-out. */
+  checkout_event_id: string | null;
+  /** 0/1 — a close item still has to reach the server. */
+  checkout_pending: number;
+  client_event_id: string;
+  synced: number;
+  last_sync_error: string | null;
+  sync_attempts: number;
+  permanent_failure: number;
+}
+
+export interface SchoolLocalRow {
+  school_id: number;
+  name: string;
+  school_type: string | null;
+  level: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  is_active: number;
+  cached_at: string;
 }
