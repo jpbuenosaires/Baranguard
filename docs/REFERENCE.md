@@ -110,8 +110,28 @@ was explicitly considered and rejected by the user in the same session.
 **Stack:** PHP 8.2 serves all of `/api/v1/*` (Node is CLI tooling only).
 MariaDB 10.4 via XAMPP. Web: vanilla JS, no bundler, no npm step (hand-
 rolled charts, inline SVG icons, vendored MapLibre). Mobile: Ionic React
-9 + Capacitor 8.5, encrypted SQLite (SQLCipher). AI: Llama-SEA-LION-
-v3.5-8B-R via **local Ollama only**.
+9 + Capacitor 8.5, encrypted SQLite (SQLCipher). **No AI**: the local
+Ollama/SEA-LION pipeline was removed 2026-10-01 (see the removal note
+below).
+
+**Electronic Blotter and the whole AI pipeline REMOVED 2026-10-01
+(migration 0029).** Barangays are directed to keep the blotter and the
+Lupon records in their own **binders**, so Baranguard no longer
+finalizes, amends or exports blotter entries, and with no blotter to feed
+there is no redaction/summary/translation/extraction pipeline left to run.
+Gone: `BlotterController`, `AiDraftController`, `routes/blotter.php`,
+`routes/ai.php`, `services/ai/*`, `services/eval/*`, `ai-worker.php` and
+the eval scripts/`eval-kit`, `GET /system/ollama-status`, `GET
+/system/ai-queue`, the Redaction/Blotter tabs, the topbar AI badge, and
+tables `blotter_record`/`blotter_revision`/`ai_processing_log`/
+`ai_evaluation_run`. **Kept on purpose:** the Secretary role (it still
+owns raw-narrative access and the incident lifecycle), `incident.
+raw_narrative` and the party fields, and the unused columns `redacted_
+narrative`/`redaction_approved_*` (nothing writes them any more). **Do
+not rebuild any of this without an explicit new decision.** Consequence
+to know about: with no approved redaction, `RetentionService`'s
+raw_narrative rule reduces to its existing 90-day ceiling for every
+incident (Rule 10: changing that number needs architecture review).
 
 **Mobile rebuild ABANDONED same day it was decided (DEVLOG 2026-09-27
 (3), reversed same date).** A React Native (Expo + dev build) rebuild was
@@ -133,10 +153,17 @@ KPIS subsystem already *is* the Katarungang Pambarangay case database
 and BIMS ships its own electronic blotter. **Baranguard complements
 BIMSS and may never be positioned as replacing it** — a legal
 constraint, not a design preference. Baranguard's value is real-time
-dispatch, GPS, SOS, offline field capture, and local-AI redaction —
-none of which BIMSS has. Anything duplicating a BIMSS *records* function
+dispatch, GPS, SOS and offline field capture — none of which BIMSS has. Anything duplicating a BIMSS *records* function
 is liability, which is why the walk-in blotter endpoint and the
-standalone blotter records list were both removed 2026-09-10.
+standalone blotter records list were removed 2026-09-10, and the rest of
+the blotter with it 2026-10-01.
+
+**Current-circular note (from secondary sources, verify against the
+circulars themselves before relying on it):** DILG's LGUSS-BIMS is
+reportedly the mandated barangay information system under MC 2025-104,
+and Safer School Zones is reportedly MC 2026-037 (June 25, 2026). Neither
+number has been checked against the issued text, and nothing in the code
+depends on them.
 
 ---
 
@@ -146,8 +173,7 @@ standalone blotter records list were both removed 2026-09-10.
 §2 list** — overlapping ground, different numbering. A "Rule N" citation
 elsewhere means whichever list context makes clear.
 
-1. **`raw_narrative` never leaves the system** except through the
-   approved AI pipeline. Never to FCM, the SMS gateway, cloud, logs,
+1. **`raw_narrative` never leaves the system.** Never to FCM, the SMS gateway, cloud, logs,
    terminal output, or audit metadata. **`GET /incidents/:id` is the only endpoint
    that returns it, and only to a Secretary** (RA 7160 §394(c) makes the
    Secretary the statutory records custodian — Admin gets *less* here on
@@ -159,21 +185,13 @@ elsewhere means whichever list context makes clear.
    `Idempotency-Key` UUID header; mobile writes use `client_event_id`
    (+ `X-Device-Id`, server-verified). A retry returns the original row,
    never a second one.
-4. **AI pipeline order:** raw → redaction draft → summary derived from
-   the draft (never raw) → Secretary review → approve. Only
-   `POST /incidents/:id/ai-draft/approve` may commit
-   `incident.redacted_narrative`. Draft edits use exact `draft_version`
-   equality (stale → 409). The AI Tools screen (Blotter Assistant, SMS
-   Composer, Threat Analyzer, then Incident Classifier) that used to sit
-   outside this pipeline was removed in full — migrations 0027/0028; see
-   AiPrompts.php's own note for why (peripheral helpers, then a real
-   runaway-generation reliability failure for the Classifier).
-5. **The API never calls Ollama.** It only enqueues; `scripts/ai-worker.php`
-   is the only process that talks to the model. No external AI fallback
-   under any failure mode.
+4. **(Retired 2026-10-01.)** This rule governed the AI redaction
+   pipeline's order of operations; the pipeline was removed (migration
+   0029). Numbering is kept so older "Rule N" citations still line up.
+5. **(Retired 2026-10-01.)** "The API never calls Ollama" — there is no
+   Ollama or AI worker any more, and no external AI is permitted either.
 6. **No demo/prototype tells.** No fabricated statistics, hardcoded
-   identities, confidence numbers not backed by a real
-   `ai_evaluation_run`, controls that look functional and do nothing, or
+   identities, confidence numbers, controls that look functional and do nothing, or
    a health badge that isn't a real probe. `not_configured` is neutral.
 7. **Offline capture is durable state.** A mobile write persists to
    encrypted SQLite before the user can leave the screen, never claimed
@@ -204,15 +222,15 @@ elsewhere means whichever list context makes clear.
 
 | Role | Reach |
 |---|---|
-| **Admin** | Full operations: dispatch, GPS, scheduler, users, devices, audit log, service health, exports. **Cannot** touch blotter finalize/amend, Lupon packet, or any AI draft. |
-| **Secretary** | Records custodian: only reader of `raw_narrative`; only role that may run the AI pipeline, approve a redaction, finalize/amend a blotter, or generate a Lupon packet. |
-| **Punong Barangay** | Read-only oversight: dashboard, map, heatmap, analytics, fatigue. No evidence files, no AI drafts, no writes, no blotter LIST (individual incidents still reachable from dashboard). |
+| **Admin** | Full operations: dispatch, GPS, scheduler, users, devices, audit log, service health, exports. Cannot read `raw_narrative` or run the Secretary lifecycle actions. |
+| **Secretary** | Records custodian: only reader of `raw_narrative` and the incident party fields; only role that may change an incident's lifecycle (duplicate/invalid/cancelled/reopened). |
+| **Punong Barangay** | Read-only oversight: dashboard, map, heatmap, analytics, fatigue. No evidence files, no writes, no list of cases (individual incidents still reachable from dashboard). |
 | **Tanod** | Mobile only. Own incidents/dispatches/shifts. Web login succeeds but lands on an honest "no screen" page. |
-| **Lupon** | **No system account at all.** Receives the generated PDF packet. |
+| **Lupon** | **No system account at all** (DB-enum-only, never a login role). Baranguard no longer generates anything for them. |
 
 ---
 
-## 4. Schema map (§5 — 27 tables)
+## 4. Schema map (§5 — 23 tables)
 
 Core chain: `barangay → user → mobile_device → incident → dispatch →
 tanod_sos → notification → notification_target → notification_delivery`.
@@ -223,18 +241,9 @@ complainant_contact_number — Secretary-only, location_description,
 display_id, status incl. duplicate/invalid/cancelled/reopened since
 migration 0025, duplicate_of_incident_id/lifecycle_changed_by/
 lifecycle_changed_at) · `dispatch` · `evidence_attachment` (files outside web
-root, legal_hold) · `blotter_record` + `blotter_revision` (party fields
-shared with Admin/PB once finalized; case_status enum
-active/under_investigation/settled/resolved, forward-only past `active`,
-`resolved` set only by an incident status change) · `citizen_report`
+root, legal_hold) · `citizen_report`
 (legal_hold) · `duty_status` · `gps_track` · `shift_schedule` (user_id
-nullable) · `shift_swap_request` · `fatigue_flag` · `ai_processing_log`
-(IS the AI job queue; `task_type` enum `summarization`/`redaction`/
-`translation`/`extraction` only — the AI Tools screen's types
-(`blotter_assist`/`sms_compose`/`threat_analysis`/`classification`) and
-the `barangay_id`/`requested_by_user_id`/`tool_input`/`tool_output`
-columns they used were removed in full, migrations 0027/0028;
-`incident_id` is NOT NULL again, matching pre-0015) · `ai_evaluation_run` · `sms_log` (barangay_id,
+nullable) · `shift_swap_request` · `fatigue_flag` · `sms_log` (barangay_id,
 message_body/read_at, `message_type` incl. `manual`, legal_hold) ·
 `sms_envelope_replay` · `audit_log` (write-once except retention) ·
 `offline_queue` · `auth_session` · `map_package` · `user`
@@ -246,26 +255,33 @@ NULL, removal is `opted_out_at` not a DELETE) · `health_check_log`
 (fixed-window abuse-budget counter, not a business dataset — no retention/
 legal-hold treatment, see migration 0023's own doc comment).
 
-**Migrations 0001–0026, all applied to both real DBs** (`baranguard`,
-`baranguard_uiseed`). On a new machine apply all in order as DBA/root —
+**Migrations 0001–0029.** 0001–0026 are applied to both real DBs
+(`baranguard`, `baranguard_uiseed`); **0029 (drops the blotter and AI
+tables) is written and verified on disposable DBs only — it has NOT been
+run against either real DB** (destructive; take a backup first). On a new machine apply all in order as DBA/root —
 `baranguard_app` has no `ALTER`/`CREATE TABLE` (§8). Notable ones:
-0008 incident party fields · 0009 blotter case_status · 0011 user
+0008 incident party fields · 0009 blotter case_status (table since dropped by 0029) · 0011 user
 suspension · 0012 system_settings (W21) · 0014 display_id · 0015 ai_tools
-(nullable incident_id + tenant/requester/tool columns) · 0016 retention
+(since removed again by 0027/0028) · 0016 retention
 hold + device scrub · 0017 health_check_log · 0018 sms_subscriber ·
 0019 audit_log idempotency index · 0020 health_check_log.ors_status ·
-0021 generic metric columns on `ai_evaluation_run` · 0022
+0021 generic metric columns on `ai_evaluation_run` (table since dropped by 0029) · 0022
 `auth_session.session_kind` (web/device — see §2 rule 12) · 0023
 `rate_limit_counter` (shared abuse-budget store, `Baranguard\Lib\
 RateLimiter` — code-review findings H-11/H-13) · 0024
 `mobile_device.device_public_key_pem` (H-09 device-signature keys) · 0025
-incident lifecycle states/merge linkage + `ai_processing_log.
-prompt_template_version` (H-16/M-03, H-18) · 0026 `tanod_sos` nullable
+incident lifecycle states/merge linkage (H-16/M-03; its `ai_processing_log.
+prompt_template_version` half went with that table) · 0026 `tanod_sos` nullable
 latitude/longitude + `location_source`/`location_recorded_at` (C-01 SOS
-no-fix fallback).
+no-fix fallback) · 0027/0028 remove the AI Tools screen's columns/types ·
+0029 `remove_blotter_and_ai_pipeline` (drops `blotter_revision`,
+`blotter_record`, `ai_processing_log`, `ai_evaluation_run`; keeps
+`incident.raw_narrative`/`redacted_narrative`/party fields and
+`health_check_log.ollama_status` as historical, new rows write
+`not_configured`).
 
-**FK trap:** `ai_processing_log`, `evidence_attachment`, `blotter_record`
-and `dispatch` are all `ON DELETE RESTRICT` against `incident` — deleting
+**FK trap:** `evidence_attachment` and `dispatch` are `ON DELETE
+RESTRICT` against `incident` — deleting
 an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 **MariaDB 10.4 limits:** no `SKIP LOCKED`; a table-level CHECK on
@@ -273,7 +289,7 @@ an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 ---
 
-## 5. Endpoints (92 live `/api/v1` routes, all built)
+## 5. Endpoints (76 live `/api/v1` routes, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -285,26 +301,23 @@ reality rather than trusting whatever's written here.
 **Auth** login · logout · change-password
 **Incidents** list (+`q=` search) · show · create · **update** (`PATCH
 /incidents/:id`) · nearby · evidence (GET+POST — Tanod-only multipart,
-tenant+device+tanod-access checked server-side) · status (flips a linked
-finalized blotter's case_status to `resolved`) · **lifecycle** (`PATCH
+tenant+device+tanod-access checked server-side) · status (Admin
+resolve) · **lifecycle** (`PATCH
 /incidents/:id/lifecycle`, Secretary-only — `duplicate`/`invalid`/
-`cancelled`/`reopened`, H-16/M-03, migration 0025; see the note below) ·
-blotter · finalize · amend (+optional case_status transition) ·
-lupon-packet (+download) · redact · ai-draft (+approve,
-regenerate-summary, translate, extraction+approve)
+`cancelled`/`reopened`, H-16/M-03, migration 0025; see the note below)
 
 > `PATCH /incidents/:id` is an **operational-correction endpoint, NOT a
 > narrative editor**: Admin+Secretary may set `priority`/`incident_type`/
 > `location_description`; `complainant_name` is Secretary-only (it
 > carries `raw_narrative`'s protection, same rule as `show()`). Sending
-> `raw_narrative`/`redacted_narrative` is a hard 400 (Rule 4 keeps
-> `ai-draft/approve` the sole writer). `Idempotency-Key` required. Audit
+> `raw_narrative`/`redacted_narrative` is a hard 400. `Idempotency-Key`
+> required. Audit
 > metadata records changed field **names**, never values (Rule 8).
 
 > `PATCH /incidents/:id/lifecycle` is **Secretary-only, separate from
 > Admin-only `.../status`** — a records-custodian judgment call
 > (duplicate/invalid/cancelled/reopened), not a dispatch outcome, same
-> reasoning as blotter finalize/amend. Forward-only per state: a terminal
+> reasoning as a records-custodian decision. Forward-only per state: a terminal
 > state (`resolved`/`cancelled`/`invalid`/`duplicate`) can only be left
 > via `reopened`, never jumped straight to another terminal state.
 > **`duplicate` requires `duplicate_of_incident_id`; MERGE MEANS LINK, NOT
@@ -352,35 +365,18 @@ map-packages (get/upload/download)
 **Reports** summary · heatmap · nav-counts · export (+download, response
 time is per-incident `MIN(arrived_at)`, de-duplicated)
 **Ops** `/audit-log` · `/system/health` (+`/history`, Admin-only) ·
-`/system/ollama-status` (Admin+Secretary — the topbar AI badge's data
-source, since `/system/health` itself stays Admin-only) ·
-`/system/ai-queue` (Admin+Secretary — `AiJobQueue::queueSnapshot()`:
-queue depth + oldest-queued job + whichever job is currently
-`processing`, allow-listed fields only, never narrative; backs the
-Service Health "AI Job Queue" panel and the Secretary topbar AI badge's
-tooltip — before this there was no way to see `ai_processing_log` at all
-without `ai-worker.php --status`/`--daemon` on the workstation itself) ·
 `/search` · `/barangays` · `/users` (list `q=`, last_login_at,
 is_suspended; suspend/unsuspend + is_active toggle) · `/citizen-reports`
-(+`/:id/convert`, list `status=`) · `/duty-status` · `/blotter` (list
-`q=`, `status=`, case_status, display_id, location_description)
+(+`/:id/convert`, list `status=`) · `/duty-status`
 
-> **`POST /blotter` (walk-in entry) was REMOVED 2026-09-10** — a walk-in
-> with no prior incident is exactly a DILG BIMSS/KPIS case (§1). The
-> rest of the blotter family (finalize/amend/lupon-packet) is untouched
-> — it's incident-originated, BIMSS has no dispatch layer to feed it.
->
-> **The AI Tools screen (`/ai-tools/*`, `AiToolsController.php`,
-> `AiToolPanel.js`) was REMOVED IN FULL** (migrations 0027/0028) — first
-> narrowed from four assistants to just the Incident Classifier
-> (peripheral helpers not tied to the statutory redaction pipeline; the
-> Blotter Assistant in particular duplicated a BIMSS records function),
-> then removed entirely after a real runaway-generation failure (the
-> model blew past the 4096-token context window and hit the 300s
-> timeout on a classification job) showed it wasn't reliable enough to
-> keep. The redaction/extraction/summary/translation pipeline below
-> (`/incidents/:id/redact`, `/ai-draft/*`) is unaffected — that's a
-> separate, still-live system.
+> **The whole blotter family (`/blotter`, `/incidents/:id/blotter`,
+> `finalize`, `blotter/amend`, `lupon-packet`) and the AI pipeline
+> (`/incidents/:id/redact`, `/ai-draft/*`, `/system/ollama-status`,
+> `/system/ai-queue`, and earlier `/ai-tools/*`) were REMOVED** — the
+> walk-in `POST /blotter` on 2026-09-10 (a walk-in with no prior incident
+> is exactly a DILG BIMSS/KPIS case, §1), everything else 2026-10-01
+> (migration 0029; barangays use binders). Each now answers a plain 404
+> route miss (asserted in `verify-sprint7-pentest-incidents.sh`).
 
 **SMS** `/sms/logs` (read-only) · `/sms/conversations` (+`/:phone/messages`,
 +`/:phone/resolve`, Admin-only) · `/sms/send` · `/sms/broadcast`
@@ -419,10 +415,7 @@ Shared components: `AppShell` · `PageHeader` · `DataTable` (+CSV export,
 pagination) · `KpiCard` · `LineChart` (treats `null` as a genuine gap,
 not zero) · `BarChart` · `DonutChart` · `LiveMap` · `Menu` · `Toast` ·
 `ConfirmDialog` (+`promptSelect`) · `StatStrip` · `Avatar` ·
-`DateRangePicker` · `BlotterWorkflow` (Secretary's 4-stage blotter progress bar, shared by W7/W8 — DEVLOG 2026-09-26 (30)) · `icons`. (`AiToolPanel` — the AI Tools screen's
-shared embeddable panel — was removed along with that screen, migration
-0028; it had no caller left once the Incident Classifier, its last user,
-was retired.)
+`DateRangePicker` · `icons`.
 
 **Shared CSS entities — use these, don't re-roll them:**
 
@@ -443,8 +436,9 @@ and follows the OS until the user stores a preference — a page-level
 `[data-theme="dark"] .x` rule alone is sufficient.
 
 **Run `node web/scripts/verify-web-wiring.mjs` after any web change** —
-catches imports/CSS classes that don't resolve. Currently 537/537 (this
-number moves as screens change; failures=0 is what matters).
+catches imports/CSS classes that don't resolve. Measured 528 checks,
+0 failed on 2026-10-01 (the count moves as screens change; failures=0 is
+what matters).
 
 **Never interpolate server data into `innerHTML`.** Use `textContent`,
 or the shared `web/src/utils/escapeHtml.js`. An 2026-09-07 audit found
@@ -460,8 +454,8 @@ defect — verify by reading every interpolation site, not by script.
 **Built:** W1 login · W2 dashboard · W3 dispatch (map markers,
 assign-from-map; queues group multiple active dispatches on one
 incident into one card) · W4 GIS · W7 incident detail (routed
-`blotter-detail`; case_status transition control; now a 3-tab case
-workspace — Incident/Redaction/Blotter, see the note below) ·
+`incident-detail`; dossier, narrative, evidence, timeline, Admin resolve,
+Secretary lifecycle actions) ·
 Analytics (tabbed Reports/Heatmap, Admin+PB) · Personnel
 (tabbed Users/Scheduler/Swap requests/Fatigue flags — only Fatigue is
 PB-visible) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
@@ -471,48 +465,19 @@ W19 public report · W20 service health · Incident Management (search,
 Resolve action, multi-responder support).
 **Mobile:** M1–M7, M12, M13.
 
-> **W6 Electronic Blotter (records list) was REMOVED 2026-09-10** — DILG
-> BIMSS's KPIS is the mandated case ledger. **W7 survives and is
-> load-bearing:** the app's ONLY per-incident detail view, tolerates no
-> blotter record, and is where Incident Management/dashboard/SMS
-> Monitor/audit log/search/notifications all land. Keeps the
-> `blotter-detail` route key (~12 `navigate()` sites use it). Back
-> button is role-aware. **Role consequence**: Punong Barangay has no
-> list-of-cases screen anymore — reach is dashboard + Analytics +
-> individual incident detail. **Nothing here re-adds a browsable list —
-> still a strict per-incident-only reach, per the DILG BIMSS constraint
-> above** (the 2026-09-27 tab redesign below folds W8 IN, it doesn't add
-> a new list screen).
-
-> **2026-09-27 UX redesign: W7 and the former standalone W8 merged into
-> one 3-tab case workspace** (DEVLOG (38)), prompted by real user
-> feedback that the old two-page split (redact/approve on a separate W8
-> page, finalize/Lupon packet on W7) was confusing. **W8 "AI Redaction
-> Review" is no longer its own route** — it is now the **Redaction** tab
-> of `blotter-detail.js`, alongside a new **Incident** tab (dossier,
-> narrative, evidence, timeline — previously undifferentiated content on
-> W7 itself) and a **Blotter** tab (finalize/amend, Lupon packet, W21
-> lifecycle actions — previously mixed into the same single W7 scroll).
-> Tab switching is instant, no page navigation; the shared workflow
-> stepper (`BlotterWorkflow.js`) drives it. Every reference elsewhere in
-> this doc to "W8 AI review" as a screen now means the Redaction tab —
-> the redaction/extraction/summary/translation pipeline itself and its
-> endpoints are completely unchanged, only where it's mounted moved.
-
-> **The AI Tools screen and its four assistants — AI Classifier
-> (Incident Management), AI Blotter Assistant (incident detail), AI
-> Message Composer (SMS Monitor › Conversations), Threat Analyzer
-> (Analytics) — were REMOVED IN FULL** (migrations 0027/0028), along
-> with `AiToolPanel.js`, the shared embeddable panel that rendered each
-> one. First narrowed to just the Classifier (the other three were
-> peripheral helpers not tied to the statutory redaction pipeline; the
-> Blotter Assistant duplicated a BIMSS records function), then the
-> Classifier itself was retired after a real runaway-generation failure
-> (model blew past the 4096-token context window, hit the 300s timeout)
-> showed it wasn't reliable enough to keep. The redaction/extraction/
-> summary/translation pipeline (W8 AI review) is a separate system and
-> is unaffected — it still polls every 3s and shows a real probe-driven
-> unavailable banner when the model is unreachable (§2 Rule 6).
+> **W6 Electronic Blotter (records list) was REMOVED 2026-09-10, and the
+> rest of the blotter 2026-10-01** (migration 0029; barangays keep the
+> blotter in binders, DILG BIMSS's KPIS is the mandated case ledger).
+> **W7 survives and is load-bearing:** the app's ONLY per-incident detail
+> view, and where Incident Management/dashboard/SMS Monitor/audit log/
+> search/notifications all land. Its route key was renamed
+> `blotter-detail` → `incident-detail` the same day. It is a single page
+> now (the former Redaction and Blotter tabs, the workflow stepper and the
+> print excerpt are gone). Back button is role-aware. **Role
+> consequence**: Punong Barangay has no list-of-cases screen — reach is
+> dashboard + Analytics + individual incident detail. **Nothing here
+> re-adds a browsable list.** The AI Tools screen (migrations 0027/0028)
+> and the W8 AI Redaction Review (0029) are likewise gone.
 
 **W21 system settings — narrow, deliberate exception, not a full
 build-out.** Migration 0012 + `SettingsController` originally covered
@@ -576,8 +541,10 @@ controls that do nothing.
   `C:\xampp\php-8.0.30-backup`. See `backend/DEVLOG.md` 2026-09-26 (32).
 - **That PHP upgrade silently broke `ext-curl` under Apache specifically
   (fixed same day, (34))** — a real symptom: the dashboard's AI badge
-  showed offline, `/system/ollama-status` said `unhealthy`, while
-  `ai-worker.php --status` (CLI) correctly said Ollama was reachable.
+  showed offline while the CLI worker could still reach Ollama. (The AI
+  badge, Ollama and the worker are all gone since 0029, but this DLL
+  problem still applies to every other `ext-curl` caller: ORS routing,
+  FCM.)
   Cause: `php_curl.dll`'s real dependency DLLs (`libcrypto-3-x64.dll`/
   `libssl-3-x64.dll`/`libssh2.dll`/`nghttp2.dll`, confirmed via
   `C:\xampp\php\deplister.exe ext\php_curl.dll`) live in `C:\xampp\php`,
@@ -631,7 +598,7 @@ controls that do nothing.
 
 ---
 
-## 9. Verification suites (all green — re-run before trusting a change)
+## 9. Verification suites (counts are LAST RECORDED, not re-run after 0029 — re-run before trusting a change)
 
 | Script | Checks |
 |---|---|
@@ -646,11 +613,10 @@ controls that do nothing.
 | `verify-public-transparency.sh` | 17 |
 | `verify-device-signature.sh` | 21 |
 | `verify-sprint4.sh` | 50 |
-| `verify-sprint4-phase2-3.sh` | 70 |
-| `verify-sprint6.sh` | 110 |
+| `verify-sprint4-phase2-3.sh` | 72 |
 | `verify-sprint7-retention.sh` | 76 |
 | `verify-sprint7-audit.sh` | 52 |
-| `verify-sprint7-pentest-incidents.sh` | 68 |
+| `verify-sprint7-pentest-incidents.sh` | 56 |
 | `verify-b2-pentest-remaining-resources.sh` | 59 |
 | `verify-sprint3.sh` | 38 |
 | `verify-f9-sms-broadcast-idempotency-index.sh` | 15 |
@@ -658,8 +624,8 @@ controls that do nothing.
 | `verify-routing.sh` | 23 (real-ORS block SKIPs, not fails, if no key) |
 | `verify-device-session.sh` | 20 |
 | `restore-drill.sh` | 12 (real DB) |
-| `verify-web-wiring.mjs` | 562 (moves as screens change; 2 pre-existing failures in admin-dashboard/statistical-reports as of 2026-09-26) |
-| `web/tests` (`npm test`) | 399 |
+| `verify-web-wiring.mjs` | 528 passed, 0 failed (measured 2026-10-01, after 0029) |
+| `web/tests` (`npm test`) | 389 passed, 0 failed (measured 2026-10-01, after 0029) |
 | `mobile: verify.schema` | 113 |
 
 All use a disposable database + disposable app user + throwaway port,

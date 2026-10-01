@@ -13,6 +13,21 @@ or roles not listed here — check §5/§6/§7 first. **If this file and
 `docs/REFERENCE.md` (the compact working summary) ever disagree, this
 file wins** and REFERENCE.md gets corrected.
 
+**Reconciliation note (2026-10-01) — READ FIRST.** Migration 0029
+(`backend/migrations/0029_remove_blotter_and_ai_pipeline.sql`) removed the
+Electronic Blotter and the entire local-AI pipeline (redaction, summary,
+translation, extraction, AI Tools, evaluation harness). Barangays keep
+the blotter and Lupon records in their own binders. This file has been
+reconciled in place: anything still describing `blotter_record`,
+`blotter_revision`, `ai_processing_log`, `ai_evaluation_run`, Ollama/
+SEA-LION, redaction approval, the AI draft endpoints or the Lupon packet
+is either removed or marked **(Historical — removed 2026-10-01)**. **Do
+not rebuild any of it without an explicit new decision.** Other sections
+of this file were NOT re-audited in this pass and still carry the
+2026-09-07 baseline; `docs/REFERENCE.md` is the more current summary and
+the bodies of §5/§6/§7 should be checked against the code before being
+trusted for anything outside the removed features.
+
 **Currency note (2026-09-07):** this rewrite reconciles migrations
 0008-0014 (party fields, suspension, `system_settings`, display IDs, the
 walk-in blotter and operational-correction endpoints) into the sections
@@ -33,7 +48,7 @@ writing and are not restated here.
 | Mobile | Ionic React 9 + Capacitor 8.5 (Android) |
 | Server-side DB | MariaDB 10.4 (via XAMPP) — MySQL-compatible; cloud hosting deferred |
 | Mobile local DB | SQLite via Capacitor SQLite, encrypted (SQLCipher-backed) |
-| AI | Llama-SEA-LION-v3.5-8B-R via Ollama, self-hosted — **never** an external AI API |
+| AI | **None** — the local Llama-SEA-LION/Ollama pipeline was removed 2026-10-01 (migration 0029). No AI service, local or external |
 | SMS | Local GSM gateway — one tethered phone, own SIM, both inbound ingestion AND outbound send (2026-09-23: Semaphore removed, cost; see `backend/DEVLOG.md` and `sms-gateway/README.md`) |
 | Push | Firebase Cloud Messaging (FCM) HTTP v1 |
 | Mapping | MapLibre with prepackaged offline vector tiles (MBTiles); online tiles when connected |
@@ -54,23 +69,24 @@ The practical test for any proposed feature: *does BIMSS already own this
 record?* If yes, Baranguard duplicating it is liability, because a
 barangay must maintain the BIMSS copy regardless and a second ledger
 invites divergence. Baranguard's ground is the layer BIMSS has none of —
-real-time dispatch, Tanod GPS, SOS, offline field capture, and local-AI
-redaction. That test is why `POST /blotter` (walk-in entry) and the W6
-records list were both removed on 2026-09-10, and why the AI Blotter
-Assistant drafts text *for transcription into KPIS* rather than
-establishing a competing record.
+real-time dispatch, Tanod GPS, SOS and offline field capture. That test
+is why `POST /blotter` (walk-in entry) and the W6 records list were both
+removed on 2026-09-10, and why the rest of the blotter (and the AI that
+fed it) followed on 2026-10-01 — barangays keep blotter and Lupon records
+in their own binders. *(Historical: local-AI redaction and the AI Blotter
+Assistant were once listed here as Baranguard's value; both are gone.)*
 
 ---
 
 ## 2. Architecture Rules
 
-1. **No unprotected raw narrative leaves the trusted environment.** `raw_narrative` is processed only by the local SLM/redaction service. Never sent to FCM, the SMS gateway, a cloud AI API, cloud storage, or any third party. GSM/SMS fallback for sensitive content uses an authenticated-encrypted envelope only — raw text is never plaintext SMS.
+1. **No unprotected raw narrative leaves the trusted environment.** `raw_narrative` is Secretary-only and never sent to FCM, the SMS gateway, any cloud service, cloud storage, logs or audit metadata. *(Historical — removed 2026-10-01: the clause that it was "processed only by the local SLM/redaction service" no longer applies; no AI processes it.)* GSM/SMS fallback for sensitive content uses an authenticated-encrypted envelope only — raw text is never plaintext SMS.
 2. **Offline capture is durable until reconciliation.** Every incident persists to encrypted mobile SQLite before the user can leave the capture flow. The local record survives until the server confirms acceptance or a duplicate is safely correlated. The server becomes authoritative after reconciliation; the local record remains an audit/cache copy.
-3. **Only the human-approval endpoint may commit `incident.redacted_narrative`.** AI output is draft until Secretary approval. No import, sync, citizen conversion, SMS handler, or other service may write the permanent redacted field.
+3. **(Historical — retired 2026-10-01.)** Formerly: only the human-approval endpoint (`ai-draft/approve`) may commit `incident.redacted_narrative`. The endpoint and the whole AI draft flow are gone; `redacted_narrative`/`redaction_approved_*` remain as unused legacy columns and **nothing may write them**.
 4. **SMS fallback uses explicit trigger and secure envelope rules.** Fallback starts only after the health-check rule in §6, never merely on Submit. Transport security, dedup, expiration, replay protection, and correlation use the envelope defined in §6.
 5. **No telecom-layer silent/Flash SMS is assumed.** Critical alerts use the configured priority SMS path (2026-09-23: the local GSM gateway, replacing Semaphore) plus the app's notification/overlay. Background coordinate beacons are ordinary authenticated SMS parsed by the trusted local ingestion service.
 6. **RBAC and object ownership are enforced server-side.** Client-side hiding is UX only. Every protected endpoint verifies role, tenant, and object-specific ownership before returning or mutating data.
-7. **No public internet exposure to this system's own inbound services, ever.** MariaDB, the backend, the web dashboard, local AI inference, and GSM ingestion accept connections only from the trusted local environment — LAN/localhost, enforced by network placement and CORS configuration, not merely assumed. *(A violation of this — a public tunnel in front of the API — was found and is an open P0; see `docs/AUDIT_2026-09-07.md` F1.)* This does **not** mean the workstation has no internet dependency at all: FCM and (since 2026-09-13) ORS routing are outbound calls to cloud services and need the workstation to have internet access for those transports/dependencies specifically. SMS is NO LONGER a cloud dependency as of 2026-09-23 — the local GSM gateway (replacing Semaphore) sends over `adb` to a physically-tethered phone's own SIM, no internet call involved at all. When FCM/ORS internet access is unavailable, health reports `not_configured`/`unhealthy` per §6 and alerting degrades to the GSM/local paths (or, for routing, `route_status` degrades to `stale`/`unavailable` and the mobile app's external-navigation-app link still works) — a known degradation, not a silent failure. Mobile capture continues in its encrypted cache regardless. Recovery/restart requirements are in §11.
+7. **No public internet exposure to this system's own inbound services, ever.** MariaDB, the backend, the web dashboard and GSM ingestion accept connections only from the trusted local environment — LAN/localhost, enforced by network placement and CORS configuration, not merely assumed. *(A violation of this — a public tunnel in front of the API — was found and is an open P0; see `docs/AUDIT_2026-09-07.md` F1.)* This does **not** mean the workstation has no internet dependency at all: FCM and (since 2026-09-13) ORS routing are outbound calls to cloud services and need the workstation to have internet access for those transports/dependencies specifically. SMS is NO LONGER a cloud dependency as of 2026-09-23 — the local GSM gateway (replacing Semaphore) sends over `adb` to a physically-tethered phone's own SIM, no internet call involved at all. When FCM/ORS internet access is unavailable, health reports `not_configured`/`unhealthy` per §6 and alerting degrades to the GSM/local paths (or, for routing, `route_status` degrades to `stale`/`unavailable` and the mobile app's external-navigation-app link still works) — a known degradation, not a silent failure. Mobile capture continues in its encrypted cache regardless. Recovery/restart requirements are in §11.
 8. **The four barangays are isolated tenants.** Authenticated callers are permanently scoped to the `barangay_id` in their session. Every endpoint that accepts or resolves a tenant/resource enforces the same boundary, including all `/:id` routes. A public citizen report is the only pre-auth flow that may select one of the four barangays.
 9. **Authentication/session lifecycle.** Argon2id passwords. JWTs carry a unique `jti` mapped to one `auth_session`, whose lifetime depends on its kind (`auth_session.session_kind`, migration 0022, decided 2026-09-19): **web** sessions (the dashboard) expire in 15 minutes; **device** sessions (a Tanod login carrying a well-formed `X-Device-Id` — tanod role only) expire in 24 hours and never renew past 7 days from issue. Both kinds are revoked on the next request by logout/suspension/deactivation/password change, which is what makes the longer device token acceptable. Every authenticated request verifies signature, algorithm, expiry, session existence/revocation, user activation state, and tenant identity. Sliding renewal may extend a still-valid session with a non-decreasing expiry. **Failed-login lockout: 5 attempts within a rolling window locks the account for 15 minutes**, and the failure response is externally indistinguishable for unknown-user, wrong-password, and locked-account cases. Logout revokes the current session; deactivation/password reset revoke active sessions per §6. Expired/revoked sessions are purged after 90 days.
 10. **Administrative bootstrap is one-time and deterministic.** The four barangay IDs are fixed in the baseline migration. The first Admin per barangay is created only by the interactive trusted CLI bootstrap. No password ever appears in source, migrations, seeds, logs, or UI. No self-registration for privileged roles.
@@ -78,22 +94,22 @@ establishing a competing record.
 12. **Notifications are logical notifications plus delivery attempts.** FCM and SMS are transport channels; one logical notification can have multiple delivery attempts. If no active FCM registration exists, SMS is used immediately. If an FCM attempt errors/times out, retry once, then SMS on the second failure. An FCM success with no client ack within 60s records `ack_timeout` — this does not automatically trigger SMS. The app renders a critical alert from local cache when the local API is unreachable.
 13. **SMS-originated duty changes are first-class.** `duty_status.channel = "sms"` is written only by the validated internal SMS handler; sender identity is derived server-side from a registered device mapping, never from a client-supplied user ID.
 14. **Offline maps are part of the offline-first guarantee.** Each approved device has a versioned encrypted basemap package, published per barangay. Route computation needs workstation connectivity; the last successfully received route stays usable offline.
-15. **The unified workstation is an infrastructure single point of failure.** If DB/API/Ollama/GSM are unavailable, mobile preserves locally capturable work where the feature contract allows it. AI jobs queue; no external AI fallback exists under any failure mode. (Routing, since 2026-09-13, is the one exception to "the workstation" being the relevant point of failure — ORS is an independent cloud service; see Rule 7.)
-16. **AI pipeline is ordered and versioned.** Raw → redaction draft → summary derived from the draft (never raw) → Secretary review → approval. Translation is a separate post-approval job against approved text only. Every run records model version, status, and the draft version it operated on. Bikol is unvalidated until empirical testing.
+15. **The unified workstation is an infrastructure single point of failure.** If DB/API/GSM are unavailable, mobile preserves locally capturable work where the feature contract allows it. (Routing, since 2026-09-13, is the one exception to "the workstation" being the relevant point of failure — ORS is an independent cloud service; see Rule 7.)
+16. **(Historical — retired 2026-10-01.)** Formerly the ordered, versioned AI pipeline (raw → redaction draft → summary → Secretary review → approval; translation post-approval; Bikol unvalidated). The pipeline was removed in full by migration 0029.
 17. **Administrative actions are auditable**, allow-listed to identifiers/statuses only — never raw narrative or credentials.
 18. **Mobile read access is least-privilege.** Tanods read their own dispatches, own duty history, own submitted incidents, and nearby redacted markers. Cached data carries the same tenant/ownership restrictions as live responses.
-19. **Cloud deployment is deferred.** No cloud database, backend, storage, or cloud AI is in scope.
+19. **Cloud deployment is deferred.** No cloud database, backend or storage is in scope (a Cloudflare tunnel fronts the workstation per `docs/REFERENCE.md` §1, but nothing is hosted in the cloud) and no AI of any kind is in scope.
 20. **Incident priority is server-controlled.** `normal|high|critical`, client input cannot self-promote, default `normal`.
 21. **Incident and dispatch state machines are explicit.** Incident: `pending → dispatched → resolved`, with `dispatched → pending` only via valid cancellation before arrival. Dispatch: `assigned → en_route → arrived → completed`, with `assigned/en_route → cancelled`. No backward/skipped transition through the ordinary status endpoint. Incident resolution requires no active dispatch remains, **and only a `dispatched` incident may be resolved** — `pending` (nothing to conclude) and an already-`resolved` repeat are both `409`. That gating is what makes `PATCH /incidents/:id/status` safe without an `Idempotency-Key`: a double submit finds no resolvable incident and so cannot write a second audit row. *(The former exception here — walk-in blotter entries born `resolved` — is gone with `POST /blotter`, removed 2026-09-10; see §6. **The `source = 'web_walkin'` discriminator it motivated is closed as obsolete, 2026-09-12** — with all three creation sites hardcoding `pending` and resolution gated on `dispatched`, there is no off-lifecycle incident left to discriminate, and `avg_response_time_minutes` never depended on it; see `docs/REMAINING.md` §G4.)*
 22. **Internal GSM ingestion is local-only.** A tethered GSM phone/modem feeds a local ingestion service. Inbound SMS is authenticated, deduplicated, size-limited, decrypted/verified, parsed, then passed to internal handlers over loopback or an equally protected boundary. *(§6's SMS section separates these genuinely-inbound handlers from the outbound sends the backend itself triggers — the two were conflated in an earlier draft; see §6.)*
-23. **AI draft edits use optimistic concurrency.** Every active draft has a `draft_version`; editing/regenerating increments it; approval must match the exact current version or gets `409`.
+23. **(Historical — retired 2026-10-01.)** Formerly `draft_version` optimistic concurrency on AI drafts. No AI drafts exist.
 24. **Notification delivery has separate logical and transport records.** A reliability metric's definition (end-to-end vs. transport-specific) must be explicit; ack timeout never silently changes delivery truth.
 25. **Public reports and evidence have explicit retention** (§11); converted reports follow the linked incident's clock. Evidence retains independently until its own deadline or legal hold.
 26. **Device secrets are protected** — FCM tokens, local DB keys, message-encryption keys, device-registration secrets never appear in ordinary API payloads, audit logs, debug logs, or UI.
 27. **Tanod SOS is a dedicated immediate channel**, never dependent on incident dispatch triage — creates a persistent record, alerts Admin and eligible on-duty Tanods. **Two fallback tiers exist today** — app (needs the local API) and SMS (needs the local GSM ingestion service) — and both terminate on the same unified workstation Rule 15 already names as a single point of failure, so **neither survives a total workstation/power outage**. This is a real, currently-unmitigated residual risk, not a solved one. The honest fix, not yet built: a third tier that never touches the workstation — the mobile app sends a native-OS SMS (the device's own SIM, no gateway) directly to a configured backup contact when both other paths are confirmed unreachable.
 28. **Dispatch cancellation is non-destructive.** A cancelled dispatch is retained as history; its incident returns to `pending` only when the cancellation transaction confirms the dispatch was `assigned` or `en_route`.
 29. **Idempotency is required for retriable writes** — incident creation, `/sync/batch`, dispatch/SOS creation, citizen-report conversion, device registration, evidence upload, and any internally-retried transport use a stable client/correlation key.
-30. **All protected resource lookups are transaction-safe** — row locking/optimistic concurrency for dispatch state, citizen conversion, swaps, AI drafts, retention. Never authorize an object using stale tenant/ownership data.
+30. **All protected resource lookups are transaction-safe** — row locking/optimistic concurrency for dispatch state, citizen conversion, swaps, retention. Never authorize an object using stale tenant/ownership data.
 31. **Time policy is explicit.** Persist UTC; operational shift times interpret Asia/Manila. Client timestamps are informational, never authoritative, never bypass session expiry or retention.
 32. **Production recovery is part of correctness.** Backups, restore verification, migration rollback strategy, health checks, and restart procedures are required before UAT.
 
@@ -107,7 +123,7 @@ Four active login roles: `admin`, `secretary`, `tanod`, `punong_barangay`.
 | Role | Who | Primary responsibility |
 |---|---|---|
 | Admin | IT/system administrator | Full operational control — user mgmt, scheduling, live dispatch, GPS oversight, incident status — own barangay only |
-| Secretary | Barangay Secretary | Blotter mgmt, PII redaction approval (RA 10173 gate), blotter finalization, BIMSS/KPIS handoff drafting |
+| Secretary | Barangay Secretary | Records custodian: sole reader of `raw_narrative` and incident party fields; incident lifecycle actions (duplicate/invalid/cancelled/reopened). *(Historical — removed 2026-10-01: blotter management, PII redaction approval, blotter finalization, BIMSS/KPIS handoff drafting.)* |
 | Tanod | Field responder | Incident capture, GPS broadcast, own dispatch/duty |
 | Punong Barangay | Elected chief executive | Read-only oversight across nearly every module (§7) |
 | Lupon | Dispute-resolution mediators | No system account |
@@ -126,14 +142,16 @@ write access to those staff's accounts (Admin).
 makes the Secretary custodian of all barangay records; the Revised
 Katarungang Pambarangay Law §2 has the Secretary concurrently serve as
 Secretary of the Lupon. That's why only Secretary holds `raw_narrative`
-access, redaction approval, and blotter finalization — a
+access and the incident lifecycle actions (formerly also redaction
+approval and blotter finalization, removed 2026-10-01) — a
 records-custodian mandate, not an executive one, so it doesn't extend to
 user management or scheduling.
 
 **Lupon has no system login.** Lupon members are appointed mediators, not
-staff with their own records office. Lupon receives case materials as a
-Secretary-generated printed packet for one referred dispute
-(`POST /incidents/:id/lupon-packet`), never a standing account.
+staff with their own records office. Baranguard no longer generates anything for the Lupon: the
+Secretary-generated packet (`POST /incidents/:id/lupon-packet`) was
+removed 2026-10-01 and Lupon records are kept in the barangay's own
+binders. Lupon never had a standing account.
 
 ---
 
@@ -158,12 +176,12 @@ camelCase conversion. Never convert ad-hoc inside a component.
 ```
 /baranguard
 ├── /backend    → /routes /controllers /models /middleware
-│                 /services(/sms /ai /sync) /config /migrations
+│                 /services(/sms /sync) /config /migrations
 ├── /web        → /src(/pages /components /styles /api)
 ├── /mobile     → Ionic/Capacitor app
-├── /docs       → this file, the compact reference, audits
-└── /eval-kit   → standalone AI-evaluation package for a friend's
-                  machine (2026-09-07) — not served, not part of the app
+└── /docs       → this file, the compact reference, audits
+    (Historical: `/eval-kit`, the standalone AI-evaluation package, and
+    `/services/ai` were removed 2026-10-01.)
 ```
 
 ---
@@ -196,23 +214,23 @@ substitute for MariaDB's lack of partial/filtered unique indexes.
 
 **`gps_track`** — `track_id` PK · `user_id` FK RESTRICT · `dispatch_id` FK SET NULL · `latitude`/`longitude` DECIMAL(10,7) · `accuracy_m` DECIMAL(8,2) · `recorded_at`, `received_at`, `synced_at` NULL · `client_event_id` NULL · UNIQUE(`user_id`,`client_event_id`).
 
-**`incident`** — `incident_id` PK · `barangay_id` FK RESTRICT · `reported_by` FK SET NULL · `device_id` FK SET NULL · `incident_type` ENUM('theft','physical_injury','disturbance','domestic_dispute','vandalism','traffic_incident','fire','medical_emergency','missing_person','animal_complaint','other') · `priority` ENUM('normal','high','critical') DEFAULT 'normal' · `raw_narrative` TEXT NULL *(NULLable since 0007, for post-retention purge)* · `redacted_narrative` TEXT NULL · `redaction_approved_by`/`redaction_approved_at` NULL · `status` ENUM('pending','dispatched','resolved') DEFAULT 'pending' · `source` ENUM('app','sms','web') · `location_description` VARCHAR(255) NULL *(0010)* · `complainant_name`, `respondent_name` VARCHAR(255) NULL, `complainant_contact_number` VARCHAR(32) NULL *(0008 — extracted from RAW narrative, so these carry `raw_narrative`'s Secretary-only protection, not the broader "approved and shareable" treatment `redacted_narrative` gets)* · `display_id` VARCHAR(20) NULL *(0014, `INC-YYYY-NNN`, new rows only — not backfilled)* · `latitude`/`longitude` DECIMAL(10,7) NULL · `created_at`, `updated_at`, `device_offline_created_at` NULL, `synced_at` NULL · `client_event_id` CHAR(36) NULL · UNIQUE(`device_id`,`client_event_id`). `redaction_approved_at IS NOT NULL` is the approval signal.
+**`incident`** — `incident_id` PK · `barangay_id` FK RESTRICT · `reported_by` FK SET NULL · `device_id` FK SET NULL · `incident_type` ENUM('theft','physical_injury','disturbance','domestic_dispute','vandalism','traffic_incident','fire','medical_emergency','missing_person','animal_complaint','other') · `priority` ENUM('normal','high','critical') DEFAULT 'normal' · `raw_narrative` TEXT NULL *(NULLable since 0007, for post-retention purge)* · `redacted_narrative` TEXT NULL · `redaction_approved_by`/`redaction_approved_at` NULL *(legacy — kept by 0029, nothing writes them any more; `RetentionService` still reads `redaction_approved_at`, which is therefore always NULL)* · `status` ENUM('pending','dispatched','resolved') DEFAULT 'pending' · `source` ENUM('app','sms','web') · `location_description` VARCHAR(255) NULL *(0010)* · `complainant_name`, `respondent_name` VARCHAR(255) NULL, `complainant_contact_number` VARCHAR(32) NULL *(0008 — extracted from RAW narrative, so these carry `raw_narrative`'s Secretary-only protection, not the broader "approved and shareable" treatment `redacted_narrative` gets)* · `display_id` VARCHAR(20) NULL *(0014, `INC-YYYY-NNN`, new rows only — not backfilled)* · `latitude`/`longitude` DECIMAL(10,7) NULL · `created_at`, `updated_at`, `device_offline_created_at` NULL, `synced_at` NULL · `client_event_id` CHAR(36) NULL · UNIQUE(`device_id`,`client_event_id`). *(Historical: `redaction_approved_at IS NOT NULL` was the approval signal; unreachable since 2026-10-01.)*
 
 **`dispatch`** — `dispatch_id` PK · `incident_id` FK RESTRICT · `dispatched_by`, `tanod_id` FK RESTRICT · `priority` ENUM(same as incident) · `route_json` JSON NULL · `route_status` ENUM('available','unavailable','stale') DEFAULT 'unavailable' · `status` ENUM('assigned','en_route','arrived','completed','cancelled') DEFAULT 'assigned' · `dispatched_at`, `en_route_at`, `arrived_at`, `completed_at`, `cancelled_at` NULL · `cancelled_by` FK SET NULL · `created_client_request_id` CHAR(36) UNIQUE. At most one active dispatch (`assigned`/`en_route`/`arrived`) per incident, enforced transactionally.
 
 **`evidence_attachment`** — `attachment_id` PK · `incident_id` FK RESTRICT · `type` ENUM('photo','voice') · `file_path` VARCHAR(512) (outside web root) · `uploaded_by` FK RESTRICT · `uploaded_at` · `sha256` CHAR(64) · `byte_size`, `mime_type`, `original_filename` · `retention_expires_at` NULL · `legal_hold` BOOLEAN DEFAULT FALSE · `client_request_id` CHAR(36) NULL UNIQUE. **No server-side writer exists for this table as of 2026-09-07** — see `docs/AUDIT_2026-09-07.md` F4; the schema is real, the upload endpoint is not.
 
-**`blotter_record`** — `blotter_id` PK · `incident_id` FK RESTRICT UNIQUE · `barangay_id` FK RESTRICT · `recorded_by` FK RESTRICT · `approved_by` FK SET NULL · `narrative_summary` TEXT · `finalized_at` NULL · `revision_no` INT UNSIGNED DEFAULT 1 · `amended_at`, `amended_by` NULL · `case_status` ENUM('active','under_investigation','settled','resolved') DEFAULT 'active' *(0009 — forward-only past `active`; `resolved` is set only by a linked incident status change, never a manual amend)* · `complainant_name`, `respondent_name`, `complainant_contact_number` (0008, same fields as `incident`, **shared with Admin/PB once finalized** — narrower protection than `raw_narrative`, since a finalized record is the legal ledger) · `display_id` VARCHAR(20) NULL *(0014, `BLT-YYYY-NNN`)*. Once finalized, overwrite is forbidden; amendment is explicit and audited into `blotter_revision`.
+**`blotter_record`** — **(Historical — table dropped 2026-10-01, migration 0029; its rows were destroyed with it.)** Formerly the finalized blotter entry (`narrative_summary`, `case_status`, party fields, `display_id` `BLT-YYYY-NNN`). Barangays keep blotter records in their own binders.
 
-**`blotter_revision`** *(0004 — a real table, undocumented until this rewrite)* — `revision_id` PK · `blotter_id` FK RESTRICT · `revision_no` INT UNSIGNED · `narrative_summary` TEXT · `reason` VARCHAR(1000) NULL · `amended_by` FK SET NULL · `superseded_at` DATETIME · `case_status` (0009) and the three party fields (0008) also carried per-revision · UNIQUE(`blotter_id`,`revision_no`). One row per superseded version — `blotter_record` holds only the current values.
+**`blotter_revision`** — **(Historical — table dropped 2026-10-01, migration 0029.)** Formerly one row per superseded blotter version.
 
 **`citizen_report`** — `report_id` PK · `barangay_id` FK RESTRICT · `incident_id` FK SET NULL UNIQUE · `contact_number` VARCHAR(32) NULL · `description` TEXT · `latitude`/`longitude` NULL · `submitted_at` · `converted_at` NULL · `retention_expires_at` NULL · `legal_hold` BOOLEAN DEFAULT FALSE. Conversion locks the row, permits exactly one incident linkage. **Unauthenticated intake — `description`/`contact_number` are the head of an open stored-XSS chain**, see `docs/AUDIT_2026-09-07.md` F2/F3.
 
 **`sms_log`** — `log_id` PK · `report_id`/`incident_id`/`dispatch_id` FK SET NULL · `sender_number`, `receiver_number` NULL · `transport` ENUM('gsm_modem','semaphore') · `message_type` ENUM('incident','dispatch','priority_alert','coord_ping','confirmation','duty_status','sos','manual') *(0013 adds `manual`)* · `direction` ENUM('inbound','outbound') · `gateway_message_id`, `modem_message_id`, `correlation_id` NULL · `status` ENUM('queued','pending','sent','failed','refunded','received','rejected','deduplicated') · `sent_at`, `received_at` NULL · `failure_reason` NULL · `barangay_id` FK *(0006)* · `message_body` TEXT NULL, `read_at` DATETIME NULL *(0013)* · `legal_hold` BOOLEAN NOT NULL DEFAULT FALSE *(0016)* · `created_at`. Phone numbers masked in UI. *(The former "no `legal_hold` column" gap is closed — 0016 added it, and §11's rule is now enforced: the retention job checks this column AND the linked incident/citizen_report/dispatch-through-incident holds at purge time.)*
 
-**`ai_processing_log`** — `log_id` PK · `incident_id` FK RESTRICT, **NULLable since 0015** *(the two non-incident AI Tools jobs, `sms_compose`/`threat_analysis`, have no parent case; nullability does NOT disturb `purgeOneIncident()`'s ordered cascade, since RESTRICT still applies to every non-null value)* · `barangay_id` FK RESTRICT NULL *(0015 — with `incident_id` NULL this is the ONLY thing scoping a job to a tenant, which §2 Rule 2 requires)* · `requested_by_user_id` FK SET NULL *(0015)* · `tool_input`, `tool_output` TEXT NULL *(0015)* · `pipeline_run_id` CHAR(36) · `task_type` ENUM('summarization','redaction','translation','extraction','blotter_assist','classification','sms_compose','threat_analysis') *(0008 adds `extraction`; 0015 adds the four AI Tools types)* · `model_version` VARCHAR(128) · `source_language`/`target_language` NULL · `draft_redacted_narrative`, `draft_summary` TEXT NULL · `draft_summary_stale` BOOLEAN DEFAULT FALSE · `draft_version` INT UNSIGNED DEFAULT 1 · `draft_complainant_name`, `draft_respondent_name` VARCHAR(255) NULL, `draft_complainant_contact_number` VARCHAR(32) NULL *(0008 — the extraction task's own draft state, approved independently of redaction via `ai-draft/extraction/approve`)* · `translated_text` TEXT NULL · `status` ENUM('queued','processing','completed','failed','superseded') · `error_code` NULL · `processed_at` NULL · `created_at`. One current redaction/summary row per incident; translation, extraction and AI Tools rows are independent (an operator may generate several drafts and compare them, so a tool run neither supersedes nor is superseded). **The "incident tasks carry `incident_id`, tool tasks carry `barangay_id`" invariant is enforced in PHP, not as a table CHECK** — MariaDB 10.4 rejects that shape of constraint with ERROR 1901, as `notification`'s entity matrix already documents.
+**`ai_processing_log`** — **(Historical — table dropped 2026-10-01, migration 0029.)** Formerly the AI job queue and draft store (redaction/summary/translation/extraction drafts; AI Tools jobs after 0015, themselves removed by 0027/0028).
 
-**`ai_evaluation_run`** — `evaluation_run_id` PK · `dataset_name`, `dataset_version`, `model_version`, `task_type` · `sample_count` · `precision_score`, `recall_score` DECIMAL(6,5) NULL · `created_at` · `notes` TEXT NULL · UNIQUE(`dataset_name`,`dataset_version`,`model_version`,`task_type`).
+**`ai_evaluation_run`** — **(Historical — table dropped 2026-10-01, migration 0029.)** Formerly stored AI evaluation metrics.
 
 **`offline_queue`** — `queue_id` PK · `device_id` FK RESTRICT · `client_event_id` · `payload_type` ENUM('incident','gps','duty_status','sos','dispatch_status') · `sync_metadata_json` JSON · `created_offline_at`, `received_at`, `synced_at` NULL · `reconciliation_status` ENUM('pending','success','duplicate','failed') DEFAULT 'pending' · UNIQUE(`device_id`,`client_event_id`). Never stores original raw payload.
 
@@ -282,40 +300,25 @@ endpoints require `Authorization: Bearer <token>`.
 
 - `POST /incidents` — tanod/secretary/admin. Idempotency key: mobile = `device_id + client_event_id`; web = `Idempotency-Key` header. Creates `pending`, server derives `barangay_id`/`reported_by`/`source`.
 - `GET /incidents?q=&...` — tenant-scoped, Tanod forced to own; no raw narrative.
-- `GET /incidents/:id` — Secretary gets `raw_narrative` + the three party fields (Secretary-only, same protection as raw narrative — §2 Rule 1); everyone else gets the allow-listed redacted view.
+- `GET /incidents/:id` — Secretary gets `raw_narrative` + the three party fields (Secretary-only, same protection as raw narrative — §2 Rule 1); everyone else gets the allow-listed view with no narrative (there is no redacted narrative any more — nothing writes `redacted_narrative`).
 - `PATCH /incidents/:id` *(new, 2026-09-06)* — **operational correction, not a narrative editor.** Admin+Secretary may set `priority`/`incident_type`/`location_description`; `complainant_name` is **Secretary-only**. Sending `raw_narrative`/`redacted_narrative` is a hard `400`. Requires `Idempotency-Key` — **but does not actually replay on it** (validates and discards); every sibling write replays for real. Audit records field *names* only, never values.
-- `PATCH /incidents/:id/status` — Admin only, body `{status:"resolved"}`, requires no active dispatch remains. Also flips a linked finalized blotter's `case_status` to `resolved` (non-destructive, audited).
+- `PATCH /incidents/:id/status` — Admin only, body `{status:"resolved"}`, requires no active dispatch remains. *(Historical: it also flipped a linked finalized blotter's `case_status` to `resolved`; no blotter exists since 2026-10-01.)*
 - `POST /incidents/:id/evidence` / `GET /incidents/:id/evidence` — **documented, not implemented.** No POST route exists server-side; `GET` is real but permanently empty. See `docs/AUDIT_2026-09-07.md` F4.
 - `GET /incidents/nearby` — Tanod only, radius-capped, never raw narrative/contact data.
 
-### AI processing
+### AI processing, Blotter and AI Tools — **(Historical — all removed 2026-10-01, migration 0029; and AI Tools earlier by 0027/0028)**
 
-- `GET /incidents/:id/ai-draft` — Secretary only.
-- `POST /incidents/:id/redact` — Secretary trigger/rerun; enqueues only, never calls Ollama directly — a structural guarantee, not just a convention: the only `OllamaClient` uses in `AiDraftController` are `isConfigured()`/`model()`, never `generate()`.
-- `POST /incidents/:id/ai-draft/regenerate-summary` — requires matching `draft_version`, summary generated from supplied draft text only, increments version.
-- `POST /incidents/:id/ai-draft/approve` — requires current version, `status=completed`, `draft_summary_stale=false`, exact text match. The **only** endpoint that may commit `incident.redacted_narrative`.
-- `POST /incidents/:id/ai-draft/translate` — requires approved redaction, runs against approved text only.
-- `GET /incidents/:id/ai-draft/extraction` / `POST .../extraction/approve` *(0008)* — the party-field pipeline (complainant/respondent/contact extracted from raw narrative), independent of redaction/approval, same draft-versioning discipline. Extraction output is Secretary-only, same as `raw_narrative`.
+None of the following routes exist any more. Listed only so older notes
+and audit-log rows (which are write-once and still mention them) can be
+read. **Do not re-add without an explicit new decision.**
 
-### Blotter
+- AI processing: `GET /incidents/:id/ai-draft`, `POST /incidents/:id/redact`, `POST .../ai-draft/regenerate-summary`, `POST .../ai-draft/approve`, `POST .../ai-draft/translate`, `GET`/`POST .../ai-draft/extraction[/approve]`.
+- Blotter: `POST /incidents/:id/finalize`, `POST /incidents/:id/blotter/amend`, `GET /blotter/:id`, `GET /incidents/:id/blotter`, `GET /blotter` (list). `POST /blotter` (walk-in) had already been removed 2026-09-10 because DILG BIMSS/KPIS is the mandated case ledger (§1).
+- Lupon packet: `POST /incidents/:id/lupon-packet` (+`/download`).
+- AI Tools: `/incidents/:id/ai-tools/*`, `/ai-tools/*`.
+- Health/queue probes: `GET /system/ollama-status`, `GET /system/ai-queue`.
 
-- `POST /incidents/:id/finalize` — Secretary only, requires approved redaction, creates/finalizes the blotter record.
-- `POST /incidents/:id/blotter/amend` — Secretary only, requires finalized record, writes a `blotter_revision` row, increments `revision_no`, optionally transitions `case_status` (forward-only past `active`).
-- `GET /blotter/:id`, `GET /incidents/:id/blotter` — same-barangay; Tanod additionally needs reporter/assignment relationship.
-- `GET /blotter?q=&status=&case_status=` — list, Admin/Secretary/PB(redacted read-only).
-- ~~`POST /blotter` — walk-in entry~~ **REMOVED 2026-09-10.** DILG BIMSS is mandated for all barangays by Memorandum Circular, and its **KPIS** subsystem already *is* the Katarungang Pambarangay case database; a walk-in complaint with no prior incident is precisely a native KPIS case. §1 makes Baranguard a complement to BIMSS, never a replacement, so a second intake path for the same record was liability rather than capability. Its removal also closed two known defects outright instead of fixing them: the `200 []` idempotency mismatch, and the fact that this was the one path where `raw_narrative` content reached Admin/PB with no redaction step. `GET /blotter` remains (Analytics' case-status widget consumes it); finalize/amend/lupon-packet remain, because those are incident-originated and BIMSS has no dispatch layer to feed them.
-
-### AI Tools *(new, 2026-09-10 — migration 0015)*
-
-Four local-model **drafting aids**, surfaced inside their host screens rather than on an AI screen of their own (§9). None writes a record: each enqueues an `ai_processing_log` row whose `tool_output` a human reads and retypes elsewhere. §2 Rule 4 still makes `ai-draft/approve` the only writer of `incident.redacted_narrative`, and nothing here touches it. The API never calls Ollama (§2 Rule 15) — these enqueue, and the screen polls.
-
-- `POST /incidents/:id/ai-tools/blotter-assist` — **Secretary only.** Reads `raw_narrative` and redacts as it drafts; the output is the formal case text a Secretary re-keys into BIMSS/KPIS. Secretary-only because §2 Rule 1 makes the Secretary raw narrative's sole reader.
-- `POST /incidents/:id/ai-tools/classify` — **Admin + Secretary.** Suggests `incident_type` and `priority`. Reads only the **approved** `redacted_narrative` — that restriction is exactly what makes the tool safe to expose to an Admin. `409` when no approved redaction exists; rechecked again by the worker at write time (§2 Rule 30).
-- `POST /ai-tools/sms-compose` — **Admin only**, matching `/sms/send` so the tool cannot draft what its caller may not send. Body `{prompt}` (≤2000 chars) is operator-typed text and the **only** input: the draft is bound for the SMS gateway (local GSM as of 2026-09-23), and §2 Rule 1 does not permit narrative text to leave that way. There is deliberately no incident parameter.
-- `POST /ai-tools/threat-analysis` — **Admin + Punong Barangay.** Aggregate counts only, always the caller's own barangay resolved server-side, never client-supplied. Groups by incident type, time of day and day of week; `location_description` is deliberately excluded as free text an intake officer typed and therefore identifying in practice. Day bucketing uses a fixed `+08:00` offset, never `CONVERT_TZ()` (§2 Rule 11).
-- `GET /ai-tools/jobs/:id` — poll one job. **Owner-scoped as well as tenant-scoped:** an Admin may not poll a Secretary's blotter-assist job, since that job's output derives from raw narrative. `404`, never `403`.
-- `GET /ai-tools/availability` — `{ollama: healthy|unhealthy|not_configured}`. Same coarse contract as `/system/health`'s `ollama` field and reusing the same probe, but readable by all three roles this screen serves (`/system/health` is Admin-only). It exists so the screen can disable Generate honestly rather than queue work nothing can run (§2 Rule 6).
-- `POST /incidents/:id/lupon-packet` (+`/download`) — Secretary only, requires approved redaction **and** finalized blotter.
+`PATCH /incidents/:id/lifecycle` (Secretary-only; duplicate/invalid/cancelled/reopened) is **not** part of this removal and remains live.
 
 ### Dispatch
 
@@ -330,7 +333,7 @@ Four local-model **drafting aids**, surfaced inside their host screens rather th
 - `POST /gps`, `GET /gps/live`, `GET /gps/history` — as in §5's `gps_track`; `is_stale=true` at ≥120s without a fresh point.
 - `POST /tanod-sos`, `GET /tanod-sos`, `PATCH .../acknowledge`, `PATCH .../resolve` — see §2 Rule 27 for the fallback-tier caveat.
 - `POST /duty-status`, `GET /duty-status` — server always writes `channel=app` for this path (SMS-originated duty changes come in via §6's internal SMS handlers, `channel=sms`).
-- `GET /system/health` — Admin only, local-only. `{api,db,ors,ollama,gsm_ingestion,notification_config,backup_last_success,restore_test_at}`, each `healthy|unhealthy|not_configured` (`ors` renamed from `osrm` 2026-09-13 when routing shipped on OpenRouteService instead of a self-hosted engine — a real, live probe, not a presence check, same pattern `ollama` already used). Never fabricated — `backup_last_success` reads a real file timestamp or `null`.
+- `GET /system/health` — Admin only, local-only. `{api,db,ors,gsm_ingestion,notification_config,backup_last_success,restore_test_at}` *(historical: an `ollama` field was removed with the AI pipeline 2026-10-01; `health_check_log.ollama_status` survives only as historical rows)*, each `healthy|unhealthy|not_configured` (`ors` renamed from `osrm` 2026-09-13 when routing shipped on OpenRouteService instead of a self-hosted engine — a real, live probe, not a presence check). Never fabricated — `backup_last_success` reads a real file timestamp or `null`.
 - `GET /barangays` — public, no auth, always exactly the four seeded rows.
 - `GET /search?q=` — any authenticated web role, same scoping as `GET /incidents`, 2-64 chars, capped at 10 rows, never `raw_narrative`.
 
@@ -387,22 +390,15 @@ caller's relationship to the specific record, not merely their role.
 
 | Action | Admin | Secretary | Tanod | Punong Barangay | Lupon |
 |---|---|---|---|---|---|
-| **Incidents & Blotter** |
+| **Incidents** |
 | Log incident (mobile) | ✗ | ✗ | ✓ | ✗ | — |
 | Web incident entry / operational correction (`PATCH`) | ✓ | ✓ (+ `complainant_name`) | ✗ | ✗ | — |
-| ~~Walk-in blotter entry~~ *(removed 2026-09-10 — BIMSS/KPIS owns it)* | — | — | — | — | — |
-| AI Blotter Assistant (BIMSS/KPIS handoff draft) | ✗ | ✓ | ✗ | ✗ | — |
-| AI Incident Classifier | ✓ | ✓ | ✗ | ✗ | — |
-| AI SMS Composer | ✓ | ✗ | ✗ | ✗ | — |
-| AI Threat Analyzer | ✓ | ✗ | ✗ | ✓ | — |
+| ~~Walk-in blotter entry~~ *(removed 2026-09-10 — BIMSS/KPIS owns it; the rest of the blotter removed 2026-10-01)* | — | — | — | — | — |
 | Convert citizen report → incident | ✓ | ✓ | ✗ | ✗ | — |
-| View raw narrative / extracted party fields | ✗ | ✓ | ✗ | ✗ | — |
-| View approved redacted narrative | ✓ | ✓ | own/assigned | R | packet only |
-| Trigger/approve AI redaction or extraction | ✗ | ✓ | ✗ | ✗ | — |
+| View raw narrative / incident party fields | ✗ | ✓ | ✗ | ✗ | — |
+| Incident lifecycle (duplicate/invalid/cancelled/reopened) | ✗ | ✓ | ✗ | ✗ | — |
 | Resolve incident status | ✓ | ✗ | ✗ | ✗ | — |
-| Finalize / amend blotter | ✗ | ✓ | ✗ | ✗ | — |
-| View blotter (finalized fields incl. party names) | ✓ | ✓ | own/assigned | R | — |
-| Generate Lupon packet | ✗ | ✓ | ✗ | ✗ | — |
+| *(Historical, removed 2026-10-01: AI assistants, redaction trigger/approval, view redacted narrative, finalize/amend blotter, view blotter, generate Lupon packet)* | — | — | — | — | — |
 | **Dispatch / GIS / SOS** |
 | Create/override/cancel dispatch | ✓ | ✗ | ✗ | ✗ | — |
 | Own dispatch status | ✗ | ✗ | ✓ | ✗ | — |
@@ -471,8 +467,8 @@ seed data is realistic (plausible Filipino names, real barangay names)
 but never labeled fake in the UI; no Lorem Ipsum or placeholder branding;
 no hardcoded credentials anywhere in committed code; an unbuilt
 dependency is mocked invisibly at the service layer, never with a visible
-"MOCK DATA" label; no confidence/score number without a real
-`ai_evaluation_run` behind it; no "All Systems Operational" badge that
+"MOCK DATA" label; no confidence/score number presented as measured without a real
+basis (the former `ai_evaluation_run` table no longer exists); no "All Systems Operational" badge that
 isn't a real probe result.
 
 ---
@@ -493,21 +489,12 @@ filters) · W5 Historical Heatmap (bounded range, explicit
 non-predictive label) · **W7 Incident Detail** *(W6, the records list,
 was removed 2026-09-10 — BIMSS/KPIS is the mandated ledger; W7 stays as
 the app's ONLY per-incident detail view and keeps the `blotter-detail`
-route key)* (server-redacted excerpt, real `case_status`/`display_id`,
-forward-only transition control; **+AI Blotter Assistant** panel,
-Secretary-only, 2026-09-10) · **AI assistants embedded in host screens**
-*(2026-09-10 — a standalone AI Tools screen shipped and was dissolved the
-same day. Each tool is a `components/AiToolPanel.js` mounted where its
-work happens: Classifier in Incident Management's detail pane with
-"Apply in Edit" prefilling the Edit form — which gained the Incident Type
-select `PATCH /incidents/:id` always accepted; Message Composer at the
-top of SMS Monitor's feed pane with "Use this draft" filling the compose
-box and no send button; Threat Analyzer as Analytics' third tab with an
-explicit non-forecast label; Blotter Assistant in incident detail. All
-poll, all render a probe-driven unavailable banner, all `textContent`
-only. Hosts must call the panel's `stop()` before wiping its DOM.)* ·
-W8 AI Redaction Review (Secretary only, real
-`draft_version`/model version, never a scripted string) · W9 Statistical
+route key)* (incident dossier, narrative for the Secretary only, evidence, timeline,
+Secretary lifecycle actions; *historical, removed 2026-10-01: redacted
+excerpt, `case_status` transition control, AI Blotter Assistant panel,
+and the Redaction/Blotter tabs*) · ~~**AI assistants embedded in host screens**~~ *(Historical — removed 2026-10-01)*
+*(The AI Tools screen and its embedded assistants/`AiToolPanel.js` were removed by migrations 0027–0029.)* ·
+~~W8 AI Redaction Review~~ *(Historical — removed 2026-10-01)* · W9 Statistical
 Reports (exact trend/response-time/notification datasets, export
 audited) · W10 User Management (create/deactivate/reactivate/**suspend**,
 one-usable-Admin guard) · W11 Scheduler · W12 Shift Swap Requests · W13
@@ -557,10 +544,10 @@ design pass before implementation:
 
 - **Full W21 System Settings** (Notifications/Security/GIS/Backup sections) — beyond the narrow 0012 override (SMS gateway + general display keys).
 - **Two-way SMS console** (reply/broadcast to arbitrary inbound threads) as an extension of W14 beyond what's built.
-- **AI incident auto-classifier / threat-risk scorer** — needs a real scoring design and an `ai_evaluation_run` behind any confidence number; never adopt an illustrative demo percentage as a target.
+- **AI incident auto-classifier / threat-risk scorer** — the earlier AI Tools versions were built then removed (0027/0028/0029); any future version needs a real scoring design and a real evaluation basis behind any confidence number, and an explicit new decision.
 - **A composite "performance score" chart** — needs a defined scoring formula with the same rigor as `avg_response_time_minutes`'s exact definition.
 - **A public marketing landing page** — this is a specific system for four named barangays, not a SaaS product; W19 is the real public entry point. If a public informational page is wanted, keep it a short honest description with a link to W19, never a metrics-driven marketing page.
-- **Voice-to-text transcription** (voice *capture* is in scope and built) — would either route audio off-device (violates Rule 1) or require a second self-hosted ASR model alongside SEA-LION on the same single-point-of-failure workstation (Rule 15). If ever revisited: a self-hosted ASR model as a second queued `ai_processing_log` task type, never a cloud speech API.
+- **Voice-to-text transcription** (voice *capture* is in scope and built) — would either route audio off-device (violates Rule 1) or require a self-hosted ASR model; no AI runtime exists since 2026-10-01. Needs an explicit new decision.
 
 ---
 
@@ -568,13 +555,13 @@ design pass before implementation:
 
 | Record | Retention | Notes |
 |---|---|---|
-| `raw_narrative` | Deleted 30 days after human-approved redaction; 90-day hard ceiling if never approved | Legal hold is the only exception |
-| Redacted incident / blotter / evidence | 7 years default | LGU records schedule or legal hold may override |
+| `raw_narrative` | **Hard-purged at 90 days from `created_at`** (`RetentionService::RAW_NARRATIVE_CEILING_DAYS`). *(The original "30 days after human-approved redaction" branch still exists in code but can never fire — nothing can approve a redaction since 2026-10-01.)* | Legal hold is the only exception. **OPEN POLICY DECISION (flagged 2026-10-01, not decided here):** there is no redacted replacement, so the narrative is permanently destroyed at 90 days with nothing kept. Whether the window, a Secretary-authored summary, or the barangay's binder record is the intended continuation needs a decision and an architecture review (Rule 10) |
+| Incident record / evidence | 7 years default *("redacted" and "blotter" dropped from this row 2026-10-01 — neither exists)* | LGU records schedule or legal hold may override |
 | `citizen_report` (unconverted) | 1 year from `submitted_at` | Converted reports follow the linked incident's clock |
 | `audit_log` | 7 years, write-once except retention deletion | |
 | `sms_log` | 1 year default, extended for the duration of any hold on the linked incident/dispatch/citizen report | **Built 2026-09-12** (migration 0016). Enforced live at purge time across four paths: the row's own `legal_hold`, the linked incident, the linked citizen report, and the linked dispatch resolved through to its incident. Checking live rather than inheriting on write means a hold placed *after* the message was logged still protects it |
-| `ai_processing_log` | 1 year, or until the linked incident's retention expires, whichever is longer | |
-| AI Tools jobs (`incident_id IS NULL`) | **90 days** from `created_at` | 0015. Needs its own rule because the row above INNER JOINs `incident` and so cannot see these; scoped by "has no parent", not by task type, so `blotter_assist`/`classification` keep following their case. User-signed-off per Rule 10. |
+| ~~`ai_processing_log`~~ | **(Historical — table dropped 2026-10-01.)** Formerly 1 year / linked incident's retention | |
+| ~~AI Tools jobs~~ | **(Historical — removed 0027/0028/0029.)** Formerly 90 days | |
 | `mobile_device` / device secrets | Secret columns (`fcm_token`, `device_secret_ref`) cleared 90 days after deactivation; **the row itself is retained, not deleted**, so `incident.device_id` provenance survives on records under longer retention or legal hold | **Built 2026-09-12** (migration 0016 + `RetentionService::scrubDeactivatedDevices()`). Revised from the original "delete the row", which was found to silently strip device attribution from 7-year legal records via `ON DELETE SET NULL` 90 days after deactivation. `secrets_scrubbed_at` is the per-record evidence and the idempotency guard; `fcm_token` is emptied rather than nulled (NOT NULL in the 0001 baseline) and is unreachable by the send path, which only reads tokens `WHERE is_active = 1` |
 | Offline mirror (`offline_queue`, mobile local tables) | Cleared on confirmed sync | No independent raw-data ceiling; server mirror never holds raw payload |
 | Backups | Follow the retention of the source data they contain | A deletion is not complete while a retained backup still holds the same data |
@@ -592,8 +579,9 @@ recovery copies, not an independent archive.
 
 ---
 
-*Document status: this file is reconciled against shipped code as of
-migration 0014. For what's currently broken in the running system (not
+*Document status: partially reconciled 2026-10-01 for migration 0029
+(blotter/AI removal only — see the note at the top); otherwise
+reconciled against shipped code as of migration 0014. For what's currently broken in the running system (not
 in this document), see `docs/REMAINING.md` and `docs/AUDIT_2026-09-07.md`.
 For day-to-day session state, see `docs/HANDOFF.md`. Historical sprint
 prompts and the full prompt-engineering scaffolding once carried here now
