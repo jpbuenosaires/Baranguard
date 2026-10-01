@@ -1,6 +1,7 @@
 # Baranguard — Privacy Notices
 
-Drafted 2026-09-26 to close H-14 (`docs/REMAINING.md` §H). These are the
+Reconciled 2026-10-01 for migration 0029 (blotter and AI redaction
+removed; notice 1 rewritten accordingly). Drafted 2026-09-26 to close H-14 (`docs/REMAINING.md` §H). These are the
 plain-language notices RA 10173's "right to be informed" expects a data
 subject to see before their personal data is collected. They are text
 for barangay staff to post/read aloud/print — this repository does not
@@ -11,19 +12,24 @@ draft's scope).
 ## 1. Notice for a citizen filing a report (walk-in, SMS, or the public
    report form)
 
-> This barangay uses Baranguard, a local dispatch and record-keeping
-> system, to respond to your report. The barangay will collect your
-> name, contact number, and the details of what happened. Your report
-> will be reviewed by barangay staff and may be recorded as an official
-> blotter entry, which barangay law requires be kept for at least seven
-> years. Your raw statement is only read by the Barangay Secretary; a
-> redacted (personal-information-removed) version may be used by other
-> barangay staff for dispatch and case tracking. Your contact number may
-> be used to send you updates about your report. This barangay does not
-> sell or share your information with advertisers, and does not send
-> your report to any service outside this barangay's own system except
-> as required by law (for example, forwarding a finalized case to the
-> Lupon ng Tagapamayapa for conciliation).
+> This barangay uses Baranguard, a local dispatch system, to respond to
+> your report. The barangay will collect your name, contact number, and
+> the details of what happened. Your report will be reviewed by barangay
+> staff. Your written statement is only read by the Barangay Secretary;
+> other barangay staff see the incident's type, location and status for
+> dispatch and tracking. Baranguard keeps the incident record for up to
+> seven years, but **your written statement itself is deleted from the
+> system after 90 days** (unless it is under legal hold). Any official
+> blotter entry is kept by the barangay in its own records, not in this
+> system. Your contact number may be used to send you updates about your
+> report. This barangay does not sell or share your information with
+> advertisers. Some services outside the barangay's own workstation are
+> used to deliver the service (for example route calculation and push
+> notifications to responders) — see the barangay's data inventory.
+>
+> *(The 90-day statement wording depends on the open raw-narrative
+> retention decision in `docs/DATA_INVENTORY.md` §5 — revise this notice
+> if that decision changes.)*
 
 ## 2. Notice for a Tanod (on registering a mobile device / starting duty)
 
@@ -52,7 +58,7 @@ draft's scope).
   payroll password.
 - **Retention exceptions** — a record under legal hold (an active
   investigation, a pending case) is kept regardless of any request to
-  delete it; this should be stated to a data subject who specifically
+  delete it (this includes the 90-day statement purge); this should be stated to a data subject who specifically
   asks about deletion, not proactively in the standard notice above.
 
 ## 5. Status

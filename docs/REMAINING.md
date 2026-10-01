@@ -2,6 +2,13 @@
 
 Sprints 0–7 complete. Legend: 🔴 blocks Sprint 8 · 🟠 needed for credible UAT · 🟢 polish.
 
+**2026-10-01 — migration 0029 removed the Electronic Blotter and the whole
+local-AI pipeline.** Every item below about blotter finalize/amend, the
+Lupon packet, AI redaction/Ollama, the eval harness/`eval-kit/` (A2, A3, A6,
+H-18) or the Redaction/Blotter tabs is HISTORICAL and obsolete; those
+sections are kept as a record, not as open work. Migration 0029 itself has
+not yet been applied to either real DB (see `HANDOFF.md`).
+
 Full forensic detail for anything marked ✅ below lives in `backend/DEVLOG.md`
 (grep by date/keyword) and, for the 2026-09-07 audit items, `docs/AUDIT_2026-09-07.md`.
 Don't re-derive it here — this file tracks what's still open, not the story of how closed items got closed.
@@ -290,7 +297,7 @@ coding session's scope:**
   action** (a Sangguniang Barangay resolution or equivalent) that no
   coding session can complete — flagged in both new docs as the one
   genuinely open piece of H-14.
-- **H-18 (AI evaluation/provenance) partially closed — provenance chain
+- **H-18 (AI evaluation/provenance) — OBSOLETE since 2026-10-01 (the AI pipeline and its tables are gone); text below is history. It was partially closed — provenance chain
   landed, eval runs still need hardware.** `ai_processing_log.model_version`
   already existed but recorded nothing about which PROMPT contract
   produced a given draft, so a later prompt-wording change couldn't be
@@ -467,27 +474,14 @@ if it's pointed at the wrong JDK, `./gradlew --stop` then re-export
 `adb logcat -d | grep -i capacitor` after a temporary `console.error` in
 `apiService.ts`'s catch block.
 
-### 🟠 A2. AI model end-to-end run — SUBSTANTIALLY UNBLOCKED, real numbers exist for 1 of 8 tasks
-This workstation cannot complete a generation within Ollama's 300s
-timeout (confirmed, not assumed) — needs a friend's faster hardware via
-`eval-kit/` (self-contained, `.bat`-launchable, paces/checkpoints itself).
-**Redaction got a real completed run 2026-09-14**: recall 98.26% (meets
-≥95% target), precision 75.88% (misses ≥90% target). Bikol is the
-weakest-recall language bucket (96.90% vs ~98.85% en/tl); all 13 leaks
-came from "ordinary" records, zero from the 7 engineered hard-case
-categories. **The `ai_evaluation_run` row is now written to both real
-DBs** (2026-09-18, `evaluation_run_id=1` in both `baranguard` and
-`baranguard_uiseed`; migration 0021 applied for real at the same time).
-Still open: Bikol human spot-check not done; **the other 7 of 8 model
-tasks have a harness+dataset ready (A6, closed) but no real run yet** —
-same friend's-hardware next step.
+### ~~A2. AI model end-to-end run~~ — OBSOLETE (migration 0029, 2026-10-01)
+The AI pipeline, its eval harness and `eval-kit/` were removed. The
+2026-09-14 redaction run (recall 98.26%, precision 75.88%) and the
+`ai_evaluation_run` rows were real at the time but the table is dropped by
+0029; DEVLOG keeps the numbers as history. Nothing remains to run.
 
-### ✅ A3. 200/350-record eval dataset — DONE, generated not hand-authored
-`generate-eval-dataset.php` (template+pool synthesis), self-validated.
-Deviates from `AI_Evaluation_Dataset_Guide.md`'s original hand-labeling
-plan by explicit user decision — disclosed in the dataset's own
-`generation_method` field. Recommended, still open: a human spot-check,
-especially the Bikol subset.
+### ~~A3. 200/350-record eval dataset~~ — OBSOLETE (dataset, generator and
+`AI_Evaluation_Dataset_Guide.md`'s purpose removed by 0029).
 
 ### ✅ A4. Real FCM + local GSM outbound SMS — DONE 2026-09-24
 Firebase project `baranguard-acb27` is wired and **a phone has now
@@ -568,18 +562,8 @@ proven outcome, not a null result: every piece of the real hardware path
 logic, the backend's envelope validation — has now been exercised
 end-to-end against real hardware. DEVLOG 2026-09-23 (6).
 
-### ✅ A6. All 8 model tasks now have an eval harness — DONE 2026-09-14
-Was: only `redaction` (1 of 8 `AiPrompts.php` task types) had ever been
-scored. Rebuilt: dataset grew to 350 records across 7 language buckets
-(3 pure + 4 code-mixed, since Bicol-region users typically code-switch);
-new scorer classes (`backend/services/eval/`, 33/33 unit-checked);
-`ai-evaluate.php` generalized to `--task=` dispatch; migration 0021 added
-generic metric columns (applied for real to both `baranguard` and
-`baranguard_uiseed` 2026-09-18); `eval-kit/` is now generated, not
-hand-maintained (fixed a real
-drift bug — it was missing 4 of 8 prompt methods). Provisional targets
-researched, not yet empirically validated. **Not done**: no real model
-run against the 7 new tasks yet (same friend's-hardware step as A2); human-rated translation/summary samples haven't happened.
+### ~~A6. Eval harness for all 8 model tasks~~ — OBSOLETE (migration 0029;
+`ai-evaluate.php`, `services/eval/*` and `eval-kit/` deleted).
 
 ---
 
@@ -641,7 +625,7 @@ obsolete (its use case no longer exists post-F7).
 
 ---
 
-## Sprint 8 — every device-free/AI-free box done 2026-09-17/18
+## Sprint 8 — every device-free box done 2026-09-17/18
 
 Dispatch response-time metric, Valid JSON contracts, Auth/session
 revocation + lockout, Tenant/ownership pentest (non-incident resource),
@@ -650,15 +634,15 @@ Raw-PII exposure audit, Fatigue audit trail, Offline-map availability
 resolution) are all done with real evidence — see `backend/DEVLOG.md`
 2026-09-17/18 entries. **Remaining Sprint 8 boxes are genuinely
 hardware/AI-blocked**: offline cache durability, notification e2e
-reliability, GPS/route accuracy, AI dataset evaluation, SLM inference
-across device tiers — none attempted without the real device/friend's
-hardware they need.
+reliability, GPS/route accuracy — none attempted without the real
+device they need. (The AI dataset evaluation and SLM inference boxes are
+obsolete since 0029.)
 
 ## Current priority
 
 1. **GPS moving run, outdoors** — a Tanod walking a known Dao street with the app on duty, comparing `gps_track` against the road. Can double as further confidence-building on C7's fix (already device-verified working for a 17-min stationary locked-screen indoor run, 2026-09-24) — a longer/moving/outdoor run only strengthens that, doesn't need to re-litigate it.
 2. ~~C2 (scheduler wiring) + B3 (real restore-drill passphrase)~~ — **both DONE 2026-09-26**, see sections B/C above.
-3. **A2/A6** — hand `eval-kit/` to a friend's hardware for the other 7 model tasks (the redaction `ai_evaluation_run` row is done, 2026-09-18).
+3. ~~A2/A6~~ — obsolete, the AI pipeline was removed (migration 0029). Instead: apply 0029 to the real DBs after a backup, and run the thesis measurements in `docs/ISO25010_EVALUATION_PLAN.md`.
 4. **M13's `sms_failed` — fixed at the code level 2026-09-24, still needs a device retest.** The gap found the same day (a malformed backup number made `SmsManager` silently drop the send while the app reported `sent_by_sms` — false confidence, zero trace in `content://sms/*`) is now closed two ways: `SettingsController::update()` rejects a malformed `sos_fallback.backup_contact_number` with 400 before it can ever reach the phone (verified against the real, disposable `baranguard_uiseed` DB — malformed → 400, valid PH number → 200, empty-to-unset → 200); `SosSmsPlugin.java` independently re-checks the same PH-mobile-number shape before ever calling `SmsManager`, AND now uses a real `sentIntent`-based result instead of trusting the synchronous return, so a genuine carrier-level rejection (airplane mode, no SIM, no service) will report `sms_failed` for real instead of a false `sent`. `./gradlew assembleDebug` BUILD SUCCESSFUL. **Not yet device-verified** — no phone was attached this session; still needs an on-device retest (malformed number should reject immediately client-side too; airplane-mode/no-SIM should now produce a real `sms_failed`).
 5. **Two fixes from the 2026-09-24 pre-commit code review, both reasoned-but-not-device-verified** (DEVLOG 2026-09-24 (9)):
    - `LocalGsmOutboundClient.php`'s `runWithTimeout()` Windows `Start-Process` argument-quoting fix — needs a real send through the gateway phone with a `"` character in the message body/number to confirm it no longer gets corrupted (the previous `-ArgumentList` array form was silently space-joined by PowerShell 5.1 before `adb.exe` re-parsed it).

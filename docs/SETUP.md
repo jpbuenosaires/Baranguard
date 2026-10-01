@@ -33,13 +33,11 @@ writing this doc — not just described from memory.
   want to serve through Apache instead (closer to how the real
   deployment runs), including the htdocs-junction / vhost options.
 - **Node.js** (LTS) — the API itself is pure PHP, but `backend/`'s own
-  CLI tooling (`bootstrap-admin.js`, the AI worker's Node-side pieces)
-  needs it.
+  CLI tooling (`bootstrap-admin.js`) needs it.
 - **Git**.
 
 Not needed for this stage, and safe to skip until you reach the stage
-that needs them: Android Studio/JDK/Gradle (stage 2), Ollama (AI
-features degrade to `not_configured`, see step 1.8), an ORS API key
+that needs them: Android Studio/JDK/Gradle (stage 2), an ORS API key
 (stage 1.4's script asks about this), a Cloudflare account (stage 4), the
 GSM SMS gateway phone (stage 3).
 
@@ -160,11 +158,17 @@ opposite reason — it must survive being out of range.)
 
 | Feature | Env var(s) | If left blank |
 |---|---|---|
-| AI redaction/drafting/tools (Ollama) | `OLLAMA_URL`, `OLLAMA_MODEL` | `GET /system/health` reports `ollama: not_configured`; redaction requests 503 instead of queueing |
 | Turn-by-turn routing | `ORS_API_KEY` | `ors: not_configured`; a dispatch's route stays `route_status: unavailable`, external nav link still works |
 | Push notifications (FCM) | `FCM_SERVICE_ACCOUNT_PATH` | `fcm: not_configured`; notifications fall straight to SMS |
 | SMS gateway (local GSM, tethered phone) | `GSM_GATEWAY_ENABLED` | `sms_gsm_gateway: not_configured`; SMS attempts recorded as `failed` (`GSM_GATEWAY_NOT_CONFIGURED`), not silently dropped |
 | Remote access beyond your LAN | — | Not built by default — see stage 4 |
+
+There is no AI feature to configure: the local Ollama/SEA-LION pipeline and
+its `OLLAMA_*` settings were removed with migration 0029 (2026-10-01). Old
+`.env` files may still carry `OLLAMA_*` lines; they are ignored and can be
+deleted. If an older `install-autostart-services.ps1` registered a
+`BaranguardAiWorker` Scheduled Task, remove it with
+`Unregister-ScheduledTask -TaskName BaranguardAiWorker -Confirm:$false`.
 
 None of these block backend+web development. Every screen has a real
 "not configured" state per §2 Rule 6 — there's nothing faked to make an

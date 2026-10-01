@@ -24,16 +24,19 @@ thing twice in the same context.
   Sprint 8 work or planning.
 - **`docs/Baranguard_Master_Reference_FINAL .md`** — the real source of
   truth; `REFERENCE.md` summarises it with section numbers. **If the two
-  disagree, this file wins** and `REFERENCE.md` should be corrected. Its
-  own closing "Document status" note says how current it is.
+  disagree, this file wins** and `REFERENCE.md` should be corrected —
+  **except** where it describes the Electronic Blotter, the Lupon packet
+  or the AI/Ollama pipeline: it predates migration 0029 (2026-10-01),
+  which removed all of those, so `REFERENCE.md` wins there. Its own
+  closing "Document status" note says how current it is.
 - **`docs/Baranguard_Sprint_Prompts.md`** — Sprints 0–7 verbatim, all
   complete; pure history.
 - **`backend/DEVLOG.md`** (huge, append-only) — every decision and why.
   **Log new work here.** Never read front-to-back — `grep` for the
   feature you're touching.
-- **`docs/AI_Evaluation_Dataset_Guide.md`** — superseded by
-  `backend/scripts/generate-eval-dataset.php`; kept short, for the PII
-  category/judgement-call definitions only.
+- **`docs/AI_Evaluation_Dataset_Guide.md`** — historical only: the AI
+  pipeline and its eval scripts (incl. `generate-eval-dataset.php`) were
+  deleted by migration 0029. Kept for the PII category definitions.
 
 `HANDOFF.md` is a **replaced-in-place snapshot, not a log** — rewrite its
 current-state section fresh each update; don't stack a new banner on the

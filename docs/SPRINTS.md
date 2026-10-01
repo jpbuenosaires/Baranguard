@@ -5,7 +5,8 @@ every sprint's original wording and its checked-off menu, is preserved in
 `docs/Baranguard_Sprint_Prompts.md` — read it only if you need to know
 what a past sprint was actually asked to do.
 
-**Only Sprint 8 is left.** Its menu is below.
+**Only Sprint 8 is left.** Its menu is below. Boxes struck through are
+obsolete since migration 0029 removed the blotter and AI pipeline.
 
 ---
 
@@ -86,15 +87,11 @@ Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
   [ ] Offline-map availability
   [ ] Fatigue audit trail
   [ ] Valid JSON contracts (schema-validate every §6 response shape)
-  [ ] AI dataset evaluation run / Bikol language-quality validation
-      (redaction has real numbers, 2026-09-14: 98.26% recall / 75.88%
-      precision, Bikol weakest-recall language — see REMAINING.md A2.
-      All 8 model tasks now have a harness+dataset (A6) but only
-      redaction has a real run. Picking this box means writing it up as
-      a real deliverable — the `ai_evaluation_run` DB row and Bikol human
-      spot-check are both still outstanding.)
-  [ ] SLM inference time / 3+ Android device tiers (workstation-side —
-      this session records the methodology, the run happens outside it)
+  [x] ~~AI dataset evaluation run / Bikol language-quality validation~~
+      — OBSOLETE: migration 0029 (2026-10-01) removed the AI pipeline, the
+      eval harness and `eval-kit/`. Nothing left to evaluate.
+  [x] ~~SLM inference time / 3+ Android device tiers~~ — OBSOLETE, same
+      reason (the local model no longer exists).
   [ ] One specific end-to-end UAT scenario (name it in prose)
 
 Requirements: report REAL MEASURED NUMBERS, never target numbers restated
