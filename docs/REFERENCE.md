@@ -133,6 +133,26 @@ to know about: with no approved redaction, `RetentionService`'s
 raw_narrative rule reduces to its existing 90-day ceiling for every
 incident (Rule 10: changing that number needs architecture review).
 
+**Tanod-workflow build added 2026-10-01 (migrations 0030-0033; plan in
+`docs/FEATURE_PLAN_2026-10.md`, binding contract in
+`docs/FEATURE_CONTRACT_2026-10.md`).** Real tanods are honorarium-only,
+have no DTR, and submit a monthly accomplishment report as their
+attendance; rosters are built from stated availability and approved by a
+barangay official; large matters are referred (PNP/BFP/EMS/officials),
+never handled; MC 2026-037 adds school-zone reporting. So: availability +
+draft/published rosters, monthly accomplishment reports (prepared -> noted
+-> approved), incident referrals, a school inventory + check-ins + a
+per-incident Annex C-1 summary + an Annex D term report. **Code-complete,
+verified on disposable DBs and jsdom only — not browser-verified by an
+agent, not device-verified, migrations 0029-0033 not applied to either
+real DB.** Positioning guard unchanged: the referral log and school
+reports are delegation/aggregate views with no names or narratives — still
+no browsable case registry (BIMSS/KPIS is the case ledger). **No retention
+rule or purge job exists for any of the new tables or the `c1_*` columns;
+retention is an open policy decision (Rule 10).** The Annex B/C-1/D field
+lists come from the user's own forms; the circular text (deadlines, filing
+frequency, Annex A) was not readable and is unknown — do not guess.
+
 **Mobile rebuild ABANDONED same day it was decided (DEVLOG 2026-09-27
 (3), reversed same date).** A React Native (Expo + dev build) rebuild was
 attempted in a `mobile-rn/` folder, reached Phases 0–7 code-complete plus
@@ -222,15 +242,28 @@ elsewhere means whichever list context makes clear.
 
 | Role | Reach |
 |---|---|
-| **Admin** | Full operations: dispatch, GPS, scheduler, users, devices, audit log, service health, exports. Cannot read `raw_narrative` or run the Secretary lifecycle actions. |
-| **Secretary** | Records custodian: only reader of `raw_narrative` and the incident party fields; only role that may change an incident's lifecycle (duplicate/invalid/cancelled/reopened). |
-| **Punong Barangay** | Read-only oversight: dashboard, map, heatmap, analytics, fatigue. No evidence files, no writes, no list of cases (individual incidents still reachable from dashboard). |
-| **Tanod** | Mobile only. Own incidents/dispatches/shifts. Web login succeeds but lands on an honest "no screen" page. |
+| **Admin** | Full operations / Chief Tanod's seat: dispatch, GPS, scheduler (drafts rosters, reviews availability), users (incl. editing official title and approval authorities), devices, audit log, service health, exports, Annex D preparation. Cannot read `raw_narrative` or run the Secretary lifecycle actions. May NOT change their OWN `approve_*` authorities (403; another Admin must). |
+| **Secretary** | **Records & Reports Officer** (redefined 2026-10-01): only reader of `raw_narrative` and the incident party fields; only role that may change an incident's lifecycle (duplicate/invalid/cancelled/reopened); also owns citizen reports, the school inventory (Annex B), the referral log, C-1 fields and preparing/filing annexes. A Kagawad has NO role of their own: they use a `secretary` account carrying approval authorities (open decision, see HANDOFF). |
+| **Punong Barangay** | Oversight **plus approval** when granted authority: dashboard, map, heatmap, analytics, Approvals inbox, accomplishment reports, referral log, school zones (read). Still no evidence files and no list of cases (individual incidents still reachable from dashboard). |
+| **Tanod** | Mobile only. Own incidents/dispatches/**published** shifts, availability, accomplishment entries, referrals, school check-ins. Web login succeeds but lands on an honest "no screen" page. |
 | **Lupon** | **No system account at all** (DB-enum-only, never a login role). Baranguard no longer generates anything for them. |
+
+**Approval authority is a separate, Admin-managed attribute — NOT a role**
+(migration 0030): `user.approval_authority` is a SET of `note_report` ·
+`approve_report` · `approve_roster` · `prepare_annex_d` · `approve_annex_d`,
+and `user.official_title` is the text printed under a signature. Only
+admin / secretary / punong_barangay accounts may hold any
+(`backend/lib/ApprovalAuthority.php`, `ELIGIBLE_ROLES`). Backfill: every
+Punong Barangay -> title "Punong Barangay" + `note_report, approve_report,
+approve_roster, approve_annex_d`; every Admin -> title "Chief Tanod" +
+`note_report, prepare_annex_d`. Segregation of duties: a preparer can never
+note/approve their own report (`assertNotPreparer`), and an Admin cannot
+add/remove their own `approve_*` authorities. `PATCH /users/:id` (Admin)
+edits title/authorities; audit `user_approval_authority_changed`.
 
 ---
 
-## 4. Schema map (§5 — 23 tables)
+## 4. Schema map (§5 — 23 tables at the Master Reference; +7 tables from migrations 0030-0033, minus 4 dropped by 0029)
 
 Core chain: `barangay → user → mobile_device → incident → dispatch →
 tanod_sos → notification → notification_target → notification_delivery`.
@@ -255,10 +288,30 @@ NULL, removal is `opted_out_at` not a DELETE) · `health_check_log`
 (fixed-window abuse-budget counter, not a business dataset — no retention/
 legal-hold treatment, see migration 0023's own doc comment).
 
-**Migrations 0001–0029.** 0001–0026 are applied to both real DBs
+**Tanod-workflow tables (0030-0033, 2026-10-01; NOT applied to any real DB;
+no retention/purge defined — Rule 10 decision pending):**
+`tanod_availability` (per tanod + period, `windows_json`, status
+submitted/accepted/revised, `client_event_id`) · `accomplishment_report`
+(per tanod + `month` 'YYYY-MM', status open/prepared/noted/approved/
+returned, noted_by/approved_by) · `accomplishment_entry` (work_date, text,
+confirmed `duration_minutes`, server `suggested_duration_minutes`,
+`duration_flag`) · `incident_referral` (referred_to enum incl.
+`ambulance_ems`, never a citizen name) · `school` (Annex B, no student data;
+carries a focal person + contact) · `school_checkin` (no coordinates) ·
+`ssz_term_report` (Annex D snapshot, draft/prepared/approved/submitted).
+**New columns:** `user.official_title`/`approval_authority`;
+`shift_schedule.approval_status` (draft/published)/`source_availability_id`/
+`approved_by`/`approved_at`; `incident.school_id`/`c1_summary`/
+`c1_action_taken`/`c1_status_notes` (short, non-identifying Annex C-1 text,
+separate from `raw_narrative`, which stays on the 90-day purge);
+`offline_queue.payload_type` gained `referral`, `availability`,
+`accomplishment_entry`, `school_checkin`.
+
+**Migrations 0001–0033.** 0001–0026 are applied to both real DBs
 (`baranguard`, `baranguard_uiseed`); **0029 (drops the blotter and AI
-tables) is written and verified on disposable DBs only — it has NOT been
-run against either real DB** (destructive; take a backup first). On a new machine apply all in order as DBA/root —
+tables) and 0030–0033 (tanod workflow) are written and verified on
+disposable DBs only — NONE of them has been run against either real DB**
+(0029 is destructive; take a backup first; apply in numeric order). On a new machine apply all in order as DBA/root —
 `baranguard_app` has no `ALTER`/`CREATE TABLE` (§8). Notable ones:
 0008 incident party fields · 0009 blotter case_status (table since dropped by 0029) · 0011 user
 suspension · 0012 system_settings (W21) · 0014 display_id · 0015 ai_tools
@@ -278,7 +331,13 @@ no-fix fallback) · 0027/0028 remove the AI Tools screen's columns/types ·
 `blotter_record`, `ai_processing_log`, `ai_evaluation_run`; keeps
 `incident.raw_narrative`/`redacted_narrative`/party fields and
 `health_check_log.ollama_status` as historical, new rows write
-`not_configured`).
+`not_configured`) · 0030 `approval_authority_and_roster` (`user.official_title`/
+`approval_authority`, `tanod_availability`, `shift_schedule` draft/published
+columns; existing shifts backfilled to published) · 0031
+`accomplishment_reports` (`accomplishment_report`/`accomplishment_entry`;
+widens `offline_queue.payload_type`) · 0032 `incident_referral` · 0033
+`school_zones` (`school`, `school_checkin`, `incident.school_id`/`c1_*`,
+`ssz_term_report`).
 
 **FK trap:** `evidence_attachment` and `dispatch` are `ON DELETE
 RESTRICT` against `incident` — deleting
@@ -289,7 +348,7 @@ an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 ---
 
-## 5. Endpoints (76 live `/api/v1` routes, all built)
+## 5. Endpoints (105 live `/api/v1` routes across 28 route files, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -346,10 +405,23 @@ route (`GET /dispatch/:id/route`)
 > dispatch falls to `unavailable`. Not audited (Rule 8 bars raw
 > coordinates).
 
-**GPS** live · history · post · `/sync/batch`
-**Scheduling** shifts (list/create/update — min 1 on-duty Tanod per
-barangay/shift + 8h minimum rest, both hard-blocked, H-17) · swap
-requests (same H-17 guards apply on approval) · fatigue flags
+**GPS** live · history · post · `/sync/batch` (kinds: sos · incident ·
+referral · gps · duty_status · dispatch_status · availability ·
+accomplishment_entry · school_checkin, processed in that order; request
+keys `referrals[]`, `availability[]`, `accomplishment_entries[]`,
+`school_checkins[]` added 2026-10-01; each new kind is signature-checked
+PER ITEM, SOS never is)
+**Scheduling** shifts (list/create/update/**publish**) · swap requests ·
+fatigue flags (endpoints and table kept; the web nav item was removed
+2026-10-01). **Roster rules changed 2026-10-01** (supersedes H-17): the 8h
+minimum-rest block and the min-1-on-duty hard block are GONE; replaced by
+a hard cap of 12 scheduled hours per tanod per Manila day (422
+`DAILY_HOURS_EXCEEDED`, writes per tanod serialized by a user-row lock);
+`assertNoOverlap` stays; missing coverage is a `NO_COVERAGE` warning on
+publish. New shifts are `draft`; a Tanod only ever sees `published` own
+shifts. Changing a published shift's `user_id`/`start_at`/`end_at`
+(PATCH or approved swap) reverts it to `draft` (re-publish needed); a
+`patrol_zone`-only edit does not. A swap request on a draft shift is 404.
 **Notifications/SOS** notifications · ack · tanod-sos (+ack/resolve)
 
 > `POST /tanod-sos` **never rejects on a missing GPS fix** (C-01,
@@ -377,6 +449,57 @@ is_suspended; suspend/unsuspend + is_active toggle) · `/citizen-reports`
 > is exactly a DILG BIMSS/KPIS case, §1), everything else 2026-10-01
 > (migration 0029; barangays use binders). Each now answers a plain 404
 > route miss (asserted in `verify-sprint7-pentest-incidents.sh`).
+
+**Tanod workflow (2026-10-01, contract in `docs/FEATURE_CONTRACT_2026-10.md`;
+cross-tenant 404, web writes need `Idempotency-Key`, tanod writes
+`client_event_id` + `X-Device-Id`; audit metadata ids/statuses only):**
+
+- **Availability** `POST /availability` (tanod; same user+period while
+  `submitted` updates windows and bumps `version`; accepted -> 409) ·
+  `GET /availability` (tanod own; admin/secretary/PB barangay-wide) ·
+  `PATCH /availability/:id` (admin|secretary: `accepted`/`revised` + note).
+- **Roster approval** `POST /shifts/publish` (`approve_roster`; 1-100 ids;
+  returns `published`, `already_published`, `warnings[NO_COVERAGE]`; a
+  tenant-mismatched id 404s the whole call; no tanod notification is sent
+  — no suitable notification type exists, none was invented).
+  `POST /shifts` takes optional `source_availability_id`.
+- **Users** `GET /users/:id` (new) · `PATCH /users/:id` also accepts
+  `official_title` and `approval_authority[]` (Admin; see §3).
+- **Accomplishment** `POST`/`PATCH /accomplishment-entries` (tanod; work
+  date not future and <= 62 days back; confirmed duration 1-1440 min; the
+  server stores its own suggested duration from `duty_status` and sets
+  `duration_flag` when they differ by > 30 min) ·
+  `GET /accomplishment-reports` (+`/:id`, entry text for approvers) ·
+  `POST /accomplishment-reports/:id/submit` (tanod, ONLINE-ONLY, not a sync
+  kind) · `/note` (`note_report`) · `/approve` (`approve_report`; preparer
+  can never note/approve) · `/return` (note or approve authority, reason
+  1-255). open|returned -> prepared -> noted -> approved; illegal -> 409.
+- **Referrals** `POST /incidents/:id/referrals` (tanod own/dispatched,
+  admin, secretary; does not change dispatch/incident status; records a
+  handoff, never acceptance) · `GET /incidents/:id/referrals` ·
+  `GET /referrals?from=&to=&referred_to=` (admin/secretary/PB; rows carry
+  no narrative, names, contacts or coordinates — a delegation log, not a
+  case registry). `referred_to`: pnp · bfp · ambulance_ems ·
+  barangay_official · vaw_desk · social_welfare · higher_lgu · doh · dpwh
+  · other.
+- **Safer School Zones** `GET/POST /schools`, `PATCH /schools/:id`
+  (admin|secretary write; no DELETE, deactivate via `is_active`; all roles
+  read own barangay) · `POST /school-checkins` (tanod; strict ISO-8601 with
+  zone; in <= 5 min future / <= 62 days back; out not before and <= 24h
+  after in; close-by-reference for already-synced check-ins via
+  `closes_client_event_id`) · `GET /school-checkins` (admin/secretary/PB) ·
+  `GET /reports/school-term?term_start=&term_end=` (live Annex D counts, span
+  <= 366 days) · `GET/POST /ssz-term-reports`, `GET/PATCH /:id`,
+  `POST /:id/prepare` (`prepare_annex_d`) · `/approve` (`approve_annex_d`,
+  never the preparer) · `/mark-submitted` (admin|secretary). Report objects
+  carry `prepared_by_name/title` and `approved_by_name/title` for the
+  signature page. Incident create (mobile + web) and `PATCH /incidents/:id`
+  (admin+secretary) accept `school_id` and `c1_*`; on the MOBILE path an
+  unusable `school_id` is stored NULL rather than failing the offline
+  incident (Rule 7), on web create/PATCH it is a 400.
+  Referral-column mapping for Annex D: `ambulance_ems` and `other` ->
+  other agencies by default (`annex_d.ambulance_ems_maps_to` setting may
+  map it to DOH); the Secretary confirms.
 
 **SMS** `/sms/logs` (read-only) · `/sms/conversations` (+`/:phone/messages`,
 +`/:phone/resolve`, Admin-only) · `/sms/send` · `/sms/broadcast`
@@ -457,13 +580,36 @@ incident into one card) · W4 GIS · W7 incident detail (routed
 `incident-detail`; dossier, narrative, evidence, timeline, Admin resolve,
 Secretary lifecycle actions) ·
 Analytics (tabbed Reports/Heatmap, Admin+PB) · Personnel
-(tabbed Users/Scheduler/Swap requests/Fatigue flags — only Fatigue is
-PB-visible) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
+(tabbed Users/Scheduler/Swap requests — Admin sees all three, Secretary
+and PB the Scheduler only; the **Fatigue flags tab was removed from nav
+2026-10-01**, `fatigue-flags.js` and its endpoints are kept, unmounted) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
 settings (+General/SMS Gateway, Admin-only) · W16 citizen inbox
 (+Convert to Incident) · W17 audit log · W18 map package management ·
 W19 public report · W20 service health · Incident Management (search,
 Resolve action, multi-responder support).
-**Mobile:** M1–M7, M12, M13.
+**Added 2026-10-01 (code-complete, jsdom-verified only; not browser- or
+device-verified by an agent):** **Approvals** (inbox for admin/secretary/PB:
+availability to review, shifts to publish, reports to note/approve, Annex D
+to prepare/approve; no count badge — no approvals-count endpoint exists) ·
+**Accomplishment Reports** (monthly list, detail with flagged durations,
+note/approve/return only for holders of the authority, print layout) ·
+**Referral Log** (delegation log, no case content) · **Safer School Zones**
+(tabs Schools/Annex B + print, Incidents/C-1 + print, Term Report/Annex D
+live counts + create/prepare/approve/mark-submitted + signature page; no
+deadline hardcoded) · Personnel: Users tab edits `official_title` and
+approval authorities (Admin); Scheduler tab gained availability review,
+draft/published badges, Publish with coverage warnings · Dashboard
+pending-approvals widget (PB landing) · Dispatch "Delegated to" action ·
+Incident Detail/Management school link, C-1 fields and referrals section.
+Secretary nav gained Approvals, Accomplishment Reports, Referral Log, Safer
+School Zones.
+**Mobile:** M1–M7, M12, M13, plus (2026-10-01, not device-verified)
+Availability, Accomplishments (entry with confirmed duration + online
+server suggestion; month submit is online-only), School check-in/out, a
+Refer panel on assignment detail and the submitted-incident view, school
+picker + C-1 fields on New Incident, My Shifts showing published shifts
+only. New local tables `availability_local`, `accomplishment_entry_local`,
+`referral_local`, `school_checkin_local`, `school_local` (cache).
 
 > **W6 Electronic Blotter (records list) was REMOVED 2026-09-10, and the
 > rest of the blotter 2026-10-01** (migration 0029; barangays keep the
@@ -598,7 +744,7 @@ controls that do nothing.
 
 ---
 
-## 9. Verification suites (counts are LAST RECORDED, not re-run after 0029 — re-run before trusting a change)
+## 9. Verification suites (counts measured 2026-10-01 after the tanod-workflow build; disposable DBs only)
 
 | Script | Checks |
 |---|---|
@@ -606,27 +752,33 @@ controls that do nothing.
 | `verify-sprint1-auth.sh` | 23 |
 | `verify-w2-reports.sh` | 31 |
 | `verify-w3-w4-dispatch-gis.sh` | 38 |
-| `verify-sprint1-remaining.sh` | 39 |
-| `verify-scheduler-fatigue.sh` | 43 |
+| `verify-sprint1-remaining.sh` | `ALL CHECKS PASSED` (count not captured) |
+| `verify-scheduler-fatigue.sh` | 49 (assertions updated to the 12h/day cap and draft/published rules) |
 | `verify-devices-map-packages.sh` | 57 |
 | `verify-duty-status-map-upload.sh` | 49 |
 | `verify-public-transparency.sh` | 17 |
 | `verify-device-signature.sh` | 21 |
-| `verify-sprint4.sh` | 50 |
+| `verify-sprint4.sh` | `ALL CHECKS PASSED` (count not captured) |
 | `verify-sprint4-phase2-3.sh` | 72 |
-| `verify-sprint7-retention.sh` | 76 |
-| `verify-sprint7-audit.sh` | 52 |
+| `verify-sprint7-retention.sh` | 82 |
+| `verify-sprint7-audit.sh` | 59 |
 | `verify-sprint7-pentest-incidents.sh` | 56 |
 | `verify-b2-pentest-remaining-resources.sh` | 59 |
-| `verify-sprint3.sh` | 38 |
+| `verify-sprint3.sh` | 43 |
 | `verify-f9-sms-broadcast-idempotency-index.sh` | 15 |
-| `verify-second-responder.sh` | 22 |
+| `verify-second-responder.sh` | 25 |
 | `verify-routing.sh` | 23 (real-ORS block SKIPs, not fails, if no key) |
 | `verify-device-session.sh` | 20 |
-| `restore-drill.sh` | 12 (real DB) |
-| `verify-web-wiring.mjs` | 528 passed, 0 failed (measured 2026-10-01, after 0029) |
-| `web/tests` (`npm test`) | 389 passed, 0 failed (measured 2026-10-01, after 0029) |
-| `mobile: verify.schema` | 113 |
+| `verify-evidence-upload.sh` | 19 |
+| verify-f5 / f6 / f8 suites | 16 / 8 / 8 |
+| verify-h16 lifecycle suite | 30 |
+| `verify-referrals.sh` (new 2026-10-01) | 147 |
+| `verify-roster-accomplishment.sh` (new 2026-10-01) | 332 (a final run prints `ALL CHECKS PASSED`; the roster half of the earlier scheduler-fatigue run likewise, counts not captured) |
+| `verify-school-zones.sh` (new 2026-10-01) | 213 |
+| `restore-drill.sh` | 12 (real DB; last run 2026-09-26, not re-run since 0030-0033) |
+| `verify-web-wiring.mjs` | 733 passed, 0 failed (2026-10-01) |
+| `web/tests` (`npm test`) | 542 passed, 0 failed (2026-10-01; the map test 'SOS markers are never clustered' looks order-sensitive/flaky) |
+| `mobile: verify-local-schema.mjs` | 230 passed, 0 failed (`tsc --noEmit`: 1 and lint: 18 errors, both pre-existing) |
 
 All use a disposable database + disposable app user + throwaway port,
 never the real `baranguard` database. `web/tests` needs no backend at

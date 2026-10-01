@@ -9,6 +9,49 @@ H-18) or the Redaction/Blotter tabs is HISTORICAL and obsolete; those
 sections are kept as a record, not as open work. Migration 0029 itself has
 not yet been applied to either real DB (see `HANDOFF.md`).
 
+**2026-10-01 — tanod-workflow build (migrations 0030-0033) is
+code-complete but unverified outside disposable DBs/jsdom; these are the
+open items it created** (details: `HANDOFF.md` Current state, DEVLOG
+2026-10-01 (3), `docs/FEATURE_PLAN_2026-10.md`, `docs/FEATURE_CONTRACT_2026-10.md`):
+
+- 🔴 **Apply migrations 0029-0033 to the real DBs** (back up first, DBA/root,
+  numeric order). Until then the real DBs lack every new table and the new
+  endpoints will 500 against them.
+- 🟠 **Browser pass** of Approvals, Accomplishment Reports, Referral Log,
+  Safer School Zones, Personnel (Users authority editing, Scheduler
+  availability/publish), dashboard widget, Dispatch "Delegated to" and the
+  Incident Detail C-1/referral sections, across Admin, Secretary and PB
+  (the user is running this; no agent has).
+- 🟠 **Device pass** of the new mobile screens (Availability, Accomplishments,
+  School check-in, Refer, C-1 inputs, My Shifts published-only), offline
+  queue sync of the four new kinds, the `closes_client_event_id` check-out
+  path, and the local-schema migration on real SQLCipher (the mobile
+  discard SQL has never run there).
+- 🟠 **Concurrency proof**: the 12h/day cap user-row lock and the
+  accomplishment-report-creation deadlock fix were reasoned but never
+  demonstrated (`php -S` is single-threaded); test under real Apache.
+- 🟠 **Print visual check** of the accomplishment-report form and Annex B,
+  C-1, D (+ signature page) layouts.
+- 🟠 **Decisions needed** (do not guess): retention for the new tables and
+  `c1_*` columns (no purge exists, Rule 10); narrative-retention policy
+  (every `raw_narrative` is on the 90-day ceiling); whether a Kagawad
+  should get a role instead of a secretary account with authorities;
+  whether an Admin may hold `approve_*` on another account; ambulance/EMS
+  mapping on Annex D (setting `annex_d.ambulance_ems_maps_to`, default
+  `other`).
+- 🟠 **Unknowns to resolve from primary sources**: MC 2026-037 text
+  (Annex B/C-1/D deadlines, C-1 filing frequency, deployment days/hours,
+  Annex A fields) and the COA/treasurer rule for honorarium attendance
+  evidence; who approves rosters in practice.
+- 🟢 **Privacy notices**: `PRIVACY_NOTICES.md` has nothing for tanod hours,
+  availability or school check-ins; the Master Reference still predates
+  0029-0033.
+- 🟢 **Test hygiene**: `web/tests` map test 'SOS markers are never
+  clustered' looks order-sensitive; one unexplained flaky run was seen once
+  in `verify-roster-accomplishment.sh`; `verify-sprint1-remaining.sh`,
+  `verify-sprint4.sh` print `ALL CHECKS PASSED` but their counts were not
+  captured this run.
+
 Full forensic detail for anything marked ✅ below lives in `backend/DEVLOG.md`
 (grep by date/keyword) and, for the 2026-09-07 audit items, `docs/AUDIT_2026-09-07.md`.
 Don't re-derive it here — this file tracks what's still open, not the story of how closed items got closed.

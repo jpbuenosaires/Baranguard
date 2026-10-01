@@ -16,6 +16,15 @@ removed below or marked historical. Not yet applied to either real DB as
 of this writing (REFERENCE.md §4) — until it is, those four tables still
 physically exist there.
 
+**Extended 2026-10-01 for migrations 0030-0033** (tanod workflow:
+availability, accomplishment reports, referrals, Safer School Zones —
+`docs/FEATURE_PLAN_2026-10.md`, `docs/FEATURE_CONTRACT_2026-10.md`). The
+new categories are the "(2026-10-01)" rows in §1. They are written and
+verified on disposable DBs only; not applied to either real DB, so no real
+personal data is held in them yet. **Retention for every new category is
+pending a policy decision (Rule 10) and no purge job exists for any of
+them** (§5).
+
 **This is a snapshot, not a log.** Re-derive it from the actual schema
 (`backend/migrations/`) whenever a migration adds, removes, or
 reclassifies a personal-data column — don't hand-edit it out of sync
@@ -38,6 +47,14 @@ the reference before being reconciled.
 | Audit | `audit_log` | Identifiers and statuses only (§2 Rule 8) — never narrative, coordinates or credentials |
 | Employment/scheduling | `shift_schedule`, `duty_status`, `fatigue_flag` | Ordinary personal data (Tanod work records) |
 | Authentication | `user.password_hash`, `auth_session` | Ordinary personal data; hashed, never stored in plaintext |
+| Official/approver identity (2026-10-01) | `user.official_title`, `user.approval_authority` | Ordinary personal data (staff title printed under signatures). Retention: pending decision, no purge job |
+| Tanod availability (2026-10-01) | `tanod_availability.windows_json`, period, review note | Ordinary personal data about a named staff member's time. Retention: pending decision, no purge job |
+| Accomplishment reports (2026-10-01) | `accomplishment_entry.accomplishment_text`, `work_date`, `start_time`/`end_time`, `duration_minutes`, `suggested_duration_minutes`, `duration_flag`; `accomplishment_report` month/status/noted_by/approved_by | Ordinary personal data but sensitive in practice: a named person's hours and activities, and the likely attendance evidence for honorarium. Free text could be typed to include third-party details. Retention: pending decision, no purge job |
+| Referral metadata (2026-10-01) | `incident_referral` (`referred_to`, `other_text`, `contact_name` = a responder/unit/official, never a citizen, `referred_at`, `reference_no`, `created_by`) | Ordinary personal data (staff/responder names, handoff times). The referral log endpoint returns no narrative, names or coordinates. Rows are deleted with their incident by the retention cascade (so they follow the incident's clock); no separate rule |
+| School inventory (2026-10-01) | `school` (name, address, optional coordinates, `focal_person`, `focal_contact`, remarks) | Ordinary personal data limited to school staff contact (a named focal person and phone number). No student data of any kind. Retention: pending decision, no purge job |
+| School check-ins (2026-10-01) | `school_checkin` (`user_id`, `school_id`, `checked_in_at`, `checked_out_at`) | Ordinary personal data: where and when a named tanod was deployed. No coordinates stored. Retention: pending decision, no purge job |
+| Annex C-1 summary fields (2026-10-01) | `incident.school_id`, `c1_summary`, `c1_action_taken`, `c1_status_notes` | Designed as short, factual, non-identifying text (no victim/student names), separate from `raw_narrative`, which stays on the 90-day purge. Code enforces length only; free text can still be typed carelessly. Retention: pending decision; no purge rule exists for these columns, so they currently live as long as the incident |
+| Term reports (2026-10-01) | `ssz_term_report` (aggregate counts, prepared_by/approved_by, mayor-office and DILG received-by names and dates) | Aggregate counts plus names of staff and receiving officers. Retention: pending decision, no purge job |
 
 ## 2. Purpose of processing
 
@@ -68,7 +85,10 @@ DILG BIMSS/KPIS remains the mandated case ledger (`docs/REFERENCE.md`
 restriction in the system, because it is the only narrative field and
 carries unredacted personal/sensitive content. The incident party fields
 (`complainant_name`, `respondent_name`, `complainant_contact_number`) are
-Secretary-only on read as well. Admin gets less here on purpose. Every other category
+Secretary-only on read as well. Admin gets less here on purpose. Accomplishment-entry text is shown only
+to the owning tanod and to admin/secretary/Punong Barangay of the same
+barangay (cross-tenant is 404); the Referral Log and school-term reports
+are aggregate/delegation views. Every other category
 above follows the ordinary role matrix (Admin/Secretary/Punong
 Barangay/Tanod), tenant-isolated per barangay (Rule 2).
 
@@ -95,6 +115,18 @@ window, a manual Secretary-authored summary, or the barangay's binder
 record is the intended continuation — is a policy call for the barangay
 and an architecture review (Rule 10), not something this document or a
 code session settles.
+
+**New 2026-10-01 tables: retention pending decision, no purge job.**
+`tanod_availability`, `accomplishment_report`/`accomplishment_entry`,
+`school`, `school_checkin`, `ssz_term_report`, `user.official_title`/
+`approval_authority` and the `incident.c1_*` columns have NO rule in
+`RetentionService`; they accumulate until a policy is chosen (Rule 10:
+needs an architecture review and a barangay council decision; no legal
+retention rule is cited here and none should be invented). The one
+exception is `incident_referral`, which the existing incident-purge
+cascade deletes together with its incident. Accomplishment reports are
+the likely attendance evidence for honorarium payroll, but what the
+treasurer/COA accepts is unconfirmed (HANDOFF.md).
 
 **Historical (removed by 0029, no longer in force):** retention rules
 for `blotter_record`/`blotter_revision`, `ai_processing_log` (1 year)
