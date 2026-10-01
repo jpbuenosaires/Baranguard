@@ -32,6 +32,7 @@ import { getDeviceId, getDevicePublicKeyPem, getFcmToken } from '../services/dev
 import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
 import { refreshSosFallbackContact } from '../services/sosFallbackContact';
+import { notifyLoggedIn } from '../services/syncScheduler';
 
 const GENERIC_FAILURE = 'Unable to sign in with those credentials.';
 
@@ -192,6 +193,9 @@ async function runPostLoginSetup(barangayId: number): Promise<void> {
   // because the moment it's actually needed is the moment the server is
   // confirmed unreachable. Same non-blocking, non-fatal treatment.
   void refreshSosFallbackContact();
+
+  // Anything queued while signed out (a 401 mid-shift) can go now.
+  notifyLoggedIn();
 }
 
 export default LoginPage;

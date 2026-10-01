@@ -37,11 +37,49 @@ export async function saveGpsPointLocally(point: NewGpsPoint): Promise<{ localId
   return { localId, clientEventId };
 }
 
-/** Rows not yet confirmed by the server, oldest first (§5 sync invariants: "processes oldest-first"). */
-export async function listUnsyncedGpsPoints(): Promise<GpsTrackLocalRow[]> {
+/**
+ * Rows not yet confirmed by the server, oldest first (§5 sync invariants:
+ * "processes oldest-first"). Capped rows (`permanent_failure`) are excluded;
+ * `limit` bounds how much of a long offline backlog one pass will take on.
+ */
+export async function listUnsyncedGpsPoints(limit?: number): Promise<GpsTrackLocalRow[]> {
   const db = await openLocalDatabase();
-  const result = await db.query('SELECT * FROM gps_track_local WHERE synced = 0 ORDER BY recorded_at ASC');
+  const result = await db.query(
+    `SELECT * FROM gps_track_local WHERE synced = 0 AND permanent_failure = 0 ORDER BY recorded_at ASC${
+      limit ? ' LIMIT ?' : ''
+    }`,
+    limit ? [limit] : []
+  );
   return (result.values ?? []) as GpsTrackLocalRow[];
+}
+
+/** Counts one server-reported failure; flips `permanent_failure` at `maxAttempts`. */
+export async function markGpsPointSyncFailed(localId: string, maxAttempts: number): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    `UPDATE gps_track_local
+       SET sync_attempts = sync_attempts + 1,
+           permanent_failure = CASE WHEN sync_attempts + 1 >= ? THEN 1 ELSE permanent_failure END
+     WHERE local_id = ?`,
+    [maxAttempts, localId],
+    /* transaction */ false
+  );
+}
+
+export async function countPermanentlyFailedGpsPoints(): Promise<number> {
+  const db = await openLocalDatabase();
+  const result = await db.query('SELECT COUNT(*) AS n FROM gps_track_local WHERE synced = 0 AND permanent_failure = 1');
+  return Number((result.values?.[0] as { n: number } | undefined)?.n ?? 0);
+}
+
+/** Manual retry: puts capped GPS points back into the automatic sync set. */
+export async function resetFailedGpsPoints(): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    'UPDATE gps_track_local SET permanent_failure = 0, sync_attempts = 0 WHERE synced = 0 AND permanent_failure = 1',
+    [],
+    /* transaction */ false
+  );
 }
 
 export async function markGpsPointSynced(localId: string, serverTrackId: number | null): Promise<void> {

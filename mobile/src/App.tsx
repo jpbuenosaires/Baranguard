@@ -37,6 +37,7 @@ import ProfilePage from './pages/profile';
 import { hasStoredSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
+import { startSosFallbackContactResumeRefresh } from './services/sosFallbackContact';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
 import { initThemeListener } from './utils/theme';
 import tacticalFeedback from './utils/tacticalFeedback';
@@ -325,6 +326,7 @@ const App: React.FC = () => {
     registerCriticalAlertListeners();
     void checkForPendingNativeAlert();
     startSyncScheduler();
+    startSosFallbackContactResumeRefresh();
     // Once per cold start, not per sync tick — Phase 3.3's cleanup rule
     // only matters on a 30-day timescale, so there is no benefit to
     // running it more often than the app actually restarts, and every run

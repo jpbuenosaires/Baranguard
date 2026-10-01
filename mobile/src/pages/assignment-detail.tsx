@@ -1,5 +1,5 @@
 /**
- * assignment-detail.tsx — M6 Assignment Detail / Tactical Navigation (§9 Mobile).
+ * assignment-detail.tsx â€” M6 Assignment Detail / Tactical Navigation (Â§9 Mobile).
  *
  * PRODUCTION-GRADE OVERHAUL:
  * Clean, flat, modern, minimal mobile UI designed specifically for Tanods in the field.
@@ -65,14 +65,23 @@ import LiveMapCanvas, { type FocusTarget, type LiveMapCanvasHandle } from '../co
 import ActiveStepCard from '../components/ActiveStepCard';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
-import { ApiError, getDispatchRoute, updateDispatchStatus, type NearbyIncident, type RouteData } from '../services/apiService';
+import {
+  ApiError,
+  getDispatches,
+  getDispatchRoute,
+  updateDispatchStatus,
+  type NearbyIncident,
+  type RouteData,
+} from '../services/apiService';
 import {
   applyLocalStatusChange,
+  cacheDispatchesFromServer,
   cacheRouteFetch,
   getCachedDispatch,
   isCacheStale,
   markStatusSynced,
   nextStatusFor,
+  revertLocalStatusChange,
 } from '../services/db/dispatchRepository';
 import { enqueueDispatchStatusChange } from '../services/db/offlineQueueRepository';
 import type { DispatchLocalRow } from '../services/db/localSchema';
@@ -203,7 +212,7 @@ const AssignmentDetailPage: React.FC = () => {
         if (!cancelled) setPosition(p);
       })
       .catch(() => {
-        // No fix yet — embedded map still frames on destination.
+        // No fix yet â€” embedded map still frames on destination.
       });
 
     watchPosition((p) => {
@@ -253,7 +262,7 @@ const AssignmentDetailPage: React.FC = () => {
       arrivalPromptedRef.current = true;
       tacticalFeedback.vibrate([80, 100, 80, 100, 80]);
       if (row?.status === 'en_route') {
-        setNote('You have arrived at the scene — tap "Mark Arrived" to confirm.');
+        setNote('You have arrived at the scene â€” tap "Mark Arrived" to confirm.');
       } else {
         setNote('You have arrived at the destination.');
       }
@@ -279,7 +288,7 @@ const AssignmentDetailPage: React.FC = () => {
     const next = nextStatusFor(row.status);
     if (!next) return;
     if (row.server_dispatch_id === null) {
-      setNote('This assignment has no server ID yet — cannot change status.');
+      setNote('This assignment has no server ID yet â€” cannot change status.');
       return;
     }
 
@@ -299,16 +308,41 @@ const AssignmentDetailPage: React.FC = () => {
         setRow(await getCachedDispatch(row.local_id));
         setNote(`Status updated: ${STATUS_LABEL[next] ?? next}`);
       } catch (error) {
-        await enqueueDispatchStatusChange(clientEventId, {
-          dispatchLocalId: row.local_id,
-          serverDispatchId: row.server_dispatch_id,
-          status: next,
-        });
-        setNote(
-          error instanceof ApiError && error.isOffline
-            ? `Offline — status set to ${STATUS_LABEL[next] ?? next} locally and queued.`
-            : `Workstation unreachable — status updated locally and queued.`
-        );
+        // Queue ONLY when the request may never have reached the server
+        // (offline/timeout), the server itself failed (5xx), or the session
+        // expired mid-shift (401 â€” syncs after re-login). A 4xx/409 is the
+        // server DECIDING no (dispatch cancelled, already advanced, not
+        // yours): queueing it would just replay the same rejection later
+        // while the cache claimed a status the server never accepted.
+        const transient =
+          !(error instanceof ApiError) || error.isOffline || error.status >= 500 || error.status === 401;
+        if (transient) {
+          await enqueueDispatchStatusChange(clientEventId, {
+            dispatchLocalId: row.local_id,
+            serverDispatchId: row.server_dispatch_id,
+            status: next,
+          });
+          setNote(
+            error instanceof ApiError && error.status === 401
+              ? `Status set to ${STATUS_LABEL[next] ?? next} locally â€” pending, re-login required to send it.`
+              : error instanceof ApiError && error.isOffline
+                ? `Offline â€” status set to ${STATUS_LABEL[next] ?? next} locally and queued.`
+                : `Workstation unreachable â€” status updated locally and queued.`
+          );
+        } else {
+          await revertLocalStatusChange(row.local_id, next);
+          try {
+            // Pull the server's real state so the card shows what actually
+            // happened (e.g. the dispatch was cancelled by Admin).
+            await cacheDispatchesFromServer(await getDispatches());
+          } catch {
+            // Offline refresh is best-effort; the local revert already ran.
+          }
+          setRow(await getCachedDispatch(row.local_id));
+          setNote(
+            `Status change was not accepted: ${(error as ApiError).message} Showing the latest from the workstation.`
+          );
+        }
       }
     } finally {
       setUpdating(false);
@@ -326,7 +360,7 @@ const AssignmentDetailPage: React.FC = () => {
 
   async function handleGetRoute() {
     if (!row || row.server_dispatch_id === null || !position) {
-      setNote(position ? 'No server ID yet — cannot fetch route.' : 'Waiting for GPS fix…');
+      setNote(position ? 'No server ID yet â€” cannot fetch route.' : 'Waiting for GPS fixâ€¦');
       return;
     }
 
@@ -349,8 +383,8 @@ const AssignmentDetailPage: React.FC = () => {
     } catch (error) {
       setNote(
         error instanceof ApiError && error.isOffline
-          ? 'Offline — cannot fetch live route.'
-          : 'Workstation unreachable — using offline route.'
+          ? 'Offline â€” cannot fetch live route.'
+          : 'Workstation unreachable â€” using offline route.'
       );
     } finally {
       setFetchingRoute(false);
@@ -521,12 +555,12 @@ const AssignmentDetailPage: React.FC = () => {
                         {formatRemainingTime(navState.remainingTimeS)}
                       </span>
                       <span className="nav-bottom-sheet__meta">
-                        · {formatNavDistance(navState.remainingDistanceM)} remaining
+                        Â· {formatNavDistance(navState.remainingDistanceM)} remaining
                       </span>
                     </>
                   ) : (
                     <span className="nav-bottom-sheet__meta">
-                      {distanceM !== null ? `${formatDistance(distanceM)} away` : 'Calculating distance…'}
+                      {distanceM !== null ? `${formatDistance(distanceM)} away` : 'Calculating distanceâ€¦'}
                     </span>
                   )}
                 </div>
@@ -572,7 +606,7 @@ const AssignmentDetailPage: React.FC = () => {
                   </div>
                   <div className="nav-bottom-sheet__dest-coords">
                     {focusTarget
-                      ? `${focusTarget.latitude.toFixed(5)}, ${focusTarget.longitude.toFixed(5)}${bearing ? ` · Bearing ${bearing}` : ''}`
+                      ? `${focusTarget.latitude.toFixed(5)}, ${focusTarget.longitude.toFixed(5)}${bearing ? ` Â· Bearing ${bearing}` : ''}`
                       : 'Coordinates mapped'}
                   </div>
                 </div>
@@ -719,7 +753,7 @@ const AssignmentDetailPage: React.FC = () => {
                 role="status"
               >
                 <IonIcon icon={syncOutline} style={{ fontSize: '1rem', flexShrink: 0 }} />
-                <span>Offline change saved — will sync when connected.</span>
+                <span>Offline change saved â€” will sync when connected.</span>
               </div>
             )}
 
@@ -756,7 +790,7 @@ const AssignmentDetailPage: React.FC = () => {
                       : 'Incident Location'}
                   </div>
                   <div className="dispatch-hero-telemetry">
-                    {distanceM !== null ? `${formatDistance(distanceM)} away · Bearing ${bearing ?? 'N'}` : 'Locating…'}
+                    {distanceM !== null ? `${formatDistance(distanceM)} away Â· Bearing ${bearing ?? 'N'}` : 'Locatingâ€¦'}
                   </div>
                 </div>
               </div>
@@ -926,7 +960,7 @@ const AssignmentDetailPage: React.FC = () => {
               }}
             >
               <IonIcon icon={navigateOutline} style={{ fontSize: '1.2rem' }} />
-              <span>{updating ? 'Starting…' : 'Start Navigation & Go En Route'}</span>
+              <span>{updating ? 'Startingâ€¦' : 'Start Navigation & Go En Route'}</span>
             </button>
           )}
 

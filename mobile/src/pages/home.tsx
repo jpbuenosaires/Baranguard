@@ -27,6 +27,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   IonAlert,
+  IonButton,
   IonContent,
   IonIcon,
   IonModal,
@@ -52,7 +53,7 @@ import tacticalFeedback from '../utils/tacticalFeedback';
 import { getDispatches, getOwnDutyStatus, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
 import { ApiError } from '../services/apiService';
 import { getCurrentPosition } from '../services/geolocation';
-import { enqueueSosItem } from '../services/db/offlineQueueRepository';
+import { countFailedSosItems, enqueueSosItem } from '../services/db/offlineQueueRepository';
 import { cacheDispatchesFromServer, listActiveCachedDispatches } from '../services/db/dispatchRepository';
 import { listAllLocalIncidents } from '../services/db/incidentRepository';
 import type { DispatchLocalRow } from '../services/db/localSchema';
@@ -61,7 +62,8 @@ import { loadSession } from '../services/session';
 import { getCachedSosFallbackContact } from '../services/sosFallbackContact';
 import SosSms from '../services/sosSms';
 import type { SmsFallbackInput } from '../services/smsFallbackState';
-import { setKnownDutyStatus } from '../services/syncScheduler';
+import { forceSyncNow, setKnownDutyStatus, subscribeSyncSummary } from '../services/syncScheduler';
+import { retryNeedsAttention } from '../services/syncService';
 import { uuid } from '../services/uuid';
 
 const BARANGAY_NAMES: Record<number, string> = { 1: 'Dao', 2: 'Binanuahan', 3: 'Marifosque', 4: 'Banuyo' };
@@ -94,6 +96,35 @@ const HomePage: React.FC = () => {
   const [sosError, setSosError] = useState<string | null>(null);
   const [sosToast, setSosToast] = useState<string | null>(null);
   const [sosFallbackOutcome, setSosFallbackOutcome] = useState<SmsFallbackInput | null>(null);
+  // SOS alerts the sync worker gave up on after repeated server rejections —
+  // persistent (not a toast) because an undelivered emergency must not
+  // quietly disappear from view.
+  const [failedSosCount, setFailedSosCount] = useState(0);
+  const [retryingSos, setRetryingSos] = useState(false);
+
+  async function refreshFailedSosCount() {
+    try {
+      setFailedSosCount(await countFailedSosItems());
+    } catch {
+      // Local DB unavailable (e.g. web preview) — no banner rather than a false one.
+    }
+  }
+
+  useEffect(() => {
+    void refreshFailedSosCount();
+    return subscribeSyncSummary(() => void refreshFailedSosCount());
+  }, []);
+
+  async function handleRetryFailedSos() {
+    setRetryingSos(true);
+    try {
+      await retryNeedsAttention();
+      await forceSyncNow();
+    } finally {
+      await refreshFailedSosCount();
+      setRetryingSos(false);
+    }
+  }
 
   // Live Shift Duration Timer
   useEffect(() => {
@@ -332,6 +363,10 @@ const HomePage: React.FC = () => {
       } catch {
         await enqueueSosItem(clientEventId, payload);
         await attemptSosSmsFallback(payload);
+        // Kick a sync right away: a 5s SOS timeout can be a blip, and the
+        // queued row (same client_event_id) is idempotent if the first
+        // attempt actually landed.
+        void forceSyncNow();
       }
     } catch (error) {
       setSosError(error instanceof Error ? error.message : 'Could not raise SOS.');
@@ -594,6 +629,32 @@ const HomePage: React.FC = () => {
           {sosFallbackOutcome && (
             <div style={{ marginTop: '2px', display: 'flex', justifyContent: 'center' }}>
               <SmsFallbackBadge input={sosFallbackOutcome} />
+            </div>
+          )}
+
+          {failedSosCount > 0 && (
+            <div
+              style={{
+                background: 'var(--tint-critical-bg)',
+                color: 'var(--pill-critical-text)',
+                border: '1px solid var(--color-critical)',
+                borderRadius: 'var(--radius-md)',
+                padding: '8px 12px',
+                fontSize: 'var(--font-size-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+              }}
+              role="alert"
+            >
+              <span>
+                {failedSosCount} SOS alert{failedSosCount === 1 ? '' : 's'} could not be delivered to HQ. Call the
+                barangay desk directly.
+              </span>
+              <IonButton size="small" color="danger" disabled={retryingSos} onClick={handleRetryFailedSos}>
+                {retryingSos ? 'Retrying…' : 'Retry'}
+              </IonButton>
             </div>
           )}
 

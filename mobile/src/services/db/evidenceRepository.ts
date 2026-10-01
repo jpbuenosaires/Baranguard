@@ -100,7 +100,7 @@ export async function listPendingEvidenceUploads(): Promise<PendingEvidenceUploa
     `SELECT e.local_id, i.server_incident_id, e.type, e.file_path, e.mime_type, e.sha256
      FROM evidence_attachment_local e
      JOIN incident_local i ON i.local_id = e.incident_local_id
-     WHERE e.synced = 0 AND i.synced = 1 AND i.server_incident_id IS NOT NULL
+     WHERE e.synced = 0 AND e.permanent_failure = 0 AND i.synced = 1 AND i.server_incident_id IS NOT NULL
      ORDER BY e.local_id ASC`
   );
   return ((result.values ?? []) as Array<{
@@ -133,12 +133,48 @@ export async function markEvidenceSynced(localId: string, serverAttachmentId: nu
   );
 }
 
-/** Records a failed upload attempt (offline, or the server rejected it) — the row stays unsynced for the next pass to retry. */
-export async function markEvidenceAttemptFailed(localId: string): Promise<void> {
+/**
+ * Records a failed upload attempt — the row stays unsynced for the next
+ * pass to retry. `maxAttempts` is passed only for a NON-transient failure
+ * (server rejected it, or the local file is unreadable): once `attempts`
+ * reaches it the row is flagged `permanent_failure` and dropped from the
+ * automatic retry set. A transient failure (offline/timeout/5xx) passes
+ * `null`, so a long outage can never exhaust the cap.
+ */
+export async function markEvidenceAttemptFailed(localId: string, maxAttempts: number | null): Promise<void> {
+  const db = await openLocalDatabase();
+  if (maxAttempts === null) {
+    await db.run(
+      'UPDATE evidence_attachment_local SET last_attempt_at = ? WHERE local_id = ?',
+      [new Date().toISOString(), localId],
+      /* transaction */ false
+    );
+    return;
+  }
+  await db.run(
+    `UPDATE evidence_attachment_local
+       SET attempts = attempts + 1, last_attempt_at = ?,
+           permanent_failure = CASE WHEN attempts + 1 >= ? THEN 1 ELSE permanent_failure END
+     WHERE local_id = ?`,
+    [new Date().toISOString(), maxAttempts, localId],
+    /* transaction */ false
+  );
+}
+
+export async function countPermanentlyFailedEvidence(): Promise<number> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    'SELECT COUNT(*) AS n FROM evidence_attachment_local WHERE synced = 0 AND permanent_failure = 1'
+  );
+  return Number((result.values?.[0] as { n: number } | undefined)?.n ?? 0);
+}
+
+/** Manual retry: puts capped evidence rows back into the automatic upload set. */
+export async function resetFailedEvidence(): Promise<void> {
   const db = await openLocalDatabase();
   await db.run(
-    'UPDATE evidence_attachment_local SET attempts = attempts + 1, last_attempt_at = ? WHERE local_id = ?',
-    [new Date().toISOString(), localId],
+    'UPDATE evidence_attachment_local SET permanent_failure = 0, attempts = 0 WHERE synced = 0 AND permanent_failure = 1',
+    [],
     /* transaction */ false
   );
 }

@@ -162,11 +162,16 @@ export async function listAllLocalIncidents(): Promise<IncidentLocalRow[]> {
   return (result.values ?? []) as IncidentLocalRow[];
 }
 
-/** Rows not yet confirmed by the server, oldest first (§5 sync invariants). */
+/**
+ * Rows not yet confirmed by the server, oldest first (§5 sync invariants).
+ * Rows that hit the retry cap (`permanent_failure`) are excluded — they stay
+ * on the device (Rule 2) but wait for a manual retry, so one poison row can't
+ * be re-sent on every pass forever or crowd out healthy ones.
+ */
 export async function listUnsyncedIncidents(): Promise<IncidentLocalRow[]> {
   const db = await openLocalDatabase();
   const result = await db.query(
-    'SELECT * FROM incident_local WHERE synced = 0 ORDER BY created_offline_at ASC'
+    'SELECT * FROM incident_local WHERE synced = 0 AND permanent_failure = 0 ORDER BY created_offline_at ASC'
   );
   return (result.values ?? []) as IncidentLocalRow[];
 }
@@ -186,12 +191,40 @@ export async function markIncidentSynced(clientEventId: string, serverId: number
   );
 }
 
-/** Records why a sync attempt failed, for M4's "needs_attention" state (deriveSyncState above). */
-export async function markIncidentSyncFailed(clientEventId: string, reason: string): Promise<void> {
+/**
+ * Records why a sync attempt failed, for M4's "needs_attention" state
+ * (deriveSyncState above). Counts one server-reported failure and flips
+ * `permanent_failure` once `maxAttempts` is reached.
+ */
+export async function markIncidentSyncFailed(
+  clientEventId: string,
+  reason: string,
+  maxAttempts: number
+): Promise<void> {
   const db = await openLocalDatabase();
   await db.run(
-    'UPDATE incident_local SET last_sync_error = ? WHERE client_event_id = ?',
-    [reason, clientEventId],
+    `UPDATE incident_local
+       SET last_sync_error = ?, sync_attempts = sync_attempts + 1,
+           permanent_failure = CASE WHEN sync_attempts + 1 >= ? THEN 1 ELSE permanent_failure END
+     WHERE client_event_id = ?`,
+    [reason, maxAttempts, clientEventId],
+    /* transaction */ false
+  );
+}
+
+/** Unsynced incidents that hit the retry cap — the "needs attention" count. */
+export async function countPermanentlyFailedIncidents(): Promise<number> {
+  const db = await openLocalDatabase();
+  const result = await db.query('SELECT COUNT(*) AS n FROM incident_local WHERE synced = 0 AND permanent_failure = 1');
+  return Number((result.values?.[0] as { n: number } | undefined)?.n ?? 0);
+}
+
+/** Manual retry: puts capped incidents back into the automatic sync set. */
+export async function resetFailedIncidents(): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    'UPDATE incident_local SET permanent_failure = 0, sync_attempts = 0, last_sync_error = NULL WHERE synced = 0 AND permanent_failure = 1',
+    [],
     /* transaction */ false
   );
 }
