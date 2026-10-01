@@ -183,18 +183,6 @@ describe('snake_case -> camelCase mapping', () => {
     assert.equal(items[1].routeJson, null);
   });
 
-  for (const [name, call, path] of [
-    ['getAiDraft', (c) => c.getAiDraft(904), '/incidents/:id/ai-draft'],
-    ['getExtractionDraft', (c) => c.getExtractionDraft(904), '/incidents/:id/ai-draft/extraction'],
-    ['getBlotterForIncident', (c) => c.getBlotterForIncident(901), '/incidents/:id/blotter'],
-  ]) {
-    test(`${name}: a 404 is an ordinary "not yet" state (null), not an error`, async () => {
-      signIn('secretary');
-      assert.equal(await call(client), null);
-      assert.equal(api.callsTo('GET', path).length, 1);
-    });
-  }
-
   test('getMapPackage: no published package (404) is null', async () => {
     signIn('admin');
     api.setScenario('empty');
@@ -203,8 +191,8 @@ describe('snake_case -> camelCase mapping', () => {
 
   test('404 handling does not swallow real failures', async () => {
     signIn('secretary');
-    api.fail('GET', '/incidents/:id/ai-draft', 500);
-    await assert.rejects(client.getAiDraft(901), (err) => err.status === 500);
+    api.fail('GET', '/incidents/:id/evidence', 500);
+    await assert.rejects(client.getIncidentEvidence(902), (err) => err.status === 500);
   });
 
   test('every list endpoint maps without leaving snake_case keys behind', async () => {
@@ -225,7 +213,6 @@ describe('snake_case -> camelCase mapping', () => {
       smsLogs: (await client.getSmsLogs()).items[0],
       conversations: (await client.getSmsConversations())[0],
       subscribers: (await client.getSmsSubscribers()).items[0],
-      blotter: (await client.getBlotterList()).items[0],
       evidence: (await client.getIncidentEvidence(902))[0],
       health: await client.getSystemHealth(),
       healthHistory: (await client.getSystemHealthHistory()).items[0],

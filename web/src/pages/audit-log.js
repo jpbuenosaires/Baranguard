@@ -56,6 +56,8 @@ const ACTION_LABELS = {
   shift_updated: 'Shift updated',
   swap_request_resolved: 'Swap decision',
   fatigue_flag_acknowledged: 'Fatigue flag acknowledged',
+  // Legacy labels: rows written before migration 0029 removed the blotter
+  // and AI redaction pipeline still exist in audit_log (write-once).
   ai_redaction_queued: 'AI redaction queued',
   ai_redaction_approved: 'AI redaction approved',
   ai_summary_regeneration_queued: 'AI summary rerun',
@@ -88,8 +90,8 @@ const CATEGORIES = {
       'swap_request_resolved', 'fatigue_flag_acknowledged',
     ],
   },
-  blotter: {
-    label: 'Blotter & Incidents',
+  incidents: {
+    label: 'Incidents',
     actions: [
       'incident_resolved', 'blotter_finalized', 'blotter_amended',
       'lupon_packet_generated', 'citizen_report_submitted',
@@ -98,7 +100,7 @@ const CATEGORIES = {
     ],
   },
   system: {
-    label: 'AI & System',
+    label: 'System',
     actions: [
       'ai_redaction_queued', 'ai_redaction_approved',
       'ai_summary_regeneration_queued', 'ai_translation_queued',
@@ -623,20 +625,20 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     // Calculate breakdown from current result page
     let authCount = 0;
     let opsCount = 0;
-    let blotterCount = 0;
+    let incidentCount = 0;
 
     items.forEach((item) => {
       const act = item.action;
       if (CATEGORIES.auth.actions.includes(act)) authCount++;
       else if (CATEGORIES.ops.actions.includes(act)) opsCount++;
-      else if (CATEGORIES.blotter.actions.includes(act)) blotterCount++;
+      else if (CATEGORIES.incidents.actions.includes(act)) incidentCount++;
     });
 
     const statCardsData = [
       { id: '', label: 'Total Events Recorded', value: totalCount, tone: 'primary' },
       { id: 'auth', label: 'Auth & Access Events', value: authCount, tone: 'info' },
       { id: 'ops', label: 'Operations & Dispatch', value: opsCount, tone: 'warning' },
-      { id: 'blotter', label: 'Blotter & Incidents', value: blotterCount, tone: 'success' },
+      { id: 'incidents', label: 'Incidents', value: incidentCount, tone: 'success' },
     ];
 
     statCardsData.forEach((stat) => {
@@ -896,17 +898,6 @@ function renderAuditCell(row, key, navigate) {
       chip.className = 'audit-entity-chip';
 
       // Provide deep navigation link if entity is a known route
-      if (row.entityType === 'blotter_record' && row.entityId) {
-        chip.className += ' audit-entity-chip--interactive';
-        chip.title = `View Blotter Record #${row.entityId}`;
-        chip.textContent = `Blotter #${row.entityId} ↗`;
-        chip.addEventListener('click', (e) => {
-          e.stopPropagation(); // Avoid triggering row modal
-          navigate('blotter-detail', { id: row.entityId });
-        });
-        return chip;
-      }
-
       if (row.entityType === 'user' && row.entityId) {
         chip.className += ' audit-entity-chip--interactive';
         chip.title = `View Personnel #${row.entityId}`;

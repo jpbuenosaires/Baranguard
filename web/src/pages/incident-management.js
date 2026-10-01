@@ -3,7 +3,7 @@
  * matching the operational design reference (split view, counter chips,
  * structured filter bar, formatted table, and detailed action pane).
  * Includes ergonomic enhancements: sticky scrollable detail, active row border,
- * smart assign shortcut, contact modal (Call + SMS), smart blotter button,
+ * smart assign shortcut, contact modal (Call + SMS), open-record button,
  * keyboard navigation (↑ / ↓ / Esc), floating quick help guide, and mobile toggle.
  */
 
@@ -50,7 +50,7 @@ const STATUS_DISPLAY_LABELS = {
   resolved: 'Resolved',
   closed: 'Closed',
   // H-16/M-03 lifecycle states (migration 0025) -- set via W21's Case
-  // lifecycle card on blotter-detail.js, never invented here.
+  // lifecycle card on incident-detail.js, never invented here.
   duplicate: 'Duplicate',
   invalid: 'Invalid',
   cancelled: 'Cancelled',
@@ -920,16 +920,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     descLabel.textContent = 'Description';
     const descBody = document.createElement('p');
     descBody.className = 'incident-desc-body';
-    // 2026-09-13: was a fabricated placeholder narrative ("Caller reported
-    // an incident in the designated purok area...") — a §2 Rule 6
-    // violation, found alongside the Assigned Tanod card's own fake
-    // fallbacks above. The honest empty state differs by WHY there's
-    // nothing to show: Secretary can always see raw_narrative, so a gap
-    // there means none was recorded; every other role only ever sees the
-    // APPROVED redaction, so a gap there usually means approval simply
-    // hasn't happened yet.
-    descBody.textContent = detail.redactedNarrative || detail.rawNarrative
-      || (user.role === 'secretary' ? 'No narrative recorded for this incident.' : 'Narrative pending redaction approval.');
+    // Rule 1: raw_narrative is only returned to a Secretary, so every
+    // other role honestly sees that it is restricted rather than blank.
+    descBody.textContent = detail.rawNarrative
+      || (user.role === 'secretary' ? 'No narrative recorded for this incident.' : 'The narrative is restricted to the Barangay Secretary.');
     descCard.append(descLabel, descBody);
     rightPanel.appendChild(descCard);
 
@@ -1023,20 +1017,15 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       actionsRow.appendChild(resolvedBtn);
     }
 
-    // Secondary action: open the incident record (W7). The label used to
-    // guess "View Blotter" vs "Create Blotter" from `row.status` plus a
-    // `detail.blotterId` the incident payload never carries — so a
-    // resolved incident with no blotter entry claimed one existed, and
-    // Admins were offered "Create Blotter", which only a Secretary can
-    // do. W7's workflow bar now shows the real blotter state.
-    const blotterBtn = document.createElement('button');
-    blotterBtn.type = 'button';
-    blotterBtn.className = 'btn-action-blotter';
-    blotterBtn.innerHTML = `${icons.fileText(16)} <span>${isSecretary ? 'Open blotter workflow' : 'Open incident record'}</span>`;
-    blotterBtn.addEventListener('click', () => {
-      navigate('blotter-detail', row.incidentId);
+    // Secondary action: open the incident record (W7).
+    const recordBtn = document.createElement('button');
+    recordBtn.type = 'button';
+    recordBtn.className = 'btn-action-record';
+    recordBtn.innerHTML = `${icons.fileText(16)} <span>Open incident record</span>`;
+    recordBtn.addEventListener('click', () => {
+      navigate('incident-detail', row.incidentId);
     });
-    actionsRow.appendChild(blotterBtn);
+    actionsRow.appendChild(recordBtn);
 
     rightPanel.appendChild(actionsRow);
 
@@ -1319,10 +1308,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     // Incident Type. `PATCH /incidents/:id` has always accepted
     // `incident_type` (Admin + Secretary) but this form never exposed it,
     // so a mis-typed intake could only be corrected through the database.
-    // Added 2026-09-10 for manual correction (originally alongside the AI
-    // Classifier, whose suggestion could prefill these; the Classifier was
-    // removed in migration 0028, but the manual-correction capability it
-    // was built on top of stands on its own).
     const gType = document.createElement('div');
     gType.className = 'incident-form-group';
     const lType = document.createElement('label');
@@ -1378,24 +1363,174 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     inComp.type = 'text';
     inComp.className = 'incident-form-input';
     inComp.value = detail.complainantName || '';
-    // Migration 0008's party fields are extracted from RAW narrative and
-    // preserve exactly the identifiers redaction strips, so they carry
-    // raw_narrative's Secretary-only protection. The server enforces this;
-    // the form just doesn't offer a control that would 403.
+    // Migration 0008's party fields carry raw_narrative's Secretary-only
+    // protection. The server enforces this; the form just doesn't offer a
+    // control that would 403.
     if (!isSecretary) {
       inComp.disabled = true;
       inComp.title = 'Only a Secretary may change the complainant name.';
     }
     gComp.append(lComp, inComp);
 
-    // Narrative is deliberately NOT editable here. Only
-    // POST /incidents/:id/ai-draft/approve may write redacted_narrative,
-    // and an Admin never receives raw_narrative at all -- so a textarea
-    // pre-filled from `rawNarrative || redactedNarrative` would have
-    // written the REDACTED text back over the raw statutory record on any
-    // Admin save. The server rejects a narrative on this endpoint; this
-    // note says where the real correction paths are instead of offering a
+    // Narrative is deliberately NOT editable here: the server rejects a
+    // narrative on this endpoint, and an Admin never receives
+    // raw_narrative at all. This note says so instead of offering a
     // control that cannot work.
+    const gNarr = document.createElement('div');
+    gNarr.className = 'incident-form-group';
+    const lNarr = document.createElement('label');
+    lNarr.className = 'incident-form-label';
+    lNarr.textContent = 'Incident Description / Narrative';
+    const inNarr = document.createElement('textarea');
+    inNarr.className = 'incident-form-textarea';
+    inNarr.placeholder = 'Describe the incident report details...';
+    inNarr.required = true;
+    gNarr.append(lNarr, inNarr);
+
+    // Actions
+    const formActions = document.createElement('div');
+    formActions.className = 'incident-form-actions';
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.className = 'incident-form-submit';
+    submitBtn.textContent = 'Log an Incident';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'incident-form-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', closeDetailPane);
+
+    formActions.append(submitBtn, cancelBtn);
+
+    form.append(gType, gPrio, gLoc, gComp, gNarr, formActions);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const narrative = inNarr.value.trim();
+      if (!narrative) {
+        showToast('Please enter an incident narrative.', { variant: 'error' });
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving...';
+      try {
+        await createIncident({
+          incidentType: selType.value,
+          priority: selPrio.value,
+          rawNarrative: narrative,
+          locationDescription: inLoc.value.trim() || undefined,
+          complainantName: inComp.value.trim() || undefined,
+          idempotencyKey: crypto.randomUUID(),
+        });
+        showToast('Incident logged successfully.', { variant: 'success' });
+        activeViewMode = 'detail';
+        await load();
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Log an Incident';
+        showToast(err instanceof ApiClientError ? err.message : 'Could not create incident.', { variant: 'error' });
+      }
+    });
+
+    formPane.appendChild(form);
+    rightPanel.appendChild(formPane);
+  }
+
+  // --- Render Edit Incident Form ---
+  function renderEditIncidentForm(row, detail) {
+    rightPanel.innerHTML = '';
+
+    const formPane = document.createElement('div');
+    formPane.className = 'incident-form-pane';
+
+    const headerRow = document.createElement('div');
+    headerRow.className = 'incident-detail-header';
+    const formTitle = document.createElement('h2');
+    formTitle.className = 'incident-form-title';
+    formTitle.textContent = `Edit Incident ${formatIncidentCode(row)}`;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn-incident-close';
+    closeBtn.innerHTML = icons.x(16);
+    closeBtn.addEventListener('click', () => {
+      activeViewMode = 'detail';
+      renderRightPane();
+    });
+    headerRow.append(formTitle, closeBtn);
+    formPane.appendChild(headerRow);
+
+    const form = document.createElement('form');
+    form.className = 'form-stack';
+
+    // Incident Type. `PATCH /incidents/:id` has always accepted
+    // `incident_type` (Admin + Secretary) but this form never exposed it,
+    // so a mis-typed intake could only be corrected through the database.
+    const gType = document.createElement('div');
+    gType.className = 'incident-form-group';
+    const lType = document.createElement('label');
+    lType.className = 'incident-form-label';
+    lType.textContent = 'Incident Type';
+    const selType = document.createElement('select');
+    selType.className = 'incident-form-select';
+    for (const [v, l] of Object.entries(INCIDENT_TYPE_LABELS)) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = l;
+      if (v === (detail.incidentType || row.incidentType)) opt.selected = true;
+      selType.appendChild(opt);
+    }
+    gType.append(lType, selType);
+
+    // Priority
+    const gPrio = document.createElement('div');
+    gPrio.className = 'incident-form-group';
+    const lPrio = document.createElement('label');
+    lPrio.className = 'incident-form-label';
+    lPrio.textContent = 'Priority';
+    const selPrio = document.createElement('select');
+    selPrio.className = 'incident-form-select';
+    for (const [v, l] of [['normal', 'Medium / Normal'], ['high', 'High'], ['critical', 'Critical']]) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = l;
+      if (v === row.priority) opt.selected = true;
+      selPrio.appendChild(opt);
+    }
+    gPrio.append(lPrio, selPrio);
+
+    // Location Description
+    const gLoc = document.createElement('div');
+    gLoc.className = 'incident-form-group';
+    const lLoc = document.createElement('label');
+    lLoc.className = 'incident-form-label';
+    lLoc.textContent = 'Location Landmark / Description';
+    const inLoc = document.createElement('input');
+    inLoc.type = 'text';
+    inLoc.className = 'incident-form-input';
+    inLoc.value = detail.locationDescription || row.locationDescription || '';
+    gLoc.append(lLoc, inLoc);
+
+    // Complainant Name
+    const gComp = document.createElement('div');
+    gComp.className = 'incident-form-group';
+    const lComp = document.createElement('label');
+    lComp.className = 'incident-form-label';
+    lComp.textContent = 'Complainant / Reporter Name';
+    const inComp = document.createElement('input');
+    inComp.type = 'text';
+    inComp.className = 'incident-form-input';
+    inComp.value = detail.complainantName || '';
+    // Migration 0008's party fields carry raw_narrative's Secretary-only
+    // protection. The server enforces this; the form just doesn't offer a
+    // control that would 403.
+    if (!isSecretary) {
+      inComp.disabled = true;
+      inComp.title = 'Only a Secretary may change the complainant name.';
+    }
+    gComp.append(lComp, inComp);
+
+    // Narrative is deliberately NOT editable here (see PATCH /incidents/:id).
     const gNarr = document.createElement('div');
     gNarr.className = 'incident-form-group';
     const lNarr = document.createElement('label');
@@ -1403,7 +1538,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     lNarr.textContent = 'Incident Description / Narrative';
     const narrNote = document.createElement('p');
     narrNote.className = 'incident-form-note';
-    narrNote.textContent = 'The narrative cannot be edited here. Use AI Review to correct the incident narrative, or amend the blotter record once the case is finalized.';
+    narrNote.textContent = 'The narrative cannot be edited here.';
     gNarr.append(lNarr, narrNote);
 
     // Actions
@@ -1588,7 +1723,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
             </div>
             <div class="incident-help-item">
               <span style="font-weight: 600; color: var(--color-text-secondary);">Closed</span>
-              <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Formal blotter documentation completed</span>
+              <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Closed out by the Barangay Secretary (duplicate, invalid, or cancelled)</span>
             </div>
           </div>
         </div>

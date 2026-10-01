@@ -1,6 +1,6 @@
 /**
  * PrintPreviewModal.js — Shared A4 print-preview modal and working-copy
- * print controller used across Blotter Detail, Statistical Reports,
+ * print controller used across Incident Detail, Statistical Reports,
  * Audit Log, Citizen Report Receipts, and Public Transparency.
  *
  * Ensures consistent official barangay document typography, dark-mode-safe
@@ -17,7 +17,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
  * @param {object} options
  * @param {string} options.title Modal header title
  * @param {string} options.subtitle Modal header subtitle
- * @param {string} [options.sheetId='printable-blotter-sheet'] DOM id for the `.print-sheet` node
+ * @param {string} [options.sheetId='printable-sheet'] DOM id for the `.print-sheet` node
  * @param {string} options.sheetHtml Inner HTML of the `.print-sheet` container
  * @param {Array<{label:string, icon?:string, className?:string, onClick:(btn:HTMLButtonElement)=>void}>} [options.extraActions=[]]
  *   Additional footer action buttons placed beside "Print working copy" (e.g. Download Official PDF, Export CSV).
@@ -26,7 +26,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 export function openPrintPreviewModal({
   title = 'Printable Official Excerpt',
   subtitle = 'Formatted A4 working sheet',
-  sheetId = 'printable-blotter-sheet',
+  sheetId = 'printable-sheet',
   sheetHtml = '',
   extraActions = [],
 } = {}) {

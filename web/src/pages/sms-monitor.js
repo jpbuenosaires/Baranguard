@@ -8,7 +8,7 @@
  * - Live multi-segment SMS character counter and Ctrl+Enter keyboard shortcuts
  * - Interactive Live Feed with category filters and click-to-open conversation
  * - Polished floating modals: Broadcast Alert (with live device preview) and Direct Message
- * - Comprehensive Activity Log with correlation ID inspection and Blotter linking
+ * - Comprehensive Activity Log with correlation ID inspection and incident linking
  */
 
 import {
@@ -1045,7 +1045,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
           incidentLink.innerHTML = `<span aria-hidden="true">${icons.fileText(12)}</span><span>Incident #${msg.incidentId}</span>`;
           incidentLink.addEventListener('click', (e) => {
             e.stopPropagation();
-            navigate('blotter-detail', msg.incidentId);
+            navigate('incident-detail', msg.incidentId);
           });
           bubble.appendChild(incidentLink);
         } else if (msg.dispatchId) {
@@ -2101,8 +2101,8 @@ function renderRowDetail(pane, row, navigate) {
     const jumpBtn = document.createElement('button');
     jumpBtn.type = 'button';
     jumpBtn.className = 'primary sms-detail-action-btn';
-    jumpBtn.innerHTML = `<span aria-hidden="true">${icons.fileText(14)}</span><span>Open Blotter Incident #${row.incidentId}</span>`;
-    jumpBtn.addEventListener('click', () => navigate('blotter-detail', row.incidentId));
+    jumpBtn.innerHTML = `<span aria-hidden="true">${icons.fileText(14)}</span><span>Open Incident #${row.incidentId}</span>`;
+    jumpBtn.addEventListener('click', () => navigate('incident-detail', row.incidentId));
     card.appendChild(jumpBtn);
   }
 
@@ -2159,7 +2159,7 @@ function renderSmsLogCell(row, key, navigate) {
         link.textContent = `Incident #${row.incidentId}`;
         link.addEventListener('click', (event) => {
           event.stopPropagation();
-          navigate('blotter-detail', row.incidentId);
+          navigate('incident-detail', row.incidentId);
         });
         span.appendChild(link);
       }

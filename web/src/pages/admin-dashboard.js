@@ -431,24 +431,24 @@ async function loadPbDigest(container) {
     });
 
     const manifest = document.createElement('div');
-    manifest.className = 'lupon-packet-manifest';
+    manifest.className = 'report-manifest';
     manifest.innerHTML = `
-      <div class="lupon-packet-tile">
-        <span class="lupon-packet-tile__label">Coverage Window</span>
-        <span class="lupon-packet-tile__value">Covers ${escapeHtml(digest.dateFrom)} to ${escapeHtml(digest.dateTo)}</span>
+      <div class="report-manifest-tile">
+        <span class="report-manifest-tile__label">Coverage Window</span>
+        <span class="report-manifest-tile__value">Covers ${escapeHtml(digest.dateFrom)} to ${escapeHtml(digest.dateTo)}</span>
       </div>
-      <div class="lupon-packet-tile">
-        <span class="lupon-packet-tile__label">Last Generated</span>
-        <span class="lupon-packet-tile__value">${escapeHtml(generated)}</span>
+      <div class="report-manifest-tile">
+        <span class="report-manifest-tile__label">Last Generated</span>
+        <span class="report-manifest-tile__value">${escapeHtml(generated)}</span>
       </div>
-      <div class="lupon-packet-tile">
-        <span class="lupon-packet-tile__label">Included Sections</span>
-        <span class="lupon-packet-tile__value">4-KPI Summary · 11 Categories · Daily Log</span>
+      <div class="report-manifest-tile">
+        <span class="report-manifest-tile__label">Included Sections</span>
+        <span class="report-manifest-tile__value">4-KPI Summary · 11 Categories · Daily Log</span>
       </div>
     `;
 
     const actionsRow = document.createElement('div');
-    actionsRow.className = 'lupon-packet-actions';
+    actionsRow.className = 'report-manifest-actions';
     actionsRow.style.marginTop = 'var(--spacing-sm)';
     const button = document.createElement('button');
     button.type = 'button';
@@ -652,7 +652,7 @@ function renderPopulated(container, summary, navigate, role) {
   // 2026-09-06 UX pass: this row's second column was always empty (a
   // `two-col-grid` with one child) — Admin's most common next steps from
   // the dashboard (log an incident, open dispatch, message a resident,
-  // review the blotter) had no single home; each was a sidebar hop away.
+  // review incidents) had no single home; each was a sidebar hop away.
   // Punong Barangay is read-only oversight (§3, no write action anywhere
   // on this screen already), so it keeps the single-column status card
   // exactly as before rather than gaining a card of actions it can't use.
@@ -756,10 +756,10 @@ function renderRecentIncidentsTable(host, items, navigate) {
     rowKey: (row) => row.incidentId,
     caption: 'Most recent incidents',
     // 2026-09-05 UX pass: this was the one list in the app whose rows led
-    // nowhere — every other list (Blotter, Incident Management, topbar
-    // search, notifications) already navigates to blotter-detail on
+    // nowhere — every other list (Incident Management, topbar
+    // search, notifications) already navigates to incident-detail on
     // click, same destination used here.
-    onRowClick: (row) => navigate('blotter-detail', row.incidentId),
+    onRowClick: (row) => navigate('incident-detail', row.incidentId),
     renderCell: (row, key) => {
       switch (key) {
         case 'id': {
@@ -922,7 +922,7 @@ function renderQuickActionsCard(navigate) {
   ));
 
   const ACTIONS = [
-    { label: 'Log an Incident', sub: 'New blotter & intake', icon: icons.alertTriangle, tone: 'amber', page: 'incident-management' },
+    { label: 'Log an Incident', sub: 'New incident intake', icon: icons.alertTriangle, tone: 'amber', page: 'incident-management' },
     { label: 'Dispatch Center', sub: 'Live tracking & roster', icon: icons.radio, tone: 'blue', page: 'dispatch' },
     { label: 'Message a Resident', sub: 'Resident SMS broadcast', icon: icons.messageSquare, tone: 'cyan', page: 'sms-log' },
     { label: 'Analytics', sub: 'Reports, trends & heatmap', icon: icons.barChart, tone: 'violet', page: 'analytics' },

@@ -20,8 +20,8 @@ describe('Service Health behaviour', () => {
     mountPage(renderServiceHealthPage, { role: 'admin' });
     await settle();
     const body = text($('.page-content'));
-    assert.match(body, /1 Failing/, 'Ollama is the one configured dependency that is down');
-    assert.match(body, /2 Neutral/, 'ORS and the GSM SMS gateway are unconfigured, not failing');
+    assert.match(body, /1 Failing/, 'ORS is the one configured dependency that is down');
+    assert.match(body, /1 Neutral/, 'the GSM SMS gateway is unconfigured, not failing');
   });
 
   test('the history\'s sampling caveat is shown, not hidden', async () => {

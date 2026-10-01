@@ -66,10 +66,8 @@ describe('router: landing page per role', () => {
   });
 
   test('a detail page is never chosen as a default landing page (it needs an id)', async () => {
-    // 'ai-review' was the example here before the 2026-09-27 tab merge
-    // (DEVLOG (38)) folded it into 'blotter-detail' as a tab — that's
-    // still the only real DETAIL_PAGES entry to test against.
-    window.localStorage.setItem('baranguard.defaultPage', 'blotter-detail');
+    // 'incident-detail' is the only real DETAIL_PAGES entry to test against.
+    window.localStorage.setItem('baranguard.defaultPage', 'incident-detail');
     signIn('secretary');
     const root = await boot();
     assert.ok(heading(root).startsWith('Incident Management'));
