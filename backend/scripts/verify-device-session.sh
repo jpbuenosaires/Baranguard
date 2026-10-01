@@ -92,17 +92,10 @@ mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || {
 
 step "1. Disposable schema (FULL migration chain) + accounts"
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_user 0004_blotter_revision \
-         0005_sms_envelope_replay 0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
-         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension 0012_system_settings \
-         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
-         0016_retention_hold_and_device_scrub \
-         0017_health_check_log \
-         0018_sms_subscriber \
-         0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key 0025_incident_lifecycle_states 0026_sos_no_fix_fallback; do
+for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0001_baseline_schema '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Migrations 0001-0022 applied"
+pass "Full migration chain applied (all migrations/*.sql, globbed)"
 
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 

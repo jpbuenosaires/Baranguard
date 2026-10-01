@@ -101,16 +101,10 @@ mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CH
 # and the suite could not reach its own assertions. A suite pinned to a
 # partial schema expires the next time a migration touches a table it logs
 # in through.
-for m in 0001_baseline_schema 0002_seed_barangays 0003_shift_schedule_nullable_user 0004_blotter_revision \
-         0005_sms_envelope_replay 0006_sms_log_barangay 0007_retention_columns 0008_incident_party_fields \
-         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension 0012_system_settings \
-         0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
-         0016_retention_hold_and_device_scrub \
-         0017_health_check_log \
-         0018_sms_subscriber 0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key 0025_incident_lifecycle_states 0026_sos_no_fix_fallback; do
+for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0001_baseline_schema '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Migrations 0001-0022 applied"
+pass "Full migration chain applied (all migrations/*.sql, globbed)"
 
 # The four schema gaps 0007 exists to close — asserted against
 # information_schema, not assumed from the migration file's intent.
@@ -295,17 +289,10 @@ SMS_AUDIT=$(db_one "SELECT metadata_json FROM audit_log WHERE action='retention_
 expect_contains "$SMS_AUDIT" '"held":4' "audit metadata carries the held count"
 
 # --------------------------------------------------------------------------
-step "5. ai_processing_log — 1 year OR the incident's clock, whichever is longer"
+step "5. The ai_processing_log rule was removed with the AI pipeline (migration 0029)"
 # --------------------------------------------------------------------------
-# A 400-day-old draft whose incident is only 60 days old must be KEPT:
-# the incident's 7-year clock is the longer of the two.
-mysql_exec "$VALDB" <<SQL
-INSERT INTO ai_processing_log (incident_id, pipeline_run_id, task_type, model_version, status, created_at) VALUES
- ($CONV_INCIDENT, UUID(), 'redaction', 'test-model', 'completed', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY));
-SQL
-run_job --only=ai_processing_log >/dev/null
-AI_KEPT=$(db_one "SELECT COUNT(*) FROM ai_processing_log;")
-expect_eq "$AI_KEPT" "1" "400-day draft KEPT because its incident's 7-year clock is longer"
+GONE_OUT="$(run_job --only=ai_processing_log 2>&1)"; GONE_CODE=$?
+if [ "$GONE_CODE" -ne 0 ]; then pass "ai_processing_log is no longer a known retention rule (exit $GONE_CODE)"; else fail "ai_processing_log still accepted as a retention rule"; fi
 
 # --------------------------------------------------------------------------
 step "6. mobile_device — secrets scrubbed at 90 days, ROW RETAINED (0016)"
@@ -382,17 +369,10 @@ INSERT INTO dispatch (incident_id, dispatched_by, tanod_id, priority, route_stat
 VALUES (@old_inc, 1, 2, 'high', 'unavailable', 'completed', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2999 DAY));
 INSERT INTO evidence_attachment (incident_id, type, file_path, uploaded_by, uploaded_at, sha256, byte_size, mime_type, original_filename)
 VALUES (@old_inc, 'photo', 'old-photo.jpg', 2, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2999 DAY), REPEAT('a',64), 20, 'image/jpeg', 'old-photo.jpg');
-INSERT INTO blotter_record (incident_id, barangay_id, recorded_by, approved_by, narrative_summary, finalized_at, revision_no)
-VALUES (@old_inc, 1, 3, 3, 'old finalized summary', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2998 DAY), 2);
-SET @old_blotter = LAST_INSERT_ID();
-INSERT INTO blotter_revision (blotter_id, revision_no, narrative_summary, reason, amended_by, superseded_at)
-VALUES (@old_blotter, 1, 'superseded summary', 'typo', 3, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2998 DAY));
-INSERT INTO ai_processing_log (incident_id, pipeline_run_id, task_type, model_version, status, created_at)
-VALUES (@old_inc, UUID(), 'redaction', 'test-model', 'completed', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2999 DAY));
 INSERT INTO citizen_report (barangay_id, incident_id, description, submitted_at, converted_at)
 VALUES (1, @old_inc, 'converted long ago', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3001 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3000 DAY));
 SQL
-pass "Seeded an 8-year-old incident with all 5 RESTRICT dependents + a held twin"
+pass "Seeded an 8-year-old incident with its RESTRICT dependents (dispatch, evidence) + a held twin"
 
 OLD_INC=$(db_one "SELECT incident_id FROM incident WHERE redacted_narrative='[NAME] fire';")
 HELD_INC=$(db_one "SELECT incident_id FROM incident WHERE redacted_narrative='[NAME] held fire';")
@@ -407,12 +387,6 @@ DISP_GONE=$(db_one "SELECT COUNT(*) FROM dispatch WHERE incident_id = $OLD_INC;"
 expect_eq "$DISP_GONE" "0" "its dispatch went with it (FK RESTRICT handled in order)"
 EV_GONE=$(db_one "SELECT COUNT(*) FROM evidence_attachment WHERE incident_id = $OLD_INC;")
 expect_eq "$EV_GONE" "0" "its evidence row went with it"
-BLOT_GONE=$(db_one "SELECT COUNT(*) FROM blotter_record WHERE incident_id = $OLD_INC;")
-expect_eq "$BLOT_GONE" "0" "its blotter record went with it"
-REV_GONE=$(db_one "SELECT COUNT(*) FROM blotter_revision;")
-expect_eq "$REV_GONE" "0" "its blotter REVISION history went with it"
-AI_GONE=$(db_one "SELECT COUNT(*) FROM ai_processing_log WHERE incident_id = $OLD_INC;")
-expect_eq "$AI_GONE" "0" "its AI draft rows went with it"
 
 if [ -f "$BACKEND_DIR/scripts/.s7chk-evidence/old-photo.jpg" ]; then
   fail "evidence FILE still on disk after the row was purged"
