@@ -1,0 +1,55 @@
+/**
+ * approvals.css — Approvals queue page. Shared card/badge/form styles live
+ * in tanod-workflow.css; only the queue layout is specific to this page.
+ */
+
+.tw-approvals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: var(--spacing-md);
+  align-items: start;
+}
+
+.tw-approvals__head {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm-md);
+}
+
+.tw-approvals__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.tw-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tw-queue__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm-md);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+.tw-queue__item:last-child { border-bottom: 0; }
+
+.tw-queue__text { display: flex; flex-direction: column; min-width: 0; }
+.tw-queue__title { font-weight: 600; color: var(--color-text-primary); overflow-wrap: anywhere; }
+.tw-queue__detail { font-size: var(--font-size-label); color: var(--color-text-secondary); }
+.tw-queue__open { flex: none; }
+
+.tw-approvals__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+.tw-approvals__more { font-size: var(--font-size-label); color: var(--color-text-tertiary); }

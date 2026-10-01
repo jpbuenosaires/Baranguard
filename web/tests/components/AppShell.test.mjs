@@ -17,9 +17,9 @@ const navLabels = () => $$('.sidebar__nav-item').map((b) => b.title);
 
 // REFERENCE.md §3/§7 + main.js PAGE_ROLES.
 const EXPECTED_NAV = {
-  admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Citizen Reports', 'Analytics', 'Personnel', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
-  secretary: ['Incident Management', 'Citizen Reports', 'Settings'],
-  punong_barangay: ['Dashboard', 'Live Map', 'Analytics', 'Personnel', 'Settings'],
+  admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Citizen Reports', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
+  secretary: ['Incident Management', 'Citizen Reports', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Personnel', 'Settings'],
+  punong_barangay: ['Dashboard', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'Settings'],
 };
 
 describe('AppShell navigation', () => {

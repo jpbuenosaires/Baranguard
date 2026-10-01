@@ -807,3 +807,134 @@
     animation: none;
   }
 }
+
+/* --- 2026-10 tanod workflow: approval authority, availability, publish ---- */
+.user-approval-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  max-width: 18rem;
+}
+
+.approval-authority-fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  margin: 0;
+  min-width: 0;
+}
+
+.approval-authority-option {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-2xs) 0;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+/* Draft / published roster badges (Scheduler). Same pill geometry as
+   .shift-status-pill; draft uses the warning tint, published the success one. */
+.shift-approval-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-xs) 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shift-approval-pill--draft {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning);
+}
+
+.shift-approval-pill--published {
+  background: var(--tint-success-bg);
+  color: var(--pill-success-text);
+  border: 1px solid var(--color-success);
+}
+
+.scheduler-publish-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.scheduler-publish-bar__hint {
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.scheduler-publish-warnings {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  border: 1px solid var(--color-warning);
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border-radius: var(--radius-sm);
+}
+
+.scheduler-publish-warnings ul {
+  margin: var(--spacing-xs) 0 0;
+  padding-left: var(--spacing-lg);
+}
+
+.availability-panel {
+  margin-bottom: var(--spacing-md);
+}
+
+.availability-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.availability-panel__head h3 {
+  margin: 0;
+}
+
+.availability-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm-md) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.availability-item:first-of-type {
+  border-top: 0;
+}
+
+.availability-item__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.availability-item__windows {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.availability-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.availability-item__actions input[type='text'] {
+  flex: 1 1 12rem;
+}

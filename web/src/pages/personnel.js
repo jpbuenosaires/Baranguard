@@ -14,10 +14,14 @@
  *
  * Each tab's real logic still lives in its own file (users tab ->
  * user-management.js's `renderUsersTab`, etc.) — only the outer
- * AppShell/PageHeader/tab-switching shell is new here. Only Fatigue
- * Flags is visible to Punong Barangay (read-only), matching every one of
- * these screens' existing role split; the other three collapse away
- * entirely for that role rather than rendering disabled.
+ * AppShell/PageHeader/tab-switching shell is new here.
+ *
+ * 2026-10 (docs/FEATURE_CONTRACT_2026-10.md §10): the Fatigue Flags tab was
+ * removed from this hub. Users gained official title/approval authority
+ * editing; Scheduler gained availability review, draft/published badges and
+ * a Publish action. Swap requests remain their own tab. Admin sees all
+ * three tabs; Secretary and Punong Barangay see the Scheduler only (that is
+ * where roster approval and availability review live).
  *
  * Sidebar badges (`pendingSwapRequests`/`unacknowledgedFatigueFlags`)
  * used to live on their own separate nav items via `GET
@@ -35,7 +39,9 @@ import { icons } from '../components/icons.js';
 import { renderUsersTab } from './user-management.js';
 import { renderSchedulerTab } from './scheduler.js';
 import { renderSwapRequestsTab } from './swap-requests.js';
-import { renderFatigueFlagsTab } from './fatigue-flags.js';
+// fatigue-flags.js (and its endpoints) are intentionally left in the repo
+// but are no longer mounted here: the 2026-10 tanod-workflow contract
+// (§8, §10) removes the Fatigue tab from the hub.
 
 /**
  * @param {HTMLElement} root
@@ -57,20 +63,22 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
 
   const pageHeader = PageHeader({
     title: 'Personnel',
-    subtitle: 'Accounts, scheduling, swap requests, and fatigue safety in one place',
+    subtitle: 'Accounts, approval authority, the duty roster, and swap requests in one place',
     icon: icons.users,
   });
   header.appendChild(pageHeader.el);
 
   const isAdmin = user.role === 'admin';
 
-  // Admin sees all four; Punong Barangay (read-only oversight) sees only
-  // the one tab it was ever allowed to see as a standalone page.
+  // Admin: Users, Scheduler, Swap requests. Secretary and Punong Barangay:
+  // Scheduler only (availability review / roster publishing — the server
+  // checks role and approval authority on every action; the Users and Swap
+  // endpoints are Admin-only). Swap requests stay a tab of their own so they
+  // remain one click from the Scheduler (contract §10).
   const TABS = [
     isAdmin && { key: 'users', label: 'Users', icon: icons.users },
-    isAdmin && { key: 'scheduler', label: 'Scheduler', icon: icons.calendar },
+    { key: 'scheduler', label: 'Scheduler', icon: icons.calendar },
     isAdmin && { key: 'swaps', label: 'Swap requests', icon: icons.repeat, badgeKey: 'pendingSwapRequests' },
-    { key: 'fatigue', label: 'Fatigue flags', icon: icons.batteryWarning, badgeKey: 'unacknowledgedFatigueFlags' },
   ].filter(Boolean);
 
   const tabBar = document.createElement('div');
@@ -119,7 +127,11 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
 
   // Initialize with requested tab if valid, or first available tab
   const validTabKeys = TABS.map((t) => t.key);
-  let activeTab = param && validTabKeys.includes(param) ? param : TABS[0].key;
+  // `param` is a tab key string, or an object carrying one (`{ tab }`, as the
+  // Approvals page sends) — other callers pass unrelated objects (the audit
+  // log sends `{ userId }`), which simply fall back to the first tab.
+  const requestedTab = param && typeof param === 'object' ? param.tab : param;
+  let activeTab = requestedTab && validTabKeys.includes(requestedTab) ? requestedTab : TABS[0].key;
   let activeTabData = null;
 
   function syncTabButtons() {
@@ -153,11 +165,9 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
     if (activeTab === 'users') {
       renderUsersTab(body, pageHeader, user);
     } else if (activeTab === 'scheduler') {
-      renderSchedulerTab(body, user, pageHeader, currentTabData);
+      renderSchedulerTab(body, user, pageHeader, currentTabData, isAdmin ? () => { setActiveTab('swaps'); } : undefined);
     } else if (activeTab === 'swaps') {
       renderSwapRequestsTab(body, user, refreshBadges);
-    } else if (activeTab === 'fatigue') {
-      renderFatigueFlagsTab(body, user, refreshBadges, (tabKey, data) => setActiveTab(tabKey, data));
     }
   }
 

@@ -1,0 +1,10 @@
+/**
+ * school-zones.css — Safer School Zones tabs. Count tiles, forms, notices
+ * and the Annex B / C-1 / D print layouts are shared in tanod-workflow.css.
+ */
+
+.tw-ssz .data-table-wrap { max-width: 100%; }
+
+.tw-form-card { max-width: 60rem; }
+
+.tw-ssz .tw-toolbar { justify-content: space-between; }

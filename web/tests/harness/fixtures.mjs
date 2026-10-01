@@ -56,6 +56,18 @@ export function buildRoutes(scenario) {
     { user_id: 7, full_name: t('Ana Dichoso'), username: 'tanod.dichoso', role: 'tanod', contact_number: '09170000007', is_active: 0, is_suspended: 0, created_at: sqlAgo(60 * 1440), last_login_at: null },
   ];
   const tanodName = (id) => users.find((u) => u.user_id === id)?.full_name ?? null;
+  // Contract section 2: official_title + approval_authority (an array on the
+  // wire). Only admin / secretary / punong_barangay accounts may hold any.
+  const authorityByUser = {
+    1: [t('Chief Tanod'), ['note_report', 'prepare_annex_d']],
+    2: ['Kagawad', ['note_report']],
+    3: ['Punong Barangay', ['note_report', 'approve_report', 'approve_roster', 'approve_annex_d']],
+  };
+  for (const u of users) {
+    const [title, authority] = authorityByUser[u.user_id] ?? [null, []];
+    u.official_title = title;
+    u.approval_authority = authority;
+  }
 
   // --- Incidents --------------------------------------------------------------
   // 901 pending/high with coords · 902 dispatched/critical with two responders
@@ -68,7 +80,49 @@ export function buildRoutes(scenario) {
     { incident_id: 903, barangay_id: 1, reported_by: 4, incident_type: 'disturbance', priority: 'normal', status: 'resolved', source: 'web', latitude: 12.9190, longitude: 123.6690, created_at: sqlAgo(3 * 1440), device_offline_created_at: null, synced_at: sqlAgo(3 * 1440), location_description: t('Roadside stalls, Purok 4'), display_id: 'INC-2026-903', officer_name: tanodName(4) },
     { incident_id: 904, barangay_id: 1, reported_by: 2, incident_type: 'vandalism', priority: 'normal', status: 'pending', source: 'web', latitude: null, longitude: null, created_at: sqlAgo(200), device_offline_created_at: null, synced_at: null, location_description: null, display_id: 'INC-2026-904', officer_name: null },
   ];
+  // Contract section 7: every incident carries school_id + the three C-1 fields.
+  for (const inc of allIncidents) {
+    inc.school_id = null;
+    inc.c1_summary = null;
+    inc.c1_action_taken = null;
+    inc.c1_status_notes = null;
+  }
+  Object.assign(allIncidents.find((i) => i.incident_id === 902), {
+    school_id: 11,
+    c1_summary: t('Pupil felt faint near the school gate.'),
+    c1_action_taken: t('First aid given, ambulance called.'),
+    c1_status_notes: null,
+  });
   const incidents = empty ? [] : allIncidents;
+
+  // --- Schools / referrals / availability (sections 3, 5, 7) -----------------
+  const schools = empty ? [] : [
+    { school_id: 11, barangay_id: 1, name: t('Dao Elementary School'), school_type: 'public', level: 'primary_elementary', address: t('Purok 1, Dao'), focal_person: null, focal_contact: null, remarks: null, latitude: 12.9205, longitude: 123.6698, is_active: 1 },
+    { school_id: 12, barangay_id: 1, name: t('Dao Integrated High School'), school_type: 'public', level: 'secondary_high_school', address: t('Purok 2, Dao'), focal_person: t('Mrs. Reyes'), focal_contact: '09170000020', remarks: null, latitude: null, longitude: null, is_active: 1 },
+    { school_id: 13, barangay_id: 1, name: t('Old Daycare Center'), school_type: 'private', level: 'preschool_daycare_eccd', address: t('Purok 5, Dao'), focal_person: null, focal_contact: null, remarks: null, latitude: null, longitude: null, is_active: 0 },
+  ];
+  const referrals = empty ? [] : [
+    { referral_id: 1, incident_id: 902, barangay_id: 1, referred_to: 'ambulance_ems', other_text: null, contact_name: t('Pilar Rescue Unit 2'), referred_at: sqlAgo(30), reference_no: 'EMS-0042', created_by: 1, created_at: sqlAgo(30) },
+    { referral_id: 2, incident_id: 903, barangay_id: 1, referred_to: 'other', other_text: t('Municipal Engineering Office'), contact_name: null, referred_at: sqlAgo(2 * 1440), reference_no: null, created_by: 2, created_at: sqlAgo(2 * 1440) },
+  ];
+  const availability = empty ? [] : [
+    { avail_id: 31, barangay_id: 1, user_id: 4, period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-05', start: '08:00', end: '16:00' }, { date: '2026-10-06', start: '22:00', end: '23:59' }], status: 'submitted', reviewed_by: null, reviewed_at: null, review_note: null, version: 1, created_at: sqlAgo(300), updated_at: sqlAgo(300) },
+    { avail_id: 32, barangay_id: 1, user_id: 5, period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-07', start: '06:00', end: '14:00' }], status: 'accepted', reviewed_by: 1, reviewed_at: sqlAgo(60), review_note: t('Thanks.'), version: 1, created_at: sqlAgo(400), updated_at: sqlAgo(60) },
+  ];
+  const accomplishmentReports = empty ? [] : [
+    { report_id: 71, barangay_id: 1, user_id: 4, full_name: tanodName(4), month: '2026-09', status: 'prepared', entry_count: 2, total_minutes: 960, flagged_entries: 1, total_minutes_confirmed: null, prepared_at: sqlAgo(1440), noted_by: null, noted_at: null, approved_by: null, approved_at: null, return_reason: null, version: 2 },
+    { report_id: 72, barangay_id: 1, user_id: 5, full_name: tanodName(5), month: '2026-09', status: 'noted', entry_count: 1, total_minutes: 480, flagged_entries: 0, total_minutes_confirmed: null, prepared_at: sqlAgo(2880), noted_by: 2, noted_at: sqlAgo(1440), approved_by: null, approved_at: null, return_reason: null, version: 3 },
+  ];
+  const accomplishmentEntries = (reportId) => (reportId === 71 ? [
+    { entry_id: 501, report_id: 71, user_id: 4, work_date: '2026-09-03', accomplishment_text: t('Foot patrol, Purok 3 and 4.'), start_time: '08:00:00', end_time: '16:00:00', duration_minutes: 480, suggested_duration_minutes: 470, duration_flag: 0 },
+    { entry_id: 502, report_id: 71, user_id: 4, work_date: '2026-09-04', accomplishment_text: t('Assisted at the market.'), start_time: null, end_time: null, duration_minutes: 480, suggested_duration_minutes: 120, duration_flag: 1 },
+  ] : [
+    { entry_id: 503, report_id: 72, user_id: 5, work_date: '2026-09-05', accomplishment_text: t('Traffic assistance.'), start_time: null, end_time: null, duration_minutes: 480, suggested_duration_minutes: 480, duration_flag: 0 },
+  ]);
+  const sszTermReports = empty ? [] : [
+    { report_id: 81, barangay_id: 1, term_label: 'Term 1 S.Y. 2026-2027', term_start: '2026-08-24', term_end: '2026-10-30', status: 'draft', total_tanods: 3, total_schools: 2, total_deployment_days: 12, total_incidents: 1, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0, incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: 1, other_institutions: 'Ambulance/EMS', remarks: null, prepared_by: null, prepared_at: null, approved_by: null, approved_at: null, mayor_office_received_by: null, mayor_office_received_at: null, dilg_received_by: null, dilg_date_received: null, version: 1 },
+    { report_id: 82, barangay_id: 1, term_label: 'Term 4 S.Y. 2025-2026', term_start: '2026-03-02', term_end: '2026-04-10', status: 'prepared', total_tanods: 3, total_schools: 2, total_deployment_days: 20, total_incidents: 0, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0, incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: 0, other_institutions: null, remarks: null, prepared_by: 1, prepared_at: sqlAgo(1440), approved_by: null, approved_at: null, mayor_office_received_by: null, mayor_office_received_at: null, dilg_received_by: null, dilg_date_received: null, version: 2 },
+  ];
 
   const dispatches = empty ? [] : [
     { dispatch_id: 7001, incident_id: 902, tanod_id: 5, tanod_name: tanodName(5), priority: 'critical', route_json: { mode: 'foot', geometry: { type: 'LineString', coordinates: [[123.665, 12.917], [123.6655, 12.9172]] }, distance_m: 420, duration_s: 300, steps: [{ instruction: t('Head north'), maneuver: 'depart', distance_m: 420, duration_s: 300 }] }, route_status: 'available', status: 'en_route', dispatched_at: sqlAgo(40), en_route_at: sqlAgo(38), arrived_at: null, completed_at: null, cancelled_at: null },
@@ -103,10 +157,10 @@ export function buildRoutes(scenario) {
   ];
 
   const shifts = empty ? [] : [
-    { shift_id: 501, user_id: 4, patrol_zone: t('Zone 1 - Riverside'), start_at: sqlAgo(120), end_at: sqlAgo(-600), version: 1 },
-    { shift_id: 502, user_id: 5, patrol_zone: t('Zone 2 - Market'), start_at: sqlAgo(-1440), end_at: sqlAgo(-720), version: 3 },
-    { shift_id: 503, user_id: null, patrol_zone: null, start_at: sqlAgo(-2880), end_at: sqlAgo(-2160), version: 1 },
-    { shift_id: 504, user_id: 4, patrol_zone: 'Zone 3', start_at: sqlAgo(3 * 1440), end_at: sqlAgo(3 * 1440 - 720), version: 2 },
+    { shift_id: 501, user_id: 4, patrol_zone: t('Zone 1 - Riverside'), start_at: sqlAgo(120), end_at: sqlAgo(-600), version: 1, approval_status: 'published', approved_by: 3, approved_at: sqlAgo(600), source_availability_id: null },
+    { shift_id: 502, user_id: 5, patrol_zone: t('Zone 2 - Market'), start_at: sqlAgo(-1440), end_at: sqlAgo(-720), version: 3, approval_status: 'draft', approved_by: null, approved_at: null, source_availability_id: 32 },
+    { shift_id: 503, user_id: null, patrol_zone: null, start_at: sqlAgo(-2880), end_at: sqlAgo(-2160), version: 1, approval_status: 'draft', approved_by: null, approved_at: null, source_availability_id: null },
+    { shift_id: 504, user_id: 4, patrol_zone: 'Zone 3', start_at: sqlAgo(3 * 1440), end_at: sqlAgo(3 * 1440 - 720), version: 2, approval_status: 'published', approved_by: 3, approved_at: sqlAgo(3 * 1440 + 60), source_availability_id: null },
   ];
 
   const swapRequests = empty ? [] : [
@@ -189,6 +243,10 @@ export function buildRoutes(scenario) {
     { method: 'POST', path: '/users', handler: ({ body }) => (users.some((u) => u.username === body.username)
       ? { status: 409, body: { error: { code: 'USERNAME_TAKEN', message: 'That username is already in use.' } } }
       : { status: 201, body: { user_id: 99, username: body.username, full_name: body.full_name, role: body.role, contact_number: body.contact_number, is_active: 1 } }) },
+    { method: 'GET', path: '/users/:id', handler: ({ params }) => {
+      const user = users.find((u) => u.user_id === Number(params.id));
+      return user ? ok(user) : notFound('User not found.');
+    } },
     { method: 'PATCH', path: '/users/:id', handler: ({ params, body }) => ok({ user_id: Number(params.id), updated: Object.keys(body || {}), is_active: body?.is_active ?? 1, is_suspended: body?.is_suspended ?? 0 }) },
 
     // --- Incidents ---
@@ -207,6 +265,42 @@ export function buildRoutes(scenario) {
     { method: 'PATCH', path: '/incidents/:id', handler: ({ params, body }) => ((body && ('raw_narrative' in body || 'redacted_narrative' in body))
       ? { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'Narrative fields cannot be edited here.' } } }
       : ok({ incident_id: Number(params.id), updated: true, fields: Object.keys(body || {}) })) },
+    { method: 'GET', path: '/incidents/:id/referrals', handler: ({ params }) => ok({ items: referrals.filter((r) => r.incident_id === Number(params.id)) }) },
+    { method: 'POST', path: '/incidents/:id/referrals', handler: ({ params, body }) => ((body && body.referred_to)
+      ? { status: 201, body: { referral_id: 9, incident_id: Number(params.id), barangay_id: 1, referred_to: body.referred_to, other_text: body.other_text ?? null, contact_name: body.contact_name ?? null, referred_at: sqlAgo(0), reference_no: body.reference_no ?? null, created_by: 1, created_at: sqlAgo(0) } }
+      : { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'referred_to is required.' } } }) },
+    { method: 'GET', path: '/referrals', handler: ({ query }) => ok(paginate(referrals
+      .filter((r) => !query.referred_to || r.referred_to === query.referred_to)
+      .map((r) => {
+        const inc = allIncidents.find((i) => i.incident_id === r.incident_id);
+        return { referral_id: r.referral_id, incident_id: r.incident_id, display_id: inc?.display_id ?? null, incident_type: inc?.incident_type ?? null, referred_to: r.referred_to, other_text: r.other_text, referred_at: r.referred_at, reference_no: r.reference_no };
+      }), query)) },
+    { method: 'GET', path: '/schools', handler: ({ query }) => ok({ items: schools.filter((s) => query.active === undefined || String(s.is_active) === String(query.active)) }) },
+    { method: 'POST', path: '/schools', handler: ({ body }) => ({ status: 201, body: { school_id: 19, barangay_id: 1, is_active: 1, ...body } }) },
+    { method: 'PATCH', path: '/schools/:id', handler: ({ params, body }) => ok({ school_id: Number(params.id), updated: Object.keys(body || {}) }) },
+    { method: 'GET', path: '/school-checkins', handler: ({ query }) => ok(paginate(empty ? [] : [
+      { checkin_id: 1, school_id: 11, user_id: 4, checked_in_at: sqlAgo(600), checked_out_at: sqlAgo(540) },
+    ], query)) },
+    { method: 'GET', path: '/reports/school-term', handler: () => ok({ total_tanods: empty ? 0 : 3, total_schools: schools.filter((s) => s.is_active).length, total_deployment_days: empty ? 0 : 12, total_incidents: empty ? 0 : 1, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0, incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: empty ? 0 : 1, other_institutions: empty ? null : 'Ambulance/EMS' }) },
+    { method: 'GET', path: '/ssz-term-reports', handler: ({ query }) => ok(paginate(sszTermReports, query)) },
+    { method: 'POST', path: '/ssz-term-reports', handler: ({ body }) => ({ status: 201, body: { ...sszTermReports[0], report_id: 89, term_label: body.term_label, term_start: body.term_start, term_end: body.term_end, status: 'draft' } }) },
+    { method: 'GET', path: '/ssz-term-reports/:id', handler: ({ params }) => {
+      const row = sszTermReports.find((r) => r.report_id === Number(params.id));
+      return row ? ok(row) : notFound('Report not found.');
+    } },
+    { method: 'PATCH', path: '/ssz-term-reports/:id', handler: ({ params }) => ok({ report_id: Number(params.id), updated: true }) },
+    { method: 'POST', path: '/ssz-term-reports/:id/prepare', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'prepared' }) },
+    { method: 'POST', path: '/ssz-term-reports/:id/approve', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved' }) },
+    { method: 'POST', path: '/ssz-term-reports/:id/mark-submitted', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'submitted' }) },
+    { method: 'GET', path: '/accomplishment-reports', handler: ({ query }) => ok(paginate(accomplishmentReports
+      .filter((r) => (!query.status || r.status === query.status) && (!query.month || r.month === query.month) && (!query.user_id || r.user_id === Number(query.user_id))), query)) },
+    { method: 'GET', path: '/accomplishment-reports/:id', handler: ({ params }) => {
+      const row = accomplishmentReports.find((r) => r.report_id === Number(params.id));
+      return row ? ok({ ...row, entries: accomplishmentEntries(row.report_id) }) : notFound('Report not found.');
+    } },
+    { method: 'POST', path: '/accomplishment-reports/:id/note', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'noted' }) },
+    { method: 'POST', path: '/accomplishment-reports/:id/approve', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved' }) },
+    { method: 'POST', path: '/accomplishment-reports/:id/return', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'returned' }) },
     { method: 'PATCH', path: '/incidents/:id/status', handler: ({ params }) => ok({ incident_id: Number(params.id), status: 'resolved' }) },
     { method: 'GET', path: '/incidents/:id/evidence', handler: ({ params }) => ok({ items: evidence.filter((e) => e.incident_id === Number(params.id)) }) },
 
@@ -249,8 +343,14 @@ export function buildRoutes(scenario) {
     { method: 'POST', path: '/citizen-reports/:id/convert', handler: ({ params }) => ({ status: 201, body: { incident_id: 905, citizen_report_id: Number(params.id), converted_at: sqlAgo(0) } }) },
 
     // --- Scheduling ---
-    { method: 'GET', path: '/shifts', handler: ({ query }) => ok(paginate(shifts, query)) },
-    { method: 'POST', path: '/shifts', handler: ({ body }) => ({ status: 201, body: { shift_id: 599, user_id: body.user_id, patrol_zone: body.patrol_zone, start_at: body.start_at, end_at: body.end_at, version: 1 } }) },
+    { method: 'GET', path: '/shifts', handler: ({ query }) => ok(paginate(shifts.filter((s) => !query.approval_status || s.approval_status === query.approval_status), query)) },
+    { method: 'POST', path: '/shifts', handler: ({ body }) => ({ status: 201, body: { shift_id: 599, user_id: body.user_id, patrol_zone: body.patrol_zone, start_at: body.start_at, end_at: body.end_at, version: 1, approval_status: 'draft', approved_by: null, approved_at: null, source_availability_id: body.source_availability_id ?? null } }) },
+    { method: 'POST', path: '/shifts/publish', handler: ({ body }) => ok({ published: body.shift_ids, already_published: [], warnings: [{ code: 'NO_COVERAGE', date: '2026-10-07' }] }) },
+    { method: 'GET', path: '/availability', handler: ({ query }) => ok(paginate(availability.filter((a) => (!query.status || a.status === query.status) && (!query.user_id || a.user_id === Number(query.user_id))), query)) },
+    { method: 'PATCH', path: '/availability/:id', handler: ({ params, body }) => {
+      const row = availability.find((a) => a.avail_id === Number(params.id));
+      return row ? ok({ ...row, status: body.status, review_note: body.review_note ?? null, reviewed_by: 1, reviewed_at: sqlAgo(0) }) : notFound('Availability not found.');
+    } },
     { method: 'PATCH', path: '/shifts/:id', handler: ({ params, body }) => ok({ shift_id: Number(params.id), updated_at: sqlAgo(0), version: (body.version || 0) + 1 }) },
     { method: 'GET', path: '/shift-swap-requests', handler: ({ query }) => ok(paginate(swapRequests, query)) },
     { method: 'PATCH', path: '/shift-swap-requests/:id', handler: ({ params, body }) => ok({ request_id: Number(params.id), status: body.status, resolved_at: sqlAgo(0), resolved_by: 1, shift_id: 502, target_user_id: 4 }) },
