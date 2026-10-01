@@ -38,6 +38,19 @@ workstation is now reachable through a Cloudflare Named Tunnel
   active, and `docs/REFERENCE.md` §8's gotcha list documents the real
   device behavior (tracking stops when off-duty, subject to the
   background-location permission fix in HANDOFF.md's C7 entry).
+- **Tanod workflow data (added 2026-10-01, migrations 0030-0033, not yet
+  applied to a real DB):** availability windows, monthly accomplishment
+  entries with hours, referral metadata, a school inventory (with a school
+  focal person's name and phone), school check-ins and Annex C-1 summary
+  fields. Purpose: replace the missing DTR with an auditable
+  accomplishment-report path, build rosters, record that large incidents
+  were referred rather than handled, and prepare the school-zone annexes.
+  Proportionality measures: no student or victim names anywhere (C-1 text
+  is meant to be short, factual and non-identifying, but that is a
+  convention, not enforced); check-ins store no coordinates; the referral
+  log shows no narrative, names or contacts; audit metadata carries
+  ids/statuses only. **Retention for all of it is pending a policy
+  decision and no purge job exists (Rule 10).**
 - **Evidence photos/audio** are collected only against a specific
   incident, stored outside the web root, and follow the same 7-year
   retention as the incident record.
@@ -52,6 +65,9 @@ workstation is now reachable through a Cloudflare Named Tunnel
 | GPS/location data retained indefinitely | Was a real gap until 2026-09-26 | Medium | H-15: `gps_track` now on a 1-year retention clock (`RetentionService::purgeGpsTracks()`) |
 | Device compromise exposing stored session/credentials | Low-medium | High | Encrypted SQLite (SQLCipher) on mobile; 15-min sliding web JWT / device sessions revoked on password change or suspension (§2 Rule 12); web JWT moved out of `sessionStorage` into memory-only (H-05, 2026-09-24) |
 | ~~AI processing exposing raw narrative to an external service~~ | **Historical** — the AI pipeline was removed 2026-10-01 (migration 0029); no AI processor exists | — | Risk retired with the feature. Do not reintroduce without a new PIA |
+| Staff hours/activities (accomplishment reports), availability and school check-ins accumulate indefinitely | Certain under current code | Medium (sensitive staff data, honorarium-linked) | None yet: retention for the new tables is an open policy decision, no purge job (`docs/DATA_INVENTORY.md` §5). Access limited to the owner and same-barangay admin/secretary/PB; cross-tenant 404 |
+| Annex C-1 free text or accomplishment text containing victim/student/third-party identities | Medium | Medium-high (minors near schools) | Length limits and in-form guidance only; nothing detects names. Needs a barangay policy and tanod training before real use |
+| Approval authority misused (an official approves their own or colleagues' reports/rosters) | Low-medium | Medium | A preparer can never note/approve their own report; an Admin cannot edit their OWN approving authorities (403); every change audited. A second Admin could still grant them (open decision, HANDOFF.md) |
 | SMS broadcast reaching a non-consenting number | Low | Medium | `sms_subscriber.consent_at`/`consent_source` NOT NULL; removal is `opted_out_at`, never a hard delete (traceability) |
 | Unauthorized access via a compromised web session (XSS) | Was a real gap until 2026-09-24 | High | H-05 — JWT moved to an in-memory variable, unreachable by `sessionStorage`-targeting XSS; full mitigation (HttpOnly cookie) is scoped and pending an HTTPS deployment decision (C-03/F1) |
 | Transport-level interception / public exposure | Partly addressed (C-03, in progress per REFERENCE.md §1) | High | The Cloudflare Named Tunnel provides TLS to the public hostnames; no Cloudflare Access policy exists and `api.baranguardph.win` is reachable by anyone with the URL. Re-check against `docs/REMAINING.md` before relying on this row |
@@ -115,6 +131,13 @@ authors against the original.
   minors, including near schools. Confirm what the circular requires for
   such images (notice, retention, access) and whether Tanod evidence
   capture needs additional safeguards.
+- **Staff data under the tanod workflow (2026-10-01).** Confirm how RA
+  10173 and NPC issuances treat staff hours/attendance records and school
+  deployment records held by a barangay, whether a separate privacy notice
+  is needed for tanods (none exists in `docs/PRIVACY_NOTICES.md`), and what
+  retention applies (COA/treasurer attendance-evidence rules are
+  unconfirmed). Annex A fields and MC 2026-037 reporting duties are
+  unknown until the circular PDF is read.
 - **Third-party disclosures** (ORS, FCM, Cloudflare —
   `docs/DATA_INVENTORY.md` §6) are not yet assessed for data-sharing
   agreements.
