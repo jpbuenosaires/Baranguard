@@ -18474,3 +18474,106 @@ real thing" happen on the same machine with the same command — always
 verify a build's actual embedded config (grep the bundle) before trusting
 it went where it was supposed to, don't just trust that changing a
 source-level default was enough.
+
+
+## 2026-10-01 (1) — Electronic Blotter and the whole local-AI pipeline REMOVED (migration 0029)
+
+**Why**: user decision after DILG MC 2026-037 (Safer School Zones) review:
+barangays are directed to keep the blotter and the Lupon records in their
+own binders, so Baranguard stops finalizing/amending/exporting blotter
+entries. With no blotter to feed, the redaction/summary/translation/
+extraction pipeline (and the Ollama worker) has no purpose either. The
+scope questions were put to the user first via AskUserQuestion and answered:
+(1) blotter + the **whole** AI pipeline, (2) drop the tables via a new
+migration, (3) keep the Secretary role and keep `raw_narrative` as plain
+incident text, (4) update the verify suites as part of the change.
+
+**Removed (backend)**: `BlotterController`, `AiDraftController`,
+`routes/blotter.php`, `routes/ai.php`, `services/ai/*`, `services/eval/*`,
+`scripts/ai-worker.php`, `ai-evaluate.php`, `build-eval-kit.php`,
+`generate-eval-dataset.php`, `verify-eval-scorers.php`, `README-ai.md`,
+`fixtures/redaction-eval-*.json`, `fixtures/eval-incidents-v1.json`, the
+`eval-kit/` folder, and `verify-sprint6.sh` (the AI+blotter suite).
+`SystemHealthController` lost `ollamaStatus()`/`ollamaStatusOnly()`/
+`aiQueue()` (routes `/system/ollama-status`, `/system/ai-queue` gone; the
+`ollama` key left `/system/health` and its history). `health_check_log.
+ollama_status` is NOT NULL, so new rows write the literal `'not_configured'`.
+`IncidentsController`: `show()` no longer returns `redacted_narrative`/
+`redaction_approved_*`; `updateStatus()` no longer flips a blotter's
+case_status; stale doc comments fixed. `RetentionService`: the
+`ai_processing_log` rule and the blotter/AI deletes in the incident cascade
+are gone (`AI_LOG_DAYS` removed). Launchers: `start-baranguard.ps1` no
+longer starts an AI worker; `install-autostart-services.ps1` no longer
+registers `BaranguardAiWorker`. `.env.example` lost the OLLAMA_* block.
+Seed scripts/SQL fixtures no longer insert blotter rows.
+
+**Migration 0029** drops `blotter_revision`, `blotter_record`,
+`ai_processing_log`, `ai_evaluation_run` (data and all). The down file
+intentionally signals an error — the final shape is the sum of ten earlier
+migrations, so rollback means restoring the pre-0029 backup. **Not run
+against either real DB** (`baranguard`, `baranguard_uiseed`); the verify
+suites build their own disposable DBs from 0001–0026. Kept columns:
+`incident.redacted_narrative`, `redaction_approved_at/by` (unused now),
+`raw_narrative_purged_at`, the 0008 party fields.
+
+**Web**: `blotter-detail.js` rewritten as `incident-detail.js` (route key
+`blotter-detail` → `incident-detail`, CSS/test renamed): one page —
+dossier, narrative (Secretary-only, honest "restricted" note for other
+roles), evidence, timeline, Admin resolve, Secretary lifecycle card. Deleted
+`ai-review.js`, `BlotterWorkflow.js`, `blotterStatus.js`, their CSS and the
+print excerpt. `AppShell` lost the AI badge, `service-health.js` the
+Ollama card + AI queue panel, `statistical-reports.js` the Blotter Case
+Status card, `incident-management.js` the "Open blotter workflow" button
+(now "Open incident record"), `apiClient.js` all blotter/AI functions.
+`lupon-packet-*` CSS classes (reused by the PB digest/citizen-report
+cards) renamed `report-manifest-*`. Audit-log history rows keep their old
+action labels (audit_log is write-once) but the chip no longer deep-links
+a `blotter_record` id.
+
+**Mobile**: untouched. It only mentioned "blotter" in comments and CSS
+class names; `redacted_incident_*` in its local cache are the dispatch
+endpoint's allow-listed fields, not this pipeline.
+
+**Verified (real runs, disposable DBs / jsdom)**: `verify-web-wiring.mjs`
+528/0 · `web/tests` 389/389 · retention 82/0 · pentest-incidents 56/0
+(step 6 now asserts every removed route is a 404 route miss) · h16
+lifecycle 30/0 · sprint7-audit 57/0 · sprint0 19, sprint1-auth 23,
+w2-reports 31, w3-w4 38, sprint1-remaining 39, scheduler-fatigue 47,
+devices-map-packages 57, duty-status 49, public-transparency 17,
+device-signature 21, sprint3 42, f9 15, second-responder 25,
+device-session 20, b2-pentest 59, f5 16, f6 8, f8 8, evidence-upload 19 —
+all 0 failed. **`verify-sprint4-phase2-3.sh`: 70 passed, 2 failed** —
+both are environmental, not this change: this machine now has a real FCM
+service account, so `/system/health` reports `fcm: healthy` where the
+suite expects `not_configured`, and the FCM delivery rows don't fail with
+FCM_NOT_CONFIGURED. `php -l` clean on every controller/service/route/
+script. Route count 92 → 76 (`count-routes.php`). Two web-test fixtures
+were fixed along the way: the fatigue-flag rows were missing five fields
+the previous commit's `apiClient.js` mapping reads (pre-existing).
+
+**Not done / follow-ups**: (1) migration 0029 has not been applied to the
+real DBs. (2) `docs/Baranguard_Master_Reference_FINAL .md`, `HANDOFF.md`'s
+older sections, `REMAINING.md`, `SETUP.md`, `DATA_INVENTORY.md`,
+`PRIVACY_IMPACT_ASSESSMENT.md`, `PRIVACY_NOTICES.md` still describe the
+blotter/AI system in places — `REFERENCE.md` (which wins for working
+purposes) and the top of `HANDOFF.md` are reconciled. (3) `backend/.env`
+still has the OLLAMA_* values (gitignored, harmless). (4) A
+`BaranguardAiWorker` Scheduled Task may still be registered on a machine
+that ran the old autostart script — unregister it. (5) Browser-verified after the fact: logged in as `secretary.dao` against
+`baranguard_uiseed`, opened an incident record — single page, no tabs,
+lifecycle card correctly disabled (a dispatch is still active), timeline and
+narrative present, console clean, network log shows only `/incidents/:id`,
+`/evidence`, `/notifications` (no removed endpoint called). (6) Raw narratives now all fall under the 90-day ceiling in
+`RetentionService` (no approved redaction ever exists) — a retention-
+policy consequence the user should confirm, per Rule 10.
+
+
+## 2026-10-01 (2) — Post-0029 revision pass: sync/SOS safety, verify suites on the full chain, docs reconciled
+
+Prompted by a multi-agent audit (backend, mobile, web+docs, standards) after migration 0029. **Not committed; nothing device-verified; 0029 still not applied to either real DB.**
+
+- **Backend** (`SyncController`, `TanodSosController`, `GpsController`, `DispatchController`, `IncidentsController`): an offline SOS or GPS ping carrying a stale/foreign `dispatch_id` is now stored with `dispatch_id` nulled instead of failing 422 (Rule 27: SOS never blocked); `processItem` catches `\Throwable` per item and marks the row failed, SQLSTATE 23000 reported as duplicate; SOS processed first; batch capped at 200 items (413); lifecycle change now locks the incident `FOR UPDATE` before re-checking dispatches; replaying an already-applied dispatch status returns 200, tanod-initiated transitions are audited (ids/statuses only). **Deviation:** the duplicate-of guard first rejected any closed target; narrowed to refuse only a target that is itself a `duplicate` (a repeat report of a resolved incident is a legitimate link).
+- **Mobile** (`mobile/src`): chunked sync (50/request, SOS and dispatch first, GPS capped 200/pass), dispatch status queued only on network/5xx/401 and reverted on 4xx/409, queued SOS retries up to 5 with a persistent banner and `created_offline_at`, poison-item caps via local schema migration 5, evidence-save failure no longer swallowed, SyncQueueModal "needs attention" + retry, 5s SOS timeout, re-login-required state. `verify-local-schema.mjs` 121/121; tsc 1 and lint 19 errors are pre-existing.
+- **Verify suites:** 25 `verify-*.sh` now apply the full migration chain by glob instead of a list pinned at 0026. Ran: sprint3 43/43 (one assertion updated to the new stored-but-unlinked GPS behaviour), h16 30/30, second-responder 25/25 and others passing. Open: `verify-sprint4-phase2-3.sh` 2 FCM assertions expect `not_configured` but this machine now has a real Firebase account (environment-dependent, not a regression); `verify-sprint7-pentest-incidents.sh` 56 vs documented 68 (likely assertions removed with blotter/AI, not investigated).
+- **Web/docs:** dead AI/Lupon-adjacent CSS removed, audit-log category renamed to Incidents (historical action labels kept), CLAUDE/REFERENCE/HANDOFF/SETUP/REMAINING/SPRINTS reconciled to post-0029. Measured: wiring 528/0, web tests 389/0. New drafts: `docs/ISO25010_EVALUATION_PLAN.md`, `docs/THESIS_OBJECTIVES_ALIGNMENT.md` (all results "not yet measured").
+- **Still open / needs a decision:** 90-day hard purge of `raw_narrative` with no redacted replacement (policy call, unchanged); apply 0029 to the real DBs after a restore-drill backup; `DATA_INVENTORY.md`, `PRIVACY_IMPACT_ASSESSMENT.md`, `PRIVACY_NOTICES.md`, Master Reference still describe the removed blotter/AI; read MC 2024-086, 2003-42, 2026-037 and the LGUSS-BIMS disaster module directly.

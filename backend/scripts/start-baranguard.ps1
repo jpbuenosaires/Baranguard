@@ -1,8 +1,7 @@
 # Baranguard - one-click startup, run by double-clicking "Start
 # Baranguard.bat" at the repo root. Starts Apache (which now also serves
-# the API on :8081 -- see below) and MySQL if not already running, starts
-# the AI worker daemon if not already running, then opens the web
-# dashboard in the default browser.
+# the API on :8081 -- see below) and MySQL if not already running, then
+# opens the web dashboard in the default browser.
 #
 # This is a MANUAL launcher -- it does NOT make anything start just
 # because the laptop is powered on. For that (no double-click, no login
@@ -10,22 +9,13 @@
 # which needs a one-time Administrator prompt to register a Windows
 # Scheduled Task. This script needs no elevation at all: it only starts
 # ordinary processes under the current user, the same as starting Apache/
-# MySQL from the XAMPP Control Panel and running ai-worker.php by hand,
-# minus the manual steps.
+# MySQL from the XAMPP Control Panel, minus the manual steps.
 #
 # Safe to double-click more than once: each piece is skipped if it's
-# already running, so this never starts a second AI worker daemon
-# racing the first one over the same queue (AiJobQueue::
-# requeueStaleProcessing()'s own doc explains why two workers isn't safe
-# on this schema without a claimed_at column).
+# already running.
 
 $ErrorActionPreference = "Continue"
 $backendDir = Split-Path -Parent $PSScriptRoot
-
-function Test-AiWorkerRunning {
-    $procs = Get-CimInstance Win32_Process -Filter "Name = 'php.exe'" -ErrorAction SilentlyContinue
-    return [bool]($procs | Where-Object { $_.CommandLine -like "*ai-worker.php*--daemon*" })
-}
 
 Write-Host "Starting Baranguard..."
 Write-Host ""
@@ -84,20 +74,7 @@ if (Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyCont
     Write-Host "[!!] API server (port 8081) is not listening -- check C:\xampp\apache\conf\extra\httpd-vhosts.conf and Apache's error log."
 }
 
-# 4. AI worker daemon
-if (Test-AiWorkerRunning) {
-    Write-Host "[OK] AI worker is already running."
-} else {
-    Write-Host "Starting AI worker..."
-    if (Test-Path $phpExe) {
-        Start-Process -FilePath $phpExe -ArgumentList "scripts\ai-worker.php","--daemon" -WorkingDirectory $backendDir -WindowStyle Hidden
-        Write-Host "[OK] AI worker started."
-    } else {
-        Write-Host "[!!] Could not find php.exe -- AI redaction/summary jobs will sit queued until this is fixed."
-    }
-}
-
-# 5. Cloudflare tunnel (C-03) -- fronts baranguardph.win/api.baranguardph.win
+# 4. Cloudflare tunnel (C-03) -- fronts baranguardph.win/api.baranguardph.win
 # on this machine's real, DNS-registered tunnel ("baranguard", not the
 # separate "baranguard-main" tunnel some other machine may have; whichever
 # tunnel this machine's own ~/.cloudflared/config.yml names is what's
@@ -107,7 +84,7 @@ if (Test-AiWorkerRunning) {
 # needs a one-time elevated prompt), that service is authoritative and
 # survives a reboot on its own -- this step only fills the gap for a
 # machine that hasn't run that yet, the same "ordinary user process, no
-# admin needed" spirit as Apache/MySQL/the AI worker above. Not proof the
+# admin needed" spirit as Apache/MySQL above. Not proof the
 # tunnel is public-reachable (that needs a real HTTP round-trip from
 # outside), just that the local connector process is up.
 $cfSvc = Get-Service -Name "cloudflared" -ErrorAction SilentlyContinue

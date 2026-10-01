@@ -257,6 +257,9 @@ final class TanodSosController
             }
             $dispatchIdInt = (int) $dispatchId;
             // §6: "Optional dispatch must belong to caller and be active."
+            // Rule 27 (SOS is never blocked) wins over that: a stale or
+            // non-active dispatch_id (typical for a queued offline SOS)
+            // is dropped to NULL instead of rejecting the alarm.
             $dispatchStmt = $pdo->prepare(
                 "SELECT d.dispatch_id FROM dispatch d
                  JOIN incident i ON i.incident_id = d.incident_id
@@ -271,7 +274,7 @@ final class TanodSosController
                 'barangay_id' => $identity['barangay_id'],
             ]);
             if ($dispatchStmt->fetch(PDO::FETCH_ASSOC) === false) {
-                throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'dispatch_id does not reference an active dispatch assigned to you.');
+                $dispatchIdInt = null;
             }
         }
 

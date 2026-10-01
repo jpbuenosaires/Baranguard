@@ -1,6 +1,5 @@
-/* blotter-detail.css — Electronic Blotter Detail executive styling (100% Token Compliant) */
-
 /* Layout & Column Spacing */
+
 .split-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
@@ -10,13 +9,13 @@
 }
 
 @media (max-width: 1024px) {
-  .split-panel {
+.split-panel {
     grid-template-columns: 1fr;
     gap: var(--spacing-md);
   }
 }
 
-.blotter-detail__main {
+.incident-detail__main {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -25,7 +24,7 @@
   width: 100%;
 }
 
-.blotter-detail__aside {
+.incident-detail__aside {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -34,14 +33,16 @@
 }
 
 /* Card Padding & Shape */
-.blotter-detail__main .card,
-.blotter-detail__aside .card {
+
+.incident-detail__main .card,
+.incident-detail__aside .card {
   padding: var(--spacing-md) var(--spacing-lg);
   margin: 0;
 }
 
 /* Header & Badges */
-.blotter-detail-header-actions {
+
+.incident-detail-header-actions {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -63,7 +64,7 @@
   line-height: 1.2;
 }
 
-.blotter-id-badge {
+.incident-id-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-2xs);
@@ -79,18 +80,19 @@
   line-height: 1.2;
 }
 
-.blotter-id-badge svg {
+.incident-id-badge svg {
   color: var(--color-primary);
   flex-shrink: 0;
 }
 
-.blotter-id-badge--incident {
+.incident-id-badge--incident {
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   color: var(--color-text-secondary);
 }
 
 /* Case Hero Card & Dossier */
+
 .case-hero {
   display: flex;
   flex-direction: column;
@@ -140,6 +142,7 @@
 }
 
 /* Dossier Tiered Body: Parties Section, then Full-Width Particulars Grid */
+
 .dossier-body {
   display: flex;
   flex-direction: column;
@@ -168,6 +171,7 @@
 }
 
 /* Involved Parties Cards — Side by side with ample room */
+
 .parties-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -176,7 +180,7 @@
 }
 
 @media (max-width: 680px) {
-  .parties-grid {
+.parties-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -251,6 +255,7 @@
 }
 
 /* 4-Column Incident Particulars Grid — Full width, no truncation */
+
 .meta-grid-4col {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -259,13 +264,13 @@
 }
 
 @media (max-width: 960px) {
-  .meta-grid-4col {
+.meta-grid-4col {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 520px) {
-  .meta-grid-4col {
+.meta-grid-4col {
     grid-template-columns: 1fr;
   }
 }
@@ -323,6 +328,7 @@
 }
 
 /* Legal Document Presentation */
+
 .doc-card {
   display: flex;
   flex-direction: column;
@@ -385,11 +391,6 @@
   position: relative;
 }
 
-.doc-blockquote--blotter {
-  border-left-color: var(--color-accent);
-  background: var(--color-bg);
-}
-
 .btn-copy {
   display: inline-flex;
   align-items: center;
@@ -412,6 +413,7 @@
 }
 
 /* Evidence Card & Slim Bar */
+
 .evidence-bar--empty {
   display: flex;
   align-items: center;
@@ -485,6 +487,7 @@
 }
 
 /* Timeline & Stepped Audit Rail */
+
 .timeline {
   display: flex;
   flex-direction: column;
@@ -612,6 +615,7 @@
 }
 
 /* Resolution Success Card */
+
 .resolution-badge-card {
   display: flex;
   align-items: flex-start;
@@ -660,6 +664,7 @@
 }
 
 /* Legal Notice Card */
+
 .legal-notice-card {
   display: flex;
   flex-direction: column;
@@ -688,8 +693,9 @@
   line-height: 1.45;
 }
 
-/* Lupon Conciliation Packet Studio Card */
-.lupon-packet-manifest {
+/* Digest manifest tiles (used by the Punong Barangay weekly digest card) */
+
+.report-manifest {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
   gap: var(--spacing-sm);
@@ -699,7 +705,7 @@
   border: 1px solid var(--color-border);
 }
 
-.lupon-packet-tile {
+.report-manifest-tile {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3xs);
@@ -709,7 +715,7 @@
   border: 1px solid var(--color-divider);
 }
 
-.lupon-packet-tile__label {
+.report-manifest-tile__label {
   font-size: var(--font-size-label);
   font-weight: 600;
   text-transform: uppercase;
@@ -717,13 +723,13 @@
   color: var(--color-text-secondary);
 }
 
-.lupon-packet-tile__value {
+.report-manifest-tile__value {
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
-.lupon-packet-actions {
+.report-manifest-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -732,6 +738,7 @@
 }
 
 /* Printable Excerpt Modal & A4 Document Preview */
+
 .print-modal-backdrop {
   z-index: 9999;
 }
@@ -800,6 +807,7 @@
 
 /* Always render the printable sheet as crisp dark-on-white paper,
    even when the operator's console is in dark mode. */
+
 .print-sheet {
   --sheet-ink: #0f172a;
   --sheet-muted: #475569;
@@ -1189,7 +1197,7 @@
 }
 
 @media screen and (max-width: 640px) {
-  .print-sheet__meta-bar,
+.print-sheet__meta-bar,
   .print-sheet__kpi-grid,
   .print-sheet__parties,
   .print-sheet__grid-2col,
@@ -1199,16 +1207,13 @@
 }
 
 /* Print Sheet Styling */
+
 @media print {
-  @page {
+@page {
     size: A4 portrait;
     margin: 12mm;
   }
-
-  /* base.css sets height:100% and overflow:hidden on html, body, and #app
-     to contain the SPA viewport. In print mode that clips everything outside
-     the first viewport height — unlock height and overflow completely. */
-  html,
+html,
   body {
     height: auto !important;
     min-height: 0 !important;
@@ -1220,10 +1225,7 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-
-  /* When the print-preview modal is open, hide #app and any non-modal siblings
-     so only the formatted A4 working sheet prints from the top of page 1. */
-  body.has-print-modal #app,
+body.has-print-modal #app,
   body:has(.print-modal-backdrop) #app,
   body.has-print-modal > *:not(.print-modal-backdrop),
   body:has(.print-modal-backdrop) > *:not(.print-modal-backdrop),
@@ -1233,15 +1235,12 @@
   .topbar,
   .app-shell__sidebar,
   .app-shell__header,
-  .blotter-detail-header-actions,
-  .blotter-flow,
+  .incident-detail-header-actions,
   .btn-copy,
   button {
     display: none !important;
   }
-
-  /* When printing the page directly without the modal open, unlock the SPA shell containers. */
-  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
+body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   .app-shell,
   .main-column,
   .page-content {
@@ -1251,8 +1250,7 @@
     overflow: visible !important;
     display: block !important;
   }
-
-  .modal-backdrop.print-modal-backdrop,
+.modal-backdrop.print-modal-backdrop,
   .print-modal-backdrop {
     position: static !important;
     inset: auto !important;
@@ -1268,8 +1266,7 @@
     display: block !important;
     overflow: visible !important;
   }
-
-  .modal-card.print-modal,
+.modal-card.print-modal,
   .print-modal,
   .print-modal__viewport {
     position: static !important;
@@ -1289,8 +1286,7 @@
     -webkit-backdrop-filter: none !important;
     display: block !important;
   }
-
-  .print-sheet {
+.print-sheet {
     display: block !important;
     max-width: none !important;
     width: 100% !important;
@@ -1304,27 +1300,22 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-
-  .print-sheet > * + * {
+.print-sheet > * + * {
     margin-top: 0.875rem !important;
   }
-
-  .print-sheet__section {
+.print-sheet__section {
     display: block !important;
   }
-
-  .print-sheet__section > * + * {
+.print-sheet__section > * + * {
     margin-top: 0.375rem !important;
   }
-
-  .print-sheet__header-logo {
+.print-sheet__header-logo {
     width: 2.5rem !important;
     height: 2.5rem !important;
     max-width: 2.5rem !important;
     max-height: 2.5rem !important;
   }
-
-  .print-sheet__meta-bar,
+.print-sheet__meta-bar,
   .print-sheet__kpi-grid,
   .print-sheet__parties,
   .print-sheet__grid-2col,
@@ -1332,12 +1323,10 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
-
-  .split-panel {
+.split-panel {
     display: block !important;
   }
-
-  .card {
+.card {
     border: 1px solid var(--color-divider) !important;
     background: #ffffff !important;
     color: #000000 !important;
@@ -1347,6 +1336,7 @@
 }
 
 /* ─── Digital Evidence & Resolution Dossier Enhancements ─── */
+
 .doc-card__icon {
   display: inline-flex;
   align-items: center;
@@ -1444,4 +1434,3 @@
 .resolve-prerequisite-callout .note {
   margin: 0;
 }
-

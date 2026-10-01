@@ -28,8 +28,8 @@ declare(strict_types=1);
  * retention, and there should not be. §6 documents no such endpoint, and
  * a web-reachable "delete everything past its date" action is a
  * liability with no operational upside on a single-workstation LAN
- * system (Rule 7). Same reasoning that keeps `ai-worker.php` off the API
- * surface.
+ * system (Rule 7). Same no-HTTP-surface reasoning applies to every
+ * background job.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -136,10 +136,9 @@ function printRuleTable(): void
     out(sprintf('  %-20s %s', 'raw_narrative', RetentionService::RAW_NARRATIVE_GRACE_DAYS . ' days after approved redaction; ' . RetentionService::RAW_NARRATIVE_CEILING_DAYS . '-day ceiling if never approved'));
     out(sprintf('  %-20s %s', 'citizen_report', RetentionService::CITIZEN_REPORT_DAYS . ' days from submitted_at, UNCONVERTED reports only'));
     out(sprintf('  %-20s %s', 'sms_log', RetentionService::SMS_LOG_DAYS . ' days from created_at, extended by a hold on the linked case'));
-    out(sprintf('  %-20s %s', 'ai_processing_log', RetentionService::AI_LOG_DAYS . ' days, or the incident\'s ' . RetentionService::RECORD_RETENTION_DAYS . '-day clock — whichever is longer'));
     out(sprintf('  %-20s %s', 'mobile_device', RetentionService::DEVICE_DEACTIVATED_DAYS . ' days after deactivation — secrets scrubbed, row RETAINED for provenance'));
     out(sprintf('  %-20s %s', 'audit_log', RetentionService::AUDIT_LOG_DAYS . ' days (7 years)'));
-    out(sprintf('  %-20s %s', 'incident_records', RetentionService::RECORD_RETENTION_DAYS . ' days (7 years) — incident + blotter + evidence cascade'));
+    out(sprintf('  %-20s %s', 'incident_records', RetentionService::RECORD_RETENTION_DAYS . ' days (7 years) — incident + evidence cascade'));
     out('');
     out('Legal hold (incident.legal_hold, evidence_attachment.legal_hold,');
     out('citizen_report.legal_hold, sms_log.legal_hold) is the only exception');

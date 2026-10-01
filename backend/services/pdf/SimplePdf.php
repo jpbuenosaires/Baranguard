@@ -4,8 +4,8 @@ declare(strict_types=1);
 namespace Baranguard\Services\Pdf;
 
 /**
- * SimplePdf — a minimal, dependency-free PDF writer for the Lupon case
- * packet (§6 `POST /incidents/:id/lupon-packet`).
+ * SimplePdf — a minimal, dependency-free PDF writer used for server-generated
+ * reports (statistical report, PB digest; see ReportsController).
  *
  * WHY THIS EXISTS RATHER THAN A LIBRARY: this repo has no Composer and no
  * vendored PDF library, and §2 Rule 7 makes the deployment local-only —

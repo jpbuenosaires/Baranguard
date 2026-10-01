@@ -32,7 +32,6 @@ SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE user;
 TRUNCATE TABLE incident;
 TRUNCATE TABLE dispatch;
-TRUNCATE TABLE blotter_record;
 TRUNCATE TABLE citizen_report;
 TRUNCATE TABLE duty_status;
 TRUNCATE TABLE gps_track;
@@ -212,25 +211,6 @@ VALUES
  (12,17,1, 4,'normal',  'unavailable','arrived',  '2026-09-04 08:36:00','2026-09-04 08:38:00','2026-09-04 08:52:00',NULL,NULL,NULL,UUID()),
  (13,18,1, 5,'normal',  'unavailable','en_route', '2026-09-05 02:26:00','2026-09-05 02:29:00',NULL,NULL,NULL,NULL,UUID()),
  (14,19,1, 6,'critical','unavailable','assigned', '2026-09-06 01:10:00',NULL,NULL,NULL,NULL,NULL,UUID());
-
--- ------------------------------------------------------------
--- BLOTTER — finalized records, case_status spread across all four
--- states. display_id is BLT-2026-NNN (migration 0014).
--- redacted_narrative on the parent incident stays NULL for the
--- walk-in-style rows: only the AI approve endpoint may write it.
--- ------------------------------------------------------------
-INSERT INTO blotter_record
- (blotter_id, incident_id, barangay_id, recorded_by, approved_by, narrative_summary, finalized_at, revision_no,
-  amended_at, amended_by, complainant_name, respondent_name, complainant_contact_number, case_status, display_id)
-VALUES
- (1, 1, 1, 2, 2,'Reported theft of three laying hens from a backyard pen. Parties identified; settled at barangay level.','2026-07-28 01:00:00',1,NULL,NULL,'Rosalinda Ubaldo','Dante Villamor','09175550101','settled','BLT-2026-001'),
- (2, 2, 1, 2, 2,'Noise complaint regarding a videoke session past midnight. Respondent advised on the curfew ordinance.','2026-07-29 03:10:00',1,NULL,NULL,'Benjamin Hamor',NULL,'09175550102','resolved','BLT-2026-002'),
- (3, 6, 1, 2, 2,'Physical injury arising from an altercation after a drinking session. Referred for Lupon mediation.','2026-08-09 01:00:00',2,'2026-08-14 02:00:00',2,'Gloria Lodovice','Renato Barcelona','09175550105','under_investigation','BLT-2026-003'),
- (4, 7, 1, 2, 2,'Domestic dispute reported by a neighbour. Parties counselled; no complaint filed by either spouse.','2026-08-12 01:00:00',1,NULL,NULL,'Anonymous neighbour',NULL,NULL,'settled','BLT-2026-004'),
- (5, 8, 1, 2, 2,'Reported theft of a bicycle from outside a residence. Property not recovered; case remains open.','2026-08-14 02:00:00',1,NULL,NULL,'Michael Guarin',NULL,'09175550106','under_investigation','BLT-2026-005'),
- (6, 12,1, 2, 2,'Reported theft of laundry from a clothesline. Complainant declined to pursue the matter further.','2026-08-23 03:00:00',1,NULL,NULL,'Marilou Dichoso',NULL,'09175550110','settled','BLT-2026-006'),
- (7, 16,1, 2, 2,'Domestic dispute reported by a neighbour. Referred to the Lupon; first mediation scheduled.','2026-09-02 01:00:00',1,NULL,NULL,'Anonymous neighbour',NULL,NULL,'active','BLT-2026-007'),
- (8, 5, 1, 2, 2,'Vandalism of the barangay hall perimeter wall. No suspect identified; case remains open.','2026-08-07 01:00:00',1,NULL,NULL,'Liwayway Ferrer',NULL,'09171234502','active','BLT-2026-008');
 
 -- ------------------------------------------------------------
 -- CITIZEN REPORTS — public-form submissions. A mix of already

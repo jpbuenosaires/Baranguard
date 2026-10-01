@@ -578,6 +578,22 @@ final class DispatchController
             }
 
             $currentStatus = $dispatch['status'];
+
+            // Idempotent replay: the same status already applied (e.g. a
+            // retried offline sync) returns current state, not a 409.
+            if ($currentStatus === $newStatus) {
+                $replayColumn = [
+                    'en_route' => 'en_route_at',
+                    'arrived' => 'arrived_at',
+                    'completed' => 'completed_at',
+                ][$newStatus];
+                $replayStmt = $pdo->prepare("SELECT {$replayColumn} FROM dispatch WHERE dispatch_id = :dispatch_id");
+                $replayStmt->execute(['dispatch_id' => $dispatchId]);
+                $replayAt = $replayStmt->fetchColumn();
+                $pdo->commit();
+                return ['dispatch_id' => $dispatchId, 'status' => $newStatus, 'updated_at' => $replayAt];
+            }
+
             $expectedNext = self::STATUS_TRANSITIONS[$currentStatus] ?? null;
             if ($expectedNext === null || $newStatus !== $expectedNext) {
                 throw new ApiError(409, 'CONFLICT', "Cannot transition from {$currentStatus} to {$newStatus}.");
@@ -610,7 +626,15 @@ final class DispatchController
                     'to' => $newStatus,
                     'reason' => $overrideReason,
                 ]);
-            } else if (in_array($newStatus, ['arrived', 'completed'], true)) {
+            } else {
+                // Tanod-initiated transition audit: ids/statuses only (Rule 8).
+                Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_status_changed', 'dispatch', $dispatchId, [
+                    'from' => $currentStatus,
+                    'to' => $newStatus,
+                    'incident_id' => (int) $dispatch['incident_id'],
+                ]);
+            }
+            if (!$isAdmin && in_array($newStatus, ['arrived', 'completed'], true)) {
                 try {
                     $admins = NotificationService::adminRecipients($pdo, (int) $identity['barangay_id']);
                     if (!empty($admins)) {
