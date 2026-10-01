@@ -62,6 +62,13 @@ export interface SosQueuePayload {
   latitude?: number;
   longitude?: number;
   dispatchId?: number | null;
+  /**
+   * Client timestamp (ISO 8601 UTC) of when the Tanod actually pressed SOS —
+   * sent as an optional extra `created_offline_at` field so the server can
+   * show how long the alert waited; a backend that doesn't know the field
+   * ignores it. Stamped by `enqueueSosItem()`, never by the caller.
+   */
+  createdOfflineAt?: string;
 }
 
 /**
@@ -72,17 +79,18 @@ export interface SosQueuePayload {
  */
 export async function enqueueSosItem(clientEventId: string, payload: SosQueuePayload): Promise<void> {
   const db = await openLocalDatabase();
+  const createdOfflineAt = new Date().toISOString();
   await db.run(
     `INSERT INTO offline_queue_local (client_event_id, payload_type, payload_json, created_offline_at)
      VALUES (?, 'sos', ?, ?)`,
-    [clientEventId, JSON.stringify(payload), new Date().toISOString()],
+    [clientEventId, JSON.stringify({ ...payload, createdOfflineAt }), createdOfflineAt],
     /* transaction */ false
   );
 }
 
 /** Pending sos queue items, oldest first (§5 sync invariants). */
 export async function listPendingSosItems(): Promise<
-  { queueId: number; clientEventId: string; payload: SosQueuePayload }[]
+  { queueId: number; clientEventId: string; createdOfflineAt: string; payload: SosQueuePayload }[]
 > {
   const db = await openLocalDatabase();
   const result = await db.query(
@@ -94,16 +102,58 @@ export async function listPendingSosItems(): Promise<
   return rows.map((row) => ({
     queueId: row.queue_id,
     clientEventId: row.client_event_id,
+    createdOfflineAt: row.created_offline_at,
     payload: JSON.parse(row.payload_json) as SosQueuePayload,
   }));
 }
 
 /**
+ * Records a server-reported 'failed' result for a queued SOS. Unlike a
+ * dispatch-status rejection, an SOS must never be silently terminal — it
+ * stays 'pending' (retried next pass) until `maxAttempts` failures, and only
+ * then becomes 'failed', which `countFailedSosItems()` surfaces as a
+ * persistent banner until the Tanod retries or the SMS fallback is used.
+ */
+export async function markSosAttemptFailed(queueId: number, maxAttempts: number): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    `UPDATE offline_queue_local
+       SET sync_attempts = sync_attempts + 1, last_attempt_at = ?,
+           reconciliation_status = CASE WHEN sync_attempts + 1 >= ? THEN 'failed' ELSE 'pending' END
+     WHERE queue_id = ?`,
+    [new Date().toISOString(), maxAttempts, queueId],
+    /* transaction */ false
+  );
+}
+
+/** SOS items that exhausted their retries and still have not reached the server. */
+export async function countFailedSosItems(): Promise<number> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    "SELECT COUNT(*) AS n FROM offline_queue_local WHERE payload_type = 'sos' AND reconciliation_status = 'failed'"
+  );
+  return Number((result.values?.[0] as { n: number } | undefined)?.n ?? 0);
+}
+
+/** Manual retry: puts exhausted SOS items back into the pending set with a fresh attempt budget. */
+export async function resetFailedSosItems(): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    `UPDATE offline_queue_local SET reconciliation_status = 'pending', sync_attempts = 0
+     WHERE payload_type = 'sos' AND reconciliation_status = 'failed'`,
+    [],
+    /* transaction */ false
+  );
+}
+
+/**
  * Records the outcome of a sync attempt for one queued item. A 'failed'
- * outcome (the server rejected the underlying transition, e.g. it was
- * already superseded by a later change) is left as a terminal state
- * rather than retried automatically — retrying an event the server has
- * already told us is invalid would just fail again.
+ * outcome for a dispatch-status item (the server rejected the underlying
+ * transition, e.g. it was already superseded by a later change) is left as
+ * a terminal state rather than retried automatically — retrying an event
+ * the server has already told us is invalid would just fail again; the
+ * caller reverts/refreshes the optimistic local status instead. SOS items
+ * use `markSosAttemptFailed()` above for 'failed' instead.
  */
 export async function markQueueItemResolved(
   queueId: number,

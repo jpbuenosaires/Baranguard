@@ -107,6 +107,8 @@ interface RequestOptions {
   auth?: boolean;
   /** Extra request headers (e.g. `X-Device-Id` on login). */
   headers?: Record<string, string>;
+  /** Overrides `REQUEST_TIMEOUT_MS` for a call that must fail over fast (SOS). */
+  timeoutMs?: number;
 }
 
 /**
@@ -122,8 +124,16 @@ interface RequestOptions {
  */
 const REQUEST_TIMEOUT_MS = 15000;
 
+/**
+ * SOS is the one call where waiting is itself the failure: on a dead link a
+ * 15s hang delays the SMS fallback tier by the same 15s. 5s is still enough
+ * for a healthy hop, and a false "timeout" is safe — the SOS is queued with
+ * the same `client_event_id`, so a late-arriving original dedupes (Rule 3).
+ */
+const SOS_TIMEOUT_MS = 5000;
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, auth = true, headers: extraHeaders = {} } = options;
+  const { method = 'GET', body, auth = true, headers: extraHeaders = {}, timeoutMs = REQUEST_TIMEOUT_MS } = options;
 
   const headers: Record<string, string> = { ...extraHeaders };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -143,7 +153,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     // §2 Rule 15: the workstation is a known single point of failure and
@@ -482,6 +492,7 @@ export async function postSos(params: {
   const json = await request<{ sos_id: number; status: string; received_at: string }>('/tanod-sos', {
     method: 'POST',
     headers,
+    timeoutMs: SOS_TIMEOUT_MS,
     body: {
       latitude: params.latitude,
       longitude: params.longitude,
@@ -966,6 +977,8 @@ export interface SyncSosItem {
   dispatch_id?: number | null;
   fallback_channel?: 'app' | 'sms';
   client_event_id: string;
+  /** Optional extra: when the Tanod pressed SOS on the device (ISO 8601 UTC). The backend may ignore it. */
+  created_offline_at?: string;
 }
 
 export interface SyncBatchResult {

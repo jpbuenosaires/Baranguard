@@ -53,6 +53,8 @@ const EXPECTED = {
     client_event_id:    ['TEXT', 1, null, 0],
     synced:             ['INTEGER', 1, '0', 0],
     last_sync_error:    ['TEXT', 0, null, 0],
+    sync_attempts:      ['INTEGER', 1, '0', 0],
+    permanent_failure:  ['INTEGER', 1, '0', 0],
   },
   mobile_device_local: {
     device_id:     ['TEXT', 1, null, 1],
@@ -87,6 +89,7 @@ const EXPECTED = {
     last_attempt_at:       ['TEXT', 0, null, 0],
     attempts:              ['INTEGER', 1, '0', 0],
     synced_at:             ['TEXT', 0, null, 0],
+    permanent_failure:     ['INTEGER', 1, '0', 0],
   },
   dispatch_local: {
     local_id:                  ['TEXT', 1, null, 1],
@@ -120,6 +123,8 @@ const EXPECTED = {
     recorded_at:     ['TEXT', 1, null, 0],
     client_event_id: ['TEXT', 1, null, 0],
     synced:          ['INTEGER', 1, '0', 0],
+    sync_attempts:   ['INTEGER', 1, '0', 0],
+    permanent_failure: ['INTEGER', 1, '0', 0],
   },
   offline_queue_local: {
     queue_id:              ['INTEGER', 1, null, 1],
@@ -243,6 +248,11 @@ db.prepare(
 const evidence = db.prepare('SELECT synced, attempts FROM evidence_attachment_local WHERE local_id = ?').get('ev-1');
 check(evidence.synced === 0, `evidence_attachment_local.synced defaults to 0 (got ${evidence.synced})`);
 check(evidence.attempts === 0, `evidence_attachment_local.attempts defaults to 0 (got ${evidence.attempts})`);
+const evidenceFlag = db.prepare('SELECT permanent_failure FROM evidence_attachment_local WHERE local_id = ?').get('ev-1');
+check(evidenceFlag.permanent_failure === 0, `evidence_attachment_local.permanent_failure defaults to 0 (got ${evidenceFlag.permanent_failure})`);
+const incidentCaps = db.prepare('SELECT sync_attempts, permanent_failure FROM incident_local WHERE local_id = ?').get('local-1');
+check(incidentCaps.sync_attempts === 0 && incidentCaps.permanent_failure === 0,
+  `incident_local.sync_attempts/permanent_failure default to 0 (got ${incidentCaps.sync_attempts}/${incidentCaps.permanent_failure})`);
 
 db.prepare(
   `INSERT INTO dispatch_local

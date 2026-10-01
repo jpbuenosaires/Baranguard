@@ -39,7 +39,7 @@
 import { App as CapacitorApp } from '@capacitor/app';
 import { Network } from '@capacitor/network';
 import { runSyncPass, type SyncSummary } from './syncService';
-import type { DutyStatus } from './apiService';
+import { ApiError, type DutyStatus } from './apiService';
 
 const ON_DUTY_INTERVAL_MS = 60000;
 
@@ -47,6 +47,7 @@ let started = false;
 let isSyncing = false;
 let knownDutyStatus: DutyStatus | null = null;
 let lastSummary: SyncSummary | null = null;
+let authBlocked = false;
 const listeners = new Set<(summary: SyncSummary) => void>();
 
 async function triggerSync(): Promise<void> {
@@ -54,14 +55,30 @@ async function triggerSync(): Promise<void> {
   isSyncing = true;
   try {
     lastSummary = await runSyncPass();
+    authBlocked = false;
     for (const listener of listeners) listener(lastSummary);
-  } catch {
-    // Offline, or the workstation rejected the batch — runSyncPass()
-    // leaves local state untouched on failure (see its own doc comment),
-    // so there is nothing to unwind; the next trigger retries naturally.
+  } catch (error) {
+    // Offline, or the workstation rejected a chunk — runSyncPass() has
+    // already applied any earlier chunks and left the rest unsynced (see
+    // its own doc comment), so there is nothing to unwind; the next trigger
+    // retries naturally. A 401 is different in kind: the items are fine but
+    // can't go anywhere until the Tanod logs in again, so remember that for
+    // the UI to say "pending — re-login required" instead of "offline".
+    if (error instanceof ApiError && error.status === 401) authBlocked = true;
   } finally {
     isSyncing = false;
   }
+}
+
+/** True when the last attempt was refused for an expired/revoked session — queued items wait for a re-login. */
+export function isSyncAuthBlocked(): boolean {
+  return authBlocked;
+}
+
+/** Called after a successful login: clears the blocked flag and flushes whatever queued while signed out. */
+export function notifyLoggedIn(): void {
+  authBlocked = false;
+  void triggerSync();
 }
 
 /** The most recent completed pass's result, for a screen that wants to show it without triggering its own. */

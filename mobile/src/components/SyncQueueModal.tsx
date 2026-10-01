@@ -24,14 +24,22 @@ import {
   syncOutline,
   warningOutline,
 } from 'ionicons/icons';
-import { checkHealth } from '../services/apiService';
+import { ApiError, checkHealth } from '../services/apiService';
+import { loadSession } from '../services/session';
 import { listUnsyncedIncidents } from '../services/db/incidentRepository';
 import { listUnsyncedGpsPoints } from '../services/db/gpsTrackRepository';
 import {
   listPendingDispatchStatusUpdates,
   listPendingSosItems,
 } from '../services/db/offlineQueueRepository';
-import { runSyncPass, type SyncSummary } from '../services/syncService';
+import { isSyncAuthBlocked } from '../services/syncScheduler';
+import {
+  getNeedsAttentionCounts,
+  retryNeedsAttention,
+  runSyncPass,
+  type NeedsAttentionCounts,
+  type SyncSummary,
+} from '../services/syncService';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { LoadingBlock } from './LoadingBlock';
 
@@ -52,6 +60,9 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
   const [sosCount, setSosCount] = useState(0);
   const [syncResult, setSyncResult] = useState<SyncSummary | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [needsAttention, setNeedsAttention] = useState<NeedsAttentionCounts | null>(null);
+  // True when queued items are waiting on a fresh login, not on connectivity.
+  const [reloginRequired, setReloginRequired] = useState(false);
 
   const loadCounts = async () => {
     setLoading(true);
@@ -74,6 +85,9 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
 
       const sos = await listPendingSosItems();
       setSosCount(sos.length);
+
+      setNeedsAttention(await getNeedsAttentionCounts());
+      setReloginRequired(isSyncAuthBlocked() || (await loadSession()) === null);
     } catch {
       setIsOnline(false);
     } finally {
@@ -98,13 +112,36 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
       tacticalFeedback.onSuccess();
       await loadCounts();
     } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Could not reach workstation for sync.');
+      if (err instanceof ApiError && err.status === 401) {
+        setReloginRequired(true);
+        setSyncError('Session expired — saved items are pending. Log in again to send them.');
+      } else {
+        setSyncError(err instanceof Error ? err.message : 'Could not reach workstation for sync.');
+      }
     } finally {
       setSyncing(false);
     }
   };
 
+  // Gives capped items a fresh attempt budget, then syncs right away.
+  const handleRetryFailed = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncResult(null);
+    try {
+      await retryNeedsAttention();
+      setSyncResult(await runSyncPass());
+      tacticalFeedback.onSuccess();
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Could not reach workstation for sync.');
+    } finally {
+      setSyncing(false);
+      await loadCounts();
+    }
+  };
+
   const totalPending = incidentCount + gpsCount + dispatchStatusCount + sosCount;
+  const attentionTotal = needsAttention?.total ?? 0;
 
   return (
     <IonModal isOpen={isOpen} onDidDismiss={onClose} initialBreakpoint={0.75} breakpoints={[0, 0.75, 1.0]}>
@@ -191,6 +228,57 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
             )}
           </div>
 
+          {/* Needs attention: items the automatic sync gave up on. Never hidden. */}
+          {attentionTotal > 0 && needsAttention && (
+            <div
+              style={{
+                background: 'var(--tint-warning-bg)',
+                border: '1px solid var(--color-warning)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px',
+                color: 'var(--pill-warning-text)',
+                fontSize: 'var(--font-size-sm)',
+                marginBottom: '16px',
+              }}
+              role="alert"
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <IonIcon icon={warningOutline} style={{ fontSize: '1.4rem' }} />
+                <strong>Needs attention ({attentionTotal})</strong>
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                The workstation kept rejecting these, so automatic sync stopped retrying. They are still saved on
+                this device.
+                {needsAttention.sos > 0 && ` ${needsAttention.sos} emergency SOS alert(s) — call the barangay desk.`}
+                {needsAttention.incidents > 0 && ` ${needsAttention.incidents} incident report(s).`}
+                {needsAttention.evidence > 0 && ` ${needsAttention.evidence} evidence file(s).`}
+                {needsAttention.gps > 0 && ` ${needsAttention.gps} location point(s).`}
+              </div>
+              <IonButton size="small" color="warning" disabled={syncing || !isOnline} onClick={handleRetryFailed}>
+                <IonIcon icon={syncOutline} slot="start" />
+                Retry failed items
+              </IonButton>
+            </div>
+          )}
+
+          {reloginRequired && totalPending > 0 && (
+            <div
+              style={{
+                background: 'var(--tint-warning-bg)',
+                border: '1px solid var(--color-warning)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px',
+                color: 'var(--pill-warning-text)',
+                fontSize: 'var(--font-size-sm)',
+                marginBottom: '16px',
+              }}
+              role="alert"
+            >
+              <strong>Pending — re-login required.</strong> {totalPending} saved item{totalPending === 1 ? '' : 's'}{' '}
+              will send automatically after you log in again.
+            </div>
+          )}
+
           {/* Sync Result Banner */}
           {syncResult && (
             <div
@@ -210,6 +298,9 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
               <IonIcon icon={checkmarkCircleOutline} style={{ fontSize: '1.4rem' }} />
               <div>
                 <strong>Sync Finished:</strong> {syncResult.succeeded} uploaded, {syncResult.duplicates} synced, {syncResult.failed} failed.
+                {syncResult.dispatchRejected > 0 && (
+                  <> {syncResult.dispatchRejected} status change(s) were rejected by HQ and reverted.</>
+                )}
                 {(syncResult.evidenceUploaded > 0 || syncResult.evidenceFailed > 0) && (
                   <>
                     {' '}

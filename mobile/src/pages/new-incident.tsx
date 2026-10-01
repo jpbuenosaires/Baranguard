@@ -120,6 +120,9 @@ const NewIncidentPage: React.FC = () => {
   const [recordDuration, setRecordDuration] = useState(0);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const recordIntervalRef = useRef<number | null>(null);
+  // Set when the incident row saved but an attachment didn't, so a retry
+  // re-attaches to THAT incident instead of saving a duplicate report.
+  const savedLocalIdRef = useRef<string | null>(null);
 
   // Location: real GPS fix or dropped pin
   const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracyM: number | null } | null>(
@@ -258,21 +261,42 @@ const NewIncidentPage: React.FC = () => {
     tacticalFeedback.onTap();
     try {
       const session = await loadSession();
-      const saved = await saveIncidentLocally({
-        barangayId: session?.barangayId ?? 0,
-        reportedBy: session?.userId ?? null,
-        incidentType,
-        rawNarrative: narrative.trim(),
-        latitude: location?.latitude ?? null,
-        longitude: location?.longitude ?? null,
-      });
+      const saved = savedLocalIdRef.current
+        ? { localId: savedLocalIdRef.current }
+        : await saveIncidentLocally({
+            barangayId: session?.barangayId ?? 0,
+            reportedBy: session?.userId ?? null,
+            incidentType,
+            rawNarrative: narrative.trim(),
+            latitude: location?.latitude ?? null,
+            longitude: location?.longitude ?? null,
+          });
 
+      // The report itself is already durably saved above, so a failed
+      // attachment save must not discard it — but it also must not be
+      // swallowed: the Tanod believes the photo/voice note is attached, and
+      // leaving would make that false. Stay on the form, say exactly how many
+      // failed, and let them re-capture instead of silently losing evidence.
+      const failedAttachments: typeof staged = [];
       for (const item of staged) {
         try {
           await saveEvidenceLocally(saved.localId, item.attachment);
         } catch {
-          // Best-effort attachment save
+          failedAttachments.push(item);
         }
+      }
+
+      if (failedAttachments.length > 0) {
+        savedLocalIdRef.current = saved.localId;
+        setError(
+          `Report saved, but ${failedAttachments.length} of ${staged.length} attachment${
+            staged.length === 1 ? '' : 's'
+          } could not be saved on this device. Tap Submit again to retry the attachment${
+            failedAttachments.length === 1 ? '' : 's'
+          }, or remove ${failedAttachments.length === 1 ? 'it' : 'them'} to continue without.`
+        );
+        setStaged(failedAttachments);
+        return;
       }
 
       tacticalFeedback.onSuccess();

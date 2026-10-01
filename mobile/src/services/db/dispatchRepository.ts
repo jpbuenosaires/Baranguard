@@ -164,6 +164,35 @@ export async function applyLocalStatusChange(
   return { clientEventId };
 }
 
+const PREVIOUS_STATUS: Record<'en_route' | 'arrived' | 'completed', { status: string; column: string }> = {
+  en_route: { status: 'assigned', column: 'en_route_at' },
+  arrived: { status: 'en_route', column: 'arrived_at' },
+  completed: { status: 'arrived', column: 'completed_at' },
+};
+
+/**
+ * Undoes an optimistic `applyLocalStatusChange()` the server refused (4xx/
+ * 409 — e.g. the dispatch was cancelled or already advanced). Only reverts
+ * if the row is still at `attemptedStatus`, so it never clobbers a newer
+ * status a later refresh already wrote. Callers should still re-fetch from
+ * the server afterwards; this is the offline-safe fallback so the cache is
+ * never left claiming a transition the server rejected.
+ */
+export async function revertLocalStatusChange(
+  localId: string,
+  attemptedStatus: 'en_route' | 'arrived' | 'completed'
+): Promise<void> {
+  const db = await openLocalDatabase();
+  const prev = PREVIOUS_STATUS[attemptedStatus];
+  await db.run(
+    `UPDATE dispatch_local
+       SET status = ?, ${prev.column} = NULL, last_status_event_id = NULL, synced = 1
+     WHERE local_id = ? AND status = ?`,
+    [prev.status, localId, attemptedStatus],
+    /* transaction */ false
+  );
+}
+
 /** Marks a cached dispatch's pending status change as confirmed by the server. */
 export async function markStatusSynced(localId: string): Promise<void> {
   const db = await openLocalDatabase();

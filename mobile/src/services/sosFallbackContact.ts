@@ -7,20 +7,18 @@
  * would ALSO fail — the whole point of this fallback tier is that the
  * workstation is confirmed unreachable. So the number has to already be
  * on the device before the emergency happens. `refreshSosFallbackContact()`
- * is called opportunistically while online — ONLY at login (`login.tsx`).
- * Corrected 2026-09-24: this comment previously also claimed "Live Map's
- * own mount" refreshes it too, mirroring `ensureMapPackageDownloaded()`'s
- * pattern — found stale during M13 device testing (grepped every call
- * site, only login.tsx calls this). No Live Map refresh was ever wired
- * up; if a mid-session change to the backup number should reach the
- * cache faster than "wait for next login," that is a real, separate
- * feature decision, not something this fix silently adds.
+ * is called opportunistically while online — at login (`login.tsx`) and
+ * on every app resume (`startSosFallbackContactResumeRefresh()` below,
+ * wired from `App.tsx`). It is NOT refreshed on Live Map mount (an older
+ * version of this comment wrongly claimed so).
  * `getCachedSosFallbackContact()` is what `home.tsx`'s SOS handler
  * actually reads from, entirely offline.
  */
 
+import { App as CapacitorApp } from '@capacitor/app';
 import { Preferences } from '@capacitor/preferences';
 import { getSosFallbackContact } from './apiService';
+import { loadSession } from './session';
 
 const CACHE_KEY = 'baranguard.sosFallbackContact';
 
@@ -32,6 +30,26 @@ export async function refreshSosFallbackContact(): Promise<void> {
   } catch {
     // Keep the existing cached value (or lack of one).
   }
+}
+
+let resumeListenerStarted = false;
+
+/**
+ * Re-runs the refresh every time the app returns to the foreground, so a
+ * backup number an Admin changes mid-session reaches the cache without
+ * waiting for the next login. Skipped when signed out — the call is
+ * authenticated, and an unauthenticated attempt would only raise a spurious
+ * session-expired event. Call once from `App.tsx`.
+ */
+export function startSosFallbackContactResumeRefresh(): void {
+  if (resumeListenerStarted) return;
+  resumeListenerStarted = true;
+  CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+    if (!isActive) return;
+    void (async () => {
+      if (await loadSession()) await refreshSosFallbackContact();
+    })();
+  });
 }
 
 /** The last-refreshed backup contact number, or null if none is configured/cached yet. */

@@ -50,7 +50,7 @@
  * unsynced field captures, which Rule 2 ("offline capture is durable
  * until reconciliation") forbids.
  */
-export const LOCAL_SCHEMA_VERSION = 4;
+export const LOCAL_SCHEMA_VERSION = 5;
 
 /** Statements for schema version 1 (Sprint 2 baseline cut). */
 const MIGRATION_001_BASELINE: readonly string[] = [
@@ -265,6 +265,26 @@ const MIGRATION_004_EVIDENCE_SYNC_TRACKING: readonly string[] = [
 ];
 
 /**
+ * Statements for schema version 5 (sync hardening: poison-item caps). A row
+ * the server keeps rejecting (incident/GPS 'failed' results) or a file that
+ * can never upload (evidence) used to be retried on every pass forever —
+ * `sync_attempts` counts server-reported failures and `permanent_failure`
+ * takes the row out of the automatic retry set once a cap is hit. The row
+ * itself is never deleted (Rule 2/7: capture is durable); a manual "Retry"
+ * from the sync modal resets both. Evidence already had `attempts` (migration
+ * 2), so it only needs the flag. Offline-queue items need no new column:
+ * `offline_queue_local.sync_attempts`/`reconciliation_status='failed'`
+ * already exist.
+ */
+const MIGRATION_005_SYNC_FAILURE_CAPS: readonly string[] = [
+  `ALTER TABLE incident_local ADD COLUMN sync_attempts INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE incident_local ADD COLUMN permanent_failure INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE gps_track_local ADD COLUMN sync_attempts INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE gps_track_local ADD COLUMN permanent_failure INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE evidence_attachment_local ADD COLUMN permanent_failure INTEGER NOT NULL DEFAULT 0`,
+];
+
+/**
  * Ordered migrations. Index 0 takes the DB from user_version 0 -> 1,
  * index 1 takes it 1 -> 2, and so on. Append only — never edit a
  * released entry (same rule as the backend's completed migration files).
@@ -274,6 +294,7 @@ export const LOCAL_MIGRATIONS: readonly (readonly string[])[] = [
   MIGRATION_002_EVIDENCE,
   MIGRATION_003_DISPATCH_GPS_SYNC,
   MIGRATION_004_EVIDENCE_SYNC_TRACKING,
+  MIGRATION_005_SYNC_FAILURE_CAPS,
 ];
 
 /** Every table this cut is responsible for, for assertions/diagnostics. */
@@ -316,6 +337,10 @@ export interface IncidentLocalRow {
   /** 0/1 — SQLite has no boolean type. */
   synced: number;
   last_sync_error: string | null;
+  /** Server-reported failures so far (migration 5). */
+  sync_attempts: number;
+  /** 0/1 — set once the retry cap is hit; excluded from automatic sync until a manual retry (migration 5). */
+  permanent_failure: number;
 }
 
 export interface MobileDeviceLocalRow {
@@ -360,6 +385,8 @@ export interface EvidenceAttachmentLocalRow {
   attempts: number;
   /** ISO 8601 UTC — when a successful upload was CONFIRMED (migration 4), for Phase 3.3's 30-day cleanup rule. Null until then. */
   synced_at: string | null;
+  /** 0/1 — retry cap hit (migration 5); excluded from automatic upload until a manual retry. */
+  permanent_failure: number;
 }
 
 export interface DispatchLocalRow {
@@ -400,6 +427,10 @@ export interface GpsTrackLocalRow {
   recorded_at: string;
   client_event_id: string;
   synced: number;
+  /** Server-reported failures so far (migration 5). */
+  sync_attempts: number;
+  /** 0/1 — retry cap hit (migration 5); excluded from automatic sync until a manual retry. */
+  permanent_failure: number;
 }
 
 /** §5 offline_queue_local.payload_type enum. */
