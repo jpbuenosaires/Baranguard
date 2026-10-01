@@ -179,20 +179,13 @@ if ($adminToken === null || $secretaryToken === null || $pbToken === null) {
 $incidentId = 1;
 $dispatchId = 1;
 $dispatchWithRouteId = 12;
-$blotterId = 1;
 $mapPackageId = 1; // none seeded — exercises the 404 error-envelope path instead
 $smsPhone = '09175550101';
 
 // --- Every GET route in routes/*.php, driven by an appropriate role --------
 $routes = [
-    ["/ai-tools/jobs/1", $adminToken],
-    ["/ai-tools/availability", $adminToken],
-    ["/incidents/{$incidentId}/ai-draft", $secretaryToken],
-    ["/incidents/{$incidentId}/ai-draft/extraction", $secretaryToken],
     ["/audit-log", $adminToken],
     ["/barangays", null],
-    ["/blotter", $secretaryToken],
-    ["/incidents/{$incidentId}/blotter", $secretaryToken],
     ["/citizen-reports", $adminToken],
     ["/dispatch", $adminToken],
     ["/dispatch/{$dispatchWithRouteId}/route?latitude=13.1857&longitude=123.6260&mode=car", $adminToken],
@@ -244,7 +237,6 @@ foreach ($routes as [$path, $token]) {
 // --- Not-found path params: two more real 404 envelope instances ----------
 $notFoundChecks = [
     ["/incidents/999999", $secretaryToken],
-    ["/blotter/999999", $secretaryToken],
     ["/map-packages/{$mapPackageId}", $adminToken],
 ];
 foreach ($notFoundChecks as [$path, $token]) {

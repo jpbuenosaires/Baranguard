@@ -104,13 +104,10 @@ mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0006_sms_log_barangay.sql" && pas
 
 # FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
 # partial schema and so 500'd at login from 2026-09-05 onward.
-for m in 0003_shift_schedule_nullable_user 0004_blotter_revision 0008_incident_party_fields \
-         0009_blotter_case_status 0010_incident_location_description 0011_user_suspension \
-         0012_system_settings 0013_sms_manual_send 0014_incident_display_id 0015_ai_tools \
-         0016_retention_hold_and_device_scrub 0017_health_check_log 0018_sms_subscriber 0019_audit_log_idempotency_index 0020_health_check_log_ors 0021_ai_evaluation_run_generic_metrics 0022_auth_session_kind 0023_rate_limit_counter 0024_mobile_device_public_key 0025_incident_lifecycle_states 0026_sos_no_fix_fallback; do
+for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0003_shift_schedule_nullable_user '$0 >= s' | grep -v -E '^000[567]_'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
-pass "Full migration chain 0001-0018 applied"
+pass "Full migration chain applied (all migrations/*.sql, globbed)"
 COLCOUNT=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='sms_log' AND COLUMN_NAME='barangay_id';")
 expect_eq "$COLCOUNT" "1" "sms_log.barangay_id column exists after 0006"
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
@@ -130,7 +127,11 @@ export JWT_SECRET="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(32));')"
 export JWT_EXPIRES_IN_MINUTES=30 CORS_ALLOWED_ORIGIN='*'
 export INTERNAL_SERVICE_TOKEN="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(32));')"
 export DEVICE_SECRET_MASTER_KEY="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(32));')"
-# FCM_SERVICE_ACCOUNT_PATH / SEMAPHORE_API_KEY deliberately left UNSET.
+# FCM_SERVICE_ACCOUNT_PATH is exported EMPTY (not merely unset): config/env.php
+# never overrides an already-set variable, so an empty export beats a real
+# service account in backend/.env and genuinely exercises the not-configured
+# path regardless of what credentials this machine has. SEMAPHORE_API_KEY unset.
+export FCM_SERVICE_ACCOUNT_PATH=''
 "$PHP_BIN" -S "127.0.0.1:${API_PORT}" "$BACKEND_DIR/public/dev-router.php" >"$BACKEND_DIR/scripts/.s4p23chk-server.log" 2>&1 &
 SERVER_PID=$!
 sleep 2
