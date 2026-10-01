@@ -1738,7 +1738,7 @@ export async function downloadLuponPacket(incidentId) {
  * GET /incidents/:id/evidence — Secretary/Admin same barangay; Tanod only
  * with a reporter/dispatch relationship. §6: this NEVER returns filesystem
  * paths, so there is no `filePath` here by design — evidence bytes are a
- * separate authorized download (Sprint 7), not a link.
+ * separate authorized download, `downloadEvidenceFile()` below.
  */
 export async function getIncidentEvidence(incidentId) {
   const json = await request('GET', `/incidents/${incidentId}/evidence`, { auth: true });
@@ -1753,6 +1753,40 @@ export async function getIncidentEvidence(incidentId) {
     mimeType: row.mime_type,
     originalFilename: row.original_filename,
   }));
+}
+
+/**
+ * GET /incidents/:id/evidence/:attachmentId/download — the actual photo
+ * or voice-note bytes behind one row from `getIncidentEvidence()` above.
+ * Same Bearer-token-only shape as `downloadLuponPacket()`: a plain
+ * `<img src>`/`<audio src>` pointed straight at this URL would 401 (no
+ * session cookie exists), so this returns a `Blob` for the caller to turn
+ * into an object URL via `URL.createObjectURL()`.
+ */
+export async function downloadEvidenceFile(incidentId, attachmentId) {
+  const session = readSession();
+  if (!session) {
+    throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
+  }
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/incidents/${incidentId}/evidence/${attachmentId}/download`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+  } catch {
+    throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
+  }
+  if (!response.ok) {
+    let message = 'Could not load this evidence file.';
+    try {
+      const body = await response.json();
+      message = body?.error?.message || message;
+    } catch {
+      // Response wasn't JSON — keep the generic message.
+    }
+    throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
+  }
+  return response.blob();
 }
 
 /**

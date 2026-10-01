@@ -196,6 +196,7 @@ const RequireSession: React.FC<{ children: React.ReactNode }> = ({ children }) =
  */
 const TabbedShell: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentPath = location.pathname;
 
   const isHome = currentPath === '/tabs/home';
@@ -225,16 +226,19 @@ const TabbedShell: React.FC = () => {
         {/* Bare `/tabs` — nothing in the app navigates there; a safety net only. */}
         <Route index element={<Navigate to="/tabs/home" replace />} />
       </IonRouterOutlet>
+
       <IonTabBar slot="bottom" className={`mobile-tab-bar ${isAssignmentDetail || isNewIncident ? 'mobile-tab-bar--hidden' : ''}`}>
         <IonTabButton
           tab="home"
           href="/tabs/home"
           onClick={() => !isHome && tacticalFeedback.onTap()}
           className={isHome ? 'tab-item--active' : ''}
+          aria-label="Home"
         >
-          <IonIcon icon={isHome ? home : homeOutline} />
-          <IonLabel>Home</IonLabel>
-          <span className="tab-indicator-dot" aria-hidden="true" />
+          <div className="tab-pill-container">
+            <IonIcon icon={isHome ? home : homeOutline} />
+            <IonLabel>Home</IonLabel>
+          </div>
         </IonTabButton>
 
         <IonTabButton
@@ -242,23 +246,25 @@ const TabbedShell: React.FC = () => {
           href="/tabs/assignments"
           onClick={() => !isAssignments && tacticalFeedback.onTap()}
           className={isAssignments ? 'tab-item--active' : ''}
+          aria-label="Dispatches"
         >
-          <IonIcon icon={isAssignments ? list : listOutline} />
-          <IonLabel>Assignments</IonLabel>
-          <span className="tab-indicator-dot" aria-hidden="true" />
+          <div className="tab-pill-container">
+            <IonIcon icon={isAssignments ? list : listOutline} />
+            <IonLabel>Dispatches</IonLabel>
+          </div>
         </IonTabButton>
 
         <IonTabButton
           tab="log-incident"
           href="/tabs/incidents/new"
-          className="mobile-tab-button--fab"
+          className="mobile-tab-button--center"
           onClick={() => tacticalFeedback.onTap()}
+          aria-label="Report Incident"
         >
-          <div className="tab-fab-btn" aria-label="Log Incident">
-            <div className="tab-fab-ring" />
+          <div className="tab-center-fab" aria-hidden="true">
             <IonIcon icon={add} />
           </div>
-          <IonLabel>Log Incident</IonLabel>
+          <IonLabel>Report</IonLabel>
         </IonTabButton>
 
         <IonTabButton
@@ -266,10 +272,12 @@ const TabbedShell: React.FC = () => {
           href="/tabs/map"
           onClick={() => !isMap && tacticalFeedback.onTap()}
           className={isMap ? 'tab-item--active' : ''}
+          aria-label="Live Map"
         >
-          <IonIcon icon={isMap ? map : mapOutline} />
-          <IonLabel>Map</IonLabel>
-          <span className="tab-indicator-dot" aria-hidden="true" />
+          <div className="tab-pill-container">
+            <IonIcon icon={isMap ? map : mapOutline} />
+            <IonLabel>Map</IonLabel>
+          </div>
         </IonTabButton>
 
         <IonTabButton
@@ -277,10 +285,12 @@ const TabbedShell: React.FC = () => {
           href="/tabs/profile"
           onClick={() => !isProfile && tacticalFeedback.onTap()}
           className={isProfile ? 'tab-item--active' : ''}
+          aria-label="Tanod Profile"
         >
-          <IonIcon icon={isProfile ? person : personOutline} />
-          <IonLabel>Profile</IonLabel>
-          <span className="tab-indicator-dot" aria-hidden="true" />
+          <div className="tab-pill-container">
+            <IonIcon icon={isProfile ? person : personOutline} />
+            <IonLabel>Profile</IonLabel>
+          </div>
         </IonTabButton>
       </IonTabBar>
     </IonTabs>

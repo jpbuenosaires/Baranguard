@@ -1,65 +1,28 @@
-/**
- * live-map.tsx — M7 Live Map (§9 Mobile).
- *
- * §9 M7: "Shows location freshness and cached marker status. No claim of
- * live server data when disconnected." APIs: GPS, nearby incidents; cached
- * local map.
- *
- * RENDERED BASEMAP (2026-09-12): the screen now plots real pins on a real
- * map via `LiveMapCanvas.tsx` — MapLibre GL JS, installed as a normal npm
- * dependency (mobile has a genuine Vite bundle, unlike `web/`, which has
- * none at all). The offline-tile-capable renderer this file used to say
- * needed a native Capacitor plugin (REMAINING.md C4) turned out not to:
- * `mbtilesReader.ts` reads the downloaded MBTiles package via sql.js
- * (also pure JS/WASM in the same WebView) and feeds tiles to MapLibre
- * through a custom protocol, with online OpenStreetMap tiles as the
- * fallback when no package is installed yet. No AndroidManifest change,
- * no new native plugin. The STATUS VIEW this screen was built as instead
- * (GPS lock card, nearby-incident/-Tanod lists with distance+bearing) is
- * kept below the map, not replaced — it stays useful when the map itself
- * can't render (e.g. WebGL unavailable), and §8 still wants real numbers
- * stated in words, not color-only.
- *
- * GPS broadcast is FOREGROUND-ONLY (see geolocation.ts): starts when this
- * screen mounts, stops when it unmounts. Every position update attempts a
- * live `POST /gps`; on failure (offline, most commonly) the point is
- * staged in `gps_track_local` instead for `syncService.ts` to send later —
- * no position is ever silently dropped.
- *
- * PEER TANOD VISIBILITY (2026-09-12, explicit user decision): `GET
- * /gps/live` was opened to the `tanod` role (previously admin/PB only —
- * see GpsController::live()'s own doc comment) so this screen can list
- * other on-duty Tanods in the same barangay — now shown both as map pins
- * and as the distance/bearing list (utils/geo.ts, haversine —
- * straight-line, NOT road-routed).
- */
-
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   IonContent,
   IonIcon,
   IonPage,
-  IonSpinner,
   IonToast,
 } from '@ionic/react';
 import {
-  copyOutline,
-  expandOutline,
-  contractOutline,
+  alertCircleOutline,
+  closeOutline,
+  flameOutline,
+  layersOutline,
   locateOutline,
   locationOutline,
   navigateOutline,
-  radioOutline,
+  openOutline,
+  optionsOutline,
+  peopleOutline,
+  refreshOutline,
   shieldCheckmarkOutline,
   timeOutline,
-  warningOutline,
-  alertCircleOutline,
-  peopleOutline,
 } from 'ionicons/icons';
 import LiveMapCanvas, { type BasemapStatus, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import MobileHeader from '../components/MobileHeader';
 import {
-  ApiError,
   getNearbyIncidents,
   getNearbyTanods,
   postGps,
@@ -78,26 +41,47 @@ const MIN_BROADCAST_INTERVAL_MS = 15000;
 const NEARBY_REFRESH_INTERVAL_MS = 30000;
 const STALE_AFTER_SECONDS = 120;
 
-const PRIORITY_PILL_CLASS: Record<string, string> = {
-  normal: 'status-pill--info',
-  high: 'status-pill--pending',
-  critical: 'status-pill--critical is-urgent',
+type DrawerMode = 'peek' | 'selected' | 'expanded';
+export type QuickFilterTab = 'all' | 'tanods' | 'incidents' | 'critical' | 'custom';
+
+export interface AdvancedFilterState {
+  showTanods: boolean;
+  hideStaleTanods: boolean;
+  showIncidents: boolean;
+  priority: 'all' | 'critical_high' | 'critical_only';
+  selectedTypes: string[];
+  maxAgeHours: number;
+}
+
+const DEFAULT_ADVANCED_FILTERS: AdvancedFilterState = {
+  showTanods: true,
+  hideStaleTanods: false,
+  showIncidents: true,
+  priority: 'all',
+  selectedTypes: [],
+  maxAgeHours: 0,
 };
 
-type RadarSegment = 'incidents' | 'tanods';
+type SelectedItem =
+  | { type: 'incident'; item: NearbyIncident }
+  | { type: 'tanod'; item: NearbyTanod };
 
 const LiveMapPage: React.FC = () => {
   const [position, setPosition] = useState<DevicePosition | null>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
   const [nearby, setNearby] = useState<NearbyIncident[]>([]);
-  const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [nearbyTanods, setNearbyTanods] = useState<NearbyTanod[]>([]);
-  const [tanodsError, setTanodsError] = useState<string | null>(null);
   const [barangayId, setBarangayId] = useState<number | null>(null);
   const [basemapStatus, setBasemapStatus] = useState<BasemapStatus>({ kind: 'loading' });
-  const [activeSegment, setActiveSegment] = useState<RadarSegment>('incidents');
-  const [isExpanded, setIsExpanded] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Interactive Bottom Sheet Drawer State
+  const [drawerMode, setDrawerMode] = useState<DrawerMode>('peek');
+  const [quickFilter, setQuickFilter] = useState<QuickFilterTab>('all');
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilterState>(DEFAULT_ADVANCED_FILTERS);
+  const [tempAdvancedFilters, setTempAdvancedFilters] = useState<AdvancedFilterState>(DEFAULT_ADVANCED_FILTERS);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
 
   const lastBroadcastAt = useRef(0);
   const mapCanvasRef = useRef<LiveMapCanvasHandle | null>(null);
@@ -162,11 +146,12 @@ const LiveMapPage: React.FC = () => {
           void broadcast(update);
         });
       } catch {
-        setPositionError('Could not initialize real-time location tracking.');
+        // Fall back to one-shot fix
       }
     }
 
     void start();
+
     return () => {
       cancelled = true;
       stopWatch?.();
@@ -174,443 +159,1033 @@ const LiveMapPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!position) return undefined;
     let cancelled = false;
-    const lat = position.latitude;
-    const lng = position.longitude;
 
-    async function refreshNearby() {
+    async function fetchNearby() {
+      if (!position) return;
       try {
-        const items = await getNearbyIncidents({ latitude: lat, longitude: lng });
+        const result = await getNearbyIncidents({
+          latitude: position.latitude,
+          longitude: position.longitude,
+        });
         if (!cancelled) {
-          setNearby(items);
-          setNearbyError(null);
+          setNearby(result);
         }
-      } catch (error) {
-        if (!cancelled) {
-          setNearbyError(
-            error instanceof ApiError && error.isOffline
-              ? 'Offline — nearby incident telemetry unavailable.'
-              : 'Could not load nearby incidents.'
-          );
-        }
+      } catch {
+        // Keep cached
       }
     }
 
-    void refreshNearby();
-    const interval = setInterval(refreshNearby, NEARBY_REFRESH_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [position]);
-
-  useEffect(() => {
-    if (!position) return undefined;
-    let cancelled = false;
-
-    async function refreshTanods() {
+    async function fetchNearbyTanods() {
       try {
-        const items = await getNearbyTanods();
+        const result = await getNearbyTanods();
         if (!cancelled) {
-          setNearbyTanods(items);
-          setTanodsError(null);
+          setNearbyTanods(result);
         }
-      } catch (error) {
-        if (!cancelled) {
-          setTanodsError(
-            error instanceof ApiError && error.isOffline
-              ? 'Offline — nearby Tanod telemetry unavailable.'
-              : 'Could not load nearby Tanods.'
-          );
-        }
+      } catch {
+        // Keep cached
       }
     }
 
-    void refreshTanods();
-    const interval = setInterval(refreshTanods, NEARBY_REFRESH_INTERVAL_MS);
+    void fetchNearby();
+    void fetchNearbyTanods();
+
+    const intervalId = window.setInterval(() => {
+      void fetchNearby();
+      void fetchNearbyTanods();
+    }, NEARBY_REFRESH_INTERVAL_MS);
+
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearInterval(intervalId);
     };
   }, [position]);
 
-  const ageSeconds = position ? Math.floor((Date.now() - new Date(position.recordedAt).getTime()) / 1000) : null;
+  const ageSeconds = position
+    ? Math.max(0, Math.floor((Date.now() - new Date(position.recordedAt).getTime()) / 1000))
+    : null;
   const isLive = ageSeconds !== null && ageSeconds < STALE_AFTER_SECONDS;
 
-  const basemapLabel =
-    basemapStatus.kind === 'offline'
-      ? `Offline MBTiles v${basemapStatus.version}`
-      : basemapStatus.kind === 'online'
-        ? 'Online OpenStreetMap'
-        : basemapStatus.kind === 'unavailable'
-          ? 'Basemap Unavailable'
-          : 'Loading Tiles…';
-
-  function handleCopyCoords() {
-    if (!position) return;
-    const coordsStr = `${position.latitude.toFixed(5)}, ${position.longitude.toFixed(5)}`;
-    void navigator.clipboard.writeText(coordsStr);
+  // Handlers for interactive selection
+  const handleSelectIncident = (incident: NearbyIncident) => {
     tacticalFeedback.onTap();
-    setToastMessage(`Copied: ${coordsStr} (Ready for radio dispatch)`);
-  }
+    setSelectedItem({ type: 'incident', item: incident });
+    setDrawerMode('selected');
+    mapCanvasRef.current?.focusCoordinates(incident.latitude, incident.longitude, 16.5);
+  };
 
-  function handleFocusTarget(lat: number, lng: number) {
+  const handleSelectTanod = (tanod: NearbyTanod) => {
     tacticalFeedback.onTap();
-    mapCanvasRef.current?.focusCoordinates(lat, lng, 16);
-    // Scroll map smoothly into view if scrolled down
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+    setSelectedItem({ type: 'tanod', item: tanod });
+    setDrawerMode('selected');
+    mapCanvasRef.current?.focusCoordinates(tanod.latitude, tanod.longitude, 16.5);
+  };
+
+  const handleDeselect = () => {
+    if (drawerMode === 'selected') {
+      setDrawerMode('peek');
+      setSelectedItem(null);
+    }
+  };
+
+  const handleRecenter = () => {
+    tacticalFeedback.onTap();
+    mapCanvasRef.current?.recenter();
+  };
+
+  const openExternalDirections = (lat: number, lng: number) => {
+    tacticalFeedback.onTap();
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    window.open(url, '_system');
+  };
+
+  // Selected item computed distance & bearing
+  const selectedTelemetry = useMemo(() => {
+    if (!selectedItem || !position) return null;
+    const targetLat = selectedItem.item.latitude;
+    const targetLng = selectedItem.item.longitude;
+    const dist = distanceMeters(position.latitude, position.longitude, targetLat, targetLng);
+    const bearing = bearingLabel(position.latitude, position.longitude, targetLat, targetLng);
+    return `${formatDistance(dist)} · ${bearing}`;
+  }, [selectedItem, position]);
+
+  // Unique available incident types
+  const availableIncidentTypes = useMemo(() => {
+    const types = new Set<string>();
+    nearby.forEach((inc) => {
+      if (inc.incidentType) types.add(inc.incidentType);
+    });
+    return Array.from(types).sort();
+  }, [nearby]);
+
+  // Reactive Multi-Layer Filter Engine
+  const { filteredIncidents, filteredTanods, criticalCount, criticalOrHighCount, isFilterActive } = useMemo(() => {
+    let incList = nearby;
+    let tanodList = nearbyTanods;
+
+    // Two DIFFERENT counts, not one blurred together: the quick-filter
+    // rail's flame button is labeled "Critical only" (aria-label below),
+    // so its badge and its actual filter must both mean literally
+    // priority==='critical' — not critical-or-high. The broader
+    // combined tier still exists, but only inside the advanced filter
+    // sheet's own explicit "Critical & High" option, which names itself
+    // correctly and won't be confused with the rail's "Critical only".
+    const critCount = nearby.filter((i) => i.priority === 'critical').length;
+    const critOrHighCount = nearby.filter(
+      (i) => i.priority === 'critical' || i.priority === 'high'
+    ).length;
+
+    if (quickFilter === 'tanods') {
+      incList = [];
+      if (advancedFilters.hideStaleTanods) {
+        tanodList = tanodList.filter((t) => !t.isStale);
+      }
+    } else if (quickFilter === 'incidents') {
+      tanodList = [];
+    } else if (quickFilter === 'critical') {
+      tanodList = [];
+      incList = incList.filter((i) => i.priority === 'critical');
+    } else if (quickFilter === 'all') {
+      if (advancedFilters.hideStaleTanods) {
+        tanodList = tanodList.filter((t) => !t.isStale);
+      }
+    } else {
+      // Custom filters applied via modal
+      if (!advancedFilters.showTanods) {
+        tanodList = [];
+      } else if (advancedFilters.hideStaleTanods) {
+        tanodList = tanodList.filter((t) => !t.isStale);
+      }
+
+      if (!advancedFilters.showIncidents) {
+        incList = [];
+      } else {
+        if (advancedFilters.priority === 'critical_only') {
+          incList = incList.filter((i) => i.priority === 'critical');
+        } else if (advancedFilters.priority === 'critical_high') {
+          incList = incList.filter((i) => i.priority === 'critical' || i.priority === 'high');
+        }
+
+        if (advancedFilters.selectedTypes.length > 0) {
+          incList = incList.filter((i) => advancedFilters.selectedTypes.includes(i.incidentType));
+        }
+
+        if (advancedFilters.maxAgeHours > 0) {
+          const maxSec = advancedFilters.maxAgeHours * 3600;
+          incList = incList.filter((i) => i.ageSeconds <= maxSec);
+        }
+      }
+    }
+
+    const active =
+      quickFilter !== 'all' ||
+      advancedFilters.hideStaleTanods ||
+      !advancedFilters.showTanods ||
+      !advancedFilters.showIncidents ||
+      advancedFilters.priority !== 'all' ||
+      advancedFilters.selectedTypes.length > 0 ||
+      advancedFilters.maxAgeHours > 0;
+
+    return {
+      filteredIncidents: incList,
+      filteredTanods: tanodList,
+      criticalCount: critCount,
+      criticalOrHighCount: critOrHighCount,
+      isFilterActive: active,
+    };
+  }, [nearby, nearbyTanods, quickFilter, advancedFilters]);
+
+  // Auto-deselect when a selected item is filtered out
+  useEffect(() => {
+    if (!selectedItem) return;
+    if (selectedItem.type === 'incident') {
+      const stillThere = filteredIncidents.some(
+        (i) => i.incidentId === selectedItem.item.incidentId
+      );
+      if (!stillThere) {
+        setSelectedItem(null);
+        if (drawerMode === 'selected') setDrawerMode('peek');
+      }
+    } else if (selectedItem.type === 'tanod') {
+      const stillThere = filteredTanods.some(
+        (t) => t.userId === selectedItem.item.userId
+      );
+      if (!stillThere) {
+        setSelectedItem(null);
+        if (drawerMode === 'selected') setDrawerMode('peek');
+      }
+    }
+  }, [filteredIncidents, filteredTanods, selectedItem, drawerMode]);
+
+  // Real-Time Gesture & Touch Engine (Direct 1:1 finger tracking & momentum)
+  const [dragY, setDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const touchStartY = useRef(0);
+  const touchStartTime = useRef(0);
+  const currentDragY = useRef(0);
+  const isInterceptionFromScroll = useRef(false);
+  const scrollListRef = useRef<HTMLDivElement>(null);
+
+  const handleTouchStart = (e: React.TouchEvent, fromScrollList = false) => {
+    if (e.touches.length !== 1) return;
+    touchStartY.current = e.touches[0].clientY;
+    touchStartTime.current = Date.now();
+    currentDragY.current = 0;
+    isInterceptionFromScroll.current = fromScrollList;
+    setIsDragging(false);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const clientY = e.touches[0].clientY;
+    const rawDelta = clientY - touchStartY.current;
+
+    if (isInterceptionFromScroll.current) {
+      const scrollEl = scrollListRef.current;
+      // If user has scrolled down into the list, let native scroll work
+      if (scrollEl && scrollEl.scrollTop > 0) {
+        return;
+      }
+      // If at top of list and dragging downwards, intercept to collapse sheet
+      if (rawDelta > 0) {
+        currentDragY.current = rawDelta;
+        setDragY(rawDelta);
+        setIsDragging(true);
+      }
+      return;
+    }
+
+    // Dragging from handle bar, header, or preview card
+    let effectiveDelta = rawDelta;
+    if (drawerMode === 'peek' && rawDelta > 0) {
+      effectiveDelta = Math.pow(rawDelta, 0.7);
+    } else if (drawerMode === 'expanded' && rawDelta < 0) {
+      effectiveDelta = -Math.pow(Math.abs(rawDelta), 0.7);
+    }
+
+    currentDragY.current = effectiveDelta;
+    setDragY(effectiveDelta);
+    setIsDragging(true);
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging && Math.abs(currentDragY.current) < 5) {
+      setIsDragging(false);
+      setDragY(0);
+      return;
+    }
+
+    const elapsedMs = Math.max(1, Date.now() - touchStartTime.current);
+    const velocity = currentDragY.current / elapsedMs;
+    const delta = currentDragY.current;
+
+    setIsDragging(false);
+    setDragY(0);
+
+    // Fast flick velocity detection
+    if (velocity < -0.3) {
+      tacticalFeedback.onTap();
+      setDrawerMode('expanded');
+      return;
+    }
+
+    if (velocity > 0.3) {
+      tacticalFeedback.onTap();
+      if (drawerMode === 'expanded') {
+        if (selectedItem) {
+          setDrawerMode('selected');
+        } else {
+          setDrawerMode('peek');
+        }
+      } else if (drawerMode === 'selected') {
+        setSelectedItem(null);
+        setDrawerMode('peek');
+      }
+      return;
+    }
+
+    // Distance-based snapping
+    if (drawerMode === 'peek') {
+      if (delta < -45) {
+        tacticalFeedback.onTap();
+        setDrawerMode('expanded');
+      }
+    } else if (drawerMode === 'expanded') {
+      if (delta > 70) {
+        tacticalFeedback.onTap();
+        if (selectedItem) {
+          setDrawerMode('selected');
+        } else {
+          setDrawerMode('peek');
+        }
+      }
+    } else if (drawerMode === 'selected') {
+      if (delta < -50) {
+        tacticalFeedback.onTap();
+        setDrawerMode('expanded');
+      } else if (delta > 50) {
+        tacticalFeedback.onTap();
+        setSelectedItem(null);
+        setDrawerMode('peek');
+      }
+    }
+  };
+
+  const fabYStyle = useMemo(() => {
+    let base = '0px';
+    if (drawerMode === 'selected') base = '-139px';
+    else if (drawerMode === 'expanded') base = 'calc(76px - 65vh)';
+
+    if (isDragging) {
+      return `translateY(${base}) translateY(${dragY}px)`;
+    }
+    return `translateY(${base})`;
+  }, [drawerMode, isDragging, dragY]);
+
+  const drawerYStyle = useMemo(() => {
+    let base = 'calc(100% - 76px)';
+    if (drawerMode === 'selected') base = 'calc(100% - 215px)';
+    else if (drawerMode === 'expanded') base = '0%';
+
+    if (isDragging) {
+      return `translateY(${base}) translateY(${dragY}px)`;
+    }
+    return `translateY(${base})`;
+  }, [drawerMode, isDragging, dragY]);
 
   return (
     <IonPage>
-      <MobileHeader title="LIVE RADAR" subtitle="Field Telemetry" />
+      <MobileHeader title="Live Map" subtitle="On-Duty GPS" />
 
-      <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
-        <div className="app-column radar-layout">
-          {/* 1. Tactical Map Viewport Container */}
-          <div className="radar-map-wrapper">
+      <IonContent scrollY={false} style={{ '--background': 'var(--color-bg)', overflow: 'hidden' }}>
+        <div className="live-map-screen">
+          {/* Edge-to-Edge Full Screen Map Canvas */}
+          <div className="live-map-canvas-fill">
             <LiveMapCanvas
               ref={mapCanvasRef}
               barangayId={barangayId}
               position={position}
-              incidents={nearby}
-              tanods={nearbyTanods}
+              incidents={filteredIncidents}
+              tanods={filteredTanods}
               onStatusChange={setBasemapStatus}
-              height={isExpanded ? '60vh' : '330px'}
+              fullScreen={true}
+              height="100%"
+              hideRecenterFab={true}
+              onSelectIncident={handleSelectIncident}
+              onSelectTanod={handleSelectTanod}
+              onDeselect={handleDeselect}
+              selectedIncidentId={selectedItem?.type === 'incident' ? selectedItem.item.incidentId : null}
+              selectedTanodId={selectedItem?.type === 'tanod' ? selectedItem.item.userId : null}
             />
-
-            {/* Top-Left Floating Basemap Status Pill */}
-            <div className="radar-map-badge">
-              <IonIcon icon={navigateOutline} style={{ color: 'var(--color-primary)' }} />
-              <span>{basemapLabel}</span>
-            </div>
-
-            {/* Floating Map Utility Stack */}
-            <div className="radar-map-controls">
-              <button
-                type="button"
-                className="radar-map-btn"
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  setIsExpanded((prev) => !prev);
-                }}
-                aria-label={isExpanded ? 'Collapse Map' : 'Expand Map'}
-              >
-                <IonIcon icon={isExpanded ? contractOutline : expandOutline} />
-              </button>
-            </div>
           </div>
 
-          {/* 2. Tactical GPS Telemetry Lock HUD */}
-          <div className="radar-gps-hud">
-            <div className="radar-gps-hud-header">
-              <div className="radar-gps-hud-title-wrap">
-                <div
-                  className={`radar-gps-hud-icon ${
-                    isLive ? 'radar-gps-hud-icon--live' : 'radar-gps-hud-icon--stale'
-                  }`}
-                >
-                  <IonIcon icon={locateOutline} />
-                </div>
-                <div>
-                  <div className="radar-gps-hud-title">GPS Telemetry Lock</div>
-                  <div className="radar-gps-hud-sub">
-                    {isLive ? 'Continuous GPS lock active' : 'Acquiring satellite fix…'}
-                  </div>
-                </div>
-              </div>
+          {/* Semi-Transparent Backdrop Scrim (Tap to Dismiss to Peek) */}
+          <div
+            className={`live-map-scrim ${drawerMode === 'expanded' ? 'live-map-scrim--active' : ''}`}
+            onClick={() => {
+              tacticalFeedback.onTap();
+              setDrawerMode('peek');
+            }}
+            aria-hidden="true"
+          />
 
-              <span className={`status-pill ${isLive ? 'status-pill--success' : 'status-pill--neutral'}`}>
-                {isLive ? 'LIVE SATELLITE LOCK' : 'SIGNAL STALE'}
-              </span>
-            </div>
-
-            {position ? (
-              <div className="radar-coords-pill">
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="radar-coords-text">
-                    {position.latitude.toFixed(5)}, {position.longitude.toFixed(5)}
-                  </div>
-                  <div className="radar-coords-meta">
-                    <span>Accuracy: ±{position.accuracyM.toFixed(0)}m</span>
-                    <span>·</span>
-                    <span>{ageSeconds !== null ? formatRelativeAge(ageSeconds) : 'Live'}</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="radar-copy-btn"
-                  onClick={handleCopyCoords}
-                  aria-label="Copy Coordinates"
-                >
-                  <IonIcon icon={copyOutline} />
-                  <span>Copy</span>
-                </button>
-              </div>
-            ) : positionError ? (
-              <div
-                style={{
-                  background: 'var(--tint-critical-bg)',
-                  border: '1px solid var(--color-critical)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '8px 10px',
-                  color: 'var(--pill-critical-text)',
-                  fontSize: 'var(--font-size-sm)',
-                }}
-              >
-                {positionError}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0' }}>
-                <IonSpinner name="dots" color="light" />
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'rgba(255, 255, 255, 0.8)' }}>
-                  Triangulating satellite coordinates…
-                </span>
-              </div>
-            )}
-
-            <div className="radar-broadcast-indicator">
-              <IonIcon icon={radioOutline} style={{ color: '#38bdf8' }} />
-              <span>Transmitting live coordinates to Barangay HQ every 15s</span>
-            </div>
+          {/* Floating Top-Left Status HUD Pill */}
+          <div className="live-map-hud-status" role="status" aria-live="polite">
+            <span
+              className={`live-map-status-dot ${
+                positionError
+                  ? 'live-map-status-dot--error'
+                  : isLive
+                  ? 'live-map-status-dot--live'
+                  : 'live-map-status-dot--stale'
+              }`}
+            />
+            <span>
+              {position
+                ? `Sharing Location · ±${position.accuracyM.toFixed(0)}m`
+                : positionError
+                ? 'GPS Unavailable'
+                : 'Acquiring GPS…'}
+            </span>
           </div>
 
-          {/* 3. Tactical Segment Filter Bar */}
-          <div className="radar-segment-bar">
+          {/* Compact Icon+Count Filter Rail — Option A */}
+          {/* Icon-only chips: no text labels = never clips, maximum map visibility.   */}
+          {/* ARIA labels carry full readable names for assistive tech.                */}
+          <div className="lm-rail" role="tablist" aria-label="Filter live map markers">
             <button
               type="button"
-              className={`radar-segment-tab ${activeSegment === 'incidents' ? 'radar-segment-tab--active' : ''}`}
+              role="tab"
+              aria-selected={quickFilter === 'all'}
+              aria-label={`All markers — ${nearby.length + nearbyTanods.length} total`}
+              className={`lm-rail-btn ${quickFilter === 'all' ? 'lm-rail-btn--active' : ''}`}
               onClick={() => {
-                tacticalFeedback.onTap();
-                setActiveSegment('incidents');
+                tacticalFeedback.onSelection();
+                setQuickFilter('all');
+                setAdvancedFilters(DEFAULT_ADVANCED_FILTERS);
+              }}
+            >
+              <IonIcon icon={layersOutline} />
+              <span className="lm-rail-count">{nearby.length + nearbyTanods.length}</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={quickFilter === 'tanods'}
+              aria-label={`Tanods — ${nearbyTanods.length} nearby`}
+              className={`lm-rail-btn ${quickFilter === 'tanods' ? 'lm-rail-btn--active' : ''}`}
+              onClick={() => {
+                tacticalFeedback.onSelection();
+                setQuickFilter('tanods');
+              }}
+            >
+              <IonIcon icon={shieldCheckmarkOutline} />
+              <span className="lm-rail-count">{nearbyTanods.length}</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={quickFilter === 'incidents'}
+              aria-label={`Incidents — ${nearby.length} active`}
+              className={`lm-rail-btn ${quickFilter === 'incidents' ? 'lm-rail-btn--active' : ''}`}
+              onClick={() => {
+                tacticalFeedback.onSelection();
+                setQuickFilter('incidents');
               }}
             >
               <IonIcon icon={alertCircleOutline} />
-              <span>Nearby Incidents</span>
-              <span className="radar-segment-badge">{nearby.length}</span>
+              <span className="lm-rail-count">{nearby.length}</span>
             </button>
 
             <button
               type="button"
-              className={`radar-segment-tab ${activeSegment === 'tanods' ? 'radar-segment-tab--active' : ''}`}
+              role="tab"
+              aria-selected={quickFilter === 'critical'}
+              aria-label={`Critical only — ${criticalCount} critical`}
+              className={`lm-rail-btn lm-rail-btn--critical ${quickFilter === 'critical' ? 'lm-rail-btn--active lm-rail-btn--critical-active' : ''}`}
               onClick={() => {
-                tacticalFeedback.onTap();
-                setActiveSegment('tanods');
+                tacticalFeedback.onSelection();
+                setQuickFilter('critical');
               }}
             >
-              <IonIcon icon={peopleOutline} />
-              <span>Peer Tanods</span>
-              <span className="radar-segment-badge">{nearbyTanods.length}</span>
+              <IonIcon icon={flameOutline} />
+              <span className="lm-rail-count">{criticalCount}</span>
+            </button>
+
+            {/* Vertical divider separates filter tier from settings tier */}
+            <span className="lm-rail-divider" aria-hidden="true" />
+
+            <button
+              type="button"
+              aria-label="Advanced filter options"
+              aria-pressed={isFilterActive && quickFilter === 'custom'}
+              className={`lm-rail-btn lm-rail-btn--settings ${isFilterActive && quickFilter === 'custom' ? 'lm-rail-btn--active' : ''}`}
+              onClick={() => {
+                tacticalFeedback.onTap();
+                setTempAdvancedFilters(advancedFilters);
+                setIsFilterModalOpen(true);
+              }}
+            >
+              <IonIcon icon={optionsOutline} />
+              {isFilterActive && <span className="lm-rail-dot" aria-hidden="true" />}
             </button>
           </div>
 
-          {/* 4. Filtered Perimeter Feed */}
-          {activeSegment === 'incidents' && (
-            <div>
-              {nearbyError && (
-                <div
-                  style={{
-                    background: 'var(--tint-warning-bg)',
-                    border: '1px solid var(--color-warning)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '10px 14px',
-                    marginBottom: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    color: 'var(--pill-warning-text)',
-                    fontSize: 'var(--font-size-sm)',
-                  }}
-                  role="status"
-                >
-                  <IonIcon icon={warningOutline} />
-                  <span>{nearbyError}</span>
-                </div>
-              )}
 
-              {nearby.length === 0 && !nearbyError ? (
-                <div
-                  className="card--elevated"
-                  style={{
-                    textAlign: 'center',
-                    padding: '36px 16px',
-                    color: 'var(--color-text-secondary)',
-                    fontSize: 'var(--font-size-sm)',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  No active incidents detected in your immediate perimeter.
-                </div>
-              ) : (
-                <div className="card-list">
-                  {nearby.map((incident) => {
-                    const pillClass = PRIORITY_PILL_CLASS[incident.priority] ?? 'status-pill--info';
-                    const priorityModifier = `radar-item-card--${incident.priority}`;
-
-                    return (
-                      <div
-                        key={incident.incidentId}
-                        className={`radar-item-card ${priorityModifier}`}
-                        onClick={() => handleFocusTarget(incident.latitude, incident.longitude)}
-                      >
-                        <div className="radar-item-top">
-                          <div className="radar-item-title">
-                            <span>{incident.incidentType.replace(/_/g, ' ').toUpperCase()}</span>
-                          </div>
-                          <span className={`status-pill ${pillClass}`}>{incident.priority}</span>
-                        </div>
-
-                        <div className="radar-item-meta">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className="radar-distance-chip">
-                              <IonIcon icon={locationOutline} />
-                              {position
-                                ? `${formatDistance(distanceMeters(position.latitude, position.longitude, incident.latitude, incident.longitude))} · ${bearingLabel(position.latitude, position.longitude, incident.latitude, incident.longitude)}`
-                                : `${incident.latitude.toFixed(4)}, ${incident.longitude.toFixed(4)}`}
-                            </span>
-
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem' }}>
-                              <IonIcon icon={timeOutline} />
-                              {formatRelativeAge(incident.ageSeconds)}
-                            </span>
-                          </div>
-
-                          <button
-                            type="button"
-                            className="radar-focus-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleFocusTarget(incident.latitude, incident.longitude);
-                            }}
-                          >
-                            <IonIcon icon={locateOutline} />
-                            <span>View</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+          {/* Floating Pill when 0 Markers match active filter */}
+          {isFilterActive && filteredIncidents.length === 0 && filteredTanods.length === 0 && (
+            <div className="live-map-empty-filter-pill" role="status">
+              <span>No markers match active filter</span>
+              <button
+                type="button"
+                className="live-map-reset-btn"
+                onClick={() => {
+                  tacticalFeedback.onTap();
+                  setQuickFilter('all');
+                  setAdvancedFilters(DEFAULT_ADVANCED_FILTERS);
+                }}
+              >
+                <IonIcon icon={refreshOutline} />
+                <span>Reset</span>
+              </button>
             </div>
           )}
 
-          {activeSegment === 'tanods' && (
-            <div>
-              {tanodsError && (
-                <div
-                  style={{
-                    background: 'var(--tint-warning-bg)',
-                    border: '1px solid var(--color-warning)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '10px 14px',
-                    marginBottom: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    color: 'var(--pill-warning-text)',
-                    fontSize: 'var(--font-size-sm)',
-                  }}
-                  role="status"
-                >
-                  <IonIcon icon={warningOutline} />
-                  <span>{tanodsError}</span>
-                </div>
-              )}
+          {/* Floating Recenter GPS FAB (Glides dynamically with drawer) */}
+          <button
+            type="button"
+            className={`live-map-recenter-fab ${isDragging ? 'live-map-recenter-fab--dragging' : ''}`}
+            onClick={handleRecenter}
+            style={{ transform: fabYStyle }}
+            aria-label="Center map on your location"
+            title="Center on my location"
+          >
+            <IonIcon icon={locateOutline} />
+          </button>
 
-              {nearbyTanods.length === 0 && !tanodsError ? (
-                <div
-                  className="card--elevated"
-                  style={{
-                    textAlign: 'center',
-                    padding: '36px 16px',
-                    color: 'var(--color-text-secondary)',
-                    fontSize: 'var(--font-size-sm)',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  No other Tanods have a recorded position right now.
-                </div>
-              ) : (
-                <div className="card-list">
-                  {nearbyTanods.map((tanod) => {
-                    const cardModifier = tanod.isStale ? 'radar-item-card--tanod-stale' : 'radar-item-card--tanod';
+          {/* Interactive Sliding Bottom Sheet Drawer (Real-Time Touch Draggable) */}
+          <div
+            className={`live-map-drawer live-map-drawer--${drawerMode} ${
+              isDragging ? 'live-map-drawer--dragging' : ''
+            }`}
+            style={{ transform: drawerYStyle }}
+            onTouchStart={(e) => handleTouchStart(e, false)}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+            role="region"
+            aria-label="Map Details Drawer"
+          >
+            {/* Drag Handle Bar */}
+            <div
+              className="live-map-drawer__handle-bar"
+              onClick={() => {
+                tacticalFeedback.onTap();
+                if (drawerMode === 'peek') setDrawerMode('expanded');
+                else if (drawerMode === 'expanded') setDrawerMode('peek');
+                else if (drawerMode === 'selected') setDrawerMode('peek');
+              }}
+              title="Toggle drawer"
+            >
+              <div className="live-map-drawer__handle-pill" />
+            </div>
 
-                    return (
-                      <div
-                        key={tanod.userId}
-                        className={`radar-item-card ${cardModifier}`}
-                        onClick={() => handleFocusTarget(tanod.latitude, tanod.longitude)}
-                      >
-                        <div className="radar-item-top">
-                          <div className="radar-item-title">
-                            <IonIcon icon={shieldCheckmarkOutline} style={{ color: 'var(--color-primary)' }} />
-                            <span>{tanod.fullName}</span>
-                          </div>
-                          <span
-                            className={`status-pill ${tanod.isStale ? 'status-pill--neutral' : 'status-pill--success'}`}
-                          >
-                            {tanod.isStale ? 'STALE' : 'LIVE'}
+            {/* State 1: Peek Mode Header — deliberately the TRUE totals
+                (nearbyTanods/nearby), not filteredTanods/filteredIncidents.
+                This strip reads as a situational-awareness status line
+                ("how many colleagues are on duty right now"), not an echo
+                of whatever the filter rail above happens to be showing —
+                the two quick-filters that hide tanods (Incidents, Critical)
+                used to make this say "0 on duty" even when tanods were
+                genuinely on duty, just filtered off the map. */}
+            {drawerMode === 'peek' && (
+              <div className="live-map-drawer__peek-content">
+                <div className="live-map-drawer__peek-title">
+                  <IonIcon icon={peopleOutline} style={{ color: 'var(--color-primary)' }} />
+                  <span>
+                    {nearbyTanods.length} on duty &bull; {nearby.length}{' '}
+                    {nearby.length === 1 ? 'incident' : 'incidents'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* State 2: Selected Marker Preview Card */}
+            {drawerMode === 'selected' && selectedItem && (
+              <div className="live-map-selected-card">
+                <div className="live-map-selected-card__top">
+                  <div className="live-map-selected-card__title-row">
+                    <div
+                      className={`live-map-selected-card__icon ${
+                        selectedItem.type === 'tanod'
+                          ? 'live-map-selected-card__icon--tanod'
+                          : selectedItem.item.priority === 'critical'
+                          ? 'live-map-selected-card__icon--critical'
+                          : 'live-map-selected-card__icon--incident'
+                      }`}
+                    >
+                      <IonIcon
+                        icon={
+                          selectedItem.type === 'tanod'
+                            ? shieldCheckmarkOutline
+                            : alertCircleOutline
+                        }
+                      />
+                    </div>
+                    <div>
+                      <div className="live-map-selected-card__name">
+                        {selectedItem.type === 'tanod'
+                          ? selectedItem.item.fullName
+                          : selectedItem.item.incidentType.replace(/_/g, ' ')}
+                      </div>
+                      <div className="live-map-selected-card__meta">
+                        {selectedTelemetry && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600, color: 'var(--color-primary)' }}>
+                            <IonIcon icon={locationOutline} />
+                            {selectedTelemetry}
                           </span>
-                        </div>
-
-                        <div className="radar-item-meta">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className="radar-distance-chip">
-                              <IonIcon icon={locationOutline} />
-                              {position
-                                ? `${formatDistance(distanceMeters(position.latitude, position.longitude, tanod.latitude, tanod.longitude))} · ${bearingLabel(position.latitude, position.longitude, tanod.latitude, tanod.longitude)}`
-                                : `${tanod.latitude.toFixed(4)}, ${tanod.longitude.toFixed(4)}`}
-                            </span>
-
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem' }}>
-                              <IonIcon icon={timeOutline} />
-                              {formatRelativeAge(tanod.ageSeconds)}
-                            </span>
-                          </div>
-
-                          <button
-                            type="button"
-                            className="radar-focus-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleFocusTarget(tanod.latitude, tanod.longitude);
-                            }}
-                          >
-                            <IonIcon icon={locateOutline} />
-                            <span>View</span>
-                          </button>
-                        </div>
-
-                        {tanod.dispatchId !== null && (
-                          <div
-                            style={{
-                              marginTop: '8px',
-                              fontSize: '0.72rem',
-                              color: 'var(--color-primary)',
-                              fontWeight: 700,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                          >
-                            <span>🚔 Assigned to Dispatch #{tanod.dispatchId}</span>
-                          </div>
                         )}
+                        <span>&bull;</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <IonIcon icon={timeOutline} />
+                          {formatRelativeAge(selectedItem.item.ageSeconds)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`status-pill ${
+                      selectedItem.type === 'tanod'
+                        ? selectedItem.item.isStale
+                          ? 'status-pill--neutral'
+                          : 'status-pill--success'
+                        : selectedItem.item.priority === 'critical'
+                        ? 'status-pill--critical is-urgent'
+                        : selectedItem.item.priority === 'high'
+                        ? 'status-pill--pending'
+                        : 'status-pill--info'
+                    }`}
+                  >
+                    {selectedItem.type === 'tanod'
+                      ? selectedItem.item.isStale
+                        ? 'Offline'
+                        : 'Active'
+                      : selectedItem.item.priority}
+                  </span>
+                </div>
+
+                <div className="live-map-selected-card__actions">
+                  {selectedItem.type === 'incident' ? (
+                    <button
+                      type="button"
+                      className="live-map-btn-primary"
+                      onClick={() => openExternalDirections(selectedItem.item.latitude, selectedItem.item.longitude)}
+                    >
+                      <IonIcon icon={openOutline} />
+                      <span>Directions (Maps)</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="live-map-btn-primary"
+                      onClick={() => mapCanvasRef.current?.focusCoordinates(selectedItem.item.latitude, selectedItem.item.longitude, 17)}
+                    >
+                      <IonIcon icon={navigateOutline} />
+                      <span>Center on Map</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className="live-map-btn-ghost"
+                    onClick={() => {
+                      tacticalFeedback.onTap();
+                      setSelectedItem(null);
+                      setDrawerMode('peek');
+                    }}
+                  >
+                    <IonIcon icon={closeOutline} />
+                    <span>Dismiss</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* State 3: Expanded List Mode */}
+            {drawerMode === 'expanded' && (
+              <div className="live-map-drawer__expanded-content">
+                {/* Active filter context label — single source of truth is the map rail above */}
+                {quickFilter !== 'all' && (
+                  <div className="lm-list-filter-context">
+                    <IonIcon
+                      icon={quickFilter === 'tanods' ? shieldCheckmarkOutline : quickFilter === 'critical' ? flameOutline : alertCircleOutline}
+                    />
+                    <span>
+                      {quickFilter === 'tanods' ? 'Tanods only' : quickFilter === 'incidents' ? 'Incidents only' : 'Critical only'}
+                    </span>
+                    <button
+                      type="button"
+                      className="lm-list-filter-clear"
+                      onClick={() => {
+                        tacticalFeedback.onTap();
+                        setQuickFilter('all');
+                        setAdvancedFilters(DEFAULT_ADVANCED_FILTERS);
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
+                {/* Scrollable Items List */}
+                <div
+                  ref={scrollListRef}
+                  className="live-map-drawer__scroll-list"
+                  onTouchStart={(e) => handleTouchStart(e, true)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                >
+                  {filteredIncidents.map((incident) => {
+                    const distM = position ? distanceMeters(position.latitude, position.longitude, incident.latitude, incident.longitude) : null;
+                    const bearing = position ? bearingLabel(position.latitude, position.longitude, incident.latitude, incident.longitude) : '';
+                    const isCritical = incident.priority === 'critical';
+
+                    return (
+                      <div
+                        key={`inc-${incident.incidentId}`}
+                        className="live-map-list-item"
+                        onClick={() => handleSelectIncident(incident)}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--color-text-primary)' }}>
+                            #{incident.incidentId} &bull; {incident.incidentType.replace(/_/g, ' ')}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '2px', display: 'flex', gap: '8px' }}>
+                            {distM !== null && (
+                              <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                {formatDistance(distM)} · {bearing}
+                              </span>
+                            )}
+                            <span>{formatRelativeAge(incident.ageSeconds)}</span>
+                          </div>
+                        </div>
+
+                        <span className={`status-pill ${isCritical ? 'status-pill--critical is-urgent' : incident.priority === 'high' ? 'status-pill--pending' : 'status-pill--info'}`}>
+                          {incident.priority}
+                        </span>
                       </div>
                     );
                   })}
+
+                  {filteredTanods.map((tanod) => {
+                    const distM = position ? distanceMeters(position.latitude, position.longitude, tanod.latitude, tanod.longitude) : null;
+                    const bearing = position ? bearingLabel(position.latitude, position.longitude, tanod.latitude, tanod.longitude) : '';
+
+                    return (
+                      <div
+                        key={`tanod-${tanod.userId}`}
+                        className="live-map-list-item"
+                        onClick={() => handleSelectTanod(tanod)}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--color-text-primary)' }}>
+                            {tanod.fullName}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '2px', display: 'flex', gap: '8px' }}>
+                            {distM !== null && (
+                              <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                {formatDistance(distM)} · {bearing}
+                              </span>
+                            )}
+                            <span>{formatRelativeAge(tanod.ageSeconds)}</span>
+                          </div>
+                        </div>
+
+                        <span className={`status-pill ${tanod.isStale ? 'status-pill--neutral' : 'status-pill--success'}`}>
+                          {tanod.isStale ? 'Offline' : 'Active'}
+                        </span>
+                      </div>
+                    );
+                  })}
+
+                  {filteredIncidents.length === 0 && filteredTanods.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+                      <p style={{ margin: 0, fontWeight: 600 }}>No active incidents or Tanods match this filter.</p>
+                      {isFilterActive && (
+                        <button
+                          type="button"
+                          className="live-map-btn-ghost"
+                          style={{ margin: '12px auto 0', display: 'inline-flex' }}
+                          onClick={() => {
+                            tacticalFeedback.onTap();
+                            setQuickFilter('all');
+                            setAdvancedFilters(DEFAULT_ADVANCED_FILTERS);
+                          }}
+                        >
+                          <IonIcon icon={refreshOutline} />
+                          <span>Reset Filters</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Detailed Filter Sheet Modal */}
+        {isFilterModalOpen && (
+          <>
+            <div
+              className="live-map-modal-backdrop"
+              onClick={() => {
+                tacticalFeedback.onTap();
+                setIsFilterModalOpen(false);
+              }}
+              aria-hidden="true"
+            />
+            <div
+              className="live-map-filter-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="filter-sheet-title"
+            >
+              <div className="live-map-filter-sheet__header">
+                <span id="filter-sheet-title" className="live-map-filter-sheet__title">
+                  Filter Live Patrol Map
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="live-map-reset-btn"
+                    onClick={() => {
+                      tacticalFeedback.onTap();
+                      setTempAdvancedFilters(DEFAULT_ADVANCED_FILTERS);
+                    }}
+                  >
+                    <IonIcon icon={refreshOutline} />
+                    <span>Reset</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="topbar-btn"
+                    style={{ width: '32px', height: '32px' }}
+                    onClick={() => {
+                      tacticalFeedback.onTap();
+                      setIsFilterModalOpen(false);
+                    }}
+                    aria-label="Close filters"
+                  >
+                    <IonIcon icon={closeOutline} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="live-map-filter-sheet__body">
+                {/* Section 1: Entities to show */}
+                <div>
+                  <div className="live-map-filter-section-title">Show On Map</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label className="live-map-filter-toggle-row">
+                      <span style={{ fontWeight: 650, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IonIcon icon={shieldCheckmarkOutline} style={{ color: 'var(--color-primary)' }} />
+                        On-Duty Tanod Patrols ({nearbyTanods.length})
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={tempAdvancedFilters.showTanods}
+                        onChange={(e) =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, showTanods: e.target.checked }))
+                        }
+                        style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)' }}
+                      />
+                    </label>
+
+                    {tempAdvancedFilters.showTanods && (
+                      <label className="live-map-filter-toggle-row live-map-filter-toggle-row--sub">
+                        <span style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
+                          Hide stale patrols (GPS older than 2m)
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={tempAdvancedFilters.hideStaleTanods}
+                          onChange={(e) =>
+                            setTempAdvancedFilters((prev) => ({ ...prev, hideStaleTanods: e.target.checked }))
+                          }
+                          style={{ width: '16px', height: '16px', accentColor: 'var(--color-primary)' }}
+                        />
+                      </label>
+                    )}
+
+                    <label className="live-map-filter-toggle-row">
+                      <span style={{ fontWeight: 650, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <IonIcon icon={alertCircleOutline} style={{ color: 'var(--color-warning)' }} />
+                        Reported Incidents ({nearby.length})
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={tempAdvancedFilters.showIncidents}
+                        onChange={(e) =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, showIncidents: e.target.checked }))
+                        }
+                        style={{ width: '18px', height: '18px', accentColor: 'var(--color-primary)' }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Section 2: Priority */}
+                {tempAdvancedFilters.showIncidents && (
+                  <div>
+                    <div className="live-map-filter-section-title">Incident Priority</div>
+                    <div className="live-map-filter-segment" role="group" aria-label="Filter by priority">
+                      <button
+                        type="button"
+                        className={`live-map-filter-segment-btn ${
+                          tempAdvancedFilters.priority === 'all' ? 'live-map-filter-segment-btn--active' : ''
+                        }`}
+                        onClick={() =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, priority: 'all' }))
+                        }
+                      >
+                        All ({nearby.length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`live-map-filter-segment-btn ${
+                          tempAdvancedFilters.priority === 'critical_high' ? 'live-map-filter-segment-btn--active' : ''
+                        }`}
+                        onClick={() =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, priority: 'critical_high' }))
+                        }
+                      >
+                        Critical &amp; High ({criticalOrHighCount})
+                      </button>
+                      <button
+                        type="button"
+                        className={`live-map-filter-segment-btn ${
+                          tempAdvancedFilters.priority === 'critical_only' ? 'live-map-filter-segment-btn--active' : ''
+                        }`}
+                        onClick={() =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, priority: 'critical_only' }))
+                        }
+                      >
+                        Critical Only
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 3: Incident Types */}
+                {tempAdvancedFilters.showIncidents && availableIncidentTypes.length > 0 && (
+                  <div>
+                    <div className="live-map-filter-section-title">Incident Types</div>
+                    <div className="live-map-filter-types-grid">
+                      <button
+                        type="button"
+                        className={`live-map-filter-type-pill ${
+                          tempAdvancedFilters.selectedTypes.length === 0 ? 'live-map-filter-type-pill--active' : ''
+                        }`}
+                        onClick={() =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, selectedTypes: [] }))
+                        }
+                      >
+                        All Types
+                      </button>
+                      {availableIncidentTypes.map((type) => {
+                        const isSelected = tempAdvancedFilters.selectedTypes.includes(type);
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            className={`live-map-filter-type-pill ${
+                              isSelected ? 'live-map-filter-type-pill--active' : ''
+                            }`}
+                            onClick={() => {
+                              setTempAdvancedFilters((prev) => {
+                                const exists = prev.selectedTypes.includes(type);
+                                return {
+                                  ...prev,
+                                  selectedTypes: exists
+                                    ? prev.selectedTypes.filter((t) => t !== type)
+                                    : [...prev.selectedTypes, type],
+                                };
+                              });
+                            }}
+                          >
+                            {type.replace(/_/g, ' ')}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 4: Incident Freshness */}
+                {tempAdvancedFilters.showIncidents && (
+                  <div>
+                    <div className="live-map-filter-section-title">Reported Time</div>
+                    <div className="live-map-filter-segment" role="group" aria-label="Filter by time">
+                      <button
+                        type="button"
+                        className={`live-map-filter-segment-btn ${
+                          tempAdvancedFilters.maxAgeHours === 0 ? 'live-map-filter-segment-btn--active' : ''
+                        }`}
+                        onClick={() =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, maxAgeHours: 0 }))
+                        }
+                      >
+                        All Active
+                      </button>
+                      <button
+                        type="button"
+                        className={`live-map-filter-segment-btn ${
+                          tempAdvancedFilters.maxAgeHours === 1 ? 'live-map-filter-segment-btn--active' : ''
+                        }`}
+                        onClick={() =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, maxAgeHours: 1 }))
+                        }
+                      >
+                        &lt; 1 Hour
+                      </button>
+                      <button
+                        type="button"
+                        className={`live-map-filter-segment-btn ${
+                          tempAdvancedFilters.maxAgeHours === 6 ? 'live-map-filter-segment-btn--active' : ''
+                        }`}
+                        onClick={() =>
+                          setTempAdvancedFilters((prev) => ({ ...prev, maxAgeHours: 6 }))
+                        }
+                      >
+                        &lt; 6 Hours
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="live-map-filter-sheet__footer">
+                <button
+                  type="button"
+                  className="live-map-btn-primary"
+                  style={{ width: '100%', height: '44px' }}
+                  onClick={() => {
+                    tacticalFeedback.onTap();
+                    setAdvancedFilters(tempAdvancedFilters);
+                    setQuickFilter('custom');
+                    setIsFilterModalOpen(false);
+                  }}
+                >
+                  <span>Apply Filters</span>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
 
         <IonToast
           isOpen={toastMessage !== null}
@@ -625,4 +1200,3 @@ const LiveMapPage: React.FC = () => {
 };
 
 export default LiveMapPage;
-

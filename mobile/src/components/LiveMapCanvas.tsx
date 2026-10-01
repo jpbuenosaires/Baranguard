@@ -167,6 +167,16 @@ interface Props {
   fullScreen?: boolean;
   /** When true, suppresses the internal floating locate FAB (for screens providing their own control rail) */
   hideRecenterFab?: boolean;
+  /** Callback triggered when a Tanod pin is tapped on the map */
+  onSelectTanod?: (tanod: NearbyTanod) => void;
+  /** Callback triggered when an incident pin is tapped on the map */
+  onSelectIncident?: (incident: NearbyIncident) => void;
+  /** Callback triggered when empty map space is tapped */
+  onDeselect?: () => void;
+  /** Currently selected Tanod ID (highlights marker) */
+  selectedTanodId?: number | null;
+  /** Currently selected Incident ID (highlights marker) */
+  selectedIncidentId?: number | null;
 }
 
 /** Frames the camera on whichever of self/focusTarget are available; both → fits bounds, one → centers on it. */
@@ -276,8 +286,35 @@ function priorityMarkerClass(priority: string): string {
   return 'map-marker map-marker--normal';
 }
 
+function shortPersonLabel(fullName?: string | null): string {
+  if (!fullName) return 'Tanod';
+  const parts = String(fullName).trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  return `${parts[0][0]}. ${parts[parts.length - 1]}`;
+}
+
 const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCanvas(
-  { barangayId, position, incidents, tanods, onStatusChange, focusTarget, onMapClick, routeGeometry, navigationMode, routeProgress, onUserPan, height, fullScreen, hideRecenterFab },
+  {
+    barangayId,
+    position,
+    incidents,
+    tanods,
+    onStatusChange,
+    focusTarget,
+    onMapClick,
+    routeGeometry,
+    navigationMode,
+    routeProgress,
+    onUserPan,
+    height,
+    fullScreen,
+    hideRecenterFab,
+    onSelectTanod,
+    onSelectIncident,
+    onDeselect,
+    selectedTanodId,
+    selectedIncidentId,
+  },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -292,6 +329,12 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
   onMapClickRef.current = onMapClick;
   const onUserPanRef = useRef(onUserPan);
   onUserPanRef.current = onUserPan;
+  const onSelectTanodRef = useRef(onSelectTanod);
+  onSelectTanodRef.current = onSelectTanod;
+  const onSelectIncidentRef = useRef(onSelectIncident);
+  onSelectIncidentRef.current = onSelectIncident;
+  const onDeselectRef = useRef(onDeselect);
+  onDeselectRef.current = onDeselect;
   /** Tracks whether the user has manually panned the map (pauses auto-follow in nav mode). */
   const userPannedRef = useRef(false);
   const [status, setStatus] = useState<BasemapStatus>({ kind: 'loading' });
@@ -349,6 +392,7 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       });
       map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
       map.on('click', (e) => {
+        onDeselectRef.current?.();
         onMapClickRef.current?.({ latitude: e.lngLat.lat, longitude: e.lngLat.lng });
       });
       // Detect manual user interaction to pause navigation auto-follow.
@@ -398,14 +442,29 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       el.className = navigationMode ? 'map-marker map-marker--self-navigating' : 'map-marker map-marker--self';
       el.title = `Your position — accuracy ±${position.accuracyM.toFixed(0)}m`;
       container.appendChild(el);
-      selfMarkerRef.current = new Marker({ element: container }).setLngLat([position.longitude, position.latitude]).addTo(map);
+
+      // Map-matching (Google Maps–style road snapping):
+      // In navigation mode, place the self-marker at the road-snapped point
+      // so the dot glides along the road instead of floating beside it due
+      // to raw GPS noise. Falls back to raw GPS when no route is active.
+      const markerLng = (navigationMode && routeProgress)
+        ? routeProgress.snappedPoint.lng
+        : position.longitude;
+      const markerLat = (navigationMode && routeProgress)
+        ? routeProgress.snappedPoint.lat
+        : position.latitude;
+
+      selfMarkerRef.current = new Marker({ element: container })
+        .setLngLat([markerLng, markerLat])
+        .addTo(map);
     }
 
     if (!framedOnce.current && (position || focusTarget)) {
       framedOnce.current = true;
       centerMap(map, position, focusTarget, false);
     }
-  }, [position, focusTarget, status, navigationMode]);
+  // routeProgress added: re-snap marker on every nav update even if raw GPS didn't change.
+  }, [position, focusTarget, status, navigationMode, routeProgress]);
 
   // Navigation auto-follow: when in navigation mode and the user hasn't
   // manually panned, smoothly track the user's snapped position with
@@ -414,8 +473,10 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     const map = mapRef.current;
     if (!map || !navigationMode || !routeProgress || !position || userPannedRef.current) return;
 
+    // Map-matching: camera follows the road-snapped point, not raw GPS.
+    // This keeps the viewport centered on the road exactly like Google Maps.
     map.easeTo({
-      center: [position.longitude, position.latitude],
+      center: [routeProgress.snappedPoint.lng, routeProgress.snappedPoint.lat],
       zoom: NAV_FOLLOW_ZOOM,
       bearing: routeProgress.routeBearing,
       duration: 500,
@@ -451,9 +512,9 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
         // Reset the user-panned flag so auto-follow resumes.
         userPannedRef.current = false;
         if (navigationMode && routeProgress && position) {
-          // In navigation mode: snap to the user's current position with heading.
+          // Map-matching: snap back to the road point, not raw GPS.
           map?.easeTo({
-            center: [position.longitude, position.latitude],
+            center: [routeProgress.snappedPoint.lng, routeProgress.snappedPoint.lat],
             zoom: NAV_FOLLOW_ZOOM,
             bearing: routeProgress.routeBearing,
             duration: 500,
@@ -469,7 +530,8 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
         map.flyTo({
           center: [lng, lat],
           zoom,
-          duration: 800,
+          speed: 1.2,
+          curve: 1.42,
           essential: true,
         });
       },
@@ -489,6 +551,9 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
           Math.abs(incident.latitude - focusTarget.latitude) < 0.00005 &&
           Math.abs(incident.longitude - focusTarget.longitude) < 0.00005;
 
+        const isCritical = incident.priority === 'critical';
+        const isSelected = selectedIncidentId === incident.incidentId;
+
         // Container div is isolated for MapLibre's coordinate translation transforms
         const container = document.createElement('div');
         container.style.cursor = 'pointer';
@@ -496,13 +561,28 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
         const el = document.createElement('div');
         el.className = isDestination
           ? `map-marker map-marker--destination ${priorityMarkerClass(incident.priority)}`
-          : priorityMarkerClass(incident.priority);
+          : `map-marker map-marker--incident ${isCritical ? 'map-marker--incident-critical' : ''} ${isSelected ? 'map-marker--focused' : ''}`;
+        
+        // Warning SVG Icon matching web Dispatch Center
+        el.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`;
+
+        // Nameplate Callout Label
+        const labelEl = document.createElement('span');
+        labelEl.className = `live-map__pin-label live-map__pin-label--incident ${isCritical ? 'live-map__pin-label--critical' : ''}`;
+        labelEl.textContent = `#${incident.incidentId}`;
+        el.appendChild(labelEl);
+
         el.title = `${incident.incidentType.replace(/_/g, ' ')} · ${incident.priority} · ${Math.floor(incident.ageSeconds / 60)}m ago`;
+
+        container.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onSelectIncidentRef.current?.(incident);
+        });
 
         container.appendChild(el);
         return new Marker({ element: container }).setLngLat([incident.longitude, incident.latitude]).addTo(map);
       });
-  }, [incidents, status, focusTarget]);
+  }, [incidents, status, focusTarget, selectedIncidentId]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -511,14 +591,35 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     tanodMarkersRef.current = tanods
       .filter((tanod: NearbyTanod) => typeof tanod.longitude === 'number' && typeof tanod.latitude === 'number' && !isNaN(tanod.longitude) && !isNaN(tanod.latitude))
       .map((tanod: NearbyTanod) => {
+        const isSelected = selectedTanodId === tanod.userId;
+        const isDispatched = tanod.dispatchId !== null;
+
         const container = document.createElement('div');
+        container.style.cursor = 'pointer';
+
         const el = document.createElement('div');
-        el.className = `map-marker ${tanod.isStale ? 'map-marker--tanod-stale' : 'map-marker--tanod-live'}`;
+        el.className = `map-marker ${tanod.isStale ? 'map-marker--tanod-stale' : isDispatched ? 'map-marker--tanod-dispatched' : 'map-marker--tanod-live'} ${isSelected ? 'map-marker--focused' : ''}`;
+        
+        // Person SVG Icon matching web Dispatch Center
+        el.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+
+        // Nameplate Callout Label
+        const labelEl = document.createElement('span');
+        labelEl.className = 'live-map__pin-label';
+        labelEl.textContent = shortPersonLabel(tanod.fullName);
+        el.appendChild(labelEl);
+
         el.title = `${tanod.fullName} — ${tanod.isStale ? 'stale' : 'live'} · ${Math.floor(tanod.ageSeconds / 60)}m ago`;
+
+        container.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onSelectTanodRef.current?.(tanod);
+        });
+
         container.appendChild(el);
         return new Marker({ element: container }).setLngLat([tanod.longitude, tanod.latitude]).addTo(map);
       });
-  }, [tanods, status]);
+  }, [tanods, status, selectedTanodId]);
 
   // Draws/updates/clears the route line — a GeoJSON source+layer on top
   // of the raster basemap.

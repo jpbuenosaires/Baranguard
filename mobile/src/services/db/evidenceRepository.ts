@@ -61,6 +61,19 @@ export async function getEvidenceForIncident(incidentLocalId: string): Promise<E
   return (result.values ?? []) as EvidenceAttachmentLocalRow[];
 }
 
+/** Map of evidence attachment counts grouped by incident local_id. */
+export async function getEvidenceCountsByIncident(): Promise<Record<string, number>> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    'SELECT incident_local_id, COUNT(*) as count FROM evidence_attachment_local GROUP BY incident_local_id'
+  );
+  const map: Record<string, number> = {};
+  for (const row of (result.values ?? []) as Array<{ incident_local_id: string; count: number }>) {
+    map[row.incident_local_id] = row.count;
+  }
+  return map;
+}
+
 // --- Upload worker support (Mobile Improvement Plan Phase 3.2, closes F4) ---
 // Mirrors incidentRepository.ts's own "capture screens only read; the sync
 // worker owns everything below" split.

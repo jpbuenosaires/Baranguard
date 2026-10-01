@@ -112,14 +112,14 @@
   --tint-info-bg: #dbeafe;
   --tint-neutral-bg: #f3f4f6;
 
-  /* Glassmorphism & elevation polish */
-  --glass-bg: rgba(255, 255, 255, 0.88);
-  --glass-border: rgba(226, 232, 240, 0.85);
-  --glass-blur: 16px;
-  --gradient-hero: linear-gradient(135deg, #1e3a6e 0%, #1d4ed8 50%, #3b82f6 100%);
-  --gradient-navy: linear-gradient(135deg, #1e3a6e 0%, #162d58 100%);
-  --glow-primary: 0 0 20px rgba(59, 130, 246, 0.25);
-  --glow-critical: 0 0 24px rgba(220, 38, 38, 0.35);
+  /* Strict Flat Design System Tokens */
+  --glass-bg: var(--color-surface);
+  --glass-border: var(--color-border);
+  --glass-blur: 0px;
+  --gradient-hero: var(--color-navy);
+  --gradient-navy: var(--color-navy);
+  --glow-primary: none;
+  --glow-critical: none;
 
   --spacing-xs: 4px;
   --spacing-sm: 8px;
@@ -137,17 +137,18 @@
   --font-size-xl: 1.75rem;
   --font-size-2xl: 2.25rem;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
-  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-card-hover: 0 8px 20px -4px rgba(15, 23, 42, 0.1), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
-  --shadow-elevated: 0 4px 12px rgba(15, 23, 42, 0.1);
-  --shadow-floating: 0 12px 28px -4px rgba(15, 23, 42, 0.14), 0 6px 12px -4px rgba(15, 23, 42, 0.08);
-  --shadow-fab: 0 8px 20px rgba(29, 78, 216, 0.35);
-  --shadow-fab-critical: 0 8px 20px rgba(220, 38, 38, 0.4);
+  /* Pure flat elevations — crisp borders instead of diffuse shadows */
+  --shadow-card: none;
+  --shadow-card-hover: none;
+  --shadow-elevated: none;
+  --shadow-floating: none;
+  --shadow-fab: none;
+  --shadow-fab-critical: none;
 
   /* --- Ionic theming, mapped onto the tokens above -------------------- */
   /* Ionic needs -rgb companions for its own alpha compositing. */
@@ -244,20 +245,15 @@
   --dark-tint-info-bg: color-mix(in srgb, #38bdf8 18%, #1e293b);
   --dark-tint-neutral-bg: color-mix(in srgb, #94a3b8 16%, #1e293b);
 
-  --dark-glass-bg: rgba(30, 41, 59, 0.88);
-  --dark-glass-border: rgba(255, 255, 255, 0.1);
-  --dark-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --dark-shadow-elevated: 0 10px 20px -3px rgba(0, 0, 0, 0.45), 0 4px 8px -4px rgba(0, 0, 0, 0.4);
-  --dark-shadow-floating: 0 20px 30px -5px rgba(0, 0, 0, 0.6), 0 8px 12px -6px rgba(0, 0, 0, 0.5);
+  --dark-glass-bg: var(--dark-surface);
+  --dark-glass-border: var(--dark-border);
+  --dark-shadow-card: none;
+  --dark-shadow-elevated: none;
+  --dark-shadow-floating: none;
 
   /* --- Fixed accent constants ---------------------------------------- */
-  /* Not part of the light/dark pair above — these stay the same value
-     regardless of the app's theme. Used by app.css's permanently-dark
-     "tactical hero" cards (Home, Profile, Live Map GPS HUD) and a few
-     repeated bright icon/badge accents that needed a name instead of a
-     hex literal hand-copied at each use site. */
-  --color-navy-deep: #0b1329;
-  --gradient-tactical-dark: linear-gradient(135deg, #0b1329 0%, #1e293b 100%);
+  --color-navy-deep: #0f172a;
+  --gradient-tactical-dark: var(--dark-surface);
   --color-critical-bright: #ef4444;
   --color-warning-bright: #f59e0b;
   --color-success-bright: #10b981;

@@ -68,6 +68,12 @@ class TacticalFeedback {
     this.playTone(600, 30, 'sine', 0.05);
   }
 
+  /** Crisp snap/tick tactile response for tab switches or filter selections. */
+  onSelection(): void {
+    this.vibrate(10);
+    this.playTone(720, 20, 'sine', 0.04);
+  }
+
   /** Tactile response when officer toggles duty status. */
   onDutyToggle(isOnDuty: boolean): void {
     this.vibrate([40, 50, 40]);

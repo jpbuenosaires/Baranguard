@@ -1,12 +1,3 @@
-/**
- * profile.tsx — M10 Profile & Tactical Field Diagnostics Console (§9 Mobile).
- *
- * Provides responders with full telemetry on their operational session,
- * device identity, push notification readiness, local SQLite database
- * health, and server connectivity (always `api.baranguardph.win` — no
- * per-device address override, see apiService.ts's `DEFAULT_API_BASE_URL`).
- */
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -20,21 +11,18 @@ import {
 } from '@ionic/react';
 import {
   calendarOutline,
+  checkmarkCircleOutline,
   checkmarkOutline,
   chevronDownOutline,
+  chevronForwardOutline,
   chevronUpOutline,
   copyOutline,
   documentTextOutline,
   logOutOutline,
   notificationsOutline,
-  serverOutline,
   shieldCheckmarkOutline,
   syncOutline,
-  wifiOutline,
-  colorPaletteOutline,
-  moonOutline,
-  sunnyOutline,
-  phonePortraitOutline,
+  warningOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import NotificationDiagnostics from '../components/NotificationDiagnostics';
@@ -53,7 +41,13 @@ import {
   type StorageSnapshot,
 } from '../services/storageMaintenance';
 import tacticalFeedback from '../utils/tacticalFeedback';
-import { getStoredTheme, setTheme, type ThemePreference, THEME_CHANGED_EVENT } from '../utils/theme';
+
+const BARANGAY_NAMES: Record<number, string> = {
+  1: 'Dao',
+  2: 'Binanuahan',
+  3: 'Marifosque',
+  4: 'Banuyo',
+};
 
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
@@ -61,9 +55,7 @@ const ProfilePage: React.FC = () => {
   const [deviceId, setDeviceId] = useState<string>('');
   const [copiedDevice, setCopiedDevice] = useState(false);
 
-  // Network Telemetry
-  const [pinging, setPinging] = useState(false);
-  const [latency, setLatency] = useState<number | null>(null);
+  // Network State
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
   // Local Storage Telemetry
@@ -79,11 +71,9 @@ const ProfilePage: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
 
-  // Storage telemetry/cleanup (Phase 3.3)
+  // Storage telemetry/cleanup
   const [storage, setStorage] = useState<StorageSnapshot | null>(null);
   const [pruning, setPruning] = useState(false);
-
-  // Drawer toggles for clean tactical layout
   const [showStorageDetails, setShowStorageDetails] = useState(false);
 
   const loadData = async () => {
@@ -117,42 +107,27 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  const pingWorkstation = async () => {
-    setPinging(true);
-    const t0 = performance.now();
+  const checkConnection = async () => {
     try {
       const ok = await checkHealth();
-      const diff = Math.round(performance.now() - t0);
       setIsOnline(ok);
-      setLatency(ok ? diff : null);
       if (ok) {
         tacticalFeedback.onSuccess();
       }
     } catch {
       setIsOnline(false);
-      setLatency(null);
-    } finally {
-      setPinging(false);
     }
   };
 
-  // Theme / Appearance
-  const [themePref, setThemePref] = useState<ThemePreference>(() => getStoredTheme());
-
   useEffect(() => {
     void loadData();
-    void pingWorkstation();
-
-    const handleThemeChanged = () => {
-      setThemePref(getStoredTheme());
-    };
-    window.addEventListener(THEME_CHANGED_EVENT, handleThemeChanged);
-    return () => window.removeEventListener(THEME_CHANGED_EVENT, handleThemeChanged);
+    void checkConnection();
   }, []);
 
   const handleCopyDeviceId = () => {
     if (!deviceId) return;
     navigator.clipboard.writeText(deviceId);
+    tacticalFeedback.onTap();
     setCopiedDevice(true);
     setTimeout(() => setCopiedDevice(false), 2000);
   };
@@ -162,8 +137,11 @@ const ProfilePage: React.FC = () => {
     try {
       const result: SyncSummary = await runSyncPass();
       tacticalFeedback.onSuccess();
-      const evidenceNote = result.evidenceUploaded > 0 ? ` · ${result.evidenceUploaded} evidence file(s) uploaded` : '';
-      setToastMessage(`Sync complete: ${result.succeeded} uploaded, ${result.duplicates} verified${evidenceNote}.`);
+      const evidenceNote =
+        result.evidenceUploaded > 0 ? ` · ${result.evidenceUploaded} evidence file(s) uploaded` : '';
+      setToastMessage(
+        `Sync complete: ${result.succeeded} uploaded, ${result.duplicates} verified${evidenceNote}.`
+      );
       await loadData();
     } catch (err) {
       setToastMessage(err instanceof Error ? err.message : 'Workstation unreachable for sync.');
@@ -208,202 +186,165 @@ const ProfilePage: React.FC = () => {
         .toUpperCase()
     : 'TO';
 
+  const barangayName = session?.barangayId
+    ? BARANGAY_NAMES[session.barangayId] ?? `Barangay ${session.barangayId}`
+    : 'Dao';
+
   const totalUnsynced =
     localStats.unsyncedIncidents + localStats.unsyncedGps + localStats.pendingQueue;
 
   return (
     <IonPage>
-      <MobileHeader title="CONSOLE & PROFILE" subtitle="Responder Diagnostics" />
+      <MobileHeader title="Console & Profile" subtitle="Responder Diagnostics" />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="app-column profile-layout">
-          {/* Module 1: Tactical Responder Command Header */}
+          {/* Section 1: Responder Identity & Duty Status */}
           <div className="profile-officer-card">
             <div className="profile-officer-header">
               <div className="profile-avatar-circle">{initials}</div>
               <div className="profile-officer-meta">
-                <h2 className="profile-officer-name">{session?.fullName || 'Tanod Officer'}</h2>
+                <div className="profile-officer-top-row">
+                  <h2 className="profile-officer-name">{session?.fullName || 'Tanod Officer'}</h2>
+                  <span className="profile-verified-badge">
+                    <IonIcon icon={shieldCheckmarkOutline} />
+                    Active Duty
+                  </span>
+                </div>
                 <div className="profile-officer-role">
-                  <IonIcon icon={shieldCheckmarkOutline} />
-                  <span>Role: {session?.role?.toUpperCase() || 'TANOD'} · Barangay #{session?.barangayId ?? 1}</span>
+                  Security Responder · Brgy {barangayName}
                 </div>
               </div>
             </div>
 
-            <div className="profile-device-strip">
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)', fontWeight: 700, marginBottom: 2 }}>
-                  Device Identity Key
-                </div>
-                <div className="profile-device-key">
-                  {deviceId || 'Loading device key…'}
-                </div>
+            <div className="profile-officer-stats">
+              <div className="profile-stat-cell">
+                <span className="profile-stat-label">Active Dispatches</span>
+                <span className="profile-stat-val">{localStats.dispatches} Assigned</span>
               </div>
-              <button
-                type="button"
-                className="profile-copy-btn"
-                onClick={handleCopyDeviceId}
-              >
-                <IonIcon icon={copiedDevice ? checkmarkOutline : copyOutline} />
-                <span>{copiedDevice ? 'Copied' : 'Copy'}</span>
-              </button>
+              <div className="profile-stat-cell">
+                <span className="profile-stat-label">Barangay Post</span>
+                <span className="profile-stat-val">{barangayName} HQ</span>
+              </div>
             </div>
           </div>
 
-          {/* Quick Action Navigation Tiles */}
-          <div className="profile-quick-grid">
+          {/* Section 2: Prominent Operational Records Navigation */}
+          <div className="profile-prominent-nav">
             <button
               type="button"
-              className="profile-quick-card"
+              className="profile-nav-card"
               onClick={() => navigate('/tabs/reports')}
             >
-              <div className="profile-quick-icon">
+              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--blue">
                 <IonIcon icon={documentTextOutline} />
               </div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <h4 className="profile-quick-label">My Reports</h4>
-                <div className="profile-quick-sub">Filed incidents & sync</div>
+              <div className="profile-nav-card__body">
+                <div className="profile-nav-card__title-row">
+                  <h3 className="profile-nav-card__title">My Filed Reports</h3>
+                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                </div>
+                <p className="profile-nav-card__sub">
+                  Review submitted incidents, attach supplementary evidence, and track dispatch status.
+                </p>
               </div>
             </button>
 
             <button
               type="button"
-              className="profile-quick-card"
+              className="profile-nav-card"
               onClick={() => navigate('/tabs/shifts')}
             >
-              <div className="profile-quick-icon">
+              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--green">
                 <IonIcon icon={calendarOutline} />
               </div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <h4 className="profile-quick-label">My Shifts</h4>
-                <div className="profile-quick-sub">Schedule & swap requests</div>
+              <div className="profile-nav-card__body">
+                <div className="profile-nav-card__title-row">
+                  <h3 className="profile-nav-card__title">My Duty Shifts</h3>
+                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                </div>
+                <p className="profile-nav-card__sub">
+                  View scheduled patrol assignments, shift hours, and request replacements.
+                </p>
               </div>
             </button>
           </div>
 
-          {/* Module 2: Tactical Appearance & Night Patrol */}
+          {/* Section 3: Data Sync & Station Health (Combined & Decluttered) */}
           <div className="profile-section-card">
             <div className="profile-section-header">
               <div className="profile-section-title">
-                <IonIcon icon={colorPaletteOutline} style={{ fontSize: '1.25rem', color: 'var(--color-primary)' }} />
-                <span>Appearance & Night Vision</span>
+                <IonIcon icon={syncOutline} style={{ fontSize: '1.25rem', color: 'var(--color-primary)' }} />
+                <span>Station Sync & Storage</span>
               </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-              {(['system', 'light', 'dark'] as ThemePreference[]).map((mode) => {
-                const isActive = themePref === mode;
-                const modeLabel = mode === 'system' ? 'System' : mode === 'light' ? 'Light' : 'Dark (Night)';
-                const modeIcon = mode === 'system' ? phonePortraitOutline : mode === 'light' ? sunnyOutline : moonOutline;
-
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => {
-                      setTheme(mode);
-                      setToastMessage(`Theme set to ${modeLabel}.`);
-                    }}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      padding: '10px 4px',
-                      borderRadius: 'var(--radius-md)',
-                      border: isActive ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                      background: isActive ? 'var(--color-row-active-bg)' : 'var(--color-surface)',
-                      color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                      fontWeight: isActive ? 700 : 500,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <IonIcon icon={modeIcon} style={{ fontSize: '1.2rem' }} />
-                    <span style={{ fontSize: 'var(--font-size-label)' }}>{modeLabel}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Module 3: Field Telemetry & SQLite Database Hub */}
-          <div className="profile-section-card">
-            <div className="profile-section-header">
-              <div className="profile-section-title">
-                <IonIcon icon={wifiOutline} style={{ fontSize: '1.25rem', color: 'var(--color-primary)' }} />
-                <span>Server Connection</span>
-              </div>
-              <span className={`status-pill ${isOnline ? 'status-pill--success' : 'status-pill--pending'}`}>
-                {isOnline ? 'ONLINE' : 'OFFLINE'}
+              <span
+                className={`status-pill ${
+                  isOnline ? 'status-pill--success' : 'status-pill--pending'
+                }`}
+              >
+                {isOnline ? 'ONLINE' : 'OFFLINE MODE'}
               </span>
             </div>
 
-            <div className="profile-stat-grid">
-              <div className="profile-stat-box">
-                <span className="profile-stat-box-label">Latency</span>
-                <span className="profile-stat-box-value">
-                  {latency !== null ? `${latency} ms` : 'Unreachable'}
-                </span>
+            {/* Sync Health Banner */}
+            {totalUnsynced === 0 ? (
+              <div className="profile-sync-banner profile-sync-banner--synced">
+                <IonIcon icon={checkmarkCircleOutline} style={{ fontSize: '1.3rem', flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>All records synced to Barangay HQ</div>
+                  <div style={{ fontSize: '0.72rem', opacity: 0.9 }}>
+                    Your incident reports and GPS tracks are fully up to date.
+                  </div>
+                </div>
               </div>
-              <div className="profile-stat-box">
-                <span className="profile-stat-box-label">Sliding JWT</span>
-                <span className="profile-stat-box-value" style={{ color: 'var(--color-success)', fontSize: '0.95rem' }}>
-                  Auto-Renew
-                </span>
+            ) : (
+              <div className="profile-sync-banner profile-sync-banner--pending">
+                <IonIcon icon={warningOutline} style={{ fontSize: '1.3rem', flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                    {totalUnsynced} record(s) pending upload
+                  </div>
+                  <div style={{ fontSize: '0.72rem', opacity: 0.9 }}>
+                    Saved on this device. Tap below to sync when connected.
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
 
-            <IonButton
-              fill="outline"
-              expand="block"
-              disabled={pinging}
-              onClick={pingWorkstation}
-              className="btn-touch-compact"
-              style={{ fontWeight: 700 }}
-            >
-              {pinging ? <IonSpinner name="dots" /> : 'Ping Baranguard Server'}
-            </IonButton>
-          </div>
-
-          {/* Module 4: Encrypted Offline SQLite & Storage Inspector */}
-          <div className="profile-section-card">
-            <div className="profile-section-header">
-              <div className="profile-section-title">
-                <IonIcon icon={serverOutline} style={{ fontSize: '1.25rem', color: 'var(--color-info)' }} />
-                <span>Offline SQLite Database</span>
+            {/* Breakdown Chips (Progressive disclosure of pending items) */}
+            {totalUnsynced > 0 && (
+              <div className="profile-sync-badge-row">
+                {localStats.unsyncedIncidents > 0 && (
+                  <span className="profile-sync-chip">
+                    <IonIcon icon={documentTextOutline} />
+                    {localStats.unsyncedIncidents} Incident(s)
+                  </span>
+                )}
+                {localStats.unsyncedGps > 0 && (
+                  <span className="profile-sync-chip">
+                    <IonIcon icon={syncOutline} />
+                    {localStats.unsyncedGps} GPS Log(s)
+                  </span>
+                )}
+                {localStats.pendingQueue > 0 && (
+                  <span className="profile-sync-chip">
+                    <IonIcon icon={shieldCheckmarkOutline} />
+                    {localStats.pendingQueue} Status Update(s)
+                  </span>
+                )}
               </div>
-              <span className="status-pill status-pill--info">ENCRYPTED</span>
-            </div>
-
-            <div className="profile-stat-grid">
-              <div className="profile-stat-box">
-                <span className="profile-stat-box-label">Cached Dispatches</span>
-                <span className="profile-stat-box-value">{localStats.dispatches}</span>
-              </div>
-              <div className="profile-stat-box">
-                <span className="profile-stat-box-label">Unsynced Reports</span>
-                <span className="profile-stat-box-value" style={{ color: localStats.unsyncedIncidents > 0 ? 'var(--color-warning)' : 'inherit' }}>
-                  {localStats.unsyncedIncidents}
-                </span>
-              </div>
-              <div className="profile-stat-box">
-                <span className="profile-stat-box-label">GPS Breadcrumbs</span>
-                <span className="profile-stat-box-value">{localStats.unsyncedGps}</span>
-              </div>
-              <div className="profile-stat-box">
-                <span className="profile-stat-box-label">Queued Transitions</span>
-                <span className="profile-stat-box-value">{localStats.pendingQueue}</span>
-              </div>
-            </div>
+            )}
 
             <IonButton
               expand="block"
               disabled={syncing || !isOnline}
               onClick={handleManualSync}
               style={{
-                '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
+                '--background': 'var(--color-primary)',
+                '--border-radius': 'var(--radius-sm)',
                 fontWeight: 700,
+                minHeight: '46px',
+                boxShadow: 'none',
               }}
             >
               {syncing ? (
@@ -411,40 +352,84 @@ const ProfilePage: React.FC = () => {
               ) : (
                 <>
                   <IonIcon icon={syncOutline} slot="start" />
-                  Sync All Local Records ({totalUnsynced})
+                  {totalUnsynced > 0
+                    ? `Sync Records Now (${totalUnsynced})`
+                    : 'Check Station Connection'}
                 </>
               )}
             </IonButton>
 
-            {/* Storage Drawer */}
+            {/* Progressive Disclosure Storage Drawer */}
             {storage && (
               <>
                 <button
                   type="button"
                   className="profile-drawer-toggle"
                   onClick={() => setShowStorageDetails(!showStorageDetails)}
+                  aria-expanded={showStorageDetails}
                 >
-                  <span>Evidence Files & Offline Map Storage</span>
+                  <span>Offline Storage Breakdown</span>
                   <IonIcon icon={showStorageDetails ? chevronUpOutline : chevronDownOutline} />
                 </button>
 
                 {showStorageDetails && (
                   <div className="profile-drawer-content">
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                      <div style={{ background: 'var(--color-bg)', padding: '8px 12px', borderRadius: 'var(--radius-md)' }}>
-                        <div style={{ fontSize: '0.68rem', color: 'var(--color-text-secondary)' }}>Evidence Files</div>
-                        <div style={{ fontSize: '0.95rem', fontWeight: 700 }}>
-                          {formatBytes(storage.evidence.totalBytes)} <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>({storage.evidence.fileCount})</span>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '8px',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          background: 'var(--color-bg)',
+                          padding: '8px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.68rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                          Evidence Files
+                        </div>
+                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                          {formatBytes(storage.evidence.totalBytes)}{' '}
+                          <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>
+                            ({storage.evidence.fileCount})
+                          </span>
                         </div>
                       </div>
-                      <div style={{ background: 'var(--color-bg)', padding: '8px 12px', borderRadius: 'var(--radius-md)' }}>
-                        <div style={{ fontSize: '0.68rem', color: 'var(--color-text-secondary)' }}>Map Packages</div>
-                        <div style={{ fontSize: '0.95rem', fontWeight: 700 }}>
-                          {formatBytes(storage.mapPackages.totalBytes)} <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>({storage.mapPackages.fileCount})</span>
+                      <div
+                        style={{
+                          background: 'var(--color-bg)',
+                          padding: '8px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.68rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                          Offline Map
+                        </div>
+                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                          {formatBytes(storage.mapPackages.totalBytes)}{' '}
+                          <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>
+                            ({storage.mapPackages.fileCount})
+                          </span>
                         </div>
                       </div>
                     </div>
-                    <IonButton fill="outline" className="btn-touch-compact" expand="block" disabled={pruning} onClick={handlePruneEvidence} style={{ fontWeight: 600 }}>
+                    <IonButton
+                      fill="outline"
+                      className="btn-touch-compact"
+                      expand="block"
+                      disabled={pruning}
+                      onClick={handlePruneEvidence}
+                      style={{
+                        fontWeight: 600,
+                        '--border-radius': 'var(--radius-sm)',
+                      }}
+                    >
                       {pruning ? <IonSpinner name="dots" /> : 'Clear Old Synced Evidence (30+ days)'}
                     </IonButton>
                   </div>
@@ -453,19 +438,36 @@ const ProfilePage: React.FC = () => {
             )}
           </div>
 
-          {/* Module 5: Hardware & Alert Verification */}
+          {/* Section 4: Alert Readiness & Terminal Diagnostics */}
           <div className="profile-section-card">
             <div className="profile-section-header">
               <div className="profile-section-title">
                 <IonIcon icon={notificationsOutline} style={{ fontSize: '1.25rem', color: 'var(--color-warning)' }} />
-                <span>Alert & Audio Verification</span>
+                <span>Emergency Push Alert Readiness</span>
               </div>
             </div>
 
             <NotificationDiagnostics />
+
+            {/* Subtle technical diagnostics footer with 1-tap copy for IT/admin */}
+            <div className="profile-terminal-footer">
+              <div className="profile-terminal-info">
+                <span className="profile-terminal-label">Device Terminal ID</span>
+                <span className="profile-terminal-key">{deviceId || 'Detecting…'}</span>
+              </div>
+              <button
+                type="button"
+                className="profile-copy-btn"
+                onClick={handleCopyDeviceId}
+                aria-label="Copy Device Terminal ID"
+              >
+                <IonIcon icon={copiedDevice ? checkmarkOutline : copyOutline} />
+                <span>{copiedDevice ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
           </div>
 
-          {/* Module 6: Secure Terminal Sign Out */}
+          {/* Section 5: Secure Terminal Sign Out */}
           <div className="profile-signout-card">
             <button
               type="button"

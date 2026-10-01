@@ -2,11 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Ionic App</title>
+    <title>Baranguard</title>
     
     <base href="/" />
     
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" id="meta-color-scheme" />
     <meta
       name="viewport"
       content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"
@@ -18,34 +18,39 @@
     
     <link rel="shortcut icon" type="image/png" href="/favicon.png" />
     
-    <!-- add to homescreen for ios -->
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Ionic App" />
+    <!-- Mobile Status Bar theme color -->
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Baranguard" />
     <script>
       (function () {
+        function syncStatusBars(theme) {
+          var isDark = theme === 'dark';
+          var cs = document.getElementById('meta-color-scheme');
+          if (cs) cs.setAttribute('content', isDark ? 'dark' : 'light');
+          var tc = document.querySelector('meta[name="theme-color"]');
+          if (tc) tc.setAttribute('content', isDark ? '#1e293b' : '#ffffff');
+        }
+
         try {
           var stored = localStorage.getItem('baranguard.theme');
-          var explicit = stored === 'light' || stored === 'dark';
+          var theme = stored === 'dark' ? 'dark' : 'light';
+          document.documentElement.setAttribute('data-theme', theme);
+          syncStatusBars(theme);
+
           var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
-          document.documentElement.setAttribute(
-            'data-theme',
-            explicit ? stored : (mq && mq.matches ? 'dark' : 'light')
-          );
-          if (!explicit && mq && mq.addEventListener) {
+          if (!stored && mq && mq.addEventListener) {
             mq.addEventListener('change', function (e) {
-              var now = null;
-              try { now = localStorage.getItem('baranguard.theme'); } catch (err) {}
-              if (now === 'light' || now === 'dark') return;
-              document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+              if (localStorage.getItem('baranguard.theme')) return;
+              var t = e.matches ? 'dark' : 'light';
+              document.documentElement.setAttribute('data-theme', t);
+              syncStatusBars(t);
             });
           }
         } catch (e) {
-          try {
-            var m = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
-            document.documentElement.setAttribute('data-theme', m && m.matches ? 'dark' : 'light');
-          } catch (e2) {
-            document.documentElement.setAttribute('data-theme', 'light');
-          }
+          document.documentElement.setAttribute('data-theme', 'light');
+          syncStatusBars('light');
         }
       })();
     </script>

@@ -308,6 +308,53 @@ final class ShiftSwapRequestsController
         ]);
     }
 
+    /**
+     * DELETE /shift-swap-requests/:id
+     * Allows a Tanod to cancel/withdraw their own pending swap request.
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function cancel(PDO $pdo, array $identity, string $requestIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['tanod']);
+        if (!ctype_digit($requestIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Swap request not found.');
+        }
+        $requestId = (int) $requestIdParam;
+
+        $stmt = $pdo->prepare(
+            'SELECT ssr.request_id, ssr.requesting_user_id, ssr.shift_id, ssr.status, ss.barangay_id
+             FROM shift_swap_request ssr
+             JOIN shift_schedule ss ON ss.shift_id = ssr.shift_id
+             WHERE ssr.request_id = :request_id'
+        );
+        $stmt->execute(['request_id' => $requestId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Swap request not found.');
+        }
+        AuthMiddleware::requireTenant($identity, (int) $row['barangay_id']);
+        if ((int) $row['requesting_user_id'] !== (int) $identity['user_id']) {
+            throw new ApiError(403, 'FORBIDDEN', 'You may only withdraw your own swap request.');
+        }
+        if ($row['status'] !== 'pending') {
+            throw new ApiError(409, 'CONFLICT', 'Only pending swap requests can be withdrawn.');
+        }
+
+        $deleteStmt = $pdo->prepare('DELETE FROM shift_swap_request WHERE request_id = :request_id');
+        $deleteStmt->execute(['request_id' => $requestId]);
+
+        Audit::record($pdo, (int) $row['barangay_id'], (int) $identity['user_id'], 'swap_request_withdrawn', 'shift_swap_request', $requestId, [
+            'shift_id' => (int) $row['shift_id'],
+            'status' => 'cancelled',
+        ]);
+
+        Http::send(200, [
+            'success' => true,
+            'request_id' => $requestId,
+            'message' => 'Shift swap request withdrawn.',
+        ]);
+    }
+
     /** @param array<string,mixed> $row @return array<string,mixed> */
     private static function mapRequest(array $row): array
     {

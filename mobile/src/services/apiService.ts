@@ -1098,6 +1098,17 @@ export async function requestShiftSwap(shiftId: number, reason: string | undefin
   return mapSwapRequest(json);
 }
 
+/**
+ * DELETE /shift-swap-requests/:id.
+ * Allows a responder to withdraw their pending shift swap request.
+ */
+export async function cancelShiftSwapRequest(requestId: number): Promise<{ success: boolean; requestId: number }> {
+  const json = await request<{ success: boolean; request_id: number }>(`/shift-swap-requests/${requestId}`, {
+    method: 'DELETE',
+  });
+  return { success: json.success, requestId: json.request_id };
+}
+
 // --- Notifications (§6 "Notification acknowledgment", M12) -----------------
 
 /**

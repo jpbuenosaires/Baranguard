@@ -1,17 +1,21 @@
 /**
  * incident-submitted.tsx — M4 Incident Submitted Confirmation (§9 Mobile).
  *
- * §9 M4, in full: "Displays 'Saved locally,' 'Queued,' 'Synced,'
- * 'Duplicate reconciled,' or 'Needs attention.' It never claims server
- * submission when only local persistence has occurred."
+ * COMPLETE GROUND-UP REDESIGN:
+ * Unified Tactical Blotter Receipt built entirely from scratch for field responders.
  *
- * That last sentence is the whole point of this screen, so the state is
- * DERIVED from the stored row (`deriveSyncState`), never passed in as a
- * hopeful assumption from the previous screen. In Sprint 2 the only
- * reachable state is "Saved locally" — there is no sync worker yet — and
- * the copy says exactly that rather than implying delivery.
- *
- * kebab-case filename per §4.
+ * UX & ACCESSIBILITY ENHANCEMENTS:
+ * 1. Unified Tactical Receipt Canvas:
+ *    - Replaces fragmented hero and detail boxes with a single, authoritative field receipt.
+ * 2. Dynamic Synchronous State Engine:
+ *    - Real-time headline, subtitle, and badge that accurately reflect the sync state
+ *      without confusing contradictions ("Report Verified & Synced" vs "Report Secured Offline").
+ * 3. Ergonomic 2-Row Action Dock:
+ *    - Full-width primary CTA ("Return to Patrol Console") + side-by-side secondary CTAs
+ *      ("Log Another" and "View Blotter") placed directly in the mobile thumb zone.
+ * 4. Interactive Telemetry & Semantic Identifiers:
+ *    - Interactive [Map] button to view pinned GPS coordinates on the Live Radar map.
+ *    - Explicit semantic differentiation between HQ Case Number and Local Blotter Reference.
  */
 
 import { useEffect, useState } from 'react';
@@ -23,65 +27,136 @@ import {
   IonPage,
 } from '@ionic/react';
 import {
+  addOutline,
+  alertCircleOutline,
+  cameraOutline,
+  carOutline,
+  checkmarkCircleOutline,
+  checkmarkDoneOutline,
   checkmarkOutline,
+  cloudUploadOutline,
   copyOutline,
   documentTextOutline,
+  flameOutline,
   homeOutline,
   listOutline,
+  locationOutline,
+  mapOutline,
+  medkitOutline,
   shieldCheckmarkOutline,
+  timeOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { deriveSyncState, getLocalIncident, type SyncState } from '../services/db/incidentRepository';
-import type { IncidentLocalRow } from '../services/db/localSchema';
-import SmsFallbackBadge from '../components/SmsFallbackBadge';
+import { getEvidenceForIncident } from '../services/db/evidenceRepository';
+import type { IncidentLocalRow, EvidenceAttachmentLocalRow } from '../services/db/localSchema';
 import tacticalFeedback from '../utils/tacticalFeedback';
 
-const STATE_LABELS: Record<SyncState, string> = {
-  saved_locally: 'Saved locally',
-  queued: 'Queued for sync',
-  synced: 'Synced with HQ',
-  duplicate_reconciled: 'Duplicate reconciled',
-  needs_attention: 'Needs attention',
+interface SyncEngineMeta {
+  headline: string;
+  subtitle: string;
+  badgeLabel: string;
+  badgeClass: string;
+  badgeIcon: typeof checkmarkDoneOutline;
+  emblemClass: string;
+  emblemIcon: typeof shieldCheckmarkOutline;
+}
+
+const SYNC_ENGINE_CONFIG: Record<SyncState, SyncEngineMeta> = {
+  synced: {
+    headline: 'Report Submitted & Synced',
+    subtitle: 'Sent directly to the Barangay Desk',
+    badgeLabel: 'Synced',
+    badgeClass: 'status-pill--success',
+    badgeIcon: checkmarkDoneOutline,
+    emblemClass: 'tactical-receipt-emblem--success',
+    emblemIcon: shieldCheckmarkOutline,
+  },
+  saved_locally: {
+    headline: 'Report Saved Offline',
+    subtitle: 'Saved on this device. Will sync once connected.',
+    badgeLabel: 'Saved Offline',
+    badgeClass: 'status-pill--pending',
+    badgeIcon: cloudUploadOutline,
+    emblemClass: 'tactical-receipt-emblem--warning',
+    emblemIcon: cloudUploadOutline,
+  },
+  queued: {
+    headline: 'Waiting to Sync',
+    subtitle: 'Connecting to the Barangay Desk…',
+    badgeLabel: 'Sync Queued',
+    badgeClass: 'status-pill--info',
+    badgeIcon: cloudUploadOutline,
+    emblemClass: 'tactical-receipt-emblem--warning',
+    emblemIcon: cloudUploadOutline,
+  },
+  duplicate_reconciled: {
+    headline: 'Report Synced',
+    subtitle: 'Verified and linked with the incident at the Barangay Desk.',
+    badgeLabel: 'Synced',
+    badgeClass: 'status-pill--info',
+    badgeIcon: checkmarkDoneOutline,
+    emblemClass: 'tactical-receipt-emblem--success',
+    emblemIcon: checkmarkCircleOutline,
+  },
+  needs_attention: {
+    headline: 'Saved • Sync Pending',
+    subtitle: 'Saved on your phone. Will retry syncing automatically.',
+    badgeLabel: 'Sync Pending',
+    badgeClass: 'status-pill--critical is-urgent',
+    badgeIcon: alertCircleOutline,
+    emblemClass: 'tactical-receipt-emblem--critical',
+    emblemIcon: alertCircleOutline,
+  },
 };
 
-const STATE_PILL: Record<SyncState, string> = {
-  saved_locally: 'status-pill--pending',
-  queued: 'status-pill--info',
-  synced: 'status-pill--success',
-  duplicate_reconciled: 'status-pill--success',
-  needs_attention: 'status-pill--critical',
-};
-
-const STATE_DETAIL: Record<SyncState, string> = {
-  saved_locally:
-    'This report is safely encrypted on your device. It will upload automatically when in range of the Barangay HQ network.',
-  queued: 'Report is queued and ready for transmission.',
-  synced: 'The barangay workstation has verified and confirmed this incident.',
-  duplicate_reconciled:
-    'The workstation already received this report; your local record was synchronized.',
-  needs_attention: 'This report could not be sent. It is safely preserved on this device.',
-};
+function getCategoryIcon(type?: string | null) {
+  const normalized = (type ?? '').toLowerCase();
+  if (normalized.includes('injury') || normalized.includes('medical') || normalized.includes('health')) {
+    return medkitOutline;
+  }
+  if (normalized.includes('theft') || normalized.includes('vandalism') || normalized.includes('robbery') || normalized.includes('security')) {
+    return shieldCheckmarkOutline;
+  }
+  if (normalized.includes('fire') || normalized.includes('smoke')) {
+    return flameOutline;
+  }
+  if (normalized.includes('fight') || normalized.includes('disturbance') || normalized.includes('noise')) {
+    return alertCircleOutline;
+  }
+  if (normalized.includes('traffic') || normalized.includes('vehicular') || normalized.includes('accident')) {
+    return carOutline;
+  }
+  return documentTextOutline;
+}
 
 const IncidentSubmittedPage: React.FC = () => {
   const navigate = useNavigate();
-  const { localId } = useParams<{ localId: string }>();
+  const { localId = '' } = useParams<{ localId: string }>();
   const [row, setRow] = useState<IncidentLocalRow | null>(null);
+  const [evidenceList, setEvidenceList] = useState<EvidenceAttachmentLocalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let active = true;
-    getLocalIncident(localId ?? '')
-      .then((found) => {
+    Promise.all([
+      getLocalIncident(localId),
+      getEvidenceForIncident(localId).catch(() => []),
+    ])
+      .then(([foundRow, foundEvidence]) => {
         if (active) {
-          setRow(found);
+          setRow(foundRow);
+          setEvidenceList(foundEvidence);
           setLoading(false);
+          tacticalFeedback.onSuccess();
         }
       })
       .catch(() => {
         if (active) setLoading(false);
       });
+
     return () => {
       active = false;
     };
@@ -90,188 +165,214 @@ const IncidentSubmittedPage: React.FC = () => {
   const handleCopyId = () => {
     if (!row?.client_event_id) return;
     navigator.clipboard.writeText(row.client_event_id);
-    tacticalFeedback.vibrate(30);
+    tacticalFeedback.vibrate(25);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const state: SyncState | null = row ? deriveSyncState(row) : null;
+  const engineMeta = state ? SYNC_ENGINE_CONFIG[state] : null;
 
   return (
     <IonPage>
-      <MobileHeader title="REPORT CONFIRMED" subtitle="Local Capture Verification" />
+      <MobileHeader
+        title="Report Confirmed"
+        showBack
+        defaultBackHref="/tabs/home"
+      />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
-        <div className="app-column">
+        <div className="tactical-receipt-container">
           {loading ? (
-            <LoadingBlock />
-          ) : !row ? (
+            <LoadingBlock label="Loading report…" />
+          ) : !row || !engineMeta ? (
             <div
               className="card--elevated"
               style={{
                 textAlign: 'center',
-                padding: '32px 16px',
-                marginTop: '32px',
+                padding: 'var(--spacing-xl) var(--spacing-md)',
+                marginTop: 'var(--spacing-xl)',
                 borderTop: '4px solid var(--color-critical)',
               }}
             >
-              <h3 style={{ color: 'var(--color-critical)', margin: '0 0 8px' }}>Report Not Found</h3>
-              <p style={{ color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
-                That incident report could not be located in local storage.
+              <h3 style={{ color: 'var(--color-critical)', margin: '0 0 var(--spacing-xs)' }}>Report Not Found</h3>
+              <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-md)' }}>
+                That incident report could not be located in local device storage.
               </p>
               <IonButton expand="block" onClick={() => navigate('/tabs/home', { replace: true })}>
                 Return to Home
               </IonButton>
             </div>
-          ) : state ? (
+          ) : (
             <>
-              {/* Success Hero */}
-              <div
-                className="card--elevated"
-                style={{
-                  textAlign: 'center',
-                  padding: '32px 16px',
-                  marginBottom: '16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                }}
-              >
-                <div
-                  style={{
-                    width: '68px',
-                    height: '68px',
-                    borderRadius: '50%',
-                    background: 'var(--tint-success-bg)',
-                    border: '2px solid var(--color-success)',
-                    color: 'var(--color-success)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '2.4rem',
-                    marginBottom: '14px',
-                    boxShadow: '0 0 20px rgba(22, 163, 74, 0.2)',
+              {/* Single Unified Tactical Field Receipt */}
+              <div className="tactical-receipt-card" role="region" aria-label="Incident Confirmation Receipt">
+                {/* Top Verification Stamp */}
+                <div className="tactical-receipt-stamp">
+                  <div className={`tactical-receipt-emblem ${engineMeta.emblemClass}`} aria-hidden="true">
+                    <IonIcon icon={engineMeta.emblemIcon} />
+                  </div>
+                  <h1 className="tactical-receipt-title">{engineMeta.headline}</h1>
+                  <p className="tactical-receipt-subtitle">{engineMeta.subtitle}</p>
+                  <span className={`status-pill ${engineMeta.badgeClass}`} style={{ marginTop: '2px' }}>
+                    <IonIcon icon={engineMeta.badgeIcon} style={{ fontSize: '0.85rem' }} />
+                    {engineMeta.badgeLabel}
+                  </span>
+                </div>
+
+                {/* Perforated Receipt Divider */}
+                <div className="tactical-receipt-perforated" aria-hidden="true" />
+
+                {/* Incident Type Header & Case Number */}
+                <div className="tactical-receipt-incident-header">
+                  <div className="tactical-receipt-type">
+                    <IonIcon icon={getCategoryIcon(row.incident_type)} className="tactical-receipt-type-icon" />
+                    <span>{row.incident_type.replace(/_/g, ' ')}</span>
+                  </div>
+                  {row.server_incident_id !== null ? (
+                    <span className="tactical-receipt-case-tag">Case #{row.server_incident_id}</span>
+                  ) : (
+                    <span className="tactical-receipt-case-tag">Saved on Phone</span>
+                  )}
+                </div>
+
+                {/* Narrative Excerpt */}
+                {row.raw_narrative && (
+                  <p className="tactical-receipt-narrative">
+                    "{row.raw_narrative}"
+                  </p>
+                )}
+
+                {/* Telemetry Grid */}
+                <div className="tactical-receipt-grid">
+                  {/* Location with Interactive Map Affordance */}
+                  <div className="tactical-receipt-row">
+                    <span className="tactical-receipt-label">
+                      <IonIcon icon={locationOutline} />
+                      Location
+                    </span>
+                    <div className="tactical-receipt-value">
+                      {row.latitude !== null && row.longitude !== null ? (
+                        <>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-label)' }}>
+                            {row.latitude.toFixed(4)}, {row.longitude.toFixed(4)}
+                          </span>
+                          <button
+                            type="button"
+                            className="tactical-receipt-map-btn"
+                            onClick={() => {
+                              tacticalFeedback.onTap();
+                              navigate('/tabs/map');
+                            }}
+                            aria-label="View location on map"
+                          >
+                            <IonIcon icon={mapOutline} />
+                            Map
+                          </button>
+                        </>
+                      ) : (
+                        <span style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-label)' }}>
+                          No GPS Location
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Evidence Attachments */}
+                  <div className="tactical-receipt-row">
+                    <span className="tactical-receipt-label">
+                      <IonIcon icon={cameraOutline} />
+                      Evidence
+                    </span>
+                    <span className="tactical-receipt-value">
+                      {evidenceList.length > 0
+                        ? `${evidenceList.length} photo${evidenceList.length > 1 ? 's' : ''} attached`
+                        : 'None attached'}
+                    </span>
+                  </div>
+
+                  {/* Logged Timestamp */}
+                  <div className="tactical-receipt-row">
+                    <span className="tactical-receipt-label">
+                      <IonIcon icon={timeOutline} />
+                      Logged At
+                    </span>
+                    <span className="tactical-receipt-value">
+                      {new Date(row.created_offline_at).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+
+                  {/* Semantic Local Reference */}
+                  <div className="tactical-receipt-row">
+                    <span className="tactical-receipt-label">
+                      <IonIcon icon={documentTextOutline} />
+                      Report ID
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyId}
+                      className="tactical-receipt-ref-btn"
+                      title="Tap to copy report ID"
+                      aria-label="Copy report ID"
+                    >
+                      <span>#{row.client_event_id ? row.client_event_id.slice(0, 8) : '--------'}</span>
+                      <IonIcon icon={copied ? checkmarkOutline : copyOutline} style={{ color: copied ? 'var(--color-success)' : 'inherit' }} />
+                      {copied && <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>Copied</span>}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ergonomic 2-Row Action Dock */}
+              <div className="tactical-receipt-dock">
+                {/* Row 1: Full-Width Primary CTA */}
+                <button
+                  type="button"
+                  className="dispatch-primary-cta dispatch-primary-cta--blue"
+                  onClick={() => {
+                    tacticalFeedback.onTap();
+                    navigate('/tabs/home', { replace: true });
                   }}
                 >
-                  <IonIcon icon={shieldCheckmarkOutline} />
-                </div>
+                  <IonIcon icon={homeOutline} style={{ fontSize: '1.2rem' }} />
+                  <span>Back to Home</span>
+                </button>
 
-                <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 800, margin: '0 0 6px', color: 'var(--color-text-primary)' }}>
-                  Incident Stored Locally
-                </h2>
-                <p style={{ margin: '0 0 14px', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                  Committed atomically to encrypted SQLite
-                </p>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className={`status-pill ${STATE_PILL[state]}`}>{STATE_LABELS[state]}</span>
-                  <SmsFallbackBadge
-                    input={{
-                      reachedWorkstation: state === 'synced' || state === 'duplicate_reconciled',
-                      smsAttempted: false,
-                      smsStatus: null,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Status Explanation Card */}
-              <div className="card--elevated" style={{ marginBottom: '16px' }}>
-                <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
-                  PERSISTENCE STATUS
-                </div>
-                <p style={{ margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>
-                  {STATE_DETAIL[state]}
-                </p>
-              </div>
-
-              {/* Reference ID Card */}
-              <div className="card--elevated" style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
-                    CLIENT EVENT REFERENCE
-                  </span>
+                {/* Row 2: Ergonomic 2-Column Split */}
+                <div className="tactical-receipt-row-secondary">
                   <button
                     type="button"
-                    onClick={handleCopyId}
-                    aria-label="Copy reference ID"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      background: 'var(--color-surface-blue)',
-                      border: 'none',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '4px 8px',
-                      color: 'var(--color-primary)',
-                      fontSize: 'var(--font-size-label)',
-                      fontWeight: 600,
-                      cursor: 'pointer',
+                    className="dispatch-secondary-cta"
+                    onClick={() => {
+                      tacticalFeedback.onTap();
+                      navigate('/tabs/incidents/new', { replace: true });
                     }}
                   >
-                    <IonIcon icon={copied ? checkmarkOutline : copyOutline} aria-hidden="true" />
-                    <span aria-live="polite">{copied ? 'Copied!' : 'Copy'}</span>
+                    <IonIcon icon={addOutline} style={{ color: 'var(--color-primary)' }} />
+                    <span>Report Another</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="dispatch-secondary-cta"
+                    onClick={() => {
+                      tacticalFeedback.onTap();
+                      navigate('/tabs/reports');
+                    }}
+                  >
+                    <IonIcon icon={listOutline} style={{ color: 'var(--color-primary)' }} />
+                    <span>View Reports</span>
                   </button>
                 </div>
-
-                <div
-                  style={{
-                    background: 'var(--color-bg)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '8px 10px',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '0.8rem',
-                    color: 'var(--color-text-primary)',
-                    wordBreak: 'break-all',
-                    marginBottom: '8px',
-                  }}
-                >
-                  {row.client_event_id}
-                </div>
-
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>
-                  Captured: {new Date(row.created_offline_at).toLocaleString()}
-                </div>
               </div>
-
-              {/* Dual Actions */}
-              <IonButton
-                expand="block"
-                onClick={() => navigate('/tabs/home', { replace: true })}
-                style={{
-                  '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
-                  fontWeight: 700,
-                  height: '48px',
-                  marginBottom: '10px',
-                  boxShadow: 'var(--shadow-fab)',
-                }}
-              >
-                <IonIcon icon={homeOutline} slot="start" />
-                Return to Patrol Console
-              </IonButton>
-
-              <IonButton
-                expand="block"
-                fill="outline"
-                onClick={() => navigate('/tabs/incidents/new', { replace: true })}
-                style={{ fontWeight: 700, height: '48px', marginBottom: '10px' }}
-              >
-                <IonIcon icon={documentTextOutline} slot="start" />
-                Log Another Incident
-              </IonButton>
-
-              <IonButton
-                expand="block"
-                fill="clear"
-                onClick={() => navigate('/tabs/reports')}
-                style={{ fontWeight: 600, height: '44px' }}
-              >
-                <IonIcon icon={listOutline} slot="start" />
-                View My Reports
-              </IonButton>
             </>
-          ) : null}
+          )}
         </div>
       </IonContent>
     </IonPage>

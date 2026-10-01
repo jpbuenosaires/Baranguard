@@ -6,10 +6,40 @@
  * command center's theme resolution model.
  */
 
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
+
 export type ThemePreference = 'light' | 'dark' | 'system';
 
 export const THEME_KEY = 'baranguard.theme';
 export const THEME_CHANGED_EVENT = 'baranguard:theme-changed';
+
+export async function syncStatusBar(resolved: 'light' | 'dark'): Promise<void> {
+  const isDark = resolved === 'dark';
+
+  // 1. Web & PWA Meta Tags
+  if (typeof document !== 'undefined') {
+    const metaColorScheme = document.querySelector('meta[name="color-scheme"]');
+    if (metaColorScheme) {
+      metaColorScheme.setAttribute('content', isDark ? 'dark' : 'light');
+    }
+
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', isDark ? '#1e293b' : '#ffffff');
+    }
+  }
+
+  // 2. Native Capacitor StatusBar
+  if (Capacitor.isPluginAvailable('StatusBar')) {
+    try {
+      await StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light });
+      await StatusBar.setBackgroundColor({ color: isDark ? '#1e293b' : '#ffffff' });
+    } catch {
+      // Non-fatal if web or plugin not available
+    }
+  }
+}
 
 export function getStoredTheme(): ThemePreference {
   try {
@@ -53,6 +83,7 @@ export function setTheme(preference: ThemePreference): void {
 
   const resolved = resolveTheme(preference);
   document.documentElement.setAttribute('data-theme', resolved);
+  void syncStatusBar(resolved);
   window.dispatchEvent(new CustomEvent(THEME_CHANGED_EVENT, { detail: { preference, resolved } }));
 }
 
@@ -65,6 +96,9 @@ export function toggleTheme(): void {
  * Watch OS color scheme changes when user preference is set to 'system'.
  */
 export function initThemeListener(): () => void {
+  const currentTheme = isCurrentlyDark() ? 'dark' : 'light';
+  void syncStatusBar(currentTheme);
+
   if (typeof window === 'undefined' || !window.matchMedia) return () => {};
 
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -73,6 +107,7 @@ export function initThemeListener(): () => void {
     if (stored === 'system') {
       const resolved = e.matches ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', resolved);
+      void syncStatusBar(resolved);
       window.dispatchEvent(new CustomEvent(THEME_CHANGED_EVENT, { detail: { preference: 'system', resolved } }));
     }
   };
@@ -80,3 +115,4 @@ export function initThemeListener(): () => void {
   mq.addEventListener('change', handler);
   return () => mq.removeEventListener('change', handler);
 }
+

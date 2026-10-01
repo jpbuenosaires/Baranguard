@@ -39,7 +39,9 @@ declare(strict_types=1);
  *   php scripts/gsm-ingest-daemon.php --status        print state + reachability, exit
  *   php scripts/gsm-ingest-daemon.php --interval=10   seconds between polls in --daemon (default 10)
  *   php scripts/gsm-ingest-daemon.php --device=<serial>   adb -s <serial>, if more than one device
- *   php scripts/gsm-ingest-daemon.php --adb=<path>    override the adb binary path
+ *   php scripts/gsm-ingest-daemon.php --adb=<path>    override the adb binary path (else
+ *                                      GSM_GATEWAY_ADB_PATH from .env, else auto-detected —
+ *                                      see resolveAdbPath())
  *   php scripts/gsm-ingest-daemon.php --source=<file> TEST ONLY: read a file containing `adb shell
  *                                      content query` output instead of shelling to a real adb —
  *                                      lets this script's parsing/dispatch logic run and be
@@ -62,9 +64,39 @@ if (PHP_SAPI !== 'cli') {
 require dirname(__DIR__) . '/config/env.php';
 baranguard_load_env();
 
+/**
+ * Resolves the adb binary path when neither --adb nor GSM_GATEWAY_ADB_PATH
+ * is given: previously hardcoded to one specific machine's own username
+ * (C:/Users/JAYSON~1/...), which silently reported "adb NOT reachable" on
+ * every OTHER machine, real adb install notwithstanding. Tries the
+ * standard Android Studio SDK location under LOCALAPPDATA first, then
+ * ANDROID_HOME/ANDROID_SDK_ROOT if set, then falls back to a bare `adb`
+ * (relies on PATH — works if it's already discoverable there).
+ */
+function resolveAdbPath(): string
+{
+    $localAppData = getenv('LOCALAPPDATA');
+    if ($localAppData !== false && $localAppData !== '') {
+        $candidate = $localAppData . '/Android/Sdk/platform-tools/adb.exe';
+        if (is_file($candidate)) {
+            return $candidate;
+        }
+    }
+    foreach (['ANDROID_HOME', 'ANDROID_SDK_ROOT'] as $envVar) {
+        $root = getenv($envVar);
+        if ($root !== false && $root !== '') {
+            $candidate = rtrim($root, '/\\') . '/platform-tools/adb.exe';
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+    }
+    return 'adb';
+}
+
 $options = parseArguments($argv);
 $interval = isset($options['interval']) ? max(1, (int) $options['interval']) : 10;
-$adbPath = $options['adb'] ?? 'C:/Users/JAYSON~1/AppData/Local/Android/Sdk/platform-tools/adb.exe';
+$adbPath = $options['adb'] ?? (baranguard_env('GSM_GATEWAY_ADB_PATH') ?: resolveAdbPath());
 $deviceSerial = $options['device'] ?? null;
 $sourceFile = $options['source'] ?? null;
 

@@ -17,6 +17,10 @@ return [
     // two cannot collide anyway since `(\d+)` never matches "nearby".
     ['GET', '#^/incidents/nearby$#', [IncidentsController::class, 'nearby'], true],
     ['GET', '#^/incidents/(\d+)$#', [IncidentsController::class, 'show'], true],
+    // The download route is listed before the bare evidence GET for
+    // readability; `(\d+)/evidence$` never matches the longer path so the
+    // two cannot collide.
+    ['GET', '#^/incidents/(\d+)/evidence/(\d+)/download$#', [IncidentsController::class, 'downloadEvidence'], true],
     ['GET', '#^/incidents/(\d+)/evidence$#', [IncidentsController::class, 'evidence'], true],
     ['POST', '#^/incidents/(\d+)/evidence$#', [IncidentsController::class, 'uploadEvidence'], true],
     ['PATCH', '#^/incidents/(\d+)/status$#', [IncidentsController::class, 'updateStatus'], true],
