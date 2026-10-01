@@ -31,4 +31,7 @@ return [
     // trigger either.
     ['GET', '#^/reports/digest$#', [ReportsController::class, 'digestMeta'], true],
     ['GET', '#^/reports/digest/download$#', [ReportsController::class, 'digestDownload'], true],
+    // Safer School Zones Annex D, live-computed (docs/FEATURE_CONTRACT_2026-10.md
+    // section 7); the persisted snapshot is /ssz-term-reports.
+    ['GET', '#^/reports/school-term$#', [ReportsController::class, 'schoolTerm'], true],
 ];

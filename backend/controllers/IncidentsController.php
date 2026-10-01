@@ -241,6 +241,7 @@ final class IncidentsController
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
                     i.location_description, i.display_id,
+                    i.school_id, i.c1_summary, i.c1_action_taken, i.c1_status_notes,
                     tanod.full_name AS officer_name
              FROM incident i
              LEFT JOIN dispatch d ON d.dispatch_id = (
@@ -279,6 +280,10 @@ final class IncidentsController
                 'location_description' => $row['location_description'] ?? null,
                 'display_id' => $row['display_id'] ?? null,
                 'officer_name' => $row['officer_name'] ?? null,
+                'school_id' => $row['school_id'] !== null ? (int) $row['school_id'] : null,
+                'c1_summary' => $row['c1_summary'],
+                'c1_action_taken' => $row['c1_action_taken'],
+                'c1_status_notes' => $row['c1_status_notes'],
             ];
         }, $rows);
 
@@ -428,6 +433,7 @@ final class IncidentsController
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
                     i.location_description, i.display_id,
+                    i.school_id, i.c1_summary, i.c1_action_taken, i.c1_status_notes,
                     i.raw_narrative,
                     i.complainant_name, i.respondent_name, i.complainant_contact_number,
                     i.duplicate_of_incident_id, i.lifecycle_changed_by, i.lifecycle_changed_at,
@@ -530,6 +536,14 @@ final class IncidentsController
             'synced_at' => $incident['synced_at'],
             'location_description' => $incident['location_description'],
             'display_id' => $incident['display_id'],
+            // Safer School Zones (migration 0033, contract section 7): the
+            // linked school and the short NON-identifying Annex C-1 text.
+            // Not narrative -- visible to every role that may read the
+            // incident (Tanod: own incidents only, like the rest of show()).
+            'school_id' => $incident['school_id'] !== null ? (int) $incident['school_id'] : null,
+            'c1_summary' => $incident['c1_summary'],
+            'c1_action_taken' => $incident['c1_action_taken'],
+            'c1_status_notes' => $incident['c1_status_notes'],
             // H-16/M-03 lifecycle state (migration 0025) -- added
             // 2026-09-26 alongside the W21 web UI for
             // `PATCH /incidents/:id/lifecycle`; previously set by that
@@ -1112,6 +1126,22 @@ final class IncidentsController
             $changedFields[] = 'complainant_name';
         }
 
+        // Safer School Zones (migration 0033): link/unlink a school (null
+        // clears it) and the short non-identifying Annex C-1 text. Not
+        // narrative, so Admin may edit these as well as Secretary.
+        if (array_key_exists('school_id', $body)) {
+            $updates[] = 'school_id = :school_id';
+            $params['school_id'] = self::validateSchoolId($pdo, $identity, $body['school_id']);
+            $changedFields[] = 'school_id';
+        }
+        foreach (['c1_summary', 'c1_action_taken', 'c1_status_notes'] as $c1Key) {
+            if (array_key_exists($c1Key, $body)) {
+                $updates[] = "{$c1Key} = :{$c1Key}";
+                $params[$c1Key] = self::c1Value($body, $c1Key);
+                $changedFields[] = $c1Key;
+            }
+        }
+
         // Explicit, so a client that still sends a narrative is told why
         // rather than having it silently dropped.
         if (array_key_exists('raw_narrative', $body) || array_key_exists('redacted_narrative', $body)) {
@@ -1482,6 +1512,10 @@ final class IncidentsController
         $complainantName = self::normalizeOptionalString($body['complainant_name'] ?? null, 255);
         $respondentName = self::normalizeOptionalString($body['respondent_name'] ?? null, 255);
         $complainantContactNumber = self::normalizeOptionalString($body['complainant_contact_number'] ?? null, 32);
+        $schoolId = self::validateSchoolId($pdo, $identity, $body['school_id'] ?? null);
+        $c1Summary = self::c1Value($body, 'c1_summary');
+        $c1ActionTaken = self::c1Value($body, 'c1_action_taken');
+        $c1StatusNotes = self::c1Value($body, 'c1_status_notes');
 
         if (!is_string($incidentType) || !in_array($incidentType, self::INCIDENT_TYPES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'incident_type must be one of: ' . implode(', ', self::INCIDENT_TYPES) . '.');
@@ -1497,7 +1531,8 @@ final class IncidentsController
         $existingStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
-                    location_description, display_id
+                    location_description, display_id,
+                    school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident
              WHERE barangay_id = :barangay_id AND device_id IS NULL AND client_event_id = :idempotency_key
              LIMIT 1'
@@ -1530,11 +1565,13 @@ final class IncidentsController
                 "INSERT INTO incident
                     (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
                      latitude, longitude, location_description, complainant_name, respondent_name,
-                     complainant_contact_number, display_id, created_at, client_event_id, updated_at)
+                     complainant_contact_number, display_id, school_id, c1_summary, c1_action_taken, c1_status_notes,
+                     created_at, client_event_id, updated_at)
                  VALUES
                     (:barangay_id, :reported_by, NULL, :incident_type, :priority, :raw_narrative, 'pending', 'web',
                      :latitude, :longitude, :location_description, :complainant_name, :respondent_name,
-                     :complainant_contact_number, :display_id, UTC_TIMESTAMP(), :idempotency_key, UTC_TIMESTAMP())"
+                     :complainant_contact_number, :display_id, :school_id, :c1_summary, :c1_action_taken, :c1_status_notes,
+                     UTC_TIMESTAMP(), :idempotency_key, UTC_TIMESTAMP())"
             );
             // display_id (migration 0014): computed inside this same
             // transaction, right before the insert, so the COUNT it reads
@@ -1561,6 +1598,10 @@ final class IncidentsController
                         'respondent_name' => $respondentName,
                         'complainant_contact_number' => $complainantContactNumber,
                         'display_id' => $displayId,
+                        'school_id' => $schoolId,
+                        'c1_summary' => $c1Summary,
+                        'c1_action_taken' => $c1ActionTaken,
+                        'c1_status_notes' => $c1StatusNotes,
                         'idempotency_key' => $idempotencyKey,
                     ]);
                     break;
@@ -1601,7 +1642,8 @@ final class IncidentsController
         $readBackStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
-                    location_description, display_id
+                    location_description, display_id,
+                    school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE incident_id = :incident_id'
         );
         $readBackStmt->execute(['incident_id' => $incidentId]);
@@ -1708,6 +1750,15 @@ final class IncidentsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'raw_narrative is required.');
         }
         [$latitude, $longitude] = self::validateCoordinates($latitude, $longitude);
+        // Rule 7 spirit: an offline-captured incident is durable state and must
+        // never be lost because its optional school link went stale (school
+        // deactivated/moved/deleted on the server, or a cached id from another
+        // barangay). An unusable school_id is stored as NULL instead of failing
+        // the whole item; the web create path stays strict (400).
+        $schoolId = self::validateSchoolId($pdo, $identity, $item['school_id'] ?? null, false);
+        $c1Summary = self::c1Value($item, 'c1_summary');
+        $c1ActionTaken = self::c1Value($item, 'c1_action_taken');
+        $c1StatusNotes = self::c1Value($item, 'c1_status_notes');
 
         $deviceOfflineCreatedAt = null;
         if ($deviceOfflineCreatedAtRaw !== null) {
@@ -1722,7 +1773,8 @@ final class IncidentsController
         $existingStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
-                    location_description, display_id
+                    location_description, display_id,
+                    school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE device_id = :device_id AND client_event_id = :client_event_id LIMIT 1'
         );
         $existingStmt->execute(['device_id' => $deviceId, 'client_event_id' => $clientEventId]);
@@ -1746,10 +1798,12 @@ final class IncidentsController
             $insertStmt = $pdo->prepare(
                 "INSERT INTO incident
                     (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
-                     latitude, longitude, display_id, created_at, device_offline_created_at, client_event_id, updated_at)
+                     latitude, longitude, display_id, school_id, c1_summary, c1_action_taken, c1_status_notes,
+                     created_at, device_offline_created_at, client_event_id, updated_at)
                  VALUES
                     (:barangay_id, :reported_by, :device_id, :incident_type, 'normal', :raw_narrative, 'pending', :source,
-                     :latitude, :longitude, :display_id, UTC_TIMESTAMP(), :device_offline_created_at, :client_event_id, UTC_TIMESTAMP())"
+                     :latitude, :longitude, :display_id, :school_id, :c1_summary, :c1_action_taken, :c1_status_notes,
+                     UTC_TIMESTAMP(), :device_offline_created_at, :client_event_id, UTC_TIMESTAMP())"
             );
             // See createWeb()'s identical bounded-retry comment.
             $attempts = 0;
@@ -1766,6 +1820,10 @@ final class IncidentsController
                         'latitude' => $latitude,
                         'longitude' => $longitude,
                         'display_id' => $displayId,
+                        'school_id' => $schoolId,
+                        'c1_summary' => $c1Summary,
+                        'c1_action_taken' => $c1ActionTaken,
+                        'c1_status_notes' => $c1StatusNotes,
                         'device_offline_created_at' => $deviceOfflineCreatedAt,
                         'client_event_id' => $clientEventId,
                     ]);
@@ -1804,7 +1862,8 @@ final class IncidentsController
         $readBackStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
-                    location_description, display_id
+                    location_description, display_id,
+                    school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE incident_id = :incident_id'
         );
         $readBackStmt->execute(['incident_id' => $incidentId]);
@@ -1852,7 +1911,68 @@ final class IncidentsController
             // incident can't have one yet — so this is always null here,
             // same shape as index()'s items for a one-consistent contract.
             'officer_name' => $row['officer_name'] ?? null,
+            'school_id' => isset($row['school_id']) ? (int) $row['school_id'] : null,
+            'c1_summary' => $row['c1_summary'] ?? null,
+            'c1_action_taken' => $row['c1_action_taken'] ?? null,
+            'c1_status_notes' => $row['c1_status_notes'] ?? null,
         ];
+    }
+
+    /**
+     * Safer School Zones (migration 0033, contract section 7): validates an
+     * optional `school_id` -- it must be a school in the CALLER's barangay.
+     * "No such school" and "another barangay's school" give the identical 400
+     * so the message cannot be used to probe other tenants. With
+     * `$strict = false` (the mobile/sync path only) an unusable value yields
+     * NULL instead of an error -- see createMobileItem().
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    private static function validateSchoolId(PDO $pdo, array $identity, mixed $value, bool $strict = true): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (!is_int($value) && !(is_string($value) && ctype_digit($value))) {
+            if (!$strict) {
+                return null;
+            }
+            throw new ApiError(400, 'VALIDATION_ERROR', 'school_id must be an integer.');
+        }
+        $schoolId = (int) $value;
+        if ($schoolId < 1 || !SchoolsController::belongsToBarangay($pdo, $schoolId, (int) $identity['barangay_id'])) {
+            if (!$strict) {
+                return null;
+            }
+            throw new ApiError(400, 'VALIDATION_ERROR', 'school_id is not a school in your barangay.');
+        }
+        return $schoolId;
+    }
+
+    /**
+     * One Annex C-1 free-text field (<= 500 chars). Short, factual and
+     * NON-identifying by contract -- never victim/student names; this
+     * server cannot verify that, so the web/mobile forms say so.
+     *
+     * @param array<string,mixed> $src
+     */
+    private static function c1Value(array $src, string $key): ?string
+    {
+        $value = $src[$key] ?? null;
+        if ($value === null) {
+            return null;
+        }
+        if (!is_string($value)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "{$key} must be a string.");
+        }
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+        if (mb_strlen($value) > 500) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "{$key} must be at most 500 characters.");
+        }
+        return $value;
     }
 
     /** @return array{0:?float,1:?float} */

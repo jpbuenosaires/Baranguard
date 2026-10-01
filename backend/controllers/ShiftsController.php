@@ -7,7 +7,9 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Lib\ApprovalAuthority;
 use Baranguard\Services\Scheduling\FatigueCalculator;
+use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
 /**
@@ -56,12 +58,20 @@ final class ShiftsController
     private const MAX_LIMIT = 100;
 
     /**
-     * H-17 (2026-09-24 external audit, docs/REMAINING.md §H), user
-     * decision 2026-09-26: "at least 1 Tanod on duty per barangay per
-     * shift, 8h minimum rest" — a hard block (409/422), not a warning,
-     * per that decision.
+     * docs/FEATURE_CONTRACT_2026-10.md section 8 (replaces H-17's
+     * `MIN_REST_HOURS` = 8 and "at least 1 Tanod on duty per shift" hard
+     * blocks, both removed): a Tanod may be scheduled for at most this many
+     * hours within one Asia/Manila calendar day (hard 422
+     * `DAILY_HOURS_EXCEEDED`). Barangay coverage is no longer a block; it is
+     * reported as `NO_COVERAGE` warnings by `publish()`.
      */
-    public const MIN_REST_HOURS = 8;
+    public const MAX_DAILY_SCHEDULED_HOURS = 12;
+
+    /** Hard cap on how many shifts one publish call may name (contract section 3). */
+    private const MAX_PUBLISH_BATCH = 100;
+
+    /** Upper bound on how many calendar dates `publish()` scans for coverage warnings. */
+    private const MAX_COVERAGE_SCAN_DAYS = 366;
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
@@ -84,11 +94,19 @@ final class ShiftsController
         if ($patrolZone !== null && !is_string($patrolZone)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'patrol_zone must be a string.');
         }
+        $sourceAvailabilityId = $body['source_availability_id'] ?? null;
+        if ($sourceAvailabilityId !== null) {
+            if (!is_int($sourceAvailabilityId) && !(is_string($sourceAvailabilityId) && ctype_digit($sourceAvailabilityId))) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'source_availability_id must be an integer.');
+            }
+            $sourceAvailabilityId = (int) $sourceAvailabilityId;
+        }
 
         // Idempotency: a retry with the same request_id returns the
         // original shift instead of creating a duplicate (§6).
         $existingStmt = $pdo->prepare(
-            'SELECT shift_id, user_id, patrol_zone, start_at, end_at, version
+            'SELECT shift_id, user_id, patrol_zone, start_at, end_at, version,
+                    approval_status, approved_by, approved_at, source_availability_id
              FROM shift_schedule WHERE client_request_id = :request_id AND barangay_id = :barangay_id LIMIT 1'
         );
         $existingStmt->execute(['request_id' => $requestId, 'barangay_id' => $identity['barangay_id']]);
@@ -101,11 +119,16 @@ final class ShiftsController
         try {
             self::assertTanodEligible($pdo, $userId, $identity['barangay_id']);
             self::assertNoOverlap($pdo, $userId, $startAt, $endAt, null);
-            self::assertMinRest($pdo, $userId, $startAt, $endAt, null);
+            self::assertDailyHoursCap($pdo, $userId, $startAt, $endAt, null);
+            if ($sourceAvailabilityId !== null) {
+                self::assertSourceAvailability($pdo, $sourceAvailabilityId, $userId, $identity['barangay_id']);
+            }
 
+            // approval_status is left to its column default ('draft'):
+            // a new shift is never visible to the Tanod until published.
             $insertStmt = $pdo->prepare(
-                'INSERT INTO shift_schedule (barangay_id, user_id, patrol_zone, start_at, end_at, created_by, client_request_id)
-                 VALUES (:barangay_id, :user_id, :patrol_zone, :start_at, :end_at, :created_by, :request_id)'
+                'INSERT INTO shift_schedule (barangay_id, user_id, patrol_zone, start_at, end_at, created_by, client_request_id, source_availability_id)
+                 VALUES (:barangay_id, :user_id, :patrol_zone, :start_at, :end_at, :created_by, :request_id, :source_availability_id)'
             );
             $insertStmt->execute([
                 'barangay_id' => $identity['barangay_id'],
@@ -115,6 +138,7 @@ final class ShiftsController
                 'end_at' => $endAt->format('Y-m-d H:i:s'),
                 'created_by' => $identity['user_id'],
                 'request_id' => $requestId,
+                'source_availability_id' => $sourceAvailabilityId,
             ]);
             $shiftId = (int) $pdo->lastInsertId();
 
@@ -141,13 +165,21 @@ final class ShiftsController
             'start_at' => $startAt->format('Y-m-d\TH:i:s\Z'),
             'end_at' => $endAt->format('Y-m-d\TH:i:s\Z'),
             'version' => 1,
+            'approval_status' => 'draft',
+            'approved_by' => null,
+            'approved_at' => null,
+            'source_availability_id' => $sourceAvailabilityId,
         ]);
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'tanod']);
+        // Contract section 3: a Tanod sees ONLY their own published shifts;
+        // admin / secretary / punong_barangay (the approver of a roster is
+        // usually the Punong Barangay) see every shift in the barangay and
+        // may filter on approval_status.
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'punong_barangay', 'tanod']);
 
         $page = max(1, (int) (Http::query('page') ?? '1'));
         $limit = min(self::MAX_LIMIT, max(1, (int) (Http::query('limit') ?? (string) self::DEFAULT_LIMIT)));
@@ -158,6 +190,16 @@ final class ShiftsController
         if ($identity['role'] === 'tanod') {
             $where[] = 'user_id = :user_id';
             $params['user_id'] = $identity['user_id'];
+            $where[] = "approval_status = 'published'";
+        } else {
+            $approvalFilter = Http::query('approval_status');
+            if ($approvalFilter !== null) {
+                if (!in_array($approvalFilter, ['draft', 'published'], true)) {
+                    throw new ApiError(400, 'VALIDATION_ERROR', 'approval_status must be draft or published.');
+                }
+                $where[] = 'approval_status = :approval_status';
+                $params['approval_status'] = $approvalFilter;
+            }
         }
         $whereSql = implode(' AND ', $where);
 
@@ -166,7 +208,8 @@ final class ShiftsController
         $total = (int) $countStmt->fetchColumn();
 
         $stmt = $pdo->prepare(
-            "SELECT shift_id, user_id, patrol_zone, start_at, end_at, version
+            "SELECT shift_id, user_id, patrol_zone, start_at, end_at, version,
+                    approval_status, approved_by, approved_at, source_availability_id
              FROM shift_schedule
              WHERE {$whereSql}
              ORDER BY start_at ASC
@@ -249,18 +292,28 @@ final class ShiftsController
             if ($newUserId !== null) {
                 self::assertTanodEligible($pdo, $newUserId, $identity['barangay_id']);
                 self::assertNoOverlap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
-                self::assertMinRest($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
-            } elseif ($oldUserId !== null) {
-                // H-17: unassigning this shift (user_id -> null) is the
-                // one edit that can leave a barangay with zero coverage —
-                // check it BEFORE the UPDATE below commits it.
-                self::assertMinCoverage($pdo, (int) $row['barangay_id'], $newStartAt, $newEndAt, $shiftId);
+                self::assertDailyHoursCap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
             }
+            // Unassigning (user_id -> null) is no longer blocked on coverage
+            // grounds (contract section 8): zero coverage is surfaced as a
+            // NO_COVERAGE warning when the roster is published instead.
+
+            // A published shift is the roster an approver signed off on. If its
+            // assignee or its times change, that approval no longer describes the
+            // shift: revert to draft and clear the approval (needs a fresh
+            // approve_roster publish). A patrol_zone-only edit keeps it published.
+            $startChanged = $newStartAt->format('Y-m-d H:i:s') !== (string) $row['start_at'];
+            $endChanged = $newEndAt->format('Y-m-d H:i:s') !== (string) $row['end_at'];
+            $materialChange = $newUserId !== $oldUserId || $startChanged || $endChanged;
+            $approvalReset = $materialChange && ($row['approval_status'] ?? 'draft') === 'published';
+            $approvalSql = $approvalReset
+                ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL"
+                : '';
 
             $pdo->prepare(
                 'UPDATE shift_schedule
                  SET user_id = :user_id, patrol_zone = :patrol_zone, start_at = :start_at, end_at = :end_at,
-                     version = version + 1, updated_at = UTC_TIMESTAMP()
+                     version = version + 1, updated_at = UTC_TIMESTAMP()' . $approvalSql . '
                  WHERE shift_id = :shift_id AND version = :version'
             )->execute([
                 'user_id' => $newUserId,
@@ -288,6 +341,7 @@ final class ShiftsController
                 'from_user_id' => $oldUserId,
                 'to_user_id' => $newUserId,
                 'version' => $version + 1,
+                'approval_reset' => $approvalReset,
             ]);
 
             $pdo->commit();
@@ -299,11 +353,17 @@ final class ShiftsController
         Http::send(200, ['shift_id' => $shiftId, 'updated_at' => gmdate('Y-m-d\TH:i:s\Z'), 'version' => $version + 1]);
     }
 
-    /** Same-barangay, active Tanod check shared by create()/update(). */
+    /**
+     * Same-barangay, active Tanod check shared by create()/update() and the swap
+     * approval. Takes a row lock on the user row (FOR UPDATE) so every
+     * overlap / daily-hours check that follows is serialized per Tanod: two
+     * concurrent schedule writes for one Tanod cannot both pass the cap.
+     * Must therefore be called inside a transaction.
+     */
     public static function assertTanodEligible(PDO $pdo, int $userId, int $barangayId): void
     {
         $stmt = $pdo->prepare(
-            "SELECT user_id FROM user WHERE user_id = :user_id AND barangay_id = :barangay_id AND role = 'tanod' AND is_active = 1 LIMIT 1"
+            "SELECT user_id FROM user WHERE user_id = :user_id AND barangay_id = :barangay_id AND role = 'tanod' AND is_active = 1 LIMIT 1 FOR UPDATE"
         );
         $stmt->execute(['user_id' => $userId, 'barangay_id' => $barangayId]);
         if ($stmt->fetch(PDO::FETCH_ASSOC) === false) {
@@ -338,24 +398,30 @@ final class ShiftsController
     }
 
     /**
-     * H-17: rejects an assignment that would leave this Tanod with less
-     * than `MIN_REST_HOURS` between two shifts. Deliberately called AFTER
-     * `assertNoOverlap()` in every caller — a true overlap is already
-     * rejected with its own, more specific message by the time this runs,
-     * so this only ever fires for two shifts that are close but not
-     * overlapping.
+     * Contract section 8: rejects an assignment that would put this Tanod
+     * above `MAX_DAILY_SCHEDULED_HOURS` of scheduled time inside any single
+     * Asia/Manila calendar day (422 `DAILY_HOURS_EXCEEDED`). A shift that
+     * crosses midnight is split at the Manila day boundary and each part
+     * counts toward its own day. Every other shift of the Tanod (draft or
+     * published) counts; `$excludeShiftId` omits the row being edited. Call
+     * AFTER `assertNoOverlap()` (which also takes the row lock).
      */
-    public static function assertMinRest(PDO $pdo, int $userId, \DateTimeImmutable $startAt, \DateTimeImmutable $endAt, ?int $excludeShiftId): void
+    public static function assertDailyHoursCap(PDO $pdo, int $userId, \DateTimeImmutable $startAt, \DateTimeImmutable $endAt, ?int $excludeShiftId): void
     {
-        $restStart = $startAt->modify('-' . self::MIN_REST_HOURS . ' hours');
-        $restEnd = $endAt->modify('+' . self::MIN_REST_HOURS . ' hours');
+        $firstDay = RosterSupport::manilaDateOf($startAt);
+        $lastDay = RosterSupport::manilaDateOf($endAt->modify('-1 second'));
+        $rangeStart = RosterSupport::manilaDayBoundsUtc($firstDay)[0];
+        $rangeEnd = RosterSupport::manilaDayBoundsUtc($lastDay)[1];
 
-        $sql = 'SELECT shift_id FROM shift_schedule
-                WHERE user_id = :user_id AND start_at < :rest_end AND end_at > :rest_start';
+        // FOR UPDATE: a locking read always sees the latest committed rows (not
+        // this transaction's older snapshot), so a concurrent create that
+        // committed while we waited on the user-row lock is counted.
+        $sql = 'SELECT start_at, end_at FROM shift_schedule
+                WHERE user_id = :user_id AND start_at < :range_end AND end_at > :range_start';
         $params = [
             'user_id' => $userId,
-            'rest_start' => $restStart->format('Y-m-d H:i:s'),
-            'rest_end' => $restEnd->format('Y-m-d H:i:s'),
+            'range_start' => $rangeStart->format('Y-m-d H:i:s'),
+            'range_end' => $rangeEnd->format('Y-m-d H:i:s'),
         ];
         if ($excludeShiftId !== null) {
             $sql .= ' AND shift_id != :exclude_id';
@@ -363,36 +429,226 @@ final class ShiftsController
         }
         $stmt = $pdo->prepare($sql . ' FOR UPDATE');
         $stmt->execute($params);
-        if ($stmt->fetch(PDO::FETCH_ASSOC) !== false) {
-            throw new ApiError(409, 'CONFLICT', 'This Tanod would have less than ' . self::MIN_REST_HOURS . ' hours of rest between shifts.');
+        $utc = new \DateTimeZone('UTC');
+        $others = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $other) {
+            $others[] = [new \DateTimeImmutable($other['start_at'], $utc), new \DateTimeImmutable($other['end_at'], $utc)];
+        }
+
+        $capSeconds = self::MAX_DAILY_SCHEDULED_HOURS * 3600;
+        $day = $firstDay;
+        while ($day <= $lastDay) {
+            [$dayStart, $dayEnd] = RosterSupport::manilaDayBoundsUtc($day);
+            $seconds = self::overlapSeconds($startAt, $endAt, $dayStart, $dayEnd);
+            foreach ($others as [$otherStart, $otherEnd]) {
+                $seconds += self::overlapSeconds($otherStart, $otherEnd, $dayStart, $dayEnd);
+            }
+            if ($seconds > $capSeconds) {
+                throw new ApiError(
+                    422,
+                    'DAILY_HOURS_EXCEEDED',
+                    'This would schedule the Tanod for more than ' . self::MAX_DAILY_SCHEDULED_HOURS . ' hours on ' . $day . '.'
+                );
+            }
+            $day = (new \DateTimeImmutable($day, $utc))->modify('+1 day')->format('Y-m-d');
+        }
+    }
+
+    private static function overlapSeconds(\DateTimeImmutable $aStart, \DateTimeImmutable $aEnd, \DateTimeImmutable $bStart, \DateTimeImmutable $bEnd): int
+    {
+        $start = max($aStart->getTimestamp(), $bStart->getTimestamp());
+        $end = min($aEnd->getTimestamp(), $bEnd->getTimestamp());
+        return $end > $start ? $end - $start : 0;
+    }
+
+    /** `source_availability_id` must be an availability row of the same barangay AND the same Tanod. */
+    private static function assertSourceAvailability(PDO $pdo, int $availabilityId, int $userId, int $barangayId): void
+    {
+        $stmt = $pdo->prepare('SELECT avail_id FROM tanod_availability WHERE avail_id = :id AND barangay_id = :barangay_id AND user_id = :user_id LIMIT 1');
+        $stmt->execute(['id' => $availabilityId, 'barangay_id' => $barangayId, 'user_id' => $userId]);
+        if ($stmt->fetch(PDO::FETCH_ASSOC) === false) {
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'source_availability_id must reference an availability submission by the same Tanod in this barangay.');
         }
     }
 
     /**
-     * H-17: rejects releasing a shift to "unassigned" (or shrinking its
-     * assignment away) when doing so would leave zero on-duty Tanod
-     * covering that barangay for that time window. Checked against every
-     * OTHER assigned shift for the same barangay/window — a barangay with
-     * a second Tanod still covering the same slot is unaffected.
+     * POST /shifts/publish — contract section 3. Requires the
+     * `approve_roster` authority (not just a role). Moves the named draft
+     * shifts to `published`; already-published ids are reported, not
+     * errors. Any id that is missing or belongs to another barangay makes
+     * the WHOLE call a 404 (existence is never confirmed). Coverage is
+     * reported, never blocked: a `NO_COVERAGE` warning is returned for each
+     * Manila date, within the date span of the named shifts, on which no
+     * published shift with an assigned Tanod overlaps any part of the day.
+     *
+     * Idempotency-Key replay is served off `audit_log` like the other
+     * non-creating writes; the stored metadata is a superset of the
+     * contract's `{count}` (also the id lists and warning dates, all
+     * identifiers/dates, nothing personal) so the replay can return the
+     * ORIGINAL outcome rather than a recomputed one.
+     *
+     * No notification is sent: `NotificationService` has no roster type and
+     * the contract forbids inventing one.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
-    public static function assertMinCoverage(PDO $pdo, int $barangayId, \DateTimeImmutable $startAt, \DateTimeImmutable $endAt, int $excludeShiftId): void
+    public static function publish(PDO $pdo, array $identity): void
     {
+        ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::APPROVE_ROSTER);
+        $idempotencyKey = RosterSupport::requireIdempotencyKey();
+
+        $body = Http::jsonBody();
+        $rawIds = $body['shift_ids'] ?? null;
+        if (!is_array($rawIds) || count($rawIds) < 1 || count($rawIds) > self::MAX_PUBLISH_BATCH) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'shift_ids must be an array of 1 to ' . self::MAX_PUBLISH_BATCH . ' shift ids.');
+        }
+        $ids = [];
+        foreach ($rawIds as $rawId) {
+            if (!is_int($rawId) && !(is_string($rawId) && ctype_digit($rawId))) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'shift_ids must contain integers only.');
+            }
+            if ((int) $rawId < 1) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'shift_ids must contain positive integers.');
+            }
+            $ids[(int) $rawId] = true;
+        }
+        $ids = array_keys($ids);
+
+        $replay = RosterSupport::findAuditReplay($pdo, $identity['barangay_id'], 'roster_published', null, $idempotencyKey);
+        if ($replay !== null) {
+            Http::send(200, [
+                'published' => array_values(array_map('intval', $replay['published'] ?? [])),
+                'already_published' => array_values(array_map('intval', $replay['already_published'] ?? [])),
+                'warnings' => array_values(array_map(
+                    static fn ($date): array => ['code' => 'NO_COVERAGE', 'date' => (string) $date],
+                    $replay['warning_dates'] ?? []
+                )),
+            ]);
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $stmt = $pdo->prepare(
+                "SELECT shift_id, barangay_id, start_at, end_at, approval_status FROM shift_schedule
+                 WHERE shift_id IN ({$placeholders}) ORDER BY shift_id FOR UPDATE"
+            );
+            $stmt->execute($ids);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (count($rows) !== count($ids)) {
+                throw new ApiError(404, 'NOT_FOUND', 'Shift not found.');
+            }
+            foreach ($rows as $row) {
+                // Cross-tenant is 404 for the whole call (Rule 2).
+                AuthMiddleware::requireTenant($identity, (int) $row['barangay_id']);
+            }
+
+            $published = [];
+            $alreadyPublished = [];
+            foreach ($rows as $row) {
+                if ($row['approval_status'] === 'published') {
+                    $alreadyPublished[] = (int) $row['shift_id'];
+                } else {
+                    $published[] = (int) $row['shift_id'];
+                }
+            }
+            if ($published !== []) {
+                $pubPlaceholders = implode(',', array_fill(0, count($published), '?'));
+                $update = $pdo->prepare(
+                    "UPDATE shift_schedule
+                        SET approval_status = 'published', approved_by = ?, approved_at = UTC_TIMESTAMP(),
+                            version = version + 1, updated_at = UTC_TIMESTAMP()
+                      WHERE shift_id IN ({$pubPlaceholders}) AND approval_status = 'draft'"
+                );
+                $update->execute([$identity['user_id'], ...$published]);
+            }
+
+            $warningDates = self::coverageWarningDates($pdo, $identity['barangay_id'], $rows);
+
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'roster_published', 'shift_schedule', null, [
+                'count' => count($published),
+                'published' => $published,
+                'already_published' => $alreadyPublished,
+                'warning_dates' => $warningDates,
+                'idempotency_key' => $idempotencyKey,
+            ]);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        Http::send(200, [
+            'published' => $published,
+            'already_published' => $alreadyPublished,
+            'warnings' => array_map(static fn (string $date): array => ['code' => 'NO_COVERAGE', 'date' => $date], $warningDates),
+        ]);
+    }
+
+    /**
+     * Manila dates inside [earliest, latest] of the named shifts with no
+     * published, assigned shift overlapping any part of the day. Evaluated
+     * after the publish UPDATE (same transaction), so it already counts the
+     * shifts just published.
+     *
+     * @param list<array<string,mixed>> $shiftRows
+     * @return list<string>
+     */
+    private static function coverageWarningDates(PDO $pdo, int $barangayId, array $shiftRows): array
+    {
+        $utc = new \DateTimeZone('UTC');
+        $firstDay = null;
+        $lastDay = null;
+        foreach ($shiftRows as $row) {
+            $start = RosterSupport::manilaDateOf(new \DateTimeImmutable($row['start_at'], $utc));
+            $end = RosterSupport::manilaDateOf((new \DateTimeImmutable($row['end_at'], $utc))->modify('-1 second'));
+            if ($firstDay === null || $start < $firstDay) {
+                $firstDay = $start;
+            }
+            if ($lastDay === null || $end > $lastDay) {
+                $lastDay = $end;
+            }
+        }
+        if ($firstDay === null || $lastDay === null) {
+            return [];
+        }
+        $rangeStart = RosterSupport::manilaDayBoundsUtc($firstDay)[0];
+        $rangeEnd = RosterSupport::manilaDayBoundsUtc($lastDay)[1];
+
         $stmt = $pdo->prepare(
-            'SELECT shift_id FROM shift_schedule
-             WHERE barangay_id = :barangay_id AND shift_id != :exclude_id
-               AND user_id IS NOT NULL
-               AND start_at < :end_at AND end_at > :start_at
-             LIMIT 1'
+            "SELECT start_at, end_at FROM shift_schedule
+             WHERE barangay_id = :barangay_id AND approval_status = 'published' AND user_id IS NOT NULL
+               AND start_at < :range_end AND end_at > :range_start"
         );
         $stmt->execute([
             'barangay_id' => $barangayId,
-            'exclude_id' => $excludeShiftId,
-            'start_at' => $startAt->format('Y-m-d H:i:s'),
-            'end_at' => $endAt->format('Y-m-d H:i:s'),
+            'range_start' => $rangeStart->format('Y-m-d H:i:s'),
+            'range_end' => $rangeEnd->format('Y-m-d H:i:s'),
         ]);
-        if ($stmt->fetch(PDO::FETCH_ASSOC) === false) {
-            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'This would leave the barangay with zero on-duty Tanod during this shift window.');
+        $covered = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $shift) {
+            $d = RosterSupport::manilaDateOf(new \DateTimeImmutable($shift['start_at'], $utc));
+            $last = RosterSupport::manilaDateOf((new \DateTimeImmutable($shift['end_at'], $utc))->modify('-1 second'));
+            $guard = 0;
+            while ($d <= $last && $guard++ < self::MAX_COVERAGE_SCAN_DAYS + 2) {
+                $covered[$d] = true;
+                $d = (new \DateTimeImmutable($d, $utc))->modify('+1 day')->format('Y-m-d');
+            }
         }
+
+        $warnings = [];
+        $day = $firstDay;
+        $scanned = 0;
+        while ($day <= $lastDay && $scanned++ < self::MAX_COVERAGE_SCAN_DAYS) {
+            if (!isset($covered[$day])) {
+                $warnings[] = $day;
+            }
+            $day = (new \DateTimeImmutable($day, $utc))->modify('+1 day')->format('Y-m-d');
+        }
+        return $warnings;
     }
 
     /**
@@ -449,6 +705,10 @@ final class ShiftsController
             'start_at' => $row['start_at'],
             'end_at' => $row['end_at'],
             'version' => (int) $row['version'],
+            'approval_status' => $row['approval_status'] ?? 'draft',
+            'approved_by' => isset($row['approved_by']) ? (int) $row['approved_by'] : null,
+            'approved_at' => $row['approved_at'] ?? null,
+            'source_availability_id' => isset($row['source_availability_id']) ? (int) $row['source_availability_id'] : null,
         ];
     }
 }

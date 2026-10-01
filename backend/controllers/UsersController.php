@@ -4,11 +4,13 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
+use Baranguard\Lib\ApprovalAuthority;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Auth\PasswordPolicy;
 use Baranguard\Services\Auth\Username;
+use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
 /**
@@ -74,6 +76,7 @@ final class UsersController
         // from.
         $stmt = $pdo->prepare(
             "SELECT u.user_id, u.full_name, u.username, u.role, u.contact_number, u.is_active, u.is_suspended, u.created_at,
+                    u.official_title, u.approval_authority,
                     (SELECT MAX(s.issued_at) FROM auth_session s WHERE s.user_id = u.user_id) AS last_login_at
              FROM user u
              WHERE {$whereSql}
@@ -88,21 +91,63 @@ final class UsersController
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $items = array_map(static function (array $row): array {
-            return [
-                'user_id' => (int) $row['user_id'],
-                'full_name' => $row['full_name'],
-                'username' => $row['username'],
-                'role' => $row['role'],
-                'contact_number' => $row['contact_number'],
-                'is_active' => (bool) $row['is_active'],
-                'is_suspended' => (bool) $row['is_suspended'],
-                'created_at' => $row['created_at'],
-                'last_login_at' => $row['last_login_at'],
-            ];
-        }, $rows);
+        $items = array_map([self::class, 'mapListRow'], $rows);
 
         Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total]);
+    }
+
+    /**
+     * GET /users/:id -- docs/FEATURE_CONTRACT_2026-10.md sections 2 and 10:
+     * the way a web user learns their OWN `official_title` /
+     * `approval_authority` (the list endpoint is Admin-only). Any
+     * authenticated role may read their own row; an Admin may read any
+     * same-barangay user; everyone else, and any cross-tenant or unknown id,
+     * gets 404 (Rule 2).
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function show(PDO $pdo, array $identity, string $userIdParam): void
+    {
+        if (!ctype_digit($userIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'User not found.');
+        }
+        $targetUserId = (int) $userIdParam;
+        if ($targetUserId !== $identity['user_id'] && $identity['role'] !== 'admin') {
+            throw new ApiError(404, 'NOT_FOUND', 'User not found.');
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT u.user_id, u.full_name, u.username, u.role, u.contact_number, u.is_active, u.is_suspended, u.created_at,
+                    u.official_title, u.approval_authority,
+                    (SELECT MAX(s.issued_at) FROM auth_session s WHERE s.user_id = u.user_id) AS last_login_at
+             FROM user u
+             WHERE u.user_id = :user_id AND u.barangay_id = :barangay_id"
+        );
+        $stmt->execute(['user_id' => $targetUserId, 'barangay_id' => $identity['barangay_id']]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'User not found.');
+        }
+        Http::send(200, self::mapListRow($row));
+    }
+
+    /** @param array<string,mixed> $row @return array<string,mixed> */
+    private static function mapListRow(array $row): array
+    {
+        $authority = (string) ($row['approval_authority'] ?? '');
+        return [
+            'user_id' => (int) $row['user_id'],
+            'full_name' => $row['full_name'],
+            'username' => $row['username'],
+            'role' => $row['role'],
+            'contact_number' => $row['contact_number'],
+            'is_active' => (bool) $row['is_active'],
+            'is_suspended' => (bool) $row['is_suspended'],
+            'created_at' => $row['created_at'],
+            'last_login_at' => $row['last_login_at'],
+            'official_title' => $row['official_title'] ?? null,
+            'approval_authority' => $authority === '' ? [] : array_values(array_intersect(ApprovalAuthority::ALL, explode(',', $authority))),
+        ];
     }
 
     /**
@@ -229,6 +274,16 @@ final class UsersController
             throw new ApiError(403, 'FORBIDDEN', 'You may only edit your own account.');
         }
         $targetUserId = (int) $userIdParam;
+
+        // Contract section 2: Admin-only `official_title` /
+        // `approval_authority` edit, for ANY same-barangay user including
+        // the Admin's own account (an Admin must be able to correct their own
+        // signing designation). Checked before the self/other split below.
+        $rawBody = Http::jsonBody();
+        if (array_key_exists('official_title', $rawBody) || array_key_exists('approval_authority', $rawBody)) {
+            self::updateApprovalAuthority($pdo, $identity, $targetUserId, $rawBody);
+            return;
+        }
 
         if ($targetUserId !== $identity['user_id']) {
             self::updateOtherUserStatus($pdo, $identity, $targetUserId);
@@ -413,5 +468,124 @@ final class UsersController
         }
 
         Http::send(200, ['user_id' => $targetUserId, 'updated' => true, 'is_active' => $nextActive, 'is_suspended' => $nextSuspended]);
+    }
+
+    /**
+     * PATCH /users/:id with `official_title` and/or `approval_authority`
+     * (docs/FEATURE_CONTRACT_2026-10.md section 2). Admin only; the target
+     * must be in the Admin's barangay (404 otherwise). `approval_authority`
+     * is an array drawn from {@see ApprovalAuthority::ALL}; a target whose
+     * role is not in {@see ApprovalAuthority::ELIGIBLE_ROLES} may not be
+     * given any authority or title (400). Cannot be mixed with the
+     * is_active / is_suspended / profile edits (400). `Idempotency-Key` is
+     * optional here (setting an absolute value is naturally idempotent) but
+     * a repeat with the same key does not write a second audit row.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     * @param array<string,mixed> $body
+     */
+    private static function updateApprovalAuthority(PDO $pdo, array $identity, int $targetUserId, array $body): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin']);
+        $idempotencyKey = RosterSupport::optionalIdempotencyKey();
+
+        foreach (['is_active', 'is_suspended', 'full_name', 'contact_number'] as $other) {
+            if (array_key_exists($other, $body)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'official_title / approval_authority cannot be combined with other user fields.');
+            }
+        }
+
+        $hasTitle = array_key_exists('official_title', $body);
+        $hasAuthority = array_key_exists('approval_authority', $body);
+
+        $title = null;
+        if ($hasTitle) {
+            $title = $body['official_title'];
+            if ($title !== null) {
+                if (!is_string($title) || mb_strlen($title) > 64) {
+                    throw new ApiError(400, 'VALIDATION_ERROR', 'official_title must be a string of at most 64 characters, or null.');
+                }
+                $title = trim($title);
+                if ($title === '') {
+                    $title = null;
+                }
+            }
+        }
+        $authorities = [];
+        if ($hasAuthority) {
+            $normalized = ApprovalAuthority::normalize($body['approval_authority']);
+            if ($normalized === null) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'approval_authority must be an array of: ' . implode(', ', ApprovalAuthority::ALL) . '.');
+            }
+            // Stored in the SET's canonical order.
+            $authorities = array_values(array_intersect(ApprovalAuthority::ALL, $normalized));
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare('SELECT user_id, role, approval_authority FROM user WHERE user_id = :user_id AND barangay_id = :barangay_id FOR UPDATE');
+            $stmt->execute(['user_id' => $targetUserId, 'barangay_id' => $identity['barangay_id']]);
+            $target = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($target === false) {
+                throw new ApiError(404, 'NOT_FOUND', 'User not found.');
+            }
+            // Segregation of duties: nobody may grant or revoke their OWN
+            // approving authorities (approve_roster / approve_report /
+            // approve_annex_d). Another Admin has to do it. Their own
+            // official_title, note_report and prepare_annex_d stay editable.
+            if ($hasAuthority && $targetUserId === $identity['user_id']) {
+                $approving = [ApprovalAuthority::APPROVE_ROSTER, ApprovalAuthority::APPROVE_REPORT, ApprovalAuthority::APPROVE_ANNEX_D];
+                $current = array_values(array_intersect($approving, array_filter(explode(',', (string) ($target['approval_authority'] ?? '')))));
+                $requested = array_values(array_intersect($approving, $authorities));
+                sort($current);
+                sort($requested);
+                if ($current !== $requested) {
+                    throw new ApiError(403, 'FORBIDDEN', 'You cannot change your own approving authorities (approve_roster, approve_report, approve_annex_d); ask another administrator.');
+                }
+            }
+            if (($authorities !== [] || $title !== null) && !in_array($target['role'], ApprovalAuthority::ELIGIBLE_ROLES, true)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'Only admin, secretary or punong_barangay accounts can hold an official title or approval authority.');
+            }
+
+            if ($idempotencyKey !== null
+                && RosterSupport::findAuditReplay($pdo, $identity['barangay_id'], 'user_approval_authority_changed', $targetUserId, $idempotencyKey) !== null
+            ) {
+                $pdo->commit();
+                Http::send(200, ['user_id' => $targetUserId, 'updated' => true]);
+            }
+
+            $sets = [];
+            $params = ['user_id' => $targetUserId];
+            if ($hasTitle) {
+                $sets[] = 'official_title = :official_title';
+                $params['official_title'] = $title;
+            }
+            if ($hasAuthority) {
+                $sets[] = 'approval_authority = :approval_authority';
+                $params['approval_authority'] = implode(',', $authorities);
+            }
+            $sets[] = 'updated_at = UTC_TIMESTAMP()';
+            $pdo->prepare('UPDATE user SET ' . implode(', ', $sets) . ' WHERE user_id = :user_id')->execute($params);
+
+            // Authority names are a closed enum (ApprovalAuthority::ALL), safe
+            // under Rule 8; recorded only when the list itself was changed.
+            $metadata = ['target_user_id' => $targetUserId, 'count' => count($authorities)];
+            if ($hasAuthority) {
+                $metadata['approval_authority'] = $authorities;
+            }
+            if ($idempotencyKey !== null) {
+                $metadata['idempotency_key'] = $idempotencyKey;
+            }
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'user_approval_authority_changed', 'user', $targetUserId, $metadata);
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        Http::send(200, ['user_id' => $targetUserId, 'updated' => true]);
     }
 }

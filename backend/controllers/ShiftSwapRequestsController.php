@@ -96,7 +96,7 @@ final class ShiftSwapRequestsController
 
         $pdo->beginTransaction();
         try {
-            $shiftStmt = $pdo->prepare('SELECT shift_id, user_id, barangay_id FROM shift_schedule WHERE shift_id = :shift_id FOR UPDATE');
+            $shiftStmt = $pdo->prepare('SELECT shift_id, user_id, barangay_id, approval_status FROM shift_schedule WHERE shift_id = :shift_id FOR UPDATE');
             $shiftStmt->execute(['shift_id' => $shiftId]);
             $shift = $shiftStmt->fetch(PDO::FETCH_ASSOC);
             if ($shift === false) {
@@ -105,6 +105,12 @@ final class ShiftSwapRequestsController
             AuthMiddleware::requireTenant($identity, (int) $shift['barangay_id']);
             if ((int) $shift['user_id'] !== $identity['user_id']) {
                 throw new ApiError(403, 'FORBIDDEN', 'You may only request a swap for your own shift.');
+            }
+            // A Tanod only ever sees PUBLISHED shifts (contract section 3); a
+            // draft is not part of the approved roster, so there is nothing to
+            // swap. Answered as not-found, same as any shift the caller cannot see.
+            if (($shift['approval_status'] ?? 'draft') !== 'published') {
+                throw new ApiError(404, 'NOT_FOUND', 'Shift not found.');
             }
             if ($targetUserId !== null) {
                 ShiftsController::assertTanodEligible($pdo, $targetUserId, $identity['barangay_id']);
@@ -217,7 +223,8 @@ final class ShiftSwapRequestsController
         try {
             $stmt = $pdo->prepare(
                 'SELECT ssr.request_id, ssr.requesting_user_id, ssr.shift_id, ssr.target_user_id, ssr.status, ssr.version,
-                        ss.barangay_id, ss.user_id AS shift_current_user_id, ss.start_at, ss.end_at
+                        ss.barangay_id, ss.user_id AS shift_current_user_id, ss.start_at, ss.end_at,
+                        ss.approval_status AS shift_approval_status
                  FROM shift_swap_request ssr
                  JOIN shift_schedule ss ON ss.shift_id = ssr.shift_id
                  WHERE ssr.request_id = :request_id
@@ -239,6 +246,15 @@ final class ShiftSwapRequestsController
             $shiftId = (int) $row['shift_id'];
             $targetUserId = $row['target_user_id'] !== null ? (int) $row['target_user_id'] : null;
 
+            // Approving a swap changes who holds the shift, so a published
+            // shift stops matching what the roster approver signed off on:
+            // revert it to draft and clear the approval (a fresh
+            // approve_roster publish is needed).
+            $approvalReset = $status === 'approved' && ($row['shift_approval_status'] ?? 'draft') === 'published';
+            $approvalResetSql = $approvalReset
+                ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL"
+                : '';
+
             if ($status === 'approved') {
                 // Revalidate current assignment — an Admin may have
                 // reassigned this shift out from under the request since
@@ -258,17 +274,17 @@ final class ShiftSwapRequestsController
                 if ($targetUserId !== null) {
                     ShiftsController::assertTanodEligible($pdo, $targetUserId, (int) $row['barangay_id']);
                     ShiftsController::assertNoOverlap($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
-                    ShiftsController::assertMinRest($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
-                    $pdo->prepare('UPDATE shift_schedule SET user_id = :user_id, version = version + 1, updated_at = UTC_TIMESTAMP() WHERE shift_id = :shift_id')
+                    ShiftsController::assertDailyHoursCap($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
+                    $pdo->prepare('UPDATE shift_schedule SET user_id = :user_id, version = version + 1, updated_at = UTC_TIMESTAMP()' . $approvalResetSql . ' WHERE shift_id = :shift_id')
                         ->execute(['user_id' => $targetUserId, 'shift_id' => $shiftId]);
                     FatigueCalculator::recalculate($pdo, (int) $row['requesting_user_id'], $shiftId);
                     FatigueCalculator::recalculate($pdo, $targetUserId, $shiftId);
                 } else {
                     // No named target: release to unassigned — see class
-                    // doc. H-17: this is the release-to-unassigned edit
-                    // that can leave a barangay with zero coverage.
-                    ShiftsController::assertMinCoverage($pdo, (int) $row['barangay_id'], $shiftStartAt, $shiftEndAt, $shiftId);
-                    $pdo->prepare('UPDATE shift_schedule SET user_id = NULL, version = version + 1, updated_at = UTC_TIMESTAMP() WHERE shift_id = :shift_id')
+                    // doc. No coverage block any more (contract section 8):
+                    // zero coverage is reported as a NO_COVERAGE warning
+                    // when the roster is published.
+                    $pdo->prepare('UPDATE shift_schedule SET user_id = NULL, version = version + 1, updated_at = UTC_TIMESTAMP()' . $approvalResetSql . ' WHERE shift_id = :shift_id')
                         ->execute(['shift_id' => $shiftId]);
                 }
             }
@@ -287,6 +303,7 @@ final class ShiftSwapRequestsController
                 'status' => $status,
                 'shift_id' => $shiftId,
                 'target_user_id' => $targetUserId,
+                'approval_reset' => $approvalReset,
             ]);
 
             $pdo->commit();

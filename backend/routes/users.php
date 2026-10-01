@@ -13,5 +13,6 @@ use Baranguard\Controllers\UsersController;
 return [
     ['GET', '#^/users$#', [UsersController::class, 'index'], true],
     ['POST', '#^/users$#', [UsersController::class, 'create'], true],
+    ['GET', '#^/users/(\d+)$#', [UsersController::class, 'show'], true],
     ['PATCH', '#^/users/(\d+)$#', [UsersController::class, 'update'], true],
 ];

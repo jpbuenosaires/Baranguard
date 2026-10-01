@@ -677,6 +677,15 @@ final class RetentionService
         $this->pdo->beginTransaction();
         try {
             // RESTRICT dependents, innermost first.
+            // incident_referral (migration 0032) is RESTRICT against incident. A DB that has
+            // not applied 0032 yet has no such table (SQLSTATE 42S02); that is not an error.
+            try {
+                $this->exec('DELETE FROM incident_referral WHERE incident_id = :id', $incidentId);
+            } catch (\PDOException $e) {
+                if ((string) $e->getCode() !== '42S02') {
+                    throw $e;
+                }
+            }
             $this->exec('DELETE FROM evidence_attachment WHERE incident_id = :id', $incidentId);
             $this->exec('DELETE FROM dispatch WHERE incident_id = :id', $incidentId);
             $this->exec('DELETE FROM incident WHERE incident_id = :id', $incidentId);
