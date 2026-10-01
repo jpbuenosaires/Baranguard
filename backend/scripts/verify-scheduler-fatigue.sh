@@ -115,13 +115,13 @@ TANOD_B2_ID=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM user WHERE usern
 ADMIN_ID=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM user WHERE username='sched_admin';")
 # tanod1: 6 shifts of 8h each, one per of the last 6 days ending "now" -> 48h so far (under the 56h threshold).
 mysql_exec "$VALDB" <<SQL
-INSERT INTO shift_schedule (barangay_id, user_id, patrol_zone, start_at, end_at, created_by, client_request_id) VALUES
-  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-1-1111111111111111111111111'),
-  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-2-2222222222222222222222222'),
-  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 4 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 4 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-3-3333333333333333333333333'),
-  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-4-4444444444444444444444444'),
-  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-5-5555555555555555555555555'),
-  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-6-6666666666666666666666666');
+INSERT INTO shift_schedule (barangay_id, user_id, patrol_zone, start_at, end_at, created_by, client_request_id, approval_status) VALUES
+  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-1-1111111111111111111111111', 'published'),
+  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-2-2222222222222222222222222', 'published'),
+  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 4 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 4 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-3-3333333333333333333333333', 'published'),
+  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 3 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-4-4444444444444444444444444', 'published'),
+  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-5-5555555555555555555555555', 'published'),
+  (1, $TANOD1_ID, 'Zone A', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY) + INTERVAL 8 HOUR, $ADMIN_ID, 'seed-shift-6-6666666666666666666666666', 'published');
 SQL
 [ $? -eq 0 ] && pass "Seeded 5 users + 6 pre-existing 8h shifts for tanod1 (48h total, under the 56h threshold)" || fail "Seed SQL failed"
 
@@ -205,39 +205,41 @@ CODE=$(echo "$RESP" | tail -1)
 DB_ZONE=$(mysql_exec -N -s "$VALDB" -e "SELECT patrol_zone FROM shift_schedule WHERE shift_id=$SHIFT_ID;")
 [ "$DB_ZONE" = "Zone B Updated" ] && pass "patrol_zone actually persisted (verified in DB)" || fail "DB patrol_zone='$DB_ZONE'"
 
-# H-17 (2026-09-24 external audit): unassigning the ONLY shift covering
-# this barangay/window must now be blocked (422) -- confirm the block
-# fires BEFORE adding a second covering shift, then confirm unassign
-# succeeds once real coverage exists, then confirm the block re-fires
-# once that second shift is the last one standing.
+# Contract section 8 (2026-10): the H-17 "zero coverage" hard block was removed
+# (coverage is now a NO_COVERAGE warning on publish), so unassigning the only
+# shift covering a window is allowed (it used to be 422).
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shifts/${SHIFT_ID}" -X PATCH -d '{"user_id":null,"version":2}')
-[ "$CODE" = "422" ] && pass "H-17: unassign the ONLY covering shift -> 422 (zero on-duty Tanod blocked)" || fail "Unassign with no other coverage -> $CODE (expected 422)"
-DB_USER=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM shift_schedule WHERE shift_id=$SHIFT_ID;")
-[ "$DB_USER" = "$TANOD2_ID" ] && pass "shift_schedule.user_id unchanged in the DB after the blocked unassign" || fail "DB user_id='$DB_USER' (expected $TANOD2_ID, unchanged)"
-
-COVER_RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-  "${BASE_URL}/shifts" -X POST -d "{\"user_id\":$TANOD1_ID,\"patrol_zone\":\"Zone B Cover\",\"start_at\":\"$START_T\",\"end_at\":\"$END_T\",\"request_id\":\"ffffffff-6666-4fff-8fff-ffffffffffff\"}")
-COVER_SHIFT_ID=$(extract "$COVER_RESP" shift_id)
-[ -n "$COVER_SHIFT_ID" ] && pass "Second overlapping shift created for tanod1 (now covering the same window)" || fail "Cover shift create failed: $COVER_RESP"
-
-CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-  "${BASE_URL}/shifts/${SHIFT_ID}" -X PATCH -d '{"user_id":null,"version":2}')
-[ "$CODE" = "200" ] && pass "Unassign (user_id:null) -> 200 once another shift still covers the window" || fail "Unassign -> $CODE (expected 200)"
+[ "$CODE" = "200" ] && pass "Contract section 8: unassign the ONLY covering shift -> 200 (coverage is a publish warning, no longer a block)" || fail "Unassign with no other coverage -> $CODE (expected 200)"
 # mysql -N -s prints the literal text "NULL" for a NULL column (verified
 # directly), not an empty string -- compare against that, not -z.
 DB_USER=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM shift_schedule WHERE shift_id=$SHIFT_ID;")
 [ "$DB_USER" = "NULL" ] && pass "shift_schedule.user_id is actually NULL in the DB after unassign" || fail "DB user_id='$DB_USER' (expected NULL)"
 
+COVER_RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  "${BASE_URL}/shifts" -X POST -d "{\"user_id\":$TANOD1_ID,\"patrol_zone\":\"Zone B Cover\",\"start_at\":\"$START_T\",\"end_at\":\"$END_T\",\"request_id\":\"ffffffff-6666-4fff-8fff-ffffffffffff\"}")
+COVER_SHIFT_ID=$(extract "$COVER_RESP" shift_id)
+[ -n "$COVER_SHIFT_ID" ] && [ "$COVER_SHIFT_ID" != "MISSING" ] && pass "Replacement shift created for tanod1 in the same window" || fail "Cover shift create failed: $COVER_RESP"
+
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shifts/${COVER_SHIFT_ID}" -X PATCH -d '{"user_id":null,"version":1}')
-[ "$CODE" = "422" ] && pass "H-17: unassigning the LAST remaining covering shift -> 422 again" || fail "Unassign last cover -> $CODE (expected 422)"
+[ "$CODE" = "200" ] && pass "Contract section 8: unassigning the LAST remaining shift -> 200 (was 422 under H-17)" || fail "Unassign last cover -> $CODE (expected 200)"
+
+# Contract section 8: the 12h/day cap replaces the old 8h-rest rule (hard 422 DAILY_HOURS_EXCEEDED).
+# 5 days out, anchored to the Manila day: 00:00-05:00 UTC is 08:00-13:00 Manila (5h) the same day.
+CAP_DAY=$(mysql_exec -N -s "$VALDB" -e "SELECT DATE_FORMAT(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 5 DAY), '%Y-%m-%d');")
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  "${BASE_URL}/shifts" -X POST -d "{\"user_id\":$TANOD2_ID,\"start_at\":\"${CAP_DAY}T08:00:00+08:00\",\"end_at\":\"${CAP_DAY}T13:00:00+08:00\",\"request_id\":\"99999999-1111-4999-8999-999999999991\"}")
+[ "$CODE" = "201" ] && pass "Contract section 8: a 5h shift on a Manila day -> 201" || fail "5h cap-test shift -> $CODE (expected 201)"
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  "${BASE_URL}/shifts" -X POST -d "{\"user_id\":$TANOD2_ID,\"start_at\":\"${CAP_DAY}T14:00:00+08:00\",\"end_at\":\"${CAP_DAY}T22:00:00+08:00\",\"request_id\":\"99999999-1111-4999-8999-999999999992\"}")
+[ "$CODE" = "422" ] && pass "Contract section 8: +8h on the same Manila day (13h > 12h cap; also only 1h rest, no longer a rule) -> 422" || fail "Daily-cap breach -> $CODE (expected 422)"
 
 # Remove the H-17 cover shift outright (not just unassign it) so it can't
 # skew tanod1's rolling 7-day fatigue total in step 7 below -- this is a
 # tomorrow-dated shift outside that window in practice, but cleaning it
 # up directly removes any doubt rather than relying on that timing.
-mysql_exec "$VALDB" -e "DELETE FROM fatigue_flag WHERE shift_id=$COVER_SHIFT_ID; DELETE FROM shift_schedule WHERE shift_id=$COVER_SHIFT_ID;" >/dev/null
+mysql_exec "$VALDB" -e "DELETE FROM fatigue_flag WHERE shift_id=$COVER_SHIFT_ID; DELETE FROM shift_schedule WHERE shift_id=$COVER_SHIFT_ID; DELETE FROM shift_schedule WHERE client_request_id LIKE '99999999-1111-%';" >/dev/null
 
 # ============================================================
 # Fatigue — pushing tanod1 over the 56h threshold
@@ -281,6 +283,13 @@ STILL_THERE=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM fatigue_flag WH
 # W12 — Shift swap requests
 # ============================================================
 step "9. POST /shift-swap-requests — ownership check, named target, idempotency"
+# Fix review finding 2: a Tanod only ever sees PUBLISHED shifts, so a swap on a DRAFT shift is refused (404).
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TANOD1_TOKEN" -H "Content-Type: application/json" \
+  "${BASE_URL}/shift-swap-requests" -X POST -d "{\"shift_id\":$FATIGUE_SHIFT_ID,\"target_user_id\":$TANOD2_ID,\"client_request_id\":\"dddddddd-0001-4ddd-8ddd-dddddddddddd\"}")
+[ "$CODE" = "404" ] && pass "Fix review finding 2: Tanod swap request on their own DRAFT shift -> 404 (refused)" || fail "Swap on a draft shift -> $CODE (expected 404)"
+# Publish it directly. Publishing through the API needs the approve_roster authority and is
+# covered by verify-roster-accomplishment.sh; this suite is about scheduling/fatigue/swap mechanics.
+mysql_exec "$VALDB" -e "UPDATE shift_schedule SET approval_status='published', approved_by=$ADMIN_ID, approved_at=UTC_TIMESTAMP() WHERE shift_id=$FATIGUE_SHIFT_ID;" >/dev/null
 RESP=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $TANOD1_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shift-swap-requests" -X POST -d "{\"shift_id\":$FATIGUE_SHIFT_ID,\"target_user_id\":$TANOD2_ID,\"reason\":\"sandbox test - too tired\",\"client_request_id\":\"ffffffff-6666-4fff-8fff-ffffffffffff\"}")
 CODE=$(echo "$RESP" | tail -1)
@@ -302,6 +311,8 @@ CODE=$(echo "$RESP" | tail -1)
 [ "$CODE" = "200" ] && pass "Approve (named target on the request) -> 200" || fail "Approve -> $CODE (expected 200): $RESP"
 NEW_SHIFT_OWNER=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM shift_schedule WHERE shift_id=$FATIGUE_SHIFT_ID;")
 [ "$NEW_SHIFT_OWNER" = "$TANOD2_ID" ] && pass "Shift actually reassigned from tanod1 to tanod2 in the DB" || fail "shift user_id=$NEW_SHIFT_OWNER (expected $TANOD2_ID)"
+DB_APPR=$(mysql_exec -N -s "$VALDB" -e "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL'),'|',IFNULL(approved_at,'NULL')) FROM shift_schedule WHERE shift_id=$FATIGUE_SHIFT_ID;")
+[ "$DB_APPR" = "draft|NULL|NULL" ] && pass "Fix review finding 1: an approved swap reverts the PUBLISHED shift to draft and clears approved_by/approved_at" || fail "approval after swap='$DB_APPR' (expected draft|NULL|NULL)"
 # Recalculation runs for tanod2 too, but their own total in this window is
 # just the 10h of this one shift -- correctly under the 56h threshold, so
 # NO flag should exist for them (recalculation must not over-flag someone
@@ -315,6 +326,7 @@ FEND2=$(mysql_exec -N -s "$VALDB" -e "SELECT DATE_FORMAT(UTC_TIMESTAMP() + INTER
 NEWSHIFT_RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shifts" -X POST -d "{\"user_id\":$TANOD2_ID,\"patrol_zone\":\"Zone C\",\"start_at\":\"$FSTART2\",\"end_at\":\"$FEND2\",\"request_id\":\"33333333-9999-4333-8333-333333333333\"}")
 NEWSHIFT_ID=$(extract "$NEWSHIFT_RESP" shift_id)
+mysql_exec "$VALDB" -e "UPDATE shift_schedule SET approval_status='published', approved_by=$ADMIN_ID, approved_at=UTC_TIMESTAMP() WHERE shift_id=$NEWSHIFT_ID;" >/dev/null
 
 SWAP2_RESP=$(curl -s -H "Authorization: Bearer $TANOD2_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shift-swap-requests" -X POST -d "{\"shift_id\":$NEWSHIFT_ID,\"client_request_id\":\"44444444-aaaa-4444-8444-444444444444\"}")
