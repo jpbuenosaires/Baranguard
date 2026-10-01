@@ -364,7 +364,7 @@ function renderSuccess(card, reportId, barangayName, onReset) {
   `;
 
   const actionsRow = document.createElement('div');
-  actionsRow.className = 'lupon-packet-actions';
+  actionsRow.className = 'report-manifest-actions';
   actionsRow.style.justifyContent = 'center';
 
   const copyButton = document.createElement('button');

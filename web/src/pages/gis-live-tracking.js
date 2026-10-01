@@ -477,11 +477,11 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
           hasActiveSos,
           incidentId: disp?.incidentId || null,
           incidentCode: disp ? `INC-${String(disp.incidentId).padStart(3, '0')}` : null,
-          onViewIncident: isAdmin ? (incId) => navigate('blotter-detail', incId) : undefined,
+          onViewIncident: isAdmin ? (incId) => navigate('incident-detail', incId) : undefined,
         };
       }));
       liveMap.setSosMarkers(openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status, fullName: s.fullName })));
-      liveMap.setIncidentMarkers(mapIncidents, undefined, isAdmin ? (incId) => navigate('blotter-detail', incId) : undefined);
+      liveMap.setIncidentMarkers(mapIncidents, undefined, isAdmin ? (incId) => navigate('incident-detail', incId) : undefined);
 
       // Draw dashed tactical connection lines between Dispatched Tanods and their assigned Incident pins
       const dispatchLinks = [];

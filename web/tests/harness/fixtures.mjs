@@ -59,7 +59,7 @@ export function buildRoutes(scenario) {
 
   // --- Incidents --------------------------------------------------------------
   // 901 pending/high with coords · 902 dispatched/critical with two responders
-  // 903 resolved, redaction approved + finalized blotter · 904 pending, NO coords.
+  // 903 resolved · 904 pending, NO coords.
   // The 'empty' scenario empties LISTS only; a detail page's own incident
   // still exists (an empty barangay, not a deleted record).
   const allIncidents = [
@@ -81,9 +81,6 @@ export function buildRoutes(scenario) {
     const first = own[0];
     const detail = {
       ...inc,
-      redacted_narrative: inc.incident_id === 903 ? t('A verbal altercation between [PERSON] and [PERSON] was reported near the stalls.') : null,
-      redaction_approved_at: inc.incident_id === 903 ? sqlAgo(2 * 1440) : null,
-      redaction_approved_by: inc.incident_id === 903 ? 2 : null,
       dispatched_at: first?.dispatched_at ?? null,
       arrived_at: first?.arrived_at ?? null,
       has_active_dispatch: own.some((d) => ['assigned', 'en_route', 'arrived'].includes(d.status)),
@@ -118,8 +115,8 @@ export function buildRoutes(scenario) {
   ];
 
   const fatigueFlags = empty ? [] : [
-    { flag_id: 801, user_id: 4, shift_id: 501, hours_worked_7day: 62.5, calculation_basis: 'scheduled_hours', flagged_at: sqlAgo(30), acknowledged_at: null },
-    { flag_id: 802, user_id: 5, shift_id: 502, hours_worked_7day: 49, calculation_basis: 'scheduled_hours', flagged_at: sqlAgo(2 * 1440), acknowledged_at: sqlAgo(1440) },
+    { flag_id: 801, user_id: 4, shift_id: 501, hours_worked_7day: 62.5, calculation_basis: 'scheduled_hours', flagged_at: sqlAgo(30), acknowledged_at: null, acknowledged_by: null, acknowledged_by_name: null, shift_patrol_zone: t('Purok 4'), shift_start_at: sqlAgo(60), shift_end_at: sqlAgo(0) },
+    { flag_id: 802, user_id: 5, shift_id: 502, hours_worked_7day: 49, calculation_basis: 'scheduled_hours', flagged_at: sqlAgo(2 * 1440), acknowledged_at: sqlAgo(1440), acknowledged_by: 1, acknowledged_by_name: t('Admin Dao'), shift_patrol_zone: t('Purok 2'), shift_start_at: sqlAgo(2 * 1440), shift_end_at: sqlAgo(2 * 1440 - 480) },
   ];
 
   const sos = empty ? [] : [
@@ -147,29 +144,11 @@ export function buildRoutes(scenario) {
     { audit_id: 44003, actor_user_id: null, actor_username: null, action: 'login_failure', entity_type: 'user', entity_id: null, metadata_json: null, created_at: sqlAgo(3000) },
   ];
 
-  const aiDraft = (id) => ({
-    log_id: 9100 + id, incident_id: id, pipeline_run_id: t(`run-${id}`), task_type: 'redaction', model_version: 'aisingapore/Llama-SEA-LION-v3.5-8B-R',
-    draft_redacted_narrative: t('Complainant [PERSON] reported the incident at [PHONE].'),
-    draft_summary: t('A theft was reported near the market.'),
-    draft_summary_stale: id === 901, draft_version: 2, status: 'completed', error_code: null,
-  });
-
-  const blotterFor903 = {
-    blotter_id: 51, incident_id: 903, narrative_summary: t('Verbal altercation, settled amicably.'), recorded_by: 2, approved_by: 2,
-    finalized_at: sqlAgo(1440), revision_no: 1, amended_at: null, amended_by: null, case_status: 'active', display_id: 'BLT-2026-051',
-    complainant_name: t('Juan Santos'), respondent_name: t('Carlos Mendoza'), complainant_contact_number: '09175550101',
-  };
-
   const evidence = empty ? [] : [
     { attachment_id: 1, incident_id: 902, type: 'photo', uploaded_by: 5, uploaded_at: sqlAgo(35), sha256: 'a'.repeat(64), byte_size: 245760, mime_type: 'image/jpeg', original_filename: t('scene.jpg') },
     { attachment_id: 2, incident_id: 902, type: 'voice', uploaded_by: 5, uploaded_at: sqlAgo(34), sha256: 'b'.repeat(64), byte_size: 81920, mime_type: 'audio/aac', original_filename: 'note.aac' },
   ];
 
-  const blotterRows = empty ? [] : [{
-    blotter_id: 51, incident_id: 903, incident_type: 'disturbance', latitude: 12.919, longitude: 123.669, location_description: t('Roadside stalls, Purok 4'),
-    officer_name: tanodName(4), recorded_by: 2, approved_by: 2, finalized_at: sqlAgo(1440), revision_no: 1, amended_at: null, amended_by: null,
-    case_status: 'active', display_id: 'BLT-2026-051', complainant_name: t('Juan Santos'), respondent_name: t('Carlos Mendoza'), complainant_contact_number: '09175550101',
-  }];
 
   const trendDays = empty ? [] : Array.from({ length: 30 }, (_, i) => ({ date: dateAgo(29 - i), count: (i * 7) % 5, resolved: (i * 3) % 3 }));
 
@@ -230,20 +209,6 @@ export function buildRoutes(scenario) {
       : ok({ incident_id: Number(params.id), updated: true, fields: Object.keys(body || {}) })) },
     { method: 'PATCH', path: '/incidents/:id/status', handler: ({ params }) => ok({ incident_id: Number(params.id), status: 'resolved' }) },
     { method: 'GET', path: '/incidents/:id/evidence', handler: ({ params }) => ok({ items: evidence.filter((e) => e.incident_id === Number(params.id)) }) },
-    { method: 'GET', path: '/incidents/:id/blotter', handler: ({ params }) => (!empty && Number(params.id) === 903 ? ok(blotterFor903) : notFound('No blotter record for this incident.')) },
-    { method: 'POST', path: '/incidents/:id/finalize', handler: ({ params }) => ({ status: 201, body: { ...blotterFor903, incident_id: Number(params.id) } }) },
-    { method: 'POST', path: '/incidents/:id/blotter/amend', handler: ({ body }) => ok({ blotter_id: 51, revision_no: 2, amended_at: sqlAgo(0), case_status: body.case_status || 'active', complainant_name: body.complainant_name ?? null, respondent_name: body.respondent_name ?? null, complainant_contact_number: body.complainant_contact_number ?? null }) },
-    { method: 'POST', path: '/incidents/:id/lupon-packet', handler: ({ params }) => ({ status: 201, body: { file_url: `/incidents/${params.id}/lupon-packet/download` } }) },
-    { method: 'GET', path: '/incidents/:id/lupon-packet/download', handler: () => ({ status: 200, raw: '%PDF-1.4 fake', headers: { 'Content-Type': 'application/pdf' } }) },
-
-    // --- AI redaction pipeline ---
-    { method: 'GET', path: '/incidents/:id/ai-draft', handler: ({ params }) => (empty || Number(params.id) === 904 ? notFound('No draft yet.') : ok(aiDraft(Number(params.id)))) },
-    { method: 'POST', path: '/incidents/:id/redact', handler: ({ params }) => ({ status: 202, body: { incident_id: Number(params.id), pipeline_run_id: 'run-new', status: 'queued' } }) },
-    { method: 'POST', path: '/incidents/:id/ai-draft/regenerate-summary', handler: ({ params, body }) => ok({ ...aiDraft(Number(params.id)), draft_redacted_narrative: body.draft_redacted_narrative, draft_version: body.draft_version + 1, status: 'queued' }) },
-    { method: 'POST', path: '/incidents/:id/ai-draft/approve', handler: ({ params }) => ok({ incident_id: Number(params.id), redaction_approved_at: sqlAgo(0), approved_by: 2 }) },
-    { method: 'POST', path: '/incidents/:id/ai-draft/translate', handler: ({ body }) => ok({ log_id: 9300, translated_text: t('Isinalin na teksto.'), source_language: 'en', target_language: body.target_language, status: 'completed', language_validated: body.target_language !== 'bcl' }) },
-    { method: 'GET', path: '/incidents/:id/ai-draft/extraction', handler: ({ params }) => (empty || Number(params.id) === 904 ? notFound('No extraction yet.') : ok({ log_id: 9200 + Number(params.id), incident_id: Number(params.id), pipeline_run_id: 'run-x', draft_complainant_name: t('Juan Santos'), draft_respondent_name: null, draft_complainant_contact_number: '09175550101', draft_version: 1, status: 'completed', error_code: null })) },
-    { method: 'POST', path: '/incidents/:id/ai-draft/extraction/approve', handler: ({ params, body }) => ok({ incident_id: Number(params.id), complainant_name: body.complainant_name, respondent_name: body.respondent_name, complainant_contact_number: body.complainant_contact_number }) },
 
     // --- Dispatch / GPS / SOS / duty ---
     { method: 'GET', path: '/dispatch', handler: ({ query }) => {
@@ -304,21 +269,10 @@ export function buildRoutes(scenario) {
       .map((i) => ({ incident_id: i.incident_id, incident_type: i.incident_type, status: i.status, priority: i.priority, created_at: i.created_at })) }) },
 
     // --- System ---
-    { method: 'GET', path: '/system/health', handler: () => ok({ api: 'healthy', db: 'healthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'healthy', notification_config: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured', backup_last_success: empty ? null : sqlAgo(600), restore_test_at: null, notification_delivery_failures_24h: 0 }) },
-    // Admin + Secretary — replaces the removed /ai-tools/availability
-    // (migration 0028) as the topbar AI badge's data source for Secretary.
-    { method: 'GET', path: '/system/ollama-status', handler: () => ok({ ollama: 'healthy' }) },
-    // Admin + Secretary — queue-visibility panel (Service Health) and the
-    // Secretary topbar AI badge's tooltip both call this.
-    { method: 'GET', path: '/system/ai-queue', handler: () => ok({
-      depth: { queued: empty ? 0 : 2, processing: empty ? 0 : 1, completed: 5, failed: 0 },
-      oldest_queued: empty ? null : { log_id: 15, task_type: 'redaction', incident_id: 20, created_at: sqlAgo(600) },
-      processing: empty ? [] : [{ log_id: 13, task_type: 'redaction', incident_id: 18, created_at: sqlAgo(120) }],
-      ollama: 'healthy',
-    }) },
+    { method: 'GET', path: '/system/health', handler: () => ok({ api: 'healthy', db: 'healthy', ors: 'unhealthy', gsm_ingestion: 'healthy', notification_config: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured', backup_last_success: empty ? null : sqlAgo(600), restore_test_at: null, notification_delivery_failures_24h: 0 }) },
     { method: 'GET', path: '/system/health/history', handler: () => ok({ sampling: 'Transitions are recorded only when a probe observed a change.', items: empty ? [] : [
-      { recorded_at: sqlAgo(60), db: 'healthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },
-      { recorded_at: sqlAgo(600), db: 'unhealthy', ors: 'not_configured', ollama: 'unhealthy', gsm_ingestion: 'unhealthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },
+      { recorded_at: sqlAgo(60), db: 'healthy', ors: 'not_configured', gsm_ingestion: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },
+      { recorded_at: sqlAgo(600), db: 'unhealthy', ors: 'not_configured', gsm_ingestion: 'unhealthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },
     ] }) },
     { method: 'GET', path: '/audit-log', handler: ({ query }) => ok(paginate(auditRows.filter((a) => !query.action || a.action === query.action), query)) },
     { method: 'GET', path: '/system-settings', handler: () => ok({ settings: {
@@ -341,8 +295,7 @@ export function buildRoutes(scenario) {
     { method: 'POST', path: '/sms/subscribers', handler: () => ({ status: 201, body: { subscriber_id: 3 } }) },
     { method: 'PATCH', path: '/sms/subscribers/:id/opt-out', handler: ({ params }) => ok({ subscriber_id: Number(params.id), opted_out_at: sqlAgo(0) }) },
 
-    // --- Blotter list / map packages ---
-    { method: 'GET', path: '/blotter', handler: ({ query }) => ok(paginate(blotterRows, query)) },
+    // --- Map packages ---
     { method: 'GET', path: '/map-packages/:barangayId', handler: () => (empty ? notFound('No published map package yet.') : ok({ version: t('2026.09.1'), checksum_sha256: 'c'.repeat(64), download_url: '/map-packages/1/download', is_published: true })) },
     { method: 'POST', path: '/map-packages', handler: () => ({ status: 201, body: { package_id: 3, version: '2026.09.2', checksum_sha256: 'd'.repeat(64), is_published: true } }) },
   ];

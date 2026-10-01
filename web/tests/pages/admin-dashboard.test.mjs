@@ -41,7 +41,7 @@ describe('Admin Dashboard behaviour', () => {
     const ctx = mountPage(renderAdminDashboardPage, { role: 'admin' });
     await settle();
     click(buttonByText(/^#901$/, ctx.root));
-    assert.deepEqual(ctx.navigations.at(-1), { page: 'blotter-detail', param: 901 });
+    assert.deepEqual(ctx.navigations.at(-1), { page: 'incident-detail', param: 901 });
   });
 
   test('Punong Barangay is never offered a shortcut into an Admin-only screen', async () => {

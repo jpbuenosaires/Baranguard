@@ -443,17 +443,13 @@ export async function getIncidents({ status, priority, q, page, limit } = {}) {
 }
 
 /**
- * POST /incidents (web path, W6 Electronic Blotter List's new-entry form).
+ * POST /incidents (web path, Incident Management's new-entry form).
  * `idempotencyKey` is the required UUID (Idempotency-Key header, not a
  * body field for web writes — see IncidentsController.php) — generate one
  * per user-initiated submit and reuse only on an automatic retry.
  *
  * `locationDescription`/`complainantName`/`respondentName`/
- * `complainantContactNumber` (2026-09-05 UX pass): optional, ported from
- * the same party-field widget `finalizeBlotter`/`amendBlotter` already
- * use — see IncidentsController::createWeb()'s own comment on why these
- * were never wired up here before despite the columns existing since
- * migration 0008.
+ * `complainantContactNumber`: optional (migration 0008 columns).
  */
 export async function createIncident({
   incidentType, rawNarrative, latitude, longitude,
@@ -509,13 +505,11 @@ export async function updateIncidentStatus(incidentId) {
  * PATCH /incidents/:id — corrects operational fields captured wrong at
  * intake. Admin may send priority/incidentType/locationDescription;
  * complainantName is Secretary-only (the server enforces that — it carries
- * raw_narrative's protection, not redacted_narrative's).
+ * raw_narrative's protection).
  *
  * **There is deliberately no narrative parameter.** The server rejects
  * `raw_narrative`/`redacted_narrative` on this endpoint outright — see
- * IncidentsController::update()'s class doc. Narrative correction goes
- * through the AI redaction pipeline; the legal record goes through blotter
- * amend, which keeps a revision trail.
+ * IncidentsController::update()'s class doc.
  *
  * `idempotencyKey` is the required UUID (Idempotency-Key header) — same
  * contract as createIncident: generate one per user-initiated submit and
@@ -977,43 +971,11 @@ export async function search(q) {
 // (getAiToolsAvailability, queueIncidentClassification, getAiToolJob) and
 // AiToolPanel.js — the component that rendered them — here. None remain.
 
-/**
- * GET /system/ollama-status — Admin + Secretary. Replaces
- * getAiToolsAvailability() (removed with the AI Tools screen, migration
- * 0028) as the topbar AI badge's data source (AppShell.js) — Secretary
- * still runs real AI jobs (the redaction pipeline) and benefits from an
- * ambient "is the model up" signal; Punong Barangay no longer has any
- * AI-consuming feature to justify one, so this doesn't extend to that role.
- */
-export async function getOllamaStatus() {
-  const json = await request('GET', '/system/ollama-status', { auth: true });
-  return { ollama: json.ollama };
-}
-
-/**
- * GET /system/ai-queue — Admin + Secretary. Before this endpoint existed
- * there was no way to see the AI job queue (`ai_processing_log`) at all
- * without shelling into `ai-worker.php --status`/`--daemon` on the
- * workstation itself — this surfaces the same counts plus which job, if
- * any, is currently claimed. Allow-listed fields only, same as the
- * server side: log_id/task_type/incident_id/created_at, never narrative.
- */
-export async function getAiQueueStatus() {
-  const json = await request('GET', '/system/ai-queue', { auth: true });
-  const mapJob = (row) => ({ logId: row.log_id, taskType: row.task_type, incidentId: row.incident_id, createdAt: row.created_at });
-  return {
-    depth: json.depth,
-    oldestQueued: json.oldest_queued ? mapJob(json.oldest_queued) : null,
-    processing: (json.processing ?? []).map(mapJob),
-    ollama: json.ollama,
-  };
-}
-
 /** GET /system/health — Admin only. Coarse status per dependency; see SystemHealthController.php. */
 export async function getSystemHealth() {
   const json = await request('GET', '/system/health', { auth: true });
   return {
-    api: json.api, db: json.db, ors: json.ors, ollama: json.ollama,
+    api: json.api, db: json.db, ors: json.ors,
     gsmIngestion: json.gsm_ingestion, notificationConfig: json.notification_config,
     fcm: json.fcm, smsGsmGateway: json.sms_gsm_gateway,
     backupLastSuccess: json.backup_last_success, restoreTestAt: json.restore_test_at,
@@ -1038,7 +1000,6 @@ export async function getSystemHealthHistory() {
       recordedAt: row.recorded_at,
       db: row.db,
       ors: row.ors,
-      ollama: row.ollama,
       gsmIngestion: row.gsm_ingestion,
       fcm: row.fcm,
       smsGsmGateway: row.sms_gsm_gateway,
@@ -1341,7 +1302,7 @@ export async function getSmsLogs({ messageType, direction, status, dateFrom, dat
   };
 }
 
-// --- AI redaction review (§6 "AI processing", W8) ---------------------------
+// --- Incident detail (§6 "Incidents", W7) -----------------------------------
 
 /**
  * GET /incidents/:id — the only endpoint that returns `raw_narrative`, and
@@ -1372,13 +1333,8 @@ export async function getIncident(incidentId) {
     lifecycleChangedBy: json.lifecycle_changed_by ?? null,
     lifecycleChangedAt: json.lifecycle_changed_at ?? null,
     rawNarrative: json.raw_narrative ?? null,
-    redactedNarrative: json.redacted_narrative,
-    redactionApprovedAt: json.redaction_approved_at,
-    redactionApprovedBy: json.redaction_approved_by,
-    // Secretary-only, same as raw_narrative above (extracted directly
-    // from raw text — see IncidentsController::show()'s own comment on
-    // why these don't get redactedNarrative's broader visibility).
-    // Absent in the JSON entirely for any other role, same as raw_narrative.
+    // Secretary-only, same as raw_narrative above. Absent in the JSON
+    // entirely for any other role, same as raw_narrative.
     complainantName: json.complainant_name ?? null,
     respondentName: json.respondent_name ?? null,
     complainantContactNumber: json.complainant_contact_number ?? null,
@@ -1405,335 +1361,6 @@ export async function getIncident(incidentId) {
   };
 }
 
-/** Shared shape for the ai_processing_log draft row (§6 GET /incidents/:id/ai-draft). */
-function mapAiDraft(json) {
-  return {
-    logId: json.log_id,
-    incidentId: json.incident_id,
-    pipelineRunId: json.pipeline_run_id,
-    taskType: json.task_type,          // enum value, unconverted
-    modelVersion: json.model_version,  // the REAL self-hosted model name (§8)
-    draftRedactedNarrative: json.draft_redacted_narrative,
-    draftSummary: json.draft_summary,
-    draftSummaryStale: json.draft_summary_stale,
-    draftVersion: json.draft_version,
-    status: json.status,               // enum value, unconverted
-    errorCode: json.error_code ?? null,
-  };
-}
-
-/**
- * GET /incidents/:id/ai-draft — Secretary only. Returns null when no
- * pipeline has ever been run for this incident (the server answers 404),
- * which is an ordinary empty state for W8, not an error.
- */
-export async function getAiDraft(incidentId) {
-  try {
-    const json = await request('GET', `/incidents/${incidentId}/ai-draft`, { auth: true });
-    return mapAiDraft(json);
-  } catch (error) {
-    if (error instanceof ApiClientError && error.status === 404) return null;
-    throw error;
-  }
-}
-
-/**
- * POST /incidents/:id/redact — queues a redaction run. Returns
- * `status:"queued"`; the draft appears once the worker processes it, so
- * callers poll getAiDraft() rather than expecting content back here.
- */
-export async function requestRedaction(incidentId) {
-  const json = await request('POST', `/incidents/${incidentId}/redact`, { auth: true });
-  return { incidentId: json.incident_id, pipelineRunId: json.pipeline_run_id, status: json.status };
-}
-
-/**
- * POST /incidents/:id/ai-draft/regenerate-summary — saves the Secretary's
- * edited narrative and queues a summary regeneration. `draftVersion` must
- * be the exact current version (§2 Rule 23); a stale value gets 409 and
- * the caller must reload.
- */
-export async function regenerateSummary(incidentId, { draftRedactedNarrative, draftVersion }) {
-  const json = await request('POST', `/incidents/${incidentId}/ai-draft/regenerate-summary`, {
-    body: { draft_redacted_narrative: draftRedactedNarrative, draft_version: draftVersion },
-    auth: true,
-  });
-  return mapAiDraft(json);
-}
-
-/**
- * POST /incidents/:id/ai-draft/approve — the ONLY call that commits
- * `incident.redacted_narrative` (§2 Rule 3). Requires exact version match
- * AND exact text equality with the current draft; anything else is 409.
- */
-export async function approveAiDraft(incidentId, { approvedNarrative, draftVersion }) {
-  const json = await request('POST', `/incidents/${incidentId}/ai-draft/approve`, {
-    body: { approved_narrative: approvedNarrative, draft_version: draftVersion },
-    auth: true,
-  });
-  return {
-    incidentId: json.incident_id,
-    redactionApprovedAt: json.redaction_approved_at,
-    approvedBy: json.approved_by,
-  };
-}
-
-/**
- * POST /incidents/:id/ai-draft/translate — post-approval only.
- * `languageValidated` is false for Bikol until a real evaluation run says
- * otherwise (§2 Rule 16) — surface it, don't hide it.
- */
-export async function translateAiDraft(incidentId, targetLanguage) {
-  const json = await request('POST', `/incidents/${incidentId}/ai-draft/translate`, {
-    body: { target_language: targetLanguage },
-    auth: true,
-  });
-  return {
-    logId: json.log_id,
-    translatedText: json.translated_text,
-    sourceLanguage: json.source_language,
-    targetLanguage: json.target_language,
-    status: json.status,
-    languageValidated: json.language_validated,
-  };
-}
-
-/**
- * GET /incidents/:id/ai-draft/extraction — Electronic Blotter follow-up.
- * Independent of the redaction draft above (own endpoint, own
- * draft_version) — returns null on 404, an ordinary empty state (no
- * extraction has run yet), same convention as getAiDraft().
- */
-export async function getExtractionDraft(incidentId) {
-  try {
-    const json = await request('GET', `/incidents/${incidentId}/ai-draft/extraction`, { auth: true });
-    return {
-      logId: json.log_id,
-      incidentId: json.incident_id,
-      pipelineRunId: json.pipeline_run_id,
-      draftComplainantName: json.draft_complainant_name,
-      draftRespondentName: json.draft_respondent_name,
-      draftComplainantContactNumber: json.draft_complainant_contact_number,
-      draftVersion: json.draft_version,
-      status: json.status,
-      errorCode: json.error_code ?? null,
-    };
-  } catch (error) {
-    if (error instanceof ApiClientError && error.status === 404) return null;
-    throw error;
-  }
-}
-
-/**
- * POST /incidents/:id/ai-draft/extraction/approve — commits the
- * Secretary's reviewed/edited complainant/respondent/contact-number onto
- * the incident (the approved home, mirrored into blotter_record at
- * finalize time). All three fields are optional — pass `null`/empty for
- * one the Secretary cleared or the AI never drafted.
- */
-export async function approveExtraction(incidentId, { complainantName, respondentName, complainantContactNumber, draftVersion }) {
-  const json = await request('POST', `/incidents/${incidentId}/ai-draft/extraction/approve`, {
-    body: {
-      complainant_name: complainantName || null,
-      respondent_name: respondentName || null,
-      complainant_contact_number: complainantContactNumber || null,
-      draft_version: draftVersion,
-    },
-    auth: true,
-  });
-  return {
-    incidentId: json.incident_id,
-    complainantName: json.complainant_name,
-    respondentName: json.respondent_name,
-    complainantContactNumber: json.complainant_contact_number,
-  };
-}
-
-// --- Blotter finalization / amendment (§6 "Blotter", W7) --------------------
-
-/**
- * POST /incidents/:id/finalize — Secretary only; requires an approved
- * redaction. `complainantName`/`respondentName`/`complainantContactNumber`
- * are all optional (§ migration 0008) — omit or pass null/empty for a
- * field the incident has none of.
- */
-export async function finalizeBlotter(incidentId, { narrativeSummary, complainantName, respondentName, complainantContactNumber } = {}) {
-  const json = await request('POST', `/incidents/${incidentId}/finalize`, {
-    body: {
-      narrative_summary: narrativeSummary,
-      complainant_name: complainantName || null,
-      respondent_name: respondentName || null,
-      complainant_contact_number: complainantContactNumber || null,
-    },
-    auth: true,
-  });
-  return {
-    blotterId: json.blotter_id,
-    finalizedAt: json.finalized_at,
-    revisionNo: json.revision_no,
-    caseStatus: json.case_status,
-    displayId: json.display_id,
-    complainantName: json.complainant_name,
-    respondentName: json.respondent_name,
-    complainantContactNumber: json.complainant_contact_number,
-  };
-}
-
-/**
- * POST /incidents/:id/blotter/amend — Secretary only; requires a finalized
- * record. The superseded text is preserved server-side in
- * `blotter_revision`, never discarded (§6).
- *
- * `caseStatus` (migration 0009, 2026-09-05 UX pass): optional, FORWARD
- * ONLY (`under_investigation`/`settled`) — see
- * BlotterController::amend()'s own comment for why `active`/`resolved`
- * are never accepted here.
- */
-export async function amendBlotter(incidentId, { narrativeSummary, reason, complainantName, respondentName, complainantContactNumber, caseStatus }) {
-  const body = { narrative_summary: narrativeSummary, reason };
-  // Unlike finalize, an OMITTED key here keeps the record's current
-  // value server-side (BlotterController::parsePartyFields()) — only
-  // include a party field in the request when the caller actually means
-  // to touch it, `undefined` meaning "leave alone" and anything else
-  // (including empty string, meaning "clear it") meaning "set this".
-  if (complainantName !== undefined) body.complainant_name = complainantName || null;
-  if (respondentName !== undefined) body.respondent_name = respondentName || null;
-  if (complainantContactNumber !== undefined) body.complainant_contact_number = complainantContactNumber || null;
-  if (caseStatus) body.case_status = caseStatus;
-
-  const json = await request('POST', `/incidents/${incidentId}/blotter/amend`, { body, auth: true });
-  return {
-    blotterId: json.blotter_id,
-    revisionNo: json.revision_no,
-    amendedAt: json.amended_at,
-    caseStatus: json.case_status,
-    complainantName: json.complainant_name,
-    respondentName: json.respondent_name,
-    complainantContactNumber: json.complainant_contact_number,
-  };
-}
-
-/**
- * GET /blotter — Phase 6 of the mockup-driven UI round 2: the finalized
- * blotter RECORDS list (W6), distinct from `getIncidents()` (every
- * incident, any status — W3/W5/Incident Management). See
- * BlotterController::index() for why this endpoint exists.
- *
- * `q` (2026-09-05 UX pass): real server-side search — see
- * BlotterController::index()'s own doc for why this isn't client-side.
- */
-export async function getBlotterList({ q, status, page, limit } = {}) {
-  const json = await request('GET', '/blotter', { query: { q, status, page, limit }, auth: true });
-  return {
-    items: json.items.map((row) => ({
-      blotterId: row.blotter_id,
-      incidentId: row.incident_id,
-      incidentType: row.incident_type,
-      latitude: row.latitude,
-      longitude: row.longitude,
-      locationDescription: row.location_description,
-      officerName: row.officer_name,
-      recordedBy: row.recorded_by,
-      approvedBy: row.approved_by,
-      finalizedAt: row.finalized_at,
-      revisionNo: row.revision_no,
-      amendedAt: row.amended_at,
-      amendedBy: row.amended_by,
-      caseStatus: row.case_status,
-      displayId: row.display_id,
-      complainantName: row.complainant_name,
-      respondentName: row.respondent_name,
-      complainantContactNumber: row.complainant_contact_number,
-    })),
-    page: json.page,
-    limit: json.limit,
-    total: json.total,
-  };
-}
-
-/**
- * GET /incidents/:id/blotter — §6's tenant-scoped convenience lookup.
- * Returns null when the incident has no blotter record yet (404), which is
- * the normal state for most incidents, not an error.
- */
-export async function getBlotterForIncident(incidentId) {
-  try {
-    const json = await request('GET', `/incidents/${incidentId}/blotter`, { auth: true });
-    return {
-      blotterId: json.blotter_id,
-      incidentId: json.incident_id,
-      narrativeSummary: json.narrative_summary,
-      recordedBy: json.recorded_by,
-      approvedBy: json.approved_by,
-      finalizedAt: json.finalized_at,
-      revisionNo: json.revision_no,
-      amendedAt: json.amended_at,
-      amendedBy: json.amended_by,
-      caseStatus: json.case_status,
-      displayId: json.display_id,
-      complainantName: json.complainant_name,
-      respondentName: json.respondent_name,
-      complainantContactNumber: json.complainant_contact_number,
-    };
-  } catch (error) {
-    if (error instanceof ApiClientError && error.status === 404) return null;
-    throw error;
-  }
-}
-
-/**
- * POST /incidents/:id/lupon-packet — Secretary only; requires BOTH an
- * approved redaction and a finalized blotter. Returns an API-relative
- * `fileUrl`; the packet itself lives outside the web root and is served
- * only through the authorized download route.
- */
-export async function generateLuponPacket(incidentId) {
-  const json = await request('POST', `/incidents/${incidentId}/lupon-packet`, { auth: true });
-  return { fileUrl: json.file_url };
-}
-
-/**
- * GET /incidents/:id/lupon-packet/download — streams the packet
- * `generateLuponPacket()` just generated. The download endpoint re-checks
- * role and tenant, so nothing here is a capability — it still requires a
- * valid session.
- *
- * 2026-09-06: this used to be `luponPacketDownloadUrl()`, a bare URL
- * handed to a plain `<a href target="_blank">` in ai-review.js — which
- * never worked, same root cause `downloadReportExport()`'s own doc
- * explains: this API is Bearer-token-only (no session cookie exists), and
- * a plain browser navigation cannot attach an Authorization header. Every
- * click 401'd. Fixed the same way: an authenticated `fetch()` returning a
- * Blob, which the caller turns into a real download via
- * `URL.createObjectURL` + a synthetic `<a download>` click.
- */
-export async function downloadLuponPacket(incidentId) {
-  const session = readSession();
-  if (!session) {
-    throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
-  }
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}/incidents/${incidentId}/lupon-packet/download`, {
-      headers: { Authorization: `Bearer ${session.token}` },
-      cache: 'no-store',
-    });
-  } catch {
-    throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
-  }
-  if (!response.ok) {
-    let message = 'Could not download the packet.';
-    try {
-      const body = await response.json();
-      message = body?.error?.message || message;
-    } catch {
-      // Response wasn't JSON (e.g. a bare 404 from the web server) — keep the generic message.
-    }
-    throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
-  }
-  return response.blob();
-}
-
 /**
  * GET /incidents/:id/evidence — Secretary/Admin same barangay; Tanod only
  * with a reporter/dispatch relationship. §6: this NEVER returns filesystem
@@ -1758,7 +1385,7 @@ export async function getIncidentEvidence(incidentId) {
 /**
  * GET /incidents/:id/evidence/:attachmentId/download — the actual photo
  * or voice-note bytes behind one row from `getIncidentEvidence()` above.
- * Same Bearer-token-only shape as `downloadLuponPacket()`: a plain
+ * Bearer-token-only (no session cookie exists): a plain
  * `<img src>`/`<audio src>` pointed straight at this URL would 401 (no
  * session cookie exists), so this returns a `Blob` for the caller to turn
  * into an object URL via `URL.createObjectURL()`.

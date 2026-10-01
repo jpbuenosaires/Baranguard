@@ -124,7 +124,7 @@ export function LiveMap(container, options = {}) {
   let lastSosResolve = null;
   let lastRawIncidents = [];
   let lastIncidentAssign = null;
-  let lastIncidentViewBlotter = null;
+  let lastIncidentViewRecord = null;
   let lastDispatchLinks = [];
   let lastRouteGeojson = null;
   let reclusterHandle = null;
@@ -454,12 +454,12 @@ export function LiveMap(container, options = {}) {
    *
    * @param {Array<{incidentId:number, displayId?:string, latitude:number, longitude:number, incidentType:string, priority:string, typeLabel:string, status?:string, locationText?:string, elapsedText?:string, responderText?:string}>} items
    * @param {(incidentId:number) => void} [onAssign]
-   * @param {(incidentId:number) => void} [onViewBlotter]
+   * @param {(incidentId:number) => void} [onViewRecord]
    */
-  function setIncidentMarkers(items, onAssign, onViewBlotter) {
+  function setIncidentMarkers(items, onAssign, onViewRecord) {
     lastRawIncidents = items || [];
     lastIncidentAssign = onAssign;
-    lastIncidentViewBlotter = onViewBlotter;
+    lastIncidentViewRecord = onViewRecord;
     incidentMarkers = clearMarkers(incidentMarkers);
     incidentMarkersById.clear();
     if (!visibleLayers.incident) return;
@@ -536,16 +536,16 @@ export function LiveMap(container, options = {}) {
         actionsRow.appendChild(assignButton);
       }
 
-      if (onViewBlotter) {
-        const blotterBtn = document.createElement('button');
-        blotterBtn.type = 'button';
-        blotterBtn.className = 'ghost live-map__popup-btn';
-        blotterBtn.textContent = 'View Blotter';
-        blotterBtn.addEventListener('click', () => {
+      if (onViewRecord) {
+        const recordBtn = document.createElement('button');
+        recordBtn.type = 'button';
+        recordBtn.className = 'ghost live-map__popup-btn';
+        recordBtn.textContent = 'View Incident';
+        recordBtn.addEventListener('click', () => {
           marker?.getPopup()?.remove();
-          onViewBlotter(item.incidentId);
+          onViewRecord(item.incidentId);
         });
-        actionsRow.appendChild(blotterBtn);
+        actionsRow.appendChild(recordBtn);
       }
 
       if (actionsRow.children.length > 0) {
@@ -608,7 +608,7 @@ export function LiveMap(container, options = {}) {
     if (!(layerKey in visibleLayers)) return visibleLayers;
     visibleLayers[layerKey] = !visibleLayers[layerKey];
     renderTanodMarkers(lastRawMarkers);
-    setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewBlotter);
+    setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
     setSosMarkers(lastRawSosItems, lastSosResolve);
     renderDispatchLinks();
     renderRoute();
@@ -621,7 +621,7 @@ export function LiveMap(container, options = {}) {
     visibleLayers.incident = true;
     visibleLayers.sos = true;
     renderTanodMarkers(lastRawMarkers);
-    setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewBlotter);
+    setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
     setSosMarkers(lastRawSosItems, lastSosResolve);
     renderDispatchLinks();
     renderRoute();

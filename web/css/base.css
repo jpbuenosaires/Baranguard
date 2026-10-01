@@ -241,7 +241,7 @@ html { font-size: 100%; }
   --font-size-xs: var(--font-size-label);
 
   /* Monospace stack for IDs, hashes, coordinates and JSON payloads —
-     referenced by audit-log, blotter-detail/list, map-packages and
+     referenced by audit-log, incident-detail/list, map-packages and
      service-health, none of which had a definition to resolve against. */
   --font-mono: "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Consolas,
                "Liberation Mono", Menlo, monospace;
@@ -260,7 +260,7 @@ html { font-size: 100%; }
      not to resurrect a dense tier nobody was seeing. Two tiers:
        --control-height            every text control and button
        --control-height-prominent  the detail-pane CTAs (Dispatch /
-                                   Resolve / Create Blotter / Convert to
+                                   Resolve / Create Incident / Convert to
                                    Incident), four selectors across two
                                    files that had each independently
                                    landed on 42px and DO render at it. */
@@ -701,7 +701,7 @@ select {
    every stock select in the app. Three page stylesheets had each patched
    their OWN selects locally; this covers the rest (Analytics and Dashboard
    date ranges, Settings, Citizen Reports status, Incident filter, Map
-   Packages, Scheduler, Swap Requests, AI Review) in one place. Colour is
+   Packages, Scheduler, Swap Requests) in one place. Colour is
    --dark-text-secondary (#94A3B8) expressed as %23-escaped hex. */
 [data-theme="dark"] select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
@@ -1533,7 +1533,7 @@ html, body, .status-pill,
 
 /* Definition-list detail block, shared by Service Health and SMS Monitor.
    Restored 2026-09-06: the Antigravity pass deleted it from
-   pages/blotter-list.css, breaking two screens it never touched. Lives in
+   the former blotter list stylesheet, breaking two screens it never touched. Lives in
    base.css now because no single page owns it. */
 .detail-fields {
   display: grid;
@@ -1556,7 +1556,7 @@ html, body, .status-pill,
   color: var(--color-text-primary);
 }
 
-/* Generic modal shell used by Blotter Detail's own dialogs. Matches
+/* Generic modal shell used by Incident Detail's own dialogs. Matches
    ConfirmDialog's backdrop/card language deliberately — a second modal
    look would read as a different system — but stays separate because
    these carry arbitrary page content rather than ConfirmDialog's fixed

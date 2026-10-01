@@ -798,7 +798,7 @@
   transform: translateY(-1px);
 }
 
-.btn-action-blotter {
+.btn-action-record {
   flex: 1;
   height: var(--control-height-prominent);
   background: var(--color-surface);
@@ -815,7 +815,7 @@
   transition: all 0.15s ease;
 }
 
-.btn-action-blotter:hover {
+.btn-action-record:hover {
   background: var(--color-bg);
   border-color: var(--color-disabled-bg);
   transform: translateY(-1px);

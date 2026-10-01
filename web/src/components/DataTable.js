@@ -1,6 +1,6 @@
 /**
  * DataTable — the compact table every list screen in the Figma reference
- * uses (Blotter, Incidents, Users). Replaces this app's stacked-card
+ * uses (Incidents, Users, Audit Log). Replaces this app's stacked-card
  * lists, which rendered ~90px per row against the reference's ~44px —
  * roughly half the information density, and the main reason the UI read
  * as oversized regardless of font size.

@@ -41,11 +41,6 @@ const HERO_FEATURES = [
   { icon: icons.shield, title: 'Session-Based Security', desc: 'Signed-in sessions and per-barangay data isolation.' },
   { icon: icons.lock, title: 'Role-Based Access', desc: 'Separate permissions for Admin, Punong Barangay, and Tanod.' },
   { icon: icons.alertCircle, title: 'Live Emergency Tracking', desc: 'Real-time Tanod GPS and SOS alerts on the dispatch map.' },
-  // 2026-09-05 UX pass: the fourth, most distinctive real capability this
-  // system has — worded the same careful way the other three already
-  // are (what it does, not an unverifiable claim): the model drafts, a
-  // human Secretary reviews and approves before anything is finalized.
-  { icon: icons.fileText, title: 'AI-Assisted Redaction', desc: 'Draft redactions for the blotter, always reviewed and approved by a Secretary before finalizing.' },
 ];
 
 const REMEMBERED_USERNAME_KEY = 'baranguard.rememberedUsername';

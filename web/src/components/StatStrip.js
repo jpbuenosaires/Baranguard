@@ -3,7 +3,7 @@
  * under (or beside) a page title: a big coloured number with a small
  * grey label, repeated a few times. Used on Dispatch Center
  * ("12 Online · 3 Dispatched · 2 Pending"), User Management
- * ("8 Total Users · 6 Active · …") and the Blotter/SMS screens.
+ * ("8 Total Users · 6 Active · …") and the Incidents/SMS screens.
  *
  * Every value passed in must come from real data — this component just
  * lays out whatever counts the caller computed; it never invents totals.

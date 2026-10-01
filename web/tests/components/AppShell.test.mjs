@@ -120,7 +120,7 @@ describe('AppShell controls', () => {
     const result = $('.topbar__search-result');
     assert.ok(result, 'no results rendered');
     click(result);
-    assert.deepEqual(ctx.navigations.at(-1), { page: 'blotter-detail', param: 901 });
+    assert.deepEqual(ctx.navigations.at(-1), { page: 'incident-detail', param: 901 });
   });
 
   test('a failed search says so instead of showing nothing', async () => {
@@ -223,7 +223,7 @@ describe('AppShell notification popover', () => {
     await settle();
 
     assert.ok(api.callsTo('POST', '/notifications/1/ack').length >= 1);
-    assert.deepEqual(ctx.navigations.at(-1), { page: 'blotter-detail', param: 902 });
+    assert.deepEqual(ctx.navigations.at(-1), { page: 'incident-detail', param: 902 });
   });
 
   test('clicking the close button or re-clicking the bell collapses the notification panel', async () => {

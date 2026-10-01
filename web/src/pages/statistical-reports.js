@@ -26,7 +26,7 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getReportsSummary, exportReport, downloadReportExport, getBlotterList, getCitizenReports, getBarangays, ApiClientError } from '../api/apiClient.js';
+import { getReportsSummary, exportReport, downloadReportExport, getCitizenReports, getBarangays, ApiClientError } from '../api/apiClient.js';
 import { showToast } from '../components/Toast.js';
 import { KpiCard, KpiHeroCard } from '../components/KpiCard.js';
 import { LineChart } from '../components/LineChart.js';
@@ -69,17 +69,6 @@ const INCIDENT_TYPE_COLORS = {
 };
 const STATUS_LABELS = { pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved' };
 const STATUS_PILL_CLASS = { pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success' };
-// Same wording/tones as blotter-list.js's own CASE_STATUS_LABELS/
-// CASE_STATUS_PILL_CLASS (kept in sync deliberately, not copy-drifted —
-// this codebase's established pattern is a small local label map per
-// page rather than a shared module, same as INCIDENT_TYPE_LABELS above).
-const CASE_STATUS_LABELS = {
-  active: 'Active', under_investigation: 'Under Investigation', settled: 'Settled', resolved: 'Resolved',
-};
-const CASE_STATUS_PILL_CLASS = {
-  active: 'status-pill--info', under_investigation: 'status-pill--pending',
-  settled: 'status-pill--success', resolved: 'status-pill--neutral',
-};
 
 
 /** 14 -> "2:00 PM – 3:00 PM" */
@@ -486,7 +475,6 @@ export function renderReportsTab(container, pageHeader, user, navigate) {
       const summary = await getReportsSummary({ dateFrom, dateTo });
       latestSummary = summary;
       renderReport(body, summary, user.role, navigate);
-      loadCaseStatusBreakdown(body);
       if (user.role === 'admin') loadCitizenReportsConversion(body, navigate);
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong generating the report.';
@@ -665,20 +653,6 @@ function renderReport(container, summary, role, navigate) {
   const crossDomainGrid = document.createElement('div');
   crossDomainGrid.className = 'two-col-grid dashboard-row';
 
-  const caseStatusCard = document.createElement('div');
-  caseStatusCard.className = 'card';
-  caseStatusCard.appendChild(cardHeader(
-    'Blotter Case Status',
-    'All finalized blotter entries, all time',
-    icons.fileText,
-    'Cumulative status of all finalized blotter entries to date — not scoped to the date range above.'
-  ));
-  const caseStatusHost = document.createElement('div');
-  caseStatusHost.setAttribute('data-case-status-host', '');
-  caseStatusHost.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton skeleton--block' }));
-  caseStatusCard.append(caseStatusHost);
-  crossDomainGrid.appendChild(caseStatusCard);
-
   if (role === 'admin') {
     const citizenCard = document.createElement('div');
     citizenCard.className = 'card';
@@ -687,7 +661,7 @@ function renderReport(container, summary, role, navigate) {
       'Citizen Reports',
       'All submitted reports, all time',
       icons.messageSquare,
-      'Conversion tracking from citizen submissions into blotter records — not scoped to the date range above.',
+      'Conversion tracking from citizen submissions into incidents — not scoped to the date range above.',
       navigate ? { label: 'Review Inbox', onClick: () => navigate('citizen-reports') } : null
     ));
     const citizenHost = document.createElement('div');
@@ -733,78 +707,9 @@ function renderReport(container, summary, role, navigate) {
 
   analyticsGrid.append(byHourCard, responseTimeCard);
 
-  container.append(kpiGrid, insightsCard, trendCard, breakdownGrid, crossDomainGrid, analyticsGrid);
-}
-
-/**
- * Blotter case_status has no summary/count endpoint and `GET /blotter`
- * has no date filter (unlike `GET /reports/summary`) — so this fetches
- * every page (bounded, `MAX_PAGES` below) and counts client-side. Real
- * deployments here are single-barangay and blotter records are only
- * FINALIZED incidents (a subset of all incidents), so this stays small in
- * practice; the bound exists so a future much larger dataset degrades to
- * "stop early" rather than an unbounded loop.
- */
-async function loadCaseStatusBreakdown(container) {
-  const host = container.querySelector('[data-case-status-host]');
-  if (!host) return;
-  const MAX_PAGES = 20;
-  const PAGE_LIMIT = 100;
-  try {
-    const counts = { active: 0, under_investigation: 0, settled: 0, resolved: 0 };
-    let page = 1;
-    let fetched = 0;
-    let total = Infinity;
-    while (fetched < total && page <= MAX_PAGES) {
-      const result = await getBlotterList({ page, limit: PAGE_LIMIT });
-      total = result.total;
-      for (const row of result.items) {
-        if (row.caseStatus in counts) counts[row.caseStatus]++;
-      }
-      fetched += result.items.length;
-      if (result.items.length === 0) break;
-      page++;
-    }
-    renderCaseStatusList(host, counts);
-  } catch {
-    host.innerHTML = '<p class="note">Could not load blotter case status.</p>';
-  }
-}
-
-function renderCaseStatusList(host, counts) {
-  host.innerHTML = '';
-  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
-  if (total === 0) {
-    host.innerHTML = '<p class="note">No finalized blotter entries yet.</p>';
-    return;
-  }
-  const list = document.createElement('div');
-  list.className = 'stack';
-  for (const [key, count] of Object.entries(counts)) {
-    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-    const item = document.createElement('div');
-    item.className = 'breakdown-item';
-
-    const row = document.createElement('div');
-    row.className = 'row-between breakdown-row';
-    const label = document.createElement('span');
-    label.innerHTML = `<span class="status-pill ${CASE_STATUS_PILL_CLASS[key]}">${CASE_STATUS_LABELS[key]}</span>`;
-    const value = document.createElement('span');
-    value.className = 'breakdown-row__value';
-    value.innerHTML = `<strong>${count}</strong> <span class="breakdown-row__pct">(${pct}%)</span>`;
-    row.append(label, value);
-
-    const track = document.createElement('div');
-    track.className = 'breakdown-progress-track';
-    const fill = document.createElement('div');
-    fill.className = `breakdown-progress-fill breakdown-progress-fill--${key}`;
-    fill.style.width = `${pct}%`;
-    track.appendChild(fill);
-
-    item.append(row, track);
-    list.appendChild(item);
-  }
-  host.appendChild(list);
+  container.append(kpiGrid, insightsCard, trendCard, breakdownGrid);
+  if (role === 'admin') container.appendChild(crossDomainGrid);
+  container.appendChild(analyticsGrid);
 }
 
 /**
@@ -896,7 +801,7 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
       </span>
       <div class="conversion-hero-banner__text">
         <span class="conversion-hero-banner__title">Intake Conversion Efficiency</span>
-        <span class="conversion-hero-banner__caption">${converted} of ${totalReports} submissions formalized into blotters</span>
+        <span class="conversion-hero-banner__caption">${converted} of ${totalReports} submissions converted into incidents</span>
       </div>
     </div>
     <div class="conversion-hero-banner__right">
@@ -913,7 +818,7 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
 
   const stages = [
     {
-      label: 'Converted to Blotter',
+      label: 'Converted to Incident',
       pillClass: 'status-pill--success',
       fillClass: 'breakdown-progress-fill--resolved',
       count: converted,
@@ -971,7 +876,7 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
         <span class="summary-tile-pip" style="background:#16A34A;" aria-hidden="true"></span>
         ${converted} Formalized
       </span>
-      <span class="category-summary-tile__sub">Verified into legal blotter</span>
+      <span class="category-summary-tile__sub">Converted into incidents</span>
     </div>
   `;
   container.appendChild(footer);

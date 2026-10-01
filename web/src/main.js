@@ -28,7 +28,7 @@ import { renderSettingsPage } from './pages/settings.js';
 import { renderCitizenReportsInboxPage } from './pages/citizen-reports-inbox.js';
 import { renderCitizenReportPage } from './pages/citizen-report.js';
 import { renderPersonnelPage } from './pages/personnel.js';
-import { renderBlotterDetailPage } from './pages/blotter-detail.js';
+import { renderIncidentDetailPage } from './pages/incident-detail.js';
 import { renderSmsMonitorPage } from './pages/sms-monitor.js';
 import { renderAuditLogPage } from './pages/audit-log.js';
 import { renderServiceHealthPage } from './pages/service-health.js';
@@ -60,21 +60,15 @@ const PAGE_ROLES = {
   settings: ['admin', 'secretary', 'punong_barangay'],
   // Per-incident detail view — the app's ONLY one, and the landing point
   // for search, notifications, Incident Management and the dashboard.
-  // 2026-09-27 (DEVLOG (38)): what used to be a separate 'ai-review'
-  // route (W8) is now the Redaction tab of THIS same page — no more
-  // standalone route/role entry for it, the Secretary-only gate lives in
-  // blotter-detail.js's own tab-visibility check instead. The finalize/
-  // amend/lifecycle controls inside are Secretary-only too, and the
-  // server enforces all of it independently (§2 Rule 6: client-side
-  // hiding is UX, not a boundary). Keeps the 'blotter-detail' key after
-  // W6's removal; the rename is a separate pass, since no automated
-  // check validates a navigate() key and ~12 call sites reference this one.
-  'blotter-detail': ['admin', 'secretary', 'punong_barangay'],
+  // The lifecycle controls inside are Secretary-only, and the server
+  // enforces all of it independently (§2 Rule 6: client-side hiding is
+  // UX, not a boundary).
+  'incident-detail': ['admin', 'secretary', 'punong_barangay'],
 };
 
 // Pages that cannot render without a parameter — never chosen as a role's
 // default landing page, since there is no id to land on.
-const DETAIL_PAGES = new Set(['blotter-detail']);
+const DETAIL_PAGES = new Set(['incident-detail']);
 
 let activeStop = null;
 
@@ -125,24 +119,20 @@ function boot(currentPage, param) {
     renderAdminDashboardPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'dispatch') {
     // Returns a stop handle now that W3 polls its queue every 15s (audit
-    // W3) — same contract the GIS and AI Review pages already use.
+    // W3) — same contract the GIS page already uses.
     const handle = renderDispatchCenterPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
   } else if (page === 'incident-management') {
     // param is an optional incidentId (e.g. from Citizen Reports Inbox's
     // "View in Incident Management" after a conversion) - undefined for the
     // normal nav-menu entry, same optional-vs-required split DETAIL_PAGES
-    // already draws for blotter-detail.
-    // Returns a stop handle: the AI Classifier panel in the detail pane
-    // polls a queued job, and that interval must not outlive the page.
+    // already draws for incident-detail.
     const handle = renderIncidentManagementPage(root, session.user, onLoggedOut, navigate, param);
     activeStop = handle?.stop ?? null;
   } else if (page === 'gis') {
     const handle = renderGisLiveTrackingPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
   } else if (page === 'analytics') {
-    // Returns a stop handle: the Threat Analyzer tab polls a queued job,
-    // and that interval must not outlive the page.
     const handle = renderAnalyticsPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
   } else if (page === 'citizen-inbox') {
@@ -152,7 +142,7 @@ function boot(currentPage, param) {
   } else if (page === 'sms-log') {
     // Returns a stop handle: the Live Feed panel polls GET /sms/logs
     // every 10s (2026-09-05 UX pass) and that interval must not outlive
-    // the page — same contract as service-health/blotter-detail below.
+    // the page — same contract as service-health/incident-detail below.
     // param can be an optional target phoneNumber or 'activity-log'.
     const handle = renderSmsMonitorPage(root, session.user, onLoggedOut, navigate, param);
     activeStop = handle?.stop ?? null;
@@ -167,14 +157,8 @@ function boot(currentPage, param) {
     activeStop = handle?.stop ?? null;
   } else if (page === 'settings') {
     renderSettingsPage(root, session.user, onLoggedOut, navigate);
-  } else if (page === 'blotter-detail') {
-    // Returns a stop handle: the Redaction tab polls the AI draft while a
-    // job is queued (2026-09-27 tab merge, DEVLOG (38) — this used to be
-    // a separate 'ai-review' route/branch with its own stop handle; that
-    // polling now lives inside this same page, stopped on tab-switch-away
-    // as well as on full unmount, see blotter-detail.js's own doc).
-    const handle = renderBlotterDetailPage(root, session.user, onLoggedOut, navigate, param);
-    activeStop = handle?.stop ?? null;
+  } else if (page === 'incident-detail') {
+    renderIncidentDetailPage(root, session.user, onLoggedOut, navigate, param);
   }
 
   setDocumentTitle(root);
@@ -184,7 +168,7 @@ function boot(currentPage, param) {
 /**
  * audit A6: document.title was never touched, so every screen, every
  * history entry and every bookmark read "Baranguard" — tab-switching
- * between Dispatch and Blotter was guesswork and browser history was
+ * between Dispatch and Incidents was guesswork and browser history was
  * useless. Read from the heading the page just rendered rather than
  * maintained as a second lookup table beside PAGE_ROLES, which would be
  * one more thing to keep in sync with the PageHeader titles.

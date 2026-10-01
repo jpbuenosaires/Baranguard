@@ -575,7 +575,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         hasActiveSos,
         incidentId: activeDisp?.incidentId || null,
         incidentCode: activeDisp?.incidentCode || null,
-        onViewIncident: (incId) => navigate('blotter-detail', incId),
+        onViewIncident: (incId) => navigate('incident-detail', incId),
       };
     }));
 
@@ -636,7 +636,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         });
         if (dispatched) onQueueChanged();
       },
-      (incidentId) => navigate('blotter-detail', incidentId)
+      (incidentId) => navigate('incident-detail', incidentId)
     );
 
     // Draw dashed tactical connection lines between Dispatched Tanods and their assigned Incident pins

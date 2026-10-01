@@ -18,7 +18,7 @@ import { icons } from './icons.js';
 import { avatarInitials } from './Avatar.js';
 import { Menu, MenuItem, MenuDivider } from './Menu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
-import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getOllamaStatus, getAiQueueStatus, getBarangays } from '../api/apiClient.js';
+import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getBarangays } from '../api/apiClient.js';
 import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
 
 // notification.notification_type values that should play an audible cue
@@ -144,30 +144,15 @@ const NAV_ITEMS = [
   { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'], icon: icons.alertTriangle, group: 'Operations' },
   { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'], icon: icons.map, group: 'Operations' },
 
-  // W6 Electronic Blotter (the records LIST) was removed 2026-09-10. DILG
-  // BIMSS is mandated for all barangays and its KPIS module already is the
-  // Katarungang Pambarangay case database, so shipping a competing ledger
-  // duplicated the system Baranguard is required to complement rather than
-  // replace. The per-incident detail view survives as 'blotter-detail' —
-  // it is the app's only incident detail screen — reached from Incident
-  // Management, the dashboard, search and notifications.
+  // There is no browsable incident-records list: DILG BIMSS's KPIS module
+  // is the mandated case ledger (REFERENCE.md §1). The per-incident detail
+  // view is 'incident-detail' — reached from Incident Management, the
+  // dashboard, search and notifications.
   { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'], icon: icons.inbox, countKey: 'unconvertedCitizenReports', group: 'Records & Reporting' },
   // 2026-09-05 merge of Historical Heatmap + Analytics (W5 + W9) into one
   // tabbed screen — see pages/analytics.js. Same role pair both already
   // had, so no per-tab gating needed there (unlike Personnel below).
   { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart, group: 'Records & Reporting' },
-  // There is deliberately NO "AI Tools" entry. The original four
-  // local-model assistants (migration 0015) lived inside the screens
-  // where their work happened — Classifier in Incident Management,
-  // Blotter Assistant in incident detail, SMS Composer in SMS Monitor,
-  // Threat Analyzer as an Analytics tab — rather than behind a standalone
-  // AI menu (one shipped and was dissolved the same day, 2026-09-10: an
-  // operator is mid-task and wants help with that task, not a detour).
-  // All four, and the AiToolPanel.js component that rendered them, were
-  // since removed (migrations 0027/0028) — this note is kept for the
-  // navigation-design rationale, in case a future AI tool faces the same
-  // "standalone screen vs. embedded" choice.
-
   // 2026-09-05 merge of what used to be four separate nav items (Shift
   // Scheduler/Swap Requests/Fatigue Flags/User Management) into one
   // tabbed screen — see pages/personnel.js. No countKey here: the two
@@ -436,14 +421,6 @@ export function AppShell(user, activePage, navigate, onLogout) {
   let groupTitle = currentNav?.group;
   let pageTitle = currentNav?.label;
 
-  // The dedicated 'blotter-detail'/'ai-review' branches this block used
-  // to have here were dead code — renderBlotterDetailPage() has always
-  // called AppShell(user, listPage, ...) with 'dashboard'/'incident-
-  // management' as activePage (so the SIDEBAR highlights correctly), not
-  // the literal string 'blotter-detail', and 'ai-review' as a standalone
-  // page no longer exists at all (2026-09-27 tab merge, DEVLOG (38)).
-  // Removed rather than left to bit-rot further; `pageTitle` already
-  // correctly falls through to "Incident Management" via `currentNav`.
   if (!groupTitle && activePage === 'dashboard') {
     groupTitle = 'Overview';
     pageTitle = 'Dashboard';
@@ -725,9 +702,9 @@ export function AppShell(user, activePage, navigate, onLogout) {
         row.addEventListener('click', () => {
           searchResults.hidden = true;
           searchInput.value = '';
-          // blotter-detail takes the id and is the app's only per-incident
+          // incident-detail takes the id and is the app's only per-incident
           // detail view, so a search result opens the incident itself.
-          navigate('blotter-detail', item.incidentId);
+          navigate('incident-detail', item.incidentId);
         });
         searchResults.appendChild(row);
       }
@@ -809,61 +786,14 @@ export function AppShell(user, activePage, navigate, onLogout) {
     topbarUser.appendChild(statusBadge);
     getSystemHealth().then((health) => {
       const coreDown = health.api !== 'healthy' || health.db !== 'healthy';
-      // `not_configured` stays neutral (§2 Rule 6 — a dependency nobody has
-      // set up yet is not a failure state), so only a real live-probe
-      // failure ('unhealthy') triggers the amber "AI Unavailable" state —
-      // otherwise every session on a workstation that has never configured
-      // Ollama would show a false alarm.
-      const aiDown = health.ollama === 'unhealthy';
-      const state = coreDown ? 'down' : aiDown ? 'warn' : 'ok';
-      const text = coreDown ? 'Database Unavailable' : aiDown ? 'AI Unavailable' : 'All Systems Operational';
+      const state = coreDown ? 'down' : 'ok';
+      const text = coreDown ? 'Database Unavailable' : 'All Systems Operational';
       statusBadge.className = 'status-badge status-badge--' + state;
       statusBadge.querySelector('.status-badge__text').textContent = text;
-      statusBadge.title = `API: ${health.api} · DB: ${health.db} · Routing: ${health.ors} · Ollama: ${health.ollama} · GSM: ${health.gsmIngestion} · Notifications: ${health.notificationConfig} (Click to view full health)`;
+      statusBadge.title = `API: ${health.api} · DB: ${health.db} · Routing: ${health.ors} · GSM: ${health.gsmIngestion} · Notifications: ${health.notificationConfig} (Click to view full health)`;
     }).catch(() => {
       statusBadge.className = 'status-badge status-badge--down';
       statusBadge.querySelector('.status-badge__text').textContent = 'Status unavailable';
-    });
-  } else if (user.role === 'secretary') {
-    // Punong Barangay dropped from this branch: Threat Analyzer (their one
-    // AI-consuming feature) was removed with the AI Tools screen
-    // (migration 0028), leaving nothing this badge would inform for that
-    // role. Secretary still runs real AI jobs (redaction/extraction/
-    // summary/translation), so the ambient "is the model up" signal
-    // stays — backed by GET /system/ollama-status now, not the removed
-    // AI Tools availability endpoint.
-    const aiBadge = document.createElement('div');
-    aiBadge.className = 'topbar__ai-badge topbar__ai-badge--neutral';
-    aiBadge.innerHTML = `<span class="topbar__ai-dot"></span><span class="topbar__ai-icon" aria-hidden="true">${icons.sparkles(12)}</span><span class="topbar__ai-text">AI Ready</span>`;
-    aiBadge.style.display = 'none';
-    topbarUser.appendChild(aiBadge);
-
-    // Queue depth folded into the same tooltip — Secretary has no Service
-    // Health page (Admin-only, §7), so this ambient tooltip is the only
-    // "is anything stuck" signal available to the role that actually
-    // enqueues these jobs. Before GET /system/ai-queue existed, the only
-    // way to see this at all was `ai-worker.php --status` on the
-    // workstation itself. Both calls are awaited together (rather than
-    // two independent `.then()`s) so whichever resolves last doesn't
-    // clobber the other's contribution to `aiBadge.title`.
-    Promise.all([
-      getOllamaStatus().catch(() => ({ ollama: null })),
-      getAiQueueStatus().catch(() => null),
-    ]).then(([{ ollama }, q]) => {
-      aiBadge.style.display = 'inline-flex';
-      const isOk = ollama === 'healthy';
-      const isWarn = ollama === 'unhealthy';
-      aiBadge.className = `topbar__ai-badge topbar__ai-badge--${isOk ? 'ok' : isWarn ? 'warn' : 'neutral'}`;
-      aiBadge.querySelector('.topbar__ai-text').textContent = isOk ? 'AI Ready' : isWarn ? 'AI Offline' : 'AI Inactive';
-      const baseTitle = isOk
-        ? 'Local Ollama AI model is online and ready.'
-        : isWarn
-          ? 'Local AI model is not responding. AI drafting is paused.'
-          : 'No local AI model is configured on this workstation.';
-      const queuedNote = q && q.depth.queued > 0
-        ? ` · Queue: ${q.depth.queued} waiting, ${q.depth.processing} processing`
-        : '';
-      aiBadge.title = baseTitle + queuedNote;
     });
   }
 
@@ -1225,7 +1155,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
             }
           }
           bellMenu.close();
-          if (item.incidentId) navigate('blotter-detail', item.incidentId);
+          if (item.incidentId) navigate('incident-detail', item.incidentId);
           else if (item.sosId || item.dispatchId) navigate('dispatch');
         });
 
