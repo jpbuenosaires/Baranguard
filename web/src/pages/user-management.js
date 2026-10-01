@@ -8,7 +8,11 @@
  * - High-density action buttons with confirmation dialogs
  */
 
-import { getUsers, setUserActive, setUserSuspended, createUser, ApiClientError } from '../api/apiClient.js';
+import { setUserActive, setUserSuspended, createUser, ApiClientError } from '../api/apiClient.js';
+import {
+  getUsersDetailed, updateUserApproval, APPROVAL_AUTHORITIES, AUTHORITY_ELIGIBLE_ROLES,
+} from '../services/shellWorkflowApi.js';
+import { clearAuthorityCache } from '../services/tanodWorkflowUi.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { DataTable } from '../components/DataTable.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
@@ -32,6 +36,7 @@ const COLUMNS = [
   { key: 'user', label: 'User' },
   { key: 'role', label: 'Role' },
   { key: 'contactNumber', label: 'Contact' },
+  { key: 'approval', label: 'Title & authority' },
   { key: 'status', label: 'Status' },
   { key: 'lastLoginAt', label: 'Last Login' },
   { key: 'createdAt', label: 'Created' },
@@ -164,7 +169,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
   async function load() {
     renderLoading(body);
     try {
-      const result = await getUsers({ page: currentPage, limit: PAGE_SIZE });
+      const result = await getUsersDetailed({ page: currentPage, limit: PAGE_SIZE });
       allItems = result.items;
       currentTotal = result.total;
       renderStatStrip(allItems);
@@ -550,6 +555,24 @@ function renderUserCell(row, key, viewer, reload) {
       return document.createTextNode(row.contactNumber);
     }
 
+    case 'approval': {
+      if (!AUTHORITY_ELIGIBLE_ROLES.includes(row.role)) {
+        return '<span class="text-tertiary">—</span>';
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'user-approval-cell';
+      const title = document.createElement('span');
+      title.className = 'user-identity-name';
+      title.textContent = row.officialTitle || 'No official title';
+      const auth = document.createElement('span');
+      auth.className = 'data-table__sub';
+      auth.textContent = row.approvalAuthority.length > 0
+        ? row.approvalAuthority.map((v) => APPROVAL_AUTHORITIES.find((a) => a.value === v)?.label ?? v).join(', ')
+        : 'No approval authority';
+      wrap.append(title, auth);
+      return wrap;
+    }
+
     case 'status': {
       const pill = document.createElement('span');
       let label;
@@ -591,6 +614,22 @@ function renderUserCell(row, key, viewer, reload) {
 function renderActionsCell(row, viewer, reload) {
   const wrap = document.createElement('div');
   wrap.className = 'user-actions-group';
+
+  // Official title + approval authority (contract §2) — only the three
+  // roles that may ever sign something. Editing one's own row is allowed:
+  // the server, not this button, is the boundary.
+  if (AUTHORITY_ELIGIBLE_ROLES.includes(row.role)) {
+    const authButton = document.createElement('button');
+    authButton.type = 'button';
+    authButton.className = 'user-action-btn';
+    authButton.textContent = 'Approval authority';
+    authButton.setAttribute('aria-label', `Edit title and approval authority for ${row.fullName}`);
+    authButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openApprovalModal(row, reload);
+    });
+    wrap.appendChild(authButton);
+  }
 
   if (viewer.userId === row.userId) {
     const note = document.createElement('span');
@@ -654,6 +693,129 @@ function renderActionsCell(row, viewer, reload) {
   }));
 
   return wrap;
+}
+
+/**
+ * Edit official_title + approval_authority (PATCH /users/:id, Admin only).
+ * The five authorities are the closed set from contract §2; the server
+ * 400s anything else and any ineligible target role.
+ */
+function openApprovalModal(row, onSaved) {
+  const overlay = document.createElement('div');
+  overlay.className = 'personnel-modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'personnel-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'approval-modal-title');
+
+  const header = document.createElement('div');
+  header.className = 'personnel-modal__header';
+  const title = document.createElement('h3');
+  title.className = 'personnel-modal__title';
+  title.id = 'approval-modal-title';
+  title.textContent = `Approval authority — ${row.fullName}`;
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'personnel-modal__close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.innerHTML = icons.x(18);
+  header.append(title, closeBtn);
+
+  const form = document.createElement('form');
+  form.noValidate = true;
+  const body = document.createElement('div');
+  body.className = 'personnel-modal__body';
+
+  const errorBox = document.createElement('div');
+  errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
+  errorBox.hidden = true;
+
+  const titleField = document.createElement('div');
+  titleField.className = 'personnel-form-field personnel-form-field--full';
+  const titleLabel = document.createElement('label');
+  titleLabel.className = 'personnel-form-label';
+  titleLabel.htmlFor = 'approval-official-title';
+  titleLabel.textContent = 'Official title (printed under their signature)';
+  const titleInput = document.createElement('input');
+  titleInput.id = 'approval-official-title';
+  titleInput.type = 'text';
+  titleInput.maxLength = 64;
+  titleInput.className = 'personnel-form-input';
+  titleInput.placeholder = 'e.g. Chief Tanod, Kagawad';
+  titleInput.value = row.officialTitle || '';
+  titleField.append(titleLabel, titleInput);
+
+  const fieldset = document.createElement('fieldset');
+  fieldset.className = 'personnel-form-field personnel-form-field--full approval-authority-fieldset';
+  const legend = document.createElement('legend');
+  legend.className = 'personnel-form-label';
+  legend.textContent = 'May do the following';
+  fieldset.appendChild(legend);
+  const boxes = [];
+  for (const authority of APPROVAL_AUTHORITIES) {
+    const line = document.createElement('label');
+    line.className = 'approval-authority-option';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.value = authority.value;
+    box.checked = row.approvalAuthority.includes(authority.value);
+    const text = document.createElement('span');
+    text.textContent = authority.label;
+    line.append(box, text);
+    fieldset.appendChild(line);
+    boxes.push(box);
+  }
+
+  body.append(errorBox, titleField, fieldset);
+
+  const footer = document.createElement('div');
+  footer.className = 'personnel-modal__footer';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'ghost';
+  cancelBtn.textContent = 'Cancel';
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'submit';
+  saveBtn.className = 'primary';
+  saveBtn.textContent = 'Save';
+  footer.append(cancelBtn, saveBtn);
+
+  form.append(body, footer);
+  modal.append(header, form);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  titleInput.focus();
+
+  const close = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  closeBtn.addEventListener('click', close);
+  cancelBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.hidden = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    try {
+      await updateUserApproval(row.userId, {
+        officialTitle: titleInput.value.trim() || null,
+        approvalAuthority: boxes.filter((b) => b.checked).map((b) => b.value),
+        idempotencyKey: crypto.randomUUID(),
+      });
+      showToast(`${row.fullName}'s approval authority saved.`, { variant: 'success' });
+      clearAuthorityCache();
+      close();
+      onSaved();
+    } catch (err) {
+      errorBox.textContent = err instanceof ApiClientError ? err.message : 'Could not save this change.';
+      errorBox.hidden = false;
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    }
+  });
 }
 
 function buildStatusButton(row, reload, { label, busyLabel, className, title, description, confirmLabel, danger, action, successMessage }) {

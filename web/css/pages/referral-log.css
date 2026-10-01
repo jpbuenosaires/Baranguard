@@ -1,0 +1,7 @@
+/**
+ * referral-log.css — Referral Log. Filters, table and notice styles are
+ * shared (tanod-workflow.css); this only keeps the delegation-log notice
+ * from stretching wider than the table beneath it.
+ */
+
+.tw-referrals__body .data-table-wrap { max-width: 100%; }

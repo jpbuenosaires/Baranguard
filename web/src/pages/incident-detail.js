@@ -34,6 +34,7 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
+import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -143,6 +144,10 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     main.appendChild(buildDossierCard());
     main.appendChild(buildNarrative());
     main.appendChild(buildEvidence());
+    // 2026-10 (contract §5, §7): school link + Annex C-1 fields (Admin and
+    // Secretary edit, Punong Barangay reads) and the referrals list. Both
+    // cards load and fail independently of the rest of the record.
+    main.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary }));
 
     if (incident.status === 'resolved') {
       aside.appendChild(buildResolvedStatusCard());
@@ -150,6 +155,11 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       aside.appendChild(buildAdminResolvePanel());
     }
     if (isSecretary) aside.appendChild(buildLifecycleCard());
+    aside.appendChild(ReferralsCard({
+      incidentId,
+      canAdd: user.role === 'admin' || isSecretary,
+      incidentLabel: incident.displayId || `#${incidentId}`,
+    }));
     aside.appendChild(buildTimeline());
 
     layout.append(main, aside);

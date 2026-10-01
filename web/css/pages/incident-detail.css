@@ -1434,3 +1434,38 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 .resolve-prerequisite-callout .note {
   margin: 0;
 }
+
+/* --- 2026-10: school link / C-1 and referral cards (IncidentCaseCards.js) -- */
+.case-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.case-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+}
+
+.case-card__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.case-card__list-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  padding: var(--spacing-sm) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.case-card__list-item:first-child {
+  border-top: 0;
+}
+
+.case-card__heading { gap: var(--spacing-sm); }

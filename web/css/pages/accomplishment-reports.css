@@ -1,0 +1,11 @@
+/**
+ * accomplishment-reports.css — page-specific layout only. The printed-form
+ * styles (`.tw-acc-form__*`, `.tw-sign__*`) are shared in tanod-workflow.css
+ * because Annex D's signature page reuses the same sheet chrome.
+ */
+
+.tw-reports-detail .data-table-wrap { max-width: 100%; }
+
+.tw-reports-list .tw-filter-bar { padding-bottom: var(--spacing-xs); }
+
+.tw-detail-head .stat-strip { margin-top: var(--spacing-xs); }

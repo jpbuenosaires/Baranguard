@@ -31,6 +31,7 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
+import { getOwnApprovalAuthority, getPendingApprovalCounts } from '../services/shellWorkflowApi.js';
 import { getReportsSummary, getIncidents, getDutyStatus, getUsers, getTanodSos, getBarangays, getReportsDigest, downloadReportsDigest, logout, ApiClientError } from '../api/apiClient.js';
 import { showToast } from '../components/Toast.js';
 import { KpiCard, KpiHeroCard } from '../components/KpiCard.js';
@@ -202,6 +203,7 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
       loadTanodsOnDuty(body, user.barangayId, user.role);
       loadAttentionBanner(body, navigate, user.role, summary.byStatus.pending || 0);
       if (user.role === 'punong_barangay') loadPbDigest(body);
+      loadPendingApprovals(body, user, navigate);
     } catch (err) {
       const message = err instanceof ApiClientError
         ? err.message
@@ -408,6 +410,74 @@ async function loadTanodsOnDuty(container, barangayId, role) {
     renderTanodsOnDutyList(host, roster);
   } catch {
     host.innerHTML = '<p class="note">Could not load Tanod duty status.</p>';
+  }
+}
+
+/**
+ * Pending-approvals widget (2026-10, contract §10). Shown to whoever lands
+ * on this dashboard (Admin and Punong Barangay): counts of work waiting on
+ * THIS user, each gated by the approval authority that would let them act
+ * on it (GET /users/:id for self, then the existing list endpoints — there
+ * is no approvals-count endpoint and none is invented). All four states:
+ * skeleton, error with Retry, nothing pending / no authority, populated.
+ */
+async function loadPendingApprovals(container, user, navigate) {
+  const host = container.querySelector('[data-pending-approvals]');
+  if (!host) return;
+  host.innerHTML = '<div class="skeleton skeleton--line" role="status" aria-label="Loading pending approvals"></div>';
+  try {
+    const authorities = await getOwnApprovalAuthority(user.userId, user.role);
+    if (authorities.length === 0) {
+      host.innerHTML = '';
+      const note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = 'No approval authority is assigned to your account, so nothing is waiting on you. An Admin can assign one under Personnel.';
+      host.appendChild(note);
+      return;
+    }
+    const counts = await getPendingApprovalCounts(authorities);
+    host.innerHTML = '';
+    const total = counts.reduce((sum, c) => sum + c.count, 0);
+    if (total === 0) {
+      const note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = 'Nothing is waiting for your approval right now.';
+      host.appendChild(note);
+    } else {
+      const list = document.createElement('ul');
+      list.className = 'dashboard-approvals-list';
+      for (const item of counts.filter((c) => c.count > 0)) {
+        const li = document.createElement('li');
+        li.className = 'dashboard-approvals-list__item';
+        const label = document.createElement('span');
+        label.textContent = item.label;
+        const value = document.createElement('strong');
+        value.textContent = String(item.count);
+        li.append(label, value);
+        list.appendChild(li);
+      }
+      host.appendChild(list);
+    }
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'ghost';
+    open.textContent = 'Open Approvals';
+    open.addEventListener('click', () => navigate('approvals'));
+    host.appendChild(open);
+  } catch (err) {
+    host.innerHTML = '';
+    const block = document.createElement('div');
+    block.className = 'state-block state-block--error';
+    block.setAttribute('role', 'alert');
+    const text = document.createElement('p');
+    text.textContent = err instanceof ApiClientError ? err.message : 'Could not load pending approvals.';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'primary';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => loadPendingApprovals(container, user, navigate));
+    block.append(text, retry);
+    host.appendChild(block);
   }
 }
 
@@ -680,7 +750,22 @@ function renderPopulated(container, summary, navigate, role) {
     statusRow.append(digestCard);
   }
 
-  container.append(grid, chartsGrid, breakdownGrid, statusRow);
+  const approvalsCard = document.createElement('div');
+  approvalsCard.className = 'card';
+  approvalsCard.appendChild(cardHeader(
+    'Pending Approvals', 'Waiting on you', icons.checkCircle,
+    'Duty rosters, accomplishment reports and Annex D term reports waiting for something only you are authorised to do.',
+    { label: 'Open Approvals', onClick: () => navigate('approvals') }
+  ));
+  const approvalsHost = document.createElement('div');
+  approvalsHost.setAttribute('data-pending-approvals', '');
+  approvalsHost.setAttribute('aria-live', 'polite');
+  approvalsCard.appendChild(approvalsHost);
+  const approvalsRow = document.createElement('div');
+  approvalsRow.className = 'dashboard-row';
+  approvalsRow.appendChild(approvalsCard);
+
+  container.append(grid, chartsGrid, breakdownGrid, statusRow, approvalsRow);
 }
 
 /**

@@ -1301,3 +1301,11 @@
   transform: translateY(-1px);
   box-shadow: 0 4px 10px color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
+
+/* 2026-10: school/C-1 + referral cards under the detail pane's timeline. */
+.incident-detail-case-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}

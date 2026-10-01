@@ -149,6 +149,14 @@ const NAV_ITEMS = [
   // view is 'incident-detail' — reached from Incident Management, the
   // dashboard, search and notifications.
   { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'], icon: icons.inbox, countKey: 'unconvertedCitizenReports', group: 'Records & Reporting' },
+  // 2026-10 tanod-workflow build (docs/FEATURE_CONTRACT_2026-10.md §10).
+  // No count badge on Approvals: GET /reports/nav-counts has no approvals
+  // figure and a badge computed any other way would be a fabricated number
+  // (§2 Rule 6) — the page itself lists what is waiting.
+  { key: 'approvals', label: 'Approvals', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.checkCircle, group: 'Records & Reporting' },
+  { key: 'accomplishment-reports', label: 'Accomplishment Reports', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.fileText, group: 'Records & Reporting' },
+  { key: 'referrals', label: 'Referral Log', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.send, group: 'Records & Reporting' },
+  { key: 'school-zones', label: 'Safer School Zones', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.mapPin, group: 'Records & Reporting' },
   // 2026-09-05 merge of Historical Heatmap + Analytics (W5 + W9) into one
   // tabbed screen — see pages/analytics.js. Same role pair both already
   // had, so no per-tab gating needed there (unlike Personnel below).
@@ -159,7 +167,12 @@ const NAV_ITEMS = [
   // badges those used to carry (pendingSwapRequests/
   // unacknowledgedFatigueFlags) moved onto the matching tab chip inside
   // the page itself instead of the sidebar.
-  { key: 'personnel', label: 'Personnel', roles: ['admin', 'punong_barangay'], icon: icons.users, group: 'Personnel' },
+  // 2026-10: Secretary and Punong Barangay reach this hub too, but only its
+  // Scheduler tab (see personnel.js): availability review (Admin/Secretary)
+  // and roster publishing (whoever holds approve_roster, typically the PB)
+  // happen there, and the Approvals page deep-links to it. The Fatigue tab
+  // is gone from the hub (contract §10); its code/endpoints are intact.
+  { key: 'personnel', label: 'Personnel', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.users, group: 'Personnel' },
 
   // §9 W14 — Admin only, explicitly.
   { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'], icon: icons.messageSquare, group: 'System' },
@@ -541,14 +554,6 @@ export function AppShell(user, activePage, navigate, onLogout) {
         group: 'Personnel',
         icon: icons.users,
         keywords: 'personnel shift swap requests',
-      },
-      {
-        page: 'personnel',
-        param: 'fatigue',
-        label: 'Personnel › Fatigue Flags',
-        group: 'Personnel',
-        icon: icons.activity,
-        keywords: 'personnel fatigue flags overwork',
       },
     );
   }

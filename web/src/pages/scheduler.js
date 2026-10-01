@@ -10,7 +10,11 @@
  * - Interactive StatStrip and filter bar with search and status chips
  */
 
-import { getUsers, getShifts, createShift, updateShift, getBarangays, ApiClientError } from '../api/apiClient.js';
+import { getUsers, createShift, updateShift, getBarangays, ApiClientError } from '../api/apiClient.js';
+import {
+  getShiftsDetailed, publishShifts, getAvailability, reviewAvailability, getOwnApprovalAuthority,
+} from '../services/shellWorkflowApi.js';
+import { confirmDialog } from '../components/ConfirmDialog.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
@@ -20,6 +24,8 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 
 const SCHEDULE_COLUMNS = [
+  { key: 'select', label: 'Select' },
+  { key: 'approval', label: 'Roster' },
   { key: 'status', label: 'Status' },
   { key: 'tanod', label: 'Assigned Tanod' },
   { key: 'zone', label: 'Patrol Zone' },
@@ -34,11 +40,25 @@ const SCHEDULE_COLUMNS = [
  * @param {{fullName:string, role:string, barangayId?:number}} user
  * @param {ReturnType<import('../components/PageHeader.js').PageHeader>} [pageHeader]
  * @param {{searchQuery?: string}} [initialData]
+ * @param {() => void} [onOpenSwaps] jump to the Swap requests tab
  */
-export function renderSchedulerTab(container, user, pageHeader, initialData) {
+export function renderSchedulerTab(container, user, pageHeader, initialData, onOpenSwaps) {
+  // Admin manages shifts (create/edit) and sees the tanod roster (GET /users
+  // is Admin-only). Secretary and Punong Barangay reach this tab to review
+  // availability (Admin/Secretary) and publish drafts (approve_roster) —
+  // the server re-checks role and authority on every action either way.
+  const isAdmin = user.role === 'admin';
+  const canReviewAvailability = isAdmin || user.role === 'secretary';
+
   // Stat Strip Host
   const statStripHost = document.createElement('div');
   container.appendChild(statStripHost);
+
+  // Availability review (2026-10, contract §3) — its own host with its own
+  // four states, so a failure here never blanks the shift list below.
+  const availabilityHost = document.createElement('div');
+  availabilityHost.className = 'card availability-panel';
+  if (canReviewAvailability) container.appendChild(availabilityHost);
 
   // Split Panel Layout
   const layout = document.createElement('div');
@@ -58,6 +78,17 @@ export function renderSchedulerTab(container, user, pageHeader, initialData) {
   let barangayName = 'Barangay Peacekeeping Watch';
   let selectedStatus = 'all';
   let searchQuery = initialData?.searchQuery ? initialData.searchQuery.trim().toLowerCase() : '';
+  // Draft shifts ticked for publishing (contract §3: POST /shifts/publish).
+  const selectedShiftIds = new Set();
+  let publishWarnings = [];
+  // Publishing needs the approve_roster authority. Looked up once for the
+  // tab; a failed lookup resolves to "does not hold it" so the controls stay
+  // hidden rather than offering an action the server will refuse.
+  let canApproveRoster = false;
+  const rosterAuthorityPromise = getOwnApprovalAuthority(user.userId, user.role)
+    .then((list) => list.includes('approve_roster'))
+    .catch(() => false);
+  let availabilityState = { status: 'loading', items: [], message: '' };
 
   if (pageHeader && pageHeader.actions) {
     const printBtn = document.createElement('button');
@@ -77,6 +108,15 @@ export function renderSchedulerTab(container, user, pageHeader, initialData) {
       });
     });
     pageHeader.actions.appendChild(printBtn);
+
+    if (onOpenSwaps) {
+      const swapsBtn = document.createElement('button');
+      swapsBtn.type = 'button';
+      swapsBtn.className = 'ghost';
+      swapsBtn.innerHTML = `${icons.repeat(15)} <span>Swap requests</span>`;
+      swapsBtn.addEventListener('click', onOpenSwaps);
+      pageHeader.actions.appendChild(swapsBtn);
+    }
   }
 
   getBarangays().then((list) => {
@@ -84,27 +124,181 @@ export function renderSchedulerTab(container, user, pageHeader, initialData) {
     if (found) barangayName = `Barangay ${found.name}`;
   }).catch(() => {});
 
+  if (!isAdmin) {
+    formPane.hidden = true;
+    listPane.style.flex = '1 1 100%';
+  }
   load();
+  if (canReviewAvailability) loadAvailability();
+
+  // One Retry re-fetches the whole tab (shifts + availability): a failed
+  // server usually fails both, and a single recovery action is clearer than
+  // two independent ones.
+  function retryAll() {
+    load();
+    if (canReviewAvailability) loadAvailability();
+  }
+
+  async function loadAvailability() {
+    availabilityState = { status: 'loading', items: [], message: '' };
+    renderAvailability();
+    try {
+      const res = await getAvailability({ status: 'submitted', limit: 100 });
+      availabilityState = { status: res.items.length === 0 ? 'empty' : 'ready', items: res.items, message: '' };
+    } catch (err) {
+      availabilityState = {
+        status: 'error',
+        items: [],
+        message: err instanceof ApiClientError ? err.message : 'Something went wrong loading availability.',
+      };
+    }
+    renderAvailability();
+  }
+
+  function formatWindow(w) {
+    return `${w.date} ${w.start}–${w.end}`;
+  }
+
+  function renderAvailability() {
+    availabilityHost.innerHTML = '';
+    availabilityHost.setAttribute('aria-busy', availabilityState.status === 'loading' ? 'true' : 'false');
+
+    const head = document.createElement('div');
+    head.className = 'availability-panel__head';
+    const heading = document.createElement('h3');
+    heading.textContent = 'Availability to review';
+    head.appendChild(heading);
+    availabilityHost.appendChild(head);
+
+    if (availabilityState.status === 'loading') {
+      const wrap = document.createElement('div');
+      wrap.className = 'stack';
+      wrap.setAttribute('role', 'status');
+      wrap.setAttribute('aria-label', 'Loading availability');
+      for (let i = 0; i < 2; i++) {
+        const skeleton = document.createElement('div');
+        skeleton.className = 'skeleton skeleton--row';
+        wrap.appendChild(skeleton);
+      }
+      availabilityHost.appendChild(wrap);
+      return;
+    }
+    if (availabilityState.status === 'error') {
+      const block = document.createElement('div');
+      block.className = 'state-block state-block--error';
+      block.setAttribute('role', 'alert');
+      const text = document.createElement('p');
+      text.textContent = availabilityState.message;
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'primary';
+      retry.textContent = 'Retry';
+      retry.addEventListener('click', retryAll);
+      block.append(text, retry);
+      availabilityHost.appendChild(block);
+      return;
+    }
+    if (availabilityState.status === 'empty') {
+      const note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = 'No availability submissions are waiting for review.';
+      availabilityHost.appendChild(note);
+      return;
+    }
+
+    for (const item of availabilityState.items) {
+      const tanodName = item.userName ?? tanods.find((t) => t.userId === item.userId)?.fullName ?? `Tanod #${item.userId}`;
+      const row = document.createElement('div');
+      row.className = 'availability-item';
+
+      const top = document.createElement('div');
+      top.className = 'availability-item__top';
+      const who = document.createElement('strong');
+      who.textContent = tanodName;
+      const period = document.createElement('span');
+      period.className = 'text-tertiary';
+      period.textContent = `${item.periodStart} to ${item.periodEnd}`;
+      top.append(who, period);
+
+      const list = document.createElement('ul');
+      list.className = 'availability-item__windows';
+      list.setAttribute('aria-label', `Availability windows for ${tanodName}`);
+      for (const w of item.windows) {
+        const li = document.createElement('li');
+        li.textContent = formatWindow(w);
+        list.appendChild(li);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'availability-item__actions';
+      const note = document.createElement('input');
+      note.type = 'text';
+      note.className = 'personnel-form-input';
+      note.maxLength = 255;
+      note.placeholder = 'Note to the tanod (optional)';
+      note.setAttribute('aria-label', `Review note for ${tanodName}`);
+      const accept = document.createElement('button');
+      accept.type = 'button';
+      accept.className = 'primary';
+      accept.textContent = 'Accept';
+      const revise = document.createElement('button');
+      revise.type = 'button';
+      revise.className = 'ghost';
+      revise.textContent = 'Ask to revise';
+
+      const review = async (status) => {
+        accept.disabled = true;
+        revise.disabled = true;
+        try {
+          await reviewAvailability(item.availId, {
+            status,
+            reviewNote: note.value.trim(),
+            idempotencyKey: crypto.randomUUID(),
+          });
+          showToast(status === 'accepted' ? 'Availability accepted.' : 'Marked for revision.', { variant: 'success' });
+          loadAvailability();
+        } catch (err) {
+          accept.disabled = false;
+          revise.disabled = false;
+          showToast(err instanceof ApiClientError ? err.message : 'Could not review this availability.', { variant: 'error' });
+        }
+      };
+      accept.addEventListener('click', () => review('accepted'));
+      revise.addEventListener('click', () => review('revised'));
+      actions.append(note, accept, revise);
+
+      row.append(top, list, actions);
+      availabilityHost.appendChild(row);
+    }
+  }
 
   async function load() {
     renderLoading(listPane);
     try {
       const [tanodsRes, shiftsRes] = await Promise.all([
-        getUsers({ role: 'tanod', limit: 100 }),
-        getShifts({ limit: 100 }),
+        isAdmin ? getUsers({ role: 'tanod', limit: 100 }) : Promise.resolve({ items: [] }),
+        getShiftsDetailed({ limit: 100 }),
       ]);
       tanods = tanodsRes.items;
       shifts = shiftsRes.items;
+      canApproveRoster = await rosterAuthorityPromise;
+      // Drop ticks for shifts that are gone or already published.
+      for (const id of [...selectedShiftIds]) {
+        if (!shifts.some((s) => s.shiftId === id && s.approvalStatus === 'draft')) selectedShiftIds.delete(id);
+      }
+      if (availabilityState.status === 'ready') renderAvailability();
 
       renderStatStrip();
-      const newFormPane = buildNewShiftForm(tanods, load, shifts);
-      layout.replaceChild(newFormPane, formPane);
-      formPane = newFormPane;
+      if (isAdmin) {
+        const newFormPane = buildNewShiftForm(tanods, load, shifts);
+        layout.replaceChild(newFormPane, formPane);
+        formPane = newFormPane;
+      }
 
       renderShiftsTable();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading the scheduler.';
-      renderError(listPane, message, load);
+      renderError(listPane, message, retryAll);
     }
   }
 
@@ -187,6 +381,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData) {
   searchInput.type = 'search';
   searchInput.className = 'personnel-search-input';
   searchInput.placeholder = 'Search by tanod or patrol zone…';
+  searchInput.setAttribute('aria-label', 'Search shifts by tanod or patrol zone');
   if (initialData?.searchQuery) {
     searchInput.value = initialData.searchQuery;
   }
@@ -243,8 +438,102 @@ export function renderSchedulerTab(container, user, pageHeader, initialData) {
     });
   }
 
+  function buildPublishBar() {
+    const draftShifts = shifts.filter((s) => s.approvalStatus === 'draft');
+    const bar = document.createElement('div');
+    bar.className = 'scheduler-publish-bar';
+
+    if (!canApproveRoster) {
+      const note = document.createElement('span');
+      note.className = 'scheduler-publish-bar__hint';
+      note.textContent = 'You do not hold roster approval authority.';
+      bar.appendChild(note);
+      return bar;
+    }
+
+    const hint = document.createElement('span');
+    hint.className = 'scheduler-publish-bar__hint';
+    hint.textContent = draftShifts.length === 0
+      ? 'No draft shifts. New shifts are saved as drafts and are only visible to tanods once published.'
+      : `${draftShifts.length} draft shift${draftShifts.length === 1 ? '' : 's'} not yet visible to tanods.`;
+
+    const buttons = document.createElement('div');
+    buttons.className = 'availability-item__actions';
+    if (draftShifts.length > 0) {
+      const selectAll = document.createElement('button');
+      selectAll.type = 'button';
+      selectAll.className = 'ghost';
+      selectAll.textContent = selectedShiftIds.size === draftShifts.length ? 'Clear selection' : 'Select all drafts';
+      selectAll.addEventListener('click', () => {
+        if (selectedShiftIds.size === draftShifts.length) selectedShiftIds.clear();
+        else draftShifts.forEach((s) => selectedShiftIds.add(s.shiftId));
+        renderShiftsTable();
+      });
+      buttons.appendChild(selectAll);
+    }
+    const publish = document.createElement('button');
+    publish.type = 'button';
+    publish.id = 'publish-shifts-btn';
+    publish.className = 'primary';
+    publish.disabled = selectedShiftIds.size === 0;
+    publish.textContent = `Publish selected (${selectedShiftIds.size})`;
+    publish.addEventListener('click', async () => {
+      const ids = [...selectedShiftIds];
+      if (ids.length === 0) return;
+      const confirmed = await confirmDialog({
+        title: `Publish ${ids.length} shift${ids.length === 1 ? '' : 's'}?`,
+        description: 'Published shifts become visible to the assigned tanods. You need roster approval authority to do this.',
+        confirmLabel: 'Publish',
+        cancelLabel: 'Cancel',
+      });
+      if (!confirmed) return;
+      publish.disabled = true;
+      publish.textContent = 'Publishing…';
+      try {
+        const result = await publishShifts(ids, crypto.randomUUID());
+        publishWarnings = result.warnings;
+        showToast(
+          `${result.published.length} shift${result.published.length === 1 ? '' : 's'} published.`,
+          { variant: 'success' },
+        );
+        selectedShiftIds.clear();
+        load();
+      } catch (err) {
+        publish.disabled = false;
+        publish.textContent = `Publish selected (${selectedShiftIds.size})`;
+        showToast(err instanceof ApiClientError ? err.message : 'Could not publish these shifts.', { variant: 'error' });
+      }
+    });
+    buttons.appendChild(publish);
+
+    bar.append(hint, buttons);
+    return bar;
+  }
+
+  function buildWarningsBlock() {
+    if (publishWarnings.length === 0) return null;
+    const box = document.createElement('div');
+    box.className = 'scheduler-publish-warnings';
+    box.setAttribute('role', 'status');
+    const title = document.createElement('strong');
+    title.textContent = 'Published with coverage warnings';
+    const list = document.createElement('ul');
+    for (const w of publishWarnings) {
+      const li = document.createElement('li');
+      li.textContent = w.code === 'NO_COVERAGE'
+        ? `${w.date}: no tanod is scheduled on this date.`
+        : `${w.date}: ${w.code}`;
+      list.appendChild(li);
+    }
+    box.append(title, list);
+    return box;
+  }
+
   function renderShiftsTable() {
     listPane.innerHTML = '';
+    const warningsBlock = buildWarningsBlock();
+    if (warningsBlock) listPane.appendChild(warningsBlock);
+    listPane.appendChild(buildPublishBar());
     listPane.appendChild(filterBar);
 
     const filtered = getFilteredShifts();
@@ -263,6 +552,28 @@ export function renderSchedulerTab(container, user, pageHeader, initialData) {
       emptyMessage: (searchQuery || selectedStatus !== 'all') ? 'No shifts match your filter.' : 'No shifts scheduled yet.',
       renderCell: (shift, key) => {
         switch (key) {
+          case 'select': {
+            if (!canApproveRoster || shift.approvalStatus !== 'draft') return '<span class="text-tertiary">—</span>';
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = selectedShiftIds.has(shift.shiftId);
+            box.setAttribute('aria-label', `Select draft shift #${shift.shiftId} for publishing`);
+            box.addEventListener('change', () => {
+              if (box.checked) selectedShiftIds.add(shift.shiftId);
+              else selectedShiftIds.delete(shift.shiftId);
+              renderShiftsTable();
+            });
+            return box;
+          }
+
+          case 'approval': {
+            const pill = document.createElement('span');
+            const draft = shift.approvalStatus === 'draft';
+            pill.className = `shift-approval-pill shift-approval-pill--${draft ? 'draft' : 'published'}`;
+            pill.textContent = draft ? 'Draft' : 'Published';
+            return pill;
+          }
+
           case 'status': {
             const status = getShiftStatus(shift.startAt, shift.endAt);
             const pill = document.createElement('span');
@@ -290,7 +601,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData) {
               const unassigned = document.createElement('span');
               unassigned.className = 'text-tertiary';
               unassigned.style.fontStyle = 'italic';
-              unassigned.textContent = 'Unassigned';
+              // Without the roster (non-Admin) an assigned shift shows its id
+              // rather than being mislabelled "Unassigned".
+              unassigned.textContent = shift.userId ? `Tanod #${shift.userId}` : 'Unassigned';
               cell.appendChild(unassigned);
             }
             return cell;
@@ -323,6 +636,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData) {
           }
 
           case 'actions': {
+            if (!isAdmin) return '<span class="text-tertiary">—</span>';
             const button = document.createElement('button');
             button.className = 'user-action-btn';
             button.type = 'button';
@@ -451,7 +765,7 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
         <span>Fatigue Safety Warning: Exceeds Safe Limit</span>
       </div>
       <div class="scheduler-fatigue-callout__desc">
-        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${tanodName}'s 7-day schedule to <strong>${preview.projectedHours.toFixed(1)} hrs</strong> (+${preview.overBy.toFixed(1)}h over the 56h threshold). A fatigue safety flag will be triggered.
+        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${escapeHtml(tanodName)}'s 7-day schedule to <strong>${preview.projectedHours.toFixed(1)} hrs</strong> (+${preview.overBy.toFixed(1)}h over the 56h threshold). A fatigue safety flag will be triggered.
       </div>
     `;
   } else if (preview.status === 'caution') {
@@ -462,7 +776,7 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
         <span>Approaching Weekly Safety Limit</span>
       </div>
       <div class="scheduler-fatigue-callout__desc">
-        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${tanodName} to <strong>${preview.projectedHours.toFixed(1)} hrs / 56h max</strong> (${(FATIGUE_THRESHOLD_HOURS - preview.projectedHours).toFixed(1)}h remaining before safety limit).
+        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${escapeHtml(tanodName)} to <strong>${preview.projectedHours.toFixed(1)} hrs / 56h max</strong> (${(FATIGUE_THRESHOLD_HOURS - preview.projectedHours).toFixed(1)}h remaining before safety limit).
       </div>
     `;
   } else {
@@ -596,6 +910,10 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   startInput.addEventListener('input', updateFormFatiguePreview);
   endInput.addEventListener('input', updateFormFatiguePreview);
 
+  const draftNote = document.createElement('p');
+  draftNote.className = 'note';
+  draftNote.textContent = 'New shifts are saved as drafts. Tanods see a shift only after it is published.';
+
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
@@ -610,6 +928,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     startLabel, startInput,
     endLabel, endInput,
     fatigueCallout,
+    draftNote,
     submitButton
   );
   card.append(heading, form);
@@ -647,7 +966,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
         endAt: endInput.value,
         requestId: crypto.randomUUID(),
       });
-      showToast('Shift successfully created.', { variant: 'success' });
+      showToast('Shift saved as a draft.', { variant: 'success' });
       zoneInput.value = '';
       startInput.value = '';
       endInput.value = '';
@@ -923,7 +1242,7 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
   const shiftRowsHtml = shifts.length > 0
     ? shifts.map((shift) => {
         const tanod = tanods.find((t) => t.userId === shift.userId);
-        const tanodName = tanod ? tanod.fullName : 'Unassigned';
+        const tanodName = tanod ? tanod.fullName : (shift.userId ? `Tanod #${shift.userId}` : 'Unassigned');
         const status = getShiftStatus(shift.startAt, shift.endAt);
         const duration = formatDuration(shift.startAt, shift.endAt).replace(/^Duration:\s*/i, '') || '—';
         return `

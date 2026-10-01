@@ -33,6 +33,11 @@ import { renderSmsMonitorPage } from './pages/sms-monitor.js';
 import { renderAuditLogPage } from './pages/audit-log.js';
 import { renderServiceHealthPage } from './pages/service-health.js';
 import { renderMapPackagesPage } from './pages/map-packages.js';
+// 2026-10 tanod-workflow pages (docs/FEATURE_CONTRACT_2026-10.md §10).
+import { renderApprovalsPage } from './pages/approvals.js';
+import { renderAccomplishmentReportsPage } from './pages/accomplishment-reports.js';
+import { renderReferralLogPage } from './pages/referral-log.js';
+import { renderSchoolZonesPage } from './pages/school-zones.js';
 import { DEFAULT_PAGE_KEY } from './pages/settings.js';
 
 const PAGE_ROLES = {
@@ -48,8 +53,12 @@ const PAGE_ROLES = {
   // 2026-09-05 merge of W10-W13 (User Management/Scheduler/Swap Requests/
   // Fatigue Flags) into one tabbed screen — see pages/personnel.js. Role
   // list is the union of the four; personnel.js gates individual tabs
-  // (only Fatigue is Punong Barangay-visible) below that.
-  personnel: ['admin', 'punong_barangay'],
+  // below that.
+  // 2026-10: the Fatigue tab left the hub. Secretary and Punong Barangay get
+  // the Scheduler tab only (availability review / roster publishing, which
+  // the Approvals page deep-links to); Users and Swap requests stay Admin —
+  // see personnel.js. The server gates every action by role + authority.
+  personnel: ['admin', 'secretary', 'punong_barangay'],
   // §9 W14 — Admin only, explicitly.
   'sms-log': ['admin'],
   // §9 W17 and W20 — both Admin only, explicitly.
@@ -64,6 +73,15 @@ const PAGE_ROLES = {
   // enforces all of it independently (§2 Rule 6: client-side hiding is
   // UX, not a boundary).
   'incident-detail': ['admin', 'secretary', 'punong_barangay'],
+  // 2026-10 tanod-workflow pages (contract §10). Appended AFTER the screens
+  // above on purpose: the default landing page is the first PAGE_ROLES match
+  // for a role, and these must not change anyone's existing landing page.
+  // Each page's own actions are additionally gated server-side by role AND
+  // by the account's approval_authority (§2); hiding here is UX only.
+  approvals: ['admin', 'secretary', 'punong_barangay'],
+  'accomplishment-reports': ['admin', 'secretary', 'punong_barangay'],
+  referrals: ['admin', 'secretary', 'punong_barangay'],
+  'school-zones': ['admin', 'secretary', 'punong_barangay'],
 };
 
 // Pages that cannot render without a parameter — never chosen as a role's
@@ -159,6 +177,22 @@ function boot(currentPage, param) {
     renderSettingsPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'incident-detail') {
     renderIncidentDetailPage(root, session.user, onLoggedOut, navigate, param);
+  } else if (page === 'approvals') {
+    // Optional stop handle (a page that polls returns one), same contract as above.
+    const handle = renderApprovalsPage(root, session.user, onLoggedOut, navigate, param);
+    activeStop = handle?.stop ?? null;
+  } else if (page === 'accomplishment-reports') {
+    // Optional stop handle (a page that polls returns one), same contract as above.
+    const handle = renderAccomplishmentReportsPage(root, session.user, onLoggedOut, navigate, param);
+    activeStop = handle?.stop ?? null;
+  } else if (page === 'referrals') {
+    // Optional stop handle (a page that polls returns one), same contract as above.
+    const handle = renderReferralLogPage(root, session.user, onLoggedOut, navigate, param);
+    activeStop = handle?.stop ?? null;
+  } else if (page === 'school-zones') {
+    // Optional stop handle (a page that polls returns one), same contract as above.
+    const handle = renderSchoolZonesPage(root, session.user, onLoggedOut, navigate, param);
+    activeStop = handle?.stop ?? null;
   }
 
   setDocumentTitle(root);

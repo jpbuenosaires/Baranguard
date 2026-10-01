@@ -36,6 +36,7 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { openReferralDialog } from '../components/IncidentCaseCards.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 
@@ -802,6 +803,19 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const card = document.createElement('div');
       card.className = `queue-incident-card${item.priority === 'critical' ? ' is-critical' : ''}`;
 
+      // "Delegated to" (2026-10, contract §5): records that the incident was
+      // referred to another party (PNP, BFP, EMS ...). It only writes a
+      // referral row; it never changes the dispatch or incident status.
+      const delegateBtn = document.createElement('button');
+      delegateBtn.type = 'button';
+      delegateBtn.className = 'queue-incident-card__add-responder-btn';
+      delegateBtn.innerHTML = `${icons.send(13)} <span>Delegated to</span>`;
+      delegateBtn.title = 'Record that this incident was referred to another party';
+      delegateBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openReferralDialog({ incidentId: item.incidentId, incidentLabel: formatIncidentCode(item) });
+      });
+
       // Card Header: • INC-XXX + Status Badge
       const cardHeader = document.createElement('div');
       cardHeader.className = 'queue-incident-card__header';
@@ -855,7 +869,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
             dispatchBtn.disabled = false;
           }
         });
-        card.append(cardHeader, titleRow, locRow, timeRow, dispatchBtn);
+        card.append(cardHeader, titleRow, locRow, timeRow, dispatchBtn, delegateBtn);
       } else {
         // Dispatched item — one row per responder (docs/REMAINING.md
         // G-backlog "second responder": an incident can now have more
@@ -992,7 +1006,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
           }
         });
 
-        card.append(cardHeader, titleRow, locRow, timeRow, dispatchedList, addResponderBtn);
+        card.append(cardHeader, titleRow, locRow, timeRow, dispatchedList, addResponderBtn, delegateBtn);
       }
 
       // Card Click: Focus on Map

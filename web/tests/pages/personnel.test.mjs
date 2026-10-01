@@ -1,36 +1,91 @@
 import { describePage } from '../harness/pageSuite.mjs';
 import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, mountPage, settle, cleanup, text, click, type, buttonByText, $, $$ } from '../harness/render.mjs';
+import { api, mountPage, settle, cleanup, text, click, type, buttonByText, $, $$, window } from '../harness/render.mjs';
 import { renderPersonnelPage } from '../../src/pages/personnel.js';
+import { getMyAuthority, clearAuthorityCache } from '../../src/services/tanodWorkflowUi.js';
 
 describePage({
   name: 'Personnel',
   render: renderPersonnelPage,
-  roles: ['admin', 'punong_barangay'],
+  // Admin: Users / Scheduler / Swap requests. Secretary and Punong Barangay
+  // land on the Scheduler tab (availability review / roster publishing).
+  roles: ['admin', 'secretary', 'punong_barangay'],
   heading: 'Personnel',
 });
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const tabLabels = () => $$('.page-tab').map((b) => text(b).replace(/\d+$/, '').trim());
 const tab = (label) => $$('.page-tab').find((b) => new RegExp(label, 'i').test(text(b)));
+
+async function openScheduler(role = 'admin') {
+  const ctx = mountPage(renderPersonnelPage, { role });
+  await settle();
+  if (role === 'admin') {
+    click(tab('Scheduler'));
+    await settle();
+  }
+  return ctx;
+}
+
+// The fixture Admin holds no roster authority; give them approve_roster for
+// the tests that publish (the Publish controls are authority-gated).
+function grantRosterAuthority() {
+  api.on('GET', '/users/:id', ({ params }) => ({
+    status: 200,
+    body: { user_id: Number(params.id), full_name: 'Ramon Elcano', role: 'admin', official_title: 'Chief Tanod', approval_authority: ['approve_roster'], is_active: 1, is_suspended: 0 },
+  }));
+}
 
 describe('Personnel behaviour', () => {
   afterEach(() => cleanup());
 
-  test('Admin sees all four tabs', async () => {
-    mountPage(renderPersonnelPage, { role: 'admin' });
-    await settle();
-    for (const label of ['Users', 'Scheduler', 'Swap', 'Fatigue']) assert.ok(tab(label), `missing ${label} tab (have: ${tabLabels().join(', ')})`);
+  test('without approve_roster the Publish bar and draft checkboxes are hidden and a note says why', async () => {
+    await openScheduler('admin');
+    assert.equal($('#publish-shifts-btn'), null);
+    assert.equal($$('tbody input[type="checkbox"]').length, 0);
+    assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
   });
 
-  test('Punong Barangay sees only Fatigue flags (REFERENCE.md §7)', async () => {
+  test('Admin sees Users, Scheduler and Swap requests, and no Fatigue tab (contract §10)', async () => {
+    mountPage(renderPersonnelPage, { role: 'admin' });
+    await settle();
+    for (const label of ['Users', 'Scheduler', 'Swap']) assert.ok(tab(label), `missing ${label} tab (have: ${tabLabels().join(', ')})`);
+    assert.equal(tab('Fatigue'), undefined, 'the Fatigue tab must be gone from the hub');
+  });
+
+  for (const role of ['secretary', 'punong_barangay']) {
+    test(`${role} sees the Scheduler tab only; no user roster is pulled`, async () => {
+      mountPage(renderPersonnelPage, { role });
+      await settle();
+      assert.deepEqual(tabLabels(), ['Scheduler']);
+      assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only; this role must not call it');
+      assert.equal($('#scheduler-new-start'), null, 'only an Admin may create shifts');
+      assert.equal(buttonByText(/edit shift/i), undefined, 'only an Admin may edit shifts');
+    });
+  }
+
+  test('the availability review panel shows for Secretary, not for Punong Barangay', async () => {
+    mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    assert.match(text($('.page-content')), /Availability to review/);
+    assert.equal(api.callsTo('GET', '/availability').length, 1);
+    cleanup();
     mountPage(renderPersonnelPage, { role: 'punong_barangay' });
     await settle();
-    for (const hidden of ['Users', 'Scheduler', 'Swap']) {
-      assert.equal(tab(hidden), undefined, `PB must not see the ${hidden} tab (saw: ${tabLabels().join(', ')})`);
-    }
-    assert.match(text($('.page-content')), /Fatigue/i);
-    assert.equal(api.callsTo('GET', '/users').length, 0, 'the read-only role must not pull the user roster');
+    assert.doesNotMatch(text($('.page-content')), /Availability to review/);
+    assert.equal(api.callsTo('GET', '/availability').length, 0);
+  });
+
+  test('an object param ({ tab }) opens that tab, as the Approvals page sends it', async () => {
+    const ctx = mountPage(renderPersonnelPage, { role: 'admin', param: { tab: 'scheduler' } });
+    await settle();
+    assert.ok(tab('Scheduler').classList.contains('is-active'));
+    assert.ok(ctx.root);
+    cleanup();
+    mountPage(renderPersonnelPage, { role: 'admin', param: { userId: 5 } });
+    await settle();
+    assert.ok(tab('Users').classList.contains('is-active'), 'an unrelated object param falls back to the first tab');
   });
 
   test('user roster lists every account with its real status', async () => {
@@ -58,6 +113,61 @@ describe('Personnel behaviour', () => {
     assert.equal(call.body.is_suspended, true);
   });
 
+  test('the Users tab shows official titles and authorities, only for roles that may hold one', async () => {
+    mountPage(renderPersonnelPage, { role: 'admin' });
+    await settle();
+    const body = text($('.page-content'));
+    assert.match(body, /Chief Tanod/);
+    assert.match(body, /Approve and publish duty roster/);
+    const rows = $$('tbody tr');
+    const tanodRow = rows.find((r) => /Jose Reyes/.test(text(r)));
+    assert.equal(buttonByText(/approval authority/i, tanodRow), undefined, 'a Tanod can never hold an approval authority');
+    const kapitanRow = rows.find((r) => /Teresa Magbanua/.test(text(r)));
+    assert.ok(buttonByText(/approval authority/i, kapitanRow));
+  });
+
+  test('saving approval authority clears the cached authority lookup', async () => {
+    mountPage(renderPersonnelPage, { role: 'admin' });
+    await settle();
+    clearAuthorityCache();
+    await getMyAuthority({ userId: 2 });
+    await getMyAuthority({ userId: 2 });
+    const before = api.callsTo('GET', '/users/:id').length;
+    const secretaryRow = $$('tbody tr').find((r) => /Liwayway Ferrer/.test(text(r)));
+    click(buttonByText(/approval authority/i, secretaryRow));
+    await settle();
+    const dialog = $('[role="dialog"]');
+    dialog.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    await getMyAuthority({ userId: 2 });
+    assert.equal(api.callsTo('GET', '/users/:id').length, before + 1, 'the next lookup must refetch after a save');
+    clearAuthorityCache();
+  });
+
+  test('editing approval authority PATCHes official_title + the five-value array with an Idempotency-Key', async () => {
+    mountPage(renderPersonnelPage, { role: 'admin' });
+    await settle();
+    const secretaryRow = $$('tbody tr').find((r) => /Liwayway Ferrer/.test(text(r)));
+    click(buttonByText(/approval authority/i, secretaryRow));
+    await settle();
+    const dialog = $('[role="dialog"]');
+    assert.ok(dialog, 'the authority dialog did not open');
+    const boxes = $$('input[type="checkbox"]', dialog);
+    assert.equal(boxes.length, 5, 'exactly the five authorities from contract §2');
+    assert.deepEqual(boxes.filter((b) => b.checked).map((b) => b.value), ['note_report'], 'pre-checked from the account');
+    type($('#approval-official-title', dialog), 'Barangay Kagawad');
+    const approveRoster = boxes.find((b) => b.value === 'approve_roster');
+    approveRoster.checked = true;
+    dialog.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    const [call] = api.callsTo('PATCH', '/users/:id');
+    assert.ok(call, 'PATCH /users/:id was not sent');
+    assert.equal(call.body.official_title, 'Barangay Kagawad');
+    assert.deepEqual(call.body.approval_authority.sort(), ['approve_roster', 'note_report']);
+    assert.match(call.headers['idempotency-key'] || '', UUID);
+    assert.equal($('[role="dialog"]'), null, 'the dialog closes after saving');
+  });
+
   test('the create-user password rule stays visible while typing (§13)', async () => {
     const ctx = mountPage(renderPersonnelPage, { role: 'admin' });
     await settle();
@@ -83,6 +193,17 @@ describe('Personnel behaviour', () => {
     assert.equal(api.callsTo('POST', '/shifts').length, 0);
   });
 
+  test('a new shift is created as a draft and the form says so (contract §3)', async () => {
+    await openScheduler('admin');
+    assert.match(text($('#scheduler-new-start').closest('form')), /saved as drafts/i);
+    type($('#scheduler-new-start'), '2026-10-12T08:00');
+    type($('#scheduler-new-end'), '2026-10-12T16:00');
+    $('#scheduler-new-start').closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    assert.equal(api.callsTo('POST', '/shifts').length, 1);
+    assert.match(text(window.document.body), /Shift saved as a draft\./);
+  });
+
   test('approving a swap request sends its version (optimistic concurrency)', async () => {
     const ctx = mountPage(renderPersonnelPage, { role: 'admin' });
     await settle();
@@ -99,10 +220,7 @@ describe('Personnel behaviour', () => {
   });
 
   test('Scheduler tab offers Preview & Print Schedule A4 duty roster modal', async () => {
-    const ctx = mountPage(renderPersonnelPage, { role: 'admin' });
-    await settle();
-    click(tab('Scheduler'));
-    await settle();
+    const ctx = await openScheduler('admin');
 
     const printBtn = ctx.root.querySelector('#preview-schedule-print-btn');
     assert.ok(printBtn, 'Preview & Print Schedule button should be mounted in Scheduler header');
@@ -118,71 +236,84 @@ describe('Personnel behaviour', () => {
     assert.ok(!document.body.classList.contains('has-print-modal'), 'closing modal should remove has-print-modal');
   });
 
-  test('Fatigue flags display accurate threshold markers, tier styling, and copy', async () => {
-    const ctx = mountPage(renderPersonnelPage, { role: 'admin' });
-    await settle();
-    click(tab('Fatigue'));
-    await settle();
-
-    // Check threshold marker is present
-    const markers = ctx.root.querySelectorAll('.fatigue-meter-threshold-marker');
-    assert.ok(markers.length > 0, 'Threshold marker should be mounted on the track');
-
-    // Fixture has 62.5h (over limit, High Risk) and 49h (under limit, Under Limit)
-    const content = text(ctx.root);
-    assert.match(content, /High Risk/i);
-    assert.match(content, /Under Limit/i);
-    assert.match(content, /\+6\.5h over safe limit/i);
-    assert.match(content, /7\.0h under limit \(historical alert\)/i);
+  test('Scheduler marks every shift Draft or Published from the server value', async () => {
+    await openScheduler('admin');
+    const pills = $$('.shift-approval-pill').map((p) => text(p));
+    assert.equal(pills.filter((p) => p === 'Draft').length, 2);
+    assert.equal(pills.filter((p) => p === 'Published').length, 2);
   });
 
-  test('Clicking "View Shifts" switches to Scheduler tab pre-filtered to Tanod', async () => {
-    const ctx = mountPage(renderPersonnelPage, { role: 'admin' });
+  test('publishing: only drafts are selectable; Publish POSTs shift_ids with an Idempotency-Key and shows coverage warnings', async () => {
+    grantRosterAuthority();
+    await openScheduler('admin');
+    const publish = $('#publish-shifts-btn');
+    assert.equal(publish.disabled, true, 'nothing selected yet');
+    assert.equal($$('tbody input[type="checkbox"]').length, 2, 'only the two draft shifts have a checkbox');
+    click(buttonByText(/select all drafts/i));
+    assert.equal($('#publish-shifts-btn').disabled, false);
+    click($('#publish-shifts-btn'));
     await settle();
-    click(tab('Fatigue'));
+    const dialog = $('[role="alertdialog"], [role="dialog"]');
+    assert.ok(dialog, 'publishing must be confirmed');
+    assert.equal(api.callsTo('POST', '/shifts/publish').length, 0, 'nothing is sent before confirmation');
+    click($$('button', dialog).filter((b) => !b.disabled).at(-1));
     await settle();
-
-    const viewShiftsBtn = buttonByText(/View Shifts/i, ctx.root);
-    assert.ok(viewShiftsBtn, 'View Shifts button should be present in Fatigue tab for admin');
-    click(viewShiftsBtn);
-    await settle();
-
-    // Active tab is now scheduler
-    assert.ok(tab('Scheduler').classList.contains('is-active'), 'Scheduler tab should now be active');
-    const searchInput = ctx.root.querySelector('.personnel-search-input');
-    assert.ok(searchInput.value.length > 0, 'Scheduler search query should be prefilled');
+    const [call] = api.callsTo('POST', '/shifts/publish');
+    assert.ok(call, 'POST /shifts/publish was not sent');
+    assert.deepEqual(call.body.shift_ids.sort(), [502, 503]);
+    assert.match(call.headers['idempotency-key'] || '', UUID);
+    assert.match(text($('.scheduler-publish-warnings')), /2026-10-07.*no tanod is scheduled/i);
   });
 
-  test('Fatigue Details button opens breakdown modal with triggering shift info and audit trail', async () => {
-    const ctx = mountPage(renderPersonnelPage, { role: 'admin' });
+  test('a publish refused for missing authority shows the server message and sends nothing else', async () => {
+    grantRosterAuthority();
+    api.on('POST', '/shifts/publish', () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'You are not designated to perform this action.' } } }));
+    await openScheduler('admin');
+    click(buttonByText(/select all drafts/i));
+    click($('#publish-shifts-btn'));
     await settle();
-    click(tab('Fatigue'));
+    click($$('button', $('[role="alertdialog"], [role="dialog"]')).filter((b) => !b.disabled).at(-1));
     await settle();
+    assert.match(text(window.document.body), /not designated to perform this action/);
+    assert.equal($('.scheduler-publish-warnings'), null);
+  });
 
-    const detailsBtn = buttonByText(/Details/i, ctx.root);
-    assert.ok(detailsBtn, 'Details button should be present');
-    click(detailsBtn);
+  test('accepting an availability submission PATCHes status accepted with an Idempotency-Key', async () => {
+    await openScheduler('admin');
+    const panel = $('.availability-panel');
+    assert.match(text(panel), /Jose Reyes/, 'the tanod name comes from the roster lookup');
+    assert.match(text(panel), /2026-10-05 08:00–16:00/);
+    type($('input[type="text"]', panel), 'Looks good');
+    click(buttonByText(/^accept$/i, panel));
     await settle();
+    const [call] = api.callsTo('PATCH', '/availability/:id');
+    assert.ok(call, 'PATCH /availability/:id was not sent');
+    assert.equal(call.body.status, 'accepted');
+    assert.equal(call.body.review_note, 'Looks good');
+    assert.match(call.headers['idempotency-key'] || '', UUID);
+  });
 
-    const modal = document.querySelector('.personnel-modal[aria-label*="Fatigue Alert Details"]');
-    assert.ok(modal, 'Fatigue Details modal should be open');
-    const modalText = text(modal);
-    assert.match(modalText, /Fatigue Alert Details/i);
-    assert.match(modalText, /Triggering Shift & Calculation Basis/i);
-    assert.match(modalText, /Safety Review & Audit Trail/i);
-
-    // Close button works
-    const closeBtn = modal.querySelector('.personnel-modal__close');
-    click(closeBtn);
+  test('"Ask to revise" sends status revised', async () => {
+    await openScheduler('admin');
+    click(buttonByText(/ask to revise/i, $('.availability-panel')));
     await settle();
-    assert.equal(document.querySelector('.personnel-modal[aria-label*="Fatigue Alert Details"]'), null);
+    assert.equal(api.callsTo('PATCH', '/availability/:id')[0].body.status, 'revised');
+  });
+
+  test('an empty availability queue says so and an availability failure does not blank the shift list', async () => {
+    api.on('GET', '/availability', () => ({ status: 200, body: { items: [], page: 1, limit: 25, total: 0 } }));
+    await openScheduler('admin');
+    assert.match(text($('.availability-panel')), /No availability submissions are waiting/);
+    cleanup();
+    api.on('GET', '/availability', () => ({ status: 500, body: { error: { code: 'SERVER_ERROR', message: 'Availability is down.' } } }));
+    await openScheduler('admin');
+    assert.match(text($('.availability-panel')), /Availability is down/);
+    assert.ok(buttonByText(/retry/i, $('.availability-panel')));
+    assert.ok($$('.shift-approval-pill').length > 0, 'the shift list still renders');
   });
 
   test('Scheduler form dynamically shows proactive fatigue callout on preset or time change', async () => {
-    const ctx = mountPage(renderPersonnelPage, { role: 'admin' });
-    await settle();
-    click(tab('Scheduler'));
-    await settle();
+    const ctx = await openScheduler('admin');
 
     const morningPreset = buttonByText(/Morning/i, ctx.root);
     assert.ok(morningPreset, 'Morning preset should be available');
@@ -196,10 +327,7 @@ describe('Personnel behaviour', () => {
   });
 
   test('Edit Shift modal shows proactive fatigue preview callout', async () => {
-    const ctx = mountPage(renderPersonnelPage, { role: 'admin' });
-    await settle();
-    click(tab('Scheduler'));
-    await settle();
+    const ctx = await openScheduler('admin');
 
     const editBtn = buttonByText(/Edit Shift/i, ctx.root);
     assert.ok(editBtn, 'Edit Shift button should be present in table');
@@ -217,5 +345,11 @@ describe('Personnel behaviour', () => {
     click(closeBtn);
     await settle();
   });
-});
 
+  test('Punong Barangay can publish drafts (the server checks approve_roster) but cannot edit them', async () => {
+    await openScheduler('punong_barangay');
+    assert.ok($('#publish-shifts-btn'));
+    assert.equal(buttonByText(/edit shift/i), undefined);
+    assert.match(text($('.page-content')), /Tanod #5/, 'an assigned shift shows its id when the roster is unavailable, not "Unassigned"');
+  });
+});

@@ -20,6 +20,7 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
 
 const INCIDENT_TYPE_LABELS = {
   sos: 'SOS / Emergency',
@@ -1132,6 +1133,17 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     timelineSection.appendChild(timelineList);
     rightPanel.appendChild(timelineSection);
+
+    // 2026-10 (contract §5, §7): school link + Annex C-1 fields and the
+    // referrals list. Admin and Secretary are the only roles on this page,
+    // and both may edit/add; each card loads and fails on its own.
+    const caseCards = document.createElement('div');
+    caseCards.className = 'incident-detail-case-cards';
+    caseCards.append(
+      SchoolC1Card({ incidentId: row.incidentId, canEdit: canCreate }),
+      ReferralsCard({ incidentId: row.incidentId, canAdd: canCreate, incidentLabel: code }),
+    );
+    rightPanel.appendChild(caseCards);
   }
 
   // --- Render New Incident Form ---
