@@ -99,6 +99,12 @@ final class SyncController
             'duty_status' => self::asItemArray($body['duty_status_updates'] ?? null),
             'dispatch_status' => self::asItemArray($body['dispatch_status_updates'] ?? null),
             'sos' => self::asItemArray($body['sos'] ?? null),
+            // docs/FEATURE_CONTRACT_2026-10.md §6: item shape = each
+            // feature's own single-item endpoint body.
+            'referral' => self::asItemArray($body['referrals'] ?? null),
+            'availability' => self::asItemArray($body['availability'] ?? null),
+            'accomplishment_entry' => self::asItemArray($body['accomplishment_entries'] ?? null),
+            'school_checkin' => self::asItemArray($body['school_checkins'] ?? null),
         ];
         $total = 0;
         foreach ($groups as $items) {
@@ -110,7 +116,10 @@ final class SyncController
 
         // SOS first: an emergency must never wait behind (or be lost
         // to a failure in) routine items. Remaining order is unchanged.
-        $order = ['sos', 'incident', 'gps', 'duty_status', 'dispatch_status'];
+        // A referral may point at an incident created earlier in this
+        // same batch (by incident_client_event_id), so incidents precede
+        // referrals.
+        $order = ['sos', 'incident', 'referral', 'gps', 'duty_status', 'dispatch_status', 'availability', 'accomplishment_entry', 'school_checkin'];
         $results = [];
         foreach ($order as $payloadType) {
             foreach ($groups[$payloadType] as $item) {
@@ -199,9 +208,16 @@ final class SyncController
 
             // SQLSTATE 23000 (unique-key) means a concurrent/earlier write
             // already stored this event: report it as a duplicate of the
-            // original row instead of a failure.
+            // original row instead of a failure. ONLY when that original row
+            // is actually found: 23000 also covers FK violations and other
+            // integrity errors, which are real failures and must never be
+            // reported as a (phantom) duplicate that the client would then
+            // drop from its queue.
+            $serverId = null;
             if ($e instanceof \PDOException && (string) $e->getCode() === '23000') {
                 $serverId = self::findExistingServerId($pdo, $identity, $deviceId, $payloadType, $clientEventId);
+            }
+            if ($serverId !== null) {
                 try {
                     $pdo->prepare(
                         "UPDATE offline_queue SET reconciliation_status = 'success', synced_at = UTC_TIMESTAMP(), sync_metadata_json = :metadata
@@ -217,6 +233,9 @@ final class SyncController
             // which could carry narrative or PII) and masked.
             if ($e instanceof ApiError) {
                 $reason = $e->getMessage();
+            } elseif ($e instanceof \PDOException && (string) $e->getCode() === '23000') {
+                $reason = 'Item could not be stored (data integrity check failed).';
+                error_log('sync/batch item failed: type=' . $payloadType . ' class=' . get_class($e) . ' code=23000');
             } else {
                 $reason = 'Internal error processing item.';
                 error_log('sync/batch item failed: type=' . $payloadType . ' class=' . get_class($e) . ' code=' . (string) $e->getCode());
@@ -252,6 +271,26 @@ final class SyncController
                     break;
                 case 'sos':
                     $stmt = $pdo->prepare('SELECT sos_id FROM tanod_sos WHERE user_id = :u AND client_event_id = :c LIMIT 1');
+                    $stmt->execute(['u' => $identity['user_id'], 'c' => $clientEventId]);
+                    break;
+                case 'referral':
+                    $stmt = $pdo->prepare('SELECT referral_id FROM incident_referral WHERE created_by = :u AND client_event_id = :c LIMIT 1');
+                    $stmt->execute(['u' => $identity['user_id'], 'c' => $clientEventId]);
+                    break;
+                case 'availability':
+                    $stmt = $pdo->prepare('SELECT avail_id FROM tanod_availability WHERE user_id = :u AND client_event_id = :c LIMIT 1');
+                    $stmt->execute(['u' => $identity['user_id'], 'c' => $clientEventId]);
+                    break;
+                case 'accomplishment_entry':
+                    $stmt = $pdo->prepare('SELECT entry_id FROM accomplishment_entry WHERE user_id = :u AND client_event_id = :c LIMIT 1');
+                    $stmt->execute(['u' => $identity['user_id'], 'c' => $clientEventId]);
+                    break;
+                case 'school_checkin':
+                    $stmt = $pdo->prepare('SELECT checkin_id FROM school_checkin WHERE user_id = :u AND client_event_id = :c LIMIT 1');
+                    $stmt->execute(['u' => $identity['user_id'], 'c' => $clientEventId]);
+                    break;
+                case 'duty_status':
+                    $stmt = $pdo->prepare('SELECT status_id FROM duty_status WHERE user_id = :u AND client_event_id = :c LIMIT 1');
                     $stmt->execute(['u' => $identity['user_id'], 'c' => $clientEventId]);
                     break;
                 default:
@@ -308,6 +347,25 @@ final class SyncController
                 // instead of raising a second alarm (§2 Rule 27).
                 $result = TanodSosController::createItem($pdo, $identity, $item);
                 return [$result['sos_id'], $result['wasCreated']];
+
+            // The four feature controllers below each expose
+            // `createItem(PDO, identity, deviceId, item): array{id:int,wasCreated:bool}`
+            // (docs/FEATURE_CONTRACT_2026-10.md §6).
+            case 'referral':
+                $result = ReferralsController::createItem($pdo, $identity, $deviceId, $item);
+                return [$result['id'], $result['wasCreated']];
+
+            case 'availability':
+                $result = AvailabilityController::createItem($pdo, $identity, $deviceId, $item);
+                return [$result['id'], $result['wasCreated']];
+
+            case 'accomplishment_entry':
+                $result = AccomplishmentController::createEntryItem($pdo, $identity, $deviceId, $item);
+                return [$result['id'], $result['wasCreated']];
+
+            case 'school_checkin':
+                $result = SchoolCheckinsController::createItem($pdo, $identity, $deviceId, $item);
+                return [$result['id'], $result['wasCreated']];
 
             default:
                 throw new ApiError(400, 'VALIDATION_ERROR', 'Unknown sync payload type.');

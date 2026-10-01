@@ -1122,4 +1122,30 @@ final class ReportsController
         $stmt->execute($params);
         return (int) $stmt->fetchColumn();
     }
+
+    /**
+     * GET /reports/school-term?term_start=&term_end= -- Safer School Zones
+     * Annex D, computed LIVE from current data and not persisted
+     * (docs/FEATURE_CONTRACT_2026-10.md section 7). Admin, Secretary and
+     * Punong Barangay, own barangay only. Returns the same count fields a
+     * saved `ssz_term_report` snapshot carries, plus the requested range.
+     * The computation itself (and its day-bucketing at a fixed +08:00)
+     * lives in `SszTermReportsController::compute()`; counts only, no
+     * person/narrative/coordinate data.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function schoolTerm(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'punong_barangay']);
+
+        $termStart = Http::query('term_start');
+        $termEnd = Http::query('term_end');
+        if ($termStart === null || $termEnd === null) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'term_start and term_end (YYYY-MM-DD) are required.');
+        }
+        $computed = SszTermReportsController::compute($pdo, $identity['barangay_id'], $termStart, $termEnd);
+
+        Http::send(200, ['term_start' => $termStart, 'term_end' => $termEnd] + $computed);
+    }
 }
