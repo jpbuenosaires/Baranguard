@@ -68,6 +68,9 @@ use PDO;
  */
 final class SyncController
 {
+    /** Max items (all arrays combined) accepted in one batch. */
+    private const MAX_ITEMS_PER_BATCH = 200;
+
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
@@ -90,21 +93,29 @@ final class SyncController
             throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'Device is not registered or not active for this account.');
         }
 
+        $groups = [
+            'incident' => self::asItemArray($body['incidents'] ?? null),
+            'gps' => self::asItemArray($body['gps_tracks'] ?? null),
+            'duty_status' => self::asItemArray($body['duty_status_updates'] ?? null),
+            'dispatch_status' => self::asItemArray($body['dispatch_status_updates'] ?? null),
+            'sos' => self::asItemArray($body['sos'] ?? null),
+        ];
+        $total = 0;
+        foreach ($groups as $items) {
+            $total += count($items);
+        }
+        if ($total > self::MAX_ITEMS_PER_BATCH) {
+            throw new ApiError(413, 'PAYLOAD_TOO_LARGE', 'A sync batch may contain at most ' . self::MAX_ITEMS_PER_BATCH . ' items.');
+        }
+
+        // SOS first: an emergency must never wait behind (or be lost
+        // to a failure in) routine items. Remaining order is unchanged.
+        $order = ['sos', 'incident', 'gps', 'duty_status', 'dispatch_status'];
         $results = [];
-        foreach (self::asItemArray($body['incidents'] ?? null) as $item) {
-            $results[] = self::processItem($pdo, $identity, $deviceId, 'incident', $item);
-        }
-        foreach (self::asItemArray($body['gps_tracks'] ?? null) as $item) {
-            $results[] = self::processItem($pdo, $identity, $deviceId, 'gps', $item);
-        }
-        foreach (self::asItemArray($body['duty_status_updates'] ?? null) as $item) {
-            $results[] = self::processItem($pdo, $identity, $deviceId, 'duty_status', $item);
-        }
-        foreach (self::asItemArray($body['dispatch_status_updates'] ?? null) as $item) {
-            $results[] = self::processItem($pdo, $identity, $deviceId, 'dispatch_status', $item);
-        }
-        foreach (self::asItemArray($body['sos'] ?? null) as $item) {
-            $results[] = self::processItem($pdo, $identity, $deviceId, 'sos', $item);
+        foreach ($order as $payloadType) {
+            foreach ($groups[$payloadType] as $item) {
+                $results[] = self::processItem($pdo, $identity, $deviceId, $payloadType, $item);
+            }
         }
 
         Http::send(200, ['results' => $results]);
@@ -181,18 +192,75 @@ final class SyncController
                 'server_id' => $serverId,
                 'status' => $wasCreated ? 'success' : 'duplicate',
             ];
-        } catch (ApiError $e) {
-            $failStmt = $pdo->prepare(
-                "UPDATE offline_queue SET reconciliation_status = 'failed', failure_reason = :reason WHERE queue_id = :queue_id"
-            );
-            $failStmt->execute(['reason' => substr($e->getMessage(), 0, 255), 'queue_id' => $queueId]);
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            // SQLSTATE 23000 (unique-key) means a concurrent/earlier write
+            // already stored this event: report it as a duplicate of the
+            // original row instead of a failure.
+            if ($e instanceof \PDOException && (string) $e->getCode() === '23000') {
+                $serverId = self::findExistingServerId($pdo, $identity, $deviceId, $payloadType, $clientEventId);
+                try {
+                    $pdo->prepare(
+                        "UPDATE offline_queue SET reconciliation_status = 'success', synced_at = UTC_TIMESTAMP(), sync_metadata_json = :metadata
+                         WHERE queue_id = :queue_id"
+                    )->execute(['metadata' => json_encode(['server_id' => $serverId]), 'queue_id' => $queueId]);
+                } catch (\Throwable $ignored) {
+                }
+                return ['client_event_id' => $clientEventId, 'server_id' => $serverId, 'status' => 'duplicate'];
+            }
+
+            // ApiError messages are client-safe validation text; anything
+            // else is logged by class/code only (never message/payload,
+            // which could carry narrative or PII) and masked.
+            if ($e instanceof ApiError) {
+                $reason = $e->getMessage();
+            } else {
+                $reason = 'Internal error processing item.';
+                error_log('sync/batch item failed: type=' . $payloadType . ' class=' . get_class($e) . ' code=' . (string) $e->getCode());
+            }
+            try {
+                $pdo->prepare(
+                    "UPDATE offline_queue SET reconciliation_status = 'failed', failure_reason = :reason WHERE queue_id = :queue_id"
+                )->execute(['reason' => substr($reason, 0, 255), 'queue_id' => $queueId]);
+            } catch (\Throwable $ignored) {
+            }
 
             return [
                 'client_event_id' => $clientEventId,
                 'server_id' => null,
                 'status' => 'failed',
-                'reason' => $e->getMessage(),
+                'reason' => $reason,
             ];
+        }
+    }
+
+    /** Looks up the original row's id for a unique-key duplicate; null if unknown. */
+    private static function findExistingServerId(PDO $pdo, array $identity, string $deviceId, string $payloadType, string $clientEventId): ?int
+    {
+        try {
+            switch ($payloadType) {
+                case 'incident':
+                    $stmt = $pdo->prepare('SELECT incident_id FROM incident WHERE device_id = :d AND client_event_id = :c LIMIT 1');
+                    $stmt->execute(['d' => $deviceId, 'c' => $clientEventId]);
+                    break;
+                case 'gps':
+                    $stmt = $pdo->prepare('SELECT track_id FROM gps_track WHERE user_id = :u AND client_event_id = :c LIMIT 1');
+                    $stmt->execute(['u' => $identity['user_id'], 'c' => $clientEventId]);
+                    break;
+                case 'sos':
+                    $stmt = $pdo->prepare('SELECT sos_id FROM tanod_sos WHERE user_id = :u AND client_event_id = :c LIMIT 1');
+                    $stmt->execute(['u' => $identity['user_id'], 'c' => $clientEventId]);
+                    break;
+                default:
+                    return null;
+            }
+            $id = $stmt->fetchColumn();
+            return $id === false ? null : (int) $id;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 

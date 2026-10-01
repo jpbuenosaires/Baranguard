@@ -5,10 +5,6 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
-use Baranguard\Services\Ai\AiJobQueue;
-use Baranguard\Services\Ai\OllamaClient;
-use Baranguard\Services\Ai\OllamaException;
-use Baranguard\Services\Ai\OllamaUnavailableException;
 use Baranguard\Services\Routing\OrsClient;
 use PDO;
 
@@ -89,7 +85,6 @@ final class SystemHealthController
         // live probe" pattern as before — see this class's own doc block.
         $smsStatus = baranguard_env('GSM_GATEWAY_ENABLED') === 'true' ? 'healthy' : 'not_configured';
         $orsStatus = self::orsStatus();
-        $ollamaStatus = self::ollamaStatus();
         $gsmStatus = self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN');
 
         // Migration 0017/0020: remember what this probe saw, but only
@@ -99,7 +94,6 @@ final class SystemHealthController
         self::recordHealthSample($pdo, [
             'db_status' => $db,
             'ors_status' => $orsStatus,
-            'ollama_status' => $ollamaStatus,
             'gsm_status' => $gsmStatus,
             'fcm_status' => $fcmStatus,
             'sms_status' => $smsStatus,
@@ -109,7 +103,6 @@ final class SystemHealthController
             'api' => 'healthy', // this code is executing, so the API itself responded.
             'db' => $db,
             'ors' => $orsStatus,
-            'ollama' => $ollamaStatus,
             // §2 Rule 22's "internal ingestion service" isn't a process
             // this endpoint can reach out and ping — INTERNAL_SERVICE_TOKEN
             // being set is the honest signal actually available here: it's
@@ -151,48 +144,11 @@ final class SystemHealthController
     }
 
     /**
-     * `GET /system/ollama-status` — Admin + Secretary. The same coarse
-     * Ollama probe `index()` uses, on its own, for the one non-Admin role
-     * that actually runs AI jobs (the redaction/extraction/summary/
-     * translation pipeline) and therefore benefits from an ambient
-     * "is the model up right now" signal in the topbar (AppShell.js) —
-     * `index()` itself stays Admin-only (§9: workstation plumbing, not
-     * incident oversight).
-     *
-     * Replaces `GET /ai-tools/availability`, removed along with the AI
-     * Tools screen (migration 0028) — that screen served Punong Barangay
-     * too, but PB has no AI-consuming feature left to justify this ping
-     * for them, so this endpoint doesn't extend to that role.
-     */
-    public static function ollamaStatusOnly(PDO $pdo, array $identity): void
-    {
-        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
-        Http::send(200, ['ollama' => self::ollamaStatus()]);
-    }
-
-    /**
-     * `GET /system/ai-queue` — Admin + Secretary, same access as
-     * `ollamaStatusOnly()` and for the same reason: Secretary is the role
-     * that actually runs the AI pipeline, and until this endpoint existed
-     * there was no way to see the job queue (`ai_processing_log`) at all
-     * without shelling into `ai-worker.php --status`/`--daemon` on the
-     * workstation itself. Counts + allow-listed identifiers only
-     * (AiJobQueue::queueSnapshot()'s own doc explains the fields) — never
-     * narrative content, same boundary every other AI endpoint keeps.
-     */
-    public static function aiQueue(PDO $pdo, array $identity): void
-    {
-        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
-        Http::send(200, AiJobQueue::queueSnapshot($pdo) + ['ollama' => self::ollamaStatus()]);
-    }
-
-    /**
      * `GET /system/health/history` — Admin only. The transitions behind
      * the snapshot `index()` returns.
      *
      * NOT IN §6's ENDPOINT LIST, added deliberately (2026-09-12), same
-     * justification `BlotterController::luponPacketDownload()` records
-     * for itself: the stored data is useless without a way to read it,
+     * justification as other read-only operational endpoints: the stored data is useless without a way to read it,
      * and §2 Rule 15 explicitly names the risk this answers. Admin-only,
      * matching `index()` — this is operational infrastructure detail,
      * and §3 gives Punong Barangay oversight of INCIDENTS, not of the
@@ -210,7 +166,7 @@ final class SystemHealthController
         AuthMiddleware::requireRole($identity, ['admin']);
 
         $stmt = $pdo->query(
-            'SELECT recorded_at, db_status, ors_status, ollama_status,
+            'SELECT recorded_at, db_status, ors_status,
                     gsm_status, fcm_status, sms_status
                FROM health_check_log
               ORDER BY recorded_at DESC, log_id DESC
@@ -223,7 +179,6 @@ final class SystemHealthController
                 'recorded_at' => $r['recorded_at'],
                 'db' => $r['db_status'],
                 'ors' => $r['ors_status'],
-                'ollama' => $r['ollama_status'],
                 'gsm_ingestion' => $r['gsm_status'],
                 'fcm' => $r['fcm_status'],
                 'sms_gsm_gateway' => $r['sms_status'],
@@ -258,7 +213,7 @@ final class SystemHealthController
     {
         try {
             $latest = $pdo->query(
-                'SELECT db_status, ors_status, ollama_status, gsm_status, fcm_status, sms_status
+                'SELECT db_status, ors_status, gsm_status, fcm_status, sms_status
                    FROM health_check_log ORDER BY log_id DESC LIMIT 1'
             )->fetch(PDO::FETCH_ASSOC);
 
@@ -286,41 +241,12 @@ final class SystemHealthController
                 "INSERT INTO health_check_log
                     (recorded_at, db_status, osrm_status, ors_status, ollama_status, gsm_status, fcm_status, sms_status)
                  VALUES
-                    (UTC_TIMESTAMP(), :db_status, 'not_configured', :ors_status, :ollama_status, :gsm_status, :fcm_status, :sms_status)"
+                    (UTC_TIMESTAMP(), :db_status, 'not_configured', :ors_status, 'not_configured', :gsm_status, :fcm_status, :sms_status)"
             );
             $stmt->execute($statuses);
         } catch (\Throwable) {
             // See the doc block: never let bookkeeping break the probe.
         }
-    }
-
-    /**
-     * A real probe of the local model server — see the class doc for how
-     * the three states are assigned. Never leaks the URL, the model name,
-     * or any error detail into the response (§6: this endpoint "never
-     * exposes credentials, tokens, internal filesystem paths, or raw
-     * data"); the coarse status is the whole contract.
-     *
-     * Was PUBLIC so the AI Tools screen's `availability` endpoint could
-     * reuse it (that screen served Secretary/Punong Barangay too, and
-     * needed the same honest answer to avoid offering a Generate button
-     * that couldn't work — §2 Rule 6). That screen is gone (migration
-     * 0028); narrowed back to private since this class is now the only
-     * caller.
-     */
-    private static function ollamaStatus(): string
-    {
-        $client = new OllamaClient();
-        if (!$client->isConfigured()) {
-            return 'not_configured';
-        }
-        try {
-            $models = $client->listModels();
-        } catch (OllamaUnavailableException | OllamaException) {
-            return 'unhealthy';
-        }
-        // Reachable, but a missing model means every queued job will fail.
-        return $client->isModelAvailable($models) ? 'healthy' : 'unhealthy';
     }
 
     private static function envConfiguredStatus(string $envVar): string

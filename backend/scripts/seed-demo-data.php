@@ -297,20 +297,6 @@ $PRIORITY_BY_TYPE = [
     'vandalism' => 'normal', 'other' => 'normal',
 ];
 $RESPONDENT_ELIGIBLE_TYPES = ['domestic_dispute', 'physical_injury', 'vandalism'];
-$blotterSummaryByType = [
-    'theft' => 'Theft reported by complainant; responding tanod conducted verification. Case resolved with no item recovered.',
-    'disturbance' => 'Disturbance complaint verified by responding tanod; parties advised and dispersed peacefully.',
-    'animal_complaint' => 'Stray/nuisance animal complaint verified; pet owner advised on containment.',
-    'vandalism' => 'Vandalism/property damage complaint recorded; no suspect identified at time of closure.',
-    'traffic_incident' => 'Minor traffic incident verified on scene; parties advised, no further barangay action needed.',
-    'domestic_dispute' => 'Domestic dispute mediated by responding tanod; parties counseled, no injuries.',
-    'physical_injury' => 'Physical injury complaint recorded; complainant advised to seek medical attention as needed.',
-    'medical_emergency' => 'Medical emergency assisted; resident transported/attended to by responding unit.',
-    'fire' => 'Fire incident contained by residents before major damage; no injuries reported.',
-    'missing_person' => 'Missing person located and returned safely; case closed.',
-    'other' => 'Miscellaneous barangay concern logged and addressed by responding tanod.',
-];
-
 $now = new DateTimeImmutable('now');
 
 $pdo->beginTransaction();
@@ -373,7 +359,6 @@ try {
     $incidentIdsSql = "(SELECT incident_id FROM incident WHERE barangay_id IN ({$allBarangayIds}))";
     $dispatchIdsSql = "(SELECT dispatch_id FROM dispatch WHERE incident_id IN {$incidentIdsSql})";
     $notifIdsSql = "(SELECT notification_id FROM notification WHERE incident_id IN {$incidentIdsSql} OR dispatch_id IN {$dispatchIdsSql})";
-    $blotterIdsSql = "(SELECT blotter_id FROM blotter_record WHERE incident_id IN {$incidentIdsSql})";
 
     $pdo->exec("DELETE FROM notification_delivery WHERE notification_id IN {$notifIdsSql}");
     $pdo->exec("DELETE FROM notification_target WHERE notification_id IN {$notifIdsSql}");
@@ -381,10 +366,7 @@ try {
     $pdo->exec("DELETE FROM gps_track WHERE dispatch_id IN {$dispatchIdsSql}");
     $pdo->exec("DELETE FROM tanod_sos WHERE dispatch_id IN {$dispatchIdsSql}");
     $pdo->exec("DELETE FROM sms_log WHERE incident_id IN {$incidentIdsSql} OR dispatch_id IN {$dispatchIdsSql}");
-    $pdo->exec("DELETE FROM blotter_revision WHERE blotter_id IN {$blotterIdsSql}");
-    $pdo->exec("DELETE FROM blotter_record WHERE incident_id IN {$incidentIdsSql}");
     $pdo->exec("DELETE FROM evidence_attachment WHERE incident_id IN {$incidentIdsSql}");
-    $pdo->exec("DELETE FROM ai_processing_log WHERE incident_id IN {$incidentIdsSql}");
     $pdo->exec("UPDATE citizen_report SET incident_id=NULL WHERE incident_id IN {$incidentIdsSql}");
     $pdo->exec("DELETE FROM dispatch WHERE incident_id IN {$incidentIdsSql}");
     $pdo->exec("DELETE FROM incident WHERE barangay_id IN ({$allBarangayIds})");
@@ -413,21 +395,9 @@ try {
             (:incident_id, :dispatched_by, :tanod_id, :priority, \'available\', :status,
              :dispatched_at, :en_route_at, :arrived_at, :completed_at, :client_request_id)'
     );
-    $insertBlotter = $pdo->prepare(
-        'INSERT INTO blotter_record
-            (incident_id, barangay_id, recorded_by, approved_by, narrative_summary,
-             finalized_at, complainant_name, respondent_name, complainant_contact_number,
-             case_status, display_id)
-         VALUES
-            (:incident_id, :barangay_id, :recorded_by, :approved_by, :narrative_summary,
-             :finalized_at, :complainant_name, :respondent_name, :complainant_contact_number,
-             :case_status, :display_id)'
-    );
-
     // Global sequential display_id counters (INC-2026-NNN / BLT-2026-NNN
     // are unique across the whole system, not per-barangay).
     $incNo = 1;
-    $blotterNo = 1;
     $totalInserted = 0;
 
     foreach ($BARANGAYS as $barangayId => $cfg) {
@@ -552,16 +522,6 @@ try {
                 $dispatchId = (int) $pdo->lastInsertId();
             }
 
-            if ($status === 'resolved' && $dispatchId !== null && mt_rand(0, 100) < 70) {
-                $finalizedAt = $createdAt->modify('+' . mt_rand(2, 6) . ' hours')->format('Y-m-d H:i:s');
-                $insertBlotter->execute([
-                    'incident_id' => $incidentId, 'barangay_id' => $barangayId, 'recorded_by' => $secretaryId,
-                    'approved_by' => $secretaryId, 'narrative_summary' => $blotterSummaryByType[$type],
-                    'finalized_at' => $finalizedAt, 'complainant_name' => $complainantName,
-                    'respondent_name' => $respondentName, 'complainant_contact_number' => $contactNumber,
-                    'case_status' => 'resolved', 'display_id' => sprintf('BLT-2026-%03d', $blotterNo++),
-                ]);
-            }
         }
 
         // Cancelled/duplicate demo rows for this barangay (if present in the plan).

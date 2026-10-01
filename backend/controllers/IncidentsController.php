@@ -123,11 +123,6 @@ final class IncidentsController
         'reopened' => ['duplicate', 'invalid', 'cancelled'],
     ];
     private const INCIDENT_PRIORITIES = ['normal', 'high', 'critical'];
-    /**
-     * Was `public` so BlotterController's walk-in entry could validate
-     * against one list; that endpoint was removed 2026-09-10 and no caller
-     * outside this class remains, so it is private again.
-     */
     private const INCIDENT_TYPES = [
         'theft', 'physical_injury', 'disturbance', 'domestic_dispute',
         'vandalism', 'traffic_incident', 'fire', 'medical_emergency',
@@ -433,7 +428,7 @@ final class IncidentsController
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
                     i.location_description, i.display_id,
-                    i.raw_narrative, i.redacted_narrative, i.redaction_approved_at, i.redaction_approved_by,
+                    i.raw_narrative,
                     i.complainant_name, i.respondent_name, i.complainant_contact_number,
                     i.duplicate_of_incident_id, i.lifecycle_changed_by, i.lifecycle_changed_at,
                     d.dispatched_at, d.arrived_at,
@@ -542,7 +537,7 @@ final class IncidentsController
             // way to display "duplicate of #N" or who/when changed it
             // after the initiating request's own response was gone.
             // `lifecycle_changed_by` is a raw user id, same disclosure
-            // level as `reported_by`/`redaction_approved_by` above.
+            // level as `reported_by`.
             'duplicate_of_incident_id' => $incident['duplicate_of_incident_id'] !== null
                 ? (int) $incident['duplicate_of_incident_id']
                 : null,
@@ -550,13 +545,6 @@ final class IncidentsController
                 ? (int) $incident['lifecycle_changed_by']
                 : null,
             'lifecycle_changed_at' => $incident['lifecycle_changed_at'],
-            // The approved redaction is readable by every role §7 allows
-            // to view an incident — approval is what makes it shareable.
-            'redacted_narrative' => $incident['redacted_narrative'],
-            'redaction_approved_at' => $incident['redaction_approved_at'],
-            'redaction_approved_by' => $incident['redaction_approved_by'] !== null
-                ? (int) $incident['redaction_approved_by']
-                : null,
             // See the query comment above for why these three are here.
             // dispatched_at/arrived_at now mean "the primary/first
             // responder" specifically — see `dispatches` for the full list.
@@ -572,17 +560,8 @@ final class IncidentsController
         if ($identity['role'] === 'secretary') {
             $payload['raw_narrative'] = $incident['raw_narrative'];
 
-            // Electronic Blotter follow-up (migration 0008): unlike
-            // redacted_narrative, these are extracted directly from RAW
-            // narrative and deliberately preserve exactly the identifiers
-            // redaction exists to strip — they get the SAME Secretary-only
-            // protection as raw_narrative itself, not the broader
-            // "approved and therefore shareable" treatment
-            // redacted_narrative gets above. `narrative_summary` on
-            // `blotter_record` has the identical lifecycle already: never
-            // staged anywhere Admin/Tanod/PB can see it until a Secretary
-            // finalizes it into the legal record — these three fields
-            // follow the same path (see BlotterController::finalize()).
+            // Party fields (migration 0008) carry the same Secretary-only
+            // protection as raw_narrative itself.
             $payload['complainant_name'] = $incident['complainant_name'];
             $payload['respondent_name'] = $incident['respondent_name'];
             $payload['complainant_contact_number'] = $incident['complainant_contact_number'];
@@ -1024,25 +1003,13 @@ final class IncidentsController
      * editor, deliberately:
      *
      *   - **`raw_narrative` and `redacted_narrative` are not writable
-     *     here, by any role.** Rule 4 makes
-     *     `POST /incidents/:id/ai-draft/approve` the ONLY writer of
-     *     `redacted_narrative`. An earlier draft of this endpoint
-     *     (2026-09-06, caught in review before it ever ran against real
-     *     data) copied raw straight into redacted, which would have
-     *     published unredacted PII to every role that can read an
-     *     incident. It also round-tripped through a form pre-filled from
-     *     `rawNarrative || redactedNarrative` - and since an Admin never
-     *     receives `rawNarrative` (see show()), an Admin save would have
-     *     overwritten the raw statutory record with its own redacted
-     *     version, irreversibly. Narrative correction stays on the AI
-     *     pipeline; the legal record stays on blotter amend, which has a
-     *     `blotter_revision` trail this endpoint does not.
+     *     here, by any role.** (The blotter and AI redaction pipeline
+     *     were removed; barangays keep the legal record in their own
+     *     binders.)
      *
      *   - **`complainant_name` is Secretary-only**, same as show()'s own
-     *     rule for it: migration 0008's party fields are extracted from
-     *     RAW narrative and preserve exactly the identifiers redaction
-     *     exists to strip, so they carry raw_narrative's protection, not
-     *     redacted_narrative's. An Admin may correct priority, type and
+     *     rule for it: migration 0008's party fields carry
+     *     raw_narrative's protection. An Admin may correct priority, type and
      *     location; only a Secretary may touch the party name.
      *
      * Audit metadata records WHICH fields changed, never their values -
@@ -1151,7 +1118,7 @@ final class IncidentsController
             throw new ApiError(
                 400,
                 'VALIDATION_ERROR',
-                'Narrative text cannot be edited here. Use the AI redaction pipeline for the incident narrative, or blotter amend for the legal record.'
+                'Narrative text cannot be edited here.'
             );
         }
 
@@ -1193,12 +1160,6 @@ final class IncidentsController
      * `arrived`): resolving an incident whose Tanod is mid-response would
      * strand that dispatch in a non-terminal state with nothing left to
      * close it.
-     *
-     * Also flips a linked FINALIZED blotter to `case_status='resolved'`.
-     * Migration 0009 makes `resolved` reachable only from here — which is
-     * why `BlotterController::amend()` rejects the value outright — so
-     * that the ledger cannot claim a case is open after its parent
-     * incident closed.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -1248,35 +1209,10 @@ final class IncidentsController
             $pdo->prepare("UPDATE incident SET status = 'resolved', updated_at = UTC_TIMESTAMP() WHERE incident_id = :id")
                 ->execute(['id' => $incidentId]);
 
-            $blotterStmt = $pdo->prepare(
-                'SELECT blotter_id, case_status FROM blotter_record
-                 WHERE incident_id = :id AND finalized_at IS NOT NULL
-                 FOR UPDATE'
-            );
-            $blotterStmt->execute(['id' => $incidentId]);
-            $blotter = $blotterStmt->fetch(PDO::FETCH_ASSOC);
-            $flipsBlotter = $blotter !== false && $blotter['case_status'] !== 'resolved';
-
-            if ($flipsBlotter) {
-                // Narrative and revision trail are untouched — this moves
-                // the case_status column only, which is why it needs no
-                // blotter_revision row (nothing a revision would record
-                // has changed).
-                $pdo->prepare("UPDATE blotter_record SET case_status = 'resolved' WHERE blotter_id = :blotter_id")
-                    ->execute(['blotter_id' => (int) $blotter['blotter_id']]);
-            }
-
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_resolved', 'incident', $incidentId, [
                 'from_status' => $incident['status'],
                 'to_status' => 'resolved',
             ]);
-            if ($flipsBlotter) {
-                Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'blotter_case_status_changed', 'blotter_record', (int) $blotter['blotter_id'], [
-                    'from_case_status' => $blotter['case_status'],
-                    'to_case_status' => 'resolved',
-                ]);
-            }
-
             $pdo->commit();
         } catch (\Throwable $e) {
             $pdo->rollBack();
@@ -1394,37 +1330,57 @@ final class IncidentsController
             return;
         }
 
-        $fromStatus = $incident['status'];
-        $legalTargets = self::LIFECYCLE_TRANSITIONS[$fromStatus] ?? [];
-        if (!in_array($toStatus, $legalTargets, true)) {
-            throw new ApiError(
-                409,
-                'CONFLICT',
-                "An incident in '{$fromStatus}' status cannot be moved to '{$toStatus}'."
-            );
-        }
-
-        if ($toStatus !== 'reopened') {
-            $openStmt = $pdo->prepare(
-                "SELECT COUNT(*) FROM dispatch
-                 WHERE incident_id = :id AND status IN ('assigned','en_route','arrived')"
-            );
-            $openStmt->execute(['id' => $incidentId]);
-            if ((int) $openStmt->fetchColumn() > 0) {
-                throw new ApiError(409, 'CONFLICT', 'Cannot change the lifecycle of an incident that still has an active dispatch.');
-            }
-        }
-
-        if ($toStatus === 'duplicate') {
-            $targetStmt = $pdo->prepare('SELECT incident_id FROM incident WHERE incident_id = :id AND barangay_id = :barangay_id');
-            $targetStmt->execute(['id' => $duplicateOfId, 'barangay_id' => $identity['barangay_id']]);
-            if ($targetStmt->fetch(PDO::FETCH_ASSOC) === false) {
-                throw new ApiError(400, 'VALIDATION_ERROR', 'duplicate_of_incident_id must reference an existing incident in the same barangay.');
-            }
-        }
-
+        // Transaction first: lock the incident row so a concurrent
+        // lifecycle change / dispatch create can't race the checks below.
         $pdo->beginTransaction();
         try {
+            $lockStmt = $pdo->prepare('SELECT status FROM incident WHERE incident_id = :id FOR UPDATE');
+            $lockStmt->execute(['id' => $incidentId]);
+            $fromStatus = $lockStmt->fetchColumn();
+            if ($fromStatus === false) {
+                throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+            }
+            $legalTargets = self::LIFECYCLE_TRANSITIONS[$fromStatus] ?? [];
+            if (!in_array($toStatus, $legalTargets, true)) {
+                throw new ApiError(
+                    409,
+                    'CONFLICT',
+                    "An incident in '{$fromStatus}' status cannot be moved to '{$toStatus}'."
+                );
+            }
+
+            if ($toStatus !== 'reopened') {
+                $openStmt = $pdo->prepare(
+                    "SELECT COUNT(*) FROM dispatch
+                     WHERE incident_id = :id AND status IN ('assigned','en_route','arrived')"
+                );
+                $openStmt->execute(['id' => $incidentId]);
+                if ((int) $openStmt->fetchColumn() > 0) {
+                    throw new ApiError(409, 'CONFLICT', 'Cannot change the lifecycle of an incident that still has an active dispatch.');
+                }
+            }
+
+            if ($toStatus === 'duplicate') {
+                $targetStmt = $pdo->prepare(
+                    'SELECT incident_id, status, duplicate_of_incident_id FROM incident
+                     WHERE incident_id = :id AND barangay_id = :barangay_id FOR UPDATE'
+                );
+                $targetStmt->execute(['id' => $duplicateOfId, 'barangay_id' => $identity['barangay_id']]);
+                $target = $targetStmt->fetch(PDO::FETCH_ASSOC);
+                if ($target === false) {
+                    throw new ApiError(400, 'VALIDATION_ERROR', 'duplicate_of_incident_id must reference an existing incident in the same barangay.');
+                }
+                // A closed target (resolved/cancelled/invalid) is a legitimate link: a repeat
+                // report of an already-resolved incident is the common case. Only a target
+                // that is itself a duplicate is refused, which prevents chains and cycles.
+                if ($target['status'] === 'duplicate') {
+                    throw new ApiError(400, 'VALIDATION_ERROR', 'duplicate_of_incident_id must not reference an incident that is itself a duplicate.');
+                }
+                if ($target['duplicate_of_incident_id'] !== null && (int) $target['duplicate_of_incident_id'] === $incidentId) {
+                    throw new ApiError(400, 'VALIDATION_ERROR', 'duplicate_of_incident_id would create a cycle.');
+                }
+            }
+
             // Reopening clears any prior duplicate pointer — a case being
             // reconsidered is no longer simply "the same as that other
             // one" by default; a Secretary who still believes so can mark
@@ -1520,14 +1476,8 @@ final class IncidentsController
         if (!is_string($priority) || !in_array($priority, self::INCIDENT_PRIORITIES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'priority must be one of: ' . implode(', ', self::INCIDENT_PRIORITIES) . '.');
         }
-        // 2026-09-05 UX pass: the web "Log Incident" form pre-dated
-        // migration 0008 and never gained these fields even though
-        // `incident` has carried the columns since — see
-        // AiDraftController::approveExtraction() for the OTHER path that
-        // writes them (from AI extraction, after the fact). This lets an
-        // Admin/Secretary who already knows the parties at intake enter
-        // them immediately, as a head start a later extraction-approve
-        // can still overwrite, same as it already can for any incident.
+        // Lets an Admin/Secretary who already knows the parties at intake
+        // enter them immediately.
         $locationDescription = self::normalizeOptionalString($body['location_description'] ?? null, 255);
         $complainantName = self::normalizeOptionalString($body['complainant_name'] ?? null, 255);
         $respondentName = self::normalizeOptionalString($body['respondent_name'] ?? null, 255);
@@ -1662,9 +1612,7 @@ final class IncidentsController
      * §5 has no dedicated sequence-per-scope table; a barangay logbook
      * number is computed as COUNT(*)+1 scoped to barangay+year, inside
      * the same transaction as the insert that will consume it. Shared by
-     * `createWeb()`/`createMobileItem()` (prefix `INC`) and
-     * `BlotterController::finalize()` (prefix `BLT`, table `blotter_record`)
-     * so the two numbering schemes can never drift apart. See migration
+     * `createWeb()`/`createMobileItem()` (prefix `INC`). See migration
      * 0014's own comment for the accepted concurrency tradeoff.
      */
     public static function nextDisplayId(PDO $pdo, int $barangayId, string $prefix, string $table = 'incident', string $dateColumn = 'created_at'): string
@@ -1691,9 +1639,7 @@ final class IncidentsController
     /**
      * Trims and length-caps an optional string body field, converting
      * blank input to `null` rather than storing an empty string — same
-     * "omitted vs. explicitly cleared" convention
-     * `BlotterController::parsePartyFields()` already established for
-     * these exact three fields at finalize/amend time.
+     * "omitted vs. explicitly cleared" convention.
      */
     private static function normalizeOptionalString(mixed $value, int $maxLength): ?string
     {

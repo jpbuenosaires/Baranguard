@@ -28,11 +28,10 @@ namespace Baranguard\Services\Notifications;
  * (§2 Rule 27/the SOS class doc: "a missing transport is never allowed to
  * fail the request").
  *
- * NEVER CALLED WITH REAL CREDENTIALS AS OF THIS COMMIT — there is no
- * funded Firebase project on this workstation. This class is written
- * against Google's real, documented v1 API contract so it starts working
- * the moment a service-account key is dropped in, exactly like
- * OllamaClient before the model was ever actually pulled. See DEVLOG.md.
+ * Credentials: a Firebase service account is wired on the production
+ * workstation (see DEVLOG.md / HANDOFF.md for current verification
+ * status); with none configured this class reports "not configured"
+ * rather than failing.
  */
 final class FcmClient
 {
@@ -80,7 +79,7 @@ final class FcmClient
      *         NotificationDispatcher treats every failure identically
      *         (Rule 12 does not distinguish failure causes for the
      *         "retry once, then SMS" rule), so this class does not need a
-     *         second exception type the way OllamaClient does.
+     *         second exception type.
      */
     public function send(string $fcmToken, string $title, string $body, array $data): array
     {

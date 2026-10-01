@@ -563,7 +563,7 @@ final class ReportsController
     /**
      * The periodic PB digest (REMAINING.md §G) — CLI-only, same
      * "no HTTP surface for a background job" discipline as
-     * `retention-job.php`/`ai-worker.php` (§2 Rule 5's reasoning applies
+     * `retention-job.php` (the same no-HTTP-surface reasoning applies
      * here too: this runs unattended on a schedule, not on a request).
      * Called from `scripts/generate-pb-digest.php` via
      * `install-scheduled-backup-jobs.ps1`'s sibling task, never over HTTP.

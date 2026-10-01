@@ -301,8 +301,8 @@ final class CitizenReportsController
      * the complainant in every practical sense — but nothing else is
      * inferred; `location_description`/`complainant_name`/
      * `respondent_name` are left null, same "omitted key is simply null"
-     * convention `BlotterController::finalize()` already follows for
-     * fields with no source to pull from.
+     * convention used elsewhere for fields with no source to pull from
+     * (the blotter/AI-draft controllers this once referenced were removed).
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */

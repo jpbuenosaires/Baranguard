@@ -47,18 +47,6 @@ INSERT INTO audit_log (barangay_id, actor_user_id, action, entity_type, entity_i
  (1,2,'incident_updated','incident',6,'{"fields":["complainant_name","priority"]}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-09 00:30:00'),
  (1,1,'incident_updated','incident',13,'{"fields":["incident_type"]}','192.168.1.10','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-25 07:10:00'),
 
- -- ---- records custody (Secretary only) ----
- (1,2,'blotter_finalized','blotter_record',1,'{"incident_id":1}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-07-28 01:00:00'),
- (1,2,'blotter_finalized','blotter_record',2,'{"incident_id":2}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-07-29 03:10:00'),
- (1,2,'blotter_finalized','blotter_record',3,'{"incident_id":6}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-09 01:00:00'),
- (1,2,'blotter_amended','blotter_record',3,'{"revision_no":2}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-14 02:00:00'),
- (1,2,'blotter_case_status_changed','blotter_record',3,'{"from":"active","to":"under_investigation"}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-14 02:01:00'),
- (1,2,'blotter_finalized','blotter_record',4,'{"incident_id":7}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-12 01:00:00'),
- (1,2,'blotter_finalized','blotter_record',5,'{"incident_id":8}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-14 02:00:00'),
- (1,2,'blotter_case_status_changed','blotter_record',1,'{"from":"active","to":"settled"}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-15 01:00:00'),
- (1,2,'blotter_finalized','blotter_record',6,'{"incident_id":12}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-23 03:00:00'),
- (1,2,'blotter_finalized','blotter_record',7,'{"incident_id":16}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-09-02 01:00:00'),
- (1,2,'lupon_packet_generated','blotter_record',3,'{"revision_no":2}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-08-15 03:20:00'),
 
  -- ---- AI redaction pipeline (Secretary only) ----
  (1,2,'ai_redaction_queued','incident',1,'{"task_type":"redaction"}','192.168.1.12','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-07-27 01:50:00'),

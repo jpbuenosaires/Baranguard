@@ -23,8 +23,7 @@ use PDO;
  *   raw_narrative          deleted 30 days after human-approved redaction;
  *                          hard ceiling 90 days from created_at if never
  *                          approved. Legal hold is the only exception.
- *   redacted incident /    7 years default (incident, blotter_record +
- *   blotter / evidence     blotter_revision, evidence_attachment).
+ *   incident / evidence    7 years default (incident, evidence_attachment).
  *   citizen_report         1 year from submitted_at while UNCONVERTED;
  *                          a converted report drops its own clock and
  *                          follows the linked incident.
@@ -32,11 +31,6 @@ use PDO;
  *   sms_log                1 year, extended for the duration of any hold
  *                          on the linked incident/dispatch/citizen
  *                          report (migration 0016).
- *   ai_processing_log      1 year, OR until the linked incident's own
- *                          retention expires, whichever is LONGER.
- *   AI Tools jobs          90 days from created_at. Migration 0015's
- *                          NULL-incident rows only — they have no case to
- *                          follow, so the rule above cannot reach them.
  *   mobile_device          secret columns (fcm_token, device_secret_ref)
  *                          cleared 90 days after deactivation; the ROW
  *                          is retained so `incident.device_id`
@@ -73,8 +67,7 @@ use PDO;
  *     `held` count alongside `purged`.
  *
  *   - **An incident's `legal_hold` covers its dependent case records.**
- *     `blotter_record`, `blotter_revision`, `dispatch` and
- *     `ai_processing_log` have no `legal_hold` column of their own; a
+ *     `dispatch` has no `legal_hold` column of its own; a
  *     hold is placed on a case, not a row. Migration 0007's own header
  *     carries the same note. **`sms_log` gained its own `legal_hold` in
  *     0016 and is the one exception** — not because the principle
@@ -84,9 +77,8 @@ use PDO;
  *
  *   - **Each purge runs in its own transaction, one record at a time for
  *     the cascading rules**, not one giant DELETE. §5's FK policy makes
- *     an incident purge a genuine ordered cascade (ai_processing_log →
- *     blotter_revision → blotter_record → evidence_attachment → dispatch
- *     → incident, since all five are ON DELETE RESTRICT), and a partial
+ *     an incident purge a genuine ordered cascade (evidence_attachment →
+ *     dispatch → incident, since both are ON DELETE RESTRICT), and a partial
  *     cascade must never be left committed. Slower, and correct.
  *
  *   - **Evidence files are unlinked from disk before the row is
@@ -129,8 +121,7 @@ final class RetentionService
     public const RECORD_RETENTION_DAYS = 2557;    // 7 years (365.25 * 7, rounded)
     public const CITIZEN_REPORT_DAYS = 365;       // unconverted only
     public const SMS_LOG_DAYS = 365;
-    public const AI_LOG_DAYS = 365;               // or the incident's, whichever is longer
-    public const AUDIT_LOG_DAYS = 2557;           // aligned with blotter retention
+    public const AUDIT_LOG_DAYS = 2557;           // aligned with the incident record retention
     public const DEVICE_DEACTIVATED_DAYS = 90;
     // H-15 (2026-09-24 external audit; sign-off 2026-09-26 — see class doc).
     public const GPS_TRACK_DAYS = 365;
@@ -143,7 +134,6 @@ final class RetentionService
         'raw_narrative',
         'citizen_report',
         'sms_log',
-        'ai_processing_log',
         'mobile_device',
         'gps_track',
         'duty_status',
@@ -192,7 +182,6 @@ final class RetentionService
                 'raw_narrative' => $this->purgeRawNarratives(),
                 'citizen_report' => $this->purgeCitizenReports(),
                 'sms_log' => $this->purgeSmsLogs(),
-                'ai_processing_log' => $this->purgeAiProcessingLogs(),
                 'mobile_device' => $this->scrubDeactivatedDevices(),
                 'gps_track' => $this->purgeGpsTracks(),
                 'duty_status' => $this->purgeDutyStatuses(),
@@ -375,59 +364,6 @@ final class RetentionService
         $this->note("sms_log: purged {$purged}, {$held} on legal hold");
         return ['purged' => $purged, 'held' => $held, 'eligible' => $eligible];
     }
-
-    // ------------------------------------------------------------------
-    // Rule 4 — ai_processing_log (§11: "1 year default, OR until the
-    // linked incident's retention expires, whichever is LONGER")
-    // ------------------------------------------------------------------
-
-    /**
-     * "Whichever is longer" is implemented literally as an AND of both
-     * clocks: a row goes only when it is BOTH more than a year old AND
-     * its incident is past its own 7-year mark. In practice the
-     * incident's clock dominates (a draft is created after its
-     * incident), which is exactly what §11's "superseded draft rows
-     * follow the same rule as the current row" implies — superseded and
-     * current rows share an incident, so they expire together.
-     *
-     * An incident on legal hold protects its drafts too (see class doc).
-     *
-     * @return array{purged:int, held:int}
-     */
-    public function purgeAiProcessingLogs(): array
-    {
-        $from = 'ai_processing_log a JOIN incident i ON i.incident_id = a.incident_id';
-        $where =
-            "a.created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :ai_days DAY)
-             AND i.created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :record_days DAY)";
-        $params = ['ai_days' => self::AI_LOG_DAYS, 'record_days' => self::RECORD_RETENTION_DAYS];
-
-        $held = $this->countWhere($from, "{$where} AND i.legal_hold = 1", $params);
-        $eligible = $this->countWhere($from, "{$where} AND i.legal_hold = 0", $params);
-
-        if ($this->dryRun || $eligible === 0) {
-            $this->note("ai_processing_log: {$eligible} eligible, {$held} on legal hold");
-            return ['purged' => 0, 'held' => $held, 'eligible' => $eligible];
-        }
-
-        $stmt = $this->pdo->prepare(
-            "DELETE a FROM ai_processing_log a
-               JOIN incident i ON i.incident_id = a.incident_id
-              WHERE {$where} AND i.legal_hold = 0"
-        );
-        $stmt->execute($params);
-        $purged = $stmt->rowCount();
-
-        $this->audit('retention_ai_log_purged', 'ai_processing_log', ['purged' => $purged, 'held' => $held]);
-        $this->note("ai_processing_log: purged {$purged}, {$held} on legal hold");
-        return ['purged' => $purged, 'held' => $held, 'eligible' => $eligible];
-    }
-
-    // Rule 4b — AI Tools jobs (migration 0015) — fully removed by
-    // migration 0028 along with the AI Tools screen itself (classification,
-    // its last surviving tool, was retired after a real runaway-generation
-    // failure). The columns this rule purged (`incident_id IS NULL` rows
-    // with `barangay_id` instead) no longer exist on `ai_processing_log`.
 
     // ------------------------------------------------------------------
     // Rule 5 — mobile_device (§11: secret columns cleared 90 days after
@@ -672,8 +608,7 @@ final class RetentionService
     /**
      * The only genuinely hard rule here, because §5's FK policy makes an
      * incident deletion an ordered cascade rather than one statement:
-     * `ai_processing_log`, `evidence_attachment`, `blotter_record`
-     * (and `blotter_revision` behind it) and `dispatch` are all
+     * `evidence_attachment` and `dispatch` are both
      * ON DELETE **RESTRICT** against `incident`. Everything else
      * (`citizen_report`, `notification`, `sms_log`, `gps_track`,
      * `tanod_sos`) is SET NULL and clears itself.
@@ -742,14 +677,6 @@ final class RetentionService
         $this->pdo->beginTransaction();
         try {
             // RESTRICT dependents, innermost first.
-            $this->exec('DELETE FROM ai_processing_log WHERE incident_id = :id', $incidentId);
-            $this->exec(
-                'DELETE br FROM blotter_revision br
-                   JOIN blotter_record b ON b.blotter_id = br.blotter_id
-                  WHERE b.incident_id = :id',
-                $incidentId
-            );
-            $this->exec('DELETE FROM blotter_record WHERE incident_id = :id', $incidentId);
             $this->exec('DELETE FROM evidence_attachment WHERE incident_id = :id', $incidentId);
             $this->exec('DELETE FROM dispatch WHERE incident_id = :id', $incidentId);
             $this->exec('DELETE FROM incident WHERE incident_id = :id', $incidentId);

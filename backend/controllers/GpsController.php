@@ -302,14 +302,16 @@ final class GpsController
                 throw new ApiError(400, 'VALIDATION_ERROR', 'dispatch_id must be an integer.');
             }
             $dispatchIdInt = (int) $dispatchId;
-            // §6: "must belong to caller, same barangay, and be active."
+            // §6 says "active", but a queued offline fix often syncs after
+            // its dispatch completed/cancelled. Ownership + tenant still
+            // must match; any status is accepted. Anything else is nulled
+            // (never fails the ping, which would stall the sync batch).
             $dispatchStmt = $pdo->prepare(
                 "SELECT d.dispatch_id
                  FROM dispatch d
                  JOIN incident i ON i.incident_id = d.incident_id
                  WHERE d.dispatch_id = :dispatch_id AND d.tanod_id = :tanod_id
                    AND i.barangay_id = :barangay_id
-                   AND d.status IN ('assigned','en_route','arrived')
                  LIMIT 1"
             );
             $dispatchStmt->execute([
@@ -318,7 +320,7 @@ final class GpsController
                 'barangay_id' => $identity['barangay_id'],
             ]);
             if ($dispatchStmt->fetch(PDO::FETCH_ASSOC) === false) {
-                throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'dispatch_id does not reference an active dispatch assigned to you.');
+                $dispatchIdInt = null;
             }
         }
 
