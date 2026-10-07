@@ -34,6 +34,7 @@
 import { PushNotifications, type PushNotificationSchema, type ActionPerformed } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
 import FullScreenAlert from './fullScreenAlert';
+import { isDispatchOfferPush, requestDispatchOfferRefresh } from './dispatchOfferStore';
 
 export type CriticalNotificationType = 'sos' | 'priority_alert' | 'dispatch';
 
@@ -112,6 +113,11 @@ export function registerCriticalAlertListeners(): void {
   // CriticalAlertOverlay rather than relying on the OS's own heads-up
   // notification UI (which this app does not control the styling of).
   PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
+    // Wave 2 night-dispatch offers: refresh the offer cards (they are rendered from
+    // `GET /dispatch-offers`, never from this payload). Not a critical-overlay type.
+    if (isDispatchOfferPush(notification.data as Record<string, unknown> | undefined)) {
+      requestDispatchOfferRefresh();
+    }
     const alert = parseAlert(
       notification.data as Record<string, unknown> | undefined,
       notification.title ?? 'Critical alert',
@@ -129,6 +135,9 @@ export function registerCriticalAlertListeners(): void {
   // way.
   PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
     const notification = action.notification;
+    if (isDispatchOfferPush(notification.data as Record<string, unknown> | undefined)) {
+      requestDispatchOfferRefresh();
+    }
     const alert = parseAlert(
       notification.data as Record<string, unknown> | undefined,
       notification.title ?? 'Critical alert',
