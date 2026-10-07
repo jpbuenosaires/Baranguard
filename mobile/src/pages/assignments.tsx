@@ -153,11 +153,10 @@ const AssignmentsPage: React.FC = () => {
       await cacheDispatchesFromServer(entries);
       setOfflineNote(null);
     } catch (error) {
-      // TEMP DIAGNOSTIC — remove before committing.
       setOfflineNote(
-        error instanceof ApiError
-          ? `DEBUG status=${error.status} code=${error.code} msg=${error.message}`
-          : `DEBUG non-ApiError: ${String(error)}`
+        error instanceof ApiError && error.isOffline
+          ? 'Offline — showing the last cached assignments.'
+          : 'Could not refresh from the workstation — showing cached records.'
       );
     }
     try {

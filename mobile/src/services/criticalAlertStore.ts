@@ -36,15 +36,24 @@ import { Capacitor } from '@capacitor/core';
 import FullScreenAlert from './fullScreenAlert';
 import { isDispatchOfferPush, requestDispatchOfferRefresh } from './dispatchOfferStore';
 
-export type CriticalNotificationType = 'sos' | 'priority_alert' | 'dispatch';
+// 'dispatch_offer' (Wave 2 night-dispatch offers) is kept in sync by hand with
+// CRITICAL_TYPES in CriticalAlertMessagingService.java.
+export type CriticalNotificationType = 'sos' | 'priority_alert' | 'dispatch' | 'dispatch_offer';
 
-const CRITICAL_TYPES: readonly string[] = ['sos', 'priority_alert', 'dispatch'];
+const CRITICAL_TYPES: readonly string[] = ['sos', 'priority_alert', 'dispatch', 'dispatch_offer'];
 
 export interface CriticalAlert {
   notificationId: number;
   notificationType: CriticalNotificationType;
   title: string;
   body: string;
+  /**
+   * Only for `dispatch_offer`: the non-identifying push facts (incident type,
+   * barangay, offer time) so the overlay can show exactly those three and
+   * nothing else. Absent on a cold-start handoff (native side carries only
+   * id/type/title/body), where the server-composed body is shown instead.
+   */
+  offer?: { offerId: number | null; incidentType: string; barangayName: string; createdAt: string };
   /** When this device received it — informational only, never sent to the server (§2 Rule 31: client timestamps are informational). */
   receivedAt: string;
 }
@@ -81,17 +90,28 @@ export function dismissCriticalAlert(): void {
 }
 
 function parseAlert(data: Record<string, unknown> | undefined, title: string, body: string): CriticalAlert | null {
-  const notificationType = String(data?.notification_type ?? '');
+  const notificationType = isDispatchOfferPush(data) ? 'dispatch_offer' : String(data?.notification_type ?? '');
   const notificationIdRaw = data?.notification_id;
   const notificationId = typeof notificationIdRaw === 'string' ? parseInt(notificationIdRaw, 10) : Number(notificationIdRaw);
   if (!CRITICAL_TYPES.includes(notificationType) || !Number.isFinite(notificationId)) {
     return null;
+  }
+  let offer: CriticalAlert['offer'];
+  if (notificationType === 'dispatch_offer' && typeof data?.incident_type === 'string' && typeof data?.barangay_name === 'string') {
+    const offerIdNum = Number(data.offer_id);
+    offer = {
+      offerId: Number.isFinite(offerIdNum) ? offerIdNum : null,
+      incidentType: data.incident_type,
+      barangayName: data.barangay_name,
+      createdAt: typeof data.created_at === 'string' ? data.created_at : '',
+    };
   }
   return {
     notificationId,
     notificationType: notificationType as CriticalNotificationType,
     title,
     body,
+    ...(offer ? { offer } : {}),
     receivedAt: new Date().toISOString(),
   };
 }
@@ -114,7 +134,7 @@ export function registerCriticalAlertListeners(): void {
   // notification UI (which this app does not control the styling of).
   PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
     // Wave 2 night-dispatch offers: refresh the offer cards (they are rendered from
-    // `GET /dispatch-offers`, never from this payload). Not a critical-overlay type.
+    // `GET /dispatch-offers`, never from this payload). Also a critical-overlay type.
     if (isDispatchOfferPush(notification.data as Record<string, unknown> | undefined)) {
       requestDispatchOfferRefresh();
     }

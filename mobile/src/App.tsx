@@ -408,8 +408,8 @@ const RoleShell: React.FC = () => {
 };
 
 /**
- * M12's overlay is mounted here, OUTSIDE `IonReactRouter`/`IonRouterOutlet`
- * entirely, so it can render above whatever screen is active — including
+ * M12's overlay is mounted here, OUTSIDE `IonRouterOutlet`
+ * (inside `IonReactRouter` so the dispatch_offer overlay can navigate), so it can render above whatever screen is active — including
  * the login page, since an already-registered device could theoretically
  * still receive a push while signed out (the overlay itself does not
  * gate on session state; `POST /notifications/:id/ack` will 401 if the
@@ -450,8 +450,9 @@ const App: React.FC = () => {
 
   return (
     <IonApp>
-      <CriticalAlertOverlay />
       <IonReactRouter>
+        {/* Inside the router (outside the outlet) so the dispatch_offer overlay can navigate. */}
+        <CriticalAlertOverlay />
         <SessionExpiryWatcher />
         <IonRouterOutlet>
           <Route path="/login" element={<LoginPage />} />
