@@ -43,8 +43,48 @@ describe('Personnel behaviour', () => {
   test('without approve_roster the Publish bar and draft checkboxes are hidden and a note says why', async () => {
     await openScheduler('admin');
     assert.equal($('#publish-shifts-btn'), null);
-    assert.equal($$('tbody input[type="checkbox"]').length, 0);
     assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
+    // Admin/Secretary without the authority get the paper route instead.
+    assert.ok($('#publish-shifts-paper-btn'), 'Recorded-from-paper control is offered');
+  });
+
+  test('Recorded from paper: picks a signer holding approve_roster (via directory) + date, then POSTs recorded_from_paper', async () => {
+    await openScheduler('admin');
+    const dialog = () => $('[role="alertdialog"]');
+    $$('tbody input[type="checkbox"]')[0].click();
+    await settle();
+    click($('#publish-shifts-paper-btn'));
+    await settle();
+    assert.ok(dialog(), 'the paper dialog opens');
+    const call = api.callsTo('GET', '/users/directory').find((c) => c.query?.purpose === 'signer');
+    assert.equal(call.query.authority, 'approve_roster');
+    assert.equal(api.callsTo('GET', '/users').filter((c) => c.query?.authority).length, 0);
+    const options = $$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o));
+    assert.deepEqual(options, ['Teresa Magbanua (Punong Barangay)']);
+    const future = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    type($('#confirm-dialog-field-signedOn', dialog()), future);
+    click($$('button', dialog()).at(-1));
+    await settle();
+    assert.equal(api.callsTo('POST', '/shifts/publish').length, 0, 'a future signing date is refused client-side');
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    type($('#confirm-dialog-field-signedOn', dialog()), today);
+    click($$('button', dialog()).at(-1));
+    await settle();
+    const [pub] = api.callsTo('POST', '/shifts/publish');
+    assert.ok(pub, 'POST /shifts/publish was sent');
+    assert.deepEqual(pub.body.recorded_from_paper, { signer_user_id: 3, signed_on: today });
+    assert.match(text(window.document.body), /recorded from paper/i);
+  });
+
+  test('a published shift recorded on paper shows "Approved on paper <date>" with the recorder', async () => {
+    api.on('GET', '/shifts', () => ({ status: 200, body: { items: [
+      { shift_id: 520, user_id: 4, patrol_zone: 'Zone 1', start_at: '2026-10-20 00:00:00', end_at: '2026-10-20 08:00:00', version: 1, approval_status: 'published', pending_reapproval: 0, approved_by: 3, approved_at: '2026-10-06 01:00:00', source_availability_id: null, approval_mode: 'recorded_from_paper', paper_signed_on: '2026-10-05', paper_recorded_by_name: 'Liwayway Ferrer' },
+      { shift_id: 521, user_id: 5, patrol_zone: 'Zone 2', start_at: '2026-10-21 00:00:00', end_at: '2026-10-21 08:00:00', version: 1, approval_status: 'published', pending_reapproval: 0, approved_by: 3, approved_at: '2026-10-06 01:00:00', source_availability_id: null, approval_mode: 'digital', paper_signed_on: null, paper_recorded_by_name: null },
+    ], page: 1, limit: 100, total: 2 } }));
+    await openScheduler('admin');
+    const notes = $$('.text-tertiary').filter((n) => /Approved on paper/.test(text(n))).map((n) => text(n));
+    assert.equal(notes.length, 1, 'only the paper-approved shift carries the label');
+    assert.match(notes[0], /^Approved on paper Oct 5, 2026 \(recorded by Liwayway Ferrer\)$/);
   });
 
   test('Admin sees Users, Scheduler and Swap requests, and no Fatigue tab (contract §10)', async () => {
@@ -80,14 +120,21 @@ describe('Personnel behaviour', () => {
     assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
   });
 
-  test('the Secretary tanod picker is built from tanods who submitted availability (no GET /users)', async () => {
+  test('the Secretary tanod picker is built from GET /users/directory?purpose=tanod (no GET /users)', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
     const options = $$('#scheduler-new-tanod option').map((o) => text(o));
-    assert.equal(options.length, 2, 'two distinct tanods in the availability fixture');
+    assert.equal(options.length, 2, 'the two active, non-suspended tanods in the fixture');
     assert.ok(options.some((o) => /Jose Reyes/.test(o)));
     assert.ok(options.some((o) => /Maria Dela Cruz/.test(o)));
     assert.equal(api.callsTo('GET', '/users').length, 0);
+    assert.equal(api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'tanod').length >= 1, true);
+  });
+
+  test('Admin also uses the directory for the tanod picker', async () => {
+    await openScheduler('admin');
+    assert.equal(api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'tanod').length >= 1, true);
+    assert.equal($$('#scheduler-new-tanod option').length, 2);
   });
 
   test('a Secretary-created shift is POSTed as a draft with the chosen tanod', async () => {
@@ -105,16 +152,16 @@ describe('Personnel behaviour', () => {
     assert.match(text(window.document.body), /Shift saved as a draft\./);
   });
 
-  test('the Secretary tanod picker says so when nobody has submitted availability', async () => {
-    api.on('GET', '/availability', () => ({ status: 200, body: { items: [], page: 1, limit: 100, total: 0 } }));
+  test('the tanod picker says so when the directory has no active tanods', async () => {
+    api.on('GET', '/users/directory', () => ({ status: 200, body: { items: [] } }));
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
-    assert.match(text($('.page-content')), /No tanod has submitted availability yet/);
+    assert.match(text($('.page-content')), /No active Tanods exist/);
     assert.equal($('#scheduler-new-start').closest('form').hidden, true, 'the form is hidden when there is nobody to assign');
   });
 
   test('editing a shift whose tanod is not in the Secretary list keeps that tanod selected (never silently unassigns)', async () => {
-    api.on('GET', '/availability', () => ({ status: 200, body: { items: [], page: 1, limit: 100, total: 0 } }));
+    api.on('GET', '/users/directory', () => ({ status: 200, body: { items: [] } }));
     const ctx = mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
     const rows = $$('tbody tr', ctx.root).filter((r) => /Tanod #4/.test(text(r)));
@@ -163,9 +210,9 @@ describe('Personnel behaviour', () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
     assert.match(text($('.page-content')), /Availability to review/);
-    // One call feeds the review panel (status=submitted); one builds the
-    // Secretary's tanod picker from every submission (GET /users is Admin-only).
-    assert.equal(api.callsTo('GET', '/availability').length, 2);
+    // One call feeds the review panel (status=submitted); the tanod picker
+    // now comes from GET /users/directory, not from availability.
+    assert.equal(api.callsTo('GET', '/availability').length, 1);
     assert.equal(api.callsTo('GET', '/availability').filter((c) => c.query?.status === 'submitted').length, 1);
     cleanup();
     mountPage(renderPersonnelPage, { role: 'punong_barangay' });

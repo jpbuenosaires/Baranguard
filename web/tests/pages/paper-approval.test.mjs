@@ -177,7 +177,9 @@ describe('Record approval from paper (Accomplishment Report)', () => {
     assert.ok(dialog(), 'the record dialog did not open');
     const options = $$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o));
     assert.deepEqual(options, ['Teresa Magbanua (Punong Barangay)'], 'only the active holder of approve_report; the admin and secretary do not hold it');
-    assert.equal(api.callsTo('GET', '/users').length >= 1, true, 'an Admin may read the user list');
+    const lookup = api.callsTo('GET', '/users/directory').find((c) => c.query?.purpose === 'signer');
+    assert.ok(lookup, 'the signer list comes from GET /users/directory');
+    assert.equal(lookup.query.authority, 'approve_report');
     // blank date refused
     click(confirmButton());
     await settle();
@@ -207,30 +209,29 @@ describe('Record approval from paper (Accomplishment Report)', () => {
     assert.match(dialogError(), /cannot also note or approve/);
   });
 
-  test('a Secretary who cannot list officials and holds no approval authority gets an honest message and no dialog (and never calls GET /users)', async () => {
+  test('a Secretary picks a signer from the directory (never GET /users) and records the approval', async () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'secretary', param: { reportId: 72 } });
     await settle();
-    // (The page itself already tries GET /users for display names and tolerates the Admin-only refusal.)
     const usersCallsBefore = api.callsTo('GET', '/users').length;
     click(buttonByText(/^Record approval from paper$/, panel()));
     await settle();
-    assert.equal(dialog(), null);
-    assert.match(text(window.document.body), /cannot list other officials/i);
-    assert.equal(api.callsTo('GET', '/users').length, usersCallsBefore, 'the signer lookup must not call the Admin-only user list for a Secretary');
+    assert.equal(api.callsTo('GET', '/users').length, usersCallsBefore, 'the Admin-only user list is never used for the signer lookup');
+    const options = $$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o));
+    assert.deepEqual(options, ['Teresa Magbanua (Punong Barangay)']);
+    type($('#confirm-dialog-field-signedOn', dialog()), today());
+    click(confirmButton());
+    await settle();
+    assert.deepEqual(api.callsTo('POST', '/accomplishment-reports/:id/record-paper-approval')[0].body, { signer_user_id: 3, signed_on: today() });
   });
 
-  test('a Secretary who holds approve_report can record with their own account as the signer', async () => {
-    api.on('GET', '/users/:id', ({ params }) => ({ status: 200, body: { user_id: Number(params.id), full_name: 'Liwayway Ferrer', role: 'secretary', official_title: 'Kagawad', approval_authority: ['note_report', 'approve_report'], is_active: 1, is_suspended: 0 } }));
+  test('when nobody holds the authority the user gets an honest message and no dialog', async () => {
+    api.on('GET', '/users/directory', () => ({ status: 200, body: { items: [] } }));
     mountPage(renderAccomplishmentReportsPage, { role: 'secretary', param: { reportId: 72 } });
     await settle();
     click(buttonByText(/^Record approval from paper$/, panel()));
     await settle();
-    const options = $$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o));
-    assert.deepEqual(options, ['Liwayway Ferrer (Kagawad) — you']);
-    type($('#confirm-dialog-field-signedOn', dialog()), today());
-    click(confirmButton());
-    await settle();
-    assert.deepEqual(api.callsTo('POST', '/accomplishment-reports/:id/record-paper-approval')[0].body, { signer_user_id: 2, signed_on: today() });
+    assert.equal(dialog(), null);
+    assert.match(text(window.document.body), /No active official holds this approval authority/i);
   });
 });
 
