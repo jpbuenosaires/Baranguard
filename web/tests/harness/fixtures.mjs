@@ -106,8 +106,8 @@ export function buildRoutes(scenario) {
     { referral_id: 2, incident_id: 903, barangay_id: 1, referred_to: 'other', other_text: t('Municipal Engineering Office'), contact_name: null, referred_at: sqlAgo(2 * 1440), reference_no: null, created_by: 2, created_at: sqlAgo(2 * 1440) },
   ];
   const availability = empty ? [] : [
-    { avail_id: 31, barangay_id: 1, user_id: 4, period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-05', start: '08:00', end: '16:00' }, { date: '2026-10-06', start: '22:00', end: '23:59' }], status: 'submitted', reviewed_by: null, reviewed_at: null, review_note: null, version: 1, created_at: sqlAgo(300), updated_at: sqlAgo(300) },
-    { avail_id: 32, barangay_id: 1, user_id: 5, period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-07', start: '06:00', end: '14:00' }], status: 'accepted', reviewed_by: 1, reviewed_at: sqlAgo(60), review_note: t('Thanks.'), version: 1, created_at: sqlAgo(400), updated_at: sqlAgo(60) },
+    { avail_id: 31, barangay_id: 1, user_id: 4, full_name: tanodName(4), period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-05', start: '08:00', end: '16:00' }, { date: '2026-10-06', start: '22:00', end: '23:59' }], status: 'submitted', reviewed_by: null, reviewed_at: null, review_note: null, version: 1, created_at: sqlAgo(300), updated_at: sqlAgo(300) },
+    { avail_id: 32, barangay_id: 1, user_id: 5, full_name: tanodName(5), period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-07', start: '06:00', end: '14:00' }], status: 'accepted', reviewed_by: 1, reviewed_at: sqlAgo(60), review_note: t('Thanks.'), version: 1, created_at: sqlAgo(400), updated_at: sqlAgo(60) },
   ];
   const accomplishmentReports = empty ? [] : [
     { report_id: 71, barangay_id: 1, user_id: 4, full_name: tanodName(4), month: '2026-09', status: 'prepared', entry_count: 2, total_minutes: 960, flagged_entries: 1, total_minutes_confirmed: null, prepared_at: sqlAgo(1440), noted_by: null, noted_at: null, approved_by: null, approved_at: null, return_reason: null, version: 2 },

@@ -20,8 +20,9 @@
  * removed from this hub. Users gained official title/approval authority
  * editing; Scheduler gained availability review, draft/published badges and
  * a Publish action. Swap requests remain their own tab. Admin sees all
- * three tabs; Secretary and Punong Barangay see the Scheduler only (that is
- * where roster approval and availability review live).
+ * three tabs; Secretary sees Scheduler + Swap requests (2026-10-07: the
+ * Secretary builds the roster and resolves swaps); Punong Barangay sees the
+ * Scheduler only (roster approval lives there).
  *
  * Sidebar badges (`pendingSwapRequests`/`unacknowledgedFatigueFlags`)
  * used to live on their own separate nav items via `GET
@@ -69,16 +70,20 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   header.appendChild(pageHeader.el);
 
   const isAdmin = user.role === 'admin';
+  // 2026-10-07: the Secretary resolves shift swaps too (the server allows
+  // GET/PATCH /shift-swap-requests for admin and secretary).
+  const canResolveSwaps = isAdmin || user.role === 'secretary';
 
-  // Admin: Users, Scheduler, Swap requests. Secretary and Punong Barangay:
-  // Scheduler only (availability review / roster publishing — the server
-  // checks role and approval authority on every action; the Users and Swap
-  // endpoints are Admin-only). Swap requests stay a tab of their own so they
-  // remain one click from the Scheduler (contract §10).
+  // Admin: Users, Scheduler, Swap requests. Secretary: Scheduler and Swap
+  // requests (build the roster, review availability, resolve swaps).
+  // Punong Barangay: Scheduler only (roster publishing). The server checks
+  // role and approval authority on every action; the Users endpoints are
+  // Admin-only. Swap requests stay a tab of their own so they remain one
+  // click from the Scheduler (contract §10).
   const TABS = [
     isAdmin && { key: 'users', label: 'Users', icon: icons.users },
     { key: 'scheduler', label: 'Scheduler', icon: icons.calendar },
-    isAdmin && { key: 'swaps', label: 'Swap requests', icon: icons.repeat, badgeKey: 'pendingSwapRequests' },
+    canResolveSwaps && { key: 'swaps', label: 'Swap requests', icon: icons.repeat, badgeKey: 'pendingSwapRequests' },
   ].filter(Boolean);
 
   const tabBar = document.createElement('div');
@@ -165,7 +170,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
     if (activeTab === 'users') {
       renderUsersTab(body, pageHeader, user);
     } else if (activeTab === 'scheduler') {
-      renderSchedulerTab(body, user, pageHeader, currentTabData, isAdmin ? () => { setActiveTab('swaps'); } : undefined);
+      renderSchedulerTab(body, user, pageHeader, currentTabData, canResolveSwaps ? () => { setActiveTab('swaps'); } : undefined);
     } else if (activeTab === 'swaps') {
       renderSwapRequestsTab(body, user, refreshBadges);
     }
