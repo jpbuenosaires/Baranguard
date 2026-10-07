@@ -40,6 +40,7 @@ import SchoolCheckinPage from './pages/school-checkin';
 import { hasStoredSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
+import { useDispatchOffers } from './services/useDispatchOffers';
 import { startSosFallbackContactResumeRefresh } from './services/sosFallbackContact';
 import { startSchoolCacheResumeRefresh } from './services/workflowRefresh';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
@@ -204,6 +205,8 @@ const TabbedShell: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
+  // Open night-dispatch offers for the Dispatches tab badge (shares the store the cards use).
+  const offerCount = useDispatchOffers().offers.length;
 
   const isHome = currentPath === '/tabs/home';
   const isAssignments = currentPath.startsWith('/tabs/assignments');
@@ -258,9 +261,14 @@ const TabbedShell: React.FC = () => {
           className={isAssignments ? 'tab-item--active' : ''}
           aria-label="Dispatches"
         >
-          <div className="tab-pill-container">
+          <div className="tab-pill-container tab-pill-container--has-badge">
             <IonIcon icon={isAssignments ? list : listOutline} />
             <IonLabel>Dispatches</IonLabel>
+            {offerCount > 0 && (
+              <span className="tab-offer-badge" role="status" aria-label={`${offerCount} dispatch offer${offerCount === 1 ? '' : 's'} waiting`}>
+                {offerCount}
+              </span>
+            )}
           </div>
         </IonTabButton>
 

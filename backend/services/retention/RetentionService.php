@@ -103,6 +103,23 @@ use PDO;
  *     see the blast radius of the first-ever run on real data before
  *     committing to it.
  *
+ * PLACEHOLDER RULES (2026-10, review decision 10) — the tables the
+ * tanod-workflow build added (migrations 0030-0033): `tanod_availability`,
+ * `accomplishment_report` (+ `accomplishment_entry`), `school_checkin`,
+ * `incident_referral`; `document_scan` (0037) follows its parent report.
+ * NO retention period for any of them has been decided by the barangay or
+ * COA, and this file does not invent one: each is a row of
+ * `NEW_TABLE_RULES` whose `days` is `null` and whose `status` is
+ * `pending_barangay_confirmation`. While `days` is null the rule is a
+ * NO-OP (it runs no query at all and reports
+ * `{purged:0, held:0, note:'pending barangay confirmation'}`), so a full
+ * non-dry-run `runAll()` provably deletes nothing from these tables. The
+ * purge itself is fully written and tested, but unreachable in
+ * production: the only way to give a rule a duration is (a) editing the
+ * constant after an architecture review (Rule 10) or (b) the constructor's
+ * `$durationOverrides` argument, which exists SOLELY as a test seam —
+ * `retention-job.php` never passes it, and it is not read from `.env`.
+ *
  * NOT IMPLEMENTED HERE, DELIBERATELY: backup expiry. §11 makes backups
  * follow their source data's retention, and Rule 11 says a deletion is
  * incomplete while a retained backup still holds the same data — but
@@ -129,6 +146,52 @@ final class RetentionService
     public const SHIFT_SCHEDULE_DAYS = 365;
     public const NOTIFICATION_DAYS = 365;
 
+    /** Status marker for a retention rule whose length the barangay has not yet confirmed. */
+    public const PENDING_BARANGAY_CONFIRMATION = 'pending_barangay_confirmation';
+
+    /**
+     * Retention rules for the tables added by migrations 0030-0033 (Rule 10:
+     * constants, not config). `days` null = no number decided = the rule is
+     * a no-op. A future decision replaces `null` with an integer AND
+     * `status` with 'confirmed' (architecture review, council/COA sign-off).
+     * `clock` documents which column the age is measured from.
+     */
+    public const NEW_TABLE_RULES = [
+        'tanod_availability' => [
+            'days' => null,
+            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'clock' => 'period_end',
+            'summary' => 'submitted availability windows, aged from the end of the availability period',
+        ],
+        'accomplishment_report' => [
+            'days' => null,
+            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'clock' => 'approved_at',
+            'summary' => 'APPROVED monthly accomplishment reports + entries + attached paper scans, aged from approval; reports not yet approved are never purged',
+        ],
+        'school_checkin' => [
+            'days' => null,
+            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'clock' => 'checked_in_at',
+            'summary' => 'school check-in/out records, aged from check-in',
+        ],
+        'incident_referral' => [
+            'days' => null,
+            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'clock' => 'referred_at',
+            'summary' => 'referral log rows, aged from the referral time; protected by a legal hold on the linked incident',
+        ],
+    ];
+
+    /**
+     * Tables with NO retention clock of their own: they live exactly as long
+     * as the parent record. If a purge of the parent is ever enabled it MUST
+     * also remove these rows and their files (see purgeOneAccomplishmentReport).
+     */
+    public const FOLLOWS_PARENT = [
+        'document_scan' => 'accomplishment_report',
+    ];
+
     /** Every rule name this service knows, in the order a full run applies them. */
     public const RULES = [
         'raw_narrative',
@@ -139,6 +202,10 @@ final class RetentionService
         'duty_status',
         'shift_schedule',
         'notification',
+        'tanod_availability',
+        'accomplishment_report',
+        'school_checkin',
+        'incident_referral',
         'audit_log',
         'incident_records',
     ];
@@ -148,10 +215,37 @@ final class RetentionService
     /** @var list<string> */
     private array $log = [];
 
-    public function __construct(PDO $pdo, bool $dryRun = false)
+    /** @var array<string,int> TEST SEAM ONLY — see __construct(). */
+    private array $durationOverrides = [];
+
+    /**
+     * @param array<string,int> $durationOverrides TEST SEAM ONLY: rule name
+     *        (a key of NEW_TABLE_RULES) => retention days. Exists so the
+     *        verify suite can prove the dormant purge code deletes only
+     *        expired rows. It is deliberately NOT populated from `.env` or
+     *        any config, and `retention-job.php` never passes it: shipping
+     *        code must get its number from the NEW_TABLE_RULES constant
+     *        (Rule 10).
+     */
+    public function __construct(PDO $pdo, bool $dryRun = false, array $durationOverrides = [])
     {
         $this->pdo = $pdo;
         $this->dryRun = $dryRun;
+        foreach ($durationOverrides as $rule => $days) {
+            if (!isset(self::NEW_TABLE_RULES[$rule]) || !is_int($days) || $days < 1) {
+                throw new \InvalidArgumentException("Invalid retention duration override for '{$rule}'.");
+            }
+            $this->durationOverrides[$rule] = $days;
+        }
+    }
+
+    /**
+     * Effective retention days for a NEW_TABLE_RULES rule, or null while the
+     * barangay has not confirmed a number (= the rule is a no-op).
+     */
+    public function newTableDays(string $rule): ?int
+    {
+        return $this->durationOverrides[$rule] ?? self::NEW_TABLE_RULES[$rule]['days'];
     }
 
     /** @return list<string> human-readable lines describing what happened. */
@@ -187,6 +281,10 @@ final class RetentionService
                 'duty_status' => $this->purgeDutyStatuses(),
                 'shift_schedule' => $this->purgeShiftSchedules(),
                 'notification' => $this->purgeNotifications(),
+                'tanod_availability' => $this->purgeTanodAvailability(),
+                'accomplishment_report' => $this->purgeAccomplishmentReports(),
+                'school_checkin' => $this->purgeSchoolCheckins(),
+                'incident_referral' => $this->purgeIncidentReferrals(),
                 'audit_log' => $this->purgeAuditLog(),
                 'incident_records' => $this->purgeExpiredIncidentRecords(),
             };
@@ -563,6 +661,297 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
+    // Placeholder rules for the 0030-0033 tables (review decision 10).
+    // Every method below is a NO-OP until NEW_TABLE_RULES gives it a
+    // number — see the class doc. None of them is reachable with a number
+    // in production code.
+    // ------------------------------------------------------------------
+
+    /**
+     * Shared no-op result for a rule whose length is not decided. Runs NO
+     * query and writes NO audit row.
+     *
+     * @return array{purged:int, held:int, note:string}
+     */
+    private function pendingResult(string $rule): array
+    {
+        $this->note("{$rule}: pending barangay confirmation — no retention period set, nothing purged");
+        return ['purged' => 0, 'held' => 0, 'note' => 'pending barangay confirmation'];
+    }
+
+    /** A DB that has not applied 0030-0033 yet has no such table (42S02); not an error. */
+    private function isMissingTable(\Throwable $e): bool
+    {
+        return $e instanceof \PDOException && (string) $e->getCode() === '42S02';
+    }
+
+    /**
+     * `tanod_availability`: aged from `period_end`. `shift_schedule.
+     * source_availability_id` is ON DELETE RESTRICT against it, so each row
+     * is purged in its own transaction that first NULLs that provenance
+     * pointer on any shift still referencing it (the shift itself is
+     * governed by its own 1-year rule and is not deleted here).
+     *
+     * @return array{purged:int, held:int, eligible?:int, failed?:int, note?:string}
+     */
+    public function purgeTanodAvailability(): array
+    {
+        $days = $this->newTableDays('tanod_availability');
+        if ($days === null) {
+            return $this->pendingResult('tanod_availability');
+        }
+        $where = 'period_end < DATE_SUB(UTC_DATE(), INTERVAL :days DAY)';
+
+        try {
+            $stmt = $this->pdo->prepare("SELECT avail_id FROM tanod_availability WHERE {$where} ORDER BY avail_id");
+            $stmt->execute(['days' => $days]);
+            $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        } catch (\PDOException $e) {
+            if ($this->isMissingTable($e)) {
+                $this->note('tanod_availability: table not present (migration 0030 not applied)');
+                return ['purged' => 0, 'held' => 0, 'note' => 'table not present'];
+            }
+            throw $e;
+        }
+        $eligible = count($ids);
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("tanod_availability: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $purged = 0;
+        $failed = 0;
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            $this->pdo->beginTransaction();
+            try {
+                $this->execById('UPDATE shift_schedule SET source_availability_id = NULL WHERE source_availability_id = :id', $id);
+                $this->execById('DELETE FROM tanod_availability WHERE avail_id = :id', $id);
+                $this->pdo->commit();
+                $purged++;
+            } catch (\Throwable $e) {
+                $this->pdo->rollBack();
+                $failed++;
+                $this->note("tanod_availability #{$id}: purge failed and was rolled back — " . $e->getMessage());
+            }
+        }
+
+        $this->audit('retention_tanod_availability_purged', 'tanod_availability', ['purged' => $purged, 'failed' => $failed]);
+        $this->note("tanod_availability: purged {$purged}, {$failed} failed");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible, 'failed' => $failed];
+    }
+
+    /**
+     * `accomplishment_report` (+ `accomplishment_entry`, ON DELETE
+     * RESTRICT, + `document_scan` rows and files, which have no FK but
+     * follow the parent). ONLY `status = 'approved'` reports are ever
+     * eligible, aged from `approved_at`: an open/prepared/noted/returned
+     * report is live work and must never be purged by an age clock. No
+     * `legal_hold` column exists on these tables, so `held` is always 0.
+     *
+     * One transaction per report. Scan FILES are unlinked after the commit
+     * (same recoverable direction as evidence in purgeOneIncident: an
+     * orphaned file is reportable, a row pointing at missing bytes is not).
+     *
+     * @return array{purged:int, held:int, eligible?:int, failed?:int, note?:string}
+     */
+    public function purgeAccomplishmentReports(): array
+    {
+        $days = $this->newTableDays('accomplishment_report');
+        if ($days === null) {
+            return $this->pendingResult('accomplishment_report');
+        }
+        $where = "status = 'approved' AND approved_at IS NOT NULL
+                  AND approved_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)";
+
+        try {
+            $stmt = $this->pdo->prepare("SELECT report_id FROM accomplishment_report WHERE {$where} ORDER BY report_id");
+            $stmt->execute(['days' => $days]);
+            $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        } catch (\PDOException $e) {
+            if ($this->isMissingTable($e)) {
+                $this->note('accomplishment_report: table not present (migration 0031 not applied)');
+                return ['purged' => 0, 'held' => 0, 'note' => 'table not present'];
+            }
+            throw $e;
+        }
+        $eligible = count($ids);
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("accomplishment_report: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $purged = 0;
+        $failed = 0;
+        foreach ($ids as $id) {
+            if ($this->purgeOneAccomplishmentReport((int) $id, $days)) {
+                $purged++;
+            } else {
+                $failed++;
+            }
+        }
+
+        $this->audit('retention_accomplishment_report_purged', 'accomplishment_report', ['purged' => $purged, 'failed' => $failed]);
+        $this->note("accomplishment_report: purged {$purged}, {$failed} failed (with entries and attached scans)");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible, 'failed' => $failed];
+    }
+
+    private function purgeOneAccomplishmentReport(int $reportId, int $days): bool
+    {
+        // document_scan may not exist on a DB without migration 0037.
+        $paths = [];
+        try {
+            $s = $this->pdo->prepare("SELECT stored_path FROM document_scan WHERE entity_type = 'accomplishment_report' AND entity_id = :id");
+            $s->execute(['id' => $reportId]);
+            $paths = $s->fetchAll(PDO::FETCH_COLUMN);
+        } catch (\PDOException $e) {
+            if (!$this->isMissingTable($e)) {
+                throw $e;
+            }
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            // Re-check eligibility INSIDE the transaction (row-locked): the
+            // report could have changed since the id scan.
+            $chk = $this->pdo->prepare(
+                "SELECT 1 FROM accomplishment_report
+                  WHERE report_id = :id AND status = 'approved' AND approved_at IS NOT NULL
+                    AND approved_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY) FOR UPDATE"
+            );
+            $chk->execute(['id' => $reportId, 'days' => $days]);
+            if ($chk->fetchColumn() === false) {
+                $this->pdo->rollBack();
+                return false;
+            }
+            try {
+                $this->execById("DELETE FROM document_scan WHERE entity_type = 'accomplishment_report' AND entity_id = :id", $reportId);
+            } catch (\PDOException $e) {
+                if (!$this->isMissingTable($e)) {
+                    throw $e;
+                }
+            }
+            $this->execById('DELETE FROM accomplishment_entry WHERE report_id = :id', $reportId);
+            $this->execById('DELETE FROM accomplishment_report WHERE report_id = :id', $reportId);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            $this->note("accomplishment_report #{$reportId}: purge failed and was rolled back — " . $e->getMessage());
+            return false;
+        }
+
+        foreach ($paths as $path) {
+            $resolved = $this->resolveScanPath((string) $path);
+            if ($resolved !== null && is_file($resolved) && !@unlink($resolved)) {
+                $this->note("accomplishment_report #{$reportId}: scan file could not be removed — {$resolved}");
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Scans live flat in `SCANS_DIR` (default `backend/storage/scans`, outside
+     * the web root); `stored_path` is a bare file name. Same containment
+     * discipline as resolveEvidencePath(): a crafted value must never steer
+     * an unlink outside the directory.
+     */
+    private function resolveScanPath(string $storedPath): ?string
+    {
+        if (!preg_match('/^[A-Za-z0-9._-]+$/', $storedPath)) {
+            return null;
+        }
+        $base = baranguard_env('SCANS_DIR');
+        $baseDir = ($base !== false && trim((string) $base) !== '')
+            ? rtrim((string) $base, '/\\')
+            : dirname(__DIR__, 2) . '/storage/scans';
+        $realBase = realpath($baseDir);
+        if ($realBase === false) {
+            return null;
+        }
+        $candidate = realpath($baseDir . DIRECTORY_SEPARATOR . $storedPath);
+        if ($candidate === false || !str_starts_with($candidate, $realBase)) {
+            return null;
+        }
+        return $candidate;
+    }
+
+    /** @return array{purged:int, held:int, eligible?:int, note?:string} */
+    public function purgeSchoolCheckins(): array
+    {
+        $days = $this->newTableDays('school_checkin');
+        if ($days === null) {
+            return $this->pendingResult('school_checkin');
+        }
+        $where = 'checked_in_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+        $params = ['days' => $days];
+
+        try {
+            $eligible = $this->countWhere('school_checkin', $where, $params);
+        } catch (\PDOException $e) {
+            if ($this->isMissingTable($e)) {
+                $this->note('school_checkin: table not present (migration 0033 not applied)');
+                return ['purged' => 0, 'held' => 0, 'note' => 'table not present'];
+            }
+            throw $e;
+        }
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("school_checkin: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $stmt = $this->pdo->prepare("DELETE FROM school_checkin WHERE {$where}");
+        $stmt->execute($params);
+        $purged = $stmt->rowCount();
+
+        $this->audit('retention_school_checkin_purged', 'school_checkin', ['purged' => $purged]);
+        $this->note("school_checkin: purged {$purged}");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible];
+    }
+
+    /**
+     * `incident_referral` has no `legal_hold` of its own; like `sms_log`'s
+     * inherited paths, a hold on the linked INCIDENT protects it (counted
+     * in `held`, never silently skipped).
+     *
+     * @return array{purged:int, held:int, eligible?:int, note?:string}
+     */
+    public function purgeIncidentReferrals(): array
+    {
+        $days = $this->newTableDays('incident_referral');
+        if ($days === null) {
+            return $this->pendingResult('incident_referral');
+        }
+        $aged = 'referred_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)';
+        $onHold = 'EXISTS (SELECT 1 FROM incident i WHERE i.incident_id = incident_referral.incident_id AND i.legal_hold = 1)';
+        $params = ['days' => $days];
+
+        try {
+            $held = $this->countWhere('incident_referral', "{$aged} AND {$onHold}", $params);
+            $eligible = $this->countWhere('incident_referral', "{$aged} AND NOT {$onHold}", $params);
+        } catch (\PDOException $e) {
+            if ($this->isMissingTable($e)) {
+                $this->note('incident_referral: table not present (migration 0032 not applied)');
+                return ['purged' => 0, 'held' => 0, 'note' => 'table not present'];
+            }
+            throw $e;
+        }
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("incident_referral: {$eligible} eligible, {$held} on legal hold");
+            return ['purged' => 0, 'held' => $held, 'eligible' => $eligible];
+        }
+
+        $stmt = $this->pdo->prepare("DELETE FROM incident_referral WHERE {$aged} AND NOT {$onHold}");
+        $stmt->execute($params);
+        $purged = $stmt->rowCount();
+
+        $this->audit('retention_incident_referral_purged', 'incident_referral', ['purged' => $purged, 'held' => $held]);
+        $this->note("incident_referral: purged {$purged}, {$held} on legal hold");
+        return ['purged' => $purged, 'held' => $held, 'eligible' => $eligible];
+    }
+
+    // ------------------------------------------------------------------
     // Rule 6 — audit_log (§11: 7 years, "write-once except controlled
     // retention deletion")
     // ------------------------------------------------------------------
@@ -772,6 +1161,13 @@ final class RetentionService
         $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM {$from} WHERE {$where}");
         $stmt->execute($params);
         return (int) $stmt->fetchColumn();
+    }
+
+    /** Runs a statement with one `:id` parameter. */
+    private function execById(string $sql, int $id): void
+    {
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute(['id' => $id]);
     }
 
     private function exec(string $sql, int $incidentId): void

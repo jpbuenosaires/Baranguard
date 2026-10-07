@@ -47,6 +47,7 @@ import {
   timeOutline,
   warningOutline,
 } from 'ionicons/icons';
+import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
 import tacticalFeedback from '../utils/tacticalFeedback';
@@ -504,6 +505,9 @@ const HomePage: React.FC = () => {
               </button>
             </div>
           )}
+
+          {/* Night-dispatch offers: online-only, accept is never queued (see DispatchOfferCards). */}
+          <DispatchOfferCards />
 
           {/* 2. Mission Hero Card */}
           {topDispatch ? (
