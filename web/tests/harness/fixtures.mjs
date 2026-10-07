@@ -83,12 +83,16 @@ export function buildRoutes(scenario) {
   // Contract section 7: every incident carries school_id + the three C-1 fields.
   for (const inc of allIncidents) {
     inc.school_id = null;
+    // Migration 0036: how the report reached the barangay + a reference link.
+    inc.report_channel = { app: 'tanod_alerted', sms: 'sms', web: 'walk_in' }[inc.source] ?? 'other';
+    inc.related_incident_id = null;
     inc.c1_summary = null;
     inc.c1_action_taken = null;
     inc.c1_status_notes = null;
   }
   Object.assign(allIncidents.find((i) => i.incident_id === 902), {
     school_id: 11,
+    related_incident_id: 903,
     c1_summary: t('Pupil felt faint near the school gate.'),
     c1_action_taken: t('First aid given, ambulance called.'),
     c1_status_notes: null,
@@ -130,11 +134,14 @@ export function buildRoutes(scenario) {
     { dispatch_id: 7003, incident_id: 903, tanod_id: 4, tanod_name: tanodName(4), priority: 'normal', route_json: null, route_status: 'stale', status: 'completed', dispatched_at: sqlAgo(3 * 1440 - 5), en_route_at: sqlAgo(3 * 1440 - 7), arrived_at: sqlAgo(3 * 1440 - 20), completed_at: sqlAgo(3 * 1440 - 60), cancelled_at: null },
   ];
 
+  const incidentLink = (row) => (row ? { incident_id: row.incident_id, display_id: row.display_id } : null);
   const incidentDetail = (inc, role) => {
     const own = dispatches.filter((d) => d.incident_id === inc.incident_id);
     const first = own[0];
     const detail = {
       ...inc,
+      related_incident: incidentLink(allIncidents.find((i) => i.incident_id === inc.related_incident_id)),
+      related_by: allIncidents.filter((i) => i.related_incident_id === inc.incident_id).map(incidentLink),
       dispatched_at: first?.dispatched_at ?? null,
       arrived_at: first?.arrived_at ?? null,
       has_active_dispatch: own.some((d) => ['assigned', 'en_route', 'arrived'].includes(d.status)),
@@ -257,7 +264,7 @@ export function buildRoutes(scenario) {
       if (query.q) rows = rows.filter((i) => `${i.display_id} ${i.incident_type} ${i.status}`.toLowerCase().includes(String(query.q).toLowerCase()));
       return ok(paginate(rows, query));
     } },
-    { method: 'POST', path: '/incidents', handler: ({ body }) => ({ status: 201, body: { incident_id: 905, barangay_id: 1, reported_by: 1, incident_type: body.incident_type, priority: body.priority || 'normal', status: 'pending', source: 'web', latitude: body.latitude ?? null, longitude: body.longitude ?? null, location_description: body.location_description ?? null, display_id: 'INC-2026-905', created_at: sqlAgo(0) } }) },
+    { method: 'POST', path: '/incidents', handler: ({ body }) => ({ status: 201, body: { incident_id: 905, barangay_id: 1, reported_by: 1, incident_type: body.incident_type, priority: body.priority || 'normal', status: 'pending', source: 'web', report_channel: body.report_channel ?? 'walk_in', latitude: body.latitude ?? null, longitude: body.longitude ?? null, location_description: body.location_description ?? null, display_id: 'INC-2026-905', created_at: sqlAgo(0) } }) },
     { method: 'GET', path: '/incidents/:id', handler: ({ params, headers }) => {
       const inc = allIncidents.find((i) => i.incident_id === Number(params.id));
       return inc ? ok(incidentDetail(inc, roleFromAuth(headers))) : notFound('Incident not found.');
@@ -265,6 +272,13 @@ export function buildRoutes(scenario) {
     { method: 'PATCH', path: '/incidents/:id', handler: ({ params, body }) => ((body && ('raw_narrative' in body || 'redacted_narrative' in body))
       ? { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'Narrative fields cannot be edited here.' } } }
       : ok({ incident_id: Number(params.id), updated: true, fields: Object.keys(body || {}) })) },
+    { method: 'PATCH', path: '/incidents/:id/related', handler: ({ params, body }) => {
+      const id = Number(params.id);
+      const target = body?.related_incident_id;
+      if (target === id) return { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'An incident cannot be related to itself.' } } };
+      if (target !== null && !allIncidents.some((i) => i.incident_id === target)) return notFound('Incident not found.');
+      return ok({ incident_id: id, related_incident_id: target ?? null });
+    } },
     { method: 'GET', path: '/incidents/:id/referrals', handler: ({ params }) => ok({ items: referrals.filter((r) => r.incident_id === Number(params.id)) }) },
     { method: 'POST', path: '/incidents/:id/referrals', handler: ({ params, body }) => ((body && body.referred_to)
       ? { status: 201, body: { referral_id: 9, incident_id: Number(params.id), barangay_id: 1, referred_to: body.referred_to, other_text: body.other_text ?? null, contact_name: body.contact_name ?? null, referred_at: sqlAgo(0), reference_no: body.reference_no ?? null, created_by: 1, created_at: sqlAgo(0) } }
