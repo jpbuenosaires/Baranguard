@@ -164,7 +164,10 @@ expect_contains "$LIST_OUT" "Legal hold" "--list states legal hold is the only e
 # --only; the deep behaviour is in verify-retention-new-tables.sh.
 expect_contains "$LIST_OUT" "pending_barangay_confirmation" "--list flags the new-table rules as pending barangay confirmation"
 expect_contains "$LIST_OUT" "document_scan" "--list notes document_scan follows its parent report"
-PEND_OUT="$(run_job --only=tanod_availability,accomplishment_report,school_checkin,incident_referral)"
+expect_contains "$LIST_OUT" "ssz_term_report" "--list names the Annex D (ssz_term_report) rule"
+expect_contains "$LIST_OUT" "deliberately NOT time-purged" "--list records that school has no rule by design"
+PEND_OUT="$(run_job --only=tanod_availability,accomplishment_report,school_checkin,incident_referral,ssz_term_report)"
+expect_contains "$PEND_OUT" "ssz_term_report: pending barangay confirmation" "--only accepts ssz_term_report and reports it pending"
 expect_contains "$PEND_OUT" "incident_referral: pending barangay confirmation" "--only accepts the new-table rules and reports them pending"
 expect_contains "$PEND_OUT" "Purged 0 record(s)" "running only the pending rules purges nothing"
 
