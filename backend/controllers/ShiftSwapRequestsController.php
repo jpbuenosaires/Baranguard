@@ -27,6 +27,10 @@ use PDO;
  *     about the name here specifically.
  *   - **shift_swap_request has no barangay_id column** — every tenant
  *     check joins through `shift_schedule` for its `barangay_id`.
+ *   - **Secretary may review swaps** (2026-10-07 review decision): list and
+ *     approve/deny are open to admin AND secretary, same barangay.
+ *   - **Approved swap on a published shift** -> draft + pending_reapproval=1
+ *     (migration 0035); ShiftsController::index() shows it to its Tanod.
  *   - **Re-validation on approve** (§6/§9's own words: "revalidate
  *     current users, assignment, time overlap, and fatigue"): if the
  *     shift's *current* occupant no longer matches `requesting_user_id`
@@ -96,7 +100,7 @@ final class ShiftSwapRequestsController
 
         $pdo->beginTransaction();
         try {
-            $shiftStmt = $pdo->prepare('SELECT shift_id, user_id, barangay_id, approval_status FROM shift_schedule WHERE shift_id = :shift_id FOR UPDATE');
+            $shiftStmt = $pdo->prepare('SELECT shift_id, user_id, barangay_id, approval_status, pending_reapproval FROM shift_schedule WHERE shift_id = :shift_id FOR UPDATE');
             $shiftStmt->execute(['shift_id' => $shiftId]);
             $shift = $shiftStmt->fetch(PDO::FETCH_ASSOC);
             if ($shift === false) {
@@ -109,6 +113,13 @@ final class ShiftSwapRequestsController
             // A Tanod only ever sees PUBLISHED shifts (contract section 3); a
             // draft is not part of the approved roster, so there is nothing to
             // swap. Answered as not-found, same as any shift the caller cannot see.
+            // The one exception: a shift still waiting for re-approval after an
+            // approved swap IS visible to its Tanod (migration 0035), so it is
+            // not "not found" — but it already went through a swap and needs
+            // a fresh publish first, so a new request on it is a 409.
+            if ((int) ($shift['pending_reapproval'] ?? 0) === 1) {
+                throw new ApiError(409, 'CONFLICT', 'This shift is waiting for roster re-approval after a swap; request a swap once it is published again.');
+            }
             if (($shift['approval_status'] ?? 'draft') !== 'published') {
                 throw new ApiError(404, 'NOT_FOUND', 'Shift not found.');
             }
@@ -154,7 +165,7 @@ final class ShiftSwapRequestsController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'tanod']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'tanod']);
 
         $page = max(1, (int) (Http::query('page') ?? '1'));
         $limit = min(self::MAX_LIMIT, max(1, (int) (Http::query('limit') ?? (string) self::DEFAULT_LIMIT)));
@@ -202,7 +213,7 @@ final class ShiftSwapRequestsController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function update(PDO $pdo, array $identity, string $requestIdParam): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         if (!ctype_digit($requestIdParam)) {
             throw new ApiError(404, 'NOT_FOUND', 'Swap request not found.');
         }
@@ -252,7 +263,7 @@ final class ShiftSwapRequestsController
             // approve_roster publish is needed).
             $approvalReset = $status === 'approved' && ($row['shift_approval_status'] ?? 'draft') === 'published';
             $approvalResetSql = $approvalReset
-                ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL"
+                ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL, pending_reapproval = 1"
                 : '';
 
             if ($status === 'approved') {
