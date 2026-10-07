@@ -31,9 +31,11 @@ use PDO;
  * MAX_ROUNDS rounds in total — the offer is re-broadcast to every Tanod who
  * qualifies at that moment. If nobody qualifies, or round 3 has run out, the
  * offer is `escalated`: no Tanod can accept it any more, and the Admin(s)
- * keep being alerted every timeout until somebody assigns a responder
- * (which closes the offer), cancels it, or the incident stops being
- * pending/dispatched. `round` is mutated in place: an offer row is the
+ * keep being reminded on a backoff (see ESCALATION_REMINDER_DELAYS: +3, +6,
+ * +12 min, then every 30 min, max MAX_ESCALATION_REMINDERS = 8 reminders,
+ * then silence) until somebody assigns a responder (which closes the
+ * offer), cancels it, or the incident stops being pending/dispatched.
+ * The offer stays escalated, and visible on the dispatch board, after the cap. `round` is mutated in place: an offer row is the
  * incident's single live offer, not one row per round.
  *
  * ALERT CONTENT IS NON-IDENTIFYING: incident type, barangay name and time.
@@ -71,6 +73,18 @@ final class OfferService
 
     /** Total tanod broadcast rounds before an offer stays `escalated`. */
     public const MAX_ROUNDS = 3;
+
+    /**
+     * Admin reminder backoff for an `escalated` offer (constants, not config).
+     * The alert sent at the moment of escalation is not a reminder. Each entry
+     * is the wait, in seconds, after the previous alert before the NEXT
+     * reminder: first reminder +3 min after escalation, second +6 min after
+     * the first, third +12 min after the second, every later one +30 min.
+     * At most MAX_ESCALATION_REMINDERS reminders per offer, then the sweeper
+     * stops alerting (the offer stays escalated and visible on the board).
+     */
+    public const ESCALATION_REMINDER_DELAYS = [180, 360, 720, 1800];
+    public const MAX_ESCALATION_REMINDERS = 8;
 
     private const MANILA_OFFSET = '+08:00';
     private const SWEEP_BATCH = 100;
@@ -483,6 +497,45 @@ final class OfferService
                 $pdo->commit();
                 $summary['processed']++;
                 $summary['closed']++;
+                return;
+            }
+
+            if ($offer['status'] === 'escalated' && $roundBefore >= self::MAX_ROUNDS) {
+                // Escalated with no tanod rounds left: a reminder tick, not a new
+                // round. (An offer that escalated early, with zero recipients at
+                // round < MAX_ROUNDS, still takes the round path below so it
+                // re-broadcasts once a Tanod qualifies.)
+                $countStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_log WHERE action = 'dispatch_offer_reminder' AND entity_type = 'dispatch_offer' AND entity_id = :id");
+                $countStmt->execute(['id' => $offerId]);
+                $sent = (int) $countStmt->fetchColumn();
+                $alertId = null;
+                if ($sent < self::MAX_ESCALATION_REMINDERS) {
+                    $alertId = self::alertAdmins($pdo, $offerId, $incidentId, $barangayId);
+                    if ($alertId !== null) {
+                        $notificationIds[] = $alertId;
+                    }
+                    $reminderNo = $sent + 1;
+                    Audit::record($pdo, $barangayId, null, 'dispatch_offer_reminder', 'dispatch_offer', $offerId, [
+                        'incident_id' => $incidentId,
+                        'reminder_no' => $reminderNo,
+                        'admin_alerted' => $alertId !== null,
+                    ]);
+                    $delays = self::ESCALATION_REMINDER_DELAYS;
+                    $wait = $delays[min($reminderNo, count($delays) - 1)];
+                } else {
+                    // Cap reached: no alert, no audit noise; keep a slow
+                    // housekeeping tick so the offer still closes when the
+                    // incident stops being actionable.
+                    $wait = self::ESCALATION_REMINDER_DELAYS[count(self::ESCALATION_REMINDER_DELAYS) - 1];
+                }
+                $pdo->prepare('UPDATE dispatch_offer SET expires_at = :expires_at WHERE offer_id = :id')->execute([
+                    'expires_at' => self::fmt($now->modify('+' . $wait . ' seconds')),
+                    'id' => $offerId,
+                ]);
+                $pdo->commit();
+                $summary['processed']++;
+                $summary['escalated']++;
+                self::deliver($pdo, $notificationIds);
                 return;
             }
 
