@@ -54,22 +54,119 @@ describe('Personnel behaviour', () => {
     assert.equal(tab('Fatigue'), undefined, 'the Fatigue tab must be gone from the hub');
   });
 
-  for (const role of ['secretary', 'punong_barangay']) {
-    test(`${role} sees the Scheduler tab only; no user roster is pulled`, async () => {
-      mountPage(renderPersonnelPage, { role });
-      await settle();
-      assert.deepEqual(tabLabels(), ['Scheduler']);
-      assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only; this role must not call it');
-      assert.equal($('#scheduler-new-start'), null, 'only an Admin may create shifts');
-      assert.equal(buttonByText(/edit shift/i), undefined, 'only an Admin may edit shifts');
-    });
-  }
+  test('punong_barangay sees the Scheduler tab only; no user roster is pulled and shifts cannot be created or edited', async () => {
+    mountPage(renderPersonnelPage, { role: 'punong_barangay' });
+    await settle();
+    assert.deepEqual(tabLabels(), ['Scheduler']);
+    assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only; this role must not call it');
+    assert.equal($('#scheduler-new-start'), null, 'a Punong Barangay may not create shifts');
+    assert.equal(buttonByText(/edit shift/i), undefined, 'a Punong Barangay may not edit shifts');
+    assert.equal(buttonByText(/swap requests/i), undefined, 'no Swap requests entry for a Punong Barangay');
+  });
+
+  test('secretary sees Scheduler and Swap requests tabs, never Users (2026-10-07)', async () => {
+    mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    assert.deepEqual(tabLabels(), ['Scheduler', 'Swap requests']);
+    assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only; the Secretary must not call it');
+  });
+
+  test('secretary gets the create-shift form and Edit Shift controls; Publish stays authority-gated', async () => {
+    mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    assert.ok($('#scheduler-new-start'), 'the Secretary must be able to create shifts');
+    assert.ok(buttonByText(/edit shift/i), 'the Secretary must be able to edit shifts');
+    assert.equal($('#publish-shifts-btn'), null, 'publishing needs approve_roster, which this Secretary does not hold');
+    assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
+  });
+
+  test('the Secretary tanod picker is built from tanods who submitted availability (no GET /users)', async () => {
+    mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    const options = $$('#scheduler-new-tanod option').map((o) => text(o));
+    assert.equal(options.length, 2, 'two distinct tanods in the availability fixture');
+    assert.ok(options.some((o) => /Jose Reyes/.test(o)));
+    assert.ok(options.some((o) => /Maria Dela Cruz/.test(o)));
+    assert.equal(api.callsTo('GET', '/users').length, 0);
+  });
+
+  test('a Secretary-created shift is POSTed as a draft with the chosen tanod', async () => {
+    mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    const select = $('#scheduler-new-tanod');
+    select.value = '5';
+    type($('#scheduler-new-start'), '2026-10-12T08:00');
+    type($('#scheduler-new-end'), '2026-10-12T16:00');
+    $('#scheduler-new-start').closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    const [call] = api.callsTo('POST', '/shifts');
+    assert.ok(call, 'POST /shifts was not sent');
+    assert.equal(call.body.user_id, 5);
+    assert.match(text(window.document.body), /Shift saved as a draft\./);
+  });
+
+  test('the Secretary tanod picker says so when nobody has submitted availability', async () => {
+    api.on('GET', '/availability', () => ({ status: 200, body: { items: [], page: 1, limit: 100, total: 0 } }));
+    mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    assert.match(text($('.page-content')), /No tanod has submitted availability yet/);
+    assert.equal($('#scheduler-new-start').closest('form').hidden, true, 'the form is hidden when there is nobody to assign');
+  });
+
+  test('editing a shift whose tanod is not in the Secretary list keeps that tanod selected (never silently unassigns)', async () => {
+    api.on('GET', '/availability', () => ({ status: 200, body: { items: [], page: 1, limit: 100, total: 0 } }));
+    const ctx = mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    const rows = $$('tbody tr', ctx.root).filter((r) => /Tanod #4/.test(text(r)));
+    click(buttonByText(/edit shift/i, rows[0]));
+    await settle();
+    const modal = $('.personnel-modal');
+    const select = $('select', modal);
+    assert.equal(select.value, '4');
+    assert.match(text($('option:checked', select)), /Tanod #4 \(current\)/);
+  });
+
+  test('a shift awaiting re-approval after a swap is labelled as such (pending_reapproval)', async () => {
+    api.on('GET', '/shifts', () => ({ status: 200, body: { items: [
+      { shift_id: 510, user_id: 4, patrol_zone: 'Zone 1', start_at: '2026-10-20 00:00:00', end_at: '2026-10-20 08:00:00', version: 3, approval_status: 'draft', pending_reapproval: 1, approved_by: null, approved_at: null, source_availability_id: null },
+      { shift_id: 511, user_id: 5, patrol_zone: 'Zone 2', start_at: '2026-10-21 00:00:00', end_at: '2026-10-21 08:00:00', version: 1, approval_status: 'draft', pending_reapproval: 0, approved_by: null, approved_at: null, source_availability_id: null },
+    ], page: 1, limit: 100, total: 2 } }));
+    await openScheduler('admin');
+    const pills = $$('.shift-approval-pill').map((p) => text(p));
+    assert.deepEqual(pills.sort(), ['Draft', 'Draft — swap awaiting re-approval']);
+  });
+
+  test('secretary Swap requests tab loads without GET /users and approves a swap', async () => {
+    const ctx = mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    click(tab('Swap'));
+    await settle();
+    assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only');
+    assert.equal(api.callsTo('GET', '/shift-swap-requests').length, 1);
+    assert.match(text($('.page-content')), /Jose Reyes|Maria Dela Cruz/, 'names come from availability');
+    click(buttonByText(/^approve$/i, ctx.root));
+    await settle();
+    const dialog = $('[role="alertdialog"]');
+    if (dialog) { click($$('button', dialog).at(-1)); await settle(); }
+    const [call] = api.callsTo('PATCH', '/shift-swap-requests/:id');
+    assert.ok(call, 'PATCH /shift-swap-requests/:id was not sent');
+    assert.equal(call.body.status, 'approved');
+  });
+
+  test('the Scheduler header offers a Swap requests shortcut to Admin and Secretary, not Punong Barangay', async () => {
+    const ctx = mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    assert.ok(buttonByText(/swap requests/i, $('.page-header', ctx.root) ?? ctx.root));
+  });
 
   test('the availability review panel shows for Secretary, not for Punong Barangay', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
     assert.match(text($('.page-content')), /Availability to review/);
-    assert.equal(api.callsTo('GET', '/availability').length, 1);
+    // One call feeds the review panel (status=submitted); one builds the
+    // Secretary's tanod picker from every submission (GET /users is Admin-only).
+    assert.equal(api.callsTo('GET', '/availability').length, 2);
+    assert.equal(api.callsTo('GET', '/availability').filter((c) => c.query?.status === 'submitted').length, 1);
     cleanup();
     mountPage(renderPersonnelPage, { role: 'punong_barangay' });
     await settle();

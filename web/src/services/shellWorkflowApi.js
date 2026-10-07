@@ -168,6 +168,8 @@ function mapShiftDetailed(row) {
     approvedBy: row.approved_by ?? null,
     approvedAt: row.approved_at ?? null,
     sourceAvailabilityId: row.source_availability_id ?? null,
+    // An approved swap on a published shift returns it to draft AND flags it for re-approval.
+    pendingReapproval: Boolean(row.pending_reapproval),
   };
 }
 
