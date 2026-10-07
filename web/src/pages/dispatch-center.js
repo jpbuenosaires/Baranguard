@@ -28,6 +28,7 @@ import {
   getIncidents, getDispatches, getDutyStatus, getUsers, getGpsLive, getTanodSos,
   cancelDispatch, acknowledgeTanodSos, resolveTanodSos, logout, ApiClientError,
 } from '../api/apiClient.js';
+import { getDispatchOffers, openDispatchOffer, cancelDispatchOffer } from '../services/shellWorkflowApi.js';
 import { LiveMap } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
@@ -75,6 +76,30 @@ function formatElapsed(timestamp) {
   if (diffHour < 24) return `${diffHour}h ago`;
   const diffDay = Math.floor(diffHour / 24);
   return `${diffDay}d ago`;
+}
+
+// Dispatch offers (Wave 2): a broadcast to on-duty tanods, up to 3 rounds of
+// 180 s each (OfferService), then `escalated` = nobody can accept, assign one.
+const OFFER_MAX_ROUNDS = 3;
+const LIVE_OFFER_STATUSES = ['open', 'escalated'];
+
+function formatCountdown(expiresAt) {
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return '';
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** One-line, non-identifying summary of an offer, or null when nothing worth showing. */
+function offerLineText(offer) {
+  if (!offer) return null;
+  if (offer.status === 'open') {
+    const n = offer.recipientCount;
+    return `Broadcast to ${n} tanod${n === 1 ? '' : 's'}, round ${offer.round}/${OFFER_MAX_ROUNDS}, expires ${formatCountdown(offer.expiresAt)}`;
+  }
+  if (offer.status === 'escalated') return 'Escalated: no tanod accepted. Assign a responder.';
+  if (offer.status === 'accepted') return `Accepted by ${offer.acceptedByName || 'a tanod'}`;
+  return null;
 }
 
 function formatIncidentCode(incident) {
@@ -158,6 +183,9 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let searchQuery = '';
   let activeCategory = 'all';
   let latestData = null;
+  // incidentId -> newest dispatch offer (GET /dispatch-offers is newest-first).
+  let offerByIncident = new Map();
+  const isAdmin = user.role === 'admin';
 
   const POLL_INTERVAL_MS = 15000;
 
@@ -176,6 +204,12 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       if (span && ts) {
         span.textContent = formatElapsed(ts);
       }
+    }
+    // Live countdown on open offers (re-rendered fully on each poll).
+    for (const el of queueListEl.querySelectorAll('[data-offer-expires]')) {
+      const offer = offerByIncident.get(Number(el.dataset.incidentId));
+      const text = offerLineText(offer);
+      if (text && el.textContent !== text) el.textContent = text;
     }
   }, 1000);
 
@@ -196,7 +230,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   async function load(showLoadingState) {
     if (showLoadingState && !layoutEl) renderLoading(body);
     try {
-      const [incidentsRes, dispatchedIncidentsRes, dispatchesRes, dutyStatuses, usersRes, sosItems, gpsItems] = await Promise.all([
+      const [incidentsRes, dispatchedIncidentsRes, dispatchesRes, dutyStatuses, usersRes, sosItems, gpsItems, offersRes] = await Promise.all([
         getIncidents({ status: 'pending', limit: 100 }),
         // 2026-09-13: fetched so grouped dispatch cards (below) can show
         // the incident's REAL type/location/display id — GET /dispatch's
@@ -209,7 +243,14 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         getUsers({ role: 'tanod', limit: 100 }),
         getTanodSos({}).catch(() => []),
         getGpsLive(user.barangayId).catch(() => []),
+        // Offer state is additive: if it cannot be read the board still works.
+        getDispatchOffers({ limit: 100 }).catch(() => ({ items: [] })),
       ]);
+
+      offerByIncident = new Map();
+      for (const offer of offersRes.items) {
+        if (!offerByIncident.has(offer.incidentId)) offerByIncident.set(offer.incidentId, offer);
+      }
 
       const incidentById = new Map(
         [...incidentsRes.items, ...dispatchedIncidentsRes.items].map((i) => [i.incidentId, i])
@@ -1015,6 +1056,67 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
         card.append(cardHeader, titleRow, locRow, timeRow, dispatchedList, addResponderBtn, delegateBtn);
       }
+
+      // Dispatch offer state (Wave 2): a live line under the elapsed time,
+      // plus Admin-only broadcast/cancel. Non-identifying data only — counts,
+      // round and (once accepted) the responder's name, which the dispatched
+      // card already shows.
+      const offer = offerByIncident.get(item.incidentId);
+      const offerText = offerLineText(offer);
+      const offerLive = offer && LIVE_OFFER_STATUSES.includes(offer.status);
+      const offerBlock = document.createElement('div');
+      offerBlock.className = 'queue-incident-card__dispatched-list';
+      if (offerText) {
+        const line = document.createElement('div');
+        line.className = `queue-incident-card__meta`;
+        if (offer.status === 'open') line.dataset.offerExpires = '1';
+        line.dataset.incidentId = String(item.incidentId);
+        line.setAttribute('role', 'status');
+        line.textContent = offerText;
+        offerBlock.appendChild(line);
+      }
+      if (isAdmin && item.itemStatus === 'pending' && !offerLive) {
+        const broadcastBtn = document.createElement('button');
+        broadcastBtn.type = 'button';
+        broadcastBtn.className = 'queue-incident-card__add-responder-btn';
+        broadcastBtn.innerHTML = `${icons.radio(13)} <span>Broadcast to on-duty tanods</span>`;
+        broadcastBtn.title = 'Offer this incident to every on-duty tanod; the first to accept is dispatched';
+        broadcastBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          broadcastBtn.disabled = true;
+          try {
+            const res = await openDispatchOffer(item.incidentId, crypto.randomUUID());
+            showToast(res.status === 'escalated'
+              ? 'No on-duty tanod could be offered this incident. Assign a responder.'
+              : `Broadcast sent to ${res.recipientCount} tanod${res.recipientCount === 1 ? '' : 's'}.`, { variant: res.status === 'escalated' ? 'warning' : 'success' });
+            onQueueChanged();
+          } catch (err) {
+            broadcastBtn.disabled = false;
+            showToast(err instanceof ApiClientError ? err.message : 'Could not start the broadcast.', { variant: 'error' });
+          }
+        });
+        offerBlock.appendChild(broadcastBtn);
+      }
+      if (isAdmin && offerLive) {
+        const cancelOfferBtn = document.createElement('button');
+        cancelOfferBtn.type = 'button';
+        cancelOfferBtn.className = 'queue-incident-card__cancel-btn';
+        cancelOfferBtn.textContent = 'Cancel broadcast';
+        cancelOfferBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          cancelOfferBtn.disabled = true;
+          try {
+            await cancelDispatchOffer(offer.offerId, crypto.randomUUID());
+            showToast('Broadcast cancelled.', { variant: 'info' });
+            onQueueChanged();
+          } catch (err) {
+            cancelOfferBtn.disabled = false;
+            showToast(err instanceof ApiClientError ? err.message : 'Could not cancel the broadcast.', { variant: 'error' });
+          }
+        });
+        offerBlock.appendChild(cancelOfferBtn);
+      }
+      if (offerBlock.childElementCount > 0) timeRow.after(offerBlock);
 
       // Card Click: Focus on Map
       card.addEventListener('click', () => {

@@ -157,15 +157,12 @@ export function PaperApprovalPanel({
         }
         approveBtn.disabled = false;
         if (loaded.candidates.length === 0) {
-          showToast(loaded.limited
-            ? 'Your account cannot list other officials and does not hold this approval authority itself. Ask an Admin to record the approval.'
-            : 'No active official holds this approval authority (other than the person who prepared the report).', { variant: 'warning' });
+          showToast('No active official holds this approval authority (other than the person who prepared the report).', { variant: 'warning' });
           return;
         }
         const result = await promptFields({
           title: 'Record approval from paper',
-          description: 'Use this when the approver signed the paper form instead of approving in the system. Pick who signed and the date they signed. The report becomes approved.'
-            + (loaded.limited ? ' Only your own account can be listed for you.' : ''),
+          description: 'Use this when the approver signed the paper form instead of approving in the system. Pick who signed and the date they signed. The report becomes approved.',
           fields: [
             { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
             { name: 'signedOn', label: 'Date signed', type: 'date', max: manilaToday() },

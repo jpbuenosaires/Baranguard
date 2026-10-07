@@ -15,7 +15,9 @@ import { loadTanodRoster } from '../services/tanodRoster.js';
 import {
   getShiftsDetailed, publishShifts, getAvailability, reviewAvailability, getOwnApprovalAuthority,
 } from '../services/shellWorkflowApi.js';
-import { confirmDialog } from '../components/ConfirmDialog.js';
+import { loadSignerCandidates } from '../services/signerCandidates.js';
+import { formatDateOnly, manilaToday } from '../services/tanodWorkflowUi.js';
+import { confirmDialog, promptFields } from '../components/ConfirmDialog.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
@@ -49,9 +51,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // approver then publishes). Punong Barangay reaches this tab to publish
   // drafts (approve_roster) only. Availability review is Admin/Secretary.
   // The server re-checks role and authority on every action either way.
-  // The tanod list comes from loadTanodRoster(): the real account list for
-  // an Admin (GET /users is Admin-only), tanods with submitted availability
-  // for a Secretary.
+  // The tanod list comes from loadTanodRoster() (GET /users/directory) for
+  // both Admin and Secretary. Admin/Secretary without approve_roster publish
+  // by recording an official's paper approval ("Recorded from paper").
   const isAdmin = user.role === 'admin';
   const canManageShifts = isAdmin || user.role === 'secretary';
   const canReviewAvailability = canManageShifts;
@@ -87,6 +89,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // Draft shifts ticked for publishing (contract §3: POST /shifts/publish).
   const selectedShiftIds = new Set();
   let publishWarnings = [];
+  let publishedCount = 0;
   // Publishing needs the approve_roster authority. Looked up once for the
   // tab; a failed lookup resolves to "does not hold it" so the controls stay
   // hidden rather than offering an action the server will refuse.
@@ -296,7 +299,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
       renderStatStrip();
       if (canManageShifts) {
-        const newFormPane = buildNewShiftForm(tanods, load, shifts, isAdmin);
+        const newFormPane = buildNewShiftForm(tanods, load, shifts);
         layout.replaceChild(newFormPane, formPane);
         formPane = newFormPane;
       }
@@ -449,7 +452,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     const bar = document.createElement('div');
     bar.className = 'scheduler-publish-bar';
 
-    if (!canApproveRoster) {
+    if (!canApproveRoster && !canManageShifts) {
       const note = document.createElement('span');
       note.className = 'scheduler-publish-bar__hint';
       note.textContent = 'You do not hold roster approval authority.';
@@ -461,7 +464,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     hint.className = 'scheduler-publish-bar__hint';
     hint.textContent = draftShifts.length === 0
       ? 'No draft shifts. New shifts are saved as drafts and are only visible to tanods once published.'
-      : `${draftShifts.length} draft shift${draftShifts.length === 1 ? '' : 's'} not yet visible to tanods.`;
+      : `${draftShifts.length} draft shift${draftShifts.length === 1 ? '' : 's'} not yet visible to tanods.`
+        + (canApproveRoster ? '' : ' You do not hold roster approval authority. Record the official\'s paper approval to publish.');
 
     const buttons = document.createElement('div');
     buttons.className = 'availability-item__actions';
@@ -476,6 +480,65 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
         renderShiftsTable();
       });
       buttons.appendChild(selectAll);
+    }
+    if (!canApproveRoster) {
+      // Admin/Secretary without approve_roster: publish by recording that an
+      // official who DOES hold it approved the roster on paper.
+      const paperBtn = document.createElement('button');
+      paperBtn.type = 'button';
+      paperBtn.id = 'publish-shifts-paper-btn';
+      paperBtn.className = 'primary';
+      paperBtn.disabled = selectedShiftIds.size === 0;
+      paperBtn.textContent = `Publish: recorded from paper (${selectedShiftIds.size})`;
+      paperBtn.addEventListener('click', async () => {
+        const ids = [...selectedShiftIds];
+        if (ids.length === 0) return;
+        paperBtn.disabled = true;
+        let loaded;
+        try {
+          loaded = await loadSignerCandidates(user, 'approve_roster', null);
+        } catch (err) {
+          paperBtn.disabled = false;
+          showToast(err instanceof ApiClientError ? err.message : 'Could not load the list of officials.', { variant: 'error' });
+          return;
+        }
+        paperBtn.disabled = false;
+        if (loaded.candidates.length === 0) {
+          showToast('No active official holds roster approval authority.', { variant: 'warning' });
+          return;
+        }
+        const today = manilaToday();
+        const result = await promptFields({
+          title: `Publish ${ids.length} shift${ids.length === 1 ? '' : 's'} (recorded from paper)?`,
+          description: 'Use this when the roster was approved on a signed paper copy. Pick the official who signed and the date they signed. The shifts become visible to the assigned tanods.',
+          fields: [
+            { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
+            { name: 'signedOn', label: 'Date signed on paper', type: 'date', max: today },
+          ],
+          confirmLabel: 'Publish',
+          onConfirmAsync: async (values) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(values.signedOn || '')) throw new Error('Enter the date signed on paper as a date.');
+            if (values.signedOn > today) throw new Error('The date signed on paper cannot be in the future.');
+            try {
+              const res = await publishShifts(ids, crypto.randomUUID(), {
+                recordedFromPaper: { signerUserId: Number(values.signer), signedOn: values.signedOn },
+              });
+              publishWarnings = res.warnings;
+              publishedCount = res.published.length;
+            } catch (err) {
+              throw new Error(err instanceof ApiClientError ? err.message : 'Could not publish these shifts.');
+            }
+          },
+        });
+        if (result !== null) {
+          showToast(`${publishedCount} shift${publishedCount === 1 ? '' : 's'} published (recorded from paper).`, { variant: 'success' });
+          selectedShiftIds.clear();
+          load();
+        }
+      });
+      buttons.appendChild(paperBtn);
+      bar.append(hint, buttons);
+      return bar;
     }
     const publish = document.createElement('button');
     publish.type = 'button';
@@ -559,7 +622,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       renderCell: (shift, key) => {
         switch (key) {
           case 'select': {
-            if (!canApproveRoster || shift.approvalStatus !== 'draft') return '<span class="text-tertiary">—</span>';
+            if (!(canApproveRoster || canManageShifts) || shift.approvalStatus !== 'draft') return '<span class="text-tertiary">—</span>';
             const box = document.createElement('input');
             box.type = 'checkbox';
             box.checked = selectedShiftIds.has(shift.shiftId);
@@ -577,6 +640,16 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
             const draft = shift.approvalStatus === 'draft';
             pill.className = `shift-approval-pill shift-approval-pill--${draft ? 'draft' : 'published'}`;
             pill.textContent = draft ? 'Draft' : 'Published';
+            if (!draft && shift.approvalMode === 'recorded_from_paper') {
+              const wrap = document.createElement('div');
+              const note = document.createElement('div');
+              note.className = 'text-tertiary';
+              const date = shift.paperSignedOn ? ` ${formatDateOnly(shift.paperSignedOn)}` : '';
+              const who = shift.paperRecordedByName ? ` (recorded by ${shift.paperRecordedByName})` : '';
+              note.textContent = `Approved on paper${date}${who}`;
+              wrap.append(pill, note);
+              return wrap;
+            }
             if (draft && shift.pendingReapproval) {
               // An approved swap changed this (previously published) shift:
               // it needs the approver again before the tanod sees it as final.
@@ -807,7 +880,7 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
 /**
  * Builds the right-hand form for creating a new shift with preset buttons.
  */
-function buildNewShiftForm(tanods, onCreated, shifts = [], hasFullRoster = true) {
+function buildNewShiftForm(tanods, onCreated, shifts = []) {
   const card = document.createElement('div');
   card.className = 'card';
 
@@ -948,12 +1021,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = [], hasFullRoster = true)
     form.hidden = true;
     const note = document.createElement('p');
     note.className = 'note';
-    // A Secretary's list is built from submitted availability (see
-    // services/tanodRoster.js), so say that instead of claiming the barangay
-    // has no tanods at all.
-    note.textContent = hasFullRoster
-      ? 'No Tanods exist in this barangay yet.'
-      : 'No tanod has submitted availability yet, so there is nobody to assign. Shifts can be created once a tanod submits availability.';
+    note.textContent = 'No active Tanods exist in this barangay yet.';
     card.appendChild(note);
   }
 

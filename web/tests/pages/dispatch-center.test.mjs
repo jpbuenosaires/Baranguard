@@ -1,7 +1,7 @@
 import { describePage } from '../harness/pageSuite.mjs';
 import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, mountPage, settle, cleanup, text, click, type, buttonByText, $, $$ } from '../harness/render.mjs';
+import { api, mountPage, settle, cleanup, text, click, type, buttonByText, $, $$, window } from '../harness/render.mjs';
 import { maps } from '../harness/env.mjs';
 import { renderDispatchCenterPage } from '../../src/pages/dispatch-center.js';
 
@@ -254,5 +254,56 @@ describe('Dispatch Center behaviour', () => {
     assert.ok(maps.length >= 1, 'no map was created');
     const markers = maps.flatMap((m) => m.markers);
     assert.ok(markers.length >= 2, `expected at least the 2 live Tanods on the map, got ${markers.length}`);
+  });
+});
+
+describe('Dispatch offers on the board (Wave 2)', () => {
+  afterEach(() => cleanup());
+
+  test('each incident card shows its offer state: open round/count/countdown, escalated, accepted', async () => {
+    mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    const body = text();
+    assert.match(body, /Broadcast to 3 tanods, round 2\/3, expires [0-2]:\d{2}/);
+    assert.match(body, /Escalated: no tanod accepted\. Assign a responder\./);
+    assert.match(body, /Accepted by Maria Dela Cruz/);
+    assert.equal(api.callsTo('GET', '/dispatch-offers').length >= 1, true);
+  });
+
+  test('Admin can cancel a live broadcast (PATCH /dispatch-offers/:id/cancel with an Idempotency-Key)', async () => {
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    const btns = $$('button', ctx.root).filter((b) => /^cancel broadcast$/i.test(text(b)));
+    assert.equal(btns.length, 2, 'open + escalated offers are cancellable');
+    click(btns[0]);
+    await settle();
+    const [call] = api.callsTo('PATCH', '/dispatch-offers/:id/cancel');
+    assert.ok(call, 'cancel was sent');
+    assert.match(call.path, /^\/dispatch-offers\/(31|32)\/cancel$/);
+    assert.match(call.headers['idempotency-key'] || '', UUID);
+  });
+
+  test('Admin can broadcast a pending incident with no live offer (POST /dispatch-offers {incident_id})', async () => {
+    api.on('GET', '/dispatch-offers', () => ({ status: 200, body: { items: [], page: 1, limit: 25, total: 0 } }));
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    assert.equal($$('button', ctx.root).filter((b) => /^cancel broadcast$/i.test(text(b))).length, 0);
+    const btn = $$('button', ctx.root).find((b) => /broadcast to on-duty tanods/i.test(text(b)));
+    assert.ok(btn, 'broadcast button present on a pending incident');
+    click(btn);
+    await settle();
+    const [call] = api.callsTo('POST', '/dispatch-offers');
+    assert.ok(call, 'POST /dispatch-offers was sent');
+    assert.equal(typeof call.body.incident_id, 'number');
+    assert.match(call.headers['idempotency-key'] || '', UUID);
+    assert.match(text(window.document.body), /Broadcast sent to 2 tanods/);
+  });
+
+  test('an unreadable offers endpoint never blanks the board', async () => {
+    api.fail('GET', '/dispatch-offers', 500);
+    mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    assert.match(text(), /INC-2026-901/);
+    assert.doesNotMatch(text(), /Broadcast to \d+ tanod/);
   });
 });
