@@ -106,7 +106,14 @@ use PDO;
  * PLACEHOLDER RULES (2026-10, review decision 10) — the tables the
  * tanod-workflow build added (migrations 0030-0033): `tanod_availability`,
  * `accomplishment_report` (+ `accomplishment_entry`), `school_checkin`,
- * `incident_referral`; `document_scan` (0037) follows its parent report.
+ * `incident_referral`, `ssz_term_report` (Annex D); `document_scan` (0037)
+ * follows its parent report (accomplishment report OR Annex D report).
+ *
+ * `school` (Annex B inventory) is DELIBERATELY NOT time-purged and has no
+ * rule, so this is a recorded decision, not a gap: it is a standing master
+ * list (not time-bound activity data), holds no student data (only school
+ * name/address and a staff focal person), is referenced by check-ins and
+ * incidents, and is retired by setting `is_active = 0`, never by age.
  * NO retention period for any of them has been decided by the barangay or
  * COA, and this file does not invent one: each is a row of
  * `NEW_TABLE_RULES` whose `days` is `null` and whose `status` is
@@ -181,6 +188,12 @@ final class RetentionService
             'clock' => 'referred_at',
             'summary' => 'referral log rows, aged from the referral time; protected by a legal hold on the linked incident',
         ],
+        'ssz_term_report' => [
+            'days' => null,
+            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'clock' => 'mayor_office_received_at',
+            'summary' => 'SUBMITTED Annex D term reports + attached paper scans, aged from the mayor-office received date (the only submission date the table stores); draft/prepared/approved reports are never purged',
+        ],
     ];
 
     /**
@@ -189,7 +202,7 @@ final class RetentionService
      * also remove these rows and their files (see purgeOneAccomplishmentReport).
      */
     public const FOLLOWS_PARENT = [
-        'document_scan' => 'accomplishment_report',
+        'document_scan' => 'accomplishment_report, ssz_term_report',
     ];
 
     /** Every rule name this service knows, in the order a full run applies them. */
@@ -206,6 +219,7 @@ final class RetentionService
         'accomplishment_report',
         'school_checkin',
         'incident_referral',
+        'ssz_term_report',
         'audit_log',
         'incident_records',
     ];
@@ -285,6 +299,7 @@ final class RetentionService
                 'accomplishment_report' => $this->purgeAccomplishmentReports(),
                 'school_checkin' => $this->purgeSchoolCheckins(),
                 'incident_referral' => $this->purgeIncidentReferrals(),
+                'ssz_term_report' => $this->purgeSszTermReports(),
                 'audit_log' => $this->purgeAuditLog(),
                 'incident_records' => $this->purgeExpiredIncidentRecords(),
             };
@@ -846,6 +861,114 @@ final class RetentionService
             $resolved = $this->resolveScanPath((string) $path);
             if ($resolved !== null && is_file($resolved) && !@unlink($resolved)) {
                 $this->note("accomplishment_report #{$reportId}: scan file could not be removed — {$resolved}");
+            }
+        }
+        return true;
+    }
+
+    /**
+     * `ssz_term_report` (Annex D). ONLY `status = 'submitted'` reports are
+     * eligible, aged from `mayor_office_received_at` (a DATE the Secretary
+     * enters on mark-submitted; required for that transition, so it is
+     * never NULL on a submitted report, and the table stores no other
+     * submission timestamp). draft/prepared/approved reports are live work
+     * and never purged by an age clock. Their `document_scan` rows
+     * (`entity_type = 'ssz_term_report'` ONLY, never an accomplishment
+     * report that happens to share the numeric id) and files go with them.
+     * No `legal_hold` column exists, so `held` is always 0. One transaction
+     * per report; scan files unlinked after the commit.
+     *
+     * @return array{purged:int, held:int, eligible?:int, failed?:int, note?:string}
+     */
+    public function purgeSszTermReports(): array
+    {
+        $days = $this->newTableDays('ssz_term_report');
+        if ($days === null) {
+            return $this->pendingResult('ssz_term_report');
+        }
+
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT report_id FROM ssz_term_report WHERE " . self::SSZ_ELIGIBLE_WHERE . " ORDER BY report_id"
+            );
+            $stmt->execute(['days' => $days]);
+            $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        } catch (\PDOException $e) {
+            if ($this->isMissingTable($e)) {
+                $this->note('ssz_term_report: table not present (migration 0033 not applied)');
+                return ['purged' => 0, 'held' => 0, 'note' => 'table not present'];
+            }
+            throw $e;
+        }
+        $eligible = count($ids);
+        if ($this->dryRun || $eligible === 0) {
+            $this->note("ssz_term_report: {$eligible} eligible");
+            return ['purged' => 0, 'held' => 0, 'eligible' => $eligible];
+        }
+
+        $purged = 0;
+        $failed = 0;
+        foreach ($ids as $id) {
+            if ($this->purgeOneSszTermReport((int) $id, $days)) {
+                $purged++;
+            } else {
+                $failed++;
+            }
+        }
+
+        $this->audit('retention_ssz_term_report_purged', 'ssz_term_report', ['purged' => $purged, 'failed' => $failed]);
+        $this->note("ssz_term_report: purged {$purged}, {$failed} failed (with attached scans)");
+        return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible, 'failed' => $failed];
+    }
+
+    private const SSZ_ELIGIBLE_WHERE = "status = 'submitted' AND mayor_office_received_at IS NOT NULL
+                  AND mayor_office_received_at < DATE_SUB(UTC_DATE(), INTERVAL :days DAY)";
+
+    private function purgeOneSszTermReport(int $reportId, int $days): bool
+    {
+        $paths = [];
+        try {
+            $s = $this->pdo->prepare("SELECT stored_path FROM document_scan WHERE entity_type = 'ssz_term_report' AND entity_id = :id");
+            $s->execute(['id' => $reportId]);
+            $paths = $s->fetchAll(PDO::FETCH_COLUMN);
+        } catch (\PDOException $e) {
+            if (!$this->isMissingTable($e)) {
+                throw $e;
+            }
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            // Re-check eligibility INSIDE the transaction (row-locked).
+            $chk = $this->pdo->prepare(
+                "SELECT 1 FROM ssz_term_report WHERE report_id = :id AND " . self::SSZ_ELIGIBLE_WHERE . " FOR UPDATE"
+            );
+            $chk->execute(['id' => $reportId, 'days' => $days]);
+            if ($chk->fetchColumn() === false) {
+                $this->pdo->rollBack();
+                return false;
+            }
+            try {
+                $this->execById("DELETE FROM document_scan WHERE entity_type = 'ssz_term_report' AND entity_id = :id", $reportId);
+            } catch (\PDOException $e) {
+                if (!$this->isMissingTable($e)) {
+                    throw $e;
+                }
+            }
+            $this->execById('DELETE FROM ssz_term_report WHERE report_id = :id', $reportId);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            $this->note("ssz_term_report #{$reportId}: purge failed and was rolled back — " . $e->getMessage());
+            return false;
+        }
+
+        foreach ($paths as $path) {
+            $resolved = $this->resolveScanPath((string) $path);
+            if ($resolved !== null && is_file($resolved) && !@unlink($resolved)) {
+                $this->note("ssz_term_report #{$reportId}: scan file could not be removed — {$resolved}");
             }
         }
         return true;

@@ -30,7 +30,7 @@ use Baranguard\Services\Retention\RetentionService;
 
 $mode = $argv[1] ?? '';
 $pdo = baranguard_db();
-$only = ['tanod_availability', 'accomplishment_report', 'school_checkin', 'incident_referral'];
+$only = ['tanod_availability', 'accomplishment_report', 'school_checkin', 'incident_referral', 'ssz_term_report'];
 
 if ($mode === 'shipped') {
     // The shipped constants, no override: what production runs.
