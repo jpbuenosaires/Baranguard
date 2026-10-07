@@ -2,23 +2,23 @@
 
 > **Barangay Intelligence and Emergency Dispatch System**  
 > Operational reference for Pilar, Sorsogon (Dao, Binanuahan, Marifosque, Banuyo).  
-> *Audited and reconciled directly against the backend, web, and mobile codebase on 2026-10-02.*
+> *Audited and reconciled directly against the backend, web, and mobile codebase on 2026-10-02; updated 2026-10-07 for the Proposed Changes Review decisions (code-complete, verified on disposable databases only).*
 
 ---
 
 # Part 1: End-User Workflows
 
-Baranguard serves **5 end-user personas**, each with distinct device interfaces, permission scopes, and responsibilities.
+Baranguard serves **4 end-user personas** (the anonymous citizen form was retired; walk-ins are logged by the Secretary or Admin), each with distinct device interfaces, permission scopes, and responsibilities.
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        BARANGUARD END USERS                            │
-├───────────────────────┬────────────────────────┬───────────────────────┤
-│ Web Dashboard Users   │ Mobile App Users       │ Public Users          │
-│ • Admin (Chief Tanod) │ • Tanod                │ • Citizen (Anonymous) │
-│ • Secretary           │                        │                       │
-│ • Punong Barangay     │                        │                       │
-└───────────────────────┴────────────────────────┴───────────────────────┘
++---------------------------------------------------------+
+|                  BARANGUARD END USERS                   |
++----------------------------+----------------------------+
+| Web Dashboard Users        | Mobile App Users           |
+| - Admin (Chief Tanod)      | - Tanod                    |
+| - Secretary                | - Admin (Chief Tanod) on   |
+| - Punong Barangay          |   phone: SOS + dispatch    |
++----------------------------+----------------------------+
 ```
 
 ---
@@ -29,8 +29,8 @@ Baranguard serves **5 end-user personas**, each with distinct device interfaces,
 * **Default Landing Page:** `dashboard`
 * **Core Function:** Day-to-day dispatch command, tanod tracking, roster drafting, user provisioning, system health, and Annex D report preparation.
 
-### Complete Navigation Reach (16 Sidebar Items)
-`dashboard`, `dispatch`, `incident-management`, `gis`, `citizen-inbox`, `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `analytics`, `personnel`, `sms-log`, `audit-log`, `service-health`, `map-packages`, `settings`.
+### Complete Navigation Reach (16 pages: 13 sidebar rows + a 4-page "System Tools" group)
+`dashboard`, `dispatch`, `incident-management`, `gis`, `citizen-inbox` (legacy reports only), `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `analytics`, `personnel`, `settings`, plus **System Tools** (one grouped menu holding `sms-log`, `audit-log`, `service-health`, `map-packages`). No separate technical-admin role exists: the barangay officials operate these themselves. `settings` is unchanged.
 
 ### Operational Flow
 
@@ -42,7 +42,9 @@ flowchart TD
     Disp --> DispQueue["View Pending Incidents"]
     DispQueue --> DispAssign["Assign On-Duty Tanod (POST /dispatch)"]
     DispAssign --> DispTrack["Monitor Live En Route / Arrived Units"]
-    DispTrack --> DispCancel["Cancel Dispatch if Needed (mandatory reason)"]
+    DispTrack --> DispCancel["Cancel Dispatch (mandatory reason; allowed before or after arrival)"]
+    DispQueue --> DispOffer["Night / on demand: Broadcast offer to on-duty tanods (first accept wins)"]
+    DispAssign --> DispOverride["No published shift? Assign anyway with a mandatory override reason"]
 
     Dash --> GIS["GIS Live Tracking"]
     GIS --> GISPoll["View Tanod Markers (polls every 15s)"]
@@ -76,10 +78,10 @@ flowchart TD
 
 * **Platform:** Web Desktop (`https://baranguardph.win`)
 * **Default Landing Page:** `incident-management` *(Code: `main.js` routes secretary directly here; dashboard is inaccessible to Secretary)*
-* **Core Function:** Statutory records custodian (RA 7160 §394c), confidential narrative reviewer, incident lifecycle governor, Safer School Zones administrator, and citizen report triage.
+* **Core Function:** Statutory records custodian (RA 7160 §394c), confidential narrative reviewer, incident lifecycle governor, Safer School Zones administrator, walk-in incident logging, draft rosters and swap review, and paper-approval recording.
 
 ### Complete Navigation Reach (8 Sidebar Items)
-`incident-management`, `citizen-inbox`, `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `personnel`, `settings`.  
+`incident-management`, `citizen-inbox` (legacy), `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `personnel`, `settings`.  
 *(Excluded by `PAGE_ROLES`: `dashboard`, `dispatch`, `gis`, `analytics`, `sms-log`, `audit-log`, `service-health`, `map-packages`)*
 
 ### Operational Flow
@@ -98,9 +100,11 @@ flowchart TD
     OpenDetail --> EditC1["Edit School Incident Annex C-1 Text"]
     OpenDetail --> LogReferral["Record External Agency Referral"]
 
-    Login --> CitInbox["Citizen Reports Inbox"]
-    CitInbox --> ReviewCit["Review Anonymous Walk-in / Web Reports"]
-    ReviewCit --> ConvertCit["Convert Citizen Report to Official Incident"]
+    IncMgmt --> LogWalkIn["Log Walk-in Incident (report channel: tanod-alerted / walk-in / SMS / other)"]
+    OpenDetail --> LinkRelated["Link Related Incident (no status change; finalize as duplicate after dispatch closes)"]
+
+    Login --> CitInbox["Citizen Reports Inbox (legacy rows only)"]
+    CitInbox --> ConvertCit["Convert Legacy Citizen Report to Official Incident"]
 
     Login --> SSZ["Safer School Zones Hub"]
     SSZ --> AnnexB["Schools Tab: Maintain Annex B School Inventory"]
@@ -114,7 +118,9 @@ flowchart TD
     ReviewEntries --> ReturnReport["Return Report to Tanod (Mandatory return_reason)"]
 
     Login --> Pers["Personnel Hub"]
-    Pers --> ViewSched["Scheduler Tab (Read-Only shift overview)"]
+    Pers --> ViewSched["Scheduler Tab: Create / Edit Draft Shifts (Publish needs approve_roster)"]
+    Pers --> SwapRev["Swap Requests Tab: Approve or Reject"]
+    AccReports --> PaperRec["Record Paper Signature Date / Record Approval From Paper / Upload Scan"]
 ```
 
 ---
@@ -172,6 +178,9 @@ flowchart TD
     DutyToggle -->|Go On Duty| StartPatrol["Start Background GPS Telemetry + Local Shift Timer"]
     DutyToggle -->|Go Off Duty| ConfirmOff["Confirm Dialog (Blocked if active dispatch exists)"]
 
+    Home --> OfferCard["Dispatch Offer Card (type, barangay, time, countdown): Accept needs a connection"]
+    OfferCard --> OfferWin["First accept recorded by server wins -> normal dispatch; others released"]
+
     Home --> SOSBtn{"EMERGENCY SOS BUTTON"}
     SOSBtn --> SOSModal["Tactical Confirmation Dialog ('Confirm & Broadcast SOS')"]
     SOSModal --> SOSGPS["Acquire GPS (Fails gracefully if no fix -> location_source='no_fix')"]
@@ -204,24 +213,18 @@ flowchart TD
 
 ---
 
-## 5. 🟣 Citizen (Public Informant)
+## 5. Chief Tanod on the phone (Admin account, one account)
 
-* **Platform:** Public Web Form (`https://baranguardph.win/#/citizen-report`)
-* **Access Level:** Zero authentication, zero account required.
-* **Core Function:** Secure, anonymous walk-in or remote reporting of neighborhood incidents directly to the barangay desk.
-
-### Operational Flow
+* **Platform:** the same Android app; an Admin login on a phone gets a device session limited to a fixed allow-list.
+* **Stage 1 (built):** acknowledge SOS (never resolve), list/assign/cancel dispatches (cancel needs a reason; assigning without a published shift needs an override reason), broadcast or cancel dispatch offers, read incidents. Resolution stays on the web dashboard.
+* **Not on the phone:** user management, reports, exports, settings, availability, accomplishments.
 
 ```mermaid
 flowchart TD
-    Visit["1. Visit Public Web Page (#/citizen-report)"] --> Form["2. Incident Reporting Form"]
-    Form --> Details["Select Barangay, Incident Topic Chip, Description (max 2000 chars)"]
-    Form --> Loc["Acquire GPS via Browser or Type Landmark Description"]
-    Form --> Phone["Optional: Leave Contact Number for Desk Follow-up"]
-    Form --> Submit["3. Submit (Enforces Rate Limiter & Duplicate Detector)"]
-    Submit --> Receipt["4. Digital Reference Slip (#REF-xxx)"]
-    Receipt --> PrintSlip["Optionally Print / Save A4 Incident Slip"]
-    Submit --> Desk["Report Arrives in Secretary / Admin Citizen Inbox"]
+    Login["Log In (Admin, with device id)"] --> SOS["SOS tab: acknowledge only"]
+    Login --> Disp["Dispatch tab: assign more responders / cancel with reason"]
+    Disp --> Offers["Offers: take over (broadcast) / cancel broadcast"]
+    Login --> Inc["Incidents tab (read only)"]
 ```
 
 ---
@@ -275,6 +278,7 @@ stateDiagram-v2
     
     assigned --> cancelled : Admin cancels (Mandatory reason recorded)
     en_route --> cancelled : Admin cancels (Mandatory reason recorded)
+    arrived --> cancelled : Admin cancels (Mandatory reason; unblocks a stuck dispatch)
     
     completed --> [*] : Terminal state
     cancelled --> [*] : Terminal state
@@ -297,22 +301,22 @@ stateDiagram-v2
     noted --> returned : Official returns report with return_reason
     
     returned --> prepared : Tanod edits entries & resubmits
-    approved --> [*] : Locked for official accounting & honoraria
+    approved --> [*] : Locked in-system; flagged "paper signature pending" until the paper date is recorded (paper is the official copy)
 ```
 
 ---
 
 ### 4. Shift Schedule & Roster Publication
-* **Database Column:** `shift_schedule.approval_status` (`draft`, `published`)
-* **Authority Gate:** Admin creates draft; holder of `approve_roster` publishes.
+* **Database Column:** `shift_schedule.approval_status` (`draft`, `published`) plus `pending_reapproval`
+* **Authority Gate:** Admin or Secretary creates draft; holder of `approve_roster` publishes (or Secretary/Admin records a paper approval naming a signer who holds it).
 
 ```mermaid
 stateDiagram-v2
     [*] --> draft : Admin creates shift from availability or scratch
-    draft --> published : Official publishes via POST /shifts/publish (approve_roster)
+    draft --> published : Official publishes via POST /shifts/publish (approve_roster, or Secretary/Admin recording a paper approval)
     
     published --> draft : Material edit to shift user_id, start_at, or end_at
-    published --> draft : Shift swap request approved
+    published --> draft : Shift swap approved (flag pending_reapproval; tanod still sees the shift)
     
     note right of published : Visible on Tanod mobile app
 ```
@@ -334,9 +338,28 @@ stateDiagram-v2
 
 ---
 
-### 6. Tanod Emergency SOS Panic Alert
+### 6. Dispatch Offer (night broadcast)
+* **Database Column:** `dispatch_offer.status` (`open`, `escalated`, `accepted`, `closed`, `cancelled`)
+* **Trigger:** every new pending incident at night (18:00 to 06:00 Manila) or an Admin/Secretary broadcast on demand; accept is online-only.
+
+```mermaid
+stateDiagram-v2
+    [*] --> open : Broadcast to on-duty tanods with a published shift (round 1 of 3)
+    open --> accepted : First accept recorded by the server wins; others released
+    open --> open : 180 s with no accept: next round re-broadcast, Admins alerted
+    open --> escalated : No qualifying tanod or round 3 expired
+    escalated --> accepted : Admin assigns or a tanod accepts
+    open --> cancelled : Admin cancels
+    escalated --> cancelled : Admin cancels
+    accepted --> [*]
+    cancelled --> [*]
+```
+
+---
+
+### 7. Tanod Emergency SOS Panic Alert
 * **Database Column:** `tanod_sos.status` (`active`, `acknowledged`, `resolved`)
-* **Trigger Endpoints:** Tanod triggers (`POST /tanod-sos`); Admin acknowledges (`/acknowledge`); Admin resolves (`/resolve`).
+* **Trigger Endpoints:** Tanod triggers (`POST /tanod-sos`); Admin acknowledges (`/acknowledge`, also from the Chief Tanod phone); Admin resolves on the web (`/resolve`). An SOS also alerts every on-duty tanod and every active Admin.
 
 ```mermaid
 stateDiagram-v2
@@ -352,23 +375,23 @@ stateDiagram-v2
 # Part 3: Business Rules (One Sentence Per Rule)
 
 ### I. Authentication, Sessions & Tenancy
-1. Every authenticated user must supply a valid username and password; anonymous access is strictly restricted to the public citizen report route.
+1. Every authenticated user must supply a valid username and password; there is no anonymous access to any write route (the public citizen form was retired; the public transparency read endpoint remains).
 2. An account is locked for 15 minutes after 5 failed login attempts within a rolling 15-minute window.
-3. Web sessions use a 15-minute sliding JWT refreshed automatically by dashboard polling, while mobile tanod sessions use a 24-hour sliding token capped at 7 days.
+3. Web sessions use a 15-minute sliding JWT refreshed automatically by dashboard polling, while mobile tanod and Admin (Chief Tanod) device sessions use a 24-hour sliding token capped at 7 days; an Admin device session can only reach a fixed allow-list of endpoints.
 4. Logging out, suspension, deactivation, or password changes instantly revoke all active session tokens on the server.
 5. All tenant-isolated database queries strictly enforce `barangay_id`, and any cross-tenant request returns a `404 Not Found` rather than a `403` to prevent confirming the existence of resources in other barangays.
 6. Server-side middleware validates role, tenant, and resource ownership on every protected endpoint; client-side guards are never treated as security boundaries.
 
 ### II. Incident Dispatch & Operations
-7. Only an Admin can create a dispatch assignment to deploy an on-duty Tanod to an incident.
-8. A Tanod cannot be dispatched if they are off-duty, already responding, inactive, suspended, or from another barangay.
+7. Only an Admin can create a dispatch assignment, except at night or on demand, when an offer is broadcast to on-duty tanods and the first accept recorded by the server creates the dispatch.
+8. A Tanod cannot be dispatched if they are off-duty, already responding, inactive, suspended, or from another barangay, and must hold a published shift covering the current time unless the Admin gives a mandatory override reason.
 9. An incident supports multiple concurrent responder dispatches without artificial priority gates.
-10. Cancelling an active dispatch reverts an incident to `pending` only when no other active responder remains assigned.
+10. Cancelling an active dispatch (assigned, en route or arrived, always with a mandatory reason) reverts an incident to `pending` only when no other active responder remains assigned.
 11. An Admin can resolve an incident only after all associated responder dispatches are marked completed or cancelled.
 12. Only a Secretary can modify an incident's statutory lifecycle to `duplicate`, `invalid`, `cancelled`, or `reopened`.
 13. Marking an incident as `duplicate` strictly requires linking it to a target `duplicate_of_incident_id` within the same barangay, preserving both records without deleting or merging data.
 14. A terminal incident state (`resolved`, `cancelled`, `invalid`, `duplicate`) can only transition to `reopened` and cannot jump directly to another terminal state.
-15. Incident status or lifecycle modifications are rejected with a conflict error if an active dispatch is open.
+15. Incident status or lifecycle modifications are rejected with a conflict error if an active dispatch is open; a related-incident link is the exception because it never changes status.
 16. Web writes require a UUID `Idempotency-Key` and mobile writes require a `client_event_id`; replayed requests return the original row rather than creating duplicates.
 
 ### III. Data Privacy, Redaction & Statutory Compliance
@@ -385,12 +408,12 @@ stateDiagram-v2
 25. The SOS mobile trigger opens a tactical confirmation dialog to prevent accidental triggers while guaranteeing immediate transmission upon confirmation.
 
 ### V. Scheduling, Rostering & Duty Limits
-26. Newly created shifts default to `draft` status and remain invisible on the mobile app until published by an official holding `approve_roster` authority.
+26. Newly created shifts (by an Admin or Secretary) default to `draft` status and remain invisible on the mobile app until published by an official holding `approve_roster` authority, or recorded as approved on paper by a Secretary or Admin naming a signer who holds it.
 27. A Tanod cannot be scheduled for more than 12 hours within a single Asia/Manila calendar day.
-28. Materially editing a published shift's assigned officer, start time, or end time immediately reverts its status to `draft` and revokes its approval.
+28. Materially editing a published shift's assigned officer, start time, or end time reverts it to `draft` and revokes its approval; when the cause is an approved swap the shift stays visible to the tanod flagged `pending_reapproval` until it is re-published.
 29. Shift swap requests raised against `draft` shifts return a `404 Not Found` because draft rosters are hidden from field personnel.
 30. Missing duty coverage across a patrol zone generates a warning during roster publication but does not block publication.
-31. Approving a shift swap request reverts the shift to `draft`, requiring re-publication by an authorized official.
+31. *(Merged into Rule 28; number kept so older citations still line up.)*
 
 ### VI. Tanod Availability & Accomplishment Reports
 32. A Tanod can revise and resubmit duty availability time windows for a period while its status is `submitted`, but modifications are locked once `accepted`.
@@ -422,6 +445,19 @@ stateDiagram-v2
 50. Retention rules are enforced as constants in code, and modifications require architectural and council policy approval.
 51. GPS tracking breadcrumbs, duty status logs, shift assignments, and notification records are purged after a 1-year retention period.
 52. Encrypted database backups run nightly and restore drills execute weekly via automated workstation scheduled tasks.
-53. Backups dated after an active legal hold are protected against automated pruning.
+53. While any legal hold is active, no backup is pruned (this covers every backup existing when the hold was placed and every backup created while it stays active).
 54. All server timestamps are stored in UTC, and calendar day calculations use a fixed Asia/Manila (+08:00) offset in PHP rather than SQL timezone conversions.
 55. The workstation serves four fixed barangays in Pilar, Sorsogon, and expanding tenant coverage requires schema migrations.
+
+### XI. Review-Decision Additions (2026-10-07)
+56. The anonymous public citizen report form no longer exists; walk-ins are logged by the Secretary or Admin and every incident records a report channel from a fixed list (tanod-alerted, walk-in, SMS, other).
+57. A dispatch offer is broadcast only to active, on-duty tanods who hold a published shift covering the current time and have no active dispatch, and its alert shows only incident type, barangay and time.
+58. Accepting a dispatch offer is online-only, never queued; the first accept the server records wins, all other recipients are released, and an Admin can still assign additional responders.
+59. An offer nobody accepts within 180 seconds re-broadcasts (up to three rounds) and alerts the Admins, then stays escalated with spaced Admin reminders until someone assigns or cancels.
+60. At night (18:00 inclusive to 06:00 exclusive, Asia/Manila) every new pending incident opens an offer automatically; during the day the Admin assigns.
+61. A related-incident link between two incidents of the same barangay changes no status and may be set while a dispatch is open; the Secretary finalizes a duplicate only after the dispatch closes.
+62. An approved accomplishment report or Annex D is locked in the system; it shows "paper signature pending" until a Secretary or Admin records the signed-on-paper date, and the paper copy is the official record.
+63. A Secretary or Admin may record an approval from paper for an absent signer, who must hold the matching authority and must not be the preparer; the signer, date and recorder are stored and audited.
+64. A scan attached to a report must be a PDF, JPG or PNG of at most 10 MB, is visible to Admin, Secretary and Punong Barangay, lives as long as its parent report, and must contain no student names.
+65. Retention periods for availability, accomplishment reports, school check-ins and referrals are placeholders pending barangay confirmation, so nothing is purged from those tables yet.
+66. An Admin (Chief Tanod) may sign in on the mobile app with a device session limited to SOS acknowledgement, dispatch override and read access.
