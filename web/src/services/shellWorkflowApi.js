@@ -207,7 +207,7 @@ export async function publishShifts(shiftIds, idempotencyKey, { recordedFromPape
 
 /**
  * GET /users/directory — thin picker feed, caller's barangay only, active
- * accounts only. `purpose` is 'tanod', or 'signer' together with `authority`.
+ * accounts only. `purpose` is 'tanod', 'roster' (tanods + admins; shift picker only), or 'signer' together with `authority`.
  * @returns {Promise<Array<{userId:number, fullName:string, officialTitle:string|null}>>}
  */
 export async function getUsersDirectory({ purpose, authority } = {}) {

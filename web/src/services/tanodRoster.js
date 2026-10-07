@@ -15,14 +15,18 @@
 import { getUsersDirectory } from './shellWorkflowApi.js';
 
 /**
+ * `purpose` defaults to 'tanod' (swap requests: tanods only). The Scheduler's
+ * create/edit shift picker passes 'roster' so the Chief Tanod (an Admin
+ * account) can be named too; labelling uses officialTitle, not a role key.
  * @param {{role:string}} user
- * @returns {Promise<Array<{userId:number, fullName:string}>>}
+ * @param {{purpose?:'tanod'|'roster'}} [opts]
+ * @returns {Promise<Array<{userId:number, fullName:string, officialTitle:string|null}>>}
  */
-export async function loadTanodRoster(user) {
+export async function loadTanodRoster(user, { purpose = 'tanod' } = {}) {
   if (user.role !== 'admin' && user.role !== 'secretary') return [];
   try {
-    const items = await getUsersDirectory({ purpose: 'tanod' });
-    return items.map((u) => ({ userId: u.userId, fullName: u.fullName }));
+    const items = await getUsersDirectory({ purpose });
+    return items.map((u) => ({ userId: u.userId, fullName: u.fullName, officialTitle: u.officialTitle ?? null }));
   } catch {
     return [];
   }

@@ -97,7 +97,7 @@ final class UsersController
     }
 
     /**
-     * GET /users/directory?purpose=tanod|signer[&authority=...] -- a
+     * GET /users/directory?purpose=tanod|roster|signer[&authority=...] -- a
      * deliberately thin picker feed (Wave 3-G; answers the gap that a
      * Secretary cannot call the Admin-only GET /users but must still pick a
      * Tanod for a shift or a signer for a paper approval).
@@ -108,7 +108,12 @@ final class UsersController
      * `{user_id, full_name, official_title}` -- no username, phone, email,
      * last login or authority list (a signer's authority is the filter, not
      * an output).
-     *   purpose=tanod  -> active tanods.
+     *   purpose=tanod  -> active tanods (swap pickers, dispatch).
+     *   purpose=roster -> active tanods AND admins (the Chief Tanod is an
+     *                     Admin account and may be rostered; shift create/
+     *                     edit picker only). Admins are still not
+     *                     dispatchable -- this widens NAMING, nothing else.
+     *                     No `role` key: the UI labels via official_title.
      *   purpose=signer -> `authority` (one of ApprovalAuthority::ALL) is
      *                     required; returns active users in an eligible role
      *                     (admin|secretary|punong_barangay) holding it.
@@ -120,16 +125,16 @@ final class UsersController
         AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
 
         $purpose = Http::query('purpose');
-        if ($purpose !== 'tanod' && $purpose !== 'signer') {
-            throw new ApiError(400, 'VALIDATION_ERROR', "purpose must be 'tanod' or 'signer'.");
+        if ($purpose !== 'tanod' && $purpose !== 'roster' && $purpose !== 'signer') {
+            throw new ApiError(400, 'VALIDATION_ERROR', "purpose must be 'tanod', 'roster' or 'signer'.");
         }
 
         $params = ['barangay_id' => $identity['barangay_id']];
-        if ($purpose === 'tanod') {
+        if ($purpose === 'tanod' || $purpose === 'roster') {
             if (Http::query('authority') !== null) {
                 throw new ApiError(400, 'VALIDATION_ERROR', "authority is only valid with purpose='signer'.");
             }
-            $roleSql = "u.role = 'tanod'";
+            $roleSql = $purpose === 'roster' ? "u.role IN ('tanod','admin')" : "u.role = 'tanod'";
         } else {
             $authority = Http::query('authority');
             if ($authority === null || !in_array($authority, ApprovalAuthority::ALL, true)) {
