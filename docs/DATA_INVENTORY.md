@@ -22,8 +22,16 @@ availability, accomplishment reports, referrals, Safer School Zones —
 new categories are the "(2026-10-01)" rows in §1. They are written and
 verified on disposable DBs only; not applied to either real DB, so no real
 personal data is held in them yet. **Retention for every new category is
-pending a policy decision (Rule 10) and no purge job exists for any of
-them** (§5).
+pending a policy decision (Rule 10).** Wave 3 (2026-10) added placeholder
+retention rules for five of them (`tanod_availability`,
+`accomplishment_report`/`accomplishment_entry`, `school_checkin`,
+`incident_referral`, plus `document_scan` which follows its parent
+report); each is switched OFF (no period set), so **nothing is purged from
+them today** (§5).
+
+**Extended 2026-10 for migration 0037** (paper approvals and scanned
+signed copies): `document_scan` (§1) and the `approval_mode`/`paper_*`
+columns on `accomplishment_report` and `ssz_term_report`.
 
 **This is a snapshot, not a log.** Re-derive it from the actual schema
 (`backend/migrations/`) whenever a migration adds, removes, or
@@ -48,11 +56,12 @@ the reference before being reconciled.
 | Employment/scheduling | `shift_schedule`, `duty_status`, `fatigue_flag` | Ordinary personal data (Tanod work records) |
 | Authentication | `user.password_hash`, `auth_session` | Ordinary personal data; hashed, never stored in plaintext |
 | Official/approver identity (2026-10-01) | `user.official_title`, `user.approval_authority` | Ordinary personal data (staff title printed under signatures). Retention: pending decision, no purge job |
-| Tanod availability (2026-10-01) | `tanod_availability.windows_json`, period, review note | Ordinary personal data about a named staff member's time. Retention: pending decision, no purge job |
-| Accomplishment reports (2026-10-01) | `accomplishment_entry.accomplishment_text`, `work_date`, `start_time`/`end_time`, `duration_minutes`, `suggested_duration_minutes`, `duration_flag`; `accomplishment_report` month/status/noted_by/approved_by | Ordinary personal data but sensitive in practice: a named person's hours and activities, and the likely attendance evidence for honorarium. Free text could be typed to include third-party details. Retention: pending decision, no purge job |
-| Referral metadata (2026-10-01) | `incident_referral` (`referred_to`, `other_text`, `contact_name` = a responder/unit/official, never a citizen, `referred_at`, `reference_no`, `created_by`) | Ordinary personal data (staff/responder names, handoff times). The referral log endpoint returns no narrative, names or coordinates. Rows are deleted with their incident by the retention cascade (so they follow the incident's clock); no separate rule |
+| Tanod availability (2026-10-01) | `tanod_availability.windows_json`, period, review note | Ordinary personal data about a named staff member's time. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
+| Accomplishment reports (2026-10-01) | `accomplishment_entry.accomplishment_text`, `work_date`, `start_time`/`end_time`, `duration_minutes`, `suggested_duration_minutes`, `duration_flag`; `accomplishment_report` month/status/noted_by/approved_by | Ordinary personal data but sensitive in practice: a named person's hours and activities, and the likely attendance evidence for honorarium. Free text could be typed to include third-party details. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
+| Referral metadata (2026-10-01) | `incident_referral` (`referred_to`, `other_text`, `contact_name` = a responder/unit/official, never a citizen, `referred_at`, `reference_no`, `created_by`) | Ordinary personal data (staff/responder names, handoff times). The referral log endpoint returns no narrative, names or coordinates. Rows are deleted with their incident by the retention cascade (so they follow the incident's clock); a separate placeholder age rule exists but is OFF pending barangay/COA confirmation (§5) |
 | School inventory (2026-10-01) | `school` (name, address, optional coordinates, `focal_person`, `focal_contact`, remarks) | Ordinary personal data limited to school staff contact (a named focal person and phone number). No student data of any kind. Retention: pending decision, no purge job |
-| School check-ins (2026-10-01) | `school_checkin` (`user_id`, `school_id`, `checked_in_at`, `checked_out_at`) | Ordinary personal data: where and when a named tanod was deployed. No coordinates stored. Retention: pending decision, no purge job |
+| School check-ins (2026-10-01) | `school_checkin` (`user_id`, `school_id`, `checked_in_at`, `checked_out_at`) | Ordinary personal data: where and when a named tanod was deployed. No coordinates stored. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
+| Signed-paper scans (2026-10) | `document_scan` (`entity_type`, `entity_id`, `stored_path`, `mime_type`, `size_bytes`, `sha256`, `uploaded_by`); files under `SCANS_DIR`, outside the web root; `accomplishment_report`/`ssz_term_report` `paper_signed_on`, `paper_recorded_by/at`, `approval_mode` | A PDF/JPG/PNG scan of a signed paper report. May show signatures and staff names (the upload copy says no student names). Responses never expose `stored_path`. Retention: lives with its parent report; no clock of its own; pending barangay/COA confirmation (placeholder, see §5) |
 | Annex C-1 summary fields (2026-10-01) | `incident.school_id`, `c1_summary`, `c1_action_taken`, `c1_status_notes` | Designed as short, factual, non-identifying text (no victim/student names), separate from `raw_narrative`, which stays on the 90-day purge. Code enforces length only; free text can still be typed carelessly. Retention: pending decision; no purge rule exists for these columns, so they currently live as long as the incident |
 | Term reports (2026-10-01) | `ssz_term_report` (aggregate counts, prepared_by/approved_by, mayor-office and DILG received-by names and dates) | Aggregate counts plus names of staff and receiving officers. Retention: pending decision, no purge job |
 
@@ -116,17 +125,32 @@ record is the intended continuation — is a policy call for the barangay
 and an architecture review (Rule 10), not something this document or a
 code session settles.
 
-**New 2026-10-01 tables: retention pending decision, no purge job.**
-`tanod_availability`, `accomplishment_report`/`accomplishment_entry`,
-`school`, `school_checkin`, `ssz_term_report`, `user.official_title`/
-`approval_authority` and the `incident.c1_*` columns have NO rule in
-`RetentionService`; they accumulate until a policy is chosen (Rule 10:
-needs an architecture review and a barangay council decision; no legal
-retention rule is cited here and none should be invented). The one
-exception is `incident_referral`, which the existing incident-purge
-cascade deletes together with its incident. Accomplishment reports are
-the likely attendance evidence for honorarium payroll, but what the
-treasurer/COA accepts is unconfirmed (HANDOFF.md).
+**New 2026-10 tables: retention PENDING barangay/COA confirmation —
+placeholder rules exist, purge is OFF.** `RetentionService::NEW_TABLE_RULES`
+(Rule 10: code constants, never config) now carries one rule per type
+below, each with `days = null` and status `pending_barangay_confirmation`.
+No duration was invented and no legal retention rule is cited (needs an
+architecture review and a barangay council decision). While `days` is
+null the rule is a no-op: it runs no query, writes no audit row, and
+reports `{purged:0, held:0, note:'pending barangay confirmation'}`;
+`php scripts/retention-job.php --list` shows each rule and its pending
+state. A full non-dry-run job therefore deletes nothing from these tables
+(asserted by `verify-retention-new-tables.sh`).
+
+| Data | Purpose | Who can read | Retention today | What the job will do once a number is set |
+|---|---|---|---|---|
+| `tanod_availability` | Tanod's stated availability, input to rosters | Owning tanod; admin/secretary/PB of the same barangay | Pending barangay/COA confirmation (placeholder) | Delete rows whose `period_end` is older than the period, one transaction per row, first nulling `shift_schedule.source_availability_id` on shifts that cite it (the shift keeps its own 1-year rule) |
+| `accomplishment_report` + `accomplishment_entry` | Monthly accomplishment report = attendance evidence for honorarium | Owning tanod; entry text also admin/secretary/PB of the same barangay | Pending barangay/COA confirmation (placeholder) | Delete only reports with status `approved`, aged from `approved_at`, together with their entries and attached `document_scan` rows and files; never an open/prepared/noted/returned report; one transaction per report |
+| `school_checkin` | Where/when a tanod was deployed to a school (MC 2026-037 reporting) | Admin/secretary/PB of the same barangay (tanod writes own) | Pending barangay/COA confirmation (placeholder) | Delete rows whose `checked_in_at` is older than the period |
+| `incident_referral` | Log of matters referred to PNP/BFP/EMS/officials | Admin/secretary/PB of the same barangay (tanod sees own referrals on their incidents) | Pending barangay/COA confirmation (placeholder); independently, the existing 7-year incident purge still deletes a referral with its incident | Delete rows whose `referred_at` is older than the period, except referrals of an incident under `legal_hold` (counted as `held`) |
+| `document_scan` | Scanned signed paper copy of an approved report | Admin/secretary/PB of the same barangay (download audited) | Lives with its parent report; no clock of its own; pending (placeholder) | Removed with its parent `accomplishment_report` (rows and files under `SCANS_DIR`). **Gap to decide:** scans attached to an `ssz_term_report` (Annex D) have no purge path because `ssz_term_report` itself has no retention rule yet |
+
+Not covered by any rule, still accumulating with no placeholder:
+`school`, `ssz_term_report`, `user.official_title`/`approval_authority`
+and the `incident.c1_*` columns. Accomplishment reports are the likely
+attendance evidence for honorarium payroll, but what the treasurer/COA
+accepts is unconfirmed (HANDOFF.md). Backups are not covered by any of
+this (Rule 11 reminder in `retention-job.php`).
 
 **Historical (removed by 0029, no longer in force):** retention rules
 for `blotter_record`/`blotter_revision`, `ai_processing_log` (1 year)
