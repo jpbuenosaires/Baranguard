@@ -21,6 +21,10 @@ const MIN = 60 * 1000;
 export function sqlAgo(minutes) {
   return new Date(Date.now() - minutes * MIN).toISOString().slice(0, 19).replace('T', ' ');
 }
+/** ISO-8601 UTC instant N seconds from now (dispatch offers use this wire format). */
+function isoIn(seconds) {
+  return new Date(Date.now() + seconds * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
 function dateAgo(days) {
   return new Date(Date.now() + 8 * 60 * MIN - days * 1440 * MIN).toISOString().slice(0, 10);
 }
@@ -250,6 +254,14 @@ export function buildRoutes(scenario) {
     { method: 'POST', path: '/users', handler: ({ body }) => (users.some((u) => u.username === body.username)
       ? { status: 409, body: { error: { code: 'USERNAME_TAKEN', message: 'That username is already in use.' } } }
       : { status: 201, body: { user_id: 99, username: body.username, full_name: body.full_name, role: body.role, contact_number: body.contact_number, is_active: 1 } }) },
+    // Thin picker feed (admin|secretary). Never carries username/phone/authority list.
+    { method: 'GET', path: '/users/directory', handler: ({ query }) => {
+      const active = users.filter((u) => u.is_active === 1 && u.is_suspended === 0);
+      const rows = query.purpose === 'tanod'
+        ? active.filter((u) => u.role === 'tanod')
+        : active.filter((u) => ['admin', 'secretary', 'punong_barangay'].includes(u.role) && u.approval_authority.includes(query.authority));
+      return ok({ items: rows.map((u) => ({ user_id: u.user_id, full_name: u.full_name, official_title: u.official_title })) });
+    } },
     { method: 'GET', path: '/users/:id', handler: ({ params }) => {
       const user = users.find((u) => u.user_id === Number(params.id));
       return user ? ok(user) : notFound('User not found.');
@@ -358,6 +370,15 @@ export function buildRoutes(scenario) {
     ], unread_count: empty ? 0 : 1 }) },
     { method: 'POST', path: '/notifications/ack-all', handler: () => ok({ success: true, acknowledged_count: 1 }) },
     { method: 'POST', path: '/notifications/:id/ack', handler: ({ params }) => ok({ success: true, notification_id: Number(params.id), acknowledged_at: sqlAgo(0) }) },
+
+    // --- Dispatch offers (Wave 2; admin|secretary|PB view, newest first) ---
+    { method: 'GET', path: '/dispatch-offers', handler: ({ query }) => ok({ items: empty ? [] : [
+      { offer_id: 31, incident_id: 901, incident_type: 'theft', priority: 'high', barangay_name: 'Dao', status: 'open', round: 2, created_at: isoIn(-200), expires_at: isoIn(120), closed_at: null, created_by: 1, recipient_count: 3, recipient_counts: { offered: 3, accepted: 0, released: 0, expired: 0 }, accepted_by: null, accepted_by_name: null, accepted_dispatch_id: null },
+      { offer_id: 32, incident_id: 904, incident_type: 'vandalism', priority: 'normal', barangay_name: 'Dao', status: 'escalated', round: 3, created_at: isoIn(-700), expires_at: isoIn(-100), closed_at: null, created_by: null, recipient_count: 2, recipient_counts: { offered: 0, accepted: 0, released: 0, expired: 2 }, accepted_by: null, accepted_by_name: null, accepted_dispatch_id: null },
+      { offer_id: 30, incident_id: 902, incident_type: 'medical_emergency', priority: 'critical', barangay_name: 'Dao', status: 'accepted', round: 1, created_at: isoIn(-2700), expires_at: isoIn(-2500), closed_at: isoIn(-2600), created_by: null, recipient_count: 3, recipient_counts: { offered: 0, accepted: 1, released: 2, expired: 0 }, accepted_by: 5, accepted_by_name: tanodName(5), accepted_dispatch_id: 7001 },
+    ].filter((o) => !query.incident_id || o.incident_id === Number(query.incident_id)), page: 1, limit: 25, total: 3 }) },
+    { method: 'POST', path: '/dispatch-offers', handler: ({ body }) => ({ status: 201, body: { offer_id: 40, incident_id: body.incident_id, round: 1, status: 'open', recipient_count: 2, expires_at: isoIn(180) } }) },
+    { method: 'PATCH', path: '/dispatch-offers/:id/cancel', handler: ({ params }) => ok({ offer_id: Number(params.id), status: 'cancelled', incident_id: 901 }) },
 
     // --- Citizen reports ---
     { method: 'GET', path: '/citizen-reports', handler: ({ query }) => ok(paginate(citizenReports.filter((r) => (query.status === 'unconverted' ? r.incident_id === null : true)), query)) },
