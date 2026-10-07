@@ -477,8 +477,8 @@ final class SszTermReportsController
                 $pdo->commit();
                 Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? $row));
             }
-            if ($row['status'] !== 'approved') {
-                throw new ApiError(409, 'CONFLICT', 'A paper signature can only be recorded on an approved term report.');
+            if (!in_array($row['status'], ['approved', 'submitted'], true)) {
+                throw new ApiError(409, 'CONFLICT', 'A paper signature can only be recorded on an approved or submitted term report.');
             }
             $pdo->prepare(
                 'UPDATE ssz_term_report

@@ -672,7 +672,7 @@ expect_code "Upload to a SUBMITTED Annex D report" 201
 api PATCH "/ssz-term-reports/$S_FLOW" "$ADM_T" '{"remarks":"x"}' -H "$(ik)"
 expect_code "PATCH after submitted" 409
 api POST "/ssz-term-reports/$S_FLOW/paper-signature" "$SEC_T" "$PS_BODY" -H "$(ik)"
-expect_code "paper-signature after submitted (contract: approved only)" 409
+expect_code "paper-signature after submitted (allowed: paper date may follow filing)" 200
 
 step "11. GET /document-scans (list)"
 api GET "/document-scans?entity_type=accomplishment_report&entity_id=$A_LEG" "$PB_T" ""
