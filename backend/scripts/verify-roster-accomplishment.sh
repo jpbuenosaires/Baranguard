@@ -663,6 +663,8 @@ expect_eq "  the ORIGINAL entry is returned" "$(jget "$BODY" entry.entry_id)" "$
 api POST "/accomplishment-entries" "$T3_T" "{\"work_date\":\"2025-03-10\",\"accomplishment_text\":\"  \",\"duration_minutes\":0,\"client_event_id\":\"$OLD_EVT\"}" -H "$D_T3"
 expect_code "Retry of the same client_event_id with a body that would now fail validation" 200
 expect_eq "  still the original entry, text untouched" "$(db_one "SELECT accomplishment_text FROM accomplishment_entry WHERE entry_id=$OLD_E;")" "stored long ago"
+api GET "/accomplishment-reports/$OLD_R" "$ADMIN_T" ""
+expect_eq "Migration 0037 fields on an approved report with no paper date (approval_mode / paper_signed_on / paper_pending)" "$(jget "$BODY" approval_mode)|$(jget "$BODY" paper_signed_on)|$(jget "$BODY" paper_pending)" "digital|null|true"
 expect_eq "  no second row" "$(db_one "SELECT COUNT(*) FROM accomplishment_entry WHERE client_event_id='$OLD_EVT';")" "1"
 api POST "/accomplishment-entries" "$T3_T" "{\"work_date\":\"2025-03-10\",\"accomplishment_text\":\"brand new\",\"duration_minutes\":60,\"client_event_id\":\"$(uuid)\"}" -H "$D_T3"
 expect_code "A NEW event id with that stale date is still rejected" 400

@@ -18,4 +18,6 @@ return [
     ['POST', '#^/ssz-term-reports/(\d+)/prepare$#', [SszTermReportsController::class, 'prepare'], true],
     ['POST', '#^/ssz-term-reports/(\d+)/approve$#', [SszTermReportsController::class, 'approve'], true],
     ['POST', '#^/ssz-term-reports/(\d+)/mark-submitted$#', [SszTermReportsController::class, 'markSubmitted'], true],
+    ['POST', '#^/ssz-term-reports/(\d+)/paper-signature$#', [SszTermReportsController::class, 'paperSignature'], true],
+    ['POST', '#^/ssz-term-reports/(\d+)/record-paper-approval$#', [SszTermReportsController::class, 'recordPaperApproval'], true],
 ];
