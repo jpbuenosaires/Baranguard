@@ -227,7 +227,7 @@ final class NotificationService
             // its incident, so the feed can show the incident type).
             self::TYPE_DISPATCH_OFFER => ($offerId === null || $incidentId === null)
                 ? 'A dispatch_offer notification requires dispatch_offer_id and incident_id.' : null,
- — no
+            // §5: "'other' may use a documented entity relationship" — no
             // combination is mandated, so nothing to reject.
             default => null,
         };
