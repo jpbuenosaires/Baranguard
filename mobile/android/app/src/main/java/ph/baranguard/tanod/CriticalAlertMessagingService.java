@@ -34,12 +34,16 @@ import java.util.Set;
  */
 public class CriticalAlertMessagingService extends MessagingService {
 
-    private static final Set<String> CRITICAL_TYPES = new HashSet<>(Arrays.asList("sos", "priority_alert", "dispatch"));
+    private static final Set<String> CRITICAL_TYPES = new HashSet<>(Arrays.asList("sos", "priority_alert", "dispatch", "dispatch_offer"));
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
         Map<String, String> data = remoteMessage.getData();
         String notificationType = data.get("notification_type");
+        // dispatch_offer pushes also carry data.type == "dispatch_offer".
+        if (notificationType == null && "dispatch_offer".equals(data.get("type"))) {
+            notificationType = "dispatch_offer";
+        }
         if (notificationType != null && CRITICAL_TYPES.contains(notificationType)) {
             RemoteMessage.Notification notificationBlock = remoteMessage.getNotification();
             String title = notificationBlock != null && notificationBlock.getTitle() != null

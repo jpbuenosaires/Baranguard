@@ -29,20 +29,26 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { IonButton, IonIcon } from '@ionic/react';
 import { warningOutline } from 'ionicons/icons';
 import { subscribeToCriticalAlert, dismissCriticalAlert, type CriticalAlert } from '../services/criticalAlertStore';
 import { acknowledgeNotification } from '../services/apiService';
+import { loadSession } from '../services/session';
+import { incidentTypeLabel } from '../utils/dispatchOfferFormat';
+import { formatManilaTime } from '../utils/manilaTime';
 
 const TYPE_LABEL: Record<CriticalAlert['notificationType'], string> = {
   sos: 'SOS ALERT',
   priority_alert: 'PRIORITY ALERT',
   dispatch: 'NEW DISPATCH',
+  dispatch_offer: 'DISPATCH OFFER',
 };
 
 const CriticalAlertOverlay: React.FC = () => {
   const [alert, setAlert] = useState<CriticalAlert | null>(null);
   const [acknowledging, setAcknowledging] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => subscribeToCriticalAlert(setAlert), []);
 
@@ -62,6 +68,35 @@ const CriticalAlertOverlay: React.FC = () => {
     }
   };
 
+  const isOffer = alert.notificationType === 'dispatch_offer';
+
+  // dispatch_offer shows ONLY incident type, barangay and time (never a
+  // narrative); falls back to the server-composed body of the same facts.
+  let bodyText = alert.body || alert.title;
+  if (isOffer && alert.offer) {
+    const when = alert.offer.createdAt ? formatManilaTime(alert.offer.createdAt) : '';
+    bodyText = [incidentTypeLabel(alert.offer.incidentType), alert.offer.barangayName, when].filter(Boolean).join(' · ');
+  }
+
+  // Primary action for an offer: acknowledge (best-effort, as above) AND open
+  // the offer card: Dispatches tab for a Tanod, Dispatch tab for the Chief
+  // Tanod (Admin) console, the only other role this app serves.
+  const handleOpenOffer = async () => {
+    setAcknowledging(true);
+    let target = '/tabs/assignments';
+    try {
+      const session = await loadSession();
+      if (session?.role === 'admin') target = '/tabs/dispatch';
+      await acknowledgeNotification(alert.notificationId);
+    } catch {
+      // Fire-and-forget on failure, same as handleAcknowledge
+    } finally {
+      setAcknowledging(false);
+      dismissCriticalAlert();
+      navigate(target);
+    }
+  };
+
   return (
     <div className="critical-alert-overlay" role="alertdialog" aria-live="assertive" aria-label={TYPE_LABEL[alert.notificationType]}>
       <div
@@ -75,11 +110,23 @@ const CriticalAlertOverlay: React.FC = () => {
           <IonIcon icon={warningOutline} style={{ fontSize: '1.4rem', color: 'var(--color-critical)' }} />
           <p className="critical-alert-overlay__title" style={{ margin: 0 }}>{TYPE_LABEL[alert.notificationType]}</p>
         </div>
-        <p className="critical-alert-overlay__body">{alert.body || alert.title}</p>
+        <p className="critical-alert-overlay__body">{bodyText}</p>
         <div className="critical-alert-overlay__actions">
+          {isOffer && (
+            <IonButton
+              expand="block"
+              color="danger"
+              disabled={acknowledging}
+              onClick={handleOpenOffer}
+              style={{ fontWeight: 700, height: '44px' }}
+            >
+              {acknowledging ? 'Opening…' : 'View Offer'}
+            </IonButton>
+          )}
           <IonButton
             expand="block"
             color="danger"
+            fill={isOffer ? 'outline' : 'solid'}
             disabled={acknowledging}
             onClick={handleAcknowledge}
             style={{ fontWeight: 700, height: '44px' }}
