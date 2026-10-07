@@ -130,7 +130,7 @@ export function startSchoolCacheResumeRefresh(): void {
   CapacitorApp.addListener('appStateChange', ({ isActive }) => {
     if (!isActive) return;
     void (async () => {
-      if (await loadSession()) await refreshSchoolCache({ force: true });
+      if ((await loadSession())?.role === 'tanod') await refreshSchoolCache({ force: true });
     })();
   });
 }
