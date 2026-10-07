@@ -554,9 +554,16 @@ export async function getDispatches({ status, incidentId, page, limit } = {}) {
  * caller generates one UUID per user-initiated create action and reuses
  * it only on an automatic retry of that same action, never on a new one.
  */
-export async function createDispatch({ incidentId, tanodId, requestId }) {
+/**
+ * `overrideReason` (1-255 chars) is sent ONLY after the server answered
+ * `NO_PUBLISHED_SHIFT` and the Admin chose to dispatch anyway; it is stored
+ * with the dispatch (never sent otherwise).
+ */
+export async function createDispatch({ incidentId, tanodId, requestId, overrideReason }) {
+  const body = { incident_id: incidentId, tanod_id: tanodId, request_id: requestId };
+  if (overrideReason !== undefined && overrideReason !== null) body.override_reason = overrideReason;
   const json = await request('POST', '/dispatch', {
-    body: { incident_id: incidentId, tanod_id: tanodId, request_id: requestId },
+    body,
     auth: true,
   });
   return {
@@ -567,8 +574,9 @@ export async function createDispatch({ incidentId, tanodId, requestId }) {
   };
 }
 
-export async function cancelDispatch(dispatchId) {
-  const json = await request('PATCH', `/dispatch/${dispatchId}/cancel`, { body: {}, auth: true });
+/** `reason` (1-255 chars) is REQUIRED by the server; allowed from assigned, en_route and arrived. */
+export async function cancelDispatch(dispatchId, reason) {
+  const json = await request('PATCH', `/dispatch/${dispatchId}/cancel`, { body: { reason }, auth: true });
   return {
     dispatchId: json.dispatch_id,
     status: json.status,
