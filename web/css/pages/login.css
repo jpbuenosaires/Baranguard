@@ -2,7 +2,7 @@
  * login.css — co-located with login.js (W1). Split out of base.css during
  * the 2026-09-02 responsive/density pass. `.login-page`/`.login-card`
  * (the simple centered-card layout) also back main.js's renderUnavailable()
- * fallback and citizen-report.js's public form — kept generic enough for
+ * fallback and the (removed) public report form — kept generic enough for
  * that reuse, unlike the split-screen `.login-screen` below which is W1-only.
  */
 
@@ -263,40 +263,6 @@
 @media (max-width: 480px) {
   .login-form-panel { padding: var(--spacing-md); }
   .login-card { padding: var(--spacing-lg); }
-}
-
-/* --- Public citizen report (W19) ---------------------------------------
-   Shares this stylesheet because both screens are unauthenticated, use no
-   AppShell, and already share the card/hero treatment. Replaces the inline
-   styles that page used to carry (audit A4/W19). */
-.citizen-report__brand {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
-}
-.citizen-report__wordmark {
-  font-weight: 700;
-  font-size: var(--font-size-lg);
-  letter-spacing: 0.02em;
-}
-/* The success screen's confirmation badge, larger than a KPI badge. */
-.icon-badge--success { width: 3.5rem; height: 3.5rem; }
-/* The reference number is the citizen's only proof they filed anything —
-   monospace and selectable so it can be read aloud or copied cleanly. */
-.citizen-report__reference {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: var(--font-size-xl);
-  font-weight: 700;
-  user-select: all;
-}
-.citizen-report__reference-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  margin: var(--spacing-sm) 0;
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
