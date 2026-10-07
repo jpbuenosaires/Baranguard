@@ -18621,3 +18621,34 @@ Prompted by a multi-agent audit (backend, mobile, web+docs, standards) after mig
 Backend `.sh` suites (checks, 0 failed unless noted): b2-pentest 59, device-session 20, device-signature 21, devices-map-packages 57, duty-status-map-upload 49, evidence-upload 19, f5 16, f6 8, f8 8, f9 15, h16 30, public-transparency 17, routing 23, second-responder 25, sprint0 19, sprint1-auth 23, sprint3 43, sprint4-phase2-3 72, sprint7-audit 59, sprint7-pentest-incidents 56, sprint7-retention 82, w2-reports 31, w3-w4 38, scheduler-fatigue 49. NEW: referrals 147, roster-accomplishment 332, school-zones 213. `verify-sprint1-remaining.sh` and `verify-sprint4.sh` printed `ALL CHECKS PASSED` (counts not captured; last recorded 39 and 50). Web: `verify-web-wiring.mjs` 733 passed / 0 failed; `web/tests` 542 / 0. Mobile: `verify-local-schema.mjs` 230 / 0; `tsc --noEmit` 1 error and `lint` 18 errors, both pre-existing (previously 1 / 19). `count-routes.php` 105. Not re-run: `restore-drill.sh` (real DB), the real-ORS block of `verify-routing.sh`.
 
 **Not proven / open (carried to HANDOFF and REMAINING):** (1) the 12h-cap race and the report-creation deadlock fix are untested for real because `php -S` is single-threaded; (2) mobile discard SQL not run on SQLCipher; no device run of any new screen or of the four new sync kinds; (3) no agent browser pass; print layouts unviewed; (4) web/tests map test 'SOS markers are never clustered' looks order-sensitive (flaky); (5) one unexplained flaky run was seen once in `verify-roster-accomplishment.sh` and did not reproduce; (6) retention for the new tables and `c1_*` undecided, no purge job; narrative-retention (90-day, no replacement) still unconfirmed; (7) no Kagawad role (a Kagawad uses a `secretary` account with authorities) and whether an Admin may hold `approve_*` through a second account are open; (8) Annex A fields and MC 2026-037 deadlines/filing frequency are unknown until the circular PDF is read, and what attendance evidence the treasurer/COA accepts is unconfirmed; (9) `PRIVACY_NOTICES.md` and the Master Reference not updated. `DATA_INVENTORY.md` and `PRIVACY_IMPACT_ASSESSMENT.md` gained the new categories, each marked "retention: pending decision, no purge job".
+
+## 2026-10-07 (1) - Proposed Changes Review build (28 decisions; migrations 0034-0038)
+
+Source: the user's decisions on the "Proposed Changes Review" (33 items; doc
+fixes, proposal corrections, stakeholder decisions). Built by parallel agents in
+git worktrees, merged to local `main`; nothing pushed.
+
+- **Docs:** items 1, 3, 5, 14b applied; whole rules doc reconciled (rules 56-66,
+  personas 5 -> 4, nav, new Dispatch Offer state machine). Items 7-9 targeted a
+  separate proposal document that was not available: not applied anywhere.
+- **0034/0035 (dispatch + roster):** reason required on cancel, arrived ->
+  cancelled, published-shift rule + override reason, Secretary shifts/swaps,
+  pending_reapproval, backup.sh prunes nothing while any legal hold exists
+  (replaces the earliest-held-record floor). Pre-existing Rule 8 breach fixed:
+  `dispatch_status_override` audited the override reason text.
+- **0036:** report_channel, related_incident_id, public submit removed (405).
+- **0037:** paper approvals + document_scan. Decision: paper date may also be
+  recorded after Annex D is `submitted`.
+- **0038:** dispatch offers (`BARANGUARD_NOW_OVERRIDE`/`BARANGUARD_TEST_OFFER_FAULT`
+  test seams, ignored unless APP_ENV is set and not production), roster
+  recorded-from-paper, escalation reminders +3/+6/+12 min then 30 min, max 8.
+- **Auth:** Admin device sessions with `ADMIN_DEVICE_ALLOWLIST` (added
+  `/users/directory`), `GET /users/directory`.
+- **Retention:** placeholder rules, purge off (Rule 10).
+- **Scope calls:** auto-offer at night for every new pending incident (all
+  creation paths); Chief Tanod rosterable but not dispatchable.
+- **Evidence (disposable DBs):** see REFERENCE.md §1; full-sweep results are
+  recorded in the session summary. Web wiring 776/0, web tests 609/0, mobile
+  tsc 1 / lint 18 (both pre-existing baseline), local schema 230/0.
+- **Not proven:** concurrency, scheduled-task registration, FCM/SMS delivery,
+  every browser and device behaviour.
