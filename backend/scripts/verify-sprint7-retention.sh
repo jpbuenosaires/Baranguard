@@ -159,6 +159,15 @@ expect_contains "$LIST_OUT" "2557" "--list prints the real 7-year constant"
 # DEVLOG has logged case-sensitivity assertion bugs twice before.
 expect_contains "$LIST_OUT" "Legal hold" "--list states legal hold is the only exception"
 
+# Wave 3 (review decision 10): the 0030-0033 tables have PLACEHOLDER rules
+# with no period set. They must be listed, flagged pending, and accepted by
+# --only; the deep behaviour is in verify-retention-new-tables.sh.
+expect_contains "$LIST_OUT" "pending_barangay_confirmation" "--list flags the new-table rules as pending barangay confirmation"
+expect_contains "$LIST_OUT" "document_scan" "--list notes document_scan follows its parent report"
+PEND_OUT="$(run_job --only=tanod_availability,accomplishment_report,school_checkin,incident_referral)"
+expect_contains "$PEND_OUT" "incident_referral: pending barangay confirmation" "--only accepts the new-table rules and reports them pending"
+expect_contains "$PEND_OUT" "Purged 0 record(s)" "running only the pending rules purges nothing"
+
 BAD_OUT="$(run_job --only=not_a_rule 2>&1)"; BAD_CODE=$?
 expect_contains "$BAD_OUT" "Unknown rule" "--only rejects an unknown rule name"
 
