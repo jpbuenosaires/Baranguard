@@ -123,6 +123,14 @@ final class IncidentsController
         'reopened' => ['duplicate', 'invalid', 'cancelled'],
     ];
     private const INCIDENT_PRIORITIES = ['normal', 'high', 'critical'];
+    /**
+     * Migration 0036: how the report reached the barangay (intake record,
+     * separate from the technical `source`). Web create (Admin/Secretary)
+     * may choose any of these; mobile/sync is forced to `tanod_alerted`,
+     * SMS-ingested incidents to `sms`, a converted citizen report to
+     * `walk_in` -- the client never picks the channel on those paths.
+     */
+    public const REPORT_CHANNELS = ['tanod_alerted', 'walk_in', 'sms', 'other'];
     private const INCIDENT_TYPES = [
         'theft', 'physical_injury', 'disturbance', 'domestic_dispute',
         'vandalism', 'traffic_incident', 'fire', 'medical_emergency',
@@ -240,7 +248,7 @@ final class IncidentsController
         $stmt = $pdo->prepare(
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
-                    i.location_description, i.display_id,
+                    i.location_description, i.display_id, i.report_channel, i.related_incident_id,
                     i.school_id, i.c1_summary, i.c1_action_taken, i.c1_status_notes,
                     tanod.full_name AS officer_name
              FROM incident i
@@ -279,6 +287,8 @@ final class IncidentsController
                 'synced_at' => $row['synced_at'],
                 'location_description' => $row['location_description'] ?? null,
                 'display_id' => $row['display_id'] ?? null,
+                'report_channel' => $row['report_channel'],
+                'related_incident_id' => $row['related_incident_id'] !== null ? (int) $row['related_incident_id'] : null,
                 'officer_name' => $row['officer_name'] ?? null,
                 'school_id' => $row['school_id'] !== null ? (int) $row['school_id'] : null,
                 'c1_summary' => $row['c1_summary'],
@@ -432,7 +442,7 @@ final class IncidentsController
         $stmt = $pdo->prepare(
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
-                    i.location_description, i.display_id,
+                    i.location_description, i.display_id, i.report_channel, i.related_incident_id,
                     i.school_id, i.c1_summary, i.c1_action_taken, i.c1_status_notes,
                     i.raw_narrative,
                     i.complainant_name, i.respondent_name, i.complainant_contact_number,
@@ -521,6 +531,39 @@ final class IncidentsController
             ];
         }, $dispatchesStmt->fetchAll(PDO::FETCH_ASSOC));
 
+        // Migration 0036 related-incident links. Same-barangay only by
+        // construction (PATCH .../related enforces it), but the queries
+        // still pin barangay_id so a stale/legacy cross-tenant link could
+        // never leak an id.
+        $relatedIncident = null;
+        if ($incident['related_incident_id'] !== null) {
+            $relStmt2 = $pdo->prepare(
+                'SELECT incident_id, display_id FROM incident
+                 WHERE incident_id = :id AND barangay_id = :barangay_id'
+            );
+            $relStmt2->execute([
+                'id' => (int) $incident['related_incident_id'],
+                'barangay_id' => (int) $incident['barangay_id'],
+            ]);
+            $relRow = $relStmt2->fetch(PDO::FETCH_ASSOC);
+            if ($relRow !== false) {
+                $relatedIncident = [
+                    'incident_id' => (int) $relRow['incident_id'],
+                    'display_id' => $relRow['display_id'],
+                ];
+            }
+        }
+        $relByStmt = $pdo->prepare(
+            'SELECT incident_id, display_id FROM incident
+             WHERE related_incident_id = :id AND barangay_id = :barangay_id
+             ORDER BY incident_id ASC'
+        );
+        $relByStmt->execute(['id' => $incidentId, 'barangay_id' => (int) $incident['barangay_id']]);
+        $relatedBy = array_map(static fn (array $r): array => [
+            'incident_id' => (int) $r['incident_id'],
+            'display_id' => $r['display_id'],
+        ], $relByStmt->fetchAll(PDO::FETCH_ASSOC));
+
         $payload = [
             'incident_id' => (int) $incident['incident_id'],
             'barangay_id' => (int) $incident['barangay_id'],
@@ -536,6 +579,13 @@ final class IncidentsController
             'synced_at' => $incident['synced_at'],
             'location_description' => $incident['location_description'],
             'display_id' => $incident['display_id'],
+            // Migration 0036: intake channel and the soft related-incident
+            // link (ids/display ids only -- never narrative; Tanod reach is
+            // the same incident-level gate as the rest of show()).
+            'report_channel' => $incident['report_channel'],
+            'related_incident_id' => $incident['related_incident_id'] !== null ? (int) $incident['related_incident_id'] : null,
+            'related_incident' => $relatedIncident,
+            'related_by' => $relatedBy,
             // Safer School Zones (migration 0033, contract section 7): the
             // linked school and the short NON-identifying Annex C-1 text.
             // Not narrative -- visible to every role that may read the
@@ -1172,6 +1222,114 @@ final class IncidentsController
     }
 
     /**
+     * `PATCH /incidents/:id/related` — Admin|Secretary, `Idempotency-Key`
+     * required, body exactly `{"related_incident_id": <int>|null}`
+     * (migration 0036).
+     *
+     * A soft "these two incidents are related" pointer, for a repeat
+     * complaint, a follow-up or a linked event. It is deliberately NOT the
+     * lifecycle `duplicate` flow: it changes no status, is allowed while a
+     * dispatch is open (so it never collides with the "no lifecycle change
+     * with an open dispatch" guard), touches no dispatch and moves no rows.
+     * `null` removes the link. The target must be in the caller's own
+     * barangay -- an unknown id and another barangay's id both answer 404
+     * (Rule 2); linking an incident to itself is a 400.
+     *
+     * Audit `incident_related_changed` carries ids only (incident, the new
+     * and the previous related id, the idempotency key) -- never narrative,
+     * names or any display text (Rule 8). A retry with the same key replays
+     * off `audit_log.idempotency_key`, same shape as `update()`.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function updateRelated(PDO $pdo, array $identity, string $incidentIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+        if (!ctype_digit($incidentIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        $incidentId = (int) $incidentIdParam;
+
+        $idempotencyKey = Http::header('Idempotency-Key');
+        if ($idempotencyKey === null || !preg_match(self::UUID_PATTERN, $idempotencyKey)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Idempotency-Key header must be a UUID.');
+        }
+
+        $body = Http::jsonBody();
+        if (!array_key_exists('related_incident_id', $body)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'related_incident_id is required (an incident id, or null to remove the link).');
+        }
+        $relatedId = $body['related_incident_id'];
+        if ($relatedId !== null) {
+            if (is_string($relatedId) && ctype_digit($relatedId)) {
+                $relatedId = (int) $relatedId;
+            }
+            if (!is_int($relatedId) || $relatedId < 1) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'related_incident_id must be a positive integer or null.');
+            }
+            if ($relatedId === $incidentId) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'An incident cannot be related to itself.');
+            }
+        }
+
+        $stmt = $pdo->prepare('SELECT incident_id, barangay_id, related_incident_id FROM incident WHERE incident_id = :id');
+        $stmt->execute(['id' => $incidentId]);
+        $incident = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+
+        // Replay: the same key returns the original outcome, writes nothing.
+        $replayStmt = $pdo->prepare(
+            "SELECT metadata_json FROM audit_log
+             WHERE barangay_id = :barangay_id AND action = 'incident_related_changed' AND entity_id = :entity_id
+               AND idempotency_key = :idempotency_key
+             LIMIT 1"
+        );
+        $replayStmt->execute([
+            'barangay_id' => $identity['barangay_id'],
+            'entity_id' => $incidentId,
+            'idempotency_key' => $idempotencyKey,
+        ]);
+        $priorMetadataJson = $replayStmt->fetchColumn();
+        if ($priorMetadataJson !== false) {
+            $prior = json_decode((string) $priorMetadataJson, true);
+            Http::send(200, [
+                'incident_id' => $incidentId,
+                'related_incident_id' => $prior['related_incident_id'] ?? null,
+            ]);
+            return;
+        }
+
+        if ($relatedId !== null) {
+            $targetStmt = $pdo->prepare('SELECT barangay_id FROM incident WHERE incident_id = :id');
+            $targetStmt->execute(['id' => $relatedId]);
+            $target = $targetStmt->fetch(PDO::FETCH_ASSOC);
+            // Unknown and other-barangay answer identically (Rule 2).
+            if ($target === false || (int) $target['barangay_id'] !== (int) $identity['barangay_id']) {
+                throw new ApiError(404, 'NOT_FOUND', 'Related incident not found.');
+            }
+        }
+
+        $previous = $incident['related_incident_id'] !== null ? (int) $incident['related_incident_id'] : null;
+        $updateStmt = $pdo->prepare(
+            'UPDATE incident SET related_incident_id = :related, updated_at = UTC_TIMESTAMP() WHERE incident_id = :id'
+        );
+        $updateStmt->bindValue(':related', $relatedId, $relatedId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        $updateStmt->bindValue(':id', $incidentId, PDO::PARAM_INT);
+        $updateStmt->execute();
+
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_related_changed', 'incident', $incidentId, [
+            'related_incident_id' => $relatedId,
+            'previous_related_incident_id' => $previous,
+            'idempotency_key' => $idempotencyKey,
+        ]);
+
+        Http::send(200, ['incident_id' => $incidentId, 'related_incident_id' => $relatedId]);
+    }
+
+    /**
      * `PATCH /incidents/:id/status` — Admin only, body exactly
      * `{status:"resolved"}`.
      *
@@ -1506,6 +1664,13 @@ final class IncidentsController
         if (!is_string($priority) || !in_array($priority, self::INCIDENT_PRIORITIES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'priority must be one of: ' . implode(', ', self::INCIDENT_PRIORITIES) . '.');
         }
+        // Migration 0036: how the report reached the barangay. Optional,
+        // defaults to `walk_in` (this path IS the desk); an unknown value is
+        // a 400 rather than silently coerced.
+        $reportChannel = $body['report_channel'] ?? 'walk_in';
+        if (!is_string($reportChannel) || !in_array($reportChannel, self::REPORT_CHANNELS, true)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'report_channel must be one of: ' . implode(', ', self::REPORT_CHANNELS) . '.');
+        }
         // Lets an Admin/Secretary who already knows the parties at intake
         // enter them immediately.
         $locationDescription = self::normalizeOptionalString($body['location_description'] ?? null, 255);
@@ -1531,7 +1696,7 @@ final class IncidentsController
         $existingStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
-                    location_description, display_id,
+                    location_description, display_id, report_channel, related_incident_id,
                     school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident
              WHERE barangay_id = :barangay_id AND device_id IS NULL AND client_event_id = :idempotency_key
@@ -1563,12 +1728,12 @@ final class IncidentsController
 
             $insertStmt = $pdo->prepare(
                 "INSERT INTO incident
-                    (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
+                    (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source, report_channel,
                      latitude, longitude, location_description, complainant_name, respondent_name,
                      complainant_contact_number, display_id, school_id, c1_summary, c1_action_taken, c1_status_notes,
                      created_at, client_event_id, updated_at)
                  VALUES
-                    (:barangay_id, :reported_by, NULL, :incident_type, :priority, :raw_narrative, 'pending', 'web',
+                    (:barangay_id, :reported_by, NULL, :incident_type, :priority, :raw_narrative, 'pending', 'web', :report_channel,
                      :latitude, :longitude, :location_description, :complainant_name, :respondent_name,
                      :complainant_contact_number, :display_id, :school_id, :c1_summary, :c1_action_taken, :c1_status_notes,
                      UTC_TIMESTAMP(), :idempotency_key, UTC_TIMESTAMP())"
@@ -1591,6 +1756,7 @@ final class IncidentsController
                         'incident_type' => $incidentType,
                         'priority' => $priority,
                         'raw_narrative' => $rawNarrative,
+                        'report_channel' => $reportChannel,
                         'latitude' => $latitude,
                         'longitude' => $longitude,
                         'location_description' => $locationDescription,
@@ -1642,7 +1808,7 @@ final class IncidentsController
         $readBackStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
-                    location_description, display_id,
+                    location_description, display_id, report_channel, related_incident_id,
                     school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE incident_id = :incident_id'
         );
@@ -1773,7 +1939,7 @@ final class IncidentsController
         $existingStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
-                    location_description, display_id,
+                    location_description, display_id, report_channel, related_incident_id,
                     school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE device_id = :device_id AND client_event_id = :client_event_id LIMIT 1'
         );
@@ -1797,11 +1963,11 @@ final class IncidentsController
 
             $insertStmt = $pdo->prepare(
                 "INSERT INTO incident
-                    (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
+                    (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source, report_channel,
                      latitude, longitude, display_id, school_id, c1_summary, c1_action_taken, c1_status_notes,
                      created_at, device_offline_created_at, client_event_id, updated_at)
                  VALUES
-                    (:barangay_id, :reported_by, :device_id, :incident_type, 'normal', :raw_narrative, 'pending', :source,
+                    (:barangay_id, :reported_by, :device_id, :incident_type, 'normal', :raw_narrative, 'pending', :source, :report_channel,
                      :latitude, :longitude, :display_id, :school_id, :c1_summary, :c1_action_taken, :c1_status_notes,
                      UTC_TIMESTAMP(), :device_offline_created_at, :client_event_id, UTC_TIMESTAMP())"
             );
@@ -1817,6 +1983,10 @@ final class IncidentsController
                         'incident_type' => $incidentType,
                         'raw_narrative' => $rawNarrative,
                         'source' => in_array($source, ['app', 'sms', 'web'], true) ? $source : 'app',
+                        // Migration 0036: FORCED, never read from the item --
+                        // a Tanod's phone cannot claim a walk-in, and an
+                        // SMS-reconstructed incident is honestly `sms`.
+                        'report_channel' => $source === 'sms' ? 'sms' : 'tanod_alerted',
                         'latitude' => $latitude,
                         'longitude' => $longitude,
                         'display_id' => $displayId,
@@ -1862,7 +2032,7 @@ final class IncidentsController
         $readBackStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
-                    location_description, display_id,
+                    location_description, display_id, report_channel, related_incident_id,
                     school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE incident_id = :incident_id'
         );
@@ -1907,6 +2077,8 @@ final class IncidentsController
             'synced_at' => $row['synced_at'],
             'location_description' => $row['location_description'] ?? null,
             'display_id' => $row['display_id'] ?? null,
+            'report_channel' => $row['report_channel'] ?? 'other',
+            'related_incident_id' => isset($row['related_incident_id']) ? (int) $row['related_incident_id'] : null,
             // create()'s callers never join dispatch — a just-created
             // incident can't have one yet — so this is always null here,
             // same shape as index()'s items for a one-consistent contract.
