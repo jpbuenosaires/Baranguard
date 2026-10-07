@@ -120,7 +120,7 @@ final class ShiftsController
 
         $pdo->beginTransaction();
         try {
-            self::assertTanodEligible($pdo, $userId, $identity['barangay_id']);
+            self::assertTanodEligible($pdo, $userId, $identity['barangay_id'], true);
             self::assertNoOverlap($pdo, $userId, $startAt, $endAt, null);
             self::assertDailyHoursCap($pdo, $userId, $startAt, $endAt, null);
             if ($sourceAvailabilityId !== null) {
@@ -302,7 +302,7 @@ final class ShiftsController
 
             $oldUserId = $row['user_id'] !== null ? (int) $row['user_id'] : null;
             if ($newUserId !== null) {
-                self::assertTanodEligible($pdo, $newUserId, $identity['barangay_id']);
+                self::assertTanodEligible($pdo, $newUserId, $identity['barangay_id'], true);
                 self::assertNoOverlap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
                 self::assertDailyHoursCap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
             }
@@ -373,16 +373,22 @@ final class ShiftsController
     }
 
     /**
-     * Same-barangay, active Tanod check shared by create()/update() and the swap
+     * Same-barangay, active Tanod (or, with $allowAdmin, Admin/Chief Tanod) check shared by create()/update() and the swap
      * approval. Takes a row lock on the user row (FOR UPDATE) so every
      * overlap / daily-hours check that follows is serialized per Tanod: two
      * concurrent schedule writes for one Tanod cannot both pass the cap.
      * Must therefore be called inside a transaction.
      */
-    public static function assertTanodEligible(PDO $pdo, int $userId, int $barangayId): void
+    public static function assertTanodEligible(PDO $pdo, int $userId, int $barangayId, bool $allowAdmin = false): void
     {
+        // Decision 21: the Chief Tanod is an `admin` account (one account, no
+        // separate login) and may be ROSTERED. Only POST/PATCH /shifts pass
+        // $allowAdmin; swap requests stay tanod-to-tanod. The row lock below
+        // applies to whichever role matched, so the 12 h/day cap path is
+        // serialized for an admin exactly as for a Tanod.
+        $roleSql = $allowAdmin ? "role IN ('tanod','admin')" : "role = 'tanod'";
         $stmt = $pdo->prepare(
-            "SELECT user_id FROM user WHERE user_id = :user_id AND barangay_id = :barangay_id AND role = 'tanod' AND is_active = 1 LIMIT 1 FOR UPDATE"
+            "SELECT user_id FROM user WHERE user_id = :user_id AND barangay_id = :barangay_id AND {$roleSql} AND is_active = 1 LIMIT 1 FOR UPDATE"
         );
         $stmt->execute(['user_id' => $userId, 'barangay_id' => $barangayId]);
         if ($stmt->fetch(PDO::FETCH_ASSOC) === false) {
