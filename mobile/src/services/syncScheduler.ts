@@ -40,6 +40,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Network } from '@capacitor/network';
 import { runSyncPass, type SyncSummary } from './syncService';
 import { ApiError, type DutyStatus } from './apiService';
+import { isTanodSession } from './role';
 
 const ON_DUTY_INTERVAL_MS = 60000;
 
@@ -54,6 +55,9 @@ async function triggerSync(): Promise<void> {
   if (isSyncing) return; // A pass already in flight covers whatever prompted this one too.
   isSyncing = true;
   try {
+    // The Chief Tanod (admin) console has no offline queue and its device
+    // session may not reach /sync/batch (403 DEVICE_SESSION_SCOPE) — never run a pass for it.
+    if (!(await isTanodSession())) return;
     lastSummary = await runSyncPass();
     authBlocked = false;
     for (const listener of listeners) listener(lastSummary);

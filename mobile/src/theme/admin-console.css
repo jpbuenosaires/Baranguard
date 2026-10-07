@@ -1,0 +1,44 @@
+/**
+ * admin-console.css — the few shapes the Chief Tanod console (decision 15C)
+ * needs beyond the shared `wf-*` / `status-pill` / `dispatch-*-cta` classes.
+ * Tokens only.
+ */
+
+.admin-section-title {
+  margin: 6px 2px 0 2px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.admin-textarea {
+  min-height: 84px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.admin-fallback-number {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.admin-device-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+.admin-incident-sheet {
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.admin-dock {
+  position: static;
+  border-top: none;
+  padding: 0;
+  background: transparent;
+}
