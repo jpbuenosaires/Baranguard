@@ -1548,3 +1548,298 @@ export async function checkHealth(): Promise<boolean> {
   }
 }
 
+
+// --- Chief Tanod (Admin) console — decision 15C, stage 1 -------------------
+//
+// An Admin may sign into this app (a scope-limited DEVICE session — see
+// backend SessionPolicy::ADMIN_DEVICE_ALLOWLIST). Everything below is
+// ONLINE-ONLY: nothing here is queued, and no caller may claim success
+// before the server answers 200/201. Writes carry the same signed device
+// headers as a Tanod's mobile writes plus an `Idempotency-Key` (the caller
+// reuses the same key when retrying the SAME user action, so a retry never
+// double-writes). A 403 `DEVICE_SESSION_SCOPE` means the server's allow-list
+// refused the route; callers show `adminErrorMessage()`.
+
+/** Signed-write headers + Idempotency-Key for an admin write. */
+async function adminWriteHeaders(method: string, routePath: string, idempotencyKey: string): Promise<Record<string, string>> {
+  const deviceId = await getDeviceId();
+  const headers = await deviceAuthHeaders(method, routePath, deviceId);
+  headers['Idempotency-Key'] = idempotencyKey;
+  return headers;
+}
+
+/** Honest, user-facing wording for the failures an admin action can hit. */
+export function adminErrorMessage(error: unknown, fallback = 'Something went wrong.'): string {
+  if (error instanceof ApiError) {
+    if (error.isOffline) return 'Needs a connection. Cannot reach the barangay workstation.';
+    if (error.code === 'DEVICE_SESSION_SCOPE') {
+      return 'This phone session is limited and cannot do that here. Use the web dashboard for it.';
+    }
+    if (error.status === 404) return 'That record is no longer available.';
+    return error.message || fallback;
+  }
+  return fallback;
+}
+
+export type SosStatus = 'active' | 'acknowledged' | 'resolved';
+
+export interface AdminSosAlert {
+  sosId: number;
+  userId: number;
+  dispatchId: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  locationSource: string | null;
+  locationRecordedAt: string | null;
+  triggeredAt: string;
+  receivedAt: string;
+  status: SosStatus;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+}
+
+/** GET /tanod-sos — Admin/PB, own barangay, newest first. No narrative exists on this record. */
+export async function getSosAlerts(params: { status?: SosStatus; limit?: number } = {}): Promise<AdminSosAlert[]> {
+  const query = new URLSearchParams();
+  if (params.status) query.set('status', params.status);
+  query.set('limit', String(params.limit ?? 50));
+  const json = await request<{
+    items: Array<{
+      sos_id: number;
+      user_id: number;
+      dispatch_id: number | null;
+      latitude: number | null;
+      longitude: number | null;
+      location_source: string | null;
+      location_recorded_at: string | null;
+      triggered_at: string;
+      received_at: string;
+      status: SosStatus;
+      acknowledged_at: string | null;
+      resolved_at: string | null;
+    }>;
+  }>(`/tanod-sos?${query.toString()}`);
+  return json.items.map((r) => ({
+    sosId: r.sos_id,
+    userId: r.user_id,
+    dispatchId: r.dispatch_id,
+    latitude: r.latitude,
+    longitude: r.longitude,
+    locationSource: r.location_source,
+    locationRecordedAt: r.location_recorded_at,
+    triggeredAt: r.triggered_at,
+    receivedAt: r.received_at,
+    status: r.status,
+    acknowledgedAt: r.acknowledged_at,
+    resolvedAt: r.resolved_at,
+  }));
+}
+
+/** PATCH /tanod-sos/:id/acknowledge — idempotent server-side. There is deliberately NO resolve call in this app. */
+export async function acknowledgeSos(sosId: number, idempotencyKey: string): Promise<{ status: string }> {
+  const path = `/tanod-sos/${sosId}/acknowledge`;
+  const json = await request<{ status: string }>(path, {
+    method: 'PATCH',
+    headers: await adminWriteHeaders('PATCH', path, idempotencyKey),
+    body: {},
+  });
+  return { status: json.status };
+}
+
+export interface AdminDispatchEntry extends DispatchEntry {
+  tanodName: string | null;
+}
+
+/** GET /dispatch with the joined tanod name — the caller filters to active (assigned/en_route/arrived). */
+export async function getAdminDispatches(): Promise<AdminDispatchEntry[]> {
+  const json = await request<{ items: Array<Parameters<typeof mapDispatch>[0] & { tanod_name?: string | null }> }>(
+    '/dispatch?limit=100'
+  );
+  return json.items.map((r) => ({ ...mapDispatch(r), tanodName: r.tanod_name ?? null }));
+}
+
+export interface DirectoryUser {
+  userId: number;
+  fullName: string;
+  officialTitle: string | null;
+}
+
+/** GET /users/directory?purpose=tanod — the thin picker feed (id, name, title only). */
+export async function getTanodDirectory(): Promise<DirectoryUser[]> {
+  const json = await request<{ items: Array<{ user_id: number; full_name: string; official_title: string | null }> }>(
+    '/users/directory?purpose=tanod'
+  );
+  return json.items.map((r) => ({ userId: r.user_id, fullName: r.full_name, officialTitle: r.official_title }));
+}
+
+/**
+ * POST /dispatch — assign one more responder. `requestId` is the body's
+ * idempotency UUID. Without `overrideReason` a Tanod with no published shift
+ * covering now is a 422 `NO_PUBLISHED_SHIFT` (the caller then asks for a
+ * reason and resends the SAME requestId with `overrideReason`).
+ */
+export async function assignResponder(params: {
+  incidentId: number;
+  tanodId: number;
+  requestId: string;
+  overrideReason?: string;
+}): Promise<{ dispatchId: number }> {
+  const json = await request<{ dispatch_id: number }>('/dispatch', {
+    method: 'POST',
+    headers: await adminWriteHeaders('POST', '/dispatch', params.requestId),
+    body: {
+      incident_id: params.incidentId,
+      tanod_id: params.tanodId,
+      request_id: params.requestId,
+      ...(params.overrideReason ? { override_reason: params.overrideReason } : {}),
+    },
+  });
+  return { dispatchId: json.dispatch_id };
+}
+
+/** PATCH /dispatch/:id/cancel — a 1-255 char reason is mandatory. */
+export async function cancelDispatch(dispatchId: number, reason: string, idempotencyKey: string): Promise<void> {
+  const path = `/dispatch/${dispatchId}/cancel`;
+  await request<unknown>(path, {
+    method: 'PATCH',
+    headers: await adminWriteHeaders('PATCH', path, idempotencyKey),
+    body: { reason },
+  });
+}
+
+export interface AdminIncidentDetail {
+  incidentId: number;
+  displayId: string | null;
+  incidentType: string | null;
+  priority: string | null;
+  status: string | null;
+  locationDescription: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  createdAt: string | null;
+  reportChannel: string | null;
+  dispatches: Array<{ dispatchId: number; tanodId: number; tanodName: string | null; status: string }>;
+}
+
+function strOrNull(v: unknown): string | null {
+  return typeof v === 'string' ? v : null;
+}
+
+/** GET /incidents/:id — read-only view. The mapper never reads `raw_narrative` (Rule 1; the server withholds it from Admin anyway). */
+export async function getAdminIncident(incidentId: number): Promise<AdminIncidentDetail> {
+  const j = await request<Record<string, unknown> & { dispatches?: Array<Record<string, unknown>> }>(`/incidents/${incidentId}`);
+  return {
+    incidentId: Number(j.incident_id),
+    displayId: strOrNull(j.display_id),
+    incidentType: strOrNull(j.incident_type),
+    priority: strOrNull(j.priority),
+    status: strOrNull(j.status),
+    locationDescription: strOrNull(j.location_description),
+    latitude: numberOrNull(j.latitude),
+    longitude: numberOrNull(j.longitude),
+    createdAt: strOrNull(j.created_at),
+    reportChannel: strOrNull(j.report_channel),
+    dispatches: (j.dispatches ?? []).map((d) => ({
+      dispatchId: Number(d.dispatch_id),
+      tanodId: Number(d.tanod_id),
+      tanodName: strOrNull(d.tanod_name),
+      status: String(d.status),
+    })),
+  };
+}
+
+export interface AdminIncidentListItem {
+  incidentId: number;
+  displayId: string | null;
+  incidentType: string | null;
+  priority: string | null;
+  status: string | null;
+  locationDescription: string | null;
+  createdAt: string | null;
+}
+
+/** GET /incidents — read-only list (first page, newest first). */
+export async function getAdminIncidents(): Promise<AdminIncidentListItem[]> {
+  const json = await request<{ items: Array<Record<string, unknown>> }>('/incidents?limit=50');
+  return json.items.map((r) => ({
+    incidentId: Number(r.incident_id),
+    displayId: strOrNull(r.display_id),
+    incidentType: strOrNull(r.incident_type),
+    priority: strOrNull(r.priority),
+    status: strOrNull(r.status),
+    locationDescription: strOrNull(r.location_description),
+    createdAt: strOrNull(r.created_at),
+  }));
+}
+
+export interface AdminOfferEntry {
+  offerId: number;
+  incidentId: number;
+  incidentType: string | null;
+  priority: string | null;
+  status: string;
+  round: number;
+  createdAt: string;
+  expiresAt: string;
+  recipientCount: number;
+  offered: number;
+  accepted: number;
+  released: number;
+  expired: number;
+  acceptedByName: string | null;
+}
+
+/** GET /dispatch-offers — admin view: status, round, recipient counts. */
+export async function getAdminOffers(): Promise<AdminOfferEntry[]> {
+  const json = await request<{
+    items: Array<{
+      offer_id: number;
+      incident_id: number;
+      incident_type: string | null;
+      priority: string | null;
+      status: string;
+      round: number;
+      created_at: string;
+      expires_at: string;
+      recipient_count: number;
+      recipient_counts?: { offered?: number; accepted?: number; released?: number; expired?: number };
+      accepted_by_name?: string | null;
+    }>;
+  }>('/dispatch-offers?limit=50');
+  return json.items.map((r) => ({
+    offerId: r.offer_id,
+    incidentId: r.incident_id,
+    incidentType: r.incident_type,
+    priority: r.priority,
+    status: r.status,
+    round: r.round ?? 0,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    recipientCount: r.recipient_count ?? 0,
+    offered: r.recipient_counts?.offered ?? 0,
+    accepted: r.recipient_counts?.accepted ?? 0,
+    released: r.recipient_counts?.released ?? 0,
+    expired: r.recipient_counts?.expired ?? 0,
+    acceptedByName: r.accepted_by_name ?? null,
+  }));
+}
+
+/** POST /dispatch-offers {incident_id} — "Take over": opens a MANUAL offer to the on-duty Tanods. */
+export async function openDispatchOffer(incidentId: number, idempotencyKey: string): Promise<{ offerId: number; status: string }> {
+  const json = await request<{ offer_id: number; status: string }>('/dispatch-offers', {
+    method: 'POST',
+    headers: await adminWriteHeaders('POST', '/dispatch-offers', idempotencyKey),
+    body: { incident_id: incidentId },
+  });
+  return { offerId: json.offer_id, status: json.status };
+}
+
+/** PATCH /dispatch-offers/:id/cancel. */
+export async function cancelDispatchOffer(offerId: number, idempotencyKey: string): Promise<void> {
+  const path = `/dispatch-offers/${offerId}/cancel`;
+  await request<unknown>(path, {
+    method: 'PATCH',
+    headers: await adminWriteHeaders('PATCH', path, idempotencyKey),
+    body: {},
+  });
+}

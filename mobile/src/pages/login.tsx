@@ -7,6 +7,9 @@
  * PascalCase.
  *
  * Rules this screen honors:
+ *   - **Roles (decision 15C, 2026-10-07):** `tanod` and `admin` (Chief Tanod)
+ *     sign in here; secretary / punong_barangay are refused with an honest
+ *     "wrong app" message and their just-opened session is ended.
  *   - **No role selector** (§9 W1's rule, and the same reasoning applies
  *     here): the server derives role from the account. §8 lists a login
  *     role-selector among the Figma patterns explicitly NOT adopted.
@@ -27,7 +30,9 @@ import { useNavigate } from 'react-router-dom';
 import { IonButton, IonContent, IonIcon, IonItem, IonList, IonPage, IonSpinner } from '@ionic/react';
 import { eyeOffOutline, eyeOutline, lockClosedOutline, personOutline, shield } from 'ionicons/icons';
 import { TextField } from '../components/FormFields';
-import { ApiError, login, registerDevice } from '../services/apiService';
+import { ApiError, login, logout, registerDevice } from '../services/apiService';
+import { clearSession } from '../services/session';
+import { isMobileRole } from '../services/role';
 import { getDeviceId, getDevicePublicKeyPem, getFcmToken } from '../services/deviceIdentity';
 import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
@@ -36,6 +41,8 @@ import { refreshSchoolCache } from '../services/workflowRefresh';
 import { notifyLoggedIn } from '../services/syncScheduler';
 
 const GENERIC_FAILURE = 'Unable to sign in with those credentials.';
+const WRONG_APP =
+  'This app is for Tanods and the Chief Tanod. Please use the Baranguard web dashboard with this account.';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -57,10 +64,23 @@ const LoginPage: React.FC = () => {
     setBusy(true);
     try {
       const session = await login(username.trim(), password);
+      if (!isMobileRole(session.role)) {
+        // Secretary / Punong Barangay are web-only: end the session we just
+        // opened instead of dropping them into a console that is not theirs.
+        try {
+          await logout();
+        } catch {
+          // Best-effort; the local session is cleared regardless.
+        }
+        await clearSession();
+        setError(WRONG_APP);
+        setPassword('');
+        return;
+      }
       // Authentication succeeded. Everything below is best-effort setup —
       // §9 M1: "enters M2 without blocking on map download".
-      await runPostLoginSetup(session.barangayId);
-      navigate('/tabs/home', { replace: true });
+      await runPostLoginSetup(session.barangayId, session.role === 'admin');
+      navigate(session.role === 'admin' ? '/tabs/sos' : '/tabs/home', { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.isOffline) {
         // A different fact from bad credentials — say so honestly rather
@@ -153,7 +173,7 @@ const LoginPage: React.FC = () => {
  * something that has no bearing on their ability to capture an incident
  * offline (§2 Rule 2).
  */
-async function runPostLoginSetup(barangayId: number): Promise<void> {
+async function runPostLoginSetup(barangayId: number, isAdmin: boolean): Promise<void> {
   try {
     const fcmToken = await getFcmToken();
     // Registration always happens now, even when fcmToken is null —
@@ -180,6 +200,14 @@ async function runPostLoginSetup(barangayId: number): Promise<void> {
     }
   } catch {
     // Non-fatal by design.
+  }
+
+  // Chief Tanod (admin) stage 1: only the SOS fallback number is useful here.
+  // The map package, school cache and the offline sync queue are Tanod-only
+  // (and outside an admin device session's server-side allow-list).
+  if (isAdmin) {
+    void refreshSosFallbackContact();
+    return;
   }
 
   // Deliberately NOT awaited: §9 M1's contract is that the map check must
