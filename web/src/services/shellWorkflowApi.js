@@ -168,6 +168,10 @@ function mapShiftDetailed(row) {
     approvedBy: row.approved_by ?? null,
     approvedAt: row.approved_at ?? null,
     sourceAvailabilityId: row.source_availability_id ?? null,
+    // Wave 2: how the roster approval was recorded (paper fields only on a published shift).
+    approvalMode: row.approval_mode ?? 'digital',
+    paperSignedOn: row.paper_signed_on ?? null,
+    paperRecordedByName: row.paper_recorded_by_name ?? null,
     // An approved swap on a published shift returns it to draft AND flags it for re-approval.
     pendingReapproval: Boolean(row.pending_reapproval),
   };
@@ -184,13 +188,76 @@ export async function getShiftsDetailed({ page, limit, approvalStatus } = {}) {
  * 403s otherwise and the page shows that message as-is).
  * @returns {Promise<{published:number[], alreadyPublished:number[], warnings:Array<{code:string,date:string}>}>}
  */
-export async function publishShifts(shiftIds, idempotencyKey) {
-  const json = await request('POST', '/shifts/publish', { body: { shift_ids: shiftIds }, idempotencyKey });
+export async function publishShifts(shiftIds, idempotencyKey, { recordedFromPaper } = {}) {
+  const body = { shift_ids: shiftIds };
+  // Admin/Secretary without approve_roster: the signer (who holds it) and the
+  // date they signed the paper roster. The server re-checks both.
+  if (recordedFromPaper) {
+    body.recorded_from_paper = { signer_user_id: recordedFromPaper.signerUserId, signed_on: recordedFromPaper.signedOn };
+  }
+  const json = await request('POST', '/shifts/publish', { body, idempotencyKey });
   return {
     published: json.published ?? [],
     alreadyPublished: json.already_published ?? [],
     warnings: (json.warnings ?? []).map((w) => ({ code: w.code, date: w.date })),
   };
+}
+
+// --- Users directory (admin|secretary picker feed) --------------------------
+
+/**
+ * GET /users/directory — thin picker feed, caller's barangay only, active
+ * accounts only. `purpose` is 'tanod', or 'signer' together with `authority`.
+ * @returns {Promise<Array<{userId:number, fullName:string, officialTitle:string|null}>>}
+ */
+export async function getUsersDirectory({ purpose, authority } = {}) {
+  const json = await request('GET', '/users/directory', { query: { purpose, authority } });
+  return (json.items ?? []).map((row) => ({
+    userId: row.user_id,
+    fullName: row.full_name,
+    officialTitle: row.official_title ?? null,
+  }));
+}
+
+// --- Dispatch offers ----------------------------------------------------------
+
+function mapDispatchOffer(row) {
+  const counts = row.recipient_counts ?? {};
+  return {
+    offerId: row.offer_id,
+    incidentId: row.incident_id,
+    status: row.status,
+    round: row.round ?? 1,
+    createdAt: row.created_at ?? null,
+    expiresAt: row.expires_at ?? null,
+    closedAt: row.closed_at ?? null,
+    recipientCount: row.recipient_count ?? 0,
+    recipientCounts: {
+      offered: counts.offered ?? 0,
+      accepted: counts.accepted ?? 0,
+      released: counts.released ?? 0,
+      expired: counts.expired ?? 0,
+    },
+    acceptedByName: row.accepted_by_name ?? null,
+  };
+}
+
+/** GET /dispatch-offers (admin|secretary|PB view: the barangay's offers, newest first). */
+export async function getDispatchOffers({ incidentId, limit } = {}) {
+  const json = await request('GET', '/dispatch-offers', { query: { incident_id: incidentId, limit } });
+  return { items: (json.items ?? []).map(mapDispatchOffer), total: json.total ?? 0 };
+}
+
+/** POST /dispatch-offers {incident_id} (admin|secretary): broadcast to on-duty tanods. */
+export async function openDispatchOffer(incidentId, idempotencyKey) {
+  const json = await request('POST', '/dispatch-offers', { body: { incident_id: incidentId }, idempotencyKey });
+  return { offerId: json.offer_id, status: json.status, round: json.round, recipientCount: json.recipient_count, expiresAt: json.expires_at };
+}
+
+/** PATCH /dispatch-offers/:id/cancel (admin). */
+export async function cancelDispatchOffer(offerId, idempotencyKey) {
+  const json = await request('PATCH', `/dispatch-offers/${offerId}/cancel`, { idempotencyKey });
+  return { offerId: json.offer_id, status: json.status };
 }
 
 function mapAvailability(row) {
