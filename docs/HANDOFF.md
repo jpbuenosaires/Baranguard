@@ -8,9 +8,37 @@ sessions, the abandoned React Native rebuild, the PHP 8.3 swap, the
 Cloudflare tunnel set-up) lives in DEVLOG; only what is still true and
 still actionable is kept here.
 
-**Last updated: 2026-10-01 (after the tanod-workflow build).**
+**Last updated: 2026-10-07 (after the Proposed Changes Review build).**
 
 ## Current state
+
+**Proposed Changes Review build (2026-10-07, DEVLOG 2026-10-07 (1)) is
+code-complete on local `main`, NOT pushed, verified on disposable DBs / jsdom
+only, NOT browser- or device-verified.** Migrations 0034-0038 (not applied to
+any real DB, apply in order after 0029-0033). What exists: dispatch cancel
+reason (also from `arrived`), published-shift rule with Admin override,
+Secretary draft shifts/swap review, `pending_reapproval` swaps, legal hold
+stops all backup pruning, incident report channel + related-incident link,
+public citizen form retired, paper-signature/record-from-paper approvals +
+scans, night dispatch offers (online-only first-accept-wins, sweeper task
+`BaranguardDispatchOfferSweeper` NOT yet registered on this machine), Chief
+Tanod (Admin) mobile console with a scope-limited device session, Chief Tanod
+rosterable, retention placeholders (purge OFF), System Tools web menu. Plan and
+decisions: `docs/WORKFLOWS_AND_RULES.md` Part 3 rules 56-66 and REFERENCE.md §1.
+Route count 117 across 30 files.
+
+**Open from this build (need the user / the barangay):** (1) retention periods
+for availability/accomplishments/check-ins/referrals/scans and a rule for
+`ssz_term_report`/`school`; (2) a `dispatch_offer` push is only a normal
+notification, not the full-screen alert (needs native `CriticalAlertMessagingService.java`
+`CRITICAL_TYPES` change); (3) admins are NOT dispatchable and get no offers,
+the Chief Tanod cannot create accomplishment entries, and the web roster picker
+(`GET /users/directory?purpose=tanod`) lists tanods only, so rostering an
+Admin works via the API but not yet from the picker; (4) `assignments.tsx` still
+has an old "TEMP DIAGNOSTIC" banner; (5) the stakeholder proposal document was
+never available, so items 7-9 of the review were applied to the rules doc only;
+(6) PHP `upload_max_filesize`/`post_max_size` must allow ~11 MB for scans;
+(7) concurrency (first accept wins, 12h cap) is reasoned, not demonstrated.
 
 **Tanod-workflow build (2026-10-01, DEVLOG 2026-10-01 (3)) is code-complete
 and verified on disposable DBs and jsdom ONLY.** It is NOT browser-verified
@@ -144,7 +172,7 @@ still be registered — `Unregister-ScheduledTask -TaskName BaranguardAiWorker
 
 ## Outstanding work (all needs a device, a credential, or a decision)
 
-1. **Apply migrations 0029-0033 to the real DBs** (back up first, DBA/root,
+1. **Apply migrations 0029-0038 to the real DBs** (back up first, DBA/root,
    in order) and decide whether `baranguard_uiseed` or `baranguard` should back the public
    tunnel.
 2. **Print/PDF visual check**: the shared print-preview modal and the
