@@ -291,6 +291,7 @@ step "7. POST /dispatch now creates its notification"
 mysql_exec "$VALDB" -e "INSERT INTO incident (barangay_id,incident_type,priority,raw_narrative,status,source,created_at,updated_at) VALUES (1,'theft','normal','Seeded for dispatch.','pending','web',UTC_TIMESTAMP(),UTC_TIMESTAMP());"
 INC=$(db_one "SELECT incident_id FROM incident LIMIT 1;")
 TANOD_ON_ID=$(db_one "SELECT user_id FROM user WHERE username='s4_tanod_on';")
+mysql_exec "$VALDB" -e "INSERT INTO shift_schedule (barangay_id, user_id, start_at, end_at, created_by, approval_status, approved_at) VALUES (1, $TANOD_ON_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 6 HOUR), $TANOD_ON_ID, 'published', UTC_TIMESTAMP());"  # review decision 2026-10-07: dispatch needs a published shift
 DISP=$(body_of POST /dispatch "$ADMIN" "{\"incident_id\":$INC,\"tanod_id\":$TANOD_ON_ID,\"request_id\":\"$(uuid)\"}")
 DISP_ID=$(echo "$DISP" | jget dispatch_id)
 expect_contains "$DISP" "dispatch_id" "Dispatch created"

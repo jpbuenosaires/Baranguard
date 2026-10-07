@@ -239,6 +239,8 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TANOD1_
 [ "$CODE" = "403" ] && pass "Tanod -> 403 on GET /tanod-sos" || fail "Tanod GET /tanod-sos -> $CODE (expected 403)"
 
 step "10. POST /dispatch — validation + idempotency"
+# Review decision 2026-10-07: POST /dispatch requires a PUBLISHED shift covering now (NO_PUBLISHED_SHIFT otherwise).
+mysql_exec -N -e "INSERT INTO \`$VALDB\`.shift_schedule (barangay_id, user_id, start_at, end_at, created_by, approval_status, approved_at) VALUES (1, 4, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 6 HOUR), 1, 'published', UTC_TIMESTAMP());"
 REQ_ID="10000000-0000-4000-8000-000000000001"
 RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   -d "{\"incident_id\":${INCIDENT_ID},\"tanod_id\":4,\"request_id\":\"${REQ_ID}\"}" "${BASE_URL}/dispatch")
@@ -287,7 +289,7 @@ step "12. PATCH /dispatch/:id/cancel"
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH -H "Authorization: Bearer $ADMIN_B2_TOKEN" "${BASE_URL}/dispatch/${DISPATCH_ID}/cancel")
 [ "$CODE" = "404" ] && pass "Cross-tenant cancel attempt -> 404" || fail "Cross-tenant cancel -> $CODE (expected 404)"
 
-RESP=$(curl -s -X PATCH -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/dispatch/${DISPATCH_ID}/cancel")
+RESP=$(curl -s -X PATCH -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"reason":"Caller withdrew the report"}' "${BASE_URL}/dispatch/${DISPATCH_ID}/cancel")
 CANCEL_STATUS=$(extract "$RESP" status)
 CANCEL_INCIDENT_STATUS=$(extract "$RESP" incident_status)
 [ "$CANCEL_STATUS" = "cancelled" ] && pass "Dispatch cancelled successfully" || fail "Cancel response status=$CANCEL_STATUS (expected cancelled): $RESP"
@@ -296,7 +298,7 @@ CANCEL_INCIDENT_STATUS=$(extract "$RESP" incident_status)
 PENDING_AFTER_CANCEL=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/incidents?status=pending" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo $d["total"];')
 [ "$PENDING_AFTER_CANCEL" = "2" ] && pass "Incident is back in the pending queue (2 pending again in barangay 1)" || fail "Pending total after cancel=$PENDING_AFTER_CANCEL (expected 2)"
 
-CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/dispatch/${DISPATCH_ID}/cancel")
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"reason":"Caller withdrew the report"}' "${BASE_URL}/dispatch/${DISPATCH_ID}/cancel")
 [ "$CODE" = "409" ] && pass "Cancelling an already-cancelled dispatch -> 409 CONFLICT" || fail "Re-cancel -> $CODE (expected 409)"
 
 step "SUMMARY"
