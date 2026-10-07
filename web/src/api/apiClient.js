@@ -427,6 +427,8 @@ export async function getIncidents({ status, priority, q, page, limit } = {}) {
       priority: row.priority,          // enum value, unconverted
       status: row.status,              // enum value, unconverted
       source: row.source,
+      reportChannel: row.report_channel ?? null, // tanod_alerted | walk_in | sms | other (migration 0036)
+      relatedIncidentId: row.related_incident_id ?? null,
       latitude: row.latitude,
       longitude: row.longitude,
       createdAt: row.created_at,
@@ -454,7 +456,7 @@ export async function getIncidents({ status, priority, q, page, limit } = {}) {
 export async function createIncident({
   incidentType, rawNarrative, latitude, longitude,
   locationDescription, complainantName, respondentName, complainantContactNumber,
-  priority,
+  priority, reportChannel,
   idempotencyKey,
 }) {
   const json = await request('POST', '/incidents', {
@@ -468,6 +470,8 @@ export async function createIncident({
       respondent_name: respondentName || undefined,
       complainant_contact_number: complainantContactNumber || undefined,
       priority: priority || undefined,
+      // tanod_alerted | walk_in | sms | other. Omitted -> the server defaults a web create to walk_in.
+      report_channel: reportChannel || undefined,
     },
     idempotencyKey,
     auth: true,
@@ -480,6 +484,7 @@ export async function createIncident({
     priority: json.priority,
     status: json.status,
     source: json.source,
+    reportChannel: json.report_channel ?? null,
     latitude: json.latitude,
     longitude: json.longitude,
     locationDescription: json.location_description,
@@ -1297,6 +1302,25 @@ export async function getSmsLogs({ messageType, direction, status, dateFrom, dat
 
 // --- Incident detail (§6 "Incidents", W7) -----------------------------------
 
+function mapIncidentLink(row) {
+  return row ? { incidentId: row.incident_id, displayId: row.display_id ?? null } : null;
+}
+
+/**
+ * PATCH /incidents/:id/related — Admin or Secretary. Links an incident to
+ * another incident of the same barangay for reference (null clears the link).
+ * Never changes either incident's status or dispatch state. `idempotencyKey`
+ * is required (Idempotency-Key header), like every web write.
+ */
+export async function setRelatedIncident(incidentId, relatedIncidentId, idempotencyKey) {
+  const json = await request('PATCH', `/incidents/${incidentId}/related`, {
+    body: { related_incident_id: relatedIncidentId },
+    auth: true,
+    idempotencyKey,
+  });
+  return { incidentId: json?.incident_id ?? incidentId, relatedIncidentId: json?.related_incident_id ?? relatedIncidentId };
+}
+
 /**
  * GET /incidents/:id — the only endpoint that returns `raw_narrative`, and
  * only to a Secretary (§6/§3: the Secretary is the statutory records
@@ -1314,6 +1338,13 @@ export async function getIncident(incidentId) {
     priority: json.priority,          // enum value, unconverted
     status: json.status,              // enum value, unconverted
     source: json.source,
+    // How the report reached the barangay (migration 0036), distinct from
+    // `source` (which client created the row). `relatedIncident` / `relatedBy`
+    // are non-narrative links only: id + display id.
+    reportChannel: json.report_channel ?? null,
+    relatedIncidentId: json.related_incident_id ?? null,
+    relatedIncident: mapIncidentLink(json.related_incident),
+    relatedBy: (json.related_by || []).map(mapIncidentLink),
     latitude: json.latitude,
     longitude: json.longitude,
     createdAt: json.created_at,
