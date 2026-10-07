@@ -60,6 +60,7 @@ import {
   timeOutline,
   warningOutline,
 } from 'ionicons/icons';
+import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { ApiError, getDispatches } from '../services/apiService';
@@ -313,6 +314,9 @@ const AssignmentsPage: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* Night-dispatch offers waiting for this tanod (online-only; see DispatchOfferCards). */}
+          <DispatchOfferCards />
 
           {/* Unified Tactical Segmented Filter Bar */}
           {!loading && rows.length > 0 && (
