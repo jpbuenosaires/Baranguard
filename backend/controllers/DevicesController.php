@@ -110,7 +110,12 @@ final class DevicesController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function register(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['tanod']);
+        // 2026-10-07 (decision 15C): admin may register a device too — the
+        // Chief Tanod's phone — so NotificationService::addTarget()'s
+        // "active device of this user" lookup (role-blind) finds a push
+        // destination for SOS/dispatch alerts. Same ownership, key and
+        // single-active-device rules as a Tanod.
+        AuthMiddleware::requireRole($identity, ['tanod', 'admin']);
 
         $body = Http::jsonBody();
         $deviceId = $body['device_id'] ?? null;
@@ -253,7 +258,7 @@ final class DevicesController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function deactivate(PDO $pdo, array $identity, string $deviceId): void
     {
-        AuthMiddleware::requireRole($identity, ['tanod']);
+        AuthMiddleware::requireRole($identity, ['tanod', 'admin']); // own device only — see the ownership query below
 
         if (!preg_match(self::DEVICE_ID_PATTERN, $deviceId)) {
             throw new ApiError(404, 'NOT_FOUND', 'Device not found.');

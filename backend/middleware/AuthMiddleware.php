@@ -106,6 +106,18 @@ final class AuthMiddleware
             throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired token.');
         }
 
+        $identityForScope = [
+            'user_id' => (int) $row['user_id'],
+            'barangay_id' => (int) $row['barangay_id'],
+            'role' => (string) $row['role'],
+        ];
+        // Decision 15C (2026-10-07): an ADMIN device session (the Chief
+        // Tanod's phone) is scope-limited to SessionPolicy's allow-list.
+        // Checked BEFORE renewal so a denied probe never extends the token.
+        if ((string) $row['session_kind'] === SessionPolicy::KIND_DEVICE && $identityForScope['role'] === 'admin') {
+            self::enforceAdminDeviceScope($pdo, $identityForScope);
+        }
+
         $issuedAt = strtotime($row['issued_at'] . ' UTC') ?: time();
         $renewedToken = self::maybeRenew($pdo, (int) $row['session_id'], $jti, (int) $row['user_id'], (int) $row['barangay_id'], (string) $row['role'], $expiresAt, (string) $row['session_kind'], $issuedAt);
 
@@ -115,8 +127,59 @@ final class AuthMiddleware
             'role' => (string) $row['role'],
             'jti' => $jti,
             'session_id' => (int) $row['session_id'],
+            'session_kind' => (string) $row['session_kind'],
             'renewedToken' => $renewedToken,
         ];
+    }
+
+    /**
+     * Scope gate for an admin DEVICE session (SessionPolicy::
+     * ADMIN_DEVICE_ALLOWLIST). Anything off the table is 403
+     * DEVICE_SESSION_SCOPE and audited (ids/method+path only, Rule 8).
+     *
+     * Allow-listed STATE-CHANGING calls (marked signed_write) follow the same
+     * mobile-write rules as a Tanod's: an `X-Device-Id` header is required
+     * (400), it must be an active device registered to THIS account (422,
+     * same code Tanod writes use), and when that device has a hardware key on
+     * file the H-09 signature must verify (401) — reusing
+     * DeviceSignature::verifyOrReject() unchanged, so the same phased rollout
+     * applies (a keyless device is held to the header + ownership check, not
+     * less). Reads and the bootstrap calls (register, logout,
+     * change-password, notification ack) do not need the header, matching
+     * what the mobile client sends today.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    private static function enforceAdminDeviceScope(PDO $pdo, array $identity): void
+    {
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+        $path = (string) (parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/');
+        if (str_starts_with($path, '/api/v1')) {
+            $path = substr($path, strlen('/api/v1'));
+        }
+        $path = rawurldecode($path === '' ? '/' : $path);
+
+        $scope = SessionPolicy::adminDeviceScope($method, $path);
+        if (!$scope['allowed']) {
+            self::auditDenial('device_session_scope_denied', $identity, []);
+            throw new ApiError(403, 'DEVICE_SESSION_SCOPE', 'This session is limited to the mobile app and cannot perform this action.');
+        }
+        if (!$scope['signed_write']) {
+            return;
+        }
+
+        $deviceId = \Baranguard\Lib\Http::header('X-Device-Id');
+        if ($deviceId === null || $deviceId === '') {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required for this request.');
+        }
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM mobile_device WHERE device_id = :device_id AND user_id = :user_id AND is_active = 1 LIMIT 1'
+        );
+        $stmt->execute(['device_id' => $deviceId, 'user_id' => $identity['user_id']]);
+        if ($stmt->fetchColumn() === false) {
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'Device is not registered or not active for this account.');
+        }
+        \Baranguard\Lib\DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
     }
 
     /**

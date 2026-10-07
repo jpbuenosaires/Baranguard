@@ -7,7 +7,9 @@
 #     (24h expiry, auth_session.session_kind='device');
 #   - the same login without the header, or with a malformed one, gets a
 #     WEB session (JWT_EXPIRES_IN_MINUTES);
-#   - an Admin sending X-Device-Id still gets a WEB session (role gate);
+#   - an Admin sending X-Device-Id gets a DEVICE session too (2026-10-07,
+#     decision 15C, scope-limited elsewhere) while an Admin without the
+#     header keeps the WEB session;
 #   - sliding renewal of a device session never exceeds issued_at + 7 days
 #     (absolute cap), while a web session renews on its own lifetime;
 #   - revocation (logout, suspension) kills a device session instantly
@@ -159,9 +161,13 @@ LIFE=$((EXP_WEB - NOW)); [ "$LIFE" -gt 840 ] && [ "$LIFE" -le 960 ] && pass "JWT
 R=$(login_with_header ds_tanod "not-a-device-id"); JTI_BAD=$(jwt_claim "$(echo "$R" | jget token)" jti)
 expect_eq "$(kind_of_jti "$JTI_BAD")" "web" "Malformed X-Device-Id -> 'web'"
 
-step "6. Admin login WITH a well-formed X-Device-Id -> still web (role gate)"
+step "6. Admin login: WITH a well-formed X-Device-Id -> device session (decision 15C, scope-limited); WITHOUT -> web"
 R=$(login_with_header ds_admin "$DEVICE_ID"); T_ADM=$(echo "$R" | jget token); JTI_ADM=$(jwt_claim "$T_ADM" jti)
-expect_eq "$(kind_of_jti "$JTI_ADM")" "web" "Admin cannot obtain a device session by adding the header"
+expect_eq "$(kind_of_jti "$JTI_ADM")" "device" "Admin + well-formed X-Device-Id -> 'device' (Chief Tanod phone; see verify-chief-tanod-mobile.sh for the scope limit)"
+R=$(login_with_header ds_admin ""); JTI_ADM_WEB=$(jwt_claim "$(echo "$R" | jget token)" jti)
+expect_eq "$(kind_of_jti "$JTI_ADM_WEB")" "web" "Admin without the header (browser) still gets the 15-minute web session"
+R=$(login_with_header ds_admin "not-a-device-id"); JTI_ADM_BAD=$(jwt_claim "$(echo "$R" | jget token)" jti)
+expect_eq "$(kind_of_jti "$JTI_ADM_BAD")" "web" "Admin with a malformed X-Device-Id -> 'web'"
 
 step "7. Sliding renewal respects the 7-day absolute cap for device sessions"
 # Age the device session: issued 6d22h ago (cap in 2h), 1h from expiry (renewal threshold is remaining < 50% of 24h).
