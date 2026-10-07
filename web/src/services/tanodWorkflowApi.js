@@ -78,7 +78,10 @@ async function request(method, path, { query, body, idempotencyKey } = {}) {
   if (!session) throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
 
   const headers = { Accept: 'application/json', Authorization: `Bearer ${session.token}` };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  // A multipart upload (FormData) must NOT carry a JSON Content-Type: the
+  // browser sets the multipart boundary itself.
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
   let response;
@@ -86,7 +89,7 @@ async function request(method, path, { query, body, idempotencyKey } = {}) {
     response = await fetch(url, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : (isForm ? body : JSON.stringify(body)),
     });
   } catch {
     throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
@@ -372,4 +375,72 @@ export async function markTermReportSubmitted(reportId, fields, idempotencyKey) 
   if (fields.dilgReceivedBy) body.dilg_received_by = fields.dilgReceivedBy;
   if (fields.dilgDateReceived) body.dilg_date_received = fields.dilgDateReceived;
   return camelize(await write('POST', `/ssz-term-reports/${reportId}/mark-submitted`, body, idempotencyKey));
+}
+
+// --- Paper signatures and scanned copies (Wave 1, item 6) -------------------
+// An approved Accomplishment Report or Annex D stays locked in the system; the
+// signed paper copy is the real record, so staff (Admin/Secretary) record WHEN
+// it was signed, may record an approval that happened only on paper, and may
+// attach a scan of the signed copy.
+
+/** Entity types a paper signature / scan can attach to (contract C). */
+export const PAPER_ENTITY_PATHS = {
+  accomplishment_report: '/accomplishment-reports',
+  ssz_term_report: '/ssz-term-reports',
+};
+
+/** POST .../paper-signature — only on an approved report; sets/overwrites the date. */
+export async function recordPaperSignature(entityType, reportId, paperSignedOn, idempotencyKey) {
+  return camelize(await write('POST', `${PAPER_ENTITY_PATHS[entityType]}/${reportId}/paper-signature`, {
+    paper_signed_on: paperSignedOn,
+  }, idempotencyKey));
+}
+
+/**
+ * POST .../record-paper-approval — moves a noted report (Annex D: prepared)
+ * to approved on the strength of a paper signature by `signerUserId`.
+ */
+export async function recordPaperApproval(entityType, reportId, { signerUserId, signedOn }, idempotencyKey) {
+  return camelize(await write('POST', `${PAPER_ENTITY_PATHS[entityType]}/${reportId}/record-paper-approval`, {
+    signer_user_id: signerUserId,
+    signed_on: signedOn,
+  }, idempotencyKey));
+}
+
+/** GET /document-scans?entity_type=&entity_id= (admin, secretary, punong_barangay). Never carries a file path. */
+export async function getDocumentScans(entityType, entityId) {
+  return listOf(await request('GET', '/document-scans', { query: { entity_type: entityType, entity_id: entityId } }));
+}
+
+/**
+ * POST /document-scans (multipart: entity_type, entity_id, file). PDF, JPEG or
+ * PNG only (the server checks the real bytes), max 10 MB. There is no
+ * Idempotency-Key on multipart; the server de-dupes by sha256 + entity.
+ */
+export async function uploadDocumentScan(entityType, entityId, file) {
+  const form = new FormData();
+  form.append('entity_type', entityType);
+  form.append('entity_id', String(entityId));
+  form.append('file', file);
+  return camelize(await request('POST', '/document-scans', { body: form }));
+}
+
+/** GET /document-scans/:id/download — authenticated bytes as a Blob (a plain link would 401). */
+export async function downloadDocumentScan(scanId) {
+  const session = getSession();
+  if (!session) throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/document-scans/${scanId}/download`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+  } catch {
+    throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
+  }
+  if (!response.ok) {
+    let message = 'Could not download this scan.';
+    try { message = (await response.json())?.error?.message || message; } catch { /* not JSON */ }
+    throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
+  }
+  return response.blob();
 }

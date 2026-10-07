@@ -305,6 +305,14 @@ export function buildRoutes(scenario) {
     { method: 'PATCH', path: '/ssz-term-reports/:id', handler: ({ params }) => ok({ report_id: Number(params.id), updated: true }) },
     { method: 'POST', path: '/ssz-term-reports/:id/prepare', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'prepared' }) },
     { method: 'POST', path: '/ssz-term-reports/:id/approve', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved' }) },
+    // --- Paper signatures + scanned copies (Wave 1, contract C) ---
+    { method: 'POST', path: '/accomplishment-reports/:id/paper-signature', handler: ({ params, body }) => ok({ report_id: Number(params.id), paper_signed_on: body.paper_signed_on }) },
+    { method: 'POST', path: '/ssz-term-reports/:id/paper-signature', handler: ({ params, body }) => ok({ report_id: Number(params.id), paper_signed_on: body.paper_signed_on }) },
+    { method: 'POST', path: '/accomplishment-reports/:id/record-paper-approval', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved', approval_mode: 'recorded_from_paper' }) },
+    { method: 'POST', path: '/ssz-term-reports/:id/record-paper-approval', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved', approval_mode: 'recorded_from_paper' }) },
+    { method: 'GET', path: '/document-scans', handler: () => ok({ items: [], page: 1, limit: 25, total: 0 }) },
+    { method: 'POST', path: '/document-scans', handler: () => ({ status: 201, body: { scan_id: 9001, entity_type: 'accomplishment_report', entity_id: 1, mime_type: 'application/pdf', size_bytes: 1234, sha256: 'a'.repeat(64), uploaded_by: 1, uploaded_at: sqlAgo(0) } }) },
+    { method: 'GET', path: '/document-scans/:id/download', handler: () => ({ status: 200, raw: '%PDF-1.4 fake', headers: { 'Content-Type': 'application/pdf' } }) },
     { method: 'POST', path: '/ssz-term-reports/:id/mark-submitted', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'submitted' }) },
     { method: 'GET', path: '/accomplishment-reports', handler: ({ query }) => ok(paginate(accomplishmentReports
       .filter((r) => (!query.status || r.status === query.status) && (!query.month || r.month === query.month) && (!query.user_id || r.user_id === Number(query.user_id))), query)) },
