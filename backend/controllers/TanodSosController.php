@@ -473,7 +473,10 @@ final class TanodSosController
      */
     public static function fallbackContact(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['tanod']);
+        // Admin added 2026-10-07 (decision 15C): the Chief Tanod's phone
+        // fetches the same non-secret number; it is on the admin-device
+        // allow-list (SessionPolicy::ADMIN_DEVICE_ALLOWLIST).
+        AuthMiddleware::requireRole($identity, ['tanod', 'admin']);
 
         $number = SettingsController::get($pdo, 'sos_fallback.backup_contact_number');
         Http::send(200, ['backup_contact_number' => $number !== '' ? $number : null]);

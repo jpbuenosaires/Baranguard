@@ -21,6 +21,12 @@ namespace Baranguard\Services\Auth;
  *            when a dispatch push arrives; one who lost the phone is
  *            bounded to a week even if nobody reports it.
  *
+ * Amended 2026-10-07 (decision 15C): the Chief Tanod's phone. An ADMIN login
+ * carrying a well-formed X-Device-Id also gets a device session — but one
+ * that is scope-limited to ADMIN_DEVICE_ALLOWLIST below (everything else is
+ * 403 DEVICE_SESSION_SCOPE). Web admin logins (no header) are unchanged.
+ * Secretary and Punong Barangay never get a device session.
+ *
  * Both kinds are revoked instantly by logout / suspension / deactivation /
  * password change, because AuthMiddleware checks the auth_session row on
  * EVERY request — the long device token changes only how long an
@@ -52,14 +58,79 @@ final class SessionPolicy
     }
 
     /**
+     * Roles that may hold a DEVICE session. `tanod` is the original mobile
+     * role; `admin` was added 2026-10-07 (review decision 15C — the Chief
+     * Tanod's phone, one account, any Admin account). An admin device
+     * session is SCOPE-LIMITED to {@see self::ADMIN_DEVICE_ALLOWLIST}, which
+     * is what makes giving an Admin a 24h/7d token acceptable. Secretary and
+     * Punong Barangay never get one.
+     */
+    private const DEVICE_SESSION_ROLES = ['tanod', 'admin'];
+
+    /**
+     * The ONLY routes an ADMIN device session may reach — everything else
+     * answers 403 DEVICE_SESSION_SCOPE (an admin WEB session is unaffected).
+     * One table, one place; AuthMiddleware::authenticate() is the enforcer.
+     * Each entry: [HTTP method, regex against the path after /api/v1,
+     * signed-write?]. `true` marks a state-changing call that must carry the
+     * same X-Device-Id (+ H-09 signature when the device has a key on file)
+     * that a Tanod's mobile writes carry — see AuthMiddleware.
+     *
+     * Deliberately NOT here: PATCH /tanod-sos/:id/resolve, GET /users, the
+     * audit log, incident resolve/lifecycle, reports/export, system
+     * settings, availability, shift publishing, notifications/ack-all.
+     * `/dispatch-offers*` is listed by pattern ahead of its routes landing
+     * (Wave 2); a pattern with no route simply 404s.
+     */
+    public const ADMIN_DEVICE_ALLOWLIST = [
+        ['GET', '#^/tanod-sos$#', false],
+        ['PATCH', '#^/tanod-sos/\d+/acknowledge$#', true],
+        ['GET', '#^/tanod-sos/fallback-contact$#', false],
+        ['GET', '#^/dispatch$#', false],
+        ['POST', '#^/dispatch$#', true],
+        ['PATCH', '#^/dispatch/\d+/cancel$#', true],
+        ['GET', '#^/dispatch/\d+/route$#', false],
+        ['GET', '#^/incidents$#', false],
+        ['GET', '#^/incidents/\d+$#', false],
+        ['GET', '#^/gps/live$#', false],
+        ['GET', '#^/notifications$#', false],
+        ['POST', '#^/notifications/\d+/ack$#', false],
+        ['POST', '#^/devices/register$#', false],
+        ['PATCH', '#^/devices/[A-Za-z0-9._:-]{8,64}/deactivate$#', false],
+        ['POST', '#^/auth/logout$#', false],
+        ['POST', '#^/auth/change-password$#', false],
+        ['GET', '#^/dispatch-offers$#', false],
+        ['POST', '#^/dispatch-offers$#', true],
+        ['PATCH', '#^/dispatch-offers/\d+/cancel$#', true],
+        ['GET', '#^/barangays$#', false],
+    ];
+
+    /**
+     * Scope decision for an admin device session.
+     *
+     * @return array{allowed:bool,signed_write:bool}
+     */
+    public static function adminDeviceScope(string $method, string $path): array
+    {
+        $method = strtoupper($method);
+        foreach (self::ADMIN_DEVICE_ALLOWLIST as [$allowedMethod, $pattern, $signedWrite]) {
+            if ($allowedMethod === $method && preg_match($pattern, $path) === 1) {
+                return ['allowed' => true, 'signed_write' => $signedWrite];
+            }
+        }
+        return ['allowed' => false, 'signed_write' => false];
+    }
+
+    /**
      * Which kind a fresh login gets. A device session needs BOTH a
-     * well-formed `X-Device-Id` header AND the tanod role (§3: Tanod is the
-     * only mobile role) — an Admin/Secretary in a browser can't lengthen
-     * their own session by adding a header.
+     * well-formed `X-Device-Id` header AND a device-capable role (Tanod, or
+     * since 2026-10-07 Admin — scope-limited, see ADMIN_DEVICE_ALLOWLIST).
+     * Secretary / Punong Barangay never get one, and an Admin in a browser
+     * (no header) keeps the 15-minute web session.
      */
     public static function kindForLogin(?string $deviceIdHeader, string $role): string
     {
-        if ($role !== 'tanod') {
+        if (!in_array($role, self::DEVICE_SESSION_ROLES, true)) {
             return self::KIND_WEB;
         }
         if ($deviceIdHeader === null || preg_match(self::DEVICE_ID_PATTERN, $deviceIdHeader) !== 1) {

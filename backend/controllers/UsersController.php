@@ -97,6 +97,70 @@ final class UsersController
     }
 
     /**
+     * GET /users/directory?purpose=tanod|signer[&authority=...] -- a
+     * deliberately thin picker feed (Wave 3-G; answers the gap that a
+     * Secretary cannot call the Admin-only GET /users but must still pick a
+     * Tanod for a shift or a signer for a paper approval).
+     *
+     * admin|secretary only; always scoped to the CALLER's barangay (there is
+     * no barangay parameter, so cross-tenant reads are impossible); only
+     * active, non-suspended accounts. Items are ONLY
+     * `{user_id, full_name, official_title}` -- no username, phone, email,
+     * last login or authority list (a signer's authority is the filter, not
+     * an output).
+     *   purpose=tanod  -> active tanods.
+     *   purpose=signer -> `authority` (one of ApprovalAuthority::ALL) is
+     *                     required; returns active users in an eligible role
+     *                     (admin|secretary|punong_barangay) holding it.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function directory(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+
+        $purpose = Http::query('purpose');
+        if ($purpose !== 'tanod' && $purpose !== 'signer') {
+            throw new ApiError(400, 'VALIDATION_ERROR', "purpose must be 'tanod' or 'signer'.");
+        }
+
+        $params = ['barangay_id' => $identity['barangay_id']];
+        if ($purpose === 'tanod') {
+            if (Http::query('authority') !== null) {
+                throw new ApiError(400, 'VALIDATION_ERROR', "authority is only valid with purpose='signer'.");
+            }
+            $roleSql = "u.role = 'tanod'";
+        } else {
+            $authority = Http::query('authority');
+            if ($authority === null || !in_array($authority, ApprovalAuthority::ALL, true)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'authority must be one of: ' . implode(', ', ApprovalAuthority::ALL) . '.');
+            }
+            $eligible = "'" . implode("','", ApprovalAuthority::ELIGIBLE_ROLES) . "'"; // constants, never input
+            $roleSql = "u.role IN ({$eligible}) AND FIND_IN_SET(:authority, u.approval_authority) > 0";
+            $params['authority'] = $authority;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT u.user_id, u.full_name, u.official_title
+               FROM user u
+              WHERE u.barangay_id = :barangay_id
+                AND u.is_active = 1
+                AND u.is_suspended = 0
+                AND {$roleSql}
+              ORDER BY u.full_name ASC, u.user_id ASC"
+        );
+        $stmt->execute($params);
+
+        $items = array_map(static fn (array $row): array => [
+            'user_id' => (int) $row['user_id'],
+            'full_name' => $row['full_name'],
+            'official_title' => $row['official_title'] !== null && $row['official_title'] !== '' ? $row['official_title'] : null,
+        ], $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+        Http::send(200, ['items' => $items]);
+    }
+
+    /**
      * GET /users/:id -- docs/FEATURE_CONTRACT_2026-10.md sections 2 and 10:
      * the way a web user learns their OWN `official_title` /
      * `approval_authority` (the list endpoint is Admin-only). Any
