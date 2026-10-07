@@ -14,6 +14,10 @@ import {
 import { IonReactRouter } from '@ionic/react-router';
 import {
   add,
+  alertCircle,
+  alertCircleOutline,
+  documentText,
+  documentTextOutline,
   home,
   homeOutline,
   list,
@@ -28,6 +32,10 @@ import AccomplishmentsPage from './pages/accomplishments';
 import AssignmentDetailPage from './pages/assignment-detail';
 import AssignmentsPage from './pages/assignments';
 import AvailabilityPage from './pages/availability';
+import AdminDispatchPage from './pages/admin/admin-dispatch';
+import AdminIncidentsPage from './pages/admin/admin-incidents';
+import AdminProfilePage from './pages/admin/admin-profile';
+import AdminSosPage from './pages/admin/admin-sos';
 import HomePage from './pages/home';
 import IncidentSubmittedPage from './pages/incident-submitted';
 import LiveMapPage from './pages/live-map';
@@ -37,6 +45,7 @@ import MyShiftsPage from './pages/my-shifts';
 import NewIncidentPage from './pages/new-incident';
 import ProfilePage from './pages/profile';
 import SchoolCheckinPage from './pages/school-checkin';
+import { getSessionRole, type AppRole } from './services/role';
 import { hasStoredSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
@@ -72,6 +81,7 @@ import '@ionic/react/css/display.css';
 import './theme/variables.css';
 import './theme/app.css';
 import './theme/tanod-workflow.css';
+import './theme/admin-console.css';
 
 setupIonicReact();
 
@@ -316,6 +326,88 @@ const TabbedShell: React.FC = () => {
 };
 
 /**
+ * Chief Tanod (Admin) shell — decision 15C, stage 1. Tabs: SOS / Dispatch /
+ * Incidents / Profile, mounted at the same `/tabs/*` prefix as the Tanod
+ * shell (so the StackManager notes on TabbedShell above apply unchanged).
+ * No Tanod-only screens exist here: no duty toggle, accomplishments,
+ * availability, school check-in, patrol GPS, or offline queue. `home` is a
+ * redirect so a cold start's `/tabs/home` lands on the SOS tab.
+ */
+const ADMIN_TABS = [
+  { tab: 'sos', label: 'SOS', path: '/tabs/sos', icon: alertCircleOutline, activeIcon: alertCircle },
+  { tab: 'dispatch', label: 'Dispatch', path: '/tabs/dispatch', icon: listOutline, activeIcon: list },
+  { tab: 'incidents', label: 'Incidents', path: '/tabs/incidents', icon: documentTextOutline, activeIcon: documentText },
+  { tab: 'profile', label: 'Profile', path: '/tabs/profile', icon: personOutline, activeIcon: person },
+];
+
+const AdminShell: React.FC = () => {
+  const currentPath = useLocation().pathname;
+
+  return (
+    <IonTabs>
+      <IonRouterOutlet>
+        <Route path="sos" element={<AdminSosPage />} />
+        <Route path="dispatch" element={<AdminDispatchPage />} />
+        <Route path="incidents" element={<AdminIncidentsPage />} />
+        <Route path="profile" element={<AdminProfilePage />} />
+        <Route path="home" element={<Navigate to="/tabs/sos" replace />} />
+        <Route index element={<Navigate to="/tabs/sos" replace />} />
+      </IonRouterOutlet>
+
+      <IonTabBar slot="bottom" className="mobile-tab-bar">
+        {ADMIN_TABS.map((t) => {
+          const active = currentPath === t.path;
+          return (
+            <IonTabButton
+              key={t.tab}
+              tab={t.tab}
+              href={t.path}
+              onClick={() => !active && tacticalFeedback.onTap()}
+              className={active ? 'tab-item--active' : ''}
+              aria-label={t.label}
+            >
+              <div className="tab-pill-container">
+                <IonIcon icon={active ? t.activeIcon : t.icon} />
+                <IonLabel>{t.label}</IonLabel>
+              </div>
+            </IonTabButton>
+          );
+        })}
+      </IonTabBar>
+    </IonTabs>
+  );
+};
+
+/** Picks the shell from the stored session's role (UX only; the server enforces scope). */
+const RoleShell: React.FC = () => {
+  const [role, setRole] = useState<AppRole | null | undefined>(undefined);
+  // Re-read on navigation (no spinner reset) so a sign-out followed by a
+  // sign-in as the other role can never leave the previous shell mounted.
+  const locationKey = useLocation().key;
+
+  useEffect(() => {
+    let active = true;
+    void getSessionRole().then((r) => {
+      if (active) setRole(r);
+    });
+    return () => {
+      active = false;
+    };
+  }, [locationKey]);
+
+  if (role === undefined) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
+        <IonSpinner name="dots" />
+      </div>
+    );
+  }
+  if (role === 'admin') return <AdminShell />;
+  // A stored session with a role this app does not support goes back to login.
+  return role === 'tanod' ? <TabbedShell /> : <Navigate to="/login" replace />;
+};
+
+/**
  * M12's overlay is mounted here, OUTSIDE `IonReactRouter`/`IonRouterOutlet`
  * entirely, so it can render above whatever screen is active — including
  * the login page, since an already-registered device could theoretically
@@ -379,7 +471,7 @@ const App: React.FC = () => {
             path="/tabs/*"
             element={
               <RequireSession>
-                <TabbedShell />
+                <RoleShell />
               </RequireSession>
             }
           />
