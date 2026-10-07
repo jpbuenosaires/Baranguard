@@ -34,7 +34,8 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
-import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
+import { SchoolC1Card, ReferralsCard, RelatedIncidentCard } from '../components/IncidentCaseCards.js';
+import { reportChannelLabel } from '../utils/reportChannel.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -155,6 +156,17 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       aside.appendChild(buildAdminResolvePanel());
     }
     if (isSecretary) aside.appendChild(buildLifecycleCard());
+    // Reference link to another incident (admin|secretary may change it;
+    // Punong Barangay reads it). Separate from the Secretary's duplicate
+    // lifecycle action above, and it never changes status or dispatch.
+    aside.appendChild(RelatedIncidentCard({
+      incidentId,
+      relatedIncident: incident.relatedIncident,
+      relatedBy: incident.relatedBy,
+      canEdit: user.role === 'admin' || isSecretary,
+      navigate,
+      onChanged: load,
+    }));
     aside.appendChild(ReferralsCard({
       incidentId,
       canAdd: user.role === 'admin' || isSecretary,
@@ -261,11 +273,14 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     // Channel
     const channelTile = document.createElement('div');
     channelTile.className = 'meta-tile';
-    const channelLabel = incident.source === 'app' ? 'Mobile App' : incident.source === 'walkin' ? 'Walk-in Desk' : 'Hotline Call';
+    // `report_channel` (migration 0036) says how the matter was reported;
+    // an older row/server without it falls back to the creating client.
+    const channelLabel = reportChannelLabel(incident.reportChannel)
+      || (incident.source === 'app' ? 'Mobile App' : incident.source === 'walkin' ? 'Walk-in Desk' : 'Hotline Call');
     channelTile.innerHTML = `
       <div class="meta-tile__icon">${icons.phone(16)}</div>
       <div class="meta-tile__content">
-        <span class="meta-tile__label">Channel</span>
+        <span class="meta-tile__label">Report channel</span>
         <span class="meta-tile__value">${channelLabel}</span>
       </div>
     `;

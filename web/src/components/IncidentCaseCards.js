@@ -25,7 +25,8 @@ import {
   getIncidentSchoolFields, updateIncidentSchoolFields, getSchools,
   getIncidentReferrals, createIncidentReferral, REFERRED_TO_OPTIONS, referredToLabel,
 } from '../services/shellWorkflowApi.js';
-import { ApiClientError } from '../api/apiClient.js';
+import { ApiClientError, setRelatedIncident } from '../api/apiClient.js';
+import { confirmDialog } from './ConfirmDialog.js';
 import { showToast } from './Toast.js';
 import { icons } from './icons.js';
 
@@ -423,5 +424,133 @@ export function ReferralsCard({ incidentId, canAdd, incidentLabel }) {
     }
   }
 
+  return card;
+}
+
+// --- Related incident ----------------------------------------------------------
+
+/**
+ * "Related incident": a reference link between two incidents of the same
+ * barangay (PATCH /incidents/:id/related). It changes NOTHING about either
+ * incident's status, dispatch or retention, and it is not the Secretary's
+ * "mark as duplicate" lifecycle action (which stays separate and keeps its own
+ * rules). Renders from the incident the page has already loaded
+ * (`related_incident`, `related_by`: id + display id only, no narrative), so it
+ * has no loading state of its own; a failed save shows inline and keeps the
+ * form open.
+ *
+ * @param {{
+ *   incidentId:number,
+ *   relatedIncident:{incidentId:number, displayId:string|null}|null,
+ *   relatedBy:Array<{incidentId:number, displayId:string|null}>,
+ *   canEdit:boolean,
+ *   navigate:(page:string, param?:any)=>void,
+ *   onChanged:()=>void,
+ * }} opts
+ * @returns {HTMLElement}
+ */
+export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, canEdit, navigate, onChanged }) {
+  const card = el('section', 'card case-card case-card--related');
+  card.setAttribute('aria-label', 'Related incident');
+  card.appendChild(cardHeading(icons.layers, 'Related incident'));
+
+  const linkButton = (link) => {
+    const label = link.displayId || `#${link.incidentId}`;
+    const btn = el('button', 'link-button', label);
+    btn.type = 'button';
+    btn.title = `Open incident ${label}`;
+    btn.addEventListener('click', () => navigate('incident-detail', link.incidentId));
+    return btn;
+  };
+
+  const toRow = el('div', 'case-card__field');
+  toRow.appendChild(el('span', 'meta-tile__label', 'Related to'));
+  if (relatedIncident) toRow.appendChild(linkButton(relatedIncident));
+  else toRow.appendChild(el('span', 'meta-tile__value', 'No related incident'));
+  card.appendChild(toRow);
+
+  if (relatedBy.length > 0) {
+    const byRow = el('div', 'case-card__field');
+    byRow.appendChild(el('span', 'meta-tile__label', 'Referenced by'));
+    for (const link of relatedBy) byRow.appendChild(linkButton(link));
+    card.appendChild(byRow);
+  }
+
+  card.appendChild(el('p', 'note', 'A reference link between two incidents. It does not change either incident’s status or dispatch.'));
+
+  if (!canEdit) return card;
+
+  const form = el('form', 'form-stack');
+  form.noValidate = true;
+  const errorBox = el('div', 'login-form__error');
+  errorBox.setAttribute('role', 'alert');
+  errorBox.hidden = true;
+  const inputId = `related-incident-${incidentId}`;
+  const label = el('label', 'label', 'Related incident number');
+  label.htmlFor = inputId;
+  const input = el('input', 'personnel-form-input');
+  input.id = inputId;
+  input.type = 'number';
+  input.min = '1';
+  input.step = '1';
+  input.placeholder = 'e.g. 902';
+  if (relatedIncident) input.value = String(relatedIncident.incidentId);
+
+  const actions = el('div', 'availability-item__actions');
+  const save = el('button', 'primary', relatedIncident ? 'Change link' : 'Link incident');
+  save.type = 'submit';
+  actions.appendChild(save);
+  let remove = null;
+  if (relatedIncident) {
+    remove = el('button', 'ghost', 'Remove link');
+    remove.type = 'button';
+    actions.appendChild(remove);
+  }
+  form.append(errorBox, label, input, actions);
+  card.appendChild(form);
+
+  async function submit(nextId) {
+    errorBox.hidden = true;
+    save.disabled = true;
+    if (remove) remove.disabled = true;
+    try {
+      await setRelatedIncident(incidentId, nextId, crypto.randomUUID());
+      showToast(nextId === null ? 'Related-incident link removed.' : 'Related incident linked.', { variant: 'success' });
+      onChanged();
+    } catch (err) {
+      save.disabled = false;
+      if (remove) remove.disabled = false;
+      errorBox.textContent = err instanceof ApiClientError ? err.message : 'Could not save the link.';
+      errorBox.hidden = false;
+    }
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const raw = input.value.trim();
+    if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+      errorBox.textContent = 'Enter the incident number (a whole number, 1 or higher).';
+      errorBox.hidden = false;
+      return;
+    }
+    const id = Number(raw);
+    if (id === incidentId) {
+      errorBox.textContent = 'An incident cannot be related to itself.';
+      errorBox.hidden = false;
+      return;
+    }
+    submit(id);
+  });
+  if (remove) {
+    remove.addEventListener('click', async () => {
+      const ok = await confirmDialog({
+        title: 'Remove the related-incident link?',
+        description: 'Neither incident is changed or deleted; only the reference between them is removed.',
+        confirmLabel: 'Remove link',
+        cancelLabel: 'Keep it',
+      });
+      if (ok) submit(null);
+    });
+  }
   return card;
 }

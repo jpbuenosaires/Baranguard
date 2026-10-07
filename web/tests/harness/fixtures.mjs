@@ -83,12 +83,16 @@ export function buildRoutes(scenario) {
   // Contract section 7: every incident carries school_id + the three C-1 fields.
   for (const inc of allIncidents) {
     inc.school_id = null;
+    // Migration 0036: how the report reached the barangay + a reference link.
+    inc.report_channel = { app: 'tanod_alerted', sms: 'sms', web: 'walk_in' }[inc.source] ?? 'other';
+    inc.related_incident_id = null;
     inc.c1_summary = null;
     inc.c1_action_taken = null;
     inc.c1_status_notes = null;
   }
   Object.assign(allIncidents.find((i) => i.incident_id === 902), {
     school_id: 11,
+    related_incident_id: 903,
     c1_summary: t('Pupil felt faint near the school gate.'),
     c1_action_taken: t('First aid given, ambulance called.'),
     c1_status_notes: null,
@@ -106,8 +110,8 @@ export function buildRoutes(scenario) {
     { referral_id: 2, incident_id: 903, barangay_id: 1, referred_to: 'other', other_text: t('Municipal Engineering Office'), contact_name: null, referred_at: sqlAgo(2 * 1440), reference_no: null, created_by: 2, created_at: sqlAgo(2 * 1440) },
   ];
   const availability = empty ? [] : [
-    { avail_id: 31, barangay_id: 1, user_id: 4, period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-05', start: '08:00', end: '16:00' }, { date: '2026-10-06', start: '22:00', end: '23:59' }], status: 'submitted', reviewed_by: null, reviewed_at: null, review_note: null, version: 1, created_at: sqlAgo(300), updated_at: sqlAgo(300) },
-    { avail_id: 32, barangay_id: 1, user_id: 5, period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-07', start: '06:00', end: '14:00' }], status: 'accepted', reviewed_by: 1, reviewed_at: sqlAgo(60), review_note: t('Thanks.'), version: 1, created_at: sqlAgo(400), updated_at: sqlAgo(60) },
+    { avail_id: 31, barangay_id: 1, user_id: 4, full_name: tanodName(4), period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-05', start: '08:00', end: '16:00' }, { date: '2026-10-06', start: '22:00', end: '23:59' }], status: 'submitted', reviewed_by: null, reviewed_at: null, review_note: null, version: 1, created_at: sqlAgo(300), updated_at: sqlAgo(300) },
+    { avail_id: 32, barangay_id: 1, user_id: 5, full_name: tanodName(5), period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-07', start: '06:00', end: '14:00' }], status: 'accepted', reviewed_by: 1, reviewed_at: sqlAgo(60), review_note: t('Thanks.'), version: 1, created_at: sqlAgo(400), updated_at: sqlAgo(60) },
   ];
   const accomplishmentReports = empty ? [] : [
     { report_id: 71, barangay_id: 1, user_id: 4, full_name: tanodName(4), month: '2026-09', status: 'prepared', entry_count: 2, total_minutes: 960, flagged_entries: 1, total_minutes_confirmed: null, prepared_at: sqlAgo(1440), noted_by: null, noted_at: null, approved_by: null, approved_at: null, return_reason: null, version: 2 },
@@ -130,11 +134,14 @@ export function buildRoutes(scenario) {
     { dispatch_id: 7003, incident_id: 903, tanod_id: 4, tanod_name: tanodName(4), priority: 'normal', route_json: null, route_status: 'stale', status: 'completed', dispatched_at: sqlAgo(3 * 1440 - 5), en_route_at: sqlAgo(3 * 1440 - 7), arrived_at: sqlAgo(3 * 1440 - 20), completed_at: sqlAgo(3 * 1440 - 60), cancelled_at: null },
   ];
 
+  const incidentLink = (row) => (row ? { incident_id: row.incident_id, display_id: row.display_id } : null);
   const incidentDetail = (inc, role) => {
     const own = dispatches.filter((d) => d.incident_id === inc.incident_id);
     const first = own[0];
     const detail = {
       ...inc,
+      related_incident: incidentLink(allIncidents.find((i) => i.incident_id === inc.related_incident_id)),
+      related_by: allIncidents.filter((i) => i.related_incident_id === inc.incident_id).map(incidentLink),
       dispatched_at: first?.dispatched_at ?? null,
       arrived_at: first?.arrived_at ?? null,
       has_active_dispatch: own.some((d) => ['assigned', 'en_route', 'arrived'].includes(d.status)),
@@ -257,7 +264,7 @@ export function buildRoutes(scenario) {
       if (query.q) rows = rows.filter((i) => `${i.display_id} ${i.incident_type} ${i.status}`.toLowerCase().includes(String(query.q).toLowerCase()));
       return ok(paginate(rows, query));
     } },
-    { method: 'POST', path: '/incidents', handler: ({ body }) => ({ status: 201, body: { incident_id: 905, barangay_id: 1, reported_by: 1, incident_type: body.incident_type, priority: body.priority || 'normal', status: 'pending', source: 'web', latitude: body.latitude ?? null, longitude: body.longitude ?? null, location_description: body.location_description ?? null, display_id: 'INC-2026-905', created_at: sqlAgo(0) } }) },
+    { method: 'POST', path: '/incidents', handler: ({ body }) => ({ status: 201, body: { incident_id: 905, barangay_id: 1, reported_by: 1, incident_type: body.incident_type, priority: body.priority || 'normal', status: 'pending', source: 'web', report_channel: body.report_channel ?? 'walk_in', latitude: body.latitude ?? null, longitude: body.longitude ?? null, location_description: body.location_description ?? null, display_id: 'INC-2026-905', created_at: sqlAgo(0) } }) },
     { method: 'GET', path: '/incidents/:id', handler: ({ params, headers }) => {
       const inc = allIncidents.find((i) => i.incident_id === Number(params.id));
       return inc ? ok(incidentDetail(inc, roleFromAuth(headers))) : notFound('Incident not found.');
@@ -265,6 +272,13 @@ export function buildRoutes(scenario) {
     { method: 'PATCH', path: '/incidents/:id', handler: ({ params, body }) => ((body && ('raw_narrative' in body || 'redacted_narrative' in body))
       ? { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'Narrative fields cannot be edited here.' } } }
       : ok({ incident_id: Number(params.id), updated: true, fields: Object.keys(body || {}) })) },
+    { method: 'PATCH', path: '/incidents/:id/related', handler: ({ params, body }) => {
+      const id = Number(params.id);
+      const target = body?.related_incident_id;
+      if (target === id) return { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'An incident cannot be related to itself.' } } };
+      if (target !== null && !allIncidents.some((i) => i.incident_id === target)) return notFound('Incident not found.');
+      return ok({ incident_id: id, related_incident_id: target ?? null });
+    } },
     { method: 'GET', path: '/incidents/:id/referrals', handler: ({ params }) => ok({ items: referrals.filter((r) => r.incident_id === Number(params.id)) }) },
     { method: 'POST', path: '/incidents/:id/referrals', handler: ({ params, body }) => ((body && body.referred_to)
       ? { status: 201, body: { referral_id: 9, incident_id: Number(params.id), barangay_id: 1, referred_to: body.referred_to, other_text: body.other_text ?? null, contact_name: body.contact_name ?? null, referred_at: sqlAgo(0), reference_no: body.reference_no ?? null, created_by: 1, created_at: sqlAgo(0) } }
@@ -291,6 +305,14 @@ export function buildRoutes(scenario) {
     { method: 'PATCH', path: '/ssz-term-reports/:id', handler: ({ params }) => ok({ report_id: Number(params.id), updated: true }) },
     { method: 'POST', path: '/ssz-term-reports/:id/prepare', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'prepared' }) },
     { method: 'POST', path: '/ssz-term-reports/:id/approve', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved' }) },
+    // --- Paper signatures + scanned copies (Wave 1, contract C) ---
+    { method: 'POST', path: '/accomplishment-reports/:id/paper-signature', handler: ({ params, body }) => ok({ report_id: Number(params.id), paper_signed_on: body.paper_signed_on }) },
+    { method: 'POST', path: '/ssz-term-reports/:id/paper-signature', handler: ({ params, body }) => ok({ report_id: Number(params.id), paper_signed_on: body.paper_signed_on }) },
+    { method: 'POST', path: '/accomplishment-reports/:id/record-paper-approval', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved', approval_mode: 'recorded_from_paper' }) },
+    { method: 'POST', path: '/ssz-term-reports/:id/record-paper-approval', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved', approval_mode: 'recorded_from_paper' }) },
+    { method: 'GET', path: '/document-scans', handler: () => ok({ items: [], page: 1, limit: 25, total: 0 }) },
+    { method: 'POST', path: '/document-scans', handler: () => ({ status: 201, body: { scan_id: 9001, entity_type: 'accomplishment_report', entity_id: 1, mime_type: 'application/pdf', size_bytes: 1234, sha256: 'a'.repeat(64), uploaded_by: 1, uploaded_at: sqlAgo(0) } }) },
+    { method: 'GET', path: '/document-scans/:id/download', handler: () => ({ status: 200, raw: '%PDF-1.4 fake', headers: { 'Content-Type': 'application/pdf' } }) },
     { method: 'POST', path: '/ssz-term-reports/:id/mark-submitted', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'submitted' }) },
     { method: 'GET', path: '/accomplishment-reports', handler: ({ query }) => ok(paginate(accomplishmentReports
       .filter((r) => (!query.status || r.status === query.status) && (!query.month || r.month === query.month) && (!query.user_id || r.user_id === Number(query.user_id))), query)) },
@@ -312,7 +334,9 @@ export function buildRoutes(scenario) {
       return ok(paginate(rows, query));
     } },
     { method: 'POST', path: '/dispatch', handler: ({ body }) => ({ status: 201, body: { dispatch_id: 7009, status: 'assigned', incident_id: body.incident_id, route_status: 'unavailable' } }) },
-    { method: 'PATCH', path: '/dispatch/:id/cancel', handler: ({ params }) => ok({ dispatch_id: Number(params.id), status: 'cancelled', incident_id: 902, incident_status: 'dispatched', cancelled_at: sqlAgo(0) }) },
+    { method: 'PATCH', path: '/dispatch/:id/cancel', handler: ({ params, body }) => (typeof body?.reason !== 'string' || body.reason.trim() === '' || body.reason.length > 255
+      ? { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'A cancellation reason of 1-255 characters is required.' } } }
+      : ok({ dispatch_id: Number(params.id), status: 'cancelled', incident_id: 902, incident_status: 'dispatched', cancelled_at: sqlAgo(0) })) },
     { method: 'GET', path: '/gps/live', handler: () => ok({ items: empty ? [] : [
       { user_id: 4, full_name: tanodName(4), dispatch_id: 7002, latitude: 12.9180, longitude: 123.6670, accuracy_m: 9.5, recorded_at: sqlAgo(0.5), received_at: sqlAgo(0.4), age_seconds: 30, is_stale: false },
       { user_id: 5, full_name: tanodName(5), dispatch_id: 7001, latitude: 12.9174, longitude: 123.6657, accuracy_m: 38, recorded_at: sqlAgo(9), received_at: sqlAgo(9), age_seconds: 540, is_stale: true },
@@ -337,9 +361,6 @@ export function buildRoutes(scenario) {
 
     // --- Citizen reports ---
     { method: 'GET', path: '/citizen-reports', handler: ({ query }) => ok(paginate(citizenReports.filter((r) => (query.status === 'unconverted' ? r.incident_id === null : true)), query)) },
-    { method: 'POST', path: '/citizen-reports', handler: ({ body }) => (!body?.description
-      ? { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'Please describe what happened.' } } }
-      : { status: 201, body: { report_id: 399, confirmation: 'CR-2026-399' } }) },
     { method: 'POST', path: '/citizen-reports/:id/convert', handler: ({ params }) => ({ status: 201, body: { incident_id: 905, citizen_report_id: Number(params.id), converted_at: sqlAgo(0) } }) },
 
     // --- Scheduling ---

@@ -17,7 +17,7 @@ const navLabels = () => $$('.sidebar__nav-item').map((b) => b.title);
 
 // REFERENCE.md §3/§7 + main.js PAGE_ROLES.
 const EXPECTED_NAV = {
-  admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Citizen Reports', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
+  admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Citizen Reports', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'System Tools', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
   secretary: ['Incident Management', 'Citizen Reports', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Personnel', 'Settings'],
   punong_barangay: ['Dashboard', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'Settings'],
 };
@@ -44,7 +44,83 @@ describe('AppShell navigation', () => {
   test('breadcrumbs show where you are', async () => {
     mountShell('admin', 'audit-log');
     await settle();
-    assert.match(text($('.topbar__breadcrumbs')), /System\s*\/\s*Audit Log/);
+    assert.match(text($('.topbar__breadcrumbs')), /System Tools\s*\/\s*Audit Log/);
+  });
+});
+
+describe('AppShell System Tools menu (2026-10-07)', () => {
+  const TOOLS = ['SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages'];
+  const toggle = () => $$('.sidebar__nav-toggle')[0];
+  const submenu = () => $('.sidebar__submenu');
+
+  test('Admin gets ONE System Tools parent row holding exactly the four operational screens; Settings stays a normal item', async () => {
+    mountShell('admin', 'dashboard');
+    await settle();
+    assert.equal($$('.sidebar__nav-toggle').length, 1);
+    assert.equal(toggle().title, 'System Tools');
+    const children = $$('.sidebar__nav-item', submenu()).map((b) => b.title);
+    assert.deepEqual(children, TOOLS);
+    const settings = $$('.sidebar__nav-item').find((b) => b.title === 'Settings');
+    assert.ok(settings && !submenu().contains(settings), 'Settings must stay outside the System Tools menu');
+    // 13 top-level rows + the 4 tools inside the menu.
+    const topLevel = $$('.sidebar__nav-item').filter((b) => !submenu().contains(b));
+    assert.equal(topLevel.length, 13);
+    assertNoRuntimeErrors();
+  });
+
+  for (const role of ['secretary', 'punong_barangay']) {
+    test(`${role} sees no System Tools menu and none of its screens`, async () => {
+      mountShell(role);
+      await settle();
+      assert.equal($$('.sidebar__nav-toggle').length, 0);
+      assert.equal(submenu(), null);
+      for (const label of TOOLS) assert.ok(!navLabels().includes(label), `${label} must not appear for ${role}`);
+    });
+  }
+
+  test('the menu is collapsed by default and the toggle expands and collapses it', async () => {
+    mountShell('admin', 'dashboard');
+    await settle();
+    assert.equal(submenu().hidden, true);
+    assert.equal(toggle().getAttribute('aria-expanded'), 'false');
+    click(toggle());
+    assert.equal(submenu().hidden, false);
+    assert.equal(toggle().getAttribute('aria-expanded'), 'true');
+    click(toggle());
+    assert.equal(submenu().hidden, true);
+    assert.equal(toggle().getAttribute('aria-expanded'), 'false');
+  });
+
+  test('the menu opens by itself when one of its screens is the current page, and that row is marked current', async () => {
+    mountShell('admin', 'service-health');
+    await settle();
+    assert.equal(submenu().hidden, false);
+    assert.equal(toggle().getAttribute('aria-expanded'), 'true');
+    const active = $$('.sidebar__nav-item').filter((b) => b.getAttribute('aria-current') === 'page');
+    assert.deepEqual(active.map((b) => b.title), ['Service Health']);
+  });
+
+  test('every tool still navigates to its own page', async () => {
+    const ctx = mountShell('admin', 'dashboard');
+    await settle();
+    click(toggle());
+    const pages = { 'SMS Monitor': 'sms-log', 'Audit Log': 'audit-log', 'Service Health': 'service-health', 'Map Packages': 'map-packages' };
+    for (const [label, page] of Object.entries(pages)) {
+      click($$('.sidebar__nav-item', submenu()).find((b) => b.title === label));
+      assert.deepEqual(ctx.navigations.at(-1), { page, param: undefined });
+    }
+  });
+
+  test('Quick Jump lists the tools under the System Tools group', async () => {
+    const ctx = mountShell('admin', 'dashboard');
+    await settle();
+    type($('#topbar-search'), 'audit');
+    await wait(500);
+    const audit = $$('.topbar__search-jump-item').find((b) => /Audit Log/i.test(text(b)));
+    assert.ok(audit, 'Audit Log should stay reachable from Quick Jump');
+    assert.match(text(audit), /System Tools/);
+    click(audit);
+    assert.deepEqual(ctx.navigations.at(-1), { page: 'audit-log', param: undefined });
   });
 });
 

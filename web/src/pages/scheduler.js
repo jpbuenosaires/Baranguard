@@ -10,7 +10,8 @@
  * - Interactive StatStrip and filter bar with search and status chips
  */
 
-import { getUsers, createShift, updateShift, getBarangays, ApiClientError } from '../api/apiClient.js';
+import { createShift, updateShift, getBarangays, ApiClientError } from '../api/apiClient.js';
+import { loadTanodRoster } from '../services/tanodRoster.js';
 import {
   getShiftsDetailed, publishShifts, getAvailability, reviewAvailability, getOwnApprovalAuthority,
 } from '../services/shellWorkflowApi.js';
@@ -43,12 +44,17 @@ const SCHEDULE_COLUMNS = [
  * @param {() => void} [onOpenSwaps] jump to the Swap requests tab
  */
 export function renderSchedulerTab(container, user, pageHeader, initialData, onOpenSwaps) {
-  // Admin manages shifts (create/edit) and sees the tanod roster (GET /users
-  // is Admin-only). Secretary and Punong Barangay reach this tab to review
-  // availability (Admin/Secretary) and publish drafts (approve_roster) —
-  // the server re-checks role and authority on every action either way.
+  // Admin and Secretary manage shifts (create/edit; 2026-10-07 — the
+  // Secretary is the Records & Reports Officer who builds the roster the
+  // approver then publishes). Punong Barangay reaches this tab to publish
+  // drafts (approve_roster) only. Availability review is Admin/Secretary.
+  // The server re-checks role and authority on every action either way.
+  // The tanod list comes from loadTanodRoster(): the real account list for
+  // an Admin (GET /users is Admin-only), tanods with submitted availability
+  // for a Secretary.
   const isAdmin = user.role === 'admin';
-  const canReviewAvailability = isAdmin || user.role === 'secretary';
+  const canManageShifts = isAdmin || user.role === 'secretary';
+  const canReviewAvailability = canManageShifts;
 
   // Stat Strip Host
   const statStripHost = document.createElement('div');
@@ -124,7 +130,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     if (found) barangayName = `Barangay ${found.name}`;
   }).catch(() => {});
 
-  if (!isAdmin) {
+  if (!canManageShifts) {
     formPane.hidden = true;
     listPane.style.flex = '1 1 100%';
   }
@@ -276,7 +282,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     renderLoading(listPane);
     try {
       const [tanodsRes, shiftsRes] = await Promise.all([
-        isAdmin ? getUsers({ role: 'tanod', limit: 100 }) : Promise.resolve({ items: [] }),
+        loadTanodRoster(user).then((items) => ({ items })),
         getShiftsDetailed({ limit: 100 }),
       ]);
       tanods = tanodsRes.items;
@@ -289,8 +295,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       if (availabilityState.status === 'ready') renderAvailability();
 
       renderStatStrip();
-      if (isAdmin) {
-        const newFormPane = buildNewShiftForm(tanods, load, shifts);
+      if (canManageShifts) {
+        const newFormPane = buildNewShiftForm(tanods, load, shifts, isAdmin);
         layout.replaceChild(newFormPane, formPane);
         formPane = newFormPane;
       }
@@ -571,6 +577,11 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
             const draft = shift.approvalStatus === 'draft';
             pill.className = `shift-approval-pill shift-approval-pill--${draft ? 'draft' : 'published'}`;
             pill.textContent = draft ? 'Draft' : 'Published';
+            if (draft && shift.pendingReapproval) {
+              // An approved swap changed this (previously published) shift:
+              // it needs the approver again before the tanod sees it as final.
+              pill.textContent = 'Draft — swap awaiting re-approval';
+            }
             return pill;
           }
 
@@ -636,7 +647,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
           }
 
           case 'actions': {
-            if (!isAdmin) return '<span class="text-tertiary">—</span>';
+            if (!canManageShifts) return '<span class="text-tertiary">—</span>';
             const button = document.createElement('button');
             button.className = 'user-action-btn';
             button.type = 'button';
@@ -796,7 +807,7 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
 /**
  * Builds the right-hand form for creating a new shift with preset buttons.
  */
-function buildNewShiftForm(tanods, onCreated, shifts = []) {
+function buildNewShiftForm(tanods, onCreated, shifts = [], hasFullRoster = true) {
   const card = document.createElement('div');
   card.className = 'card';
 
@@ -937,7 +948,12 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     form.hidden = true;
     const note = document.createElement('p');
     note.className = 'note';
-    note.textContent = 'No Tanods exist in this barangay yet.';
+    // A Secretary's list is built from submitted availability (see
+    // services/tanodRoster.js), so say that instead of claiming the barangay
+    // has no tanods at all.
+    note.textContent = hasFullRoster
+      ? 'No Tanods exist in this barangay yet.'
+      : 'No tanod has submitted availability yet, so there is nobody to assign. Shifts can be created once a tanod submits availability.';
     card.appendChild(note);
   }
 
@@ -1054,7 +1070,13 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
   unassignedOpt.value = '';
   unassignedOpt.textContent = 'Unassigned';
   tanodSelect.appendChild(unassignedOpt);
-  for (const t of tanods) {
+  // The shift's current tanod may be missing from the list (a Secretary's
+  // list only holds tanods with submitted availability). Keep them as a
+  // selectable option so saving never silently unassigns the shift.
+  const editableTanods = (shift.userId && !tanods.some((t) => t.userId === shift.userId))
+    ? [{ userId: shift.userId, fullName: `Tanod #${shift.userId} (current)` }, ...tanods]
+    : tanods;
+  for (const t of editableTanods) {
     const currentHours = calculateTanodHoursInWindow(shifts, t.userId, new Date().toISOString(), shift.shiftId);
     const opt = document.createElement('option');
     opt.value = String(t.userId);

@@ -232,3 +232,63 @@ export function promptText({ title, description, label, placeholder, inputType =
     },
   });
 }
+
+/**
+ * A dialog with several labelled fields (select, date or text), for actions
+ * that need more than one value at once — e.g. recording an approval from a
+ * paper signature needs the signer AND the date they signed. Same shell as the
+ * other dialogs: `onConfirmAsync(values)` is the validation/submit hook, and
+ * throwing inside it shows the message inline and keeps the dialog open.
+ *
+ * @param {{
+ *   title: string, description?: string,
+ *   fields: Array<
+ *     {name:string, label:string, type:'select', options:Array<{value:string|number,label:string}>} |
+ *     {name:string, label:string, type:'date'|'text', max?:string, placeholder?:string}
+ *   >,
+ *   confirmLabel?: string, cancelLabel?: string,
+ *   onConfirmAsync?: (values: Record<string,string>) => Promise<any>
+ * }} options
+ * @returns {Promise<Record<string,string>|null>} the field values, or null if cancelled
+ */
+export function promptFields({ title, description, fields, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirmAsync }) {
+  const controls = new Map();
+  return openDialog({
+    title, description, confirmLabel, cancelLabel, danger: false,
+    cancelValue: null,
+    resolveValue: () => Object.fromEntries([...controls].map(([name, control]) => [name, control.value.trim()])),
+    onConfirmAsync,
+    buildBody: (dialog) => {
+      let first = null;
+      for (const spec of fields) {
+        const field = document.createElement('div');
+        field.className = 'form-stack confirm-dialog__field';
+        const labelEl = document.createElement('label');
+        labelEl.className = 'label';
+        labelEl.htmlFor = `confirm-dialog-field-${spec.name}`;
+        labelEl.textContent = spec.label;
+        let control;
+        if (spec.type === 'select') {
+          control = document.createElement('select');
+          for (const option of spec.options) {
+            const el = document.createElement('option');
+            el.value = String(option.value);
+            el.textContent = option.label;
+            control.appendChild(el);
+          }
+        } else {
+          control = document.createElement('input');
+          control.type = spec.type;
+          if (spec.max) control.max = spec.max;
+          if (spec.placeholder) control.placeholder = spec.placeholder;
+        }
+        control.id = `confirm-dialog-field-${spec.name}`;
+        controls.set(spec.name, control);
+        field.append(labelEl, control);
+        dialog.appendChild(field);
+        if (!first) first = control;
+      }
+      return first;
+    },
+  });
+}

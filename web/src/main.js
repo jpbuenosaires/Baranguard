@@ -9,12 +9,10 @@
  *
  * `currentPage` is in-memory only (no URL routing exists yet in this
  * vanilla-JS, no-bundler stack) — a reload always returns to the default
- * page for the role. The two exceptions are `#/citizen-report` (W19) and
- * `#/transparency` (H-13/L-03): a hash fragment never reaches the server,
- * so each works as a zero-config public entry point on the same
- * index.html without needing a real server-side route — checked before
- * the session-gated boot() below, since both are reachable with no
- * session at all.
+ * page for the role. (The public `#/citizen-report` page was removed
+ * 2026-10-07: walk-ins are logged by staff from Incident Management, and
+ * `POST /citizen-reports` no longer exists. The public transparency report
+ * is a separate static page, not a route of this app.)
  */
 
 import { getSession, logout } from './api/apiClient.js';
@@ -26,7 +24,6 @@ import { renderGisLiveTrackingPage } from './pages/gis-live-tracking.js';
 import { renderAnalyticsPage } from './pages/analytics.js';
 import { renderSettingsPage } from './pages/settings.js';
 import { renderCitizenReportsInboxPage } from './pages/citizen-reports-inbox.js';
-import { renderCitizenReportPage } from './pages/citizen-report.js';
 import { renderPersonnelPage } from './pages/personnel.js';
 import { renderIncidentDetailPage } from './pages/incident-detail.js';
 import { renderSmsMonitorPage } from './pages/sms-monitor.js';
@@ -260,13 +257,4 @@ function renderUnavailable(root, user) {
   root.appendChild(page);
 }
 
-function checkRoute() {
-  if (window.location.hash.startsWith('#/citizen-report')) {
-    renderCitizenReportPage(document.getElementById('app'));
-  } else {
-    boot();
-  }
-}
-
-window.addEventListener('hashchange', checkRoute);
-checkRoute();
+boot();

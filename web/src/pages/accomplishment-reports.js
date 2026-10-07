@@ -26,6 +26,7 @@ import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
+import { PaperApprovalPanel } from '../components/PaperApprovalPanel.js';
 import { icons } from '../components/icons.js';
 import {
   getAccomplishmentReports, getAccomplishmentReport, noteAccomplishmentReport,
@@ -325,6 +326,22 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       head.appendChild(callout);
     }
     detailHost.append(back, head);
+
+    // Paper signature + scan (Wave 1): from the point the report can be
+    // approved on paper (noted) until it is approved and filed. The panel
+    // gates its own controls by role; the server re-checks everything.
+    if (report.status === 'noted' || report.status === 'approved') {
+      detailHost.appendChild(PaperApprovalPanel({
+        entityType: 'accomplishment_report',
+        report,
+        user,
+        recordStatus: 'noted',
+        signerAuthority: 'approve_report',
+        preparerUserId: report.userId ?? null, // the tanod who prepared (submitted) it
+        approvedStatuses: ['approved'],
+        onChanged: () => loadDetail(reportId),
+      }));
+    }
 
     // entries
     const entriesCard = card('Entries', flagged > 0

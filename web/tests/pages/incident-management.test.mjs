@@ -1,7 +1,7 @@
 import { describePage } from '../harness/pageSuite.mjs';
 import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, mountPage, settle, wait, cleanup, text, click, type, buttonByText, $, $$ } from '../harness/render.mjs';
+import { api, window, mountPage, settle, wait, cleanup, text, click, type, buttonByText, $, $$ } from '../harness/render.mjs';
 import { renderIncidentManagementPage } from '../../src/pages/incident-management.js';
 
 // backend/migrations/0001_baseline_schema.sql, widened by 0025
@@ -79,6 +79,47 @@ describe('Incident Management behaviour', () => {
     assert.ok(statBadge, 'detail pane status badge with pending modifier class missing');
     assert.match(text(statBadge), /Active/);
     assert.ok($('svg', statBadge), 'detail pane status badge icon missing');
+  });
+
+  for (const role of ['admin', 'secretary']) {
+    test(`${role}: the Log an Incident form has a Report channel select, defaulting to Walk-in`, async () => {
+      const ctx = mountPage(renderIncidentManagementPage, { role });
+      await settle();
+      click(buttonByText(/new incident/i, ctx.root));
+      await settle();
+      const select = $('#incident-report-channel');
+      assert.ok(select, 'Report channel select missing');
+      assert.deepEqual([...select.options].map((o) => text(o)), ['Tanod alerted', 'Walk-in', 'SMS', 'Other']);
+      assert.deepEqual([...select.options].map((o) => o.value), ['tanod_alerted', 'walk_in', 'sms', 'other']);
+      assert.equal(select.value, 'walk_in');
+      assert.equal(text($(`label[for="incident-report-channel"]`)), 'Report channel');
+    });
+
+    test(`${role}: submitting sends the default report_channel walk_in`, async () => {
+      const ctx = mountPage(renderIncidentManagementPage, { role });
+      await settle();
+      click(buttonByText(/new incident/i, ctx.root));
+      await settle();
+      type($('.incident-form-textarea'), 'Caller reported a noisy gathering.');
+      $('.incident-form-pane form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await settle();
+      const [call] = api.callsTo('POST', '/incidents');
+      assert.ok(call, 'POST /incidents was not sent');
+      assert.equal(call.body.report_channel, 'walk_in');
+      assert.match(call.headers['idempotency-key'] || '', /^[0-9a-f-]{36}$/i);
+    });
+  }
+
+  test('a different report channel is sent as chosen', async () => {
+    const ctx = mountPage(renderIncidentManagementPage, { role: 'secretary' });
+    await settle();
+    click(buttonByText(/new incident/i, ctx.root));
+    await settle();
+    type($('#incident-report-channel'), 'sms');
+    type($('.incident-form-textarea'), 'Text message from a resident.');
+    $('.incident-form-pane form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    assert.equal(api.callsTo('POST', '/incidents')[0].body.report_channel, 'sms');
   });
 
   test('the incident list never exposes the raw narrative, even to a Secretary', async () => {

@@ -140,6 +140,18 @@ function printRuleTable(): void
     out(sprintf('  %-20s %s', 'audit_log', RetentionService::AUDIT_LOG_DAYS . ' days (7 years)'));
     out(sprintf('  %-20s %s', 'incident_records', RetentionService::RECORD_RETENTION_DAYS . ' days (7 years) — incident + evidence cascade'));
     out('');
+    out('Tanod-workflow tables (migrations 0030-0033) — retention NOT YET DECIDED:');
+    out('  the barangay/COA has not confirmed a period, so each rule below is a');
+    out('  no-op placeholder (nothing is ever purged from these tables by this job).');
+    foreach (RetentionService::NEW_TABLE_RULES as $rule => $def) {
+        $days = $def['days'] === null ? 'no period set' : $def['days'] . ' days';
+        out(sprintf('  %-22s %-34s [%s; clock: %s]', $rule, $days, $def['status'], $def['clock']));
+        out(sprintf('  %-22s %s', '', $def['summary']));
+    }
+    foreach (RetentionService::FOLLOWS_PARENT as $child => $parent) {
+        out(sprintf('  %-22s %-34s [follows %s; no clock of its own]', $child, '(lives with its parent report)', $parent));
+    }
+    out('');
     out('Legal hold (incident.legal_hold, evidence_attachment.legal_hold,');
     out('citizen_report.legal_hold, sms_log.legal_hold) is the only exception');
     out('to any of these. A hold on an incident also covers its dependent');

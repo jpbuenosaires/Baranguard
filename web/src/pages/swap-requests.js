@@ -9,7 +9,8 @@
  * - High-density action buttons with confirmation dialogs
  */
 
-import { getShiftSwapRequests, getShifts, getUsers, resolveShiftSwapRequest, ApiClientError } from '../api/apiClient.js';
+import { getShiftSwapRequests, getShifts, resolveShiftSwapRequest, ApiClientError } from '../api/apiClient.js';
+import { loadTanodRoster } from '../services/tanodRoster.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { avatarInitials } from '../components/Avatar.js';
@@ -115,7 +116,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
       const [requestsRes, shiftsRes, tanodsRes] = await Promise.all([
         getShiftSwapRequests({ limit: 100 }),
         getShifts({ limit: 100 }),
-        getUsers({ role: 'tanod', limit: 100 }),
+        loadTanodRoster(user).then((items) => ({ items })),
       ]);
       allRequests = requestsRes.items;
       shiftsById = new Map(shiftsRes.items.map((s) => [s.shiftId, s]));
@@ -312,7 +313,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
               note.className = 'data-table__sub';
               note.style.color = 'var(--color-warning-text)';
               note.style.fontWeight = '600';
-              note.textContent = '⚠️ Unassigned — Admin action required';
+              note.textContent = '⚠️ Unassigned — reassignment required';
               wrap.appendChild(note);
             }
             return wrap;
