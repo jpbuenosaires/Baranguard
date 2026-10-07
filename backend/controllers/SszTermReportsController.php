@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\ApprovalAuthority;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
+use Baranguard\Lib\PaperApproval;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
@@ -23,6 +24,13 @@ use PDO;
  *                                         never by the preparer
  *   POST  /ssz-term-reports/:id/mark-submitted
  *                                         admin|secretary: approved -> submitted
+ *   POST  /ssz-term-reports/:id/paper-signature
+ *                                         admin|secretary: record the date on the
+ *                                         signed paper of an APPROVED report
+ *   POST  /ssz-term-reports/:id/record-paper-approval
+ *                                         admin|secretary: prepared -> approved,
+ *                                         recorded from paper (signer holds
+ *                                         approve_annex_d, never the preparer)
  *
  * Every write needs an Idempotency-Key. `POST` stores it in
  * `client_request_id` (a retry returns the original, 200). The state-changing
@@ -442,6 +450,122 @@ final class SszTermReportsController
     }
 
     /**
+     * POST /ssz-term-reports/:id/paper-signature - admin|secretary. Records
+     * (or overwrites) the date written on the signed paper of an APPROVED
+     * term report (409 in any other status, including `submitted`). Touches
+     * no count or content, so an approved report stays locked. Order: 403 ->
+     * 400 (key/body) -> 404 -> idempotent replay -> 409.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function paperSignature(PDO $pdo, array $identity, string $reportIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+        if (!ctype_digit($reportIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Term report not found.');
+        }
+        $key = self::requireIdempotencyKey();
+        $body = Http::jsonBody();
+        $signedOn = PaperApproval::requirePastOrTodayDate($body['paper_signed_on'] ?? null, 'paper_signed_on');
+
+        $pdo->beginTransaction();
+        try {
+            $row = self::loadOrFail($pdo, $identity, $reportIdParam, true);
+            $reportId = (int) $row['report_id'];
+
+            if (PaperApproval::isReplay($pdo, $identity['barangay_id'], 'paper_signature_recorded', 'ssz_term_report', $reportId, $key)) {
+                $pdo->commit();
+                Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? $row));
+            }
+            if ($row['status'] !== 'approved') {
+                throw new ApiError(409, 'CONFLICT', 'A paper signature can only be recorded on an approved term report.');
+            }
+            $pdo->prepare(
+                'UPDATE ssz_term_report
+                    SET paper_signed_on = :signed_on, paper_recorded_by = :actor, paper_recorded_at = UTC_TIMESTAMP(),
+                        version = version + 1, updated_at = UTC_TIMESTAMP()
+                  WHERE report_id = :id'
+            )->execute(['signed_on' => $signedOn, 'actor' => $identity['user_id'], 'id' => $reportId]);
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'paper_signature_recorded', 'ssz_term_report', $reportId, [
+                'report_id' => $reportId,
+                'status' => 'approved',
+                'idempotency_key' => $key,
+            ]);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? []));
+    }
+
+    /**
+     * POST /ssz-term-reports/:id/record-paper-approval - admin|secretary.
+     * Body {"signer_user_id", "signed_on"}. Records an approval that
+     * happened on paper: `prepared` -> `approved`, `approved_by` = the signer
+     * (an active same-barangay user holding `approve_annex_d`, never the
+     * preparer), `approval_mode` = 'recorded_from_paper'. Order: 403 -> 400
+     * -> 404 (report / cross-tenant) -> idempotent replay -> 409 (not
+     * prepared) -> 409 (signer is the preparer) -> 404 (signer in another
+     * barangay) -> 422 (signer cannot approve).
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    public static function recordPaperApproval(PDO $pdo, array $identity, string $reportIdParam): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+        if (!ctype_digit($reportIdParam)) {
+            throw new ApiError(404, 'NOT_FOUND', 'Term report not found.');
+        }
+        $key = self::requireIdempotencyKey();
+        $body = Http::jsonBody();
+        $signerId = PaperApproval::requirePositiveInt($body['signer_user_id'] ?? null, 'signer_user_id');
+        $signedOn = PaperApproval::requirePastOrTodayDate($body['signed_on'] ?? null, 'signed_on');
+
+        $pdo->beginTransaction();
+        try {
+            $row = self::loadOrFail($pdo, $identity, $reportIdParam, true);
+            $reportId = (int) $row['report_id'];
+
+            if (PaperApproval::isReplay($pdo, $identity['barangay_id'], 'approval_recorded_from_paper', 'ssz_term_report', $reportId, $key)) {
+                $pdo->commit();
+                Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? $row));
+            }
+            if ($row['status'] !== 'prepared') {
+                throw new ApiError(409, 'CONFLICT', 'Only a prepared term report can have a paper approval recorded.');
+            }
+            ApprovalAuthority::assertNotPreparer($signerId, (int) $row['prepared_by']);
+            PaperApproval::requireSigner($pdo, $identity['barangay_id'], $signerId, ApprovalAuthority::APPROVE_ANNEX_D);
+
+            $pdo->prepare(
+                "UPDATE ssz_term_report
+                    SET status = 'approved', approved_by = :signer, approved_at = UTC_TIMESTAMP(),
+                        approval_mode = 'recorded_from_paper', paper_signed_on = :signed_on,
+                        paper_recorded_by = :actor, paper_recorded_at = UTC_TIMESTAMP(),
+                        version = version + 1, updated_at = UTC_TIMESTAMP()
+                  WHERE report_id = :id"
+            )->execute(['signer' => $signerId, 'signed_on' => $signedOn, 'actor' => $identity['user_id'], 'id' => $reportId]);
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'approval_recorded_from_paper', 'ssz_term_report', $reportId, [
+                'report_id' => $reportId,
+                'status' => 'approved',
+                'signer_user_id' => $signerId,
+                'idempotency_key' => $key,
+            ]);
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? []));
+    }
+
+    /**
      * The Annex D computation (see the class doc). `$termStart`/`$termEnd`
      * are Manila calendar dates 'YYYY-MM-DD', end INCLUSIVE.
      *
@@ -667,7 +791,11 @@ final class SszTermReportsController
         // names and printed titles are joined here, server-side. Same barangay
         // by construction (the preparer/approver acted on this report).
         $names = [];
-        $ids = array_values(array_filter([(int) ($row['prepared_by'] ?? 0), (int) ($row['approved_by'] ?? 0)]));
+        $ids = array_values(array_unique(array_filter([
+            (int) ($row['prepared_by'] ?? 0),
+            (int) ($row['approved_by'] ?? 0),
+            (int) ($row['paper_recorded_by'] ?? 0),
+        ])));
         if ($ids !== []) {
             $in = implode(',', array_fill(0, count($ids), '?'));
             $nameStmt = $pdo->prepare("SELECT user_id, full_name, official_title FROM user WHERE user_id IN ({$in})");
@@ -678,6 +806,7 @@ final class SszTermReportsController
         }
         $preparer = $names[(int) ($row['prepared_by'] ?? 0)] ?? null;
         $approver = $names[(int) ($row['approved_by'] ?? 0)] ?? null;
+        $recorder = $names[(int) ($row['paper_recorded_by'] ?? 0)] ?? null;
         $iso = static fn (mixed $v): ?string => $v === null
             ? null
             : (new \DateTimeImmutable((string) $v, new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
@@ -710,6 +839,6 @@ final class SszTermReportsController
             'version' => (int) $row['version'],
             'created_at' => $iso($row['created_at']),
             'updated_at' => $iso($row['updated_at']),
-        ];
+        ] + PaperApproval::fields($row, isset($recorder['full_name']) ? (string) $recorder['full_name'] : null);
     }
 }
