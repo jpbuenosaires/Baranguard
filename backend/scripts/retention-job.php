@@ -151,6 +151,8 @@ function printRuleTable(): void
     foreach (RetentionService::FOLLOWS_PARENT as $child => $parent) {
         out(sprintf('  %-22s %-34s [follows %s; no clock of its own]', $child, '(lives with its parent report)', $parent));
     }
+    out(sprintf('  %-22s %-34s [decision: deliberately NOT time-purged]', 'school', '(no rule, by design)'));
+    out(sprintf('  %-22s %s', '', 'Annex B inventory is standing master data, no student data; retired via is_active, never by age'));
     out('');
     out('Legal hold (incident.legal_hold, evidence_attachment.legal_hold,');
     out('citizen_report.legal_hold, sms_log.legal_hold) is the only exception');

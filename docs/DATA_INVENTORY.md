@@ -23,10 +23,10 @@ new categories are the "(2026-10-01)" rows in §1. They are written and
 verified on disposable DBs only; not applied to either real DB, so no real
 personal data is held in them yet. **Retention for every new category is
 pending a policy decision (Rule 10).** Wave 3 (2026-10) added placeholder
-retention rules for five of them (`tanod_availability`,
+retention rules for six of them (`tanod_availability`,
 `accomplishment_report`/`accomplishment_entry`, `school_checkin`,
-`incident_referral`, plus `document_scan` which follows its parent
-report); each is switched OFF (no period set), so **nothing is purged from
+`incident_referral`, `ssz_term_report`, plus `document_scan` which follows
+its parent report, accomplishment or Annex D); each is switched OFF (no period set), so **nothing is purged from
 them today** (§5).
 
 **Extended 2026-10 for migration 0037** (paper approvals and scanned
@@ -59,11 +59,11 @@ the reference before being reconciled.
 | Tanod availability (2026-10-01) | `tanod_availability.windows_json`, period, review note | Ordinary personal data about a named staff member's time. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
 | Accomplishment reports (2026-10-01) | `accomplishment_entry.accomplishment_text`, `work_date`, `start_time`/`end_time`, `duration_minutes`, `suggested_duration_minutes`, `duration_flag`; `accomplishment_report` month/status/noted_by/approved_by | Ordinary personal data but sensitive in practice: a named person's hours and activities, and the likely attendance evidence for honorarium. Free text could be typed to include third-party details. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
 | Referral metadata (2026-10-01) | `incident_referral` (`referred_to`, `other_text`, `contact_name` = a responder/unit/official, never a citizen, `referred_at`, `reference_no`, `created_by`) | Ordinary personal data (staff/responder names, handoff times). The referral log endpoint returns no narrative, names or coordinates. Rows are deleted with their incident by the retention cascade (so they follow the incident's clock); a separate placeholder age rule exists but is OFF pending barangay/COA confirmation (§5) |
-| School inventory (2026-10-01) | `school` (name, address, optional coordinates, `focal_person`, `focal_contact`, remarks) | Ordinary personal data limited to school staff contact (a named focal person and phone number). No student data of any kind. Retention: pending decision, no purge job |
+| School inventory (2026-10-01) | `school` (name, address, optional coordinates, `focal_person`, `focal_contact`, remarks) | Ordinary personal data limited to school staff contact (a named focal person and phone number). No student data of any kind. Retention: **deliberately NOT time-purged, by decision** (standing master list, retired via `is_active`; §5), not a gap |
 | School check-ins (2026-10-01) | `school_checkin` (`user_id`, `school_id`, `checked_in_at`, `checked_out_at`) | Ordinary personal data: where and when a named tanod was deployed. No coordinates stored. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
 | Signed-paper scans (2026-10) | `document_scan` (`entity_type`, `entity_id`, `stored_path`, `mime_type`, `size_bytes`, `sha256`, `uploaded_by`); files under `SCANS_DIR`, outside the web root; `accomplishment_report`/`ssz_term_report` `paper_signed_on`, `paper_recorded_by/at`, `approval_mode` | A PDF/JPG/PNG scan of a signed paper report. May show signatures and staff names (the upload copy says no student names). Responses never expose `stored_path`. Retention: lives with its parent report; no clock of its own; pending barangay/COA confirmation (placeholder, see §5) |
 | Annex C-1 summary fields (2026-10-01) | `incident.school_id`, `c1_summary`, `c1_action_taken`, `c1_status_notes` | Designed as short, factual, non-identifying text (no victim/student names), separate from `raw_narrative`, which stays on the 90-day purge. Code enforces length only; free text can still be typed carelessly. Retention: pending decision; no purge rule exists for these columns, so they currently live as long as the incident |
-| Term reports (2026-10-01) | `ssz_term_report` (aggregate counts, prepared_by/approved_by, mayor-office and DILG received-by names and dates) | Aggregate counts plus names of staff and receiving officers. Retention: pending decision, no purge job |
+| Term reports (2026-10-01) | `ssz_term_report` (aggregate counts, prepared_by/approved_by, mayor-office and DILG received-by names and dates) | Aggregate counts plus names of staff and receiving officers. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
 
 ## 2. Purpose of processing
 
@@ -143,10 +143,20 @@ state. A full non-dry-run job therefore deletes nothing from these tables
 | `accomplishment_report` + `accomplishment_entry` | Monthly accomplishment report = attendance evidence for honorarium | Owning tanod; entry text also admin/secretary/PB of the same barangay | Pending barangay/COA confirmation (placeholder) | Delete only reports with status `approved`, aged from `approved_at`, together with their entries and attached `document_scan` rows and files; never an open/prepared/noted/returned report; one transaction per report |
 | `school_checkin` | Where/when a tanod was deployed to a school (MC 2026-037 reporting) | Admin/secretary/PB of the same barangay (tanod writes own) | Pending barangay/COA confirmation (placeholder) | Delete rows whose `checked_in_at` is older than the period |
 | `incident_referral` | Log of matters referred to PNP/BFP/EMS/officials | Admin/secretary/PB of the same barangay (tanod sees own referrals on their incidents) | Pending barangay/COA confirmation (placeholder); independently, the existing 7-year incident purge still deletes a referral with its incident | Delete rows whose `referred_at` is older than the period, except referrals of an incident under `legal_hold` (counted as `held`) |
-| `document_scan` | Scanned signed paper copy of an approved report | Admin/secretary/PB of the same barangay (download audited) | Lives with its parent report; no clock of its own; pending (placeholder) | Removed with its parent `accomplishment_report` (rows and files under `SCANS_DIR`). **Gap to decide:** scans attached to an `ssz_term_report` (Annex D) have no purge path because `ssz_term_report` itself has no retention rule yet |
+| `document_scan` | Scanned signed paper copy of an approved report | Admin/secretary/PB of the same barangay (download audited) | Lives with its parent report; no clock of its own; pending (placeholder) | Removed with its parent: an `accomplishment_report` (`entity_type = 'accomplishment_report'`) or an `ssz_term_report` (`entity_type = 'ssz_term_report'`) — rows and files under `SCANS_DIR`, matched by entity type AND id so a same-numbered report of the other kind is never touched |
+| `ssz_term_report` (Annex D) | Per-term aggregate report to the Mayor's office/DILG | Admin/secretary/PB of the same barangay | Pending barangay/COA confirmation (placeholder, period null, purge OFF) | Delete only reports with status `submitted`, aged from `mayor_office_received_at` (the Secretary-entered submission date; the table stores no other submission timestamp), together with their own `document_scan` rows and files; never a draft/prepared/approved report; one transaction per report |
+
+**`school` (Annex B inventory) has no retention rule, deliberately.** It
+is a standing master list, not time-bound activity data: it holds no
+student data (school name/address, optional coordinates, a staff focal
+person's name and phone), it is referenced by check-ins and incident C-1
+fields, and a school that closes or leaves the program is retired by
+setting `is_active = 0`, never by age. Not purging it is a decision, not
+a gap; revisit only if the barangay wants the focal-person contact
+removed on a clock (that would be a column scrub, not a row purge).
 
 Not covered by any rule, still accumulating with no placeholder:
-`school`, `ssz_term_report`, `user.official_title`/`approval_authority`
+`user.official_title`/`approval_authority`
 and the `incident.c1_*` columns. Accomplishment reports are the likely
 attendance evidence for honorarium payroll, but what the treasurer/COA
 accepts is unconfirmed (HANDOFF.md). Backups are not covered by any of
