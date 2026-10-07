@@ -18652,3 +18652,19 @@ git worktrees, merged to local `main`; nothing pushed.
   tsc 1 / lint 18 (both pre-existing baseline), local schema 230/0.
 - **Not proven:** concurrency, scheduled-task registration, FCM/SMS delivery,
   every browser and device behaviour.
+
+## 2026-10-08 (1) - Follow-ups to the Proposed Changes Review build
+
+- `dispatch_offer` push now uses the full-screen critical alert (native + JS
+  `CRITICAL_TYPES`), overlay shows only type/barangay/time, "View Offer" opens the
+  Dispatches tab (Tanod) or Dispatch tab (Admin). Android only syntax-checked.
+- Removed the leftover `TEMP DIAGNOSTIC` banner in `assignments.tsx`.
+- Roster picker: `GET /users/directory?purpose=roster` (tanods + admins) feeds the
+  Scheduler create/edit pickers only; swap and dispatch pickers stay tanod-only.
+- Retention: `ssz_term_report` placeholder rule (period null, purge OFF, ages from
+  `mayor_office_received_at`, submitted only); `school` documented as deliberately
+  not time-purged.
+- Rehearsal: migrations 0029-0038 applied to scratch copies of `baranguard` and
+  `baranguard_uiseed` (dropped afterwards), all ok, `baranguard_uiseed` kept 123
+  incidents / 76 dispatches / 12 published shifts, report_channel backfilled.
+- Not proven: Gradle compile, device behaviour, real push delivery, concurrency.
