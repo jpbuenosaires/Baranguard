@@ -9,6 +9,7 @@ use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Lib\RateLimiter;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Dispatch\OfferService;
 use Baranguard\Services\Sms\CitizenUpdateNotifier;
 use Baranguard\Services\Notifications\NotificationService;
 use PDO;
@@ -1812,6 +1813,10 @@ final class IncidentsController
                     school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE incident_id = :incident_id'
         );
+        // Wave 2: at night a new pending incident opens a dispatch offer.
+        // After commit, and it can never fail incident creation (Rule 7).
+        OfferService::autoOpenForNewIncident($pdo, $incidentId, (int) $identity['barangay_id']);
+
         $readBackStmt->execute(['incident_id' => $incidentId]);
         Http::send(201, self::mapIncident($readBackStmt->fetch(PDO::FETCH_ASSOC)));
     }
@@ -2036,6 +2041,11 @@ final class IncidentsController
                     school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE incident_id = :incident_id'
         );
+        // Wave 2: same night auto-offer as createWeb(); covers POST /incidents
+        // (tanod), /sync/batch incidents[] and SMS-ingested incidents, which
+        // all come through here. Never throws (Rule 7).
+        OfferService::autoOpenForNewIncident($pdo, $incidentId, (int) $identity['barangay_id']);
+
         $readBackStmt->execute(['incident_id' => $incidentId]);
         return ['incident' => self::mapIncident($readBackStmt->fetch(PDO::FETCH_ASSOC)), 'wasCreated' => true];
     }

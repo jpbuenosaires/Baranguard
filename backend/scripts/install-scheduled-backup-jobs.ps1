@@ -6,6 +6,8 @@
 #
 #   BaranguardBackupRetention  daily 02:00      -> scheduled-backup-and-retention.ps1
 #   BaranguardRestoreDrill     weekly Sun 03:00 -> scheduled-restore-drill.ps1
+#   BaranguardDispatchOfferSweeper every minute -> scheduled-dispatch-offer-sweep.ps1
+#                              (night-time dispatch offers, Wave 2)
 #   BaranguardPbDigest         weekly Mon 06:00 -> scheduled-pb-digest.ps1 (7-day
 #                              window, so each digest's range starts exactly where
 #                              the previous one's ended)
@@ -71,8 +73,14 @@ Write-Step "3. Weekly PB digest (Monday 06:00)"
 $digestTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "06:00"
 Install-BaranguardTask "BaranguardPbDigest" "scheduled-pb-digest.ps1" $digestTrigger
 
+Write-Step "4. Dispatch offer sweeper (every minute)"
+# Night-time dispatch offers (Wave 2): escalates/re-broadcasts offers nobody
+# accepted within 180 s. Silent when nothing is due.
+$sweepTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+Install-BaranguardTask "BaranguardDispatchOfferSweeper" "scheduled-dispatch-offer-sweep.ps1" $sweepTrigger
+
 Write-Step "Summary"
-Get-ScheduledTask -TaskName "BaranguardBackupRetention", "BaranguardRestoreDrill", "BaranguardPbDigest" -ErrorAction SilentlyContinue |
+Get-ScheduledTask -TaskName "BaranguardBackupRetention", "BaranguardRestoreDrill", "BaranguardPbDigest", "BaranguardDispatchOfferSweeper" -ErrorAction SilentlyContinue |
     Select-Object TaskName, State | Format-Table -AutoSize
 Write-Host "$pass passed, $fail failed."
 Write-Host ""

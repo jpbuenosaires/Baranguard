@@ -8,6 +8,7 @@ use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Lib\ApprovalAuthority;
+use Baranguard\Lib\PaperApproval;
 use Baranguard\Services\Scheduling\FatigueCalculator;
 use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
@@ -106,7 +107,9 @@ final class ShiftsController
         // original shift instead of creating a duplicate (§6).
         $existingStmt = $pdo->prepare(
             'SELECT shift_id, user_id, patrol_zone, start_at, end_at, version,
-                    approval_status, approved_by, approved_at, source_availability_id, pending_reapproval
+                    approval_status, approved_by, approved_at, source_availability_id, pending_reapproval,
+                    approval_mode, paper_signed_on,
+                    (SELECT pu.full_name FROM user pu WHERE pu.user_id = shift_schedule.paper_recorded_by) AS paper_recorded_by_name
              FROM shift_schedule WHERE client_request_id = :request_id AND barangay_id = :barangay_id LIMIT 1'
         );
         $existingStmt->execute(['request_id' => $requestId, 'barangay_id' => $identity['barangay_id']]);
@@ -170,6 +173,9 @@ final class ShiftsController
             'approved_at' => null,
             'source_availability_id' => $sourceAvailabilityId,
             'pending_reapproval' => false,
+            'approval_mode' => 'digital',
+            'paper_signed_on' => null,
+            'paper_recorded_by_name' => null,
         ]);
     }
 
@@ -213,7 +219,9 @@ final class ShiftsController
 
         $stmt = $pdo->prepare(
             "SELECT shift_id, user_id, patrol_zone, start_at, end_at, version,
-                    approval_status, approved_by, approved_at, source_availability_id, pending_reapproval
+                    approval_status, approved_by, approved_at, source_availability_id, pending_reapproval,
+                    approval_mode, paper_signed_on,
+                    (SELECT pu.full_name FROM user pu WHERE pu.user_id = shift_schedule.paper_recorded_by) AS paper_recorded_by_name
              FROM shift_schedule
              WHERE {$whereSql}
              ORDER BY start_at ASC
@@ -505,10 +513,30 @@ final class ShiftsController
      */
     public static function publish(PDO $pdo, array $identity): void
     {
-        ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::APPROVE_ROSTER);
+        $body = Http::jsonBody();
+
+        // Wave 2 (migration 0038): `recorded_from_paper: {signer_user_id,
+        // signed_on}` lets an Admin/Secretary record a roster that was
+        // approved ON PAPER by someone holding `approve_roster`, without
+        // holding that authority themselves. Absent -> unchanged behaviour
+        // (the caller must hold approve_roster).
+        $paper = null;
+        if (array_key_exists('recorded_from_paper', $body) && $body['recorded_from_paper'] !== null) {
+            AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+            $rec = $body['recorded_from_paper'];
+            if (!is_array($rec)) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'recorded_from_paper must be an object {signer_user_id, signed_on}.');
+            }
+            $paper = [
+                'signer_user_id' => PaperApproval::requirePositiveInt($rec['signer_user_id'] ?? null, 'signer_user_id'),
+                'signed_on' => PaperApproval::requirePastOrTodayDate($rec['signed_on'] ?? null, 'signed_on'),
+            ];
+        } else {
+            ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::APPROVE_ROSTER);
+        }
+        $auditAction = $paper !== null ? 'roster_published_from_paper' : 'roster_published';
         $idempotencyKey = RosterSupport::requireIdempotencyKey();
 
-        $body = Http::jsonBody();
         $rawIds = $body['shift_ids'] ?? null;
         if (!is_array($rawIds) || count($rawIds) < 1 || count($rawIds) > self::MAX_PUBLISH_BATCH) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'shift_ids must be an array of 1 to ' . self::MAX_PUBLISH_BATCH . ' shift ids.');
@@ -525,7 +553,7 @@ final class ShiftsController
         }
         $ids = array_keys($ids);
 
-        $replay = RosterSupport::findAuditReplay($pdo, $identity['barangay_id'], 'roster_published', null, $idempotencyKey);
+        $replay = RosterSupport::findAuditReplay($pdo, $identity['barangay_id'], $auditAction, null, $idempotencyKey);
         if ($replay !== null) {
             Http::send(200, [
                 'published' => array_values(array_map('intval', $replay['published'] ?? [])),
@@ -535,6 +563,14 @@ final class ShiftsController
                     $replay['warning_dates'] ?? []
                 )),
             ]);
+        }
+
+        // Who signed on paper: unknown / other-barangay id -> 404, a same-
+        // barangay user who may not approve rosters -> 422 (PaperApproval).
+        $signerId = $identity['user_id'];
+        if ($paper !== null) {
+            $signer = PaperApproval::requireSigner($pdo, (int) $identity['barangay_id'], $paper['signer_user_id'], ApprovalAuthority::APPROVE_ROSTER);
+            $signerId = $signer['user_id'];
         }
 
         $pdo->beginTransaction();
@@ -565,25 +601,40 @@ final class ShiftsController
             }
             if ($published !== []) {
                 $pubPlaceholders = implode(',', array_fill(0, count($published), '?'));
+                // A digital publish also resets any stale paper fields.
                 $update = $pdo->prepare(
                     "UPDATE shift_schedule
                         SET approval_status = 'published', approved_by = ?, approved_at = UTC_TIMESTAMP(),
                             pending_reapproval = 0,
+                            approval_mode = ?, paper_signed_on = ?, paper_recorded_by = ?, paper_recorded_at = ?,
                             version = version + 1, updated_at = UTC_TIMESTAMP()
                       WHERE shift_id IN ({$pubPlaceholders}) AND approval_status = 'draft'"
                 );
-                $update->execute([$identity['user_id'], ...$published]);
+                $update->execute([
+                    $signerId,
+                    $paper !== null ? PaperApproval::MODE_PAPER : PaperApproval::MODE_DIGITAL,
+                    $paper['signed_on'] ?? null,
+                    $paper !== null ? $identity['user_id'] : null,
+                    $paper !== null ? gmdate('Y-m-d H:i:s') : null,
+                    ...$published,
+                ]);
             }
 
             $warningDates = self::coverageWarningDates($pdo, $identity['barangay_id'], $rows);
 
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'roster_published', 'shift_schedule', null, [
+            $auditMeta = [
                 'count' => count($published),
                 'published' => $published,
                 'already_published' => $alreadyPublished,
                 'warning_dates' => $warningDates,
                 'idempotency_key' => $idempotencyKey,
-            ]);
+            ];
+            if ($paper !== null) {
+                // Ids and a date only — who signed on paper and when.
+                $auditMeta['signer_user_id'] = $signerId;
+                $auditMeta['paper_signed_on'] = $paper['signed_on'];
+            }
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], $auditAction, 'shift_schedule', null, $auditMeta);
 
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -710,6 +761,11 @@ final class ShiftsController
     /** @param array<string,mixed> $row @return array<string,mixed> */
     public static function mapShift(array $row): array
     {
+        // Paper fields describe an APPROVAL, so they only show while the
+        // shift is published (a draft, e.g. after an approved swap, has no
+        // live approval whatever the columns still hold).
+        $published = ($row['approval_status'] ?? 'draft') === 'published';
+        $onPaper = $published && ($row['approval_mode'] ?? 'digital') === 'recorded_from_paper';
         return [
             'shift_id' => (int) $row['shift_id'],
             'user_id' => $row['user_id'] !== null ? (int) $row['user_id'] : null,
@@ -722,6 +778,9 @@ final class ShiftsController
             'approved_at' => $row['approved_at'] ?? null,
             'source_availability_id' => isset($row['source_availability_id']) ? (int) $row['source_availability_id'] : null,
             'pending_reapproval' => (int) ($row['pending_reapproval'] ?? 0) === 1,
+            'approval_mode' => $onPaper ? 'recorded_from_paper' : 'digital',
+            'paper_signed_on' => $onPaper ? ($row['paper_signed_on'] ?? null) : null,
+            'paper_recorded_by_name' => $onPaper ? ($row['paper_recorded_by_name'] ?? null) : null,
         ];
     }
 }
