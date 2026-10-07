@@ -776,22 +776,7 @@ export async function updateProfile(userId, { fullName, contactNumber } = {}) {
   return { userId: json.user_id, updated: json.updated };
 }
 
-// --- Citizen reports (W16 inbox, W19 public form) ---------------------------
-
-/** POST /citizen-reports — public, no session required. */
-export async function submitCitizenReport({ barangayId, description, contactNumber, latitude, longitude }) {
-  const json = await request('POST', '/citizen-reports', {
-    body: {
-      barangay_id: barangayId,
-      description,
-      contact_number: contactNumber,
-      latitude,
-      longitude,
-    },
-    auth: false,
-  });
-  return { reportId: json.report_id, confirmation: json.confirmation };
-}
+// --- Citizen reports (W16 inbox; the public submit form was removed 2026-10-07) ---------------------------
 
 /** GET /public/transparency?barangay_id= — no auth (H-13/L-03: published deliberately, not an internal endpoint). */
 export async function getPublicTransparency(barangayId) {

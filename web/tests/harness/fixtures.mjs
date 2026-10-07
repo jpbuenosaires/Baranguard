@@ -337,9 +337,6 @@ export function buildRoutes(scenario) {
 
     // --- Citizen reports ---
     { method: 'GET', path: '/citizen-reports', handler: ({ query }) => ok(paginate(citizenReports.filter((r) => (query.status === 'unconverted' ? r.incident_id === null : true)), query)) },
-    { method: 'POST', path: '/citizen-reports', handler: ({ body }) => (!body?.description
-      ? { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'Please describe what happened.' } } }
-      : { status: 201, body: { report_id: 399, confirmation: 'CR-2026-399' } }) },
     { method: 'POST', path: '/citizen-reports/:id/convert', handler: ({ params }) => ({ status: 201, body: { incident_id: 905, citizen_report_id: Number(params.id), converted_at: sqlAgo(0) } }) },
 
     // --- Scheduling ---

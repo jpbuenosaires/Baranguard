@@ -252,6 +252,36 @@
   color: #FFFFFF;
 }
 
+/* Collapsible sidebar menu (System Tools): a parent row that toggles a
+   nested group of the same nav buttons. Children are indented so they read
+   as belonging to the parent; the chevron turns when the menu is open. */
+.sidebar__nav-chevron {
+  margin-left: auto;
+  display: flex;
+  flex-shrink: 0;
+  color: rgba(186, 230, 253, 0.7);
+  transition: transform 0.15s ease;
+}
+.sidebar__nav-toggle.is-open .sidebar__nav-chevron { transform: rotate(180deg); }
+.sidebar__nav-toggle.has-active:not(.is-open) {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.07);
+}
+.sidebar__submenu[hidden] { display: none; }
+.sidebar__submenu {
+  display: flex;
+  flex-direction: column;
+}
+.sidebar__nav-item--child {
+  margin-left: 1.75rem;
+  width: calc(100% - 2.375rem);
+}
+.sidebar.is-collapsed .sidebar__nav-chevron { display: none; }
+.sidebar.is-collapsed .sidebar__nav-item--child {
+  width: calc(100% - 1rem);
+  margin: var(--spacing-3xs) var(--spacing-sm);
+}
+
 /* Sidebar section headers */
 .sidebar__nav-group-label {
   margin: var(--spacing-sm-md) 0.875rem var(--spacing-xs);
@@ -832,6 +862,8 @@
   .sidebar.is-collapsed .sidebar__nav-label,
   .sidebar.is-collapsed .sidebar__user-text { display: block; }
   .sidebar.is-collapsed .sidebar__user-action { display: inline-flex; }
+  .sidebar.is-collapsed .sidebar__nav-chevron { display: flex; }
+  .sidebar.is-collapsed .sidebar__nav-item--child { margin-left: 1.75rem; width: calc(100% - 2.375rem); }
   .sidebar.is-collapsed .sidebar__brand { justify-content: flex-start; }
   .sidebar.is-collapsed .sidebar__brand .icon-badge--brand { display: inline-flex; }
   .sidebar.is-collapsed .sidebar__nav-item { justify-content: flex-start; position: static; }

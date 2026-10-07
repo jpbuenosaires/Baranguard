@@ -124,10 +124,9 @@ describe('request plumbing', () => {
     assert.deepEqual(call.body, { location_description: 'Purok 1' });
   });
 
-  test('public endpoints (citizen report, barangays) never send a token', async () => {
+  test('public endpoints (barangays) never send a token', async () => {
     signIn('admin');
     await client.getBarangays();
-    await client.submitCitizenReport({ barangayId: 1, description: 'Flooding', contactNumber: null, latitude: null, longitude: null });
     for (const call of api.calls) assert.equal(call.headers.authorization, undefined, `${call.method} ${call.path} leaked a token`);
   });
 });
