@@ -167,20 +167,27 @@ const MyShiftsPage: React.FC = () => {
     }
   }
 
-  // Calculate schedule summary metrics
-  const { nextShift, totalScheduledHours } = useMemo(() => {
+  // Calculate schedule summary metrics. A shift flagged `pendingReapproval` (swap approved,
+  // awaiting re-publish) is NOT confirmed duty, so it never counts toward "next duty" or hours.
+  const { nextShift, totalScheduledHours, confirmedCount, pendingReapprovalCount } = useMemo(() => {
     const now = Date.now();
-    const upcoming = shifts.filter((s) => new Date(s.endAt).getTime() >= now);
-    const next = upcoming[0] ?? shifts[0] ?? null;
+    const confirmed = shifts.filter((s) => !s.pendingReapproval);
+    const upcoming = confirmed.filter((s) => new Date(s.endAt).getTime() >= now);
+    const next = upcoming[0] ?? confirmed[0] ?? null;
 
     let hours = 0;
-    for (const s of shifts) {
+    for (const s of confirmed) {
       const start = new Date(s.startAt).getTime();
       const end = new Date(s.endAt).getTime();
       hours += Math.max(0, Math.round((end - start) / (1000 * 60 * 60)));
     }
 
-    return { nextShift: next, totalScheduledHours: hours };
+    return {
+      nextShift: next,
+      totalScheduledHours: hours,
+      confirmedCount: confirmed.length,
+      pendingReapprovalCount: shifts.length - confirmed.length,
+    };
   }, [shifts]);
 
   const nextShiftTiming = nextShift ? parseShiftTiming(nextShift.startAt, nextShift.endAt) : null;
@@ -227,7 +234,7 @@ const MyShiftsPage: React.FC = () => {
           {/* Roster Glance Overview Metric Banner (Dynamic for Schedule vs Swaps) */}
           {!loading && !error && (
             activeTab === 'schedule' ? (
-              shifts.length > 0 && nextShiftTiming && (
+              shifts.length > 0 && (
                 <div className="roster-glance-banner" role="region" aria-label="Schedule Overview">
                   <div className="roster-glance-left">
                     <div className="roster-glance-icon" aria-hidden="true">
@@ -235,10 +242,13 @@ const MyShiftsPage: React.FC = () => {
                     </div>
                     <div>
                       <div className="roster-glance-headline">
-                        Next: {nextShiftTiming.isToday ? 'Today' : nextShiftTiming.isTomorrow ? 'Tomorrow' : nextShiftTiming.dateLabel.split('·')[0].trim()} at {nextShiftTiming.timeRange.split('–')[0].trim()}
+                        {nextShiftTiming
+                          ? `Next: ${nextShiftTiming.isToday ? 'Today' : nextShiftTiming.isTomorrow ? 'Tomorrow' : nextShiftTiming.dateLabel.split('·')[0].trim()} at ${nextShiftTiming.timeRange.split('–')[0].trim()}`
+                          : 'No confirmed duty'}
                       </div>
                       <div className="roster-glance-sub">
-                        {shifts.length} upcoming shift{shifts.length > 1 ? 's' : ''}
+                        {confirmedCount} confirmed shift{confirmedCount === 1 ? '' : 's'}
+                        {pendingReapprovalCount > 0 ? ` · ${pendingReapprovalCount} pending re-approval` : ''}
                       </div>
                     </div>
                   </div>
@@ -371,13 +381,14 @@ const MyShiftsPage: React.FC = () => {
                 {shifts.map((shift) => {
                   const pendingSwap = pendingSwapForShift(shift.shiftId);
                   const timing = parseShiftTiming(shift.startAt, shift.endAt);
-                  const isNext = shift.shiftId === nextShift?.shiftId;
+                  const isPendingReapproval = shift.pendingReapproval;
+                  const isNext = !isPendingReapproval && shift.shiftId === nextShift?.shiftId;
 
                   return (
                     <article
                       key={shift.shiftId}
-                      className="roster-card"
-                      aria-label={`Shift on ${timing.dateLabel}`}
+                      className={`roster-card ${isPendingReapproval ? 'roster-card--pending-reapproval' : ''}`}
+                      aria-label={`Shift on ${timing.dateLabel}${isPendingReapproval ? ', pending re-approval' : ''}`}
                     >
                       {/* Top: Date & Next Up Indicator */}
                       <div className="roster-card__top">
@@ -389,6 +400,12 @@ const MyShiftsPage: React.FC = () => {
                           <div className="status-indicator status-indicator--info">
                             <span className="status-indicator__dot" aria-hidden="true" />
                             <span className="status-indicator__label">Next Duty</span>
+                          </div>
+                        )}
+                        {isPendingReapproval && (
+                          <div className="status-indicator status-indicator--pending">
+                            <span className="status-indicator__dot" aria-hidden="true" />
+                            <span className="status-indicator__label">Pending re-approval</span>
                           </div>
                         )}
                       </div>
@@ -413,7 +430,11 @@ const MyShiftsPage: React.FC = () => {
 
                       {/* Footer: Contextual Swap Action */}
                       <div className="roster-card__footer">
-                        {pendingSwap ? (
+                        {isPendingReapproval ? (
+                          <span className="roster-card__zone-row">
+                            Your swap was approved. The desk must re-publish this shift before it counts as confirmed duty.
+                          </span>
+                        ) : pendingSwap ? (
                           <div className="status-indicator status-indicator--pending">
                             <span className="status-indicator__dot" aria-hidden="true" />
                             <span className="status-indicator__label">Swap Pending Approval</span>
