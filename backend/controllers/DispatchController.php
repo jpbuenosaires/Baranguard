@@ -8,6 +8,7 @@ use Baranguard\Lib\Audit;
 use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Dispatch\OfferService;
 use Baranguard\Services\Notifications\NotificationDispatcher;
 use Baranguard\Services\Notifications\NotificationService;
 use Baranguard\Services\Routing\OrsClient;
@@ -149,171 +150,27 @@ final class DispatchController
 
         $pdo->beginTransaction();
         try {
-            // Lock the incident row first — this is what makes "at most
-            // one active dispatch per incident" (§5) safe under
-            // concurrent requests, not just the status check below.
-            $incidentStmt = $pdo->prepare(
-                'SELECT incident_id, barangay_id, status, priority FROM incident WHERE incident_id = :incident_id FOR UPDATE'
-            );
-            $incidentStmt->execute(['incident_id' => $incidentId]);
-            $incident = $incidentStmt->fetch(PDO::FETCH_ASSOC);
-            if ($incident === false) {
-                throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
-            }
-            AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
-            // 2026-09-13, explicit user-approved architecture change
-            // (docs/REMAINING.md G-backlog "backup/second responder"):
-            // an incident may now have MORE THAN ONE concurrent active
-            // dispatch — Admin's own judgment call, no incident-type or
-            // priority gate. `dispatched` is therefore also acceptable
-            // here, not just `pending`; only `resolved` (or any other
-            // non-actionable status) is still refused. See that plan's
-            // own "what already works with zero changes" section for
-            // why the resolve-gate, response-time metric, dispatch list
-            // endpoint, mobile, and the notification target were all
-            // already safe under N concurrent dispatches without any
-            // change of their own.
-            if (!in_array($incident['status'], ['pending', 'dispatched'], true)) {
-                throw new ApiError(409, 'CONFLICT', 'Incident is not pending or dispatched — it may already be resolved.');
-            }
-
-            $tanodStmt = $pdo->prepare(
-                "SELECT u.user_id
-                 FROM user u
-                 WHERE u.user_id = :tanod_id AND u.barangay_id = :barangay_id
-                   AND u.role = 'tanod' AND u.is_active = 1
-                   AND EXISTS (
-                       SELECT 1 FROM duty_status ds
-                       WHERE ds.user_id = u.user_id AND ds.status = 'on_duty'
-                         AND ds.changed_at = (SELECT MAX(ds2.changed_at) FROM duty_status ds2 WHERE ds2.user_id = u.user_id)
-                   )
-                 LIMIT 1"
-            );
-            $tanodStmt->execute(['tanod_id' => $tanodId, 'barangay_id' => $identity['barangay_id']]);
-            if ($tanodStmt->fetch(PDO::FETCH_ASSOC) === false) {
-                throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'The selected Tanod is not available for assignment.');
-            }
-
-            // A Tanod cannot be double-assigned to the same incident —
-            // this doesn't follow automatically from allowing a SECOND
-            // (different) responder above, so it needs its own guard.
-            $dupStmt = $pdo->prepare(
-                "SELECT 1 FROM dispatch
-                 WHERE incident_id = :incident_id AND tanod_id = :tanod_id
-                   AND status IN ('assigned','en_route','arrived')
-                 LIMIT 1"
-            );
-            $dupStmt->execute(['incident_id' => $incidentId, 'tanod_id' => $tanodId]);
-            if ($dupStmt->fetch(PDO::FETCH_ASSOC) !== false) {
-                throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on this incident.');
-            }
-
-            // Code-review finding H-01 (2026-09-24): the check above only
-            // catches the SAME tanod being double-assigned to the SAME
-            // incident — it did nothing to stop a Tanod who already has an
-            // active dispatch on a DIFFERENT incident from being assigned
-            // here too. That's a real double-booking gap, not the
-            // sanctioned multi-responder feature above (which is about one
-            // INCIDENT accepting several different Tanods, not one Tanod
-            // covering several incidents at once). Hard reject, no admin-
-            // override escape hatch for this pass.
-            $otherActiveStmt = $pdo->prepare(
-                "SELECT 1 FROM dispatch
-                 WHERE tanod_id = :tanod_id AND incident_id != :incident_id
-                   AND status IN ('assigned','en_route','arrived')
-                 LIMIT 1"
-            );
-            $otherActiveStmt->execute(['tanod_id' => $tanodId, 'incident_id' => $incidentId]);
-            if ($otherActiveStmt->fetch(PDO::FETCH_ASSOC) !== false) {
-                throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on a different incident.');
-            }
-
-            // Review decision 2026-10-07: a dispatch normally goes to a Tanod
-            // who is on the PUBLISHED roster right now. The check is a
-            // plain UTC compare of now against [start_at, end_at) of a
-            // `published` shift (draft shifts, including a swap awaiting
-            // re-approval, do not count). Without one the call is a 422
-            // NO_PUBLISHED_SHIFT, unless the Admin supplies an
-            // `override_reason` — a deliberate, audited escape hatch for a
-            // real emergency, stored on the row.
-            $shiftStmt = $pdo->prepare(
-                "SELECT 1 FROM shift_schedule
-                 WHERE user_id = :tanod_id AND barangay_id = :barangay_id
-                   AND approval_status = 'published'
-                   AND start_at <= UTC_TIMESTAMP() AND end_at > UTC_TIMESTAMP()
-                 LIMIT 1"
-            );
-            $shiftStmt->execute(['tanod_id' => $tanodId, 'barangay_id' => $identity['barangay_id']]);
-            $hasPublishedShift = $shiftStmt->fetch(PDO::FETCH_ASSOC) !== false;
-            $overrideUsed = false;
-            if (!$hasPublishedShift) {
-                if ($overrideReason === null) {
-                    throw new ApiError(422, 'NO_PUBLISHED_SHIFT', 'The selected Tanod has no published shift covering the current time. Provide an override_reason to dispatch anyway.');
-                }
-                $overrideUsed = true;
-            }
-
-            $insertStmt = $pdo->prepare(
-                'INSERT INTO dispatch
-                    (incident_id, dispatched_by, tanod_id, priority, route_json, route_status, status, dispatched_at, created_client_request_id, override_reason)
-                 VALUES
-                    (:incident_id, :dispatched_by, :tanod_id, :priority, NULL, :route_status, :status, UTC_TIMESTAMP(), :request_id, :override_reason)'
-            );
-            $insertStmt->execute([
-                'incident_id' => $incidentId,
-                'dispatched_by' => $identity['user_id'],
-                'tanod_id' => $tanodId,
-                'priority' => $incident['priority'],
-                'route_status' => 'unavailable', // Not computed at creation time — see class doc; route() computes it on demand.
-                'status' => 'assigned',
-                'request_id' => $requestId,
-                // Stored only when it was actually needed.
-                'override_reason' => $overrideUsed ? $overrideReason : null,
-            ]);
-            $dispatchId = (int) $pdo->lastInsertId();
-
-            $updateIncidentStmt = $pdo->prepare(
-                "UPDATE incident SET status = 'dispatched', updated_at = UTC_TIMESTAMP() WHERE incident_id = :incident_id"
-            );
-            $updateIncidentStmt->execute(['incident_id' => $incidentId]);
-
-            // §6: dispatch creation "records notification creation". Sprint 1
-            // deliberately deferred this rather than write a bare row with no
-            // transport able to deliver it (see the class doc's resolved
-            // decisions); Sprint 4 built that transport layer, so the
-            // deferral is resolved here. The assigned Tanod is the sole
-            // target — a dispatch is an instruction to one person, unlike an
-            // SOS, which fans out.
-            $notificationResult = NotificationService::create(
+            $created = self::createWithinTransaction(
                 $pdo,
-                $identity['barangay_id'],
-                NotificationService::TYPE_DISPATCH,
-                ['dispatch_id' => $dispatchId, 'incident_id' => $incidentId],
-                $identity['user_id'],
-                [$tanodId]
+                $identity,
+                (int) $identity['user_id'],
+                $incidentId,
+                $tanodId,
+                $requestId,
+                true,
+                $overrideReason
             );
+            $dispatchId = $created['dispatch_id'];
+            $notificationResult = ['notification_id' => $created['notification_id']];
 
-            // Rule 17 names "dispatch create/override/cancel" — override
-            // was already audited (applyStatusTransition), these two were
-            // the gap, closed in Sprint 7's audit-completeness cut.
-            // Identifiers and statuses only, never narrative (Rule 17's
-            // own allow-list).
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_created', 'dispatch', $dispatchId, [
-                'incident_id' => $incidentId,
-                'tanod_id' => $tanodId,
-                // Matches the literal the INSERT above writes — routing
-                // isn't computed until route() is called with a real
-                // Tanod position, not at creation time (see class doc).
-                'route_status' => 'unavailable',
-                // True when this call added a responder to an incident
-                // that was ALREADY dispatched (read from the row fetched
-                // before the UPDATE above changed it) — distinguishes a
-                // primary assignment from a backup one in the trail.
-                'is_additional_responder' => $incident['status'] === 'dispatched',
-                // Boolean only — the override reason's text never enters
-                // audit metadata (Rule 8).
-                'shift_override' => $overrideUsed,
-            ]);
+            // Wave 2 (migration 0038): an Admin assigning a responder
+            // directly settles any live night-time offer on this incident --
+            // somebody IS responding, so the broadcast is closed and its
+            // recipients released. Same transaction as the dispatch, and the
+            // incident row is already locked, so this cannot interleave with
+            // a Tanod accepting the same offer (OfferService's lock order is
+            // incident, then offer).
+            OfferService::closeLiveOffersForIncident($pdo, $identity, $incidentId, 'admin_dispatch');
 
             $pdo->commit();
         } catch (\Throwable $e) {
@@ -335,6 +192,225 @@ final class DispatchController
             'incident_id' => $incidentId,
             'route_status' => 'unavailable',
         ]);
+    }
+
+    /**
+     * The one place a `dispatch` row is created: shared by `POST /dispatch`
+     * (Admin) and `POST /dispatch-offers/:id/accept` (the Tanod who won a
+     * night-time offer), so the double-booking, eligibility, notification and
+     * audit rules cannot drift between the two.
+     *
+     * MUST be called inside the caller's transaction (it locks the incident
+     * row and does not commit). It does NOT dispatch the notification — the
+     * caller does that after commit, using the returned `notification_id`.
+     *
+     * Every check `create()` always made is kept: incident pending/
+     * dispatched, Tanod active + on duty, no second active dispatch on the
+     * same incident, no active dispatch on a different incident.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity the
+     *        ACTOR (Admin for POST /dispatch, the accepting Tanod for an
+     *        offer); supplies the tenant and the audit actor.
+     * @param int $dispatchedBy `dispatch.dispatched_by` — the Admin for POST
+     *        /dispatch; for an accepted offer, the offer's creator or the
+     *        barangay's first Admin (see DispatchOffersController).
+     * @param bool $enforcePublishedShift true for POST /dispatch (published-
+     *        shift rule, `NO_PUBLISHED_SHIFT` unless `$overrideReason`);
+     *        false for an accepted offer, because its recipients were
+     *        already filtered by that very rule when the offer was built.
+     * @param array<string,scalar|null> $extraAudit merged into the
+     *        `dispatch_created` metadata (identifiers/booleans only).
+     * @return array{dispatch_id:int,notification_id:int,shift_override:bool,is_additional_responder:bool}
+     */
+    public static function createWithinTransaction(
+        PDO $pdo,
+        array $identity,
+        int $dispatchedBy,
+        int $incidentId,
+        int $tanodId,
+        string $requestId,
+        bool $enforcePublishedShift,
+        ?string $overrideReason,
+        array $extraAudit = []
+    ): array {
+        // Lock the incident row first — this is what makes "at most
+        // one active dispatch per incident" (§5) safe under
+        // concurrent requests, not just the status check below.
+        $incidentStmt = $pdo->prepare(
+            'SELECT incident_id, barangay_id, status, priority FROM incident WHERE incident_id = :incident_id FOR UPDATE'
+        );
+        $incidentStmt->execute(['incident_id' => $incidentId]);
+        $incident = $incidentStmt->fetch(PDO::FETCH_ASSOC);
+        if ($incident === false) {
+            throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
+        }
+        AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
+        // 2026-09-13, explicit user-approved architecture change
+        // (docs/REMAINING.md G-backlog "backup/second responder"):
+        // an incident may now have MORE THAN ONE concurrent active
+        // dispatch — Admin's own judgment call, no incident-type or
+        // priority gate. `dispatched` is therefore also acceptable
+        // here, not just `pending`; only `resolved` (or any other
+        // non-actionable status) is still refused. See that plan's
+        // own "what already works with zero changes" section for
+        // why the resolve-gate, response-time metric, dispatch list
+        // endpoint, mobile, and the notification target were all
+        // already safe under N concurrent dispatches without any
+        // change of their own.
+        if (!in_array($incident['status'], ['pending', 'dispatched'], true)) {
+            throw new ApiError(409, 'CONFLICT', 'Incident is not pending or dispatched — it may already be resolved.');
+        }
+
+        $tanodStmt = $pdo->prepare(
+            "SELECT u.user_id
+             FROM user u
+             WHERE u.user_id = :tanod_id AND u.barangay_id = :barangay_id
+               AND u.role = 'tanod' AND u.is_active = 1
+               AND EXISTS (
+                   SELECT 1 FROM duty_status ds
+                   WHERE ds.user_id = u.user_id AND ds.status = 'on_duty'
+                     AND ds.changed_at = (SELECT MAX(ds2.changed_at) FROM duty_status ds2 WHERE ds2.user_id = u.user_id)
+               )
+             LIMIT 1"
+        );
+        $tanodStmt->execute(['tanod_id' => $tanodId, 'barangay_id' => $identity['barangay_id']]);
+        if ($tanodStmt->fetch(PDO::FETCH_ASSOC) === false) {
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'The selected Tanod is not available for assignment.');
+        }
+
+        // A Tanod cannot be double-assigned to the same incident —
+        // this doesn't follow automatically from allowing a SECOND
+        // (different) responder above, so it needs its own guard.
+        $dupStmt = $pdo->prepare(
+            "SELECT 1 FROM dispatch
+             WHERE incident_id = :incident_id AND tanod_id = :tanod_id
+               AND status IN ('assigned','en_route','arrived')
+             LIMIT 1"
+        );
+        $dupStmt->execute(['incident_id' => $incidentId, 'tanod_id' => $tanodId]);
+        if ($dupStmt->fetch(PDO::FETCH_ASSOC) !== false) {
+            throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on this incident.');
+        }
+
+        // Code-review finding H-01 (2026-09-24): the check above only
+        // catches the SAME tanod being double-assigned to the SAME
+        // incident — it did nothing to stop a Tanod who already has an
+        // active dispatch on a DIFFERENT incident from being assigned
+        // here too. That's a real double-booking gap, not the
+        // sanctioned multi-responder feature above (which is about one
+        // INCIDENT accepting several different Tanods, not one Tanod
+        // covering several incidents at once). Hard reject, no admin-
+        // override escape hatch for this pass.
+        $otherActiveStmt = $pdo->prepare(
+            "SELECT 1 FROM dispatch
+             WHERE tanod_id = :tanod_id AND incident_id != :incident_id
+               AND status IN ('assigned','en_route','arrived')
+             LIMIT 1"
+        );
+        $otherActiveStmt->execute(['tanod_id' => $tanodId, 'incident_id' => $incidentId]);
+        if ($otherActiveStmt->fetch(PDO::FETCH_ASSOC) !== false) {
+            throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on a different incident.');
+        }
+
+        // Review decision 2026-10-07: a dispatch normally goes to a Tanod
+        // who is on the PUBLISHED roster right now. The check is a
+        // plain UTC compare of now against [start_at, end_at) of a
+        // `published` shift (draft shifts, including a swap awaiting
+        // re-approval, do not count). Without one the call is a 422
+        // NO_PUBLISHED_SHIFT, unless the Admin supplies an
+        // `override_reason` — a deliberate, audited escape hatch for a
+        // real emergency, stored on the row.
+        //
+        // Wave 2: a Tanod who ACCEPTS a night-time offer skips this check
+        // ($enforcePublishedShift = false) — the offer's recipients were
+        // already filtered by this exact rule when it was broadcast.
+        $overrideUsed = false;
+        if ($enforcePublishedShift) {
+            $shiftStmt = $pdo->prepare(
+                "SELECT 1 FROM shift_schedule
+                 WHERE user_id = :tanod_id AND barangay_id = :barangay_id
+                   AND approval_status = 'published'
+                   AND start_at <= UTC_TIMESTAMP() AND end_at > UTC_TIMESTAMP()
+                 LIMIT 1"
+            );
+            $shiftStmt->execute(['tanod_id' => $tanodId, 'barangay_id' => $identity['barangay_id']]);
+            $hasPublishedShift = $shiftStmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$hasPublishedShift) {
+                if ($overrideReason === null) {
+                    throw new ApiError(422, 'NO_PUBLISHED_SHIFT', 'The selected Tanod has no published shift covering the current time. Provide an override_reason to dispatch anyway.');
+                }
+                $overrideUsed = true;
+            }
+        }
+
+        $insertStmt = $pdo->prepare(
+            'INSERT INTO dispatch
+                (incident_id, dispatched_by, tanod_id, priority, route_json, route_status, status, dispatched_at, created_client_request_id, override_reason)
+             VALUES
+                (:incident_id, :dispatched_by, :tanod_id, :priority, NULL, :route_status, :status, UTC_TIMESTAMP(), :request_id, :override_reason)'
+        );
+        $insertStmt->execute([
+            'incident_id' => $incidentId,
+            'dispatched_by' => $dispatchedBy,
+            'tanod_id' => $tanodId,
+            'priority' => $incident['priority'],
+            'route_status' => 'unavailable', // Not computed at creation time — see class doc; route() computes it on demand.
+            'status' => 'assigned',
+            'request_id' => $requestId,
+            // Stored only when it was actually needed.
+            'override_reason' => $overrideUsed ? $overrideReason : null,
+        ]);
+        $dispatchId = (int) $pdo->lastInsertId();
+
+        $updateIncidentStmt = $pdo->prepare(
+            "UPDATE incident SET status = 'dispatched', updated_at = UTC_TIMESTAMP() WHERE incident_id = :incident_id"
+        );
+        $updateIncidentStmt->execute(['incident_id' => $incidentId]);
+
+        // §6: dispatch creation "records notification creation". Sprint 1
+        // deliberately deferred this rather than write a bare row with no
+        // transport able to deliver it (see the class doc's resolved
+        // decisions); Sprint 4 built that transport layer, so the
+        // deferral is resolved here. The assigned Tanod is the sole
+        // target — a dispatch is an instruction to one person, unlike an
+        // SOS, which fans out.
+        $notificationResult = NotificationService::create(
+            $pdo,
+            $identity['barangay_id'],
+            NotificationService::TYPE_DISPATCH,
+            ['dispatch_id' => $dispatchId, 'incident_id' => $incidentId],
+            $dispatchedBy,
+            [$tanodId]
+        );
+
+        // Rule 17 names "dispatch create/override/cancel" — override
+        // was already audited (applyStatusTransition), these two were
+        // the gap, closed in Sprint 7's audit-completeness cut.
+        // Identifiers and statuses only, never narrative (Rule 17's
+        // own allow-list).
+        Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_created', 'dispatch', $dispatchId, [
+            'incident_id' => $incidentId,
+            'tanod_id' => $tanodId,
+            // Matches the literal the INSERT above writes — routing
+            // isn't computed until route() is called with a real
+            // Tanod position, not at creation time (see class doc).
+            'route_status' => 'unavailable',
+            // True when this call added a responder to an incident
+            // that was ALREADY dispatched (read from the row fetched
+            // before the UPDATE above changed it) — distinguishes a
+            // primary assignment from a backup one in the trail.
+            'is_additional_responder' => $incident['status'] === 'dispatched',
+            // Boolean only — the override reason's text never enters
+            // audit metadata (Rule 8).
+            'shift_override' => $overrideUsed,
+        ] + $extraAudit);
+
+        return [
+            'dispatch_id' => $dispatchId,
+            'notification_id' => $notificationResult['notification_id'],
+            'shift_override' => $overrideUsed,
+            'is_additional_responder' => $incident['status'] === 'dispatched',
+        ];
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
@@ -710,7 +786,12 @@ final class DispatchController
                 Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_status_override', 'dispatch', $dispatchId, [
                     'from' => $currentStatus,
                     'to' => $newStatus,
-                    'reason' => $overrideReason,
+                    // Rule 8: only THAT an override reason was given (it is
+                    // required above) and its length — never its text. This
+                    // used to write the free text under `reason` (found by
+                    // Wave 1 agent A, fixed Wave 2).
+                    'has_reason' => true,
+                    'reason_length' => mb_strlen(trim($overrideReason)),
                 ]);
             } else {
                 // Tanod-initiated transition audit: ids/statuses only (Rule 8).
