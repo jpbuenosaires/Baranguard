@@ -511,6 +511,48 @@ db_run "UPDATE dispatch_offer SET expires_at='2026-10-08 12:59:00' WHERE offer_i
 php_run "$FAKE_NIGHT" "$BACKEND_DIR/scripts/dispatch-offer-sweeper.php" --once >/dev/null
 expect_eq "Escalated offer keeps alerting Admins on every timeout" "$(db_one "SELECT COUNT(*) FROM notification WHERE notification_type='priority_alert' AND dispatch_offer_id=$OFFER5;")" "$((AL_BEFORE+1))"
 expect_eq "  and stays escalated at round 3" "$(offer_field $OFFER5 "CONCAT(\`round\`,'/',status)")" "3/escalated"
+# ---- escalation reminder backoff + cap (Wave 3b-K): +3, +6, +12 min, then every 30 min, max 8 reminders, then silence
+expect_eq "Reminder #1 was audited (ids only)" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='dispatch_offer_reminder' AND entity_id=$OFFER5 ORDER BY audit_id DESC LIMIT 1;")" '["incident_id", "reminder_no", "admin_alerted"]'
+expect_eq "  next reminder is due +6 min after reminder #1 (13:00 + 360 s)" "$(offer_field $OFFER5 "DATE_FORMAT(expires_at,'%H:%i:%s')")" "13:06:00"
+cat > "$TMP_DIR/sweepsched.php" <<PHP
+<?php
+require '$BOOT_PATH';
+use Baranguard\Services\Dispatch\OfferService;
+\$id = (int) \$argv[1];
+\$alerts = function () use (\$pdo, \$id) {
+    \$s = \$pdo->prepare("SELECT COUNT(*) FROM notification WHERE notification_type='priority_alert' AND dispatch_offer_id = ?");
+    \$s->execute([\$id]);
+    return (int) \$s->fetchColumn();
+};
+\$exp = function () use (\$pdo, \$id) {
+    \$s = \$pdo->prepare("SELECT expires_at, status FROM dispatch_offer WHERE offer_id = ?");
+    \$s->execute([\$id]);
+    return \$s->fetch(PDO::FETCH_ASSOC);
+};
+\$rem = function () use (\$pdo, \$id) {
+    \$s = \$pdo->prepare("SELECT COUNT(*) FROM audit_log WHERE action='dispatch_offer_reminder' AND entity_id = ?");
+    \$s->execute([\$id]);
+    return (int) \$s->fetchColumn();
+};
+\$out = [];
+// one second early: nothing may happen
+\$row = \$exp();
+\$a0 = \$alerts();
+OfferService::sweep(\$pdo, (new DateTimeImmutable(\$row['expires_at'] . ' UTC'))->modify('-1 second'));
+\$out[] = 'early:' . (\$alerts() - \$a0);
+for (\$i = 0; \$i < 11; \$i++) {
+    \$row = \$exp();
+    \$a = \$alerts();
+    OfferService::sweep(\$pdo, new DateTimeImmutable(\$row['expires_at'] . ' UTC'));
+    \$after = \$exp();
+    \$out[] = (\$alerts() - \$a) . '@' . substr(\$after['expires_at'], 11, 5) . '/' . \$rem() . '/' . \$after['status'];
+}
+echo implode(' ', \$out);
+PHP
+EXPECT_SCHED="early:0 1@13:18/2/escalated 1@13:48/3/escalated 1@14:18/4/escalated 1@14:48/5/escalated 1@15:18/6/escalated 1@15:48/7/escalated 1@16:18/8/escalated 0@16:48/8/escalated 0@17:18/8/escalated 0@17:48/8/escalated 0@18:18/8/escalated"
+expect_eq "Backoff: reminders 2-8 alert Admins at +6,+12,+30... min gaps; ticks 9+ send no alert; offer stays escalated" "$(php_run "$FAKE_NIGHT" "$TMP_DIR/sweepsched.php" $OFFER5)" "$EXPECT_SCHED"
+expect_eq "  exactly 8 reminders audited, never more" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='dispatch_offer_reminder' AND entity_id=$OFFER5;")" "8"
+expect_eq "  the capped offer is still escalated (visible on the board)" "$(offer_field $OFFER5 "CONCAT(\`round\`,'/',status)")" "3/escalated"
 # Admin assigns directly -> offer closed
 api POST /dispatch "$ADMIN_T" "{\"incident_id\":$INC5,\"tanod_id\":$T2,\"request_id\":\"$(uuid)\",\"override_reason\":\"offers escalated, assigned directly\"}"
 expect_code "Admin assigns a responder directly on the escalated incident" 201
@@ -582,7 +624,7 @@ BASE_URL="$NIGHT_URL"
 step "13. Audit metadata for offers is identifiers/statuses/counts only"
 LEAK=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action LIKE 'dispatch_offer%' AND (metadata_json LIKE '%SECRET%' OR metadata_json LIKE '%Secret%' OR metadata_json LIKE '%Purok%' OR metadata_json LIKE '%13.01%' OR metadata_json LIKE '%OF Tanod%' OR metadata_json LIKE '%0999%');")
 expect_eq "No narrative, names, contacts, coordinates or location text in any dispatch_offer audit row" "$LEAK" "0"
-expect_eq "Offer audit rows exist (opened/accepted/expired/closed/cancelled)" "$(db_one "SELECT COUNT(DISTINCT action) FROM audit_log WHERE action LIKE 'dispatch_offer%';")" "5"
+expect_eq "Offer audit rows exist (opened/accepted/expired/reminder/closed/cancelled)" "$(db_one "SELECT COUNT(DISTINCT action) FROM audit_log WHERE action LIKE 'dispatch_offer%';")" "6"
 
 # ================================================================ roster paper
 step "14. POST /shifts/publish with recorded_from_paper"
