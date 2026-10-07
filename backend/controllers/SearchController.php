@@ -87,7 +87,7 @@ final class SearchController
         $whereSql = implode(' AND ', $where);
 
         $stmt = $pdo->prepare(
-            "SELECT incident_id, incident_type, status, priority, created_at
+            "SELECT incident_id, incident_type, status, priority, report_channel, related_incident_id, created_at
              FROM incident
              WHERE {$whereSql}
              ORDER BY created_at DESC
@@ -105,6 +105,8 @@ final class SearchController
                 'incident_type' => $row['incident_type'],
                 'status' => $row['status'],
                 'priority' => $row['priority'],
+                'report_channel' => $row['report_channel'],
+                'related_incident_id' => $row['related_incident_id'] !== null ? (int) $row['related_incident_id'] : null,
                 'created_at' => $row['created_at'],
             ];
         }, $rows);

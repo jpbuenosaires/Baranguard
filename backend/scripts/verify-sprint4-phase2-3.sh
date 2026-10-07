@@ -393,6 +393,8 @@ INC_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$INTERNAL_URL/sms/i
 expect_eq "$INC_STATUS" "200" "Incident-fallback envelope accepted"
 INC_SOURCE=$(db_one "SELECT source FROM incident WHERE client_event_id='$CE_ENV6';")
 expect_eq "$INC_SOURCE" "sms" "The reconstructed incident correctly has source='sms', not 'app'"
+INC_CHANNEL=$(db_one "SELECT report_channel FROM incident WHERE client_event_id='$CE_ENV6';")
+expect_eq "$INC_CHANNEL" "sms" "...and report_channel='sms' (migration 0036: SMS-ingested incidents are forced to sms)"
 
 step "17. SOS-fallback envelope creates a real SOS and fans out identically to the app path"
 CE_ENV7=$(uuid)
