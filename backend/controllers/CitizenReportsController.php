@@ -7,6 +7,7 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Dispatch\OfferService;
 use Baranguard\Services\Sms\CitizenUpdateNotifier;
 use Baranguard\Services\Notifications\NotificationService;
 use PDO;
@@ -255,6 +256,10 @@ final class CitizenReportsController
         // anyway — so the only correct order is commit first, notify
         // second. The notifier swallows its own failures.
         CitizenUpdateNotifier::notifyReceived($pdo, $reportId);
+
+        // Wave 2: at night the converted (pending) incident opens a dispatch
+        // offer. After commit; never fails the conversion (Rule 7).
+        OfferService::autoOpenForNewIncident($pdo, $incidentId, (int) $report['barangay_id']);
 
         Http::send(200, [
             'incident_id' => $incidentId,

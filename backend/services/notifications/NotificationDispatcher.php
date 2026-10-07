@@ -88,12 +88,12 @@ final class NotificationDispatcher
     }
 
     /**
-     * @return array{notification_type:string,barangay_id:int,dispatch_id:?int,sos_id:?int,incident_id:?int}|null
+     * @return array{notification_type:string,barangay_id:int,dispatch_id:?int,sos_id:?int,incident_id:?int,dispatch_offer_id:?int}|null
      */
     private function loadNotification(PDO $pdo, int $notificationId): ?array
     {
         $stmt = $pdo->prepare(
-            'SELECT notification_type, barangay_id, dispatch_id, sos_id, incident_id
+            'SELECT notification_type, barangay_id, dispatch_id, sos_id, incident_id, dispatch_offer_id
              FROM notification WHERE notification_id = :id'
         );
         $stmt->execute(['id' => $notificationId]);
@@ -107,6 +107,7 @@ final class NotificationDispatcher
             'dispatch_id' => $row['dispatch_id'] !== null ? (int) $row['dispatch_id'] : null,
             'sos_id' => $row['sos_id'] !== null ? (int) $row['sos_id'] : null,
             'incident_id' => $row['incident_id'] !== null ? (int) $row['incident_id'] : null,
+            'dispatch_offer_id' => $row['dispatch_offer_id'] !== null ? (int) $row['dispatch_offer_id'] : null,
         ];
     }
 
@@ -186,7 +187,41 @@ final class NotificationDispatcher
                     'message_type' => 'sos',
                 ];
 
+            case 'dispatch_offer':
+                // Migration 0038. NON-IDENTIFYING by design: incident type,
+                // barangay name and time only -- no narrative, names,
+                // contacts, coordinates or location text.
+                $offer = $notification['dispatch_offer_id'] !== null
+                    ? self::loadOfferFacts($pdo, $notification['dispatch_offer_id']) : null;
+                if ($offer === null) {
+                    return null;
+                }
+                $what = self::offerWhat($offer);
+                return [
+                    'title' => 'Dispatch offer',
+                    'body' => "{$what}. Open the app to accept.",
+                    'sms' => "BARANGUARD DISPATCH OFFER: {$what}. Open the app to accept.",
+                    // sms_log's message_type enum has no offer value; an
+                    // offer text sent over SMS is a dispatch-class message.
+                    'message_type' => 'dispatch',
+                ];
+
             case 'priority_alert':
+                if ($notification['dispatch_offer_id'] !== null) {
+                    // Admin escalation of an unanswered offer: same
+                    // non-identifying content rule as the offer itself.
+                    $offer = self::loadOfferFacts($pdo, $notification['dispatch_offer_id']);
+                    if ($offer === null) {
+                        return null;
+                    }
+                    $what = self::offerWhat($offer);
+                    return [
+                        'title' => 'PRIORITY ALERT',
+                        'body' => "No Tanod has accepted: {$what}. Assign a responder.",
+                        'sms' => "BARANGUARD PRIORITY ALERT: No Tanod has accepted: {$what}. Assign a responder.",
+                        'message_type' => 'priority_alert',
+                    ];
+                }
                 $incidentType = null;
                 $lat = $lng = null;
                 if ($notification['incident_id'] !== null) {
@@ -225,6 +260,81 @@ final class NotificationDispatcher
                     'message_type' => '', // Deliberately unmapped — see dispatchToTarget()'s SMS branch.
                 ];
         }
+    }
+
+    /**
+     * Incident type, barangay name and offer time -- the ONLY facts an offer
+     * alert may carry.
+     *
+     * @return array{offer_id:int,incident_type:string,barangay_name:string,created_at:string}|null
+     */
+    private static function loadOfferFacts(PDO $pdo, int $offerId): ?array
+    {
+        $stmt = $pdo->prepare(
+            'SELECT o.offer_id, o.created_at, i.incident_type, b.name AS barangay_name
+               FROM dispatch_offer o
+               JOIN incident i ON i.incident_id = o.incident_id
+               JOIN barangay b ON b.barangay_id = o.barangay_id
+              WHERE o.offer_id = :id'
+        );
+        $stmt->execute(['id' => $offerId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+        return [
+            'offer_id' => (int) $row['offer_id'],
+            'incident_type' => (string) $row['incident_type'],
+            'barangay_name' => (string) $row['barangay_name'],
+            'created_at' => (string) $row['created_at'],
+        ];
+    }
+
+    /**
+     * "a fire incident reported in Dao at 21:40" -- Manila clock, fixed
+     * +08:00 (Rule 11).
+     *
+     * @param array{incident_type:string,barangay_name:string,created_at:string} $offer
+     */
+    private static function offerWhat(array $offer): string
+    {
+        $time = (new \DateTimeImmutable($offer['created_at'], new \DateTimeZone('UTC')))
+            ->setTimezone(new \DateTimeZone('+08:00'))->format('H:i');
+        $type = $offer['incident_type'] === 'other'
+            ? 'an incident'
+            : self::describeIncidentType($offer['incident_type']);
+        return "{$type} reported in {$offer['barangay_name']} at {$time}";
+    }
+
+    /**
+     * The FCM `data` map for one notification (every value a string, per
+     * FCM). Generic notifications carry only their id and type. A
+     * `dispatch_offer` additionally carries EXACTLY {type, offer_id,
+     * incident_type, barangay_name, created_at} -- non-identifying, and the
+     * keys the mobile app switches on (`data.type === 'dispatch_offer'`).
+     * Public and static so the verify suite can assert the key set without
+     * a Firebase project.
+     *
+     * @param array{notification_type:string,dispatch_offer_id?:?int} $notification
+     * @return array<string,string>
+     */
+    public static function buildFcmData(PDO $pdo, int $notificationId, array $notification): array
+    {
+        $data = [
+            'notification_id' => (string) $notificationId,
+            'notification_type' => $notification['notification_type'],
+        ];
+        if ($notification['notification_type'] === 'dispatch_offer' && ($notification['dispatch_offer_id'] ?? null) !== null) {
+            $offer = self::loadOfferFacts($pdo, (int) $notification['dispatch_offer_id']);
+            if ($offer !== null) {
+                $data['type'] = 'dispatch_offer';
+                $data['offer_id'] = (string) $offer['offer_id'];
+                $data['incident_type'] = $offer['incident_type'];
+                $data['barangay_name'] = $offer['barangay_name'];
+                $data['created_at'] = (new \DateTimeImmutable($offer['created_at'], new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
+            }
+        }
+        return $data;
     }
 
     /**
@@ -281,12 +391,9 @@ final class NotificationDispatcher
             return;
         }
 
-        $data = [
-            'notification_id' => (string) $notificationId,
-            'notification_type' => $notification['notification_type'],
-        ];
+        $data = self::buildFcmData($pdo, $notificationId, $notification);
 
-        $sent = $this->attemptFcm($pdo, $target, $fcmToken, $message, attemptNo: 1, data: $data);
+        $sent =$this->attemptFcm($pdo, $target, $fcmToken, $message, attemptNo: 1, data: $data);
         if ($sent) {
             return;
         }
