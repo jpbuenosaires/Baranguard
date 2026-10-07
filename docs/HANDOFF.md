@@ -27,18 +27,23 @@ rosterable, retention placeholders (purge OFF), System Tools web menu. Plan and
 decisions: `docs/WORKFLOWS_AND_RULES.md` Part 3 rules 56-66 and REFERENCE.md §1.
 Route count 117 across 30 files.
 
-**Open from this build (need the user / the barangay):** (1) retention periods
-for availability/accomplishments/check-ins/referrals/scans and a rule for
-`ssz_term_report`/`school`; (2) a `dispatch_offer` push is only a normal
-notification, not the full-screen alert (needs native `CriticalAlertMessagingService.java`
-`CRITICAL_TYPES` change); (3) admins are NOT dispatchable and get no offers,
-the Chief Tanod cannot create accomplishment entries, and the web roster picker
-(`GET /users/directory?purpose=tanod`) lists tanods only, so rostering an
-Admin works via the API but not yet from the picker; (4) `assignments.tsx` still
-has an old "TEMP DIAGNOSTIC" banner; (5) the stakeholder proposal document was
-never available, so items 7-9 of the review were applied to the rules doc only;
-(6) PHP `upload_max_filesize`/`post_max_size` must allow ~11 MB for scans;
-(7) concurrency (first accept wins, 12h cap) is reasoned, not demonstrated.
+**Open from this build (need the user / the barangay):** (1) retention
+periods for availability/accomplishments/check-ins/referrals/Annex D/scans
+(all placeholders, purge OFF; `ssz_term_report` ages from
+`mayor_office_received_at`, `school` is deliberately never purged); (2) a
+`dispatch_offer` push now raises the full-screen critical alert (native
+`CriticalAlertMessagingService.java` and `criticalAlertStore.ts` `CRITICAL_TYPES`
+must be kept in sync by hand) but the Android side was only syntax-checked,
+never compiled in Gradle or run on a device; (3) admins are NOT dispatchable and
+get no offers, and the Chief Tanod cannot create accomplishment entries (the
+web roster picker now lists the Chief Tanod via `GET /users/directory?purpose=roster`);
+(4) the stakeholder proposal document was never available, so items 7-9 of the
+review were applied to the rules doc only; (5) PHP `upload_max_filesize` /
+`post_max_size` must allow ~11 MB for scans; (6) concurrency (first accept wins,
+12h cap) is reasoned, not demonstrated; (7) migrations 0029-0038 were rehearsed
+on scratch copies of BOTH real DBs on 2026-10-08 and applied cleanly with all
+rows preserved, but are still not applied to the real DBs; (8) the sweeper
+scheduled task is not registered yet.
 
 **Tanod-workflow build (2026-10-01, DEVLOG 2026-10-01 (3)) is code-complete
 and verified on disposable DBs and jsdom ONLY.** It is NOT browser-verified

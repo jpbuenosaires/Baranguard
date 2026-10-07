@@ -204,20 +204,21 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   `DEVICE_SESSION_SCOPE`); five writes require the device header/signature. The
   mobile app serves the Chief Tanod (Admin) with a 4-tab console: SOS
   acknowledge (never resolve), dispatch assign/cancel/offers, read-only incidents.
-  `GET /users/directory` (admin|secretary) returns `{user_id, full_name,
+  `GET /users/directory?purpose=tanod|roster|signer` (admin|secretary) returns `{user_id, full_name,
   official_title}` for tanod and signer pickers.
 - **Retention:** placeholder rules (`RetentionService::NEW_TABLE_RULES`, period
   `null`, purge OFF) for availability, accomplishment reports, school check-ins,
-  referrals; `document_scan` follows its parent report. `ssz_term_report` and
-  `school` have no rule yet. Needs a council/COA decision (Rule 10).
+  referrals and Annex D (`ssz_term_report`, submitted only); `document_scan`
+  follows its parent report; `school` is deliberately never purged. Needs a
+  council/COA decision (Rule 10).
 - **Web:** System Tools menu groups SMS Monitor, Audit Log, Service Health, Map
   Packages (Admin only; Settings unchanged); reason dialogs; offer state on the
   Dispatch board; paper panels; related-incident card; Secretary scheduler.
   Verification counts 2026-10-07: `verify-web-wiring.mjs` 776, `web/tests` 609,
   `verify-wave1a-dispatch-roster.sh` 145, `verify-incident-intake.sh` 124,
   `verify-paper-approvals.sh` 271, `verify-dispatch-offers.sh` 184,
-  `verify-chief-tanod-mobile.sh` 163, `verify-retention-new-tables.sh` 98,
-  `verify-sprint7-retention.sh` 86.
+  `verify-retention-new-tables.sh` 131,
+  `verify-sprint7-retention.sh` 89, `verify-chief-tanod-mobile.sh` 174.
 
 **Four barangays, fixed:** Dao=1, Binanuahan=2, Marifosque=3, Banuyo=4.
 
