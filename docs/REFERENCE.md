@@ -165,6 +165,60 @@ abandoned attempt found (including a real encrypted-SQLite bug that would
 need re-discovering if this is ever revisited) and `backend/DEVLOG.md`
 2026-09-27 (3)-(13) for the full arc.
 
+**Review-decision build added 2026-10-07 (migrations 0034-0038; source: the
+"Proposed Changes Review" decisions and `docs/WORKFLOWS_AND_RULES.md` Part 3
+rules 56-66). Code-complete, verified on disposable DBs and jsdom only; NOT
+browser- or device-verified; migrations 0034-0038 NOT applied to either real
+DB (apply in order after 0029-0033, DBA/root, backup first).**
+
+- **0034** `dispatch.cancel_reason`/`override_reason` (VARCHAR 255). `PATCH
+  /dispatch/:id/cancel` now REQUIRES `reason` and also works from `arrived`;
+  `POST /dispatch` requires a published shift covering now, else 422
+  `NO_PUBLISHED_SHIFT` unless `override_reason` is sent. Reason text is never
+  audited (Rule 8: `has_reason`/`reason_length` only).
+- **0035** `shift_schedule.pending_reapproval`. An approved swap on a published
+  shift makes it draft + flagged; the owning tanod still sees it. Secretary may
+  create/update shifts and review swaps (publish still needs `approve_roster`).
+  `backup.sh` prunes NOTHING while any legal hold exists.
+- **0036** `incident.report_channel` (tanod_alerted|walk_in|sms|other) and
+  `incident.related_incident_id`; `PATCH /incidents/:id/related`
+  (admin|secretary, no status change, allowed with an open dispatch). Public
+  `POST /citizen-reports` removed (405: GET shares the path).
+- **0037** paper approvals: `approval_mode`/`paper_signed_on`/`paper_recorded_*`
+  on `accomplishment_report` and `ssz_term_report`; `POST .../paper-signature`
+  and `POST .../record-paper-approval` (admin|secretary); table `document_scan`
+  + `POST /document-scans`, `GET /document-scans`, `GET /document-scans/:id/download`
+  (PDF/JPEG/PNG, 10 MB, stored under `SCANS_DIR`, PB may read). Paper is the
+  official record; approved reports stay locked; `paper_pending` flags the gap.
+- **0038** night dispatch offers: `dispatch_offer`, `dispatch_offer_recipient`,
+  notification type `dispatch_offer`, `shift_schedule` paper columns. Routes
+  `GET/POST /dispatch-offers`, `POST /dispatch-offers/:id/accept` (online-only,
+  first accept wins), `PATCH /dispatch-offers/:id/cancel`. Night = 18:00-06:00
+  Manila, 180 s per round, 3 rounds, then Admin-only escalation reminders
+  (spaced). Sweeper `backend/scripts/dispatch-offer-sweeper.php`, scheduled by
+  `install-scheduled-backup-jobs.ps1` as `BaranguardDispatchOfferSweeper`.
+  `POST /shifts/publish` accepts `recorded_from_paper:{signer_user_id,signed_on}`.
+- **Rule 12 amendment:** an Admin login with a well-formed `X-Device-Id` gets a
+  device session (24h sliding, 7-day cap) limited to
+  `SessionPolicy::ADMIN_DEVICE_ALLOWLIST` (anything else 403
+  `DEVICE_SESSION_SCOPE`); five writes require the device header/signature. The
+  mobile app serves the Chief Tanod (Admin) with a 4-tab console: SOS
+  acknowledge (never resolve), dispatch assign/cancel/offers, read-only incidents.
+  `GET /users/directory` (admin|secretary) returns `{user_id, full_name,
+  official_title}` for tanod and signer pickers.
+- **Retention:** placeholder rules (`RetentionService::NEW_TABLE_RULES`, period
+  `null`, purge OFF) for availability, accomplishment reports, school check-ins,
+  referrals; `document_scan` follows its parent report. `ssz_term_report` and
+  `school` have no rule yet. Needs a council/COA decision (Rule 10).
+- **Web:** System Tools menu groups SMS Monitor, Audit Log, Service Health, Map
+  Packages (Admin only; Settings unchanged); reason dialogs; offer state on the
+  Dispatch board; paper panels; related-incident card; Secretary scheduler.
+  Verification counts 2026-10-07: `verify-web-wiring.mjs` 776, `web/tests` 609,
+  `verify-wave1a-dispatch-roster.sh` 145, `verify-incident-intake.sh` 124,
+  `verify-paper-approvals.sh` 271, `verify-dispatch-offers.sh` 184,
+  `verify-chief-tanod-mobile.sh` 163, `verify-retention-new-tables.sh` 98,
+  `verify-sprint7-retention.sh` 86.
+
 **Four barangays, fixed:** Dao=1, Binanuahan=2, Marifosque=3, Banuyo=4.
 
 **Relationship to DILG BIMSS — settled, do not re-litigate.** DILG
@@ -348,7 +402,7 @@ an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 ---
 
-## 5. Endpoints (105 live `/api/v1` routes across 28 route files, all built)
+## 5. Endpoints (117 live `/api/v1` routes across 30 route files, all built)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -438,7 +492,7 @@ map-packages (get/upload/download)
 time is per-incident `MIN(arrived_at)`, de-duplicated)
 **Ops** `/audit-log` · `/system/health` (+`/history`, Admin-only) ·
 `/search` · `/barangays` · `/users` (list `q=`, last_login_at,
-is_suspended; suspend/unsuspend + is_active toggle) · `/citizen-reports`
+is_suspended; suspend/unsuspend + is_active toggle) · `/citizen-reports` (GET + convert only; the public `POST` was REMOVED 2026-10-07, now 405)
 (+`/:id/convert`, list `status=`) · `/duty-status`
 
 > **The whole blotter family (`/blotter`, `/incidents/:id/blotter`,
@@ -585,7 +639,7 @@ and PB the Scheduler only; the **Fatigue flags tab was removed from nav
 2026-10-01**, `fatigue-flags.js` and its endpoints are kept, unmounted) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
 settings (+General/SMS Gateway, Admin-only) · W16 citizen inbox
 (+Convert to Incident) · W17 audit log · W18 map package management ·
-W19 public report · W20 service health · Incident Management (search,
+W19 public report (REMOVED 2026-10-07) · W20 service health · Incident Management (search,
 Resolve action, multi-responder support).
 **Added 2026-10-01 (code-complete, jsdom-verified only; not browser- or
 device-verified by an agent):** **Approvals** (inbox for admin/secretary/PB:
