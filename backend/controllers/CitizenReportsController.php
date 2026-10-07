@@ -14,80 +14,30 @@ use PDO;
 /**
  * Citizen reports — Master Reference §6 "Citizen reports" section, §5
  * `citizen_report` table, §7 role matrix ("View citizen report inbox":
- * Admin/Secretary only), §9 W19 Public Citizen Report + W16 Citizen
- * Reports Inbox + Convert (2026-09-05: the convert endpoint §6 always
- * documented — `citizen_report.incident_id`/`converted_at` existed in
- * the schema from the baseline — was built this pass; W16's own Sprint 1
- * checklist entry said "list only" because only the list half existed
- * yet, not because convert was out of scope).
+ * Admin/Secretary only), §9 W16 Citizen Reports Inbox + Convert.
  *
- * Resolved decisions, logged in DEVLOG.md:
- *   - **Rate limiting.** §6 says `POST /citizen-reports` is "rate-limited
- *     and size-limited" but never states a threshold or mechanism, and
- *     `citizen_report` itself has no IP column to key a limiter off of.
- *     `audit_log` already exists for exactly this kind of write-once
- *     tracking (has `ip_address`, `action`, `created_at`) — reused here
- *     rather than adding a new table: every submission attempt (accepted
- *     or rate-limited) writes an `audit_log` row with
- *     `action='citizen_report_submitted'`, and a new request is rejected
- *     with 429 once the same IP has 3 accepted submissions inside a
- *     rolling 15-minute window. Same "reuse an existing schema entity
- *     instead of inventing one" precedent as `AuthController`'s lockout
- *     counters living on the `user` row itself.
- *   - **`confirmation`.** §6: "Creates report before attempting optional
- *     confirmation SMS. Response includes `{report_id,confirmation}`."
- *     No SMS/GSM transport exists yet (Sprint 4 dependency — same
- *     "not wired up yet" situation `DispatchController` documents for
- *     OSRM). `confirmation` is always `null` here rather than a fabricated
- *     `{sent:true}` — this is queued dependent-feature absence, not a
- *     bug, and mirrors `dispatch.route_status="unavailable"`'s precedent
- *     exactly: don't claim a side effect that never actually happened.
+ * **The public submission endpoint (`POST /citizen-reports`, W19) was
+ * REMOVED in Wave 1 (2026-10-07 review decisions)** together with
+ * everything that existed only to defend it (per-IP audit_log limiter,
+ * per-barangay volume limit, duplicate-text detection, size caps).
+ * Walk-ins are logged by staff from Incident Management with
+ * `report_channel = walk_in`. The table and every existing row are kept;
+ * this controller still lists them (`GET /citizen-reports`) and converts
+ * one into an incident (`POST /citizen-reports/:id/convert`), and the SMS
+ * `CitizenUpdateNotifier` still works off those rows. Historic audit rows
+ * with `action='citizen_report_submitted'` stay in `audit_log` (it is
+ * write-once).
+ *
+ * Resolved decisions still in force, logged in DEVLOG.md:
  *   - **Response shape for a listed report.** §6 fixes
  *     `{report_id,description,contact_number,latitude,longitude,
  *     submitted_at,incident_id}` for the inbox list; that's returned
  *     verbatim, no raw narrative concept applies here (citizen reports
  *     have no separate raw/redacted split — that split is only on
  *     `incident`, post-conversion).
- *   - **Size limit.** `description` is capped at 2000 characters (the
- *     column is TEXT, effectively unbounded — this is an abuse-prevention
- *     ceiling on a public unauthenticated endpoint, not a schema limit).
- *     `contact_number` follows the column's own VARCHAR(32).
- *   - **Layered abuse hardening (code-review finding H-12, 2026-09-24).**
- *     The per-IP limit above catches one flooding source; two more layers
- *     were added, explicitly WITHOUT a CAPTCHA/third-party service (a
- *     deliberate scope decision — this stays dependency-free, matching
- *     every other control in this class):
- *       - **Duplicate-content detection.** The same (`barangay_id`,
- *         normalized `description`) submitted more than once within
- *         `DUPLICATE_WINDOW_MINUTES` is rejected 409 — this is a distinct
- *         axis from the IP limit (catches a botnet spreading identical
- *         text across many IPs, which the IP limit alone cannot). No new
- *         column: normalized comparison (`LOWER(TRIM(description))`) runs
- *         at query time against the existing `description` TEXT column,
- *         which is adequate at this barangay's real submission volume.
- *       - **Per-barangay aggregate limit.** `PER_BARANGAY_RATE_LIMIT_MAX`
- *         accepted reports per `PER_BARANGAY_RATE_LIMIT_WINDOW_MINUTES`,
- *         counted directly against `citizen_report` (not `audit_log` —
- *         this table already carries `barangay_id`+`submitted_at` and has
- *         none of the "don't want to bloat a 7-year-retention table with
- *         public traffic" constraint that applies to
- *         `PublicReportsController::transparency()`). Catches a
- *         distributed flood against one barangay that no single IP or
- *         single duplicate text would trip.
- *     The existing per-IP window (3 per 15 minutes) was reviewed and left
- *     unchanged — it was already tight; the two layers above are additive,
- *     not a retuning of it.
  */
 final class CitizenReportsController
 {
-    private const MAX_DESCRIPTION_LENGTH = 2000;
-    private const MAX_CONTACT_LENGTH = 32;
-    private const RATE_LIMIT_MAX_ATTEMPTS = 3;
-    private const RATE_LIMIT_WINDOW_MINUTES = 15;
-    /** H-12: no §5/§6 number given for either; picked generously so real, distinct reports are never blocked. */
-    private const DUPLICATE_WINDOW_MINUTES = 60;
-    private const PER_BARANGAY_RATE_LIMIT_MAX = 50;
-    private const PER_BARANGAY_RATE_LIMIT_WINDOW_MINUTES = 60;
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
     // Same 11-member enum as `incident.incident_type` (§5) — duplicated
@@ -102,127 +52,6 @@ final class CitizenReportsController
         'animal_complaint', 'other',
     ];
     private const INCIDENT_PRIORITIES = ['normal', 'high', 'critical'];
-
-    public static function submit(PDO $pdo): void
-    {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
-
-        if ($ip !== null) {
-            $stmt = $pdo->prepare(
-                "SELECT COUNT(*) FROM audit_log
-                 WHERE action = 'citizen_report_submitted' AND ip_address = :ip
-                   AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :window_minutes MINUTE)"
-            );
-            $stmt->bindValue('ip', $ip);
-            $stmt->bindValue('window_minutes', self::RATE_LIMIT_WINDOW_MINUTES, PDO::PARAM_INT);
-            $stmt->execute();
-            if ((int) $stmt->fetchColumn() >= self::RATE_LIMIT_MAX_ATTEMPTS) {
-                throw new ApiError(429, 'RATE_LIMITED', 'Too many reports submitted recently. Please try again later.');
-            }
-        }
-
-        $body = Http::jsonBody();
-        $barangayId = $body['barangay_id'] ?? null;
-        $description = $body['description'] ?? null;
-        $contactNumber = $body['contact_number'] ?? null;
-        $latitude = $body['latitude'] ?? null;
-        $longitude = $body['longitude'] ?? null;
-
-        if (!is_int($barangayId) && !(is_string($barangayId) && ctype_digit($barangayId))) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'barangay_id is required.');
-        }
-        $barangayId = (int) $barangayId;
-
-        if (!is_string($description) || trim($description) === '') {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'description is required.');
-        }
-        if (strlen($description) > self::MAX_DESCRIPTION_LENGTH) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'description must be at most ' . self::MAX_DESCRIPTION_LENGTH . ' characters.');
-        }
-
-        if ($contactNumber !== null) {
-            if (!is_string($contactNumber) || strlen($contactNumber) > self::MAX_CONTACT_LENGTH) {
-                throw new ApiError(400, 'VALIDATION_ERROR', 'contact_number must be a string of at most ' . self::MAX_CONTACT_LENGTH . ' characters.');
-            }
-        }
-
-        [$latitude, $longitude] = self::validateCoordinates($latitude, $longitude);
-
-        // "Only the four known barangays are accepted" (§6) — checked
-        // against the real table rather than hardcoding 1-4, so this
-        // still works if the deterministic seed ever changes rows.
-        $barangayStmt = $pdo->prepare('SELECT barangay_id FROM barangay WHERE barangay_id = :barangay_id LIMIT 1');
-        $barangayStmt->execute(['barangay_id' => $barangayId]);
-        if ($barangayStmt->fetch(PDO::FETCH_ASSOC) === false) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'barangay_id must be one of the known barangays.');
-        }
-
-        // H-12 layer 1: per-barangay aggregate limit — a distributed flood
-        // against one barangay that no single IP would trip on its own.
-        $barangayVolumeStmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM citizen_report
-              WHERE barangay_id = :barangay_id
-                AND submitted_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :window_minutes MINUTE)'
-        );
-        $barangayVolumeStmt->bindValue('barangay_id', $barangayId, PDO::PARAM_INT);
-        $barangayVolumeStmt->bindValue('window_minutes', self::PER_BARANGAY_RATE_LIMIT_WINDOW_MINUTES, PDO::PARAM_INT);
-        $barangayVolumeStmt->execute();
-        if ((int) $barangayVolumeStmt->fetchColumn() >= self::PER_BARANGAY_RATE_LIMIT_MAX) {
-            throw new ApiError(429, 'RATE_LIMITED', 'This barangay has received an unusually high number of reports recently. Please try again later.');
-        }
-
-        // H-12 layer 2: duplicate-content detection — the same text
-        // resubmitted (from any IP) within the window is almost certainly
-        // a bot/replay, not a second citizen independently typing
-        // byte-identical wording.
-        $duplicateStmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM citizen_report
-              WHERE barangay_id = :barangay_id
-                AND LOWER(TRIM(description)) = LOWER(TRIM(:description))
-                AND submitted_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :window_minutes MINUTE)'
-        );
-        $duplicateStmt->bindValue('barangay_id', $barangayId, PDO::PARAM_INT);
-        $duplicateStmt->bindValue('description', $description);
-        $duplicateStmt->bindValue('window_minutes', self::DUPLICATE_WINDOW_MINUTES, PDO::PARAM_INT);
-        $duplicateStmt->execute();
-        if ((int) $duplicateStmt->fetchColumn() > 0) {
-            throw new ApiError(409, 'CONFLICT', 'A report with this exact description was already submitted recently. If this is a different incident, please add distinguishing details.');
-        }
-
-        $insertStmt = $pdo->prepare(
-            'INSERT INTO citizen_report (barangay_id, contact_number, description, latitude, longitude, submitted_at)
-             VALUES (:barangay_id, :contact_number, :description, :latitude, :longitude, UTC_TIMESTAMP())'
-        );
-        $insertStmt->execute([
-            'barangay_id' => $barangayId,
-            'contact_number' => $contactNumber,
-            'description' => $description,
-            'latitude' => $latitude,
-            'longitude' => $longitude,
-        ]);
-        $reportId = (int) $pdo->lastInsertId();
-
-        // Write-once tracking row, doubling as the rate-limit ledger — see
-        // class doc. actor_user_id is NULL: public/unauthenticated caller.
-        $auditStmt = $pdo->prepare(
-            'INSERT INTO audit_log (barangay_id, actor_user_id, action, entity_type, entity_id, metadata_json, ip_address, user_agent, created_at)
-             VALUES (:barangay_id, NULL, :action, :entity_type, :entity_id, :metadata_json, :ip, :ua, UTC_TIMESTAMP())'
-        );
-        $auditStmt->execute([
-            'barangay_id' => $barangayId,
-            'action' => 'citizen_report_submitted',
-            'entity_type' => 'citizen_report',
-            'entity_id' => $reportId,
-            'metadata_json' => json_encode([], JSON_UNESCAPED_SLASHES),
-            'ip' => $ip,
-            'ua' => Http::header('User-Agent'),
-        ]);
-
-        Http::send(201, [
-            'report_id' => $reportId,
-            'confirmation' => null, // No SMS transport built yet — see class doc.
-        ]);
-    }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
@@ -351,10 +180,10 @@ final class CitizenReportsController
 
             $insertStmt = $pdo->prepare(
                 "INSERT INTO incident
-                    (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source,
+                    (barangay_id, reported_by, device_id, incident_type, priority, raw_narrative, status, source, report_channel,
                      latitude, longitude, complainant_contact_number, display_id, created_at, updated_at)
                  VALUES
-                    (:barangay_id, NULL, NULL, :incident_type, :priority, :raw_narrative, 'pending', 'web',
+                    (:barangay_id, NULL, NULL, :incident_type, :priority, :raw_narrative, 'pending', 'web', 'walk_in',
                      :latitude, :longitude, :complainant_contact_number, :display_id, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
             );
             // display_id (migration 0014): same bounded-retry-on-collision
@@ -432,22 +261,5 @@ final class CitizenReportsController
             'citizen_report_id' => $reportId,
             'converted_at' => $convertedAt,
         ]);
-    }
-
-    /** @return array{0:?float,1:?float} */
-    private static function validateCoordinates(mixed $latitude, mixed $longitude): array
-    {
-        if ($latitude === null && $longitude === null) {
-            return [null, null];
-        }
-        if (!is_numeric($latitude) || !is_numeric($longitude)) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude and longitude must both be provided together as numbers.');
-        }
-        $lat = (float) $latitude;
-        $lng = (float) $longitude;
-        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'latitude/longitude are out of range.');
-        }
-        return [$lat, $lng];
     }
 }

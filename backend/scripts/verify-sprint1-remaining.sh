@@ -2,8 +2,8 @@
 # Baranguard — Sprint 1's remaining "Today's cut" items validation against a
 # REAL local XAMPP MariaDB + PHP (not a cloud sandbox): W5 Historical
 # Heatmap, W6 Electronic Blotter List, W9 Statistical Reports (Generate
-# only), W15 Settings/Account, W16 Citizen Reports Inbox (list only), W19
-# Public Citizen Report. Safe to run: everything happens in a disposable
+# only), W15 Settings/Account, W16 Citizen Reports Inbox (list only); W19
+# Public Citizen Report is REMOVED (Wave 1) and asserted to 404. Safe to run: everything happens in a disposable
 # database (baranguard_s1rem_check) with a disposable app-user, disposable
 # test accounts, and a PHP dev server on a throwaway local port. Your real
 # `baranguard` database, real backend/.env, and Apache are never touched.
@@ -280,85 +280,35 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $RELOGIN
 [ "$CODE" = "400" ] && pass "Admin editing a DIFFERENT user's profile fields is refused (400; write does not happen)" || fail "Cross-user edit -> $CODE (expected 400)"
 
 # ============================================================
-# W19 — POST /citizen-reports (public) + W16 GET /citizen-reports (inbox)
+# W19 REMOVED (Wave 1, 2026-10-07) — POST /citizen-reports no longer exists.
+# W16 GET /citizen-reports (inbox) stays; fixture rows are SQL inserts now.
 # ============================================================
-step "9. W19 POST /citizen-reports (public, no auth)"
-RESP=$(curl -s -w "\n%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":1,"description":"sandbox test citizen report narrative","contact_number":"09171112222"}')
+step "9. Wave 1: public POST /citizen-reports is REMOVED (no handler: router answers 405, path still exists for GET)"
+for body in \
+  '{"barangay_id":1,"description":"sandbox test citizen report narrative","contact_number":"09171112222"}' \
+  '{"barangay_id":99,"description":"n/a"}' \
+  '{}'; do
+  RESP=$(curl -s -w "\n%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" -d "$body")
+  CODE=$(echo "$RESP" | tail -1)
+  [ "$CODE" = "405" ] && pass "POST /citizen-reports (no Authorization) -> 405 (no handler any more)" || fail "POST /citizen-reports -> $CODE (expected 405)"
+done
+RESP=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $RELOGIN_TOKEN" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
+  -d '{"barangay_id":1,"description":"authenticated attempt"}')
 CODE=$(echo "$RESP" | tail -1)
-BODY=$(echo "$RESP" | head -n -1)
-[ "$CODE" = "201" ] && pass "Public citizen report submit (no Authorization header) -> 201" || fail "Public submit -> $CODE (expected 201)"
-REPORT_ID=$(extract "$BODY" report_id)
-[ -n "$REPORT_ID" ] && [ "$REPORT_ID" != "MISSING" ] && pass "Response includes a report_id" || fail "No report_id in response"
+[ "$CODE" = "405" ] && pass "POST /citizen-reports as an authenticated Admin -> 405 as well (route gone, not just the public path)" || fail "Admin POST /citizen-reports -> $CODE (expected 405)"
+CNT=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM citizen_report;")
+[ "$CNT" = "1" ] && pass "No citizen_report row was created by any of the rejected POSTs (still only the pre-seeded 1)" || fail "citizen_report count=$CNT (expected 1)"
 
-CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":99,"description":"n/a"}')
-[ "$CODE" = "400" ] && pass "Unknown barangay_id -> 400" || fail "Unknown barangay_id -> $CODE (expected 400)"
-
-CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":1,"description":""}')
-[ "$CODE" = "400" ] && pass "Empty description -> 400" || fail "Empty description -> $CODE (expected 400)"
-
-step "9b. Code-review finding H-12: duplicate-content detection (distinct from the IP rate limit)"
-# The per-IP rate limit checked by submit() is unconditional of barangay
-# (it keys on IP+action only), so ANY accepted submission here — even for
-# barangay 2/3 — would eat into the SAME budget step 10 below depends on,
-# and any inserted citizen_report row would corrupt step 11's exact
-# inbox-count assertions. Every check below is therefore either (a) a
-# REJECTED call (409/429 — rejected before any insert, so it consumes no
-# IP budget and creates no row) or (b) an accepted call that is
-# immediately, fully undone (both the citizen_report row AND its
-# audit_log ledger row) so this test leaves zero footprint on anything
-# downstream. Barangay 2/3 are otherwise untouched by this file.
-mysql_exec "$VALDB" -e "INSERT INTO citizen_report (barangay_id, description, submitted_at) VALUES (2, 'H-12 duplicate detection probe text', UTC_TIMESTAMP());"
-DUP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":2,"description":"H-12 Duplicate Detection Probe Text"}')
-[ "$DUP_CODE" = "409" ] && pass "Resubmitting the same text (case/whitespace-insensitive) for the same barangay -> 409" || fail "Duplicate submission -> $DUP_CODE (expected 409)"
-mysql_exec "$VALDB" -e "DELETE FROM citizen_report WHERE barangay_id=2 AND description='H-12 duplicate detection probe text';"
-
-DIFF_RESP=$(curl -s -w "\n%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":3,"description":"H-12 different-text probe, not a duplicate of anything"}')
-DIFFERENT_CODE=$(echo "$DIFF_RESP" | tail -1)
-DIFF_REPORT_ID=$(extract "$(echo "$DIFF_RESP" | head -n -1)" report_id)
-[ "$DIFFERENT_CODE" = "201" ] && pass "Genuinely different text is NOT treated as a duplicate -> 201" || fail "Different text -> $DIFFERENT_CODE (expected 201)"
-mysql_exec "$VALDB" -e "DELETE FROM citizen_report WHERE report_id=$DIFF_REPORT_ID; DELETE FROM audit_log WHERE action='citizen_report_submitted' AND entity_id=$DIFF_REPORT_ID;"
-
-step "9c. Code-review finding H-12: per-barangay aggregate submission limit"
-# Seeded directly for the same reason as 9b — reaching 50 real accepted
-# submissions through the endpoint would also blow through the per-IP
-# limit long before reaching the per-barangay one.
-for i in $(seq 1 50); do
-  mysql_exec "$VALDB" -e "INSERT INTO citizen_report (barangay_id, description, submitted_at) VALUES (2, 'H-12 aggregate filler $i', UTC_TIMESTAMP());"
-done
-AGG_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":2,"description":"H-12 aggregate limit probe, should be rejected"}')
-[ "$AGG_CODE" = "429" ] && pass "51st report for one barangay within the window -> 429 (per-barangay aggregate limit, independent of IP)" || fail "Aggregate limit -> $AGG_CODE (expected 429)"
-CTRL_RESP=$(curl -s -w "\n%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":3,"description":"H-12 aggregate limit control, different (near-empty) barangay"}')
-BARANGAY3_CODE=$(echo "$CTRL_RESP" | tail -1)
-CTRL_REPORT_ID=$(extract "$(echo "$CTRL_RESP" | head -n -1)" report_id)
-[ "$BARANGAY3_CODE" = "201" ] && pass "Barangay 3's own aggregate quota is unaffected by barangay 2's volume (per-barangay, not global)" || fail "Control submission -> $BARANGAY3_CODE (expected 201)"
-mysql_exec "$VALDB" -e "DELETE FROM citizen_report WHERE barangay_id=2 AND description LIKE 'H-12 aggregate filler%'; DELETE FROM citizen_report WHERE report_id=$CTRL_REPORT_ID; DELETE FROM audit_log WHERE action='citizen_report_submitted' AND entity_id=$CTRL_REPORT_ID;"
-# The two accepted calls in this block ("different text" in 9b, "control"
-# here) each temporarily counted against the shared per-IP budget — but
-# since that budget IS a live COUNT(*) over audit_log rows (see class doc),
-# deleting their audit_log rows above genuinely restores the budget, not
-# just the visible citizen_report data. Net effect: zero residual state of
-# any kind by the time step 10 runs.
-
-step "10. Rate limiting (3 accepted submissions/15min, then 429)"
-for i in 2 3; do
-  curl -s -o /dev/null "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-    -d "{\"barangay_id\":1,\"description\":\"sandbox rate-limit filler $i\"}"
-done
-CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":1,"description":"sandbox rate-limit 4th attempt"}')
-[ "$CODE" = "429" ] && pass "4th submission from the same IP within the window -> 429 RATE_LIMITED" || fail "4th submission -> $CODE (expected 429)"
+step "10. Seed three more inbox rows by SQL (fixture formerly created through the public endpoint)"
+mysql_exec "$VALDB" -e "INSERT INTO citizen_report (barangay_id, contact_number, description, submitted_at) VALUES
+  (1, '09171112222', 'sandbox inbox fixture 1', UTC_TIMESTAMP()),
+  (1, NULL, 'sandbox inbox fixture 2', UTC_TIMESTAMP()),
+  (1, NULL, 'sandbox inbox fixture 3', UTC_TIMESTAMP());" && pass "Seeded 3 additional barangay-1 citizen_report rows" || fail "Fixture insert failed"
 
 step "11. W16 GET /citizen-reports (inbox, list only)"
 RESP=$(curl -s -H "Authorization: Bearer $RELOGIN_TOKEN" "${BASE_URL}/citizen-reports?status=unconverted")
 TOTAL=$(extract "$RESP" total)
-[ "$TOTAL" = "4" ] && pass "Admin sees 4 unconverted reports (1 pre-seeded + 3 accepted before rate-limit)" || fail "Inbox total=$TOTAL (expected 4)"
+[ "$TOTAL" = "4" ] && pass "Admin sees 4 unconverted reports (1 pre-seeded + 3 SQL-seeded)" || fail "Inbox total=$TOTAL (expected 4)"
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TANOD_TOKEN" "${BASE_URL}/citizen-reports")
 [ "$CODE" = "403" ] && pass "Tanod -> 403 on citizen reports inbox (Admin/Secretary only)" || fail "Tanod inbox -> $CODE (expected 403)"
