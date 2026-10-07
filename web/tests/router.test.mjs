@@ -1,7 +1,7 @@
 /**
  * main.js — boot/router: session gate, per-role landing page, the
  * default-landing preference, document title, focus management, and the
- * public #/citizen-report entry point. main.js boots itself on import, so
+ * absence of the removed public #/citizen-report entry point. main.js boots itself on import, so
  * each case imports a fresh copy (cache-busting query) after arranging
  * the session it needs.
  */
@@ -91,14 +91,18 @@ describe('router: title and focus', () => {
   });
 });
 
-describe('router: public citizen report', () => {
+describe('router: public citizen report page is gone', () => {
   // Kept last in the file: it sets location.hash, and every earlier import
-  // of main.js registered its own hashchange listener.
-  test('#/citizen-report renders the public form with no session at all', async () => {
+  // of main.js registered its own listeners.
+  test('#/citizen-report no longer renders a public form: with no session it is just the login page', async () => {
     window.location.hash = '#/citizen-report';
     const root = await boot();
-    assert.ok($('#citizen-report-description', root), 'public report form not shown');
-    assert.equal(apiClient.getSession(), null);
-    for (const call of api.calls) assert.equal(call.headers.authorization, undefined, `${call.path} sent a token from the public page`);
+    assert.equal($('#citizen-report-description', root), null, 'the public report form is still reachable');
+    assert.ok($('#login-username', root), 'expected the normal login page');
+    assert.equal(api.calls.filter((c) => c.path === '/citizen-reports' && c.method === 'POST').length, 0);
+  });
+
+  test('the API client no longer exposes the public submit function', async () => {
+    assert.equal(apiClient.submitCitizenReport, undefined);
   });
 });

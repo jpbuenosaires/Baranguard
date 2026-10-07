@@ -198,6 +198,30 @@
 .tw-trail__label { color: var(--color-text-tertiary); min-width: 12rem; }
 .tw-trail__value { color: var(--color-text-primary); }
 
+/* Paper signature + scan panel (Accomplishment Report and Annex D detail) */
+.tw-paper-panel { display: flex; flex-direction: column; gap: var(--spacing-sm-md); }
+.tw-paper-panel__badges { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
+.tw-paper-badge { width: fit-content; }
+.tw-paper-panel__scans { display: flex; flex-direction: column; gap: var(--spacing-sm-md); }
+.tw-scan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.tw-scan-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+.tw-scan-list__meta { color: var(--color-text-secondary); }
+.tw-scan-upload { padding-top: var(--spacing-sm-md); border-top: 1px solid var(--color-divider); }
+
 .tw-other-inst,
 .tw-remarks {
   font-size: var(--font-size-sm);

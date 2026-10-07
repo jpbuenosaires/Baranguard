@@ -117,6 +117,36 @@ describe('request plumbing', () => {
     assert.deepEqual(call.body, { priority: 'high' });
   });
 
+  test('cancelDispatch always sends the reason; createDispatch sends override_reason only when given', async () => {
+    signIn('admin');
+    await client.cancelDispatch(7001, 'Responder released');
+    assert.deepEqual(api.callsTo('PATCH', '/dispatch/:id/cancel')[0].body, { reason: 'Responder released' });
+    await client.createDispatch({ incidentId: 901, tanodId: 4, requestId: 'r-1' });
+    await client.createDispatch({ incidentId: 901, tanodId: 4, requestId: 'r-1', overrideReason: 'No roster yet' });
+    const [plain, overridden] = api.callsTo('POST', '/dispatch');
+    assert.deepEqual(plain.body, { incident_id: 901, tanod_id: 4, request_id: 'r-1' });
+    assert.deepEqual(overridden.body, { incident_id: 901, tanod_id: 4, request_id: 'r-1', override_reason: 'No roster yet' });
+  });
+
+  test('report channel and related-incident links round-trip through the mappers and writers', async () => {
+    signIn('secretary');
+    await client.createIncident({ incidentType: 'theft', rawNarrative: 'x', reportChannel: 'sms', idempotencyKey: 'k-1' });
+    assert.equal(api.callsTo('POST', '/incidents')[0].body.report_channel, 'sms');
+    await client.createIncident({ incidentType: 'theft', rawNarrative: 'x', idempotencyKey: 'k-2' });
+    assert.equal('report_channel' in api.callsTo('POST', '/incidents')[1].body, false, 'omitted channel is left to the server default');
+    const detail = await client.getIncident(902);
+    assert.equal(detail.reportChannel, 'sms');
+    assert.deepEqual(detail.relatedIncident, { incidentId: 903, displayId: 'INC-2026-903' });
+    assert.deepEqual(detail.relatedBy, []);
+    assert.deepEqual((await client.getIncident(903)).relatedBy, [{ incidentId: 902, displayId: 'INC-2026-902' }]);
+    const list = await client.getIncidents({});
+    assert.equal(list.items.find((i) => i.incidentId === 902).relatedIncidentId, 903);
+    await client.setRelatedIncident(901, 902, 'idem-9');
+    const [call] = api.callsTo('PATCH', '/incidents/:id/related');
+    assert.deepEqual(call.body, { related_incident_id: 902 });
+    assert.equal(call.headers['idempotency-key'], 'idem-9');
+  });
+
   test('updateIncident has no way to send a narrative (Rule 4: only ai-draft/approve may write it)', async () => {
     signIn('secretary');
     await client.updateIncident(901, { rawNarrative: 'x', redactedNarrative: 'y', locationDescription: 'Purok 1' });
@@ -124,10 +154,9 @@ describe('request plumbing', () => {
     assert.deepEqual(call.body, { location_description: 'Purok 1' });
   });
 
-  test('public endpoints (citizen report, barangays) never send a token', async () => {
+  test('public endpoints (barangays) never send a token', async () => {
     signIn('admin');
     await client.getBarangays();
-    await client.submitCitizenReport({ barangayId: 1, description: 'Flooding', contactNumber: null, latitude: null, longitude: null });
     for (const call of api.calls) assert.equal(call.headers.authorization, undefined, `${call.method} ${call.path} leaked a token`);
   });
 });

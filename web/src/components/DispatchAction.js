@@ -12,7 +12,8 @@
  */
 
 import { createDispatch, getGpsLive, ApiClientError } from '../api/apiClient.js';
-import { promptSelect } from './ConfirmDialog.js';
+import { promptSelect, promptText } from './ConfirmDialog.js';
+import { requireReason } from '../utils/reasonText.js';
 import { showToast } from './Toast.js';
 
 const PRIORITY_LABELS = { normal: 'Normal', high: 'High', critical: 'Critical' };
@@ -148,16 +149,38 @@ export async function promptDispatchTanod({ incident, incidentTypeLabel, eligibl
   });
   if (tanodId === null) return false;
 
+  const requestId = crypto.randomUUID();
+  const tanodName = eligibleTanods.find((t) => String(t.userId) === String(tanodId))?.fullName || 'Tanod';
   try {
-    await createDispatch({
-      incidentId: incident.incidentId,
-      tanodId: Number(tanodId),
-      requestId: crypto.randomUUID(),
-    });
-    const tanodName = eligibleTanods.find((t) => String(t.userId) === String(tanodId))?.fullName || 'Tanod';
+    await createDispatch({ incidentId: incident.incidentId, tanodId: Number(tanodId), requestId });
     showToast(`Dispatch assigned to ${tanodName}`, { variant: 'success' });
     return true;
   } catch (err) {
+    if (err instanceof ApiClientError && err.code === 'NO_PUBLISHED_SHIFT') {
+      // The Tanod has no PUBLISHED shift covering right now. An Admin may
+      // still dispatch (emergencies do not wait for a roster), but must
+      // say why; the reason is stored with the dispatch and audited as a
+      // flag only. The same request_id is reused: the first attempt
+      // created nothing, so a retry cannot produce a second row.
+      const overridden = await promptText({
+        title: 'No published shift',
+        description: `${tanodName} has no published shift covering the current time. Enter a reason to dispatch anyway; it is recorded with the dispatch.`,
+        label: 'Override reason (required)',
+        confirmLabel: 'Dispatch anyway',
+        onConfirmAsync: async (value) => {
+          const reason = requireReason(value, 'override reason');
+          await createDispatch({
+            incidentId: incident.incidentId,
+            tanodId: Number(tanodId),
+            requestId,
+            overrideReason: reason,
+          });
+        },
+      });
+      if (overridden === null) return false;
+      showToast(`Dispatch assigned to ${tanodName} (shift override recorded)`, { variant: 'success' });
+      return true;
+    }
     const message = err instanceof ApiClientError ? err.message : 'Could not create the dispatch.';
     showToast(message, { variant: 'error' });
     return false;
