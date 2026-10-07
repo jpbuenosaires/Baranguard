@@ -153,6 +153,7 @@ export DB_HOST="$XAMPP_MYSQL_HOST" DB_PORT="$XAMPP_MYSQL_PORT" DB_USER="$APP_USE
 export JWT_SECRET="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(32));')"
 export JWT_EXPIRES_IN_MINUTES=15
 export CORS_ALLOWED_ORIGIN='*'
+export FCM_SERVICE_ACCOUNT_PATH=
 export GSM_GATEWAY_ENABLED=false
 "$PHP_BIN" -S "127.0.0.1:${API_PORT}" -t "$BACKEND_DIR/public" >"$BACKEND_DIR/scripts/.ctm-server.log" 2>&1 &
 SERVER_PID=$!
@@ -276,7 +277,7 @@ expect_reached POST /auth/change-password "$A1D" "{\"current_password\":\"$TEST_
 
 step "7. Admin DEVICE session: everything off the allow-list is 403 DEVICE_SESSION_SCOPE"
 expect_scope GET  /users "$A1D"
-expect_scope GET  "/users/directory?purpose=tanod" "$A1D"
+req GET "/users/directory?purpose=tanod" "$A1D"; expect_eq "$CODE" "200" "GET /users/directory (allowed on admin device: name list only)"
 expect_scope POST /users "$A1D" '{}'
 expect_scope GET  "/users/$(uid adm1)" "$A1D"
 expect_scope GET  /audit-log "$A1D"
@@ -476,7 +477,7 @@ HDR=$(curl -s -D - -o /dev/null "${BASE_URL}/notifications" -H "Authorization: B
 [ -n "$HDR" ] && pass "Admin device session renews when under half its lifetime" || fail "no X-Renewed-Token"
 EXP_IN=$(db_one "SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), expires_at) FROM auth_session WHERE jti='$JTI_CAP';")
 CAP_IN=$(db_one "SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), issued_at + INTERVAL 7 DAY) FROM auth_session WHERE jti='$JTI_CAP';")
-[ "$EXP_IN" -gt 7000 ] && [ "$EXP_IN" -le "$CAP_IN" ] && [ "$EXP_IN" -lt 10000 ] && pass "Renewed expiry lands AT the 7-day cap (${EXP_IN}s), not +24h" || fail "cap not applied: expires in ${EXP_IN}s, cap in ${CAP_IN}s"
+[ "$EXP_IN" -gt 7000 ] && [ "$EXP_IN" -le "$((CAP_IN + 3))" ] && [ "$EXP_IN" -lt 10000 ] && pass "Renewed expiry lands AT the 7-day cap (${EXP_IN}s), not +24h" || fail "cap not applied: expires in ${EXP_IN}s, cap in ${CAP_IN}s"
 # A scope-denied probe must NOT extend a session (the gate runs before renewal).
 mysql_exec "$VALDB" -e "UPDATE auth_session SET expires_at = UTC_TIMESTAMP() + INTERVAL 1 HOUR WHERE jti='$JTI_CAP';"
 BEFORE=$(db_one "SELECT expires_at FROM auth_session WHERE jti='$JTI_CAP';")

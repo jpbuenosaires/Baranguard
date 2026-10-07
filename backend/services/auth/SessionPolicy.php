@@ -103,6 +103,7 @@ final class SessionPolicy
         ['POST', '#^/dispatch-offers$#', true],
         ['PATCH', '#^/dispatch-offers/\d+/cancel$#', true],
         ['GET', '#^/barangays$#', false],
+        ['GET', '#^/users/directory$#', false],
     ];
 
     /**
