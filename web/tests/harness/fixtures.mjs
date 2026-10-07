@@ -312,7 +312,9 @@ export function buildRoutes(scenario) {
       return ok(paginate(rows, query));
     } },
     { method: 'POST', path: '/dispatch', handler: ({ body }) => ({ status: 201, body: { dispatch_id: 7009, status: 'assigned', incident_id: body.incident_id, route_status: 'unavailable' } }) },
-    { method: 'PATCH', path: '/dispatch/:id/cancel', handler: ({ params }) => ok({ dispatch_id: Number(params.id), status: 'cancelled', incident_id: 902, incident_status: 'dispatched', cancelled_at: sqlAgo(0) }) },
+    { method: 'PATCH', path: '/dispatch/:id/cancel', handler: ({ params, body }) => (typeof body?.reason !== 'string' || body.reason.trim() === '' || body.reason.length > 255
+      ? { status: 400, body: { error: { code: 'VALIDATION_ERROR', message: 'A cancellation reason of 1-255 characters is required.' } } }
+      : ok({ dispatch_id: Number(params.id), status: 'cancelled', incident_id: 902, incident_status: 'dispatched', cancelled_at: sqlAgo(0) })) },
     { method: 'GET', path: '/gps/live', handler: () => ok({ items: empty ? [] : [
       { user_id: 4, full_name: tanodName(4), dispatch_id: 7002, latitude: 12.9180, longitude: 123.6670, accuracy_m: 9.5, recorded_at: sqlAgo(0.5), received_at: sqlAgo(0.4), age_seconds: 30, is_stale: false },
       { user_id: 5, full_name: tanodName(5), dispatch_id: 7001, latitude: 12.9174, longitude: 123.6657, accuracy_m: 38, recorded_at: sqlAgo(9), received_at: sqlAgo(9), age_seconds: 540, is_stale: true },

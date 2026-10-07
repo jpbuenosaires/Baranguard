@@ -117,6 +117,17 @@ describe('request plumbing', () => {
     assert.deepEqual(call.body, { priority: 'high' });
   });
 
+  test('cancelDispatch always sends the reason; createDispatch sends override_reason only when given', async () => {
+    signIn('admin');
+    await client.cancelDispatch(7001, 'Responder released');
+    assert.deepEqual(api.callsTo('PATCH', '/dispatch/:id/cancel')[0].body, { reason: 'Responder released' });
+    await client.createDispatch({ incidentId: 901, tanodId: 4, requestId: 'r-1' });
+    await client.createDispatch({ incidentId: 901, tanodId: 4, requestId: 'r-1', overrideReason: 'No roster yet' });
+    const [plain, overridden] = api.callsTo('POST', '/dispatch');
+    assert.deepEqual(plain.body, { incident_id: 901, tanod_id: 4, request_id: 'r-1' });
+    assert.deepEqual(overridden.body, { incident_id: 901, tanod_id: 4, request_id: 'r-1', override_reason: 'No roster yet' });
+  });
+
   test('updateIncident has no way to send a narrative (Rule 4: only ai-draft/approve may write it)', async () => {
     signIn('secretary');
     await client.updateIncident(901, { rawNarrative: 'x', redactedNarrative: 'y', locationDescription: 'Purok 1' });
