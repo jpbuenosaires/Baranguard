@@ -285,7 +285,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     renderLoading(listPane);
     try {
       const [tanodsRes, shiftsRes] = await Promise.all([
-        loadTanodRoster(user).then((items) => ({ items })),
+        loadTanodRoster(user, { purpose: 'roster' }).then((items) => ({ items })),
         getShiftsDetailed({ limit: 100 }),
       ]);
       tanods = tanodsRes.items;
@@ -880,6 +880,11 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
 /**
  * Builds the right-hand form for creating a new shift with preset buttons.
  */
+/** Picker label: the Chief Tanod (an Admin account) is told apart by official title. */
+function rosterLabel(t) {
+  return t.officialTitle ? `${t.fullName} - ${t.officialTitle}` : t.fullName;
+}
+
 function buildNewShiftForm(tanods, onCreated, shifts = []) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -941,7 +946,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     const option = document.createElement('option');
     option.value = String(t.userId);
     const badge = currentHours > FATIGUE_THRESHOLD_HOURS ? ' [Over Limit]' : (currentHours >= 48 ? ' [Near Limit]' : '');
-    option.textContent = `${t.fullName} (${currentHours.toFixed(1)}h scheduled${badge})`;
+    option.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled${badge})`;
     tanodSelect.appendChild(option);
   }
 
@@ -1149,7 +1154,7 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
     const opt = document.createElement('option');
     opt.value = String(t.userId);
     const badge = currentHours > FATIGUE_THRESHOLD_HOURS ? ' [Over Limit]' : (currentHours >= 48 ? ' [Near Limit]' : '');
-    opt.textContent = `${t.fullName} (${currentHours.toFixed(1)}h scheduled${badge})`;
+    opt.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled${badge})`;
     if (t.userId === shift.userId) opt.selected = true;
     tanodSelect.appendChild(opt);
   }

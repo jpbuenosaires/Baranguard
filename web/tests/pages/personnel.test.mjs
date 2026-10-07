@@ -120,21 +120,33 @@ describe('Personnel behaviour', () => {
     assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
   });
 
-  test('the Secretary tanod picker is built from GET /users/directory?purpose=tanod (no GET /users)', async () => {
+  test('the shift picker is built from GET /users/directory?purpose=roster (no GET /users) and names the Chief Tanod', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
     const options = $$('#scheduler-new-tanod option').map((o) => text(o));
-    assert.equal(options.length, 2, 'the two active, non-suspended tanods in the fixture');
+    assert.equal(options.length, 3, 'the Chief Tanod (admin) plus the two active, non-suspended tanods');
     assert.ok(options.some((o) => /Jose Reyes/.test(o)));
     assert.ok(options.some((o) => /Maria Dela Cruz/.test(o)));
+    assert.ok(options.some((o) => /Ramon Elcano - Chief Tanod/.test(o)), 'the Chief Tanod is labelled by official title');
+    assert.equal(options.filter((o) => /Liwayway|Teresa/.test(o)).length, 0, 'secretary / PB are never rosterable');
     assert.equal(api.callsTo('GET', '/users').length, 0);
-    assert.equal(api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'tanod').length >= 1, true);
+    assert.equal(api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'roster').length >= 1, true);
+    assert.equal(api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'tanod').length, 0, 'the Scheduler no longer asks for tanods only');
   });
 
-  test('Admin also uses the directory for the tanod picker', async () => {
+  test('Admin also uses the roster directory for the shift picker', async () => {
     await openScheduler('admin');
-    assert.equal(api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'tanod').length >= 1, true);
-    assert.equal($$('#scheduler-new-tanod option').length, 2);
+    assert.equal(api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'roster').length >= 1, true);
+    assert.equal($$('#scheduler-new-tanod option').length, 3);
+  });
+
+  test('the edit-shift picker also offers the Chief Tanod', async () => {
+    mountPage(renderPersonnelPage, { role: 'secretary' });
+    await settle();
+    click(buttonByText(/edit shift/i));
+    await settle();
+    const opts = $$('select option', $('.personnel-modal')).map((o) => text(o));
+    assert.ok(opts.some((o) => /Ramon Elcano - Chief Tanod/.test(o)));
   });
 
   test('a Secretary-created shift is POSTed as a draft with the chosen tanod', async () => {
