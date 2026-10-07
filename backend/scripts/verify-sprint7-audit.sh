@@ -200,14 +200,23 @@ INCIDENT_ID=$(curl -s -X POST "$BASE_URL/incidents" -H "Authorization: Bearer $S
 
 TANOD_ID=$(db_one "SELECT user_id FROM user WHERE username='s7a_tanod';")
 REQ_ID=$("$PHP_BIN" -r 'printf("%s-%s-4%s-8%s-%s", bin2hex(random_bytes(4)), bin2hex(random_bytes(2)), substr(bin2hex(random_bytes(2)),1), substr(bin2hex(random_bytes(2)),1), bin2hex(random_bytes(6)));')
+mysql_exec "$VALDB" -e "INSERT INTO shift_schedule (barangay_id, user_id, start_at, end_at, created_by, approval_status, approved_at) VALUES (1, $TANOD_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 6 HOUR), $TANOD_ID, 'published', UTC_TIMESTAMP());"  # review decision 2026-10-07: dispatch needs a published shift
 DISPATCH_ID=$(curl -s -X POST "$BASE_URL/dispatch" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d "{\"incident_id\":$INCIDENT_ID,\"tanod_id\":$TANOD_ID,\"request_id\":\"$REQ_ID\"}" \
   | "$PHP_BIN" -r 'echo json_decode(stream_get_contents(STDIN), true)["dispatch_id"] ?? "";')
 [ -n "$DISPATCH_ID" ] && pass "Dispatch #$DISPATCH_ID created" || fail "Dispatch creation failed"
 expect_audit "dispatch_created" "assigning a Tanod (this was an audit GAP before Sprint 7)"
 
-curl -s -X PATCH "$BASE_URL/dispatch/$DISPATCH_ID/cancel" -H "Authorization: Bearer $ADMIN_TOKEN" >/dev/null
+curl -s -X PATCH "$BASE_URL/dispatch/$DISPATCH_ID/cancel" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"reason":"drill: audit completeness check"}' >/dev/null
 expect_audit "dispatch_cancelled" "cancelling a dispatch (also a GAP before Sprint 7)"
+# Review decision 2026-10-07: the cancel reason is stored on dispatch, but its
+# TEXT must never enter audit metadata (Rule 8) — only that one exists.
+CMETA=$(db_one "SELECT metadata_json FROM audit_log WHERE action='dispatch_cancelled' LIMIT 1;")
+case "$CMETA" in
+  *"audit completeness check"*) fail "AUDIT LEAK: the dispatch cancel reason text is in audit metadata";;
+  *'"has_reason":true'*) pass "dispatch_cancelled metadata records that a reason exists, never its text";;
+  *) fail "dispatch_cancelled metadata missing has_reason: $CMETA";;
+esac
 
 # Re-dispatch, walk it to completion, then resolve the incident.
 REQ_ID2=$("$PHP_BIN" -r 'printf("%s-%s-4%s-8%s-%s", bin2hex(random_bytes(4)), bin2hex(random_bytes(2)), substr(bin2hex(random_bytes(2)),1), substr(bin2hex(random_bytes(2)),1), bin2hex(random_bytes(6)));')

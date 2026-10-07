@@ -267,6 +267,7 @@ INSERT INTO incident (barangay_id, incident_type, priority, raw_narrative, statu
 VALUES (1,'theft','normal','test narrative — never sent anywhere','pending','web',12.92,123.62,UTC_TIMESTAMP(),UTC_TIMESTAMP());
 SQL
 INCIDENT_ID=$(db_one "SELECT incident_id FROM incident ORDER BY incident_id DESC LIMIT 1;")
+mysql_exec "$VALDB" -e "INSERT INTO shift_schedule (barangay_id, user_id, start_at, end_at, created_by, approval_status, approved_at) SELECT 1, user_id, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 6 HOUR), user_id, 'published', UTC_TIMESTAMP() FROM user WHERE username='s4p23_tanod_a';"  # review decision 2026-10-07: dispatch needs a published shift
 DISPATCH_BODY=$(body_of POST /dispatch "$ADMIN" "{\"incident_id\":$INCIDENT_ID,\"tanod_id\":$(db_one "SELECT user_id FROM user WHERE username='s4p23_tanod_a';"),\"request_id\":\"$(uuid)\"}")
 DISPATCH_ID=$(echo "$DISPATCH_BODY" | jget dispatch_id)
 [ -n "$DISPATCH_ID" ] && pass "Dispatch created (dispatch_id=$DISPATCH_ID)" || fail "Dispatch create failed: $DISPATCH_BODY"

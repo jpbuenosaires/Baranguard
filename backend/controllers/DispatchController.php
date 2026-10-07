@@ -77,6 +77,30 @@ final class DispatchController
         'arrived' => 'completed',
     ];
 
+    /** Max length of `cancel_reason` / `override_reason` (VARCHAR(255), migration 0034). */
+    private const MAX_REASON_LENGTH = 255;
+
+    /**
+     * Validates an optional free-text reason: absent/null -> null; otherwise
+     * a string that is non-blank after trimming and at most 255 characters
+     * (400 VALIDATION_ERROR when present but unusable). Returns the trimmed
+     * text.
+     */
+    private static function optionalReason(mixed $raw, string $field): ?string
+    {
+        if ($raw === null) {
+            return null;
+        }
+        if (!is_string($raw) || trim($raw) === '') {
+            throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be a non-empty string of at most " . self::MAX_REASON_LENGTH . ' characters.');
+        }
+        $trimmed = trim($raw);
+        if (mb_strlen($trimmed) > self::MAX_REASON_LENGTH) {
+            throw new ApiError(400, 'VALIDATION_ERROR', "{$field} must be at most " . self::MAX_REASON_LENGTH . ' characters.');
+        }
+        return $trimmed;
+    }
+
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
     {
@@ -98,6 +122,10 @@ final class DispatchController
         }
         $incidentId = (int) $incidentId;
         $tanodId = (int) $tanodId;
+        // Optional: only consulted when the Tanod holds no published shift
+        // covering "now" (NO_PUBLISHED_SHIFT below). Validated up front so a
+        // malformed value is a 400 whether or not it ends up being needed.
+        $overrideReason = self::optionalReason($body['override_reason'] ?? null, 'override_reason');
 
         // Idempotency: a retry with the same request_id returns the
         // original dispatch instead of creating a duplicate (§6).
@@ -200,11 +228,36 @@ final class DispatchController
                 throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on a different incident.');
             }
 
+            // Review decision 2026-10-07: a dispatch normally goes to a Tanod
+            // who is on the PUBLISHED roster right now. The check is a
+            // plain UTC compare of now against [start_at, end_at) of a
+            // `published` shift (draft shifts, including a swap awaiting
+            // re-approval, do not count). Without one the call is a 422
+            // NO_PUBLISHED_SHIFT, unless the Admin supplies an
+            // `override_reason` — a deliberate, audited escape hatch for a
+            // real emergency, stored on the row.
+            $shiftStmt = $pdo->prepare(
+                "SELECT 1 FROM shift_schedule
+                 WHERE user_id = :tanod_id AND barangay_id = :barangay_id
+                   AND approval_status = 'published'
+                   AND start_at <= UTC_TIMESTAMP() AND end_at > UTC_TIMESTAMP()
+                 LIMIT 1"
+            );
+            $shiftStmt->execute(['tanod_id' => $tanodId, 'barangay_id' => $identity['barangay_id']]);
+            $hasPublishedShift = $shiftStmt->fetch(PDO::FETCH_ASSOC) !== false;
+            $overrideUsed = false;
+            if (!$hasPublishedShift) {
+                if ($overrideReason === null) {
+                    throw new ApiError(422, 'NO_PUBLISHED_SHIFT', 'The selected Tanod has no published shift covering the current time. Provide an override_reason to dispatch anyway.');
+                }
+                $overrideUsed = true;
+            }
+
             $insertStmt = $pdo->prepare(
                 'INSERT INTO dispatch
-                    (incident_id, dispatched_by, tanod_id, priority, route_json, route_status, status, dispatched_at, created_client_request_id)
+                    (incident_id, dispatched_by, tanod_id, priority, route_json, route_status, status, dispatched_at, created_client_request_id, override_reason)
                  VALUES
-                    (:incident_id, :dispatched_by, :tanod_id, :priority, NULL, :route_status, :status, UTC_TIMESTAMP(), :request_id)'
+                    (:incident_id, :dispatched_by, :tanod_id, :priority, NULL, :route_status, :status, UTC_TIMESTAMP(), :request_id, :override_reason)'
             );
             $insertStmt->execute([
                 'incident_id' => $incidentId,
@@ -214,6 +267,8 @@ final class DispatchController
                 'route_status' => 'unavailable', // Not computed at creation time — see class doc; route() computes it on demand.
                 'status' => 'assigned',
                 'request_id' => $requestId,
+                // Stored only when it was actually needed.
+                'override_reason' => $overrideUsed ? $overrideReason : null,
             ]);
             $dispatchId = (int) $pdo->lastInsertId();
 
@@ -255,6 +310,9 @@ final class DispatchController
                 // before the UPDATE above changed it) — distinguishes a
                 // primary assignment from a backup one in the trail.
                 'is_additional_responder' => $incident['status'] === 'dispatched',
+                // Boolean only — the override reason's text never enters
+                // audit metadata (Rule 8).
+                'shift_override' => $overrideUsed,
             ]);
 
             $pdo->commit();
@@ -347,6 +405,7 @@ final class DispatchController
         $stmt = $pdo->prepare(
             "SELECT d.dispatch_id, d.incident_id, d.tanod_id, d.priority, d.route_json, d.route_status,
                     d.status, d.dispatched_at, d.en_route_at, d.arrived_at, d.completed_at, d.cancelled_at,
+                    d.cancel_reason,
                     i.incident_type, i.latitude, i.longitude,
                     tanod.full_name AS tanod_name
              FROM dispatch d
@@ -364,8 +423,12 @@ final class DispatchController
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $items = array_map(static function (array $row): array {
-            return [
+        // cancel_reason is for the people who manage dispatch (Admin) and
+        // oversee it (Punong Barangay); a Tanod's own list never carries it.
+        $showCancelReason = in_array($identity['role'], ['admin', 'punong_barangay'], true);
+
+        $items = array_map(static function (array $row) use ($showCancelReason): array {
+            $item = [
                 'dispatch_id' => (int) $row['dispatch_id'],
                 'incident_id' => (int) $row['incident_id'],
                 'tanod_id' => (int) $row['tanod_id'],
@@ -383,6 +446,10 @@ final class DispatchController
                 'completed_at' => $row['completed_at'],
                 'cancelled_at' => $row['cancelled_at'],
             ];
+            if ($showCancelReason) {
+                $item['cancel_reason'] = $row['cancel_reason'];
+            }
+            return $item;
         }, $rows);
 
         Http::send(200, [
@@ -401,6 +468,7 @@ final class DispatchController
             throw new ApiError(404, 'NOT_FOUND', 'Dispatch not found.');
         }
         $dispatchId = (int) $dispatchIdParam;
+        $body = Http::jsonBody();
 
         $pdo->beginTransaction();
         try {
@@ -418,20 +486,33 @@ final class DispatchController
             }
             AuthMiddleware::requireTenant($identity, (int) $dispatch['barangay_id']);
 
-            // §6/§5: only assigned/en_route may be cancelled; cannot
-            // cancel arrived/completed (§5 Rule 28's non-destructive
-            // cancellation, and §5's own "cannot cancel arrived/
-            // completed" note).
-            if (!in_array($dispatch['status'], ['assigned', 'en_route'], true)) {
-                throw new ApiError(409, 'CONFLICT', 'Only an assigned or en-route dispatch can be cancelled.');
+            // Review decision 2026-10-07: a reason is now REQUIRED, and a
+            // dispatch may be cancelled from `arrived` too (a Tanod who got
+            // there and found the call void / handled by someone else).
+            // Validated after the tenant check so a cross-tenant caller
+            // still gets 404 and never learns anything from a 400.
+            $reason = self::optionalReason($body['reason'] ?? null, 'reason');
+            if ($reason === null) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'reason is required (1-' . self::MAX_REASON_LENGTH . ' characters).');
+            }
+
+            // Only a live dispatch can be cancelled; completed/cancelled are
+            // final (§5 Rule 28's non-destructive cancellation).
+            if (!in_array($dispatch['status'], ['assigned', 'en_route', 'arrived'], true)) {
+                throw new ApiError(409, 'CONFLICT', 'Only an assigned, en-route or arrived dispatch can be cancelled.');
             }
 
             $cancelStmt = $pdo->prepare(
                 "UPDATE dispatch
-                 SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(), cancelled_by = :cancelled_by
+                 SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(), cancelled_by = :cancelled_by,
+                     cancel_reason = :cancel_reason
                  WHERE dispatch_id = :dispatch_id"
             );
-            $cancelStmt->execute(['cancelled_by' => $identity['user_id'], 'dispatch_id' => $dispatchId]);
+            $cancelStmt->execute([
+                'cancelled_by' => $identity['user_id'],
+                'cancel_reason' => $reason,
+                'dispatch_id' => $dispatchId,
+            ]);
 
             // §5 Rule 21/28: dispatched -> pending only through valid
             // cancellation before arrival — this is that transition.
@@ -474,6 +555,11 @@ final class DispatchController
                 // responder can keep an incident 'dispatched' after this
                 // cancellation — no longer always 'pending'.
                 'incident_status' => $revertedToPending ? 'pending' : 'dispatched',
+                'from_status' => $dispatch['status'],
+                // Only THAT a reason exists and how long it is — never its
+                // text (Rule 8).
+                'has_reason' => true,
+                'reason_length' => mb_strlen($reason),
             ]);
 
             $pdo->commit();
