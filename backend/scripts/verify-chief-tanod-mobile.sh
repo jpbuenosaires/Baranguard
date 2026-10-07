@@ -213,7 +213,6 @@ step "4. Users directory — GET /users/directory"
 SEC=$(login_tok sec1 ""); PB=$(login_tok pb1 ""); TANW=$(login_tok tan2 ""); A1WEB="$A1W"
 req GET "/users/directory?purpose=tanod" "$SEC"
 expect_eq "$CODE" "200" "Secretary may read the tanod directory"
-expect_eq "$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); $n=array_map(fn($i)=>$i["full_name"],$d["items"]); sort($n); echo implode("|",$n);')" "Tanod NoDuty|Tanod OnDuty|Tanod OffDuty|Tanod Raiser|Tanod Respond" "purpose=tanod: only ACTIVE, NON-suspended tanods of the caller's barangay (not suspended, inactive or other-barangay ones)" 2>/dev/null || true
 GOT=$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); $n=array_map(fn($i)=>$i["full_name"],$d["items"]); sort($n); echo implode("|",$n);')
 expect_eq "$GOT" "Tanod NoDuty|Tanod OffDuty|Tanod OnDuty|Tanod Raiser|Tanod Respond" "purpose=tanod lists exactly the 5 active, non-suspended tanods of barangay 1"
 expect_eq "$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); $k=[]; foreach($d["items"] as $i){ $x=array_keys($i); sort($x); $k[implode(",",$x)]=1; } echo implode(";",array_keys($k));')" "full_name,official_title,user_id" "Every item carries ONLY user_id, full_name, official_title (no username/phone/email/authorities)"
@@ -273,7 +272,7 @@ expect_reached PATCH /tanod-sos/999999/acknowledge "$A1D" '{}'
 expect_reached POST /dispatch "$A1D" '{}'
 expect_reached PATCH /dispatch/999999/cancel "$A1D" '{}'
 expect_reached PATCH "/devices/does-not-exist-xyz/deactivate" "$A1D" '{}'
-expect_reached POST /auth/change-password "$A1D" '{"current_password":"wrong","new_password":"x"}'
+expect_reached POST /auth/change-password "$A1D" "{\"current_password\":\"$TEST_PW\",\"new_password\":\"x\"}"
 
 step "7. Admin DEVICE session: everything off the allow-list is 403 DEVICE_SESSION_SCOPE"
 expect_scope GET  /users "$A1D"
@@ -311,11 +310,10 @@ expect_scope GET  /accomplishment-reports "$A1D"
 expect_scope GET  /referrals "$A1D"
 expect_scope GET  /schools "$A1D"
 expect_scope POST /sync/batch "$A1D" '{}'
-expect_scope GET  /map-packages "$A1D"
+expect_scope GET  /map-packages/1/download "$A1D"
 expect_scope POST /duty-status "$A1D" '{}'
 echo "(the SAME admin's WEB session reaches those controllers — see step 5)"
-expect_eq "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='device_session_scope_denied';")" "$(( $(echo "$PASS") * 0 + $(db_one "SELECT COUNT(*) FROM audit_log WHERE action='device_session_scope_denied';") ))" "(count captured)" >/dev/null
-DENIED_ROWS=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='device_session_scope_denied' AND user_id=$(uid adm1);")
+DENIED_ROWS=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='device_session_scope_denied' AND actor_user_id=$(uid adm1);")
 [ "$DENIED_ROWS" -ge 30 ] && pass "Every scope denial is audited ($DENIED_ROWS device_session_scope_denied rows for adm1)" || fail "scope denials not audited ($DENIED_ROWS rows)"
 LEAK=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='device_session_scope_denied' AND JSON_LENGTH(metadata_json) <> 1;")
 expect_eq "$LEAK" "0" "Denial audit metadata is just method_path (no token, no body, no names — Rule 8)"
@@ -328,7 +326,7 @@ expect_eq "$CODE" "201" "tan1 raises an SOS"
 SOS1=$(echo "$BODY" | jget sos_id)
 NOTIF1=$(db_one "SELECT notification_id FROM notification WHERE sos_id=$SOS1;")
 TARGETS=$(db_one "SELECT GROUP_CONCAT(u.username ORDER BY u.username SEPARATOR ',') FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF1;")
-expect_eq "$TARGETS" "adm1,adm2,adm_cap,adm_cp,adm_rv,tan2,tan5" "Targets = every active admin of barangay 1 + the on_duty tanod + the responding tanod (NOT the sender, the off-duty/never-on-duty/suspended-or-inactive tanods, barangay-2 users, secretary, punong barangay)"
+expect_eq "$TARGETS" "adm_cap,adm_cp,adm_rv,adm1,adm2,tan2,tan5" "Targets = every active admin of barangay 1 + the on_duty tanod + the responding tanod (NOT the sender, the off-duty/never-on-duty/suspended-or-inactive tanods, barangay-2 users, secretary, punong barangay)"
 expect_eq "$(db_one "SELECT device_id FROM notification_target WHERE notification_id=$NOTIF1 AND user_id=$(uid adm1);")" "$DEV_A" "adm1's target row carries adm1's REGISTERED DEVICE id (push destination)"
 expect_eq "$(db_one "SELECT COALESCE(device_id,'NULL') FROM notification_target WHERE notification_id=$NOTIF1 AND user_id=$(uid adm2);")" "NULL" "adm2 has no device: target device_id is NULL (Rule 12 -> SMS directly)"
 expect_eq "$(db_one "SELECT COUNT(*) FROM notification_delivery d JOIN notification_target nt ON nt.notification_target_id=d.notification_target_id WHERE nt.notification_id=$NOTIF1 AND nt.user_id=$(uid adm1) AND d.channel='fcm';")" "2" "adm1 (device registered, token on file) gets FCM delivery attempts 1+2 (retry once, Rule 12)"
@@ -344,11 +342,8 @@ expect_eq "$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php
 req POST "/notifications/$NOTIF1/ack" "$A1D" '{}'; expect_eq "$CODE" "200" "Admin device acknowledges the notification"
 req GET /tanod-sos "$A1D"
 expect_eq "$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); $f=0; foreach($d["items"] as $i){ if((int)$i["sos_id"]===(int)$argv[1]) $f=1; } echo $f;' "$SOS1")" "1" "GET /tanod-sos over the device session lists the SOS"
-req PATCH "/tanod-sos/$SOS1/acknowledge" "$A1D" '{}'
-expect_eq "$CODE" "200" "Admin device acknowledges the SOS (no X-Device-Id header: no key on file for the device yet -> phased rollout... see below)" 2>/dev/null || true
 
 step "9. Mobile writes from an admin device follow the Tanod device rules (header + ownership + H-09 signature)"
-# NOTE: acknowledge above required the header per the rule — re-check precisely.
 req PATCH "/tanod-sos/$SOS1/acknowledge" "$A1D" '{}'
 expect_eq "$CODE" "400" "Signed-write class without X-Device-Id -> 400 (same code a Tanod mobile write gets)"
 req PATCH "/tanod-sos/$SOS1/acknowledge" "$A1D" '{}' -H "X-Device-Id: and-$(gen_uuid)"
@@ -436,16 +431,17 @@ req PATCH "/devices/$DEV_K/deactivate" "$A1D" '{}'
 expect_eq "$CODE" "200" "adm1 deactivates its own device (device session may do this)"
 SOS_CID2=$(gen_uuid)
 req POST /tanod-sos "$TAN1D" "{\"latitude\":12.93,\"longitude\":123.67,\"client_event_id\":\"$SOS_CID2\"}"
+expect_eq "$CODE" "201" "tan1 raises a second SOS ($BODY)"
 SOS2=$(echo "$BODY" | jget sos_id); NOTIF2=$(db_one "SELECT notification_id FROM notification WHERE sos_id=$SOS2;")
 expect_eq "$(db_one "SELECT COALESCE(device_id,'NULL') FROM notification_target WHERE notification_id=$NOTIF2 AND user_id=$(uid adm1);")" "NULL" "adm1 with no active device -> target device_id NULL"
 expect_eq "$(db_one "SELECT COUNT(*) FROM notification_delivery d JOIN notification_target nt ON nt.notification_target_id=d.notification_target_id WHERE nt.notification_id=$NOTIF2 AND nt.user_id=$(uid adm1) AND d.channel='fcm';")" "0" "...so no FCM attempt, SMS only"
-expect_eq "$(db_one "SELECT GROUP_CONCAT(u.username ORDER BY u.username SEPARATOR ',') FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF2;")" "adm1,adm2,adm_cap,adm_cp,adm_rv,tan2,tan5" "Same fan-out set on the second SOS"
+expect_eq "$(db_one "SELECT GROUP_CONCAT(u.username ORDER BY u.username SEPARATOR ',') FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF2;")" "adm_cap,adm_cp,adm_rv,adm1,adm2,tan2,tan5" "Same fan-out set on the second SOS"
 # A suspended/deactivated admin is not alerted; a tanod who went off duty is not either.
 mysql_exec "$VALDB" -e "UPDATE user SET is_active=0 WHERE username='adm_cap'; INSERT INTO duty_status (user_id,status,channel,changed_at) VALUES ($(uid tan2),'off_duty','app',UTC_TIMESTAMP() + INTERVAL 1 SECOND);"
 SOS_CID3=$(gen_uuid)
 req POST /tanod-sos "$TAN1D" "{\"latitude\":12.93,\"longitude\":123.67,\"client_event_id\":\"$SOS_CID3\"}"
 SOS3=$(echo "$BODY" | jget sos_id); NOTIF3=$(db_one "SELECT notification_id FROM notification WHERE sos_id=$SOS3;")
-expect_eq "$(db_one "SELECT GROUP_CONCAT(u.username ORDER BY u.username SEPARATOR ',') FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF3;")" "adm1,adm2,adm_cp,adm_rv,tan5" "Deactivated admin and now-off-duty tanod drop out of the fan-out"
+expect_eq "$(db_one "SELECT GROUP_CONCAT(u.username ORDER BY u.username SEPARATOR ',') FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF3;")" "adm_cp,adm_rv,adm1,adm2,tan5" "Deactivated admin and now-off-duty tanod drop out of the fan-out"
 
 step "12. Revocation still kills an admin device session on the very next request"
 RV=$(login_tok adm_rv "and-$(gen_uuid)")
