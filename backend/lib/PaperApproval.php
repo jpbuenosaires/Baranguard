@@ -119,7 +119,7 @@ final class PaperApproval
             'paper_recorded_at' => $recordedAt === null
                 ? null
                 : (new \DateTimeImmutable((string) $recordedAt, new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z'),
-            'paper_pending' => ($row['status'] ?? null) === 'approved' && $signedOn === null,
+            'paper_pending' => in_array($row['status'] ?? null, ['approved', 'submitted'], true) && $signedOn === null,
         ];
     }
 }
