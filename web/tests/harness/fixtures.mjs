@@ -257,7 +257,9 @@ export function buildRoutes(scenario) {
     // Thin picker feed (admin|secretary). Never carries username/phone/authority list.
     { method: 'GET', path: '/users/directory', handler: ({ query }) => {
       const active = users.filter((u) => u.is_active === 1 && u.is_suspended === 0);
-      const rows = query.purpose === 'tanod'
+      const rows = query.purpose === 'roster'
+        ? active.filter((u) => u.role === 'tanod' || u.role === 'admin')
+        : query.purpose === 'tanod'
         ? active.filter((u) => u.role === 'tanod')
         : active.filter((u) => ['admin', 'secretary', 'punong_barangay'].includes(u.role) && u.approval_authority.includes(query.authority));
       return ok({ items: rows.map((u) => ({ user_id: u.user_id, full_name: u.full_name, official_title: u.official_title })) });
