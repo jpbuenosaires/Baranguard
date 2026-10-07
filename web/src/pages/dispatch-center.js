@@ -33,7 +33,8 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
-import { confirmDialog } from '../components/ConfirmDialog.js';
+import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
+import { requireReason } from '../utils/reasonText.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { openReferralDialog } from '../components/IncidentCaseCards.js';
@@ -953,24 +954,30 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
           cancelBtn.title = 'Cancel this dispatch';
           cancelBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            const confirmed = await confirmDialog({
+            // A reason is REQUIRED (1-255 chars) and cancelling is allowed
+            // from every active state, including `arrived`. Validation and
+            // the PATCH both run inside the dialog's confirm hook, so a
+            // client or server rejection shows inline and the dialog stays
+            // open with what was typed.
+            const arrivedNote = dispatch.status === 'arrived'
+              ? ' This responder has already arrived at the scene.'
+              : '';
+            const reason = await promptText({
               title: `Cancel dispatch #${dispatch.dispatchId}?`,
               // 2026-09-13: was "The incident will return to the pending
               // queue" unconditionally — no longer always true once a
               // second responder can stay active after this cancellation.
-              description: `This removes ${dispatch.tanodName || 'this responder'} from the incident.`,
+              description: `This removes ${dispatch.tanodName || 'this responder'} from the incident.${arrivedNote} A reason is required and is kept with the dispatch.`,
+              label: 'Reason for cancelling (required)',
               confirmLabel: 'Cancel dispatch',
               cancelLabel: 'Keep it',
-              danger: true,
+              onConfirmAsync: async (value) => {
+                await cancelDispatch(dispatch.dispatchId, requireReason(value, 'cancellation reason'));
+              },
             });
-            if (!confirmed) return;
-            try {
-              await cancelDispatch(dispatch.dispatchId);
-              showToast(`Dispatch #${dispatch.dispatchId} cancelled`, { variant: 'info' });
-              onQueueChanged();
-            } catch (err) {
-              showToast(err instanceof ApiClientError ? err.message : 'Could not cancel dispatch.', { variant: 'error' });
-            }
+            if (reason === null) return;
+            showToast(`Dispatch #${dispatch.dispatchId} cancelled`, { variant: 'info' });
+            onQueueChanged();
           });
           actionsGroup.appendChild(cancelBtn);
 

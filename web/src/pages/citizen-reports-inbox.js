@@ -97,7 +97,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   // Modern PageHeader with counter pills in actions slot
   const pageHeader = PageHeader({
     title: 'Citizen Reports',
-    subtitle: 'Public submissions intake & triage console',
+    subtitle: 'Citizen submissions on file — triage & convert to incidents',
     icon: icons.inbox,
   });
 
@@ -263,7 +263,11 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     updateCounts();
 
     if (filtered.length === 0) {
-      renderEmpty(tableWrap, q ? 'No reports match your search criteria.' : 'No citizen reports found in this view.');
+      renderEmpty(
+        tableWrap,
+        q ? 'No reports match your search criteria.' : 'No citizen reports found in this view.',
+        q ? null : 'Walk-ins are logged from Incident Management.'
+      );
       if (selectedReportId !== null) {
         closeDetailPane();
       }
@@ -834,15 +838,24 @@ function renderLoading(container) {
   container.appendChild(wrap);
 }
 
-function renderEmpty(container, message) {
+function renderEmpty(container, message, hint = null) {
   container.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card state-block';
   block.style.margin = 'auto';
-  block.innerHTML = `
-    <h3>No Reports</h3>
-    <p>${message}</p>
-  `;
+  const heading = document.createElement('h3');
+  heading.textContent = 'No Reports';
+  const body = document.createElement('p');
+  body.textContent = message;
+  block.append(heading, body);
+  if (hint) {
+    // Citizens can no longer file reports directly (the public form was
+    // removed 2026-10-07), so an empty inbox is the normal state: say where
+    // walk-ins go instead of leaving staff wondering why it is empty.
+    const hintLine = document.createElement('p');
+    hintLine.textContent = hint;
+    block.appendChild(hintLine);
+  }
   container.appendChild(block);
 }
 

@@ -31,6 +31,7 @@ import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
+import { PaperApprovalPanel } from '../components/PaperApprovalPanel.js';
 import { icons } from '../components/icons.js';
 import {
   getSchools, createSchool, updateSchool, getSchoolIncidents, getIncidentReferrals,
@@ -814,6 +815,21 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       if (trail.children.length) head.appendChild(trail);
 
       detailHost.append(back, head);
+
+      // Paper signature + scan (Wave 1) once the report is prepared, i.e.
+      // from the point it can be approved on paper.
+      if (report.status !== 'draft') {
+        detailHost.appendChild(PaperApprovalPanel({
+          entityType: 'ssz_term_report',
+          report,
+          user,
+          recordStatus: 'prepared',
+          signerAuthority: 'approve_annex_d',
+          preparerUserId: report.preparedBy ?? null,
+          approvedStatuses: ['approved', 'submitted'],
+          onChanged: () => loadDetail(report.reportId),
+        }));
+      }
 
       if (report.status === 'draft' && canEdit) detailHost.appendChild(buildDraftEditor(report));
       detailHost.appendChild(buildTermActions(report));

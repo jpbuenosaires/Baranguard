@@ -19,6 +19,7 @@ import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
+import { REPORT_CHANNEL_OPTIONS, DEFAULT_WEB_REPORT_CHANNEL } from '../utils/reportChannel.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
 
@@ -1205,6 +1206,27 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     }
     gPrio.append(lPrio, selPrio);
 
+    // Report channel: how the matter reached the barangay (migration 0036).
+    // Defaults to Walk-in because this form is the desk's intake path; the
+    // server forces tanod_alerted for incidents a Tanod files from the app.
+    const gChan = document.createElement('div');
+    gChan.className = 'incident-form-group';
+    const lChan = document.createElement('label');
+    lChan.className = 'incident-form-label';
+    lChan.htmlFor = 'incident-report-channel';
+    lChan.textContent = 'Report channel';
+    const selChan = document.createElement('select');
+    selChan.id = 'incident-report-channel';
+    selChan.className = 'incident-form-select';
+    for (const { value, label } of REPORT_CHANNEL_OPTIONS) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      if (value === DEFAULT_WEB_REPORT_CHANNEL) opt.selected = true;
+      selChan.appendChild(opt);
+    }
+    gChan.append(lChan, selChan);
+
     // Location Description
     const gLoc = document.createElement('div');
     gLoc.className = 'incident-form-group';
@@ -1257,7 +1279,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     formActions.append(submitBtn, cancelBtn);
 
-    form.append(gType, gPrio, gLoc, gComp, gNarr, formActions);
+    form.append(gType, gPrio, gChan, gLoc, gComp, gNarr, formActions);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const narrative = inNarr.value.trim();
@@ -1272,6 +1294,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         await createIncident({
           incidentType: selType.value,
           priority: selPrio.value,
+          reportChannel: selChan.value,
           rawNarrative: narrative,
           locationDescription: inLoc.value.trim() || undefined,
           complainantName: inComp.value.trim() || undefined,

@@ -1101,6 +1101,12 @@ export interface ShiftEntry {
   version: number;
   /** Contract §3: a Tanod only ever receives `published` rows; null from a server that predates the field. */
   approvalStatus: 'draft' | 'published' | null;
+  /**
+   * Wave 1-A: an approved swap on a published shift sends it back to `draft` with this flag set — the
+   * server then shows it to its owner only, as "awaiting re-publish". It is NOT confirmed duty: UI must
+   * badge it and keep it out of next-duty/hours logic. `false` from a server that predates the field.
+   */
+  pendingReapproval: boolean;
 }
 
 /**
@@ -1118,6 +1124,7 @@ export async function getMyShifts(): Promise<ShiftEntry[]> {
       end_at: string;
       version: number;
       approval_status?: 'draft' | 'published' | null;
+      pending_reapproval?: boolean | number | null;
     }[];
   }>('/shifts?limit=100');
   return json.items
@@ -1128,8 +1135,11 @@ export async function getMyShifts(): Promise<ShiftEntry[]> {
       endAt: row.end_at,
       version: row.version,
       approvalStatus: row.approval_status ?? null,
+      pendingReapproval: row.pending_reapproval === true || Number(row.pending_reapproval) === 1,
     }))
-    .filter((shift) => shift.approvalStatus !== 'draft');
+    // A plain draft is never shown; a draft the server flagged `pending_reapproval` IS (as a badged,
+    // non-confirmed row) because the owner needs to see that their swap changed the roster.
+    .filter((shift) => shift.approvalStatus !== 'draft' || shift.pendingReapproval);
 }
 
 // --- Tanod workflow (contract docs/FEATURE_CONTRACT_2026-10.md §3-§7) --------
@@ -1432,6 +1442,73 @@ export async function cancelShiftSwapRequest(requestId: number): Promise<{ succe
     method: 'DELETE',
   });
   return { success: json.success, requestId: json.request_id };
+}
+
+// --- Dispatch offers (Wave 2: night dispatch broadcast; ONLINE-ONLY) -------------
+//
+// An offer is a broadcast "who can take this call" to on-duty tanods holding a
+// published shift. The alert content is deliberately NON-IDENTIFYING (incident
+// type, barangay name, time) — no narrative, names, contacts, coordinates or
+// location text — and nothing here is ever written to the offline queue or
+// SQLite: accepting needs the server to arbitrate "first accept wins", so it
+// cannot be deferred or claimed locally.
+
+export interface DispatchOfferEntry {
+  offerId: number;
+  incidentId: number;
+  /** Raw `incident_type` enum value (e.g. `medical_emergency`) — label it for display. */
+  incidentType: string;
+  priority: string | null;
+  barangayName: string;
+  createdAt: string;
+  expiresAt: string;
+  status: string;
+}
+
+interface RawDispatchOffer {
+  offer_id: number;
+  incident_id: number;
+  incident_type: string;
+  priority?: string | null;
+  barangay_name: string;
+  created_at: string;
+  expires_at: string;
+  status: string;
+}
+
+/** GET /dispatch-offers — a tanod caller gets only their own still-`offered` open offers. */
+export async function getOpenDispatchOffers(): Promise<DispatchOfferEntry[]> {
+  const json = await request<unknown>('/dispatch-offers');
+  return listItems<RawDispatchOffer>(json).map((row) => ({
+    offerId: row.offer_id,
+    incidentId: row.incident_id,
+    incidentType: row.incident_type,
+    priority: row.priority ?? null,
+    barangayName: row.barangay_name,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    status: row.status,
+  }));
+}
+
+/**
+ * POST /dispatch-offers/:id/accept. Requires the device session headers (same signed
+ * set the other tanod writes use) and a fresh `request_id` per tap: the server replays
+ * the original result for a repeated id, so a retry after a dropped response is safe.
+ * 409 `OFFER_CLOSED` (someone else won / expired / cancelled) surfaces as an ApiError.
+ */
+export async function acceptDispatchOffer(
+  offerId: number,
+  requestId: string
+): Promise<{ dispatchId: number; status: string; incidentId: number }> {
+  const path = `/dispatch-offers/${offerId}/accept`;
+  const headers = await deviceAuthHeaders('POST', path, await getDeviceId());
+  const json = await request<{ dispatch_id: number; status: string; incident_id: number }>(path, {
+    method: 'POST',
+    headers,
+    body: { request_id: requestId },
+  });
+  return { dispatchId: json.dispatch_id, status: json.status, incidentId: json.incident_id };
 }
 
 // --- Notifications (§6 "Notification acknowledgment", M12) -----------------

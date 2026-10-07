@@ -427,6 +427,8 @@ export async function getIncidents({ status, priority, q, page, limit } = {}) {
       priority: row.priority,          // enum value, unconverted
       status: row.status,              // enum value, unconverted
       source: row.source,
+      reportChannel: row.report_channel ?? null, // tanod_alerted | walk_in | sms | other (migration 0036)
+      relatedIncidentId: row.related_incident_id ?? null,
       latitude: row.latitude,
       longitude: row.longitude,
       createdAt: row.created_at,
@@ -454,7 +456,7 @@ export async function getIncidents({ status, priority, q, page, limit } = {}) {
 export async function createIncident({
   incidentType, rawNarrative, latitude, longitude,
   locationDescription, complainantName, respondentName, complainantContactNumber,
-  priority,
+  priority, reportChannel,
   idempotencyKey,
 }) {
   const json = await request('POST', '/incidents', {
@@ -468,6 +470,8 @@ export async function createIncident({
       respondent_name: respondentName || undefined,
       complainant_contact_number: complainantContactNumber || undefined,
       priority: priority || undefined,
+      // tanod_alerted | walk_in | sms | other. Omitted -> the server defaults a web create to walk_in.
+      report_channel: reportChannel || undefined,
     },
     idempotencyKey,
     auth: true,
@@ -480,6 +484,7 @@ export async function createIncident({
     priority: json.priority,
     status: json.status,
     source: json.source,
+    reportChannel: json.report_channel ?? null,
     latitude: json.latitude,
     longitude: json.longitude,
     locationDescription: json.location_description,
@@ -554,9 +559,16 @@ export async function getDispatches({ status, incidentId, page, limit } = {}) {
  * caller generates one UUID per user-initiated create action and reuses
  * it only on an automatic retry of that same action, never on a new one.
  */
-export async function createDispatch({ incidentId, tanodId, requestId }) {
+/**
+ * `overrideReason` (1-255 chars) is sent ONLY after the server answered
+ * `NO_PUBLISHED_SHIFT` and the Admin chose to dispatch anyway; it is stored
+ * with the dispatch (never sent otherwise).
+ */
+export async function createDispatch({ incidentId, tanodId, requestId, overrideReason }) {
+  const body = { incident_id: incidentId, tanod_id: tanodId, request_id: requestId };
+  if (overrideReason !== undefined && overrideReason !== null) body.override_reason = overrideReason;
   const json = await request('POST', '/dispatch', {
-    body: { incident_id: incidentId, tanod_id: tanodId, request_id: requestId },
+    body,
     auth: true,
   });
   return {
@@ -567,8 +579,9 @@ export async function createDispatch({ incidentId, tanodId, requestId }) {
   };
 }
 
-export async function cancelDispatch(dispatchId) {
-  const json = await request('PATCH', `/dispatch/${dispatchId}/cancel`, { body: {}, auth: true });
+/** `reason` (1-255 chars) is REQUIRED by the server; allowed from assigned, en_route and arrived. */
+export async function cancelDispatch(dispatchId, reason) {
+  const json = await request('PATCH', `/dispatch/${dispatchId}/cancel`, { body: { reason }, auth: true });
   return {
     dispatchId: json.dispatch_id,
     status: json.status,
@@ -776,22 +789,7 @@ export async function updateProfile(userId, { fullName, contactNumber } = {}) {
   return { userId: json.user_id, updated: json.updated };
 }
 
-// --- Citizen reports (W16 inbox, W19 public form) ---------------------------
-
-/** POST /citizen-reports — public, no session required. */
-export async function submitCitizenReport({ barangayId, description, contactNumber, latitude, longitude }) {
-  const json = await request('POST', '/citizen-reports', {
-    body: {
-      barangay_id: barangayId,
-      description,
-      contact_number: contactNumber,
-      latitude,
-      longitude,
-    },
-    auth: false,
-  });
-  return { reportId: json.report_id, confirmation: json.confirmation };
-}
+// --- Citizen reports (W16 inbox; the public submit form was removed 2026-10-07) ---------------------------
 
 /** GET /public/transparency?barangay_id= — no auth (H-13/L-03: published deliberately, not an internal endpoint). */
 export async function getPublicTransparency(barangayId) {
@@ -1304,6 +1302,25 @@ export async function getSmsLogs({ messageType, direction, status, dateFrom, dat
 
 // --- Incident detail (§6 "Incidents", W7) -----------------------------------
 
+function mapIncidentLink(row) {
+  return row ? { incidentId: row.incident_id, displayId: row.display_id ?? null } : null;
+}
+
+/**
+ * PATCH /incidents/:id/related — Admin or Secretary. Links an incident to
+ * another incident of the same barangay for reference (null clears the link).
+ * Never changes either incident's status or dispatch state. `idempotencyKey`
+ * is required (Idempotency-Key header), like every web write.
+ */
+export async function setRelatedIncident(incidentId, relatedIncidentId, idempotencyKey) {
+  const json = await request('PATCH', `/incidents/${incidentId}/related`, {
+    body: { related_incident_id: relatedIncidentId },
+    auth: true,
+    idempotencyKey,
+  });
+  return { incidentId: json?.incident_id ?? incidentId, relatedIncidentId: json?.related_incident_id ?? relatedIncidentId };
+}
+
 /**
  * GET /incidents/:id — the only endpoint that returns `raw_narrative`, and
  * only to a Secretary (§6/§3: the Secretary is the statutory records
@@ -1321,6 +1338,13 @@ export async function getIncident(incidentId) {
     priority: json.priority,          // enum value, unconverted
     status: json.status,              // enum value, unconverted
     source: json.source,
+    // How the report reached the barangay (migration 0036), distinct from
+    // `source` (which client created the row). `relatedIncident` / `relatedBy`
+    // are non-narrative links only: id + display id.
+    reportChannel: json.report_channel ?? null,
+    relatedIncidentId: json.related_incident_id ?? null,
+    relatedIncident: mapIncidentLink(json.related_incident),
+    relatedBy: (json.related_by || []).map(mapIncidentLink),
     latitude: json.latitude,
     longitude: json.longitude,
     createdAt: json.created_at,

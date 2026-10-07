@@ -137,6 +137,7 @@ function resetNotificationBaselineOnLogout() {
 // that group is visible to the signed-in role — see the render loop
 // below — so Secretary/Punong Barangay still see small, sparse groups
 // rather than empty headers.
+const SYSTEM_TOOLS_MENU = 'System Tools';
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', roles: ['admin', 'punong_barangay'], icon: icons.layoutDashboard, group: null },
 
@@ -174,13 +175,17 @@ const NAV_ITEMS = [
   // is gone from the hub (contract §10); its code/endpoints are intact.
   { key: 'personnel', label: 'Personnel', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.users, group: 'Personnel' },
 
+  // 2026-10-07: the four Admin-only operational screens live under ONE
+  // collapsible "System Tools" menu instead of four separate sidebar rows
+  // (`menu` marks membership; reach is unchanged — PAGE_ROLES in main.js
+  // still gates every one of them to Admin). Settings stays a normal item.
   // §9 W14 — Admin only, explicitly.
-  { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'], icon: icons.messageSquare, group: 'System' },
+  { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'], icon: icons.messageSquare, group: 'System', menu: SYSTEM_TOOLS_MENU },
   // §9 W17 / W20 — Admin-only operational screens.
-  { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield, group: 'System' },
-  { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity, group: 'System' },
+  { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield, group: 'System', menu: SYSTEM_TOOLS_MENU },
+  { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity, group: 'System', menu: SYSTEM_TOOLS_MENU },
   // §D/W18 — Admin only, built as a deliberate Sprint 8 exception.
-  { key: 'map-packages', label: 'Map Packages', roles: ['admin'], icon: icons.map, group: 'System' },
+  { key: 'map-packages', label: 'Map Packages', roles: ['admin'], icon: icons.map, group: 'System', menu: SYSTEM_TOOLS_MENU },
   { key: 'settings', label: 'Settings', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.settings, group: 'System' },
 ];
 const NAV_COUNTS_POLL_MS = 60000; // Not time-critical — see ReportsController::navCounts()'s own doc.
@@ -195,6 +200,17 @@ function readSidebarCollapsed() {
 }
 function writeSidebarCollapsed(collapsed) {
   try { sessionStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* private mode — collapse just won't persist */ }
+}
+
+// Which sidebar menus the user has expanded survives navigation for the
+// same reason the collapse state does (AppShell is rebuilt on every
+// navigate()). A menu also always opens while one of its pages is active.
+const OPEN_MENUS_KEY = 'baranguard.sidebarOpenMenus';
+function readOpenMenus() {
+  try { return new Set(JSON.parse(sessionStorage.getItem(OPEN_MENUS_KEY) || '[]')); } catch { return new Set(); }
+}
+function writeOpenMenus(openMenus) {
+  try { sessionStorage.setItem(OPEN_MENUS_KEY, JSON.stringify([...openMenus])); } catch { /* private mode — just won't persist */ }
 }
 
 /**
@@ -289,21 +305,25 @@ export function AppShell(user, activePage, navigate, onLogout) {
   // for an Admin viewer).
   const countBadges = {};
   let lastRenderedGroup = undefined; // distinct from `null` (dashboard's "no group")
-  for (const item of NAV_ITEMS.filter((i) => i.roles.includes(user.role))) {
-    if (item.group !== lastRenderedGroup) {
-      lastRenderedGroup = item.group;
-      if (item.group) {
+  const openMenus = readOpenMenus();
+  const menuBlocks = new Map(); // menu label -> { toggle, submenu }
+  const appendGroupLabel = (group) => {
+    if (group !== lastRenderedGroup) {
+      lastRenderedGroup = group;
+      if (group) {
         const groupLabel = document.createElement('div');
         groupLabel.className = 'sidebar__nav-group-label';
         groupLabel.setAttribute('role', 'presentation');
-        groupLabel.textContent = item.group;
+        groupLabel.textContent = group;
         nav.appendChild(groupLabel);
       }
     }
+  };
+  const buildNavButton = (item, extraClass = '') => {
     const isActive = item.key === activePage;
     const navItem = document.createElement('button');
     navItem.type = 'button';
-    navItem.className = 'sidebar__nav-item' + (isActive ? ' active' : '');
+    navItem.className = 'sidebar__nav-item' + extraClass + (isActive ? ' active' : '');
     if (isActive) navItem.setAttribute('aria-current', 'page');
     navItem.setAttribute('aria-label', item.label);
     // Sighted users get no hover tooltip on touch, and the collapsed rail
@@ -319,7 +339,52 @@ export function AppShell(user, activePage, navigate, onLogout) {
       countBadges[item.countKey] = badge;
     }
     navItem.addEventListener('click', () => { closeDrawer(); navigate(item.key); });
-    nav.appendChild(navItem);
+    return navItem;
+  };
+  for (const item of NAV_ITEMS.filter((i) => i.roles.includes(user.role))) {
+    appendGroupLabel(item.group);
+    if (!item.menu) {
+      nav.appendChild(buildNavButton(item));
+      continue;
+    }
+    // A menu member: the first one creates the collapsible parent row.
+    let block = menuBlocks.get(item.menu);
+    if (!block) {
+      const submenuId = `sidebar-submenu-${item.menu.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'sidebar__nav-item sidebar__nav-toggle';
+      toggle.setAttribute('aria-label', item.menu);
+      toggle.title = item.menu;
+      toggle.setAttribute('aria-controls', submenuId);
+      toggle.innerHTML = `<span class="sidebar__nav-icon" aria-hidden="true">${icons.layers(18)}</span><span class="sidebar__nav-label">${item.menu}</span><span class="sidebar__nav-chevron" aria-hidden="true">${icons.chevronDown(14)}</span>`;
+      const submenu = document.createElement('div');
+      submenu.className = 'sidebar__submenu';
+      submenu.id = submenuId;
+      submenu.setAttribute('role', 'group');
+      submenu.setAttribute('aria-label', item.menu);
+      block = { toggle, submenu, label: item.menu, keys: [] };
+      menuBlocks.set(item.menu, block);
+      toggle.addEventListener('click', () => {
+        const open = submenu.hidden;
+        submenu.hidden = !open;
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.classList.toggle('is-open', open);
+        if (open) openMenus.add(block.label); else openMenus.delete(block.label);
+        writeOpenMenus(openMenus);
+      });
+      nav.append(toggle, submenu);
+    }
+    block.keys.push(item.key);
+    block.submenu.appendChild(buildNavButton(item, ' sidebar__nav-item--child'));
+  }
+  for (const block of menuBlocks.values()) {
+    // Open while the current page lives inside it, so the active row is never hidden.
+    const open = block.keys.includes(activePage) || openMenus.has(block.label);
+    block.submenu.hidden = !open;
+    block.toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    block.toggle.classList.toggle('is-open', open);
+    if (block.keys.includes(activePage)) block.toggle.classList.add('has-active');
   }
   // Applying counts is its own function because three things call it: the
   // first load, the poll, and refreshNavCounts() on the returned handle —
@@ -431,7 +496,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
 
   // Compute breadcrumb path from activePage and NAV_ITEMS
   const currentNav = NAV_ITEMS.find((i) => i.key === activePage);
-  let groupTitle = currentNav?.group;
+  let groupTitle = currentNav?.menu || currentNav?.group;
   let pageTitle = currentNav?.label;
 
   if (!groupTitle && activePage === 'dashboard') {
@@ -522,9 +587,9 @@ export function AppShell(user, activePage, navigate, onLogout) {
       page: item.key,
       param: undefined,
       label: item.label,
-      group: item.group || 'Overview',
+      group: item.menu || item.group || 'Overview',
       icon: item.icon,
-      keywords: `${item.label} ${item.key} ${item.group || ''}`.toLowerCase(),
+      keywords: `${item.label} ${item.key} ${item.menu || ''} ${item.group || ''}`.toLowerCase(),
     })),
   ];
   if (user.role === 'admin' || user.role === 'punong_barangay') {
