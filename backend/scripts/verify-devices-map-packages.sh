@@ -188,7 +188,9 @@ db_one() { mysql_exec -N -s "$VALDB" -e "$1"; }
 # POST /devices/register
 # ============================================================
 step "4. POST /devices/register — role gating and validation"
-expect_eq "$(status_of POST /devices/register "$ADMIN_TOKEN" '{"device_id":"admin-device-001","fcm_token":"tok","platform":"android"}')" "403" "Admin cannot register a device"
+# 2026-10-07 (decision 15C, Wave 3-G): the Chief Tanod's phone is an admin device, so Admin may now register one.
+expect_eq "$(status_of POST /devices/register "$ADMIN_TOKEN" '{"device_id":"admin-device-001","fcm_token":"tok","platform":"android"}')" "200" "Admin can register a device (Chief Tanod phone, decision 15C)"
+expect_eq "$(db_one "SELECT user_id FROM mobile_device WHERE device_id='admin-device-001';")" "$(db_one "SELECT user_id FROM user WHERE username='dev_admin';")" "Admin device row belongs to the admin"
 expect_eq "$(status_of POST /devices/register "$SEC_TOKEN" '{"device_id":"sec-device-001","fcm_token":"tok","platform":"android"}')" "403" "Secretary cannot register a device"
 expect_eq "$(status_of POST /devices/register "$T1_TOKEN" '{"device_id":"short","fcm_token":"tok","platform":"android"}')" "400" "device_id shorter than 8 chars rejected"
 expect_eq "$(status_of POST /devices/register "$T1_TOKEN" '{"device_id":"tanod1-device-aaa","fcm_token":"tok","platform":"ios"}')" "400" "platform other than android rejected"
@@ -245,7 +247,7 @@ expect_eq "$(db_one "SELECT fcm_token FROM mobile_device WHERE device_id='tanod1
 # PATCH /devices/:id/deactivate
 # ============================================================
 step "9. PATCH /devices/:id/deactivate"
-expect_eq "$(status_of PATCH /devices/tanod1-device-bbb/deactivate "$ADMIN_TOKEN")" "403" "Admin cannot use the Tanod device-deactivate endpoint"
+expect_eq "$(status_of PATCH /devices/tanod1-device-bbb/deactivate "$ADMIN_TOKEN")" "404" "Admin cannot deactivate a Tanod's device (ownership: 404 not 403)"
 expect_eq "$(status_of PATCH /devices/tanod1-device-bbb/deactivate "$T2_TOKEN")" "404" "Another Tanod's device returns 404 (existence not leaked)"
 expect_eq "$(db_one "SELECT is_active FROM mobile_device WHERE device_id='tanod1-device-bbb';")" "1" "That device is still active after the rejected attempt"
 expect_eq "$(status_of PATCH /devices/does-not-exist-xyz/deactivate "$T1_TOKEN")" "404" "Unknown device returns 404"
