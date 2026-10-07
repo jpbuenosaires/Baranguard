@@ -76,7 +76,7 @@ final class ShiftsController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
 
         $body = Http::jsonBody();
         $userId = $body['user_id'] ?? null;
@@ -106,7 +106,7 @@ final class ShiftsController
         // original shift instead of creating a duplicate (§6).
         $existingStmt = $pdo->prepare(
             'SELECT shift_id, user_id, patrol_zone, start_at, end_at, version,
-                    approval_status, approved_by, approved_at, source_availability_id
+                    approval_status, approved_by, approved_at, source_availability_id, pending_reapproval
              FROM shift_schedule WHERE client_request_id = :request_id AND barangay_id = :barangay_id LIMIT 1'
         );
         $existingStmt->execute(['request_id' => $requestId, 'barangay_id' => $identity['barangay_id']]);
@@ -169,6 +169,7 @@ final class ShiftsController
             'approved_by' => null,
             'approved_at' => null,
             'source_availability_id' => $sourceAvailabilityId,
+            'pending_reapproval' => false,
         ]);
     }
 
@@ -190,7 +191,10 @@ final class ShiftsController
         if ($identity['role'] === 'tanod') {
             $where[] = 'user_id = :user_id';
             $params['user_id'] = $identity['user_id'];
-            $where[] = "approval_status = 'published'";
+            // A published shift, OR one of the Tanod's own whose approved swap
+            // is waiting for the roster to be re-approved (migration 0035) —
+            // the Tanod keeps seeing a shift that is still theirs.
+            $where[] = "(approval_status = 'published' OR pending_reapproval = 1)";
         } else {
             $approvalFilter = Http::query('approval_status');
             if ($approvalFilter !== null) {
@@ -209,7 +213,7 @@ final class ShiftsController
 
         $stmt = $pdo->prepare(
             "SELECT shift_id, user_id, patrol_zone, start_at, end_at, version,
-                    approval_status, approved_by, approved_at, source_availability_id
+                    approval_status, approved_by, approved_at, source_availability_id, pending_reapproval
              FROM shift_schedule
              WHERE {$whereSql}
              ORDER BY start_at ASC
@@ -234,7 +238,7 @@ final class ShiftsController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function update(PDO $pdo, array $identity, string $shiftIdParam): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         if (!ctype_digit($shiftIdParam)) {
             throw new ApiError(404, 'NOT_FOUND', 'Shift not found.');
         }
@@ -309,6 +313,13 @@ final class ShiftsController
             $approvalSql = $approvalReset
                 ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL"
                 : '';
+            // A shift waiting on re-approval after an approved swap belongs to
+            // the swap's new holder; handing it to someone else clears the
+            // waiting state (the new holder never swapped). A time-only edit
+            // leaves it as it is.
+            if ($newUserId !== $oldUserId && (int) ($row['pending_reapproval'] ?? 0) === 1) {
+                $approvalSql .= ', pending_reapproval = 0';
+            }
 
             $pdo->prepare(
                 'UPDATE shift_schedule
@@ -557,6 +568,7 @@ final class ShiftsController
                 $update = $pdo->prepare(
                     "UPDATE shift_schedule
                         SET approval_status = 'published', approved_by = ?, approved_at = UTC_TIMESTAMP(),
+                            pending_reapproval = 0,
                             version = version + 1, updated_at = UTC_TIMESTAMP()
                       WHERE shift_id IN ({$pubPlaceholders}) AND approval_status = 'draft'"
                 );
@@ -709,6 +721,7 @@ final class ShiftsController
             'approved_by' => isset($row['approved_by']) ? (int) $row['approved_by'] : null,
             'approved_at' => $row['approved_at'] ?? null,
             'source_availability_id' => isset($row['source_availability_id']) ? (int) $row['source_availability_id'] : null,
+            'pending_reapproval' => (int) ($row['pending_reapproval'] ?? 0) === 1,
         ];
     }
 }

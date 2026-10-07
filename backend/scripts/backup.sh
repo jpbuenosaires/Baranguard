@@ -14,11 +14,11 @@
 # Backup retention note (§11 Rule 11): a backup is a recovery copy, not an
 # independent archive. Its expiration follows the retention of the source
 # data it contains. BACKUP_RETENTION_DAYS is age-based pruning, but the
-# pruning step below additionally checks for an active legal_hold before
-# deleting any backup file — retention-job.php/RetentionService.php only
-# purge DB rows, by deliberate design (see RetentionService's own
-# docblock), so this script is where backup-file-level legal hold has to
-# be enforced.
+# pruning step below additionally checks for an active legal_hold and, while
+# ANY record is held, deletes no backup file at all — retention-job.php/
+# RetentionService.php only purge DB rows, by deliberate design (see
+# RetentionService's own docblock), so this script is where backup-file-level
+# legal hold has to be enforced.
 
 set -euo pipefail
 
@@ -65,56 +65,54 @@ sha256sum "$ENCRYPTED_DUMP" > "$CHECKSUM_FILE"
 echo "[backup] Wrote $ENCRYPTED_DUMP"
 echo "[backup] Checksum: $(cat "$CHECKSUM_FILE")"
 
-echo "[backup] Pruning backups older than ${BACKUP_RETENTION_DAYS} days ..."
-
-# §11 Rule 11 / docs/REMAINING.md C1: age-based pruning alone can delete a
-# backup that still holds a legal-held record — RetentionService.php's own
-# docblock says this is deliberately NOT its job (it only purges DB rows).
-# Each backup is a single full-DB dump named
-# ${DB_NAME}_<TIMESTAMP>.sql.enc, so the fix is file-level: compute the
-# earliest created_at/uploaded_at/submitted_at among rows CURRENTLY under
-# legal_hold across every table that carries the column (incident,
-# citizen_report, evidence_attachment, sms_log). Any backup timestamped
-# on/after that floor could contain the held record and must survive
-# pruning regardless of age; anything strictly older than the floor
-# predates the record and prunes normally.
+# §11 Rule 11 / docs/REMAINING.md C1 — LEGAL HOLD PRUNES NOTHING (review
+# decision 2026-10-07; supersedes the earlier "earliest held record" floor).
 #
-# Real bug fixed 2026-09-26 (DEVLOG (35)): this query used to select
-# `created_at` from `citizen_report`, which has never had that column
-# (it uses `submitted_at` -- see migration 0001/its own schema) -- every
-# run failed closed with "Unknown column 'created_at'" and silently
-# skipped pruning, every time, since the day this script was written.
-# Caught running the FIRST real scheduled-backup dry run, not by
-# inspection. Also added `sms_log` (has its own `legal_hold` +
-# `created_at` per REFERENCE.md's schema map) to the floor, which this
-# query never covered at all.
+# A backup is a full-DB dump named ${DB_NAME}_<TIMESTAMP>.sql.enc, and
+# RetentionService.php only purges DB rows (by deliberate design), so this
+# script is where backup-FILE legal hold has to be enforced. The earlier rule
+# kept only backups taken on/after the oldest held record, which let a backup
+# that predated a hold (yet still contained a record that later became held)
+# be deleted. The simpler, safer rule: while ANY record is under legal_hold in
+# ANY table inspected below (incident, citizen_report, evidence_attachment,
+# sms_log) no backup file is deleted at all. With no hold, the normal
+# age-based pruning (BACKUP_RETENTION_DAYS) applies.
+#
+# Fails CLOSED: if the hold query itself errors, nothing is pruned this run.
+#
+# Real bug fixed 2026-09-26 (DEVLOG (35)): the old query selected `created_at`
+# from `citizen_report`, which has never had that column (it uses
+# `submitted_at`), so every run failed closed and silently skipped pruning
+# from the day the script was written. The tables/columns below are the real
+# ones (all four carry `legal_hold`).
 set +e
-HOLD_FLOOR="$(MYSQL_PWD="$DB_PASSWORD" mysql \
+HELD_COUNT="$(MYSQL_PWD="$DB_PASSWORD" mysql \
   --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" -N -B "$DB_NAME" -e "
-    SELECT MIN(created_at) FROM (
-      SELECT created_at FROM incident WHERE legal_hold = 1
-      UNION ALL SELECT submitted_at AS created_at FROM citizen_report WHERE legal_hold = 1
-      UNION ALL SELECT uploaded_at AS created_at FROM evidence_attachment WHERE legal_hold = 1
-      UNION ALL SELECT created_at FROM sms_log WHERE legal_hold = 1
-    ) AS held;
+    SELECT
+      (SELECT COUNT(*) FROM incident WHERE legal_hold = 1)
+    + (SELECT COUNT(*) FROM citizen_report WHERE legal_hold = 1)
+    + (SELECT COUNT(*) FROM evidence_attachment WHERE legal_hold = 1)
+    + (SELECT COUNT(*) FROM sms_log WHERE legal_hold = 1);
   " 2>&1)"
 HOLD_QUERY_STATUS=$?
 set -e
 
-if [ "$HOLD_QUERY_STATUS" -ne 0 ]; then
+if [ "$HOLD_QUERY_STATUS" -ne 0 ] || ! [[ "$HELD_COUNT" =~ ^[0-9]+$ ]]; then
   # Fail CLOSED, not open: if we can't determine hold status, we do not
   # know it's safe to delete anything, so nothing gets pruned this run
   # rather than risking a held record's only remaining backup.
-  echo "[backup] WARNING: could not check legal_hold status (${HOLD_FLOOR}). Skipping pruning this run." >&2
+  echo "[backup] WARNING: could not check legal_hold status (${HELD_COUNT}). Skipping pruning this run." >&2
   echo "[backup] Done."
   exit 0
 fi
-if [ -z "${HOLD_FLOOR:-}" ] || [ "$HOLD_FLOOR" = "NULL" ]; then
-  HOLD_FLOOR_EPOCH=""
-else
-  echo "[backup] Legal hold active — backups from ${HOLD_FLOOR} UTC onward will not be pruned regardless of age."
-  HOLD_FLOOR_EPOCH="$(date -u -d "$HOLD_FLOOR" +%s)"
+
+if [ "$HELD_COUNT" -gt 0 ]; then
+  echo "[backup] Legal hold active on ${HELD_COUNT} record(s) — pruning NOTHING this run (no backup file is deleted while any record is under legal hold)."
+  echo "[backup] Done."
+  exit 0
 fi
+
+echo "[backup] No legal hold — pruning backups older than ${BACKUP_RETENTION_DAYS} days ..."
 
 CUTOFF_EPOCH="$(date -u -d "-${BACKUP_RETENTION_DAYS} days" +%s)"
 
@@ -131,10 +129,6 @@ for f in "$BACKUP_DIR/${DB_NAME}_"*.sql.enc; do
   fi
   if [ "$file_epoch" -ge "$CUTOFF_EPOCH" ]; then
     continue # Not old enough yet.
-  fi
-  if [ -n "$HOLD_FLOOR_EPOCH" ] && [ "$file_epoch" -ge "$HOLD_FLOOR_EPOCH" ]; then
-    echo "[backup] Retaining $base — may contain data under an active legal hold (>= ${HOLD_FLOOR} UTC)."
-    continue
   fi
   echo "[backup] Deleting $base"
   rm -f "$f" "${f}.sha256"

@@ -117,6 +117,10 @@ mysql_exec "$VALDB" <<SQL
 INSERT INTO duty_status (user_id, status, channel, changed_at) VALUES
   ($TANOD_A, 'on_duty', 'app', UTC_TIMESTAMP()),
   ($TANOD_B, 'on_duty', 'app', UTC_TIMESTAMP());
+-- Review decision 2026-10-07: POST /dispatch needs a PUBLISHED shift covering now (NO_PUBLISHED_SHIFT otherwise).
+INSERT INTO shift_schedule (barangay_id, user_id, start_at, end_at, created_by, approval_status, approved_at)
+  SELECT 1, u.user_id, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 6 HOUR), (SELECT user_id FROM user WHERE username='2r_admin'), 'published', UTC_TIMESTAMP()
+  FROM user u WHERE u.user_id IN ($TANOD_A, $TANOD_B);
 SQL
 pass "Seeded 2 admins (barangay 1 + 2) and 2 on-duty Tanods"
 
@@ -207,13 +211,13 @@ echo implode(",", $names);
 expect_eq "$NAMES_MATCH" "Tanod Alpha,Tanod Bravo" "Both real Tanod names present, no fabricated fallback"
 
 step "8. Cancelling ONE of two active dispatches leaves the incident 'dispatched'"
-CANCEL1=$(body_of PATCH "/dispatch/$DISPATCH2/cancel" "$ADMIN_TOKEN")
+CANCEL1=$(body_of PATCH "/dispatch/$DISPATCH2/cancel" "$ADMIN_TOKEN" '{"reason":"Backup no longer needed"}')
 expect_eq "$(echo "$CANCEL1" | jget incident_status)" "dispatched" "Cancel response reports incident_status='dispatched' (not the old hardcoded 'pending')"
 expect_eq "$(incident_status)" "dispatched" "DB confirms incident is still dispatched — Tanod Alpha's dispatch is untouched"
 expect_eq "$(active_dispatch_count)" "1" "Exactly one active dispatch remains"
 
 step "9. Cancelling the LAST active dispatch DOES revert to pending (regression on single-responder path)"
-CANCEL2=$(body_of PATCH "/dispatch/$DISPATCH1/cancel" "$ADMIN_TOKEN")
+CANCEL2=$(body_of PATCH "/dispatch/$DISPATCH1/cancel" "$ADMIN_TOKEN" '{"reason":"Incident handled by barangay hall staff"}')
 expect_eq "$(echo "$CANCEL2" | jget incident_status)" "pending" "Cancel response reports incident_status='pending'"
 expect_eq "$(incident_status)" "pending" "DB confirms incident reverted to pending — no active dispatch remains"
 expect_eq "$(active_dispatch_count)" "0" "Zero active dispatches remain"
