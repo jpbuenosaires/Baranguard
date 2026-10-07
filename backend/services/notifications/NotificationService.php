@@ -35,8 +35,10 @@ final class NotificationService
     public const TYPE_SOS = 'sos';
     public const TYPE_PRIORITY_ALERT = 'priority_alert';
     public const TYPE_OTHER = 'other';
+    /** Migration 0038: a night-time dispatch offer broadcast to on-duty Tanods. */
+    public const TYPE_DISPATCH_OFFER = 'dispatch_offer';
 
-    private const TYPES = [self::TYPE_DISPATCH, self::TYPE_SOS, self::TYPE_PRIORITY_ALERT, self::TYPE_OTHER];
+    private const TYPES = [self::TYPE_DISPATCH, self::TYPE_SOS, self::TYPE_PRIORITY_ALERT, self::TYPE_OTHER, self::TYPE_DISPATCH_OFFER];
 
     /**
      * Creates one logical notification plus a target row per recipient.
@@ -49,7 +51,7 @@ final class NotificationService
      * @param int[] $targetUserIds recipients; duplicates are collapsed, and
      *        the empty case is allowed (a notification with nothing to
      *        deliver is still a true record that the event occurred).
-     * @param array{dispatch_id?:?int,sos_id?:?int,incident_id?:?int} $entities
+     * @param array{dispatch_id?:?int,sos_id?:?int,incident_id?:?int,dispatch_offer_id?:?int} $entities
      * @return array{notification_id:int,target_count:int}
      */
     public static function create(
@@ -67,13 +69,14 @@ final class NotificationService
         $dispatchId = $entities['dispatch_id'] ?? null;
         $sosId = $entities['sos_id'] ?? null;
         $incidentId = $entities['incident_id'] ?? null;
-        self::assertEntityIntegrity($type, $dispatchId, $sosId, $incidentId);
+        $offerId = $entities['dispatch_offer_id'] ?? null;
+        self::assertEntityIntegrity($type, $dispatchId, $sosId, $incidentId, $offerId);
 
         $insert = $pdo->prepare(
             'INSERT INTO notification
-                (barangay_id, notification_type, dispatch_id, sos_id, incident_id, created_by, created_at)
+                (barangay_id, notification_type, dispatch_id, sos_id, incident_id, dispatch_offer_id, created_by, created_at)
              VALUES
-                (:barangay_id, :notification_type, :dispatch_id, :sos_id, :incident_id, :created_by, UTC_TIMESTAMP())'
+                (:barangay_id, :notification_type, :dispatch_id, :sos_id, :incident_id, :dispatch_offer_id, :created_by, UTC_TIMESTAMP())'
         );
         $insert->execute([
             'barangay_id' => $barangayId,
@@ -81,6 +84,7 @@ final class NotificationService
             'dispatch_id' => $dispatchId,
             'sos_id' => $sosId,
             'incident_id' => $incidentId,
+            'dispatch_offer_id' => $offerId,
             'created_by' => $createdBy,
         ]);
         $notificationId = (int) $pdo->lastInsertId();
@@ -210,7 +214,7 @@ final class NotificationService
      * §5's notification entity-integrity matrix. See the class doc for why
      * this lives in PHP and not in a CHECK constraint.
      */
-    private static function assertEntityIntegrity(string $type, ?int $dispatchId, ?int $sosId, ?int $incidentId): void
+    private static function assertEntityIntegrity(string $type, ?int $dispatchId, ?int $sosId, ?int $incidentId, ?int $offerId = null): void
     {
         $problem = match ($type) {
             self::TYPE_DISPATCH => $dispatchId === null
@@ -219,6 +223,10 @@ final class NotificationService
                 ? 'An SOS notification requires sos_id.' : null,
             self::TYPE_PRIORITY_ALERT => ($incidentId === null && $dispatchId === null)
                 ? 'A priority alert requires incident_id or dispatch_id.' : null,
+            // Migration 0038: an offer notification is about ONE offer (and
+            // its incident, so the feed can show the incident type).
+            self::TYPE_DISPATCH_OFFER => ($offerId === null || $incidentId === null)
+                ? 'A dispatch_offer notification requires dispatch_offer_id and incident_id.' : null,
             // §5: "'other' may use a documented entity relationship" — no
             // combination is mandated, so nothing to reject.
             default => null,
@@ -237,6 +245,9 @@ final class NotificationService
         }
         if ($type === self::TYPE_DISPATCH && $sosId !== null) {
             throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'A dispatch notification must not carry sos_id.');
+        }
+        if ($type === self::TYPE_DISPATCH_OFFER && ($sosId !== null || $dispatchId !== null)) {
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'A dispatch_offer notification must not carry sos_id or dispatch_id.');
         }
     }
 }
