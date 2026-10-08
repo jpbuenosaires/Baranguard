@@ -276,7 +276,45 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       revise.addEventListener('click', () => review('revised'));
       actions.append(note, accept, revise);
 
+      // Create a draft shift from one of this availability's windows. Opens
+      // the existing New Shift form prefilled; the server re-validates
+      // ownership/tenant (source_availability_id) and every roster rule.
+      const fromRow = document.createElement('div');
+      fromRow.className = 'availability-item__actions';
+      let windowSelect = null;
+      if (item.windows.length > 1) {
+        windowSelect = document.createElement('select');
+        windowSelect.className = 'personnel-form-select';
+        windowSelect.setAttribute('aria-label', `Window to schedule for ${tanodName}`);
+        item.windows.forEach((w, i) => {
+          const opt = document.createElement('option');
+          opt.value = String(i);
+          opt.textContent = formatWindow(w);
+          windowSelect.appendChild(opt);
+        });
+      }
+      const createFrom = document.createElement('button');
+      createFrom.type = 'button';
+      createFrom.className = 'ghost';
+      createFrom.textContent = 'Create shift from this availability';
+      createFrom.addEventListener('click', () => {
+        const w = item.windows[windowSelect ? Number(windowSelect.value) : 0];
+        if (!w || !formPane || typeof formPane.applyAvailability !== 'function') {
+          showToast('The New Shift form is not available right now.', { variant: 'error' });
+          return;
+        }
+        const ok = formPane.applyAvailability({ availId: item.availId, userId: item.userId, window: w });
+        if (!ok) {
+          showToast('This Tanod is not in the shift roster list, so a shift cannot be created from here.', { variant: 'error' });
+          return;
+        }
+        formPane.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      });
+      if (windowSelect) fromRow.appendChild(windowSelect);
+      fromRow.appendChild(createFrom);
+
       row.append(top, list, actions);
+      if (canManageShifts) row.appendChild(fromRow);
       availabilityHost.appendChild(row);
     }
   }
@@ -999,6 +1037,31 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   startInput.addEventListener('input', updateFormFatiguePreview);
   endInput.addEventListener('input', updateFormFatiguePreview);
 
+  // Set by applyAvailability(); cleared on success or when the user edits the
+  // tanod/times by hand away from the chosen window.
+  let sourceAvailabilityId = null;
+  const sourceNote = document.createElement('p');
+  sourceNote.className = 'note';
+  sourceNote.hidden = true;
+  const clearSource = () => {
+    sourceAvailabilityId = null;
+    sourceNote.hidden = true;
+  };
+  tanodSelect.addEventListener('change', clearSource);
+
+  card.applyAvailability = ({ availId, userId, window: w }) => {
+    if (!tanods.some((t) => t.userId === userId)) return false;
+    tanodSelect.value = String(userId);
+    startInput.value = `${w.date}T${w.start}`;
+    endInput.value = `${w.date}T${w.end}`;
+    sourceAvailabilityId = availId;
+    sourceNote.textContent = `Prefilled from the Tanod's submitted availability (${w.date} ${w.start}–${w.end}). Adjust the times if needed; the shift is still saved as a draft.`;
+    sourceNote.hidden = false;
+    errorBox.hidden = true;
+    updateFormFatiguePreview();
+    return true;
+  };
+
   const draftNote = document.createElement('p');
   draftNote.className = 'note';
   draftNote.textContent = 'New shifts are saved as drafts. Tanods see a shift only after it is published.';
@@ -1017,6 +1080,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     startLabel, startInput,
     endLabel, endInput,
     fatigueCallout,
+    sourceNote,
     draftNote,
     submitButton
   );
@@ -1054,7 +1118,9 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
         startAt: startInput.value,
         endAt: endInput.value,
         requestId: crypto.randomUUID(),
+        sourceAvailabilityId,
       });
+      clearSource();
       showToast('Shift saved as a draft.', { variant: 'success' });
       zoneInput.value = '';
       startInput.value = '';

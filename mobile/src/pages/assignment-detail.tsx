@@ -65,6 +65,7 @@ import LiveMapCanvas, { type FocusTarget, type LiveMapCanvasHandle } from '../co
 import ActiveStepCard from '../components/ActiveStepCard';
 import MobileHeader from '../components/MobileHeader';
 import ReferralPanel from '../components/ReferralPanel';
+import AssignmentEvidencePanel from '../components/AssignmentEvidencePanel';
 import { LoadingBlock } from '../components/LoadingBlock';
 import {
   ApiError,
@@ -872,6 +873,9 @@ const AssignmentDetailPage: React.FC = () => {
               incidentLabel={`Case #${row.server_incident_id}`}
             />
 
+            {/* Evidence for the assigned incident - saved on the phone first, uploaded by the sync worker. */}
+            <AssignmentEvidencePanel dispatchLocalId={row.local_id} />
+
             {/* Clean Tap-to-Navigate Map Card */}
             {focusTarget && (
               <div
@@ -922,7 +926,7 @@ const AssignmentDetailPage: React.FC = () => {
                     className="dispatch-scene-tool-btn"
                     onClick={() => {
                       tacticalFeedback.onTap();
-                      navigate('/tabs/my-reports');
+                      navigate('/tabs/reports');
                     }}
                     title="View or attach incident notes and evidence"
                   >
