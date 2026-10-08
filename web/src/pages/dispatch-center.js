@@ -230,8 +230,12 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   async function load(showLoadingState) {
     if (showLoadingState && !layoutEl) renderLoading(body);
     try {
-      const [incidentsRes, dispatchedIncidentsRes, dispatchesRes, dutyStatuses, usersRes, sosItems, gpsItems, offersRes] = await Promise.all([
+      const [incidentsRes, reopenedIncidentsRes, dispatchedIncidentsRes, dispatchesRes, dutyStatuses, usersRes, sosItems, gpsItems, offersRes] = await Promise.all([
         getIncidents({ status: 'pending', limit: 100 }),
+        // A Secretary-reopened incident is back in active handling: queue it
+        // beside pending ones so the Admin can dispatch it. Additive — if it
+        // cannot be read the board still works.
+        getIncidents({ status: 'reopened', limit: 100 }).catch(() => ({ items: [] })),
         // 2026-09-13: fetched so grouped dispatch cards (below) can show
         // the incident's REAL type/location/display id — GET /dispatch's
         // own rows don't carry those (see mapDispatch()), so a dispatched
@@ -253,7 +257,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       }
 
       const incidentById = new Map(
-        [...incidentsRes.items, ...dispatchedIncidentsRes.items].map((i) => [i.incidentId, i])
+        [...incidentsRes.items, ...reopenedIncidentsRes.items, ...dispatchedIncidentsRes.items].map((i) => [i.incidentId, i])
       );
       const onDutyUserIds = new Set(dutyStatuses.filter((d) => d.status === 'on_duty').map((d) => d.userId));
       const eligibleTanods = usersRes.items.filter((u) => u.isActive && onDutyUserIds.has(u.userId));
@@ -285,7 +289,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const tanodNames = new Map(usersRes.items.map((u) => [u.userId, u.fullName]));
 
       latestData = {
-        pendingIncidents: incidentsRes.items,
+        pendingIncidents: [...incidentsRes.items, ...reopenedIncidentsRes.items],
         activeDispatches: groupedActiveDispatches,
         eligibleTanods,
         openSos: openSos.map((s) => ({ ...s, fullName: tanodNames.get(s.userId) })),
@@ -872,7 +876,9 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
       const badge = document.createElement('span');
       badge.className = `queue-badge ${item.itemStatus === 'pending' ? 'queue-badge--pending' : 'queue-badge--dispatched'}`;
-      badge.textContent = item.itemStatus === 'pending' ? 'PENDING' : 'DISPATCHED';
+      badge.textContent = item.itemStatus === 'pending'
+        ? (item.status === 'reopened' ? 'REOPENED' : 'PENDING')
+        : 'DISPATCHED';
 
       cardHeader.append(idGroup, badge);
 
