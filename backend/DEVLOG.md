@@ -18675,8 +18675,8 @@ git worktrees, merged to local `main`; nothing pushed.
   branch but never merged; merged into `main` this session. `DispatchController::create`,
   `OfferService` (create + sweep) and the Dispatch Center queue now treat `reopened`
   like `pending` (queue badge REOPENED). Checked: `verify-web-wiring.mjs` 776/0,
-  `php -l`. NOT run: `verify-h16-incident-lifecycle.sh`, `verify-dispatch-offers.sh`
-  (new assertions added by the commit).
+  `php -l`. Then run on disposable DBs: `verify-h16-incident-lifecycle.sh` 47/0,
+  `verify-dispatch-offers.sh` 193/0 (concurrency still not demonstrated).
 - **Gap-X2:** dead `my-reports` link fixed; `AssignmentEvidencePanel.tsx` adds
   evidence capture/upload on assigned incidents (offline-queued). Not device-verified.
 - **Gap-X3:** Scheduler "Create shift from this availability" (prefilled, saved as
