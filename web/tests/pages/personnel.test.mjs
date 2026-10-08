@@ -508,4 +508,43 @@ describe('Personnel behaviour', () => {
     assert.equal(buttonByText(/edit shift/i), undefined);
     assert.match(text($('.page-content')), /Tanod #5/, 'an assigned shift shows its id when the roster is unavailable, not "Unassigned"');
   });
+  for (const role of ['admin', 'secretary']) {
+    test(`${role}: "Create shift from this availability" prefills the form and POSTs source_availability_id as a draft`, async () => {
+      await openScheduler(role);
+      const panel = $('.availability-panel');
+      const picker = $('select', panel);
+      assert.ok(picker, 'a tanod with several windows gets a window picker');
+      picker.value = '1';
+      click(buttonByText(/create shift from this availability/i, panel));
+      assert.equal($('#scheduler-new-tanod').value, '4');
+      assert.equal($('#scheduler-new-start').value, '2026-10-06T22:00');
+      assert.equal($('#scheduler-new-end').value, '2026-10-06T23:59');
+      $('#scheduler-new-start').closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await settle();
+      const [call] = api.callsTo('POST', '/shifts');
+      assert.ok(call, 'POST /shifts was not sent');
+      assert.equal(call.body.source_availability_id, 31);
+      assert.equal(call.body.user_id, 4);
+      assert.match(call.body.request_id, UUID);
+      assert.match(text(window.document.body), /Shift saved as a draft\./);
+    });
+  }
+
+  test('a hand-built shift sends no source_availability_id', async () => {
+    await openScheduler('admin');
+    type($('#scheduler-new-start'), '2026-10-12T08:00');
+    type($('#scheduler-new-end'), '2026-10-12T16:00');
+    $('#scheduler-new-start').closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    assert.equal('source_availability_id' in api.callsTo('POST', '/shifts')[0].body, false);
+  });
+
+  test('a server rejection (daily-hours cap) from an availability-created shift is shown in the form', async () => {
+    api.on('POST', '/shifts', () => ({ status: 422, body: { error: { code: 'DAILY_HOURS_EXCEEDED', message: 'Daily scheduled hours exceed 12.' } } }));
+    await openScheduler('admin');
+    click(buttonByText(/create shift from this availability/i, $('.availability-panel')));
+    $('#scheduler-new-start').closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    assert.match(text($('#scheduler-new-start').closest('form')), /Daily scheduled hours exceed 12/);
+  });
 });
