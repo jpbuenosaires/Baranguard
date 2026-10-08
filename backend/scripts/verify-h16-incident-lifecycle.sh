@@ -231,6 +231,60 @@ expect_eq "$(status_of PATCH "/incidents/${INC_D}/lifecycle" "$SEC_TOKEN" "$K14"
 K14B="60000000-0000-4000-8000-000000000002"
 expect_eq "$(status_of PATCH "/incidents/${INC_D}/lifecycle" "$SEC_B2_TOKEN" "$K14B" '{"status":"invalid"}')" "200" "Barangay-2 secretary against their own incident -> 200"
 
+step "15. Gap-X1: a REOPENED incident is actionable (dispatch -> complete -> resolve)"
+# A fresh Tanod: h16_tanod is already busy on incident C (assigned dispatch).
+mysql_exec "$VALDB" -e "INSERT INTO user (barangay_id, username, password_hash, full_name, role, is_active, created_at) SELECT 1, 'h16_tanod2', password_hash, 'H16 Tanod Two', 'tanod', 1, UTC_TIMESTAMP() FROM user WHERE username='h16_tanod';"
+TANOD2_ID=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM user WHERE username='h16_tanod2';")
+mysql_exec "$VALDB" <<SQL
+INSERT INTO duty_status (user_id, status, channel, changed_at) VALUES ($TANOD2_ID, 'on_duty', 'app', UTC_TIMESTAMP());
+INSERT INTO shift_schedule (barangay_id, user_id, start_at, end_at, created_by, approval_status, approved_at)
+  VALUES (1, $TANOD2_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 6 HOUR), $ADMIN_USER_ID, 'published', UTC_TIMESTAMP());
+INSERT INTO incident (barangay_id, incident_type, priority, raw_narrative, status, source, created_at, updated_at) VALUES
+  (1, 'theft', 'normal', 'RAW-H16-E (reopen, dispatch, resolve)', 'invalid', 'web', UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+  (1, 'theft', 'normal', 'RAW-H16-F (reopen, dispatch, cancel)', 'invalid', 'web', UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+  (1, 'theft', 'normal', 'RAW-H16-G (reopen, then close again)', 'invalid', 'web', UTC_TIMESTAMP(), UTC_TIMESTAMP());
+SQL
+INC_E=$(mysql_exec -N -s "$VALDB" -e "SELECT incident_id FROM incident WHERE raw_narrative LIKE 'RAW-H16-E%';")
+INC_F=$(mysql_exec -N -s "$VALDB" -e "SELECT incident_id FROM incident WHERE raw_narrative LIKE 'RAW-H16-F%';")
+INC_G=$(mysql_exec -N -s "$VALDB" -e "SELECT incident_id FROM incident WHERE raw_narrative LIKE 'RAW-H16-G%';")
+uuid() { "$PHP_BIN" -r "echo bin2hex(random_bytes(4)).'-'.bin2hex(random_bytes(2)).'-4'.substr(bin2hex(random_bytes(2)),1).'-8'.substr(bin2hex(random_bytes(2)),1).'-'.bin2hex(random_bytes(6));"; }
+for I in $INC_E $INC_F $INC_G; do
+  expect_eq "$(body_of PATCH "/incidents/${I}/lifecycle" "$SEC_TOKEN" "$(uuid)" '{"status":"reopened"}' | jget status)" "reopened" "incident $I invalid -> reopened"
+done
+
+# Admin resolve of a reopened incident with no dispatch mirrors pending: refused (needs dispatched).
+expect_eq "$(status_of PATCH "/incidents/${INC_E}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved"}')" "409" "Reopened with no dispatch cannot be resolved (same as pending)"
+
+DE=$(body_of POST "/dispatch" "$ADMIN_TOKEN" "" "{\"incident_id\":$INC_E,\"tanod_id\":$TANOD2_ID,\"request_id\":\"$(uuid)\"}")
+DISP_E=$(echo "$DE" | jget dispatch_id)
+expect_eq "$([ -n "$DISP_E" ] && echo yes || echo no)" "yes" "POST /dispatch accepted for a reopened incident ($DISP_E)"
+expect_eq "$(db_status_of "$INC_E")" "dispatched" "Reopened incident is now dispatched"
+expect_eq "$(status_of PATCH "/incidents/${INC_E}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved"}')" "409" "Resolve refused while the dispatch is still active"
+mysql_exec "$VALDB" -e "UPDATE dispatch SET status='completed', completed_at=UTC_TIMESTAMP() WHERE dispatch_id=$DISP_E;"
+expect_eq "$(status_of PATCH "/incidents/${INC_E}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved"}')" "200" "Resolve works after the dispatch completed"
+expect_eq "$(db_status_of "$INC_E")" "resolved" "Reopened -> dispatched -> resolved in the DB"
+
+step "16. Gap-X1: reopen -> dispatch -> cancel returns to pending"
+DF=$(body_of POST "/dispatch" "$ADMIN_TOKEN" "" "{\"incident_id\":$INC_F,\"tanod_id\":$TANOD2_ID,\"request_id\":\"$(uuid)\"}")
+DISP_F=$(echo "$DF" | jget dispatch_id)
+expect_eq "$(db_status_of "$INC_F")" "dispatched" "Reopened incident F dispatched"
+CF=$(body_of PATCH "/dispatch/${DISP_F}/cancel" "$ADMIN_TOKEN" "$(uuid)" '{"reason":"Responder stood down"}')
+expect_eq "$(echo "$CF" | jget incident_status)" "pending" "Cancel response reports incident_status=pending"
+expect_eq "$(db_status_of "$INC_F")" "pending" "Incident F reverted to pending after the last dispatch was cancelled"
+
+step "17. Gap-X1: a reopened incident can still be closed again when no dispatch is open"
+expect_eq "$(body_of PATCH "/incidents/${INC_G}/lifecycle" "$SEC_TOKEN" "$(uuid)" '{"status":"cancelled"}' | jget status)" "cancelled" "reopened -> cancelled (no open dispatch)"
+mysql_exec "$VALDB" -e "UPDATE incident SET status='reopened' WHERE incident_id=$INC_G;"
+expect_eq "$(body_of PATCH "/incidents/${INC_G}/lifecycle" "$SEC_TOKEN" "$(uuid)" '{"status":"invalid"}' | jget status)" "invalid" "reopened -> invalid (no open dispatch)"
+mysql_exec "$VALDB" -e "UPDATE incident SET status='reopened' WHERE incident_id=$INC_G;"
+expect_eq "$(body_of PATCH "/incidents/${INC_G}/lifecycle" "$SEC_TOKEN" "$(uuid)" '{"status":"duplicate","duplicate_of_incident_id":'"$INC_B"'}' | jget status)" "duplicate" "reopened -> duplicate (no open dispatch)"
+
+step "18. Gap-X1: cross-tenant dispatch of a reopened incident is 404; audit rows carry ids only"
+mysql_exec "$VALDB" -e "UPDATE incident SET status='reopened' WHERE incident_id=$INC_D;"
+expect_eq "$(status_of POST "/dispatch" "$ADMIN_TOKEN" "" "{\"incident_id\":$INC_D,\"tanod_id\":$TANOD2_ID,\"request_id\":\"$(uuid)\"}")" "404" "Barangay-1 admin dispatching a barangay-2 reopened incident -> 404"
+LEAK=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM audit_log WHERE metadata_json LIKE '%RAW-H16%' OR metadata_json LIKE '%Responder stood down%';")
+expect_eq "$LEAK" "0" "No audit row contains narrative or cancel-reason text"
+
 echo
 echo "=================================================="
 echo "PASSED: $PASS   FAILED: $FAIL"

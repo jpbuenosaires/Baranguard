@@ -257,8 +257,11 @@ final class DispatchController
         // endpoint, mobile, and the notification target were all
         // already safe under N concurrent dispatches without any
         // change of their own.
-        if (!in_array($incident['status'], ['pending', 'dispatched'], true)) {
-            throw new ApiError(409, 'CONFLICT', 'Incident is not pending or dispatched — it may already be resolved.');
+        // 'reopened' (Secretary lifecycle action) means "reconsidered, back
+        // to active handling": it is dispatchable like a pending incident,
+        // otherwise a reopened incident would be a dead end.
+        if (!in_array($incident['status'], ['pending', 'dispatched', 'reopened'], true)) {
+            throw new ApiError(409, 'CONFLICT', 'Incident is not pending, reopened or dispatched — it may already be resolved.');
         }
 
         $tanodStmt = $pdo->prepare(

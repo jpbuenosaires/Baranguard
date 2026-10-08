@@ -271,8 +271,8 @@ final class OfferService
             if ($incident === false || (int) $incident['barangay_id'] !== $barangayId) {
                 throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
             }
-            if (!in_array($incident['status'], ['pending', 'dispatched'], true)) {
-                throw new ApiError(409, 'CONFLICT', 'Incident is not pending or dispatched.');
+            if (!in_array($incident['status'], ['pending', 'dispatched', 'reopened'], true)) {
+                throw new ApiError(409, 'CONFLICT', 'Incident is not pending, reopened or dispatched.');
             }
             $liveStmt = $pdo->prepare("SELECT 1 FROM dispatch_offer WHERE incident_id = :id AND status IN ('open','escalated') LIMIT 1");
             $liveStmt->execute(['id' => $incidentId]);
@@ -483,7 +483,7 @@ final class OfferService
             $incStmt->execute(['id' => $incidentId]);
             $incidentStatus = $incStmt->fetchColumn();
 
-            if (!in_array($incidentStatus, ['pending', 'dispatched'], true)) {
+            if (!in_array($incidentStatus, ['pending', 'dispatched', 'reopened'], true)) {
                 // The incident was resolved/cancelled/merged meanwhile: the
                 // offer has nothing left to ask anyone.
                 $pdo->prepare("UPDATE dispatch_offer SET status = 'closed', closed_at = UTC_TIMESTAMP() WHERE offer_id = :id")

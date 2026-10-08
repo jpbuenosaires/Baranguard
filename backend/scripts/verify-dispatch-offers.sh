@@ -691,6 +691,18 @@ OMETA=$(db_one "SELECT metadata_json FROM audit_log WHERE action='dispatch_statu
 case "$OMETA" in *"$OVR_TEXT"*) fail "AUDIT LEAK: override reason text in audit metadata";; *) pass "Override reason text is NOT in audit metadata";; esac
 expect_eq "  records has_reason and reason_length instead" "$(db_one "SELECT CONCAT(JSON_EXTRACT(metadata_json,'\$.has_reason'),'/',JSON_EXTRACT(metadata_json,'\$.reason_length')) FROM audit_log WHERE action='dispatch_status_override' AND entity_id=$D1 ORDER BY audit_id DESC LIMIT 1;")" "true/${#OVR_TEXT}"
 
+step "16. Gap-X1: a REOPENED incident can receive a manual offer and be accepted"
+db_run "INSERT INTO incident (barangay_id,incident_type,priority,raw_narrative,status,source,created_at,updated_at) VALUES (1,'theft','normal','OF-INC-REOPEN','reopened','web',UTC_TIMESTAMP(),UTC_TIMESTAMP()),(2,'theft','normal','OF-INC-REOPEN-B2','reopened','web',UTC_TIMESTAMP(),UTC_TIMESTAMP());"
+INCR=$(iid OF-INC-REOPEN); INCR2=$(iid OF-INC-REOPEN-B2)
+api POST /dispatch-offers "$ADMIN_T" "{\"incident_id\":$INCR2}" -H "Idempotency-Key: $(uuid)"
+expect_code "Cross-tenant manual offer on a reopened incident" 404
+api POST /dispatch-offers "$ADMIN_T" "{\"incident_id\":$INCR}" -H "Idempotency-Key: $(uuid)"
+expect_code "Admin opens a manual offer on a reopened incident" 201
+OFFERR=$(jget "$BODY" offer_id)
+expect_eq "  incident stays reopened until someone accepts" "$(db_one "SELECT status FROM incident WHERE incident_id=$INCR;")" "reopened"
+expect_eq "  offer audit carries ids only (no narrative)" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE entity_type='dispatch_offer' AND entity_id=$OFFERR AND metadata_json LIKE '%OF-INC-REOPEN%';")" "0"
+db_run "UPDATE dispatch_offer SET status='cancelled' WHERE offer_id=$OFFERR;"
+
 echo
 echo "================================================================"
 echo "Wave 2E dispatch offers: $PASS passed, $FAIL failed"
