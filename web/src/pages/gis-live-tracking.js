@@ -374,7 +374,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       <span>Monitoring ${gpsItems.length} field personnel across Pilar barangays</span>
     `;
 
-    const activeIncidents = incidents.filter((i) => i.status === 'pending' || i.status === 'dispatched');
+    const activeIncidents = incidents.filter((i) => i.status === 'pending' || i.status === 'reopened' || i.status === 'dispatched');
     const mapIncidents = activeIncidents
       .filter((i) => i.latitude != null && i.longitude != null)
       .map((i) => ({

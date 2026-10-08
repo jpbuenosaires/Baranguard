@@ -942,14 +942,14 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     // Primary Action Button (Dispatch or Resolve). Dispatch and resolve are
     // Admin-only on the server (POST /dispatch, PATCH /incidents/:id/status);
     // other roles get a read-only note instead of a control that would 403.
-    if (!isAdmin && (row.status === 'pending' || row.status === 'dispatched')) {
+    if (!isAdmin && (row.status === 'pending' || row.status === 'reopened' || row.status === 'dispatched')) {
       const note = document.createElement('p');
       note.className = 'note';
-      note.textContent = row.status === 'pending'
+      note.textContent = (row.status === 'pending' || row.status === 'reopened')
         ? 'Dispatching is done by the Admin.'
         : 'Resolving is done by the Admin.';
       actionsRow.appendChild(note);
-    } else if (row.status === 'pending') {
+    } else if (row.status === 'pending' || row.status === 'reopened') {
       const dispatchBtn = document.createElement('button');
       dispatchBtn.type = 'button';
       dispatchBtn.className = 'btn-action-dispatch';
