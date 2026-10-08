@@ -420,7 +420,7 @@ stateDiagram-v2
 31. *(Merged into Rule 28; number kept so older citations still line up.)*
 
 ### VI. Tanod Availability & Accomplishment Reports
-32. A Tanod can revise and resubmit duty availability time windows for a period while its status is `submitted`, but modifications are locked once `accepted`.
+32. A Tanod can revise and resubmit duty availability time windows for a period while its status is `submitted` (or `revised`, when a reviewer asked for changes), but modifications are locked once `accepted`.
 33. The server computes suggested duty durations from recorded `on_duty` intervals and flags any accomplishment entry where the Tanod's confirmed duration differs by more than 30 minutes.
 34. Final monthly accomplishment reports must be submitted online and cannot be queued through the offline sync worker.
 35. The preparer of an accomplishment report can never note or approve their own report.
@@ -471,3 +471,154 @@ stateDiagram-v2
 68. Dispatch and Resolve controls in Incident Management are shown to the Admin only; the Secretary sees a read-only note (the server already enforced this).
 69. A draft shift can be created from a submitted availability entry; it is prefilled from the tanod's window and is still saved as `draft`.
 70. A tanod can capture photo or voice evidence on an assigned incident while offline; it shows as waiting for a connection until the server confirms the upload.
+
+---
+
+# Part 4: Scenario Walk-Throughs (for checking)
+
+Each scenario is one realistic story you can follow step by step and compare with the app. "Rules" points to Part 3, "State" to Part 2, "Evidence" to the automated suite that exercises it on a disposable database. None of these has been run in a browser or on a device by an agent (see `docs/HANDOFF.md`). Where a UAT ID is given it comes from `docs/chapter4-instruments/04-uat-signoff.html`.
+
+| # | Scenario | Roles |
+|---|---|---|
+| 1 | Daytime incident from report to resolution | Tanod, Admin |
+| 2 | Night incident: dispatch offer, first accept wins | System, Tanod, Admin |
+| 3 | Dispatching without a published shift | Admin |
+| 4 | Cancelling a dispatch, and a second responder | Admin |
+| 5 | Wrong or duplicate report: Secretary lifecycle and reopening | Secretary, Admin |
+| 6 | Resolve guards | Admin |
+| 7 | SOS with and without signal or GPS | Tanod, Admin |
+| 8 | Roster: availability to published shift, swap and 12-hour cap | Tanod, Admin, Secretary, Punong Barangay |
+| 9 | Monthly accomplishment report | Tanod, officials |
+| 10 | Annex D term report and school check-in | Tanod, Secretary, officials |
+| 11 | Who can read the confidential narrative | All roles |
+| 12 | Login lockout, revocation and the Chief Tanod phone | Any, Admin |
+| 13 | Referral to another agency | Tanod, Secretary |
+| 14 | Offline duplicates | Tanod |
+
+### Scenario 1. Daytime incident from report to resolution
+1. A tanod saves a new incident on the phone with no signal. It is written to encrypted SQLite first and shows a receipt (Rules 44, 47).
+2. Signal returns. The sync queue sends SOS first, then dispatch status, then incidents, with workflow items and GPS last, in chunks of 50 (Rules 45, 46).
+3. The incident appears as `pending` in the Admin's Dispatch Center queue.
+4. It is daytime (06:00 to 18:00 Manila), so no offer opens. The Admin presses "Dispatch Tanod" and picks an on-duty tanod who has a published shift covering now (Rules 7, 8, 60). The incident becomes `dispatched`; the dispatch is `assigned`.
+5. The tanod taps Start Navigation, then Mark Arrived, then Mark as Completed (`assigned` to `en_route` to `arrived` to `completed`).
+6. The Admin resolves the incident. This is allowed only because the incident is `dispatched` and no dispatch is still open (Rule 11).
+- **Expected end state:** incident `resolved`, dispatch `completed`.
+- **State:** 1, 2. **Evidence:** `verify-sprint3.sh`, `verify-w3-w4-dispatch-gis.sh`. **UAT:** T-01 to T-10, A-03.
+
+### Scenario 2. Night incident: dispatch offer, first accept wins
+1. A new incident is created at 22:30 Manila time. Between 18:00 (inclusive) and 06:00 (exclusive) an offer opens automatically (Rule 60). The Admin can also broadcast one by hand in the day ("Broadcast to on-duty tanods").
+2. Only active, on-duty tanods with a published shift covering now and no active dispatch receive it. The alert shows only type, barangay and time (Rule 57).
+3. Two tanods tap Accept. Accepting needs a connection and is never queued. The server records the first accept as the winner and releases the other (Rule 58).
+4. The winner gets a normal dispatch. The Admin can still add more responders.
+5. Variation: nobody accepts within 180 seconds. The offer re-broadcasts and alerts the Admins, for up to three rounds, then stays `escalated` with spaced Admin reminders until someone assigns or cancels (Rule 59; reminders at +3, +6, +12 minutes, then every 30, at most 8).
+- **State:** 6. **Evidence:** `verify-dispatch-offers.sh` (193 checks). **Not demonstrated:** two truly concurrent accepts, because the test server is single-threaded.
+
+### Scenario 3. Dispatching without a published shift
+1. The Admin tries to assign a tanod who has no published shift covering the current time.
+2. The server refuses with `NO_PUBLISHED_SHIFT`.
+3. The Admin enters an override reason and assigns anyway. The reason text is stored, but its content is never written to the audit log (only that a reason existed and its length).
+4. Assigning a tanod who is off duty, already responding, suspended, inactive or from another barangay is refused regardless (Rule 8).
+- **Evidence:** `verify-wave1a-dispatch-roster.sh`. **UAT:** A-03, A-04, A-05.
+
+### Scenario 4. Cancelling a dispatch, and a second responder
+1. The Admin assigns tanod A, then presses "Add Responder" and assigns tanod B (Rule 9).
+2. The Admin cancels tanod A's dispatch with the reason left empty. It is refused; a reason of 1 to 255 characters is required (Rule 10).
+3. With a reason entered, A's dispatch becomes `cancelled`. B is still active, so the incident stays `dispatched`.
+4. The Admin cancels B after B has marked arrived. This is allowed (cancel works from `arrived`). Now no responder is left, so the incident returns to `pending`.
+- **State:** 1, 2. **Evidence:** `verify-second-responder.sh`, `verify-wave1a-dispatch-roster.sh`. **UAT:** A-06, A-07, A-08.
+
+### Scenario 5. Wrong or duplicate report: Secretary lifecycle and reopening
+1. A walk-in reports a fire already logged by a tanod. The Secretary opens the second incident and chooses Mark as duplicate without choosing the original. It is refused: a duplicate must link a `duplicate_of_incident_id` in the same barangay (Rule 13).
+2. A dispatch is still open on it. The change is refused with a conflict (Rule 15). After the dispatch closes, marking it duplicate with the link works. Nothing is deleted or merged; both records stay (Rule 13).
+3. While a dispatch is still open the Secretary can still use "Link related incident", because it changes no status (Rules 15, 61).
+4. A `resolved`, `duplicate`, `invalid` or `cancelled` incident can only go to `reopened`; it can never jump to another terminal state (Rule 14).
+5. After the Secretary reopens an incident, the Admin sees it in the Dispatch Center queue with a REOPENED badge and can dispatch it like a pending one (Rule 67). The Secretary sees no Dispatch or Resolve buttons, only a note (Rule 68).
+- **State:** 1. **Evidence:** `verify-h16-incident-lifecycle.sh` (47 checks, includes the reopened-dispatch case). **UAT:** S-04 to S-08, A-18, S-20.
+
+### Scenario 6. Resolve guards
+1. The Admin tries to resolve a `pending` incident that was never dispatched. It is refused: "Only a dispatched incident can be resolved."
+2. The incident is dispatched but a tanod is still `en_route`. Resolve is refused because it still has an active dispatch.
+3. After all dispatches are `completed` or `cancelled`, resolve succeeds.
+4. A reopened incident follows the same path: it must be dispatched first, then resolved.
+- **Rules:** 11. **Evidence:** `verify-sprint1-remaining.sh`, `verify-h16-incident-lifecycle.sh`.
+
+### Scenario 7. SOS with and without signal or GPS
+1. Online with GPS: the tanod presses SOS and confirms ("Confirm & Broadcast SOS"). The server stores it `active`, and on-duty tanods and every active Admin are alerted.
+2. Online without a GPS fix: the SOS is still accepted. It uses the tanod's last known position, or is stored with `location_source = no_fix` and no coordinates (Rule 22).
+3. No signal (or the server times out after 5 seconds): the SOS is queued locally and the phone sends a direct SMS to the cached backup contact through its own SIM (Rule 23). The app shows a badge for the SMS result (`sent_by_sms`, `sms_pending`, `sms_failed`).
+4. The Admin acknowledges (`acknowledged`) from the web or from the Chief Tanod phone console. Acknowledging does not clear the alert; only an explicit resolve on the web does (Rule 24). The Chief Tanod phone can acknowledge but never resolve.
+5. The Admin can also resolve an `active` SOS directly.
+- **State:** 7. **Evidence:** `verify-sprint4.sh`. **Device-verified once (2026-09-24):** the successful `sent_by_sms` path only; the `sms_failed` path and the no-GPS change are code-only. **UAT:** T-05 to T-08.
+
+### Scenario 8. Roster: availability to published shift, swap and 12-hour cap
+1. The tanod submits available windows for a period on the phone (Availability). While `submitted` the tanod can edit and resubmit (the version goes up); once `accepted` it is locked (Rule 32).
+2. The Admin or Secretary reviews it: `accepted`, or `revised` with a note (a revised period can be resubmitted).
+3. In Personnel, Scheduler, the Admin presses "Create shift from this availability". The form is prefilled and the shift is saved as `draft` (Rules 26, 69). The tanod cannot see it yet.
+4. Scheduling the same tanod for more than 12 hours in one Manila day is refused with `DAILY_HOURS_EXCEEDED` (Rule 27). Missing coverage is only a warning at publish (Rule 30).
+5. An official holding `approve_roster` (usually the Punong Barangay) publishes. The shift becomes visible to the tanod. If nobody with that authority is present, a Secretary or Admin can record a paper approval naming a signer who holds it (Rules 26, 63).
+6. A swap request on a `draft` shift returns 404 (Rule 29). On a published shift the swap goes to the Admin or Secretary for review.
+7. Changing the tanod, start or end of a published shift reverts it to `draft` (Rule 28). An approved swap also sets it to `draft` with `pending_reapproval`, but the tanod still sees it.
+- **State:** 4 and the availability appendix below. **Evidence:** `verify-roster-accomplishment.sh` (332), `verify-scheduler-fatigue.sh`, `verify-paper-approvals.sh`. **UAT:** S-19, A-19, P-05. **Not demonstrated:** the 12-hour cap under real concurrent writes.
+
+### Scenario 9. Monthly accomplishment report
+1. During the month the tanod enters daily work on the phone with a confirmed duration of 1 to 1440 minutes. A work date in the future or more than 62 days back is refused (Rule 33).
+2. The server stores its own suggested duration from on-duty time. If the two differ by more than 30 minutes the entry is flagged for the approver (Rule 33).
+3. The tanod submits the whole month online. It cannot be queued offline (Rule 34). Status goes `open` to `prepared`.
+4. An official with `note_report` notes it (`noted`). An official with `approve_report` approves it (`approved`). The tanod, as preparer, can never note or approve their own report (Rule 35).
+5. An official who disagrees returns it with a reason (1 to 255 characters). The tanod edits and resubmits.
+6. An approved report is locked. It shows "paper signature pending" until the Secretary or Admin records the date it was signed on paper, and the paper copy is the official record (Rule 62).
+7. An Admin cannot grant or remove their own `approve_*` authorities; a second Admin must (Rule 36).
+- **State:** 3. **Evidence:** `verify-roster-accomplishment.sh`, `verify-paper-approvals.sh` (271). **UAT:** P-06.
+
+### Scenario 10. Annex D term report and school check-in
+1. The tanod checks in at a school on the phone and later checks out. A check-in time more than 5 minutes ahead or more than 62 days back is refused. A check-out before the check-in, or more than 24 hours after it, is refused (Rules 39, 40).
+2. The Secretary maintains the school list (Annex B). On an incident the school link and the short Annex C-1 text are stored apart from the narrative, with no student names (Rule 43). On a mobile report an unusable `school_id` is saved as empty so the offline report still goes through (Rule 41).
+3. The Secretary or Admin creates the Annex D term report from live term counts (`draft`). An official with `prepare_annex_d` prepares it. A different official with `approve_annex_d` approves it. The Secretary or Admin marks it submitted (Rule 42).
+- **State:** 5. **Evidence:** `verify-school-zones.sh` (213). **UAT:** S-10 to S-12, P-07. **Open:** the circular's deadlines and Annex A are unknown, so no deadline is hardcoded.
+
+### Scenario 11. Who can read the confidential narrative
+1. The Secretary opens an incident detail: the raw narrative and party contacts are shown (Rule 18).
+2. The Admin opens the same incident: no narrative and no party contacts.
+3. The Punong Barangay opens it from the dashboard: operational summary only, read-only.
+4. A user from another barangay requests the same incident id: the answer is `404`, never `403` (Rule 5).
+5. The narrative never appears in push notifications, SMS, logs or audit metadata (Rule 17), and is purged at 90 days (Rule 19).
+- **Evidence:** `verify-sprint7-pentest-incidents.sh`, `verify-b2-pentest-remaining-resources.sh`, `verify-sprint7-audit.sh`. **UAT:** S-03.
+
+### Scenario 12. Login lockout, revocation and the Chief Tanod phone
+1. Five wrong passwords lock the account for 15 minutes (Rule 2).
+2. An Admin suspends a user. The user's very next request fails, because the session is checked on every request (Rule 4).
+3. A tanod logging in on a registered phone gets a 24-hour sliding device session capped at 7 days. A web login gets a 15-minute sliding token (Rule 3).
+4. The Admin logs in on the phone with a device id. The session works only for the fixed allow-list (SOS acknowledge, dispatch assign and cancel, offers, read-only incidents). Anything else returns 403 `DEVICE_SESSION_SCOPE` (Rule 66).
+- **Evidence:** `verify-auth-lockout-revocation.php`, `verify-device-session.sh`, `verify-chief-tanod-mobile.sh` (174). **UAT:** C-01 to C-06.
+
+### Scenario 13. Referral to another agency
+1. At a fire the tanod opens the assignment, taps "Refer This Case", chooses BFP (or EMS, PNP and so on) and records it (Rule 37).
+2. The dispatch and incident status do not change. The record means "handed over", not "accepted".
+3. The Secretary, Admin and Punong Barangay see it in the Referral Log: incident, type, agency, time and reference only, with no names or narrative (Rule 38).
+- **Evidence:** `verify-referrals.sh` (147). **UAT:** T-27, P-08.
+
+### Scenario 14. Offline duplicates
+1. A tanod saves an incident, loses signal mid-upload and the app retries.
+2. The retry carries the same `client_event_id` and `X-Device-Id`. The server returns the original row and creates no second incident (Rule 47).
+3. A web write retried with the same `Idempotency-Key` behaves the same way (Rule 16).
+4. If the server permanently rejects a queued item, the optimistic local change is reverted and the item is marked as needing attention (Rule 48).
+- **Evidence:** `verify-sprint3.sh`, `verify-f5`, `verify-f6` and `verify-f8` suites. **Not device-verified:** offline durability across a real app kill or reboot.
+
+---
+
+## Appendix: Availability states (not in Part 2 above)
+```mermaid
+stateDiagram-v2
+    [*] --> submitted : Tanod submits windows for a period
+    submitted --> submitted : Tanod edits and resubmits (version +1)
+    submitted --> accepted : Admin or Secretary accepts
+    submitted --> revised : Admin or Secretary asks for changes (note)
+    revised --> submitted : Tanod resubmits
+    accepted --> [*] : Locked (409 on any change)
+```
+
+## What did not fit, found during this re-check
+- The old incident diagram allowed `pending` to `resolved` and `reopened` to `pending`; the code allows neither (fixed in Part 2).
+- Rule 24 (acknowledge does not clear the alert banner) and the SOS fallback badge states describe UI behaviour read from the project docs, not re-run.
+- The accomplishment return reason and the 62-day back-date limit are in the scenarios and in Rule 33 only partly; they have no rule of their own.
+- Retention for the new tables is undecided (Rule 65), so no scenario can say when that data is deleted.
