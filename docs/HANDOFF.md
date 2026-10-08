@@ -28,8 +28,8 @@ decisions: `docs/WORKFLOWS_AND_RULES.md` Part 3 rules 56-66 and REFERENCE.md §1
 Route count 117 across 30 files.
 
 **Gap-X1/X2/X3 (2026-10-08, DEVLOG 2026-10-08 (2)), merged to local `main`, not
-pushed:** reopened incidents are dispatchable (X1; its two verify scripts were
-not re-run after the merge), evidence capture/upload on assigned incidents on
+pushed:** reopened incidents are dispatchable (X1; verify-h16 47/0 and verify-dispatch-offers 193/0
+re-run after the merge), evidence capture/upload on assigned incidents on
 mobile (X2, not device-verified), create-shift-from-availability and Admin-only
 Resolve/Dispatch in Incident Management (X3). Chapter 4 instruments live in
 `docs/chapter4-instruments/` (untracked); the UAT sign-off covers these.
