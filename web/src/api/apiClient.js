@@ -848,9 +848,11 @@ function mapShift(row) {
 }
 
 /** POST /shifts. `requestId` is the required idempotency key (§6). */
-export async function createShift({ userId, patrolZone, startAt, endAt, requestId }) {
+export async function createShift({ userId, patrolZone, startAt, endAt, requestId, sourceAvailabilityId }) {
+  const body = { user_id: userId, patrol_zone: patrolZone, start_at: startAt, end_at: endAt, request_id: requestId };
+  if (sourceAvailabilityId != null) body.source_availability_id = sourceAvailabilityId;
   const json = await request('POST', '/shifts', {
-    body: { user_id: userId, patrol_zone: patrolZone, start_at: startAt, end_at: endAt, request_id: requestId },
+    body,
     auth: true,
   });
   return mapShift(json);

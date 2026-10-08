@@ -127,4 +127,21 @@ describe('Incident Management behaviour', () => {
     await settle();
     assert.doesNotMatch(text($('.data-table')), /RAW-NARRATIVE/);
   });
+  test('Resolve/dispatch controls are Admin-only; the Secretary sees a read-only note instead', async () => {
+    for (const [role, id] of [['secretary', 902], ['secretary', 901]]) {
+      const ctx = mountPage(renderIncidentManagementPage, { role });
+      await settle();
+      click(buttonByText(new RegExp(`^INC-2026-${id}`), ctx.root));
+      await settle();
+      assert.equal(buttonByText(/resolve incident/i, ctx.root), undefined, 'no Resolve button for the Secretary');
+      assert.equal(buttonByText(/dispatch tanod|assign additional responder/i, ctx.root), undefined);
+      assert.match(text(ctx.root), id === 902 ? /Resolving is done by the Admin/ : /Dispatching is done by the Admin/);
+      cleanup();
+    }
+    const ctx = mountPage(renderIncidentManagementPage, { role: 'admin' });
+    await settle();
+    click(buttonByText(/^INC-2026-902/, ctx.root));
+    await settle();
+    assert.ok(buttonByText(/resolve incident/i, ctx.root), 'Admin still gets Resolve');
+  });
 });
