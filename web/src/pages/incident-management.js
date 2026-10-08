@@ -867,7 +867,13 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
           assignBtn.disabled = false;
         }
       });
-      tanodContent.append(tanodLeft, assignBtn);
+      if (isAdmin) {
+        tanodContent.append(tanodLeft, assignBtn);
+      } else {
+        // Dispatch (POST /dispatch) is Admin-only server-side.
+        tanodStatus.textContent = 'Dispatching is done by the Admin';
+        tanodContent.append(tanodLeft);
+      }
       tanodCard.appendChild(tanodContent);
     } else {
       for (const dispatch of activeDispatches) {
@@ -933,8 +939,17 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const actionsRow = document.createElement('div');
     actionsRow.className = 'incident-actions-row';
 
-    // Primary Action Button (Dispatch or Resolve)
-    if (row.status === 'pending') {
+    // Primary Action Button (Dispatch or Resolve). Dispatch and resolve are
+    // Admin-only on the server (POST /dispatch, PATCH /incidents/:id/status);
+    // other roles get a read-only note instead of a control that would 403.
+    if (!isAdmin && (row.status === 'pending' || row.status === 'dispatched')) {
+      const note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = row.status === 'pending'
+        ? 'Dispatching is done by the Admin.'
+        : 'Resolving is done by the Admin.';
+      actionsRow.appendChild(note);
+    } else if (row.status === 'pending') {
       const dispatchBtn = document.createElement('button');
       dispatchBtn.type = 'button';
       dispatchBtn.className = 'btn-action-dispatch';
