@@ -97,10 +97,17 @@ export interface PendingEvidenceUpload {
 export async function listPendingEvidenceUploads(): Promise<PendingEvidenceUpload[]> {
   const db = await openLocalDatabase();
   const result = await db.query(
-    `SELECT e.local_id, i.server_incident_id, e.type, e.file_path, e.mime_type, e.sha256
+    // `incident_local_id` is either an `incident_local.local_id` (evidence
+    // captured on New Incident) or a `dispatch_local.local_id` (evidence added
+    // to an assigned incident from the assignment screen, Gap-X2) - local ids
+    // are random UUIDs, so the two can't collide.
+    `SELECT e.local_id, COALESCE(i.server_incident_id, d.server_incident_id) AS server_incident_id,
+            e.type, e.file_path, e.mime_type, e.sha256
      FROM evidence_attachment_local e
-     JOIN incident_local i ON i.local_id = e.incident_local_id
-     WHERE e.synced = 0 AND e.permanent_failure = 0 AND i.synced = 1 AND i.server_incident_id IS NOT NULL
+     LEFT JOIN incident_local i ON i.local_id = e.incident_local_id AND i.synced = 1
+     LEFT JOIN dispatch_local d ON d.local_id = e.incident_local_id
+     WHERE e.synced = 0 AND e.permanent_failure = 0
+       AND COALESCE(i.server_incident_id, d.server_incident_id) IS NOT NULL
      ORDER BY e.local_id ASC`
   );
   return ((result.values ?? []) as Array<{
