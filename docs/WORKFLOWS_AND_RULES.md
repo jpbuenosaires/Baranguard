@@ -243,7 +243,7 @@ Every state machine in Baranguard is strictly validated on the backend. The foll
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending : Reported by Tanod, Citizen, or Desk
+    [*] --> pending : Reported by a Tanod, or logged by the Secretary/Admin (walk-in, SMS, other; legacy citizen reports are converted)
     pending --> dispatched : Admin creates dispatch assignment
     dispatched --> pending : All active dispatches cancelled
     dispatched --> resolved : Admin resolves (Requires ALL dispatches completed/cancelled)
@@ -343,7 +343,7 @@ stateDiagram-v2
 ---
 
 ### 6. Dispatch Offer (night broadcast)
-* **Database Column:** `dispatch_offer.status` (`open`, `escalated`, `accepted`, `closed`, `cancelled`)
+* **Database Column:** `dispatch_offer.status` (`open`, `escalated`, `accepted`, `closed`, `cancelled`). `closed` means settled without a tanod accepting: an Admin assigned directly, or the incident was resolved/cancelled/merged meanwhile.
 * **Trigger:** every new pending incident at night (18:00 to 06:00 Manila) or an Admin/Secretary broadcast on demand; accept is online-only.
 
 ```mermaid
@@ -352,11 +352,14 @@ stateDiagram-v2
     open --> accepted : First accept recorded by the server wins; others released
     open --> open : 180 s with no accept: next round re-broadcast, Admins alerted
     open --> escalated : No qualifying tanod or round 3 expired
-    escalated --> accepted : Admin assigns or a tanod accepts
+    escalated --> accepted : A tanod accepts
+    open --> closed : Admin assigns directly (POST /dispatch) or the incident is no longer open
+    escalated --> closed : Admin assigns directly (POST /dispatch) or the incident is no longer open
     open --> cancelled : Admin cancels
     escalated --> cancelled : Admin cancels
     accepted --> [*]
     cancelled --> [*]
+    closed --> [*]
 ```
 
 ---
@@ -622,3 +625,31 @@ stateDiagram-v2
 - Rule 24 (acknowledge does not clear the alert banner) and the SOS fallback badge states describe UI behaviour read from the project docs, not re-run.
 - The accomplishment return reason and the 62-day back-date limit are in the scenarios and in Rule 33 only partly; they have no rule of their own.
 - Retention for the new tables is undecided (Rule 65), so no scenario can say when that data is deleted.
+
+
+---
+
+# Part 5: Logic Review (does the whole thing hang together?)
+
+Reviewed 2026-10-08 by reading the rules against each other and against the code. Most of the rule set is consistent. The items below are the places where the logic is thin, one-sided or silently depends on something outside the system. None is a confirmed bug unless it says so; each needs a decision from you or the barangay.
+
+### Consistent (checked, no contradiction found)
+- **Authority is layered and non-overlapping:** the Admin owns dispatch and resolution, the Secretary owns the record lifecycle and narrative, approvals follow a separate authority attribute, and the Punong Barangay is oversight plus approval (Rules 7, 12, 18, 26, 35).
+- **Time rules agree:** UTC storage, fixed +08:00 days, the night window, the 12-hour cap and school check-in limits all use the same Manila day (Rules 27, 54, 60).
+- **Every offline write has a duplicate guard** (`client_event_id` or `Idempotency-Key`), and the things that must not be queued (duty toggle, month submit, offer accept) are the same ones that need a live server answer (Rules 16, 34, 49, 58).
+- **Privacy rules do not conflict:** the narrative is Secretary-only, never leaves the system, is purged at 90 days, while the incident row keeps for its own period (Rules 17 to 20).
+
+### Gaps and one-sided rules
+1. **No way to close an incident that needed no dispatch as `resolved`.** The Admin can resolve only a `dispatched` incident (Rule 11), and the Secretary can only mark `duplicate`, `invalid` or `cancelled`. A report handled by a phone call or a walk-in settled on the spot has no honest ending: it stays `pending`, or is wrongly marked `cancelled`. This matters for the response-time and statistics reports. **Decision needed:** allow Admin resolve from `pending` with a reason, or add a "handled without dispatch" outcome.
+2. **SOS can only be resolved on the web.** The Chief Tanod phone may acknowledge but never resolve (Rules 24, 66). If the Admin is away from the desk, the SOS stays `acknowledged` and, per Rule 24, its alert is not cleared until it is resolved. **Decision needed:** whether a phone-side resolve is wanted, or an expected hand-off to the desk.
+3. **Segregation of duties is per account, not per person.** The preparer cannot note or approve (Rule 35) and an Admin cannot edit their own approving authorities (Rule 36), but a second Admin can grant them, and one real person could hold two accounts. The rules assume honest staffing in a four-barangay setting. State this assumption in the thesis.
+4. **A Chief Tanod on the roster has no operational effect.** The Chief Tanod can be rostered but is never dispatchable, never receives offers and cannot enter accomplishments. Rostering them records presence only. If that is the intent, say so; if not, one of those three needs to change.
+5. **Offers and direct dispatch treat the published-shift rule differently.** A direct dispatch can override a missing published shift with a reason (Rule 8); an offer cannot, because recipients must hold a published shift (Rule 57). A tanod who is on duty without a published shift can be assigned by the Admin but never be offered a night incident.
+6. **A tanod cannot go off duty while offline** (Rule 49). Combined with the 24-hour device session this is safe, but a tanod who loses signal at the end of a shift stays "on duty" until reconnecting, which may inflate the server's suggested duty duration (not tested). The 30-minute flag (Rule 33) only helps when the tanod confirms a different figure.
+7. **Legal hold stops all backup pruning** (Rule 53). That is the safe choice, but backups then grow without limit while any hold exists. Needs a storage budget or a review date for holds.
+8. **Retention is incomplete for the records that matter most for honoraria.** Shifts and duty status are purged at 1 year (Rule 51), but accomplishment reports and Annex D have no period (Rule 65). A COA review can reach back further than one year, so the 1-year rule may delete the supporting data before the report that depends on it. Decide the report periods first, then check Rule 51 against them.
+9. **The 90-day narrative purge (Rule 19) is policy-unconfirmed.** With the blotter removed there is no "approved redaction" path, so every raw narrative simply expires at 90 days. This is consistent with the barangay keeping its own binder, but it must be confirmed with the barangay.
+10. **A reopened incident loses its closing history in the status field.** After `resolved` then `reopened` then `dispatched`, only the audit log shows the earlier closure. Acceptable, but anyone reading the incident detail should be pointed at the timeline.
+
+### How I would use this
+Items 1, 2 and 8 are decisions that change behaviour; 3, 4, 5, 6, 7, 9 and 10 are mostly things to state in the thesis or confirm with the barangay. None blocks the UAT, but item 1 is likely to come up in the Chief Tanod and Secretary scenarios, so decide it before you run them.
