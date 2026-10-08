@@ -18668,3 +18668,18 @@ git worktrees, merged to local `main`; nothing pushed.
   `baranguard_uiseed` (dropped afterwards), all ok, `baranguard_uiseed` kept 123
   incidents / 76 dispatches / 12 published shifts, report_channel backfilled.
 - Not proven: Gradle compile, device behaviour, real push delivery, concurrency.
+
+## 2026-10-08 (2) - Gap-X1/X2/X3 recorded; Gap-X1 merged; Chapter 4 UAT rows
+
+- **Gap-X1** (reopened incidents are dispatchable) was committed on a worktree
+  branch but never merged; merged into `main` this session. `DispatchController::create`,
+  `OfferService` (create + sweep) and the Dispatch Center queue now treat `reopened`
+  like `pending` (queue badge REOPENED). Checked: `verify-web-wiring.mjs` 776/0,
+  `php -l`. NOT run: `verify-h16-incident-lifecycle.sh`, `verify-dispatch-offers.sh`
+  (new assertions added by the commit).
+- **Gap-X2:** dead `my-reports` link fixed; `AssignmentEvidencePanel.tsx` adds
+  evidence capture/upload on assigned incidents (offline-queued). Not device-verified.
+- **Gap-X3:** Scheduler "Create shift from this availability" (prefilled, saved as
+  draft); Resolve/Dispatch in Incident Management are Admin-only. jsdom tests added.
+- `docs/chapter4-instruments/04-uat-signoff.html`: added T-28, A-18..A-20, S-20 for
+  the above; Part G totals now 30/23/7/22/10 = 92.

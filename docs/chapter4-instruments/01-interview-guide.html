@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BG-INT-01 Key Informant Interview Guide</title>
+<style>
+@page { size: A4; margin: 18mm;
+  @top-center { content: "BG-INT-01 | Key Informant Interview Guide | Baranguard"; font: 9pt Georgia, serif; color: #444; }
+  @bottom-center { content: "Page " counter(page); font: 9pt Georgia, serif; color: #444; } }
+* { box-sizing: border-box; }
+body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.4; color: #111; background: #fff; margin: 0; }
+.wrap { max-width: 800px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 20pt; margin: 0 0 4px; text-align: center; }
+h2 { font-size: 14pt; border-bottom: 2px solid #222; padding-bottom: 3px; margin: 18px 0 8px; }
+h3 { font-size: 12pt; margin: 14px 0 6px; }
+.sub { text-align: center; margin: 0 0 10px; }
+.part { page-break-before: always; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+th, td { border: 1px solid #222; padding: 5px 7px; vertical-align: top; text-align: left; font-size: 10.5pt; }
+th { background: #eee; }
+.box { border: 1.5px solid #222; padding: 8px 10px; margin: 10px 0; }
+.note { border: 1.5px dashed #555; background: #f6f6f6; padding: 8px 10px; margin: 10px 0; font-size: 10pt; }
+.script { border-left: 4px solid #555; padding: 4px 12px; margin: 8px 0; background: #fafafa; }
+.q { margin: 10px 0 4px; page-break-inside: avoid; }
+.q .n { font-weight: bold; display: inline-block; min-width: 2.6em; }
+.fil { font-style: italic; font-size: 9.5pt; color: #333; margin: 1px 0 2px 2.6em; }
+.probe { font-size: 10pt; margin: 1px 0 2px 2.6em; color: #222; }
+.lines { margin: 4px 0 6px 2.6em; }
+.lines div { border-bottom: 1px solid #888; height: 20px; }
+.small { font-size: 9.5pt; }
+input[type=checkbox] { width: 13px; height: 13px; vertical-align: middle; margin: 0 3px 0 0; accent-color: #222; }
+.opt { font-size: 9pt; font-weight: normal; border: 1px solid #555; padding: 0 4px; margin-left: 4px; }
+.sig td { height: 36px; }
+ul, ol { margin: 4px 0 4px 22px; padding: 0; }
+@media screen { body { background: #e8e8e8; } .wrap { background: #fff; box-shadow: 0 0 6px #999; margin: 12px auto; padding: 24px 32px; } .part { border-top: 3px double #888; padding-top: 16px; margin-top: 28px; } }
+@media print { .wrap { max-width: none; padding: 0; } tr { page-break-inside: avoid; } }
+h2,h3,h4{break-after:avoid;page-break-after:avoid}h3+p,h3+table,h4+table,h4+p{break-before:avoid}tr{break-inside:avoid;page-break-inside:avoid}@media print{body{font-size:10.5pt;line-height:1.32}}</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Key Informant Interview Guide</h1>
+<p class="sub"><b>Form code BG-INT-01</b> | Baranguard: An Offline-First Barangay Intelligence and Emergency Dispatch System<br>
+Pilot barangays: Dao, Binanuahan, Marifosque, Banuyo (Pilar, Sorsogon) | Bicol University, IT 124 | Section 4.2 Data Gathering</p>
+
+<h2>Part 1. Instructions for the Interviewer</h2>
+
+<h3>1.1 Purpose</h3>
+<p>This guide is used to document the <b>current (as-is)</b> process of incident and emergency response, tanod dispatch, rostering and availability, hours and accomplishment reporting, record keeping, referrals to other agencies, school-zone reporting, and approvals and signatures in the four pilot barangays. The answers are used to identify problems, which are coded and then mapped to the four specific objectives of the study. The interview does not test, promote, or evaluate any system. Respondents are the Chief Tanod, the Barangay Secretary, the Punong Barangay, and tanods. Residents are not respondents.</p>
+
+<h3>1.2 Who is interviewed and how long</h3>
+<table>
+<tr><th>Guide</th><th>Respondent</th><th>Format</th><th>Target time</th></tr>
+<tr><td>A</td><td>Chief Tanod (the Chief Tanod uses an Admin account in the system)</td><td>Individual</td><td>30 to 40 minutes</td></tr>
+<tr><td>B</td><td>Barangay Secretary (Secretary account, Records and Reports Officer)</td><td>Individual</td><td>30 to 40 minutes</td></tr>
+<tr><td>C</td><td>Punong Barangay (Punong Barangay account, oversight and approvals)</td><td>Individual</td><td>30 to 40 minutes (if time is short, ask C1, C2, C5, C6, and C7 first)</td></tr>
+<tr><td>D</td><td>Tanods (Tanod accounts, mobile app only)</td><td>Small group of 3 to 5 tanods</td><td>40 to 60 minutes for the group</td></tr>
+</table>
+<p class="small">The optional section &quot;After seeing a demo&quot; is used only after the as-is questions are complete and only if a demonstration on the seeded demo setup (fictitious data) is shown. It adds about 10 minutes.</p>
+
+<h3>1.3 Before the interview</h3>
+<ul>
+<li>Secure the barangay official&#39;s permission and schedule a time and place free from interruption. Avoid the respondent&#39;s duty hours where possible.</li>
+<li>Print one record header (Part 2), one consent block (Part 3), and the relevant role guide for each respondent. Bring a pen, a spare consent sheet, and a charged recorder (if recording is permitted).</li>
+<li>Assign a respondent code (for example, DAO-A-01, BIN-D-02) before the interview. The code key is kept apart from the notes.</li>
+<li>Use a neutral voice. Ask each question as written, then use the probes only if the respondent has not covered the point.</li>
+</ul>
+
+<h3>1.4 Consent script (read aloud before the respondent signs)</h3>
+<div class="script">
+<p>&quot;Good day. My name is ______ , a BSIT student of Bicol University. We are conducting a study for our capstone project about how incidents and emergencies are handled in the barangay, such as how reports are received, how tanods are dispatched and scheduled, and how records and approvals are done. We would like to ask about how things are done now.</p>
+<p>Your participation is voluntary. You may skip any question, and you may stop the interview or withdraw at any time without any consequence. There are no right or wrong answers. We are not evaluating you or your barangay.</p>
+<p>Under the Data Privacy Act of 2012 (Republic Act 10173), the information you give will be used only for this study and kept confidential. Your name will not appear in our manuscript. We will use only your role, for example &#39;Barangay Secretary,&#39; and a respondent code. Please do not tell us about specific residents or cases by name; if you need to give an example, describe it without names.</p>
+<p>With your permission, we would like to audio record this interview so that we can write down your answers accurately. The recording is used only by the proponents and the adviser, is stored on a password-protected device, and is deleted after transcription. If you do not want to be recorded, we will take handwritten notes instead.</p>
+<p>Do you have any questions? Do you agree to take part? Please tick and sign the consent form.&quot;</p>
+</div>
+
+<h3>1.5 Recording permission</h3>
+<p>Ask separately from the consent to participate. Tick the result in the record header. If permission is refused, take handwritten notes and do not record. If the respondent asks to pause the recording, pause it and note the pause in the margin.</p>
+
+<h3>1.6 How to anonymize</h3>
+<ul>
+<li>Record only the respondent code and the role label. Do not write the respondent&#39;s name in the notes, the quote boxes, or the tally sheet.</li>
+<li>Replace names of residents, tanods, officials, streets, and sitios in quotes with bracketed labels, for example [a resident], [Tanod 2], [the barangay].</li>
+<li>The manuscript uses role labels and respondent codes only, for example &quot;Barangay Secretary, Respondent B-02.&quot;</li>
+<li>Store the code key (code to name) on a separate sheet from the notes. Store recordings and notes on a password-protected device and delete recordings after transcription.</li>
+</ul>
+
+<h3>1.7 Conduct of the interview</h3>
+<ol>
+<li>Read the consent script and obtain the signed consent (Part 3).</li>
+<li>Complete the record header (Part 2).</li>
+<li>Ask the questions in order. Questions are open; do not suggest an answer or imply that a problem exists. If the respondent says a step does not exist or is not done, record that as a finding.</li>
+<li>Write short notes under each question and use the verbatim quote box for statements worth quoting.</li>
+<li>End with the &quot;Anything else&quot; question and thank the respondent.</li>
+</ol>
+
+<div class="note"><b>Language note.</b> Questions are in English. Interviews may be conducted in Filipino or Bikol. Tanod questions carry a Filipino line under each English question. <b>Filipino text is an unvalidated working translation. It must be reviewed by a Filipino or Bikol speaking faculty member before use. Translator: ____________________ Date: ____________.</b> A Bikol version can follow later.</div>
+
+<div class="part"></div>
+<h2>Part 2. Interview Record Header</h2>
+<table>
+<tr><th style="width:28%">Barangay</th><td><input type="checkbox"> Dao &nbsp; <input type="checkbox"> Binanuahan &nbsp; <input type="checkbox"> Marifosque &nbsp; <input type="checkbox"> Banuyo</td></tr>
+<tr><th>Date of interview</th><td>____ / ____ / ________ &nbsp;&nbsp; Start time: ______ &nbsp; End time: ______</td></tr>
+<tr><th>Place of interview</th><td>&nbsp;</td></tr>
+<tr><th>Interviewer (initials only)</th><td>&nbsp;</td></tr>
+<tr><th>Note-taker / translator (initials only)</th><td>&nbsp;</td></tr>
+<tr><th>Respondent code</th><td>&nbsp;&nbsp; (Do not write the respondent&#39;s name here)</td></tr>
+<tr><th>Role</th><td><input type="checkbox"> A. Chief Tanod &nbsp; <input type="checkbox"> B. Barangay Secretary &nbsp; <input type="checkbox"> C. Punong Barangay &nbsp; <input type="checkbox"> D. Tanod (group)</td></tr>
+<tr><th>Years in current role</th><td>______ years &nbsp; ______ months</td></tr>
+<tr><th>Number of respondents (group only)</th><td>______ (codes: ______________________________________)</td></tr>
+<tr><th>Language used</th><td><input type="checkbox"> English &nbsp; <input type="checkbox"> Filipino &nbsp; <input type="checkbox"> Bikol &nbsp; <input type="checkbox"> Mixed</td></tr>
+<tr><th>Audio recording permitted</th><td><input type="checkbox"> Yes &nbsp; <input type="checkbox"> No</td></tr>
+<tr><th>Consent form signed</th><td><input type="checkbox"> Yes &nbsp; <input type="checkbox"> No (stop the interview)</td></tr>
+<tr><th>Demo shown (seeded demo setup)</th><td><input type="checkbox"> Yes &nbsp; <input type="checkbox"> No</td></tr>
+</table>
+
+<h2>Part 3. Consent and Privacy Statement (separate consent block)</h2>
+<div class="box">
+<p><b>Study:</b> Baranguard: An Offline-First Barangay Intelligence and Emergency Dispatch System, Pilar, Sorsogon. <b>Proponents:</b> [to be filled by the proponents]. <b>Adviser:</b> [to be filled by the proponents].</p>
+<p><b>Privacy statement (Data Privacy Act of 2012, RA 10173).</b> The proponents collect your answers about barangay incident handling, rostering, reporting, and record keeping for the sole purpose of the study. Participation is voluntary and you may withdraw at any time. No names will appear in the manuscript; only role labels and respondent codes are used. Audio recordings, if allowed, are kept on a password-protected device and deleted after transcription. Notes are used only by the proponents and the adviser. Please do not disclose names or identifying details of residents or cases.</p>
+<p><input type="checkbox"> I have read or heard the above, my questions were answered, and I voluntarily agree to take part in this interview.</p>
+<p><input type="checkbox"> I agree to be audio recorded. &nbsp;&nbsp; <input type="checkbox"> I do not agree to be audio recorded (handwritten notes only).</p>
+<p>(Group interview) <input type="checkbox"> I agree to keep what other participants say in this group confidential.</p>
+<table class="sig">
+<tr><th style="width:34%">Respondent code / role</th><th>Signature (over printed name, kept separately from the notes)</th><th style="width:20%">Date</th></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>Interviewer</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+<p class="small">Keep this consent block detached from the interview notes. Link the two only through the respondent code on the separate code key.</p>
+</div>
+
+<!-- GUIDE A -->
+<div class="part"></div>
+<h2>Guide A. Chief Tanod (system role: Admin, acting as Chief Tanod; operations seat)</h2>
+<p class="small">Respondent code: __________ &nbsp; Barangay: __________ &nbsp; Ask about the current practice. Probes are optional; use them only if the respondent has not covered the point.</p>
+
+<div class="q"><span class="n">A1.</span> Please describe how an incident or emergency is usually reported to you or to your tanods, from the first contact until a tanod is on the scene.</div>
+<div class="probe"><b>Probes:</b> Who is usually the first to know? How do reports arrive (walk-in at the barangay hall or outpost, phone call, text, radio, social media, a tanod on patrol, other)? How are walk-in complaints handled? Who receives reports outside office hours?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A2.</span> How is it decided which tanod responds to a report?</div>
+<div class="probe"><b>Probes:</b> Who makes the decision? What does the decision depend on? How is the tanod informed? Can more than one tanod respond?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A3.</span> How do you reach your tanods during a shift, and how do you know where they are? What phones, devices, and mobile load or data are used for this, and who provides them?</div>
+<div class="probe"><b>Probes:</b> Which phones, numbers, or groups are used? Personal or barangay-owned phones? Android or other? How reliable is the signal? What happens when a tanod does not answer?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A4.</span> Please walk me through how night-time and off-hours incidents are handled.</div>
+<div class="probe"><b>Probes:</b> Who is on duty? How are they reached? Who decides to call additional tanods, and how are they asked? Who is informed afterwards?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A5.</span> What does a tanod do when he or she needs urgent help while on duty, and what happens next?</div>
+<div class="probe"><b>Probes:</b> Who is contacted first? What happens if there is no mobile signal or no load? Has this situation happened before, and how was it handled?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A6.</span> How are tanod duty schedules (rosters) made, and who approves them?</div>
+<div class="probe"><b>Probes:</b> How do tanods let you know when they are available? Who is consulted? Does anyone other than you draft the schedule? How are changes or swaps handled? How are tanods informed of their schedule?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A7.</span> How are tanod hours and accomplishments recorded and reported, and who approves them?</div>
+<div class="probe"><b>Probes:</b> What document is submitted, and how often? What evidence is required for the honorarium? Who signs it (paper signature or other), and what happens to the paper afterwards?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A8.</span> After an incident is handled, how is it recorded, and where are the records kept? How is it handled when the same incident is reported more than once?</div>
+<div class="probe"><b>Probes:</b> Who writes the record? Are photos or other evidence taken, and where are they kept? Is a blotter or binder used? How are earlier records looked up? How are repeated reports of one incident recognized? Who closes a case as resolved?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A9.</span> What reports or annexes do you prepare or contribute to for the Punong Barangay or other offices, and how often?</div>
+<div class="probe"><b>Probes:</b> Monthly reports? Summaries of incident trends or hot spots for the Punong Barangay? Reports under the Safer School Zones circular (MC 2026-037), such as school incidents and tanod school visits, if the barangay does this? Who compiles them and from which source?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A10.</span> When an incident is too big for the tanods or belongs to another office (for example the police, fire station, ambulance or health unit, or social welfare), how is it passed on, and how is that recorded?</div>
+<div class="probe"><b>Probes:</b> Who decides to call them? Who is called, and by what means? Is anything written down about who was informed and when? Is there a computer in the barangay hall?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A11.</span> What concerns, if any, do you have about the privacy of incident information, tanod locations, or contact numbers?</div>
+<div class="probe"><b>Probes:</b> Who is allowed to see incident details? How is information shared today?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">A12.</span> Is there anything else about how incidents, dispatch, scheduling, or records are handled that you would like to add?</div>
+<div class="lines"><div></div><div></div></div>
+
+<div class="box"><b>Verbatim quote capture (Guide A).</b> Write the quote as spoken, then the English translation. Remove names. <span class="small">Reminder: translate Filipino or Bikol to English and note the translator.</span>
+<table>
+<tr><th style="width:9%">Q no.</th><th style="width:38%">Original wording (as spoken)</th><th style="width:38%">English translation</th><th>Translator (initials)</th></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table></div>
+
+<h3>Guide A. After seeing a demo <span class="opt">optional</span></h3>
+<p class="small">Ask only after the as-is questions, and only after a demonstration on the seeded demo setup (fictitious data). Do not defend or promote the system.</p>
+<div class="q"><span class="n">A13.</span> What was your first impression of the Dispatch Center and Live Map screens that you saw?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">A14.</span> Which parts of what you saw (for example the dispatch queue, tanod locations, SOS alerts, rosters, or Approvals) would fit, or not fit, with how your tanods work now?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">A15.</span> What did you find unclear, missing, or difficult to understand?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">A16.</span> What would need to be in place (devices, signal, training, approvals) before your barangay could try it?</div><div class="lines"><div></div><div></div></div>
+
+<!-- GUIDE B -->
+<div class="part"></div>
+<h2>Guide B. Barangay Secretary (system role: Secretary, Records and Reports Officer; records custodian)</h2>
+<p class="small">Respondent code: __________ &nbsp; Barangay: __________</p>
+
+<div class="q"><span class="n">B1.</span> Please describe your part in the handling of incidents and emergencies reported in the barangay, including walk-in complaints, and how the details are written down and by whom.</div>
+<div class="probe"><b>Probes:</b> At what point do you become involved? How do you learn about an incident? What details are noted, and how soon? What happens to notes taken by tanods in the field? Who is allowed to read the full account?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B2.</span> When an incident is passed on to another agency or office (for example the police, fire station, ambulance or health unit, social welfare, or a women and children&#39;s desk), how is that recorded?</div>
+<div class="probe"><b>Probes:</b> Who informs the other office, and how? Is there a logbook or list of referrals? Is the outcome ever reported back? Who keeps the copy?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B3.</span> How are the blotter or binder and other incident records kept, organized, and looked up?</div>
+<div class="probe"><b>Probes:</b> Where are they stored? Who has access? How are older records and attached photos or evidence found when needed? How long are they kept?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B4.</span> How are cases handled in which the same incident is reported by more than one person or in more than one way?</div>
+<div class="probe"><b>Probes:</b> How are such reports noticed? What is written in the record? Who decides that one report is a repeat of another?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B5.</span> What monthly reports, annexes, or other submissions do you prepare, and how are they put together?</div>
+<div class="probe"><b>Probes:</b> To whom are they submitted and how often? From which sources do the figures come? How long does preparation take? What tools are used (paper, spreadsheets, word processor)?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B6.</span> If the barangay reports under the Safer School Zones circular (MC 2026-037), how is that reporting done?</div>
+<div class="probe"><b>Probes:</b> Which forms or annexes are used? Is there a list of schools in the barangay, and who keeps it? Who provides the information on school incidents and tanod school visits? How often? If the barangay does not do this, please say so.</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B7.</span> What is your role in the reporting of tanod hours and accomplishments, and in the honorarium documents?</div>
+<div class="probe"><b>Probes:</b> What documents do you receive or prepare? What evidence is attached? Who signs them and in what order? Are signed paper copies filed or scanned?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B8.</span> How do approvals and signatures on reports and rosters currently work?</div>
+<div class="probe"><b>Probes:</b> Paper or digital? Who signs? How is the Punong Barangay reached when a signature is needed? What happens if he or she is not available? Who else may sign or note a document?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B9.</span> What is your involvement in the preparation of tanod duty rosters?</div>
+<div class="probe"><b>Probes:</b> Who prepares them? How do you learn when tanods can serve? Who approves them? How are they posted or sent to the tanods? How are changes and swaps recorded?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B10.</span> What computers, phones, printers, software, and internet access do you use for your work, and how reliable are they?</div>
+<div class="probe"><b>Probes:</b> Where are files stored? Are there backups? Who else uses the same devices?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B11.</span> What concerns, if any, do you have about the privacy and security of the records you keep?</div>
+<div class="probe"><b>Probes:</b> Who may read incident details? How are requests for copies handled? How are records shared with other offices?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">B12.</span> Is there anything else about record keeping, reporting, or approvals that you would like to add?</div>
+<div class="lines"><div></div><div></div></div>
+
+<div class="box"><b>Verbatim quote capture (Guide B).</b> <span class="small">Reminder: translate Filipino or Bikol to English and note the translator. Remove names.</span>
+<table>
+<tr><th style="width:9%">Q no.</th><th style="width:38%">Original wording (as spoken)</th><th style="width:38%">English translation</th><th>Translator (initials)</th></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table></div>
+
+<h3>Guide B. After seeing a demo <span class="opt">optional</span></h3>
+<div class="q"><span class="n">B13.</span> What was your first impression of the Incident Management, Accomplishment Reports, Referral Log, Safer School Zones, and Approvals screens that you saw?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">B14.</span> How do the steps shown compare with how you prepare reports and obtain signatures now?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">B15.</span> What did you find unclear, missing, or difficult to understand?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">B16.</span> What would you need (training, devices, written procedures) to try it in your office?</div><div class="lines"><div></div><div></div></div>
+
+<!-- GUIDE C -->
+<div class="part"></div>
+<h2>Guide C. Punong Barangay (system role: Punong Barangay, oversight; approves rosters and reports only when granted approval authority)</h2>
+<p class="small">Respondent code: __________ &nbsp; Barangay: __________ &nbsp; If time is short, ask C1, C2, C5, C6, and C7 first.</p>
+
+<div class="q"><span class="n">C1.</span> What is your role when an incident or emergency occurs in the barangay?</div>
+<div class="probe"><b>Probes:</b> At what point are you informed or involved? Do you take part in deciding who responds? Does this differ between daytime and night-time?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C2.</span> How are you informed about incidents and about what the tanods are doing?</div>
+<div class="probe"><b>Probes:</b> Who informs you? How soon? In what form (call, text, report, meeting)? Do you know where the tanods are during a shift?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C3.</span> How are night-time and off-hours emergencies handled in your barangay?</div>
+<div class="probe"><b>Probes:</b> Who is responsible? How are responders reached? What is expected of the barangay leadership? If a tanod needed urgent help at night, how would you learn of it?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C4.</span> What information do you rely on to oversee peace and order and tanod activity, and how often do you review it?</div>
+<div class="probe"><b>Probes:</b> Where does this information come from? In what form is it given to you (for example summaries, trends by area or time, counts of incidents handled)? Where are incident records kept, and how do you access them when needed?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C5.</span> How are tanod duty rosters decided and approved?</div>
+<div class="probe"><b>Probes:</b> Who proposes the roster? What is your role (approving, signing)? How often is it revised? How are swaps handled?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C6.</span> How are tanod hours and accomplishments reported to you, and what do you need to see before the honorarium is approved?</div>
+<div class="probe"><b>Probes:</b> Which documents? How often? What does the treasurer or the auditor require? Who prepares and who notes the report before it reaches you? Is the signed paper copy the official one?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C7.</span> How do approvals and signatures currently work, and how available are you to sign when something is needed?</div>
+<div class="probe"><b>Probes:</b> Paper or digital? How do documents reach you? What happens when you are away from the barangay hall? Who may sign in your absence?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C8.</span> What monthly reports and annexes does the barangay submit, and what is your part in them?</div>
+<div class="probe"><b>Probes:</b> To which offices? Is the barangay reporting under the Safer School Zones circular (MC 2026-037)? If not applicable, please say so.</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C9.</span> When a matter is beyond what the barangay can handle (for example a fire, a medical emergency, or a serious crime), who is contacted, and what do you need to know about it afterwards?</div>
+<div class="probe"><b>Probes:</b> Who calls the police, fire station, or ambulance? Are you told? Is there a record of who was informed and when?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C10.</span> What phones, computers, and internet access do you and your barangay officials use for official work?</div>
+<div class="probe"><b>Probes:</b> How reliable is the signal? Who pays for load or data?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C11.</span> What concerns, if any, do you have about the privacy of residents&#39; information and tanod information?</div>
+<div class="probe"><b>Probes:</b> What would you want protected? What has the barangay done about this so far?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">C12.</span> Is there anything else about emergency response, oversight, or approvals that you would like to add?</div>
+<div class="lines"><div></div><div></div></div>
+
+<div class="box"><b>Verbatim quote capture (Guide C).</b> <span class="small">Reminder: translate Filipino or Bikol to English and note the translator. Remove names.</span>
+<table>
+<tr><th style="width:9%">Q no.</th><th style="width:38%">Original wording (as spoken)</th><th style="width:38%">English translation</th><th>Translator (initials)</th></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table></div>
+
+<h3>Guide C. After seeing a demo <span class="opt">optional</span></h3>
+<div class="q"><span class="n">C13.</span> What was your first impression of the Dashboard, Live Map, Analytics (reports and heatmap), and Approvals screens that you saw?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">C14.</span> How would the way approvals are shown compare with the way you sign now?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">C15.</span> What did you find unclear, missing, or concerning?</div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">C16.</span> What would the barangay council need to decide or prepare before trying a system like this?</div><div class="lines"><div></div><div></div></div>
+
+<!-- GUIDE D -->
+<div class="part"></div>
+<h2>Guide D. Tanods (system role: Tanod, mobile app; small group of 3 to 5)</h2>
+<p class="small">Group code: __________ &nbsp; Barangay: __________ &nbsp; Number present: ______ &nbsp; Individual codes: ______________________________</p>
+
+<div class="note"><b>Group facilitation notes.</b>
+<ul>
+<li>Invite 3 to 5 tanods from the same barangay. Do not include the Chief Tanod, a barangay official, or a supervisor in the same group, because tanods may hold back in front of them.</li>
+<li>State that the discussion is about how the work is done, not about anyone&#39;s performance. Nothing said will be reported to officials with a name attached.</li>
+<li>Give each participant a code (D-1, D-2, and so on). Ask them to say the code before speaking if the interview is recorded.</li>
+<li>Ask each question to the whole group, then invite quieter members by turn. Avoid letting one person answer for everyone. Note when answers differ.</li>
+<li>Speak in the language the group prefers (English, Filipino, or Bikol). Use the Filipino line under each question as a guide; the Filipino text is a working translation, so rephrase naturally.</li>
+<li>Remind everyone not to name residents and to keep the discussion within the group. State honestly that confidentiality within a group cannot be guaranteed.</li>
+<li>Allow the group 40 to 60 minutes. Use a second interviewer or note-taker if possible.</li>
+</ul></div>
+
+<div class="q"><span class="n">D1.</span> How do you usually learn that an incident or emergency has happened?
+<div class="fil">Paano ninyo karaniwang nalalaman na may naganap na insidente o emerhensiya?</div></div>
+<div class="probe"><b>Probes:</b> Who informs you? Through what (call, text, in person, radio)?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D2.</span> Once you know about it, how is it decided who goes to the scene?
+<div class="fil">Kapag alam na ninyo, paano napagpapasyahan kung sino ang pupunta sa lugar ng insidente?</div></div>
+<div class="probe"><b>Probes:</b> Who tells you? Do you decide among yourselves? Can several tanods respond to one incident?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D3.</span> What is it like when an incident happens at night or outside your regular hours?
+<div class="fil">Ano ang nangyayari kapag may insidente sa gabi o sa labas ng inyong regular na oras?</div></div>
+<div class="probe"><b>Probes:</b> Who is on duty? How are you reached? How long does it take to get to the scene?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D4.</span> During a shift, how do the Chief Tanod or the office reach you, and how do they know where you are?
+<div class="fil">Habang naka-duty, paano kayo naaabot ng Chief Tanod o ng opisina, at paano nila nalalaman kung nasaan kayo?</div></div>
+<div class="probe"><b>Probes:</b> Calls, text messages, group chats? What if your phone has no signal or battery?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D5.</span> If you needed urgent help while on duty, what would you do, and what would happen next?
+<div class="fil">Kung kailangan ninyo ng agarang tulong habang naka-duty, ano ang gagawin ninyo, at ano ang susunod na mangyayari?</div></div>
+<div class="probe"><b>Probes:</b> Whom would you contact first? What if there is no signal or no load? Has this happened to anyone you know?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D6.</span> How do you learn your duty schedule, and how do you tell the barangay when you are available or not available?
+<div class="fil">Paano ninyo nalalaman ang inyong iskedyul ng duty, at paano ninyo sinasabi sa barangay kung kailan kayo available o hindi available?</div></div>
+<div class="probe"><b>Probes:</b> Who makes the schedule? How are changes or swaps arranged? Who approves?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D7.</span> How are your hours and the work you did reported, and what do you need to submit for the honorarium?
+<div class="fil">Paano iniuulat ang inyong oras at ang mga ginawa ninyo, at ano ang kailangan ninyong isumite para sa honorarium?</div></div>
+<div class="probe"><b>Probes:</b> What form or paper? How often? Who signs it? How long does it take to be approved?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D8.</span> After you respond to an incident, what do you write down or report, and to whom? What do you do when there is no signal at that time?
+<div class="fil">Pagkatapos ninyong tumugon sa isang insidente, ano ang isinusulat o iniuulat ninyo, at kanino? Ano ang ginagawa ninyo kapag walang signal sa oras na iyon?</div></div>
+<div class="probe"><b>Probes:</b> On paper, by text, by call? Do you take photos or voice recordings? How soon afterwards? Where do the notes go? What happens when the same incident is reported by more than one person, and how do you find out?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D9.</span> What do you do when an incident is too big for the tanods, or happens at or near a school?
+<div class="fil">Ano ang ginagawa ninyo kapag masyadong malaki ang insidente para sa mga tanod, o nangyari ito sa loob o malapit sa paaralan?</div></div>
+<div class="probe"><b>Probes:</b> Whom do you call (police, fire station, ambulance, barangay official)? Do you write down who was informed? Do you visit schools on patrol, and how is that reported?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D10.</span> What phones do you use for duty, and how do you handle load, mobile data, and battery?
+<div class="fil">Anong cellphone ang ginagamit ninyo sa duty, at paano ninyo inaasikaso ang load, mobile data, at baterya?</div></div>
+<div class="probe"><b>Probes:</b> Is the phone personal or from the barangay? Android or other? Who pays for load? How is the signal in your patrol areas?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D11.</span> What concerns, if any, do you have about sharing your location, your phone number, or incident information?
+<div class="fil">Ano ang mga alalahanin ninyo, kung mayroon, tungkol sa pagbabahagi ng inyong lokasyon, numero ng telepono, o impormasyon tungkol sa insidente?</div></div>
+<div class="probe"><b>Probes:</b> Who currently knows your location during a shift? Who sees the incident details you write?</div>
+<div class="lines"><div></div><div></div><div></div></div>
+
+<div class="q"><span class="n">D12.</span> Is there anything else about your work as tanods that you would like to share?
+<div class="fil">May iba pa ba kayong nais ibahagi tungkol sa inyong trabaho bilang tanod?</div></div>
+<div class="lines"><div></div><div></div></div>
+
+<div class="box"><b>Verbatim quote capture (Guide D).</b> Write the quote as spoken with the speaker&#39;s code (D-1, D-2, ...). <span class="small">Reminder: translate Filipino or Bikol to English and note the translator. Remove names.</span>
+<table>
+<tr><th style="width:9%">Q no.</th><th style="width:9%">Speaker code</th><th style="width:33%">Original wording (as spoken)</th><th style="width:33%">English translation</th><th>Translator (initials)</th></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;<br>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table></div>
+
+<h3>Guide D. After seeing a demo <span class="opt">optional</span></h3>
+<p class="small">Show the phone app on the seeded demo setup (fictitious data) only after the as-is questions: Home (duty status and SOS), Dispatches, Report, Map, My Duty Shifts, My Availability, My Accomplishments, and School Check-in.</p>
+<div class="q"><span class="n">D13.</span> What was your first impression of the phone app that you saw?
+<div class="fil">Ano ang una ninyong impresyon sa app sa cellphone na ipinakita?</div></div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">D14.</span> Which parts would be easy or hard to use during a real shift?
+<div class="fil">Aling mga bahagi ang magiging madali o mahirap gamitin sa aktuwal na duty?</div></div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">D15.</span> What did you find unclear or missing?
+<div class="fil">Ano ang hindi malinaw o kulang para sa inyo?</div></div><div class="lines"><div></div><div></div></div>
+<div class="q"><span class="n">D16.</span> What would you need (phone, load, training) to use it?
+<div class="fil">Ano ang kakailanganin ninyo (cellphone, load, pagsasanay) para magamit ito?</div></div><div class="lines"><div></div><div></div></div>
+
+<div class="note"><b>Filipino text is an unvalidated working translation. It must be reviewed by a Filipino or Bikol speaking faculty member before use. Translator: ____________________ Date: ____________.</b> A Bikol version can follow later. The probes in Guide D are in English and are for the interviewer only.</div>
+
+<!-- CODING TABLE -->
+<div class="part"></div>
+<h2>Part 4. Coding Table: Questions, Problem Codes, and Specific Objectives</h2>
+<p class="small">The student fills in the Problem Code column (P1, P2, ... Pn) after analysis; the codes are not predefined. The Objective column is a suggested mapping by topic; the proponents must confirm it. Web dashboard modules that are not map screens (records, approvals, reports) are suggested under O1 as part of the web command center; the proponents decide whether they belong there. Objectives: <b>O1</b> GIS web command center with near-real-time responder tracking and heatmaps; <b>O2</b> offline-first tanod mobile application with queued records and synchronization; <b>O3</b> SMS best-effort fallback for emergency alerts with geolocation; <b>O4</b> evaluation against ISO/IEC 25010:2023. Use &quot;none&quot; if a question maps to no objective.</p>
+<table>
+<tr><th>Topic</th><th>Guide A</th><th>Guide B</th><th>Guide C</th><th>Guide D</th><th>Problem code(s)<br>(P1..Pn)</th><th>Objective(s)</th></tr>
+<tr><td>Receiving incidents (including walk-ins), who is dispatched</td><td>A1, A2</td><td>B1</td><td>C1, C2</td><td>D1, D2</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>Night and off-hours response</td><td>A4</td><td>&ndash;</td><td>C3</td><td>D3</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>Reaching and locating tanods</td><td>A3</td><td>&ndash;</td><td>C2</td><td>D4</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>SOS, no signal or no load</td><td>A5</td><td>&ndash;</td><td>C3</td><td>D5, D8</td><td>P__ P__ P__</td><td>O3 / O2</td></tr>
+<tr><td>Duty rosters, availability, swaps, approval</td><td>A6</td><td>B9</td><td>C5</td><td>D6</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>Hours, accomplishments, honorarium evidence</td><td>A7</td><td>B7</td><td>C6</td><td>D7</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>Blotter, binder, incident records, photos and evidence</td><td>A8</td><td>B1, B3</td><td>C4</td><td>D8</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>Duplicate reports</td><td>A8</td><td>B4</td><td>&ndash;</td><td>D8</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>Referrals to other agencies (PNP, BFP, EMS, others)</td><td>A10</td><td>B2</td><td>C9</td><td>D9</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>Monthly reports, annexes, oversight summaries, Safer School Zones</td><td>A9</td><td>B5, B6</td><td>C4, C8</td><td>D9</td><td>P__ P__ P__</td><td>O1 / O2</td></tr>
+<tr><td>Approvals and signatures (paper vs digital)</td><td>A6, A7</td><td>B8</td><td>C7</td><td>&ndash;</td><td>P__ P__ P__</td><td>O1 / O4</td></tr>
+<tr><td>Existing tools, phones, internet and load</td><td>A3</td><td>B10</td><td>C10</td><td>D10</td><td>P__ P__ P__</td><td>O2 / O3 / O4</td></tr>
+<tr><td>Privacy concerns</td><td>A11</td><td>B11</td><td>C11</td><td>D11</td><td>P__ P__ P__</td><td>O4</td></tr>
+<tr><td>Anything else</td><td>A12</td><td>B12</td><td>C12</td><td>D12</td><td>P__ P__ P__</td><td>(assign after review)</td></tr>
+<tr><td>After seeing a demo (optional)</td><td>A13 to A16</td><td>B13 to B16</td><td>C13 to C16</td><td>D13 to D16</td><td>P__ P__ P__</td><td>O4 (and O1 to O3 by topic)</td></tr>
+</table>
+
+<h3>Problem code register (filled by the proponents)</h3>
+<table>
+<tr><th style="width:10%">Code</th><th>Problem statement (as-is, from the data)</th><th style="width:18%">Source questions</th><th style="width:14%">Objective</th></tr>
+<tr><td>P1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>P2</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>P3</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>P4</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>P5</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>P6</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>Pn</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+<!-- TALLY -->
+<div class="part"></div>
+<h2>Part 5. Theme Tally Sheet (for Table 4-7)</h2>
+<p class="small">One row per theme that emerged. Count each respondent (or each tanod group) once per theme, regardless of how many times it was mentioned. The representative statement is identified by role label only, never by name. Total respondents interviewed: Chief Tanod ____ Secretary ____ Punong Barangay ____ Tanod groups ____ (tanod individuals ____).</p>
+<table>
+<tr><th style="width:5%">No.</th><th style="width:28%">Theme</th><th style="width:16%">Number of respondents mentioning the theme</th><th>Representative statement (English translation)</th><th style="width:18%">Role label of representative statement</th></tr>
+<tr><td>1</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>2</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>3</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>4</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>5</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>6</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>7</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>8</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>9</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>10</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+<p class="small">Role labels to use: Chief Tanod; Barangay Secretary; Punong Barangay; Tanod. Keep the respondent code in the working notes, not in the manuscript table, unless the adviser requires it.</p>
+
+<h2>Part 6. Report Format</h2>
+<p>Findings from the interviews are reported in the manuscript (Section 4.2) as follows. Counts, quotes, and problems come only from the completed forms. Nothing is written before the data exist.</p>
+<ol>
+<li><b>Respondent profile table:</b> role label, barangay, number of respondents, years in role (range or mean), and whether the interview was recorded. Names are never shown.</li>
+<li><b>Theme table (Table 4-7):</b> the completed Part 5 tally, with the representative statement and its role label.</li>
+<li><b>Narrative by topic:</b> one paragraph per topic in Part 4, in third person and past tense, for example: &quot;Of the [n] respondents, [n] reported that ...&quot; followed by one short quotation labelled by role (for example, &quot;Barangay Secretary&quot;). Quotes are translated into English and the translator is acknowledged once in the methods text.</li>
+<li><b>Problem register:</b> the problem codes P1 to Pn, each stated as an observed as-is condition with its source questions and the specific objective it relates to.</li>
+<li><b>Mapping table:</b> problem code to specific objective (O1 to O4), then to the system component that addresses it, as confirmed by the proponents and the adviser.</li>
+<li><b>Limitations:</b> number of barangays and respondents, the use of working Filipino translations, and the fact that the demo section, if used, was shown on fictitious data.</li>
+</ol>
+
+<div class="note"><b>Facilitator notes.</b>
+<ul>
+<li>Interview records are not shared with barangay officials in identifiable form.</li>
+<li>Evaluators and respondents for the later ISO/IEC 25010:2023 evaluation must be external to the development team. Never invite or count group members as respondents.</li>
+<li>The demo section is used only on the seeded demo setup (fictitious data), never on live records.</li>
+<li>ISO/IEC 25010:2023 renamed Usability to Interaction Capability and Portability to Flexibility. Characteristic and sub-characteristic names must be checked against the purchased standard text before use.</li>
+</ul></div>
+
+<table class="sig">
+<tr><th style="width:30%">Reviewed by (adviser)</th><th>Signature over printed name</th><th style="width:20%">Date</th></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+</div>
+</body>
+</html>
