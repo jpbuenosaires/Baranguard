@@ -2,7 +2,7 @@
 
 > **Barangay Intelligence and Emergency Dispatch System**  
 > Operational reference for Pilar, Sorsogon (Dao, Binanuahan, Marifosque, Banuyo).  
-> *Audited and reconciled directly against the backend, web, and mobile codebase on 2026-10-02; updated 2026-10-07 for the Proposed Changes Review decisions (code-complete, verified on disposable databases only).*
+> *Audited and reconciled directly against the backend, web, and mobile codebase on 2026-10-02; updated 2026-10-07 for the Proposed Changes Review decisions and re-checked 2026-10-08 against the code (nav/landing pages in `web/src/main.js` and `AppShell.js`, incident and dispatch rules in `IncidentsController`/`DispatchController`, sync in `SyncController`/`syncService.ts`, offers in `OfferService`) after Gap-X1/X2/X3. Code-complete, verified on disposable databases only; not browser- or device-verified.*
 
 ---
 
@@ -29,7 +29,7 @@ Baranguard serves **4 end-user personas** (the anonymous citizen form was retire
 * **Default Landing Page:** `dashboard`
 * **Core Function:** Day-to-day dispatch command, tanod tracking, roster drafting, user provisioning, system health, and Annex D report preparation.
 
-### Complete Navigation Reach (16 pages: 13 sidebar rows + a 4-page "System Tools" group)
+### Complete Navigation Reach (12 sidebar pages + a 4-page "System Tools" group = 16 pages)
 `dashboard`, `dispatch`, `incident-management`, `gis`, `citizen-inbox` (legacy reports only), `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `analytics`, `personnel`, `settings`, plus **System Tools** (one grouped menu holding `sms-log`, `audit-log`, `service-health`, `map-packages`). No separate technical-admin role exists: the barangay officials operate these themselves. `settings` is unchanged.
 
 ### Operational Flow
@@ -43,6 +43,7 @@ flowchart TD
     DispQueue --> DispAssign["Assign On-Duty Tanod (POST /dispatch)"]
     DispAssign --> DispTrack["Monitor Live En Route / Arrived Units"]
     DispTrack --> DispCancel["Cancel Dispatch (mandatory reason; allowed before or after arrival)"]
+    DispQueue --> DispReopened["Reopened incidents are queued here too (REOPENED badge) and can be dispatched"]
     DispQueue --> DispOffer["Night / on demand: Broadcast offer to on-duty tanods (first accept wins)"]
     DispAssign --> DispOverride["No published shift? Assign anyway with a mandatory override reason"]
 
@@ -53,11 +54,12 @@ flowchart TD
     Dash --> IncMgmt["Incident Management"]
     IncMgmt --> IncCreate["Log New Incident or Link to School"]
     IncMgmt --> IncDetail["Open Incident Detail"]
-    IncDetail --> IncResolve["Resolve Incident (Admin only; requires zero active dispatches)"]
+    IncDetail --> IncResolve["Resolve Incident (Admin only; only a dispatched incident, zero active dispatches)"]
+    IncMgmt --> IncDispatch["Dispatch / Resolve buttons are Admin-only (Secretary sees a note instead)"]
 
     Dash --> PersHub["Personnel Hub"]
     PersHub --> UsersTab["Users: Create / Suspend / Set Title & Authorities"]
-    PersHub --> SchedTab["Scheduler: Review Availability & Draft Shifts"]
+    PersHub --> SchedTab["Scheduler: Review Availability & Draft Shifts ('Create shift from this availability' prefills the form)"]
     SchedTab --> PublishShifts["Publish Roster (Requires approve_roster authority)"]
     PersHub --> SwapsTab["Shift Swaps: Approve or Reject Tanod Swap Requests"]
 
@@ -90,7 +92,7 @@ flowchart TD
 flowchart TD
     Login["1. Log In (Web)"] --> IncMgmt["2. Incident Management (Default Landing)"]
     
-    IncMgmt --> OpenDetail["Open Incident Detail"]
+    IncMgmt --> OpenDetail["Open Incident Detail (no Dispatch/Resolve controls for the Secretary)"]
     OpenDetail --> ReadNarrative["Read Confidential Raw Narrative (Secretary ONLY)"]
     OpenDetail --> ReadParties["View Complainant & Respondent Contact Details"]
     OpenDetail --> ChangeLifecycle["PATCH /incidents/:id/lifecycle"]
@@ -113,7 +115,7 @@ flowchart TD
     AnnexD --> MarkSub["Mark Annex D as Submitted to DILG"]
 
     Login --> AccReports["Accomplishment Reports Hub"]
-    AccReports --> ReviewEntries["Inspect Tanod 31-Day Duty Entries & Flagged Variances"]
+    AccReports --> ReviewEntries["Inspect Tanod Duty Entries (back-dated up to 62 days) & Flagged Variances"]
     ReviewEntries --> NoteOrApprove["Note or Approve Report (If granted note_report / approve_report)"]
     ReviewEntries --> ReturnReport["Return Report to Tanod (Mandatory return_reason)"]
 
@@ -237,7 +239,7 @@ Every state machine in Baranguard is strictly validated on the backend. The foll
 
 ### 1. Incident Lifecycle & Resolution
 * **Database Columns:** `incident.status` (`pending`, `dispatched`, `resolved`, `duplicate`, `invalid`, `cancelled`, `reopened`) and `incident.duplicate_of_incident_id`
-* **Authority Gate:** Admin resolves (`/status`); Secretary governs records lifecycle (`/lifecycle`).
+* **Authority Gate:** Admin resolves (`/status`, only from `dispatched`); Secretary governs records lifecycle (`/lifecycle`). Cancelling the last active dispatch of a `dispatched` incident returns it to `pending`.
 
 ```mermaid
 stateDiagram-v2
@@ -245,7 +247,6 @@ stateDiagram-v2
     pending --> dispatched : Admin creates dispatch assignment
     dispatched --> pending : All active dispatches cancelled
     dispatched --> resolved : Admin resolves (Requires ALL dispatches completed/cancelled)
-    pending --> resolved : Admin resolves directly (No dispatch created)
     
     pending --> duplicate : Secretary marks duplicate (Requires duplicate_of_incident_id link)
     pending --> invalid : Secretary marks invalid
@@ -260,7 +261,10 @@ stateDiagram-v2
     invalid --> reopened : Secretary reopens case
     cancelled --> reopened : Secretary reopens case
     
-    reopened --> pending : Returns to active operational triage
+    reopened --> dispatched : Admin dispatches a tanod (a reopened incident is dispatchable like a pending one)
+    reopened --> duplicate : Secretary (Blocked if active dispatch open)
+    reopened --> invalid : Secretary (Blocked if active dispatch open)
+    reopened --> cancelled : Secretary (Blocked if active dispatch open)
 ```
 
 ---
@@ -383,11 +387,11 @@ stateDiagram-v2
 6. Server-side middleware validates role, tenant, and resource ownership on every protected endpoint; client-side guards are never treated as security boundaries.
 
 ### II. Incident Dispatch & Operations
-7. Only an Admin can create a dispatch assignment, except at night or on demand, when an offer is broadcast to on-duty tanods and the first accept recorded by the server creates the dispatch.
+7. Only an Admin can create a dispatch assignment (for a `pending`, `reopened` or `dispatched` incident), except at night or on demand, when an offer is broadcast to on-duty tanods and the first accept recorded by the server creates the dispatch.
 8. A Tanod cannot be dispatched if they are off-duty, already responding, inactive, suspended, or from another barangay, and must hold a published shift covering the current time unless the Admin gives a mandatory override reason.
 9. An incident supports multiple concurrent responder dispatches without artificial priority gates.
 10. Cancelling an active dispatch (assigned, en route or arrived, always with a mandatory reason) reverts an incident to `pending` only when no other active responder remains assigned.
-11. An Admin can resolve an incident only after all associated responder dispatches are marked completed or cancelled.
+11. An Admin can resolve an incident only when it is `dispatched` and all associated responder dispatches are marked completed or cancelled; a pending or reopened incident must be dispatched first.
 12. Only a Secretary can modify an incident's statutory lifecycle to `duplicate`, `invalid`, `cancelled`, or `reopened`.
 13. Marking an incident as `duplicate` strictly requires linking it to a target `duplicate_of_incident_id` within the same barangay, preserving both records without deleting or merging data.
 14. A terminal incident state (`resolved`, `cancelled`, `invalid`, `duplicate`) can only transition to `reopened` and cannot jump directly to another terminal state.
@@ -436,7 +440,7 @@ stateDiagram-v2
 ### IX. Mobile Offline Architecture & Sync Queue
 44. Every mobile field submission persists immediately to encrypted local SQLite storage before navigation can continue.
 45. Mobile synchronization processes queued items in strict priority: SOS alerts first, dispatch updates second, incidents third, workflow items fourth, and GPS breadcrumbs last.
-46. Sync batches are limited to 50 items per payload with GPS breadcrumbs capped at 200 points per sync pass.
+46. The mobile app sends sync payloads in chunks of 50 items, the server rejects a batch above 200 items, and GPS breadcrumbs are capped at 200 points per sync pass.
 47. Duplicate sync payloads matching an existing `client_event_id` return the existing server row rather than throwing an error.
 48. Non-transient client sync rejections revert optimistic local status changes and mark the queue item as requiring attention.
 49. Duty status cannot be toggled while offline, and an officer cannot declare themselves off-duty while an active dispatch assignment remains open.
@@ -461,3 +465,9 @@ stateDiagram-v2
 64. A scan attached to a report must be a PDF, JPG or PNG of at most 10 MB, is visible to Admin, Secretary and Punong Barangay, lives as long as its parent report, and must contain no student names.
 65. Retention periods for availability, accomplishment reports, school check-ins and referrals are placeholders pending barangay confirmation, so nothing is purged from those tables yet.
 66. An Admin (Chief Tanod) may sign in on the mobile app with a device session limited to SOS acknowledgement, dispatch override and read access.
+
+### XII. Gap-X Additions (2026-10-08)
+67. A `reopened` incident is treated like a `pending` one for dispatching and dispatch offers, and appears in the Dispatch Center queue and the GIS active-incident filter.
+68. Dispatch and Resolve controls in Incident Management are shown to the Admin only; the Secretary sees a read-only note (the server already enforced this).
+69. A draft shift can be created from a submitted availability entry; it is prefilled from the tanod's window and is still saved as `draft`.
+70. A tanod can capture photo or voice evidence on an assigned incident while offline; it shows as waiting for a connection until the server confirms the upload.
