@@ -170,25 +170,55 @@
     //      for the rare case a different address is needed (e.g. a
     //      temporary Quick Tunnel for testing — see DEVLOG.md
     //      2026-09-15 — which has no stable hostname to auto-detect).
-    const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    //
+    // SECURITY (audit 2026-10-09 V-01): the override used to be accepted
+    // from ANY page URL with no check, so one phishing link to the real
+    // domain (`?api_base=https://evil.example/api/v1`) sent the sign-in
+    // password and every bearer token to another host, and stuck in
+    // localStorage. An override is now honoured only when (a) the page
+    // itself is opened from this machine (localhost/127.0.0.1/[::1]: local
+    // dev), or (b) it points at THIS page's own host on any port (LAN use,
+    // e.g. http://<workstation>:8081/api/v1 — the same machine the user
+    // already trusts), or (c) it is https and its host is exactly
+    // `api.` + this page's host. Anything else is ignored, and a stored
+    // value that fails the same test is deleted. The CSP connect-src in
+    // web/.htaccess is the second layer.
+    const pageHost = window.location.hostname;
+    const isLocalHost = pageHost === 'localhost' || pageHost === '127.0.0.1' || pageHost === '[::1]' || pageHost === '::1';
     const AUTO_DEFAULT = isLocalHost
       ? 'http://localhost:8081/api/v1'
-      : `${window.location.protocol}//api.${window.location.hostname}/api/v1`;
+      : `${window.location.protocol}//api.${pageHost}/api/v1`;
     const STORAGE_KEY = 'baranguard.apiBaseUrlOverride';
+    function isAllowedApiBase(value) {
+      let url;
+      try { url = new URL(value); } catch (e) { return false; }
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+      if (url.username || url.password) return false;
+      if (isLocalHost) return true;
+      if (url.hostname === pageHost) return true;
+      return url.protocol === 'https:' && url.hostname === 'api.' + pageHost;
+    }
     (function resolveApiBaseUrl() {
       const params = new URLSearchParams(window.location.search);
       const fromQuery = params.get('api_base');
-      if (fromQuery) {
-        try { window.localStorage.setItem(STORAGE_KEY, fromQuery); } catch (e) { /* best-effort */ }
+      if (fromQuery !== null) {
+        // Always strip it from the address bar, honoured or not.
         params.delete('api_base');
         const cleanQuery = params.toString();
         const cleanUrl = window.location.pathname + (cleanQuery ? '?' + cleanQuery : '') + window.location.hash;
         window.history.replaceState({}, '', cleanUrl);
-        window.BARANGUARD_API_BASE_URL = fromQuery;
-        return;
+        if (isAllowedApiBase(fromQuery)) {
+          try { window.localStorage.setItem(STORAGE_KEY, fromQuery); } catch (e) { /* best-effort */ }
+          window.BARANGUARD_API_BASE_URL = fromQuery;
+          return;
+        }
       }
       let stored = null;
       try { stored = window.localStorage.getItem(STORAGE_KEY); } catch (e) { /* private mode etc. */ }
+      if (stored && !isAllowedApiBase(stored)) {
+        try { window.localStorage.removeItem(STORAGE_KEY); } catch (e) { /* best-effort */ }
+        stored = null;
+      }
       window.BARANGUARD_API_BASE_URL = stored || AUTO_DEFAULT;
     })();
   </script>

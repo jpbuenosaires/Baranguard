@@ -72,7 +72,14 @@ final class ReportsController
         'vandalism', 'traffic_incident', 'fire', 'medical_emergency',
         'missing_person', 'animal_complaint', 'other',
     ];
-    private const INCIDENT_STATUSES = ['pending', 'dispatched', 'resolved'];
+    /**
+     * Every incident status (migration 0025 added the four lifecycle
+     * states). Audit P-06 (2026-10-09): only the first three used to be
+     * counted, so by_status stopped adding up to total_incidents as soon as
+     * one incident was reopened/cancelled/invalid/duplicate. Additive keys,
+     * always present at 0.
+     */
+    private const INCIDENT_STATUSES = ['pending', 'dispatched', 'resolved', 'reopened', 'cancelled', 'invalid', 'duplicate'];
     private const MAX_RANGE_DAYS = 366;
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
@@ -155,9 +162,15 @@ final class ReportsController
         // therefore contributes to resolved_count (a state count) but not
         // to this per-day series (a timing series); the two answer
         // different questions and are not expected to reconcile.
+        //
+        // Audit P-07 (2026-10-09): counted per INCIDENT per day, not per
+        // completed dispatch -- a multi-responder incident used to count
+        // once per responder, so the "resolved" line could exceed the
+        // "reported" one. One incident counts at most once per Manila day.
         $resolvedMap = array_fill_keys(array_keys($trendMap), 0);
+        $resolvedSeen = [];
         $stmt = $pdo->prepare(
-            "SELECT d.completed_at
+            "SELECT d.incident_id, d.completed_at
                FROM dispatch d
                JOIN incident i ON i.incident_id = d.incident_id
               WHERE i.barangay_id = :barangay_id
@@ -173,21 +186,22 @@ final class ReportsController
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $completedUtc = new \DateTimeImmutable($row['completed_at'], $utc);
             $dayKey = $completedUtc->setTimezone($manila)->format('Y-m-d');
-            if (isset($resolvedMap[$dayKey])) {
+            $seenKey = $dayKey . '#' . (int) $row['incident_id'];
+            if (isset($resolvedMap[$dayKey]) && !isset($resolvedSeen[$seenKey])) {
+                $resolvedSeen[$seenKey] = true;
                 $resolvedMap[$dayKey]++;
             }
         }
 
-        $trend = [];
-        foreach ($trendMap as $date => $count) {
-            // `count` keeps its existing meaning (incidents reported that
-            // day) so every current consumer is unaffected; `resolved` is
-            // additive, same precedent as officer_name on GET /incidents.
-            $trend[] = ['date' => $date, 'count' => $count, 'resolved' => $resolvedMap[$date]];
-        }
-
+        // Response-time metric: incident.created_at -> FIRST dispatch
+        // arrived_at, per incident (de-duplicated, F8). The clock starts
+        // when the incident reached the server: an incident captured
+        // offline on a Tanod's phone gets created_at at SYNC time
+        // (device_offline_created_at holds the capture time), so for those
+        // the interval starts at sync -- the UI footnotes this (audit P-04).
         $stmt = $pdo->prepare(
-            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at)) AS avg_minutes
+            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at)) AS avg_minutes,
+                    COUNT(*) AS sample_size
              FROM incident i
              JOIN (
                  SELECT incident_id, MIN(arrived_at) AS first_arrived_at
@@ -203,8 +217,10 @@ final class ReportsController
             'range_start' => $rangeStartUtc->format('Y-m-d H:i:s'),
             'range_end' => $rangeEndUtc->format('Y-m-d H:i:s'),
         ]);
-        $avgMinutesRaw = $stmt->fetchColumn();
+        $avgRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['avg_minutes' => null, 'sample_size' => 0];
+        $avgMinutesRaw = $avgRow['avg_minutes'];
         $avgResponseMinutes = $avgMinutesRaw !== null ? round((float) $avgMinutesRaw, 1) : null;
+        $responseSampleSize = (int) $avgRow['sample_size'];
 
         // response_time_trend[]: avg response minutes PER DAY, alongside
         // the single range-level scalar above — Phase 9. Bucketed the same
@@ -244,6 +260,24 @@ final class ReportsController
             $responseTimeTrend[] = [
                 'date' => $date,
                 'avg_minutes' => $minutesList === [] ? null : round(array_sum($minutesList) / count($minutesList), 1),
+                'sample_size' => count($minutesList),
+            ];
+        }
+
+        $trend = [];
+        foreach ($trendMap as $date => $count) {
+            // `count` keeps its existing meaning (incidents reported that
+            // day) so every current consumer is unaffected; `resolved` is
+            // additive, same precedent as officer_name on GET /incidents.
+            // `arrivals` (audit N-02/P-04, 2026-10-09): how many of that
+            // day's incidents had a first Tanod arrival, i.e. the per-day
+            // sample size behind response_time_trend -- summing it equals
+            // response_sample_size.
+            $trend[] = [
+                'date' => $date,
+                'count' => $count,
+                'resolved' => $resolvedMap[$date],
+                'arrivals' => count($responseTimeMap[$date] ?? []),
             ];
         }
 
@@ -265,6 +299,10 @@ final class ReportsController
             'total_incidents' => count($incidents),
             'resolved_count' => $resolvedCount,
             'avg_response_time_minutes' => $avgResponseMinutes,
+            // Number of incidents behind avg_response_time_minutes (those
+            // with at least one dispatch arrival). 0 with a null average
+            // means "no data", never "zero minutes".
+            'response_sample_size' => $responseSampleSize,
             'active_tanods' => $activeTanods,
             'by_incident_type' => $byType,
             'by_status' => $byStatus,
@@ -750,6 +788,9 @@ final class ReportsController
      * writes its own HTTP response and isn't structured to hand back a
      * value — but it is intentionally the exact same SQL shape, so the
      * export can never disagree with the screen it's exporting.
+     *
+     * @return array{avg:?float, n:int} average minutes (null = no data) and
+     *         the number of incidents it is based on.
      */
     private static function averageResponseTimeMinutes(
         PDO $pdo,
@@ -757,13 +798,14 @@ final class ReportsController
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         \DateTimeZone $manila
-    ): ?float {
+    ): array {
         $utc = new \DateTimeZone('UTC');
         $rangeStartUtc = $from->setTime(0, 0, 0)->setTimezone($utc)->format('Y-m-d H:i:s');
         $rangeEndUtc = $to->setTime(0, 0, 0)->modify('+1 day')->setTimezone($utc)->format('Y-m-d H:i:s');
 
         $stmt = $pdo->prepare(
-            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at)) AS avg_minutes
+            'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at)) AS avg_minutes,
+                    COUNT(*) AS sample_size
              FROM incident i
              JOIN (
                  SELECT incident_id, MIN(arrived_at) AS first_arrived_at
@@ -780,8 +822,11 @@ final class ReportsController
             'range_start' => $rangeStartUtc,
             'range_end' => $rangeEndUtc,
         ]);
-        $raw = $stmt->fetchColumn();
-        return $raw !== null ? round((float) $raw, 1) : null;
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['avg_minutes' => null, 'sample_size' => 0];
+        return [
+            'avg' => $row['avg_minutes'] !== null ? round((float) $row['avg_minutes'], 1) : null,
+            'n' => (int) $row['sample_size'],
+        ];
     }
 
     /**
@@ -852,7 +897,8 @@ final class ReportsController
 
         ['total' => $total, 'byDay' => $byDay, 'byType' => $byType, 'byStatus' => $byStatus, 'byHour' => $byHour]
             = self::aggregateIncidents($pdo, $barangayId, $from, $to, $manila);
-        $avgResponseMinutes = self::averageResponseTimeMinutes($pdo, $barangayId, $from, $to, $manila);
+        ['avg' => $avgResponseMinutes, 'n' => $responseSampleSize]
+            = self::averageResponseTimeMinutes($pdo, $barangayId, $from, $to, $manila);
 
         // Fetch Barangay information (name, municipality, province)
         $brgyStmt = $pdo->prepare('SELECT name, municipality, province FROM barangay WHERE barangay_id = :bid LIMIT 1');
@@ -866,32 +912,30 @@ final class ReportsController
         $municipality = (string) ($brgy['municipality'] ?? 'Municipality');
         $province = (string) ($brgy['province'] ?? 'Province');
 
-        // Fetch Desk Officer / Generator Name and Role. A null user_id
-        // means this was generated unattended (generateDigest() below,
-        // the periodic PB digest's CLI path) -- say so honestly rather
-        // than reusing the interactive fallback ("Desk Officer" implies a
-        // human who couldn't be looked up, which isn't what happened
-        // here; §2 Rule 6 bars fabricating an identity either way).
+        // Who asked for this file (shown as "requested by", never as a
+        // signer). A null user_id means the unattended weekly digest
+        // (generateDigest()). Audit P-01/N-18 (2026-10-09): this name used
+        // to be printed as "Prepared By" over a signature line, and the
+        // Punong Barangay's real name was printed under a pre-written
+        // sworn attestation ("certify under oath ... Attested & Approved")
+        // that nobody had made -- on a timer-generated digest too. The
+        // file now says it is a system-generated, unsigned summary and
+        // leaves the reviewer's signature, name and date blank for a
+        // person to fill in on paper.
         if ($identity['user_id'] === null) {
-            $generatorName = 'Automated scheduled digest';
-            $generatorRole = 'System';
+            $requestedBy = 'the scheduled weekly digest job';
         } else {
             $genStmt = $pdo->prepare('SELECT full_name, role FROM user WHERE user_id = :uid LIMIT 1');
             $genStmt->execute([':uid' => $identity['user_id']]);
             $genRow = $genStmt->fetch(PDO::FETCH_ASSOC);
-            $generatorName = !empty($genRow['full_name']) ? (string) $genRow['full_name'] : 'Desk Officer';
-            $generatorRole = self::humanizeRole((string) ($genRow['role'] ?? $identity['role']));
+            $requestedBy = !empty($genRow['full_name'])
+                ? (string) $genRow['full_name'] . ' (' . self::humanizeRole((string) ($genRow['role'] ?? $identity['role'])) . ')'
+                : 'user #' . (int) $identity['user_id'];
         }
 
-        // Fetch Punong Barangay (Captain) for attestation
-        $pbStmt = $pdo->prepare(
-            "SELECT full_name FROM user WHERE barangay_id = :bid AND role = 'punong_barangay' AND is_active = 1 LIMIT 1"
-        );
-        $pbStmt->execute([':bid' => $barangayId]);
-        $pbRow = $pbStmt->fetch(PDO::FETCH_ASSOC);
-        $pbName = !empty($pbRow['full_name']) ? (string) $pbRow['full_name'] : 'HON. PUNONG BARANGAY';
-
-        // Count Active Tanod Peacekeeping Force
+        // Tanod ACCOUNTS that are active right now (audit P-16): a
+        // snapshot at generation time, not a figure for the coverage
+        // period, and labelled that way below.
         $tanodStmt = $pdo->prepare(
             "SELECT COUNT(*) FROM user WHERE barangay_id = :bid AND role = 'tanod' AND is_active = 1"
         );
@@ -927,14 +971,18 @@ final class ReportsController
             ? sprintf('%02d:00 - %02d:00 (%d %s)', $peakHour, ($peakHour + 1) % 24, $peakHourCount, $peakHourCount === 1 ? 'incident' : 'incidents')
             : 'No incidents recorded';
 
-        // Pending and In-Progress Load
+        // Still-open incidents from this range (pending, dispatched or
+        // reopened -- a reopened incident is active work again).
         $activeLoad = (int) ($byStatus['pending'] ?? 0)
-            + (int) ($byStatus['investigating'] ?? 0)
-            + (int) ($byStatus['dispatched'] ?? 0);
+            + (int) ($byStatus['dispatched'] ?? 0)
+            + (int) ($byStatus['reopened'] ?? 0);
 
         $nowManila = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))
             ->setTimezone($manila)
             ->format('d M Y, g:i A');
+        $nowStamp = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))
+            ->setTimezone($manila)
+            ->format('Ymd-Hi');
         $rangeShort = $from->format('M j, Y') . ' - ' . $to->format('M j, Y');
 
         $pdf = SimplePdf::create("Baranguard Statistical Report - Barangay {$barangayName}")
@@ -949,7 +997,10 @@ final class ReportsController
             ->metaBar([
                 [
                     'label' => 'Report Reference',
-                    'value' => "BRGY-{$barangayId}-RPT",
+                    // Audit P-17: a fixed BRGY-<id>-RPT on every file
+                    // looked like a control number; now it names the
+                    // generation minute so two files can be told apart.
+                    'value' => "BRGY-{$barangayId}-" . $nowStamp,
                 ],
                 [
                     'label' => 'Coverage Period',
@@ -957,7 +1008,7 @@ final class ReportsController
                 ],
                 [
                     'label' => 'Prepared By',
-                    'value' => $generatorName,
+                    'value' => 'System-generated (not signed)',
                 ],
                 [
                     'label' => 'Date Generated',
@@ -979,13 +1030,13 @@ final class ReportsController
                 ],
                 [
                     'label' => 'Avg Response Time',
-                    'value' => $avgResponseMinutes !== null ? "{$avgResponseMinutes} min" : 'N/A',
-                    'sub' => 'Dispatch to arrival',
+                    'value' => $avgResponseMinutes !== null ? "{$avgResponseMinutes} min" : 'No data',
+                    'sub' => "Reported to first arrival, n={$responseSampleSize}",
                 ],
                 [
-                    'label' => 'Tanod Force',
+                    'label' => 'Tanod Accounts',
                     'value' => (string) $activeTanods,
-                    'sub' => 'Active peacekeeping unit',
+                    'sub' => 'Active at time of printing',
                 ],
             ], 48.0)
 
@@ -1008,7 +1059,7 @@ final class ReportsController
                 ],
                 [
                     'label' => 'Active Caseload Requiring Action',
-                    'value' => "{$activeLoad} ongoing cases (Pending / Dispatched)",
+                    'value' => "{$activeLoad} still open (Pending / Dispatched / Reopened)",
                 ],
                 44.0
             )
@@ -1057,18 +1108,26 @@ final class ReportsController
         $pdf->tableRow(['PERIOD TOTAL', '-', (string) $total, (string) $total], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right'], true, true)
             ->spacer(10.0)
 
-            // 8. Official Attestation Callout Box & Centered Dual Sign-Off
+            // 8. Notes + blank sign-off (audit P-01/N-18, 2026-10-09). No
+            // oath, no pre-filled signer: the reviewer signs, prints their
+            // name and dates it on paper.
             ->calloutSection(
-                'OFFICIAL ATTESTATION & DATA PRIVACY COMPLIANCE (RA 10173)',
-                'I hereby certify under oath that the statistics, incident counts, and operational performance indicators set forth in this summary report are faithfully compiled from official records logged within the Baranguard Incident Management System for the stated coverage period. In compliance with Republic Act No. 10173, this report contains aggregate operational metrics only and withholds all personally identifiable information.',
+                'NOTES',
+                'System-generated summary, not signed or attested. Compiled automatically from Baranguard records on '
+                    . $nowManila . ' (Asia/Manila), requested by ' . $requestedBy . '. '
+                    . 'This report contains aggregate operational figures only; no personal data. '
+                    . 'Avg Response Time is measured from when an incident was recorded on the server to the first '
+                    . "Tanod arrival, averaged over the {$responseSampleSize} incident(s) in this period that had an arrival; "
+                    . 'an incident captured offline on a Tanod phone starts the clock when it synced. '
+                    . 'It is an operational measure, not a rating of any Tanod.',
                 8.5
             )
             ->spacer(8.0)
             ->centeredSignatures(
-                strtoupper($generatorName),
-                $generatorRole,
-                strtoupper($pbName),
-                'Punong Barangay · Attested & Approved',
+                'Prepared by: system-generated summary',
+                '(not signed)',
+                'Reviewed and approved by:',
+                'Punong Barangay        Date: ____________',
                 60.0
             );
 

@@ -75,7 +75,7 @@ final class SystemHealthController
             $db = 'unhealthy';
         }
 
-        $fcmStatus = self::envConfiguredStatus('FCM_SERVICE_ACCOUNT_PATH');
+        $fcmStatus = self::fcmCredentialStatus();
         // 2026-09-23: Semaphore removed, replaced by the local GSM
         // gateway (`LocalGsmOutboundClient`) — 'healthy' means the
         // deployment has explicitly opted in (GSM_GATEWAY_ENABLED=true),
@@ -83,9 +83,11 @@ final class SystemHealthController
         // meaningful, valid value here (unlike an API key, where any
         // non-empty string was a real key). Same fcm/sms "presence, not a
         // live probe" pattern as before — see this class's own doc block.
-        $smsStatus = baranguard_env('GSM_GATEWAY_ENABLED') === 'true' ? 'healthy' : 'not_configured';
+        // F-05 (2026-10-09): nothing records a gateway heartbeat, so a flag is
+        // only 'configured' (neutral), never 'healthy' (Rule 6).
+        $smsStatus = baranguard_env('GSM_GATEWAY_ENABLED') === 'true' ? 'configured' : 'not_configured';
         $orsStatus = self::orsStatus();
-        $gsmStatus = self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN');
+        $gsmStatus = self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN'); // 'configured' or 'not_configured'
 
         // Migration 0017/0020: remember what this probe saw, but only
         // when it differs from the last thing recorded. See
@@ -127,7 +129,9 @@ final class SystemHealthController
             'sms_gsm_gateway' => $smsStatus,
             // Kept for the existing web topbar tooltip (AppShell.js) —
             // additive, not a breaking rename.
-            'notification_config' => ($fcmStatus === 'healthy' || $smsStatus === 'healthy') ? 'healthy' : 'not_configured',
+            'notification_config' => ($fcmStatus === 'configured' || $smsStatus === 'configured')
+                ? 'configured'
+                : ($fcmStatus === 'unhealthy' ? 'unhealthy' : 'not_configured'),
             'backup_last_success' => self::latestBackupTimestamp(),
             // Sprint 7's backup/restore-drill box closed the gap this
             // field used to document: `scripts/restore-drill.sh` now
@@ -252,7 +256,37 @@ final class SystemHealthController
     private static function envConfiguredStatus(string $envVar): string
     {
         $value = baranguard_env($envVar);
-        return ($value !== false && trim((string) $value) !== '') ? 'healthy' : 'not_configured';
+        return ($value !== false && trim((string) $value) !== '') ? 'configured' : 'not_configured';
+    }
+
+    /**
+     * F-05: real, side-effect-free check of the FCM service-account file —
+     * exists, readable, parses as JSON with the keys FCM auth needs. Never
+     * calls Google and never returns file contents. A valid file is still only
+     * 'configured' (not 'healthy'): nothing here proves Google accepts it.
+     * Path set but file missing/unreadable/invalid is 'unhealthy'.
+     */
+    private static function fcmCredentialStatus(): string
+    {
+        $path = baranguard_env('FCM_SERVICE_ACCOUNT_PATH');
+        if ($path === false || trim((string) $path) === '') {
+            return 'not_configured';
+        }
+        $path = trim((string) $path);
+        if (!is_file($path) || !is_readable($path)) {
+            return 'unhealthy';
+        }
+        $raw = @file_get_contents($path);
+        $json = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($json)) {
+            return 'unhealthy';
+        }
+        foreach (['project_id', 'client_email', 'private_key'] as $key) {
+            if (!isset($json[$key]) || !is_string($json[$key]) || $json[$key] === '') {
+                return 'unhealthy';
+            }
+        }
+        return 'configured';
     }
 
     /**

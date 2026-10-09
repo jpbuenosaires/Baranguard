@@ -66,7 +66,12 @@ export function KpiCard({
     const chipEl = document.createElement('span');
     chipEl.className = `kpi-card__chip kpi-card__chip--${badgeChip.tone || 'neutral'}`;
     if (badgeChip.tone === 'live') {
-      chipEl.innerHTML = `<span class="kpi-card__chip-dot"></span><span>${badgeChip.text}</span>`;
+      // DOM, not innerHTML: badgeChip.text is caller-supplied (V-12).
+      const dot = document.createElement('span');
+      dot.className = 'kpi-card__chip-dot';
+      const label = document.createElement('span');
+      label.textContent = badgeChip.text;
+      chipEl.append(dot, label);
     } else {
       chipEl.textContent = badgeChip.text;
     }

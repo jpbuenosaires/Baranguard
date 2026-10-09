@@ -35,7 +35,7 @@ describe('router: session gate', () => {
 });
 
 describe('router: landing page per role', () => {
-  for (const [role, expected] of [['admin', 'Admin Dashboard'], ['punong_barangay', 'Admin Dashboard'], ['secretary', 'Incident Management']]) {
+  for (const [role, expected] of [['admin', 'Dashboard'], ['punong_barangay', 'Dashboard'], ['secretary', 'Incident Management']]) {
     test(`${role} lands on ${expected}`, async () => {
       signIn(role);
       const root = await boot();
@@ -78,7 +78,7 @@ describe('router: title and focus', () => {
   test('the browser tab title is the page heading, cleanly', async () => {
     signIn('admin');
     await boot();
-    assert.equal(window.document.title, 'Admin Dashboard — Baranguard',
+    assert.equal(window.document.title, 'Dashboard — Baranguard',
       'badges placed INSIDE the <h2> (e.g. the "Brgy. Dao" pill) leak into the tab title');
   });
 

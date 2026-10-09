@@ -283,6 +283,7 @@
   background: color-mix(in srgb, var(--color-surface) 96%, var(--color-critical) 4%);
 }
 
+.health-service-card--configured,
 .health-service-card--not_configured {
   border-left: 3px solid var(--color-border);
 }

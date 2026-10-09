@@ -226,9 +226,9 @@ export async function getAvailability({ status, userId, periodStart, page, limit
 }
 
 /** GET /shifts?approval_status= — own mapping because apiClient's `mapShift` drops approval fields. */
-export async function getShiftsByApproval({ approvalStatus, page, limit } = {}) {
+export async function getShiftsByApproval({ approvalStatus, from, to, page, limit } = {}) {
   return listOf(await request('GET', '/shifts', {
-    query: { approval_status: approvalStatus, page, limit },
+    query: { approval_status: approvalStatus, from, to, page, limit },
   }));
 }
 
@@ -239,9 +239,9 @@ export async function publishShifts(shiftIds, idempotencyKey) {
 
 // --- Accomplishment reports (§4) --------------------------------------------
 
-export async function getAccomplishmentReports({ month, userId, status, page, limit } = {}) {
+export async function getAccomplishmentReports({ month, userId, status, paperPending, page, limit } = {}) {
   return listOf(await request('GET', '/accomplishment-reports', {
-    query: { month, user_id: userId, status, page, limit },
+    query: { month, user_id: userId, status, paper_pending: paperPending ? 1 : undefined, page, limit },
   }));
 }
 
@@ -400,11 +400,11 @@ export async function recordPaperSignature(entityType, reportId, paperSignedOn, 
  * POST .../record-paper-approval — moves a noted report (Annex D: prepared)
  * to approved on the strength of a paper signature by `signerUserId`.
  */
-export async function recordPaperApproval(entityType, reportId, { signerUserId, signedOn }, idempotencyKey) {
-  return camelize(await write('POST', `${PAPER_ENTITY_PATHS[entityType]}/${reportId}/record-paper-approval`, {
-    signer_user_id: signerUserId,
-    signed_on: signedOn,
-  }, idempotencyKey));
+export async function recordPaperApproval(entityType, reportId, { signerUserId, signedOn, noterUserId }, idempotencyKey) {
+  const body = { signer_user_id: signerUserId, signed_on: signedOn };
+  // A report still 'prepared': the official who NOTED it on paper is named too.
+  if (noterUserId) body.noter_user_id = noterUserId;
+  return camelize(await write('POST', `${PAPER_ENTITY_PATHS[entityType]}/${reportId}/record-paper-approval`, body, idempotencyKey));
 }
 
 /** GET /document-scans?entity_type=&entity_id= (admin, secretary, punong_barangay). Never carries a file path. */

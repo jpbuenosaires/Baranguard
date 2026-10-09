@@ -21,14 +21,16 @@
  */
 
 import { StatStrip } from '../components/StatStrip.js';
+import { getShiftSwapRequests } from '../api/apiClient.js';
 import { icons } from '../components/icons.js';
 import {
   getAvailability, getShiftsByApproval, getAccomplishmentReports, getTermReports, getUserNames,
 } from '../services/tanodWorkflowApi.js';
 import {
   h, mountPageFrame, showLoading, showError, showEmpty, getMyAuthority,
-  formatMonthLabel, formatDateOnly, formatManilaDate,
+  formatMonthLabel, formatDateOnly, formatManilaDate, manilaToday,
 } from '../services/tanodWorkflowUi.js';
+import { addDays } from '../services/rosterWindow.js';
 
 const ROW_PREVIEW_LIMIT = 6;
 
@@ -70,7 +72,9 @@ function buildGroups({ user, navigate, nameOf }) {
       hint: 'Draft shifts. Tanods only see a shift once it is published.',
       visible: (a) => a.has('approve_roster'),
       load: async () => {
-        const res = await getShiftsByApproval({ approvalStatus: 'draft', limit: 100 });
+        // Drafts that have not finished yet (shifts end_at after the start of a week ago); older
+        // drafts would otherwise fill the oldest-first 100-row page and hide the ones being planned.
+        const res = await getShiftsByApproval({ approvalStatus: 'draft', from: addDays(manilaToday(), -7), limit: 100 });
         await nameOf.ensure(res.items.filter((r) => r.userId !== null));
         return {
           total: res.total,
@@ -84,6 +88,49 @@ function buildGroups({ user, navigate, nameOf }) {
       },
       openAll: () => navigate('personnel', { tab: 'scheduler' }),
       openLabel: 'Open Scheduler',
+    },
+    {
+      id: 'swaps',
+      title: 'Swap requests waiting',
+      hint: 'Tanod shift swap requests nobody has approved or denied yet.',
+      visible: () => user.role === 'admin' || user.role === 'secretary',
+      load: async () => {
+        const res = await getShiftSwapRequests({ limit: 100 });
+        const pending = res.items.filter((r) => r.status === 'pending');
+        await nameOf.ensure([{ fullName: '' }]);
+        return {
+          total: pending.length,
+          rows: pending.map((r) => ({
+            key: r.requestId,
+            title: nameOf(r.requestingUserId) || `Tanod #${r.requestingUserId}`,
+            detail: r.targetUserId ? 'Swap with a named tanod' : 'Open request (any eligible tanod)',
+            open: () => navigate('personnel', { tab: 'swaps' }),
+          })),
+        };
+      },
+      openAll: () => navigate('personnel', { tab: 'swaps' }),
+      openLabel: 'Open Swap requests',
+    },
+    {
+      id: 'paper',
+      title: 'Approved, paper signature pending',
+      hint: 'Approved accomplishment reports whose signed paper copy has not been recorded. The paper is the official record.',
+      visible: () => user.role === 'admin' || user.role === 'secretary',
+      load: async () => {
+        const res = await getAccomplishmentReports({ status: 'approved', paperPending: true, limit: 100 });
+        await nameOf.ensure(res.items);
+        return {
+          total: res.total,
+          rows: res.items.map((r) => ({
+            key: r.reportId,
+            title: person(r),
+            detail: formatMonthLabel(r.month),
+            open: () => navigate('accomplishment-reports', { reportId: r.reportId }),
+          })),
+        };
+      },
+      openAll: () => navigate('accomplishment-reports', { status: 'approved', paperPending: true }),
+      openLabel: 'Open reports',
     },
     {
       id: 'note',

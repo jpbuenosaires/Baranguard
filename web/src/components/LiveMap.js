@@ -75,7 +75,7 @@ const CLUSTER_RADIUS_PX = 44; // Screen-pixel distance under which two Tanod mar
  * @param {HTMLElement} container
  * @returns {{
  *   setMarkers: (markers: Array<{userId:number, fullName:string, latitude:number, longitude:number, ageSeconds:number, isStale:boolean}>) => void,
- *   setSosMarkers: (sosItems: Array<{sosId:number, latitude:number, longitude:number, status:string}>) => void,
+ *   setSosMarkers: (sosItems: Array<{sosId:number, latitude:number, longitude:number, status:string, locationSource?:string, locationRecordedAt?:string}>, onResolve?, onAcknowledge?) => void,
  *   setIncidentMarkers: (items: Array<{incidentId:number, latitude:number, longitude:number, incidentType:string, priority:string, typeLabel?:string}>, onAssign?: (incidentId:number) => void) => void,
  *   setBoundary: (geojson: object) => void,
  *   destroy: () => void,
@@ -122,6 +122,7 @@ export function LiveMap(container, options = {}) {
   let lastRawMarkers = []; // re-clustered on zoom/move — see recluster() below.
   let lastRawSosItems = [];
   let lastSosResolve = null;
+  let lastSosAck = null;
   let lastRawIncidents = [];
   let lastIncidentAssign = null;
   let lastIncidentViewRecord = null;
@@ -384,9 +385,17 @@ export function LiveMap(container, options = {}) {
     }
   }
 
-  function setSosMarkers(sosItems, onResolve) {
+  /** HH:MM in Asia/Manila for a stored UTC instant, or null when unusable. */
+  function manilaClock(value) {
+    const d = value ? new Date(value) : null;
+    if (!d || Number.isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
+  }
+
+  function setSosMarkers(sosItems, onResolve, onAcknowledge) {
     lastRawSosItems = sosItems || [];
     lastSosResolve = onResolve;
+    lastSosAck = onAcknowledge;
     sosMarkers = clearMarkers(sosMarkers);
     sosMarkersById.clear();
     if (!visibleLayers.sos) return;
@@ -399,10 +408,20 @@ export function LiveMap(container, options = {}) {
 
       const labelEl = document.createElement('span');
       labelEl.className = 'live-map__pin-label live-map__pin-label--sos';
-      labelEl.textContent = item.fullName ? `SOS · ${shortPersonLabel(item.fullName)}` : `SOS #${item.sosId}`;
+      // C-01: a `last_known` fix is the tanod's previous GPS position, not
+      // where the SOS was raised. Say so on the pin, the title and the popup
+      // instead of drawing it as if it were live.
+      const isLastKnown = item.locationSource === 'last_known';
+      const lastKnownAt = isLastKnown ? manilaClock(item.locationRecordedAt) : null;
+      const lastKnownText = isLastKnown ? `last known position${lastKnownAt ? ` (${lastKnownAt})` : ''}` : null;
+      const baseLabel = item.fullName ? `SOS · ${shortPersonLabel(item.fullName)}` : `SOS #${item.sosId}`;
+      labelEl.textContent = lastKnownText ? `${baseLabel} · ${lastKnownText}` : baseLabel;
       el.appendChild(labelEl);
+      if (isLastKnown) {
+        el.classList.add('live-map__marker--sos-last-known');
+      }
 
-      el.title = `SOS Alert #${item.sosId} — ${item.status || 'Active'}`;
+      el.title = `SOS Alert #${item.sosId} — ${item.status || 'Active'}${lastKnownText ? ` — ${lastKnownText}` : ''}`;
 
       const popupContent = document.createElement('div');
       popupContent.className = 'live-map__incident-popup';
@@ -416,8 +435,27 @@ export function LiveMap(container, options = {}) {
       statusPill.textContent = (item.status || 'active').toUpperCase();
       topRow.append(heading, statusPill);
       popupContent.appendChild(topRow);
+      if (lastKnownText) {
+        const note = document.createElement('div');
+        note.className = 'live-map__incident-popup-meta';
+        note.textContent = `Position is the ${lastKnownText}, not a live fix. Call the tanod.`;
+        popupContent.appendChild(note);
+      }
 
       let marker;
+      if (onAcknowledge && item.status === 'active') {
+        const ackBtn = document.createElement('button');
+        ackBtn.type = 'button';
+        ackBtn.className = 'live-map__popup-ack-btn';
+        ackBtn.style.marginTop = '6px';
+        ackBtn.style.width = '100%';
+        ackBtn.textContent = 'Acknowledge SOS';
+        ackBtn.addEventListener('click', () => {
+          marker?.getPopup()?.remove();
+          onAcknowledge(item.sosId);
+        });
+        popupContent.appendChild(ackBtn);
+      }
       if (onResolve && item.status !== 'resolved') {
         const resolveBtn = document.createElement('button');
         resolveBtn.type = 'button';
@@ -433,7 +471,8 @@ export function LiveMap(container, options = {}) {
       }
 
       el.addEventListener('click', () => {
-        const targetZoom = Math.max(map.getZoom(), 18.5);
+        // A last-known fix is only approximate: do not zoom in as if live.
+        const targetZoom = isLastKnown ? Math.max(map.getZoom(), 15) : Math.max(map.getZoom(), 18.5);
         map.flyTo({ center: [item.longitude, item.latitude], zoom: targetZoom, duration: 500 });
       });
 
@@ -609,7 +648,7 @@ export function LiveMap(container, options = {}) {
     visibleLayers[layerKey] = !visibleLayers[layerKey];
     renderTanodMarkers(lastRawMarkers);
     setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
-    setSosMarkers(lastRawSosItems, lastSosResolve);
+    setSosMarkers(lastRawSosItems, lastSosResolve, lastSosAck);
     renderDispatchLinks();
     renderRoute();
     return { ...visibleLayers };
@@ -622,7 +661,7 @@ export function LiveMap(container, options = {}) {
     visibleLayers.sos = true;
     renderTanodMarkers(lastRawMarkers);
     setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
-    setSosMarkers(lastRawSosItems, lastSosResolve);
+    setSosMarkers(lastRawSosItems, lastSosResolve, lastSosAck);
     renderDispatchLinks();
     renderRoute();
     return { ...visibleLayers };
@@ -731,7 +770,8 @@ export function LiveMap(container, options = {}) {
     const marker = sosMarkersById.get(sosId);
     if (!marker) return false;
     const lngLat = marker.getLngLat();
-    const targetZoom = Math.max(map.getZoom(), zoom);
+    const approx = lastRawSosItems.find((s) => s.sosId === sosId)?.locationSource === 'last_known';
+    const targetZoom = Math.max(map.getZoom(), approx ? Math.min(zoom, 15) : zoom);
     map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: targetZoom, duration: 600 });
     try {
       const popup = marker.getPopup();

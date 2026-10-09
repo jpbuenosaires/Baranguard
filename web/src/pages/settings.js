@@ -769,39 +769,18 @@ function buildGeneralCard(settings) {
   const munField = buildInputGroup('settings-municipality', 'Municipality / City', settings['general.municipality'], icons.mapPin);
   const regField = buildInputGroup('settings-region', 'Region / Province', settings['general.region'], icons.compass);
 
-  const submitButton = document.createElement('button');
-  submitButton.type = 'submit';
-  submitButton.className = 'primary';
-  submitButton.style.cssText = 'width: fit-content; min-width: 140px; margin-top: 0.25rem;';
-  submitButton.textContent = 'Save General Settings';
+  // F-06 / Rule 6: no screen, report or SMS reads these three values yet, so
+  // they are shown read-only with an honest note instead of a Save button that
+  // changes nothing. The keys and PATCH /system-settings stay for later wiring.
+  [nameField, munField, regField].forEach((f) => { f.input.disabled = true; });
+  const notUsed = document.createElement('p');
+  notUsed.className = 'settings-card__subtitle';
+  notUsed.setAttribute('data-testid', 'general-not-used');
+  notUsed.textContent = 'Not yet used: these values are not shown on any report, header or message, so editing is disabled.';
 
-  form.append(nameField.field, munField.field, regField.field, submitButton);
+  form.append(nameField.field, munField.field, regField.field, notUsed);
   bodyEl.appendChild(form);
   card.appendChild(bodyEl);
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    submitButton.disabled = true;
-    submitButton.textContent = 'Saving…';
-
-    try {
-      await updateSystemSettings({
-        'general.system_name': nameField.input.value.trim(),
-        'general.municipality': munField.input.value.trim(),
-        'general.region': regField.input.value.trim(),
-      });
-
-      brandHero.querySelector('.settings-brand-hero__title').textContent = nameField.input.value.trim() || 'BARANGUARD';
-      brandHero.querySelector('.settings-brand-hero__sub').textContent = `${munField.input.value.trim()} • ${regField.input.value.trim()}`;
-      showToast('General system configuration saved.', { variant: 'success' });
-    } catch (err) {
-      const message = err instanceof ApiClientError ? err.message : 'Could not save general settings.';
-      showToast(message, { variant: 'error' });
-    } finally {
-      submitButton.disabled = false;
-      submitButton.textContent = 'Save General Settings';
-    }
-  });
 
   return card;
 }

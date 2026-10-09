@@ -69,7 +69,7 @@ const TYPE_TAG_CLASS = {
 const QUICK_RESPONSES = [
   {
     display: 'Acknowledge & Dispatching',
-    full: 'Natanggap po namin ang inyong ulat. Papunta na po ang mga tanod sa kanto ng San Jose St. Manatili sa ligtas na lugar.',
+    full: 'Natanggap po namin ang inyong ulat. Papunta na po ang mga tanod sa inyong lokasyon. Manatili sa ligtas na lugar.',
   },
   {
     display: 'Request Exact Location',
@@ -1460,11 +1460,12 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
   const scopeSelect = document.createElement('select');
   scopeSelect.className = 'personnel-form-select';
   const scopeOptions = [
-    ['on_duty_tanods', '🛡️ All on-duty Tanods'],
-    ['role:tanod', '👮 All Tanods (on or off duty)'],
-    ['role:secretary', '📑 All Barangay Secretaries'],
-    ['role:admin', '⚙️ All System Admins'],
-    ['role:punong_barangay', '🏛️ Punong Barangay'],
+    ['on_duty_tanods', 'All on-duty Tanods'],
+    ['role:tanod', 'All Tanods (on or off duty)'],
+    ['role:secretary', 'All Barangay Secretaries'],
+    ['role:admin', 'All System Admins'],
+    ['role:punong_barangay', 'Punong Barangay'],
+    ['subscribers', 'Residents: consented advisory subscribers only'],
   ];
   scopeOptions.forEach(([val, label]) => {
     const opt = document.createElement('option');
@@ -1557,7 +1558,9 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
 
     const confirmed = await confirmDialog({
       title: 'Confirm Broadcast SMS?',
-      description: 'This immediately sends to every matching recipient in your barangay. This action cannot be canceled once initiated.',
+      description: scopeSelect.value === 'subscribers'
+        ? 'This immediately sends to every resident on your advisory list who has consented and not opted out. This action cannot be canceled once initiated.'
+        : 'This immediately sends to every matching recipient in your barangay. This action cannot be canceled once initiated.',
       confirmLabel: 'Send Broadcast',
       cancelLabel: 'Keep Editing',
       danger: true,
@@ -1571,7 +1574,7 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
       const [scopeKey, role] = scopeSelect.value.split(':');
       const result = await broadcastSms({
         message,
-        scope: scopeKey === 'role' ? 'role' : 'on_duty_tanods',
+        scope: scopeKey === 'role' ? 'role' : (scopeKey === 'subscribers' ? 'subscribers' : 'on_duty_tanods'),
         role: scopeKey === 'role' ? role : undefined,
         idempotencyKey: crypto.randomUUID(),
       });

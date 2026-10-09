@@ -303,6 +303,10 @@ final class AccomplishmentController
             $where[] = 'r.status = :status';
             $params['status'] = $status;
         }
+        // paper_pending=1: approved reports whose signed paper date nobody has recorded yet (worklist).
+        if (Http::query('paper_pending') === '1') {
+            $where[] = "r.status = 'approved' AND r.paper_signed_on IS NULL";
+        }
         $whereSql = implode(' AND ', $where);
 
         $page = max(1, (int) (Http::query('page') ?? '1'));
@@ -376,7 +380,10 @@ final class AccomplishmentController
             throw new ApiError(404, 'NOT_FOUND', 'Report not found.');
         }
 
-        $textVisible = $identity['role'] === 'tanod'
+        // Admin (Chief Tanod) and Secretary (records & reports officer) must be able to
+        // print the paper report that gets signed, so they read the entry text of their
+        // own barangay's reports (tenant already enforced above). Never audited (Rule 8).
+        $textVisible = in_array($identity['role'], ['tanod', 'admin', 'secretary'], true)
             || ApprovalAuthority::has($pdo, $identity['user_id'], ApprovalAuthority::NOTE_REPORT)
             || ApprovalAuthority::has($pdo, $identity['user_id'], ApprovalAuthority::APPROVE_REPORT);
 
@@ -622,8 +629,10 @@ final class AccomplishmentController
 
     /**
      * POST /accomplishment-reports/:id/record-paper-approval - admin|secretary.
-     * Body {"signer_user_id", "signed_on"}. Records an approval that
-     * happened on paper: `noted` -> `approved`, `approved_by` = the signer
+     * Body {"signer_user_id", "signed_on"[, "noter_user_id"]}. Records an
+     * approval that happened on paper: `noted` -> `approved` (or `prepared` ->
+     * `approved` when `noter_user_id` names the official who noted on paper,
+     * holding `note_report`, never the preparer), `approved_by` = the signer
      * (an active same-barangay user holding `approve_report`, never the
      * preparer), `approval_mode` = 'recorded_from_paper'. The recorder may
      * be the signer (a Secretary can hold the authority). Order: 403 -> 400
@@ -652,8 +661,16 @@ final class AccomplishmentController
                 $pdo->commit();
                 Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? $report));
             }
-            if ($report['status'] !== 'noted') {
+            if (!in_array($report['status'], ['noted', 'prepared'], true)) {
                 throw new ApiError(409, 'CONFLICT', "A report in '{$report['status']}' status cannot have a paper approval recorded.");
+            }
+            // From 'prepared' the paper noting happened too: the noting official must be
+            // named (holds note_report, never the preparer) so noted_by is never blank.
+            $noterId = null;
+            if ($report['status'] === 'prepared') {
+                $noterId = PaperApproval::requirePositiveInt($body['noter_user_id'] ?? null, 'noter_user_id');
+                ApprovalAuthority::assertNotPreparer($noterId, (int) $report['user_id']);
+                PaperApproval::requireSigner($pdo, $identity['barangay_id'], $noterId, ApprovalAuthority::NOTE_REPORT);
             }
             ApprovalAuthority::assertNotPreparer($signerId, (int) $report['user_id']);
             PaperApproval::requireSigner($pdo, $identity['barangay_id'], $signerId, ApprovalAuthority::APPROVE_REPORT);
@@ -661,18 +678,19 @@ final class AccomplishmentController
             $pdo->prepare(
                 "UPDATE accomplishment_report
                     SET status = 'approved', approved_by = :signer, approved_at = UTC_TIMESTAMP(),
+                        noted_by = COALESCE(:noter, noted_by), noted_at = IF(:noter2 IS NULL, noted_at, UTC_TIMESTAMP()),
                         approval_mode = 'recorded_from_paper', paper_signed_on = :signed_on,
                         paper_recorded_by = :actor, paper_recorded_at = UTC_TIMESTAMP(),
                         version = version + 1, updated_at = UTC_TIMESTAMP()
                   WHERE report_id = :id"
-            )->execute(['signer' => $signerId, 'signed_on' => $signedOn, 'actor' => $identity['user_id'], 'id' => $reportId]);
+            )->execute(['signer' => $signerId, 'noter' => $noterId, 'noter2' => $noterId, 'signed_on' => $signedOn, 'actor' => $identity['user_id'], 'id' => $reportId]);
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'approval_recorded_from_paper', 'accomplishment_report', $reportId, [
                 'report_id' => $reportId,
                 'month' => $report['month'],
                 'status' => 'approved',
                 'signer_user_id' => $signerId,
                 'idempotency_key' => $key,
-            ]);
+            ] + ($noterId !== null ? ['noter_user_id' => $noterId] : []));
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {

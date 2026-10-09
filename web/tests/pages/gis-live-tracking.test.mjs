@@ -54,3 +54,41 @@ describe('Live Map behaviour', () => {
     assert.notEqual(live.className, stale.className, 'a stale fix must look different from a live one');
   });
 });
+
+describe('Live Map: stale data and SOS wording (audit 2026-10-09)', () => {
+  afterEach(() => cleanup());
+
+  test('a failed background poll shows the paused banner and the pill stops claiming live', async () => {
+    const polls = [];
+    const original = globalThis.setInterval;
+    globalThis.setInterval = (fn, ms, ...rest) => { if (ms === 15000) polls.push(fn); return original(fn, ms, ...rest); };
+    const ctx = mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    globalThis.setInterval = original;
+    await settle();
+    const banner = ctx.root.querySelector('.dispatch-stale-banner');
+    assert.equal(banner.hidden, true);
+    api.fail('GET', '/gps/live', 500);
+    await polls.at(-1)();
+    await settle();
+    assert.equal(banner.hidden, false);
+    assert.match(text(banner), /Live updates paused - last updated \d{2}:\d{2} \(Manila time\)\. Retrying\.\.\./);
+    assert.match(text(ctx.root.querySelector('.dispatch-map-live-pill')), /paused/i);
+    assert.match(text(ctx.root), /Jose Reyes|Maria Dela Cruz/, 'last good data stays');
+    api.overrides.length = 0;
+    await polls.at(-1)();
+    await settle();
+    assert.equal(banner.hidden, true);
+  });
+
+  test('the activity feed never invents a barangay name for an SOS', async () => {
+    api.on('GET', '/tanod-sos', () => ({ status: 200, body: { items: [{
+      sos_id: 91, user_id: 5, dispatch_id: null, latitude: null, longitude: null, location_source: 'no_fix',
+      triggered_at: '2026-10-09 03:00:00', received_at: '2026-10-09 03:00:00', status: 'active', acknowledged_at: null, resolved_at: null,
+    }] } }));
+    const ctx = mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    await settle();
+    const body = text(ctx.root.querySelector('.gis-floating-activity') || ctx.root);
+    assert.doesNotMatch(body, /Brgy\. Dao/);
+    assert.match(body, /New SOS alert from .* - no location available, call the tanod/);
+  });
+});

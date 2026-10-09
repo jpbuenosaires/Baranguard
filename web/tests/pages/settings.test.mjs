@@ -36,21 +36,17 @@ describe('Settings behaviour', () => {
     });
   }
 
-  test('saving General sends only the three general.* keys', async () => {
+  test('General card is read-only and says "Not yet used" (no Save, nothing sent)', async () => {
     mountPage(renderSettingsPage, { role: 'admin' });
     await settle();
     await openSection('General')();
     await settle();
     const name = $$('input', $('.page-content')).find((i) => i.value === 'Baranguard');
     assert.ok(name, 'system name field not found');
-    type(name, 'Baranguard Dao');
-    click(buttonByText(/^save/i, $('.page-content')));
-    await settle();
-    const [call] = api.callsTo('PATCH', '/system-settings');
-    assert.ok(call, 'PATCH /system-settings was not sent');
-    const keys = Object.keys(call.body.settings);
-    assert.ok(keys.every((k) => k.startsWith('general.')), `unexpected keys sent: ${keys}`);
-    assert.equal(call.body.settings['general.system_name'], 'Baranguard Dao');
+    assert.equal(name.disabled, true);
+    assert.equal(buttonByText(/^save general/i, $('.page-content')), undefined, 'no Save button for unused keys');
+    assert.match(text($('.page-content')), /Not yet used/);
+    assert.equal(api.callsTo('PATCH', '/system-settings').length, 0);
   });
 
   const themeCard = (label) => $$('.settings-theme-card').find((el) => new RegExp(label, 'i').test(text(el)));

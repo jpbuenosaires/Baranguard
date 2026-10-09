@@ -79,6 +79,7 @@ function scanFileName(scan) {
  */
 export function PaperApprovalPanel({
   entityType, report, user, recordStatus, signerAuthority, preparerUserId, approvedStatuses, onChanged,
+  notePriorStatus = null, noterAuthority = null,
 }) {
   const reportId = report.reportId;
   const canManage = user.role === 'admin' || user.role === 'secretary';
@@ -142,7 +143,10 @@ export function PaperApprovalPanel({
       bar.appendChild(dateBtn);
     }
 
-    if (report.status === recordStatus) {
+    // `notePriorStatus` (accomplishment reports: 'prepared'): paper noting AND approval can be
+    // recorded together, naming both officials (the preparer is never either).
+    const needsNoter = Boolean(notePriorStatus && noterAuthority && report.status === notePriorStatus);
+    if (report.status === recordStatus || needsNoter) {
       const approveBtn = h('button', 'ghost', 'Record approval from paper');
       approveBtn.type = 'button';
       approveBtn.addEventListener('click', async () => {
@@ -155,8 +159,18 @@ export function PaperApprovalPanel({
           showToast(actionErrorMessage(err, 'Could not load the list of officials.'), { variant: 'error' });
           return;
         }
+        let noterLoaded = null;
+        if (needsNoter) {
+          try {
+            noterLoaded = await loadSignerCandidates(user, noterAuthority, preparerUserId ?? null);
+          } catch (err) {
+            approveBtn.disabled = false;
+            showToast(actionErrorMessage(err, 'Could not load the list of officials.'), { variant: 'error' });
+            return;
+          }
+        }
         approveBtn.disabled = false;
-        if (loaded.candidates.length === 0) {
+        if (loaded.candidates.length === 0 || (noterLoaded && noterLoaded.candidates.length === 0)) {
           showToast('No active official holds this approval authority (other than the person who prepared the report).', { variant: 'warning' });
           return;
         }
@@ -164,14 +178,21 @@ export function PaperApprovalPanel({
           title: 'Record approval from paper',
           description: 'Use this when the approver signed the paper form instead of approving in the system. Pick who signed and the date they signed. The report becomes approved.',
           fields: [
-            { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
+            ...(noterLoaded
+              ? [{ name: 'noter', label: 'Noted on paper by', type: 'select', options: noterLoaded.candidates.map((c) => ({ value: c.userId, label: c.label })) }]
+              : []),
+            { name: 'signer', label: noterLoaded ? 'Approved on paper by' : 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
             { name: 'signedOn', label: 'Date signed', type: 'date', max: manilaToday() },
           ],
           confirmLabel: 'Record approval',
           onConfirmAsync: async (values) => {
             const signedOn = validateSignedOn(values.signedOn, 'date signed');
             try {
-              await recordPaperApproval(entityType, reportId, { signerUserId: Number(values.signer), signedOn });
+              await recordPaperApproval(entityType, reportId, {
+                signerUserId: Number(values.signer),
+                signedOn,
+                noterUserId: needsNoter ? Number(values.noter) : undefined,
+              });
             } catch (err) {
               throw new Error(actionErrorMessage(err, 'Could not record the approval.'));
             }

@@ -39,6 +39,7 @@ import { requireReason } from '../utils/reasonText.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { openReferralDialog } from '../components/IncidentCaseCards.js';
+import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 
@@ -100,6 +101,18 @@ function offerLineText(offer) {
   if (offer.status === 'escalated') return 'Escalated: no tanod accepted. Assign a responder.';
   if (offer.status === 'accepted') return `Accepted by ${offer.acceptedByName || 'a tanod'}`;
   return null;
+}
+
+/** HH:MM (24h) in Asia/Manila for a Date or stored UTC instant; null when unusable. */
+function manilaClock(value) {
+  const d = value instanceof Date ? value : (value ? new Date(value) : null);
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
+}
+
+/** An SOS with no usable coordinates (C-01 `no_fix`, or a null pair on an old row). */
+function sosHasNoLocation(sos) {
+  return sos.locationSource === 'no_fix' || sos.latitude == null || sos.longitude == null;
 }
 
 function formatIncidentCode(incident) {
@@ -178,6 +191,16 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let mapSummaryPillEl = null;
   let legendCardEl = null;
   let pollTimer = null;
+  let staleBannerEl = null;
+  let staleBannerTextEl = null;
+  let livePillEl = null;
+  let livePillTextEl = null;
+  let sosPanelEl = null;
+  let soundHintEl = null;
+  let sosToneTimer = null;
+  // Stale-data tracking (audit X-01/A-03). `navigator.onLine` is only a hint.
+  let lastGoodAt = null;
+  let userGestured = Boolean(typeof navigator !== 'undefined' && navigator.userActivation?.hasBeenActive);
 
   // Filter state
   let searchQuery = '';
@@ -218,7 +241,53 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
   const onQueueChanged = () => { load(false); shell.refreshNavCounts?.(); };
 
+  function setStale(on) {
+    if (staleBannerEl) {
+      staleBannerEl.hidden = !on;
+      if (on) {
+        const clock = manilaClock(lastGoodAt);
+        staleBannerTextEl.textContent = `Live updates paused - last updated ${clock || 'unknown'} (Manila time). Retrying...`;
+      }
+    }
+    if (livePillEl) {
+      livePillEl.classList.toggle('is-stale', on);
+      livePillTextEl.textContent = on ? 'Updates paused' : 'Live · 15s sync';
+    }
+  }
+  // Hints only: the poll result remains the source of truth.
+  const onBrowserOffline = () => { if (layoutEl) setStale(true); };
+  const onBrowserOnline = () => { load(false); };
+  const onUserGesture = () => {
+    if (userGestured) return;
+    userGestured = true;
+    syncSosAlertSound(latestData ? latestData.openSos.some((s) => s.status === 'active') : false);
+  };
+  window.addEventListener('offline', onBrowserOffline);
+  window.addEventListener('online', onBrowserOnline);
+  document.addEventListener('pointerdown', onUserGesture);
+  document.addEventListener('keydown', onUserGesture);
+
+  /** Repeats the alert tone every 10 s while any SOS is still unacknowledged. */
+  function syncSosAlertSound(hasUnacknowledged) {
+    if (soundHintEl) soundHintEl.hidden = !(hasUnacknowledged && !userGestured);
+    if (hasUnacknowledged && userGestured) {
+      if (!sosToneTimer) {
+        playCriticalAlertTone();
+        sosToneTimer = setInterval(playCriticalAlertTone, 10000);
+      }
+    } else if (sosToneTimer) {
+      clearInterval(sosToneTimer);
+      sosToneTimer = null;
+    }
+  }
+
   function stopPolling() {
+    window.removeEventListener('offline', onBrowserOffline);
+    window.removeEventListener('online', onBrowserOnline);
+    document.removeEventListener('pointerdown', onUserGesture);
+    document.removeEventListener('keydown', onUserGesture);
+    if (sosToneTimer) clearInterval(sosToneTimer);
+    sosToneTimer = null;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     if (liveElapsedTimer) clearInterval(liveElapsedTimer);
@@ -287,18 +356,26 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
       const openSos = sosItems.filter((s) => s.status !== 'resolved');
       const tanodNames = new Map(usersRes.items.map((u) => [u.userId, u.fullName]));
+      const tanodContacts = new Map(usersRes.items.map((u) => [u.userId, u.contactNumber]));
 
       latestData = {
         pendingIncidents: [...incidentsRes.items, ...reopenedIncidentsRes.items],
         activeDispatches: groupedActiveDispatches,
         eligibleTanods,
-        openSos: openSos.map((s) => ({ ...s, fullName: tanodNames.get(s.userId) })),
+        openSos: openSos.map((s) => ({ ...s, fullName: tanodNames.get(s.userId), contactNumber: tanodContacts.get(s.userId) })),
         gpsItems,
         tanodNames,
       };
 
       renderPopulated(body, latestData);
+      lastGoodAt = new Date();
+      setStale(false);
     } catch (err) {
+      if (layoutEl) {
+        // Keep the last good data on screen but never pretend it is live.
+        setStale(true);
+        return;
+      }
       if (!showLoadingState) return;
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading the Dispatch Center.';
       renderError(body, message, () => load(true));
@@ -312,16 +389,36 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     if (!layoutEl) {
       container.innerHTML = '';
 
+      // 0. Stale-data banner (hidden until a background poll fails)
+      staleBannerEl = document.createElement('div');
+      staleBannerEl.className = 'dispatch-stale-banner';
+      staleBannerEl.setAttribute('role', 'status');
+      staleBannerEl.setAttribute('aria-live', 'polite');
+      staleBannerEl.hidden = true;
+      const staleIcon = document.createElement('span');
+      staleIcon.setAttribute('aria-hidden', 'true');
+      staleIcon.innerHTML = icons.alertTriangle(16);
+      staleBannerTextEl = document.createElement('span');
+      staleBannerEl.append(staleIcon, staleBannerTextEl);
+      container.appendChild(staleBannerEl);
+
       // 1. Top Red Priority Alert Banner
       priorityAlertEl = document.createElement('div');
       priorityAlertEl.className = 'dispatch-priority-alert';
+      priorityAlertEl.setAttribute('role', 'alert');
+      priorityAlertEl.setAttribute('aria-live', 'assertive');
+      priorityAlertEl.setAttribute('aria-atomic', 'true');
       priorityAlertEl.style.display = 'none';
 
       const alertLeft = document.createElement('div');
       alertLeft.className = 'dispatch-priority-alert__left';
       alertLeft.innerHTML = icons.alertTriangle(20);
       alertTextEl = document.createElement('span');
-      alertLeft.appendChild(alertTextEl);
+      soundHintEl = document.createElement('span');
+      soundHintEl.className = 'dispatch-alert-sound-hint';
+      soundHintEl.textContent = 'Click anywhere to enable alert sound';
+      soundHintEl.hidden = true;
+      alertLeft.append(alertTextEl, soundHintEl);
 
       const alertActions = document.createElement('div');
       alertActions.className = 'dispatch-priority-alert__actions';
@@ -340,6 +437,12 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       alertActions.append(alertBtnEl, alertResolveBtnEl);
       priorityAlertEl.append(alertLeft, alertActions);
       container.appendChild(priorityAlertEl);
+
+      sosPanelEl = document.createElement('div');
+      sosPanelEl.className = 'dispatch-sos-panel';
+      sosPanelEl.setAttribute('aria-label', 'Active SOS emergencies');
+      sosPanelEl.hidden = true;
+      container.appendChild(sosPanelEl);
 
       // 2. 3-KPI Card in PageHeader Actions
       if (!kpiCardEl) {
@@ -412,7 +515,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       newEmergencyBtn.className = 'btn-new-emergency';
       newEmergencyBtn.innerHTML = `${icons.bell(18)} <span>New Emergency Report</span>`;
       newEmergencyBtn.addEventListener('click', () => {
-        navigate('incidents');
+        navigate('incident-management');
       });
 
       queueCol.append(queueCard, newEmergencyBtn);
@@ -439,6 +542,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const livePill = document.createElement('span');
       livePill.className = 'dispatch-map-live-pill';
       livePill.innerHTML = `<span class="dispatch-map-live-dot" aria-hidden="true"></span><span>Live · 15s sync</span>`;
+      livePillEl = livePill;
+      livePillTextEl = livePill.lastElementChild;
       mapSummaryPillEl = document.createElement('span');
       mapSummaryPillEl.className = 'dispatch-map-summary-pill';
       mapMetaRow.append(livePill, mapSummaryPillEl);
@@ -513,8 +618,22 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       }
     };
 
+    // Acknowledge (Rule 24): tells the tanod HQ has seen it; it does NOT
+    // clear the alert, which stays until someone explicitly resolves it.
+    const handleAcknowledgeSos = async (sosId) => {
+      const sos = openSos.find((s) => s.sosId === sosId);
+      const tanodName = sos?.fullName || (sos ? `Tanod #${sos.userId}` : `SOS #${sosId}`);
+      try {
+        await acknowledgeTanodSos(sosId);
+        showToast(`SOS #${sosId} for ${tanodName} acknowledged. It stays active until resolved.`, { variant: 'success' });
+        onQueueChanged();
+      } catch (err) {
+        showToast(err instanceof ApiClientError ? err.message : 'Could not acknowledge SOS.', { variant: 'error' });
+      }
+    };
+
     // Update Priority Alert Banner
-    const urgentSos = openSos.find((s) => s.status !== 'resolved');
+    const urgentSos = openSos.find((s) => s.status === 'active') || openSos.find((s) => s.status !== 'resolved');
     const urgentCritical = pendingIncidents.find((i) => i.priority === 'critical');
 
     if (urgentSos) {
@@ -522,15 +641,21 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const tanodLabel = urgentSos.fullName || `Tanod #${urgentSos.userId}`;
       if (openSos.length > 1) {
         alertTextEl.textContent = `PRIORITY ALERT: ${openSos.length} Active Tanod SOS Emergencies — Latest: ${tanodLabel}`;
+      } else if (urgentSos.status === 'acknowledged') {
+        alertTextEl.textContent = `SOS Emergency for ${tanodLabel} - acknowledged, still active until resolved`;
       } else {
         alertTextEl.textContent = `PRIORITY ALERT: SOS Emergency for ${tanodLabel} - Requires immediate dispatch`;
       }
+      if (openSos.length === 1 && sosHasNoLocation(urgentSos)) {
+        alertTextEl.textContent += ' - no location available, call the tanod';
+      }
       alertBtnEl.textContent = 'Locate on Map';
       alertBtnEl.onclick = () => {
-        if (urgentSos.latitude != null && urgentSos.longitude != null) {
-          const found = liveMap?.highlightSos?.(urgentSos.sosId, 18.5);
+        if (!sosHasNoLocation(urgentSos)) {
+          const zoom = urgentSos.locationSource === 'last_known' ? 15 : 18.5;
+          const found = liveMap?.highlightSos?.(urgentSos.sosId, zoom);
           if (!found) {
-            liveMap?.flyTo(Number(urgentSos.latitude), Number(urgentSos.longitude), 18.5);
+            liveMap?.flyTo(Number(urgentSos.latitude), Number(urgentSos.longitude), zoom);
           }
         } else {
           liveMap?.fitAll();
@@ -564,7 +689,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       alertResolveBtnEl.style.display = 'none';
       alertBtnEl.textContent = 'Dispatch Now';
       const typeLabel = INCIDENT_TYPE_LABELS[urgentCritical.incidentType] || urgentCritical.incidentType;
-      const locLabel = urgentCritical.locationDescription || urgentCritical.location_description || 'Barangay Area';
+      const locLabel = urgentCritical.locationDescription || urgentCritical.location_description || 'a location not recorded';
       alertTextEl.textContent = `PRIORITY ALERT: ${typeLabel} in ${locLabel} - Requires immediate dispatch`;
       alertBtnEl.onclick = async () => {
         await promptDispatchTanod({ incident: urgentCritical, incidentTypeLabel: typeLabel, eligibleTanods, tanodPositions: gpsItems });
@@ -574,6 +699,9 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       priorityAlertEl.style.display = 'none';
       alertResolveBtnEl.style.display = 'none';
     }
+
+    renderSosPanel(openSos, handleAcknowledgeSos, handleResolveSingleSos);
+    syncSosAlertSound(openSos.some((s) => s.status === 'active'));
 
     // Update 3-KPI Card
     kpiCardEl.innerHTML = `
@@ -627,8 +755,12 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     }));
 
     liveMap.setSosMarkers(
-      openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status, fullName: s.fullName })),
-      handleResolveSingleSos
+      openSos.map((s) => ({
+        sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status, fullName: s.fullName,
+        locationSource: s.locationSource, locationRecordedAt: s.locationRecordedAt,
+      })),
+      handleResolveSingleSos,
+      handleAcknowledgeSos
     );
 
     // Combine Pending Incidents + Active Dispatched Incidents with coordinates on the map
@@ -664,13 +796,13 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
     liveMap.setIncidentMarkers(
       mapIncidents,
-      eligibleTanods.length === 0 ? undefined : async (incidentId) => {
+      async (incidentId) => {
         const incident = pendingIncidents.find((i) => i.incidentId === incidentId)
           || activeDispatches.find((i) => i.incidentId === incidentId);
         if (!incident) return;
         const assignedIds = new Set((incident.dispatches || []).map((d) => d.tanodId));
         const availableEligible = eligibleTanods.filter((t) => !assignedIds.has(t.userId));
-        if (availableEligible.length === 0) {
+        if (availableEligible.length === 0 && eligibleTanods.length > 0) {
           showToast('All eligible on-duty Tanods are already assigned to this incident.', { variant: 'info' });
           return;
         }
@@ -715,6 +847,75 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
     // Update Queue Cards view
     updateQueueView();
+  }
+
+  /** One row per open SOS: who, how reliable the position is, and the actions. */
+  function renderSosPanel(openSos, onAcknowledge, onResolve) {
+    if (!sosPanelEl) return;
+    sosPanelEl.innerHTML = '';
+    sosPanelEl.hidden = openSos.length === 0;
+    for (const sos of openSos) {
+      const row = document.createElement('div');
+      row.className = 'dispatch-sos-row';
+      row.dataset.sosId = String(sos.sosId);
+
+      const info = document.createElement('div');
+      info.className = 'dispatch-sos-row__info';
+      const name = document.createElement('span');
+      name.className = 'dispatch-sos-row__name';
+      const who = sos.fullName || `Tanod #${sos.userId}`;
+      name.textContent = `SOS #${sos.sosId} - ${who} - ${sos.status === 'acknowledged' ? 'Acknowledged' : 'Active'}`;
+      const loc = document.createElement('span');
+      loc.className = 'dispatch-sos-row__loc';
+      if (sosHasNoLocation(sos)) {
+        loc.classList.add('dispatch-sos-row__loc--warn');
+        loc.textContent = `No location available. Call ${who}${sos.contactNumber ? ` on ${sos.contactNumber}` : ''} now.`;
+      } else if (sos.locationSource === 'last_known') {
+        const at = manilaClock(sos.locationRecordedAt);
+        loc.classList.add('dispatch-sos-row__loc--warn');
+        loc.textContent = `Last known position${at ? ` (${at})` : ''} - not a live fix. Confirm with the tanod.`;
+      } else {
+        loc.textContent = 'Live position from the SOS.';
+      }
+      info.append(name, loc);
+
+      const actions = document.createElement('div');
+      actions.className = 'dispatch-sos-row__actions';
+      if (!sosHasNoLocation(sos)) {
+        const locate = document.createElement('button');
+        locate.type = 'button';
+        locate.className = 'dispatch-sos-row__btn';
+        locate.textContent = 'Locate';
+        locate.addEventListener('click', () => {
+          const zoom = sos.locationSource === 'last_known' ? 15 : 18.5;
+          if (!liveMap?.highlightSos?.(sos.sosId, zoom)) liveMap?.flyTo(Number(sos.latitude), Number(sos.longitude), zoom);
+        });
+        actions.appendChild(locate);
+      }
+      if (sos.status === 'active') {
+        const ack = document.createElement('button');
+        ack.type = 'button';
+        ack.className = 'dispatch-sos-row__btn dispatch-sos-row__btn--ack';
+        ack.textContent = 'Acknowledge';
+        ack.setAttribute('aria-label', `Acknowledge SOS ${sos.sosId} for ${who}`);
+        ack.addEventListener('click', async () => {
+          ack.disabled = true;
+          await onAcknowledge(sos.sosId);
+          ack.disabled = false;
+        });
+        actions.appendChild(ack);
+      }
+      const resolve = document.createElement('button');
+      resolve.type = 'button';
+      resolve.className = 'dispatch-sos-row__btn';
+      resolve.textContent = 'Resolve';
+      resolve.setAttribute('aria-label', `Resolve SOS ${sos.sosId} for ${who}`);
+      resolve.addEventListener('click', () => onResolve(sos.sosId));
+      actions.appendChild(resolve);
+
+      row.append(info, actions);
+      sosPanelEl.appendChild(row);
+    }
   }
 
   function renderInteractiveLegend(availCount, dispCount, incCount, sosCount) {
@@ -890,7 +1091,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       // Location
       const locRow = document.createElement('div');
       locRow.className = 'queue-incident-card__meta';
-      const locText = item.locationDescription || item.location_description || (item.latitude && item.longitude ? `${Number(item.latitude).toFixed(4)}, ${Number(item.longitude).toFixed(4)}` : 'Location pinned on map');
+      const locText = item.locationDescription || item.location_description || (item.latitude && item.longitude ? `${Number(item.latitude).toFixed(4)}, ${Number(item.longitude).toFixed(4)}` : 'Location not recorded');
       locRow.innerHTML = `${icons.mapPin(13)} <span>${escapeHtml(locText)}</span>`;
 
       // Elapsed Time

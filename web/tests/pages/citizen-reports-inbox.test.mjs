@@ -46,7 +46,7 @@ describe('Citizen Reports inbox behaviour', () => {
     assert.ok(call, 'POST /citizen-reports/:id/convert was not sent');
     assert.equal(call.path, '/citizen-reports/301/convert');
     assert.deepEqual(call.body, { incident_type: 'fire', priority: 'high' });
-    assert.match(text(ctx.root), /Converted \(INC-905\)|Incident #905/);
+    assert.match(text(ctx.root), /Converted to an incident/);
   });
 
   test('a report with no location does not claim one', async () => {

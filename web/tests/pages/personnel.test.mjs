@@ -201,7 +201,8 @@ describe('Personnel behaviour', () => {
     click(tab('Swap'));
     await settle();
     assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only');
-    assert.equal(api.callsTo('GET', '/shift-swap-requests').length, 1);
+    // one call for the tab badge (the Secretary cannot use nav-counts), one for the tab itself
+    assert.equal(api.callsTo('GET', '/shift-swap-requests').length, 2);
     assert.match(text($('.page-content')), /Jose Reyes|Maria Dela Cruz/, 'names come from availability');
     click(buttonByText(/^approve$/i, ctx.root));
     await settle();
@@ -224,8 +225,10 @@ describe('Personnel behaviour', () => {
     assert.match(text($('.page-content')), /Availability to review/);
     // One call feeds the review panel (status=submitted); the tanod picker
     // now comes from GET /users/directory, not from availability.
-    assert.equal(api.callsTo('GET', '/availability').length, 1);
+    // plus status=accepted for the collapsed "Accepted - create shift" list
+    assert.equal(api.callsTo('GET', '/availability').length, 2);
     assert.equal(api.callsTo('GET', '/availability').filter((c) => c.query?.status === 'submitted').length, 1);
+    assert.equal(api.callsTo('GET', '/availability').filter((c) => c.query?.status === 'accepted').length, 1);
     cleanup();
     mountPage(renderPersonnelPage, { role: 'punong_barangay' });
     await settle();
@@ -479,7 +482,7 @@ describe('Personnel behaviour', () => {
     const callout = ctx.root.querySelector('.scheduler-fatigue-callout');
     assert.ok(callout, 'Fatigue callout element should be mounted in form');
     assert.equal(callout.hidden, false, 'Callout should become visible once times are filled');
-    assert.match(text(callout), /hrs \/ 56h max/i);
+    assert.match(text(callout), /hrs \/ 12h max/i);
   });
 
   test('Edit Shift modal shows proactive fatigue preview callout', async () => {
@@ -500,6 +503,41 @@ describe('Personnel behaviour', () => {
     const closeBtn = modal.querySelector('.personnel-modal__close');
     click(closeBtn);
     await settle();
+  });
+
+  test('Scheduler asks the server for a month window (from/to) and the month controls re-query', async () => {
+    await openScheduler('admin');
+    const first = api.callsTo('GET', '/shifts').at(-1);
+    assert.match(first.query.from, /^\d{4}-\d{2}-\d{2}$/);
+    assert.match(first.query.to, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(first.query.from < first.query.to);
+    const before = api.callsTo('GET', '/shifts').length;
+    click($('#scheduler-next-month'));
+    await settle();
+    const next = api.callsTo('GET', '/shifts').at(-1);
+    assert.ok(api.callsTo('GET', '/shifts').length > before);
+    assert.ok(next.query.from > first.query.from, 'next month moves the window forward');
+  });
+
+  test('the fatigue callout states the 12 h per day rule, never the old 56 h weekly one', async () => {
+    const ctx = await openScheduler('admin');
+    click(buttonByText(/Morning/i, ctx.root));
+    await settle();
+    const t = text(ctx.root.querySelector('.scheduler-fatigue-callout'));
+    assert.doesNotMatch(t, /56/);
+    assert.match(t, /12h/);
+  });
+
+  test('accepted availability stays reachable in a collapsed "Accepted - create shift" list', async () => {
+    api.on('GET', '/availability', (req) => ({ status: 200, body: { items: req.query?.status === 'accepted'
+      ? [{ avail_id: 77, user_id: 4, user_name: 'Jose Reyes', period_start: '2099-01-01', period_end: '2099-01-07', windows_json: [{ date: '2099-01-02', start: '08:00', end: '16:00' }], windows: [{ date: '2099-01-02', start: '08:00', end: '16:00' }], status: 'accepted', version: 1 }]
+      : [], page: 1, limit: 100, total: req.query?.status === 'accepted' ? 1 : 0 } }));
+    await openScheduler('admin');
+    const details = $('.availability-accepted');
+    assert.ok(details, 'accepted list missing');
+    assert.equal(details.open, false);
+    assert.match(text(details), /Accepted - create shift \(1\)/);
+    assert.ok(buttonByText(/Create shift from this availability/, details));
   });
 
   test('Punong Barangay can publish drafts (the server checks approve_roster) but cannot edit them', async () => {

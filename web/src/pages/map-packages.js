@@ -34,8 +34,8 @@ const MAX_BYTES = 500 * 1024 * 1024; // 500 MB server ceiling
 
 const BARANGAY_NAMES = {
   1: 'Dao',
-  2: 'Marifosque',
-  3: 'Binanuahan',
+  2: 'Binanuahan',
+  3: 'Marifosque',
   4: 'Banuyo',
 };
 

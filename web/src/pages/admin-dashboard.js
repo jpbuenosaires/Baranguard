@@ -66,8 +66,55 @@ const INCIDENT_TYPE_COLORS = {
   animal_complaint: 'var(--cat-animal)',
   other: 'var(--cat-other)',
 };
-const STATUS_LABELS = { pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved' };
-const STATUS_PILL_CLASS = { pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success' };
+// Audit P-06 (2026-10-09): by_status now carries every incident status
+// (migration 0025's lifecycle states too), so the rows add up to the total.
+const STATUS_LABELS = {
+  pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved', reopened: 'Reopened',
+  cancelled: 'Cancelled', invalid: 'Invalid', duplicate: 'Duplicate',
+};
+const STATUS_PILL_CLASS = {
+  pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success',
+  reopened: 'status-pill--warning', cancelled: 'status-pill--neutral', invalid: 'status-pill--neutral', duplicate: 'status-pill--neutral',
+};
+// Lifecycle statuses are listed only when they actually occur in the range,
+// so a normal range keeps its familiar three rows.
+const CORE_STATUSES = new Set(['pending', 'dispatched', 'resolved']);
+// Bar/segment colour classes exist for the core three; the lifecycle
+// states borrow the nearest existing style instead of an unstyled class.
+const STATUS_STYLE_KEY = { reopened: 'pending', cancelled: 'settled', invalid: 'settled', duplicate: 'settled' };
+const OPEN_STATUSES = ['pending', 'dispatched', 'reopened'];
+
+/**
+ * How often the attention banner re-reads the live counts. Same 15 s cadence
+ * the rest of the live console uses (Dispatch Center, GIS); audit A-06
+ * (2026-10-09) found the banner was fetched once and never refreshed, so an
+ * SOS raised while the Dashboard was open never showed here.
+ */
+const ATTENTION_POLL_MS = 15000;
+
+/**
+ * One wording for the response-time metric (audits N-01, N-02, P-02..P-05,
+ * 2026-10-09) -- kept identical to statistical-reports.js. The backend
+ * measures incident.created_at to the FIRST dispatch arrived_at per
+ * incident. No target exists in any project document, so none is shown; it
+ * is an operational measure, never a ranking of tanods.
+ */
+const RESPONSE_METRIC_LABEL = 'Incident reported to first Tanod arrival (average)';
+const RESPONSE_OFFLINE_FOOTNOTE = 'An incident captured offline on a Tanod phone starts the clock when it synced, not when it was captured.';
+
+/** Sum of trend[].arrivals, or null when the server did not send it. */
+function responseSampleSize(summary) {
+  const days = summary?.trend || [];
+  if (days.length === 0 || days.some((d) => typeof d.arrivals !== 'number')) return null;
+  return days.reduce((sum, d) => sum + d.arrivals, 0);
+}
+
+function responseFooter(summary) {
+  const n = responseSampleSize(summary);
+  if (n === null) return 'Incident reported to first Tanod arrival';
+  if (n === 0) return 'No incident in this range had a Tanod arrival';
+  return `Based on ${n} incident${n === 1 ? '' : 's'} with a Tanod arrival`;
+}
 const DUTY_STATUS_LABELS = { on_duty: 'On Duty', responding: 'Responding', off_duty: 'Off Duty' };
 const DUTY_STATUS_PILL_CLASS = { on_duty: 'status-pill--success', responding: 'status-pill--info', off_duty: 'status-pill--neutral' };
 
@@ -110,7 +157,7 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   const { header, content } = shell;
   root.appendChild(shell.el);
 
-  const pageHeader = PageHeader({ title: 'Admin Dashboard', subtitle: 'Barangay-wide incident summary and activity', icon: icons.layoutDashboard });
+  const pageHeader = PageHeader({ title: 'Dashboard', subtitle: 'Barangay-wide incident summary and activity', icon: icons.layoutDashboard });
   header.appendChild(pageHeader.el);
 
   // 2026-09-05 UX pass: the topbar never showed which of the 4 barangays
@@ -161,6 +208,18 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
 
   load(undefined, undefined);
 
+  // A-06: the banner reflects "right now", so it refreshes on its own timer,
+  // independent of the date range and of the full reload. Retires itself the
+  // first tick after this page leaves the DOM (main.js rebuilds #app on
+  // every navigate), and stop() is returned for callers that hold a handle.
+  const attentionTimer = setInterval(() => {
+    if (!body.isConnected) {
+      clearInterval(attentionTimer);
+      return;
+    }
+    loadAttentionBanner(body, navigate, user.role);
+  }, ATTENTION_POLL_MS);
+
   async function load(dateFrom, dateTo) {
     const isInitial = body.children.length === 0;
     if (isInitial) {
@@ -187,23 +246,34 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
         }
       }
 
-      const isFreshDeployment = summary.totalIncidents === 0 && summary.activeTanods === 0;
+      // A-07/P-08 (2026-10-09): a quiet date range while nobody is on duty
+      // used to replace the WHOLE dashboard with a "fresh deployment"
+      // message, hiding the live attention banner and pending approvals.
+      // The empty state is now reserved for a barangay with no incident on
+      // record at all (checked independently of the range), and even then
+      // the banner and approvals still load.
+      let isFreshDeployment = false;
+      if (summary.totalIncidents === 0 && summary.activeTanods === 0) {
+        const anyIncident = await getIncidents({ limit: 1 }).catch(() => null);
+        isFreshDeployment = anyIncident !== null && anyIncident.total === 0;
+      }
       if (isFreshDeployment) {
         renderEmpty(body, navigate, user.role);
-        return;
+      } else {
+        renderPopulated(body, summary, navigate, user.role);
       }
 
-      renderPopulated(body, summary, navigate, user.role);
+      freshness.textContent = `Updated ${new Date().toLocaleTimeString([], { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}`;
 
-      freshness.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      loadAttentionBanner(body, navigate, user.role);
+      loadPendingApprovals(body, user, navigate);
+      if (isFreshDeployment) return;
 
       const committed = rangePicker.getState();
       loadDeltas(body, committed.from, committed.to, summary);
-      loadRecentIncidents(body, navigate);
+      loadRecentIncidents(body, navigate, user.role);
       loadTanodsOnDuty(body, user.barangayId, user.role);
-      loadAttentionBanner(body, navigate, user.role, summary.byStatus.pending || 0);
       if (user.role === 'punong_barangay') loadPbDigest(body);
-      loadPendingApprovals(body, user, navigate);
     } catch (err) {
       const message = err instanceof ApiClientError
         ? err.message
@@ -215,6 +285,8 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
       refreshButton.classList.remove('is-spinning');
     }
   }
+
+  return { stop: () => clearInterval(attentionTimer) };
 }
 
 /**
@@ -248,41 +320,48 @@ function urgentWaitMinutes(urgentItems) {
 }
 
 /**
- * 2026-09-05 UX pass: the dashboard used to be entirely retrospective (a
- * date-range summary) with no "what needs my attention right now" signal
- * — an Admin had to separately open Dispatch Center to discover a pending
- * incident or an open Tanod SOS. `summary.byStatus.pending` is already
- * fetched by `load()`, so only the SOS count is a new (best-effort, own
- * catch) call — same `status !== 'resolved'` definition of "open"
- * `dispatch-center.js`'s own SOS banner already uses, kept in sync
- * deliberately.
+ * "What needs attention right now" banner. Audit A-06/A-07/P-18
+ * (2026-10-09): it used to take its pending count from the DATE-RANGE
+ * summary (so an incident older than the range was invisible), never
+ * counted `reopened` incidents (active work again, queued by Dispatch
+ * Center), was fetched once, and vanished with the rest of the page on a
+ * quiet range. Now every count comes from live, range-independent queries
+ * (GET /incidents?status=pending and ?status=reopened `total`s, GET
+ * /tanod-sos), it re-runs on ATTENTION_POLL_MS, and a failed fetch is said
+ * out loud instead of being read as zero. Same `status !== 'resolved'`
+ * definition of an open SOS as `dispatch-center.js`.
  */
-async function loadAttentionBanner(container, navigate, role, pendingCount) {
+async function loadAttentionBanner(container, navigate, role) {
   const host = container.querySelector('[data-attention-banner]');
   if (!host) return;
-  let openSosCount = 0;
-  let hasCriticalOrHighPending = false;
-  let criticalCount = 0;
-  let oldestUrgentMinutes = null;
 
-  try {
-    const [sosItems, pendingRes] = await Promise.all([
-      getTanodSos({}).catch(() => []),
-      pendingCount > 0 ? getIncidents({ status: 'pending', limit: 100 }).catch(() => null) : Promise.resolve(null),
-    ]);
-    openSosCount = (sosItems || []).filter((s) => s.status !== 'resolved').length;
-    if (pendingRes && Array.isArray(pendingRes.items)) {
-      const urgentItems = pendingRes.items.filter((i) => i.priority === 'critical' || i.priority === 'high' || i.incidentType === 'sos');
-      criticalCount = urgentItems.length;
-      hasCriticalOrHighPending = criticalCount > 0;
-      oldestUrgentMinutes = urgentWaitMinutes(urgentItems);
-    }
-  } catch {
-    // Best-effort — the banner still shows the pending-incident count below.
-  }
+  const [sosItems, pendingRes, reopenedRes] = await Promise.all([
+    getTanodSos({}).catch(() => null),
+    getIncidents({ status: 'pending', limit: 100 }).catch(() => null),
+    getIncidents({ status: 'reopened', limit: 100 }).catch(() => null),
+  ]);
+  if (!host.isConnected) return;
+
+  const openSosCount = sosItems ? sosItems.filter((s) => s.status !== 'resolved').length : 0;
+  const pendingCount = pendingRes ? (pendingRes.total ?? pendingRes.items.length) : 0;
+  const reopenedCount = reopenedRes ? (reopenedRes.total ?? reopenedRes.items.length) : 0;
+  const awaitingItems = [...(pendingRes?.items || []), ...(reopenedRes?.items || [])];
+  const urgentItems = awaitingItems.filter((i) => i.priority === 'critical' || i.priority === 'high' || i.incidentType === 'sos');
+  const hasCriticalOrHighPending = urgentItems.length > 0;
+  // Wait time only for never-dispatched (pending) items: a reopened
+  // incident's createdAt is its ORIGINAL report time, not when it reopened.
+  const oldestUrgentMinutes = urgentWaitMinutes(urgentItems.filter((i) => i.status === 'pending'));
+  const fetchFailed = sosItems === null || pendingRes === null || reopenedRes === null;
 
   host.innerHTML = '';
-  if (pendingCount === 0 && openSosCount === 0) return;
+  if (fetchFailed) {
+    const warn = document.createElement('p');
+    warn.className = 'note';
+    warn.setAttribute('role', 'status');
+    warn.textContent = 'Live alert counts could not be loaded just now; open SOS alerts or pending incidents may not be shown. Retrying automatically.';
+    host.appendChild(warn);
+  }
+  if (pendingCount === 0 && reopenedCount === 0 && openSosCount === 0) return;
 
   const isStale = oldestUrgentMinutes !== null && oldestUrgentMinutes >= STALE_URGENT_MINUTES;
   const isCritical = openSosCount > 0 || hasCriticalOrHighPending;
@@ -310,6 +389,7 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
   const parts = [];
   if (openSosCount > 0) parts.push(openSosCount === 1 ? '1 Tanod SOS alert' : `${openSosCount} Tanod SOS alerts`);
   if (pendingCount > 0) parts.push(pendingCount === 1 ? '1 incident pending dispatch' : `${pendingCount} incidents pending dispatch`);
+  if (reopenedCount > 0) parts.push(reopenedCount === 1 ? '1 reopened incident' : `${reopenedCount} reopened incidents`);
 
   const title = document.createElement('span');
   title.className = 'attention-banner__title';
@@ -317,7 +397,13 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
 
   const detail = document.createElement('span');
   detail.className = 'attention-banner__detail';
-  detail.textContent = isCritical ? 'Needs immediate response' : 'Needs attention';
+  // P-18: the Punong Barangay has no dispatch action, so the banner says who
+  // acts on it instead of an alarm with no next step.
+  if (role === 'admin') {
+    detail.textContent = isCritical ? 'Needs immediate response' : 'Needs attention';
+  } else {
+    detail.textContent = 'The Chief Tanod (Admin) handles dispatch. You can follow it on the Live Map.';
+  }
 
   textGroup.append(title, detail);
   lead.appendChild(textGroup);
@@ -345,6 +431,14 @@ async function loadAttentionBanner(container, navigate, role, pendingCount) {
     goButton.innerHTML = `<span>Dispatch Now</span><span class="attention-banner__btn-icon" aria-hidden="true">${icons.arrowRight(14)}</span>`;
     goButton.addEventListener('click', () => navigate('dispatch'));
     actions.appendChild(goButton);
+  } else if (role === 'punong_barangay') {
+    const mapButton = document.createElement('button');
+    mapButton.type = 'button';
+    mapButton.className = 'attention-banner__btn';
+    mapButton.setAttribute('aria-label', 'Open the Live Map');
+    mapButton.innerHTML = `<span>View Live Map</span><span class="attention-banner__btn-icon" aria-hidden="true">${icons.arrowRight(14)}</span>`;
+    mapButton.addEventListener('click', () => navigate('gis'));
+    actions.appendChild(mapButton);
   }
 
   banner.appendChild(actions);
@@ -374,12 +468,12 @@ async function loadDeltas(container, dateFrom, dateTo, summary) {
   }
 }
 
-async function loadRecentIncidents(container, navigate) {
+async function loadRecentIncidents(container, navigate, role) {
   const host = container.querySelector('[data-recent-incidents]');
   if (!host) return;
   try {
     const result = await getIncidents({ limit: 6 });
-    renderRecentIncidentsTable(host, result.items, navigate);
+    renderRecentIncidentsTable(host, result.items, navigate, role);
   } catch {
     host.innerHTML = '<p class="note">Could not load recent incidents.</p>';
   }
@@ -497,7 +591,7 @@ async function loadPbDigest(container) {
     }
     host.innerHTML = '';
     const generated = new Date(digest.generatedAt).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
 
     const manifest = document.createElement('div');
@@ -512,8 +606,8 @@ async function loadPbDigest(container) {
         <span class="report-manifest-tile__value">${escapeHtml(generated)}</span>
       </div>
       <div class="report-manifest-tile">
-        <span class="report-manifest-tile__label">Included Sections</span>
-        <span class="report-manifest-tile__value">4-KPI Summary · 11 Categories · Daily Log</span>
+        <span class="report-manifest-tile__label">Status</span>
+        <span class="report-manifest-tile__value">System-generated, not signed. Sign on paper after review.</span>
       </div>
     `;
 
@@ -571,9 +665,17 @@ function renderLoading(container) {
 
 function renderEmpty(container, navigate, role) {
   container.innerHTML = '';
+  const attentionHost = document.createElement('div');
+  attentionHost.setAttribute('data-attention-banner', '');
+  container.appendChild(attentionHost);
   const block = document.createElement('div');
   block.className = 'card state-block';
-  block.innerHTML = `
+  block.innerHTML = role === 'punong_barangay'
+    ? `
+    <h3>No activity yet</h3>
+    <p>There are no open incidents, none were reported in the last 30 days, and no Tanod is on duty right now. This dashboard fills in automatically as incidents are reported.</p>
+  `
+    : `
     <h3>No activity yet</h3>
     <p>This barangay hasn't logged any incidents or on-duty Tanods yet. Once incidents are reported and Tanods are on duty, this dashboard fills in automatically.</p>
   `;
@@ -591,6 +693,7 @@ function renderEmpty(container, navigate, role) {
     block.appendChild(cta);
   }
   container.appendChild(block);
+  container.appendChild(pendingApprovalsRow(navigate));
 }
 
 function renderError(container, message, onRetry) {
@@ -627,20 +730,19 @@ function renderPopulated(container, summary, navigate, role) {
       sparkline: summary.trend.map((day) => day.count),
       description: 'Every incident reported in the selected date range, alongside resolution progress and trend activity.',
     }),
+    // N-01/P-03 (2026-10-09): no "Target < 20m" chip -- no document defines
+    // a response target (see STALE_URGENT_MINUTES' own note), and a null
+    // value used to be painted as a warning.
     KpiCard({
       label: 'Avg. Response Time',
       value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
-      emptyText: 'No arrivals yet',
+      emptyText: 'No arrivals recorded in this range',
       icon: icons.clock,
       accent: 'orange',
       // Faster response is better, so a NEGATIVE delta is the good one.
       trend: 'down-good',
-      badgeChip: {
-        text: 'Target < 20m',
-        tone: summary.avgResponseTimeMinutes !== null && summary.avgResponseTimeMinutes <= 20 ? 'positive' : 'warning',
-      },
-      footerNote: 'Incident reported to Tanod arrival',
-      description: 'Average time from an incident being reported to a Tanod’s dispatch marked Arrived. Incidents with no arrival yet aren’t counted.',
+      footerNote: responseFooter(summary),
+      description: `${RESPONSE_METRIC_LABEL}. Only incidents with a Tanod arrival are counted; incidents resolved without a dispatch are not included. ${RESPONSE_OFFLINE_FOOTNOTE} An operational measure for the barangay, not a rating of any Tanod.`,
     }),
     // No period-over-period delta here — this is a live current-state
     // snapshot (§9), not a range-bucketed count, so "vs previous period"
@@ -654,8 +756,8 @@ function renderPopulated(container, summary, navigate, role) {
         text: 'Live Roster',
         tone: 'live',
       },
-      footerNote: 'Currently active or responding',
-      description: 'Tanods currently marked On Duty or Responding, right now — not scoped to the date range above.',
+      footerNote: 'Marked On Duty or Responding',
+      description: 'Tanods whose latest duty status is On Duty or Responding, right now — not scoped to the date range above. A Tanod whose phone went offline still counts until their status changes.',
     })
   );
 
@@ -671,7 +773,7 @@ function renderPopulated(container, summary, navigate, role) {
   trendCard.className = 'card';
   trendCard.appendChild(cardHeader(
     'Incident Trends', 'Reported against resolved, by day', icons.trendingUp,
-    'Incidents reported each day (blue) versus incidents resolved that same day (green), across the selected range.',
+    'Incidents reported each day (blue) versus incidents with a dispatch completed that day (green, each incident counted once per day). Incidents the Admin resolved without a dispatch are not in the green line.',
     { label: 'View all reports', onClick: () => navigate('analytics') }
   ));
   trendCard.appendChild(LineChart({
@@ -739,7 +841,7 @@ function renderPopulated(container, summary, navigate, role) {
     digestCard.className = 'card';
     digestCard.appendChild(cardHeader(
       'Weekly Digest', 'Auto-generated barangay summary', icons.fileText,
-      'A PDF summary of this barangay’s incident activity, regenerated automatically once a week — the same content GET /reports/export?format=pdf produces on demand, just on a timer.',
+      'A PDF summary of this barangay’s incident activity, regenerated automatically once a week, the same content as the on-demand PDF export. It is a system-generated summary: nobody has signed or attested it, and the reviewer block is left blank for a signature on paper.',
       null,
       { text: 'PDF' }
     ));
@@ -750,6 +852,19 @@ function renderPopulated(container, summary, navigate, role) {
     statusRow.append(digestCard);
   }
 
+  if (summary.totalIncidents === 0) {
+    const quiet = document.createElement('p');
+    quiet.className = 'note';
+    quiet.setAttribute('role', 'status');
+    quiet.textContent = 'No incidents were reported in the selected date range. Live alerts and approvals above and below are not limited to the range.';
+    container.appendChild(quiet);
+  }
+
+  container.append(grid, chartsGrid, breakdownGrid, statusRow, pendingApprovalsRow(navigate));
+}
+
+/** The Pending Approvals card row; shared by the populated and empty states. */
+function pendingApprovalsRow(navigate) {
   const approvalsCard = document.createElement('div');
   approvalsCard.className = 'card';
   approvalsCard.appendChild(cardHeader(
@@ -764,8 +879,7 @@ function renderPopulated(container, summary, navigate, role) {
   const approvalsRow = document.createElement('div');
   approvalsRow.className = 'dashboard-row';
   approvalsRow.appendChild(approvalsCard);
-
-  container.append(grid, chartsGrid, breakdownGrid, statusRow, approvalsRow);
+  return approvalsRow;
 }
 
 /**
@@ -829,10 +943,15 @@ function shortDate(iso) {
   return `${months[Number(m) - 1]} ${Number(d)}`;
 }
 
-function renderRecentIncidentsTable(host, items, navigate) {
+function renderRecentIncidentsTable(host, items, navigate, role) {
   host.innerHTML = '';
   if (items.length === 0) {
-    host.innerHTML = '<p class="note">No incidents logged yet.</p>';
+    // For the Punong Barangay the server only returns open incidents and
+    // those reported in the last 30 days (no browsable case list, REFERENCE
+    // section 3), so "none" means none in that window.
+    host.innerHTML = role === 'punong_barangay'
+      ? '<p class="note">No open incidents and none reported in the last 30 days.</p>'
+      : '<p class="note">No incidents logged yet.</p>';
     return;
   }
   const table = DataTable({
@@ -1058,7 +1177,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
       if (count > 0) {
         const seg = document.createElement('div');
         const pct = ((count / total) * 100).toFixed(1);
-        seg.className = `pipeline-stacked-segment pipeline-stacked-segment--${key}`;
+        seg.className = `pipeline-stacked-segment pipeline-stacked-segment--${STATUS_STYLE_KEY[key] || key}`;
         seg.style.width = `${pct}%`;
         seg.title = `${labels[key] || key}: ${count} (${pct}%)`;
         pipelineBar.appendChild(seg);
@@ -1070,6 +1189,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
   const list = document.createElement('div');
   list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
+    if (!CORE_STATUSES.has(key) && STATUS_LABELS[key] && count === 0) continue;
     const pct = total > 0 ? Math.round((count / total) * 100) : 0;
     const item = document.createElement('div');
     item.className = 'breakdown-item';
@@ -1093,7 +1213,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
     const track = document.createElement('div');
     track.className = 'breakdown-progress-track';
     const fill = document.createElement('div');
-    fill.className = `breakdown-progress-fill breakdown-progress-fill--${key}`;
+    fill.className = `breakdown-progress-fill breakdown-progress-fill--${STATUS_STYLE_KEY[key] || key}`;
     fill.style.width = `${pct}%`;
     track.appendChild(fill);
 
@@ -1104,7 +1224,10 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
 
   // Operational Pipeline Summary Footer (Balances card height with Quick Actions)
   if (total > 0) {
-    const activeCount = (counts.pending || 0) + (counts.dispatched || 0);
+    // "Open" = still needs work: pending, dispatched or reopened (audit
+    // P-06; "Active in Field" used to include pending, which is not in the
+    // field yet, and left out reopened).
+    const activeCount = OPEN_STATUSES.reduce((sum, key) => sum + (counts[key] || 0), 0);
     const activePct = Math.round((activeCount / total) * 100);
     const resolvedCount = counts.resolved || 0;
     const resolvedPct = Math.round((resolvedCount / total) * 100);
@@ -1114,17 +1237,17 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
     footer.innerHTML = `
       <div class="breakdown-summary-tile">
         <span class="breakdown-summary-tile__val">
-          <span class="summary-tile-pip" style="background:#3B82F6;" aria-hidden="true"></span>
-          ${activeCount} Active in Field
+          <span class="summary-tile-pip" style="background:var(--chart-line-1);" aria-hidden="true"></span>
+          ${activeCount} Open
         </span>
-        <span class="breakdown-summary-tile__sub">${activePct}% of total workload</span>
+        <span class="breakdown-summary-tile__sub">${activePct}% of incidents in range (pending, dispatched or reopened)</span>
       </div>
       <div class="breakdown-summary-tile">
         <span class="breakdown-summary-tile__val">
-          <span class="summary-tile-pip" style="background:#16A34A;" aria-hidden="true"></span>
-          ${resolvedCount} Closed & Resolved
+          <span class="summary-tile-pip" style="background:var(--chart-line-2);" aria-hidden="true"></span>
+          ${resolvedCount} Resolved
         </span>
-        <span class="breakdown-summary-tile__sub">${resolvedPct}% clearance rate</span>
+        <span class="breakdown-summary-tile__sub">${resolvedPct}% of incidents in range</span>
       </div>
     `;
     card.appendChild(footer);

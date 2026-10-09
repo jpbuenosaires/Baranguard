@@ -25,7 +25,7 @@ import {
   getIncidentSchoolFields, updateIncidentSchoolFields, getSchools,
   getIncidentReferrals, createIncidentReferral, REFERRED_TO_OPTIONS, referredToLabel,
 } from '../services/shellWorkflowApi.js';
-import { ApiClientError, setRelatedIncident } from '../api/apiClient.js';
+import { ApiClientError, setRelatedIncident, getIncidents } from '../api/apiClient.js';
 import { confirmDialog } from './ConfirmDialog.js';
 import { showToast } from './Toast.js';
 import { icons } from './icons.js';
@@ -427,6 +427,39 @@ export function ReferralsCard({ incidentId, canAdd, incidentLabel }) {
   return card;
 }
 
+// --- Incident reference lookup -----------------------------------------------------
+
+/**
+ * Resolves what staff type ("INC-2026-048", or a bare number) to a real incident
+ * of their own barangay, through the existing list search (GET /incidents?q=,
+ * tenant-scoped, no narrative). Throws an Error with a plain-language message
+ * when nothing matches, so callers can show it inline.
+ *
+ * @param {string} text
+ * @returns {Promise<{incidentId:number, displayId:string|null, incidentType:string, status:string, createdAt:string}>}
+ */
+export async function resolveIncidentReference(text) {
+  const raw = String(text ?? '').trim();
+  if (raw === '') throw new Error('Enter the incident number, for example INC-2026-048.');
+  const result = await getIncidents({ q: raw, limit: 25 });
+  const upper = raw.toUpperCase();
+  const hit = result.items.find((i) => String(i.displayId || '').toUpperCase() === upper)
+    || (/^[0-9]+$/.test(raw) ? result.items.find((i) => i.incidentId === Number(raw)) : undefined);
+  if (!hit) throw new Error(`No incident "${raw}" was found in this barangay. Check the number and try again.`);
+  return hit;
+}
+
+/** One plain line identifying an incident so staff can confirm it is the right one. */
+export function describeIncidentRef(ref) {
+  const label = ref.displayId || `#${ref.incidentId}`;
+  const type = String(ref.incidentType || 'incident').replace(/_/g, ' ');
+  const when = ref.createdAt
+    ? new Date(String(ref.createdAt).includes('T') ? ref.createdAt : String(ref.createdAt).replace(' ', 'T') + 'Z')
+        .toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' })
+    : 'date not recorded';
+  return `${label}: ${type}, logged ${when}`;
+}
+
 // --- Related incident ----------------------------------------------------------
 
 /**
@@ -490,11 +523,10 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
   label.htmlFor = inputId;
   const input = el('input', 'personnel-form-input');
   input.id = inputId;
-  input.type = 'number';
-  input.min = '1';
-  input.step = '1';
-  input.placeholder = 'e.g. 902';
-  if (relatedIncident) input.value = String(relatedIncident.incidentId);
+  input.type = 'text';
+  input.autocomplete = 'off';
+  input.placeholder = 'e.g. INC-2026-048';
+  if (relatedIncident) input.value = relatedIncident.displayId || String(relatedIncident.incidentId);
 
   const actions = el('div', 'availability-item__actions');
   const save = el('button', 'primary', relatedIncident ? 'Change link' : 'Link incident');
@@ -525,21 +557,43 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
     }
   }
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    errorBox.hidden = true;
     const raw = input.value.trim();
-    if (!/^\d+$/.test(raw) || Number(raw) < 1) {
-      errorBox.textContent = 'Enter the incident number (a whole number, 1 or higher).';
+    if (raw === '') {
+      errorBox.textContent = 'Enter the incident number, for example INC-2026-048.';
       errorBox.hidden = false;
       return;
     }
-    const id = Number(raw);
-    if (id === incidentId) {
+    save.disabled = true;
+    let target;
+    try {
+      target = await resolveIncidentReference(raw);
+    } catch (err) {
+      save.disabled = false;
+      errorBox.textContent = err?.message || 'Could not look that incident up.';
+      errorBox.hidden = false;
+      return;
+    }
+    if (target.incidentId === incidentId) {
+      save.disabled = false;
       errorBox.textContent = 'An incident cannot be related to itself.';
       errorBox.hidden = false;
       return;
     }
-    submit(id);
+    // Show what is being linked before it is saved.
+    const ok = await confirmDialog({
+      title: 'Link this incident?',
+      description: describeIncidentRef(target),
+      confirmLabel: 'Link incident',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) {
+      save.disabled = false;
+      return;
+    }
+    submit(target.incidentId);
   });
   if (remove) {
     remove.addEventListener('click', async () => {

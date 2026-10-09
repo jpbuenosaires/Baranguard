@@ -97,7 +97,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   // Modern PageHeader with counter pills in actions slot
   const pageHeader = PageHeader({
     title: 'Citizen Reports',
-    subtitle: 'Citizen submissions on file — triage & convert to incidents',
+    subtitle: 'Earlier citizen submissions on file (the public form is no longer open) — triage & convert to incidents',
     icon: icons.inbox,
   });
 
@@ -339,7 +339,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
     const statusPill = document.createElement('span');
     statusPill.className = `status-pill ${isConverted ? 'status-pill--success' : 'status-pill--pending'}`;
-    statusPill.textContent = isConverted ? `Converted (INC-${report.incidentId})` : 'Pending Review';
+    statusPill.textContent = isConverted ? 'Converted to an incident' : 'Pending Review';
 
     headerLeft.append(title, statusPill);
 
@@ -379,7 +379,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       </div>
       <div class="citizen-detail-meta-item">
         <span class="citizen-detail-meta-label">Status</span>
-        <span class="citizen-detail-meta-val">${isConverted ? `Incident #${report.incidentId}` : 'Awaiting Review'}</span>
+        <span class="citizen-detail-meta-val">${isConverted ? 'Converted to an incident' : 'Awaiting Review'}</span>
       </div>
     `;
     body.appendChild(metaGrid);
@@ -580,7 +580,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
       const bannerDesc = document.createElement('div');
       bannerDesc.className = 'citizen-converted-banner__desc';
-      bannerDesc.textContent = `This report has been converted to Incident #INC-${report.incidentId}.`;
+      bannerDesc.textContent = 'This report has been converted to an incident. Open it in Incident Management to see its incident number.';
 
       bannerInfo.append(bannerTitle, bannerDesc);
 
@@ -684,7 +684,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
             incidentType: typeSelect.value,
             priority: selectedPriority,
           });
-          showToast(`Converted to Incident #${res.incidentId}.`, { variant: 'success' });
+          showToast('Converted to an incident.', { variant: 'success' });
           report.incidentId = res.incidentId;
           updateCounts();
           applyFilter();
@@ -756,7 +756,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
             const span = document.createElement('span');
             if (row.incidentId) {
               span.className = 'status-pill status-pill--success';
-              span.textContent = `INC-${row.incidentId}`;
+              span.textContent = 'Converted';
             } else {
               span.className = 'status-pill status-pill--pending';
               span.textContent = 'Pending';

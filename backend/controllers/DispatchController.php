@@ -64,6 +64,8 @@ final class DispatchController
     private const DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived', 'completed', 'cancelled'];
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
+    /** Recent-window for the Punong Barangay dispatch list (display window, not retention). */
+    private const PB_LIST_WINDOW_DAYS = 30;
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
     // §6 PATCH /dispatch/:id/status: "Allowed transitions only:
@@ -442,6 +444,21 @@ final class DispatchController
             $where[] = 'd.tanod_id = :tanod_id';
             $params['tanod_id'] = $identity['user_id'];
         }
+        // Punong Barangay (audit V-02, 2026-10-09; REFERENCE.md section 3:
+        // the Dispatch page is Admin-only, PB has no list of cases). The
+        // PB's only caller is the Live Map, which needs which tanod is on
+        // which open incident plus recent dispatch events for its activity
+        // feed. So: first page only, active dispatches plus those started
+        // in the last PB_LIST_WINDOW_DAYS days, and no tanod name, route
+        // geometry or (once closed) incident coordinates in the rows.
+        $isPunongBarangay = $identity['role'] === 'punong_barangay';
+        if ($isPunongBarangay) {
+            if ($page > 1) {
+                throw new ApiError(403, 'FORBIDDEN', 'The Punong Barangay role gets a recent-activity summary, not a paginated dispatch list.');
+            }
+            $where[] = "(d.status IN ('assigned', 'en_route', 'arrived') OR d.dispatched_at >= :pb_window_start)";
+            $params['pb_window_start'] = gmdate('Y-m-d H:i:s', time() - self::PB_LIST_WINDOW_DAYS * 86400);
+        }
         if ($status !== null) {
             $where[] = 'd.status = :status';
             $params['status'] = $status;
@@ -506,7 +523,7 @@ final class DispatchController
         // oversee it (Punong Barangay); a Tanod's own list never carries it.
         $showCancelReason = in_array($identity['role'], ['admin', 'punong_barangay'], true);
 
-        $items = array_map(static function (array $row) use ($showCancelReason): array {
+        $items = array_map(static function (array $row) use ($showCancelReason, $isPunongBarangay): array {
             $item = [
                 'dispatch_id' => (int) $row['dispatch_id'],
                 'incident_id' => (int) $row['incident_id'],
@@ -527,6 +544,14 @@ final class DispatchController
             ];
             if ($showCancelReason) {
                 $item['cancel_reason'] = $row['cancel_reason'];
+            }
+            if ($isPunongBarangay) {
+                $item['tanod_name'] = null;
+                $item['route_json'] = null;
+                if (!in_array($row['status'], ['assigned', 'en_route', 'arrived'], true)) {
+                    $item['latitude'] = null;
+                    $item['longitude'] = null;
+                }
             }
             return $item;
         }, $rows);

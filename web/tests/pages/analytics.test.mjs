@@ -50,6 +50,17 @@ describe('Analytics behaviour', () => {
     assert.ok(sheet, 'Printable statistical report A4 sheet should be mounted');
     assert.ok(document.body.classList.contains('has-print-modal'), 'body should have has-print-modal while preview is open');
     assert.match(text(sheet), /BARANGAY INCIDENT & PEACEKEEPING STATISTICAL REPORT/i);
+    // Audits P-01/N-18 (2026-10-09): no pre-written oath, no pre-filled
+    // signer; an unsigned system summary with a blank reviewer block.
+    assert.doesNotMatch(text(sheet), /under oath/i);
+    assert.doesNotMatch(text(sheet), /Attested &|Attested and Approved/i);
+    assert.doesNotMatch(text(sheet), /HON\. PUNONG BARANGAY/);
+    assert.match(text(sheet), /not signed/i);
+    assert.match(text(sheet), /Reviewed and approved by/);
+    assert.match(text(sheet), /no personal data/);
+    // N-02/P-02: the clock starts at the report, never "dispatch to arrival".
+    assert.doesNotMatch(text(sheet), /dispatch to arrival/i);
+    assert.match(text(sheet), /Reported to first arrival, n=22/);
 
     const closeBtn = document.querySelector('#close-print-modal');
     click(closeBtn);
