@@ -22,6 +22,7 @@ import { requireReason } from '../utils/reasonText.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { REPORT_CHANNEL_OPTIONS, DEFAULT_WEB_REPORT_CHANNEL, reportChannelLabel } from '../utils/reportChannel.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDateTime, manilaDateKey } from '../utils/manilaTime.js';
 import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
 import { getSchools, updateIncidentSchoolFields } from '../services/shellWorkflowApi.js';
 
@@ -83,15 +84,7 @@ const COLUMNS = [
  */
 function formatDateTime(isoString) {
   if (!isoString) return '—';
-  const d = new Date(isoString);
-  if (isNaN(d.getTime())) return isoString;
-  const pad = (n) => String(n).padStart(2, '0');
-  const y = d.getFullYear();
-  const m = pad(d.getMonth() + 1);
-  const day = pad(d.getDate());
-  const h = pad(d.getHours());
-  const min = pad(d.getMinutes());
-  return `${y}-${m}-${day} ${h}:${min}`;
+  return formatManilaDateTime(isoString, String(isoString));
 }
 
 /**
@@ -99,7 +92,7 @@ function formatDateTime(isoString) {
  */
 function formatIncidentCode(row) {
   if (row.displayId) return row.displayId;
-  const year = row.createdAt ? new Date(row.createdAt).getFullYear() : '2026';
+  const year = row.createdAt ? (manilaDateKey(row.createdAt) || "2026").slice(0, 4) : '2026';
   return `INC-${year}-${String(row.incidentId).padStart(3, '0')}`;
 }
 

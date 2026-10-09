@@ -18,6 +18,7 @@ import { PageHeader } from '../components/PageHeader.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 import { logout } from '../api/apiClient.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDateTime as manilaDateTime, formatManilaDate as manilaDate, formatManilaTime as manilaTime, manilaDateKey } from '../utils/manilaTime.js';
 import {
   ApiClientError, getUserById, getBarangayLetterhead,
   REPORT_STATUS_LABELS, TERM_STATUS_LABELS,
@@ -130,20 +131,45 @@ export function formatDateOnly(value) {
   });
 }
 
-/** UTC instant -> Manila date + time. */
+/** UTC instant -> Manila date + time (12-hour). Delegates to utils/manilaTime.js. */
 export function formatManilaDateTime(value) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('en-PH', { timeZone: MANILA, dateStyle: 'medium', timeStyle: 'short' });
+  return manilaDateTime(value, '—');
 }
 
 /** UTC instant -> Manila date only. */
 export function formatManilaDate(value) {
-  if (!value) return '—';
+  return manilaDate(value, '—');
+}
+
+const MANILA_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: MANILA, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+
+/** ISO instant -> `YYYY-MM-DDTHH:mm` on the Manila clock, for <input type="datetime-local">. */
+export function toManilaDatetimeLocal(value) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString('en-PH', { timeZone: MANILA, year: 'numeric', month: 'short', day: 'numeric' });
+  if (Number.isNaN(date.getTime())) return '';
+  const p = Object.fromEntries(MANILA_PARTS.formatToParts(date).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
+/** `YYYY-MM-DD` plus `days` calendar days (pure date arithmetic, no time zone involved). */
+export function addDaysToDateKey(dateKey, days) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+const MANILA_MONTH_DAY = new Intl.DateTimeFormat('en-PH', { timeZone: MANILA, month: 'short', day: 'numeric' });
+
+/** Shift window as staff read it: "Oct 9 · 6:00 am – 2:00 pm" (Manila time, 12-hour). */
+export function formatShiftRange(startAt, endAt) {
+  const s = new Date(startAt);
+  const e = new Date(endAt);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 'Time not recorded';
+  const t = (d) => manilaTime(d, '');
+  const day = (d) => MANILA_MONTH_DAY.format(d);
+  if (manilaDateKey(s) === manilaDateKey(e)) return `${day(s)} · ${t(s)} – ${t(e)}`;
+  return `${day(s)} ${t(s)} – ${day(e)} ${t(e)}`;
 }
 
 /** `YYYY-MM-DD` of "today" in Manila (a fixed +08:00 offset, never CONVERT_TZ-style tz data). */
@@ -265,30 +291,67 @@ export function getMyAuthority(user) {
 
 // --- Printed-form letterhead ------------------------------------------------
 
-/** Province / municipality / barangay for printed forms, from GET /barangays. */
+/**
+ * Province / municipality / barangay for printed forms, from GET /barangays.
+ * On failure the names are left EMPTY (never "#3") and `failed` is true, so the
+ * printed form shows a blank line to fill in by hand instead of a fake name.
+ */
 export async function loadLetterhead(user) {
   try {
     const lh = await getBarangayLetterhead(user.barangayId);
-    return { ...lh, barangayName: lh.barangayName || `#${user.barangayId}` };
+    return { ...lh, failed: !lh.barangayName };
   } catch {
-    return { barangayName: `#${user.barangayId}`, municipality: '', province: '' };
+    return { barangayName: '', municipality: '', province: '', failed: true };
   }
 }
 
-/** Letterhead block shared by every printed form (Republic / Province / Municipality / Barangay). */
+const PRINT_ROLE_LABELS = {
+  admin: 'Chief Tanod (Admin)',
+  secretary: 'Barangay Secretary',
+  punong_barangay: 'Punong Barangay',
+  tanod: 'Barangay Tanod',
+};
+
+/** Role label printed in the footer of every official printout ("Printed ... by <role>"). */
+export function printedByLabel(user) {
+  return PRINT_ROLE_LABELS[user?.role] || 'a signed-in official';
+}
+
+const BLANK_LINE = '________________';
+
+/**
+ * Letterhead block shared by every printed form (Republic / Province /
+ * Municipality / Barangay). No logo circles: the API holds no seal image, and
+ * an empty circle on an official form reads as an unfinished draft (Rule 6).
+ */
 export function letterheadHtml(lh, { office = false } = {}) {
   return `
     <div class="tw-print__letterhead-row">
-      <span class="tw-print__logo" role="img" aria-label="Barangay logo placeholder"></span>
-      <span class="tw-print__logo" role="img" aria-label="Municipal logo placeholder"></span>
       <div class="tw-print__letterhead">
       <p class="tw-print__republic">Republic of the Philippines</p>
-      <p class="tw-print__line">Province of ${escapeHtml(lh.province || '')}</p>
-      <p class="tw-print__line">Municipality of ${escapeHtml(lh.municipality || '')}</p>
-      <p class="tw-print__brgy">Barangay ${escapeHtml(lh.barangayName || '')}</p>
+      <p class="tw-print__line">Province of ${escapeHtml(lh.province || BLANK_LINE)}</p>
+      <p class="tw-print__line">Municipality of ${escapeHtml(lh.municipality || BLANK_LINE)}</p>
+      <p class="tw-print__brgy">Barangay ${escapeHtml(lh.barangayName || BLANK_LINE)}</p>
       ${office ? '<p class="tw-print__office">Office of the Sangguniang Barangay</p>' : ''}
       </div>
-      <span class="tw-print__logo" role="img" aria-label="Bagong Pilipinas logo placeholder"></span>
+    </div>`;
+}
+
+/**
+ * Signature block for an official's line on a printed form: blank space for
+ * the wet signature, then the printed name, title, and a date line.
+ * `name` and `title` may be empty (the signer is not known yet) -> blank lines.
+ */
+export function signatureBlockHtml(caption, name, title) {
+  return `
+    <div class="tw-sign__col">
+      <div class="tw-sign__cap">${escapeHtml(caption)}</div>
+      <div class="tw-sign__space" aria-hidden="true"></div>
+      <div class="tw-sign__line"></div>
+      <div class="tw-sign__hint">Signature over printed name</div>
+      <div class="tw-sign__name">${escapeHtml(name || '')}</div>
+      <div class="tw-sign__pos">${escapeHtml(title || '')}</div>
+      <div class="tw-sign__date">Date signed: ______________</div>
     </div>`;
 }
 

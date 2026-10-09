@@ -22,6 +22,8 @@
 }
 .page-header__titles { min-width: 0; }
 .page-header__title {
+  margin: 0;
+  line-height: 1.25;
   font-size: var(--font-size-2xl);
   font-weight: 700;
   color: var(--color-text-primary);
@@ -156,7 +158,7 @@
 }
 
 .page-tab:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 1px;
 }
 
@@ -179,11 +181,12 @@
 }
 
 .page-tab__badge {
-  background: var(--color-critical);
+  /* D-01: -solid, not the plain token (white on it was 2.77:1 in dark). */
+  background: var(--color-critical-solid);
   color: var(--color-white);
   font-size: var(--font-size-label);
   font-weight: 700;
   padding: var(--spacing-3xs) var(--spacing-sm);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   line-height: 1.2;
 }

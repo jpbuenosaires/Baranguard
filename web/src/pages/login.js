@@ -111,11 +111,11 @@ export function renderLoginPage(root, onSuccess, { notice } = {}) {
   errorBox.hidden = true;
 
   // Session-ended notice: same visual weight as the error box, but a polite
-  // status (it is information, not a failed action). textContent only.
+  // alert so a screen reader announces why the user is back here. textContent only.
   const noticeBox = document.createElement('div');
   noticeBox.id = 'login-notice';
   noticeBox.className = 'login-form__error';
-  noticeBox.setAttribute('role', 'status');
+  noticeBox.setAttribute('role', 'alert');
   noticeBox.textContent = notice || '';
   noticeBox.hidden = !notice;
 
@@ -211,8 +211,23 @@ export function renderLoginPage(root, onSuccess, { notice } = {}) {
   submitButton.textContent = 'Sign in';
 
   form.append(noticeBox, errorBox, usernameLabel, usernameInput, passwordLabel, passwordField, capsLockWarning, rememberRow, submitButton);
-  card.append(mobileBrand, brand, form);
+  // No self-service reset exists (no email on file, no dead-end control):
+  // say plainly who can reset a password.
+  const helpNote = document.createElement('p');
+  helpNote.className = 'login-card__help';
+  helpNote.textContent = 'Forgot your password? Contact the Chief Tanod to have it reset.';
+  const privacyLink = document.createElement('a');
+  privacyLink.className = 'login-card__privacy';
+  privacyLink.href = 'privacy.html';
+  privacyLink.target = '_blank';
+  privacyLink.rel = 'noopener';
+  privacyLink.textContent = 'Privacy notice';
+  const footerRow = document.createElement('p');
+  footerRow.className = 'login-card__footer';
+  footerRow.appendChild(privacyLink);
+  card.append(mobileBrand, brand, form, helpNote, footerRow);
   formPanel.appendChild(card);
+  formPanel.setAttribute('role', 'main');
   screen.append(hero, formPanel);
   root.appendChild(screen);
 

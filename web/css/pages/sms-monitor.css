@@ -60,15 +60,15 @@
 }
 
 .sms-kpi-val--total {
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .sms-kpi-val--inbound {
-  color: var(--color-success);
+  color: var(--color-success-text);
 }
 
 .sms-kpi-val--outbound {
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .sms-kpi-val--unread {
@@ -171,7 +171,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-card);
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -403,17 +403,17 @@
 
 .sms-tag-pill--alert {
   background: var(--tint-warning-bg);
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .sms-tag-pill--tip {
   background: var(--tint-success-solid);
-  color: var(--color-success);
+  color: var(--color-success-text);
 }
 
 .sms-tag-pill--dispatch {
   background: var(--tint-info-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .sms-tag-pill--feedback {
@@ -433,22 +433,22 @@
 
 [data-theme="dark"] .sms-tag-pill--alert {
   background: color-mix(in srgb, var(--color-warning) 20%, transparent);
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 [data-theme="dark"] .sms-tag-pill--tip {
   background: color-mix(in srgb, var(--color-success) 20%, transparent);
-  color: var(--color-success);
+  color: var(--color-success-text);
 }
 
 [data-theme="dark"] .sms-tag-pill--dispatch {
   background: color-mix(in srgb, var(--color-primary) 20%, transparent);
-  color: var(--color-accent);
+  color: var(--color-link);
 }
 
 [data-theme="dark"] .sms-tag-pill--feedback {
   background: color-mix(in srgb, var(--color-success) 20%, transparent);
-  color: var(--color-success);
+  color: var(--color-success-text);
 }
 
 [data-theme="dark"] .sms-tag-pill--neutral {
@@ -474,7 +474,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-card);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -639,7 +639,7 @@
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
   border-bottom-left-radius: 0.25rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-card);
 }
 
 .sms-bubble--outbound {
@@ -669,7 +669,7 @@
 }
 
 .sms-tick--success {
-  color: var(--color-success);
+  color: var(--color-success-text);
   font-weight: 700;
 }
 
@@ -687,7 +687,7 @@
   padding: var(--spacing-3xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary);
+  color: var(--color-link);
   border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
   cursor: pointer;
   margin-top: var(--spacing-2xs);
@@ -757,7 +757,7 @@
   padding: 0 var(--spacing-md);
   border-radius: 9999px;
   background: var(--color-row-active-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
   border: 1px solid var(--tint-info-bg);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -777,7 +777,7 @@
 
 [data-theme="dark"] .sms-quick-chip {
   background: color-mix(in srgb, var(--color-accent) 14%, transparent);
-  color: var(--color-accent);
+  color: var(--color-link);
   border-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
@@ -816,7 +816,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2xs);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-card);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -883,7 +883,7 @@
   height: 2.125rem;
   border-radius: 50%;
   background: var(--tint-info-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
   border: none;
   display: flex;
   align-items: center;
@@ -894,7 +894,7 @@
 
 .sms-compose-send-circle:hover:not(:disabled) {
   background: color-mix(in srgb, var(--tint-info-bg) 60%, var(--color-primary));
-  color: var(--color-primary);
+  color: var(--color-link);
   transform: scale(1.05);
 }
 
@@ -913,7 +913,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-card);
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -942,7 +942,7 @@
   gap: var(--spacing-2xs);
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--color-success);
+  color: var(--color-success-text);
 }
 
 .sms-live-dot {
@@ -1081,7 +1081,7 @@
 .sms-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.65);
+  background: color-mix(in srgb, var(--dark-bg) 65%, transparent);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
@@ -1204,7 +1204,7 @@
   font-size: 0.8125rem;
   color: var(--color-text-primary);
   max-width: 90%;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-card);
 }
 
 /* Activity Log tab's detail pane (right column of its .split-panel).
@@ -1245,7 +1245,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-card);
   box-sizing: border-box;
 }
 
@@ -1318,7 +1318,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-card);
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
@@ -1337,7 +1337,7 @@
   height: 3.5rem;
   border-radius: 50%;
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary);
+  color: var(--color-link);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1394,7 +1394,7 @@
 
 .sms-detail-dir-badge--inbound {
   background: var(--tint-info-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .sms-detail-dir-badge--outbound {
@@ -1404,7 +1404,7 @@
 
 [data-theme="dark"] .sms-detail-dir-badge--inbound {
   background: color-mix(in srgb, var(--color-primary) 25%, transparent);
-  color: var(--color-accent);
+  color: var(--color-link);
 }
 
 
@@ -1558,4 +1558,80 @@
 .sms-kpi-col:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+.sms-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.sms-header-btn {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.sms-empty-note {
+  padding: var(--spacing-md);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.sms-thread-placeholder {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: var(--spacing-xl);
+}
+
+.sms-thread-placeholder__icon {
+  color: var(--color-link);
+  margin-bottom: var(--spacing-sm);
+}
+
+.sms-thread-placeholder__title {
+  margin: 0 0 var(--spacing-xs) 0;
+}
+
+.sms-thread-placeholder__desc {
+  max-width: 20rem;
+  margin: 0;
+}
+
+.sms-thread-loading {
+  height: 100%;
+}
+
+.sms-thread-empty {
+  text-align: center;
+  margin: auto;
+}
+
+.sms-thread-header__phone-icon {
+  display: inline-flex;
+  color: var(--color-text-tertiary);
+}
+
+.sms-tag-pill--small {
+  font-size: var(--font-size-xs);
+  padding: var(--spacing-3xs) var(--spacing-xs);
+}
+
+.sms-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.sms-modal-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.sms-segment-counter {
+  margin-top: var(--spacing-xs);
 }

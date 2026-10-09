@@ -27,7 +27,7 @@
   position: absolute;
   top: calc(100% + var(--spacing-xs));
   right: 0;
-  z-index: 50;
+  z-index: var(--z-dropdown);
   width: 19rem;
   padding: var(--spacing-md);
   background: var(--glass-bg);
@@ -95,7 +95,7 @@
 }
 
 .date-range-popover__input:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 1px;
 }
 

@@ -75,7 +75,7 @@
 
 .kpi-card .icon-badge--kpi.accent-orange {
   background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  color: #D97706;
+  color: var(--color-warning);
   border: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
 }
 
@@ -87,28 +87,28 @@
 
 [data-theme="dark"] .kpi-card .icon-badge--kpi.accent-blue {
   background: rgba(59, 130, 246, 0.16);
-  color: #60A5FA;
+  color: var(--dark-accent);
   border-color: rgba(59, 130, 246, 0.35);
   box-shadow: 0 0 14px rgba(59, 130, 246, 0.18);
 }
 
 [data-theme="dark"] .kpi-card .icon-badge--kpi.accent-green {
   background: rgba(34, 197, 94, 0.16);
-  color: #4ADE80;
+  color: var(--dark-success);
   border-color: rgba(34, 197, 94, 0.35);
   box-shadow: 0 0 14px rgba(34, 197, 94, 0.18);
 }
 
 [data-theme="dark"] .kpi-card .icon-badge--kpi.accent-orange {
   background: rgba(245, 158, 11, 0.16);
-  color: #FBBF24;
+  color: var(--dark-warning);
   border-color: rgba(245, 158, 11, 0.35);
   box-shadow: 0 0 14px rgba(245, 158, 11, 0.18);
 }
 
 [data-theme="dark"] .kpi-card .icon-badge--kpi.accent-teal {
   background: rgba(20, 184, 166, 0.16);
-  color: #2DD4BF;
+  color: var(--dark-accent-teal);
   border-color: rgba(20, 184, 166, 0.35);
   box-shadow: 0 0 14px rgba(20, 184, 166, 0.18);
 }
@@ -148,7 +148,7 @@
 
 .kpi-card__delta--positive {
   background: color-mix(in srgb, var(--color-success) 14%, transparent);
-  color: var(--color-success);
+  color: var(--color-success-text);
   border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
 }
 
@@ -167,19 +167,19 @@
 /* Contextual Chips */
 .kpi-card__chip--positive {
   background: color-mix(in srgb, var(--color-success) 14%, transparent);
-  color: var(--color-success);
+  color: var(--color-success-text);
   border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
 }
 
 .kpi-card__chip--warning {
   background: color-mix(in srgb, var(--color-warning) 14%, transparent);
-  color: #D97706;
+  color: var(--color-warning-text);
   border: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
 }
 
 .kpi-card__chip--live {
   background: color-mix(in srgb, var(--color-info) 14%, transparent);
-  color: var(--color-info);
+  color: var(--color-info-text);
   border: 1px solid color-mix(in srgb, var(--color-info) 28%, transparent);
 }
 
@@ -329,7 +329,7 @@
 }
 .kpi-grid .card:focus-visible,
 .kpi-card:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 2px;
 }
 .kpi-card__sparkline-point {

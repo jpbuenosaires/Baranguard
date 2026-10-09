@@ -19,6 +19,7 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { icons } from '../components/icons.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDate, formatManilaDateTime, formatManilaTime } from '../utils/manilaTime.js';
 
 const FATIGUE_THRESHOLD_HOURS = 56;
 
@@ -284,7 +285,7 @@ export function renderFatigueFlagsTab(container, user, onCountsChanged, onSwitch
             // Sub text: accurate overage and basis with alert timestamp context
             const overText = document.createElement('div');
             overText.className = 'fatigue-meter-over';
-            const alertDateStr = new Date(flag.flaggedAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
+            const alertDateStr = formatManilaDate(flag.flaggedAt);
             if (overBy > 0) {
               overText.textContent = `+${overBy.toFixed(1)}h over safe limit at alert (${alertDateStr})`;
             } else if (overBy === 0) {
@@ -298,7 +299,7 @@ export function renderFatigueFlagsTab(container, user, onCountsChanged, onSwitch
           }
 
           case 'flagged': {
-            return new Date(flag.flaggedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+            return formatManilaDateTime(flag.flaggedAt);
           }
 
           case 'action': {
@@ -324,7 +325,7 @@ function renderActionCell(flag, name, canAcknowledge, onChanged, onSwitchToSched
 
   if (flag.acknowledgedAt) {
     const wrapAck = document.createElement('div');
-    wrapAck.style.cssText = 'display: flex; flex-direction: column; align-items: flex-end; gap: 2px;';
+    wrapAck.style.cssText = 'display: flex; flex-direction: column; align-items: flex-end; gap: var(--spacing-3xs);';
 
     const pill = document.createElement('span');
     pill.className = 'status-pill status-pill--success';
@@ -332,7 +333,7 @@ function renderActionCell(flag, name, canAcknowledge, onChanged, onSwitchToSched
 
     const dateNote = document.createElement('span');
     dateNote.className = 'data-table__sub';
-    dateNote.textContent = new Date(flag.acknowledgedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+    dateNote.textContent = formatManilaDateTime(flag.acknowledgedAt);
 
     wrapAck.append(pill, dateNote);
     wrap.appendChild(wrapAck);
@@ -360,7 +361,7 @@ function renderActionCell(flag, name, canAcknowledge, onChanged, onSwitchToSched
   detailsBtn.type = 'button';
   detailsBtn.className = 'user-action-btn';
   detailsBtn.title = `View fatigue alert details for ${name}`;
-  detailsBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:4px;">${icons.eye(13)}<span>Details</span></span>`;
+  detailsBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:var(--spacing-xs);">${icons.eye(13)}<span>Details</span></span>`;
   detailsBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     openFatigueDetailsModal({
@@ -379,7 +380,7 @@ function renderActionCell(flag, name, canAcknowledge, onChanged, onSwitchToSched
     schedBtn.type = 'button';
     schedBtn.className = 'user-action-btn';
     schedBtn.title = `Inspect ${name}'s schedule in the Scheduler`;
-    schedBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:4px;">${icons.calendar(13)}<span>View Shifts</span></span>`;
+    schedBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:var(--spacing-xs);">${icons.calendar(13)}<span>View Shifts</span></span>`;
     schedBtn.addEventListener('click', (event) => {
       event.stopPropagation();
       onSwitchToScheduler();
@@ -511,7 +512,7 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
     <span class="fatigue-details-stat__label">Safety Threshold</span>
     <span class="fatigue-details-stat__value">
       ${FATIGUE_THRESHOLD_HOURS}h / wk
-      <span style="font-size:0.75rem;font-weight:600;color:var(--color-text-secondary);">${limitDiffText}</span>
+      <span style="font-size:var(--font-size-label);font-weight:600;color:var(--color-text-secondary);">${limitDiffText}</span>
     </span>
   `;
 
@@ -523,7 +524,7 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
     : `<span class="status-pill status-pill--critical">Needs Review</span>`;
   stat3.innerHTML = `
     <span class="fatigue-details-stat__label">Review Status</span>
-    <div style="margin-top:2px;">${statusPill}</div>
+    <div style="margin-top:var(--spacing-3xs);">${statusPill}</div>
   `;
 
   // Stat 4: Flagged At
@@ -531,8 +532,8 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
   stat4.className = 'fatigue-details-stat';
   stat4.innerHTML = `
     <span class="fatigue-details-stat__label">Alert Timestamp</span>
-    <span class="fatigue-details-stat__value" style="font-size:0.8125rem;">
-      ${new Date(flag.flaggedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+    <span class="fatigue-details-stat__value" style="font-size:var(--type-card-subtitle);">
+      ${escapeHtml(formatManilaDateTime(flag.flaggedAt))}
     </span>
   `;
 
@@ -553,7 +554,7 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
     const s = new Date(flag.shiftStartAt);
     const e = new Date(flag.shiftEndAt);
     const durHours = ((e.getTime() - s.getTime()) / (1000 * 60 * 60)).toFixed(1);
-    shiftTimeStr = `<div><strong>Shift Schedule:</strong> ${s.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${s.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${e.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${durHours} hrs)</div>`;
+    shiftTimeStr = `<div><strong>Shift Schedule:</strong> ${escapeHtml(formatManilaDate(s))} ${escapeHtml(formatManilaTime(s))} – ${escapeHtml(formatManilaTime(e))} (${durHours} hrs)</div>`;
   }
   const zoneStr = flag.shiftPatrolZone ? `<div><strong>Patrol Zone:</strong> ${escapeHtml(flag.shiftPatrolZone)}</div>` : '';
 
@@ -562,8 +563,8 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
     ${zoneStr}
     ${shiftTimeStr}
     <div><strong>Basis:</strong> ${escapeHtml(formattedBasis)} (rolling 7-day cumulative window anchored to shift end)</div>
-    <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:4px;">
-      ℹ️ This alert reflects the cumulative hours at the time the flag occurred (${new Date(flag.flaggedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}). Click <em>Open in Scheduler</em> below to inspect live assignments.
+    <div style="font-size:var(--font-size-label);color:var(--color-text-secondary);margin-top:var(--spacing-xs);">
+      This alert reflects the cumulative hours at the time the flag occurred (${escapeHtml(formatManilaDate(flag.flaggedAt))}). Click <em>Open in Scheduler</em> below to inspect live assignments.
     </div>
   `;
   shiftSection.append(shiftTitle, shiftCard);
@@ -581,15 +582,15 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
     const ackByName = flag.acknowledgedByName || (flag.acknowledgedBy ? `Admin #${flag.acknowledgedBy}` : 'Administrator');
     auditCard.innerHTML = `
       <div><strong>Reviewed By:</strong> ${escapeHtml(ackByName)}</div>
-      <div><strong>Acknowledged At:</strong> ${new Date(flag.acknowledgedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</div>
-      <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:2px;">
+      <div><strong>Acknowledged At:</strong> ${escapeHtml(formatManilaDateTime(flag.acknowledgedAt))}</div>
+      <div style="font-size:var(--font-size-label);color:var(--color-text-secondary);margin-top:var(--spacing-3xs);">
         Acknowledgment confirms administrative review and preserves this safety record in the permanent audit trail.
       </div>
     `;
   } else {
     auditCard.innerHTML = `
       <div style="color:var(--color-critical);font-weight:600;">Pending Administrative Review</div>
-      <div style="font-size:0.75rem;color:var(--color-text-secondary);">
+      <div style="font-size:var(--font-size-label);color:var(--color-text-secondary);">
         This tanod is scheduled at or beyond the 56-hour weekly limit. Check upcoming shifts or swap assignments in the Scheduler before acknowledging.
       </div>
     `;
@@ -613,7 +614,7 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
     const viewSchedBtn = document.createElement('button');
     viewSchedBtn.type = 'button';
     viewSchedBtn.className = 'user-action-btn';
-    viewSchedBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:4px;">${icons.calendar(14)}<span>Open in Scheduler</span></span>`;
+    viewSchedBtn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:var(--spacing-xs);">${icons.calendar(14)}<span>Open in Scheduler</span></span>`;
     viewSchedBtn.addEventListener('click', () => {
       closeModal();
       onViewInScheduler();

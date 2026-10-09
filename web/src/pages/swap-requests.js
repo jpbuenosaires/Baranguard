@@ -11,7 +11,7 @@
 
 import { getShiftSwapRequests, getShifts, resolveShiftSwapRequest, ApiClientError } from '../api/apiClient.js';
 import { loadTanodRoster } from '../services/tanodRoster.js';
-import { manilaToday } from '../services/tanodWorkflowUi.js';
+import { manilaToday, formatShiftRange } from '../services/tanodWorkflowUi.js';
 import { addDays, fetchAllPages } from '../services/rosterWindow.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
@@ -339,16 +339,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
 }
 
 function formatShiftTimeRange(startAt, endAt) {
-  const s = new Date(startAt);
-  const e = new Date(endAt);
-  const isSameDay = s.toDateString() === e.toDateString();
-  const timeOpts = { hour: '2-digit', minute: '2-digit', hour12: true };
-  const dateOpts = { month: 'short', day: 'numeric' };
-
-  if (isSameDay) {
-    return `${s.toLocaleDateString([], dateOpts)} · ${s.toLocaleTimeString([], timeOpts)} – ${e.toLocaleTimeString([], timeOpts)}`;
-  }
-  return `${s.toLocaleDateString([], dateOpts)} ${s.toLocaleTimeString([], timeOpts)} – ${e.toLocaleDateString([], dateOpts)} ${e.toLocaleTimeString([], timeOpts)}`;
+  return formatShiftRange(startAt, endAt);
 }
 
 function formatDuration(startAt, endAt) {
@@ -371,7 +362,7 @@ function renderActionsCell(req, requesterName, shift, onChanged) {
   denyButton.textContent = 'Deny';
 
   const shiftDescription = shift
-    ? `${new Date(shift.startAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} – ${new Date(shift.endAt).toLocaleTimeString([], { timeStyle: 'short' })}`
+    ? formatShiftRange(shift.startAt, shift.endAt)
     : `Shift #${req.shiftId}`;
 
   const resolve = async (status, button, event) => {

@@ -16,7 +16,11 @@ import {
   getShiftsDetailed, publishShifts, getAvailability, reviewAvailability, getOwnApprovalAuthority,
 } from '../services/shellWorkflowApi.js';
 import { loadSignerCandidates } from '../services/signerCandidates.js';
-import { formatDateOnly, manilaToday, manilaMonth, formatMonthLabel } from '../services/tanodWorkflowUi.js';
+import {
+  formatDateOnly, manilaToday, manilaMonth, formatMonthLabel, formatShiftRange, toManilaDatetimeLocal,
+  addDaysToDateKey, printedByLabel,
+} from '../services/tanodWorkflowUi.js';
+import { formatManilaDateTime } from '../utils/manilaTime.js';
 import { monthWindow, addMonths, addDays, fetchAllPages } from '../services/rosterWindow.js';
 import { confirmDialog, promptFields } from '../components/ConfirmDialog.js';
 import { DataTable } from '../components/DataTable.js';
@@ -894,17 +898,7 @@ function formatDuration(startAt, endAt) {
 }
 
 function formatShiftTimeRange(startAt, endAt) {
-  const s = new Date(startAt);
-  const e = new Date(endAt);
-
-  const isSameDay = s.toDateString() === e.toDateString();
-  const timeOpts = { hour: '2-digit', minute: '2-digit', hour12: true };
-  const dateOpts = { month: 'short', day: 'numeric' };
-
-  if (isSameDay) {
-    return `${s.toLocaleDateString([], dateOpts)} · ${s.toLocaleTimeString([], timeOpts)} – ${e.toLocaleTimeString([], timeOpts)}`;
-  }
-  return `${s.toLocaleDateString([], dateOpts)} ${s.toLocaleTimeString([], timeOpts)} – ${e.toLocaleDateString([], dateOpts)} ${e.toLocaleTimeString([], timeOpts)}`;
+  return formatShiftRange(startAt, endAt);
 }
 
 // Rule 27 (REFERENCE.md section 5, "Roster rules changed 2026-10-01"): the server
@@ -1057,12 +1051,15 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   const presetsWrap = document.createElement('div');
   presetsWrap.className = 'shift-presets-wrap';
 
-  const presetsLabel = document.createElement('label');
+  const presetsLabel = document.createElement('div');
+  presetsLabel.id = 'shift-presets-label';
   presetsLabel.className = 'shift-presets-label';
   presetsLabel.textContent = 'Quick Presets (Today)';
 
   const presetsRow = document.createElement('div');
   presetsRow.className = 'shift-presets-row';
+  presetsRow.setAttribute('role', 'group');
+  presetsRow.setAttribute('aria-labelledby', 'shift-presets-label');
 
   const presets = [
     { label: 'Morning', hours: '06:00 – 14:00', type: 'morning' },
@@ -1260,24 +1257,17 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
 }
 
 function applyPreset(type, startInput, endInput) {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-
+  // Dates are the Manila calendar day, whatever the workstation's own zone is.
+  const today = manilaToday();
   if (type === 'morning') {
-    startInput.value = `${y}-${m}-${d}T06:00`;
-    endInput.value = `${y}-${m}-${d}T14:00`;
+    startInput.value = `${today}T06:00`;
+    endInput.value = `${today}T14:00`;
   } else if (type === 'afternoon') {
-    startInput.value = `${y}-${m}-${d}T14:00`;
-    endInput.value = `${y}-${m}-${d}T22:00`;
+    startInput.value = `${today}T14:00`;
+    endInput.value = `${today}T22:00`;
   } else if (type === 'night') {
-    startInput.value = `${y}-${m}-${d}T22:00`;
-    const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const ndY = nextDay.getFullYear();
-    const ndM = String(nextDay.getMonth() + 1).padStart(2, '0');
-    const ndD = String(nextDay.getDate()).padStart(2, '0');
-    endInput.value = `${ndY}-${ndM}-${ndD}T06:00`;
+    startInput.value = `${today}T22:00`;
+    endInput.value = `${addDaysToDateKey(today, 1)}T06:00`;
   }
 }
 
@@ -1487,9 +1477,7 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
 }
 
 function toDatetimeLocal(isoString) {
-  const d = new Date(isoString);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return toManilaDatetimeLocal(isoString);
 }
 
 function renderLoading(container) {
@@ -1566,7 +1554,7 @@ function openSchedulePrintModal({ monthLabel, shifts: filteredShifts, allShifts:
           </tr>
         `;
       }).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:#64748b;">No published shifts match the selected schedule filter.</td></tr>`;
+    : `<tr><td colspan="6" class="print-sheet__empty-row">No published shifts match the selected schedule filter.</td></tr>`;
 
   const activeTanods = tanods.filter((t) => t.isActive !== false && !t.isSuspended);
   const rosterRowsHtml = activeTanods.length > 0
@@ -1577,21 +1565,15 @@ function openSchedulePrintModal({ monthLabel, shifts: filteredShifts, allShifts:
           <td>Active</td>
         </tr>
       `).join('')
-    : `<tr><td colspan="3" style="text-align:center;color:#64748b;">No active Tanod personnel records loaded.</td></tr>`;
+    : `<tr><td colspan="3" class="print-sheet__empty-row">No active Tanod personnel records loaded.</td></tr>`;
 
-  const generatedStamp = new Date().toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const generatedStamp = `${formatManilaDateTime(new Date())} (Philippine time)`;
 
   const sheetHtml = `
     <div class="print-sheet__header">
       <img src="assets/logo.svg" alt="" width="44" height="44" class="print-sheet__header-logo" aria-hidden="true" />
       <div class="print-sheet__header-text">
-        <p style="margin:0;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#475569;">Republic of the Philippines · Province of Sorsogon · Municipality of Pilar</p>
+        <p class="print-sheet__eyebrow">Republic of the Philippines · Province of Sorsogon · Municipality of Pilar</p>
         <h1 class="print-sheet__doc-title">BARANGAY TANOD DUTY ROSTER &amp; PATROL SCHEDULE</h1>
         <p class="print-sheet__doc-subtitle">${escapeHtml(barangayName)} · Official Bulletin-Board Peacekeeping Schedule</p>
       </div>
@@ -1635,18 +1617,18 @@ function openSchedulePrintModal({ monthLabel, shifts: filteredShifts, allShifts:
       </div>
     </div>
 
-    ${draftsExcluded > 0 ? `<p style="margin:0 0 0.5rem;font-weight:700;">${draftsExcluded} DRAFT shift${draftsExcluded === 1 ? '' : 's'} in this view ${draftsExcluded === 1 ? 'is' : 'are'} not approved and ${draftsExcluded === 1 ? 'is' : 'are'} not printed.</p>` : ''}
+    ${draftsExcluded > 0 ? `<p class="print-sheet__draft-note">${draftsExcluded} DRAFT shift${draftsExcluded === 1 ? '' : 's'} in this view ${draftsExcluded === 1 ? 'is' : 'are'} not approved and ${draftsExcluded === 1 ? 'is' : 'are'} not printed.</p>` : ''}
     <div class="print-sheet__section">
       <h2 class="print-sheet__section-title">1. Patrol Shift Assignments</h2>
       <table class="print-sheet__table">
         <thead>
           <tr>
-            <th>Shift ID</th>
-            <th>Assigned Tanod</th>
-            <th>Patrol Zone / Sector</th>
-            <th>Duty Window (Start — End)</th>
-            <th class="print-sheet__table--right">Duration</th>
-            <th>Status</th>
+            <th scope="col">Shift ID</th>
+            <th scope="col">Assigned Tanod</th>
+            <th scope="col">Patrol Zone / Sector</th>
+            <th scope="col">Duty Window (Start — End)</th>
+            <th scope="col" class="print-sheet__table--right">Duration</th>
+            <th scope="col">Status</th>
           </tr>
         </thead>
         <tbody>
@@ -1660,9 +1642,9 @@ function openSchedulePrintModal({ monthLabel, shifts: filteredShifts, allShifts:
       <table class="print-sheet__table">
         <thead>
           <tr>
-            <th>Full Name</th>
-            <th>Title</th>
-            <th>Roster Standing</th>
+            <th scope="col">Full Name</th>
+            <th scope="col">Title</th>
+            <th scope="col">Roster Standing</th>
           </tr>
         </thead>
         <tbody>
@@ -1695,6 +1677,7 @@ function openSchedulePrintModal({ monthLabel, shifts: filteredShifts, allShifts:
     subtitle: 'A4 Bulletin-Board Schedule · Ready for Posting or PDF Archiving',
     sheetId: 'printable-schedule-sheet',
     sheetHtml,
+    printedBy: printedByLabel(user),
   });
 }
 

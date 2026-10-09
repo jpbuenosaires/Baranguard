@@ -45,6 +45,7 @@ import { icons } from '../components/icons.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { InfoTip } from '../components/Tooltip.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDate, formatManilaDateTime, formatManilaTime } from '../utils/manilaTime.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -263,7 +264,7 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
         renderPopulated(body, summary, navigate, user.role);
       }
 
-      freshness.textContent = `Updated ${new Date().toLocaleTimeString([], { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}`;
+      freshness.textContent = `Updated ${formatManilaTime(new Date())}`;
 
       loadAttentionBanner(body, navigate, user.role);
       loadPendingApprovals(body, user, navigate);
@@ -590,9 +591,7 @@ async function loadPbDigest(container) {
       return;
     }
     host.innerHTML = '';
-    const generated = new Date(digest.generatedAt).toLocaleDateString('en-US', {
-      timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    });
+    const generated = formatManilaDateTime(digest.generatedAt);
 
     const manifest = document.createElement('div');
     manifest.className = 'report-manifest';
@@ -974,24 +973,21 @@ function renderRecentIncidentsTable(host, items, navigate, role) {
         }
         case 'type': {
           const typeEl = document.createElement('span');
-          typeEl.style.fontWeight = '500';
-          typeEl.textContent = INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType;
+          typeEl.className = 'incident-type-cell';
+          typeEl.textContent = INCIDENT_TYPE_LABELS[row.incidentType] || 'Other';
           return typeEl;
         }
         case 'status': {
           const span = document.createElement('span');
           span.className = `status-pill ${STATUS_PILL_CLASS[row.status] || 'status-pill--neutral'}`;
-          span.textContent = row.status;
+          span.textContent = STATUS_LABELS[row.status] || 'Unknown';
           return span;
         }
         case 'date': {
           const dateEl = document.createElement('span');
           dateEl.className = 'incident-date-cell';
-          const d = new Date(row.createdAt);
-          dateEl.textContent = isNaN(d.getTime())
-            ? row.createdAt
-            : d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
-          dateEl.title = row.createdAt;
+          dateEl.textContent = formatManilaDate(row.createdAt);
+          dateEl.title = formatManilaDateTime(row.createdAt);
           return dateEl;
         }
         default:
@@ -1040,7 +1036,7 @@ function renderTanodsOnDutyList(host, roster) {
 
     const pill = document.createElement('span');
     pill.className = `status-pill ${DUTY_STATUS_PILL_CLASS[tanod.status] || 'status-pill--neutral'}`;
-    pill.textContent = DUTY_STATUS_LABELS[tanod.status] || tanod.status;
+    pill.textContent = DUTY_STATUS_LABELS[tanod.status] || 'Unknown';
 
     row.append(left, pill);
     list.appendChild(row);
@@ -1057,7 +1053,7 @@ function renderIncidentTypeDonutCard(counts, navigate) {
   const rows = entries.map(([key, count]) => ({
     key,
     count,
-    label: INCIDENT_TYPE_LABELS[key] || key,
+    label: INCIDENT_TYPE_LABELS[key] || 'Other',
     color: INCIDENT_TYPE_COLORS[key] || 'var(--cat-other)',
   }));
 
@@ -1066,7 +1062,7 @@ function renderIncidentTypeDonutCard(counts, navigate) {
   for (const [key, count] of entries) {
     if (count > 0) activeCatsCount++;
     if (count > topCat.count) {
-      topCat = { key, count, label: INCIDENT_TYPE_LABELS[key] || key };
+      topCat = { key, count, label: INCIDENT_TYPE_LABELS[key] || 'Other' };
     }
   }
   const topCatPct = total > 0 ? Math.round((topCat.count / total) * 100) : 0;
@@ -1096,7 +1092,7 @@ function renderIncidentTypeDonutCard(counts, navigate) {
       </div>
       <div class="category-summary-tile">
         <span class="category-summary-tile__val">
-          <span class="summary-tile-pip" style="background:var(--chart-cat-8, #8B5CF6);" aria-hidden="true"></span>
+          <span class="summary-tile-pip" style="background:var(--chart-cat-8);" aria-hidden="true"></span>
           ${activeCatsCount} Active ${activeCatsCount === 1 ? 'Category' : 'Categories'}
         </span>
         <span class="category-summary-tile__sub">Out of 11 classified types</span>
@@ -1128,7 +1124,7 @@ function renderQuickActionsCard(navigate) {
   const ACTIONS = [
     { label: 'Log an Incident', sub: 'New incident intake', icon: icons.alertTriangle, tone: 'amber', page: 'incident-management' },
     { label: 'Dispatch Center', sub: 'Live tracking & roster', icon: icons.radio, tone: 'blue', page: 'dispatch' },
-    { label: 'Message a Resident', sub: 'Resident SMS broadcast', icon: icons.messageSquare, tone: 'cyan', page: 'sms-log' },
+    { label: 'Send an SMS', sub: 'Message staff or reply to a resident', icon: icons.messageSquare, tone: 'cyan', page: 'sms-log' },
     { label: 'Analytics', sub: 'Reports, trends & heatmap', icon: icons.barChart, tone: 'violet', page: 'analytics' },
   ];
   const grid = document.createElement('div');
@@ -1179,7 +1175,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
         const pct = ((count / total) * 100).toFixed(1);
         seg.className = `pipeline-stacked-segment pipeline-stacked-segment--${STATUS_STYLE_KEY[key] || key}`;
         seg.style.width = `${pct}%`;
-        seg.title = `${labels[key] || key}: ${count} (${pct}%)`;
+        seg.title = `${labels[key] || 'Unknown'}: ${count} (${pct}%)`;
         pipelineBar.appendChild(seg);
       }
     }
@@ -1200,9 +1196,9 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
     const label = document.createElement('span');
     const pillClass = pillClasses[key];
     if (pillClass) {
-      label.innerHTML = `<span class="status-pill ${pillClass}">${labels[key] || key}</span>`;
+      label.innerHTML = `<span class="status-pill ${pillClass}">${escapeHtml(labels[key] || 'Unknown')}</span>`;
     } else {
-      label.textContent = labels[key] || key;
+      label.textContent = labels[key] || 'Unknown';
     }
 
     const value = document.createElement('span');

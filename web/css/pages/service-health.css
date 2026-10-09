@@ -32,7 +32,7 @@
   border-radius: 999px;
   font-size: var(--font-size-xs, 0.75rem);
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-link);
   user-select: none;
 }
 
@@ -505,7 +505,7 @@
 
 .health-btn-terminal-copy:hover {
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-  color: var(--color-primary);
+  color: var(--color-link);
   border-color: var(--color-primary);
 }
 
@@ -516,7 +516,7 @@
 .health-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.65);
+  background: color-mix(in srgb, var(--dark-bg) 65%, transparent);
   backdrop-filter: blur(4px);
   z-index: 1000;
   display: flex;
@@ -632,7 +632,7 @@
   padding: var(--spacing-xs) var(--spacing-2xs);
   border-radius: var(--radius-sm, 0.25rem);
   border: 1px solid var(--color-border);
-  color: var(--color-primary);
+  color: var(--color-link);
   display: inline-block;
   width: fit-content;
 }
@@ -792,4 +792,23 @@
   .health-refresh-btn.is-refreshing svg {
     animation: none;
   }
+}
+
+.health-freshness-pill.is-stale {
+  color: var(--color-warning-text);
+}
+
+.health-modal-icon {
+  color: var(--color-link);
+}
+
+.health-modal-val--healthy { color: var(--color-success-text); }
+.health-modal-val--unhealthy { color: var(--color-critical); }
+.health-modal-val--configured,
+.health-modal-val--not_configured { color: var(--color-text-secondary); }
+
+.health-modal-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
 }

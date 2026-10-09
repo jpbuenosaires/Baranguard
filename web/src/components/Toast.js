@@ -30,10 +30,10 @@ function ensureContainer() {
   if (container) return container;
   container = document.createElement('div');
   container.className = 'toast-container';
-  // "polite" — a toast is a confirmation/status, not an emergency (SOS
-  // alerts have their own dedicated, always-visible banner in Dispatch
-  // Center; this component doesn't replace that).
-  container.setAttribute('aria-live', 'polite');
+  // No aria-live on the container (audit 2026-10-09 X-08): each toast is
+  // its own live region, role=status (polite) for success/info/warning and
+  // role=alert (assertive) for errors. A polite container around an alert
+  // made some screen readers queue the error behind other speech.
   document.body.appendChild(container);
   return container;
 }
@@ -43,11 +43,17 @@ function ensureContainer() {
  * @param {{variant?: 'success'|'error'|'warning'|'info', duration?: number}} [options]
  * @returns {() => void} dismiss function, in case the caller wants to close it early
  */
-export function showToast(message, { variant = 'info', duration = 4000 } = {}) {
+export function showToast(message, { variant = 'info', duration } = {}) {
+  // X-08: an error stays until it is dismissed (a 4-second error was easy
+  // to miss and could not be paused by keyboard); everything else
+  // auto-dismisses after 4 s unless the caller sets a duration.
+  // `duration: 0` (or Infinity) also means "until dismissed".
+  if (duration === undefined) duration = variant === 'error' ? 0 : 4000;
+  const persistent = !Number.isFinite(duration) || duration <= 0;
   const host = ensureContainer();
 
   const toast = document.createElement('div');
-  toast.className = `toast toast--${variant}`;
+  toast.className = `toast toast--${variant}` + (persistent ? ' toast--persistent' : '');
   toast.setAttribute('role', variant === 'error' ? 'alert' : 'status');
 
   const iconEl = document.createElement('span');
@@ -71,9 +77,10 @@ export function showToast(message, { variant = 'info', duration = 4000 } = {}) {
   const progressBar = document.createElement('div');
   progressBar.className = 'toast__progress';
   progressBar.setAttribute('aria-hidden', 'true');
-  toast.style.setProperty('--toast-duration', `${duration}ms`);
+  if (!persistent) toast.style.setProperty('--toast-duration', `${duration}ms`);
 
-  toast.append(iconEl, messageEl, closeButton, progressBar);
+  if (persistent) toast.append(iconEl, messageEl, closeButton);
+  else toast.append(iconEl, messageEl, closeButton, progressBar);
   host.appendChild(toast);
 
   let timeoutHandle;
@@ -94,19 +101,22 @@ export function showToast(message, { variant = 'info', duration = 4000 } = {}) {
   };
 
   const pause = () => {
-    if (dismissed) return;
+    if (dismissed || persistent) return;
     clearTimeout(timeoutHandle);
     remaining -= (Date.now() - startTime);
   };
 
   const resume = () => {
-    if (dismissed) return;
+    if (dismissed || persistent) return;
     startTime = Date.now();
     timeoutHandle = setTimeout(dismiss, Math.max(remaining, 500));
   };
 
   toast.addEventListener('mouseenter', pause);
   toast.addEventListener('mouseleave', resume);
+  // Keyboard users pause it the same way a mouse hover does.
+  toast.addEventListener('focusin', pause);
+  toast.addEventListener('focusout', resume);
 
   closeButton.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -115,6 +125,6 @@ export function showToast(message, { variant = 'info', duration = 4000 } = {}) {
   // "Dismiss on click" (§3.1) — clicking the toast body itself also closes it.
   toast.addEventListener('click', dismiss);
 
-  timeoutHandle = setTimeout(dismiss, duration);
+  if (!persistent) timeoutHandle = setTimeout(dismiss, duration);
   return dismiss;
 }

@@ -37,6 +37,7 @@ import { icons } from '../components/icons.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDate, formatManilaDateTime, formatManilaTimeSeconds, manilaDateKey } from '../utils/manilaTime.js';
 
 const PAGE_SIZE = 25;
 
@@ -187,36 +188,37 @@ function getActionTone(action) {
  * @returns {string} YYYY-MM-DD
  */
 function getPastDateISO(days) {
-  const d = new Date();
-  d.setDate(d.getDate() - (days - 1));
-  return d.toISOString().slice(0, 10);
+  // Manila has no daylight saving, so whole-day subtraction is exact.
+  return manilaDateKey(Date.now() - (days - 1) * 86400000);
 }
 
 function getTodayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return manilaDateKey(new Date());
+}
+
+/** "2026-10-09" (a Manila calendar day) -> "Oct 9, 2026". */
+function dayLabel(iso) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(iso || '')) ? formatManilaDate(`${iso}T00:00:00+08:00`) : '';
+}
+
+/** Plain words for an action code that has no entry in ACTION_LABELS. */
+function actionText(action) {
+  if (!action) return 'Unknown action';
+  if (ACTION_LABELS[action]) return ACTION_LABELS[action];
+  const words = String(action).replace(/_/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /**
- * Formats a date string to friendly readable parts
- * @param {string} dateStr
+ * Formats an instant as Manila date + time parts (Rule 11).
+ * @param {string|Date} value
  * @returns {{ date: string, time: string }}
  */
-function formatAuditTime(dateStr) {
-  if (!dateStr) return { date: '—', time: '' };
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return { date: dateStr, time: '' };
-
-  const date = d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  const time = d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  return { date, time };
+function formatAuditTime(value) {
+  if (!value) return { date: '—', time: '' };
+  const date = formatManilaDate(value, '');
+  if (!date) return { date: 'Not recorded', time: '' };
+  return { date, time: formatManilaTimeSeconds(value, '') };
 }
 
 /**
@@ -229,10 +231,11 @@ function exportAuditLogsToCsv(items) {
     return;
   }
 
-  const headers = ['Audit ID', 'Timestamp (UTC)', 'Actor ID', 'Actor Username', 'Action', 'Entity Type', 'Entity ID', 'Metadata'];
+  const headers = ['Audit ID', 'When (Manila time)', 'Timestamp (UTC)', 'Actor ID', 'Actor Username', 'Action', 'Entity Type', 'Entity ID', 'Metadata'];
   const rows = items.map((item) => [
     item.auditId,
-    `"${item.createdAt || ''}"`,
+    `"${formatManilaDateTime(item.createdAt, '')}"`,
+    `"${item.createdAt instanceof Date ? item.createdAt.toISOString() : (item.createdAt || '')}"`,
     item.actorUserId ?? 'SYSTEM',
     `"${(item.actorUsername || '').replace(/"/g, '""')}"`,
     `"${(item.action || '').replace(/"/g, '""')}"`,
@@ -246,7 +249,7 @@ function exportAuditLogsToCsv(items) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.setAttribute('href', url);
-  link.setAttribute('download', `baranguard_audit_log_${new Date().toISOString().slice(0, 10)}.csv`);
+  link.setAttribute('download', `baranguard_audit_log_${getTodayISO()}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -262,10 +265,7 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
     return;
   }
 
-  const printedAt = new Date().toLocaleString('en-PH', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  const printedAt = formatManilaDateTime(new Date());
   const preparedBy = user?.fullName || 'System Administrator';
   const scopeDesc = [categoryLabel || 'All Categories', actionLabel || 'All Actions'].join(' · ');
 
@@ -273,7 +273,7 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
     const actor = item.actorUsername
       ? `${item.actorUsername} (#${item.actorUserId ?? '—'})`
       : (item.actorUserId ? `User #${item.actorUserId}` : 'SYSTEM');
-    const actionText = ACTION_LABELS[item.action] || (item.action || '').replace(/_/g, ' ');
+    const actionName = actionText(item.action);
     const entityText = item.entityType
       ? `${item.entityType}${item.entityId ? ` #${item.entityId}` : ''}`
       : '—';
@@ -284,9 +284,9 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
     return `
       <tr>
         <td>#${escapeHtml(String(item.auditId))}</td>
-        <td>${escapeHtml(item.createdAt || '—')}</td>
+        <td>${escapeHtml(formatManilaDateTime(item.createdAt, '—'))}</td>
         <td>${escapeHtml(actor)}</td>
-        <td>${escapeHtml(actionText)}</td>
+        <td>${escapeHtml(actionName)}</td>
         <td>${escapeHtml(entityText)}</td>
         <td>${escapeHtml(metaEntries || '—')}</td>
       </tr>
@@ -296,18 +296,18 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
   const sheetHtml = `
     <div class="print-sheet__header">
       <p class="print-sheet__republic">Republic of the Philippines</p>
-      <p class="print-sheet__office">Barangay Administrative &amp; Data Protection Compliance Record</p>
-      <h3 class="print-sheet__title">Immutable System Audit Trail Excerpt</h3>
-      <p class="print-sheet__subline">Covering ${escapeHtml(dateFrom)} to ${escapeHtml(dateTo)}${searchQuery ? ` · Filtered by "${escapeHtml(searchQuery)}"` : ''}</p>
+      <p class="print-sheet__office">Barangay Administrative Record</p>
+      <h3 class="print-sheet__title">System Audit Trail Excerpt</h3>
+      <p class="print-sheet__subline">Covering ${escapeHtml(dayLabel(dateFrom))} to ${escapeHtml(dayLabel(dateTo))}${searchQuery ? ` · Filtered by "${escapeHtml(searchQuery)}"` : ''}</p>
       <div>
-        <span class="print-sheet__badge print-sheet__badge--finalized">Write-Once Statutory Audit Record (§5 / §9 W17)</span>
+        <span class="print-sheet__badge print-sheet__badge--finalized">Write-once record: entries cannot be edited or deleted</span>
       </div>
     </div>
 
     <div class="print-sheet__meta-bar">
       <div class="print-sheet__meta-cell">
         <div class="print-sheet__meta-label">Period Covered</div>
-        <div class="print-sheet__meta-val">${escapeHtml(dateFrom)} — ${escapeHtml(dateTo)}</div>
+        <div class="print-sheet__meta-val">${escapeHtml(dayLabel(dateFrom))} to ${escapeHtml(dayLabel(dateTo))}</div>
       </div>
       <div class="print-sheet__meta-cell">
         <div class="print-sheet__meta-label">Filter Scope</div>
@@ -328,12 +328,12 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
       <table class="print-sheet__table">
         <thead>
           <tr>
-            <th>Audit ID</th>
-            <th>Timestamp (UTC)</th>
-            <th>Actor</th>
-            <th>Action</th>
-            <th>Target Entity</th>
-            <th>Metadata Summary</th>
+            <th scope="col">Audit ID</th>
+            <th scope="col">When (Manila time)</th>
+            <th scope="col">Actor</th>
+            <th scope="col">Action</th>
+            <th scope="col">Target Entity</th>
+            <th scope="col">Metadata Summary</th>
           </tr>
         </thead>
         <tbody>
@@ -343,8 +343,8 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
     </div>
 
     <div class="print-sheet__section">
-      <h4 class="print-sheet__section-title">Statutory Compliance &amp; Retention Notice</h4>
-      <div class="print-sheet__narrative">Audit log entries in Baranguard are write-once and tamper-evident. No user or administrator has edit or delete privileges over this table; automated retention pruning occurs strictly after the 7-year statutory retention horizon expires.</div>
+      <h4 class="print-sheet__section-title">Record-keeping Notice</h4>
+      <div class="print-sheet__narrative">Audit log entries in Baranguard are write-once. No user or administrator can edit or delete them from the system. Old entries are removed automatically only when the system's retention period for audit records has passed. This printout is not signed until a person signs it below.</div>
     </div>
 
     <div class="print-sheet__signatures">
@@ -353,20 +353,20 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
         <div class="print-sheet__sig-role">Prepared &amp; Exported By</div>
       </div>
       <div class="print-sheet__sig-box">
-        <div class="print-sheet__sig-line">Punong Barangay / Data Protection Officer</div>
-        <div class="print-sheet__sig-role">Attested By</div>
+        <div class="print-sheet__sig-line"></div>
+        <div class="print-sheet__sig-role">Reviewed by (Punong Barangay) · Date: ____________</div>
       </div>
     </div>
 
     <div class="print-sheet__footer">
       <span>Generated via Baranguard Audit Compliance Console · ${escapeHtml(printedAt)}</span>
-      <span>RA 10173 &amp; Statutory Audit Trail Compliance</span>
+      <span>Audit trail excerpt</span>
     </div>
   `;
 
   openPrintPreviewModal({
     title: 'Printable Audit Trail Excerpt',
-    subtitle: `${dateFrom} to ${dateTo} · ${items.length} entries`,
+    subtitle: `${dayLabel(dateFrom)} to ${dayLabel(dateTo)} · ${items.length} entries`,
     sheetId: 'printable-audit-sheet',
     sheetHtml,
     extraActions: [
@@ -400,7 +400,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   // Page Header with Preview & Print Excerpt + Export CSV actions
   const pageHeader = PageHeader({
     title: 'Audit Log',
-    subtitle: 'Immutable record of administrative actions & system events',
+    subtitle: 'Permanent record of administrative actions and system events',
     icon: icons.shield,
   });
 
@@ -408,7 +408,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   previewPrintBtn.type = 'button';
   previewPrintBtn.id = 'preview-audit-print-btn';
   previewPrintBtn.className = 'ghost';
-  previewPrintBtn.style.cssText = 'display: inline-flex; align-items: center; gap: 0.5rem;';
+  previewPrintBtn.classList.add('audit-header-btn');
   previewPrintBtn.innerHTML = `${icons.printer(16)}<span>Preview &amp; Print Excerpt</span>`;
   previewPrintBtn.addEventListener('click', () => {
     const filtered = filterItemsBySearch(currentItems);
@@ -416,7 +416,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
       ? CATEGORIES[activeFilterCategory].label
       : 'All Categories';
     const actionLabel = actionSelect.value
-      ? (ACTION_LABELS[actionSelect.value] || actionSelect.value)
+      ? actionText(actionSelect.value)
       : 'All Actions';
     openAuditPrintModal({
       items: filtered,
@@ -433,7 +433,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
   exportBtn.className = 'ghost';
-  exportBtn.style.cssText = 'display: inline-flex; align-items: center; gap: 0.5rem;';
+  exportBtn.classList.add('audit-header-btn');
   exportBtn.innerHTML = `${icons.download(16)}<span>Export CSV</span>`;
   exportBtn.addEventListener('click', () => exportAuditLogsToCsv(filterItemsBySearch(currentItems)));
   pageHeader.actions.append(previewPrintBtn, exportBtn);
@@ -453,12 +453,12 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     </div>
     <div class="audit-security-banner__content">
       <div class="audit-security-banner__title">
-        <span>Immutable Compliance Audit Trail</span>
-        <span class="audit-security-banner__badge">7-Year Statutory Retention (§5/§9 W17)</span>
+        <span>Permanent Audit Trail</span>
+        <span class="audit-security-banner__badge">Write-once</span>
       </div>
       <p class="audit-security-banner__text">
-        Audit entries are write-once and tamper-evident. They cannot be edited or deleted from this console or any API endpoint.
-        The only authorized purge is performed by the automated retention subsystem after the 7-year statutory period expires.
+        Audit entries are write-once. They cannot be edited or deleted from this screen or from the system's API.
+        The only removal is the automatic clean-up of very old entries under the system's retention rules.
       </p>
     </div>
   `;
@@ -479,6 +479,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   const searchIcon = document.createElement('span');
   searchIcon.className = 'audit-search-field__icon';
   searchIcon.innerHTML = icons.search(16);
+  searchIcon.setAttribute('aria-hidden', 'true');
   const searchInput = document.createElement('input');
   searchInput.type = 'search';
   searchInput.id = 'audit-search';
@@ -509,6 +510,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   const categoryChevron = document.createElement('span');
   categoryChevron.className = 'audit-select-chevron';
   categoryChevron.innerHTML = icons.chevronDown(14);
+  categoryChevron.setAttribute('aria-hidden', 'true');
   categoryWrapper.append(categorySelect, categoryChevron);
 
   // Col 3: Action Dropdown
@@ -533,7 +535,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     for (const act of eligibleActions) {
       const option = document.createElement('option');
       option.value = act;
-      option.textContent = ACTION_LABELS[act] || act.replace(/_/g, ' ');
+      option.textContent = actionText(act);
       actionSelect.appendChild(option);
     }
   }
@@ -542,6 +544,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   const actionChevron = document.createElement('span');
   actionChevron.className = 'audit-select-chevron';
   actionChevron.innerHTML = icons.chevronDown(14);
+  actionChevron.setAttribute('aria-hidden', 'true');
   actionWrapper.append(actionSelect, actionChevron);
 
   // Col 4: Date range. 2026-09-06 UI/UX audit — this screen used to build
@@ -584,6 +587,12 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
 
   filterPanel.append(searchField, categoryWrapper, actionWrapper, rangePicker.el);
   pageContainer.appendChild(filterPanel);
+
+  // Announces the result count to screen readers after each filter or page change.
+  const resultStatus = document.createElement('p');
+  resultStatus.className = 'sr-only';
+  resultStatus.setAttribute('role', 'status');
+  pageContainer.appendChild(resultStatus);
 
   // 4. Data Table Container
   const tableContainer = document.createElement('div');
@@ -718,6 +727,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
 
   function renderList(items, totalItems) {
     tableContainer.innerHTML = '';
+    resultStatus.textContent = `Showing ${items.length} of ${totalItems} audit entries.`;
     tableContainer.appendChild(DataTable({
       columns: COLUMNS,
       rows: items,
@@ -746,7 +756,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     backdrop.className = 'audit-modal-backdrop';
     backdrop.setAttribute('role', 'dialog');
     backdrop.setAttribute('aria-modal', 'true');
-    backdrop.setAttribute('aria-label', `Audit Event #${row.auditId}`);
+    backdrop.setAttribute('aria-labelledby', 'audit-modal-title');
 
     const card = document.createElement('div');
     card.className = 'audit-modal-card';
@@ -757,6 +767,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
 
     const titleEl = document.createElement('h3');
     titleEl.className = 'audit-modal-title';
+    titleEl.id = 'audit-modal-title';
     titleEl.innerHTML = `${icons.shield(18)}<span>Audit Event #${row.auditId}</span>`;
 
     const closeBtn = document.createElement('button');
@@ -776,12 +787,12 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
 
     const { date, time } = formatAuditTime(row.createdAt);
     const tone = getActionTone(row.action);
-    const actionLabel = ACTION_LABELS[row.action] || row.action.replace(/_/g, ' ');
+    const actionLabel = actionText(row.action);
 
     grid.innerHTML = `
       <div class="audit-modal-field">
-        <span class="audit-modal-label">Event Timestamp</span>
-        <span class="audit-modal-value">${date} ${time} (UTC: ${row.createdAt || 'N/A'})</span>
+        <span class="audit-modal-label">When</span>
+        <span class="audit-modal-value">${escapeHtml(date)} ${escapeHtml(time)} (Manila time)</span>
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Actor / Initiator</span>
@@ -790,12 +801,12 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
       <div class="audit-modal-field">
         <span class="audit-modal-label">Action</span>
         <span class="audit-modal-value">
-          <span class="audit-action-pill audit-action-pill--${tone}">${actionLabel}</span>
+          <span class="audit-action-pill audit-action-pill--${tone}">${escapeHtml(actionLabel)}</span>
         </span>
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Target Entity</span>
-        <span class="audit-modal-value">${escapeHtml(row.entityType || 'General')}${row.entityId !== null ? ` #${row.entityId}` : ''}</span>
+        <span class="audit-modal-value">${escapeHtml(row.entityType || 'General')}${row.entityId !== null ? ` #${escapeHtml(String(row.entityId))}` : ''}</span>
       </div>
     `;
 
@@ -805,7 +816,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
 
     const jsonLabel = document.createElement('span');
     jsonLabel.className = 'audit-modal-label';
-    jsonLabel.textContent = 'Event Metadata Payload';
+    jsonLabel.textContent = 'Recorded details (technical)';
 
     const jsonViewer = document.createElement('pre');
     jsonViewer.className = 'audit-json-viewer';
@@ -822,16 +833,16 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'audit-btn-copy';
-    copyBtn.innerHTML = `${icons.copy(14)}<span>Copy Raw JSON</span>`;
+    copyBtn.innerHTML = `${icons.copy(14)}<span>Copy details</span>`;
 
     copyBtn.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(jsonString);
-        copyBtn.innerHTML = `${icons.checkCircle(14)}<span>Copied!</span>`;
-        copyBtn.style.borderColor = 'var(--color-success)';
+        copyBtn.innerHTML = `${icons.checkCircle(14)}<span>Copied</span>`;
+        copyBtn.classList.add('is-copied');
         setTimeout(() => {
-          copyBtn.innerHTML = `${icons.copy(14)}<span>Copy Raw JSON</span>`;
-          copyBtn.style.borderColor = '';
+          copyBtn.innerHTML = `${icons.copy(14)}<span>Copy details</span>`;
+          copyBtn.classList.remove('is-copied');
         }, 2000);
       } catch (err) {
         showToast('Could not copy to clipboard.', { variant: 'error' });
@@ -849,13 +860,25 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     backdrop.appendChild(card);
     document.body.appendChild(backdrop);
 
+    // Focus management: remember the opener, move focus into the dialog,
+    // keep Tab inside it, and give focus back on close (audit X-10).
+    const opener = document.activeElement;
     const closeModal = () => {
       document.removeEventListener('keydown', handleKey);
       backdrop.remove();
+      if (opener && typeof opener.focus === 'function' && opener.isConnected) opener.focus();
     };
 
     const handleKey = (e) => {
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape') { closeModal(); return; }
+      if (e.key !== 'Tab') return;
+      const focusable = [...card.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+        .filter((el) => !el.disabled);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     };
 
     closeBtn.addEventListener('click', closeModal);
@@ -864,6 +887,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
       if (e.target === backdrop) closeModal();
     });
     document.addEventListener('keydown', handleKey);
+    closeBtn.focus();
   }
 }
 
@@ -931,7 +955,7 @@ function renderAuditCell(row, key, navigate) {
       const span = document.createElement('span');
       const tone = getActionTone(row.action);
       span.className = `audit-action-pill audit-action-pill--${tone}`;
-      span.textContent = ACTION_LABELS[row.action] || row.action.replace(/_/g, ' ');
+      span.textContent = actionText(row.action);
       return span;
     }
 
@@ -959,7 +983,7 @@ function renderAuditCell(row, key, navigate) {
     case 'metadata': {
       if (!row.metadataJson || Object.keys(row.metadataJson).length === 0) {
         const dash = document.createElement('span');
-        dash.style.color = 'var(--color-text-tertiary)';
+        dash.className = 'audit-meta-empty';
         dash.textContent = '—';
         return dash;
       }
@@ -985,8 +1009,7 @@ function renderAuditCell(row, key, navigate) {
 
       if (entries.length > 3) {
         const moreTag = document.createElement('span');
-        moreTag.className = 'audit-meta-tag';
-        moreTag.style.color = 'var(--color-primary)';
+        moreTag.className = 'audit-meta-tag audit-meta-tag--more';
         moreTag.textContent = `+${entries.length - 3} more`;
         wrap.appendChild(moreTag);
       }

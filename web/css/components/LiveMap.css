@@ -238,7 +238,7 @@
 }
 .live-map__popup-assigned {
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 .live-map__popup-actions {
   display: flex;

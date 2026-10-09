@@ -11,24 +11,35 @@ import { getReportsHeatmap, ApiClientError } from '../api/apiClient.js';
 import { HeatmapMap } from '../components/HeatmapMap.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
 import { StatStrip } from '../components/StatStrip.js';
+import { formatManilaDate } from '../utils/manilaTime.js';
 
+// The 11 real incident types (REFERENCE section 4); same labels as the
+// Dashboard and Reports so one type never reads two ways.
 const TYPE_LABELS = {
   theft: 'Theft',
-  assault: 'Assault',
-  vandalism: 'Vandalism',
+  physical_injury: 'Physical Injury',
   disturbance: 'Disturbance',
-  noise_complaint: 'Noise Complaint',
   domestic_dispute: 'Domestic Dispute',
-  trespassing: 'Trespassing',
+  vandalism: 'Vandalism',
+  traffic_incident: 'Traffic Incident',
   fire: 'Fire',
   medical_emergency: 'Medical Emergency',
-  flooding: 'Flooding',
+  missing_person: 'Missing Person',
+  animal_complaint: 'Animal Complaint',
   other: 'Other',
 };
 
+/** Below this many plotted incidents the colour scale is too coarse to read as a trend. */
+const SMALL_SAMPLE = 10;
+
+/** "2026-10-09" (a Manila calendar day) -> "Oct 9, 2026". */
+function dayLabel(iso) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(iso || '')) ? formatManilaDate(`${iso}T00:00:00+08:00`) : '';
+}
+
 function formatIncidentType(raw) {
   if (!raw) return 'Other';
-  return TYPE_LABELS[raw] || raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return TYPE_LABELS[raw] || 'Other';
 }
 
 /**
@@ -127,9 +138,9 @@ export function renderHeatmapTab(container, pageHeader, user) {
       stripHolder.appendChild(
         StatStrip({
           items: [
-            { label: 'Mapped Incidents', value: points.length, tone: 'default' },
+            { label: 'Incidents with a location', value: points.length, tone: 'default' },
             { label: 'Visible on Map', value: visibleCount, tone: 'info' },
-            { label: 'Top Hotspot Category', value: topCategoryLabel, tone: 'warning' },
+            { label: 'Most Common Category', value: topCategoryLabel, tone: 'warning' },
             { label: 'High / Critical Priority', value: highCriticalCount, tone: highCriticalCount > 0 ? 'critical' : 'default' },
           ],
         }),
@@ -174,13 +185,13 @@ export function renderHeatmapTab(container, pageHeader, user) {
     const legendBar = document.createElement('div');
     legendBar.className = 'heatmap-legend-bar';
     legendBar.innerHTML = `
-      <span class="heatmap-legend-bar__title">Spatial Concentration Scale</span>
+      <span class="heatmap-legend-bar__title">How closely incidents are grouped</span>
       <div class="heatmap-legend-bar__scale">
-        <span>Low (Isolated)</span>
+        <span>Fewer incidents</span>
         <span class="heatmap-legend-bar__gradient" aria-hidden="true"></span>
-        <span>High (Hotspot Cluster)</span>
+        <span>Many incidents close together</span>
       </div>
-      <span class="heatmap-legend-bar__meta">Plotting GPS-verified incidents (${points.length} total in range)</span>
+      <span class="heatmap-legend-bar__meta">Showing the ${points.length} incident${points.length === 1 ? '' : 's'} in this range that have a recorded location.${points.length < SMALL_SAMPLE ? ' With so few incidents the colours exaggerate small clusters; read them with care.' : ''}</span>
     `;
     mapPanel.appendChild(legendBar);
 
@@ -194,7 +205,7 @@ export function renderHeatmapTab(container, pageHeader, user) {
 
     const bdSub = document.createElement('p');
     bdSub.className = 'heatmap-breakdown-card__subtitle';
-    bdSub.textContent = dateFrom && dateTo ? `Window: ${dateFrom} to ${dateTo}` : 'Selected historical window';
+    bdSub.textContent = dateFrom && dateTo ? `Window: ${dayLabel(dateFrom)} to ${dayLabel(dateTo)}` : 'Selected historical window';
 
     const bdList = document.createElement('div');
     bdList.className = 'heatmap-breakdown-list';

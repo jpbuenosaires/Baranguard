@@ -41,8 +41,8 @@ describe('Dispatch Center behaviour', () => {
     mountPage(renderDispatchCenterPage, { role: 'admin' });
     await settle();
     const body = text();
-    assert.match(body, /Assigned: Maria Dela Cruz/);
-    assert.match(body, /Assigned: Jose Reyes/);
+    assert.match(body, /Maria Dela Cruz: On the way/);
+    assert.match(body, /Jose Reyes: Assigned/);
   });
 
   const dialog = () => $('[role="alertdialog"]');
@@ -361,7 +361,7 @@ describe('Dispatch Center: stale data, SOS handling and routing (audit 2026-10-0
     api.fail('GET', '/dispatch', 500);
     await poll();
     assert.equal(banner.hidden, false);
-    assert.match(text(banner), /Live updates paused - last updated \d{2}:\d{2} \(Manila time\)\. Retrying\.\.\./);
+    assert.match(text(banner), /Live updates paused - last updated \d{1,2}:\d{2} (am|pm) \(Manila time\)\. Retrying\.\.\./i);
     assert.match(text(ctx.root), /INC-2026-901/, 'last good data stays on screen');
     assert.match(text($('.dispatch-map-live-pill', ctx.root)), /paused/i);
     assert.doesNotMatch(text($('.dispatch-map-live-pill', ctx.root)), /Live/);
@@ -430,9 +430,9 @@ describe('Dispatch Center: stale data, SOS handling and routing (audit 2026-10-0
     const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
     await settle();
     // 02:40 UTC is 10:40 in Manila.
-    assert.match(text($('.dispatch-sos-row', ctx.root)), /Last known position \(10:40\)/);
+    assert.match(text($('.dispatch-sos-row', ctx.root)), /Last known position \(10:40 am\)/i);
     const label = maps.flatMap((m) => m.markers).map((m) => m.getElement()).find((el) => el.className.includes('live-map__marker--sos'));
-    assert.match(text(label), /last known position \(10:40\)/);
+    assert.match(text(label), /last known position \(10:40( am)?\)/);
     assert.ok(label.className.includes('live-map__marker--sos-last-known'));
   });
 

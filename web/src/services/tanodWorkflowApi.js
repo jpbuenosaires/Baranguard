@@ -27,7 +27,7 @@
  * the previous token stays valid until its own expiry.
  */
 
-import { getSession, ApiClientError } from '../api/apiClient.js';
+import { getSession, ApiClientError, expireSession } from '../api/apiClient.js';
 
 export { ApiClientError };
 
@@ -105,6 +105,11 @@ async function request(method, path, { query, body, idempotencyKey } = {}) {
     }
   }
 
+  // F-08/X-02: a server 401 ends the session app-wide (back to sign-in with
+  // a message), exactly as apiClient.js does, instead of leaving this page
+  // on an error state whose Retry can never succeed. Only when the token
+  // that failed is still the current one (a newer sign-in is left alone).
+  if (response.status === 401 && getSession()?.token === session.token) expireSession('unauthorized');
   if (!response.ok) {
     const errBody = json && json.error ? json.error : {};
     throw new ApiClientError(response.status, errBody.code || 'UNKNOWN_ERROR', errBody.message || 'Something went wrong.');
@@ -437,6 +442,11 @@ export async function downloadDocumentScan(scanId) {
   } catch {
     throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
   }
+  // F-08/X-02: a server 401 ends the session app-wide (back to sign-in with
+  // a message), exactly as apiClient.js does, instead of leaving this page
+  // on an error state whose Retry can never succeed. Only when the token
+  // that failed is still the current one (a newer sign-in is left alone).
+  if (response.status === 401 && getSession()?.token === session.token) expireSession('unauthorized');
   if (!response.ok) {
     let message = 'Could not download this scan.';
     try { message = (await response.json())?.error?.message || message; } catch { /* not JSON */ }

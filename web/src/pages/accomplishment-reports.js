@@ -35,9 +35,9 @@ import {
 } from '../services/tanodWorkflowApi.js';
 import {
   h, escapeHtml, mountPageFrame, showLoading, showError, showEmpty, card, selectOf,
-  getMyAuthority, statusPill, formatMonthLabel, formatMinutes, minutesToHours, formatManilaDate,
+  getMyAuthority, statusPill, formatMonthLabel, formatMinutes, minutesToHours,
   formatManilaDateTime, formatDateOnly, trimTime, daysInMonth, actionErrorMessage,
-  loadLetterhead, letterheadHtml,
+  loadLetterhead, letterheadHtml, signatureBlockHtml, printedByLabel,
 } from '../services/tanodWorkflowUi.js';
 
 const PAGE_SIZE = 25;
@@ -303,6 +303,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
           subtitle: `${person} — ${formatMonthLabel(report.month)}`,
           sheetId: 'printable-accomplishment-report',
           sheetHtml: buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh }),
+          printedBy: printedByLabel(user),
         });
       } finally {
         printBtn.disabled = false;
@@ -542,12 +543,7 @@ function buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh
     rows += `<tr class="${dim.trim()}"><td class="tw-acc-form__day">${day}.</td><td>${escapeHtml(text)}</td><td class="tw-acc-form__time">${escapeHtml(time)}</td></tr>`;
   }
 
-  const sign = (caption, name, title, underline) => `
-    <div class="tw-sign__col">
-      <div class="tw-sign__cap">${escapeHtml(caption)}</div>
-      <div class="${underline ? 'tw-sign__name' : 'tw-sign__line'}">${escapeHtml(name || '')}</div>
-      <div class="tw-sign__pos">${escapeHtml(title || '')}</div>
-    </div>`;
+  const sign = (caption, name, title) => signatureBlockHtml(caption, name, title);
 
   return `
     <div class="tw-print tw-acc-form">
@@ -564,14 +560,14 @@ function buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh
         </tr>
       </table>
       <table class="tw-acc-form__log">
-        <thead><tr><th class="tw-acc-form__c-day">Day</th><th class="tw-acc-form__c-acc">Accomplishment</th><th class="tw-acc-form__c-time">Time</th></tr></thead>
+        <thead><tr><th scope="col" class="tw-acc-form__c-day">Day</th><th scope="col" class="tw-acc-form__c-acc">Accomplishment</th><th scope="col" class="tw-acc-form__c-time">Time</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="tw-sign">
-        ${sign('Prepared By:', person, position, false)}
-        ${sign('Noted By:', signatories.noted.name, signatories.noted.title, true)}
-        ${sign('Approved By:', signatories.approved.name, signatories.approved.title, true)}
+        ${sign('Prepared By:', person, position)}
+        ${sign('Noted By:', signatories.noted.name, signatories.noted.title)}
+        ${sign('Approved By:', signatories.approved.name, signatories.approved.title)}
       </div>
-      <p class="tw-print__footnote">Approval status at printing: ${escapeHtml(REPORT_STATUS_LABELS[report.status] || report.status || '')} · Printed ${escapeHtml(formatManilaDate(new Date().toISOString()))}</p>
+      <p class="tw-print__footnote">Approval status at printing: ${escapeHtml(REPORT_STATUS_LABELS[report.status] || report.status || '')}</p>
     </div>`;
 }

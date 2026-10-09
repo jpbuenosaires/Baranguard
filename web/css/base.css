@@ -113,7 +113,9 @@ html { font-size: 100%; }
      4.40:1) drops under AA. Darkened one step to green-800. Raising a
      token only ever adds contrast, so every other site improves too. */
   --color-success-text: #166534;  /* 5.94:1 on white */
-  --color-info-text: #0E7490;     /* 5.36:1 on white */
+  /* 2026-10-09: was #0E7490 (5.36:1 on white) but 4.47:1 on the 15% info
+     tint KPI chips use; #0E708B is 5.66:1 on white, 4.72:1 on that tint. */
+  --color-info-text: #0E708B;
   --color-link: #1D4ED8;          /* 6.70:1 on white */
 
   /* Status-pill label colours, per pill, against that pill's own tint —
@@ -137,8 +139,13 @@ html { font-size: 100%; }
      clearly inactive, because "disabled" is carried by the flat grey fill
      and the not-allowed cursor, not by making the text unreadable. */
   --color-disabled-text: #475569;
-  --color-critical: #DC2626;      --color-warning: #D97706;
-  --color-success: #16A34A;       --color-info: #0891B2;
+  /* audit 2026-10-09 (05 contrast table): the plain warning/success/info
+     fills were 3.19/3.30/3.68:1 against white, failing AA both as text and
+     under white text, and 31 page rules use them as text. Same hues, darker
+     (HSL lightness only), measured 4.78/4.78/4.76:1 on white and
+     4.57/4.57/4.55:1 on --color-bg. Was #D97706 / #16A34A / #0891B2. */
+  --color-critical: #DC2626;      --color-warning: #AC5F05;
+  --color-success: #12843C;       --color-info: #077D9A;
   /* §6.4: same reasoning as --color-text-tertiary above — the pending
      pill's text was hardcoded #92400E directly in .status-pill--pending
      because --color-warning itself only reaches ~3.2:1 against
@@ -294,7 +301,24 @@ html { font-size: 100%; }
   --glass-bg: rgba(255,255,255,0.72);
   --glass-border: var(--color-border);
   --glass-blur: 12px;
-  --gradient-hero: linear-gradient(135deg, #1E3A6E 0%, #1D4ED8 50%, #3B82F6 100%);
+  /* D-24: ended at #3B82F6 (white 3.68:1); #2563EB is 5.17:1, so a label
+     near either end of a wide primary button still clears AA. */
+  --gradient-hero: linear-gradient(135deg, #1E3A6E 0%, #1D4ED8 50%, #2563EB 100%);
+  /* D-12: the deep navy AppShell.css and login.css used as a literal. */
+  --color-navy-deep: #162D58;
+  /* D-12: the sidebar's own palette, previously literal hex in AppShell.css.
+     Deliberately not re-themed (the sidebar is dark navy in both themes).
+     White on the badge fill is 4.83:1 (was #EF4444, 3.76:1 for 11px bold
+     text); the focus ring blue is 4.8:1 against the sidebar bottom. */
+  --sidebar-bg-start: #102038;
+  --sidebar-bg-end: #0C1626;
+  --sidebar-text-accent: #93C5FD;
+  --sidebar-danger: #F87171;
+  --sidebar-focus: #3B82F6;
+  --sidebar-active-start: #2563EB;
+  --sidebar-active-end: #1D4ED8;
+  /* D-11: the teal KPI accent in dark mode had no token. */
+  --dark-accent-teal: #2DD4BF;
   --gradient-card-hover: linear-gradient(135deg, rgba(59,130,246,0.04), rgba(29,78,216,0.02));
   --glow-primary: 0 0 20px rgba(59,130,246,0.25);
   --glow-critical: 0 0 24px rgba(220,38,38,0.3);
@@ -328,11 +352,12 @@ html { font-size: 100%; }
   --status-onduty-bg: var(--tint-success-bg);
   --status-onduty-border: color-mix(in srgb, var(--color-success) 30%, transparent);
 
-  --status-responding-text: #0E7490;
+  --status-responding-text: var(--color-info-text);
   --status-responding-bg: color-mix(in srgb, var(--color-info) 14%, transparent);
   --status-responding-border: color-mix(in srgb, var(--color-info) 30%, transparent);
 
-  --status-offduty-text: var(--color-text-secondary);
+  /* D-08: was --color-text-secondary, 4.29:1 on the dark neutral tint. */
+  --status-offduty-text: var(--pill-neutral-text);
   --status-offduty-bg: var(--tint-neutral-bg);
   --status-offduty-border: color-mix(in srgb, var(--color-border) 60%, transparent);
 
@@ -340,6 +365,31 @@ html { font-size: 100%; }
   --pad-table-cell-y: 0.625rem;
   --pad-table-cell-x: 0.875rem;
   --pad-roster-item: 0.5rem 0.625rem;
+
+  /* D-17: referenced but never defined (AppShell.css role tag, LiveMap.css,
+     personnel.css, incident-detail.css print modal). Aliases, no new values. */
+  --radius-full: 9999px;
+  --radius-xs: 0.25rem;
+  --shadow-lg: var(--shadow-floating);
+  --color-critical-subtle: var(--tint-critical-bg);
+
+  /* ─── LAYERING SCALE (audit 2026-10-09 D-16) ──────────────────────────
+     Toasts sat at 300, under the shared modal (400), ConfirmDialog (400),
+     every page modal (999-1000) and the fullscreen maps / print modal
+     (9999), so a save error raised while a modal was open was invisible.
+     One ordered scale now. Page stylesheets still carry literal values
+     (max 9999); --z-confirm and --z-toast sit above that maximum so a
+     confirmation or a toast is never hidden by any page layer.
+       sticky < dropdown < drawer < modal < fullscreen < confirm < toast */
+  --z-raised: 10;
+  --z-popover: 30;
+  --z-sticky: 50;
+  --z-dropdown: 100;
+  --z-drawer: 200;
+  --z-modal: 1000;
+  --z-fullscreen: 9999;
+  --z-confirm: 10050;
+  --z-toast: 10100;
 }
 
 /* Dark palette — only the tokens that actually need a different value in
@@ -386,6 +436,11 @@ html { font-size: 100%; }
   --dark-divider: #263449;
   --dark-chart-line-1: #60A5FA;   --dark-chart-line-2: #4ADE80;
   --dark-chart-grid: #334155;     --dark-chart-axis-text: #93A2B4;
+  /* D-26: three donut slices were under the 3:1 graphics threshold on the
+     dark surface (cat-1 2.83, cat-7 2.26, cat-9 2.57). Same hues, lighter:
+     3.16 / 3.13 / 3.16. */
+  --dark-chart-cat-1: #336DEC;    --dark-chart-cat-7: #DF2929;
+  --dark-chart-cat-9: #8C51EF;
   /* audit A2: pill text on the dark tints — info was 2.78:1, critical
      4.07:1, neutral 4.29:1. These clear AA at 7.70 / 5.93 / 7.40. */
   --dark-pill-info-text: #BAE6FD;
@@ -429,6 +484,9 @@ html { font-size: 100%; }
     --chart-line-2: var(--dark-chart-line-2);
     --chart-grid: var(--dark-chart-grid);
     --chart-axis-text: var(--dark-chart-axis-text);
+    --chart-cat-1: var(--dark-chart-cat-1);
+    --chart-cat-7: var(--dark-chart-cat-7);
+    --chart-cat-9: var(--dark-chart-cat-9);
     --pill-info-text: var(--dark-pill-info-text);
     --pill-critical-text: var(--dark-pill-critical-text);
     --pill-neutral-text: var(--dark-pill-neutral-text);
@@ -444,9 +502,9 @@ html { font-size: 100%; }
     --shadow-card: var(--dark-shadow-card);
     --shadow-elevated: var(--dark-shadow-elevated);
     --shadow-floating: var(--dark-shadow-floating);
-    --status-responding-text: #38BDF8;
-    --status-responding-bg: color-mix(in srgb, #38BDF8 18%, var(--dark-surface));
-    --status-responding-border: color-mix(in srgb, #38BDF8 35%, transparent);
+    --status-responding-text: var(--dark-info);
+    --status-responding-bg: color-mix(in srgb, var(--dark-info) 18%, var(--dark-surface));
+    --status-responding-border: color-mix(in srgb, var(--dark-info) 35%, transparent);
     --shadow-card-subtle: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 }
@@ -473,6 +531,9 @@ html { font-size: 100%; }
   --chart-line-2: var(--dark-chart-line-2);
   --chart-grid: var(--dark-chart-grid);
   --chart-axis-text: var(--dark-chart-axis-text);
+  --chart-cat-1: var(--dark-chart-cat-1);
+  --chart-cat-7: var(--dark-chart-cat-7);
+  --chart-cat-9: var(--dark-chart-cat-9);
   --pill-info-text: var(--dark-pill-info-text);
   --pill-critical-text: var(--dark-pill-critical-text);
   --pill-neutral-text: var(--dark-pill-neutral-text);
@@ -488,9 +549,9 @@ html { font-size: 100%; }
   --shadow-card: var(--dark-shadow-card);
   --shadow-elevated: var(--dark-shadow-elevated);
   --shadow-floating: var(--dark-shadow-floating);
-  --status-responding-text: #38BDF8;
-  --status-responding-bg: color-mix(in srgb, #38BDF8 18%, var(--dark-surface));
-  --status-responding-border: color-mix(in srgb, #38BDF8 35%, transparent);
+  --status-responding-text: var(--dark-info);
+  --status-responding-bg: color-mix(in srgb, var(--dark-info) 18%, var(--dark-surface));
+  --status-responding-border: color-mix(in srgb, var(--dark-info) 35%, transparent);
   --shadow-card-subtle: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
@@ -571,7 +632,7 @@ html { font-size: 100%; }
   background: var(--color-primary);
   color: var(--color-white);
   border-radius: var(--radius-md);
-  z-index: 200;
+  z-index: var(--z-toast);
   transition: top .2s ease;
 }
 .skip-link:focus { top: var(--spacing-md); outline: none; }
@@ -716,7 +777,9 @@ textarea:hover:not(:focus):not(:disabled) {
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: transparent;
-  box-shadow: 0 0 0 2px var(--color-primary);
+  /* --color-link: --color-primary is 2.83:1 on the dark surface, under
+     the 3:1 needed for a focus indicator; link is 6.70 / 5.75. */
+  box-shadow: 0 0 0 2px var(--color-link);
 }
 input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); }
 
@@ -765,7 +828,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   /* The inner ring matches the SURFACE the element sits on (creates the
      "gap" between element and outer ring) — --color-surface, not literal
      white, so this reads correctly in dark mode too. */
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-link);
 }
 button svg { flex-shrink: 0; }
 button.primary {
@@ -831,7 +894,7 @@ button.icon-btn {
   color: var(--color-text-secondary);
   border-radius: var(--radius-md);
 }
-button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--color-primary); }
+button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--color-link); }
 button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(--color-critical); }
 
 /* --- Cards / surfaces -------------------------------------------------- */
@@ -895,7 +958,7 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
   color: var(--color-text-secondary);
   margin-top: var(--spacing-3xs);
 }
-.card-header__icon { color: var(--color-primary); flex-shrink: 0; }
+.card-header__icon { color: var(--color-link); flex-shrink: 0; }
 /* Icon-only "View all" variant (2026-09-06 UX pass) — same slot, but a
    real button rather than a decorative span, since it navigates. */
 .card-header__icon--action {
@@ -1255,7 +1318,7 @@ html, body, .status-pill,
   transform: translateY(-1px);
 }
 .stat-card:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 2px;
 }
 .stat-card.is-active {
@@ -1274,7 +1337,7 @@ html, body, .status-pill,
   align-items: center;
   gap: var(--spacing-2xs);
 }
-.stat-card__value--primary  { color: var(--color-primary); }
+.stat-card__value--primary  { color: var(--color-link); }
 .stat-card__value--info     { color: var(--color-info-text); }
 .stat-card__value--warning  { color: var(--color-warning-text); }
 .stat-card__value--success  { color: var(--color-success-text); }
@@ -1339,12 +1402,12 @@ html, body, .status-pill,
   white-space: nowrap;
 }
 .filter-chip:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-link);
+  color: var(--color-link);
   background: var(--color-surface);
 }
 .filter-chip:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 1px;
 }
 .filter-chip.is-active {
@@ -1411,7 +1474,7 @@ html, body, .status-pill,
 }
 .status-pill--responding {
   background: var(--status-responding-bg, color-mix(in srgb, var(--color-info) 14%, transparent));
-  color: var(--status-responding-text, #0E7490);
+  color: var(--status-responding-text);
   border-color: var(--status-responding-border, color-mix(in srgb, var(--color-info) 30%, transparent));
 }
 .status-pill--neutral,
@@ -1571,7 +1634,7 @@ html, body, .status-pill,
   align-items: center;
   justify-content: center;
   padding: var(--spacing-lg);
-  z-index: 400;
+  z-index: var(--z-modal);
 }
 
 .modal-card {
@@ -1607,4 +1670,11 @@ svg.is-spinning {
   svg.is-spinning {
     animation: none;
   }
+}
+
+/* D-25 / X-18: the focus ring above is a box-shadow, which Windows High
+   Contrast (forced colours) removes, leaving no visible focus at all. */
+@media (forced-colors: active) {
+  :focus-visible { outline: 2px solid CanvasText !important; outline-offset: 2px; }
+  .sos-bar { border: 2px solid CanvasText; }
 }

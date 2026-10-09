@@ -27,7 +27,9 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
+import { confirmDialog } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { manilaDateKey } from '../utils/manilaTime.js';
 
 const VERSION_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 const MAX_BYTES = 500 * 1024 * 1024; // 500 MB server ceiling
@@ -57,11 +59,8 @@ function formatBytes(bytes) {
  * @returns {string}
  */
 function getTodayVersionString() {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}.${month}.${day}`;
+  // Manila calendar day, not the browser's (Rule 11).
+  return manilaDateKey(new Date()).replace(/-/g, '.');
 }
 
 /**
@@ -106,11 +105,11 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
     <div class="map-pkg-banner__content">
       <div class="map-pkg-banner__title">
         <span>Disaster-Ready Offline Basemaps</span>
-        <span class="map-pkg-banner__badge">Offline-First Guarantee (§2 Rule 14)</span>
+        <span class="map-pkg-banner__badge">Works without internet</span>
       </div>
       <p class="map-pkg-banner__text">
-        Patrolling Tanods rely on self-contained SQLite basemap packages (.mbtiles) to navigate roads, alleys, rivers, and evacuation centers
-        without requiring internet or cellular connectivity. Tanod mobile terminals automatically verify and pull published updates upon M1 Login.
+        Patrolling Tanods use a map file (.mbtiles) stored on their phones to see roads, alleys, rivers, and evacuation centers
+        without internet or a mobile signal. Their phones check for a newer published map each time they sign in.
       </p>
     </div>
   `;
@@ -138,31 +137,31 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
     <div class="map-pkg-guide-card">
       <div class="map-pkg-guide-card__header">
         <span class="map-pkg-guide-card__icon">${icons.layers(16)}</span>
-        <span>MBTiles SQLite Format</span>
+        <span>About the map file</span>
       </div>
       <p class="map-pkg-guide-card__text">
-        Packaged as a high-performance SQLite database container storing zoom levels 12–18 with OpenStreetMap road networks,
-        topography, and localized barangay boundary layers.
+        The map file holds the roads, terrain, and barangay boundaries for your area at the zoom levels used in the field,
+        so it can be used with no connection.
       </p>
     </div>
     <div class="map-pkg-guide-card">
       <div class="map-pkg-guide-card__header">
         <span class="map-pkg-guide-card__icon">${icons.radio(16)}</span>
-        <span>Non-Blocking M1 Sync</span>
+        <span>How phones get the map</span>
       </div>
       <p class="map-pkg-guide-card__text">
-        Tanod mobile devices verify basemap checksums during authentication. If a new version is detected, the device synchronizes
-        in the background without halting dispatch operations.
+        When a Tanod signs in, the phone checks whether a newer map has been published. If so, it downloads it in the background
+        without interrupting dispatch work.
       </p>
     </div>
     <div class="map-pkg-guide-card">
       <div class="map-pkg-guide-card__header">
         <span class="map-pkg-guide-card__icon">${icons.shield(16)}</span>
-        <span>Blackout Continuity</span>
+        <span>During a blackout</span>
       </div>
       <p class="map-pkg-guide-card__text">
-        Zero external cloud dependencies. During typhoons and cellular grid outages, patrol teams retain full interactive map rendering,
-        incident geotagging, and GPS breadcrumbs.
+        The map is stored on the phone, so during typhoons and mobile network outages patrol teams can still see the map,
+        mark where an incident is, and record their route.
       </p>
     </div>
   `;
@@ -190,26 +189,26 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
     const statItems = [
       {
-        label: 'Active Basemap Version',
-        value: isPublished ? `v${pkg.version}` : 'None Active',
+        label: 'Published map version',
+        value: isPublished ? `v${pkg.version}` : 'None published',
         tone: isPublished ? 'success' : 'neutral',
         icon: icons.map(16),
       },
       {
-        label: 'Cryptographic Checksum',
-        value: isPublished ? 'SHA-256 Verified' : 'Awaiting Package',
+        label: 'File check code',
+        value: isPublished ? 'Recorded' : 'Awaiting map file',
         tone: isPublished ? 'primary' : 'neutral',
         icon: icons.shield(16),
       },
       {
-        label: 'Tanod Mobile Sync',
-        value: isPublished ? 'Ready on Login' : 'Offline Map Missing',
+        label: 'Tanod phones',
+        value: isPublished ? 'Download at sign-in' : 'No offline map yet',
         tone: isPublished ? 'info' : 'neutral',
         icon: icons.send(16),
       },
       {
-        label: 'Package Size Ceiling',
-        value: '500 MB Max',
+        label: 'Largest file allowed',
+        value: '500 MB',
         tone: 'neutral',
         icon: icons.layers(16),
       },
@@ -251,13 +250,13 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
     const title = document.createElement('h3');
     title.className = 'map-pkg-card__title';
-    title.textContent = 'Active Barangay Basemap';
+    title.textContent = 'Current barangay map';
 
     titleWrap.append(iconSpan, title);
 
     const pill = document.createElement('span');
     pill.className = `status-pill ${pkg ? 'status-pill--success' : 'status-pill--neutral'}`;
-    pill.textContent = pkg ? 'PUBLISHED' : 'NO PACKAGE';
+    pill.textContent = pkg ? 'Published' : 'No map published';
 
     headerEl.append(titleWrap, pill);
 
@@ -275,11 +274,11 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
       const emptyTitle = document.createElement('h4');
       emptyTitle.className = 'map-pkg-empty-title';
-      emptyTitle.textContent = 'No Offline Basemap Deployed';
+      emptyTitle.textContent = 'No offline map published';
 
       const emptyDesc = document.createElement('p');
       emptyDesc.className = 'map-pkg-empty-desc';
-      emptyDesc.textContent = `Brgy. ${barangayName} does not have an active offline basemap published yet. Use the publisher to deploy an .mbtiles basemap for your patrolling tanods.`;
+      emptyDesc.textContent = `Brgy. ${barangayName} does not have an offline map published yet. Use the form to publish an .mbtiles map file for your patrolling tanods.`;
 
       emptyState.append(emptyIcon, emptyTitle, emptyDesc);
       bodyEl.appendChild(emptyState);
@@ -291,8 +290,8 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
       const brgyItem = document.createElement('div');
       brgyItem.className = 'map-pkg-detail-item';
       brgyItem.innerHTML = `
-        <span class="map-pkg-detail-label">Assigned Barangay Tenant</span>
-        <span class="map-pkg-detail-val">Brgy. ${barangayName} (Barangay ID: #${user.barangayId})</span>
+        <span class="map-pkg-detail-label">Barangay</span>
+        <span class="map-pkg-detail-val">Brgy. ${escapeHtml(barangayName)}</span>
       `;
 
       // Item 2: Version
@@ -300,17 +299,17 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
       versionItem.className = 'map-pkg-detail-item';
       versionItem.innerHTML = `
         <span class="map-pkg-detail-label">Current Published Version</span>
-        <span class="map-pkg-detail-val" style="font-size: 1.125rem; color: var(--color-primary);">v${escapeHtml(pkg.version)}</span>
+        <span class="map-pkg-detail-val map-pkg-detail-val--version">v${escapeHtml(pkg.version)}</span>
       `;
 
       // Item 3: Device Sync Status
       const syncItem = document.createElement('div');
       syncItem.className = 'map-pkg-detail-item';
       syncItem.innerHTML = `
-        <span class="map-pkg-detail-label">Tanod Field Synchronization</span>
-        <span class="map-pkg-detail-val" style="color: var(--color-success-text); display: flex; align-items: center; gap: 0.35rem;">
-          ${icons.checkCircle(14)}
-          <span>Active — Patrolling devices download this version on login</span>
+        <span class="map-pkg-detail-label">Tanod phones</span>
+        <span class="map-pkg-detail-val map-pkg-detail-val--ok">
+          <span aria-hidden="true">${icons.checkCircle(14)}</span>
+          <span>In use. Patrol phones download this version when they sign in.</span>
         </span>
       `;
 
@@ -320,7 +319,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
       const checksumLabel = document.createElement('span');
       checksumLabel.className = 'map-pkg-detail-label';
-      checksumLabel.textContent = 'Cryptographic Integrity (SHA-256 Checksum)';
+      checksumLabel.textContent = 'File check code (SHA-256). Used to confirm the file was not damaged.';
 
       const checksumBox = document.createElement('div');
       checksumBox.className = 'map-pkg-checksum-box';
@@ -333,17 +332,17 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'map-pkg-btn-copy';
-      copyBtn.innerHTML = `${icons.copy(12)}<span>Copy Hash</span>`;
+      copyBtn.innerHTML = `${icons.copy(12)}<span>Copy code</span>`;
 
       copyBtn.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(pkg.checksumSha256);
-          copyBtn.innerHTML = `${icons.checkCircle(12)}<span>Copied!</span>`;
+          copyBtn.innerHTML = `${icons.checkCircle(12)}<span>Copied</span>`;
           setTimeout(() => {
-            copyBtn.innerHTML = `${icons.copy(12)}<span>Copy Hash</span>`;
+            copyBtn.innerHTML = `${icons.copy(12)}<span>Copy code</span>`;
           }, 2000);
         } catch {
-          showToast('Could not copy hash to clipboard', { variant: 'error' });
+          showToast('Could not copy the code to the clipboard', { variant: 'error' });
         }
       });
 
@@ -375,7 +374,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
     const title = document.createElement('h3');
     title.className = 'map-pkg-card__title';
-    title.textContent = 'Publish New Basemap';
+    title.textContent = 'Publish a new map';
 
     titleWrap.append(iconSpan, title);
     headerEl.appendChild(titleWrap);
@@ -396,7 +395,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
     const versionLabel = document.createElement('label');
     versionLabel.className = 'map-pkg-label';
-    versionLabel.textContent = 'Package Version';
+    versionLabel.textContent = 'Map version';
     versionLabel.htmlFor = 'map-package-version';
 
     const quickDateBtn = document.createElement('button');
@@ -426,23 +425,23 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
     const fileLabel = document.createElement('label');
     fileLabel.className = 'map-pkg-label';
-    fileLabel.textContent = 'MBTiles Package File';
+    fileLabel.textContent = 'Map file (.mbtiles)';
     fileLabel.htmlFor = 'map-package-file';
 
     const fileInput = document.createElement('input');
     fileInput.id = 'map-package-file';
     fileInput.type = 'file';
     fileInput.accept = '.mbtiles';
-    fileInput.style.display = 'none';
+    fileInput.hidden = true;
 
     const dropzone = document.createElement('div');
     dropzone.className = 'map-pkg-dropzone';
     dropzone.setAttribute('tabindex', '0');
     dropzone.setAttribute('role', 'button');
-    dropzone.setAttribute('aria-label', 'Upload .mbtiles file');
+    dropzone.setAttribute('aria-label', 'Choose the .mbtiles map file to upload');
 
     dropzone.innerHTML = `
-      <div class="map-pkg-dropzone__icon">${icons.layers(28)}</div>
+      <div class="map-pkg-dropzone__icon" aria-hidden="true">${icons.layers(28)}</div>
       <div class="map-pkg-dropzone__prompt">Drag & drop your <span>.mbtiles</span> basemap here</div>
       <div class="map-pkg-dropzone__hint">or click to browse local files (max 500 MB)</div>
     `;
@@ -456,11 +455,12 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
     fileInfo.className = 'map-pkg-file-info';
 
     const fileIcon = document.createElement('span');
-    fileIcon.style.color = 'var(--color-primary)';
+    fileIcon.className = 'map-pkg-file-icon';
+    fileIcon.setAttribute('aria-hidden', 'true');
     fileIcon.innerHTML = icons.fileText(20);
 
     const fileNameWrap = document.createElement('div');
-    fileNameWrap.style.cssText = 'display:flex; flex-direction:column; min-width:0;';
+    fileNameWrap.className = 'map-pkg-file-name-wrap';
 
     const fileNameEl = document.createElement('span');
     fileNameEl.className = 'map-pkg-file-name';
@@ -484,7 +484,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
       if (!file) return;
 
       if (!file.name.toLowerCase().endsWith('.mbtiles')) {
-        showToast('Invalid file format. Please choose an .mbtiles package.', { variant: 'error' });
+        showToast('That is not a map file. Please choose a file ending in .mbtiles.', { variant: 'error' });
         return;
       }
       if (file.size > MAX_BYTES) {
@@ -552,15 +552,15 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
     uploadingBox.hidden = true;
     uploadingBox.innerHTML = `
       <div class="map-pkg-spinner" aria-hidden="true"></div>
-      <span>Uploading and verifying MBTiles SQLite structure… please wait.</span>
+      <span role="status">Uploading and checking the map file. Please wait.</span>
     `;
 
     // 4. Submit Button
     const submitButton = document.createElement('button');
     submitButton.type = 'submit';
     submitButton.className = 'primary';
-    submitButton.style.cssText = 'display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; height: 2.375rem;';
-    submitButton.innerHTML = `${icons.map(16)}<span>Publish to Barangay Tanods</span>`;
+    submitButton.classList.add('map-pkg-submit');
+    submitButton.innerHTML = `<span aria-hidden="true">${icons.map(16)}</span><span>Publish to Barangay Tanods</span>`;
 
     form.append(versionField, fileField, uploadingBox, submitButton);
     bodyEl.appendChild(form);
@@ -572,15 +572,29 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
       const version = versionInput.value.trim();
       if (!VERSION_PATTERN.test(version)) {
-        showToast('Version must be 1-64 characters containing only letters, numbers, . _ or -.', { variant: 'error' });
+        showToast('The version can be up to 64 characters: letters, numbers, dots, dashes or underscores only.', { variant: 'error' });
         versionInput.focus();
         return;
       }
 
       if (!selectedFile) {
-        showToast('Please select or drag an .mbtiles file to publish.', { variant: 'error' });
+        showToast('Please choose or drag the .mbtiles map file to publish.', { variant: 'error' });
         return;
       }
+
+      // Publishing replaces the map every Tanod phone downloads next sign-in,
+      // so name what is live now and what will replace it (audit A-30).
+      let liveVersion = null;
+      try { liveVersion = (await getMapPackage(user.barangayId))?.version || null; } catch { /* confirm without it */ }
+      const ok = await confirmDialog({
+        title: 'Publish this map to all Tanod phones?',
+        description: liveVersion
+          ? `Version ${version} will replace the map now in use (version ${liveVersion}). Every patrol phone will download it the next time it signs in.`
+          : `Version ${version} will become the offline map for Brgy. ${barangayName}. Every patrol phone will download it the next time it signs in.`,
+        confirmLabel: 'Publish map',
+        cancelLabel: 'Not yet',
+      });
+      if (!ok) return;
 
       submitButton.disabled = true;
       versionInput.disabled = true;
@@ -590,7 +604,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
 
       try {
         await uploadMapPackage(version, selectedFile);
-        showToast(`Basemap package v${version} published successfully!`, { variant: 'success' });
+        showToast(`Map version ${version} published.`, { variant: 'success' });
         versionInput.value = '';
         selectedFile = null;
         fileInput.value = '';

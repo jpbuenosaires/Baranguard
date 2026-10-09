@@ -71,7 +71,7 @@ describe('Live Map: stale data and SOS wording (audit 2026-10-09)', () => {
     await polls.at(-1)();
     await settle();
     assert.equal(banner.hidden, false);
-    assert.match(text(banner), /Live updates paused - last updated \d{2}:\d{2} \(Manila time\)\. Retrying\.\.\./);
+    assert.match(text(banner), /Live updates paused - last updated \d{1,2}:\d{2} (am|pm) \(Manila time\)\. Retrying\.\.\./i);
     assert.match(text(ctx.root.querySelector('.dispatch-map-live-pill')), /paused/i);
     assert.match(text(ctx.root), /Jose Reyes|Maria Dela Cruz/, 'last good data stays');
     api.overrides.length = 0;

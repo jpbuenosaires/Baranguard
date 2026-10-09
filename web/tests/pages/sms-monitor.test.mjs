@@ -39,7 +39,7 @@ describe('SMS Monitor behaviour', () => {
     const box = $$('textarea', ctx.root).find((t) => !t.closest('.ai-panel'));
     assert.ok(box, 'no reply box');
     type(box, 'Salamat po, papunta na kami.');
-    click(buttonByText(/^send sms$/i, ctx.root));
+    click(buttonByText(/^send message$/i, ctx.root));
     await settle();
     const dialog = $('[role="alertdialog"]');
     if (dialog) { click($$('button', dialog).at(-1)); await settle(); }

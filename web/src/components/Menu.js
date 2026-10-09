@@ -84,6 +84,14 @@ export function Menu({ trigger, label, align = 'right', panelClass = '', onOpen 
       event.preventDefault();
       open();
       items()[0]?.focus();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      open();
+      items().at(-1)?.focus();
+    } else if (event.key === 'Escape' && !panel.hidden) {
+      // Escape closes an open menu even while focus is still on the trigger.
+      event.preventDefault();
+      close();
     }
   });
 
@@ -99,6 +107,12 @@ export function Menu({ trigger, label, align = 'right', panelClass = '', onOpen 
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       list[(i - 1 + list.length) % list.length]?.focus();
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      list[0]?.focus();
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      list.at(-1)?.focus();
     } else if (event.key === 'Tab') {
       // Tabbing out of a menu closes it rather than leaving an orphaned
       // panel open behind the user.

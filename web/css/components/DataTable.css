@@ -82,16 +82,16 @@
   gap: var(--spacing-xs);
   cursor: pointer;
 }
-.data-table__sort-button:hover { color: var(--color-primary); }
+.data-table__sort-button:hover { color: var(--color-link); }
 .data-table__sort-button:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 2px;
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 /* Neutral ↕ at rest so a sortable column is identifiable before it has
    been clicked (audit A12); the active column's arrow takes full weight. */
 .data-table__sort-icon { font-size: 0.625rem; width: 0.625rem; display: inline-block; opacity: 0.4; }
-.data-table__sort-icon.is-active { opacity: 1; color: var(--color-primary); }
+.data-table__sort-icon.is-active { opacity: 1; color: var(--color-link); }
 
 /* Sort arrow rotation animation. */
 .data-table__sort-icon { transition: transform 0.2s ease; }
@@ -127,7 +127,7 @@
 }
 .data-table tbody tr:has(.data-table__row-activator:focus-visible) .row-open-hint {
   opacity: 1;
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 /* Secondary line inside a cell (e.g. a timestamp under an ID). */
@@ -154,7 +154,7 @@
 .data-table tbody tr.is-clickable:hover .row-open-hint,
 .data-table tbody tr.is-clickable:focus-visible .row-open-hint {
   opacity: 1;
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 /* --- Empty state + pagination (§3.3 of the UI/UX review) ---------------- */

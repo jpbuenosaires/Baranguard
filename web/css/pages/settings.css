@@ -66,7 +66,7 @@
 
 .settings-rail__item.is-active {
   background: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary) 8%);
-  color: var(--color-primary);
+  color: var(--color-link);
   border-left: 3px solid var(--color-primary);
   border-color: color-mix(in srgb, var(--color-border) 80%, var(--color-primary) 20%);
   border-left-color: var(--color-primary);
@@ -82,7 +82,7 @@
 }
 
 .settings-rail__item.is-active .settings-rail__icon {
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .settings-rail__text-wrap {
@@ -99,7 +99,7 @@
 }
 
 .settings-rail__item.is-active .settings-rail__title {
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .settings-rail__desc {
@@ -148,7 +148,7 @@
 .settings-card__icon {
   display: flex;
   align-items: center;
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .settings-card__title {
@@ -445,7 +445,7 @@
   border-radius: var(--radius-md, 0.5rem);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .settings-theme-card__indicator {
@@ -525,7 +525,7 @@
   border-radius: var(--radius-sm, 0.25rem);
   font-size: var(--font-size-xs, 0.75rem);
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-link);
   width: fit-content;
 }
 
@@ -585,4 +585,36 @@
 .settings-pwd-toggle:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+.settings-submit {
+  width: fit-content;
+  min-width: 8.75rem;
+  margin-top: var(--spacing-xs);
+}
+
+.settings-submit--wide {
+  min-width: 9.5rem;
+  margin-top: var(--spacing-sm);
+}
+
+.settings-sos-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+}
+
+.settings-sos-status__icon {
+  color: var(--color-link);
+}
+
+.settings-sos-status__title {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.settings-sos-status__sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
 }

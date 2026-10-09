@@ -268,3 +268,12 @@
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .login-card { background: var(--color-surface); border-color: var(--color-border); }
 }
+
+.login-card__help {
+  margin: var(--spacing-md) 0 0;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.login-card__footer { margin: var(--spacing-sm) 0 0; text-align: center; font-size: var(--font-size-sm); }
+.login-card__privacy { color: var(--color-link); }

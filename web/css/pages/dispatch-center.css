@@ -88,7 +88,7 @@
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s ease;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow-card);
 }
 
 .dispatch-priority-alert__btn:hover {
@@ -174,7 +174,7 @@
 .dispatch-queue-card__header {
   padding: var(--spacing-md) 1.125rem var(--spacing-sm-md);
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface, #ffffff);
+  background: var(--color-surface);
 }
 
 .dispatch-queue-card__title-row {
@@ -338,7 +338,7 @@
 
 .queue-incident-card__title svg {
   flex-shrink: 0;
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .queue-incident-card__meta,
@@ -417,7 +417,7 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-link);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -438,7 +438,7 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-link);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -476,7 +476,7 @@
 .queue-incident-card__add-responder-btn {
   width: 100%;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-link);
   border: 1px dashed color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
   border-radius: 8px;
   padding: 0.45rem 0.625rem;
@@ -559,7 +559,7 @@
   inset: 1rem;
   z-index: 9999;
   height: auto;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+  box-shadow: var(--shadow-floating);
 }
 
 .dispatch-map-header {
@@ -614,7 +614,7 @@
   width: 0.4375rem;
   height: 0.4375rem;
   border-radius: 50%;
-  background: var(--color-success-solid, #16A34A);
+  background: var(--color-success-solid);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-success) 25%, transparent);
 }
 
@@ -649,7 +649,7 @@
 .btn-recenter:hover {
   background: var(--color-bg);
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .btn-fullscreen {
@@ -699,8 +699,8 @@
 }
 
 [data-theme="dark"] .dispatch-map-legend-card {
-  background: rgba(30, 41, 59, 0.94);
-  border-color: rgba(51, 65, 85, 0.85);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  border-color: var(--color-border);
   box-shadow: var(--shadow-floating);
 }
 
@@ -727,7 +727,7 @@
   padding: 0;
   font-size: 0.6875rem;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-link);
   cursor: pointer;
 }
 .legend-reset-btn:hover {
@@ -790,13 +790,13 @@
   flex-shrink: 0;
 }
 
-.legend-dot--green { background: var(--color-success-solid, #16A34A); }
-.legend-dot--blue { background: var(--color-primary, #2563EB); }
+.legend-dot--green { background: var(--color-success-solid); }
+.legend-dot--blue { background: var(--color-primary); }
 .legend-dot--amber {
-  background: var(--color-warning-solid, #D97706);
+  background: var(--color-warning-solid);
   border-radius: 3px;
 }
-.legend-dot--red { background: var(--color-critical-solid, #DC2626); }
+.legend-dot--red { background: var(--color-critical-solid); }
 
 /* Empty state card for queue */
 .dispatch-empty-card {
@@ -935,4 +935,15 @@
   margin-top: 6px;
   width: 100%;
   font-weight: 700;
+}
+
+.queue-incident-card__actions-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+
+.dispatch-skeleton-card {
+  height: 7rem;
+  border-radius: var(--radius-lg);
 }

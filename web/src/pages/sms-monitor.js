@@ -35,14 +35,30 @@ import { icons } from '../components/icons.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDate, formatManilaDateTime, formatManilaTime, manilaDateKey } from '../utils/manilaTime.js';
 
 const PAGE_SIZE = 25;
 const LIVE_FEED_POLL_MS = 10000;
 const SMS_SINGLE_LIMIT = 160;
 
+const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay', tanod: 'Tanod' };
 const MESSAGE_TYPES = ['incident', 'dispatch', 'priority_alert', 'coord_ping', 'confirmation', 'duty_status', 'sos', 'manual'];
 const DIRECTIONS = ['inbound', 'outbound'];
 const STATUSES = ['queued', 'pending', 'sent', 'failed', 'refunded', 'received', 'rejected', 'deduplicated'];
+
+// Plain words for the codes the SMS log stores (never shown raw).
+const MESSAGE_TYPE_LABELS = {
+  incident: 'Incident report', dispatch: 'Dispatch', priority_alert: 'Priority alert', coord_ping: 'Location ping',
+  confirmation: 'Confirmation', duty_status: 'Duty status', sos: 'SOS', manual: 'Manual message',
+};
+const STATUS_LABELS = {
+  queued: 'Waiting to send', pending: 'Sending', sent: 'Sent', failed: 'Failed', refunded: 'Refunded',
+  received: 'Received', rejected: 'Rejected', deduplicated: 'Duplicate, ignored',
+};
+const DIRECTION_LABELS = { inbound: 'Incoming', outbound: 'Outgoing' };
+const msgTypeLabel = (t) => MESSAGE_TYPE_LABELS[t] || 'Message';
+const statusLabel = (s) => STATUS_LABELS[s] || 'Unknown';
+const transportLabel = (t) => (t === 'gsm_modem' ? 'Phone SMS gateway' : 'Old SMS service');
 
 const STATUS_PILL_CLASS = {
   sent: 'status-pill--success',
@@ -68,19 +84,19 @@ const TYPE_TAG_CLASS = {
 
 const QUICK_RESPONSES = [
   {
-    display: 'Acknowledge & Dispatching',
+    display: 'Report received, tanods on the way',
     full: 'Natanggap po namin ang inyong ulat. Papunta na po ang mga tanod sa inyong lokasyon. Manatili sa ligtas na lugar.',
   },
   {
-    display: 'Request Exact Location',
+    display: 'Ask for exact location',
     full: 'Maaari po bang ibigay ang inyong eksaktong lokasyon o pinakamalapit na landmark?',
   },
   {
-    display: 'Situation Resolved',
+    display: 'Situation resolved',
     full: 'Naresolba na po ang usapin. Salamat sa mabilis na tugon ng mga tanod. Mabuhay kayo!',
   },
   {
-    display: 'Emergency - Call 911',
+    display: 'Emergency: call 911',
     full: 'Kung may banta sa buhay, mangyaring tumawag agad sa 911 o sa hotline ng barangay habang paparating ang mga tanod.',
   },
 ];
@@ -121,7 +137,7 @@ function getContactTagInfo(convo) {
   if (type === 'confirmation' || text.includes('salamat') || text.includes('naresolba') || text.includes('feedback')) {
     return { label: 'Feedback', pillClass: 'sms-tag-pill--feedback' };
   }
-  return { label: type.replace(/_/g, ' '), pillClass: 'sms-tag-pill--neutral' };
+  return { label: msgTypeLabel(type), pillClass: 'sms-tag-pill--neutral' };
 }
 
 // getContactLocation() removed 2026-09-06 - GET /sms/conversations never
@@ -143,16 +159,14 @@ function getContactTagInfo(convo) {
 function formatSmartTime(isoOrTime) {
   if (!isoOrTime) return '';
   if (typeof isoOrTime === 'string' && isoOrTime.length === 5) return isoOrTime;
-  const d = new Date(isoOrTime);
-  if (isNaN(d.getTime())) return String(isoOrTime);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  return formatManilaTime(isoOrTime, '');
 }
 
 const COLUMNS = [
   { key: 'id', label: 'ID', width: '4.5rem', csvValue: (row) => row.logId },
   { key: 'direction', label: 'Direction', width: '7rem', csvValue: (row) => row.direction },
   { key: 'type', label: 'Type', width: '9rem', csvValue: (row) => row.messageType },
-  { key: 'transport', label: 'Transport', width: '8rem', csvValue: (row) => row.transport },
+  { key: 'transport', label: 'Sent through', width: '8rem', csvValue: (row) => row.transport },
   {
     key: 'linked', label: 'Linked to',
     csvValue: (row) => [
@@ -161,7 +175,7 @@ const COLUMNS = [
       row.reportId ? `report:${row.reportId}` : null,
     ].filter(Boolean).join(' '),
   },
-  { key: 'when', label: 'Sent / Received', csvValue: (row) => row.sentAt || row.receivedAt || row.createdAt || '' },
+  { key: 'when', label: 'Sent / received (Manila time)', csvValue: (row) => row.sentAt || row.receivedAt || row.createdAt || '' },
   { key: 'status', label: 'Status', align: 'right', csvValue: (row) => row.status },
 ];
 
@@ -193,6 +207,8 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
 
   const tabRow = document.createElement('div');
   tabRow.className = 'page-tabs';
+  tabRow.setAttribute('role', 'tablist');
+  tabRow.setAttribute('aria-label', 'SMS Monitor sections');
 
   const conversationsTabBtn = document.createElement('button');
   conversationsTabBtn.type = 'button';
@@ -200,7 +216,7 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   conversationsTabBtn.innerHTML = `
     <span class="page-tab__icon" aria-hidden="true">${icons.messageSquare(16)}</span>
     <span>Conversations</span>
-    <span class="page-tab__badge" id="sms-unread-tab-badge" style="display:none;">0</span>
+    <span class="page-tab__badge" id="sms-unread-tab-badge" role="status" aria-label="Unread conversations" style="display:none;">0</span>
   `;
 
   const activityTabBtn = document.createElement('button');
@@ -222,12 +238,29 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
     <span>Advisory List</span>
   `;
 
+  const tabDefs = [['conversations', conversationsTabBtn], ['activity-log', activityTabBtn]];
+  if (user.role === 'admin') tabDefs.push(['subscribers', subscribersTabBtn]);
+  tabDefs.forEach(([key, btn], index) => {
+    btn.id = `sms-tab-${key}`;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', 'sms-tabpanel');
+    // Arrow keys move between tabs (WAI-ARIA tabs pattern).
+    btn.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      event.preventDefault();
+      const next = tabDefs[(index + (event.key === 'ArrowRight' ? 1 : tabDefs.length - 1)) % tabDefs.length];
+      next[1].click();
+      next[1].focus();
+    });
+  });
   tabRow.append(conversationsTabBtn, activityTabBtn);
   if (user.role === 'admin') tabRow.append(subscribersTabBtn);
   tabBar.appendChild(tabRow);
   header.appendChild(tabBar);
 
   const body = document.createElement('div');
+  body.id = 'sms-tabpanel';
+  body.setAttribute('role', 'tabpanel');
   content.appendChild(body);
 
   let activeTab = param === 'activity-log' ? 'activity-log' : 'conversations';
@@ -237,6 +270,11 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
     conversationsTabBtn.classList.toggle('is-active', activeTab === 'conversations');
     activityTabBtn.classList.toggle('is-active', activeTab === 'activity-log');
     subscribersTabBtn.classList.toggle('is-active', activeTab === 'subscribers');
+    for (const [key, btn] of tabDefs) {
+      btn.setAttribute('aria-selected', String(activeTab === key));
+      btn.tabIndex = activeTab === key ? 0 : -1;
+    }
+    body.setAttribute('aria-labelledby', `sms-tab-${activeTab}`);
   }
 
   conversationsTabBtn.addEventListener('click', () => {
@@ -463,7 +501,7 @@ function renderSubscribersTab(container) {
 
     const table = document.createElement('table');
     table.className = 'data-table';
-    table.innerHTML = '<thead><tr><th>Number</th><th>Consent</th><th>Recorded</th><th>Status</th><th></th></tr></thead>';
+    table.innerHTML = '<caption class="sr-only">Advisory subscribers</caption><thead><tr><th scope="col">Number</th><th scope="col">Consent</th><th scope="col">Recorded</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>';
     const tbody = document.createElement('tbody');
 
     for (const item of data.items) {
@@ -474,7 +512,7 @@ function renderSubscribersTab(container) {
       num.textContent = item.contactNumber;
 
       const consent = document.createElement('td');
-      consent.textContent = CONSENT_SOURCE_LABELS[item.consentSource] || item.consentSource;
+      consent.textContent = CONSENT_SOURCE_LABELS[item.consentSource] || 'Not stated';
       if (item.consentNote) {
         const note = document.createElement('small');
         note.className = 'sms-subscriber-note';
@@ -484,7 +522,7 @@ function renderSubscribersTab(container) {
       }
 
       const when = document.createElement('td');
-      when.textContent = item.consentAt ? new Date(item.consentAt).toLocaleDateString() : '—';
+      when.textContent = item.consentAt ? formatManilaDate(item.consentAt) : '—';
 
       const status = document.createElement('td');
       const pill = document.createElement('span');
@@ -494,7 +532,7 @@ function renderSubscribersTab(container) {
       if (item.optedOutAt) {
         const date = document.createElement('small');
         date.className = 'sms-subscriber-note';
-        date.textContent = `on ${new Date(item.optedOutAt).toLocaleDateString()}`;
+        date.textContent = `on ${formatManilaDate(item.optedOutAt)}`;
         status.appendChild(document.createElement('br'));
         status.appendChild(date);
       }
@@ -505,6 +543,7 @@ function renderSubscribersTab(container) {
         out.type = 'button';
         out.className = 'ghost';
         out.textContent = 'Opt out';
+        out.setAttribute('aria-label', `Record opt-out for ${item.contactNumber}`);
         out.addEventListener('click', async () => {
           const ok = await confirmDialog({
             title: 'Record opt-out?',
@@ -540,20 +579,20 @@ function renderSubscribersTab(container) {
 function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, onUnreadChanged, navigate, initialPhone) {
   // Page Header Actions
   const actionsWrap = document.createElement('div');
-  actionsWrap.style.cssText = 'display: flex; align-items: center; gap: 0.5rem;';
+  actionsWrap.className = 'sms-header-actions';
 
   const newMsgBtn = document.createElement('button');
   newMsgBtn.type = 'button';
   newMsgBtn.className = 'ghost';
-  newMsgBtn.style.cssText = 'font-size: 0.8125rem; font-weight: 600; padding: 0.45rem 0.85rem;';
+  newMsgBtn.classList.add('sms-header-btn');
   newMsgBtn.innerHTML = `<span aria-hidden="true">${icons.plus(14)}</span><span>New Message</span>`;
   newMsgBtn.addEventListener('click', () => openNewMessageModal());
 
   const broadcastBtn = document.createElement('button');
   broadcastBtn.type = 'button';
   broadcastBtn.className = 'primary';
-  broadcastBtn.style.cssText = 'font-size: 0.875rem; font-weight: 600; padding: 0.5rem 1.125rem; border-radius: 8px; background: #2563eb;';
-  broadcastBtn.innerHTML = `<span aria-hidden="true" style="font-size: 1.05rem; margin-right: 0.35rem; font-weight: 700;">+</span><span>Broadcast Alert</span>`;
+  broadcastBtn.classList.add('sms-header-btn');
+  broadcastBtn.innerHTML = `<span aria-hidden="true">${icons.megaphone(14)}</span><span>Broadcast Alert</span>`;
   broadcastBtn.addEventListener('click', () => openBroadcastModal());
 
   actionsWrap.append(newMsgBtn, broadcastBtn);
@@ -609,7 +648,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   }
 
   async function loadStatStrip() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = manilaDateKey(new Date());
     try {
       const [totalToday, inboundToday, outboundToday] = await Promise.all([
         getSmsLogs({ dateFrom: today, dateTo: today, limit: 1 }),
@@ -719,6 +758,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
     const searchIcon = document.createElement('span');
     searchIcon.className = 'sms-search-icon';
     searchIcon.innerHTML = icons.search(14);
+    searchIcon.setAttribute('aria-hidden', 'true');
 
     const searchInput = document.createElement('input');
     searchInput.type = 'search';
@@ -821,8 +861,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
     if (filtered.length === 0) {
       const empty = document.createElement('p');
-      empty.className = 'note';
-      empty.style.cssText = 'padding: var(--spacing-md); text-align: center; color: var(--color-text-tertiary);';
+      empty.className = 'note sms-empty-note';
       empty.textContent = allConversations.length === 0
         ? 'No SMS conversations recorded.'
         : 'No conversations match your filter.';
@@ -869,7 +908,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
       // Preview line (2-line clamped)
       const previewEl = document.createElement('div');
       previewEl.className = 'sms-contact-card__preview';
-      previewEl.textContent = convo.lastMessage?.messageBody || `(${convo.lastMessage?.messageType?.replace(/_/g, ' ') || 'No message text'})`;
+      previewEl.textContent = convo.lastMessage?.messageBody || `(${convo.lastMessage?.messageType ? msgTypeLabel(convo.lastMessage.messageType) : 'No message text'})`;
 
       // Bottom line: Pill Tag and Location
       const bottom = document.createElement('div');
@@ -878,6 +917,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
       const pill = document.createElement('span');
       pill.className = `sms-tag-pill ${tagInfo.pillClass}`;
       pill.textContent = tagInfo.label;
+      pill.title = 'Suggested label, guessed from the message';
 
       bottom.append(pill);
       card.append(top, previewEl, bottom);
@@ -906,11 +946,11 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
     threadPane.innerHTML = '';
     const card = document.createElement('div');
     card.className = 'sms-thread-card state-block';
-    card.style.cssText = 'justify-content: center; align-items: center; text-align: center; padding: var(--spacing-xl);';
+    card.classList.add('sms-thread-placeholder');
     card.innerHTML = `
-      <div style="color: var(--color-primary); margin-bottom: 0.5rem;" aria-hidden="true">${icons.messageSquare(36)}</div>
-      <h3 style="margin: 0 0 0.25rem 0;">Select a Conversation</h3>
-      <p class="note" style="max-width: 20rem; margin: 0;">Choose a contact thread from the left directory to view full chat history, reply, or mark resolved.</p>
+      <div class="sms-thread-placeholder__icon" aria-hidden="true">${icons.messageSquare(36)}</div>
+      <h3 class="sms-thread-placeholder__title">Select a conversation</h3>
+      <p class="note sms-thread-placeholder__desc">Choose a contact from the list on the left to read the messages, reply, or mark the conversation resolved.</p>
     `;
     threadPane.appendChild(card);
   }
@@ -918,8 +958,9 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   async function openThread(convo) {
     threadPane.innerHTML = '';
     const loading = document.createElement('div');
-    loading.className = 'skeleton skeleton--block';
-    loading.style.height = '100%';
+    loading.className = 'skeleton skeleton--block sms-thread-loading';
+    loading.setAttribute('role', 'status');
+    loading.setAttribute('aria-label', 'Loading conversation');
     threadPane.appendChild(loading);
 
     try {
@@ -975,7 +1016,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
     const phoneLine = document.createElement('div');
     phoneLine.className = 'sms-thread-header__phone';
-    phoneLine.innerHTML = `<span aria-hidden="true" style="display:inline-flex; color: var(--color-text-tertiary);">${icons.phone(13)}</span><span>${escapeHtml(convo.phoneNumber)}</span>`;
+    phoneLine.innerHTML = `<span aria-hidden="true" class="sms-thread-header__phone-icon">${icons.phone(13)}</span><span>${escapeHtml(convo.phoneNumber)}</span>`;
 
     info.append(nameTitle, phoneLine);
     contactWrap.append(avatar, info);
@@ -986,13 +1027,13 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
     const headerTag = document.createElement('span');
     headerTag.className = `sms-tag-pill ${tagInfo.pillClass}`;
-    headerTag.style.cssText = 'font-size: 0.75rem; padding: 0.2rem 0.65rem;';
     headerTag.textContent = tagInfo.label;
+    headerTag.title = 'Suggested label, guessed from the message';
 
     const resolveBtn = document.createElement('button');
     resolveBtn.type = 'button';
     resolveBtn.className = 'sms-resolve-btn';
-    resolveBtn.textContent = 'Mark Resolved';
+    resolveBtn.textContent = 'Mark resolved';
     resolveBtn.disabled = convo.unreadCount === 0;
     resolveBtn.addEventListener('click', async () => {
       resolveBtn.disabled = true;
@@ -1018,8 +1059,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
     if (messages.length === 0) {
       const empty = document.createElement('p');
-      empty.className = 'note';
-      empty.style.cssText = 'text-align: center; margin: auto;';
+      empty.className = 'note sms-thread-empty';
       empty.textContent = 'No messages recorded for this contact yet.';
       messagesArea.appendChild(empty);
     } else {
@@ -1035,7 +1075,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
         const text = document.createElement('div');
         text.className = 'sms-bubble__text';
-        text.textContent = msg.messageBody || `(${msg.messageType?.replace(/_/g, ' ') || 'No message text'})`;
+        text.textContent = msg.messageBody || `(${msg.messageType ? msgTypeLabel(msg.messageType) : 'No message text'})`;
         bubble.appendChild(text);
 
         if (msg.incidentId) {
@@ -1066,7 +1106,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
         if (typeof at === 'string' && at.length === 5) {
           timeFormatted = at;
         } else if (at) {
-          timeFormatted = new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+          timeFormatted = formatManilaTime(at, '');
         }
         timeSpan.textContent = timeFormatted;
         metaRow.appendChild(timeSpan);
@@ -1074,7 +1114,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
         if (isInbound) {
           const tagSpan = document.createElement('span');
           tagSpan.className = `sms-tag-pill ${tagInfo.pillClass}`;
-          tagSpan.style.cssText = 'font-size: 0.625rem; padding: 0.05rem 0.45rem;';
+          tagSpan.classList.add('sms-tag-pill--small');
           tagSpan.textContent = tagInfo.label;
           metaRow.appendChild(tagSpan);
         } else {
@@ -1083,13 +1123,15 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
             tick.className = 'sms-tick--success';
             tick.textContent = '✓✓';
             tick.title = 'Delivered';
+            tick.setAttribute('aria-label', 'Delivered');
           } else if (msg.status === 'failed' || msg.status === 'rejected') {
             tick.className = 'sms-tick--fail';
-            tick.textContent = '⚠️ Failed';
-            tick.title = msg.failureReason || 'Failed';
+            tick.textContent = 'Not delivered';
+            tick.title = msg.failureReason || 'Not delivered';
           } else {
             tick.textContent = '✓';
-            tick.title = msg.status;
+            tick.title = statusLabel(msg.status);
+            tick.setAttribute('aria-label', statusLabel(msg.status));
           }
           metaRow.appendChild(tick);
         }
@@ -1107,7 +1149,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
     const qrTitle = document.createElement('div');
     qrTitle.className = 'sms-quick-replies-title';
-    qrTitle.textContent = 'Quick Replies';
+    qrTitle.textContent = 'Quick replies';
     quickRepliesSection.appendChild(qrTitle);
 
     const qrGrid = document.createElement('div');
@@ -1118,7 +1160,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
       chip.type = 'button';
       chip.className = 'sms-quick-chip';
       chip.title = qr.full;
-      chip.innerHTML = `<span class="sms-quick-chip__text">${qr.display}</span>`;
+      chip.innerHTML = `<span class="sms-quick-chip__text">${escapeHtml(qr.display)}</span>`;
       chip.addEventListener('click', () => {
         composeTextarea.value = qr.full;
         updateCharCounter();
@@ -1162,7 +1204,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
     const sendBtn = document.createElement('button');
     sendBtn.type = 'button';
     sendBtn.className = 'sms-compose-send-circle';
-    sendBtn.setAttribute('aria-label', 'Send SMS');
+    sendBtn.setAttribute('aria-label', 'Send message');
     sendBtn.title = 'Send (Ctrl+Enter)';
     sendBtn.innerHTML = icons.send(16);
     sendBtn.disabled = true;
@@ -1195,7 +1237,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
         if (result.status === 'sent') {
           showToast('Message sent successfully.', { variant: 'success' });
         } else {
-          showToast(`Logged, but delivery status: ${result.status} (${result.failureReason || 'gateway offline'})`, {
+          showToast(`Message saved but not confirmed sent. Status: ${statusLabel(result.status)}${result.failureReason ? ` (${result.failureReason})` : ''}.`, {
             variant: 'info',
           });
         }
@@ -1236,24 +1278,34 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
   // Modals
   function openBroadcastModal(initialText = '') {
+    const opener = document.activeElement;
+    const restoreFocus = () => { if (opener && typeof opener.focus === 'function' && opener.isConnected) opener.focus(); };
     const modalEl = buildBroadcastModal(() => {
       document.body.removeChild(modalEl);
       loadStatStrip();
+      restoreFocus();
     }, () => {
       document.body.removeChild(modalEl);
+      restoreFocus();
     }, initialText);
     document.body.appendChild(modalEl);
+    modalEl.querySelector('textarea')?.focus();
   }
 
   function openNewMessageModal() {
+    const opener = document.activeElement;
+    const restoreFocus = () => { if (opener && typeof opener.focus === 'function' && opener.isConnected) opener.focus(); };
     const modalEl = buildNewMessageModal(allConversations, (phone) => {
       document.body.removeChild(modalEl);
       onSelectFeedPhone(phone);
       loadConversations();
+      restoreFocus();
     }, () => {
       document.body.removeChild(modalEl);
+      restoreFocus();
     });
     document.body.appendChild(modalEl);
+    modalEl.querySelector('select')?.focus();
   }
 }
 
@@ -1295,10 +1347,11 @@ async function loadLiveFeed(feedPane, onSelectPhone) {
     const helpBtn = document.createElement('button');
     helpBtn.type = 'button';
     helpBtn.className = 'sms-feed-help-btn';
-    helpBtn.title = 'Help & Live Feed Info';
+    helpBtn.title = 'About the live feed';
+    helpBtn.setAttribute('aria-label', 'About the live feed');
     helpBtn.textContent = '?';
     helpBtn.addEventListener('click', () => {
-      showToast('Live Feed polls incoming and outgoing SMS activity in real-time.', { variant: 'info' });
+      showToast('The live feed refreshes every few seconds with the latest incoming and outgoing messages.', { variant: 'info' });
     });
 
     footer.append(refreshBtn, helpBtn);
@@ -1326,8 +1379,7 @@ async function loadLiveFeed(feedPane, onSelectPhone) {
 function renderEmptyFeed(listHost) {
   listHost.innerHTML = '';
   const note = document.createElement('p');
-  note.className = 'note';
-  note.style.cssText = 'padding: var(--spacing-md); text-align: center; color: var(--color-text-tertiary);';
+  note.className = 'note sms-empty-note';
   note.textContent = 'No recent SMS activity.';
   listHost.appendChild(note);
 }
@@ -1335,8 +1387,7 @@ function renderEmptyFeed(listHost) {
 function renderFeedError(listHost) {
   listHost.innerHTML = '';
   const note = document.createElement('p');
-  note.className = 'note';
-  note.style.cssText = 'padding: var(--spacing-md); text-align: center; color: var(--color-text-tertiary);';
+  note.className = 'note sms-empty-note';
   note.textContent = 'Could not load the live feed.';
   listHost.appendChild(note);
 }
@@ -1373,7 +1424,7 @@ function renderFeedItems(items, listHost, onSelectPhone) {
     const time = document.createElement('span');
     time.className = 'sms-feed-time';
     const at = item.sentAt || item.receivedAt || item.createdAt;
-    time.textContent = at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+    time.textContent = at ? formatManilaTime(at, '') : '';
 
     body.append(text, time);
     entry.append(dot, body);
@@ -1407,15 +1458,37 @@ function renderFeedItems(items, listHost, onSelectPhone) {
 // type, same `replace(/_/g, ' ')` humanization already used elsewhere
 // in this file (see the Conversations detail rendering).
 function describeLiveFeedEvent(item) {
-  const direction = item.direction === 'outbound' ? 'Outbound' : 'Inbound';
-  const typeLabel = item.messageType ? item.messageType.replace(/_/g, ' ') : 'message';
-  const statusNote = item.status === 'failed' ? ' — failed' : '';
+  const direction = item.direction === 'outbound' ? 'Outgoing' : 'Incoming';
+  const typeLabel = item.messageType ? msgTypeLabel(item.messageType).toLowerCase() : 'message';
+  const statusNote = item.status === 'failed' ? ' (failed)' : '';
   return `${direction} ${typeLabel}${statusNote}`;
 }
 
 // ============================================================
 // Modals
 // ============================================================
+
+/**
+ * Keyboard behaviour for the page's two SMS dialogs (audit X-10): Escape
+ * closes, Tab stays inside. Focus return is done by the opener.
+ */
+function trapModalKeys(overlay, onCancel) {
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      onCancel();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusable = [...overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter((el) => !el.disabled);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+}
 
 /**
  * Broadcast Alert Modal with Live Device Preview.
@@ -1428,19 +1501,23 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
   modal.className = 'sms-modal';
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'sms-broadcast-title');
 
   const header = document.createElement('div');
   header.className = 'sms-modal__header';
 
   const title = document.createElement('h3');
   title.className = 'sms-modal__title';
-  title.innerHTML = `<span aria-hidden="true">${icons.megaphone(20)}</span><span>Broadcast SMS Alert</span>`;
+  title.id = 'sms-broadcast-title';
+  title.innerHTML = `<span aria-hidden="true">${icons.megaphone(20)}</span><span>Send a broadcast SMS</span>`;
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'sms-modal__close';
+  closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.innerHTML = icons.x(18);
   closeBtn.addEventListener('click', onCancel);
+  trapModalKeys(overlay, onCancel);
 
   header.append(title, closeBtn);
 
@@ -1451,19 +1528,21 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
 
   // Target audience selection
   const scopeField = document.createElement('div');
-  scopeField.style.cssText = 'display: flex; flex-direction: column; gap: 0.35rem;';
+  scopeField.className = 'sms-modal-field';
 
   const scopeLabel = document.createElement('label');
-  scopeLabel.style.cssText = 'font-size: var(--font-size-xs); font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary);';
-  scopeLabel.textContent = 'Recipient Audience *';
+  scopeLabel.className = 'sms-modal-label';
+  scopeLabel.htmlFor = 'sms-broadcast-audience';
+  scopeLabel.textContent = 'Send to (required)';
 
   const scopeSelect = document.createElement('select');
+  scopeSelect.id = 'sms-broadcast-audience';
   scopeSelect.className = 'personnel-form-select';
   const scopeOptions = [
     ['on_duty_tanods', 'All on-duty Tanods'],
     ['role:tanod', 'All Tanods (on or off duty)'],
     ['role:secretary', 'All Barangay Secretaries'],
-    ['role:admin', 'All System Admins'],
+    ['role:admin', 'All Admins (Chief Tanod accounts)'],
     ['role:punong_barangay', 'Punong Barangay'],
     ['subscribers', 'Residents: consented advisory subscribers only'],
   ];
@@ -1477,22 +1556,24 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
 
   // Message content
   const msgField = document.createElement('div');
-  msgField.style.cssText = 'display: flex; flex-direction: column; gap: 0.35rem;';
+  msgField.className = 'sms-modal-field';
 
   const msgLabel = document.createElement('label');
-  msgLabel.style.cssText = 'font-size: var(--font-size-xs); font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary);';
-  msgLabel.textContent = 'Alert Message *';
+  msgLabel.className = 'sms-modal-label';
+  msgLabel.htmlFor = 'sms-broadcast-message';
+  msgLabel.textContent = 'Message (required)';
 
   const textarea = document.createElement('textarea');
+  textarea.id = 'sms-broadcast-message';
   textarea.className = 'sms-compose-textarea';
   textarea.rows = 4;
-  textarea.placeholder = 'Type alert text to broadcast to selected audience…';
+  textarea.placeholder = 'Type the message to send to the people selected above…';
   textarea.required = true;
 
   const counterWrap = document.createElement('div');
   counterWrap.className = 'sms-segment-counter';
-  counterWrap.style.marginTop = '0.25rem';
-  counterWrap.textContent = '0 / 160 chars · 1 SMS segment';
+  counterWrap.setAttribute('aria-live', 'polite');
+  counterWrap.textContent = '0 / 160 characters · 1 text message';
 
   msgField.append(msgLabel, textarea, counterWrap);
 
@@ -1502,7 +1583,7 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
 
   const previewLabel = document.createElement('span');
   previewLabel.className = 'sms-device-preview__label';
-  previewLabel.textContent = 'Recipient Device Preview';
+  previewLabel.textContent = 'How it will look on the phone';
 
   const previewBubble = document.createElement('div');
   previewBubble.className = 'sms-device-preview__bubble';
@@ -1513,7 +1594,7 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
   textarea.addEventListener('input', () => {
     const len = textarea.value.length;
     const seg = getSmsSegmentCount(textarea.value);
-    counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}${seg.encoding === 'UCS-2' ? ' · Unicode' : ''}`;
+    counterWrap.textContent = `${len} / ${seg.limit} characters · ${seg.segments} text message${seg.segments === 1 ? '' : 's'}${seg.encoding === 'UCS-2' ? ' · special characters' : ''}`;
     previewBubble.textContent = textarea.value.trim() || 'Your message text will appear here…';
   });
 
@@ -1521,7 +1602,7 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
     textarea.value = initialText;
     const initialLen = textarea.value.length;
     const initialSeg = getSmsSegmentCount(textarea.value);
-    counterWrap.innerHTML = `${initialLen} / ${initialSeg.limit} chars · ${initialSeg.segments} SMS ${initialSeg.segments === 1 ? 'segment' : 'segments'}${initialSeg.encoding === 'UCS-2' ? ' · Unicode' : ''}`;
+    counterWrap.textContent = `${initialLen} / ${initialSeg.limit} characters · ${initialSeg.segments} text message${initialSeg.segments === 1 ? '' : 's'}${initialSeg.encoding === 'UCS-2' ? ' · special characters' : ''}`;
     previewBubble.textContent = textarea.value.trim() || 'Your message text will appear here…';
   }
 
@@ -1540,7 +1621,7 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
   const sendBtn = document.createElement('button');
   sendBtn.type = 'submit';
   sendBtn.className = 'primary';
-  sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send Broadcast</span>`;
+  sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send broadcast</span>`;
 
   footer.append(cancelBtn, sendBtn);
   form.append(body, footer);
@@ -1557,18 +1638,18 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
     if (!message) return;
 
     const confirmed = await confirmDialog({
-      title: 'Confirm Broadcast SMS?',
+      title: 'Send this broadcast?',
       description: scopeSelect.value === 'subscribers'
         ? 'This immediately sends to every resident on your advisory list who has consented and not opted out. This action cannot be canceled once initiated.'
         : 'This immediately sends to every matching recipient in your barangay. This action cannot be canceled once initiated.',
-      confirmLabel: 'Send Broadcast',
-      cancelLabel: 'Keep Editing',
+      confirmLabel: 'Send broadcast',
+      cancelLabel: 'Keep editing',
       danger: true,
     });
     if (!confirmed) return;
 
     sendBtn.disabled = true;
-    sendBtn.textContent = 'Broadcasting…';
+    sendBtn.textContent = 'Sending…';
 
     try {
       const [scopeKey, role] = scopeSelect.value.split(':');
@@ -1578,14 +1659,14 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
         role: scopeKey === 'role' ? role : undefined,
         idempotencyKey: crypto.randomUUID(),
       });
-      showToast(`Broadcast complete: ${result.recipientCount} recipient(s), ${result.sent} delivered.`, {
+      showToast(`Broadcast done: ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}, ${result.sent} sent.`, {
         variant: result.failed > 0 ? 'info' : 'success',
       });
       onSuccess();
     } catch (err) {
       showToast(err instanceof ApiClientError ? err.message : 'Could not broadcast SMS.', { variant: 'error' });
       sendBtn.disabled = false;
-      sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send Broadcast</span>`;
+      sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send broadcast</span>`;
     }
   });
 
@@ -1604,19 +1685,23 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
   modal.className = 'sms-modal';
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'sms-newmsg-title');
 
   const header = document.createElement('div');
   header.className = 'sms-modal__header';
 
   const title = document.createElement('h3');
   title.className = 'sms-modal__title';
-  title.innerHTML = `<span aria-hidden="true">${icons.plus(20)}</span><span>New Direct SMS Message</span>`;
+  title.id = 'sms-newmsg-title';
+  title.innerHTML = `<span aria-hidden="true">${icons.plus(20)}</span><span>New text message</span>`;
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'sms-modal__close';
+  closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.innerHTML = icons.x(18);
   closeBtn.addEventListener('click', onCancel);
+  trapModalKeys(overlay, onCancel);
 
   header.append(title, closeBtn);
 
@@ -1627,31 +1712,33 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
 
   // Recipient Dropdown / Select
   const recipField = document.createElement('div');
-  recipField.style.cssText = 'display: flex; flex-direction: column; gap: 0.35rem;';
+  recipField.className = 'sms-modal-field';
 
   const recipLabel = document.createElement('label');
-  recipLabel.style.cssText = 'font-size: var(--font-size-xs); font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary);';
-  recipLabel.textContent = 'Select Recipient *';
+  recipLabel.className = 'sms-modal-label';
+  recipLabel.htmlFor = 'sms-newmsg-recipient';
+  recipLabel.textContent = 'Send to (required)';
 
   const recipSelect = document.createElement('select');
+  recipSelect.id = 'sms-newmsg-recipient';
   recipSelect.className = 'personnel-form-select';
   recipSelect.required = true;
 
   const defaultOpt = document.createElement('option');
   defaultOpt.value = '';
-  defaultOpt.textContent = '— Choose a contact or personnel —';
+  defaultOpt.textContent = 'Choose a person or a recent contact';
   recipSelect.appendChild(defaultOpt);
 
   // Load registered Tanods / Users to allow messaging staff directly
   getUsers({ limit: 100 }).then((res) => {
     if (res.items.length > 0) {
       const groupPersonnel = document.createElement('optgroup');
-      groupPersonnel.label = 'Barangay Personnel';
+      groupPersonnel.label = 'Barangay staff';
       res.items.forEach((u) => {
         if (u.contactNumber) {
           const opt = document.createElement('option');
           opt.value = `user:${u.userId}:${u.contactNumber}`;
-          opt.textContent = `${u.fullName} (${u.role}) · ${u.contactNumber}`;
+          opt.textContent = `${u.fullName} (${ROLE_LABELS[u.role] || 'Staff'}) · ${u.contactNumber}`;
           groupPersonnel.appendChild(opt);
         }
       });
@@ -1661,7 +1748,7 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
 
   if (existingConversations.length > 0) {
     const groupRecent = document.createElement('optgroup');
-    groupRecent.label = 'Recent Conversations';
+    groupRecent.label = 'Recent conversations';
     existingConversations.forEach((c) => {
       const opt = document.createElement('option');
       opt.value = `phone:${c.phoneNumber}`;
@@ -1675,27 +1762,29 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
 
   // Message body
   const msgField = document.createElement('div');
-  msgField.style.cssText = 'display: flex; flex-direction: column; gap: 0.35rem;';
+  msgField.className = 'sms-modal-field';
 
   const msgLabel = document.createElement('label');
-  msgLabel.style.cssText = 'font-size: var(--font-size-xs); font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary);';
-  msgLabel.textContent = 'Message *';
+  msgLabel.className = 'sms-modal-label';
+  msgLabel.htmlFor = 'sms-newmsg-message';
+  msgLabel.textContent = 'Message (required)';
 
   const textarea = document.createElement('textarea');
+  textarea.id = 'sms-newmsg-message';
   textarea.className = 'sms-compose-textarea';
   textarea.rows = 4;
-  textarea.placeholder = 'Type direct SMS message…';
+  textarea.placeholder = 'Type your text message…';
   textarea.required = true;
 
   const counterWrap = document.createElement('div');
   counterWrap.className = 'sms-segment-counter';
-  counterWrap.style.marginTop = '0.25rem';
-  counterWrap.textContent = '0 / 160 chars · 1 SMS segment';
+  counterWrap.setAttribute('aria-live', 'polite');
+  counterWrap.textContent = '0 / 160 characters · 1 text message';
 
   textarea.addEventListener('input', () => {
     const len = textarea.value.length;
     const seg = getSmsSegmentCount(textarea.value);
-    counterWrap.innerHTML = `${len} / ${seg.limit} chars · ${seg.segments} SMS ${seg.segments === 1 ? 'segment' : 'segments'}${seg.encoding === 'UCS-2' ? ' · Unicode' : ''}`;
+    counterWrap.textContent = `${len} / ${seg.limit} characters · ${seg.segments} text message${seg.segments === 1 ? '' : 's'}${seg.encoding === 'UCS-2' ? ' · special characters' : ''}`;
   });
 
   msgField.append(msgLabel, textarea, counterWrap);
@@ -1715,7 +1804,7 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
   const sendBtn = document.createElement('button');
   sendBtn.type = 'submit';
   sendBtn.className = 'primary';
-  sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send Message</span>`;
+  sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send message</span>`;
 
   footer.append(cancelBtn, sendBtn);
   form.append(body, footer);
@@ -1747,14 +1836,14 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
         message,
         idempotencyKey: crypto.randomUUID(),
       });
-      showToast(result.status === 'sent' ? 'Message sent.' : `Logged (${result.status})`, {
+      showToast(result.status === 'sent' ? 'Message sent.' : `Message saved. Status: ${statusLabel(result.status)}.`, {
         variant: result.status === 'sent' ? 'success' : 'info',
       });
       onRecipientSelected(targetPhone);
     } catch (err) {
       showToast(err instanceof ApiClientError ? err.message : 'Could not send SMS.', { variant: 'error' });
       sendBtn.disabled = false;
-      sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send Message</span>`;
+      sendBtn.innerHTML = `<span aria-hidden="true">${icons.send(14)}</span><span>Send message</span>`;
     }
   });
 
@@ -1813,9 +1902,9 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   const filterPanel = document.createElement('div');
   filterPanel.className = 'sms-log-filter-panel';
 
-  const typeSelect = buildFilterSelect('sms-log-type', 'Message type', ['All types', ...MESSAGE_TYPES]);
-  const directionSelect = buildFilterSelect('sms-log-direction', 'Direction', ['Both directions', ...DIRECTIONS]);
-  const statusSelect = buildFilterSelect('sms-log-status', 'Status', ['All statuses', ...STATUSES]);
+  const typeSelect = buildFilterSelect('sms-log-type', 'Message type', 'All types', MESSAGE_TYPES.map((v) => [v, msgTypeLabel(v)]));
+  const directionSelect = buildFilterSelect('sms-log-direction', 'Direction', 'Both directions', DIRECTIONS.map((v) => [v, DIRECTION_LABELS[v]]));
+  const statusSelect = buildFilterSelect('sms-log-status', 'Status', 'All statuses', STATUSES.map((v) => [v, statusLabel(v)]));
 
   const dateRangePicker = buildDateRangePicker('30', () => {
     currentPage = 1;
@@ -1990,7 +2079,7 @@ function renderDetailPlaceholder(pane) {
         ${icons.messageSquare(28)}
       </div>
       <h3 class="sms-detail-empty-title">Select a message</h3>
-      <p class="sms-detail-empty-desc">Choose any row on the left to inspect correlation tokens, delivery routing, and linked records.</p>
+      <p class="sms-detail-empty-desc">Choose a row on the left to see its delivery details and any linked incident.</p>
     </div>
   `;
 }
@@ -2013,14 +2102,14 @@ function renderRowDetail(pane, row, navigate) {
   const dirBadge = document.createElement('span');
   const isInbound = row.direction === 'inbound';
   dirBadge.className = `sms-detail-dir-badge sms-detail-dir-badge--${row.direction}`;
-  dirBadge.innerHTML = `<span aria-hidden="true">${isInbound ? icons.arrowDownLeft(12) : icons.arrowUpRight(12)}</span><span>${isInbound ? 'Inbound' : 'Outbound'}</span>`;
+  dirBadge.innerHTML = `<span aria-hidden="true">${isInbound ? icons.arrowDownLeft(12) : icons.arrowUpRight(12)}</span><span>${isInbound ? 'Incoming' : 'Outgoing'}</span>`;
 
   titleWrap.append(title, dirBadge);
 
   const statusPill = document.createElement('span');
   const cls = STATUS_PILL_CLASS[row.status] || 'status-pill--neutral';
   statusPill.className = `status-pill ${cls}`;
-  statusPill.textContent = row.status.toUpperCase();
+  statusPill.textContent = statusLabel(row.status);
 
   header.append(titleWrap, statusPill);
   card.appendChild(header);
@@ -2037,8 +2126,8 @@ function renderRowDetail(pane, row, navigate) {
     failBox.className = 'sms-detail-failure-box';
     failBox.innerHTML = `
       <div class="sms-detail-failure-head">
-        <span class="sms-detail-failure-icon">⚠️</span>
-        <strong>Delivery Failure</strong>
+        <span class="sms-detail-failure-icon" aria-hidden="true">${icons.alertTriangle(14)}</span>
+        <strong>Could not be delivered</strong>
       </div>
       <div class="sms-detail-failure-text">${escapeHtml(row.failureReason)}</div>
     `;
@@ -2066,6 +2155,7 @@ function renderRowDetail(pane, row, navigate) {
       copyBtn.type = 'button';
       copyBtn.className = 'sms-detail-copy-btn';
       copyBtn.title = `Copy ${label}`;
+      copyBtn.setAttribute('aria-label', `Copy ${label}`);
       copyBtn.innerHTML = icons.copy(12);
       copyBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2078,18 +2168,18 @@ function renderRowDetail(pane, row, navigate) {
     fields.append(dt, dd);
   };
 
-  addField('Transport', row.transport === 'gsm_modem' ? 'GSM Modem' : 'Semaphore');
-  addField('Message Type', row.messageType ? row.messageType.replace(/_/g, ' ') : null);
+  addField('Sent through', transportLabel(row.transport));
+  addField('Message type', row.messageType ? msgTypeLabel(row.messageType) : null);
   if (row.phoneNumber) addField('Phone Number', row.phoneNumber, true);
-  addField('Correlation ID', row.correlationId, true);
-  addField('Gateway Msg ID', row.gatewayMessageId, true);
-  addField('Modem Msg ID', row.modemMessageId, true);
+  addField('Tracking ID', row.correlationId, true);
+  addField('Gateway message ID', row.gatewayMessageId, true);
+  addField('Phone message ID', row.modemMessageId, true);
   addField('Incident', row.incidentId ? `#${row.incidentId}` : null);
   addField('Dispatch', row.dispatchId ? `#${row.dispatchId}` : null);
   addField('Citizen Report', row.reportId ? `#${row.reportId}` : null);
-  addField('Sent At', row.sentAt ? new Date(row.sentAt).toLocaleString() : null);
-  addField('Received At', row.receivedAt ? new Date(row.receivedAt).toLocaleString() : null);
-  addField('Logged At', new Date(row.createdAt).toLocaleString());
+  addField('Sent at', row.sentAt ? formatManilaDateTime(row.sentAt) : null);
+  addField('Received at', row.receivedAt ? formatManilaDateTime(row.receivedAt) : null);
+  addField('Logged at', formatManilaDateTime(row.createdAt));
 
   if (fields.children.length === 0 && !row.messageBody && !row.failureReason) {
     const none = document.createElement('p');
@@ -2112,7 +2202,7 @@ function renderRowDetail(pane, row, navigate) {
   pane.appendChild(card);
 }
 
-function buildFilterSelect(id, srLabel, optionLabels) {
+function buildFilterSelect(id, srLabel, allLabel, options) {
   const fragment = document.createDocumentFragment();
   const label = document.createElement('label');
   label.className = 'sr-only';
@@ -2121,10 +2211,10 @@ function buildFilterSelect(id, srLabel, optionLabels) {
   const select = document.createElement('select');
   select.id = id;
   select.className = 'input--auto sms-log-filter-select';
-  optionLabels.forEach((text, i) => {
+  [['', allLabel], ...options].forEach(([value, text]) => {
     const option = document.createElement('option');
-    option.value = i === 0 ? '' : text;
-    option.textContent = i === 0 ? text : text.replace(/_/g, ' ');
+    option.value = value;
+    option.textContent = text;
     select.appendChild(option);
   });
   fragment.append(label, select);
@@ -2138,18 +2228,18 @@ function renderSmsLogCell(row, key, navigate) {
     case 'direction': {
       const span = document.createElement('span');
       span.className = 'data-table__sub';
-      span.innerHTML = (row.direction === 'inbound' ? icons.arrowDownLeft(14) : icons.arrowUpRight(14));
-      span.append(' ' + (row.direction === 'inbound' ? 'Inbound' : 'Outbound'));
+      span.innerHTML = `<span aria-hidden="true">${row.direction === 'inbound' ? icons.arrowDownLeft(14) : icons.arrowUpRight(14)}</span>`;
+      span.append(' ' + (row.direction === 'inbound' ? 'Incoming' : 'Outgoing'));
       return span;
     }
     case 'type': {
       const span = document.createElement('span');
-      span.textContent = row.messageType.replace(/_/g, ' ');
+      span.textContent = msgTypeLabel(row.messageType);
       return span;
     }
     case 'transport': {
       const span = document.createElement('span');
-      span.textContent = row.transport === 'gsm_modem' ? 'GSM modem' : 'Semaphore';
+      span.textContent = transportLabel(row.transport);
       return span;
     }
     case 'linked': {
@@ -2178,7 +2268,7 @@ function renderSmsLogCell(row, key, navigate) {
     }
     case 'when': {
       const at = row.sentAt || row.receivedAt || row.createdAt;
-      return at ? new Date(at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—';
+      return at ? formatManilaDateTime(at) : '—';
     }
     case 'status': {
       const wrap = document.createElement('span');
@@ -2186,7 +2276,7 @@ function renderSmsLogCell(row, key, navigate) {
       const pill = document.createElement('span');
       const cls = STATUS_PILL_CLASS[row.status] || 'status-pill--neutral';
       pill.className = `status-pill ${cls}`;
-      pill.textContent = row.status.toUpperCase();
+      pill.textContent = statusLabel(row.status);
       wrap.appendChild(pill);
       if (row.failureReason) {
         const reason = document.createElement('span');
@@ -2204,34 +2294,6 @@ function renderSmsLogCell(row, key, navigate) {
 // ============================================================
 // Utilities
 // ============================================================
-
-function formatGroupDate(dateString) {
-  if (!dateString) return 'Previous Messages';
-  const d = new Date(dateString);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-  const targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-  if (targetDate.getTime() === today.getTime()) return 'Today';
-  if (targetDate.getTime() === yesterday.getTime()) return 'Yesterday';
-  return d.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-  });
-}
-
-function formatRelativeTime(isoString) {
-  if (!isoString) return '';
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(isoString).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 // Code-review finding H-22 (2026-09-24): this always assumed the GSM-7
 // default alphabet's 160/153-char limits, regardless of what the message

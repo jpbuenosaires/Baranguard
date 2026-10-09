@@ -171,7 +171,8 @@ describe('AppShell controls', () => {
   test('the live clock ticks after mount', async () => {
     mountShell('admin');
     await wait(1100);
-    assert.match(text($('.topbar__clock-digits')), /^\d{1,2}:\d{2}:\d{2} (AM|PM) PST$/);
+    assert.match(text($('.topbar__clock-digits')), /^\d{1,2}:\d{2}:\d{2}\s?(am|pm) Manila \(PHT\)$/i);
+    assert.doesNotMatch(text($('.topbar__clock-digits')), /PST/);
     assert.match(text($('.topbar__clock-shift')), /Duty/);
   });
 

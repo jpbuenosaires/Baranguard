@@ -12,7 +12,9 @@ import { setUserActive, setUserSuspended, createUser, ApiClientError } from '../
 import {
   getUsersDetailed, updateUserApproval, APPROVAL_AUTHORITIES, AUTHORITY_ELIGIBLE_ROLES,
 } from '../services/shellWorkflowApi.js';
+import { fetchAllPages } from '../services/rosterWindow.js';
 import { clearAuthorityCache } from '../services/tanodWorkflowUi.js';
+import { formatManilaDateTime, formatManilaDate } from '../utils/manilaTime.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { DataTable } from '../components/DataTable.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
@@ -88,7 +90,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
   searchInput.setAttribute('aria-label', 'Search users');
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value.trim().toLowerCase();
-    renderFilteredList();
+    currentPage = 1; renderFilteredList();
   });
 
   searchWrap.append(searchIcon, searchInput);
@@ -121,7 +123,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
   roleSelect.addEventListener('change', () => {
     selectedRole = roleSelect.value;
-    renderFilteredList();
+    currentPage = 1; renderFilteredList();
   });
 
   const statusSelect = document.createElement('select');
@@ -146,7 +148,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
   statusSelect.addEventListener('change', () => {
     selectedStatus = statusSelect.value;
-    renderFilteredList();
+    currentPage = 1; renderFilteredList();
   });
 
   filterRight.append(roleSelect, statusSelect);
@@ -169,9 +171,11 @@ export function renderUsersTab(container, pageHeader, viewer) {
   async function load() {
     renderLoading(body);
     try {
-      const result = await getUsersDetailed({ page: currentPage, limit: PAGE_SIZE });
+      // Load every account (an install has a few dozen) so the filters and the
+      // four tiles below cover everyone, not just one server page.
+      const result = await fetchAllPages(({ page, limit }) => getUsersDetailed({ page, limit }));
       allItems = result.items;
-      currentTotal = result.total;
+      currentTotal = result.items.length;
       renderStatStrip(allItems);
       renderFilteredList();
     } catch (err) {
@@ -188,11 +192,10 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
     const strip = StatStrip({
       items: [
-        // Counted over the loaded page only (the list is paged 25 at a time), so say so.
-        { label: currentTotal > items.length ? `Users (page ${currentPage} of ${currentTotal})` : 'Total Users', value: items.length },
-        { label: currentTotal > items.length ? 'Active on this page' : 'Active', value: activeCount, tone: 'success' },
-        { label: currentTotal > items.length ? 'Admins on this page' : 'Admins', value: adminCount, tone: 'info' },
-        { label: currentTotal > items.length ? 'Tanods on this page' : 'Tanods', value: tanodCount },
+        { label: 'Total Users', value: items.length },
+        { label: 'Active', value: activeCount, tone: 'success' },
+        { label: 'Admins', value: adminCount, tone: 'info' },
+        { label: 'Tanods', value: tanodCount },
       ],
     });
 
@@ -206,7 +209,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
         selectedStatus = 'all';
         roleSelect.value = 'all';
         statusSelect.value = 'all';
-        renderFilteredList();
+        currentPage = 1; renderFilteredList();
       });
     }
     if (statCards[1]) {
@@ -215,7 +218,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
       statCards[1].addEventListener('click', () => {
         selectedStatus = 'active';
         statusSelect.value = 'active';
-        renderFilteredList();
+        currentPage = 1; renderFilteredList();
       });
     }
     if (statCards[2]) {
@@ -224,7 +227,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
       statCards[2].addEventListener('click', () => {
         selectedRole = 'admin';
         roleSelect.value = 'admin';
-        renderFilteredList();
+        currentPage = 1; renderFilteredList();
       });
     }
     if (statCards[3]) {
@@ -233,7 +236,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
       statCards[3].addEventListener('click', () => {
         selectedRole = 'tanod';
         roleSelect.value = 'tanod';
-        renderFilteredList();
+        currentPage = 1; renderFilteredList();
       });
     }
 
@@ -271,19 +274,21 @@ export function renderUsersTab(container, pageHeader, viewer) {
     body.innerHTML = '';
     const filtered = getFilteredItems();
 
+    const lastPage = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (currentPage > lastPage) currentPage = lastPage;
     body.appendChild(DataTable({
       columns: COLUMNS,
-      rows: filtered,
+      rows: filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
       rowKey: (row) => row.userId,
       caption: 'Users Roster',
       emptyIcon: icons.users,
       emptyMessage: (searchQuery || selectedRole !== 'all' || selectedStatus !== 'all')
-        ? `No users match the selected filters${currentTotal > allItems.length ? ' on this page. Filters only cover the page shown; try the other pages.' : '.'}`
+        ? 'No users match the selected filters.'
         : 'No users found.',
       page: currentPage,
-      totalItems: (searchQuery || selectedRole !== 'all' || selectedStatus !== 'all') ? filtered.length : currentTotal,
+      totalItems: filtered.length,
       pageSize: PAGE_SIZE,
-      onPageChange: (nextPage) => { currentPage = nextPage; load(); },
+      onPageChange: (nextPage) => { currentPage = nextPage; renderFilteredList(); },
       renderCell: (row, key) => renderUserCell(row, key, viewer, load),
     }));
   }
@@ -595,12 +600,12 @@ function renderUserCell(row, key, viewer, reload) {
 
     case 'lastLoginAt': {
       return row.lastLoginAt
-        ? new Date(row.lastLoginAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+        ? formatManilaDateTime(row.lastLoginAt)
         : '<span class="text-tertiary">Never</span>';
     }
 
     case 'createdAt': {
-      return new Date(row.createdAt).toLocaleDateString();
+      return formatManilaDate(row.createdAt);
     }
 
     case 'actions': {

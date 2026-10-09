@@ -99,7 +99,7 @@
 
 .gis-mini-stat:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-card-hover);
 }
 
 .gis-mini-stat.is-active {
@@ -112,7 +112,7 @@
   color: var(--pill-success-text);
 }
 .gis-mini-stat--available .gis-mini-stat__value {
-  color: var(--color-success);
+  color: var(--color-success-text);
 }
 
 .gis-mini-stat--dispatched {
@@ -121,7 +121,7 @@
   color: var(--pill-info-text);
 }
 .gis-mini-stat--dispatched .gis-mini-stat__value {
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .gis-mini-stat--active {
@@ -154,7 +154,7 @@
   justify-content: space-between;
   padding: var(--spacing-sm) 0.875rem;
   border-radius: var(--radius-md, 8px);
-  background: var(--color-surface, #ffffff);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   font-size: 0.8125rem;
   font-weight: 600;
@@ -217,7 +217,7 @@
 
 /* Modern Field Personnel Card */
 .gis-personnel-card {
-  background: var(--color-surface, #ffffff);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg, 12px);
   padding: var(--pad-panel);
@@ -232,14 +232,14 @@
 
 .gis-personnel-card:hover {
   border-color: var(--color-primary);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-card-hover);
   transform: translateY(-1px);
 }
 
 .gis-personnel-card.is-selected {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
-  background: var(--tint-info-bg, #f0f7ff);
+  background: var(--tint-info-bg);
 }
 
 .gis-personnel-card__left {
@@ -367,7 +367,7 @@
 .gis-personnel-card__phone-btn:hover {
   background: var(--color-bg);
   border-color: var(--color-border, var(--color-disabled-bg));
-  color: var(--color-primary);
+  color: var(--color-link);
   transform: scale(1.08);
 }
 
@@ -392,7 +392,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--pad-panel-lg);
-  background: var(--color-surface, #ffffff);
+  background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   z-index: 10;
   gap: var(--spacing-md);
@@ -461,7 +461,7 @@
 
 .gis-map-tool-btn:hover {
   background: var(--color-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
   border-color: var(--color-primary);
 }
 
@@ -556,7 +556,7 @@
 }
 
 .gis-floating-activity__title-group svg {
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .gis-floating-activity__toggle {
@@ -734,7 +734,7 @@
 }
 
 .gis-floating-legend__dot--incident {
-  background: var(--color-warning-solid, #D97706);
+  background: var(--color-warning-solid);
 }
 
 .gis-floating-legend__dot--emergency {
@@ -760,16 +760,16 @@
 /* Dark mode adjustments */
 [data-theme="dark"] .gis-floating-activity,
 [data-theme="dark"] .gis-floating-legend {
-  background: rgba(30, 41, 59, 0.94);
-  border-color: rgba(51, 65, 85, 0.85);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  border-color: var(--color-border);
   box-shadow: var(--shadow-floating);
 }
 [data-theme="dark"] .gis-floating-activity__item {
-  background: rgba(15, 23, 42, 0.7);
-  border-color: rgba(51, 65, 85, 0.5);
+  background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+  border-color: var(--color-border);
 }
 [data-theme="dark"] .gis-floating-activity__item:hover {
-  background: rgba(15, 23, 42, 0.95);
+  background: color-mix(in srgb, var(--color-bg) 95%, transparent);
 }
 [data-theme="dark"] .gis-map-header {
   background: var(--color-surface);
@@ -837,7 +837,7 @@
 .heatmap-compliance-banner__icon {
   display: inline-flex;
   align-items: center;
-  color: var(--color-primary);
+  color: var(--color-link);
   flex-shrink: 0;
 }
 
@@ -913,11 +913,11 @@
   border-radius: 9999px;
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
-  background: rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
 }
 
 .heatmap-chip--active .heatmap-chip__count {
-  background: rgba(255, 255, 255, 0.22);
+  background: color-mix(in srgb, var(--color-white) 22%, transparent);
   color: var(--color-white);
 }
 
@@ -966,7 +966,7 @@
   width: 9rem;
   height: 0.5rem;
   border-radius: 9999px;
-  background: linear-gradient(90deg, #3b82f6 0%, #22c55e 40%, #eab308 70%, #dc2626 100%);
+  background: linear-gradient(90deg, var(--color-accent) 0%, var(--color-success) 40%, var(--color-warning) 70%, var(--color-critical) 100%);
 }
 
 .heatmap-legend-bar__meta {
@@ -1076,3 +1076,32 @@
 }
 
 
+
+.gis-empty-note {
+  padding: var(--spacing-md-lg) var(--spacing-sm);
+  text-align: center;
+}
+
+.gis-no-location-note {
+  padding: var(--spacing-sm);
+}
+
+.gis-updated-at {
+  color: var(--color-text-secondary);
+}
+
+.gis-personnel-card__phone-btn--none {
+  opacity: 0.3;
+}
+
+.gis-skeleton {
+  margin-bottom: var(--spacing-sm);
+}
+
+.gis-skeleton--sm { height: 3rem; }
+.gis-skeleton--md { height: 4.5rem; }
+.gis-skeleton--fill { flex: 1; min-height: 20rem; margin-bottom: 0; }
+
+.gis-skeleton-map {
+  border-radius: var(--radius-xl);
+}

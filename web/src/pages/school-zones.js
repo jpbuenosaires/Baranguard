@@ -30,6 +30,7 @@ import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
+import { manilaDateKey } from '../utils/manilaTime.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { PaperApprovalPanel } from '../components/PaperApprovalPanel.js';
 import { icons } from '../components/icons.js';
@@ -42,7 +43,7 @@ import {
 import {
   h, escapeHtml, mountPageFrame, buildTabBar, showLoading, showError, showEmpty, card, field,
   selectOf, getMyAuthority, statusPill, formatDateOnly, formatManilaDateTime, actionErrorMessage,
-  loadLetterhead, letterheadHtml, applyPrintOrientation, SSZ_PURSUANT_HTML,
+  loadLetterhead, letterheadHtml, applyPrintOrientation, printedByLabel, signatureBlockHtml, SSZ_PURSUANT_HTML,
 } from '../services/tanodWorkflowUi.js';
 
 const TABS = [
@@ -75,9 +76,7 @@ function normalizeParam(param) {
 }
 
 function manilaDateOf(value) {
-  const t = Date.parse(value);
-  if (Number.isNaN(t)) return '';
-  return new Date(t + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  return manilaDateKey(value) || '';
 }
 
 /**
@@ -193,6 +192,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         subtitle: `${active.length} active school${active.length === 1 ? '' : 's'}`,
         sheetId: 'printable-annex-b',
         sheetHtml: buildAnnexBHtml(active, lh),
+        printedBy: printedByLabel(user),
       });
       applyPrintOrientation(preview, 'landscape');
     });
@@ -469,6 +469,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
             to: state.to,
             truncatedScan: truncated,
           }),
+          printedBy: printedByLabel(user),
         });
         applyPrintOrientation(preview, 'landscape');
       } finally {
@@ -820,6 +821,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
             subtitle: `${report.termLabel} · ${TERM_STATUS_LABELS[report.status] || report.status}`,
             sheetId: 'printable-annex-d',
             sheetHtml: buildAnnexDHtml(report, lh, { preparedByName, approvedByName }),
+            printedBy: printedByLabel(user),
           });
         } finally {
           printBtn.disabled = false;
@@ -1060,11 +1062,15 @@ function buildAnnexBHtml(schools, lh) {
       ${titleBlock}
       <table class="tw-print__table tw-print__table--inv">
         <thead><tr>
-          <th>Name of School</th><th>Public/<br>Private</th><th>Level</th><th>Complete Address</th>
-          <th>SSZ Focal Person</th><th>SSZ Focal Contact<br>Number</th><th>Remarks<br>(include possible hotspots)</th>
+          <th scope="col">Name of School</th><th scope="col">Public/<br>Private</th><th scope="col">Level</th><th scope="col">Complete Address</th>
+          <th scope="col">SSZ Focal Person</th><th scope="col">SSZ Focal Contact<br>Number</th><th scope="col">Remarks<br>(include possible hotspots)</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
+      <div class="tw-sign">
+        ${signatureBlockHtml('Prepared by:', '', 'Name and position')}
+        ${signatureBlockHtml('Noted by:', '', 'Punong Barangay')}
+      </div>
       <div class="tw-print__page-break"></div>
       ${safeLetterheadHtml(lh, { office: true })}
       ${titleBlock}
@@ -1116,17 +1122,21 @@ function buildAnnexC1Html(rows, lh, meta = {}) {
       <p class="tw-print__intro">Itala ang mga insidente o panganib na nangyari sa, o may direktang epekto sa, <i>school zone</i>. Panatilihing batay sa katotohanan, maikli, at hindi para sa imbestigasyon o pagtukoy ng pananagutan.</p>
       <table class="tw-print__table tw-print__table--c1">
         <thead><tr>
-          <th>Pangalan ng Paaralan na malapit sa pinangyarihan ng insidente</th>
-          <th>Oras / Petsa ng Insidente (Kailan)</th>
-          <th>Eksaktong Lugar (Saan)</th>
-          <th>Maikling Salaysay ng Insidente (Ano ang Nangyari at Paano)</th>
-          <th>Ginawang Aksyon</th>
-          <th>ISINANGGUNI O INIULAT SA<div class="tw-print__th-sub">(PNP / BFP / Higher LGU / DPWH / DOH / Iba pa, gaya ng 911)</div></th>
-          <th>Tumugong Tauhan ng Barangay</th>
-          <th>Kalagayan / Mga Tala</th>
+          <th scope="col">Pangalan ng Paaralan na malapit sa pinangyarihan ng insidente</th>
+          <th scope="col">Oras / Petsa ng Insidente (Kailan)</th>
+          <th scope="col">Eksaktong Lugar (Saan)</th>
+          <th scope="col">Maikling Salaysay ng Insidente (Ano ang Nangyari at Paano)</th>
+          <th scope="col">Ginawang Aksyon</th>
+          <th scope="col">ISINANGGUNI O INIULAT SA<div class="tw-print__th-sub">(PNP / BFP / Higher LGU / DPWH / DOH / Iba pa, gaya ng 911)</div></th>
+          <th scope="col">Tumugong Tauhan ng Barangay</th>
+          <th scope="col">Kalagayan / Mga Tala</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>
+      <div class="tw-sign">
+        ${signatureBlockHtml('Prepared by:', '', 'Name and position')}
+        ${signatureBlockHtml('Noted by:', '', 'Punong Barangay')}
+      </div>
       <div class="tw-print__howto">
         <p class="tw-print__lead">Paano Gamitin:</p>
         <p>1. Isulat ang buong pangalan ng paaralan o institusyong pang-edukasyon na kaugnay ng school zone kung saan nangyari o nakaapekto ang insidente o panganib.</p>
@@ -1166,26 +1176,26 @@ function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
       <p class="tw-print__note-line">To be submitted to the Office of the Mayor, copy furnished the concerned C/MLGOO or DILG City Director, on or before the applicable deadline prescribed under DILG Memorandum Circular No. 2026-037</p>
 
       <table class="tw-print__table tw-print__table--term">
-        <tr><th>Reporting TERM</th></tr>
+        <tr><th scope="col">Reporting TERM</th></tr>
         <tr><td>${escapeHtml(report.termLabel || '')} (${escapeHtml(formatDateOnly(report.termStart))} &ndash; ${escapeHtml(formatDateOnly(report.termEnd))})</td></tr>
       </table>
       <table class="tw-print__table tw-print__table--term">
         <tr>
-          <th><b>Total Number of Tanods</b><br>(Annual Reporting every Term 1)</th>
-          <th>Total No. of Schools Covered</th>
-          <th>Total No. of Days with Tanod Deployment in Schools</th>
-          <th>Total No. of Incidents Logged (As also reflected in Annex &ldquo;C-1&rdquo;)</th>
-          <th>Remarks (Technical Assistance Needed / Key Issues &amp; Notable Good Practices / Notes)</th>
+          <th scope="col"><b>Total Number of Tanods</b><br>(Annual Reporting every Term 1)</th>
+          <th scope="col">Total No. of Schools Covered</th>
+          <th scope="col">Total No. of Days with Tanod Deployment in Schools</th>
+          <th scope="col">Total No. of Incidents Logged (As also reflected in Annex &ldquo;C-1&rdquo;)</th>
+          <th scope="col">Remarks (Technical Assistance Needed / Key Issues &amp; Notable Good Practices / Notes)</th>
         </tr>
         <tr>${cell(report.totalTanods)}${cell(report.totalSchools)}${cell(report.totalDeploymentDays)}${cell(report.totalIncidents)}${cell(report.remarks)}</tr>
       </table>
       <table class="tw-print__table tw-print__table--term">
         <tr><td colspan="8" class="tw-print__cap">TOTAL NUMBER OF INCIDENTS THAT (As also reflected in Annex &ldquo;C-1&rdquo;):</td></tr>
         <tr>
-          <th>Acted upon by the Barangay and without referral</th><th>Referred to the PNP</th><th>Referred to the BFP</th>
-          <th>Referred to the Higher LGU (City/ Municipality)</th><th>Referred to the DOH</th><th>Referred to the DPWH</th>
-          <th>Referred to other Agencies/Institutions</th>
-          <th>[Please Indicate the name of institutions, Multiple Entries are allowed Ex: Department of Agriculture (DA)]</th>
+          <th scope="col">Acted upon by the Barangay and without referral</th><th scope="col">Referred to the PNP</th><th scope="col">Referred to the BFP</th>
+          <th scope="col">Referred to the Higher LGU (City/ Municipality)</th><th scope="col">Referred to the DOH</th><th scope="col">Referred to the DPWH</th>
+          <th scope="col">Referred to other Agencies/Institutions</th>
+          <th scope="col">[Please Indicate the name of institutions, Multiple Entries are allowed Ex: Department of Agriculture (DA)]</th>
         </tr>
         <tr>${cell(report.incidentsBarangayOnly)}${cell(report.incidentsPnp)}${cell(report.incidentsBfp)}${cell(report.incidentsHigherLgu)}${cell(report.incidentsDoh)}${cell(report.incidentsDpwh)}${cell(report.incidentsOtherAgencies)}${cell(report.otherInstitutions)}</tr>
       </table>
@@ -1208,15 +1218,21 @@ function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
         <div class="tw-print__sigrow">
           <div class="tw-print__sigcell">
             <p class="tw-print__siglbl">Prepared by:</p>
-            <div class="tw-print__sigline">${escapeHtml(preparedByName || '')}</div>
+            <div class="tw-print__sigline"></div>
+            <p class="tw-print__sigparen">Name and signature over printed name</p>
+            <p class="tw-print__signame">${escapeHtml(preparedByName || '')}</p>
             ${report.preparedByTitle ? `<p class="tw-print__sigtitle">${escapeHtml(report.preparedByTitle)}</p>` : ''}
             <p class="tw-print__sigcap">Chief Tanod/ Executive Officer</p>
+            <p class="tw-print__sigfield">Date signed: <span></span></p>
           </div>
           <div class="tw-print__sigcell">
             <p class="tw-print__siglbl">Approved by:</p>
-            <div class="tw-print__sigline">${escapeHtml(approvedByName || '')}</div>
+            <div class="tw-print__sigline"></div>
+            <p class="tw-print__sigparen">Name and signature over printed name</p>
+            <p class="tw-print__signame">${escapeHtml(approvedByName || '')}</p>
             ${report.approvedByTitle ? `<p class="tw-print__sigtitle">${escapeHtml(report.approvedByTitle)}</p>` : ''}
             <p class="tw-print__sigcap">Punong Barangay/ BPOC Chairperson</p>
+            <p class="tw-print__sigfield">Date signed: <span></span></p>
           </div>
         </div>
         <div class="tw-print__sigrow tw-print__sigrow--single">

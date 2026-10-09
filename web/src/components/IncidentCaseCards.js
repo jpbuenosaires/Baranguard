@@ -29,6 +29,7 @@ import { ApiClientError, setRelatedIncident, getIncidents } from '../api/apiClie
 import { confirmDialog } from './ConfirmDialog.js';
 import { showToast } from './Toast.js';
 import { icons } from './icons.js';
+import { formatManilaDateTime } from '../utils/manilaTime.js';
 
 const C1_FIELDS = [
   { key: 'c1Summary', label: 'Summary (Annex C-1)', hint: 'Short and factual.' },
@@ -364,9 +365,7 @@ export function openReferralDialog({ incidentId, incidentLabel, onCreated }) {
 }
 
 function formatReferredAt(value) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' });
+  return formatManilaDateTime(value, '');
 }
 
 /**
@@ -454,8 +453,7 @@ export function describeIncidentRef(ref) {
   const label = ref.displayId || `#${ref.incidentId}`;
   const type = String(ref.incidentType || 'incident').replace(/_/g, ' ');
   const when = ref.createdAt
-    ? new Date(String(ref.createdAt).includes('T') ? ref.createdAt : String(ref.createdAt).replace(' ', 'T') + 'Z')
-        .toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' })
+    ? formatManilaDateTime(String(ref.createdAt).includes('T') ? ref.createdAt : String(ref.createdAt).replace(' ', 'T') + 'Z')
     : 'date not recorded';
   return `${label}: ${type}, logged ${when}`;
 }

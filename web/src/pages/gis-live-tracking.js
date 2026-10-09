@@ -49,20 +49,23 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaTime, formatManilaTimeSeconds } from '../utils/manilaTime.js';
 
 const POLL_INTERVAL_MS = 15000;
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
-// Labels only (2026-09-05 bug pass) — 'available' really means "on duty
-// and not currently responding," and 'dispatched' means "has an active
-// dispatch," which "Dispatched" alone doesn't convey from the Tanod's own
-// point of view. Filter keys/values are unchanged — only what the chip
-// reads as.
-const ROSTER_FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'available', label: 'On Duty' },
-  { key: 'dispatched', label: 'Responding' },
-  { key: 'stale', label: 'Stale' },
-];
+// What the quick filter is currently showing, in plain words.
+const FILTER_LABELS = {
+  all: 'Showing everyone',
+  available: 'Showing: On Duty',
+  dispatched: 'Showing: Responding',
+  active: 'Showing: with an open SOS or dispatch',
+};
+const INCIDENT_TYPE_LABELS = {
+  theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
+  domestic_dispute: 'Domestic Dispute', vandalism: 'Vandalism', traffic_incident: 'Traffic Incident',
+  fire: 'Fire', medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
+  animal_complaint: 'Animal Complaint', other: 'Other',
+};
 const DUTY_EVENT_LABEL = { on_duty: 'marked as available', responding: 'marked as responding', off_duty: 'went off duty' };
 const ACTIVITY_FEED_LIMIT = 10;
 
@@ -132,9 +135,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   let isStale = false;
 
   function manilaClock(value) {
-    const d = value instanceof Date ? value : (value ? new Date(value) : null);
-    if (!d || Number.isNaN(d.getTime())) return null;
-    return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
+    return value ? formatManilaTime(value, null) : null;
   }
 
   function setStale(on) {
@@ -170,7 +171,8 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     try {
       const [gpsItems, sosItems, dutyStatuses, dispatchesRes, usersRes, incidentsRes] = await Promise.all([
         getGpsLive(user.barangayId),
-        getTanodSos({}).catch(() => []),
+        // A failed SOS read must not look like "no alerts" (audit P-14).
+        getTanodSos({}),
         getDutyStatus(user.barangayId).catch(() => []),
         getDispatches({ limit: 100 }).catch(() => ({ items: [] })),
         isAdmin ? getUsers({ role: 'tanod', limit: 100 }).catch(() => ({ items: [] })) : Promise.resolve(null),
@@ -235,15 +237,23 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       // Map Filters Row
       filterBarEl = document.createElement('div');
       filterBarEl.className = 'gis-filter-bar';
+      filterBarEl.setAttribute('role', 'button');
+      filterBarEl.setAttribute('tabindex', '0');
+      filterBarEl.setAttribute('aria-label', 'Change which responders are shown');
       filterBarEl.innerHTML = `
         <div class="gis-filter-bar__left">
-          ${icons.filter(15)}
-          <span>Map Filters</span>
+          <span aria-hidden="true">${icons.filter(15)}</span>
+          <span>Show</span>
         </div>
       `;
       filterBadgeEl = document.createElement('span');
       filterBadgeEl.className = 'gis-filter-bar__badge';
       filterBarEl.appendChild(filterBadgeEl);
+      filterBarEl.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        filterBarEl.click();
+      });
       filterBarEl.addEventListener('click', () => {
         // Toggle roster filter in a simple cycle: all -> available -> dispatched -> all
         if (rosterFilter === 'all') rosterFilter = 'available';
@@ -380,21 +390,26 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
     // ── Update 3 Mini Status Cards ──
     statCardsEl.innerHTML = `
-      <div class="gis-mini-stat gis-mini-stat--available ${rosterFilter === 'available' ? 'is-active' : ''}" data-filter="available">
+      <div class="gis-mini-stat gis-mini-stat--available ${rosterFilter === 'available' ? 'is-active' : ''}" data-filter="available" role="button" tabindex="0" aria-pressed="${rosterFilter === 'available'}">
         <div class="gis-mini-stat__value">${availableCount}</div>
-        <div class="gis-mini-stat__label">Available</div>
+        <div class="gis-mini-stat__label">On duty</div>
       </div>
-      <div class="gis-mini-stat gis-mini-stat--dispatched ${rosterFilter === 'dispatched' ? 'is-active' : ''}" data-filter="dispatched">
+      <div class="gis-mini-stat gis-mini-stat--dispatched ${rosterFilter === 'dispatched' ? 'is-active' : ''}" data-filter="dispatched" role="button" tabindex="0" aria-pressed="${rosterFilter === 'dispatched'}">
         <div class="gis-mini-stat__value">${dispatchedCount}</div>
-        <div class="gis-mini-stat__label">Dispatched</div>
+        <div class="gis-mini-stat__label">Responding</div>
       </div>
-      <div class="gis-mini-stat gis-mini-stat--active ${rosterFilter === 'active' ? 'is-active' : ''}" data-filter="active">
+      <div class="gis-mini-stat gis-mini-stat--active ${rosterFilter === 'active' ? 'is-active' : ''}" data-filter="active" role="button" tabindex="0" aria-pressed="${rosterFilter === 'active'}">
         <div class="gis-mini-stat__value">${activeAlertsCount}</div>
-        <div class="gis-mini-stat__label">Active</div>
+        <div class="gis-mini-stat__label">Open SOS alerts</div>
       </div>
     `;
 
     statCardsEl.querySelectorAll('.gis-mini-stat').forEach((card) => {
+      card.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        card.click();
+      });
       card.addEventListener('click', () => {
         const filter = card.getAttribute('data-filter');
         if (rosterFilter === filter) {
@@ -408,18 +423,22 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     });
 
     function updateMiniStatCardsSelection() {
+      if (filterBadgeEl) filterBadgeEl.textContent = FILTER_LABELS[rosterFilter] || FILTER_LABELS.all;
       statCardsEl.querySelectorAll('.gis-mini-stat').forEach((card) => {
-        card.classList.toggle('is-active', card.getAttribute('data-filter') === rosterFilter);
+        const on = card.getAttribute('data-filter') === rosterFilter;
+        card.classList.toggle('is-active', on);
+        card.setAttribute('aria-pressed', String(on));
       });
     }
 
     // ── Update Filter Bar Badge & Subtitle ──
     const activeFiltersCount = rosterFilter === 'all' ? 0 : 1;
-    filterBadgeEl.textContent = activeFiltersCount > 0 ? `${rosterFilter.toUpperCase()} filter active` : 'All filter active';
+    filterBadgeEl.textContent = FILTER_LABELS[rosterFilter] || FILTER_LABELS.all;
 
     mapSubtitleEl.innerHTML = `
-      <span class="dispatch-map-live-pill"><span class="dispatch-map-live-dot"></span>Live · 15s sync</span>
-      <span>Monitoring ${gpsItems.length} field personnel across Pilar barangays</span>
+      <span class="dispatch-map-live-pill"><span class="dispatch-map-live-dot" aria-hidden="true"></span>Live · 15s sync</span>
+      <span>Showing ${gpsItems.length} field personnel with a location in your barangay</span>
+      <span class="gis-updated-at">Updated ${escapeHtml(formatManilaTimeSeconds(new Date()))}</span>
     `;
     if (isStale) setStale(true);
 
@@ -432,7 +451,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         latitude: i.latitude,
         longitude: i.longitude,
         incidentType: i.incidentType || 'other',
-        typeLabel: i.typeLabel || i.incidentType,
+        typeLabel: INCIDENT_TYPE_LABELS[i.incidentType] || 'Incident',
         priority: i.priority || 'normal',
         status: i.status,
         locationText: i.locationDescription || i.location_description || '',
@@ -484,7 +503,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         btn.title = `Click to ${vis[row.key] ? 'hide' : 'show'} ${row.label} pins on map`;
         btn.innerHTML = `
           <span class="legend-item__left">
-            <span class="legend-dot ${row.dotClass}"></span>
+            <span class="legend-dot ${row.dotClass}" aria-hidden="true"></span>
             <span>${escapeHtml(row.label)}</span>
           </span>
           <span class="legend-count-pill">${row.count}</span>
@@ -508,7 +527,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         return true;
       });
 
-      personnelHeaderEl.textContent = `FIELD PERSONNEL (${filtered.length})`;
+      personnelHeaderEl.textContent = `Field personnel (${filtered.length})`;
 
       // Map Markers
       liveMap.setMarkers(filtered.map((g) => {
@@ -562,9 +581,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       personnelListEl.innerHTML = '';
       if (filtered.length === 0) {
         const empty = document.createElement('div');
-        empty.className = 'note';
-        empty.style.padding = '1.5rem 0.5rem';
-        empty.style.textAlign = 'center';
+        empty.className = 'note gis-empty-note';
         empty.textContent = gpsItems.length === 0
           ? 'No Tanod locations reported yet.'
           : 'No personnel match the selected filter.';
@@ -610,10 +627,10 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
             : 'gis-personnel-card__status-pill--available';
 
         const statusText = g.isStale
-          ? 'STALE'
+          ? 'Old location'
           : isDispatched
-            ? 'DISPATCHED'
-            : 'AVAILABLE';
+            ? 'Responding'
+            : 'On duty';
 
         const incidentBadgeHtml = (isDispatched && dispatchObj)
           ? `<span class="gis-personnel-card__incident-pill">INC-${String(dispatchObj.incidentId).padStart(3, '0')}</span>`
@@ -622,12 +639,12 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         const contactNumber = tanodUser?.contactNumber;
         const callBtnHtml = contactNumber
           ? `<a href="tel:${escapeHtml(contactNumber)}" class="gis-personnel-card__phone-btn" title="Call ${escapeHtml(g.fullName)}" aria-label="Call ${escapeHtml(g.fullName)}" onclick="event.stopPropagation()">${icons.phone(16)}</a>`
-          : `<span class="gis-personnel-card__phone-btn" style="opacity:0.3;" title="No phone on file">${icons.phone(16)}</span>`;
+          : `<span class="gis-personnel-card__phone-btn gis-personnel-card__phone-btn--none" role="img" aria-label="No phone number on file" title="No phone on file">${icons.phone(16)}</span>`;
 
         card.innerHTML = `
           <div class="gis-personnel-card__left">
             <div class="gis-personnel-card__avatar ${avatarModifier}">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                 <circle cx="12" cy="7" r="4"/>
               </svg>
@@ -666,6 +683,19 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
         personnelListEl.appendChild(card);
       }
+
+      // On-duty tanods with no GPS fix are not on the map; say so rather than hide them (audit A-27).
+      if (rosterFilter === 'all' || rosterFilter === 'available') {
+        const located = new Set(gpsItems.map((g) => g.userId));
+        const missing = [...onDutyIds].filter((id) => !located.has(id) && !dispatchedIds.has(id));
+        if (missing.length > 0) {
+          const note = document.createElement('div');
+          note.className = 'note gis-no-location-note';
+          const names = missing.map((id) => tanodRosterById.get(id)?.fullName || `Tanod #${id}`).join(', ');
+          note.textContent = `On duty but no location yet: ${names}.`;
+          personnelListEl.appendChild(note);
+        }
+      }
     }
   }
 
@@ -675,14 +705,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   function renderActivityFeed(container, dispatches, dutyStatuses, openSos, gpsItems) {
     if (!container) return;
     const gpsNameById = new Map(gpsItems.map((g) => [g.userId, g.fullName]));
-    const resolveName = (id) => {
-      const u = tanodRosterById.get(id);
-      if (u) {
-        const badge = u.badgeNumber || `T-${String(u.userId).padStart(3, '0')}`;
-        return badge;
-      }
-      return `T-${String(id).padStart(3, '0')}`;
-    };
+    const resolveName = (id) => tanodRosterById.get(id)?.fullName || gpsNameById.get(id) || `Tanod #${id}`;
 
     const events = [];
     for (const d of dispatches) {
@@ -752,9 +775,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     container.innerHTML = '';
     if (recent.length === 0) {
       const empty = document.createElement('div');
-      empty.className = 'note';
-      empty.style.padding = '0.5rem';
-      empty.style.textAlign = 'center';
+      empty.className = 'note gis-empty-note';
       empty.textContent = 'No recent activity to show.';
       container.appendChild(empty);
       return;
@@ -769,7 +790,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
       item.innerHTML = `
         <div class="gis-floating-activity__text-row">
-          <span class="gis-floating-activity__dot ${dotModifier}"></span>
+          <span class="gis-floating-activity__dot ${dotModifier}" aria-hidden="true"></span>
           <span class="gis-floating-activity__desc">${escapeHtml(event.text)}</span>
         </div>
         <div class="gis-floating-activity__time">${escapeHtml(elapsed)}</div>
@@ -803,12 +824,12 @@ function renderLoading(container) {
   page.setAttribute('aria-label', 'Loading live tracking');
   page.innerHTML = `
     <div class="gis-sidebar">
-      <div class="skeleton" style="height: 3rem; margin-bottom: 0.5rem;"></div>
-      <div class="skeleton" style="height: 4.5rem; margin-bottom: 0.5rem;"></div>
-      <div class="skeleton" style="height: 2.5rem; margin-bottom: 0.5rem;"></div>
-      <div class="skeleton" style="flex: 1; min-height: 20rem;"></div>
+      <div class="skeleton gis-skeleton gis-skeleton--sm"></div>
+      <div class="skeleton gis-skeleton gis-skeleton--md"></div>
+      <div class="skeleton gis-skeleton gis-skeleton--sm"></div>
+      <div class="skeleton gis-skeleton gis-skeleton--fill"></div>
     </div>
-    <div class="skeleton gis-page__map-wrapper--fill" style="border-radius: var(--radius-xl, 16px);"></div>
+    <div class="skeleton gis-page__map-wrapper--fill gis-skeleton-map"></div>
   `;
   container.appendChild(page);
 }

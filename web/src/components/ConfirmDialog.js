@@ -28,16 +28,24 @@
  * the element that should receive initial focus); `resolveValue` maps a
  * confirm click onto the promise's resolved value.
  */
-function openDialog({ title, description, confirmLabel, cancelLabel, danger, buildBody, cancelValue, resolveValue, onConfirmAsync }) {
+function openDialog({ title, description, confirmLabel, cancelLabel, danger, buildBody, cancelValue, resolveValue, onConfirmAsync, role = 'alertdialog' }) {
   return new Promise((resolve) => {
     const previouslyFocused = document.activeElement;
 
     const backdrop = document.createElement('div');
     backdrop.className = 'confirm-backdrop';
+    // This dialog runs its own focus trap / Escape / focus return; the
+    // shared modalA11y.js helper must stand aside for it.
+    backdrop.setAttribute('data-modal-a11y', 'self');
 
     const dialog = document.createElement('div');
     dialog.className = 'confirm-dialog' + (danger ? ' confirm-dialog--danger' : '');
-    dialog.setAttribute('role', 'alertdialog');
+    // X-14 recommends role="dialog" for the prompt* forms (alertdialog is
+    // for interruptions). The `role` option exists for that, but every
+    // caller still gets alertdialog for now: page tests owned elsewhere
+    // locate these dialogs by [role="alertdialog"], so the switch is a
+    // coordinated follow-up, not a silent change here.
+    dialog.setAttribute('role', role);
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-labelledby', 'confirm-dialog-title');
 
@@ -49,8 +57,11 @@ function openDialog({ title, description, confirmLabel, cancelLabel, danger, bui
     if (description) {
       const descEl = document.createElement('p');
       descEl.className = 'confirm-dialog__description';
+      descEl.id = 'confirm-dialog-description';
       descEl.textContent = description;
       dialog.appendChild(descEl);
+      // X-14: read the description when the dialog opens, not only the title.
+      dialog.setAttribute('aria-describedby', descEl.id);
     }
 
     const preferredFocus = buildBody ? buildBody(dialog) : null;
@@ -111,8 +122,14 @@ function openDialog({ title, description, confirmLabel, cancelLabel, danger, bui
       if (typeof onConfirmAsync === 'function') {
         confirmButton.disabled = true;
         cancelButton.disabled = true;
-        const originalContent = confirmButton.innerHTML;
-        confirmButton.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span> <span>${confirmLabel}</span>`;
+        // Built with DOM nodes, not innerHTML: confirmLabel can carry a
+        // caller-supplied name (X-14 flagged the unescaped interpolation).
+        const spinner = document.createElement('span');
+        spinner.className = 'btn-spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        const busyLabel = document.createElement('span');
+        busyLabel.textContent = confirmLabel;
+        confirmButton.replaceChildren(spinner, document.createTextNode(' '), busyLabel);
         errorEl.hidden = true;
         try {
           const val = resolveValue();
@@ -121,7 +138,7 @@ function openDialog({ title, description, confirmLabel, cancelLabel, danger, bui
         } catch (err) {
           confirmButton.disabled = false;
           cancelButton.disabled = false;
-          confirmButton.innerHTML = originalContent;
+          confirmButton.replaceChildren(document.createTextNode(confirmLabel));
           errorEl.textContent = err?.message || 'Operation failed. Please try again.';
           errorEl.hidden = false;
         }

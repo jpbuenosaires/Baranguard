@@ -62,13 +62,27 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
 
   const tabRow = document.createElement('div');
   tabRow.className = 'page-tabs';
+  tabRow.setAttribute('role', 'tablist');
+  tabRow.setAttribute('aria-label', 'Analytics sections');
   const tabButtons = {};
   for (const tab of TABS) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'page-tab';
+    btn.id = `analytics-tab-${tab.key}`;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', 'analytics-tabpanel');
     btn.textContent = tab.label;
     btn.addEventListener('click', () => setActiveTab(tab.key));
+    // Arrow keys move between tabs (WAI-ARIA tabs pattern).
+    btn.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      event.preventDefault();
+      const index = TABS.findIndex((t) => t.key === tab.key);
+      const next = TABS[(index + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+      setActiveTab(next.key);
+      tabButtons[next.key].focus();
+    });
     tabButtons[tab.key] = btn;
     tabRow.appendChild(btn);
   }
@@ -76,12 +90,22 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
   header.appendChild(tabBar);
 
   const body = document.createElement('div');
+  body.id = 'analytics-tabpanel';
+  body.setAttribute('role', 'tabpanel');
   content.appendChild(body);
 
   let activeTab = TABS[0].key;
 
   function syncTabButtons() {
-    for (const [key, btn] of Object.entries(tabButtons)) btn.classList.toggle('is-active', key === activeTab);
+    for (const [key, btn] of Object.entries(tabButtons)) {
+      const selected = key === activeTab;
+      btn.classList.toggle('is-active', selected);
+      btn.setAttribute('aria-selected', String(selected));
+      btn.tabIndex = selected ? 0 : -1;
+    }
+    body.setAttribute('aria-labelledby', `analytics-tab-${activeTab}`);
+    const label = TABS.find((t) => t.key === activeTab)?.label;
+    if (label) document.title = `Analytics: ${label}`;
   }
 
   function setActiveTab(key) {

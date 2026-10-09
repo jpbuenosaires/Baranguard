@@ -20,8 +20,8 @@ describe('Service Health behaviour', () => {
     mountPage(renderServiceHealthPage, { role: 'admin' });
     await settle();
     const body = text($('.page-content'));
-    assert.match(body, /1 Failing/, 'ORS is the one configured dependency that is down');
-    assert.match(body, /1 Neutral/, 'the GSM SMS gateway is unconfigured, not failing');
+    assert.match(body, /1 not working/, 'ORS is the one configured dependency that is down');
+    assert.match(body, /1 part\b/, 'the GSM SMS gateway is unconfigured, not failing');
   });
 
   test('the history\'s sampling caveat is shown, not hidden', async () => {
@@ -41,7 +41,7 @@ describe('Service Health behaviour', () => {
     await settle();
     const body = text($('.page-content'));
     assert.match(body, /Notification Delivery/, 'the new H-20 card is rendered');
-    assert.match(body, /All Reaching Recipients/, '0 fully-undelivered targets is the honest, healthy state from the fixture');
+    assert.match(body, /All reaching recipients/, '0 fully-undelivered targets is the honest, healthy state from the fixture');
     assert.match(body, /0 notifications/, 'the real count (0) is shown, not hidden');
   });
 });

@@ -67,6 +67,8 @@
  *     rule already established above.
  */
 
+import { onThemeChange } from './themeEvents.js';
+
 const DEFAULT_CENTER = [123.6667, 12.9186]; // Pilar, Sorsogon [lng, lat]
 const DEFAULT_ZOOM = 13;
 const CLUSTER_RADIUS_PX = 44; // Screen-pixel distance under which two Tanod markers merge into one cluster bubble.
@@ -690,10 +692,17 @@ export function LiveMap(container, options = {}) {
     renderRoute();
   }
 
+  // D-10: MapLibre paint colours are resolved once from CSS tokens; re-read
+  // them when the theme flips so the boundary/route/link layers follow it.
+  const offTheme = onThemeChange(container, () => {
+    if (!destroyed && ready) applyThemeColors(map);
+  });
+
   let destroyed = false;
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    offTheme();
     clearTimeout(reclusterHandle);
     clearTimeout(focusTimeoutHandle);
     clearMarkers(tanodMarkers);
@@ -863,6 +872,18 @@ export function LiveMap(container, options = {}) {
 function themeToken(name, fallback) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
+}
+
+/** Re-applies every token-derived paint colour to the layers that exist (theme change). */
+export function applyThemeColors(map) {
+  const set = (layer, prop, value) => {
+    if (map.getLayer(layer)) map.setPaintProperty(layer, prop, value);
+  };
+  set('background', 'background-color', themeToken('--color-surface-blue', '#E0F2FE'));
+  set('barangay-boundary-fill', 'fill-color', themeToken('--color-accent', '#3B82F6'));
+  set('barangay-boundary-line', 'line-color', themeToken('--color-primary', '#1D4ED8'));
+  set('dispatch-links-layer', 'line-color', themeToken('--color-primary', '#2563EB'));
+  set('dispatch-route-line', 'line-color', themeToken('--color-primary', '#1D4ED8'));
 }
 
 function applyBoundary(map, geojson) {
