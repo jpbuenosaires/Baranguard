@@ -20,7 +20,7 @@
  *    - Tapping opens the report receipt and verification screen.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   IonContent,
@@ -135,27 +135,44 @@ const MyReportsPage: React.FC = () => {
   const [rows, setRows] = useState<IncidentLocalRow[]>([]);
   const [evidenceCounts, setEvidenceCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const mountedRef = useRef(true);
   const [syncing, setSyncing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'synced' | 'pending'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   const load = useCallback(async () => {
-    const [all, counts] = await Promise.all([
-      listAllLocalIncidents(),
-      getEvidenceCountsByIncident().catch(() => ({})),
-    ]);
-    setRows(all);
-    setEvidenceCounts(counts);
+    try {
+      const [all, counts] = await Promise.all([
+        listAllLocalIncidents(),
+        getEvidenceCountsByIncident().catch(() => ({})),
+      ]);
+      if (!mountedRef.current) return;
+      setRows(all);
+      setEvidenceCounts(counts);
+      setLoadError(false);
+    } catch {
+      if (mountedRef.current) setLoadError(true);
+    }
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     setLoading(true);
-    load().finally(() => setLoading(false));
+    void load().finally(() => {
+      if (mountedRef.current) setLoading(false);
+    });
+    return () => {
+      mountedRef.current = false;
+    };
   }, [load]);
 
   async function handleRefresh(event: CustomEvent) {
-    await load();
-    (event.target as HTMLIonRefresherElement).complete();
+    try {
+      await load();
+    } finally {
+      (event.target as HTMLIonRefresherElement).complete();
+    }
   }
 
   const handleManualSync = async () => {
@@ -169,7 +186,7 @@ const MyReportsPage: React.FC = () => {
     } catch {
       tacticalFeedback.onWarning();
     } finally {
-      setSyncing(false);
+      if (mountedRef.current) setSyncing(false);
     }
   };
 
@@ -345,6 +362,25 @@ const MyReportsPage: React.FC = () => {
           {/* Content Body */}
           {loading ? (
             <LoadingBlock label="Loading reports…" />
+          ) : loadError && rows.length === 0 ? (
+            <div role="alert" style={{ textAlign: 'center', padding: 'var(--spacing-xl) var(--spacing-md)' }}>
+              <p style={{ margin: '0 0 var(--spacing-md)', color: 'var(--pill-critical-text)', fontSize: 'var(--font-size-sm)' }}>
+                Could not read the reports saved on this phone.
+              </p>
+              <button
+                type="button"
+                className="dispatch-primary-cta dispatch-primary-cta--blue"
+                style={{ maxWidth: '240px', height: '44px' }}
+                onClick={() => {
+                  setLoading(true);
+                  void load().finally(() => {
+                    if (mountedRef.current) setLoading(false);
+                  });
+                }}
+              >
+                Try again
+              </button>
+            </div>
           ) : rows.length === 0 ? (
             <div
               className="card--elevated"
@@ -422,9 +458,16 @@ const MyReportsPage: React.FC = () => {
                           tacticalFeedback.onTap();
                           navigate(`/incidents/${row.local_id}/submitted`);
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            tacticalFeedback.onTap();
+                            navigate(`/incidents/${row.local_id}/submitted`);
+                          }
+                        }}
                         role="button"
                         tabIndex={0}
-                        aria-label={`View report for ${row.incident_type}`}
+                        aria-label={`View report for ${formatIncidentType(row.incident_type)}`}
                       >
                         {/* Row 1: Header (Type & Category Icon on Left, Time on Right) */}
                         <div className="report-blotter-top">
@@ -467,7 +510,7 @@ const MyReportsPage: React.FC = () => {
                                 <span className="report-blotter-meta-bullet">•</span>
                                 <span className="report-blotter-meta-item">
                                   <IonIcon icon={cameraOutline} style={{ color: 'var(--color-info)' }} />
-                                  <span>{evidenceCount} photo{evidenceCount > 1 ? 's' : ''}</span>
+                                  <span>{evidenceCount} attachment{evidenceCount > 1 ? 's' : ''}</span>
                                 </span>
                               </>
                             )}

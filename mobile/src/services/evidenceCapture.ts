@@ -44,6 +44,9 @@ import { Directory, Filesystem } from '@capacitor/filesystem';
 import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { uuid } from './uuid';
 
+/** Server cap (IncidentsController::MAX_EVIDENCE_BYTES). A larger file can never upload. */
+export const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024;
+
 const MAX_PHOTO_DIMENSION = 1600;
 const PHOTO_JPEG_QUALITY = 0.75;
 
@@ -173,6 +176,7 @@ export function isRecordingVoice(): boolean {
 }
 
 export async function startVoiceRecording(): Promise<void> {
+  if (activeRecording) return;
   const permission = await VoiceRecorder.hasAudioRecordingPermission();
   if (!permission.value) {
     const granted = await VoiceRecorder.requestAudioRecordingPermission();
@@ -189,8 +193,13 @@ export async function startVoiceRecording(): Promise<void> {
 }
 
 export async function stopVoiceRecording(): Promise<StagedAttachment> {
-  const result = await VoiceRecorder.stopRecording();
-  activeRecording = false;
+  let result: Awaited<ReturnType<typeof VoiceRecorder.stopRecording>>;
+  try {
+    result = await VoiceRecorder.stopRecording();
+  } finally {
+    // Whatever the plugin says, the UI must not stay stuck in "recording".
+    activeRecording = false;
+  }
   const { path, mimeType, recordDataBase64 } = result.value;
 
   if (path) {

@@ -142,6 +142,9 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   function syncTabButtons() {
     for (const [key, btn] of Object.entries(tabButtons)) {
       btn.classList.toggle('is-active', key === activeTab);
+      // Not colour-only: assistive tech also learns which tab is current.
+      if (key === activeTab) btn.setAttribute('aria-current', 'page');
+      else btn.removeAttribute('aria-current');
     }
   }
 

@@ -18708,3 +18708,21 @@ git worktrees, merged to local `main`; nothing pushed.
   verify-sprint7-pentest-incidents 56/0, verify-wave1a-dispatch-roster 145/0,
   verify-chief-tanod-mobile 174/0, verify-second-responder 25/0. **Not run:** the
   rest of the suite chain; not browser- or device-verified.
+
+## 2026-10-09 (2) - UI audit of the recent web and mobile changes (three parallel agents)
+
+- **incident-management.js:** disabled action label no longer says "Incident Resolved"
+  for cancelled/invalid/duplicate; detail badge classes for reopened/duplicate/invalid/
+  cancelled (were unstyled; reuses pending/closed styles; a dedicated `--reopened` CSS
+  rule is still cleaner); list status label wrapped in `escapeHtml`.
+- **scheduler.js / personnel.js:** hand-editing times or a preset now clears
+  `source_availability_id` and the "Prefilled" note; focus moves into the prefilled
+  form; no Create button for a submission with zero windows; Edit Shift dialog labelled;
+  active tab gets `aria-current`.
+- **Mobile (evidence panel, my-reports, evidenceCapture):** recording state restored and
+  saved on unmount, double-tap guard, caught rejections, 25 MB check, friendly permission
+  errors, accessible names, my-reports error + retry and keyboard support.
+- Evidence: wiring 779/0, `web/tests` 625/0, mobile tsc 1 / lint 18 / schema 230 (same as
+  baseline). jsdom only: nothing browser- or device-verified.
+- Left on purpose: accepted availability leaves the review list; Edit Shift has no Escape
+  or focus trap; print sheet hardcodes two colours; draft-checkbox re-render drops focus.

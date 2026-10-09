@@ -306,4 +306,25 @@ describe('Dispatch offers on the board (Wave 2)', () => {
     assert.match(text(), /INC-2026-901/);
     assert.doesNotMatch(text(), /Broadcast to \d+ tanod/);
   });
+
+  test('a reopened incident is queued with a REOPENED badge and can be dispatched; pending ones keep PENDING', async () => {
+    const original = api.routes.find((r) => r.method === 'GET' && r.path === '/incidents');
+    api.on('GET', '/incidents', (req) => {
+      const res = original.handler(req);
+      const body = res.body ?? res;
+      if (req.query.status === 'reopened') {
+        const base = (original.handler({ ...req, query: { ...req.query, status: 'pending' } }).body ?? {}).items ?? [];
+        return { status: 200, body: { ...body, items: base.slice(0, 1).map((i) => ({ ...i, incident_id: 950, display_id: 'INC-2026-950', status: 'reopened' })) } };
+      }
+      return res;
+    });
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    const badges = $$('.queue-badge', ctx.root).map((b) => text(b));
+    assert.ok(badges.includes('REOPENED'), `no REOPENED badge in ${JSON.stringify(badges)}`);
+    assert.ok(badges.includes('PENDING'), 'pending incidents keep their PENDING badge');
+    const card = $$('.queue-incident-card', ctx.root).find((c) => /INC-2026-950/.test(text(c)));
+    assert.ok(card, 'reopened incident card missing');
+    assert.ok($$('button', card).some((b) => /^dispatch tanod$/i.test(text(b))), 'a reopened incident is dispatchable');
+  });
 });

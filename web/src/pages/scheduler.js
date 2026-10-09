@@ -314,7 +314,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       fromRow.appendChild(createFrom);
 
       row.append(top, list, actions);
-      if (canManageShifts) row.appendChild(fromRow);
+      // A submission with no usable window cannot produce a shift.
+      if (canManageShifts && item.windows.length > 0) row.appendChild(fromRow);
       availabilityHost.appendChild(row);
     }
   }
@@ -964,6 +965,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     btn.innerHTML = `${p.label}<small>${p.hours}</small>`;
     btn.addEventListener('click', () => {
       applyPreset(p.type, startInput, endInput);
+      clearSource();
       updateFormFatiguePreview();
     });
     presetsRow.appendChild(btn);
@@ -1047,7 +1049,11 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     sourceAvailabilityId = null;
     sourceNote.hidden = true;
   };
+  // Editing the tanod or either time by hand (or picking a preset) means the
+  // shift no longer matches the chosen window, so stop claiming it does.
   tanodSelect.addEventListener('change', clearSource);
+  startInput.addEventListener('input', clearSource);
+  endInput.addEventListener('input', clearSource);
 
   card.applyAvailability = ({ availId, userId, window: w }) => {
     if (!tanods.some((t) => t.userId === userId)) return false;
@@ -1059,6 +1065,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     sourceNote.hidden = false;
     errorBox.hidden = true;
     updateFormFatiguePreview();
+    startInput.focus?.({ preventScroll: true });
     return true;
   };
 
@@ -1173,17 +1180,20 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
   modal.className = 'personnel-modal';
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'scheduler-edit-title');
 
   const header = document.createElement('div');
   header.className = 'personnel-modal__header';
 
   const title = document.createElement('h3');
+  title.id = 'scheduler-edit-title';
   title.className = 'personnel-modal__title';
   title.innerHTML = `<span aria-hidden="true">${icons.calendar(20)}</span><span>Edit Shift Schedule</span>`;
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'personnel-modal__close';
+  closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.innerHTML = icons.x(18);
   closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
 
@@ -1203,7 +1213,9 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
   const tanodLabel = document.createElement('label');
   tanodLabel.className = 'personnel-form-label';
   tanodLabel.textContent = 'Assigned Tanod';
+  tanodLabel.htmlFor = 'scheduler-edit-tanod';
   const tanodSelect = document.createElement('select');
+  tanodSelect.id = 'scheduler-edit-tanod';
   tanodSelect.className = 'personnel-form-select';
   const unassignedOpt = document.createElement('option');
   unassignedOpt.value = '';
@@ -1232,7 +1244,9 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
   const zoneLabel = document.createElement('label');
   zoneLabel.className = 'personnel-form-label';
   zoneLabel.textContent = 'Patrol Zone';
+  zoneLabel.htmlFor = 'scheduler-edit-zone';
   const zoneInput = document.createElement('input');
+  zoneInput.id = 'scheduler-edit-zone';
   zoneInput.type = 'text';
   zoneInput.className = 'personnel-form-input';
   zoneInput.value = shift.patrolZone || '';
@@ -1245,7 +1259,9 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
   const startLabel = document.createElement('label');
   startLabel.className = 'personnel-form-label';
   startLabel.textContent = 'Start Time';
+  startLabel.htmlFor = 'scheduler-edit-start';
   const startInput = document.createElement('input');
+  startInput.id = 'scheduler-edit-start';
   startInput.type = 'datetime-local';
   startInput.className = 'personnel-form-input';
   startInput.value = toDatetimeLocal(shift.startAt);
@@ -1256,7 +1272,9 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
   const endLabel = document.createElement('label');
   endLabel.className = 'personnel-form-label';
   endLabel.textContent = 'End Time';
+  endLabel.htmlFor = 'scheduler-edit-end';
   const endInput = document.createElement('input');
+  endInput.id = 'scheduler-edit-end';
   endInput.type = 'datetime-local';
   endInput.className = 'personnel-form-input';
   endInput.value = toDatetimeLocal(shift.endAt);

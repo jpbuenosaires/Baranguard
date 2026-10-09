@@ -547,4 +547,56 @@ describe('Personnel behaviour', () => {
     await settle();
     assert.match(text($('#scheduler-new-start').closest('form')), /Daily scheduled hours exceed 12/);
   });
+  test('hand-editing the times after prefill drops source_availability_id and the "Prefilled" note', async () => {
+    await openScheduler('admin');
+    click(buttonByText(/create shift from this availability/i, $('.availability-panel')));
+    const form = $('#scheduler-new-start').closest('form');
+    const prefilled = (f) => $$('p.note', f).some((n) => !n.hidden && /Prefilled from the Tanod's submitted availability/.test(text(n)));
+    assert.ok(prefilled(form));
+    type($('#scheduler-new-start'), '2026-10-12T08:00');
+    type($('#scheduler-new-end'), '2026-10-12T16:00');
+    assert.equal(prefilled(form), false);
+    form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    assert.equal('source_availability_id' in api.callsTo('POST', '/shifts')[0].body, false);
+  });
+
+  test('a quick preset after prefill also drops the availability link', async () => {
+    await openScheduler('admin');
+    click(buttonByText(/create shift from this availability/i, $('.availability-panel')));
+    click($('.shift-preset-btn'));
+    assert.equal($$('p.note', $('#scheduler-new-start').closest('form')).some((n) => !n.hidden && /Prefilled from/.test(text(n))), false);
+  });
+
+  test('the Edit Shift dialog has a name, a labelled close button and labelled fields', async () => {
+    const ctx = await openScheduler('admin');
+    click(buttonByText(/Edit Shift/i, ctx.root));
+    await settle();
+    const modal = document.querySelector('.personnel-modal');
+    const titleId = modal.getAttribute('aria-labelledby');
+    assert.ok(titleId && document.getElementById(titleId), 'dialog is named by its heading');
+    assert.equal(modal.querySelector('.personnel-modal__close').getAttribute('aria-label'), 'Close');
+    for (const id of ['scheduler-edit-tanod', 'scheduler-edit-zone', 'scheduler-edit-start', 'scheduler-edit-end']) {
+      assert.ok(modal.querySelector(`label[for="${id}"]`) && modal.querySelector(`#${id}`), `${id} is labelled`);
+    }
+    click(modal.querySelector('.personnel-modal__close'));
+  });
+
+  test('the active Personnel tab is exposed with aria-current, not by colour alone', async () => {
+    mountPage(renderPersonnelPage, { role: 'admin' });
+    await settle();
+    assert.equal(tab('Users').getAttribute('aria-current'), 'page');
+    click(tab('Scheduler'));
+    await settle();
+    assert.equal(tab('Scheduler').getAttribute('aria-current'), 'page');
+    assert.equal(tab('Users').getAttribute('aria-current'), null);
+  });
+
+  test('an availability submission with no windows offers no "Create shift" button', async () => {
+    api.on('GET', '/availability', () => ({ status: 200, body: { items: [
+      { avail_id: 40, user_id: 4, full_name: 'Jose Reyes', period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [], status: 'submitted', version: 1 },
+    ], page: 1, limit: 100, total: 1 } }));
+    await openScheduler('admin');
+    assert.equal(buttonByText(/create shift from this availability/i, $('.availability-panel')), undefined);
+  });
 });
