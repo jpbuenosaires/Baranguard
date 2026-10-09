@@ -17,7 +17,8 @@ import { PageHeader } from '../components/PageHeader.js';
 import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
-import { confirmDialog } from '../components/ConfirmDialog.js';
+import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
+import { requireReason } from '../utils/reasonText.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { REPORT_CHANNEL_OPTIONS, DEFAULT_WEB_REPORT_CHANNEL } from '../utils/reportChannel.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
@@ -860,7 +861,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         const dispatched = await promptDispatchTanod({ incident: row, incidentTypeLabel: typeLabel, eligibleTanods });
         if (dispatched) {
           await load();
-          refreshCounterCounts();
           const refreshed = lastItems.find((r) => r.incidentId === row.incidentId);
           if (refreshed) selectIncident(refreshed);
         } else {
@@ -963,7 +963,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         });
         if (dispatched) {
           await load();
-          refreshCounterCounts();
           const refreshed = lastItems.find((r) => r.incidentId === row.incidentId);
           if (refreshed) selectIncident(refreshed);
         } else {
@@ -971,6 +970,32 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         }
       });
       actionsRow.appendChild(dispatchBtn);
+
+      // Part 5 item 1 (2026-10-09): an incident settled without any dispatch
+      // (a phone call, a walk-in sorted on the spot) can be closed by the
+      // Admin with a mandatory reason. The server enforces the reason.
+      const resolveNoDispatchBtn = document.createElement('button');
+      resolveNoDispatchBtn.type = 'button';
+      resolveNoDispatchBtn.className = 'btn-action-resolve';
+      resolveNoDispatchBtn.innerHTML = `${icons.checkCircle(16)} <span>Resolve without dispatch</span>`;
+      resolveNoDispatchBtn.addEventListener('click', async () => {
+        const reason = await promptText({
+          title: 'Resolve without dispatch?',
+          description: 'No tanod was sent to this incident. Say why it needed no dispatch. The reason is kept with the incident.',
+          label: 'Reason (required)',
+          confirmLabel: 'Mark Resolved',
+          cancelLabel: 'Cancel',
+          onConfirmAsync: async (value) => {
+            await updateIncidentStatus(row.incidentId, requireReason(value, 'reason'));
+          },
+        });
+        if (reason === null) return;
+        showToast('Incident resolved successfully.', { variant: 'success' });
+        await load();
+        const refreshed = lastItems.find((r) => r.incidentId === row.incidentId);
+        if (refreshed) selectIncident(refreshed);
+      });
+      actionsRow.appendChild(resolveNoDispatchBtn);
     } else if (row.status === 'dispatched') {
       // 2026-09-13: an already-dispatched incident can now get an
       // additional concurrent responder too (docs/REMAINING.md G-backlog,
@@ -987,7 +1012,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         const dispatched = await promptDispatchTanod({ incident: row, incidentTypeLabel: typeLabel, eligibleTanods });
         if (dispatched) {
           await load();
-          refreshCounterCounts();
           const refreshed = lastItems.find((r) => r.incidentId === row.incidentId);
           if (refreshed) selectIncident(refreshed);
         } else {
@@ -1014,7 +1038,6 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
           await updateIncidentStatus(row.incidentId);
           showToast('Incident resolved successfully.', { variant: 'success' });
           await load();
-          refreshCounterCounts();
           const refreshed = lastItems.find((r) => r.incidentId === row.incidentId);
           if (refreshed) selectIncident(refreshed);
         } catch (err) {
