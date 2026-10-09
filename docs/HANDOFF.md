@@ -8,7 +8,7 @@ sessions, the abandoned React Native rebuild, the PHP 8.3 swap, the
 Cloudflare tunnel set-up) lives in DEVLOG; only what is still true and
 still actionable is kept here.
 
-**Last updated: 2026-10-09 (after the logic-review decisions).**
+**Last updated: 2026-10-09 (after the web audit fixes, waves 1-3).**
 
 ## Current state
 
@@ -26,6 +26,33 @@ Tanod (Admin) mobile console with a scope-limited device session, Chief Tanod
 rosterable, retention placeholders (purge OFF), System Tools web menu. Plan and
 decisions: `docs/WORKFLOWS_AND_RULES.md` Part 3 rules 56-66 and REFERENCE.md §1.
 Route count 117 across 30 files.
+
+**Web audit fixes (2026-10-09; report in `docs/audit-2026-10-09/00-SUMMARY.md`,
+nine auditor reports beside it), local `main`, NOT pushed, jsdom/scripts only,
+NOT browser-verified (the user is doing the browser pass).** Three committed waves
+(`06736b5`, `6b52a53`, wave 3). Fixed: the `?api_base=` credential-theft override
+(now localhost / same-site only), unescaped `patrolZone` XSS and latent sites,
+session expiry (401 -> sign-in with notice) and a 15-minute idle lock, security
+headers + CSP in `web/.htaccess`/`backend/public/.htaccess`, the pre-filled "certify
+under oath" attestation removed from reports, the fake "Target < 20m" chip, honest
+Service Health ('configured', not green), SOS acknowledge + last-known/no-fix display
+on the web, site-wide SOS bar, Manila time everywhere (`web/src/utils/manilaTime.js`),
+shared modal accessibility, z-index scale, contrast token fixes, paper-report workflow
+(Secretary sees entry text; paper approval from `prepared`; paper-pending queue),
+Scheduler date window, Punong Barangay incident/dispatch list scope (open + last 30
+days, no search/paging, id-only search), invented fallbacks removed, Copy Narrative
+removed, privacy notice draft (`web/privacy.html`) and breach/DPO docs. Decisions
+still owed: darker warning/success/info colours (visible app-wide), idle lock vs the
+Dispatch screen (it signs out an Admin who only watches for SOS), SOS bar after
+'Mark as seen', Annex B/C-1 'Prepared by/Noted by' blocks, Kagawad account model,
+whether the PB 30-day window is right, shift delete route, Secretary incident
+date/location filters, Lupon/KP referral destination, map tiles/fonts (third-party).
+Not code: DPO designation, verifying the legal text (MC 2026-037 was unreadable),
+real DB migrations. `git stash@{0}` is a leftover from an agent's mishap: the tree was
+restored, drop it when satisfied. Checks: wiring 914/0, `web/tests` 742 (the order-
+sensitive map test can fail in a full run, passes alone), h16 59, wave1a 145, roster-
+accomplishment 339, paper-approvals 280, w2-reports 41, pentest-incidents 74, sprint4-
+phase2-3 73, sprint7-audit 60, scheduler-fatigue 55.
 
 **Logic review (2026-10-09, DEVLOG 2026-10-09 (1)), local `main`, not pushed:**
 an Admin can now resolve a `pending`/`reopened` incident that needed no dispatch

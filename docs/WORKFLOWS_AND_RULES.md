@@ -673,3 +673,15 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 ### Still open (not logic, but found while doing this)
 - Master Reference §6 (`docs/Baranguard_Master_Reference_FINAL .md`) still states only a dispatched incident can be resolved. Per `CLAUDE.md` the Master Reference is the authority unless corrected, so reconcile it with Rule 11.
 - Migrations 0029 to 0039 are not applied to the real databases.
+
+---
+
+# Part 6: Rules added by the 2026-10-09 web audit fixes
+
+73. The Punong Barangay's `GET /incidents` and `GET /dispatch` return only open items plus the last 30 days, no free-text search and no paging beyond page 1, with free-text location, officer name and C-1 text removed; `GET /search` matches an exact id or display id only (constant `PB_LIST_WINDOW_DAYS`).
+74. Reports and the weekly digest are labelled system-generated and unsigned; a person signs on paper under a blank "Reviewed and approved by" block. No sworn statement or attestation is ever pre-filled.
+75. The response-time figure is shown only as "incident reported to first Tanod arrival" with its sample size; no target is displayed until the barangay adopts one, and it is never a ranking of tanods.
+76. A health badge shows `configured` (neutral) when only configuration exists; HEALTHY needs a real probe.
+77. The web dashboard signs out after 15 minutes without input (named constant `IDLE_TIMEOUT_MS`) and on any 401; it honours an API base override only on localhost or `https://api.<this site>` (or the page's own host on a port).
+78. A paper note and approval may be recorded together for a report still at `prepared` when the noter holds `note_report`, the signer holds `approve_report`, and neither is the preparer.
+79. Operational times shown on the web are formatted by `web/src/utils/manilaTime.js` in Asia/Manila, 12-hour; incident and dispatch statuses are labelled by `web/src/utils/statusLabels.js` (pending = Pending, dispatched = Responding).
