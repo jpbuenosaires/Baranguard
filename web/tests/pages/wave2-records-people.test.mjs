@@ -86,7 +86,7 @@ describe('Wave 2: incident detail', () => {
     const ctx = mountPage(renderIncidentDetailPage, { role: 'admin', param: 902 });
     await settle();
     const pills = $$('.status-pill', ctx.root).map((p) => text(p));
-    assert.ok(pills.includes('Dispatched'));
+    assert.ok(pills.includes('Responding'));
     const heading = $$('h3', ctx.root).find((h) => /^Responders$/.test(text(h)));
     assert.ok(heading, 'a Responders card is shown');
     assert.ok($$('.responders-table th[scope="col"]', ctx.root).length >= 3);

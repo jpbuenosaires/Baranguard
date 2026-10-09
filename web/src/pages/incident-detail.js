@@ -38,6 +38,7 @@ import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncStat
 import { SchoolC1Card, ReferralsCard, RelatedIncidentCard, resolveIncidentReference, describeIncidentRef } from '../components/IncidentCaseCards.js';
 import { reportChannelLabel } from '../utils/reportChannel.js';
 import { requireReason } from '../utils/reasonText.js';
+import { INCIDENT_STATUS_LABELS, DISPATCH_STATUS_LABELS as SHARED_DISPATCH_STATUS_LABELS } from '../utils/statusLabels.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -80,19 +81,9 @@ const STATUS_PILL_CLASS = {
 };
 
 /** Plain words for every incident state (never the raw enum value). */
-const STATUS_LABELS = {
-  pending: 'Pending',
-  dispatched: 'Dispatched',
-  resolved: 'Resolved',
-  reopened: 'Reopened',
-  duplicate: 'Duplicate',
-  invalid: 'Invalid',
-  cancelled: 'Cancelled',
-};
+const STATUS_LABELS = INCIDENT_STATUS_LABELS;
 const PRIORITY_LABELS = { critical: 'Critical', urgent: 'Urgent', high: 'High', normal: 'Normal', medium: 'Normal', low: 'Low' };
-const DISPATCH_STATUS_LABELS = {
-  dispatched: 'Dispatched', en_route: 'On the way', arrived: 'On scene', completed: 'Completed', cancelled: 'Cancelled',
-};
+const DISPATCH_STATUS_LABELS = SHARED_DISPATCH_STATUS_LABELS;
 
 function statusLabel(status) {
   return STATUS_LABELS[status] || String(status || 'Unknown').replace(/_/g, ' ');

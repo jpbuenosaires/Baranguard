@@ -164,17 +164,6 @@
   font-size: var(--font-size-sm);
 }
 
-.page-tab__badge {
-  min-width: 1.25rem;
-  padding: 0 var(--spacing-xs);
-  border-radius: var(--radius-xl);
-  background: var(--tint-warning-bg);
-  color: var(--color-warning-text);
-  font-size: var(--font-size-label);
-  font-weight: 700;
-  text-align: center;
-}
-
 .tw-detail-head__row {
   display: flex;
   align-items: flex-start;

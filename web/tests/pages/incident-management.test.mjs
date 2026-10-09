@@ -77,7 +77,7 @@ describe('Incident Management behaviour', () => {
 
     const statBadge = $('.incident-detail-badge--pending', ctx.root);
     assert.ok(statBadge, 'detail pane status badge with pending modifier class missing');
-    assert.match(text(statBadge), /Active/);
+    assert.match(text(statBadge), /Pending/);
     assert.ok($('svg', statBadge), 'detail pane status badge icon missing');
   });
 

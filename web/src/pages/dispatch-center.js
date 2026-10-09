@@ -41,6 +41,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { openReferralDialog } from '../components/IncidentCaseCards.js';
 import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
 import { formatManilaTime } from '../utils/manilaTime.js';
+import { DISPATCH_STATUS_LABELS as SHARED_DISPATCH_STATUS_LABELS } from '../utils/statusLabels.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 
@@ -110,7 +111,7 @@ function manilaClock(value) {
 }
 
 // Plain words for a responder's dispatch state (never the raw en_route code).
-const DISPATCH_STATUS_LABELS = { assigned: 'Assigned', en_route: 'On the way', arrived: 'Arrived at scene' };
+const DISPATCH_STATUS_LABELS = SHARED_DISPATCH_STATUS_LABELS;
 
 /** An SOS with no usable coordinates (C-01 `no_fix`, or a null pair on an old row). */
 function sosHasNoLocation(sos) {

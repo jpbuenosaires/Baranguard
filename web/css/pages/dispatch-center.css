@@ -136,7 +136,7 @@
 }
 
 .dispatch-kpi-val--online { color: var(--color-success); }
-.dispatch-kpi-val--dispatched { color: var(--color-primary); }
+.dispatch-kpi-val--dispatched { color: var(--color-link); }
 .dispatch-kpi-val--pending { color: var(--color-critical); }
 
 .dispatch-kpi-label {
@@ -557,7 +557,7 @@
 .dispatch-map-container.is-fullscreen {
   position: fixed;
   inset: 1rem;
-  z-index: 9999;
+  z-index: var(--z-fullscreen);
   height: auto;
   box-shadow: var(--shadow-floating);
 }

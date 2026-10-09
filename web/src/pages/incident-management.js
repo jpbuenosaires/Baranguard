@@ -25,6 +25,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatManilaDateTime, manilaDateKey } from '../utils/manilaTime.js';
 import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
 import { getSchools, updateIncidentSchoolFields } from '../services/shellWorkflowApi.js';
+import { INCIDENT_STATUS_LABELS, DISPATCH_STATUS_LABELS as SHARED_DISPATCH_STATUS_LABELS } from '../utils/statusLabels.js';
 
 /** Programmatically links a visible <label> to its control (accessibility). */
 function linkLabel(label, control, id) {
@@ -55,18 +56,7 @@ const PRIORITY_LABELS = {
   low: 'Low',
 };
 
-const STATUS_DISPLAY_LABELS = {
-  pending: 'Active',
-  dispatched: 'Responding',
-  resolved: 'Resolved',
-  closed: 'Closed',
-  // H-16/M-03 lifecycle states (migration 0025) -- set via W21's Case
-  // lifecycle card on incident-detail.js, never invented here.
-  duplicate: 'Duplicate',
-  invalid: 'Invalid',
-  cancelled: 'Cancelled',
-  reopened: 'Reopened',
-};
+const STATUS_DISPLAY_LABELS = { ...INCIDENT_STATUS_LABELS, closed: 'Closed' };
 
 const PAGE_SIZE = 15;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -373,7 +363,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   statusSelect.setAttribute('aria-label', 'Filter by status');
   const statusOptions = [
     { value: '', label: 'All Status' },
-    { value: 'pending', label: 'Active' },
+    { value: 'pending', label: INCIDENT_STATUS_LABELS.pending },
     { value: 'dispatched', label: 'Responding' },
     { value: 'resolved', label: 'Resolved' },
     // H-16/M-03 lifecycle states -- otherwise a Secretary could set them
@@ -862,7 +852,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     tanodLabel.textContent = activeDispatches.length > 1 ? 'Assigned Tanods' : 'Assigned Tanod';
     tanodCard.appendChild(tanodLabel);
 
-    const DISPATCH_STATUS_TEXT = { assigned: 'Assigned', en_route: 'En route', arrived: 'On scene' };
+    const DISPATCH_STATUS_TEXT = SHARED_DISPATCH_STATUS_LABELS;
 
     if (activeDispatches.length === 0) {
       const tanodContent = document.createElement('div');

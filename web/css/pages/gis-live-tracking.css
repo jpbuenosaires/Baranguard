@@ -431,7 +431,7 @@
 .gis-map-card.is-fullscreen {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-modal);
   border-radius: 0;
   height: 100vh;
   margin: 0;

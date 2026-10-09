@@ -38,6 +38,7 @@ import { DateRangePicker, manilaTodayIso } from '../components/DateRangePicker.j
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatManilaDate, formatManilaDateTime } from '../utils/manilaTime.js';
+import { INCIDENT_STATUS_LABELS } from '../utils/statusLabels.js';
 
 // 12-hour clock labels for the by-hour bar chart's 24 buckets.
 const HOUR_LABELS = Array.from({ length: 24 }, (_, h) => {
@@ -70,10 +71,7 @@ const INCIDENT_TYPE_COLORS = {
 };
 // Audit P-06 (2026-10-09): by_status now carries every incident status
 // (migration 0025's lifecycle states too), so the rows add up to the total.
-const STATUS_LABELS = {
-  pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved', reopened: 'Reopened',
-  cancelled: 'Cancelled', invalid: 'Invalid', duplicate: 'Duplicate',
-};
+const STATUS_LABELS = INCIDENT_STATUS_LABELS;
 const STATUS_PILL_CLASS = {
   pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success',
   reopened: 'status-pill--warning', cancelled: 'status-pill--neutral', invalid: 'status-pill--neutral', duplicate: 'status-pill--neutral',
@@ -351,7 +349,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
       </div>
       <div class="print-sheet__field-box">
         <span class="print-sheet__label">Active Caseload Requiring Action</span>
-        <p class="print-sheet__field-val">${escapeHtml(String(activeLoad))} still open (Pending / Dispatched / Reopened)</p>
+        <p class="print-sheet__field-val">${escapeHtml(String(activeLoad))} still open (Pending / Responding / Reopened)</p>
       </div>
     </div>
 
