@@ -127,7 +127,12 @@ function rankByProximity(eligibleTanods, positions, incident) {
  * @returns {Promise<boolean>} true if a dispatch was created; false if cancelled or failed (toast already shown)
  */
 export async function promptDispatchTanod({ incident, incidentTypeLabel, eligibleTanods, tanodPositions }) {
-  if (eligibleTanods.length === 0) return false;
+  if (eligibleTanods.length === 0) {
+    // Never fail silently (audit A-01): the Chief must learn why nothing
+    // opened, and what to do at the worst moment, e.g. a night call.
+    showToast('No tanod is on duty. Open Personnel > Scheduler or use Broadcast to on-duty tanods.', { variant: 'warning', duration: 8000 });
+    return false;
+  }
 
   // Callers that already poll live GPS (dispatch-center) pass theirs in
   // rather than paying for a second identical call; the rest get one

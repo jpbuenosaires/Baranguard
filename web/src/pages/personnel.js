@@ -33,7 +33,7 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getNavCounts, logout } from '../api/apiClient.js';
+import { getNavCounts, getShiftSwapRequests, logout } from '../api/apiClient.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
@@ -179,19 +179,28 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
     }
   }
 
-  // Admin-only endpoint (same restriction the old per-nav-item badges
-  // already had — a Punong Barangay session never saw a badge either).
+  // nav-counts is Admin-only. The Secretary also resolves swaps but cannot call
+  // it, so her badge is counted from GET /shift-swap-requests (a role-allowed
+  // endpoint) - the server gate is unchanged. A Punong Barangay sees no badge.
   function refreshBadges() {
-    if (!isAdmin) return;
-    getNavCounts().then((counts) => {
-      for (const [key, badge] of Object.entries(badgeSlots)) {
-        const count = counts[key];
-        badge.hidden = !count;
-        if (count) badge.textContent = String(count);
-      }
-    }).catch(() => {
-      // Badge counts are a convenience; a failed fetch just leaves them hidden.
-    });
+    if (!canResolveSwaps) return;
+    const paint = (key, count) => {
+      const badge = badgeSlots[key];
+      if (!badge) return;
+      badge.hidden = !count;
+      if (count) badge.textContent = String(count);
+    };
+    if (isAdmin) {
+      getNavCounts().then((counts) => {
+        for (const key of Object.keys(badgeSlots)) paint(key, counts[key]);
+      }).catch(() => {
+        // Badge counts are a convenience; a failed fetch just leaves them hidden.
+      });
+      return;
+    }
+    getShiftSwapRequests({ limit: 100 }).then((res) => {
+      paint('pendingSwapRequests', res.items.filter((r) => r.status === 'pending').length);
+    }).catch(() => {});
   }
 
   syncTabButtons();

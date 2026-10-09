@@ -185,7 +185,7 @@ export function buildRoutes(scenario) {
   ];
 
   const sos = empty ? [] : [
-    { sos_id: 91, user_id: 5, dispatch_id: 7001, latitude: 12.9175, longitude: 123.6658, triggered_at: sqlAgo(3), received_at: sqlAgo(3), status: 'active', acknowledged_at: null, resolved_at: null },
+    { sos_id: 91, user_id: 5, dispatch_id: 7001, latitude: 12.9175, longitude: 123.6658, location_source: 'live', location_recorded_at: null, triggered_at: sqlAgo(3), received_at: sqlAgo(3), status: 'active', acknowledged_at: null, resolved_at: null },
   ];
 
   const smsLogs = empty ? [] : [
@@ -215,7 +215,7 @@ export function buildRoutes(scenario) {
   ];
 
 
-  const trendDays = empty ? [] : Array.from({ length: 30 }, (_, i) => ({ date: dateAgo(29 - i), count: (i * 7) % 5, resolved: (i * 3) % 3 }));
+  const trendDays = empty ? [] : Array.from({ length: 30 }, (_, i) => ({ date: dateAgo(29 - i), count: (i * 7) % 5, resolved: (i * 3) % 3, arrivals: i % 4 === 0 ? 0 : 1 }));
 
   const routes = [
     // --- Auth ---
@@ -271,7 +271,18 @@ export function buildRoutes(scenario) {
     { method: 'PATCH', path: '/users/:id', handler: ({ params, body }) => ok({ user_id: Number(params.id), updated: Object.keys(body || {}), is_active: body?.is_active ?? 1, is_suspended: body?.is_suspended ?? 0 }) },
 
     // --- Incidents ---
-    { method: 'GET', path: '/incidents', handler: ({ query }) => {
+    { method: 'GET', path: '/incidents', handler: ({ query, headers }) => {
+      // Mirrors IncidentsController::index() for the Punong Barangay
+      // (V-02/P-12, 2026-10-09): no search, first page only, minimal fields.
+      if (roleFromAuth(headers) === 'punong_barangay') {
+        if (query.q) return { status: 403, body: { error: { code: 'FORBIDDEN', message: 'Incident search is not available to the Punong Barangay role.' } } };
+        if (Number(query.page || 1) > 1) return { status: 403, body: { error: { code: 'FORBIDDEN', message: 'The Punong Barangay role gets a recent-activity summary, not a paginated incident list.' } } };
+        let pbRows = incidents;
+        if (query.status) pbRows = pbRows.filter((i) => i.status === query.status);
+        const page = paginate(pbRows, query);
+        const open = (st) => st === 'pending' || st === 'dispatched' || st === 'reopened';
+        return ok({ ...page, items: page.items.map((i) => ({ incident_id: i.incident_id, barangay_id: i.barangay_id, display_id: i.display_id, incident_type: i.incident_type, priority: i.priority, status: i.status, latitude: open(i.status) ? i.latitude : null, longitude: open(i.status) ? i.longitude : null, created_at: i.created_at })) });
+      }
       let rows = incidents;
       if (query.status) rows = rows.filter((i) => i.status === query.status);
       if (query.priority) rows = rows.filter((i) => i.priority === query.priority);
@@ -413,7 +424,7 @@ export function buildRoutes(scenario) {
       .map((i) => ({ incident_id: i.incident_id, incident_type: i.incident_type, status: i.status, priority: i.priority, created_at: i.created_at })) }) },
 
     // --- System ---
-    { method: 'GET', path: '/system/health', handler: () => ok({ api: 'healthy', db: 'healthy', ors: 'unhealthy', gsm_ingestion: 'healthy', notification_config: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured', backup_last_success: empty ? null : sqlAgo(600), restore_test_at: null, notification_delivery_failures_24h: 0 }) },
+    { method: 'GET', path: '/system/health', handler: () => ok({ api: 'healthy', db: 'healthy', ors: 'unhealthy', gsm_ingestion: 'configured', notification_config: 'configured', fcm: 'configured', sms_gsm_gateway: 'not_configured', backup_last_success: empty ? null : sqlAgo(600), restore_test_at: null, notification_delivery_failures_24h: 0 }) },
     { method: 'GET', path: '/system/health/history', handler: () => ok({ sampling: 'Transitions are recorded only when a probe observed a change.', items: empty ? [] : [
       { recorded_at: sqlAgo(60), db: 'healthy', ors: 'not_configured', gsm_ingestion: 'healthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },
       { recorded_at: sqlAgo(600), db: 'unhealthy', ors: 'not_configured', gsm_ingestion: 'unhealthy', fcm: 'healthy', sms_gsm_gateway: 'not_configured' },

@@ -15,6 +15,8 @@
  * them carries the whole meaning:
  *   healthy         — checked, and it answered live probes.
  *   unhealthy       — CONFIGURED, checked, and it failed. Action Required!
+ *   configured      — set up, but nothing here can test it (FCM, GSM gateway,
+ *                     GSM ingestion). Neutral, NOT healthy (Rule 6).
  *   not_configured  — never wired up on this deployment. NOT a fault.
  * So `not_configured` renders neutral with an explanation, never as a
  * red error. Equally, it is never shown green: §8 forbids a fabricated
@@ -114,8 +116,8 @@ const DEPENDENCIES = [
     label: 'GSM Cellular Ingestion',
     description: 'Inbound SMS envelope receiver for local cellular modems',
     icon: icons.inbox,
-    probeType: 'Service Token Probe',
-    probeDetail: 'Validates INTERNAL_SERVICE_TOKEN required by /internal/sms/* router',
+    probeType: 'Config Presence Check (not a liveness probe)',
+    probeDetail: 'Only checks that INTERNAL_SERVICE_TOKEN is set. It does not confirm the ingest daemon or gateway phone is running',
     configKey: 'INTERNAL_SERVICE_TOKEN',
     impacted: [
       'Direct incoming citizen SMS reception in SMS Monitor (W5/W6)',
@@ -129,8 +131,8 @@ const DEPENDENCIES = [
     label: 'Notification Dispatcher',
     description: 'Aggregated push and SMS transport routing readiness',
     icon: icons.bell,
-    probeType: 'Aggregate Routing Check',
-    probeDetail: 'Passes if either FCM or the local GSM SMS gateway is configured',
+    probeType: 'Aggregate Config Check',
+    probeDetail: 'Shows Configured if either FCM or the local GSM SMS gateway is configured. Neither is tested from the dashboard',
     configKey: 'FCM_SERVICE_ACCOUNT_PATH or GSM_GATEWAY_ENABLED',
     impacted: [
       'Multi-channel emergency escalation to tanods and desk officers',
@@ -144,8 +146,8 @@ const DEPENDENCIES = [
     label: 'Firebase Cloud Messaging',
     description: 'Mobile push dispatch for Tanod operations mobile app',
     icon: icons.send,
-    probeType: 'Credentials File Probe',
-    probeDetail: 'Validates FCM_SERVICE_ACCOUNT_PATH file existence and readability',
+    probeType: 'Credentials File Check',
+    probeDetail: 'Checks that the FCM_SERVICE_ACCOUNT_PATH file exists, is readable and has the expected keys. Google is not contacted, so push delivery is not tested',
     configKey: 'FCM_SERVICE_ACCOUNT_PATH',
     impacted: [
       'Instant push notifications to Tanod mobile devices (M1-M4)',
@@ -159,8 +161,8 @@ const DEPENDENCIES = [
     label: 'GSM SMS Gateway',
     description: 'Outbound citizen alert and broadcast SMS via the tethered gateway phone’s own SIM',
     icon: icons.messageSquare,
-    probeType: 'Config Flag Probe',
-    probeDetail: 'Validates GSM_GATEWAY_ENABLED is explicitly set to true',
+    probeType: 'Config Flag Check (not a liveness probe)',
+    probeDetail: 'Only checks that GSM_GATEWAY_ENABLED is true. It does not confirm the gateway phone is connected or can send',
     configKey: 'GSM_GATEWAY_ENABLED',
     impacted: [
       'Barangay emergency broadcast SMS alerts to resident phone lists (W7)',
@@ -173,14 +175,19 @@ const DEPENDENCIES = [
 const STATUS_PILL_CLASS = {
   healthy: 'status-pill--success',
   unhealthy: 'status-pill--critical',
+  configured: 'status-pill--neutral',
   not_configured: 'status-pill--neutral',
 };
 
 const STATUS_LABEL = {
   healthy: 'HEALTHY',
   unhealthy: 'UNHEALTHY',
+  configured: 'CONFIGURED',
   not_configured: 'NOT CONFIGURED',
 };
+
+// Rule 6: no probe exists that proves these work end-to-end from the dashboard.
+const CONFIGURED_TOOLTIP = 'Configured but not tested from the dashboard';
 
 /**
  * Calculates human-friendly relative age or date
@@ -306,6 +313,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     const healthyCount = DEPENDENCIES.filter((d) => health[d.key] === 'healthy').length;
     const unhealthyDeps = DEPENDENCIES.filter((d) => health[d.key] === 'unhealthy');
+    const configuredCount = DEPENDENCIES.filter((d) => health[d.key] === 'configured').length;
     const notConfiguredCount = DEPENDENCIES.filter((d) => (health[d.key] ?? 'not_configured') === 'not_configured').length;
     const isDegraded = unhealthyDeps.length > 0;
 
@@ -371,6 +379,13 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
         value: `${unhealthyDeps.length} Failing`,
         tone: unhealthyDeps.length > 0 ? 'critical' : 'neutral',
         icon: icons.alertTriangle(16),
+      },
+      {
+        id: 'configured',
+        label: 'Configured, Not Tested',
+        value: `${configuredCount} Neutral`,
+        tone: 'neutral',
+        icon: icons.settings(16),
       },
       {
         id: 'not_configured',
@@ -474,6 +489,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
         const pill = document.createElement('span');
         pill.className = `status-pill ${STATUS_PILL_CLASS[status] || 'status-pill--neutral'}`;
         pill.textContent = STATUS_LABEL[status] || String(status).toUpperCase();
+        if (status === 'configured') pill.title = CONFIGURED_TOOLTIP;
 
         topRow.append(identity, pill);
 
@@ -733,7 +749,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
       // A transition INTO a non-healthy state is the one worth spotting
       // in a scan; recoveries are good news and do not need to shout.
-      if (changed.some(([key]) => row[key] !== 'healthy')) {
+      if (changed.some(([key]) => row[key] === 'unhealthy')) {
         item.classList.add('health-history__item--degraded');
       }
       list.appendChild(item);
@@ -774,7 +790,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
   /**
    * Opens the Diagnostic Inspection & Troubleshooting Modal
    * @param {object} dep
-   * @param {'healthy'|'unhealthy'|'not_configured'} status
+   * @param {'healthy'|'unhealthy'|'configured'|'not_configured'} status
    */
   function openServiceModal(dep, status) {
     const existing = document.querySelector('.health-modal-backdrop');
@@ -831,7 +847,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       </div>
       <div class="health-modal-field">
         <span class="health-modal-label">Operational Status</span>
-        <span class="health-modal-val" style="color:${status === 'healthy' ? 'var(--color-success-text)' : (status === 'unhealthy' ? 'var(--color-critical)' : 'var(--color-text-secondary)')};">${STATUS_LABEL[status]}</span>
+        <span class="health-modal-val" style="color:${status === 'healthy' ? 'var(--color-success-text)' : (status === 'unhealthy' ? 'var(--color-critical)' : 'var(--color-text-secondary)')};">${STATUS_LABEL[status]}${status === 'configured' ? ` (${CONFIGURED_TOOLTIP})` : ''}</span>
       </div>
       <div class="health-modal-field">
         <span class="health-modal-label">Probe Methodology</span>

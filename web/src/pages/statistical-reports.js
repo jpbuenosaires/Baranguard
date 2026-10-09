@@ -67,8 +67,63 @@ const INCIDENT_TYPE_COLORS = {
   animal_complaint: 'var(--cat-animal)',
   other: 'var(--cat-other)',
 };
-const STATUS_LABELS = { pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved' };
-const STATUS_PILL_CLASS = { pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success' };
+// Audit P-06 (2026-10-09): by_status now carries every incident status
+// (migration 0025's lifecycle states too), so the rows add up to the total.
+const STATUS_LABELS = {
+  pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved', reopened: 'Reopened',
+  cancelled: 'Cancelled', invalid: 'Invalid', duplicate: 'Duplicate',
+};
+const STATUS_PILL_CLASS = {
+  pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success',
+  reopened: 'status-pill--warning', cancelled: 'status-pill--neutral', invalid: 'status-pill--neutral', duplicate: 'status-pill--neutral',
+};
+// Lifecycle statuses are listed only when they actually occur in the range,
+// so a normal range keeps its familiar three rows.
+const CORE_STATUSES = new Set(['pending', 'dispatched', 'resolved']);
+// Bar/segment colour classes exist for the core three; the lifecycle
+// states borrow the nearest existing style instead of an unstyled class.
+const STATUS_STYLE_KEY = { reopened: 'pending', cancelled: 'settled', invalid: 'settled', duplicate: 'settled' };
+const OPEN_STATUSES = ['pending', 'dispatched', 'reopened'];
+
+/**
+ * One wording for the response-time metric everywhere (audits N-01, N-02,
+ * P-02..P-05, 2026-10-09). The backend measures incident.created_at to the
+ * FIRST dispatch arrived_at, per incident (de-duplicated), so the clock
+ * starts when the incident was recorded, NOT at dispatch. No target or
+ * benchmark exists in any project document, so none is shown. It is an
+ * operational measure for the barangay, never a ranking of tanods.
+ */
+const RESPONSE_METRIC_LABEL = 'Incident reported to first Tanod arrival (average)';
+const RESPONSE_OFFLINE_FOOTNOTE = 'An incident captured offline on a Tanod phone starts the clock when it synced, not when it was captured.';
+
+/**
+ * Number of incidents behind the average: the sum of trend[].arrivals
+ * (each day's incidents that had a first arrival). Null when the server
+ * did not send the per-day counts, so the UI says nothing rather than
+ * inventing a sample size.
+ */
+function responseSampleSize(summary) {
+  const days = summary?.trend || [];
+  if (days.length === 0 || days.some((d) => typeof d.arrivals !== 'number')) return null;
+  return days.reduce((sum, d) => sum + d.arrivals, 0);
+}
+
+/** "Based on N incidents with a Tanod arrival" footer, or a neutral line when n is unknown. */
+function responseFooter(summary) {
+  const n = responseSampleSize(summary);
+  if (n === null) return 'Incident reported to first Tanod arrival';
+  if (n === 0) return 'No incident in this range had a Tanod arrival';
+  return `Based on ${n} incident${n === 1 ? '' : 's'} with a Tanod arrival`;
+}
+
+/** YYYYMMDD-HHMM (Asia/Manila) suffix for a unique-per-print reference (audit P-17). */
+function referenceStamp(now) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '00';
+  return `${get('year')}${get('month')}${get('day')}-${get('hour')}${get('minute')}`;
+}
 
 
 /** 14 -> "2:00 PM – 3:00 PM" */
@@ -156,7 +211,9 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
   const resolutionRate = total > 0 ? ((resolvedCount / total) * 100).toFixed(1) : '0.0';
   const avgResp = summary.avgResponseTimeMinutes !== null && summary.avgResponseTimeMinutes !== undefined
     ? `${summary.avgResponseTimeMinutes} min`
-    : 'N/A';
+    : 'No data';
+  const sampleSize = responseSampleSize(summary);
+  const avgRespSub = sampleSize === null ? 'Reported to first arrival' : `Reported to first arrival, n=${sampleSize}`;
 
   const busiestDay = summary.trend && summary.trend.length > 0
     ? summary.trend.reduce((best, day) => (day.count > best.count ? day : best), summary.trend[0])
@@ -177,15 +234,19 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
     ? `${formatHourRange(peakHour.hour)} (${peakHour.count} ${peakHour.count === 1 ? 'incident' : 'incidents'})`
     : 'No incidents recorded';
 
-  const activeLoad = (summary.byStatus?.pending || 0) + (summary.byStatus?.dispatched || 0);
-  const nowStr = new Date().toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  const activeLoad = OPEN_STATUSES.reduce((sum, key) => sum + (summary.byStatus?.[key] || 0), 0);
+  const now = new Date();
+  const nowStr = now.toLocaleDateString('en-US', {
+    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
-  const generatorName = user?.fullName || 'Barangay Desk Officer';
-  const generatorRole = user?.role === 'punong_barangay'
-    ? 'Punong Barangay'
-    : 'Barangay Administrator / Desk Officer';
-  const refCode = `BRGY-${user?.barangayId || 1}-RPT`;
+  // Audit P-01/N-18 (2026-10-09): this sheet used to print the viewer as
+  // "Prepared By" over a signature line and "HON. PUNONG BARANGAY ·
+  // Attested & Approved" under a pre-written sworn oath nobody had made.
+  // It is now an unsigned system summary; the person who asked for it is
+  // named only as the requester, and the reviewer block stays blank until
+  // someone signs on paper.
+  const requestedBy = user?.fullName || 'a signed-in user';
+  const refCode = `BRGY-${user?.barangayId ?? '?'}-${referenceStamp(now)}`;
 
   const sublineHtml = barangayInfo
     ? `<p class="print-sheet__subline">Province of ${escapeHtml(barangayInfo.province)} · Municipality of ${escapeHtml(barangayInfo.municipality)}</p>`
@@ -237,7 +298,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
       </div>
       <div class="print-sheet__meta-cell">
         <span class="print-sheet__label">Prepared By</span>
-        <strong>${escapeHtml(generatorName)}</strong>
+        <strong>System-generated (not signed)</strong>
       </div>
       <div class="print-sheet__meta-cell">
         <span class="print-sheet__label">Date Generated</span>
@@ -259,12 +320,12 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
       <div class="print-sheet__kpi-card">
         <span class="print-sheet__label">Avg Response Time</span>
         <p class="print-sheet__kpi-val">${escapeHtml(avgResp)}</p>
-        <p class="print-sheet__kpi-sub">Dispatch to arrival</p>
+        <p class="print-sheet__kpi-sub">${escapeHtml(avgRespSub)}</p>
       </div>
       <div class="print-sheet__kpi-card">
-        <span class="print-sheet__label">Tanod Force</span>
+        <span class="print-sheet__label">Tanods On Duty</span>
         <p class="print-sheet__kpi-val">${escapeHtml(String(summary.activeTanods ?? 0))}</p>
-        <p class="print-sheet__kpi-sub">Active peacekeeping unit</p>
+        <p class="print-sheet__kpi-sub">At time of printing</p>
       </div>
     </div>
 
@@ -286,7 +347,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
       </div>
       <div class="print-sheet__field-box">
         <span class="print-sheet__label">Active Caseload Requiring Action</span>
-        <p class="print-sheet__field-val">${escapeHtml(String(activeLoad))} ongoing cases (Pending / Dispatched)</p>
+        <p class="print-sheet__field-val">${escapeHtml(String(activeLoad))} still open (Pending / Dispatched / Reopened)</p>
       </div>
     </div>
 
@@ -333,31 +394,31 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
     </div>
 
     <div class="print-sheet__section">
-      <span class="print-sheet__label">Official Attestation &amp; Data Privacy Compliance (RA 10173)</span>
-      <div class="print-sheet__narrative">I hereby certify under oath that the statistics, incident counts, and operational performance indicators set forth in this summary report are faithfully compiled from official records logged within the Baranguard Incident Management System for the stated coverage period. In compliance with Republic Act No. 10173, this report contains aggregate operational metrics only and withholds all personally identifiable information.</div>
+      <span class="print-sheet__label">Notes</span>
+      <div class="print-sheet__narrative">System-generated summary, not signed or attested. Compiled from Baranguard records on ${escapeHtml(nowStr)} (Asia/Manila), requested by ${escapeHtml(requestedBy)}. This report contains aggregate operational figures only; no personal data. Avg Response Time = ${escapeHtml(RESPONSE_METRIC_LABEL)}${sampleSize === null ? '' : `, over ${escapeHtml(String(sampleSize))} incident(s) that had an arrival`}. ${escapeHtml(RESPONSE_OFFLINE_FOOTNOTE)} It is an operational measure, not a rating of any Tanod.</div>
     </div>
 
     <div class="print-sheet__signatures">
       <div class="print-sheet__sig-col">
         <div class="print-sheet__sig-line"></div>
-        <p class="print-sheet__sig-name">${escapeHtml(generatorName.toUpperCase())}</p>
-        <p class="print-sheet__sig-role">${escapeHtml(generatorRole)}</p>
+        <p class="print-sheet__sig-name">Prepared by: system-generated summary</p>
+        <p class="print-sheet__sig-role">(not signed)</p>
       </div>
       <div class="print-sheet__sig-col">
         <div class="print-sheet__sig-line"></div>
-        <p class="print-sheet__sig-name">HON. PUNONG BARANGAY</p>
-        <p class="print-sheet__sig-role">Punong Barangay · Attested &amp; Approved</p>
+        <p class="print-sheet__sig-name">Reviewed and approved by:</p>
+        <p class="print-sheet__sig-role">Punong Barangay &nbsp;&nbsp;&nbsp; Date: ____________</p>
       </div>
     </div>
 
     <p class="print-sheet__footer">
-      Official Statistical Summary Excerpt (${escapeHtml(range.from)} to ${escapeHtml(range.to)}) · Generated ${escapeHtml(nowStr)} from the Baranguard Operations Console.
+      System-generated statistical summary (${escapeHtml(range.from)} to ${escapeHtml(range.to)}) · Generated ${escapeHtml(nowStr)} from the Baranguard Operations Console.
     </p>
   `;
 
   openPrintPreviewModal({
     title: 'Printable Statistical & Operations Report',
-    subtitle: `Formatted A4 summary (${range.from} to ${range.to}) • Aggregate RA 10173-compliant dataset`,
+    subtitle: `Formatted A4 summary (${range.from} to ${range.to}) • Aggregate figures only, unsigned`,
     sheetId: 'printable-report-sheet',
     sheetHtml,
     extraActions: [
@@ -368,10 +429,10 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
         onClick: (btn) => triggerExport('csv', btn, 'Export CSV', icons.download(16)),
       },
       {
-        label: 'Download Official PDF',
+        label: 'Download PDF',
         icon: icons.fileText(16),
         className: 'ghost',
-        onClick: (btn) => triggerExport('pdf', btn, 'Download Official PDF', icons.fileText(16)),
+        onClick: (btn) => triggerExport('pdf', btn, 'Download PDF', icons.fileText(16)),
       },
     ],
   });
@@ -536,18 +597,17 @@ function renderReport(container, summary, role, navigate) {
       sparkline: summary.trend?.map((day) => day.count),
       description: 'Every incident reported in the selected date range, alongside resolution progress and trend activity.',
     }),
+    // Audits N-01/P-03 (2026-10-09): the "Target < 20m" chip is gone -- no
+    // document defines a response target, and a null value was painted as
+    // a warning. See RESPONSE_METRIC_LABEL for the one wording used.
     KpiCard({
       label: 'Avg. Response Time',
       value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
-      emptyText: 'No arrivals yet',
+      emptyText: 'No arrivals recorded in this range',
       icon: icons.clock,
       accent: 'orange',
-      badgeChip: {
-        text: 'Target < 20m',
-        tone: summary.avgResponseTimeMinutes !== null && summary.avgResponseTimeMinutes <= 20 ? 'positive' : 'warning',
-      },
-      footerNote: 'Incident reported to Tanod arrival',
-      description: 'Average time from an incident being reported to Tanod arrival across resolved/dispatched incidents.',
+      footerNote: responseFooter(summary),
+      description: `${RESPONSE_METRIC_LABEL}. Only incidents with a Tanod arrival are counted; incidents resolved without a dispatch are not included. ${RESPONSE_OFFLINE_FOOTNOTE} An operational measure for the barangay, not a rating of any Tanod.`,
     }),
     KpiCard({
       label: 'Active Tanods',
@@ -695,14 +755,14 @@ function renderReport(container, summary, role, navigate) {
   responseTimeCard.className = 'card';
   responseTimeCard.appendChild(cardHeader(
     'Response Time Trend',
-    'Average minutes to arrival by day',
+    'Average minutes from report to first arrival, by day',
     icons.activity,
-    'Average response time from dispatch to arrival on scene.'
+    `${RESPONSE_METRIC_LABEL}, per day the incident was reported. Days with no arrival are gaps, not zero. ${RESPONSE_OFFLINE_FOOTNOTE}`
   ));
   responseTimeCard.appendChild(LineChart({
     points: summary.responseTimeTrend.map((day) => ({ label: shortDate(day.date), values: [day.avgMinutes] })),
-    series: [{ name: 'Avg. minutes to arrival', colorVar: '--chart-line-2' }],
-    caption: 'Average response time by day',
+    series: [{ name: 'Avg. minutes, report to first arrival', colorVar: '--chart-line-2' }],
+    caption: 'Average minutes from incident report to first Tanod arrival, by day',
   }));
 
   analyticsGrid.append(byHourCard, responseTimeCard);
@@ -954,7 +1014,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     title,
     'Breakdown by resolution stage',
     icons.barChart,
-    'Distribution of incidents across pending, dispatched, and resolved stages.'
+    'Distribution of incidents in this range across every status.'
   ));
 
   // Multi-Segment Top Proportional Pipeline Strip
@@ -966,7 +1026,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
       if (count > 0) {
         const seg = document.createElement('div');
         const pct = ((count / total) * 100).toFixed(1);
-        seg.className = `pipeline-stacked-segment pipeline-stacked-segment--${key}`;
+        seg.className = `pipeline-stacked-segment pipeline-stacked-segment--${STATUS_STYLE_KEY[key] || key}`;
         seg.style.width = `${pct}%`;
         seg.title = `${labels[key] || key}: ${count} (${pct}%)`;
         pipelineBar.appendChild(seg);
@@ -978,6 +1038,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
   const list = document.createElement('div');
   list.className = 'stack';
   for (const [key, count] of Object.entries(counts)) {
+    if (!CORE_STATUSES.has(key) && STATUS_LABELS[key] && count === 0) continue;
     const pct = total > 0 ? Math.round((count / total) * 100) : 0;
     const item = document.createElement('div');
     item.className = 'breakdown-item';
@@ -1001,7 +1062,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     const track = document.createElement('div');
     track.className = 'breakdown-progress-track';
     const fill = document.createElement('div');
-    fill.className = `breakdown-progress-fill breakdown-progress-fill--${key}`;
+    fill.className = `breakdown-progress-fill breakdown-progress-fill--${STATUS_STYLE_KEY[key] || key}`;
     fill.style.width = `${pct}%`;
     track.appendChild(fill);
 
@@ -1012,7 +1073,10 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
 
   // Operational Pipeline Summary Footer
   if (total > 0) {
-    const activeCount = (counts.pending || 0) + (counts.dispatched || 0);
+    // "Open" = still needs work: pending, dispatched or reopened (audit
+    // P-06; "Active in Field" used to include pending, which is not in the
+    // field yet, and left out reopened).
+    const activeCount = OPEN_STATUSES.reduce((sum, key) => sum + (counts[key] || 0), 0);
     const activePct = Math.round((activeCount / total) * 100);
     const resolvedCount = counts.resolved || 0;
     const resolvedPct = Math.round((resolvedCount / total) * 100);
@@ -1022,17 +1086,17 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
     footer.innerHTML = `
       <div class="breakdown-summary-tile">
         <span class="breakdown-summary-tile__val">
-          <span class="summary-tile-pip" style="background:#3B82F6;" aria-hidden="true"></span>
-          ${activeCount} Active in Field
+          <span class="summary-tile-pip" style="background:var(--chart-line-1);" aria-hidden="true"></span>
+          ${activeCount} Open
         </span>
-        <span class="breakdown-summary-tile__sub">${activePct}% of total workload</span>
+        <span class="breakdown-summary-tile__sub">${activePct}% of incidents in range (pending, dispatched or reopened)</span>
       </div>
       <div class="breakdown-summary-tile">
         <span class="breakdown-summary-tile__val">
-          <span class="summary-tile-pip" style="background:#16A34A;" aria-hidden="true"></span>
-          ${resolvedCount} Closed & Resolved
+          <span class="summary-tile-pip" style="background:var(--chart-line-2);" aria-hidden="true"></span>
+          ${resolvedCount} Resolved
         </span>
-        <span class="breakdown-summary-tile__sub">${resolvedPct}% clearance rate</span>
+        <span class="breakdown-summary-tile__sub">${resolvedPct}% of incidents in range</span>
       </div>
     `;
     card.appendChild(footer);

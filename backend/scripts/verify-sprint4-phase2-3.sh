@@ -181,11 +181,11 @@ expect_eq "$KEY1B" "" "Re-registration does NOT re-return message_encryption_key
 SECRETREF1B=$(db_one "SELECT device_secret_ref FROM mobile_device WHERE device_id='$DEV1';")
 expect_eq "$SECRETREF1B" "$SECRETREF1" "Re-registration keeps the EXACT SAME wrapped secret (verified in DB, not just the response)"
 
-step "3. GET /system/health reports fcm/sms_gsm_gateway as not_configured, gsm_ingestion as healthy"
+step "3. GET /system/health reports fcm/sms_gsm_gateway as not_configured, gsm_ingestion as configured (neutral, never healthy without a probe)"
 HEALTH=$(body_of GET /system/health "$ADMIN")
 expect_contains "$HEALTH" '"fcm":"not_configured"' "fcm: not_configured (no service account on this machine)"
 expect_contains "$HEALTH" '"sms_gsm_gateway":"not_configured"' "sms_gsm_gateway: not_configured (GSM_GATEWAY_ENABLED unset on this test run)"
-expect_contains "$HEALTH" '"gsm_ingestion":"healthy"' "gsm_ingestion: healthy (INTERNAL_SERVICE_TOKEN is set)"
+expect_contains "$HEALTH" '"gsm_ingestion":"configured"' "gsm_ingestion: configured, not healthy (INTERNAL_SERVICE_TOKEN is set; no liveness probe exists)"
 
 # ---------------------------------------------------------------------------
 step "4. Rule 12 ladder — target WITH a device: 2 FCM attempts then SMS, all recorded"

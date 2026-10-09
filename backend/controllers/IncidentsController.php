@@ -140,6 +140,12 @@ final class IncidentsController
     public const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
+    /**
+     * How far back GET /incidents reaches for the Punong Barangay (besides
+     * still-open incidents). Matches the Dashboard's default 30-day range;
+     * a display window, not a retention number (Rule 10 does not apply).
+     */
+    private const PB_LIST_WINDOW_DAYS = 30;
 
     // §5 has no documented ceiling for one evidence file; picked as a sane
     // bound for a phone-captured photo/voice note (the mobile client's own
@@ -197,6 +203,26 @@ final class IncidentsController
         $limit = min($limit, self::MAX_LIMIT);
         $offset = ($page - 1) * $limit;
 
+        // Punong Barangay reach (REFERENCE.md section 3 "no list of cases";
+        // audits V-02/P-12, 2026-10-09). The PB's own screens call this
+        // endpoint only for the Dashboard's six newest incidents, its
+        // attention-banner counts (status=pending / status=reopened) and
+        // the Live Map's active markers -- never a browsable or searchable
+        // register. So for this role: no `q` search, no page past the
+        // first, rows limited to still-open incidents plus those reported
+        // in the last PB_LIST_WINDOW_DAYS days, and a minimal field set
+        // (see the item mapping below). Individual incidents stay
+        // reachable through GET /incidents/:id.
+        $isPunongBarangay = $identity['role'] === 'punong_barangay';
+        if ($isPunongBarangay) {
+            if ($q !== null && $q !== '') {
+                throw new ApiError(403, 'FORBIDDEN', 'Incident search is not available to the Punong Barangay role.');
+            }
+            if ($page > 1) {
+                throw new ApiError(403, 'FORBIDDEN', 'The Punong Barangay role gets a recent-activity summary, not a paginated incident list.');
+            }
+        }
+
         // Qualified with i. throughout — the officer-name join below adds
         // `dispatch` (also has status/priority columns) and `user` (also
         // has barangay_id), so an unqualified column here would be
@@ -209,6 +235,10 @@ final class IncidentsController
         if ($identity['role'] === 'tanod') {
             $where[] = 'i.reported_by = :reported_by';
             $params['reported_by'] = $identity['user_id'];
+        }
+        if ($isPunongBarangay) {
+            $where[] = "(i.status IN ('pending', 'dispatched', 'reopened') OR i.created_at >= :pb_window_start)";
+            $params['pb_window_start'] = gmdate('Y-m-d H:i:s', time() - self::PB_LIST_WINDOW_DAYS * 86400);
         }
         if ($status !== null) {
             $where[] = 'i.status = :status';
@@ -272,7 +302,26 @@ final class IncidentsController
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $items = array_map(static function (array $row): array {
+        $items = array_map(static function (array $row) use ($isPunongBarangay): array {
+            if ($isPunongBarangay) {
+                // Minimal operational summary for the PB (V-02/P-12): no
+                // free-text location, no officer name, no reporter, no c1_*
+                // text, no school/related links. Coordinates only while the
+                // incident is still open (the Live Map's active markers);
+                // the historical spread is the aggregated heatmap's job.
+                $isOpen = in_array($row['status'], ['pending', 'dispatched', 'reopened'], true);
+                return [
+                    'incident_id' => (int) $row['incident_id'],
+                    'barangay_id' => (int) $row['barangay_id'],
+                    'display_id' => $row['display_id'] ?? null,
+                    'incident_type' => $row['incident_type'],
+                    'priority' => $row['priority'],
+                    'status' => $row['status'],
+                    'latitude' => $isOpen && $row['latitude'] !== null ? (float) $row['latitude'] : null,
+                    'longitude' => $isOpen && $row['longitude'] !== null ? (float) $row['longitude'] : null,
+                    'created_at' => $row['created_at'],
+                ];
+            }
             return [
                 'incident_id' => (int) $row['incident_id'],
                 'barangay_id' => (int) $row['barangay_id'],

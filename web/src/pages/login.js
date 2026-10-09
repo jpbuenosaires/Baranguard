@@ -48,8 +48,11 @@ const REMEMBERED_USERNAME_KEY = 'baranguard.rememberedUsername';
 /**
  * @param {HTMLElement} root
  * @param {(user: object) => void} onSuccess
+ * @param {{notice?: string}} [options] `notice`: why the user is back here
+ *   (session expired / signed out for inactivity, audit 2026-10-09 X-02),
+ *   shown above the form until the next sign-in attempt.
  */
-export function renderLoginPage(root, onSuccess) {
+export function renderLoginPage(root, onSuccess, { notice } = {}) {
   root.innerHTML = '';
 
   const screen = document.createElement('div');
@@ -106,6 +109,15 @@ export function renderLoginPage(root, onSuccess) {
   errorBox.className = 'login-form__error';
   errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
+
+  // Session-ended notice: same visual weight as the error box, but a polite
+  // status (it is information, not a failed action). textContent only.
+  const noticeBox = document.createElement('div');
+  noticeBox.id = 'login-notice';
+  noticeBox.className = 'login-form__error';
+  noticeBox.setAttribute('role', 'status');
+  noticeBox.textContent = notice || '';
+  noticeBox.hidden = !notice;
 
   const clearInputError = (input) => {
     input.removeAttribute('aria-invalid');
@@ -198,7 +210,7 @@ export function renderLoginPage(root, onSuccess) {
   submitButton.className = 'primary';
   submitButton.textContent = 'Sign in';
 
-  form.append(errorBox, usernameLabel, usernameInput, passwordLabel, passwordField, capsLockWarning, rememberRow, submitButton);
+  form.append(noticeBox, errorBox, usernameLabel, usernameInput, passwordLabel, passwordField, capsLockWarning, rememberRow, submitButton);
   card.append(mobileBrand, brand, form);
   formPanel.appendChild(card);
   screen.append(hero, formPanel);
@@ -215,6 +227,7 @@ export function renderLoginPage(root, onSuccess) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     errorBox.hidden = true;
+    noticeBox.hidden = true;
     usernameInput.removeAttribute('aria-invalid');
     usernameInput.removeAttribute('aria-describedby');
     passwordInput.removeAttribute('aria-invalid');

@@ -34,7 +34,7 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
-import { SchoolC1Card, ReferralsCard, RelatedIncidentCard } from '../components/IncidentCaseCards.js';
+import { SchoolC1Card, ReferralsCard, RelatedIncidentCard, resolveIncidentReference, describeIncidentRef } from '../components/IncidentCaseCards.js';
 import { reportChannelLabel } from '../utils/reportChannel.js';
 
 const INCIDENT_TYPE_LABELS = {
@@ -44,6 +44,30 @@ const INCIDENT_TYPE_LABELS = {
   medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
+
+const RESTRICTED_TO_SECRETARY = 'Restricted to the Barangay Secretary';
+const NOT_AVAILABLE_FOR_ROLE = 'Not available for your role';
+// Raw narratives are deleted by the retention job 90 days after creation
+// (RetentionService; Rule 10 constant). GET /incidents/:id does not return
+// raw_narrative_purged_at, so age is the only signal the screen has.
+const NARRATIVE_RETENTION_DAYS = 90;
+
+/** Parses the API's UTC timestamps ('YYYY-MM-DD HH:MM:SS' or ISO) into a Date, or null. */
+function parseApiDate(value) {
+  if (!value) return null;
+  const raw = String(value);
+  const d = new Date(/[zZ]|[+-][0-9]{2}:?[0-9]{2}$/.test(raw) ? raw : `${raw.replace(' ', 'T')}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Operational times are shown in Asia/Manila (Rule 11). */
+function formatDateTime(value) {
+  const d = parseApiDate(value);
+  if (!d) return null;
+  return d.toLocaleString('en-PH', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Manila',
+  });
+}
 
 const STATUS_PILL_CLASS = {
   pending: 'status-pill--pending',
@@ -97,6 +121,9 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
   let incident = null;
   let evidence = [];
+  // True when the evidence API answered 403 for this role: restricted,
+  // which must not read as "no evidence recorded".
+  let evidenceDenied = false;
 
   load();
 
@@ -106,7 +133,11 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       incident = await getIncident(incidentId);
       // Evidence is enrichment — a failure degrades that one panel rather
       // than blanking a record staff may need to act on.
-      evidence = await getIncidentEvidence(incidentId).catch(() => []);
+      evidenceDenied = false;
+      evidence = await getIncidentEvidence(incidentId).catch((err) => {
+        if (err instanceof ApiClientError && err.status === 403) evidenceDenied = true;
+        return [];
+      });
       renderShell();
     } catch (err) {
       renderError(err instanceof ApiClientError ? err.message : 'Something went wrong loading this incident.');
@@ -246,8 +277,10 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     locTile.className = 'meta-tile';
     const locCoords = incident.latitude != null && incident.longitude != null
       ? `${incident.latitude.toFixed(5)}, ${incident.longitude.toFixed(5)}`
-      : 'Barangay Center';
-    const locDesc = incident.locationDescription ? `${incident.locationDescription} (${locCoords})` : locCoords;
+      : null;
+    const locDesc = incident.locationDescription
+      ? (locCoords ? `${incident.locationDescription} (${locCoords})` : incident.locationDescription)
+      : (locCoords || 'No location recorded');
     locTile.innerHTML = `
       <div class="meta-tile__icon">${icons.mapPin(16)}</div>
       <div class="meta-tile__content">
@@ -259,9 +292,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     // Date Filed
     const dateTile = document.createElement('div');
     dateTile.className = 'meta-tile';
-    const filedDate = new Date(incident.createdAt).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
+    const filedDate = escapeHtml(formatDateTime(incident.createdAt) || 'Not recorded');
     dateTile.innerHTML = `
       <div class="meta-tile__icon">${icons.clock(16)}</div>
       <div class="meta-tile__content">
@@ -276,7 +307,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     // `report_channel` (migration 0036) says how the matter was reported;
     // an older row/server without it falls back to the creating client.
     const channelLabel = reportChannelLabel(incident.reportChannel)
-      || (incident.source === 'app' ? 'Mobile App' : incident.source === 'walkin' ? 'Walk-in Desk' : 'Hotline Call');
+      || (incident.source === 'app' ? 'Mobile App' : incident.source === 'walkin' ? 'Walk-in Desk' : 'Not recorded');
     channelTile.innerHTML = `
       <div class="meta-tile__icon">${icons.phone(16)}</div>
       <div class="meta-tile__content">
@@ -288,7 +319,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     // Officer
     const officerTile = document.createElement('div');
     officerTile.className = 'meta-tile';
-    const officerName = incident.officerName || 'Barangay Desk Secretary';
+    const officerName = incident.officerName || 'Not recorded';
     officerTile.innerHTML = `
       <div class="meta-tile__icon">${icons.users(16)}</div>
       <div class="meta-tile__content">
@@ -309,8 +340,11 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
     const compCard = document.createElement('div');
     compCard.className = 'party-card';
-    const compName = incident.complainantName || 'Walk-in Complainant / Confidential';
-    const compContact = incident.complainantContactNumber || 'No contact number provided';
+    // Party fields are returned to the Secretary only (Rule 1). Anyone else
+    // gets an honest "restricted" label, never wording that reads like a fact.
+    const missingParty = isSecretary ? 'Not recorded' : RESTRICTED_TO_SECRETARY;
+    const compName = incident.complainantName || missingParty;
+    const compContact = incident.complainantContactNumber || missingParty;
     compCard.innerHTML = `
       <div class="party-card__role">
         <span class="party-card__tag party-card__tag--complainant">Complainant</span>
@@ -324,7 +358,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
     const respCard = document.createElement('div');
     respCard.className = 'party-card';
-    const respName = incident.respondentName || 'Unspecified / Under Investigation';
+    const respName = incident.respondentName || missingParty;
     respCard.innerHTML = `
       <div class="party-card__role">
         <span class="party-card__tag party-card__tag--respondent">Respondent</span>
@@ -361,7 +395,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     // Rule 1: raw_narrative is only ever returned to a Secretary
     // (RA 7160 §394(c) records custodian); every other role gets nothing.
     const narrativeText = isSecretary
-      ? (incident.rawNarrative || 'No narrative recorded yet.')
+      ? (incident.rawNarrative || missingNarrativeText())
       : 'The narrative is restricted to the Barangay Secretary (RA 10173).';
 
     if (isSecretary && incident.rawNarrative) {
@@ -386,14 +420,32 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     return card;
   }
 
+  /**
+   * Empty-narrative wording for the Secretary. Raw narratives are deleted 90
+   * days after the incident is logged, and the API does not say whether this
+   * one was purged, so an old record is described honestly as "removed" and a
+   * recent one as "not recorded".
+   */
+  function missingNarrativeText() {
+    const created = parseApiDate(incident.createdAt);
+    const ageDays = created ? (Date.now() - created.getTime()) / 86400000 : 0;
+    if (ageDays > NARRATIVE_RETENTION_DAYS) {
+      return `The confidential narrative was removed after the ${NARRATIVE_RETENTION_DAYS}-day retention period.`;
+    }
+    return 'No narrative recorded.';
+  }
+
   function buildEvidence() {
     if (evidence.length === 0) {
       const bar = document.createElement('div');
       bar.className = 'evidence-bar--empty';
+      const message = evidenceDenied
+        ? `Digital evidence: ${NOT_AVAILABLE_FOR_ROLE}.`
+        : 'No digital evidence attachments recorded for this incident.';
       bar.innerHTML = `
         <div class="evidence-bar--empty__left">
           <span style="color:var(--color-text-secondary);display:flex;align-items:center;">${icons.fileText(15)}</span>
-          <span>No digital evidence attachments recorded for this incident.</span>
+          <span>${escapeHtml(message)}</span>
         </div>
       `;
       return bar;
@@ -449,7 +501,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       const meta = document.createElement('span');
       meta.className = 'evidence-item__meta';
       const kb = Math.max(1, Math.round(item.byteSize / 1024));
-      meta.textContent = `${kb} KB · ${new Date(item.uploadedAt).toLocaleString()}`;
+      meta.textContent = `${kb} KB · ${formatDateTime(item.uploadedAt) || 'time not recorded'}`;
 
       details.append(title, meta);
       left.append(icon, details);
@@ -600,11 +652,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
       const value = document.createElement('span');
       value.className = 'timeline__value';
-      value.textContent = reached
-        ? new Date(timestamp).toLocaleDateString('en-US', {
-            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-          })
-        : 'Pending';
+      value.textContent = reached ? (formatDateTime(timestamp) || 'Not recorded') : 'Pending';
 
       row.append(name, value);
       body.appendChild(row);
@@ -786,7 +834,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     if (incident.status === 'duplicate' && incident.duplicateOfIncidentId) {
       const note = document.createElement('p');
       note.className = 'note';
-      note.textContent = `Linked as a duplicate of incident #${incident.duplicateOfIncidentId}.`;
+      note.textContent = 'Linked as a duplicate of another incident.';
       body.appendChild(note);
       const viewLink = document.createElement('button');
       viewLink.className = 'ghost';
@@ -849,27 +897,37 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
   async function runLifecycleAction(target, meta) {
     if (target === 'duplicate') {
+      // Step 1: the incident number as staff see it everywhere (INC-2026-048).
+      // Step 2: look it up and show what it is before anything is saved.
+      let targetRef = null;
       await promptText({
         title: meta.label,
-        description: `${meta.description} Enter the incident id this is a duplicate of (same barangay only).`,
-        label: 'Duplicate of incident #',
-        placeholder: 'e.g. 42',
-        inputType: 'number',
-        confirmLabel: meta.label,
+        description: `${meta.description} Enter the incident number this is a duplicate of (same barangay only), for example INC-2026-048.`,
+        label: 'Duplicate of incident number',
+        placeholder: 'e.g. INC-2026-048',
+        inputType: 'text',
+        confirmLabel: 'Look up incident',
         onConfirmAsync: async (value) => {
-          const duplicateOfIncidentId = Number.parseInt(value, 10);
-          if (!Number.isInteger(duplicateOfIncidentId) || duplicateOfIncidentId <= 0) {
-            throw new Error('Enter a valid incident id.');
-          }
-          if (duplicateOfIncidentId === incident.incidentId) {
+          const found = await resolveIncidentReference(value);
+          if (found.incidentId === incident.incidentId) {
             throw new Error('An incident cannot be a duplicate of itself.');
           }
+          targetRef = found;
+        },
+      });
+      if (!targetRef) return;
+      const targetLabel = targetRef.displayId || `#${targetRef.incidentId}`;
+      await confirmDialog({
+        title: `Mark as duplicate of ${targetLabel}?`,
+        description: describeIncidentRef(targetRef),
+        confirmLabel: meta.label,
+        onConfirmAsync: async () => {
           await updateIncidentLifecycle(incidentId, {
             status: 'duplicate',
-            duplicateOfIncidentId,
+            duplicateOfIncidentId: targetRef.incidentId,
             idempotencyKey: crypto.randomUUID(),
           });
-          showToast(`Marked as a duplicate of incident #${duplicateOfIncidentId}.`, { variant: 'success' });
+          showToast(`Marked as a duplicate of ${targetLabel}.`, { variant: 'success' });
           await load();
         },
       });
@@ -891,31 +949,13 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   function buildResolvedStatusCard() {
     const card = document.createElement('div');
     card.className = 'card resolution-badge-card';
-    const resolutionDate = incident.syncedAt || incident.createdAt;
-    const formattedResDate = resolutionDate
-      ? new Date(resolutionDate).toLocaleDateString('en-US', {
-          month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
-        })
-      : null;
-
     card.innerHTML = `
       <div class="resolution-badge-card__icon">${icons.checkCircle(20)}</div>
       <div style="flex:1;min-width:0;">
         <h4 class="resolution-badge-card__title">Case Closed & Resolved</h4>
-        <p class="resolution-badge-card__desc">This incident was officially closed and resolved. Permanent statutory retention policies apply under Republic Act 7160 Section 394.</p>
-        <div class="resolution-badge-card__meta">
-          ${formattedResDate ? `<span><strong>Resolution Logged:</strong> ${formattedResDate}</span>` : ''}
-          <span><strong>Dispatch Status:</strong> All active dispatches cleared</span>
-        </div>
+        <p class="resolution-badge-card__desc">This incident has been marked resolved.</p>
       </div>
     `;
     return card;
-  }
-
-  function formatDateTime(value) {
-    if (!value) return null;
-    return new Date(value).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    });
   }
 }

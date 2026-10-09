@@ -51,6 +51,7 @@ const COLUMNS = [
   { key: 'entries', label: 'Entries', align: 'right' },
   { key: 'total', label: 'Total time', align: 'right' },
   { key: 'flagged', label: 'Flagged', align: 'right' },
+  { key: 'paper', label: 'Paper signature' },
 ];
 
 function normalizeParam(param) {
@@ -87,6 +88,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
   const state = {
     month: typeof initial.month === 'string' ? initial.month : '',
     status: STATUS_FILTERS.includes(initial.status) ? initial.status : '',
+    paperPending: Boolean(initial.paperPending),
     page: 1,
     names: null,
   };
@@ -129,15 +131,29 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     status.addEventListener('change', () => { state.status = status.value; state.page = 1; onChange(); });
     statusWrap.append(statusLabel, status);
 
+    // Approved reports whose signed paper copy has not been recorded yet (Rule 62: paper is the official record).
+    const paperWrap = h('div', 'form-stack tw-field');
+    const paperLabel = h('label', 'label', 'Paper signature');
+    paperLabel.htmlFor = 'tw-acc-paper';
+    const paperBox = document.createElement('input');
+    paperBox.type = 'checkbox';
+    paperBox.id = 'tw-acc-paper';
+    paperBox.checked = state.paperPending;
+    paperBox.addEventListener('change', () => { state.paperPending = paperBox.checked; state.page = 1; onChange(); });
+    const paperText = h('span', '', ' Approved, paper signature pending');
+    const paperRow = h('label', '', '');
+    paperRow.append(paperBox, paperText);
+    paperWrap.append(paperLabel, paperRow);
+
     const clear = h('button', 'ghost', 'Clear filters');
     clear.type = 'button';
     clear.addEventListener('click', () => {
-      state.month = ''; state.status = ''; state.page = 1;
-      month.value = ''; status.value = '';
+      state.month = ''; state.status = ''; state.paperPending = false; state.page = 1;
+      month.value = ''; status.value = ''; paperBox.checked = false;
       onChange();
     });
 
-    bar.append(monthWrap, statusWrap, clear);
+    bar.append(monthWrap, statusWrap, paperWrap, clear);
     return bar;
   }
 
@@ -161,7 +177,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     showLoading(listBody, 'Loading accomplishment reports');
     try {
       const res = await getAccomplishmentReports({
-        month: state.month, status: state.status, page: state.page, limit: PAGE_SIZE,
+        month: state.month, status: state.status, paperPending: state.paperPending, page: state.page, limit: PAGE_SIZE,
       });
       await ensureNames();
       renderList(res);
@@ -176,7 +192,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       showEmpty(
         listBody,
         'No accomplishment reports',
-        state.month || state.status
+        state.month || state.status || state.paperPending
           ? 'No reports match these filters.'
           : 'Reports appear here once a tanod logs accomplishments for a month.',
       );
@@ -208,6 +224,11 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
           case 'status': return statusPill(row.status);
           case 'entries': { const n = entryCountOf(row); return h('span', '', n === null ? '—' : n); }
           case 'total': return h('span', '', row.totalMinutes === undefined || row.totalMinutes === null ? '—' : formatMinutes(row.totalMinutes));
+          case 'paper': {
+            if (row.paperPending) return h('span', 'status-pill status-pill--pending', 'Pending');
+            if (row.paperSignedOn) return h('span', '', formatDateOnly(row.paperSignedOn));
+            return h('span', 'text-tertiary', '—');
+          }
           case 'flagged': {
             const n = Number(row.flaggedEntries) || 0;
             return n > 0 ? h('span', 'tw-flag', `${n} to check`) : h('span', '', '0');
@@ -330,8 +351,10 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     // Paper signature + scan (Wave 1): from the point the report can be
     // approved on paper (noted) until it is approved and filed. The panel
     // gates its own controls by role; the server re-checks everything.
-    if (report.status === 'noted' || report.status === 'approved') {
+    if (report.status === 'prepared' || report.status === 'noted' || report.status === 'approved') {
       detailHost.appendChild(PaperApprovalPanel({
+        notePriorStatus: 'prepared',
+        noterAuthority: 'note_report',
         entityType: 'accomplishment_report',
         report,
         user,

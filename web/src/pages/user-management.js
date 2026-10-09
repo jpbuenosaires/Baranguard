@@ -188,10 +188,11 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
     const strip = StatStrip({
       items: [
-        { label: 'Total Users', value: items.length },
-        { label: 'Active', value: activeCount, tone: 'success' },
-        { label: 'Admins', value: adminCount, tone: 'info' },
-        { label: 'Tanods', value: tanodCount },
+        // Counted over the loaded page only (the list is paged 25 at a time), so say so.
+        { label: currentTotal > items.length ? `Users (page ${currentPage} of ${currentTotal})` : 'Total Users', value: items.length },
+        { label: currentTotal > items.length ? 'Active on this page' : 'Active', value: activeCount, tone: 'success' },
+        { label: currentTotal > items.length ? 'Admins on this page' : 'Admins', value: adminCount, tone: 'info' },
+        { label: currentTotal > items.length ? 'Tanods on this page' : 'Tanods', value: tanodCount },
       ],
     });
 
@@ -277,7 +278,7 @@ export function renderUsersTab(container, pageHeader, viewer) {
       caption: 'Users Roster',
       emptyIcon: icons.users,
       emptyMessage: (searchQuery || selectedRole !== 'all' || selectedStatus !== 'all')
-        ? 'No users match the selected filters.'
+        ? `No users match the selected filters${currentTotal > allItems.length ? ' on this page. Filters only cover the page shown; try the other pages.' : '.'}`
         : 'No users found.',
       page: currentPage,
       totalItems: (searchQuery || selectedRole !== 'all' || selectedStatus !== 'all') ? filtered.length : currentTotal,

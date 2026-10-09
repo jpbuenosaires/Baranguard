@@ -16,7 +16,8 @@ import {
   getShiftsDetailed, publishShifts, getAvailability, reviewAvailability, getOwnApprovalAuthority,
 } from '../services/shellWorkflowApi.js';
 import { loadSignerCandidates } from '../services/signerCandidates.js';
-import { formatDateOnly, manilaToday } from '../services/tanodWorkflowUi.js';
+import { formatDateOnly, manilaToday, manilaMonth, formatMonthLabel } from '../services/tanodWorkflowUi.js';
+import { monthWindow, addMonths, addDays, fetchAllPages } from '../services/rosterWindow.js';
 import { confirmDialog, promptFields } from '../components/ConfirmDialog.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
@@ -83,6 +84,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
   let tanods = [];
   let shifts = [];
+  // Month shown (Manila). The server is asked for that month +/- a week, all pages.
+  let windowMonth = manilaMonth();
+  let shiftsTruncated = false;
   let barangayName = 'Barangay Peacekeeping Watch';
   let selectedStatus = 'all';
   let searchQuery = initialData?.searchQuery ? initialData.searchQuery.trim().toLowerCase() : '';
@@ -97,7 +101,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   const rosterAuthorityPromise = getOwnApprovalAuthority(user.userId, user.role)
     .then((list) => list.includes('approve_roster'))
     .catch(() => false);
-  let availabilityState = { status: 'loading', items: [], message: '' };
+  let availabilityState = { status: 'loading', items: [], accepted: [], message: '' };
 
   if (pageHeader && pageHeader.actions) {
     const printBtn = document.createElement('button');
@@ -107,6 +111,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     printBtn.innerHTML = `${icons.printer(15)} <span>Preview & Print Schedule</span>`;
     printBtn.addEventListener('click', () => {
       openSchedulePrintModal({
+        monthLabel: formatMonthLabel(windowMonth),
         shifts: getFilteredShifts(),
         allShifts: shifts,
         tanods,
@@ -149,15 +154,28 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   }
 
   async function loadAvailability() {
-    availabilityState = { status: 'loading', items: [], message: '' };
+    availabilityState = { status: 'loading', items: [], accepted: [], message: '' };
     renderAvailability();
     try {
-      const res = await getAvailability({ status: 'submitted', limit: 100 });
-      availabilityState = { status: res.items.length === 0 ? 'empty' : 'ready', items: res.items, message: '' };
+      const [res, acc] = await Promise.all([
+        getAvailability({ status: 'submitted', limit: 100 }),
+        // Accepted availability stays reachable (collapsed list) so shifts can be
+        // created from it after the review (audit R-03). Past periods are dropped.
+        getAvailability({ status: 'accepted', limit: 100 }).catch(() => ({ items: [] })),
+      ]);
+      const today = manilaToday();
+      const accepted = acc.items.filter((a) => !a.periodEnd || String(a.periodEnd).slice(0, 10) >= today);
+      availabilityState = {
+        status: res.items.length === 0 && accepted.length === 0 ? 'empty' : 'ready',
+        items: res.items,
+        accepted,
+        message: '',
+      };
     } catch (err) {
       availabilityState = {
         status: 'error',
         items: [],
+        accepted: [],
         message: err instanceof ApiClientError ? err.message : 'Something went wrong loading availability.',
       };
     }
@@ -214,110 +232,133 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       availabilityHost.appendChild(note);
       return;
     }
+    if (availabilityState.items.length === 0) {
+      const note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = 'No availability submissions are waiting for review.';
+      availabilityHost.appendChild(note);
+    }
 
     for (const item of availabilityState.items) {
-      const tanodName = item.userName ?? tanods.find((t) => t.userId === item.userId)?.fullName ?? `Tanod #${item.userId}`;
-      const row = document.createElement('div');
-      row.className = 'availability-item';
-
-      const top = document.createElement('div');
-      top.className = 'availability-item__top';
-      const who = document.createElement('strong');
-      who.textContent = tanodName;
-      const period = document.createElement('span');
-      period.className = 'text-tertiary';
-      period.textContent = `${item.periodStart} to ${item.periodEnd}`;
-      top.append(who, period);
-
-      const list = document.createElement('ul');
-      list.className = 'availability-item__windows';
-      list.setAttribute('aria-label', `Availability windows for ${tanodName}`);
-      for (const w of item.windows) {
-        const li = document.createElement('li');
-        li.textContent = formatWindow(w);
-        list.appendChild(li);
-      }
-
-      const actions = document.createElement('div');
-      actions.className = 'availability-item__actions';
-      const note = document.createElement('input');
-      note.type = 'text';
-      note.className = 'personnel-form-input';
-      note.maxLength = 255;
-      note.placeholder = 'Note to the tanod (optional)';
-      note.setAttribute('aria-label', `Review note for ${tanodName}`);
-      const accept = document.createElement('button');
-      accept.type = 'button';
-      accept.className = 'primary';
-      accept.textContent = 'Accept';
-      const revise = document.createElement('button');
-      revise.type = 'button';
-      revise.className = 'ghost';
-      revise.textContent = 'Ask to revise';
-
-      const review = async (status) => {
-        accept.disabled = true;
-        revise.disabled = true;
-        try {
-          await reviewAvailability(item.availId, {
-            status,
-            reviewNote: note.value.trim(),
-            idempotencyKey: crypto.randomUUID(),
-          });
-          showToast(status === 'accepted' ? 'Availability accepted.' : 'Marked for revision.', { variant: 'success' });
-          loadAvailability();
-        } catch (err) {
-          accept.disabled = false;
-          revise.disabled = false;
-          showToast(err instanceof ApiClientError ? err.message : 'Could not review this availability.', { variant: 'error' });
-        }
-      };
-      accept.addEventListener('click', () => review('accepted'));
-      revise.addEventListener('click', () => review('revised'));
-      actions.append(note, accept, revise);
-
-      // Create a draft shift from one of this availability's windows. Opens
-      // the existing New Shift form prefilled; the server re-validates
-      // ownership/tenant (source_availability_id) and every roster rule.
-      const fromRow = document.createElement('div');
-      fromRow.className = 'availability-item__actions';
-      let windowSelect = null;
-      if (item.windows.length > 1) {
-        windowSelect = document.createElement('select');
-        windowSelect.className = 'personnel-form-select';
-        windowSelect.setAttribute('aria-label', `Window to schedule for ${tanodName}`);
-        item.windows.forEach((w, i) => {
-          const opt = document.createElement('option');
-          opt.value = String(i);
-          opt.textContent = formatWindow(w);
-          windowSelect.appendChild(opt);
-        });
-      }
-      const createFrom = document.createElement('button');
-      createFrom.type = 'button';
-      createFrom.className = 'ghost';
-      createFrom.textContent = 'Create shift from this availability';
-      createFrom.addEventListener('click', () => {
-        const w = item.windows[windowSelect ? Number(windowSelect.value) : 0];
-        if (!w || !formPane || typeof formPane.applyAvailability !== 'function') {
-          showToast('The New Shift form is not available right now.', { variant: 'error' });
-          return;
-        }
-        const ok = formPane.applyAvailability({ availId: item.availId, userId: item.userId, window: w });
-        if (!ok) {
-          showToast('This Tanod is not in the shift roster list, so a shift cannot be created from here.', { variant: 'error' });
-          return;
-        }
-        formPane.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-      });
-      if (windowSelect) fromRow.appendChild(windowSelect);
-      fromRow.appendChild(createFrom);
-
-      row.append(top, list, actions);
-      // A submission with no usable window cannot produce a shift.
-      if (canManageShifts && item.windows.length > 0) row.appendChild(fromRow);
-      availabilityHost.appendChild(row);
+      availabilityHost.appendChild(buildAvailabilityItem(item, false));
     }
+    if (canManageShifts && availabilityState.accepted.length > 0) {
+      const details = document.createElement('details');
+      details.className = 'availability-accepted';
+      const summary = document.createElement('summary');
+      summary.textContent = `Accepted - create shift (${availabilityState.accepted.length})`;
+      details.appendChild(summary);
+      for (const item of availabilityState.accepted) {
+        details.appendChild(buildAvailabilityItem(item, true));
+      }
+      availabilityHost.appendChild(details);
+    }
+  }
+
+  function buildAvailabilityItem(item, accepted) {
+    const tanodName = item.userName ?? tanods.find((t) => t.userId === item.userId)?.fullName ?? `Tanod #${item.userId}`;
+    const row = document.createElement('div');
+    row.className = 'availability-item';
+
+    const top = document.createElement('div');
+    top.className = 'availability-item__top';
+    const who = document.createElement('strong');
+    who.textContent = tanodName;
+    const period = document.createElement('span');
+    period.className = 'text-tertiary';
+    period.textContent = `${item.periodStart} to ${item.periodEnd}`;
+    top.append(who, period);
+
+    const list = document.createElement('ul');
+    list.className = 'availability-item__windows';
+    list.setAttribute('aria-label', `Availability windows for ${tanodName}`);
+    for (const w of item.windows) {
+      const li = document.createElement('li');
+      li.textContent = formatWindow(w);
+      list.appendChild(li);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'availability-item__actions';
+    const note = document.createElement('input');
+    note.type = 'text';
+    note.className = 'personnel-form-input';
+    note.maxLength = 255;
+    note.placeholder = 'Note to the tanod (optional)';
+    note.setAttribute('aria-label', `Review note for ${tanodName}`);
+    const accept = document.createElement('button');
+    accept.type = 'button';
+    accept.className = 'primary';
+    accept.textContent = 'Accept';
+    const revise = document.createElement('button');
+    revise.type = 'button';
+    revise.className = 'ghost';
+    revise.textContent = 'Ask to revise';
+
+    const review = async (status) => {
+      accept.disabled = true;
+      revise.disabled = true;
+      try {
+        await reviewAvailability(item.availId, {
+          status,
+          reviewNote: note.value.trim(),
+          idempotencyKey: crypto.randomUUID(),
+        });
+        showToast(status === 'accepted' ? 'Availability accepted.' : 'Marked for revision.', { variant: 'success' });
+        loadAvailability();
+      } catch (err) {
+        accept.disabled = false;
+        revise.disabled = false;
+        showToast(err instanceof ApiClientError ? err.message : 'Could not review this availability.', { variant: 'error' });
+      }
+    };
+    accept.addEventListener('click', () => review('accepted'));
+    revise.addEventListener('click', () => review('revised'));
+    actions.append(note, accept, revise);
+
+    // Create a draft shift from one of this availability's windows. Opens
+    // the existing New Shift form prefilled; the server re-validates
+    // ownership/tenant (source_availability_id) and every roster rule.
+    const fromRow = document.createElement('div');
+    fromRow.className = 'availability-item__actions';
+    let windowSelect = null;
+    if (item.windows.length > 1) {
+      windowSelect = document.createElement('select');
+      windowSelect.className = 'personnel-form-select';
+      windowSelect.setAttribute('aria-label', `Window to schedule for ${tanodName}`);
+      item.windows.forEach((w, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = formatWindow(w);
+        windowSelect.appendChild(opt);
+      });
+    }
+    const createFrom = document.createElement('button');
+    createFrom.type = 'button';
+    createFrom.className = 'ghost';
+    createFrom.textContent = 'Create shift from this availability';
+    createFrom.addEventListener('click', () => {
+      const w = item.windows[windowSelect ? Number(windowSelect.value) : 0];
+      if (!w || !formPane || typeof formPane.applyAvailability !== 'function') {
+        showToast('The New Shift form is not available right now.', { variant: 'error' });
+        return;
+      }
+      const ok = formPane.applyAvailability({ availId: item.availId, userId: item.userId, window: w });
+      if (!ok) {
+        showToast('This Tanod is not in the shift roster list, so a shift cannot be created from here.', { variant: 'error' });
+        return;
+      }
+      formPane.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    });
+    if (windowSelect) fromRow.appendChild(windowSelect);
+    fromRow.appendChild(createFrom);
+
+    // Accepted items were already reviewed: only the create-shift controls remain.
+    if (accepted) row.append(top, list);
+    else row.append(top, list, actions);
+    // A submission with no usable window cannot produce a shift.
+    if (canManageShifts && item.windows.length > 0) row.appendChild(fromRow);
+    return row;
   }
 
   async function load() {
@@ -325,10 +366,11 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     try {
       const [tanodsRes, shiftsRes] = await Promise.all([
         loadTanodRoster(user, { purpose: 'roster' }).then((items) => ({ items })),
-        getShiftsDetailed({ limit: 100 }),
+        fetchAllPages((p) => getShiftsDetailed({ ...monthWindow(windowMonth), ...p })),
       ]);
       tanods = tanodsRes.items;
       shifts = shiftsRes.items;
+      shiftsTruncated = shiftsRes.truncated;
       canApproveRoster = await rosterAuthorityPromise;
       // Drop ticks for shifts that are gone or already published.
       for (const id of [...selectedShiftIds]) {
@@ -465,7 +507,48 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     filterChipsWrap.appendChild(chip);
   });
 
-  filterBar.append(searchWrap, filterChipsWrap);
+  // Month window (audit F-09): the server is asked for this month +/- a week.
+  const monthNav = document.createElement('div');
+  monthNav.className = 'scheduler-month-nav';
+  monthNav.style.cssText = 'display:flex;align-items:center;gap:var(--spacing-sm);flex-wrap:wrap;';
+  const prevMonthBtn = document.createElement('button');
+  prevMonthBtn.type = 'button';
+  prevMonthBtn.className = 'ghost';
+  prevMonthBtn.id = 'scheduler-prev-month';
+  prevMonthBtn.textContent = '‹ Previous month';
+  const monthLabel = document.createElement('strong');
+  monthLabel.id = 'scheduler-month-label';
+  monthLabel.setAttribute('aria-live', 'polite');
+  const nextMonthBtn = document.createElement('button');
+  nextMonthBtn.type = 'button';
+  nextMonthBtn.className = 'ghost';
+  nextMonthBtn.id = 'scheduler-next-month';
+  nextMonthBtn.textContent = 'Next month ›';
+  const thisMonthBtn = document.createElement('button');
+  thisMonthBtn.type = 'button';
+  thisMonthBtn.className = 'ghost';
+  thisMonthBtn.id = 'scheduler-this-month';
+  thisMonthBtn.textContent = 'This month';
+  const monthNote = document.createElement('span');
+  monthNote.className = 'text-tertiary';
+  monthNote.id = 'scheduler-month-note';
+  monthNav.append(prevMonthBtn, monthLabel, nextMonthBtn, thisMonthBtn, monthNote);
+  const goToMonth = (m) => {
+    windowMonth = m;
+    selectedShiftIds.clear();
+    load();
+  };
+  prevMonthBtn.addEventListener('click', () => goToMonth(addMonths(windowMonth, -1)));
+  nextMonthBtn.addEventListener('click', () => goToMonth(addMonths(windowMonth, 1)));
+  thisMonthBtn.addEventListener('click', () => goToMonth(manilaMonth()));
+  function syncMonthNav() {
+    monthLabel.textContent = formatMonthLabel(windowMonth);
+    const w = monthWindow(windowMonth);
+    monthNote.textContent = `Showing ${shifts.length} shift${shifts.length === 1 ? '' : 's'} from ${w.from} to ${w.to}`
+      + (shiftsTruncated ? ' (list cut off: narrow to another month)' : '');
+  }
+
+  filterBar.append(monthNav, searchWrap, filterChipsWrap);
 
   function getFilteredShifts() {
     const now = Date.now();
@@ -638,6 +721,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   }
 
   function renderShiftsTable() {
+    syncMonthNav();
     listPane.innerHTML = '';
     const warningsBlock = buildWarningsBlock();
     if (warningsBlock) listPane.appendChild(warningsBlock);
@@ -649,6 +733,13 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     if (shifts.length === 0) {
       renderEmpty(listPane);
       return;
+    }
+    if (shiftsTruncated) {
+      const cut = document.createElement('p');
+      cut.className = 'note';
+      cut.setAttribute('role', 'status');
+      cut.textContent = 'This month has more shifts than can be loaded at once, so the list is incomplete. Totals, publish selection and print only cover what is shown.';
+      listPane.appendChild(cut);
     }
 
     const table = DataTable({
@@ -816,18 +907,30 @@ function formatShiftTimeRange(startAt, endAt) {
   return `${s.toLocaleDateString([], dateOpts)} ${s.toLocaleTimeString([], timeOpts)} – ${e.toLocaleDateString([], dateOpts)} ${e.toLocaleTimeString([], timeOpts)}`;
 }
 
-const FATIGUE_THRESHOLD_HOURS = 56.0;
+// Rule 27 (REFERENCE.md section 5, "Roster rules changed 2026-10-01"): the server
+// hard-blocks (422 DAILY_HOURS_EXCEEDED) more than 12 scheduled hours per tanod
+// per Asia/Manila calendar day, counting drafts and published shifts alike.
+// The old 56 h / 7-day callout described a fatigue flag no screen shows any more.
+const DAILY_CAP_HOURS = 12;
+const NEAR_CAP_HOURS = 10;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const MANILA_OFFSET_MS = 8 * HOUR_MS;
 
-/**
- * Calculates total scheduled shift hours for a tanod in the 7-day rolling window ending at targetEndAt.
- * Mirrors backend FatigueCalculator logic: window = [end_at - 7 days, end_at).
- */
-function calculateTanodHoursInWindow(shifts, userId, targetEndAt, excludeShiftId = null) {
-  if (!userId || !targetEndAt || !Array.isArray(shifts)) return 0;
-  const end = new Date(targetEndAt).getTime();
-  if (isNaN(end)) return 0;
-  const windowStart = end - (7 * 24 * 60 * 60 * 1000);
+/** UTC ms of the start of the Manila calendar day containing `ms`. */
+function manilaDayStart(ms) {
+  return Math.floor((ms + MANILA_OFFSET_MS) / DAY_MS) * DAY_MS - MANILA_OFFSET_MS;
+}
 
+function overlapHours(aStart, aEnd, dayStart) {
+  const lo = Math.max(aStart, dayStart);
+  const hi = Math.min(aEnd, dayStart + DAY_MS);
+  return hi > lo ? (hi - lo) / HOUR_MS : 0;
+}
+
+/** Hours the tanod is already scheduled inside one Manila day (drafts included, like the server). */
+function calculateTanodHoursOnDay(shifts, userId, dayStart, excludeShiftId = null) {
+  if (!userId || !Array.isArray(shifts)) return 0;
   let sum = 0;
   for (const s of shifts) {
     if (s.userId !== userId) continue;
@@ -835,15 +938,21 @@ function calculateTanodHoursInWindow(shifts, userId, targetEndAt, excludeShiftId
     const sStart = new Date(s.startAt).getTime();
     const sEnd = new Date(s.endAt).getTime();
     if (isNaN(sStart) || isNaN(sEnd) || sEnd <= sStart) continue;
-    if (sStart >= windowStart && sStart < end) {
-      sum += (sEnd - sStart) / (1000 * 60 * 60);
-    }
+    sum += overlapHours(sStart, sEnd, dayStart);
   }
   return Math.round(sum * 10) / 10;
 }
 
+/** Hours scheduled today (Manila) - used for the tanod picker labels. */
+function calculateTanodHoursToday(shifts, userId, excludeShiftId = null) {
+  return calculateTanodHoursOnDay(shifts, userId, manilaDayStart(Date.now()), excludeShiftId);
+}
+
 /**
- * Computes projected rolling hours if the given shift is assigned.
+ * Per-day preview that mirrors the server rule: for every Manila day the new
+ * shift touches, existing hours + this shift's hours on that day vs the cap.
+ * Only shifts inside the loaded month window are known, which covers any day
+ * being edited in practice; the server is the final judge.
  */
 function previewShiftFatigue(shifts, userId, startAt, endAt, excludeShiftId = null) {
   if (!userId || !startAt || !endAt || !Array.isArray(shifts)) return null;
@@ -851,22 +960,24 @@ function previewShiftFatigue(shifts, userId, startAt, endAt, excludeShiftId = nu
   const e = new Date(endAt).getTime();
   if (isNaN(s) || isNaN(e) || e <= s) return null;
 
-  const shiftDuration = (e - s) / (1000 * 60 * 60);
-  const priorHours = calculateTanodHoursInWindow(shifts, userId, endAt, excludeShiftId);
-  const projectedHours = priorHours + shiftDuration;
-  const overBy = projectedHours - FATIGUE_THRESHOLD_HOURS;
-
-  let status = 'safe';
-  if (projectedHours > FATIGUE_THRESHOLD_HOURS) {
-    status = 'critical';
-  } else if (projectedHours >= 48) {
-    status = 'caution';
+  const shiftDuration = (e - s) / HOUR_MS;
+  let worst = { projectedHours: 0, priorHours: 0, dayStart: manilaDayStart(s) };
+  for (let day = manilaDayStart(s); day < e; day += DAY_MS) {
+    const mine = overlapHours(s, e, day);
+    if (mine <= 0) continue;
+    const prior = calculateTanodHoursOnDay(shifts, userId, day, excludeShiftId);
+    if (prior + mine > worst.projectedHours) worst = { projectedHours: prior + mine, priorHours: prior, dayStart: day };
   }
+  const overBy = worst.projectedHours - DAILY_CAP_HOURS;
+  let status = 'safe';
+  if (worst.projectedHours > DAILY_CAP_HOURS) status = 'critical';
+  else if (worst.projectedHours >= NEAR_CAP_HOURS) status = 'caution';
 
   return {
     shiftDuration,
-    priorHours,
-    projectedHours,
+    priorHours: worst.priorHours,
+    projectedHours: worst.projectedHours,
+    dayLabel: new Date(worst.dayStart + MANILA_OFFSET_MS).toISOString().slice(0, 10),
     overBy,
     status,
   };
@@ -880,15 +991,16 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
   }
 
   calloutEl.hidden = false;
+  const day = escapeHtml(preview.dayLabel);
   if (preview.status === 'critical') {
     calloutEl.className = 'scheduler-fatigue-callout scheduler-fatigue-callout--critical';
     calloutEl.innerHTML = `
       <div class="scheduler-fatigue-callout__title">
         <span style="display:flex;align-items:center;">${icons.batteryWarning(16)}</span>
-        <span>Fatigue Safety Warning: Exceeds Safe Limit</span>
+        <span>Daily limit exceeded: this shift will be rejected</span>
       </div>
       <div class="scheduler-fatigue-callout__desc">
-        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${escapeHtml(tanodName)}'s 7-day schedule to <strong>${preview.projectedHours.toFixed(1)} hrs</strong> (+${preview.overBy.toFixed(1)}h over the 56h threshold). A fatigue safety flag will be triggered.
+        On <strong>${day}</strong> ${escapeHtml(tanodName)} would be scheduled <strong>${preview.projectedHours.toFixed(1)} hrs</strong> (${preview.overBy.toFixed(1)}h over the ${DAILY_CAP_HOURS}h per-day limit). The server will not save it.
       </div>
     `;
   } else if (preview.status === 'caution') {
@@ -896,10 +1008,10 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
     calloutEl.innerHTML = `
       <div class="scheduler-fatigue-callout__title">
         <span style="display:flex;align-items:center;">${icons.alertTriangle(16)}</span>
-        <span>Approaching Weekly Safety Limit</span>
+        <span>Approaching the daily limit</span>
       </div>
       <div class="scheduler-fatigue-callout__desc">
-        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${escapeHtml(tanodName)} to <strong>${preview.projectedHours.toFixed(1)} hrs / 56h max</strong> (${(FATIGUE_THRESHOLD_HOURS - preview.projectedHours).toFixed(1)}h remaining before safety limit).
+        On <strong>${day}</strong> ${escapeHtml(tanodName)} would be at <strong>${preview.projectedHours.toFixed(1)} hrs / ${DAILY_CAP_HOURS}h max</strong> (${(DAILY_CAP_HOURS - preview.projectedHours).toFixed(1)}h remaining that day).
       </div>
     `;
   } else {
@@ -907,10 +1019,10 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
     calloutEl.innerHTML = `
       <div class="scheduler-fatigue-callout__title">
         <span style="display:flex;align-items:center;">${icons.checkCircle(16)}</span>
-        <span>Schedule Capacity: Safe</span>
+        <span>Within the daily limit</span>
       </div>
       <div class="scheduler-fatigue-callout__desc">
-        Projected 7-day schedule: <strong>${preview.projectedHours.toFixed(1)} hrs / 56h max</strong> (within safe operational limits).
+        Busiest day (<strong>${day}</strong>): <strong>${preview.projectedHours.toFixed(1)} hrs / ${DAILY_CAP_HOURS}h max</strong>.
       </div>
     `;
   }
@@ -982,11 +1094,11 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   tanodSelect.id = 'scheduler-new-tanod';
   tanodSelect.className = 'personnel-form-select';
   for (const t of tanods) {
-    const currentHours = calculateTanodHoursInWindow(shifts, t.userId, new Date().toISOString());
+    const currentHours = calculateTanodHoursToday(shifts, t.userId);
     const option = document.createElement('option');
     option.value = String(t.userId);
-    const badge = currentHours > FATIGUE_THRESHOLD_HOURS ? ' [Over Limit]' : (currentHours >= 48 ? ' [Near Limit]' : '');
-    option.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled${badge})`;
+    const badge = currentHours >= DAILY_CAP_HOURS ? ' [Day full]' : (currentHours >= NEAR_CAP_HOURS ? ' [Near daily limit]' : '');
+    option.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled today${badge})`;
     tanodSelect.appendChild(option);
   }
 
@@ -1228,11 +1340,11 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
     ? [{ userId: shift.userId, fullName: `Tanod #${shift.userId} (current)` }, ...tanods]
     : tanods;
   for (const t of editableTanods) {
-    const currentHours = calculateTanodHoursInWindow(shifts, t.userId, new Date().toISOString(), shift.shiftId);
+    const currentHours = calculateTanodHoursToday(shifts, t.userId, shift.shiftId);
     const opt = document.createElement('option');
     opt.value = String(t.userId);
-    const badge = currentHours > FATIGUE_THRESHOLD_HOURS ? ' [Over Limit]' : (currentHours >= 48 ? ' [Near Limit]' : '');
-    opt.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled${badge})`;
+    const badge = currentHours >= DAILY_CAP_HOURS ? ' [Day full]' : (currentHours >= NEAR_CAP_HOURS ? ' [Near daily limit]' : '');
+    opt.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled today${badge})`;
     if (t.userId === shift.userId) opt.selected = true;
     tanodSelect.appendChild(opt);
   }
@@ -1339,6 +1451,19 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
       showToast('End time must be after the start time.', { variant: 'error' });
       return;
     }
+    // Rule 28: changing the tanod or the times of a PUBLISHED shift returns it to Draft.
+    const materialChange = String(shift.userId ?? '') !== tanodSelect.value
+      || startInput.value !== toDatetimeLocal(shift.startAt)
+      || endInput.value !== toDatetimeLocal(shift.endAt);
+    if (shift.approvalStatus === 'published' && materialChange) {
+      const ok = await confirmDialog({
+        title: 'This shift is published',
+        description: 'Changing the tanod or the times returns this shift to Draft. The tanod will stop seeing it and it must be approved again (or its paper approval re-recorded) before it counts as published. Dispatch also loses its published-shift cover for it until then.',
+        confirmLabel: 'Change and return to Draft',
+        cancelLabel: 'Keep as is',
+      });
+      if (!ok) return;
+    }
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving…';
     try {
@@ -1403,7 +1528,12 @@ function renderError(container, message, onRetry) {
   container.appendChild(block);
 }
 
-function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, searchQuery, user, barangayName }) {
+function openSchedulePrintModal({ monthLabel, shifts: filteredShifts, allShifts: loadedShifts, tanods, selectedStatus, searchQuery, user, barangayName }) {
+  // The sheet carries an approval signature line, so only PUBLISHED (approved) shifts are printed;
+  // drafts are counted in a visible note instead (audit R-05).
+  const shifts = filteredShifts.filter((s) => s.approvalStatus === 'published');
+  const allShifts = loadedShifts.filter((s) => s.approvalStatus === 'published');
+  const draftsExcluded = filteredShifts.length - shifts.length;
   const now = Date.now();
   let activeCount = 0;
   let upcomingCount = 0;
@@ -1415,8 +1545,9 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
   }
 
   const filterDesc = selectedStatus === 'all'
-    ? (searchQuery ? `Filtered ("${searchQuery}")` : 'All Scheduled Shifts')
+    ? (searchQuery ? `Filtered ("${searchQuery}")` : 'All Published Shifts')
     : `${selectedStatus.toUpperCase()}${searchQuery ? ` ("${searchQuery}")` : ''}`;
+  const filterDescFull = `${monthLabel}: ${filterDesc}`;
 
   const shiftRowsHtml = shifts.length > 0
     ? shifts.map((shift) => {
@@ -1435,19 +1566,18 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
           </tr>
         `;
       }).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:#64748b;">No shifts match the selected schedule filter.</td></tr>`;
+    : `<tr><td colspan="6" style="text-align:center;color:#64748b;">No published shifts match the selected schedule filter.</td></tr>`;
 
   const activeTanods = tanods.filter((t) => t.isActive !== false && !t.isSuspended);
   const rosterRowsHtml = activeTanods.length > 0
     ? activeTanods.map((t) => `
         <tr>
           <td><strong>${escapeHtml(t.fullName)}</strong></td>
-          <td class="print-sheet__table--mono">${escapeHtml(t.username || '—')}</td>
-          <td class="print-sheet__table--mono">${escapeHtml(t.contactNumber || '—')}</td>
-          <td>Active Duty</td>
+          <td>${escapeHtml(t.officialTitle || 'Tanod')}</td>
+          <td>Active</td>
         </tr>
       `).join('')
-    : `<tr><td colspan="4" style="text-align:center;color:#64748b;">No active Tanod personnel records loaded.</td></tr>`;
+    : `<tr><td colspan="3" style="text-align:center;color:#64748b;">No active Tanod personnel records loaded.</td></tr>`;
 
   const generatedStamp = new Date().toLocaleString('en-US', {
     year: 'numeric',
@@ -1470,7 +1600,7 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
     <div class="print-sheet__meta-bar">
       <div class="print-sheet__meta-cell">
         <span class="print-sheet__meta-label">Schedule View</span>
-        <span class="print-sheet__meta-val">${escapeHtml(filterDesc)}</span>
+        <span class="print-sheet__meta-val">${escapeHtml(filterDescFull)}</span>
       </div>
       <div class="print-sheet__meta-cell">
         <span class="print-sheet__meta-label">Shifts Listed</span>
@@ -1505,6 +1635,7 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
       </div>
     </div>
 
+    ${draftsExcluded > 0 ? `<p style="margin:0 0 0.5rem;font-weight:700;">${draftsExcluded} DRAFT shift${draftsExcluded === 1 ? '' : 's'} in this view ${draftsExcluded === 1 ? 'is' : 'are'} not approved and ${draftsExcluded === 1 ? 'is' : 'are'} not printed.</p>` : ''}
     <div class="print-sheet__section">
       <h2 class="print-sheet__section-title">1. Patrol Shift Assignments</h2>
       <table class="print-sheet__table">
@@ -1525,13 +1656,12 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
     </div>
 
     <div class="print-sheet__section">
-      <h2 class="print-sheet__section-title">2. Active Tanod Personnel Contact Directory</h2>
+      <h2 class="print-sheet__section-title">2. Roster of Personnel Available for Scheduling</h2>
       <table class="print-sheet__table">
         <thead>
           <tr>
-            <th>Tanod Full Name</th>
-            <th>System Callsign / Username</th>
-            <th>Contact Number</th>
+            <th>Full Name</th>
+            <th>Title</th>
             <th>Roster Standing</th>
           </tr>
         </thead>
@@ -1550,7 +1680,7 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
       <div class="print-sheet__sig-box">
         <div class="print-sheet__sig-line"></div>
         <div class="print-sheet__sig-name">Punong Barangay</div>
-        <div class="print-sheet__sig-role">Noted &amp; Approved For Posting</div>
+        <div class="print-sheet__sig-role">Noted &amp; Approved For Posting (published shifts only)</div>
       </div>
     </div>
 

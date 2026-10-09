@@ -328,3 +328,143 @@ describe('Dispatch offers on the board (Wave 2)', () => {
     assert.ok($$('button', card).some((b) => /^dispatch tanod$/i.test(text(b))), 'a reopened incident is dispatchable');
   });
 });
+
+describe('Dispatch Center: stale data, SOS handling and routing (audit 2026-10-09)', () => {
+  afterEach(() => cleanup());
+
+  const sosRow = (extra) => ({
+    sos_id: 91, user_id: 5, dispatch_id: 7001, latitude: 12.9175, longitude: 123.6658,
+    triggered_at: '2026-10-09 03:00:00', received_at: '2026-10-09 03:00:00', status: 'active',
+    acknowledged_at: null, resolved_at: null, ...extra,
+  });
+  const sosOverride = (extra) => api.on('GET', '/tanod-sos', () => ({ status: 200, body: { items: [sosRow(extra)] } }));
+
+  /** Mounts the page while capturing the 15 s poll callback so a test can fire it. */
+  async function mountWithPoll() {
+    const polls = [];
+    const original = globalThis.setInterval;
+    globalThis.setInterval = (fn, ms, ...rest) => { if (ms === 15000) polls.push(fn); return original(fn, ms, ...rest); };
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    globalThis.setInterval = original;
+    await settle();
+    return { ctx, poll: async () => { await polls.at(-1)(); await settle(); } };
+  }
+
+  test('a failed background poll keeps the data and shows a polite "updates paused" banner, cleared on recovery', async () => {
+    const { ctx, poll } = await mountWithPoll();
+    const banner = $('.dispatch-stale-banner', ctx.root);
+    assert.ok(banner, 'banner element must exist');
+    assert.equal(banner.hidden, true);
+    assert.equal(banner.getAttribute('role'), 'status');
+    assert.equal(banner.getAttribute('aria-live'), 'polite');
+    api.fail('GET', '/gps/live', 500);
+    api.fail('GET', '/dispatch', 500);
+    await poll();
+    assert.equal(banner.hidden, false);
+    assert.match(text(banner), /Live updates paused - last updated \d{2}:\d{2} \(Manila time\)\. Retrying\.\.\./);
+    assert.match(text(ctx.root), /INC-2026-901/, 'last good data stays on screen');
+    assert.match(text($('.dispatch-map-live-pill', ctx.root)), /paused/i);
+    assert.doesNotMatch(text($('.dispatch-map-live-pill', ctx.root)), /Live/);
+    api.overrides.length = 0;
+    await poll();
+    assert.equal(banner.hidden, true);
+    assert.match(text($('.dispatch-map-live-pill', ctx.root)), /Live · 15s sync/);
+  });
+
+  test('the browser going offline only hints: banner appears', async () => {
+    const { ctx } = await mountWithPoll();
+    window.dispatchEvent(new window.Event('offline'));
+    assert.equal($('.dispatch-stale-banner', ctx.root).hidden, false);
+  });
+
+  test('with nobody on duty, Dispatch Tanod says why instead of doing nothing', async () => {
+    api.on('GET', '/duty-status', () => ({ status: 200, body: { items: [] } }));
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    click(buttonByText(/^dispatch tanod$/i, ctx.root));
+    await settle();
+    assert.match(text(window.document.body), /No tanod is on duty\. Open Personnel > Scheduler or use Broadcast to on-duty tanods\./);
+    assert.ok(!$('[role="alertdialog"]'), 'no picker dialog');
+    assert.equal(api.callsTo('POST', '/dispatch').length, 0);
+  });
+
+  test('"New Emergency Report" navigates to a real route key', async () => {
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    click(buttonByText(/new emergency report/i, ctx.root));
+    assert.equal(ctx.navigations.at(-1)?.page, 'incident-management');
+  });
+
+  test('Acknowledge calls PATCH acknowledge, toasts, and does not resolve', async () => {
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    const row = $('.dispatch-sos-row', ctx.root);
+    assert.ok(row, 'per-SOS row present');
+    click(buttonByText(/^acknowledge$/i, row));
+    await settle();
+    assert.equal(api.callsTo('PATCH', '/tanod-sos/91/acknowledge').length, 1);
+    assert.equal(api.callsTo('PATCH', '/tanod-sos/:id/resolve').length, 0, 'acknowledging must not resolve');
+    assert.match(text(window.document.body), /acknowledged\. It stays active until resolved/);
+  });
+
+  test('an acknowledged SOS stays in the banner and offers no second Acknowledge', async () => {
+    sosOverride({ status: 'acknowledged', acknowledged_at: '2026-10-09 03:01:00' });
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    assert.match(text($('.dispatch-priority-alert', ctx.root)), /acknowledged, still active until resolved/);
+    assert.ok(!buttonByText(/^acknowledge$/i, ctx.root));
+    assert.match(text($('.dispatch-sos-row', ctx.root)), /Acknowledged/);
+  });
+
+  test('a failed acknowledge shows an error toast', async () => {
+    api.fail('PATCH', '/tanod-sos/:id/acknowledge', 500, 'SERVER_ERROR', 'Ack broke.');
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    click(buttonByText(/^acknowledge$/i, $('.dispatch-sos-row', ctx.root)));
+    await settle();
+    assert.match(text(window.document.body), /Ack broke\./);
+  });
+
+  test('a last_known SOS is labelled "last known position (HH:MM)" on the card and the pin', async () => {
+    sosOverride({ location_source: 'last_known', location_recorded_at: '2026-10-09 02:40:00' });
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    // 02:40 UTC is 10:40 in Manila.
+    assert.match(text($('.dispatch-sos-row', ctx.root)), /Last known position \(10:40\)/);
+    const label = maps.flatMap((m) => m.markers).map((m) => m.getElement()).find((el) => el.className.includes('live-map__marker--sos'));
+    assert.match(text(label), /last known position \(10:40\)/);
+    assert.ok(label.className.includes('live-map__marker--sos-last-known'));
+  });
+
+  test('a no_fix SOS is not hidden: card says no location, names the tanod and gives their number', async () => {
+    sosOverride({ location_source: 'no_fix', latitude: null, longitude: null });
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    const row = text($('.dispatch-sos-row', ctx.root));
+    assert.match(row, /No location available/);
+    assert.match(row, /Maria Dela Cruz/);
+    assert.match(row, /09170000005/);
+    assert.match(text($('.dispatch-priority-alert', ctx.root)), /no location available, call the tanod/);
+    assert.ok(!buttonByText(/^locate$/i, $('.dispatch-sos-row', ctx.root)));
+  });
+
+  test('the SOS banner is an assertive alert and offers the audio hint until a gesture', async () => {
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    const banner = $('.dispatch-priority-alert', ctx.root);
+    assert.equal(banner.getAttribute('role'), 'alert');
+    assert.equal(banner.getAttribute('aria-live'), 'assertive');
+    const hint = $('.dispatch-alert-sound-hint', ctx.root);
+    assert.equal(hint.hidden, false);
+    assert.match(text(hint), /Click anywhere to enable alert sound/);
+    window.document.dispatchEvent(new window.Event('pointerdown'));
+    assert.equal(hint.hidden, true);
+  });
+
+  test('no invented fallback place names appear', async () => {
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    assert.doesNotMatch(text($('.dispatch-queue-card', ctx.root)), /Location pinned on map|Barangay Area/);
+    assert.match(text($('.dispatch-queue-card', ctx.root)), /Location not recorded/);
+  });
+});

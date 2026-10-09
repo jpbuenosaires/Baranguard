@@ -75,6 +75,39 @@ const ACTION_LABELS = {
   citizen_report_submitted: 'Citizen report submitted',
   report_exported: 'Report exported',
   evidence_accessed: 'Evidence accessed',
+  dispatch_status_changed: 'Dispatch status changed',
+  dispatch_offer_opened: 'Dispatch offer opened',
+  dispatch_offer_accepted: 'Dispatch offer accepted',
+  dispatch_offer_cancelled: 'Dispatch offer cancelled',
+  dispatch_offer_closed: 'Dispatch offer closed',
+  dispatch_offer_expired: 'Dispatch offer expired',
+  dispatch_offer_reminder: 'Dispatch offer reminder',
+  incident_lifecycle_changed: 'Incident lifecycle changed',
+  incident_updated: 'Incident updated',
+  incident_related_changed: 'Related incident changed',
+  citizen_report_converted: 'Citizen report converted',
+  raw_narrative_viewed: 'Raw narrative viewed',
+  availability_reviewed: 'Availability reviewed',
+  paper_signature_recorded: 'Paper signature recorded',
+  approval_recorded_from_paper: 'Approval recorded from paper',
+  document_scan_uploaded: 'Document scan uploaded',
+  document_scan_downloaded: 'Document scan downloaded',
+  school_created: 'School created',
+  school_updated: 'School updated',
+  ssz_term_report_created: 'Annex D created',
+  ssz_term_report_prepared: 'Annex D prepared',
+  ssz_term_report_approved: 'Annex D approved',
+  ssz_term_report_submitted: 'Annex D submitted',
+  sms_broadcast_sent: 'SMS broadcast sent',
+  sms_manual_sent: 'SMS manual reply sent',
+  sms_subscriber_added: 'SMS subscriber added',
+  sms_subscriber_opted_out: 'SMS subscriber opted out',
+  system_settings_updated: 'System settings updated',
+  user_created: 'User created',
+  user_approval_authority_changed: 'Approval authority changed',
+  evidence_downloaded: 'Evidence downloaded',
+  report_export_downloaded: 'Report export downloaded',
+  report_digest_downloaded: 'Report digest downloaded',
 };
 
 const CATEGORIES = {
@@ -88,25 +121,33 @@ const CATEGORIES = {
       'dispatch_created', 'dispatch_cancelled', 'dispatch_status_override',
       'duty_status_changed', 'shift_created', 'shift_updated',
       'swap_request_resolved', 'fatigue_flag_acknowledged',
+      'dispatch_status_changed', 'dispatch_offer_opened', 'dispatch_offer_accepted',
+      'dispatch_offer_cancelled', 'dispatch_offer_closed', 'dispatch_offer_expired',
+      'dispatch_offer_reminder', 'availability_reviewed',
     ],
   },
   incidents: {
     label: 'Incidents',
     actions: [
-      'incident_resolved', 'blotter_finalized', 'blotter_amended',
-      'lupon_packet_generated', 'citizen_report_submitted',
+      'incident_resolved', 'incident_lifecycle_changed', 'incident_updated',
+      'incident_related_changed', 'citizen_report_converted',
       'tanod_sos_raised', 'tanod_sos_acknowledged', 'tanod_sos_resolved',
-      'evidence_accessed',
+      'evidence_accessed', 'evidence_downloaded', 'raw_narrative_viewed',
     ],
   },
   system: {
     label: 'System',
     actions: [
-      'ai_redaction_queued', 'ai_redaction_approved',
-      'ai_summary_regeneration_queued', 'ai_translation_queued',
       'map_package_published', 'report_exported',
       'device_registered', 'device_deactivated',
-      'user_updated', 'user_status_changed',
+      'user_created', 'user_updated', 'user_status_changed', 'user_approval_authority_changed',
+      'system_settings_updated', 'sms_broadcast_sent', 'sms_manual_sent',
+      'sms_subscriber_added', 'sms_subscriber_opted_out',
+      'paper_signature_recorded', 'approval_recorded_from_paper',
+      'document_scan_uploaded', 'document_scan_downloaded',
+      'school_created', 'school_updated',
+      'ssz_term_report_created', 'ssz_term_report_prepared',
+      'ssz_term_report_approved', 'ssz_term_report_submitted',
     ],
   },
 };
@@ -441,8 +482,9 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   const searchInput = document.createElement('input');
   searchInput.type = 'search';
   searchInput.id = 'audit-search';
-  searchInput.placeholder = 'Search actor, action, or metadata…';
-  searchInput.setAttribute('aria-label', 'Search audit logs');
+  searchInput.placeholder = 'Search the rows loaded on this page…';
+  searchInput.setAttribute('aria-label', 'Search the audit log rows loaded on this page (use filters and paging for other records)');
+  searchInput.title = 'Searches only the rows shown on this page. Use the action and date filters, or change page, to reach other records.';
   searchField.append(searchIcon, searchInput);
 
   // Col 2: Category Dropdown

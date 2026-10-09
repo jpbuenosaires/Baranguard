@@ -243,6 +243,33 @@ MANILA_TODAY=$("$PHP_BIN" -r 'echo (new DateTimeImmutable("now", new DateTimeZon
 NARROW=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/reports/summary?date_from=${MANILA_TODAY}&date_to=${MANILA_TODAY}" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo $d["total_incidents"];')
 [ "$NARROW" = "2" ] && pass "Narrow range (today only, Asia/Manila) = 2 incidents (the two seeded with UTC_TIMESTAMP())" || fail "Narrow range (today only, Asia/Manila) = $NARROW (expected 2)"
 
+step "8. Honest response-time sample size and status coverage (audits N-02/P-04/P-06, 2026-10-09)"
+RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/reports/summary")
+[ "$(extract response_sample_size)" = "4" ] && pass "response_sample_size = 4 (the four incidents with a first arrival)" || fail "response_sample_size = $(extract response_sample_size) (expected 4)"
+ARRIVALS_SUM=$(echo "$RESP" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo array_sum(array_column($d["trend"], "arrivals"));')
+[ "$ARRIVALS_SUM" = "4" ] && pass "sum(trend[].arrivals) = 4 = response_sample_size" || fail "sum(trend[].arrivals) = $ARRIVALS_SUM (expected 4)"
+STATUS_KEYS=$(echo "$RESP" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); $k=array_keys($d["by_status"]); sort($k); echo implode(",",$k);')
+[ "$STATUS_KEYS" = "cancelled,dispatched,duplicate,invalid,pending,reopened,resolved" ] && pass "by_status lists every incident status (zero-filled)" || fail "by_status keys = $STATUS_KEYS"
+
+step "9. Generated PDF carries no pre-filled oath or signer (audits P-01/N-18, 2026-10-09)"
+DIGEST_DIR="$(mktemp -d)"
+DIGEST_DIR_NATIVE="$DIGEST_DIR"
+command -v cygpath >/dev/null 2>&1 && DIGEST_DIR_NATIVE="$(cygpath -m "$DIGEST_DIR")"
+( cd "$BACKEND_DIR" && REPORT_EXPORT_DIR="$DIGEST_DIR_NATIVE" "$PHP_BIN" scripts/generate-pb-digest.php --days=30 > /dev/null 2>&1 )
+PDF_FILE="$DIGEST_DIR/digest/barangay-1.pdf"
+if [ -f "$PDF_FILE" ]; then
+  pass "Scheduled digest PDF generated for barangay 1"
+  grep -qa "under oath" "$PDF_FILE" && fail "PDF still contains a sworn 'under oath' statement" || pass "PDF contains no 'under oath' statement"
+  grep -qa "Attested" "$PDF_FILE" && fail "PDF still says 'Attested'" || pass "PDF contains no 'Attested & Approved' line"
+  grep -qai "W2 Check PB" "$PDF_FILE" && fail "PDF pre-fills the Punong Barangay's real name" || pass "PDF does not pre-fill the Punong Barangay's name"
+  grep -qa "not signed" "$PDF_FILE" && pass "PDF says it is a system-generated summary, not signed" || fail "PDF lacks the 'not signed' statement"
+  grep -qa "Reviewed and approved by" "$PDF_FILE" && pass "PDF has a blank 'Reviewed and approved by' block" || fail "PDF lacks the blank reviewer block"
+  grep -qa "no personal data" "$PDF_FILE" && pass "PDF keeps the aggregate-only privacy note" || fail "PDF lacks the aggregate-only privacy note"
+else
+  fail "Scheduled digest PDF was not generated (looked for $PDF_FILE)"
+fi
+rm -rf "$DIGEST_DIR"
+
 step "SUMMARY"
 echo "$PASS passed, $FAIL failed."
 echo "Full log: $LOG_FILE"

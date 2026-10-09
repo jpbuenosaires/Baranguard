@@ -20,9 +20,16 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { requireReason } from '../utils/reasonText.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
-import { REPORT_CHANNEL_OPTIONS, DEFAULT_WEB_REPORT_CHANNEL } from '../utils/reportChannel.js';
+import { REPORT_CHANNEL_OPTIONS, DEFAULT_WEB_REPORT_CHANNEL, reportChannelLabel } from '../utils/reportChannel.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
+import { getSchools, updateIncidentSchoolFields } from '../services/shellWorkflowApi.js';
+
+/** Programmatically links a visible <label> to its control (accessibility). */
+function linkLabel(label, control, id) {
+  control.id = id;
+  label.htmlFor = id;
+}
 
 const INCIDENT_TYPE_LABELS = {
   sos: 'SOS / Emergency',
@@ -223,6 +230,12 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
   // Cached Lookups
   const barangayNameById = new Map();
+  // Never guesses a name when the lookup failed (Rule 6).
+  const barangayLabel = (barangayId) => {
+    const raw = barangayNameById.get(barangayId);
+    if (!raw) return barangayId != null ? `Barangay #${barangayId}` : 'Barangay not recorded';
+    return raw.startsWith('Brgy.') ? raw : `Brgy. ${raw}`;
+  };
   let eligibleTanods = [];
   let tanodRosterById = new Map();
 
@@ -407,6 +420,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   helpBtn.type = 'button';
   helpBtn.className = 'incident-floating-help';
   helpBtn.title = 'Incident Management Guide & Shortcuts';
+  helpBtn.setAttribute('aria-label', 'Incident Management guide and shortcuts');
   helpBtn.textContent = '?';
   helpBtn.addEventListener('click', () => showHelpModal());
   content.appendChild(helpBtn);
@@ -431,8 +445,9 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       bRes.forEach((b) => barangayNameById.set(b.barangayId, b.name));
     } catch {
       barangayNameById.set(1, 'Dao');
-      barangayNameById.set(2, 'Marifosque');
-      barangayNameById.set(3, 'Binanuahan');
+      // Fixed ids per REFERENCE.md section 1: Dao=1, Binanuahan=2, Marifosque=3, Banuyo=4.
+      barangayNameById.set(2, 'Binanuahan');
+      barangayNameById.set(3, 'Marifosque');
       barangayNameById.set(4, 'Banuyo');
     }
 
@@ -552,12 +567,11 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         const stack = document.createElement('div');
         stack.className = 'incident-cell-stack';
 
-        const rawBrgy = barangayNameById.get(row.barangayId) || 'Dao';
-        const bName = rawBrgy.startsWith('Brgy.') ? rawBrgy : `Brgy. ${rawBrgy}`;
+        const bName = barangayLabel(row.barangayId);
 
         const locPrimary = document.createElement('span');
         locPrimary.className = 'incident-cell-loc-primary';
-        locPrimary.innerHTML = `${icons.mapPin(13)} <span>${bName}</span>`;
+        locPrimary.innerHTML = `${icons.mapPin(13)} <span>${escapeHtml(bName)}</span>`;
 
         const locSub = document.createElement('span');
         locSub.className = 'incident-cell-loc-sub';
@@ -695,12 +709,25 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     }
   }
 
+  /**
+   * Narratives are deleted 90 days after an incident is logged (retention
+   * job). GET /incidents/:id does not say whether this one was purged, so an
+   * old record reads as removed and a recent one as not recorded.
+   */
+  function missingNarrativeText(detail) {
+    const raw = detail.createdAt;
+    const created = raw ? new Date(/[zZ]|[+-][0-9]{2}:?[0-9]{2}$/.test(String(raw)) ? raw : `${String(raw).replace(' ', 'T')}Z`) : null;
+    const ageDays = created && !Number.isNaN(created.getTime()) ? (Date.now() - created.getTime()) / 86400000 : 0;
+    return ageDays > 90
+      ? 'The confidential narrative was removed after the 90-day retention period.'
+      : 'No narrative recorded for this incident.';
+  }
+
   // --- Render Detail View ---
   function renderDetailPane(row, detail, officerContact) {
     rightPanel.innerHTML = '';
 
-    const rawBrgy = barangayNameById.get(row.barangayId) || 'Dao';
-    const bName = rawBrgy.startsWith('Brgy.') ? rawBrgy : `Brgy. ${rawBrgy}`;
+    const bName = barangayLabel(row.barangayId);
     const code = formatIncidentCode(row);
     const typeLabel = INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType;
     const prioKey = row.priority || 'normal';
@@ -795,10 +822,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     locLabel.textContent = 'Location';
     const locVal = document.createElement('span');
     locVal.className = 'incident-info-box__val';
-    locVal.innerHTML = `${icons.mapPin(15)} <span>${bName}</span>`;
+    locVal.innerHTML = `${icons.mapPin(15)} <span>${escapeHtml(bName)}</span>`;
     const locSub = document.createElement('span');
     locSub.className = 'incident-info-box__sub';
-    locSub.textContent = detail.locationDescription || row.locationDescription || 'Purok 3, near market';
+    locSub.textContent = detail.locationDescription || row.locationDescription || 'No location description recorded';
     locCard.append(locLabel, locVal, locSub);
 
     // Reported Card
@@ -812,8 +839,12 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     repVal.innerHTML = `${icons.clock(15)} <span>${formatDateTime(row.createdAt)}</span>`;
     const repSub = document.createElement('span');
     repSub.className = 'incident-info-box__sub';
-    const reporter = detail.complainantName || row.reportedBy || (row.source ? `Caller (${row.source})` : 'Juan dela Cruz');
-    repSub.textContent = `By: ${reporter}`;
+    // Never a name or a bare user id: the complainant (Secretary-only) when
+    // present, else how the report arrived, else an honest "Not recorded".
+    const channelText = reportChannelLabel(detail.reportChannel || row.reportChannel);
+    repSub.textContent = detail.complainantName
+      ? `By: ${detail.complainantName}`
+      : `Channel: ${channelText || 'Not recorded'}`;
     repCard.append(repLabel, repVal, repSub);
 
     infoGrid.append(locCard, repCard);
@@ -937,7 +968,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     // Rule 1: raw_narrative is only returned to a Secretary, so every
     // other role honestly sees that it is restricted rather than blank.
     descBody.textContent = detail.rawNarrative
-      || (user.role === 'secretary' ? 'No narrative recorded for this incident.' : 'The narrative is restricted to the Barangay Secretary.');
+      || (user.role === 'secretary' ? missingNarrativeText(detail) : 'The narrative is restricted to the Barangay Secretary.');
     descCard.append(descLabel, descBody);
     rightPanel.appendChild(descCard);
 
@@ -1209,6 +1240,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'btn-incident-close';
+    closeBtn.setAttribute('aria-label', 'Close form');
     closeBtn.innerHTML = icons.x(16);
     closeBtn.addEventListener('click', () => {
       activeViewMode = 'detail';
@@ -1295,8 +1327,60 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const inComp = document.createElement('input');
     inComp.type = 'text';
     inComp.className = 'incident-form-input';
-    inComp.placeholder = 'e.g. Juan dela Cruz';
+    inComp.placeholder = 'Full name';
     gComp.append(lComp, inComp);
+
+    // Records-officer fields. The server returns the party fields to the
+    // Secretary only, so only the Secretary is offered the extra inputs.
+    const gResp = document.createElement('div');
+    gResp.className = 'incident-form-group';
+    const lResp = document.createElement('label');
+    lResp.className = 'incident-form-label';
+    lResp.textContent = 'Person complained about (Optional)';
+    const inResp = document.createElement('input');
+    inResp.type = 'text';
+    inResp.className = 'incident-form-input';
+    inResp.maxLength = 255;
+    inResp.placeholder = 'Full name, if known';
+    gResp.append(lResp, inResp);
+
+    const gContact = document.createElement('div');
+    gContact.className = 'incident-form-group';
+    const lContact = document.createElement('label');
+    lContact.className = 'incident-form-label';
+    lContact.textContent = 'Complainant contact number (Optional)';
+    const inContact = document.createElement('input');
+    inContact.type = 'tel';
+    inContact.className = 'incident-form-input';
+    inContact.maxLength = 32;
+    inContact.placeholder = 'e.g. 09XX XXX XXXX';
+    gContact.append(lContact, inContact);
+
+    // School link (Safer School Zones). Sent as a second step after the
+    // incident exists, because the shared create call does not carry it.
+    const gSchool = document.createElement('div');
+    gSchool.className = 'incident-form-group';
+    const lSchool = document.createElement('label');
+    lSchool.className = 'incident-form-label';
+    lSchool.textContent = 'School near the incident (Optional)';
+    const selSchool = document.createElement('select');
+    selSchool.className = 'incident-form-select';
+    const noSchool = document.createElement('option');
+    noSchool.value = '';
+    noSchool.textContent = 'Not near a school';
+    selSchool.appendChild(noSchool);
+    gSchool.append(lSchool, selSchool);
+    getSchools({ active: true }).then((list) => {
+      for (const s of list) {
+        const opt = document.createElement('option');
+        opt.value = String(s.schoolId);
+        opt.textContent = s.name;
+        selSchool.appendChild(opt);
+      }
+    }).catch(() => {
+      noSchool.textContent = 'Schools could not be loaded';
+      selSchool.disabled = true;
+    });
 
     // Narrative
     const gNarr = document.createElement('div');
@@ -1326,7 +1410,19 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     formActions.append(submitBtn, cancelBtn);
 
-    form.append(gType, gPrio, gChan, gLoc, gComp, gNarr, formActions);
+    linkLabel(lType, selType, 'incident-new-type');
+    linkLabel(lPrio, selPrio, 'incident-new-priority');
+    linkLabel(lLoc, inLoc, 'incident-new-location');
+    linkLabel(lComp, inComp, 'incident-new-complainant');
+    linkLabel(lResp, inResp, 'incident-new-respondent');
+    linkLabel(lContact, inContact, 'incident-new-contact');
+    linkLabel(lSchool, selSchool, 'incident-new-school');
+    linkLabel(lNarr, inNarr, 'incident-new-narrative');
+    if (isSecretary) {
+      form.append(gType, gPrio, gChan, gLoc, gComp, gResp, gContact, gSchool, gNarr, formActions);
+    } else {
+      form.append(gType, gPrio, gChan, gLoc, gComp, gSchool, gNarr, formActions);
+    }
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const narrative = inNarr.value.trim();
@@ -1338,16 +1434,32 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       submitBtn.disabled = true;
       submitBtn.textContent = 'Saving...';
       try {
-        await createIncident({
+        const created = await createIncident({
           incidentType: selType.value,
           priority: selPrio.value,
           reportChannel: selChan.value,
           rawNarrative: narrative,
           locationDescription: inLoc.value.trim() || undefined,
           complainantName: inComp.value.trim() || undefined,
+          respondentName: isSecretary ? (inResp.value.trim() || undefined) : undefined,
+          complainantContactNumber: isSecretary ? (inContact.value.trim() || undefined) : undefined,
           idempotencyKey: crypto.randomUUID(),
         });
-        showToast('Incident logged successfully.', { variant: 'success' });
+        const newCode = created.displayId || `#${created.incidentId}`;
+        let schoolFailed = false;
+        if (selSchool.value !== '') {
+          try {
+            await updateIncidentSchoolFields(created.incidentId, { schoolId: Number(selSchool.value) }, crypto.randomUUID());
+          } catch {
+            schoolFailed = true;
+          }
+        }
+        showToast(
+          schoolFailed
+            ? `Incident ${newCode} logged, but the school link was not saved. Add it from the incident record.`
+            : `Incident ${newCode} logged. Write this number on the binder entry.`,
+          { variant: schoolFailed ? 'warning' : 'success' },
+        );
         activeViewMode = 'detail';
         await load();
       } catch (err) {
@@ -1376,164 +1488,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'btn-incident-close';
-    closeBtn.innerHTML = icons.x(16);
-    closeBtn.addEventListener('click', () => {
-      activeViewMode = 'detail';
-      renderRightPane();
-    });
-    headerRow.append(formTitle, closeBtn);
-    formPane.appendChild(headerRow);
-
-    const form = document.createElement('form');
-    form.className = 'form-stack';
-
-    // Incident Type. `PATCH /incidents/:id` has always accepted
-    // `incident_type` (Admin + Secretary) but this form never exposed it,
-    // so a mis-typed intake could only be corrected through the database.
-    const gType = document.createElement('div');
-    gType.className = 'incident-form-group';
-    const lType = document.createElement('label');
-    lType.className = 'incident-form-label';
-    lType.textContent = 'Incident Type';
-    const selType = document.createElement('select');
-    selType.className = 'incident-form-select';
-    for (const [v, l] of Object.entries(INCIDENT_TYPE_LABELS)) {
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = l;
-      if (v === (detail.incidentType || row.incidentType)) opt.selected = true;
-      selType.appendChild(opt);
-    }
-    gType.append(lType, selType);
-
-    // Priority
-    const gPrio = document.createElement('div');
-    gPrio.className = 'incident-form-group';
-    const lPrio = document.createElement('label');
-    lPrio.className = 'incident-form-label';
-    lPrio.textContent = 'Priority';
-    const selPrio = document.createElement('select');
-    selPrio.className = 'incident-form-select';
-    for (const [v, l] of [['normal', 'Medium / Normal'], ['high', 'High'], ['critical', 'Critical']]) {
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = l;
-      if (v === row.priority) opt.selected = true;
-      selPrio.appendChild(opt);
-    }
-    gPrio.append(lPrio, selPrio);
-
-    // Location Description
-    const gLoc = document.createElement('div');
-    gLoc.className = 'incident-form-group';
-    const lLoc = document.createElement('label');
-    lLoc.className = 'incident-form-label';
-    lLoc.textContent = 'Location Landmark / Description';
-    const inLoc = document.createElement('input');
-    inLoc.type = 'text';
-    inLoc.className = 'incident-form-input';
-    inLoc.value = detail.locationDescription || row.locationDescription || '';
-    gLoc.append(lLoc, inLoc);
-
-    // Complainant Name
-    const gComp = document.createElement('div');
-    gComp.className = 'incident-form-group';
-    const lComp = document.createElement('label');
-    lComp.className = 'incident-form-label';
-    lComp.textContent = 'Complainant / Reporter Name';
-    const inComp = document.createElement('input');
-    inComp.type = 'text';
-    inComp.className = 'incident-form-input';
-    inComp.value = detail.complainantName || '';
-    // Migration 0008's party fields carry raw_narrative's Secretary-only
-    // protection. The server enforces this; the form just doesn't offer a
-    // control that would 403.
-    if (!isSecretary) {
-      inComp.disabled = true;
-      inComp.title = 'Only a Secretary may change the complainant name.';
-    }
-    gComp.append(lComp, inComp);
-
-    // Narrative is deliberately NOT editable here: the server rejects a
-    // narrative on this endpoint, and an Admin never receives
-    // raw_narrative at all. This note says so instead of offering a
-    // control that cannot work.
-    const gNarr = document.createElement('div');
-    gNarr.className = 'incident-form-group';
-    const lNarr = document.createElement('label');
-    lNarr.className = 'incident-form-label';
-    lNarr.textContent = 'Incident Description / Narrative';
-    const inNarr = document.createElement('textarea');
-    inNarr.className = 'incident-form-textarea';
-    inNarr.placeholder = 'Describe the incident report details...';
-    inNarr.required = true;
-    gNarr.append(lNarr, inNarr);
-
-    // Actions
-    const formActions = document.createElement('div');
-    formActions.className = 'incident-form-actions';
-    const submitBtn = document.createElement('button');
-    submitBtn.type = 'submit';
-    submitBtn.className = 'incident-form-submit';
-    submitBtn.textContent = 'Log an Incident';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'incident-form-cancel';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', closeDetailPane);
-
-    formActions.append(submitBtn, cancelBtn);
-
-    form.append(gType, gPrio, gLoc, gComp, gNarr, formActions);
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const narrative = inNarr.value.trim();
-      if (!narrative) {
-        showToast('Please enter an incident narrative.', { variant: 'error' });
-        return;
-      }
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Saving...';
-      try {
-        await createIncident({
-          incidentType: selType.value,
-          priority: selPrio.value,
-          rawNarrative: narrative,
-          locationDescription: inLoc.value.trim() || undefined,
-          complainantName: inComp.value.trim() || undefined,
-          idempotencyKey: crypto.randomUUID(),
-        });
-        showToast('Incident logged successfully.', { variant: 'success' });
-        activeViewMode = 'detail';
-        await load();
-      } catch (err) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Log an Incident';
-        showToast(err instanceof ApiClientError ? err.message : 'Could not create incident.', { variant: 'error' });
-      }
-    });
-
-    formPane.appendChild(form);
-    rightPanel.appendChild(formPane);
-  }
-
-  // --- Render Edit Incident Form ---
-  function renderEditIncidentForm(row, detail) {
-    rightPanel.innerHTML = '';
-
-    const formPane = document.createElement('div');
-    formPane.className = 'incident-form-pane';
-
-    const headerRow = document.createElement('div');
-    headerRow.className = 'incident-detail-header';
-    const formTitle = document.createElement('h2');
-    formTitle.className = 'incident-form-title';
-    formTitle.textContent = `Edit Incident ${formatIncidentCode(row)}`;
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'btn-incident-close';
+    closeBtn.setAttribute('aria-label', 'Close form');
     closeBtn.innerHTML = icons.x(16);
     closeBtn.addEventListener('click', () => {
       activeViewMode = 'detail';
@@ -1646,6 +1601,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     formActions.append(submitBtn, cancelBtn);
 
+    linkLabel(lType, selType, 'incident-edit-type');
+    linkLabel(lPrio, selPrio, 'incident-edit-priority');
+    linkLabel(lLoc, inLoc, 'incident-edit-location');
+    linkLabel(lComp, inComp, 'incident-edit-complainant');
     form.append(gType, gPrio, gLoc, gComp, gNarr, formActions);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1804,8 +1763,12 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
               <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Incident neutralized and officially resolved by Admin</span>
             </div>
             <div class="incident-help-item">
-              <span style="font-weight: 600; color: var(--color-text-secondary);">Closed</span>
-              <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Closed out by the Barangay Secretary (duplicate, invalid, or cancelled)</span>
+              <span style="font-weight: 600; color: var(--color-text-secondary);">Duplicate / Invalid / Cancelled</span>
+              <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">Set by the Barangay Secretary from the incident record</span>
+            </div>
+            <div class="incident-help-item">
+              <span style="font-weight: 600; color: var(--color-critical);">Reopened</span>
+              <span style="color: var(--color-text-secondary); font-size: 0.8125rem;">A settled case reopened by the Barangay Secretary; it can be dispatched again</span>
             </div>
           </div>
         </div>

@@ -722,7 +722,7 @@ api GET "/accomplishment-reports/999999" "$ADMIN_T" ""
 expect_code "GET nonexistent report" 404
 api GET "/accomplishment-reports/$R2_ID" "$SEC_T" ""
 expect_code "Secretary WITHOUT note/approve authority GET it" 200
-expect_eq "  structure visible, text withheld" "$(jget "$BODY" entries.0.accomplishment_text)/$(jget "$BODY" text_visible)/$(jget "$BODY" entries.0.duration_minutes)" "null/false/300"
+expect_eq "  records officer reads the entry text (needed for the printed paper report)" "$(jget "$BODY" entries.0.accomplishment_text)/$(jget "$BODY" text_visible)/$(jget "$BODY" entries.0.duration_minutes)" "T2 first entry edited/true/300"
 api GET "/accomplishment-reports/$R2_ID" "$ADMIN_T" ""
 expect_eq "Admin (holds note_report) sees the text" "$(jget "$BODY" text_visible)" "true"
 expect_eq "  entry duration_flag / suggested exposed" "$(jget "$BODY" entries.0.duration_flag)/$(jget "$BODY" entries.0.suggested_duration_minutes)" "false/null"

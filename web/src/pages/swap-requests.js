@@ -11,6 +11,8 @@
 
 import { getShiftSwapRequests, getShifts, resolveShiftSwapRequest, ApiClientError } from '../api/apiClient.js';
 import { loadTanodRoster } from '../services/tanodRoster.js';
+import { manilaToday } from '../services/tanodWorkflowUi.js';
+import { addDays, fetchAllPages } from '../services/rosterWindow.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { avatarInitials } from '../components/Avatar.js';
@@ -115,7 +117,8 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
     try {
       const [requestsRes, shiftsRes, tanodsRes] = await Promise.all([
         getShiftSwapRequests({ limit: 100 }),
-        getShifts({ limit: 100 }),
+        // Shifts for the lookup: a window from 30 days ago onward, all pages (audit F-09).
+        fetchAllPages((p) => getShifts({ from: addDays(manilaToday(), -30), ...p })),
         loadTanodRoster(user).then((items) => ({ items })),
       ]);
       allRequests = requestsRes.items;
@@ -281,7 +284,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
               const zoneTag = document.createElement('span');
               zoneTag.className = 'shift-zone-tag';
               zoneTag.style.cssText = 'width: fit-content; margin-bottom: 2px;';
-              zoneTag.innerHTML = `<span style="color:var(--color-primary);">${icons.map(12)}</span><span>${shift.patrolZone}</span>`;
+              zoneTag.innerHTML = `<span style="color:var(--color-primary);">${icons.map(12)}</span><span>${escapeHtml(shift.patrolZone)}</span>`; // free text (V-03): always escaped
               wrap.appendChild(zoneTag);
             }
 
@@ -375,7 +378,10 @@ function renderActionsCell(req, requesterName, shift, onChanged) {
     event.stopPropagation();
     const confirmed = await confirmDialog({
       title: status === 'approved' ? 'Approve shift swap request?' : 'Deny shift swap request?',
-      description: `${requesterName} — ${shiftDescription}`,
+      description: `${requesterName} — ${shiftDescription}`
+        + (status === 'approved'
+          ? '. Approving moves or releases the shift and returns it to Draft; it must be approved again before the tanod sees it as final. An open request ("any eligible tanod") leaves the shift unassigned until you reassign it in the Scheduler.'
+          : ''),
       confirmLabel: status === 'approved' ? 'Approve' : 'Deny',
       cancelLabel: 'Cancel',
       danger: status === 'denied',

@@ -130,8 +130,16 @@ describe('Incident detail behaviour', () => {
       const ctx = mountPage(renderIncidentDetailPage, { role, param: 901 });
       await settle();
       const card = $('.case-card--related', ctx.root);
-      type($('input', card), '902');
+      // Staff type the number they see everywhere (the display id), and are
+      // shown what it resolves to before anything is saved.
+      type($('input', card), 'INC-2026-902');
       card.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await settle();
+      const dialog = $('[role="alertdialog"]');
+      assert.ok(dialog, 'a confirmation showing the target must appear');
+      assert.match(text(dialog), /INC-2026-902: medical emergency, logged/);
+      assert.equal(api.callsTo('PATCH', '/incidents/:id/related').length, 0, 'nothing is saved before confirming');
+      click($$('button', dialog).at(-1));
       await settle();
       const [call] = api.callsTo('PATCH', '/incidents/:id/related');
       assert.ok(call, 'PATCH /incidents/:id/related was not sent');
@@ -142,15 +150,16 @@ describe('Incident detail behaviour', () => {
     });
   }
 
-  test('linking validates the number client-side: blank, non-numeric and self are refused without a request', async () => {
+  test('linking validates the number client-side: blank and self are refused without a save', async () => {
     const ctx = mountPage(renderIncidentDetailPage, { role: 'secretary', param: 901 });
     await settle();
     const card = $('.case-card--related', ctx.root);
     const submit = () => card.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
     submit();
-    assert.match(text($('.login-form__error', card)), /whole number/);
-    type($('input', card), '901');
+    assert.match(text($('.login-form__error', card)), /incident number/);
+    type($('input', card), 'INC-2026-901');
     submit();
+    await settle();
     assert.match(text($('.login-form__error', card)), /itself/);
     assert.equal(api.callsTo('PATCH', '/incidents/:id/related').length, 0);
   });
@@ -159,11 +168,12 @@ describe('Incident detail behaviour', () => {
     const ctx = mountPage(renderIncidentDetailPage, { role: 'admin', param: 901 });
     await settle();
     const card = $('.case-card--related', ctx.root);
-    type($('input', card), '99999');
+    type($('input', card), 'INC-2026-99999');
     card.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
     await settle();
-    assert.match(text($('.login-form__error', card)), /not found/i);
-    assert.equal($('input', card).value, '99999');
+    assert.match(text($('.login-form__error', card)), /No incident .* was found/i);
+    assert.equal($('input', card).value, 'INC-2026-99999');
+    assert.equal(api.callsTo('PATCH', '/incidents/:id/related').length, 0);
   });
 
   test('Remove link is confirmed, then sends related_incident_id null', async () => {

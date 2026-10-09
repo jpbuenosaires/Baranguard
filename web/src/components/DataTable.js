@@ -56,6 +56,51 @@
  * }} props
  * @returns {HTMLElement}
  */
+
+// --- String cells are sanitized, not trusted (audit 2026-10-09 V-12) -------
+// `renderCell` may return a string, and callers use that for small static
+// markup ('<span class="text-tertiary">—</span>'). Trusting it as raw
+// innerHTML meant any caller that returned server text unescaped was a stored
+// XSS. A string is now parsed inertly (<template>: nothing loads or runs) and
+// only an allowlist of formatting tags/attributes survives; any other element
+// is replaced by its own text. Callers that escape still render identically.
+const SAFE_CELL_TAGS = new Set([
+  'span', 'strong', 'em', 'b', 'i', 'small', 'br', 'code', 'div', 'p', 'abbr', 'time', 'mark', 'sup', 'sub',
+  'svg', 'g', 'path', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect',
+]);
+const SAFE_CELL_ATTRS = new Set([
+  'class', 'title', 'role', 'datetime', 'style',
+  'viewbox', 'width', 'height', 'd', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+  'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'points', 'xmlns', 'focusable', 'transform',
+  'opacity', 'fill-rule', 'clip-rule',
+]);
+
+function sanitizeCellNode(parent) {
+  for (const child of [...parent.childNodes]) {
+    if (child.nodeType === 3) continue; // text
+    if (child.nodeType !== 1) { child.remove(); continue; }
+    const tag = child.localName.toLowerCase();
+    if (!SAFE_CELL_TAGS.has(tag)) {
+      child.replaceWith(document.createTextNode(child.textContent));
+      continue;
+    }
+    for (const attr of [...child.attributes]) {
+      const name = attr.name.toLowerCase();
+      const allowed = SAFE_CELL_ATTRS.has(name) || name.startsWith('aria-');
+      if (!allowed || (name === 'style' && /url\s*\(|expression\s*\(/i.test(attr.value))) child.removeAttribute(attr.name);
+    }
+    sanitizeCellNode(child);
+  }
+}
+
+/** Inert parse + allowlist; returns a fragment safe to append. Exported for tests. */
+export function cellContent(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html == null ? '' : String(html);
+  sanitizeCellNode(template.content);
+  return template.content;
+}
+
 export function DataTable({
   columns, rows, renderCell, rowKey, rowClass, onRowClick, selectedKey = null, caption,
   emptyIcon, emptyMessage,
@@ -116,7 +161,12 @@ export function DataTable({
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'data-table__sort-button';
-      button.innerHTML = `<span>${col.label}</span><span class="data-table__sort-icon" aria-hidden="true"></span>`;
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = col.label; // same as the non-sortable header below
+      const sortIcon = document.createElement('span');
+      sortIcon.className = 'data-table__sort-icon';
+      sortIcon.setAttribute('aria-hidden', 'true');
+      button.append(labelSpan, sortIcon);
       button.addEventListener('click', () => {
         sort = sort.key === col.key
           ? { key: col.key, direction: sort.direction === 'asc' ? 'desc' : 'asc' }
@@ -228,7 +278,7 @@ export function DataTable({
           activator.type = 'button';
           activator.className = 'data-table__row-activator';
           if (cell instanceof Node) activator.appendChild(cell);
-          else activator.innerHTML = cell ?? '';
+          else activator.appendChild(cellContent(cell));
           activator.addEventListener('click', (event) => {
             // The row handler above would otherwise fire a second time.
             event.stopPropagation();
@@ -238,7 +288,7 @@ export function DataTable({
         } else if (cell instanceof Node) {
           td.appendChild(cell);
         } else {
-          td.innerHTML = cell ?? '';
+          td.appendChild(cellContent(cell));
         }
         firstCell = false;
         tr.appendChild(td);

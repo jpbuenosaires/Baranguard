@@ -193,6 +193,22 @@ RESP=$(curl -s -H "Authorization: Bearer $TANOD1_TOKEN" "${BASE_URL}/shifts?limi
 TOTAL=$(extract "$RESP" total)
 [ "$TOTAL" = "6" ] && pass "Tanod sees only own 6 shifts (forced to self)" || fail "Tanod own shifts total=$TOTAL (expected 6)"
 
+# from/to window (audit F-09): inclusive Manila dates, shift returned when it overlaps the window
+FAR_FUTURE=$("$PHP_BIN" -r "echo date('Y-m-d', strtotime('+3650 days'));")
+FAR_PAST=$("$PHP_BIN" -r "echo date('Y-m-d', strtotime('-3650 days'));")
+RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/shifts?limit=100&from=${FAR_FUTURE}")
+[ "$(extract "$RESP" total)" = "0" ] && pass "GET /shifts?from=far-future -> 0 shifts" || fail "from=far-future total=$(extract "$RESP" total) (expected 0)"
+RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/shifts?limit=100&from=${FAR_PAST}&to=${FAR_FUTURE}")
+[ "$(extract "$RESP" total)" = "7" ] && pass "GET /shifts?from=far-past&to=far-future -> all 7" || fail "wide window total=$(extract "$RESP" total) (expected 7)"
+RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/shifts?limit=100&to=${FAR_PAST}")
+[ "$(extract "$RESP" total)" = "0" ] && pass "GET /shifts?to=far-past -> 0 shifts" || fail "to=far-past total=$(extract "$RESP" total) (expected 0)"
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/shifts?from=${FAR_FUTURE}&to=${FAR_PAST}")
+[ "$CODE" = "400" ] && pass "from after to -> 400" || fail "from after to -> $CODE (expected 400)"
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/shifts?from=10/09/2026")
+[ "$CODE" = "400" ] && pass "from in a non-ISO format -> 400" || fail "bad from -> $CODE (expected 400)"
+RESP=$(curl -s -H "Authorization: Bearer $TANOD1_TOKEN" "${BASE_URL}/shifts?limit=100&from=${FAR_PAST}&to=${FAR_FUTURE}")
+[ "$(extract "$RESP" total)" = "6" ] && pass "Tanod window still scoped to own 6 shifts" || fail "tanod window total=$(extract "$RESP" total) (expected 6)"
+
 step "6. PATCH /shifts/:id — version conflict, reassignment, unassign"
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shifts/${SHIFT_ID}" -X PATCH -d '{"patrol_zone":"Zone B Updated","version":99}')

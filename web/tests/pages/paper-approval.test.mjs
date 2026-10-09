@@ -87,10 +87,13 @@ describe('Paper signature badges (Accomplishment Report)', () => {
     assert.match(text(panel()), /Approval recorded from paper/);
   });
 
-  test('an unapproved report (prepared) shows no paper panel at all', async () => {
+  test('a prepared report offers recording the paper note+approval, but no date control or scans', async () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 71 } });
     await settle();
-    assert.equal(panel(), null);
+    assert.ok(panel(), 'a prepared report can be recorded from paper');
+    assert.ok(buttonByText(/^Record approval from paper$/, panel()));
+    assert.equal(buttonByText(/^Record paper signature date$/, panel()), undefined);
+    assert.match(text(panel()), /A scan can be attached once this report is approved/);
   });
 
   test('a noted report shows the panel but explains scans wait for approval and does not fetch scans', async () => {

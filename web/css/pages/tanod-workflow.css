@@ -394,3 +394,25 @@
 @media print {
   .tw-print-sheet--landscape { max-width: none; }
 }
+
+/* Printed-form safeguards (audit 2026-10-09 S-05..S-09): loud, never subtle. */
+.tw-print__warning {
+  margin: 0 0 var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border: 2px solid #000;
+  font-weight: 700;
+  text-align: center;
+}
+.tw-print__draft-mark {
+  margin: 0 0 var(--spacing-sm);
+  padding: var(--spacing-xs);
+  border: 2px dashed #000;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+}
+.tw-print__meta {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}

@@ -211,6 +211,24 @@ final class ShiftsController
                 $params['approval_status'] = $approvalFilter;
             }
         }
+        // Optional window (Manila calendar dates, inclusive): a shift is returned when it
+        // OVERLAPS from..to. Without them the list is unbounded (oldest first, capped by limit),
+        // which hides newer shifts once a barangay has more than `limit` shifts (audit F-09).
+        $fromRaw = Http::query('from');
+        $toRaw = Http::query('to');
+        if ($fromRaw !== null && $fromRaw !== '') {
+            [$fromUtc] = RosterSupport::manilaDayBoundsUtc(RosterSupport::parseDate($fromRaw, 'from'));
+            $where[] = 'end_at > :window_from';
+            $params['window_from'] = $fromUtc->format('Y-m-d H:i:s');
+        }
+        if ($toRaw !== null && $toRaw !== '') {
+            [, $toUtc] = RosterSupport::manilaDayBoundsUtc(RosterSupport::parseDate($toRaw, 'to'));
+            $where[] = 'start_at < :window_to';
+            $params['window_to'] = $toUtc->format('Y-m-d H:i:s');
+        }
+        if (isset($fromUtc, $toUtc) && $fromUtc >= $toUtc) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'from must not be after to.');
+        }
         $whereSql = implode(' AND ', $where);
 
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM shift_schedule WHERE {$whereSql}");

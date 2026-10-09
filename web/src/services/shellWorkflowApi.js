@@ -178,8 +178,8 @@ function mapShiftDetailed(row) {
 }
 
 /** GET /shifts with the §3 approval fields; `approvalStatus` filters server-side. */
-export async function getShiftsDetailed({ page, limit, approvalStatus } = {}) {
-  const json = await request('GET', '/shifts', { query: { page, limit, approval_status: approvalStatus } });
+export async function getShiftsDetailed({ page, limit, approvalStatus, from, to } = {}) {
+  const json = await request('GET', '/shifts', { query: { page, limit, approval_status: approvalStatus, from, to } });
   return { items: json.items.map(mapShiftDetailed), page: json.page, limit: json.limit, total: json.total };
 }
 

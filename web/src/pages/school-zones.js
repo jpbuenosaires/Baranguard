@@ -52,6 +52,7 @@ const TABS = [
 ];
 const INCIDENT_PAGE_SIZE = 25;
 const PRINT_INCIDENT_CAP = 200;
+const REFERRAL_UNAVAILABLE = 'Referral data could not be loaded - do not file this copy';
 const BARANGAY_LEVEL_DESTINATIONS = new Set(['barangay_official', 'vaw_desk']);
 
 const COUNT_TILES = [
@@ -79,10 +80,29 @@ function manilaDateOf(value) {
   return new Date(t + 8 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-function typeLabel(value) {
-  if (!value) return '—';
-  const text = String(value).replace(/_/g, ' ');
-  return text.charAt(0).toUpperCase() + text.slice(1);
+/**
+ * loadLetterhead() falls back to "#<id>" with a blank municipality and
+ * province when GET /barangays fails. A printed form must never go out that
+ * way, so the sheet carries a loud warning instead of a half-filled header.
+ */
+function letterheadUsable(lh) {
+  return Boolean(lh && lh.barangayName && !String(lh.barangayName).startsWith('#') && lh.municipality && lh.province);
+}
+
+const LETTERHEAD_WARNING_HTML = `
+  <div class="tw-print__warning" role="alert">
+    <b>LETTERHEAD NOT LOADED.</b> The barangay, municipality and province could not be loaded from the system.
+    Do not file this copy. Reload the page and print again.
+  </div>`;
+
+function safeLetterheadHtml(lh, opts) {
+  return letterheadUsable(lh) ? letterheadHtml(lh, opts) : LETTERHEAD_WARNING_HTML;
+}
+
+function warnIfLetterheadMissing(lh) {
+  if (!letterheadUsable(lh)) {
+    showToast('The barangay letterhead could not be loaded. The preview carries a warning; do not file this copy.', { variant: 'warning' });
+  }
 }
 
 /**
@@ -167,6 +187,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       const active = schools.filter((s) => s.isActive !== false && s.isActive !== 0);
       if (active.length === 0) { showToast('There are no active schools to print.', { variant: 'info' }); return; }
       const lh = await loadLetterhead(user);
+      warnIfLetterheadMissing(lh);
       const preview = openPrintPreviewModal({
         title: 'Annex B — Safer School Zones Inventory',
         subtitle: `${active.length} active school${active.length === 1 ? '' : 's'}`,
@@ -427,12 +448,27 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         const toPrint = rows.slice(0, PRINT_INCIDENT_CAP);
         if (rows.length > PRINT_INCIDENT_CAP) showToast(`Printing the first ${PRINT_INCIDENT_CAP} of ${rows.length} incidents. Narrow the dates to print the rest.`, { variant: 'warning' });
         await ensureReferrals(toPrint);
+        // A blank "referred to" cell reads as "not referred" on a form that
+        // goes to the Mayor and DILG, so a failed lookup blocks the print.
+        const unchecked = toPrint.filter((r) => !referralCache.get(r.incidentId));
+        if (unchecked.length > 0) {
+          showToast(`Referral data could not be loaded for ${unchecked.length} incident${unchecked.length === 1 ? '' : 's'} - do not file a copy until it loads. Try again.`, { variant: 'error' });
+          renderTable();
+          return;
+        }
         const lh = await loadLetterhead(user);
+        warnIfLetterheadMissing(lh);
         const preview = openPrintPreviewModal({
           title: 'Annex C-1 — Incident Report, Safer School Zones',
           subtitle: `${toPrint.length} incident${toPrint.length === 1 ? '' : 's'}`,
           sheetId: 'printable-annex-c1',
-          sheetHtml: buildAnnexC1Html(toPrint.map(toC1Row), lh),
+          sheetHtml: buildAnnexC1Html(toPrint.map(toC1Row), lh, {
+            count: toPrint.length,
+            total: rows.length,
+            from: state.from,
+            to: state.to,
+            truncatedScan: truncated,
+          }),
         });
         applyPrintOrientation(preview, 'landscape');
       } finally {
@@ -460,7 +496,8 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     }
 
     async function ensureReferrals(rows) {
-      const missing = rows.filter((r) => !referralCache.has(r.incidentId));
+      // A failed lookup is cached as null; retry those rather than trusting them.
+      const missing = rows.filter((r) => !referralCache.get(r.incidentId));
       const results = await Promise.allSettled(missing.map((r) => getIncidentReferrals(r.incidentId)));
       results.forEach((res, idx) => {
         const id = missing[idx].incidentId;
@@ -488,13 +525,16 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     function toC1Row(i) {
       return {
         schoolName: schoolNames.get(i.schoolId) || i.schoolName || `School #${i.schoolId}`,
-        when: formatManilaDateTime(i.createdAt),
+        // The API has no incident-occurrence time, only when the record was
+        // logged, so the cell says so rather than passing it off as "when it happened".
+        when: `Reported: ${formatManilaDateTime(i.createdAt)}`,
         location: i.locationDescription || '',
         narrative: i.c1Summary || '',
         action: i.c1ActionTaken || '',
-        referredTo: referredText(i.incidentId) ?? '',
+        referredTo: referredText(i.incidentId) ?? REFERRAL_UNAVAILABLE,
         personnel: i.officerName || '',
-        status: i.c1StatusNotes || typeLabel(i.status),
+        // Internal system status ("Pending", "Dispatched") is not a C-1 status note.
+        status: i.c1StatusNotes || '',
       };
     }
 
@@ -568,7 +608,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
             case 'where': return h('span', '', c1.location || '—');
             case 'what': return h('span', '', c1.narrative || '—');
             case 'action': return h('span', '', c1.action || '—');
-            case 'referred': return h('span', '', referredText(i.incidentId) ?? 'Unavailable');
+            case 'referred': return h('span', '', referredText(i.incidentId) ?? REFERRAL_UNAVAILABLE);
             case 'who': return h('span', '', c1.personnel || '—');
             case 'status': return h('span', '', c1.status || '—');
             default: return '';
@@ -774,6 +814,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
             report.preparedByName ? Promise.resolve(report.preparedByName) : personName(report.preparedBy),
             report.approvedByName ? Promise.resolve(report.approvedByName) : personName(report.approvedBy),
           ]);
+          warnIfLetterheadMissing(lh);
           openPrintPreviewModal({
             title: 'Annex D — Safer School Zones Term-Based Report',
             subtitle: `${report.termLabel} · ${TERM_STATUS_LABELS[report.status] || report.status}`,
@@ -1015,7 +1056,7 @@ function buildAnnexBHtml(schools, lh) {
     <p class="tw-print__subtitle">${SSZ_PURSUANT_HTML}</p>`;
   return `
     <div class="tw-print tw-print--wide">
-      ${letterheadHtml(lh, { office: true })}
+      ${safeLetterheadHtml(lh, { office: true })}
       ${titleBlock}
       <table class="tw-print__table tw-print__table--inv">
         <thead><tr>
@@ -1025,7 +1066,7 @@ function buildAnnexBHtml(schools, lh) {
         <tbody>${rows}</tbody>
       </table>
       <div class="tw-print__page-break"></div>
-      ${letterheadHtml(lh, { office: true })}
+      ${safeLetterheadHtml(lh, { office: true })}
       ${titleBlock}
       <div class="tw-print__howto">
         <p class="tw-print__lead">How To Use:</p>
@@ -1047,7 +1088,14 @@ function buildAnnexBHtml(schools, lh) {
     </div>`;
 }
 
-function buildAnnexC1Html(rows, lh) {
+function buildAnnexC1Html(rows, lh, meta = {}) {
+  const range = (meta.from || meta.to)
+    ? `Incidents logged ${meta.from ? 'from ' + meta.from : ''}${meta.from && meta.to ? ' ' : ''}${meta.to ? 'to ' + meta.to : ''}`
+    : 'Incidents logged: all dates on file';
+  const truncationNote = (meta.total > meta.count)
+    ? ` PARTIAL LIST: ${meta.count} of ${meta.total} matching incidents are shown. Narrow the dates and print the rest.`
+    : (meta.truncatedScan ? ' Only the most recent incidents were scanned for school links; older school incidents may be missing.' : '');
+  const metaLine = meta.count === undefined ? '' : `<p class="tw-print__meta">${escapeHtml(range)}. ${meta.count} incident${meta.count === 1 ? '' : 's'} listed.${escapeHtml(truncationNote)}</p>`;
   const body = rows.map((r) => `
     <tr>
       <td>${escapeHtml(r.schoolName)}</td>
@@ -1061,9 +1109,10 @@ function buildAnnexC1Html(rows, lh) {
     </tr>`).join('');
   return `
     <div class="tw-print tw-print--wide">
-      ${letterheadHtml(lh, { office: true })}
+      ${safeLetterheadHtml(lh, { office: true })}
       <p class="tw-print__title">ANNEX C-1 &ndash; PORMULARYO NG ULAT SA INSIDENTE SA SAFER SCHOOL ZONES</p>
       <p class="tw-print__subtitle">${SSZ_PURSUANT_HTML}</p>
+      ${metaLine}
       <p class="tw-print__intro">Itala ang mga insidente o panganib na nangyari sa, o may direktang epekto sa, <i>school zone</i>. Panatilihing batay sa katotohanan, maikli, at hindi para sa imbestigasyon o pagtukoy ng pananagutan.</p>
       <table class="tw-print__table tw-print__table--c1">
         <thead><tr>
@@ -1093,7 +1142,7 @@ function buildAnnexC1Html(rows, lh) {
 }
 
 function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
-  const letterheadD = `
+  const letterheadD = !letterheadUsable(lh) ? LETTERHEAD_WARNING_HTML : `
     <div class="tw-print__letterhead">
       <p class="tw-print__republic">Republic of the Philippines</p>
       <p class="tw-print__brgy">Barangay <u>${escapeHtml(lh.barangayName || '')}</u></p>
@@ -1102,9 +1151,15 @@ function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
     </div>`;
   const titleD = `<p class="tw-print__title">ANNEX &ldquo;D&rdquo; &ndash; SAFER SCHOOL ZONES TERM-BASED REPORT FORM &ndash; ${escapeHtml((report.termLabel || '').toUpperCase())}</p>`;
   const cell = (v) => `<td>${escapeHtml(v === undefined || v === null ? '' : String(v))}</td>`;
+  // Draft and prepared reports carry snapshot counts and no approval; they
+  // must not look like a finished, signed-off filing.
+  const isFinal = report.status === 'approved' || report.status === 'submitted';
+  const statusText = TERM_STATUS_LABELS[report.status] || report.status || 'Unknown';
+  const draftMark = isFinal ? '' : `<p class="tw-print__draft-mark">DRAFT - NOT FOR SUBMISSION (status: ${escapeHtml(statusText)}; not yet approved)</p>`;
 
   return `
     <div class="tw-print">
+      ${draftMark}
       ${letterheadD}
       ${titleD}
       <p class="tw-print__subtitle">${SSZ_PURSUANT_HTML}</p>
@@ -1146,6 +1201,7 @@ function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
       </div>
 
       <div class="tw-print__page-break"></div>
+      ${draftMark}
       ${letterheadD}
       ${titleD}
       <div class="tw-print__sigbox">
@@ -1175,5 +1231,6 @@ function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
           <p class="tw-print__sigfield">Received by: <span>${escapeHtml(report.dilgReceivedBy || '')}</span></p>
         </div>
       </div>
+      <p class="tw-print__meta">Report status when printed: ${escapeHtml(statusText)}.</p>
     </div>`;
 }

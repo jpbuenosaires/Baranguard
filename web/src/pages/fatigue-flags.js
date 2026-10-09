@@ -18,6 +18,7 @@ import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { icons } from '../components/icons.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const FATIGUE_THRESHOLD_HOURS = 56;
 
@@ -554,13 +555,13 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
     const durHours = ((e.getTime() - s.getTime()) / (1000 * 60 * 60)).toFixed(1);
     shiftTimeStr = `<div><strong>Shift Schedule:</strong> ${s.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${s.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${e.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${durHours} hrs)</div>`;
   }
-  const zoneStr = flag.shiftPatrolZone ? `<div><strong>Patrol Zone:</strong> ${flag.shiftPatrolZone}</div>` : '';
+  const zoneStr = flag.shiftPatrolZone ? `<div><strong>Patrol Zone:</strong> ${escapeHtml(flag.shiftPatrolZone)}</div>` : '';
 
   shiftCard.innerHTML = `
-    <div><strong>Triggering Shift ID:</strong> #${flag.shiftId}</div>
+    <div><strong>Triggering Shift ID:</strong> #${escapeHtml(flag.shiftId)}</div>
     ${zoneStr}
     ${shiftTimeStr}
-    <div><strong>Basis:</strong> ${formattedBasis} (rolling 7-day cumulative window anchored to shift end)</div>
+    <div><strong>Basis:</strong> ${escapeHtml(formattedBasis)} (rolling 7-day cumulative window anchored to shift end)</div>
     <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:4px;">
       ℹ️ This alert reflects the cumulative hours at the time the flag occurred (${new Date(flag.flaggedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}). Click <em>Open in Scheduler</em> below to inspect live assignments.
     </div>
@@ -579,7 +580,7 @@ function openFatigueDetailsModal({ flag, name, canAcknowledge, onAcknowledge, on
   if (flag.acknowledgedAt) {
     const ackByName = flag.acknowledgedByName || (flag.acknowledgedBy ? `Admin #${flag.acknowledgedBy}` : 'Administrator');
     auditCard.innerHTML = `
-      <div><strong>Reviewed By:</strong> ${ackByName}</div>
+      <div><strong>Reviewed By:</strong> ${escapeHtml(ackByName)}</div>
       <div><strong>Acknowledged At:</strong> ${new Date(flag.acknowledgedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</div>
       <div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:2px;">
         Acknowledgment confirms administrative review and preserves this safety record in the permanent audit trail.

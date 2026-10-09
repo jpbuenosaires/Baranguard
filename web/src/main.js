@@ -15,7 +15,8 @@
  * is a separate static page, not a route of this app.)
  */
 
-import { getSession, logout } from './api/apiClient.js';
+import { getSession, logout, onSessionExpired, SESSION_EXPIRED_MESSAGE } from './api/apiClient.js';
+import { showToast } from './components/Toast.js';
 import { renderLoginPage } from './pages/login.js';
 import { renderAdminDashboardPage } from './pages/admin-dashboard.js';
 import { renderDispatchCenterPage } from './pages/dispatch-center.js';
@@ -85,9 +86,106 @@ const PAGE_ROLES = {
 // default landing page, since there is no id to land on.
 const DETAIL_PAGES = new Set(['incident-detail']);
 
-let activeStop = null;
+// --- Idle lock (audit 2026-10-09 X-02) --------------------------------------
+// The dashboard polls every 15 s and every response slides the server session
+// (Rule 12), so a tab left open on a shared barangay-hall PC never expires on
+// its own. This signs the user out after IDLE_TIMEOUT_MS with no keyboard,
+// mouse, touch or scroll input, after a visible IDLE_WARNING_MS warning. It
+// is measured by wall clock, so a PC that slept past the limit locks on wake.
+export const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+export const IDLE_WARNING_MS = 60 * 1000;
+const IDLE_CHECK_INTERVAL_MS = 5 * 1000;
+const IDLE_ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'];
+export const IDLE_SIGNED_OUT_MESSAGE =
+  `You were signed out after ${Math.round(IDLE_TIMEOUT_MS / 60000)} minutes without activity. Please sign in again.`;
 
-function boot(currentPage, param) {
+let lastActivityAt = Date.now();
+let idleTimer = null;
+let idleWarningDismiss = null;
+
+function noteActivity() {
+  lastActivityAt = Date.now();
+  if (idleWarningDismiss) {
+    idleWarningDismiss();
+    idleWarningDismiss = null;
+  }
+}
+
+function startIdleLock() {
+  if (idleTimer !== null) return; // already running across page swaps
+  lastActivityAt = Date.now();
+  for (const name of IDLE_ACTIVITY_EVENTS) {
+    document.addEventListener(name, noteActivity, { capture: true, passive: true });
+  }
+  idleTimer = setInterval(() => checkIdle(), IDLE_CHECK_INTERVAL_MS);
+}
+
+function stopIdleLock() {
+  if (idleTimer !== null) clearInterval(idleTimer);
+  idleTimer = null;
+  for (const name of IDLE_ACTIVITY_EVENTS) {
+    document.removeEventListener(name, noteActivity, { capture: true });
+  }
+  if (idleWarningDismiss) {
+    idleWarningDismiss();
+    idleWarningDismiss = null;
+  }
+}
+
+function checkIdle(now = Date.now()) {
+  if (idleTimer === null) return;
+  const idleFor = now - lastActivityAt;
+  if (idleFor >= IDLE_TIMEOUT_MS) {
+    signOutForInactivity();
+    return;
+  }
+  if (idleFor >= IDLE_TIMEOUT_MS - IDLE_WARNING_MS && !idleWarningDismiss) {
+    const secondsLeft = Math.max(1, Math.ceil((IDLE_TIMEOUT_MS - idleFor) / 1000));
+    idleWarningDismiss = showToast(
+      `No activity detected. For security you will be signed out in ${secondsLeft} seconds. Move the mouse or press any key to stay signed in.`,
+      { variant: 'warning', duration: IDLE_TIMEOUT_MS - idleFor },
+    );
+  }
+}
+
+function signOutForInactivity() {
+  stopIdleLock();
+  // logout() drops the in-memory session synchronously and revokes the
+  // server session in the background (never waits on the network).
+  logout();
+  endSession(IDLE_SIGNED_OUT_MESSAGE);
+}
+
+/** Test-only hooks (the import is cache-busted per test, see web/tests). */
+export const __idleLockForTests = {
+  check: (now) => checkIdle(now),
+  get lastActivityAt() { return lastActivityAt; },
+  get running() { return idleTimer !== null; },
+};
+
+// --- Session end: back to sign-in, keeping the user's place -----------------
+// The token is memory-only (H-05), so a reload still signs out; that trade-off
+// is unchanged. What IS kept (in memory, not storage) is the page the user was
+// on: signing back in as the SAME user returns there instead of the landing
+// page. Unsaved form text is not preserved.
+
+let activeStop = null;
+let currentRoute = null; // { page, param, userId } of the screen on display
+let resumeRoute = null;  // where to return after a forced sign-out
+
+function endSession(notice) {
+  if (currentRoute) resumeRoute = currentRoute;
+  currentRoute = null;
+  boot(undefined, undefined, { notice });
+}
+
+onSessionExpired(() => {
+  if (getSession()) return; // already signed in again
+  stopIdleLock();
+  endSession(SESSION_EXPIRED_MESSAGE);
+});
+
+function boot(currentPage, param, { notice } = {}) {
   if (activeStop) {
     activeStop();
     activeStop = null;
@@ -97,10 +195,19 @@ function boot(currentPage, param) {
   const session = getSession();
 
   if (!session) {
-    renderLoginPage(root, () => boot());
+    stopIdleLock();
+    currentRoute = null;
+    renderLoginPage(root, (user) => {
+      const resume = resumeRoute;
+      resumeRoute = null;
+      if (resume && user && resume.userId === user.userId) boot(resume.page, resume.param);
+      else boot();
+    }, { notice });
     document.title = 'Sign in — Baranguard';
     return;
   }
+
+  startIdleLock();
 
   const role = session.user.role;
   let page = currentPage;
@@ -127,8 +234,14 @@ function boot(currentPage, param) {
     return;
   }
 
+  currentRoute = { page, param, userId: session.user.userId };
   const navigate = (nextPage, nextParam) => boot(nextPage, nextParam);
-  const onLoggedOut = () => boot();
+  // A deliberate sign-out is not a forced one: no "continue where you left off".
+  const onLoggedOut = () => {
+    resumeRoute = null;
+    currentRoute = null;
+    boot();
+  };
 
   if (page === 'dashboard') {
     renderAdminDashboardPage(root, session.user, onLoggedOut, navigate);
@@ -250,6 +363,7 @@ function renderUnavailable(root, user) {
   signOutButton.textContent = 'Sign out';
   signOutButton.addEventListener('click', async () => {
     await logout();
+    resumeRoute = null;
     boot();
   });
   card.append(heading, text, signOutButton);

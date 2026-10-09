@@ -43,7 +43,10 @@ final class SearchController
 
         $q = trim((string) (Http::query('q') ?? ''));
         $length = strlen($q);
-        if ($length < self::MIN_QUERY_LENGTH || $length > self::MAX_QUERY_LENGTH) {
+        // A bare incident number may be a single digit ("#7"); anything
+        // else still needs MIN_QUERY_LENGTH characters.
+        $minLength = ctype_digit($q) ? 1 : self::MIN_QUERY_LENGTH;
+        if ($length < $minLength || $length > self::MAX_QUERY_LENGTH) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'q must be ' . self::MIN_QUERY_LENGTH . '-' . self::MAX_QUERY_LENGTH . ' characters.');
         }
 
@@ -55,6 +58,25 @@ final class SearchController
         if ($identity['role'] === 'tanod') {
             $where[] = 'reported_by = :reported_by';
             $params['reported_by'] = $identity['user_id'];
+        }
+
+        // Punong Barangay: exact id lookup only (audits V-02/P-12,
+        // 2026-10-09; REFERENCE.md section 3 "no list of cases"). A PB can
+        // jump to an incident whose number or display id they already have,
+        // but cannot list incidents by type, status or partial number. A
+        // non-matching query is an empty result, not an error, so the
+        // shared top-bar search box keeps working for page shortcuts.
+        if ($identity['role'] === 'punong_barangay') {
+            $digits = ctype_digit($q) ? $q : (preg_match('/^INC-0*(\d+)$/i', $q, $m) === 1 ? $m[1] : null);
+            $where[] = $digits !== null
+                ? '(incident_id = :exact_id OR display_id = :exact_display)'
+                : 'display_id = :exact_display';
+            if ($digits !== null) {
+                $params['exact_id'] = (int) $digits;
+            }
+            $params['exact_display'] = $q;
+            self::sendResults($pdo, implode(' AND ', $where), $params);
+            return;
         }
 
         $matchClauses = ['CAST(incident_id AS CHAR) LIKE :q_id'];
@@ -84,8 +106,12 @@ final class SearchController
         }
 
         $where[] = '(' . implode(' OR ', $matchClauses) . ')';
-        $whereSql = implode(' AND ', $where);
+        self::sendResults($pdo, implode(' AND ', $where), $params);
+    }
 
+    /** @param array<string,mixed> $params */
+    private static function sendResults(PDO $pdo, string $whereSql, array $params): void
+    {
         $stmt = $pdo->prepare(
             "SELECT incident_id, incident_type, status, priority, report_channel, related_incident_id, created_at
              FROM incident

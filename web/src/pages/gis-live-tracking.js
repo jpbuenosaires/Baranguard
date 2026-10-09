@@ -126,10 +126,41 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   let floatingActivityListEl = null;
   let legendWidgetEl = null;
 
+  // Stale-data tracking (audit X-01/A-03). `navigator.onLine` is only a hint.
+  let staleBannerEl = null;
+  let lastGoodAt = null;
+  let isStale = false;
+
+  function manilaClock(value) {
+    const d = value instanceof Date ? value : (value ? new Date(value) : null);
+    if (!d || Number.isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
+  }
+
+  function setStale(on) {
+    isStale = on;
+    if (staleBannerEl) {
+      staleBannerEl.hidden = !on;
+      const textEl = staleBannerEl.lastElementChild;
+      if (on && textEl) textEl.textContent = `Live updates paused - last updated ${manilaClock(lastGoodAt) || 'unknown'} (Manila time). Retrying...`;
+    }
+    const pill = mapSubtitleEl?.querySelector('.dispatch-map-live-pill');
+    if (pill) {
+      pill.classList.toggle('is-stale', on);
+      pill.lastChild.textContent = on ? 'Updates paused' : 'Live · 15s sync';
+    }
+  }
+  const onBrowserOffline = () => { if (layoutEl) setStale(true); };
+  const onBrowserOnline = () => { load(false); };
+  window.addEventListener('offline', onBrowserOffline);
+  window.addEventListener('online', onBrowserOnline);
+
   load(true);
   timer = setInterval(() => load(false), POLL_INTERVAL_MS);
 
   function stopPolling() {
+    window.removeEventListener('offline', onBrowserOffline);
+    window.removeEventListener('online', onBrowserOnline);
     if (timer) clearInterval(timer);
     if (liveMap) liveMap.destroy();
   }
@@ -148,7 +179,13 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       if (usersRes) tanodRosterById = new Map(usersRes.items.map((u) => [u.userId, u]));
       const openSos = sosItems.filter((s) => s.status !== 'resolved');
       renderPopulated(body, gpsItems, openSos, dutyStatuses, dispatchesRes.items, incidentsRes?.items || []);
+      lastGoodAt = new Date();
+      setStale(false);
     } catch (err) {
+      if (layoutEl) {
+        setStale(true);
+        return;
+      }
       if (showLoadingState && !layoutEl) {
         const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading live tracking.';
         renderError(body, message, () => load(true));
@@ -171,6 +208,17 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     // First time mounting the console
     if (!layoutEl) {
       container.innerHTML = '';
+
+      staleBannerEl = document.createElement('div');
+      staleBannerEl.className = 'dispatch-stale-banner';
+      staleBannerEl.setAttribute('role', 'status');
+      staleBannerEl.setAttribute('aria-live', 'polite');
+      staleBannerEl.hidden = true;
+      const staleIcon = document.createElement('span');
+      staleIcon.setAttribute('aria-hidden', 'true');
+      staleIcon.innerHTML = icons.alertTriangle(16);
+      staleBannerEl.append(staleIcon, document.createElement('span'));
+      container.appendChild(staleBannerEl);
 
       layoutEl = document.createElement('div');
       layoutEl.className = 'gis-layout';
@@ -373,6 +421,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       <span class="dispatch-map-live-pill"><span class="dispatch-map-live-dot"></span>Live · 15s sync</span>
       <span>Monitoring ${gpsItems.length} field personnel across Pilar barangays</span>
     `;
+    if (isStale) setStale(true);
 
     const activeIncidents = incidents.filter((i) => i.status === 'pending' || i.status === 'reopened' || i.status === 'dispatched');
     const mapIncidents = activeIncidents
@@ -480,7 +529,10 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
           onViewIncident: isAdmin ? (incId) => navigate('incident-detail', incId) : undefined,
         };
       }));
-      liveMap.setSosMarkers(openSos.map((s) => ({ sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status, fullName: s.fullName })));
+      liveMap.setSosMarkers(openSos.map((s) => ({
+        sosId: s.sosId, latitude: s.latitude, longitude: s.longitude, status: s.status, fullName: s.fullName,
+        locationSource: s.locationSource, locationRecordedAt: s.locationRecordedAt,
+      })));
       liveMap.setIncidentMarkers(mapIncidents, undefined, isAdmin ? (incId) => navigate('incident-detail', incId) : undefined);
 
       // Draw dashed tactical connection lines between Dispatched Tanods and their assigned Incident pins
@@ -680,10 +732,17 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
     for (const s of openSos) {
       const code = resolveName(s.userId);
+      // Never invent a place name (Rule 6): say what the server actually knows.
+      let where = '';
+      if (s.locationSource === 'no_fix' || s.latitude == null || s.longitude == null) {
+        where = ' - no location available, call the tanod';
+      } else if (s.locationSource === 'last_known') {
+        where = ' - last known position, not live';
+      }
       events.push({
         ts: s.triggeredAt,
         tone: 'critical',
-        text: `New SOS alert from ${code} in Brgy. Dao`,
+        text: `New SOS alert from ${code}${where}`,
       });
     }
 

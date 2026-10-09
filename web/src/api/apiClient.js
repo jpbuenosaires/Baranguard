@@ -68,6 +68,44 @@ export class ApiClientError extends Error {
 
 let inMemorySession = null;
 
+// --- Session expiry notification (audit 2026-10-09 X-02/F-07) -------------
+// A dead session used to be cleared silently: every page then showed "Not
+// signed in." with a Retry that could never succeed. Now the ONE place that
+// learns a session is dead (a server 401 on an authenticated call, or the
+// in-memory expiry passing) tells the app once, and main.js returns the user
+// to the sign-in screen with an explicit message. Still memory-only (H-05).
+
+export const SESSION_EXPIRED_MESSAGE = 'Your session expired. Please sign in again.';
+
+let sessionExpiredHandler = null;
+let expiryNotifyPending = false;
+let sessionEndedByExpiry = false;
+
+/** main.js registers one handler; called (deferred, at most once per dead session) with 'expired' | 'unauthorized'. */
+export function onSessionExpired(handler) {
+  sessionExpiredHandler = typeof handler === 'function' ? handler : null;
+}
+
+/**
+ * Ends the current session because it is no longer valid, and notifies the
+ * app. Exported so the other request helpers (services/*Api.js) can report a
+ * server 401 the same way. A no-op notification when no session existed.
+ * Deferred one tick so the failing page's own catch block runs first and
+ * cannot paint its error state over the sign-in screen.
+ */
+export function expireSession(reason = 'expired') {
+  const hadSession = inMemorySession !== null;
+  inMemorySession = null;
+  if (!hadSession) return;
+  sessionEndedByExpiry = true;
+  if (expiryNotifyPending || !sessionExpiredHandler) return;
+  expiryNotifyPending = true;
+  setTimeout(() => {
+    expiryNotifyPending = false;
+    if (inMemorySession === null && sessionExpiredHandler) sessionExpiredHandler(reason);
+  }, 0);
+}
+
 function readSession() {
   if (!inMemorySession) return null;
   if (
@@ -75,7 +113,7 @@ function readSession() {
     typeof inMemorySession.expiresAt !== 'string' ||
     new Date(inMemorySession.expiresAt).getTime() <= Date.now()
   ) {
-    inMemorySession = null;
+    expireSession('expired');
     return null;
   }
   return inMemorySession;
@@ -83,10 +121,12 @@ function readSession() {
 
 function writeSession(session) {
   inMemorySession = session;
+  sessionEndedByExpiry = false;
 }
 
 function clearSession() {
   inMemorySession = null;
+  sessionEndedByExpiry = false;
 }
 
 export function getSession() {
@@ -105,11 +145,15 @@ export function isAuthenticated() {
  */
 export function __setSessionForTests(session) {
   inMemorySession = session;
+  sessionEndedByExpiry = false;
 }
 
 // --- Low-level request helper ----------------------------------------------
 
-async function request(method, path, { query, body, auth = true, idempotencyKey } = {}) {
+// `expireOn401: false` is for the one call whose 401 is a business answer,
+// not a dead session: change-password answers 401 for a wrong CURRENT
+// password, which must not sign the user out (it used to).
+async function request(method, path, { query, body, auth = true, idempotencyKey, expireOn401 = true } = {}) {
   let url = `${BASE_URL}${path}`;
   if (query) {
     const params = new URLSearchParams();
@@ -129,7 +173,7 @@ async function request(method, path, { query, body, auth = true, idempotencyKey 
   const session = auth ? readSession() : null;
   if (auth) {
     if (!session) {
-      throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
+      throw new ApiClientError(401, 'UNAUTHORIZED', sessionEndedByExpiry ? SESSION_EXPIRED_MESSAGE : 'Not signed in.');
     }
     headers.Authorization = `Bearer ${session.token}`;
   }
@@ -150,7 +194,9 @@ async function request(method, path, { query, body, auth = true, idempotencyKey 
 
   // Sliding renewal (§6): keep the token with the latest expiry.
   const renewed = response.headers.get('X-Renewed-Token');
-  if (renewed && session) {
+  // Only renew the session this call was made with: a logout or a fresh
+  // sign-in while the call was in flight must not be overwritten.
+  if (renewed && session && inMemorySession && inMemorySession.token === session.token) {
     const payload = decodeJwtPayload(renewed);
     if (payload && typeof payload.exp === 'number') {
       writeSession({ ...session, token: renewed, expiresAt: new Date(payload.exp * 1000).toISOString() });
@@ -169,10 +215,13 @@ async function request(method, path, { query, body, auth = true, idempotencyKey 
 
   if (!response.ok) {
     const errBody = json && json.error ? json.error : {};
-    if (response.status === 401 && auth) {
+    if (response.status === 401 && auth && expireOn401) {
       // Session is dead server-side (expired/revoked) — don't let the app
-      // keep sending a token that will only ever come back 401.
-      clearSession();
+      // keep sending a token that will only ever come back 401, and send the
+      // user back to sign-in. Only if it is still the session this call used
+      // (a fresh sign-in meanwhile must not be thrown away).
+      if (inMemorySession && inMemorySession.token === session.token) expireSession('unauthorized');
+      throw new ApiClientError(401, errBody.code || 'UNAUTHORIZED', SESSION_EXPIRED_MESSAGE);
     }
     throw new ApiClientError(response.status, errBody.code || 'UNKNOWN_ERROR', errBody.message || 'Something went wrong.');
   }
@@ -256,18 +305,24 @@ export async function changePassword(currentPassword, newPassword) {
   await request('POST', '/auth/change-password', {
     body: { current_password: currentPassword, new_password: newPassword },
     auth: true,
+    expireOn401: false,
   });
 }
 
 export async function logout() {
+  // request() reads the token synchronously before its first await, so the
+  // revoke call still carries it while the local session is dropped at once:
+  // signing out (incl. the idle lock) never waits on a slow or dead network.
+  const pending = request('POST', '/auth/logout', { auth: true, body: {}, expireOn401: false });
+  clearSession();
   try {
-    await request('POST', '/auth/logout', { auth: true, body: {} });
+    await pending;
   } catch {
     // §6: "server ignores a second logout safely" — client-side, logging
     // out is a local action regardless of whether the network call
     // succeeds; never block the user from leaving a signed-in state.
-  } finally {
-    clearSession();
+    // (No clearSession() after the await: it already ran above, and a
+    // second one here could wipe a NEW sign-in made while this was pending.)
   }
 }
 
@@ -692,6 +747,9 @@ export async function getTanodSos({ status } = {}) {
     dispatchId: row.dispatch_id,
     latitude: row.latitude,
     longitude: row.longitude,
+    // C-01 (migration 0026): live | last_known | no_fix; undefined on old rows.
+    locationSource: row.location_source,
+    locationRecordedAt: row.location_recorded_at,
     triggeredAt: row.triggered_at,
     receivedAt: row.received_at,
     status: row.status, // enum value, unconverted
@@ -864,8 +922,8 @@ export async function createShift({ userId, patrolZone, startAt, endAt, requestI
 }
 
 /** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
-export async function getShifts({ page, limit } = {}) {
-  const json = await request('GET', '/shifts', { query: { page, limit }, auth: true });
+export async function getShifts({ page, limit, from, to } = {}) {
+  const json = await request('GET', '/shifts', { query: { page, limit, from, to }, auth: true });
   return { items: json.items.map(mapShift), page: json.page, limit: json.limit, total: json.total };
 }
 
@@ -1130,6 +1188,7 @@ export async function downloadReportExport({ format = 'csv' } = {}) {
     } catch {
       // Response wasn't JSON (e.g. a bare 404 from the web server) — keep the generic message.
     }
+    if (response.status === 401) expireSession('unauthorized');
     throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
   }
   return response.blob();
@@ -1182,6 +1241,7 @@ export async function downloadReportsDigest() {
     } catch {
       // Response wasn't JSON — keep the generic message.
     }
+    if (response.status === 401) expireSession('unauthorized');
     throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
   }
   return response.blob();
@@ -1442,6 +1502,7 @@ export async function downloadEvidenceFile(incidentId, attachmentId) {
     } catch {
       // Response wasn't JSON — keep the generic message.
     }
+    if (response.status === 401) expireSession('unauthorized');
     throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
   }
   return response.blob();
@@ -1544,7 +1605,7 @@ export async function uploadMapPackage(version, file) {
   }
 
   const renewed = response.headers.get('X-Renewed-Token');
-  if (renewed) {
+  if (renewed && inMemorySession && inMemorySession.token === session.token) {
     const payload = decodeJwtPayload(renewed);
     if (payload && typeof payload.exp === 'number') {
       writeSession({ ...session, token: renewed, expiresAt: new Date(payload.exp * 1000).toISOString() });
@@ -1563,7 +1624,7 @@ export async function uploadMapPackage(version, file) {
 
   if (!response.ok) {
     const errBody = json && json.error ? json.error : {};
-    if (response.status === 401) clearSession();
+    if (response.status === 401) expireSession('unauthorized');
     throw new ApiClientError(response.status, errBody.code || 'UNKNOWN_ERROR', errBody.message || 'Something went wrong.');
   }
 

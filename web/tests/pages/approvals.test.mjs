@@ -67,6 +67,6 @@ describe('Approvals behaviour', () => {
     api.on('GET', '/users/:id', () => ({ status: 200, body: { user_id: 2, full_name: 'X', role: 'secretary', official_title: null, approval_authority: [] } }));
     const ctx = mountPage(renderApprovalsPage, { role: 'secretary' });
     await settle();
-    assert.deepEqual(groupTitles(ctx.root), ['Availability to review']);
+    assert.deepEqual(groupTitles(ctx.root), ['Availability to review', 'Swap requests waiting', 'Approved, paper signature pending']);
   });
 });
