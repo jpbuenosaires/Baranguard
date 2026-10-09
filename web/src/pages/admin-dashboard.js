@@ -46,6 +46,7 @@ import { avatarInitials } from '../components/Avatar.js';
 import { InfoTip } from '../components/Tooltip.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatManilaDate, formatManilaDateTime, formatManilaTime } from '../utils/manilaTime.js';
+import { INCIDENT_STATUS_LABELS } from '../utils/statusLabels.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -69,10 +70,7 @@ const INCIDENT_TYPE_COLORS = {
 };
 // Audit P-06 (2026-10-09): by_status now carries every incident status
 // (migration 0025's lifecycle states too), so the rows add up to the total.
-const STATUS_LABELS = {
-  pending: 'Pending', dispatched: 'Dispatched', resolved: 'Resolved', reopened: 'Reopened',
-  cancelled: 'Cancelled', invalid: 'Invalid', duplicate: 'Duplicate',
-};
+const STATUS_LABELS = INCIDENT_STATUS_LABELS;
 const STATUS_PILL_CLASS = {
   pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success',
   reopened: 'status-pill--warning', cancelled: 'status-pill--neutral', invalid: 'status-pill--neutral', duplicate: 'status-pill--neutral',

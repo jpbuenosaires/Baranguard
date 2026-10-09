@@ -215,7 +215,7 @@ describe('Incident detail behaviour', () => {
 
     const pills = $$('.status-pill', ctx.root);
     assert.ok(pills.length >= 2, 'expected status and priority pills');
-    assert.ok(pills.some((p) => /DISPATCHED/i.test(text(p))));
+    assert.ok(pills.some((p) => /RESPONDING/i.test(text(p))));
     assert.ok(pills.some((p) => /CRITICAL PRIORITY/i.test(text(p))));
   });
 });

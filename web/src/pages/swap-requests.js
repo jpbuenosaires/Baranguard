@@ -59,6 +59,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
   searchInput.type = 'search';
   searchInput.className = 'personnel-search-input';
   searchInput.placeholder = 'Search by tanod name or reason…';
+  searchInput.setAttribute('aria-label', 'Search swap requests');
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value.trim().toLowerCase();
     renderFiltered();

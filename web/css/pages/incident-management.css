@@ -303,7 +303,7 @@
 .incident-priority-pill--medium,
 .incident-priority-pill--normal {
   background: var(--tint-info-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .incident-priority-pill--low {
@@ -364,7 +364,7 @@
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-link);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -483,7 +483,7 @@
   border-radius: 9999px;
   border: 1px solid var(--color-border-blue);
   background: var(--color-row-active-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
   font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
@@ -576,7 +576,7 @@
 .incident-detail-badge--medium,
 .incident-detail-badge--normal {
   background: var(--tint-info-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .incident-detail-badge--low {
@@ -643,7 +643,7 @@
 }
 
 .incident-info-box__val svg {
-  color: var(--color-primary);
+  color: var(--color-link);
   flex-shrink: 0;
 }
 
@@ -757,7 +757,7 @@
 .btn-action-dispatch {
   flex: 1;
   height: var(--control-height-prominent);
-  background: var(--color-warning);
+  background: var(--color-warning-solid);
   color: var(--color-white);
   border: none;
   border-radius: 8px;
@@ -772,14 +772,14 @@
 }
 
 .btn-action-dispatch:hover {
-  background: var(--color-warning-text);
+  background: color-mix(in srgb, var(--color-warning-solid) 85%, black);
   transform: translateY(-1px);
 }
 
 .btn-action-resolve {
   flex: 1;
   height: var(--control-height-prominent);
-  background: var(--color-success);
+  background: var(--color-success-solid);
   color: var(--color-white);
   border: none;
   border-radius: 8px;
@@ -794,7 +794,7 @@
 }
 
 .btn-action-resolve:hover {
-  background: var(--color-success-text);
+  background: color-mix(in srgb, var(--color-success-solid) 85%, black);
   transform: translateY(-1px);
 }
 
@@ -1064,14 +1064,14 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 90;
+  z-index: var(--z-sticky);
   transition: all 0.2s ease;
 }
 
 .incident-floating-help:hover {
   transform: scale(1.08);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
-  color: var(--color-primary);
+  color: var(--color-link);
   border-color: var(--color-border-blue);
 }
 
@@ -1084,7 +1084,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 999;
+  z-index: var(--z-modal);
   padding: var(--spacing-md);
   animation: modalFadeIn 0.15s ease-out;
 }
@@ -1201,7 +1201,7 @@
 }
 
 .incident-contact-btn svg {
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 /* Responsive Mobile Toggle Bar */
