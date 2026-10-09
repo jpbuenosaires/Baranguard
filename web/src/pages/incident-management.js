@@ -592,7 +592,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
           iconSvg = icons.rotateCcw(14);
         }
 
-        indicator.innerHTML = `${iconSvg} <span>${label}</span>`;
+        indicator.innerHTML = `${iconSvg} <span>${escapeHtml(label)}</span>`;
         return indicator;
       }
       case 'action': {
@@ -761,14 +761,20 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     prioBadge.textContent = `${prioLabel} Priority`;
 
     const statBadge = document.createElement('span');
-    statBadge.className = `incident-detail-badge incident-detail-badge--${row.status}`;
+    // The badge stylesheet only knows pending/dispatched/resolved/closed:
+    // a reopened incident reads as active again, the Secretary's terminal
+    // lifecycle states (duplicate/invalid/cancelled) read as closed.
+    const badgeKey = row.status === 'reopened' ? 'pending'
+      : (row.status === 'duplicate' || row.status === 'invalid' || row.status === 'cancelled') ? 'closed'
+        : row.status;
+    statBadge.className = `incident-detail-badge incident-detail-badge--${badgeKey}`;
 
     let statIconSvg = icons.alertTriangle(13);
     if (row.status === 'dispatched') {
       statIconSvg = icons.radio(13);
     } else if (row.status === 'resolved') {
       statIconSvg = icons.checkCircle(13);
-    } else if (row.status === 'closed') {
+    } else if (row.status === 'closed' || badgeKey === 'closed') {
       statIconSvg = icons.check(13);
     }
 
@@ -1053,7 +1059,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       resolvedBtn.className = 'btn-action-resolve';
       resolvedBtn.disabled = true;
       resolvedBtn.style.opacity = '0.7';
-      resolvedBtn.innerHTML = `${icons.checkCircle(16)} <span>Incident Resolved</span>`;
+      // This branch also covers the Secretary's terminal states, so the
+      // label must say what the incident actually is, not always "Resolved".
+      const settledLabel = row.status === 'resolved' ? 'Incident Resolved' : `Incident ${statLabel}`;
+      resolvedBtn.innerHTML = `${icons.checkCircle(16)} <span>${escapeHtml(settledLabel)}</span>`;
       actionsRow.appendChild(resolvedBtn);
     }
 

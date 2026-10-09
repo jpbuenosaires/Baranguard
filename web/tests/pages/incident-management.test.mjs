@@ -172,4 +172,60 @@ describe('Incident Management behaviour', () => {
     assert.ok(call, 'PATCH /incidents/:id/status was not sent');
     assert.deepEqual(call.body, { status: 'resolved', reason: 'Settled by phone call' });
   });
+
+  function overrideListStatus(id, status) {
+    const original = api.routes.find((r) => r.method === 'GET' && r.path === '/incidents');
+    api.on('GET', '/incidents', (req) => {
+      const res = original.handler(req);
+      const body = res.body ?? res;
+      const items = (body.items ?? []).map((i) => (i.incident_id === id ? { ...i, status } : i));
+      return { status: 200, body: { ...body, items } };
+    });
+    const originalOne = api.routes.find((r) => r.method === 'GET' && r.path === '/incidents/:id');
+    api.on('GET', '/incidents/:id', (req) => {
+      const res = originalOne.handler(req);
+      const body = res.body ?? res;
+      return body.incident_id === id ? { status: 200, body: { ...body, status } } : res;
+    });
+  }
+
+  test('a reopened incident reads as active again: styled badge, Dispatch and Resolve-without-dispatch for the Admin, note for the Secretary', async () => {
+    for (const role of ['admin', 'secretary']) {
+      overrideListStatus(904, 'reopened'); // cleanup() resets api overrides
+      const ctx = mountPage(renderIncidentManagementPage, { role });
+      await settle();
+      click(buttonByText(/^INC-2026-904/, ctx.root));
+      await settle();
+      assert.ok($('.incident-detail-badge--pending', ctx.root), `${role}: reopened badge must use a defined modifier class`);
+      assert.match(text($('.incident-detail-badges', ctx.root)), /Reopened/);
+      if (role === 'admin') {
+        assert.ok(buttonByText(/^dispatch tanod$/i, ctx.root), 'Admin can dispatch a reopened incident');
+        assert.ok(buttonByText(/resolve without dispatch/i, ctx.root));
+      } else {
+        assert.equal(buttonByText(/resolve without dispatch|dispatch tanod/i, ctx.root), undefined);
+        assert.match(text(ctx.root), /Dispatching is done by the Admin/);
+      }
+      cleanup();
+    }
+  });
+
+  test('a cancelled incident shows its real state on the disabled action, not "Incident Resolved"', async () => {
+    overrideListStatus(903, 'cancelled');
+    const ctx = mountPage(renderIncidentManagementPage, { role: 'admin' });
+    await settle();
+    click(buttonByText(/^INC-2026-903/, ctx.root));
+    await settle();
+    const btn = $('.incident-actions-row .btn-action-resolve[disabled]', ctx.root);
+    assert.ok(btn, 'disabled state button missing');
+    assert.match(text(btn), /Incident Cancelled/);
+    assert.ok($('.incident-detail-badge--closed', ctx.root), 'cancelled badge uses the closed style');
+  });
+
+  test('a resolved incident still says "Incident Resolved"', async () => {
+    const ctx = mountPage(renderIncidentManagementPage, { role: 'admin' });
+    await settle();
+    click(buttonByText(/^INC-2026-903/, ctx.root));
+    await settle();
+    assert.match(text($('.incident-actions-row .btn-action-resolve[disabled]', ctx.root)), /Incident Resolved/);
+  });
 });

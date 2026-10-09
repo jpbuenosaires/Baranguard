@@ -16,7 +16,7 @@
  * Only filenames-free thumbnails/icons and sizes are shown — no narrative.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { IonIcon, IonSpinner } from '@ionic/react';
 import { Capacitor } from '@capacitor/core';
 import { cameraOutline, micOutline, stopCircleOutline, refreshOutline } from 'ionicons/icons';
@@ -28,7 +28,9 @@ import {
 import type { EvidenceAttachmentLocalRow } from '../services/db/localSchema';
 import {
   capturePhoto,
+  deleteEvidenceFile,
   isRecordingVoice,
+  MAX_EVIDENCE_BYTES,
   startVoiceRecording,
   stopVoiceRecording,
 } from '../services/evidenceCapture';
@@ -46,83 +48,161 @@ function stateOf(row: EvidenceAttachmentLocalRow): { label: string; pill: string
   return { label: 'Needs a connection to upload', pill: 'status-pill--pending' };
 }
 
+const TOO_LARGE_TEXT =
+  'That file is larger than 25 MB, which is too big to upload. Nothing was saved. Try a shorter note or another photo.';
+
+/** Plain-language message for a capture failure; null = the Tanod just backed out (nothing to show). */
+function captureErrorText(err: unknown, fallback: string): string | null {
+  const message = err instanceof Error ? err.message : '';
+  if (message === TOO_LARGE_TEXT) return message;
+  if (/cancel/i.test(message)) return null;
+  if (/permission|denied|not granted/i.test(message)) {
+    return /microphone|audio|record/i.test(message) || /voice/i.test(fallback)
+      ? 'Microphone access is off. Allow it in the phone Settings for this app, then try again.'
+      : 'Camera access is off. Allow it in the phone Settings for this app, then try again.';
+  }
+  return fallback;
+}
+
 const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
   const [items, setItems] = useState<EvidenceAttachmentLocalRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
-  const [recording, setRecording] = useState(false);
+  const [recording, setRecording] = useState(() => isRecordingVoice());
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Guards: no state updates after unmount, and no double-fire while a capture is in flight
+  // (React state updates are async, so `disabled` alone doesn't stop a fast double tap).
+  const mountedRef = useRef(true);
+  const busyRef = useRef(false);
+  const dispatchIdRef = useRef(dispatchLocalId);
+  dispatchIdRef.current = dispatchLocalId;
+
   const reload = useCallback(async () => {
     try {
-      setItems(await getEvidenceForIncident(dispatchLocalId));
+      const rows = await getEvidenceForIncident(dispatchLocalId);
+      if (!mountedRef.current) return;
+      setItems(rows);
       setLoadError(null);
     } catch {
-      setLoadError('Could not read the evidence saved on this phone.');
+      if (mountedRef.current) setLoadError('Could not read the evidence saved on this phone.');
     }
   }, [dispatchLocalId]);
 
   useEffect(() => {
+    mountedRef.current = true;
     void reload();
-    return subscribeSyncSummary(() => void reload());
+    const unsubscribe = subscribeSyncSummary(() => void reload());
+    return () => {
+      mountedRef.current = false;
+      unsubscribe();
+    };
   }, [reload]);
 
+  // Leaving the screen mid-recording must not lose the note (Rule 7): stop it and save it
+  // to the encrypted local table, then let the sync worker upload it later.
+  useEffect(() => {
+    return () => {
+      if (!isRecordingVoice()) return;
+      const targetId = dispatchIdRef.current;
+      void (async () => {
+        try {
+          const staged = await stopVoiceRecording();
+          if (staged.byteSize > MAX_EVIDENCE_BYTES) {
+            await deleteEvidenceFile(staged.filePath);
+            return;
+          }
+          await saveEvidenceLocally(targetId, staged);
+          void forceSyncNow().catch(() => undefined);
+        } catch {
+          // Nothing recoverable to save.
+        }
+      })();
+    };
+  }, []);
+
   async function pushUploads() {
-    setSyncing(true);
+    if (mountedRef.current) setSyncing(true);
     try {
       await forceSyncNow();
+    } catch {
+      // Offline or workstation unreachable: rows stay "Needs a connection" and retry on their own.
     } finally {
-      setSyncing(false);
+      if (mountedRef.current) setSyncing(false);
       await reload();
     }
   }
 
   async function saveAndUpload(staged: Parameters<typeof saveEvidenceLocally>[1]) {
+    if (staged.byteSize > MAX_EVIDENCE_BYTES) {
+      // The server rejects > 25 MB, so saving it would only produce a permanent "Upload failed".
+      await deleteEvidenceFile(staged.filePath);
+      throw new Error(TOO_LARGE_TEXT);
+    }
     await saveEvidenceLocally(dispatchLocalId, staged);
     await reload();
     void pushUploads();
   }
 
   async function handleAddPhoto() {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setError(null);
     setCapturing(true);
     tacticalFeedback.onTap();
     try {
       await saveAndUpload(await capturePhoto());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not capture photo.');
+      const text = captureErrorText(err, 'Could not capture the photo.');
+      if (text && mountedRef.current) setError(text);
     } finally {
-      setCapturing(false);
+      busyRef.current = false;
+      if (mountedRef.current) setCapturing(false);
     }
   }
 
   async function handleToggleVoice() {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setError(null);
     tacticalFeedback.onTap();
-    if (isRecordingVoice()) {
-      setCapturing(true);
-      try {
-        await saveAndUpload(await stopVoiceRecording());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not save voice note.');
-      } finally {
-        setRecording(false);
-        setCapturing(false);
-      }
-      return;
-    }
     try {
-      await startVoiceRecording();
-      setRecording(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start recording.');
+      if (isRecordingVoice()) {
+        setCapturing(true);
+        try {
+          await saveAndUpload(await stopVoiceRecording());
+        } catch (err) {
+          const text = captureErrorText(err, 'Could not save the voice note.');
+          if (text && mountedRef.current) setError(text);
+        } finally {
+          if (mountedRef.current) {
+            setRecording(false);
+            setCapturing(false);
+          }
+        }
+        return;
+      }
+      try {
+        await startVoiceRecording();
+        if (mountedRef.current) setRecording(true);
+      } catch (err) {
+        const text = captureErrorText(err, 'Could not start the voice note.');
+        if (text && mountedRef.current) setError(text);
+      }
+    } finally {
+      busyRef.current = false;
     }
   }
 
   async function handleRetry() {
     tacticalFeedback.onTap();
-    await resetFailedEvidence();
+    try {
+      await resetFailedEvidence();
+    } catch {
+      if (mountedRef.current) setError('Could not reset the failed uploads. Please try again.');
+      return;
+    }
     await pushUploads();
   }
 
@@ -139,11 +219,12 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
           className="intake-btn-touch"
           onClick={() => void handleAddPhoto()}
           disabled={capturing || recording}
+          aria-label="Add photo evidence"
         >
           {capturing && !recording ? (
             <IonSpinner name="dots" style={{ width: '16px', height: '16px' }} />
           ) : (
-            <IonIcon icon={cameraOutline} style={{ fontSize: '1.1rem' }} />
+            <IonIcon icon={cameraOutline} style={{ fontSize: '1.1rem' }} aria-hidden="true" />
           )}
           <span>Add Photo</span>
         </button>
@@ -152,12 +233,20 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
           className={`intake-btn-touch ${recording ? 'intake-btn-touch--active' : ''}`}
           onClick={() => void handleToggleVoice()}
           disabled={capturing && !recording}
+          aria-pressed={recording}
+          aria-label={recording ? 'Stop recording and save voice note' : 'Record voice note'}
           style={recording ? { borderColor: 'var(--color-critical)', color: 'var(--color-critical)' } : undefined}
         >
-          <IonIcon icon={recording ? stopCircleOutline : micOutline} style={{ fontSize: '1.1rem' }} />
+          <IonIcon icon={recording ? stopCircleOutline : micOutline} style={{ fontSize: '1.1rem' }} aria-hidden="true" />
           <span>{recording ? 'Stop & Save' : 'Record Audio'}</span>
         </button>
       </div>
+
+      {recording && (
+        <div role="status" style={{ fontSize: '0.78rem', marginTop: 6, fontWeight: 600 }}>
+          Recording voice note. Tap Stop &amp; Save when done.
+        </div>
+      )}
 
       {error && (
         <div role="alert" style={{ color: 'var(--pill-critical-text)', fontSize: '0.78rem', marginTop: 6 }}>
@@ -195,7 +284,7 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
                   />
                 ) : (
                   <div className="media-tile__voice">
-                    <IonIcon icon={item.type === 'photo' ? cameraOutline : micOutline} style={{ fontSize: '1.1rem' }} />
+                    <IonIcon icon={item.type === 'photo' ? cameraOutline : micOutline} style={{ fontSize: '1.1rem' }} aria-label={item.type === 'photo' ? 'Photo' : 'Voice note'} />
                     <span className="media-tile__voice-size">{(item.byte_size / 1024).toFixed(0)} KB</span>
                   </div>
                 )}
@@ -216,7 +305,7 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
           disabled={syncing}
           onClick={() => void (failed ? handleRetry() : pushUploads())}
         >
-          {syncing ? <IonSpinner name="dots" /> : <IonIcon icon={refreshOutline} />}
+          {syncing ? <IonSpinner name="dots" /> : <IonIcon icon={refreshOutline} aria-hidden="true" />}
           <span>{failed ? 'Retry upload' : 'Upload now'}</span>
         </button>
       )}
