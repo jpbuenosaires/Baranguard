@@ -18683,3 +18683,28 @@ git worktrees, merged to local `main`; nothing pushed.
   draft); Resolve/Dispatch in Incident Management are Admin-only. jsdom tests added.
 - `docs/chapter4-instruments/04-uat-signoff.html`: added T-28, A-18..A-20, S-20 for
   the above; Part G totals now 30/23/7/22/10 = 92.
+
+## 2026-10-09 (1) - Logic review (WORKFLOWS_AND_RULES Part 5) decisions implemented
+
+- **Decision (user, 2026-10-09):** an Admin may resolve a `pending`/`reopened`
+  incident that needed no dispatch, with a mandatory reason. Amends Master
+  Reference §2 rule 21 (annotated there) and REFERENCE.md §5.
+- **Migration 0039** `incident.resolve_reason VARCHAR(255) NULL` (+ down). Not
+  applied to any real DB.
+- `IncidentsController::updateStatus`: pending/reopened need `reason` (1-255,
+  else 400); stored on the incident; audit metadata `has_reason` +
+  `reason_length` only (Rule 8). Dispatched path unchanged. Secretary still 403.
+- Web: "Resolve without dispatch" button (Admin only, pending/reopened) with a
+  reason dialog; `updateIncidentStatus(id, reason)`/`resolveIncident(id, reason)`.
+- **Pre-existing bug fixed:** `incident-management.js` called an undefined
+  `refreshCounterCounts()` after dispatch/resolve, so a successful Resolve showed
+  an error toast after the server had already resolved. The five calls were removed.
+- SOS resolve stays web-only (Rule 72). Items 3-10 of Part 5 became stated
+  assumptions A1-A8 in `docs/WORKFLOWS_AND_RULES.md`.
+- **Evidence (disposable DB):** `verify-h16-incident-lifecycle.sh` 59/0 (step 19
+  new; the old "reopened resolve -> 409" check now expects 400),
+  `verify-web-wiring.mjs` 779/0, `web/tests` 616/0.
+- Also re-run clean after the change: verify-sprint7-audit 60/0,
+  verify-sprint7-pentest-incidents 56/0, verify-wave1a-dispatch-roster 145/0,
+  verify-chief-tanod-mobile 174/0, verify-second-responder 25/0. **Not run:** the
+  rest of the suite chain; not browser- or device-verified.

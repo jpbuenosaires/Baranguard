@@ -8,14 +8,14 @@ sessions, the abandoned React Native rebuild, the PHP 8.3 swap, the
 Cloudflare tunnel set-up) lives in DEVLOG; only what is still true and
 still actionable is kept here.
 
-**Last updated: 2026-10-07 (after the Proposed Changes Review build).**
+**Last updated: 2026-10-09 (after the logic-review decisions).**
 
 ## Current state
 
 **Proposed Changes Review build (2026-10-07, DEVLOG 2026-10-07 (1)) is
 code-complete on local `main`, NOT pushed, verified on disposable DBs / jsdom
 only, NOT browser- or device-verified.** Migrations 0034-0038 (not applied to
-any real DB, apply in order after 0029-0033). What exists: dispatch cancel
+any real DB, apply in order after 0029-0033; 0039 follows them). What exists: dispatch cancel
 reason (also from `arrived`), published-shift rule with Admin override,
 Secretary draft shifts/swap review, `pending_reapproval` swaps, legal hold
 stops all backup pruning, incident report channel + related-incident link,
@@ -26,6 +26,16 @@ Tanod (Admin) mobile console with a scope-limited device session, Chief Tanod
 rosterable, retention placeholders (purge OFF), System Tools web menu. Plan and
 decisions: `docs/WORKFLOWS_AND_RULES.md` Part 3 rules 56-66 and REFERENCE.md §1.
 Route count 117 across 30 files.
+
+**Logic review (2026-10-09, DEVLOG 2026-10-09 (1)), local `main`, not pushed:**
+an Admin can now resolve a `pending`/`reopened` incident that needed no dispatch
+with a mandatory reason (migration **0039** `incident.resolve_reason`, not applied
+to any real DB; `PATCH /incidents/:id/status`; web "Resolve without dispatch").
+Master Reference §2 rule 21 and REFERENCE.md were annotated. Also fixed a real bug:
+`incident-management.js` called an undefined `refreshCounterCounts()` after a
+successful resolve/dispatch. Part 5 of `docs/WORKFLOWS_AND_RULES.md` now lists
+assumptions A1-A8 with owners (SOS resolve stays web-only, Rule 72).
+`verify-h16` 59/0, wiring 779/0, `web/tests` 616/0. Not browser-verified.
 
 **Gap-X1/X2/X3 (2026-10-08, DEVLOG 2026-10-08 (2)), merged to local `main`, not
 pushed:** reopened incidents are dispatchable (X1; verify-h16 47/0 and verify-dispatch-offers 193/0
@@ -184,7 +194,7 @@ still be registered — `Unregister-ScheduledTask -TaskName BaranguardAiWorker
 
 ## Outstanding work (all needs a device, a credential, or a decision)
 
-1. **Apply migrations 0029-0038 to the real DBs** (back up first, DBA/root,
+1. **Apply migrations 0029-0039 to the real DBs** (back up first, DBA/root,
    in order) and decide whether `baranguard_uiseed` or `baranguard` should back the public
    tunnel.
 2. **Print/PDF visual check**: the shared print-preview modal and the

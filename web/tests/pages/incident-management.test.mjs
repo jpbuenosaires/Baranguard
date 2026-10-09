@@ -144,4 +144,32 @@ describe('Incident Management behaviour', () => {
     await settle();
     assert.ok(buttonByText(/resolve incident/i, ctx.root), 'Admin still gets Resolve');
   });
+
+  test('Admin can resolve a pending incident without dispatch only with a reason; the Secretary cannot', async () => {
+    const sec = mountPage(renderIncidentManagementPage, { role: 'secretary' });
+    await settle();
+    click(buttonByText(/^INC-2026-901/, sec.root));
+    await settle();
+    assert.equal(buttonByText(/resolve without dispatch/i, sec.root), undefined, 'no such control for the Secretary');
+    cleanup();
+
+    const ctx = mountPage(renderIncidentManagementPage, { role: 'admin' });
+    await settle();
+    click(buttonByText(/^INC-2026-901/, ctx.root));
+    await settle();
+    click(buttonByText(/resolve without dispatch/i, ctx.root));
+    const dialog = () => $('[role="alertdialog"]');
+    const confirm = () => $$('button', dialog()).at(-1);
+    assert.ok($('#confirm-dialog-input', dialog()), 'the dialog must ask for a reason');
+    click(confirm());
+    await settle();
+    assert.match(text($('.confirm-dialog__error', dialog())), /reason/i);
+    assert.equal(api.callsTo('PATCH', '/incidents/:id/status').length, 0, 'nothing is sent without a reason');
+    type($('#confirm-dialog-input', dialog()), '  Settled by phone call  ');
+    click(confirm());
+    await settle();
+    const [call] = api.callsTo('PATCH', '/incidents/:id/status');
+    assert.ok(call, 'PATCH /incidents/:id/status was not sent');
+    assert.deepEqual(call.body, { status: 'resolved', reason: 'Settled by phone call' });
+  });
 });

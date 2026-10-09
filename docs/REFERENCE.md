@@ -198,6 +198,14 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   (spaced). Sweeper `backend/scripts/dispatch-offer-sweeper.php`, scheduled by
   `install-scheduled-backup-jobs.ps1` as `BaranguardDispatchOfferSweeper`.
   `POST /shifts/publish` accepts `recorded_from_paper:{signer_user_id,signed_on}`.
+- **0039** (2026-10-09, NOT applied to any real DB) `incident.resolve_reason`
+  (VARCHAR 255). `PATCH /incidents/:id/status` (Admin) now also resolves a
+  `pending` or `reopened` incident that was never dispatched, but ONLY with a
+  `reason` (1-255 chars; missing -> 400). Stored on the incident, never in
+  audit metadata (`has_reason`/`reason_length` only). A `dispatched` incident
+  is resolved as before. **This amends Master Reference §2 rule 21, which
+  said only a dispatched incident may be resolved; the Master Reference text
+  has not been edited yet.**
 - **Rule 12 amendment:** an Admin login with a well-formed `X-Device-Id` gets a
   device session (24h sliding, 7-day cap) limited to
   `SessionPolicy::ADMIN_DEVICE_ALLOWLIST` (anything else 403

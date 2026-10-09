@@ -1339,11 +1339,18 @@ final class IncidentsController
      * transition a human drives directly is closing the incident out, so
      * that is the only one accepted here.
      *
-     * ONLY A `dispatched` INCIDENT MAY BE RESOLVED (§6). A `pending` one
-     * has had no response to conclude, and an already-`resolved` one is a
-     * repeat — both are 409. That also makes the endpoint safe without an
-     * `Idempotency-Key`: a double submit cannot write a second audit row,
-     * because the second call no longer finds a resolvable incident.
+     * A `dispatched` INCIDENT IS RESOLVED AS BEFORE (§6). A `pending` or
+     * `reopened` one has had no response to conclude, so (decision
+     * 2026-10-09, WORKFLOWS_AND_RULES Part 5 item 1) it can be closed only
+     * with a mandatory `reason` (1-255 chars) saying why no dispatch was
+     * needed — a call that settled it, a walk-in sorted on the spot. The
+     * reason is kept in `incident.resolve_reason` (migration 0039) and is
+     * NEVER copied into audit metadata (Rule 8: only has_reason and
+     * reason_length). Without a reason it is a 400. An already-`resolved`
+     * or terminal incident is a repeat — 409. That also makes the endpoint
+     * safe without an `Idempotency-Key`: a double submit cannot write a
+     * second audit row, because the second call no longer finds a
+     * resolvable incident.
      *
      * Refuses while any dispatch is still open (`assigned`/`en_route`/
      * `arrived`): resolving an incident whose Tanod is mid-response would
@@ -1374,13 +1381,24 @@ final class IncidentsController
         // Cross-tenant is 404, never 403 (Rule 2).
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
 
-        if ($incident['status'] !== 'dispatched') {
+        $resolveReason = null;
+        if (in_array($incident['status'], ['pending', 'reopened'], true)) {
+            $rawReason = $body['reason'] ?? null;
+            if (!is_string($rawReason) || trim($rawReason) === '' || mb_strlen(trim($rawReason)) > 255) {
+                throw new ApiError(
+                    400,
+                    'VALIDATION_ERROR',
+                    'reason is required (1 to 255 characters) to resolve an incident that was never dispatched.'
+                );
+            }
+            $resolveReason = trim($rawReason);
+        } elseif ($incident['status'] !== 'dispatched') {
             throw new ApiError(
                 409,
                 'CONFLICT',
                 $incident['status'] === 'resolved'
                     ? 'This incident is already resolved.'
-                    : 'Only a dispatched incident can be resolved.'
+                    : 'Only a dispatched, pending or reopened incident can be resolved.'
             );
         }
 
@@ -1395,13 +1413,18 @@ final class IncidentsController
 
         $pdo->beginTransaction();
         try {
-            $pdo->prepare("UPDATE incident SET status = 'resolved', updated_at = UTC_TIMESTAMP() WHERE incident_id = :id")
-                ->execute(['id' => $incidentId]);
+            $pdo->prepare("UPDATE incident SET status = 'resolved', resolve_reason = :reason, updated_at = UTC_TIMESTAMP() WHERE incident_id = :id")
+                ->execute(['id' => $incidentId, 'reason' => $resolveReason]);
 
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_resolved', 'incident', $incidentId, [
+            $auditMeta = [
                 'from_status' => $incident['status'],
                 'to_status' => 'resolved',
-            ]);
+            ];
+            if ($resolveReason !== null) {
+                $auditMeta['has_reason'] = true;
+                $auditMeta['reason_length'] = mb_strlen($resolveReason);
+            }
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_resolved', 'incident', $incidentId, $auditMeta);
             $pdo->commit();
         } catch (\Throwable $e) {
             $pdo->rollBack();

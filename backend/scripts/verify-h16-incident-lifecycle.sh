@@ -252,8 +252,8 @@ for I in $INC_E $INC_F $INC_G; do
   expect_eq "$(body_of PATCH "/incidents/${I}/lifecycle" "$SEC_TOKEN" "$(uuid)" '{"status":"reopened"}' | jget status)" "reopened" "incident $I invalid -> reopened"
 done
 
-# Admin resolve of a reopened incident with no dispatch mirrors pending: refused (needs dispatched).
-expect_eq "$(status_of PATCH "/incidents/${INC_E}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved"}')" "409" "Reopened with no dispatch cannot be resolved (same as pending)"
+# Admin resolve of a reopened incident with no dispatch needs a reason (2026-10-09 decision); without one it is a 400.
+expect_eq "$(status_of PATCH "/incidents/${INC_E}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved"}')" "400" "Reopened with no dispatch cannot be resolved without a reason"
 
 DE=$(body_of POST "/dispatch" "$ADMIN_TOKEN" "" "{\"incident_id\":$INC_E,\"tanod_id\":$TANOD2_ID,\"request_id\":\"$(uuid)\"}")
 DISP_E=$(echo "$DE" | jget dispatch_id)
@@ -284,6 +284,23 @@ mysql_exec "$VALDB" -e "UPDATE incident SET status='reopened' WHERE incident_id=
 expect_eq "$(status_of POST "/dispatch" "$ADMIN_TOKEN" "" "{\"incident_id\":$INC_D,\"tanod_id\":$TANOD2_ID,\"request_id\":\"$(uuid)\"}")" "404" "Barangay-1 admin dispatching a barangay-2 reopened incident -> 404"
 LEAK=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM audit_log WHERE metadata_json LIKE '%RAW-H16%' OR metadata_json LIKE '%Responder stood down%';")
 expect_eq "$LEAK" "0" "No audit row contains narrative or cancel-reason text"
+
+step "19. Resolve without dispatch needs a reason (WORKFLOWS_AND_RULES Part 5 item 1)"
+# INC_F is pending again after step 16.
+expect_eq "$(db_status_of "$INC_F")" "pending" "Incident F is pending"
+expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved"}')" "400" "Pending resolve without a reason -> 400"
+expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved","reason":"   "}')" "400" "Blank reason -> 400"
+LONG=$("$PHP_BIN" -r 'echo str_repeat("x", 256);')
+expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid)" "{\"status\":\"resolved\",\"reason\":\"$LONG\"}")" "400" "256-char reason -> 400"
+expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$SEC_TOKEN" "$(uuid)" '{"status":"resolved","reason":"Settled by phone call"}')" "403" "Secretary cannot resolve"
+expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved","reason":"Settled by phone call"}')" "200" "Pending resolve with a reason -> 200"
+expect_eq "$(db_status_of "$INC_F")" "resolved" "Incident F resolved without a dispatch"
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT resolve_reason FROM incident WHERE incident_id=$INC_F;")" "Settled by phone call" "Reason stored on the incident"
+expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved","reason":"Again"}')" "409" "Second resolve of the same incident -> 409"
+RAUD=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM audit_log WHERE action='incident_resolved' AND entity_id=$INC_F;")
+expect_eq "$RAUD" "1" "Exactly one incident_resolved audit row"
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM audit_log WHERE action='incident_resolved' AND entity_id=$INC_F AND metadata_json LIKE '%has_reason%' AND metadata_json LIKE '%reason_length%';")" "1" "Audit records has_reason and reason_length"
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM audit_log WHERE metadata_json LIKE '%Settled by phone call%';")" "0" "Reason text is never in audit metadata"
 
 echo
 echo "=================================================="

@@ -495,12 +495,17 @@ export async function createIncident({
 
 /**
  * PATCH /incidents/:id/status — Admin only, body is exactly
- * `{status:'resolved'}` (see IncidentsController::updateStatus()'s own
+ * `{status:'resolved'}` plus a `reason` when the incident was never
+ * dispatched (see IncidentsController::updateStatus()'s own
  * doc — this is not a general status-setter).
  */
-export async function updateIncidentStatus(incidentId) {
+export async function updateIncidentStatus(incidentId, reason) {
+  // `reason` (1-255 chars) is REQUIRED by the server for a pending or
+  // reopened incident (closed without a dispatch); ignored otherwise.
+  const body = { status: 'resolved' };
+  if (reason !== undefined && reason !== null) body.reason = reason;
   const json = await request('PATCH', `/incidents/${incidentId}/status`, {
-    body: { status: 'resolved' },
+    body,
     auth: true,
   });
   return { incidentId: json.incident_id, status: json.status };
@@ -1444,12 +1449,15 @@ export async function downloadEvidenceFile(incidentId, attachmentId) {
 
 /**
  * PATCH /incidents/:id/status — Admin only, and the body is exactly
- * `{status:"resolved"}` (§6). Deliberately not a general status setter:
- * 409 unless the incident is `dispatched` with no active dispatch left.
+ * `{status:"resolved"}` (§6), plus `reason` for a pending/reopened incident.
+ * Deliberately not a general status setter: 409 unless the incident is
+ * `dispatched` with no active dispatch left, or pending/reopened with a reason.
  */
-export async function resolveIncident(incidentId) {
+export async function resolveIncident(incidentId, reason) {
+  const body = { status: 'resolved' };
+  if (reason !== undefined && reason !== null) body.reason = reason;
   const json = await request('PATCH', `/incidents/${incidentId}/status`, {
-    body: { status: 'resolved' },
+    body,
     auth: true,
   });
   return { incidentId: json.incident_id, status: json.status };
