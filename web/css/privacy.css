@@ -1,0 +1,65 @@
+/* privacy.css — the static privacy notice page (web/privacy.html, audit
+   2026-10-09 V-06/N-03). Tokens from base.css only. */
+.privacy-page {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-base);
+  margin: 0;
+  min-height: 100vh;
+}
+.privacy-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--color-navy);
+  color: var(--color-white);
+}
+.privacy-header__logo { width: 2.5rem; height: 2.5rem; flex-shrink: 0; }
+.privacy-header__brand { margin: 0; font-weight: 700; font-size: var(--font-size-lg); letter-spacing: 0.04em; }
+.privacy-header__sub { margin: 0; font-size: var(--font-size-label); color: var(--sidebar-text-accent); }
+.privacy-main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: var(--spacing-xl) var(--spacing-md) var(--spacing-2xl);
+  line-height: 1.6;
+  font-size: var(--font-size-md);
+}
+.privacy-main:focus { outline: none; }
+.privacy-main h1 { margin: var(--spacing-lg) 0 var(--spacing-sm); }
+.privacy-main h2 {
+  font-size: var(--font-size-xl);
+  margin: var(--spacing-xl) 0 var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+}
+.privacy-main p { margin: 0 0 var(--spacing-sm-md); }
+.privacy-main ul { margin: 0 0 var(--spacing-sm-md); padding-left: var(--spacing-lg); }
+.privacy-main li { margin-bottom: var(--spacing-xs); }
+.privacy-lead { color: var(--color-text-secondary); }
+.privacy-draft {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border: 1px solid var(--status-pending-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+}
+.privacy-table-wrap { overflow-x: auto; }
+.privacy-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); background: var(--color-surface); }
+.privacy-table th, .privacy-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--spacing-sm) var(--spacing-sm-md);
+  border: 1px solid var(--color-border);
+}
+.privacy-table thead th { background: var(--tint-neutral-bg); }
+.privacy-note, .privacy-footer { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+.privacy-contact { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: var(--spacing-sm) var(--spacing-md); margin: 0; }
+.privacy-contact dt { font-weight: 600; }
+.privacy-contact dd { margin: 0; }
+/* The DPO contact is deliberately left blank until the council designates one. */
+.privacy-blank { border-bottom: 1px solid var(--color-text-secondary); min-height: 1.5rem; }
+@media print {
+  .privacy-header { background: none; color: inherit; }
+  .skip-link { display: none; }
+}

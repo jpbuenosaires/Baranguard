@@ -29,10 +29,10 @@ describe('icons', () => {
 });
 
 describe('PageHeader', () => {
-  test('renders a real <h2> title and an empty actions slot', () => {
+  test('renders a real <h1> title and an empty actions slot', () => {
     const { el, actions } = PageHeader({ title: 'Audit Log', subtitle: 'Immutable record', icon: icons.shield });
     mount(el);
-    assert.equal(el.querySelector('h2.page-header__title').textContent, 'Audit Log');
+    assert.equal(el.querySelector('h1.page-header__title').textContent, 'Audit Log');
     assert.equal(el.querySelector('.page-header__subtitle').textContent, 'Immutable record');
     assert.equal(el.querySelector('.page-header__icon').getAttribute('aria-hidden'), 'true');
     assert.equal(actions.children.length, 0);
@@ -156,7 +156,8 @@ describe('Toast', () => {
     assert.equal(err.getAttribute('role'), 'alert');
     assert.equal(ok.getAttribute('role'), 'status');
     noInjection();
-    assert.equal($('.toast-container').getAttribute('aria-live'), 'polite');
+    // Each toast is its own live region; the container is not (X-08).
+    assert.equal($('.toast-container').getAttribute('aria-live'), null);
   });
 
   test('the close button is named and dismisses', async () => {

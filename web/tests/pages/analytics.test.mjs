@@ -73,7 +73,7 @@ describe('Analytics behaviour', () => {
     click(tab('Heatmap'));
     await settle();
 
-    assert.match(text(ctx.root), /Mapped Incidents/i);
+    assert.match(text(ctx.root), /Incidents with a location/i);
     assert.match(text(ctx.root), /Hotspot Category Breakdown/i);
 
     const chips = $$('.heatmap-chip', ctx.root);

@@ -11,6 +11,8 @@
  * background only, see that file's own doc for why.
  */
 
+import { onThemeChange, readThemeToken } from './themeEvents.js';
+
 const DEFAULT_CENTER = [123.6667, 12.9186]; // Pilar, Sorsogon [lng, lat]
 const DEFAULT_ZOOM = 12;
 const SOURCE_ID = 'incident-heat';
@@ -36,7 +38,7 @@ export function HeatmapMap(container) {
         },
       },
       layers: [
-        { id: 'background', type: 'background', paint: { 'background-color': '#E0F2FE' } },
+        { id: 'background', type: 'background', paint: { 'background-color': readThemeToken('--color-surface-blue', '#E0F2FE') } },
         { id: 'osm-raster-layer', type: 'raster', source: 'osm-raster' },
       ],
     },
@@ -90,8 +92,9 @@ export function HeatmapMap(container) {
       minzoom: 13,
       paint: {
         'circle-radius': 6,
-        'circle-color': '#DC2626',
-        'circle-stroke-color': '#ffffff',
+        // Tokens rather than literal hex (D-12); re-read on theme change below.
+        'circle-color': readThemeToken('--color-critical-solid', '#DC2626'),
+        'circle-stroke-color': readThemeToken('--color-white', '#FFFFFF'),
         'circle-stroke-width': 2,
         'circle-opacity': [
           'interpolate', ['linear'], ['zoom'],
@@ -127,10 +130,21 @@ export function HeatmapMap(container) {
     map.fitBounds(bounds, { padding: 48, maxZoom: 15, duration: 300 });
   }
 
+  // D-10: re-read token colours when the theme flips.
+  const offTheme = onThemeChange(container, () => {
+    if (destroyed || !ready) return;
+    if (map.getLayer('background')) map.setPaintProperty('background', 'background-color', readThemeToken('--color-surface-blue', '#E0F2FE'));
+    if (map.getLayer('incident-point-layer')) {
+      map.setPaintProperty('incident-point-layer', 'circle-color', readThemeToken('--color-critical-solid', '#DC2626'));
+      map.setPaintProperty('incident-point-layer', 'circle-stroke-color', readThemeToken('--color-white', '#FFFFFF'));
+    }
+  });
+
   let destroyed = false;
   function destroy() {
     if (destroyed) return; // Same double-destroy guard as LiveMap.js — see its comment.
     destroyed = true;
+    offTheme();
     map.remove();
   }
 

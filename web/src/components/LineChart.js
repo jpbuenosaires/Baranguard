@@ -40,10 +40,12 @@ const VIEW_W = 720;
 const VIEW_H = 240;
 const PAD = { top: 14, right: 14, bottom: 36, left: 42 };
 
-function readToken(name, fallback) {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
-}
+// Colours are CSS custom-property references, applied through `style`
+// (SVG presentation attributes do not resolve var()). The browser then
+// re-resolves them the moment the theme flips, so a chart already on screen
+// follows a light/dark toggle with no redraw (audit 2026-10-09 D-10), and no
+// hex fallback has to be duplicated here (D-12).
+const cssVar = (name) => `var(${name})`;
 
 /**
  * A "nice" axis maximum at or above `max`, so the top gridline is a round
@@ -72,9 +74,8 @@ export function LineChart({ points, series, caption }) {
 
   host.className = 'line-chart';
 
-  const gridColor = readToken('--chart-grid', '#E2E8F0');
-  const axisColor = readToken('--chart-axis-text', '#64748B');
-  const colors = series.map((s, i) => readToken(s.colorVar, i === 0 ? '#2563EB' : '#15803D'));
+  const gridColor = cssVar('--chart-grid');
+  const colors = series.map((s, i) => cssVar(s.colorVar || (i === 0 ? '--chart-line-1' : '--chart-line-2')));
 
   const allValues = points.flatMap((p) => p.values).filter((v) => v != null);
   const yMax = niceMax(Math.max(1, ...allValues));
@@ -108,7 +109,7 @@ export function LineChart({ points, series, caption }) {
     line.setAttribute('x2', String(VIEW_W - PAD.right));
     line.setAttribute('y1', String(yy));
     line.setAttribute('y2', String(yy));
-    line.setAttribute('stroke', gridColor);
+    line.style.stroke = gridColor;
     line.setAttribute('stroke-width', '1');
     line.setAttribute('vector-effect', 'non-scaling-stroke');
     if (t > 0) line.setAttribute('stroke-dasharray', '3 4');
@@ -184,14 +185,14 @@ export function LineChart({ points, series, caption }) {
         + run.map(([cx, cy]) => `L ${cx} ${cy}`).join(' ')
         + ` L ${run[run.length - 1][0]} ${PAD.top + plotH} Z`;
       area.setAttribute('d', areaD);
-      area.setAttribute('fill', colors[si]);
+      area.style.fill = colors[si];
       area.setAttribute('opacity', '0.10');
       svg.appendChild(area);
 
       const path = document.createElementNS(svgNS, 'path');
       path.setAttribute('d', `M ${run.map(([cx, cy]) => `${cx} ${cy}`).join(' L ')}`);
       path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', colors[si]);
+      path.style.stroke = colors[si];
       path.setAttribute('stroke-width', '2.5');
       path.setAttribute('stroke-linejoin', 'round');
       path.setAttribute('stroke-linecap', 'round');
@@ -214,8 +215,8 @@ export function LineChart({ points, series, caption }) {
         dot.setAttribute('cx', String(cx));
         dot.setAttribute('cy', String(cy));
         dot.setAttribute('r', '3.5');
-        dot.setAttribute('fill', 'var(--color-surface)');
-        dot.setAttribute('stroke', colors[si]);
+        dot.style.fill = 'var(--color-surface)';
+        dot.style.stroke = colors[si];
         dot.setAttribute('stroke-width', '2');
         svg.appendChild(dot);
       });
@@ -231,7 +232,7 @@ export function LineChart({ points, series, caption }) {
   const crosshair = document.createElementNS(svgNS, 'line');
   crosshair.setAttribute('y1', String(PAD.top));
   crosshair.setAttribute('y2', String(PAD.top + plotH));
-  crosshair.setAttribute('stroke', gridColor);
+  crosshair.style.stroke = gridColor;
   crosshair.setAttribute('stroke-width', '1');
   crosshair.setAttribute('vector-effect', 'non-scaling-stroke');
   crosshair.style.opacity = '0';

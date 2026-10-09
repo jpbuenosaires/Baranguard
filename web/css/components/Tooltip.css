@@ -26,19 +26,27 @@
   font-size: 0.6875rem;
   font-weight: 700;
   font-style: italic;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-base); /* D-21: was a Georgia serif stack */
   cursor: help;
   flex-shrink: 0;
+  position: relative;
+}
+/* X-17: the visible dot stays 18px, but the hit area is 24x24 (WCAG 2.2
+   target size) through an invisible pseudo-element. */
+.info-tip__trigger::after {
+  content: '';
+  position: absolute;
+  inset: -0.1875rem;
 }
 .info-tip__trigger:hover,
 .info-tip__trigger:focus-visible {
   background: var(--color-row-active-bg);
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .info-tip__panel {
   position: absolute;
-  z-index: 30;
+  z-index: var(--z-popover);
   top: calc(100% + var(--spacing-xs));
   left: 50%;
   width: max-content;

@@ -119,12 +119,11 @@ describe('2026-10 review fixes', () => {
     assert.equal(actionErrorMessage(other), 'The report was prepared by someone else and changed since you opened it.');
   });
 
-  test('the printed letterhead carries three empty logo slots', () => {
+  test('the printed letterhead has no empty logo circles (the API holds no seal image)', () => {
     const html = letterheadHtml({ barangayName: 'Dao', municipality: 'Pilar', province: 'Sorsogon' });
-    assert.equal((html.match(/tw-print__logo/g) || []).length, 3);
-    assert.match(html, /Barangay logo/);
-    assert.match(html, /Municipal logo/);
-    assert.match(html, /Bagong Pilipinas logo/);
+    assert.equal((html.match(/tw-print__logo/g) || []).length, 0);
+    assert.doesNotMatch(html, /logo placeholder/);
+    assert.match(html, /Barangay Dao/);
   });
 
   test('referral time is shown in Asia/Manila, not the viewer zone', async () => {
@@ -157,9 +156,11 @@ describe('2026-10 review fixes', () => {
     await settle();
     const sheet = document.querySelector('#printable-annex-d');
     assert.ok(sheet);
-    const lines = $$('.tw-print__sigline', sheet).map((n) => text(n));
+    const lines = $$('.tw-print__signame', sheet).map((n) => text(n));
     assert.ok(lines.includes('Cesar Dimaano'));
     assert.ok(lines.includes('Teresa Magbanua'));
+    assert.match(text(sheet), /Name and signature over printed name/);
+    assert.match(text(sheet), /Date signed:/);
     const titles = $$('.tw-print__sigtitle', sheet).map((n) => text(n));
     assert.deepEqual(titles, ['Chief Tanod', 'Punong Barangay']);
     click(document.querySelector('#close-print-modal'));

@@ -48,7 +48,7 @@ describe('Audit Log behaviour', () => {
     const sheet = document.querySelector('#printable-audit-sheet');
     assert.ok(sheet, 'Printable audit sheet should be mounted');
     assert.ok(document.body.classList.contains('has-print-modal'), 'body should have has-print-modal while preview is open');
-    assert.match(text(sheet), /Immutable System Audit Trail Excerpt/i);
+    assert.match(text(sheet), /System Audit Trail Excerpt/i);
 
     const closeBtn = document.querySelector('#close-print-modal');
     click(closeBtn);

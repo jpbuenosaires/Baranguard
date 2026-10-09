@@ -24,7 +24,7 @@
 .stat-strip__value.tone-success { color: var(--color-success); }
 .stat-strip__value.tone-warning { color: var(--color-warning); }
 .stat-strip__value.tone-critical { color: var(--color-critical); }
-.stat-strip__value.tone-info { color: var(--color-primary); }
+.stat-strip__value.tone-info { color: var(--color-link); }
 .stat-strip__label {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);

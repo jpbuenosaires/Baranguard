@@ -33,9 +33,11 @@ import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDateTime, formatManilaDate } from '../utils/manilaTime.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 import { SchoolC1Card, ReferralsCard, RelatedIncidentCard, resolveIncidentReference, describeIncidentRef } from '../components/IncidentCaseCards.js';
 import { reportChannelLabel } from '../utils/reportChannel.js';
+import { requireReason } from '../utils/reasonText.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -64,16 +66,37 @@ function parseApiDate(value) {
 function formatDateTime(value) {
   const d = parseApiDate(value);
   if (!d) return null;
-  return d.toLocaleString('en-PH', {
-    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Manila',
-  });
+  return formatManilaDateTime(d);
 }
 
 const STATUS_PILL_CLASS = {
   pending: 'status-pill--pending',
   dispatched: 'status-pill--info',
   resolved: 'status-pill--success',
+  reopened: 'status-pill--critical',
+  duplicate: 'status-pill--neutral',
+  invalid: 'status-pill--neutral',
+  cancelled: 'status-pill--neutral',
 };
+
+/** Plain words for every incident state (never the raw enum value). */
+const STATUS_LABELS = {
+  pending: 'Pending',
+  dispatched: 'Dispatched',
+  resolved: 'Resolved',
+  reopened: 'Reopened',
+  duplicate: 'Duplicate',
+  invalid: 'Invalid',
+  cancelled: 'Cancelled',
+};
+const PRIORITY_LABELS = { critical: 'Critical', urgent: 'Urgent', high: 'High', normal: 'Normal', medium: 'Normal', low: 'Low' };
+const DISPATCH_STATUS_LABELS = {
+  dispatched: 'Dispatched', en_route: 'On the way', arrived: 'On scene', completed: 'Completed', cancelled: 'Cancelled',
+};
+
+function statusLabel(status) {
+  return STATUS_LABELS[status] || String(status || 'Unknown').replace(/_/g, ' ');
+}
 
 
 /**
@@ -203,6 +226,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       canAdd: user.role === 'admin' || isSecretary,
       incidentLabel: incident.displayId || `#${incidentId}`,
     }));
+    aside.appendChild(buildResponders());
     aside.appendChild(buildTimeline());
 
     layout.append(main, aside);
@@ -249,12 +273,13 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
     const statusPill = document.createElement('span');
     statusPill.className = `status-pill ${STATUS_PILL_CLASS[incident.status] || 'status-pill--neutral'}`;
-    statusPill.textContent = (incident.status || 'unknown').toUpperCase();
+    statusPill.textContent = statusLabel(incident.status);
+    statusPill.setAttribute('aria-label', `Status: ${statusLabel(incident.status)}`);
     badgesToAppend.push(statusPill);
 
     const priorityPill = document.createElement('span');
     priorityPill.className = `status-pill ${incident.priority === 'urgent' || incident.priority === 'critical' ? 'status-pill--critical' : incident.priority === 'high' ? 'status-pill--warning' : 'status-pill--neutral'}`;
-    priorityPill.textContent = `${(incident.priority || 'normal').toUpperCase()} PRIORITY`;
+    priorityPill.textContent = `${PRIORITY_LABELS[incident.priority] || 'Normal'} priority`;
     badgesToAppend.push(priorityPill);
 
     badges.append(...badgesToAppend);
@@ -398,16 +423,9 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       ? (incident.rawNarrative || missingNarrativeText())
       : 'The narrative is restricted to the Barangay Secretary (RA 10173).';
 
-    if (isSecretary && incident.rawNarrative) {
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'btn-copy';
-      copyBtn.innerHTML = `${icons.fileText(14)} Copy Narrative`;
-      copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(incident.rawNarrative);
-        showToast('Narrative copied to clipboard.', { variant: 'success' });
-      });
-      actions.appendChild(copyBtn);
-    }
+    // No "Copy Narrative" button (audit V-10): copying put raw_narrative on
+    // the system clipboard, which any other app can read (Rule 1: it never
+    // leaves the system). The Secretary reads it on screen only.
 
     header.append(titleGroup, actions);
     card.appendChild(header);
@@ -580,23 +598,72 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     return card;
   }
 
+  /** Every responder ever dispatched to this incident (A-13). Names are shown to the Admin only. */
+  function buildResponders() {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const heading = document.createElement('h3');
+    heading.className = 'incident-card-heading';
+    heading.textContent = 'Responders';
+    card.appendChild(heading);
+    const list = Array.isArray(incident.dispatches) ? incident.dispatches : [];
+    if (list.length === 0) {
+      const none = document.createElement('p');
+      none.className = 'note';
+      none.textContent = 'No tanod has been dispatched to this incident.';
+      card.appendChild(none);
+      return card;
+    }
+    const table = document.createElement('table');
+    table.className = 'responders-table';
+    const caption = document.createElement('caption');
+    caption.className = 'sr-only';
+    caption.textContent = 'Responders dispatched to this incident';
+    table.appendChild(caption);
+    const head = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const label of ['Responder', 'Status', 'Dispatched', 'On scene']) {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = label;
+      headRow.appendChild(th);
+    }
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const tbody = document.createElement('tbody');
+    list.forEach((d, i) => {
+      const tr = document.createElement('tr');
+      const cells = [
+        user.role === 'admin' ? (d.tanodName || `Responder ${i + 1}`) : `Responder ${i + 1}`,
+        DISPATCH_STATUS_LABELS[d.status] || String(d.status || '').replace(/_/g, ' '),
+        formatDateTime(d.dispatchedAt) || 'Not recorded',
+        d.arrivedAt ? formatDateTime(d.arrivedAt) : 'Not yet',
+      ];
+      for (const text of cells) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    card.appendChild(table);
+    return card;
+  }
+
   function buildTimeline() {
     const card = document.createElement('div');
     card.className = 'card';
 
     const headerRow = document.createElement('div');
-    headerRow.style.display = 'flex';
-    headerRow.style.alignItems = 'center';
-    headerRow.style.gap = '0.5rem';
-    headerRow.style.marginBottom = '0.75rem';
+    headerRow.className = 'incident-card-heading';
 
     const iconWrap = document.createElement('span');
-    iconWrap.style.color = 'var(--color-info)';
+    iconWrap.className = 'incident-card-heading__icon';
     iconWrap.innerHTML = icons.clock(18);
 
     const heading = document.createElement('h3');
     heading.textContent = 'Incident Timeline';
-    heading.style.margin = '0';
 
     headerRow.append(iconWrap, heading);
     card.appendChild(headerRow);
@@ -685,8 +752,12 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
     const activeDispatch = incident.hasActiveDispatch;
     let blockedBecause = null;
-    if (incident.status !== 'dispatched') {
-      blockedBecause = `Only a dispatched incident can be resolved — this one is ${incident.status}.`;
+    // A pending or reopened incident that never needed a dispatch can be
+    // closed with a written reason (migration 0039); a dispatched one is
+    // resolved once its responders have finished.
+    const noDispatchResolve = incident.status === 'pending' || incident.status === 'reopened';
+    if (incident.status !== 'dispatched' && !noDispatchResolve) {
+      blockedBecause = `This incident is ${statusLabel(incident.status)} and cannot be resolved from here.`;
     } else if (activeDispatch) {
       blockedBecause = 'A dispatch is still active. Complete or cancel it before resolving.';
     }
@@ -717,14 +788,30 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
     const button = document.createElement('button');
     button.className = 'primary';
-    button.textContent = 'Mark incident resolved';
+    const buttonLabel = noDispatchResolve ? 'Resolve without dispatch' : 'Mark incident resolved';
+    button.textContent = buttonLabel;
     button.disabled = blockedBecause !== null;
 
     button.addEventListener('click', async () => {
-      const description = 'This closes the incident. It cannot be reopened from this screen.';
+      if (noDispatchResolve) {
+        const reason = await promptText({
+          title: 'Resolve without dispatch?',
+          description: 'No tanod was sent to this incident. Say why it needed no dispatch. The reason is kept with the incident.',
+          label: 'Reason (required)',
+          confirmLabel: 'Mark resolved',
+          cancelLabel: 'Cancel',
+          onConfirmAsync: async (value) => {
+            await resolveIncident(incidentId, requireReason(value, 'reason'));
+          },
+        });
+        if (reason === null) return;
+        showToast('Incident marked resolved.', { variant: 'success' });
+        await load();
+        return;
+      }
       const confirmed = await confirmDialog({
         title: 'Mark this incident resolved?',
-        description,
+        description: 'This closes the incident. It cannot be reopened from this screen.',
         confirmLabel: 'Mark resolved',
         cancelLabel: 'Cancel',
       });
@@ -738,7 +825,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
         await load();
       } catch (err) {
         button.disabled = false;
-        button.textContent = 'Mark incident resolved';
+        button.textContent = buttonLabel;
         showToast(err instanceof ApiClientError ? err.message : 'Could not resolve the incident.', { variant: 'error' });
       }
     });
@@ -823,7 +910,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
     const statusBadge = document.createElement('span');
     statusBadge.className = 'status-pill status-pill--neutral';
-    statusBadge.textContent = `Status: ${String(incident.status || '').replace(/_/g, ' ').toUpperCase()}`;
+    statusBadge.textContent = `Status: ${statusLabel(incident.status)}`;
 
     header.append(titleGroup, statusBadge);
     card.appendChild(header);

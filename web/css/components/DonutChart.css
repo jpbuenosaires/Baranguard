@@ -109,7 +109,7 @@
   font-weight: 600;
 }
 .donut-chart__legend-item:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 1px;
 }
 .donut-chart__swatch {
@@ -207,7 +207,7 @@
 /* Cursor-following tooltip for hovering the ring's own colored arc */
 .donut-chart__ring-tip {
   position: absolute;
-  z-index: 31;
+  z-index: calc(var(--z-popover) + 1);
   transform: translate(-50%, calc(-100% - 10px));
   padding: var(--spacing-xs) var(--spacing-sm-md);
   background: var(--glass-bg);

@@ -8,7 +8,7 @@
   position: fixed;
   top: var(--spacing-lg);
   right: var(--spacing-lg);
-  z-index: 300;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
@@ -61,7 +61,7 @@
 }
 .toast__close:hover { background: var(--color-bg); color: var(--color-text-secondary); }
 .toast__close:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 1px;
 }
 

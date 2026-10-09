@@ -14,6 +14,7 @@ import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDateTime } from '../utils/manilaTime.js';
 
 // Same 11-member enum as `incident.incident_type` (§5)
 const INCIDENT_TYPE_OPTIONS = [
@@ -48,15 +49,7 @@ const COLUMNS = [
 
 function formatDateTime(isoString) {
   if (!isoString) return '—';
-  const d = new Date(isoString);
-  if (isNaN(d.getTime())) return isoString;
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return formatManilaDateTime(isoString, String(isoString));
 }
 
 function timeAgo(isoString) {
@@ -533,16 +526,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
           // Branded map pin
           const pinEl = document.createElement('div');
-          pinEl.style.display = 'flex';
-          pinEl.style.alignItems = 'center';
-          pinEl.style.justifyContent = 'center';
-          pinEl.style.width = '1.875rem';
-          pinEl.style.height = '1.875rem';
-          pinEl.style.borderRadius = '50%';
-          pinEl.style.background = 'var(--color-critical)';
-          pinEl.style.color = '#ffffff';
-          pinEl.style.boxShadow = '0 3px 10px rgba(0,0,0,0.35)';
-          pinEl.style.border = '2px solid #ffffff';
+          pinEl.className = 'citizen-mini-map-pin';
           pinEl.innerHTML = icons.mapPin(15);
 
           new window.maplibregl.Marker({ element: pinEl })

@@ -271,14 +271,7 @@
   font-size: var(--font-size-sm);
 }
 
-.tw-print__letterhead-row { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md); }
-.tw-print__logo {
-  flex: 0 0 auto;
-  width: 4rem;
-  height: 4rem;
-  border: 1px solid var(--sheet-ink);
-  border-radius: 50%;
-}
+.tw-print__letterhead-row { display: flex; align-items: center; justify-content: center; gap: var(--spacing-md); }
 .tw-print__letterhead { flex: 1 1 auto; text-align: center; line-height: 1.35; }
 .tw-print__republic,
 .tw-print__line { margin: 0; font-size: var(--font-size-sm); }
@@ -345,11 +338,14 @@
   text-transform: uppercase;
   font-weight: 700;
 }
+.tw-print__signame { margin: 0; font-weight: 700; text-transform: uppercase; min-height: 1.25rem; }
 .tw-print__sigtitle { margin: 0; font-size: var(--font-size-label); font-weight: 700; }
 .tw-print__sigcap { margin: 0; font-size: var(--font-size-label); }
 .tw-print__sigparen { margin: 0; font-size: var(--font-size-label); font-style: italic; }
 .tw-print__sigfield { margin: 0; text-align: left; font-size: var(--font-size-label); }
-.tw-print__sigfield span { border-bottom: 1px solid var(--sheet-ink); padding: 0 var(--spacing-lg); }
+.tw-print__sigfield span {
+  display: inline-block;
+  min-width: 8rem; border-bottom: 1px solid var(--sheet-ink); padding: 0 var(--spacing-lg); }
 
 /* Accomplishment Report */
 .tw-acc-form__info { width: 100%; border-collapse: collapse; }
@@ -379,6 +375,10 @@
 .tw-sign__name,
 .tw-sign__line { border-bottom: 1px solid var(--sheet-ink); min-height: 1.25rem; width: 85%; margin: 0 auto; }
 .tw-sign__name { font-weight: 700; text-transform: uppercase; }
+.tw-sign { break-inside: avoid; page-break-inside: avoid; }
+.tw-sign__space { min-height: var(--spacing-xl); }
+.tw-sign__hint { font-size: var(--font-size-label); font-style: italic; }
+.tw-sign__date { margin-top: var(--spacing-xs); font-size: var(--font-size-label); }
 .tw-sign__pos { font-weight: 700; text-transform: uppercase; font-size: var(--font-size-label); }
 
 @media (max-width: 640px) {
@@ -416,3 +416,38 @@
   font-size: var(--font-size-sm);
   text-align: center;
 }
+
+/* Page footer on every printed sheet (audit S-13): "Page N of M" in the
+   page margin box, and a "Printed <Manila time> by <role>" stamp. */
+@page {
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #000; }
+}
+.print-sheet__stamp {
+  margin: var(--spacing-md) 0 0;
+  font-size: var(--font-size-label);
+  color: var(--sheet-muted);
+  text-align: left;
+}
+@media print {
+  .print-sheet { padding-bottom: 10mm !important; }
+  .print-sheet__stamp {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    color: #000;
+    font-size: 9pt;
+  }
+}
+
+/* Roster print: classes instead of inline colours (audit design D-12). */
+.print-sheet__empty-row { text-align: center; color: var(--sheet-muted); }
+.print-sheet__eyebrow {
+  margin: 0;
+  font-size: var(--font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sheet-muted);
+}
+.print-sheet__draft-note { margin: 0 0 var(--spacing-sm); font-weight: 700; }

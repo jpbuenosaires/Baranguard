@@ -28,10 +28,9 @@ const VIEW_W = 720;
 const VIEW_H = 220;
 const PAD = { top: 14, right: 10, bottom: 32, left: 34 };
 
-function readToken(name, fallback) {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
-}
+// CSS custom-property references applied through `style`, so the bars
+// re-resolve on a theme flip without a redraw (audit 2026-10-09 D-10/D-12).
+const cssVar = (name) => `var(${name})`;
 
 function niceMax(max) {
   if (max <= 4) return 4;
@@ -54,9 +53,8 @@ export function BarChart({ bars, colorVar = '--chart-line-1', caption }) {
 
   host.className = 'bar-chart';
 
-  const gridColor = readToken('--chart-grid', '#E2E8F0');
-  const axisColor = readToken('--chart-axis-text', '#64748B');
-  const barColor = readToken(colorVar, '#2563EB');
+  const gridColor = cssVar('--chart-grid');
+  const barColor = cssVar(colorVar);
 
   const yMax = niceMax(Math.max(1, ...bars.map((b) => b.value)));
   const plotW = VIEW_W - PAD.left - PAD.right;
@@ -84,7 +82,7 @@ export function BarChart({ bars, colorVar = '--chart-line-1', caption }) {
     line.setAttribute('x2', String(VIEW_W - PAD.right));
     line.setAttribute('y1', String(yy));
     line.setAttribute('y2', String(yy));
-    line.setAttribute('stroke', gridColor);
+    line.style.stroke = gridColor;
     line.setAttribute('stroke-width', '1');
     line.setAttribute('vector-effect', 'non-scaling-stroke');
     if (t > 0) line.setAttribute('stroke-dasharray', '3 4');
@@ -111,7 +109,7 @@ export function BarChart({ bars, colorVar = '--chart-line-1', caption }) {
     rect.setAttribute('y', String(PAD.top + plotH - barHeight));
     rect.setAttribute('width', String(barWidth));
     rect.setAttribute('height', String(Math.max(0, barHeight)));
-    rect.setAttribute('fill', barColor);
+    rect.style.fill = barColor;
     rect.setAttribute('rx', '2');
     const title = document.createElementNS(svgNS, 'title');
     title.textContent = `${bar.label}: ${bar.value}`;

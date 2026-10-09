@@ -31,7 +31,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-primary);
+  color: var(--color-link);
   flex-shrink: 0;
   margin-top: var(--spacing-3xs);
 }
@@ -61,7 +61,7 @@
   letter-spacing: 0.02em;
   text-transform: uppercase;
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary);
+  color: var(--color-link);
   border-radius: var(--radius-sm, 0.25rem);
   border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
 }
@@ -122,7 +122,7 @@
 .map-pkg-card__icon {
   display: flex;
   align-items: center;
-  color: var(--color-primary);
+  color: var(--color-link);
 }
 
 .map-pkg-card__title {
@@ -205,7 +205,7 @@
 
 .map-pkg-btn-copy:hover {
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-  color: var(--color-primary);
+  color: var(--color-link);
   border-color: var(--color-primary);
 }
 
@@ -279,7 +279,7 @@
 .map-pkg-btn-text {
   font-size: 0.6875rem;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-link);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -339,7 +339,7 @@
 }
 
 .map-pkg-dropzone__icon {
-  color: var(--color-primary);
+  color: var(--color-link);
   margin-bottom: var(--spacing-xs);
 }
 
@@ -350,7 +350,7 @@
 }
 
 .map-pkg-dropzone__prompt span {
-  color: var(--color-primary);
+  color: var(--color-link);
   text-decoration: underline;
 }
 
@@ -419,7 +419,7 @@
   border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
   border-radius: var(--radius-md, 0.5rem);
   font-size: var(--font-size-xs, 0.75rem);
-  color: var(--color-primary);
+  color: var(--color-link);
   font-weight: 500;
 }
 
@@ -469,7 +469,7 @@
 }
 
 .map-pkg-guide-card__icon {
-  color: var(--color-primary);
+  color: var(--color-link);
   display: flex;
   align-items: center;
 }
@@ -497,4 +497,35 @@
 }
 
 @media (max-width: 560px) {
+}
+
+.map-pkg-detail-val--version {
+  font-size: var(--font-size-lg);
+  color: var(--color-link);
+}
+
+.map-pkg-detail-val--ok {
+  color: var(--color-success-text);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+
+.map-pkg-file-icon {
+  color: var(--color-link);
+}
+
+.map-pkg-file-name-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.map-pkg-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  height: var(--control-height);
 }

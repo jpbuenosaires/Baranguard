@@ -19,7 +19,7 @@
  * keep the session renewed, so a page that is open never expires.
  */
 
-import { getSession, ApiClientError } from '../api/apiClient.js';
+import { getSession, ApiClientError, expireSession } from '../api/apiClient.js';
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8080/api/v1';
 
@@ -70,6 +70,11 @@ async function request(method, path, { query, body, idempotencyKey } = {}) {
       throw new ApiClientError(response.status, 'INVALID_RESPONSE', 'The server returned an unreadable response.');
     }
   }
+  // F-08/X-02: a server 401 ends the session app-wide (back to sign-in with
+  // a message), exactly as apiClient.js does, instead of leaving this page
+  // on an error state whose Retry can never succeed. Only when the token
+  // that failed is still the current one (a newer sign-in is left alone).
+  if (response.status === 401 && getSession()?.token === session.token) expireSession('unauthorized');
   if (!response.ok) {
     const err = json && json.error ? json.error : {};
     throw new ApiClientError(response.status, err.code || 'UNKNOWN_ERROR', err.message || 'Something went wrong.');

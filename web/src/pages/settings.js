@@ -317,7 +317,7 @@ function buildProfileCard(user, onFullNameSaved) {
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
-  submitButton.style.cssText = 'width: fit-content; min-width: 140px; margin-top: 0.25rem;';
+  submitButton.classList.add('settings-submit');
   submitButton.textContent = 'Save Changes';
 
   form.append(nameField, contactField, submitButton);
@@ -422,7 +422,7 @@ function buildPasswordCard() {
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'settings-pwd-toggle';
-    toggle.setAttribute('aria-label', `Toggle ${labelText} visibility`);
+    toggle.setAttribute('aria-label', `Show or hide ${labelText}`);
     toggle.innerHTML = icons.eye(16);
 
     let isVisible = false;
@@ -447,7 +447,7 @@ function buildPasswordCard() {
 
   const rulesTitle = document.createElement('span');
   rulesTitle.className = 'settings-rules-title';
-  rulesTitle.textContent = 'Password Complexity Requirements:';
+  rulesTitle.textContent = 'Your new password must have:';
 
   const rulesList = document.createElement('ul');
   rulesList.className = 'settings-rules-list';
@@ -489,7 +489,7 @@ function buildPasswordCard() {
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
-  submitButton.style.cssText = 'width: fit-content; min-width: 150px; margin-top: 0.5rem;';
+  submitButton.classList.add('settings-submit', 'settings-submit--wide');
   submitButton.textContent = 'Update Password';
 
   form.append(currentField.field, newField.field, rulesBox, confirmField.field, submitButton);
@@ -575,10 +575,13 @@ function buildAppearanceCard(role) {
 
   const themeLabel = document.createElement('span');
   themeLabel.className = 'settings-label';
-  themeLabel.textContent = 'Interface Color Theme';
+  themeLabel.textContent = 'Screen colours (light or dark)';
+  themeLabel.id = 'settings-theme-label';
 
   const themeGrid = document.createElement('div');
   themeGrid.className = 'settings-theme-grid';
+  themeGrid.setAttribute('role', 'group');
+  themeGrid.setAttribute('aria-labelledby', 'settings-theme-label');
 
   const isDark = () => {
     const attr = document.documentElement.getAttribute('data-theme');
@@ -591,6 +594,7 @@ function buildAppearanceCard(role) {
   const lightCard = document.createElement('div');
   lightCard.className = 'settings-theme-card';
   lightCard.setAttribute('role', 'button');
+  lightCard.setAttribute('aria-label', 'Light mode');
   lightCard.setAttribute('tabindex', '0');
   lightCard.innerHTML = `
     <div class="settings-theme-card__top">
@@ -598,13 +602,14 @@ function buildAppearanceCard(role) {
       <span class="settings-theme-card__indicator" aria-hidden="true">${icons.checkCircle(12)}</span>
     </div>
     <h4 class="settings-theme-card__title">Light Mode</h4>
-    <p class="settings-theme-card__desc">Clean, high-contrast operational console tuned for daylight shift environments.</p>
+    <p class="settings-theme-card__desc">Bright screen, easy to read in a well-lit office.</p>
   `;
 
   // Dark Card
   const darkCard = document.createElement('div');
   darkCard.className = 'settings-theme-card';
   darkCard.setAttribute('role', 'button');
+  darkCard.setAttribute('aria-label', 'Dark mode');
   darkCard.setAttribute('tabindex', '0');
   darkCard.innerHTML = `
     <div class="settings-theme-card__top">
@@ -612,13 +617,15 @@ function buildAppearanceCard(role) {
       <span class="settings-theme-card__indicator" aria-hidden="true">${icons.checkCircle(12)}</span>
     </div>
     <h4 class="settings-theme-card__title">Dark Mode</h4>
-    <p class="settings-theme-card__desc">Reduces glare and blue-light strain for nighttime dispatch operations.</p>
+    <p class="settings-theme-card__desc">Darker screen that is easier on the eyes at night.</p>
   `;
 
   const syncThemeCards = () => {
     const dark = isDark();
     lightCard.classList.toggle('is-active', !dark);
     darkCard.classList.toggle('is-active', dark);
+    lightCard.setAttribute('aria-pressed', String(!dark));
+    darkCard.setAttribute('aria-pressed', String(dark));
   };
 
   const applyTheme = (mode) => {
@@ -648,12 +655,11 @@ function buildAppearanceCard(role) {
   // Section 2: Default Landing Screen
   const landingSection = document.createElement('div');
   landingSection.className = 'settings-field';
-  landingSection.style.marginTop = '0.5rem';
 
   const landingLabel = document.createElement('label');
   landingLabel.className = 'settings-label';
   landingLabel.htmlFor = 'settings-default-page';
-  landingLabel.textContent = 'Default Login Landing Screen';
+  landingLabel.textContent = 'Screen to open after signing in';
 
   const landingSelect = document.createElement('select');
   landingSelect.id = 'settings-default-page';
@@ -661,7 +667,7 @@ function buildAppearanceCard(role) {
 
   const autoOpt = document.createElement('option');
   autoOpt.value = '';
-  autoOpt.textContent = 'Automatic (First available operational view)';
+  autoOpt.textContent = 'Automatic (the first screen available to you)';
   landingSelect.appendChild(autoOpt);
 
   const eligibleScreens = LANDING_OPTIONS.filter((opt) => opt.roles.includes(role));
@@ -689,7 +695,7 @@ function buildAppearanceCard(role) {
 
   const landingHelp = document.createElement('span');
   landingHelp.className = 'settings-help-text';
-  landingHelp.textContent = 'Determines which operational screen opens immediately after authentication.';
+  landingHelp.textContent = 'This choice is saved in this browser only, not on your account.';
 
   landingSection.append(landingLabel, landingSelect, landingHelp);
 
@@ -730,7 +736,7 @@ function buildGeneralCard(settings) {
       <div class="settings-brand-hero__title">${escapeHtml(settings['general.system_name'] || 'BARANGUARD')}</div>
       <div class="settings-brand-hero__sub">${escapeHtml(settings['general.municipality'] || 'Pilar, Sorsogon')} • ${escapeHtml(settings['general.region'] || 'Region V (Bicol)')}</div>
     </div>
-    <span class="role-badge role-badge--admin">DEPLOYMENT TENANT</span>
+    <span class="role-badge role-badge--admin">This barangay</span>
   `;
   bodyEl.appendChild(brandHero);
 
@@ -818,15 +824,15 @@ function buildSosFallbackCard(settings) {
   statusBox.className = 'settings-gateway-status-box';
   const configured = Boolean(settings['sos_fallback.backup_contact_number']);
   statusBox.innerHTML = `
-    <div style="display:flex; align-items:center; gap:0.625rem;">
-      <span style="color:var(--color-primary);">${icons.phone(18)}</span>
+    <div class="settings-sos-status">
+      <span class="settings-sos-status__icon" aria-hidden="true">${icons.phone(18)}</span>
       <div>
-        <div style="font-size:var(--font-size-sm); font-weight:700; color:var(--color-text-primary);">Direct Device SMS (no gateway)</div>
-        <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">Sent from the Tanod's own phone SIM — only when the app AND the workstation are both unreachable</div>
+        <div class="settings-sos-status__title">Text message from the Tanod's own phone</div>
+        <div class="settings-sos-status__sub">Sent from the Tanod's own phone SIM — only when the app AND the workstation are both unreachable</div>
       </div>
     </div>
     <span class="status-pill ${configured ? 'status-pill--success' : 'status-pill--neutral'}">
-      ${configured ? 'CONFIGURED' : 'NOT CONFIGURED'}
+      ${configured ? 'Number saved' : 'No number saved'}
     </span>
   `;
   bodyEl.appendChild(statusBox);
@@ -860,7 +866,7 @@ function buildSosFallbackCard(settings) {
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
-  submitButton.style.cssText = 'width: fit-content; min-width: 140px; margin-top: 0.25rem;';
+  submitButton.classList.add('settings-submit');
   submitButton.textContent = 'Save Fallback Contact';
 
   form.append(numberField, submitButton);
@@ -901,4 +907,5 @@ const LANDING_OPTIONS = [
   { key: 'audit-log', label: 'Audit Log', roles: ['admin'] },
   { key: 'service-health', label: 'Service Health', roles: ['admin'] },
   { key: 'map-packages', label: 'Map Packages', roles: ['admin'] },
+  { key: 'approvals', label: 'Approvals', roles: ['admin', 'secretary', 'punong_barangay'] },
 ];

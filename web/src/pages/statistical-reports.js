@@ -37,6 +37,7 @@ import { icons } from '../components/icons.js';
 import { DateRangePicker, manilaTodayIso } from '../components/DateRangePicker.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDate, formatManilaDateTime } from '../utils/manilaTime.js';
 
 // 12-hour clock labels for the by-hour bar chart's 24 buckets.
 const HOUR_LABELS = Array.from({ length: 24 }, (_, h) => {
@@ -127,6 +128,11 @@ function referenceStamp(now) {
 
 
 /** 14 -> "2:00 PM – 3:00 PM" */
+/** "2026-10-09" (a Manila calendar day from the API) -> "Oct 9, 2026". */
+function dayLabel(iso) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(iso || '')) ? formatManilaDate(`${iso}T00:00:00+08:00`) : 'Not recorded';
+}
+
 function formatHourRange(h) {
   const startPeriod = h < 12 ? 'AM' : 'PM';
   const startH = h % 12 === 0 ? 12 : h % 12;
@@ -223,7 +229,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
     (best, [key, count]) => (count > best.count ? { key, count } : best),
     { key: null, count: 0 }
   );
-  const topTypeLabel = topType.key ? (INCIDENT_TYPE_LABELS[topType.key] || topType.key) : 'None';
+  const topTypeLabel = topType.key ? (INCIDENT_TYPE_LABELS[topType.key] || 'Other') : 'None';
   const topTypeShare = total > 0 ? ((topType.count / total) * 100).toFixed(1) : '0.0';
 
   let peakHour = { hour: 0, count: 0 };
@@ -236,9 +242,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
 
   const activeLoad = OPEN_STATUSES.reduce((sum, key) => sum + (summary.byStatus?.[key] || 0), 0);
   const now = new Date();
-  const nowStr = now.toLocaleDateString('en-US', {
-    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
+  const nowStr = formatManilaDateTime(now);
   // Audit P-01/N-18 (2026-10-09): this sheet used to print the viewer as
   // "Prepared By" over a signature line and "HON. PUNONG BARANGAY ·
   // Attested & Approved" under a pre-written sworn oath nobody had made.
@@ -257,7 +261,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
 
   const typeRowsHtml = Object.entries(summary.byIncidentType || {}).map(([typeKey, count]) => {
     const share = total > 0 ? ((count / total) * 100).toFixed(1) + '%' : '0.0%';
-    const label = INCIDENT_TYPE_LABELS[typeKey] || typeKey;
+    const label = INCIDENT_TYPE_LABELS[typeKey] || 'Other';
     return `
       <tr>
         <td>${escapeHtml(label)}</td>
@@ -269,7 +273,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
 
   const statusRowsHtml = Object.entries(summary.byStatus || {}).map(([statusKey, count]) => {
     const share = total > 0 ? ((count / total) * 100).toFixed(1) + '%' : '0.0%';
-    const label = STATUS_LABELS[statusKey] || statusKey;
+    const label = STATUS_LABELS[statusKey] || 'Unknown';
     return `
       <tr>
         <td>${escapeHtml(label)}</td>
@@ -294,7 +298,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
       </div>
       <div class="print-sheet__meta-cell">
         <span class="print-sheet__label">Coverage Period</span>
-        <strong>${escapeHtml(range.from)} to ${escapeHtml(range.to)}</strong>
+        <strong>${escapeHtml(dayLabel(range.from))} to ${escapeHtml(dayLabel(range.to))}</strong>
       </div>
       <div class="print-sheet__meta-cell">
         <span class="print-sheet__label">Prepared By</span>
@@ -343,7 +347,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
     <div class="print-sheet__grid-2col">
       <div class="print-sheet__field-box">
         <span class="print-sheet__label">Highest Activity Date</span>
-        <p class="print-sheet__field-val">${busiestDay.count > 0 ? `${escapeHtml(busiestDay.date)} (${escapeHtml(String(busiestDay.count))} cases logged)` : 'Evenly distributed / No incidents'}</p>
+        <p class="print-sheet__field-val">${busiestDay.count > 0 ? `${escapeHtml(dayLabel(busiestDay.date))} (${escapeHtml(String(busiestDay.count))} cases logged)` : 'Evenly distributed / No incidents'}</p>
       </div>
       <div class="print-sheet__field-box">
         <span class="print-sheet__label">Active Caseload Requiring Action</span>
@@ -356,9 +360,9 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
       <table class="print-sheet__table">
         <thead>
           <tr>
-            <th>Incident Classification / Type</th>
-            <th class="print-sheet__table-num">Recorded Cases</th>
-            <th class="print-sheet__table-num">Percentage Share</th>
+            <th scope="col">Incident Classification / Type</th>
+            <th scope="col" class="print-sheet__table-num">Recorded Cases</th>
+            <th scope="col" class="print-sheet__table-num">Percentage Share</th>
           </tr>
         </thead>
         <tbody>
@@ -377,9 +381,9 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
       <table class="print-sheet__table">
         <thead>
           <tr>
-            <th>Case Disposition / Status</th>
-            <th class="print-sheet__table-num">Case Count</th>
-            <th class="print-sheet__table-num">Resolution Share</th>
+            <th scope="col">Case Disposition / Status</th>
+            <th scope="col" class="print-sheet__table-num">Case Count</th>
+            <th scope="col" class="print-sheet__table-num">Resolution Share</th>
           </tr>
         </thead>
         <tbody>
@@ -412,13 +416,13 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
     </div>
 
     <p class="print-sheet__footer">
-      System-generated statistical summary (${escapeHtml(range.from)} to ${escapeHtml(range.to)}) · Generated ${escapeHtml(nowStr)} from the Baranguard Operations Console.
+      System-generated statistical summary (${escapeHtml(dayLabel(range.from))} to ${escapeHtml(dayLabel(range.to))}) · Generated ${escapeHtml(nowStr)} from the Baranguard Operations Console.
     </p>
   `;
 
   openPrintPreviewModal({
     title: 'Printable Statistical & Operations Report',
-    subtitle: `Formatted A4 summary (${range.from} to ${range.to}) • Aggregate figures only, unsigned`,
+    subtitle: `Formatted A4 summary (${dayLabel(range.from)} to ${dayLabel(range.to)}) • Aggregate figures only, unsigned`,
     sheetId: 'printable-report-sheet',
     sheetHtml,
     extraActions: [
@@ -660,7 +664,7 @@ function renderReport(container, summary, role, navigate) {
     <div class="insight-tile__badge">${busiestDay.count > 0 ? `${busiestDay.count} ${busiestDay.count === 1 ? 'incident' : 'incidents'} logged` : 'No incidents recorded'}</div>
   `;
 
-  const typeLabel = topType.count > 0 ? (INCIDENT_TYPE_LABELS[topType.key] || topType.key) : 'None';
+  const typeLabel = topType.count > 0 ? (INCIDENT_TYPE_LABELS[topType.key] || 'Other') : 'None';
   const typeTile = document.createElement('div');
   typeTile.className = 'insight-tile';
   typeTile.innerHTML = `
@@ -722,7 +726,7 @@ function renderReport(container, summary, role, navigate) {
       'All submitted reports, all time',
       icons.messageSquare,
       'Conversion tracking from citizen submissions into incidents — not scoped to the date range above.',
-      navigate ? { label: 'Review Inbox', onClick: () => navigate('citizen-reports') } : null
+      navigate ? { label: 'Review Inbox', onClick: () => navigate('citizen-inbox') } : null
     ));
     const citizenHost = document.createElement('div');
     citizenHost.setAttribute('data-citizen-conversion-host', '');
@@ -866,7 +870,7 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
     </div>
     <div class="conversion-hero-banner__right">
       <span class="conversion-hero-banner__val">${convertedPct}%</span>
-      <span class="conversion-hero-banner__rate-label">Clearance</span>
+      <span class="conversion-hero-banner__rate-label">Converted</span>
     </div>
   `;
   container.appendChild(heroBanner);
@@ -926,14 +930,14 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
   footer.innerHTML = `
     <div class="category-summary-tile">
       <span class="category-summary-tile__val">
-        <span class="summary-tile-pip" style="background:#F59E0B;" aria-hidden="true"></span>
+        <span class="summary-tile-pip" style="background:var(--color-warning);" aria-hidden="true"></span>
         ${unconverted} Pending Action
       </span>
       <span class="category-summary-tile__sub">${unconvertedPct}% awaiting triage</span>
     </div>
     <div class="category-summary-tile">
       <span class="category-summary-tile__val">
-        <span class="summary-tile-pip" style="background:#16A34A;" aria-hidden="true"></span>
+        <span class="summary-tile-pip" style="background:var(--color-success);" aria-hidden="true"></span>
         ${converted} Formalized
       </span>
       <span class="category-summary-tile__sub">Converted into incidents</span>
@@ -992,7 +996,7 @@ function renderIncidentTypeDonutCard(counts) {
       </div>
       <div class="category-summary-tile">
         <span class="category-summary-tile__val">
-          <span class="summary-tile-pip" style="background:var(--chart-cat-8, #8B5CF6);" aria-hidden="true"></span>
+          <span class="summary-tile-pip" style="background:var(--chart-cat-8);" aria-hidden="true"></span>
           ${activeCatsCount} Active ${activeCatsCount === 1 ? 'Category' : 'Categories'}
         </span>
         <span class="category-summary-tile__sub">Out of 11 classified types</span>

@@ -19,7 +19,11 @@ import { avatarInitials } from './Avatar.js';
 import { Menu, MenuItem, MenuDivider } from './Menu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getBarangays } from '../api/apiClient.js';
-import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
+import { playCriticalAlertTone, isAlertSoundUnlocked, onAlertSoundUnlocked } from '../utils/criticalAlertSound.js';
+import { formatManilaTimeSeconds, formatManilaTime } from '../utils/manilaTime.js';
+import { onThemeChange, startThemeWatcher } from './themeEvents.js';
+import { startModalA11y } from './modalA11y.js';
+import { startTabA11y } from './tabA11y.js';
 
 // notification.notification_type values that should play an audible cue
 // the moment they first appear — an SOS or a priority-flagged incident is
@@ -116,7 +120,44 @@ document.addEventListener('click', (event) => {
 let knownNotificationIds = null;
 function resetNotificationBaselineOnLogout() {
   knownNotificationIds = null;
+  stopSosTone();
+  lastPollOkAt = null;
 }
+
+// --- Site-wide SOS alarm (audit 2026-10-09 A-08/X-01) ------------------------
+// While any SOS notification is still unacknowledged, every page shows a
+// persistent bar (rendered per AppShell below) and the alert tone repeats
+// every SOS_TONE_REPEAT_MS. The repeat loop lives at module scope so a page
+// navigation (which rebuilds the shell) neither restarts nor doubles it; the
+// tone itself is throttled in criticalAlertSound.js, so the Dispatch Center's
+// own 10 s loop and this one together still produce one chime per period.
+export const SOS_TONE_REPEAT_MS = 10000;
+let sosToneInterval = null;
+let sosToneOwner = null; // the shell element that started it; stops when detached
+function startSosTone(ownerEl) {
+  sosToneOwner = ownerEl;
+  if (sosToneInterval) return;
+  playCriticalAlertTone();
+  sosToneInterval = setInterval(() => {
+    if (!sosToneOwner || !sosToneOwner.isConnected) {
+      // The shell this alarm belongs to is gone and no newer shell has
+      // claimed it (sign-out, session expiry): stop rather than beep on
+      // the sign-in screen.
+      stopSosTone();
+      return;
+    }
+    playCriticalAlertTone();
+  }, SOS_TONE_REPEAT_MS);
+}
+function stopSosTone() {
+  if (sosToneInterval) clearInterval(sosToneInterval);
+  sosToneInterval = null;
+  sosToneOwner = null;
+}
+
+// Last successful background poll (bell or nav counts), kept across shell
+// rebuilds so the "Updates paused" stamp can say when data was last fresh.
+let lastPollOkAt = null;
 
 
 // §9 role gates: W2 Dashboard and W4 Live Map are Admin + Punong Barangay
@@ -227,6 +268,12 @@ export function AppShell(user, activePage, navigate, onLogout) {
     resetNotificationBaselineOnLogout();
     onLogout();
   };
+
+  // Shared, idempotent document-level behaviours (dialog semantics, tab
+  // semantics, theme-change signal): started once, on the first shell.
+  startModalA11y();
+  startTabA11y();
+  startThemeWatcher();
 
   const el = document.createElement('div');
   el.className = 'app-shell';
@@ -405,7 +452,9 @@ export function AppShell(user, activePage, navigate, onLogout) {
   }
   function refreshNavCounts() {
     if (user.role !== 'admin' || Object.keys(countBadges).length === 0) return Promise.resolve();
-    return getNavCounts().then(applyCounts).catch(() => {});
+    return getNavCounts()
+      .then((counts) => { applyCounts(counts); markPollOk(); })
+      .catch(() => { markPollFailed(); });
   }
 
   if (user.role === 'admin' && Object.keys(countBadges).length > 0) {
@@ -481,8 +530,16 @@ export function AppShell(user, activePage, navigate, onLogout) {
     else openDrawer();
   });
   topbar.appendChild(drawerButton);
-  const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay (read-only)' };
-  const roleLabel = ROLE_LABELS[user.role] ?? user.role;
+  // audit 2026-10-09 D-06/X-23: the Punong Barangay approves reports and
+  // rosters since 2026-10-01, so "(read-only)" was simply wrong. The
+  // account's own official_title (e.g. "Chief Tanod") is shown when the
+  // session carries one, so officials recognise their own role.
+  const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay' };
+  const baseRoleLabel = ROLE_LABELS[user.role] ?? user.role;
+  const officialTitle = typeof user.officialTitle === 'string' ? user.officialTitle.trim() : '';
+  const roleLabel = officialTitle && officialTitle.toLowerCase() !== baseRoleLabel.toLowerCase()
+    ? `${officialTitle} (${baseRoleLabel})`
+    : baseRoleLabel;
 
   // --- Left: Wayfinding & Jurisdiction Context ---
   const topbarContext = document.createElement('div');
@@ -518,7 +575,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
 
   if (user.role === 'punong_barangay') {
     breadcrumbsHtml += `
-      <span class="topbar__role-tag" title="Punong Barangay: Executive Oversight & Monitoring (Read-Only)">Executive</span>
+      <span class="topbar__role-tag" title="Punong Barangay: oversight and approvals">Executive</span>
     `;
   }
 
@@ -579,7 +636,11 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const searchResults = document.createElement('div');
   searchResults.className = 'topbar__search-results';
   searchResults.hidden = true;
-  searchHost.append(searchLabel, searchInputWrap, mobileSearchClose, searchResults);
+  // X-20: the result count is announced; the list itself is not live.
+  const searchStatus = document.createElement('span');
+  searchStatus.className = 'sr-only';
+  searchStatus.setAttribute('role', 'status');
+  searchHost.append(searchLabel, searchInputWrap, mobileSearchClose, searchResults, searchStatus);
 
   // Build role-gated Quick Jump targets (screens + deep-linked tabs)
   const quickJumpTargets = [
@@ -753,8 +814,10 @@ export function AppShell(user, activePage, navigate, onLogout) {
     if (searchInput.value.trim() !== q) return;
     if (results.length === 0 && matchedPages.length === 0) {
       searchResults.innerHTML = '<div class="topbar__search-empty">No matching incidents.</div>';
+      searchStatus.textContent = 'No matching incidents.';
       return;
     }
+    searchStatus.textContent = `${results.length} incident${results.length === 1 ? '' : 's'} and ${matchedPages.length} screen${matchedPages.length === 1 ? '' : 's'} found.`;
     searchResults.innerHTML = '';
 
     if (results.length > 0) {
@@ -768,7 +831,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
         row.type = 'button';
         row.className = 'topbar__search-result';
         const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
-        row.innerHTML = `<strong>#${escapeHtml(item.incidentId)} — ${escapeHtml(typeLabel)}</strong><span class="status-pill status-pill--neutral">${escapeHtml(item.status)}</span>`;
+        row.innerHTML = `<strong>#${escapeHtml(item.incidentId)} — ${escapeHtml(typeLabel)}</strong><span class="status-pill status-pill--neutral">${escapeHtml(String(item.status ?? '').replace(/_/g, ' '))}</span>`;
         row.addEventListener('click', () => {
           searchResults.hidden = true;
           searchInput.value = '';
@@ -795,10 +858,16 @@ export function AppShell(user, activePage, navigate, onLogout) {
   const topbarUser = document.createElement('div');
   topbarUser.className = 'topbar__user';
 
-  // Live Philippine Standard Time clock and active shift
+  // Live Manila clock and active shift. Pinned to Asia/Manila through
+  // manilaTime.js (audit 2026-10-09 X-24): it used the browser's own zone
+  // and was labelled "PST", which most readers take as US Pacific time.
+  // role="timer" with aria-live off: a once-a-second update must not be
+  // read out continuously (X-15).
   const clockContainer = document.createElement('div');
   clockContainer.className = 'topbar__clock';
-  clockContainer.setAttribute('aria-label', 'Live local time and active duty shift');
+  clockContainer.setAttribute('role', 'timer');
+  clockContainer.setAttribute('aria-live', 'off');
+  clockContainer.setAttribute('aria-label', 'Current time in Manila and active duty shift');
 
   const clockTimeRow = document.createElement('div');
   clockTimeRow.className = 'topbar__clock-time';
@@ -818,20 +887,17 @@ export function AppShell(user, activePage, navigate, onLogout) {
 
   let clockInterval;
   const updateClock = () => {
-    if (!clockContainer.isConnected) {
+    // The first call runs before the shell is attached: render it then
+    // (the clock was blank for its first second), stop only once detached.
+    if (clockInterval !== undefined && !clockContainer.isConnected) {
       clearInterval(clockInterval);
       return;
     }
     const now = new Date();
-    const hours = now.getHours();
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    const h12 = hours % 12 || 12;
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    clockDigits.textContent = `${h12}:${minutes}:${seconds} ${ampm} PST`;
-
+    clockDigits.textContent = `${formatManilaTimeSeconds(now)} Manila (PHT)`;
+    const hours = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hourCycle: 'h23' }).format(now));
     const isDay = hours >= 8 && hours < 20;
-    clockShift.textContent = isDay ? 'Day Duty (08:00–20:00)' : 'Night Duty (20:00–08:00)';
+    clockShift.textContent = isDay ? 'Day Duty (8:00 am–8:00 pm)' : 'Night Duty (8:00 pm–8:00 am)';
   };
   updateClock();
   clockInterval = setInterval(updateClock, 1000);
@@ -842,28 +908,33 @@ export function AppShell(user, activePage, navigate, onLogout) {
   // actually ran, and is simply omitted for roles that can't call the
   // endpoint rather than showing a fake status for them.
   if (user.role === 'admin') {
-    const statusBadge = document.createElement('div');
-    // The text changes asynchronously once the health probe resolves, so
-    // it needs to be announced rather than silently swapped.
-    statusBadge.setAttribute('role', 'button');
-    statusBadge.setAttribute('tabindex', '0');
-    statusBadge.setAttribute('aria-label', 'System health status. Click to open Service Health dashboard.');
-    statusBadge.style.cursor = 'pointer';
+    // A real <button> (audit 2026-10-09 X-15): it was a div with
+    // role=button whose fixed aria-label hid the live state, so a screen
+    // reader never heard whether the system was up.
+    const statusBadge = document.createElement('button');
+    statusBadge.type = 'button';
     statusBadge.className = 'status-badge status-badge--checking';
-    statusBadge.innerHTML = '<span class="status-badge__dot"></span><span class="status-badge__text">Checking…</span>';
-    statusBadge.addEventListener('click', () => navigate('service-health'));
-    statusBadge.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') navigate('service-health'); });
-    topbarUser.appendChild(statusBadge);
-    getSystemHealth().then((health) => {
-      const coreDown = health.api !== 'healthy' || health.db !== 'healthy';
-      const state = coreDown ? 'down' : 'ok';
-      const text = coreDown ? 'Database Unavailable' : 'All Systems Operational';
+    statusBadge.innerHTML = '<span class="status-badge__dot" aria-hidden="true"></span><span class="status-badge__text">Checking…</span>';
+    const setBadge = (state, text) => {
       statusBadge.className = 'status-badge status-badge--' + state;
       statusBadge.querySelector('.status-badge__text').textContent = text;
+      statusBadge.setAttribute('aria-label', `System health: ${text}. Open Service Health.`);
+    };
+    statusBadge.setAttribute('aria-label', 'System health: checking. Open Service Health.');
+    statusBadge.addEventListener('click', () => navigate('service-health'));
+    topbarUser.appendChild(statusBadge);
+    getSystemHealth().then((health) => {
+      // X-22: name the cause instead of calling every core failure
+      // "Database Unavailable", and do not claim "All Systems Operational"
+      // while a non-core service reports a failure.
+      const nonCore = [health.ors, health.gsmIngestion, health.notificationConfig];
+      if (health.api !== 'healthy') setBadge('down', 'Server not responding');
+      else if (health.db !== 'healthy') setBadge('down', 'Database problem');
+      else if (nonCore.some((v) => v && v !== 'healthy' && v !== 'not_configured')) setBadge('checking', 'Some services need attention');
+      else setBadge('ok', 'All Systems Operational');
       statusBadge.title = `API: ${health.api} · DB: ${health.db} · Routing: ${health.ors} · GSM: ${health.gsmIngestion} · Notifications: ${health.notificationConfig} (Click to view full health)`;
     }).catch(() => {
-      statusBadge.className = 'status-badge status-badge--down';
-      statusBadge.querySelector('.status-badge__text').textContent = 'Status unavailable';
+      setBadge('down', 'Status unavailable');
     });
   }
 
@@ -891,6 +962,9 @@ export function AppShell(user, activePage, navigate, onLogout) {
     writeStoredTheme(next);
     syncThemeToggleIcon();
   });
+  // D-10: the Settings page's theme cards and the OS-following bootstrap
+  // also change data-theme; keep the icon and menu label in step with them.
+  onThemeChange(themeToggle, () => syncThemeToggleIcon());
   topbarUser.appendChild(themeToggle);
 
   sidebarUserRole.textContent = roleLabel;
@@ -1284,9 +1358,13 @@ export function AppShell(user, activePage, navigate, onLogout) {
       }
       knownNotificationIds = new Set(result.items.map((item) => item.notificationId));
       renderNotifications(result);
+      updateSosBar(result.items);
+      markPollOk();
     } catch {
-      // The bell is a convenience; a failed fetch leaves the previous
-      // state rather than replacing the panel with an error.
+      // A failed fetch leaves the previous bell state rather than replacing
+      // the panel with an error, but it is no longer silent: the topbar
+      // says updates are paused until a poll succeeds again (X-01).
+      markPollFailed();
     }
   }
 
@@ -1378,6 +1456,19 @@ export function AppShell(user, activePage, navigate, onLogout) {
   };
   onThemeChanged();
 
+  // V-06/N-03: the data-privacy notice (draft) is a static page, so it opens
+  // even when the API is down; a new tab keeps the console where it was.
+  const privacyItem = MenuItem({
+    label: 'Privacy notice',
+    description: 'How this system handles personal data',
+    icon: icons.shield,
+    onClick: () => {
+      avatarMenu.close();
+      window.open('privacy.html', '_blank', 'noopener');
+    },
+  });
+  avatarMenu.panel.appendChild(privacyItem);
+
   avatarMenu.panel.appendChild(MenuDivider());
 
   // Kept as a real element (not just a menu row) because callers rely on
@@ -1400,8 +1491,115 @@ export function AppShell(user, activePage, navigate, onLogout) {
   };
   renderUserLabel(user.fullName);
 
+  // --- "Updates paused" indicator (audit 2026-10-09 X-01) -----------------
+  // The bell and nav counts poll in the background; when those polls fail
+  // the screen silently goes stale. role=status announces the change once.
+  const staleIndicator = document.createElement('span');
+  staleIndicator.className = 'topbar__stale';
+  staleIndicator.setAttribute('role', 'status');
+  const staleText = document.createElement('span');
+  staleText.className = 'topbar__stale-text';
+  staleIndicator.append(staleText);
+  staleIndicator.hidden = true;
+  function markPollOk() {
+    lastPollOkAt = new Date();
+    staleIndicator.hidden = true;
+    staleText.textContent = '';
+    staleIndicator.removeAttribute('title');
+  }
+  function markPollFailed() {
+    staleIndicator.hidden = false;
+    staleText.textContent = 'Updates paused';
+    staleIndicator.title = lastPollOkAt
+      ? `Cannot reach the server. Alerts and counts were last updated at ${formatManilaTime(lastPollOkAt)} (Manila time). Retrying.`
+      : 'Cannot reach the server. Alerts and counts are not updating. Retrying.';
+  }
+
+  // --- Site-wide SOS bar (audit 2026-10-09 A-08) --------------------------
+  const sosBar = document.createElement('div');
+  sosBar.className = 'sos-bar';
+  sosBar.setAttribute('role', 'alert');
+  sosBar.setAttribute('aria-live', 'assertive');
+  sosBar.setAttribute('aria-atomic', 'true');
+  sosBar.hidden = true;
+  const sosIcon = document.createElement('span');
+  sosIcon.className = 'sos-bar__icon';
+  sosIcon.setAttribute('aria-hidden', 'true');
+  sosIcon.innerHTML = icons.alertTriangle(18);
+  const sosText = document.createElement('span');
+  sosText.className = 'sos-bar__text';
+  const sosSoundHint = document.createElement('span');
+  sosSoundHint.className = 'sos-bar__sound-hint';
+  sosSoundHint.textContent = 'Click anywhere to enable alert sound';
+  sosSoundHint.hidden = true;
+  const sosActions = document.createElement('span');
+  sosActions.className = 'sos-bar__actions';
+  // Where an SOS is handled: the Dispatch Center for the Admin, the Live
+  // Map for the Punong Barangay (who has no dispatch screen), else nowhere.
+  const sosTarget = user.role === 'admin'
+    ? { page: 'dispatch', label: 'Open Dispatch Center' }
+    : (NAV_ITEMS.find((i) => i.key === 'gis')?.roles.includes(user.role) ? { page: 'gis', label: 'Open Live Map' } : null);
+  if (sosTarget) {
+    const goBtn = document.createElement('button');
+    goBtn.type = 'button';
+    goBtn.className = 'sos-bar__btn sos-bar__btn--primary';
+    goBtn.textContent = sosTarget.label;
+    goBtn.addEventListener('click', () => navigate(sosTarget.page));
+    sosActions.appendChild(goBtn);
+  }
+  const ackBtn = document.createElement('button');
+  ackBtn.type = 'button';
+  ackBtn.className = 'sos-bar__btn';
+  ackBtn.textContent = 'Mark as seen';
+  sosActions.appendChild(ackBtn);
+  sosBar.append(sosIcon, sosText, sosSoundHint, sosActions);
+  let pendingSosItems = [];
+  ackBtn.addEventListener('click', async () => {
+    const ids = pendingSosItems.map((i) => i.notificationId);
+    ackBtn.disabled = true;
+    try {
+      // Acknowledges the caller's own SOS notifications (the existing
+      // per-notification route). The SOS itself stays open on the
+      // Dispatch board until it is resolved there.
+      await Promise.all(ids.map((id) => acknowledgeNotification(id)));
+      updateSosBar([]);
+      loadNotifications();
+    } catch {
+      sosText.textContent = 'Could not mark the SOS alert as seen. Try again.';
+    } finally {
+      ackBtn.disabled = false;
+    }
+  });
+  const syncSoundHint = () => {
+    sosSoundHint.hidden = !(pendingSosItems.length > 0 && !isAlertSoundUnlocked());
+  };
+  const offUnlock = onAlertSoundUnlocked(() => {
+    if (!el.isConnected) { offUnlock(); return; }
+    syncSoundHint();
+    if (pendingSosItems.length > 0) startSosTone(el);
+  });
+  function updateSosBar(items) {
+    pendingSosItems = items.filter((i) => i.notificationType === 'sos' && i.ackStatus === 'pending');
+    const active = pendingSosItems.length > 0;
+    // The Dispatch Center draws its own SOS banner with resolve controls;
+    // a second bar there would announce the same alert twice. The tone
+    // keeps going (throttled, so still one chime per period).
+    sosBar.hidden = !active || activePage === 'dispatch';
+    if (active) {
+      const first = pendingSosItems[0];
+      const who = first.sosTanodName ? `${first.sosTanodName} needs help` : 'A tanod needs help';
+      sosText.textContent = pendingSosItems.length === 1
+        ? `SOS: ${who}.`
+        : `SOS: ${pendingSosItems.length} unacknowledged alerts. ${who}.`;
+      if (isAlertSoundUnlocked()) startSosTone(el);
+    } else {
+      stopSosTone();
+    }
+    syncSoundHint();
+  }
+
   topbarUser.append(bellMenu.el, avatarMenu.el);
-  topbar.append(searchHost, topbarUser);
+  topbar.append(searchHost, staleIndicator, topbarUser);
   loadNotifications();
 
   // Full-bleed slot for a PageHeader, above the scrolling area so the
@@ -1425,7 +1623,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
   contentContainer.className = 'page-container';
   content.appendChild(contentContainer);
 
-  mainColumn.append(topbar, header, content);
+  mainColumn.append(topbar, sosBar, header, content);
   el.append(sidebar, scrim, mainColumn);
 
   // Periodic real-time background notification poller (every 15s).

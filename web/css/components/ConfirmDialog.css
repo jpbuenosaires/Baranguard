@@ -13,7 +13,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--spacing-lg);
-  z-index: 400;
+  z-index: var(--z-confirm);
   animation: confirm-backdrop-enter .15s ease-out;
 }
 @keyframes confirm-backdrop-enter {
@@ -55,7 +55,7 @@
   margin-top: var(--spacing-lg);
 }
 .confirm-dialog__actions button:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-link);
   outline-offset: 2px;
 }
 .confirm-dialog__error {

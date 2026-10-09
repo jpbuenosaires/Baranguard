@@ -21,7 +21,9 @@ export function PageHeader({ title, subtitle, icon }) {
   const titleBlock = document.createElement('div');
   titleBlock.className = 'page-header__titles';
 
-  const heading = document.createElement('h2');
+  // h1 (audit 2026-10-09 X-12): the page title is the top-level heading of
+  // every screen; the class carries the look, so the level is semantic only.
+  const heading = document.createElement('h1');
   heading.className = 'page-header__title';
   if (icon) {
     const iconSpan = document.createElement('span');

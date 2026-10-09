@@ -9,6 +9,7 @@
  */
 import { icons } from './icons.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatManilaDateTime } from '../utils/manilaTime.js';
 
 /**
  * Opens an interactive A4 Print Preview modal and mounts `#printable-...`
@@ -21,6 +22,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
  * @param {string} options.sheetHtml Inner HTML of the `.print-sheet` container
  * @param {Array<{label:string, icon?:string, className?:string, onClick:(btn:HTMLButtonElement)=>void}>} [options.extraActions=[]]
  *   Additional footer action buttons placed beside "Print working copy" (e.g. Download Official PDF, Export CSV).
+ * @param {string} [options.printedBy] Role or name printed in the page footer ("Printed <Manila time> by <printedBy>").
  * @returns {{ close: () => void, overlay: HTMLElement, sheet: HTMLElement }}
  */
 export function openPrintPreviewModal({
@@ -29,7 +31,9 @@ export function openPrintPreviewModal({
   sheetId = 'printable-sheet',
   sheetHtml = '',
   extraActions = [],
+  printedBy = '',
 } = {}) {
+  const returnFocusTo = document.activeElement;
   // Remove any existing print modal first so two never stack
   const existing = document.querySelector('.print-modal-backdrop');
   if (existing) existing.remove();
@@ -52,12 +56,13 @@ export function openPrintPreviewModal({
           <p class="print-modal__subtitle">${escapeHtml(subtitle)}</p>
         </div>
       </div>
-      <button type="button" class="ghost" id="close-print-modal" aria-label="Close print preview">✕</button>
+      <button type="button" class="ghost" id="close-print-modal" aria-label="Close print preview">${icons.x ? icons.x(16) : '&times;'}</button>
     </div>
 
     <div class="print-modal__viewport">
       <div id="${escapeHtml(sheetId)}" class="print-sheet">
         ${sheetHtml}
+        <p class="print-sheet__stamp">Printed ${escapeHtml(formatManilaDateTime(new Date()))} (Philippine time)${printedBy ? ` by ${escapeHtml(printedBy)}` : ''}</p>
       </div>
     </div>
 
@@ -65,7 +70,7 @@ export function openPrintPreviewModal({
       <button type="button" class="ghost" id="cancel-print-btn">Close</button>
       <div class="print-modal__footer-actions">
         <button type="button" class="primary" id="do-print-btn">
-          ${icons.printer(16)} <span>Print working copy</span>
+          ${icons.printer(16)} <span>Print</span>
         </button>
       </div>
     </div>
@@ -92,6 +97,17 @@ export function openPrintPreviewModal({
     if (event.key === 'Escape') {
       event.preventDefault();
       close();
+      return;
+    }
+    if (event.key === 'Tab') {
+      // Keep keyboard focus inside the dialog while it is open.
+      const focusable = [...modal.querySelectorAll('button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      else if (!modal.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
     }
   };
   window.addEventListener('keydown', onKeyDown);
@@ -100,10 +116,12 @@ export function openPrintPreviewModal({
     window.removeEventListener('keydown', onKeyDown);
     document.body.classList.remove('has-print-modal');
     overlay.remove();
+    if (returnFocusTo && typeof returnFocusTo.focus === 'function' && document.contains(returnFocusTo)) returnFocusTo.focus();
   }
 
   modal.querySelector('#close-print-modal').addEventListener('click', close);
   modal.querySelector('#cancel-print-btn').addEventListener('click', close);
+  doPrintBtn.focus();
   doPrintBtn.addEventListener('click', () => {
     document.body.classList.add('has-print-modal');
     window.print();

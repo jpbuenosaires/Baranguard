@@ -40,6 +40,7 @@ import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
+import { formatManilaDateTime, formatManilaTimeSeconds } from '../utils/manilaTime.js';
 
 const REFRESH_MS = 30000;
 
@@ -71,14 +72,15 @@ const DEPENDENCIES = [
     label: 'API Gateway',
     description: 'Front controller & HTTP endpoint responding on local port',
     icon: icons.activity,
+    whatToDo: 'If this fails, nothing else will work. Close and reopen the Start Baranguard launcher on the workstation, or ask whoever maintains the computer.',
     probeType: 'Live HTTP Probe',
     probeDetail: 'Endpoint executes within local request lifecycle and returns JSON',
-    configKey: 'HTTP Front Controller (port 8140)',
+    configKey: 'Web server (port 8081)',
     impacted: [
       'All web console and mobile application API requests',
       'Live operations, incident dispatches, and authentication sessions',
     ],
-    runbook: '# Test local HTTP endpoint reachability:\ncurl -I http://127.0.0.1:8140/api/v1/system/health\n# Verify Apache/PHP process status on the host workstation.',
+    runbook: '# Test local HTTP endpoint reachability:\ncurl -I http://127.0.0.1:8081/api/v1/system/health\n# Verify Apache/PHP process status on the host workstation.',
   },
   {
     key: 'db',
@@ -86,6 +88,7 @@ const DEPENDENCIES = [
     label: 'MariaDB Database',
     description: 'Primary relational database (10.4+) storage layer',
     icon: icons.layers,
+    whatToDo: 'If this fails, the records cannot be read. Make sure MySQL is running (the Start Baranguard launcher starts it), or ask whoever maintains the computer.',
     probeType: 'Live SQL: SELECT 1',
     probeDetail: 'PDO executes live SELECT 1 check against local MariaDB connection',
     configKey: 'DB_HOST, DB_NAME, DB_USER, DB_PASS',
@@ -101,6 +104,7 @@ const DEPENDENCIES = [
     label: 'OpenRouteService (Routing)',
     description: 'Cloud turn-by-turn routing for tanod dispatch and patrol ETA (car and foot), free tier, no card required',
     icon: icons.map,
+    whatToDo: 'Only affects road directions for Tanods. Dispatching still works. Ask whoever maintains the computer to check the routing key.',
     probeType: 'Live Route Request',
     probeDetail: 'Requests a real route between two fixed Pilar/Sorsogon points, not just a key presence check',
     configKey: 'ORS_API_KEY',
@@ -116,7 +120,8 @@ const DEPENDENCIES = [
     label: 'GSM Cellular Ingestion',
     description: 'Inbound SMS envelope receiver for local cellular modems',
     icon: icons.inbox,
-    probeType: 'Config Presence Check (not a liveness probe)',
+    whatToDo: 'Check that the SMS phone is plugged in and its app is open. This screen can only tell that the setting exists, not that texts are arriving.',
+    probeType: 'Setting check only (not a live test)',
     probeDetail: 'Only checks that INTERNAL_SERVICE_TOKEN is set. It does not confirm the ingest daemon or gateway phone is running',
     configKey: 'INTERNAL_SERVICE_TOKEN',
     impacted: [
@@ -131,7 +136,8 @@ const DEPENDENCIES = [
     label: 'Notification Dispatcher',
     description: 'Aggregated push and SMS transport routing readiness',
     icon: icons.bell,
-    probeType: 'Aggregate Config Check',
+    whatToDo: 'Make sure at least one way of alerting Tanods (push or SMS) is set up.',
+    probeType: 'Setting check only (not a live test)',
     probeDetail: 'Shows Configured if either FCM or the local GSM SMS gateway is configured. Neither is tested from the dashboard',
     configKey: 'FCM_SERVICE_ACCOUNT_PATH or GSM_GATEWAY_ENABLED',
     impacted: [
@@ -146,7 +152,8 @@ const DEPENDENCIES = [
     label: 'Firebase Cloud Messaging',
     description: 'Mobile push dispatch for Tanod operations mobile app',
     icon: icons.send,
-    probeType: 'Credentials File Check',
+    whatToDo: 'Push alerts need a Firebase key file. Ask whoever maintains the computer if this shows Not set up.',
+    probeType: 'Key file check (not a live test)',
     probeDetail: 'Checks that the FCM_SERVICE_ACCOUNT_PATH file exists, is readable and has the expected keys. Google is not contacted, so push delivery is not tested',
     configKey: 'FCM_SERVICE_ACCOUNT_PATH',
     impacted: [
@@ -161,7 +168,8 @@ const DEPENDENCIES = [
     label: 'GSM SMS Gateway',
     description: 'Outbound citizen alert and broadcast SMS via the tethered gateway phone’s own SIM',
     icon: icons.messageSquare,
-    probeType: 'Config Flag Check (not a liveness probe)',
+    whatToDo: 'Check that the SMS phone is plugged in, has load, and its app is open. This screen only knows the setting is switched on.',
+    probeType: 'Setting check only (not a live test)',
     probeDetail: 'Only checks that GSM_GATEWAY_ENABLED is true. It does not confirm the gateway phone is connected or can send',
     configKey: 'GSM_GATEWAY_ENABLED',
     impacted: [
@@ -180,14 +188,14 @@ const STATUS_PILL_CLASS = {
 };
 
 const STATUS_LABEL = {
-  healthy: 'HEALTHY',
-  unhealthy: 'UNHEALTHY',
-  configured: 'CONFIGURED',
-  not_configured: 'NOT CONFIGURED',
+  healthy: 'Working',
+  unhealthy: 'Not working',
+  configured: 'Set up, not tested',
+  not_configured: 'Not set up',
 };
 
 // Rule 6: no probe exists that proves these work end-to-end from the dashboard.
-const CONFIGURED_TOOLTIP = 'Configured but not tested from the dashboard';
+const CONFIGURED_TOOLTIP = 'Set up, but this screen cannot test it';
 
 /**
  * Calculates human-friendly relative age or date
@@ -196,24 +204,17 @@ const CONFIGURED_TOOLTIP = 'Configured but not tested from the dashboard';
  */
 function evaluateTimestampFreshness(dateStr, maxHours = 24) {
   if (!dateStr) {
-    return { formatted: 'Never (Action Required)', isRecent: false, isWarning: true };
+    return { formatted: 'Never recorded', isRecent: false, isWarning: true };
   }
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) {
-    return { formatted: 'Invalid date', isRecent: false, isWarning: true };
+    return { formatted: 'Not recorded', isRecent: false, isWarning: true };
   }
 
   const now = new Date();
   const diffHours = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
 
-  const formatted = d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  const formatted = formatManilaDateTime(d);
 
   return {
     formatted,
@@ -243,7 +244,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
   // Page Header
   const pageHeader = PageHeader({
     title: 'Service Health',
-    subtitle: 'Operational diagnostics, dependency availability, and disaster recovery telemetry',
+    subtitle: 'Whether the system\'s parts are working, and when the last backup was made',
     icon: icons.activity,
   });
 
@@ -275,6 +276,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
   content.appendChild(pageContainer);
 
   let timer = null;
+  let lastCheckedLabel = null;
   let activeFilter = 'all'; // 'all' | 'healthy' | 'unhealthy' | 'not_configured'
   let cachedHealth = null;
 
@@ -297,10 +299,16 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       const health = await getSystemHealth();
       cachedHealth = health;
       renderHealth(health);
-      const timeStr = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      freshnessPill.innerHTML = `${icons.clock(13)}<span>Checked ${timeStr}</span>`;
+      lastCheckedLabel = formatManilaTimeSeconds(new Date());
+      freshnessPill.classList.remove('is-stale');
+      freshnessPill.innerHTML = `${icons.clock(13)}<span>Checked ${lastCheckedLabel}</span>`;
     } catch (err) {
-      if (background) return; // Do not blank populated UI on transient background poll glitch
+      if (background) {
+        // Do not blank the populated screen, but never let old results look current (audit A-31).
+        freshnessPill.classList.add('is-stale');
+        freshnessPill.innerHTML = `${icons.alertTriangle(13)}<span>Cannot reach the server. Showing results from ${lastCheckedLabel || 'an earlier check'}.</span>`;
+        return;
+      }
       const message = err instanceof ApiClientError ? err.message : 'Could not retrieve operational service health.';
       renderError(pageContainer, message, () => load());
     } finally {
@@ -335,20 +343,20 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     const heroTitle = document.createElement('h3');
     heroTitle.className = 'health-hero-banner__title';
     heroTitle.textContent = isDegraded
-      ? `Action Required: ${unhealthyDeps.length} Configured Dependency Failing`
-      : 'All Configured Subsystems Responding Normally';
+      ? `Needs attention: ${unhealthyDeps.length} part${unhealthyDeps.length === 1 ? ' is' : 's are'} not working`
+      : 'Everything that can be tested is working';
 
     const heroBadge = document.createElement('span');
     heroBadge.className = 'health-hero-banner__badge';
-    heroBadge.textContent = isDegraded ? 'SYSTEM DEGRADED' : 'OPERATIONAL';
+    heroBadge.textContent = isDegraded ? 'Needs attention' : 'Working';
 
     heroHeader.append(heroTitle, heroBadge);
 
     const heroText = document.createElement('p');
     heroText.className = 'health-hero-banner__text';
     heroText.textContent = isDegraded
-      ? `Failing services: ${unhealthyDeps.map((d) => d.label).join(', ')}. Click any failing service card below to inspect diagnostic logs and remediation instructions.`
-      : 'Core API, database, and all configured external integrations are answering live health probes. Unconfigured optional integrations are marked neutral per Baranguard honesty standards (§8).';
+      ? `Not working: ${unhealthyDeps.map((d) => d.label).join(', ')}. Click a card below to see what it affects and what to do.`
+      : 'The server and database answered a live test. Parts marked "Set up, not tested" or "Not set up" cannot be tested from this screen, so they are shown in grey, not green.';
 
     heroContent.append(heroHeader, heroText);
     heroBanner.append(heroIcon, heroContent);
@@ -361,36 +369,36 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     const statItems = [
       {
         id: 'all',
-        label: 'Overall Workstation Health',
-        value: isDegraded ? 'DEGRADED' : 'HEALTHY',
+        label: 'Overall',
+        value: isDegraded ? 'Needs attention' : 'Working',
         tone: isDegraded ? 'critical' : 'success',
         icon: isDegraded ? icons.alertTriangle(16) : icons.shield(16),
       },
       {
         id: 'healthy',
-        label: 'Active & Responding',
+        label: 'Working',
         value: `${healthyCount} / ${DEPENDENCIES.length}`,
         tone: 'success',
         icon: icons.checkCircle(16),
       },
       {
         id: 'unhealthy',
-        label: 'Configured & Failing',
-        value: `${unhealthyDeps.length} Failing`,
+        label: 'Not working',
+        value: `${unhealthyDeps.length} not working`,
         tone: unhealthyDeps.length > 0 ? 'critical' : 'neutral',
         icon: icons.alertTriangle(16),
       },
       {
         id: 'configured',
-        label: 'Configured, Not Tested',
-        value: `${configuredCount} Neutral`,
+        label: 'Set up, not tested',
+        value: `${configuredCount} part${configuredCount === 1 ? '' : 's'}`,
         tone: 'neutral',
         icon: icons.settings(16),
       },
       {
         id: 'not_configured',
-        label: 'Unconfigured / Optional',
-        value: `${notConfiguredCount} Neutral`,
+        label: 'Not set up',
+        value: `${notConfiguredCount} part${notConfiguredCount === 1 ? '' : 's'}`,
         tone: 'neutral',
         icon: icons.settings(16),
       },
@@ -400,11 +408,12 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       const card = document.createElement('button');
       card.type = 'button';
       card.className = `stat-card ${activeFilter === item.id ? 'is-active' : ''}`;
-      card.setAttribute('aria-label', `Filter by ${item.label}`);
+      card.setAttribute('aria-label', `Show only: ${item.label}`);
+      card.setAttribute('aria-pressed', String(activeFilter === item.id));
 
       const val = document.createElement('span');
       val.className = `stat-card__value stat-card__value--${item.tone}`;
-      val.innerHTML = `${item.icon}<span>${item.value}</span>`;
+      val.innerHTML = `<span aria-hidden="true">${item.icon}</span><span>${item.value}</span>`;
 
       const lbl = document.createElement('span');
       lbl.className = 'stat-card__label';
@@ -488,7 +497,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
         const pill = document.createElement('span');
         pill.className = `status-pill ${STATUS_PILL_CLASS[status] || 'status-pill--neutral'}`;
-        pill.textContent = STATUS_LABEL[status] || String(status).toUpperCase();
+        pill.textContent = STATUS_LABEL[status] || 'Unknown';
         if (status === 'configured') pill.title = CONFIGURED_TOOLTIP;
 
         topRow.append(identity, pill);
@@ -508,7 +517,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
         const actionHint = document.createElement('span');
         actionHint.className = 'health-service-card__action-hint';
-        actionHint.innerHTML = 'Inspect & Runbook →';
+        actionHint.textContent = 'What this affects and what to do →';
 
         footer.append(probe, actionHint);
         card.append(topRow, desc, footer);
@@ -543,19 +552,19 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     backupHeader.className = 'health-dr-card__header';
     const backupTitle = document.createElement('h4');
     backupTitle.className = 'health-dr-card__title';
-    backupTitle.innerHTML = `${icons.shield(18)}<span>Automated Database Backup</span>`;
+    backupTitle.innerHTML = `${icons.shield(18)}<span>Daily Database Backup</span>`;
 
     const backupFreshness = evaluateTimestampFreshness(health.backupLastSuccess, 24);
     const backupBadge = document.createElement('span');
     backupBadge.className = `health-dr-card__badge ${backupFreshness.isRecent ? 'status-pill--success' : (backupFreshness.isWarning ? 'status-pill--warning' : 'status-pill--critical')}`;
-    backupBadge.textContent = backupFreshness.isRecent ? 'Active (< 24h)' : (health.backupLastSuccess ? 'Stale (> 24h)' : 'No Backup Taken');
+    backupBadge.textContent = backupFreshness.isRecent ? 'Recent (within 24 hours)' : (health.backupLastSuccess ? 'Older than 24 hours' : 'No backup yet');
     backupHeader.append(backupTitle, backupBadge);
 
     const backupField = document.createElement('div');
     backupField.className = 'health-dr-field';
     const backupLabel = document.createElement('span');
     backupLabel.className = 'health-dr-label';
-    backupLabel.textContent = 'Last Successful Backup';
+    backupLabel.textContent = 'Last successful backup (Manila time)';
     const backupValRow = document.createElement('div');
     backupValRow.className = 'health-dr-value-row';
     const backupVal = document.createElement('span');
@@ -566,7 +575,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     const backupNote = document.createElement('p');
     backupNote.className = 'health-dr-note';
-    backupNote.textContent = 'Scheduled daemon produces AES-256-CBC encrypted dumps (backend/backups/*.sql.enc) with SHA-256 checksums per statutory retention standards.';
+    backupNote.textContent = 'A scheduled job makes an encrypted copy of the database every day. Keep a recent copy somewhere other than this computer.';
 
     const backupSnippet = buildTerminalBox('bash backend/scripts/backup.sh');
     backupCard.append(backupHeader, backupField, backupNote, backupSnippet);
@@ -579,19 +588,19 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     restoreHeader.className = 'health-dr-card__header';
     const restoreTitle = document.createElement('h4');
     restoreTitle.className = 'health-dr-card__title';
-    restoreTitle.innerHTML = `${icons.repeat(18)}<span>Integrity & Restore Drill</span>`;
+    restoreTitle.innerHTML = `${icons.repeat(18)}<span>Restore Test</span>`;
 
     const restoreFreshness = evaluateTimestampFreshness(health.restoreTestAt, 168); // 7 days
     const restoreBadge = document.createElement('span');
     restoreBadge.className = `health-dr-card__badge ${health.restoreTestAt ? 'status-pill--success' : 'status-pill--critical'}`;
-    restoreBadge.textContent = health.restoreTestAt ? 'Statutory Verified' : 'Untested (Action Required)';
+    restoreBadge.textContent = health.restoreTestAt ? 'Restore tested' : 'Never tested';
     restoreHeader.append(restoreTitle, restoreBadge);
 
     const restoreField = document.createElement('div');
     restoreField.className = 'health-dr-field';
     const restoreLabel = document.createElement('span');
     restoreLabel.className = 'health-dr-label';
-    restoreLabel.textContent = 'Last Verified Restore Drill';
+    restoreLabel.textContent = 'Last successful restore test (Manila time)';
     const restoreValRow = document.createElement('div');
     restoreValRow.className = 'health-dr-value-row';
     const restoreVal = document.createElement('span');
@@ -602,7 +611,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     const restoreNote = document.createElement('p');
     restoreNote.className = 'health-dr-note';
-    restoreNote.textContent = 'A backup that has never been restored is an untested backup. restore-drill.sh verifies row counts and foreign keys against an isolated sandbox database (§9 W20).';
+    restoreNote.textContent = 'A backup that has never been restored is an untested backup. The restore test brings a backup back into a separate practice database to check that nothing is missing.';
 
     const restoreSnippet = buildTerminalBox('bash backend/scripts/restore-drill.sh');
     restoreCard.append(restoreHeader, restoreField, restoreNote, restoreSnippet);
@@ -623,14 +632,14 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     const failedCount = Number.isFinite(health.notificationDeliveryFailures24h) ? health.notificationDeliveryFailures24h : 0;
     const notifBadge = document.createElement('span');
     notifBadge.className = `health-dr-card__badge ${failedCount === 0 ? 'status-pill--success' : 'status-pill--warning'}`;
-    notifBadge.textContent = failedCount === 0 ? 'All Reaching Recipients' : 'Delivery Gaps Detected';
+    notifBadge.textContent = failedCount === 0 ? 'All reaching recipients' : 'Some alerts not delivered';
     notifHeader.append(notifTitle, notifBadge);
 
     const notifField = document.createElement('div');
     notifField.className = 'health-dr-field';
     const notifLabel = document.createElement('span');
     notifLabel.className = 'health-dr-label';
-    notifLabel.textContent = 'Fully Undelivered (24h)';
+    notifLabel.textContent = 'Not delivered at all (last 24 hours)';
     const notifValRow = document.createElement('div');
     notifValRow.className = 'health-dr-value-row';
     const notifVal = document.createElement('span');
@@ -641,7 +650,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     const notifNote = document.createElement('p');
     notifNote.className = 'health-dr-note';
-    notifNote.textContent = 'Targets where every configured channel (FCM retry, then SMS fallback) failed to deliver — a genuine "nobody was alerted" gap, not a single failed attempt that a fallback still caught.';
+    notifNote.textContent = 'Alerts where both push and SMS failed, so the person was not reached. A single failed try that a backup channel still delivered is not counted.';
 
     notifCard.append(notifHeader, notifField, notifNote);
 
@@ -731,9 +740,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
       const when = document.createElement('span');
       when.className = 'health-history__when';
-      when.textContent = new Date(row.recordedAt).toLocaleString(undefined, {
-        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-      });
+      when.textContent = formatManilaDateTime(row.recordedAt);
       item.appendChild(when);
 
       const what = document.createElement('span');
@@ -742,7 +749,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
         what.textContent = 'First recorded check.';
       } else {
         what.textContent = changed
-          .map(([key, label]) => `${label} → ${STATUS_LABEL[row[key]] || row[key]}`)
+          .map(([key, label]) => `${label} → ${STATUS_LABEL[row[key]] || 'Unknown'}`)
           .join(' · ');
       }
       item.appendChild(what);
@@ -774,7 +781,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       e.stopPropagation();
       try {
         await navigator.clipboard.writeText(command);
-        copyBtn.innerHTML = `${icons.checkCircle(12)}<span>Copied!</span>`;
+        copyBtn.innerHTML = `${icons.checkCircle(12)}<span>Copied</span>`;
         setTimeout(() => {
           copyBtn.innerHTML = `${icons.copy(12)}<span>Copy</span>`;
         }, 2000);
@@ -800,7 +807,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     backdrop.className = 'health-modal-backdrop';
     backdrop.setAttribute('role', 'dialog');
     backdrop.setAttribute('aria-modal', 'true');
-    backdrop.setAttribute('aria-label', `${dep.label} Diagnostics`);
+    backdrop.setAttribute('aria-labelledby', 'health-modal-title');
 
     const card = document.createElement('div');
     card.className = 'health-modal-card';
@@ -812,16 +819,18 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     const titleWrap = document.createElement('div');
     titleWrap.className = 'health-modal-title-wrap';
     const iconSpan = document.createElement('span');
-    iconSpan.style.color = 'var(--color-primary)';
+    iconSpan.className = 'health-modal-icon';
+    iconSpan.setAttribute('aria-hidden', 'true');
     iconSpan.innerHTML = dep.icon(20);
 
     const titleEl = document.createElement('h3');
     titleEl.className = 'health-modal-title';
-    titleEl.textContent = `${dep.label} Diagnostics`;
+    titleEl.id = 'health-modal-title';
+    titleEl.textContent = `${dep.label}: details`;
 
     const pill = document.createElement('span');
     pill.className = `status-pill ${STATUS_PILL_CLASS[status] || 'status-pill--neutral'}`;
-    pill.textContent = STATUS_LABEL[status] || String(status).toUpperCase();
+    pill.textContent = STATUS_LABEL[status] || 'Unknown';
 
     titleWrap.append(iconSpan, titleEl, pill);
 
@@ -842,19 +851,19 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     grid.innerHTML = `
       <div class="health-modal-field">
-        <span class="health-modal-label">Subsystem Domain</span>
+        <span class="health-modal-label">Group</span>
         <span class="health-modal-val">${DOMAINS[dep.domain]?.label || dep.domain}</span>
       </div>
       <div class="health-modal-field">
-        <span class="health-modal-label">Operational Status</span>
-        <span class="health-modal-val" style="color:${status === 'healthy' ? 'var(--color-success-text)' : (status === 'unhealthy' ? 'var(--color-critical)' : 'var(--color-text-secondary)')};">${STATUS_LABEL[status]}${status === 'configured' ? ` (${CONFIGURED_TOOLTIP})` : ''}</span>
+        <span class="health-modal-label">Status</span>
+        <span class="health-modal-val health-modal-val--${status}">${STATUS_LABEL[status] || 'Unknown'}${status === 'configured' ? ` (${CONFIGURED_TOOLTIP})` : ''}</span>
       </div>
       <div class="health-modal-field">
-        <span class="health-modal-label">Probe Methodology</span>
+        <span class="health-modal-label">How it is checked</span>
         <span class="health-modal-val">${dep.probeType}</span>
       </div>
       <div class="health-modal-field">
-        <span class="health-modal-label">Configuration Key</span>
+        <span class="health-modal-label">Technical setting name</span>
         <code class="health-modal-code">${dep.configKey}</code>
       </div>
     `;
@@ -864,7 +873,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     impactSection.className = 'health-modal-section';
     const impactTitle = document.createElement('span');
     impactTitle.className = 'health-modal-section-title';
-    impactTitle.textContent = 'Impacted Platform Capabilities:';
+    impactTitle.textContent = 'What this affects:';
 
     const impactList = document.createElement('ul');
     impactList.className = 'health-modal-impact-list';
@@ -875,19 +884,29 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     });
     impactSection.append(impactTitle, impactList);
 
+    // Plain-language first step, before the technical commands.
+    const todoSection = document.createElement('div');
+    todoSection.className = 'health-modal-section';
+    const todoTitle = document.createElement('span');
+    todoTitle.className = 'health-modal-section-title';
+    todoTitle.textContent = 'What to do:';
+    const todoText = document.createElement('p');
+    todoText.textContent = dep.whatToDo;
+    todoSection.append(todoTitle, todoText);
+
     // Runbook / Remediation
     const runbookSection = document.createElement('div');
     runbookSection.className = 'health-modal-section';
     const runbookTitle = document.createElement('span');
     runbookTitle.className = 'health-modal-section-title';
-    runbookTitle.textContent = status === 'unhealthy' ? 'Remediation Runbook (Action Required):' : 'Operator Diagnostic Runbook:';
+    runbookTitle.textContent = 'For whoever maintains the computer (technical commands):';
 
     const runbookCode = document.createElement('pre');
     runbookCode.className = 'health-modal-runbook';
     runbookCode.textContent = dep.runbook;
 
     runbookSection.append(runbookTitle, runbookCode);
-    bodyEl.append(grid, impactSection, runbookSection);
+    bodyEl.append(grid, impactSection, todoSection, runbookSection);
 
     // Footer
     const footerEl = document.createElement('div');
@@ -896,18 +915,18 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'ghost';
-    copyBtn.style.cssText = 'display: inline-flex; align-items: center; gap: 0.4rem;';
-    copyBtn.innerHTML = `${icons.copy(14)}<span>Copy Runbook Commands</span>`;
+    copyBtn.classList.add('health-modal-copy');
+    copyBtn.innerHTML = `${icons.copy(14)}<span>Copy commands</span>`;
 
     copyBtn.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(dep.runbook);
-        copyBtn.innerHTML = `${icons.checkCircle(14)}<span>Copied to Clipboard!</span>`;
+        copyBtn.innerHTML = `${icons.checkCircle(14)}<span>Copied</span>`;
         setTimeout(() => {
-          copyBtn.innerHTML = `${icons.copy(14)}<span>Copy Runbook Commands</span>`;
+          copyBtn.innerHTML = `${icons.copy(14)}<span>Copy commands</span>`;
         }, 2000);
       } catch (err) {
-        showToast('Could not copy runbook to clipboard.', { variant: 'error' });
+        showToast('Could not copy the commands to the clipboard.', { variant: 'error' });
       }
     });
 
@@ -922,13 +941,24 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     backdrop.appendChild(card);
     document.body.appendChild(backdrop);
 
+    // Focus management (audit X-10): move focus in, trap Tab, restore on close.
+    const opener = document.activeElement;
     const closeModal = () => {
       document.removeEventListener('keydown', handleKey);
       backdrop.remove();
+      if (opener && typeof opener.focus === 'function' && opener.isConnected) opener.focus();
     };
 
     const handleKey = (e) => {
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape') { closeModal(); return; }
+      if (e.key !== 'Tab') return;
+      const focusable = [...card.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+        .filter((el) => !el.disabled);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     };
 
     closeBtn.addEventListener('click', closeModal);
@@ -937,6 +967,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       if (e.target === backdrop) closeModal();
     });
     document.addEventListener('keydown', handleKey);
+    closeBtn.focus();
   }
 
   return {
@@ -951,5 +982,5 @@ function renderLoading(container) {
 }
 
 function renderError(container, message, onRetry) {
-  renderErrorState({ container, message, onRetry, retryLabel: 'Retry Diagnostics' });
+  renderErrorState({ container, message, onRetry, retryLabel: 'Try again' });
 }

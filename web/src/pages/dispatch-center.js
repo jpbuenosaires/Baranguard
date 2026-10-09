@@ -40,6 +40,7 @@ import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { openReferralDialog } from '../components/IncidentCaseCards.js';
 import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
+import { formatManilaTime } from '../utils/manilaTime.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 
@@ -103,12 +104,13 @@ function offerLineText(offer) {
   return null;
 }
 
-/** HH:MM (24h) in Asia/Manila for a Date or stored UTC instant; null when unusable. */
+/** "2:05 pm" in Asia/Manila for a Date or stored UTC instant; null when unusable. */
 function manilaClock(value) {
-  const d = value instanceof Date ? value : (value ? new Date(value) : null);
-  if (!d || Number.isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
+  return value ? formatManilaTime(value, null) : null;
 }
+
+// Plain words for a responder's dispatch state (never the raw en_route code).
+const DISPATCH_STATUS_LABELS = { assigned: 'Assigned', en_route: 'On the way', arrived: 'Arrived at scene' };
 
 /** An SOS with no usable coordinates (C-01 `no_fix`, or a null pair on an old row). */
 function sosHasNoLocation(sos) {
@@ -474,7 +476,9 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const filterIconBtn = document.createElement('button');
       filterIconBtn.type = 'button';
       filterIconBtn.className = 'dispatch-queue-card__filter-icon';
-      filterIconBtn.title = 'Filter queue';
+      filterIconBtn.title = 'Search the queue';
+      filterIconBtn.setAttribute('aria-label', 'Search the emergency queue');
+      filterIconBtn.setAttribute('aria-expanded', 'false');
       filterIconBtn.innerHTML = icons.filter(18);
 
       const searchBox = document.createElement('div');
@@ -495,6 +499,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       filterIconBtn.addEventListener('click', () => {
         const isHidden = searchBox.style.display === 'none';
         searchBox.style.display = isHidden ? 'block' : 'none';
+        filterIconBtn.setAttribute('aria-expanded', String(isHidden));
         if (isHidden) searchInputEl.focus();
       });
 
@@ -668,7 +673,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         if (openSos.length > 1) {
           const confirmed = await confirmDialog({
             title: `Resolve ${openSos.length} SOS Emergencies?`,
-            description: `Confirm that all ${openSos.length} active Tanod SOS emergencies have been attended to and can be marked as resolved.`,
+            description: `Confirm that all ${openSos.length} open SOS emergencies have been attended to and can be marked as resolved: ${openSos.map((s) => `SOS #${s.sosId} (${s.fullName || `Tanod #${s.userId}`})`).join(', ')}.`,
             confirmLabel: `Resolve All (${openSos.length})`,
             cancelLabel: 'Keep Active',
           });
@@ -688,7 +693,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       priorityAlertEl.style.display = 'flex';
       alertResolveBtnEl.style.display = 'none';
       alertBtnEl.textContent = 'Dispatch Now';
-      const typeLabel = INCIDENT_TYPE_LABELS[urgentCritical.incidentType] || urgentCritical.incidentType;
+      const typeLabel = INCIDENT_TYPE_LABELS[urgentCritical.incidentType] || 'Incident';
       const locLabel = urgentCritical.locationDescription || urgentCritical.location_description || 'a location not recorded';
       alertTextEl.textContent = `PRIORITY ALERT: ${typeLabel} in ${locLabel} - Requires immediate dispatch`;
       alertBtnEl.onclick = async () => {
@@ -771,7 +776,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         latitude: incident.latitude,
         longitude: incident.longitude,
         incidentType: incident.incidentType,
-        typeLabel: INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType,
+        typeLabel: INCIDENT_TYPE_LABELS[incident.incidentType] || 'Incident',
         priority: incident.priority,
         status: 'pending',
         locationText: incident.locationDescription || incident.location_description || '',
@@ -785,7 +790,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
           latitude: group.latitude,
           longitude: group.longitude,
           incidentType: group.incidentType || 'other',
-          typeLabel: INCIDENT_TYPE_LABELS[group.incidentType] || group.incidentType || 'Dispatched Incident',
+          typeLabel: INCIDENT_TYPE_LABELS[group.incidentType] || 'Dispatched Incident',
           priority: group.priority || 'normal',
           status: 'dispatched',
           locationText: group.locationDescription || group.location_description || '',
@@ -806,7 +811,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
           showToast('All eligible on-duty Tanods are already assigned to this incident.', { variant: 'info' });
           return;
         }
-        const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType || 'Incident';
+        const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || 'Incident';
         const dispatched = await promptDispatchTanod({
           incident,
           incidentTypeLabel: typeLabel,
@@ -956,9 +961,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       btn.type = 'button';
       btn.className = `legend-item legend-item-btn${vis[row.key] ? '' : ' is-muted'}`;
       btn.title = `Click to ${vis[row.key] ? 'hide' : 'show'} ${row.label} pins on map`;
+      btn.setAttribute('aria-pressed', String(Boolean(vis[row.key])));
       btn.innerHTML = `
         <span class="legend-item__left">
-          <span class="legend-dot ${row.dotClass}"></span>
+          <span class="legend-dot ${row.dotClass}" aria-hidden="true"></span>
           <span>${escapeHtml(row.label)}</span>
         </span>
         <span class="legend-count-pill">${row.count}</span>
@@ -982,6 +988,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       btn.type = 'button';
       btn.className = `filter-chip${activeCategory === chip.key ? ' is-active' : ''}`;
       btn.textContent = chip.label;
+      btn.setAttribute('aria-pressed', String(activeCategory === chip.key));
       btn.addEventListener('click', () => {
         activeCategory = chip.key;
         updateQueueView();
@@ -1009,7 +1016,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     const searchFiltered = categoryFiltered.filter((item) => {
       if (!searchQuery) return true;
       const idStr = String(item.displayId || item.incidentId || item.dispatchId || '').toLowerCase();
-      const typeStr = (INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType || '').toLowerCase();
+      const typeStr = (INCIDENT_TYPE_LABELS[item.incidentType] || '').toLowerCase();
       const locStr = (item.locationDescription || item.location_description || '').toLowerCase();
       // A grouped dispatched item has `dispatches[]` (one or more
       // responders); a pending item has neither — matches any responder's
@@ -1086,7 +1093,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       // Card Title: Warning Icon + Emergency Title
       const titleRow = document.createElement('div');
       titleRow.className = 'queue-incident-card__title';
-      titleRow.innerHTML = `${getIncidentIcon(item.incidentType, item.priority)} <span>${escapeHtml(INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType || 'Emergency')}</span>`;
+      titleRow.innerHTML = `${getIncidentIcon(item.incidentType, item.priority)} <span>${escapeHtml(INCIDENT_TYPE_LABELS[item.incidentType] || 'Emergency')}</span>`;
 
       // Location
       const locRow = document.createElement('div');
@@ -1110,7 +1117,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         dispatchBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           dispatchBtn.disabled = true;
-          const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
+          const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || 'Incident';
           const dispatched = await promptDispatchTanod({ incident: item, incidentTypeLabel: typeLabel, eligibleTanods, tanodPositions: gpsItems });
           if (dispatched) {
             onQueueChanged();
@@ -1134,12 +1141,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
           const nameSpan = document.createElement('span');
           nameSpan.className = 'queue-incident-card__dispatched-name';
-          nameSpan.textContent = `Assigned: ${dispatch.tanodName || `Tanod #${dispatch.tanodId}`}`;
+          nameSpan.textContent = `${dispatch.tanodName || `Tanod #${dispatch.tanodId}`}: ${DISPATCH_STATUS_LABELS[dispatch.status] || 'Assigned'}`;
 
           const actionsGroup = document.createElement('div');
-          actionsGroup.style.display = 'flex';
-          actionsGroup.style.alignItems = 'center';
-          actionsGroup.style.gap = '0.375rem';
+          actionsGroup.className = 'queue-incident-card__actions-group';
 
           const tanodGps = gpsItems.find((g) => g.userId === dispatch.tanodId);
           if (tanodGps && tanodGps.latitude != null && tanodGps.longitude != null) {
@@ -1247,7 +1252,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         addResponderBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           addResponderBtn.disabled = true;
-          const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType || 'Incident';
+          const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || 'Incident';
           const dispatched = await promptDispatchTanod({
             incident: item,
             incidentTypeLabel: typeLabel,
@@ -1378,9 +1383,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     queue.className = 'dispatch-queue-column';
     for (let i = 0; i < 3; i++) {
       const skeleton = document.createElement('div');
-      skeleton.className = 'skeleton skeleton--row';
-      skeleton.style.height = '7rem';
-      skeleton.style.borderRadius = '12px';
+      skeleton.className = 'skeleton skeleton--row dispatch-skeleton-card';
       queue.appendChild(skeleton);
     }
     const mapSkeleton = document.createElement('div');
