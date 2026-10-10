@@ -68,6 +68,7 @@
  */
 
 import { onThemeChange } from './themeEvents.js';
+import { attachBasemapFallback, OSM_TILE_URL } from '../utils/mapFallback.js';
 
 const DEFAULT_CENTER = [123.6667, 12.9186]; // Pilar, Sorsogon [lng, lat]
 const DEFAULT_ZOOM = 13;
@@ -101,6 +102,8 @@ export function LiveMap(container, options = {}) {
   // map panes this component renders into (W3's sidebar pane vs. W4's
   // full page).
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  // Offline: say so once, keep markers/positions working over the plain background.
+  const detachBasemapFallback = attachBasemapFallback(map, 'osm-raster');
 
   let tanodMarkers = [];
   let sosMarkers = [];
@@ -713,6 +716,7 @@ export function LiveMap(container, options = {}) {
     incidentMarkersById.clear();
     applyDispatchLinks(map, []);
     applyRoute(map, null);
+    detachBasemapFallback();
     map.remove();
   }
 
@@ -980,7 +984,7 @@ function buildStyle() {
       // this is online rather than the offline-MBTiles path.
       'osm-raster': {
         type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tiles: [OSM_TILE_URL],
         tileSize: 256,
         maxzoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',

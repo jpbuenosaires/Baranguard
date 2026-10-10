@@ -45,6 +45,45 @@
  * a media query, which is what broke responsiveness before.
  */
 
+/* Inter, self-hosted (latin subset, SIL OFL 1.1, see assets/fonts/Inter-OFL-LICENSE.txt)
+   so the dashboard renders identically with no internet. Characters outside
+   the latin subset fall back to the system stack in --font-base. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-800.woff2") format("woff2");
+}
+
 /* UI scale knob: `html { font-size: 100% }` operates as the single root scale knob.
    All sizing tokens across the system are declared in `rem`, so altering this
    percentage proportionally scales typography, spacing, controls, and layout.
@@ -233,7 +272,7 @@ html { font-size: 100%; }
   --pad-panel: var(--spacing-sm-md) var(--spacing-md);
   --pad-panel-lg: var(--spacing-md) var(--spacing-md-lg);
 
-  --font-base: "Inter", system-ui, -apple-system, sans-serif;
+  --font-base: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   /* text-xs(12) / sm(14) / base(16) / lg(18, card titles) /
      xl(20, panel headings) / 2xl(24, page titles) / 3xl(30, KPI values) */
   --font-size-label: 0.75rem; --font-size-sm: 0.875rem; --font-size-md: 1rem;

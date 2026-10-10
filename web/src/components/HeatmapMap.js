@@ -12,6 +12,7 @@
  */
 
 import { onThemeChange, readThemeToken } from './themeEvents.js';
+import { attachBasemapFallback, OSM_TILE_URL } from '../utils/mapFallback.js';
 
 const DEFAULT_CENTER = [123.6667, 12.9186]; // Pilar, Sorsogon [lng, lat]
 const DEFAULT_ZOOM = 12;
@@ -31,7 +32,7 @@ export function HeatmapMap(container) {
       sources: {
         'osm-raster': {
           type: 'raster',
-          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tiles: [OSM_TILE_URL],
           tileSize: 256,
           maxzoom: 19,
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
@@ -48,6 +49,7 @@ export function HeatmapMap(container) {
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  const detachBasemapFallback = attachBasemapFallback(map, 'osm-raster');
 
   let ready = false;
   let pendingPoints = null;
@@ -145,6 +147,7 @@ export function HeatmapMap(container) {
     if (destroyed) return; // Same double-destroy guard as LiveMap.js — see its comment.
     destroyed = true;
     offTheme();
+    detachBasemapFallback();
     map.remove();
   }
 
