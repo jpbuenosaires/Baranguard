@@ -49,7 +49,19 @@ let isSyncing = false;
 let knownDutyStatus: DutyStatus | null = null;
 let lastSummary: SyncSummary | null = null;
 let authBlocked = false;
+// True when the workstation refuses this phone's whole sync because the
+// device is registered to a different account (or deactivated). Items stay
+// queued and nothing is marked failed, so without this flag the Tanod would
+// never learn that saved reports and SOS alerts cannot leave the phone.
+let deviceBlocked = false;
 const listeners = new Set<(summary: SyncSummary) => void>();
+const blockListeners = new Set<(blocked: boolean) => void>();
+
+function setDeviceBlocked(value: boolean): void {
+  if (deviceBlocked === value) return;
+  deviceBlocked = value;
+  for (const listener of blockListeners) listener(value);
+}
 
 async function triggerSync(): Promise<void> {
   if (isSyncing) return; // A pass already in flight covers whatever prompted this one too.
@@ -60,6 +72,9 @@ async function triggerSync(): Promise<void> {
     if (!(await isTanodSession())) return;
     lastSummary = await runSyncPass();
     authBlocked = false;
+    // Only a pass that really sent something proves the device is accepted
+    // again; an empty pass makes no request and must not clear the warning.
+    if (lastSummary.attempted > 0) setDeviceBlocked(false);
     for (const listener of listeners) listener(lastSummary);
   } catch (error) {
     // Offline, or the workstation rejected a chunk — runSyncPass() has
@@ -69,6 +84,11 @@ async function triggerSync(): Promise<void> {
     // can't go anywhere until the Tanod logs in again, so remember that for
     // the UI to say "pending — re-login required" instead of "offline".
     if (error instanceof ApiError && error.status === 401) authBlocked = true;
+    // 422 DEVICE_NOT_REGISTERED: a different account owns this phone's device
+    // id (or it was deactivated). Retrying cannot help; tell the user.
+    if (error instanceof ApiError && error.status === 422 && error.code === 'DEVICE_NOT_REGISTERED') {
+      setDeviceBlocked(true);
+    }
   } finally {
     isSyncing = false;
   }
@@ -77,6 +97,27 @@ async function triggerSync(): Promise<void> {
 /** True when the last attempt was refused for an expired/revoked session — queued items wait for a re-login. */
 export function isSyncAuthBlocked(): boolean {
   return authBlocked;
+}
+
+/** True when the last sync was refused because this phone is registered to another account (or deactivated). */
+export function isSyncDeviceBlocked(): boolean {
+  return deviceBlocked;
+}
+
+/** Login calls this when device registration is refused (409): the phone belongs to another account. */
+export function markSyncDeviceBlocked(): void {
+  setDeviceBlocked(true);
+}
+
+/** Login calls this when device registration succeeds: this account owns the phone's device id. */
+export function clearSyncDeviceBlocked(): void {
+  setDeviceBlocked(false);
+}
+
+/** Notified when the device-blocked state changes. Returns an unsubscribe function. */
+export function subscribeSyncDeviceBlocked(listener: (blocked: boolean) => void): () => void {
+  blockListeners.add(listener);
+  return () => blockListeners.delete(listener);
 }
 
 /** Called after a successful login: clears the blocked flag and flushes whatever queued while signed out. */

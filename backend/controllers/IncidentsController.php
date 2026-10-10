@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
+use Baranguard\Lib\ClientEventTime;
 use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Lib\RateLimiter;
@@ -2003,13 +2004,13 @@ final class IncidentsController
         $c1ActionTaken = self::c1Value($item, 'c1_action_taken');
         $c1StatusNotes = self::c1Value($item, 'c1_status_notes');
 
-        $deviceOfflineCreatedAt = null;
-        if ($deviceOfflineCreatedAtRaw !== null) {
-            if (!is_string($deviceOfflineCreatedAtRaw) || strtotime($deviceOfflineCreatedAtRaw) === false) {
-                throw new ApiError(400, 'VALIDATION_ERROR', 'device_offline_created_at must be a valid timestamp.');
-            }
-            $deviceOfflineCreatedAt = gmdate('Y-m-d H:i:s', (int) strtotime($deviceOfflineCreatedAtRaw));
-        }
+        // Phone-clock plausibility (docs/OFFLINE_SYNC_CONFLICT_RULES.md gap 4):
+        // device_offline_created_at is audit context only, so a value that
+        // does not parse, is >300 s in the future (GPS rejects the same) or
+        // older than 30 days is stored as NULL instead of a bogus date. The
+        // report itself is ALWAYS accepted (Rule 7: a wrong phone clock must
+        // never lose an incident); incident.created_at stays server time.
+        $deviceOfflineCreatedAt = ClientEventTime::parse($deviceOfflineCreatedAtRaw, ClientEventTime::INCIDENT_MAX_AGE_SECONDS);
 
         // §5 UNIQUE(device_id, client_event_id) — same replay-lookup-then-
         // insert shape as the web path's own idempotency check above.

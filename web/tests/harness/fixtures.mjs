@@ -433,6 +433,7 @@ export function buildRoutes(scenario) {
     { method: 'GET', path: '/system-settings', handler: () => ok({ settings: {
       'general.system_name': t('Baranguard'), 'general.municipality': t('Pilar'), 'general.region': t('Region V (Bicol)'),
       'sos_fallback.backup_contact_number': empty ? '' : '09170009999',
+      'sos_fallback.gateway_number': empty ? '' : '09180009999',
     } }) },
     { method: 'PATCH', path: '/system-settings', handler: ({ body }) => ok({ settings: { ...body.settings } }) },
 

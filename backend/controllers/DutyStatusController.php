@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
+use Baranguard\Lib\ClientEventTime;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use PDO;
@@ -124,7 +125,7 @@ final class DutyStatusController
      *        from anything embedded in the SMS payload.
      * @return array{status_id:int,status:string,channel:string,changed_at:string,wasCreated:bool}
      */
-    public static function applyToggle(PDO $pdo, array $identity, string $status, mixed $clientEventId, string $channel = 'app'): array
+    public static function applyToggle(PDO $pdo, array $identity, string $status, mixed $clientEventId, string $channel = 'app', mixed $clientEventTime = null): array
     {
         if (!in_array($status, self::VALID_STATUSES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of on_duty, responding, off_duty.');
@@ -174,13 +175,16 @@ final class DutyStatusController
 
         $insertStmt = $pdo->prepare(
             "INSERT INTO duty_status (user_id, status, channel, client_event_id, changed_at)
-             VALUES (:user_id, :status, :channel, :client_event_id, UTC_TIMESTAMP())"
+             VALUES (:user_id, :status, :channel, :client_event_id, COALESCE(:changed_at, UTC_TIMESTAMP()))"
         );
         $insertStmt->execute([
             'user_id' => $identity['user_id'],
             'status' => $status,
             'channel' => in_array($channel, ['app', 'sms'], true) ? $channel : 'app',
             'client_event_id' => $clientEventId,
+            // Sync items only: plausible client time (ClientEventTime), else
+            // null -> server time. Online callers never pass one.
+            'changed_at' => ClientEventTime::eventOrServerTime($clientEventTime),
         ]);
         $statusId = (int) $pdo->lastInsertId();
 

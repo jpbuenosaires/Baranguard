@@ -28,9 +28,13 @@
  * server-reported per-item 'failed' is different — it counts toward a retry
  * cap (`MAX_SYNC_ATTEMPTS`) so one poison row cannot be re-sent forever;
  * capped rows stay on the device (Rule 2) and surface as "needs attention"
- * until a manual `retryNeedsAttention()`. A rejected dispatch-status item
- * reverts the optimistic local status and refreshes from the server; a
- * failed SOS is retried, never silently terminal.
+ * until a manual `retryNeedsAttention()`. A dispatch-status item the server's
+ * rules refuse (`syncFailureClass.ts`: invalid transition, not found, not ours)
+ * is DEFINITIVE: it reverts the optimistic local status and refreshes from the
+ * server. A dispatch-status 'failed' that is transient/unrecognised (e.g.
+ * 'Internal error processing item.') stays queued and spends one attempt per
+ * pass; after MAX_SYNC_ATTEMPTS it is treated as definitive (revert) and shows
+ * as "needs attention". A failed SOS is retried, never silently terminal.
  *
  * `duty_status_updates` is always sent empty: M2's duty toggle already
  * always calls `POST /duty-status` directly online (Sprint 2) — there is
@@ -89,13 +93,17 @@ import {
   resetFailedGpsPoints,
 } from './db/gpsTrackRepository';
 import {
+  countDispatchNeedsAttention,
   countFailedSosItems,
   listPendingDispatchStatusUpdates,
   listPendingSosItems,
   markQueueItemResolved,
+  markDispatchAttemptFailed,
   markSosAttemptFailed,
+  resetDispatchAttention,
   resetFailedSosItems,
 } from './db/offlineQueueRepository';
+import { classifyDispatchFailure } from './syncFailureClass';
 import { cacheDispatchesFromServer, markStatusSynced, revertLocalStatusChange } from './db/dispatchRepository';
 import { listUnsyncedReferrals, markReferralSynced, markReferralSyncFailed } from './db/referralRepository';
 import {
@@ -171,6 +179,7 @@ export async function runSyncPass(): Promise<SyncSummary> {
   const pendingSos = await listPendingSosItems();
 
   const totals: ChunkCounts = { attempted: 0, succeeded: 0, duplicates: 0, failed: 0, dispatchRejected: 0 };
+  const heldDispatchIds = new Set<number>();
   const add = (c: ChunkCounts) => {
     totals.attempted += c.attempted;
     totals.succeeded += c.succeeded;
@@ -185,7 +194,7 @@ export async function runSyncPass(): Promise<SyncSummary> {
     add(await syncChunk(deviceId, { sos: part }));
   }
   for (const part of chunk(pendingDispatchStatus, SYNC_CHUNK_SIZE)) {
-    add(await syncChunk(deviceId, { dispatch: part }));
+    add(await syncChunk(deviceId, { dispatch: part, heldDispatchIds }));
   }
   // 2. Incident reports.
   for (const part of chunk(unsyncedIncidents, SYNC_CHUNK_SIZE)) {
@@ -265,6 +274,13 @@ interface ChunkInput {
   availability?: Awaited<ReturnType<typeof listUnsyncedAvailability>>;
   accomplishments?: Awaited<ReturnType<typeof listUnsyncedEntries>>;
   schoolCheckins?: Awaited<ReturnType<typeof listUnsyncedSchoolCheckins>>;
+  /**
+   * Server dispatch ids with an earlier queued step that was KEPT (transient
+   * failure) in this pass. Later steps for the same dispatch would only fail
+   * 'Cannot transition ...' because the earlier one did not land, so they are
+   * deferred too instead of being reverted. Shared across a pass's chunks.
+   */
+  heldDispatchIds?: Set<number>;
 }
 
 /** Sends one chunk and applies its per-item results before returning (so a later timeout never un-does it). */
@@ -350,10 +366,11 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     client_event_id: row.client_event_id,
   }));
 
-  const dispatchStatusItems: SyncDispatchStatusItem[] = dispatch.map(({ clientEventId, payload }) => ({
+  const dispatchStatusItems: SyncDispatchStatusItem[] = dispatch.map(({ clientEventId, createdOfflineAt, payload }) => ({
     dispatch_id: payload.serverDispatchId,
     status: payload.status,
     client_event_id: clientEventId,
+    created_offline_at: createdOfflineAt,
   }));
 
   const sosItems: SyncSosItem[] = sos.map(({ clientEventId, createdOfflineAt, payload }) => ({
@@ -399,21 +416,47 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
   }
 
   let dispatchRejected = 0;
-  for (const { queueId, clientEventId, payload } of dispatch) {
+  let dispatchRefreshNeeded = false;
+  const held = input.heldDispatchIds ?? new Set<number>();
+  for (const { queueId, clientEventId, syncAttempts, payload } of dispatch) {
     const result = byEventId.get(clientEventId);
     if (!result) continue;
-    await markQueueItemResolved(queueId, result.status);
     if (result.status !== 'failed') {
+      await markQueueItemResolved(queueId, result.status);
       await markStatusSynced(payload.dispatchLocalId);
-    } else {
-      // The server refused this transition (cancelled/already advanced/
-      // not ours). Terminal for the queue row, but the optimistic local
-      // status must not be left claiming it happened.
-      dispatchRejected += 1;
-      await revertLocalStatusChange(payload.dispatchLocalId, payload.status);
+      // A row that already failed before (or was revived by "Retry failed
+      // items" after being reverted) may leave the local status behind the
+      // server's: refresh once below.
+      if (syncAttempts > 0) dispatchRefreshNeeded = true;
+      continue;
     }
+    const definitive = classifyDispatchFailure(result.reason) === 'definitive';
+    if (!definitive || held.has(payload.serverDispatchId)) {
+      if (!definitive) {
+        // Transient/unknown: keep the queued update, spend one attempt. Not
+        // exhausted -> leave the optimistic local status alone, retry next pass.
+        const exhausted = await markDispatchAttemptFailed(queueId, MAX_SYNC_ATTEMPTS);
+        if (!exhausted) {
+          held.add(payload.serverDispatchId);
+          continue;
+        }
+        // Budget spent: fall through and treat as definitive (row is now
+        // 'attention' and counted by getNeedsAttentionCounts).
+      } else {
+        // A later step of a dispatch whose earlier step is being retried: its
+        // 'Cannot transition' is a consequence, not a verdict. Defer, no attempt spent.
+        continue;
+      }
+    } else {
+      await markQueueItemResolved(queueId, 'failed');
+    }
+    // DEFINITIVE (or budget exhausted): the server refused this transition
+    // (cancelled/already advanced/not ours). Terminal for the queue row, but
+    // the optimistic local status must not be left claiming it happened.
+    dispatchRejected += 1;
+    await revertLocalStatusChange(payload.dispatchLocalId, payload.status);
   }
-  if (dispatchRejected > 0) {
+  if (dispatchRejected > 0 || dispatchRefreshNeeded) {
     try {
       await cacheDispatchesFromServer(await getDispatches());
     } catch {
@@ -505,6 +548,8 @@ export interface NeedsAttentionCounts {
   evidence: number;
   /** SOS alerts that exhausted their retries and never reached the server. */
   sos: number;
+  /** Dispatch status changes that kept failing for non-rule (transient/unknown) reasons; the local status was reverted. */
+  dispatch: number;
   referrals: number;
   availability: number;
   accomplishments: number;
@@ -514,11 +559,12 @@ export interface NeedsAttentionCounts {
 
 /** Items the automatic sync has given up on — shown as a warning, never hidden. */
 export async function getNeedsAttentionCounts(): Promise<NeedsAttentionCounts> {
-  const [incidents, gps, evidence, sos, referrals, availability, accomplishments, schoolCheckins] = await Promise.all([
+  const [incidents, gps, evidence, sos, dispatch, referrals, availability, accomplishments, schoolCheckins] = await Promise.all([
     countPermanentlyFailedIncidents(),
     countPermanentlyFailedGpsPoints(),
     countPermanentlyFailedEvidence(),
     countFailedSosItems(),
+    countDispatchNeedsAttention(),
     countWorkflowPermanentFailures('referral_local'),
     countWorkflowPermanentFailures('availability_local'),
     countWorkflowPermanentFailures('accomplishment_entry_local'),
@@ -529,11 +575,12 @@ export async function getNeedsAttentionCounts(): Promise<NeedsAttentionCounts> {
     gps,
     evidence,
     sos,
+    dispatch,
     referrals,
     availability,
     accomplishments,
     schoolCheckins,
-    total: incidents + gps + evidence + sos + referrals + availability + accomplishments + schoolCheckins,
+    total: incidents + gps + evidence + sos + dispatch + referrals + availability + accomplishments + schoolCheckins,
   };
 }
 
@@ -543,6 +590,7 @@ export async function retryNeedsAttention(): Promise<void> {
   await resetFailedGpsPoints();
   await resetFailedEvidence();
   await resetFailedSosItems();
+  await resetDispatchAttention();
   await resetWorkflowFailures('referral_local');
   await resetWorkflowFailures('availability_local');
   await resetWorkflowFailures('accomplishment_entry_local');

@@ -62,10 +62,17 @@ import { formatManilaTime } from '../utils/manilaTime';
 import type { DispatchLocalRow, SchoolCheckinLocalRow } from '../services/db/localSchema';
 import { startPatrolTracking, stopPatrolTracking } from '../services/patrolLocationService';
 import { loadSession } from '../services/session';
-import { getCachedSosFallbackContact } from '../services/sosFallbackContact';
+import { getCachedSosFallbackContact, getCachedSosGatewayNumber } from '../services/sosFallbackContact';
 import SosSms from '../services/sosSms';
+import { buildSosEnvelopeText } from '../services/sosEnvelope';
 import type { SmsFallbackInput } from '../services/smsFallbackState';
-import { forceSyncNow, setKnownDutyStatus, subscribeSyncSummary } from '../services/syncScheduler';
+import {
+  forceSyncNow,
+  isSyncDeviceBlocked,
+  setKnownDutyStatus,
+  subscribeSyncDeviceBlocked,
+  subscribeSyncSummary,
+} from '../services/syncScheduler';
 import { retryNeedsAttention } from '../services/syncService';
 import { uuid } from '../services/uuid';
 
@@ -106,6 +113,10 @@ const HomePage: React.FC = () => {
   // quietly disappear from view.
   const [failedSosCount, setFailedSosCount] = useState(0);
   const [retryingSos, setRetryingSos] = useState(false);
+  // The workstation refuses this phone's whole sync because its device id
+  // belongs to another account: saved reports and SOS alerts cannot leave.
+  const [deviceBlocked, setDeviceBlocked] = useState(isSyncDeviceBlocked());
+  useEffect(() => subscribeSyncDeviceBlocked(setDeviceBlocked), []);
 
   async function refreshFailedSosCount() {
     try {
@@ -317,15 +328,45 @@ const HomePage: React.FC = () => {
     setConfirmingSos(true);
   }
 
-  async function attemptSosSmsFallback(payload: { latitude?: number; longitude?: number }) {
+  async function attemptSosSmsFallback(payload: { latitude?: number; longitude?: number }, clientEventId: string) {
     const backupNumber = await getCachedSosFallbackContact();
-    if (!backupNumber) {
+    const gatewayNumber = await getCachedSosGatewayNumber();
+    if (!backupNumber && !gatewayNumber) {
       setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: false, smsStatus: null });
       setSosToast('SOS saved locally — will dispatch automatically upon reconnect. (No backup contact configured.)');
       return;
     }
 
     setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: 'pending' });
+
+    // Tier A — encrypted envelope to the command-center gateway phone. If the
+    // workstation is up but only the app's internet path is down, the gateway's
+    // ingest daemon turns this into a real SOS on the dashboard. Uses the same
+    // client_event_id as the queued SOS, so the later sync cannot double it.
+    let gatewaySent = false;
+    if (gatewayNumber) {
+      try {
+        const envelopeText = await buildSosEnvelopeText({ clientEventId, ...payload });
+        if (envelopeText) {
+          await SosSms.sendDirect({ number: gatewayNumber, message: envelopeText });
+          gatewaySent = true;
+        }
+      } catch {
+        // Falls through to the plain-text contact below; never blocks it.
+      }
+    }
+
+    // Tier B — plain-text SMS to a human-monitored number. Independent of the
+    // workstation entirely (survives the workstation itself being down).
+    if (!backupNumber) {
+      setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: gatewaySent ? 'sent' : 'failed' });
+      setSosToast(
+        gatewaySent
+          ? 'Internet unreachable — SOS texted to the command center gateway.'
+          : 'SOS saved locally. Gateway SMS could not be sent.'
+      );
+      return;
+    }
     try {
       const session = await loadSession();
       const bName = session ? (BARANGAY_NAMES[session.barangayId] ?? `Barangay ${session.barangayId}`) : 'Unknown';
@@ -344,13 +385,21 @@ const HomePage: React.FC = () => {
 
       await SosSms.sendDirect({ number: backupNumber, message });
       setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: 'sent' });
-      setSosToast('Workstation unreachable — emergency SMS sent directly to backup contact.');
-    } catch (smsError) {
-      setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: 'failed' });
       setSosToast(
-        smsError instanceof Error
-          ? `SOS saved locally. Backup SMS also failed: ${smsError.message}`
-          : 'SOS saved locally. Backup SMS also failed.'
+        gatewaySent
+          ? 'Internet unreachable — SOS texted to the command center gateway and the backup contact.'
+          : 'Workstation unreachable — emergency SMS sent directly to backup contact.'
+      );
+    } catch (smsError) {
+      // Honest status: "sent" if the gateway text went out even though the
+      // backup-contact text failed; "failed" only when nothing was sent.
+      setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: gatewaySent ? 'sent' : 'failed' });
+      setSosToast(
+        gatewaySent
+          ? 'SOS texted to the command center gateway. Backup contact SMS failed.'
+          : smsError instanceof Error
+            ? `SOS saved locally. Backup SMS also failed: ${smsError.message}`
+            : 'SOS saved locally. Backup SMS also failed.'
       );
     }
   }
@@ -375,7 +424,7 @@ const HomePage: React.FC = () => {
         setSosToast('EMERGENCY SOS BROADCAST SENT TO BARANGAY HQ.');
       } catch {
         await enqueueSosItem(clientEventId, payload);
-        await attemptSosSmsFallback(payload);
+        await attemptSosSmsFallback(payload, clientEventId);
         // Kick a sync right away: a 5s SOS timeout can be a blip, and the
         // queued row (same client_event_id) is idempotent if the first
         // attempt actually landed.
@@ -666,6 +715,23 @@ const HomePage: React.FC = () => {
             </div>
           )}
 
+          {deviceBlocked && (
+            <div
+              style={{
+                background: 'var(--tint-critical-bg)',
+                color: 'var(--pill-critical-text)',
+                border: '1px solid var(--color-critical)',
+                borderRadius: 'var(--radius-md)',
+                padding: '8px 12px',
+                fontSize: 'var(--font-size-sm)',
+              }}
+              role="alert"
+            >
+              <strong>This phone is registered to a different account.</strong> Reports and SOS alerts saved here
+              cannot be sent to HQ from this account. Nothing is lost: log in with the account that saved them, or ask
+              the Chief Tanod to reset this phone. For an emergency, call the barangay desk or text your backup contact.
+            </div>
+          )}
           {failedSosCount > 0 && (
             <div
               style={{

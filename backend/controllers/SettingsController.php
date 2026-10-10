@@ -61,6 +61,13 @@ final class SettingsController
         // GET above to any OTHER role — see TanodSosController::fallbackContact()
         // for the one narrow, tanod-readable path to this single value.
         'sos_fallback.backup_contact_number' => ['default' => '', 'max' => 32, 'secret' => false],
+        // 2026-10-10: the SIM number of the GSM gateway phone (sms-gateway/).
+        // The Tanod app sends its encrypted `sos` envelope here when the
+        // workstation API is unreachable but cellular SMS still works, so the
+        // gateway's inbound ingestion (gsm-ingest-daemon.php ->
+        // /internal/sms/sos) turns it into a real SOS record on the command
+        // center. Non-secret, same exposure rule as the backup contact.
+        'sos_fallback.gateway_number' => ['default' => '', 'max' => 32, 'secret' => false],
     ];
 
     /** Placeholder echoed back for a secret whose real value is already set — never a real key. */
@@ -128,7 +135,7 @@ final class SettingsController
             if (mb_strlen($trimmed) > $meta['max']) {
                 throw new ApiError(400, 'VALIDATION_ERROR', "{$key} must be at most {$meta['max']} characters.");
             }
-            if ($key === 'sos_fallback.backup_contact_number' && $trimmed !== '' && !preg_match(self::PH_MOBILE_NUMBER_PATTERN, $trimmed)) {
+            if (in_array($key, ['sos_fallback.backup_contact_number', 'sos_fallback.gateway_number'], true) && $trimmed !== '' && !preg_match(self::PH_MOBILE_NUMBER_PATTERN, $trimmed)) {
                 throw new ApiError(400, 'VALIDATION_ERROR', "{$key} must be a PH mobile number in 09XXXXXXXXX or +639XXXXXXXXX format.");
             }
             $writes[$key] = $trimmed;

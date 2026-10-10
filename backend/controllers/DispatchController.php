@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
+use Baranguard\Lib\ClientEventTime;
 use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
@@ -725,9 +726,16 @@ final class DispatchController
      * `PATCH /dispatch/:id/cancel` instead, which has its own tighter
      * rules).
      *
+     * `$clientEventTime` (sync items only: the item's optional
+     * `created_offline_at`) is when the Tanod actually pressed the step. It
+     * is used for the step's `*_at` column only when ClientEventTime deems it
+     * plausible, and is clamped to never precede `dispatched_at` or the
+     * previous step's time; otherwise the step keeps the server time. It never
+     * changes which transition is legal and is ignored for an Admin override.
+     *
      * @return array{dispatch_id:int,status:string,updated_at:string}
      */
-    public static function applyStatusTransition(PDO $pdo, array $identity, int $dispatchId, mixed $newStatus, mixed $overrideReason): array
+    public static function applyStatusTransition(PDO $pdo, array $identity, int $dispatchId, mixed $newStatus, mixed $overrideReason, mixed $clientEventTime = null): array
     {
         if (!is_string($newStatus) || !in_array($newStatus, ['en_route', 'arrived', 'completed'], true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of: en_route, arrived, completed.');
@@ -748,7 +756,8 @@ final class DispatchController
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
-                'SELECT d.dispatch_id, d.incident_id, d.tanod_id, d.status, i.barangay_id
+                'SELECT d.dispatch_id, d.incident_id, d.tanod_id, d.status, i.barangay_id,
+                        d.dispatched_at, d.en_route_at, d.arrived_at
                  FROM dispatch d
                  JOIN incident i ON i.incident_id = d.incident_id
                  WHERE d.dispatch_id = :dispatch_id
@@ -805,10 +814,17 @@ final class DispatchController
                 'completed' => 'completed_at',
             ][$newStatus];
 
+            // Plausible client event time (Tanod only), never before the
+            // dispatch or the previous step; null -> server time as before.
+            $eventTime = $isAdmin ? null : ClientEventTime::eventOrServerTime($clientEventTime, [
+                $dispatch['dispatched_at'],
+                $newStatus === 'arrived' || $newStatus === 'completed' ? $dispatch['en_route_at'] : null,
+                $newStatus === 'completed' ? $dispatch['arrived_at'] : null,
+            ]);
             $updateStmt = $pdo->prepare(
-                "UPDATE dispatch SET status = :status, {$timestampColumn} = UTC_TIMESTAMP() WHERE dispatch_id = :dispatch_id"
+                "UPDATE dispatch SET status = :status, {$timestampColumn} = COALESCE(:event_time, UTC_TIMESTAMP()) WHERE dispatch_id = :dispatch_id"
             );
-            $updateStmt->execute(['status' => $newStatus, 'dispatch_id' => $dispatchId]);
+            $updateStmt->execute(['status' => $newStatus, 'event_time' => $eventTime, 'dispatch_id' => $dispatchId]);
 
             if ($isAdmin) {
                 Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_status_override', 'dispatch', $dispatchId, [
@@ -985,10 +1001,29 @@ final class DispatchController
             'dispatch_id' => $dispatchId,
         ]);
 
-        Http::send(200, [
+        $response = [
             'dispatch_id' => $dispatchId,
             'route_status' => $routeStatus,
             'route_json' => $routeJson !== null ? json_decode($routeJson, true) : null,
-        ]);
+        ];
+
+        // Partial-outage fallback: when ORS did not give a fresh road
+        // route, ALSO return a straight-line distance/rough ETA so the
+        // Tanod still gets a number. Additive and optional; deliberately
+        // NOT written to route_json/route_status (those mean "road
+        // route"), and `is_road_route` is always false so no client can
+        // mistake it for one.
+        if ($routeStatus !== 'available') {
+            $line = OrsClient::straightLine($originLat, $originLng, $destLat, $destLng, $mode);
+            $response['straight_line'] = [
+                'is_road_route' => false,
+                'distance_m' => $line['distance_m'],
+                'rough_duration_s' => $line['rough_duration_s'],
+                'assumed_speed_kmh' => $line['assumed_speed_kmh'],
+                'label' => 'Straight-line distance, not a road route. Time is a rough guess, not an accurate ETA.',
+            ];
+        }
+
+        Http::send(200, $response);
     }
 }

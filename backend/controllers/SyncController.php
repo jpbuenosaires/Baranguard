@@ -90,7 +90,11 @@ final class SyncController
         );
         $deviceStmt->execute(['device_id' => $deviceId, 'user_id' => $identity['user_id']]);
         if ($deviceStmt->fetch(PDO::FETCH_ASSOC) === false) {
-            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'Device is not registered or not active for this account.');
+            // Distinct code (status unchanged) so the app can tell this
+            // whole-batch refusal apart from an ordinary validation 422 and
+            // show "this phone belongs to another account" instead of
+            // silently retrying forever (docs/OFFLINE_SYNC_CONFLICT_RULES.md, gap 1).
+            throw new ApiError(422, 'DEVICE_NOT_REGISTERED', 'Device is not registered or not active for this account.');
         }
 
         $groups = [
@@ -120,14 +124,60 @@ final class SyncController
         // same batch (by incident_client_event_id), so incidents precede
         // referrals.
         $order = ['sos', 'incident', 'referral', 'gps', 'duty_status', 'dispatch_status', 'availability', 'accomplishment_entry', 'school_checkin'];
+        $startedNs = hrtime(true);
         $results = [];
+        $tally = [];
         foreach ($order as $payloadType) {
             foreach ($groups[$payloadType] as $item) {
-                $results[] = self::processItem($pdo, $identity, $deviceId, $payloadType, $item);
+                $result = self::processItem($pdo, $identity, $deviceId, $payloadType, $item);
+                $results[] = $result;
+                $status = (string) ($result['status'] ?? 'unknown');
+                $tally[$payloadType][$status] = ($tally[$payloadType][$status] ?? 0) + 1;
             }
         }
 
+        self::logBatchMetrics($identity, $tally, $total, $startedNs);
         Http::send(200, ['results' => $results]);
+    }
+
+    /**
+     * Thesis measurement (objective 2 / ISO 25010 reliability): one JSON line
+     * per non-empty batch in `backend/storage/metrics/sync-YYYYMMDD.jsonl` —
+     * counts of success / duplicate / failed per item kind and the server's
+     * processing time. Read by `scripts/metrics-report.php`. Deliberately a
+     * file, not `audit_log`: a batch is posted every few seconds while a
+     * phone has a queue, which would drown the Admin-visible audit trail,
+     * and a file needs no migration. Identifiers and counts ONLY (Rule 17 /
+     * Rule 8: never narratives, coordinates or tokens). Best-effort: any
+     * failure here is swallowed, because measuring must never break a sync.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     * @param array<string,array<string,int>> $tally
+     */
+    private static function logBatchMetrics(array $identity, array $tally, int $total, int|float $startedNs): void
+    {
+        if ($total < 1) {
+            return;
+        }
+        try {
+            $dir = dirname(__DIR__) . '/storage/metrics';
+            if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+                return;
+            }
+            $line = json_encode([
+                'ts' => gmdate('Y-m-d\TH:i:s\Z'),
+                'user_id' => $identity['user_id'],
+                'barangay_id' => $identity['barangay_id'],
+                'items' => $total,
+                'results' => $tally,
+                'server_ms' => (int) round((hrtime(true) - $startedNs) / 1_000_000),
+            ], JSON_UNESCAPED_SLASHES);
+            if ($line !== false) {
+                file_put_contents($dir . '/sync-' . gmdate('Ymd') . '.jsonl', $line . "\n", FILE_APPEND | LOCK_EX);
+            }
+        } catch (\Throwable $e) {
+            // Intentionally silent — see the doc comment.
+        }
     }
 
     /** @return array<int,array<string,mixed>> */
@@ -324,7 +374,7 @@ final class SyncController
                 if (!is_string($status)) {
                     throw new ApiError(400, 'VALIDATION_ERROR', 'status is required.');
                 }
-                $result = DutyStatusController::applyToggle($pdo, $identity, $status, $clientEventId);
+                $result = DutyStatusController::applyToggle($pdo, $identity, $status, $clientEventId, 'app', $item['created_offline_at'] ?? null);
                 return [$result['status_id'], $result['wasCreated']];
 
             case 'dispatch_status':
@@ -336,7 +386,7 @@ final class SyncController
                 // No override_reason from a sync item — see class doc: a
                 // queued offline status change is always the owning Tanod
                 // moving their own dispatch, never an Admin override.
-                $result = DispatchController::applyStatusTransition($pdo, $identity, (int) $dispatchId, $status, null);
+                $result = DispatchController::applyStatusTransition($pdo, $identity, (int) $dispatchId, $status, null, $item['created_offline_at'] ?? null);
                 return [$result['dispatch_id'], true];
 
             case 'sos':
