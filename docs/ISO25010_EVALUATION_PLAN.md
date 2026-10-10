@@ -20,6 +20,7 @@ Sub-characteristics: time behaviour, resource utilization, capacity [verify agai
 - Metrics: API response time (median, p95) per key endpoint; dashboard position-refresh delay; sync latency (reconnect to server row); dispatch response time per the REFERENCE definition (`incident.created_at` to `dispatch.arrived_at`, per-incident MIN(arrived_at)); workstation CPU/RAM; battery drain per on-duty hour.
 - Method: scripted timed requests (N fixed in advance, e.g. 30+) against the real stack; timestamps from logcat/server for sync; `adb shell dumpsys batterystats` for battery.
 - Existing evidence: no measured latency numbers found in the docs. The response-time computation is implemented (ReportsController, F8). The 15 s dashboard poll is a design interval, not a measurement. GPS fixes arriving every ~30-90 s over a 17-minute locked-screen run (REMAINING.md C7) is an observation, not a benchmark.
+- Tooling added 2026-10-10 (not yet run on real data): `backend/scripts/measure-api-latency.mjs` (median/p95/max per key GET endpoint) and `backend/scripts/metrics-report.php` (GPS delivery delay, fix interval, dispatch response, offline sync delay, SOS delay).
 - Missing: all of the above. Sprint 8 boxes "Sync latency" and "Dispatch response-time metric" are open (SPRINTS.md).
 - Who: DEV (API), DEVICE (sync, battery).
 - Result: not yet measured.
@@ -52,6 +53,7 @@ Sub-characteristics: faultlessness (maturity), availability, fault tolerance, re
 - Method: DEVICE trials: create N incidents/evidence items offline, kill app, reconnect, compare local queue with server rows; repeat with forced duplicate sends; log timestamps.
 - Existing evidence: `verify-sprint3.sh` (sync/batch backend), `verify-device-session.sh`, `verify-evidence-upload.sh`, `restore-drill.sh` (12 checks, real DB; scheduled weekly per HANDOFF), `backup.sh`, `verify-sprint7-retention.sh`. Device sessions 2026-09-19/23/24: FCM alert, 17-minute continuous locked-screen GPS (REMAINING.md C7), one SMS fallback `sent_by_sms` (M13). The Sprint 8 offline durability and duplicate-reconciliation box is not recorded complete.
 - Known limit: everything depends on one powered-on workstation (REFERENCE section 1); no UPS/backup internet measured.
+- Tooling added 2026-10-10: every `/sync/batch` appends success/duplicate/failed counts to `backend/storage/metrics/sync-*.jsonl`; `metrics-report.php` turns them into (b) and (c) once real tanod use exists. (a) still needs the DEVICE kill-and-reconnect trial.
 - Missing: (a)-(e) as rates. Who: DEVICE + DEV. Result: not yet measured.
 
 ## 6. Security
