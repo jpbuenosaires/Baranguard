@@ -73,17 +73,7 @@
   <link rel="apple-touch-icon" href="assets/logo.svg">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#1E3A6E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <!-- gstatic.com is where the actual .woff2 font FILES load from (the
-       googleapis.com stylesheet just references them) — preconnecting
-       only to googleapis.com left that second, later-discovered
-       connection to warm up from scratch. §7.3 of the UI/UX review. -->
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- 500/800 added: button/label text sets font-weight:500 and the type
-       spec calls for an 800 weight on prominent headings — without the
-       actual font file loaded, a browser synthesizes ("fake bold")
-       instead of rendering the real Inter Medium/ExtraBold. -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Inter is self-hosted (css/base.css @font-face, assets/fonts/): no third-party font host, works offline. -->
   <link rel="stylesheet" href="css/base.css">
   <!-- Component/page CSS, one dedicated css/ folder (moved out of src/ in
        the glassmorphism refactor pass — was previously co-located with

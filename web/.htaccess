@@ -36,7 +36,7 @@
 #    `onclick="event.stopPropagation()"` (gis-live-tracking.js); remove both
 #    once that handler is converted to addEventListener.
 #  - style-src needs 'unsafe-inline': many components set style="..." in
-#    markup strings, plus Google Fonts' stylesheet.
+#    markup strings (fonts are self-hosted under assets/fonts/).
 #  - worker-src blob: MapLibre starts its tile worker from a Blob URL.
 #  - connect-src: the API (public tunnel host, any host on :8081 for LAN /
 #    local dev, any localhost port for dev) and the OSM raster tiles. If the
@@ -49,5 +49,5 @@
   Header always set X-Content-Type-Options "nosniff"
   Header always set X-Frame-Options "DENY"
   Header always set Referrer-Policy "no-referrer"
-  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-gA/fxCfWHvh7MsJpv1eaZVjCJhDea02wCbQIq4ngrb8=' 'sha256-BHETkcds8WCsm1C291F1vriN3F7brUBtJzdHbYowptI=' 'unsafe-hashes' 'sha256-jHF5hTIlMDyGZRAsNK0HO/WFYrwPvI2I1q0o1xKKB6I='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self' blob:; connect-src 'self' https://api.baranguardph.win http://*:8081 http://localhost:* http://127.0.0.1:* https://tile.openstreetmap.org; worker-src 'self' blob:; child-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-gA/fxCfWHvh7MsJpv1eaZVjCJhDea02wCbQIq4ngrb8=' 'sha256-BHETkcds8WCsm1C291F1vriN3F7brUBtJzdHbYowptI=' 'unsafe-hashes' 'sha256-jHF5hTIlMDyGZRAsNK0HO/WFYrwPvI2I1q0o1xKKB6I='; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self' blob:; connect-src 'self' https://api.baranguardph.win http://*:8081 http://localhost:* http://127.0.0.1:* https://tile.openstreetmap.org; worker-src 'self' blob:; child-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 </IfModule>

@@ -169,3 +169,32 @@ describe('HeatmapMap', () => {
     assert.equal(maps[0].getSource('incident-heat').data.features.length, 0);
   });
 });
+
+describe('Basemap offline fallback', () => {
+  const notices = (el) => el.querySelectorAll('.map-basemap-notice');
+
+  test('LiveMap shows one notice on a raster tile error, clears it when a tile loads, ignores other sources', async () => {
+    const el = container();
+    LiveMap(el);
+    await settle();
+    const map = maps[0];
+    map.fire('error', { sourceId: 'barangay-boundary', error: new Error('x') });
+    assert.equal(notices(el).length, 0, 'non-basemap errors must not claim the basemap is down');
+    map.fire('error', { sourceId: 'osm-raster', error: new Error('net') });
+    map.fire('error', { sourceId: 'osm-raster', error: new Error('net') });
+    assert.equal(notices(el).length, 1);
+    assert.match(text(notices(el)[0]), /Basemap unavailable \(offline\)/);
+    map.fire('sourcedata', { sourceId: 'osm-raster', tile: {} });
+    assert.equal(notices(el).length, 0);
+  });
+
+  test('HeatmapMap shows the notice on tile error and removes it on destroy', async () => {
+    const el = container();
+    const heat = HeatmapMap(el);
+    await settle();
+    maps[0].fire('error', { sourceId: 'osm-raster', error: new Error('net') });
+    assert.equal(notices(el).length, 1);
+    heat.destroy();
+    assert.equal(notices(el).length, 0);
+  });
+});

@@ -15,6 +15,7 @@ import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatManilaDateTime } from '../utils/manilaTime.js';
+import { attachBasemapFallback, OSM_TILE_URL } from '../utils/mapFallback.js';
 
 // Same 11-member enum as `incident.incident_type` (§5)
 const INCIDENT_TYPE_OPTIONS = [
@@ -122,6 +123,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   // Right Panel slot (Detail pane)
   let detailPanel = null;
   let currentMiniMap = null;
+  let detachMiniMapFallback = null;
 
   // Filter Bar
   const filterBar = document.createElement('div');
@@ -206,6 +208,10 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   observer.observe(root, { childList: true });
 
   function destroyMiniMap() {
+    if (detachMiniMapFallback) {
+      detachMiniMapFallback();
+      detachMiniMapFallback = null;
+    }
     if (currentMiniMap) {
       try {
         currentMiniMap.remove();
@@ -510,12 +516,16 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
               sources: {
                 'osm-tiles': {
                   type: 'raster',
-                  tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                  tiles: [OSM_TILE_URL],
                   tileSize: 256,
                   attribution: '© OpenStreetMap contributors',
                 },
               },
-              layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm-tiles' }],
+              layers: [
+                // Plain fallback so the pin still sits on a neutral map when tiles cannot load.
+                { id: 'background', type: 'background', paint: { 'background-color': '#E0F2FE' } },
+                { id: 'osm-tiles', type: 'raster', source: 'osm-tiles' },
+              ],
             },
             center: [report.longitude, report.latitude],
             zoom: 15,
@@ -523,6 +533,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
           });
 
           currentMiniMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+          detachMiniMapFallback = attachBasemapFallback(currentMiniMap, 'osm-tiles');
 
           // Branded map pin
           const pinEl = document.createElement('div');
