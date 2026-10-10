@@ -375,12 +375,17 @@ const AssignmentDetailPage: React.FC = () => {
       });
       await cacheRouteFetch(row.local_id, result.routeJson, result.routeStatus);
       setRow(await getCachedDispatch(row.local_id));
+      // Honest labelling: a straight-line figure is never worded as a
+      // road route or a real ETA.
+      const straight = result.straightLine
+        ? ` Straight-line distance: ${formatDistance(result.straightLine.distanceM)} (not a road route; time is a rough guess, about ${Math.max(1, Math.round(result.straightLine.roughDurationS / 60))} min).`
+        : '';
       setNote(
         result.routeStatus === 'available'
           ? 'Route updated.'
           : result.routeStatus === 'stale'
-            ? 'Showing last known route.'
-            : 'No road route available.'
+            ? `Routing unavailable. Showing last known road route (may be outdated).${straight}`
+            : `Routing unavailable, no road route.${straight}`
       );
     } catch (error) {
       setNote(

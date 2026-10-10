@@ -518,6 +518,18 @@ export async function getSosFallbackContact(): Promise<string | null> {
   return json.backup_contact_number;
 }
 
+/**
+ * Same endpoint, both numbers: the human backup contact (plain-text SMS) and
+ * the command-center gateway phone's SIM (encrypted SOS envelope that the
+ * workstation ingests). Either may be null when not configured.
+ */
+export async function getSosFallbackNumbers(): Promise<{ backupContact: string | null; gatewayNumber: string | null }> {
+  const json = await request<{ backup_contact_number: string | null; gateway_number?: string | null }>(
+    '/tanod-sos/fallback-contact'
+  );
+  return { backupContact: json.backup_contact_number, gatewayNumber: json.gateway_number ?? null };
+}
+
 // --- Dispatch (§6, Sprint 1 web + Sprint 3 mobile: M5/M6) -------------------
 
 /** §5 dispatch.status enum. */
@@ -684,13 +696,24 @@ export async function getDispatchRoute(
   dispatchId: number,
   position: { latitude: number; longitude: number },
   mode: RouteMode = 'car'
-): Promise<{ dispatchId: number; routeStatus: RouteStatus; routeJson: RouteData | null }> {
+): Promise<{
+  dispatchId: number;
+  routeStatus: RouteStatus;
+  routeJson: RouteData | null;
+  /** Present only when ORS gave no fresh road route; never a road route (see DispatchController::route()). */
+  straightLine: { distanceM: number; roughDurationS: number; label: string } | null;
+}> {
   const query = new URLSearchParams({
     latitude: String(position.latitude),
     longitude: String(position.longitude),
     mode,
   });
-  const json = await request<{ dispatch_id: number; route_status: RouteStatus; route_json: unknown | null }>(
+  const json = await request<{
+    dispatch_id: number;
+    route_status: RouteStatus;
+    route_json: unknown | null;
+    straight_line?: { distance_m: number; rough_duration_s: number; label: string };
+  }>(
     `/dispatch/${dispatchId}/route?${query.toString()}`
   );
 
@@ -698,6 +721,13 @@ export async function getDispatchRoute(
     dispatchId: json.dispatch_id,
     routeStatus: json.route_status,
     routeJson: mapRouteJson(json.route_json),
+    straightLine: json.straight_line
+      ? {
+          distanceM: json.straight_line.distance_m,
+          roughDurationS: json.straight_line.rough_duration_s,
+          label: json.straight_line.label,
+        }
+      : null,
   };
 }
 
@@ -1018,6 +1048,8 @@ export interface SyncDispatchStatusItem {
   dispatch_id: number;
   status: 'en_route' | 'arrived' | 'completed';
   client_event_id: string;
+  /** Optional: when the Tanod pressed the step (ISO 8601 UTC). The server uses it only if plausible. */
+  created_offline_at?: string;
 }
 
 /**

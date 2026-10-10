@@ -42,7 +42,14 @@ export async function enqueueDispatchStatusChange(
 
 /** Pending dispatch_status queue items, oldest first (§5 sync invariants). */
 export async function listPendingDispatchStatusUpdates(): Promise<
-  { queueId: number; clientEventId: string; payload: DispatchStatusQueuePayload }[]
+  {
+    queueId: number;
+    clientEventId: string;
+    createdOfflineAt: string;
+    /** Server-reported transient failures already spent on this row (0 = never failed). */
+    syncAttempts: number;
+    payload: DispatchStatusQueuePayload;
+  }[]
 > {
   const db = await openLocalDatabase();
   const result = await db.query(
@@ -54,8 +61,54 @@ export async function listPendingDispatchStatusUpdates(): Promise<
   return rows.map((row) => ({
     queueId: row.queue_id,
     clientEventId: row.client_event_id,
+    createdOfflineAt: row.created_offline_at,
+    syncAttempts: row.sync_attempts,
     payload: JSON.parse(row.payload_json) as DispatchStatusQueuePayload,
   }));
+}
+
+/**
+ * Spends one attempt on a dispatch-status row whose 'failed' result was
+ * classified TRANSIENT/UNKNOWN (syncFailureClass.ts). The row stays 'pending'
+ * (retried next pass) until `maxAttempts` is reached, then becomes 'attention':
+ * no longer auto-retried, counted by `countDispatchNeedsAttention()`. Returns
+ * true when this call exhausted the budget (the caller then treats the row as
+ * definitive: reverts the optimistic local status).
+ *
+ * Reuses `sync_attempts`/`reconciliation_status` — no schema change.
+ */
+export async function markDispatchAttemptFailed(queueId: number, maxAttempts: number): Promise<boolean> {
+  const db = await openLocalDatabase();
+  await db.run(
+    `UPDATE offline_queue_local
+       SET sync_attempts = sync_attempts + 1, last_attempt_at = ?,
+           reconciliation_status = CASE WHEN sync_attempts + 1 >= ? THEN 'attention' ELSE 'pending' END
+     WHERE queue_id = ?`,
+    [new Date().toISOString(), maxAttempts, queueId],
+    /* transaction */ false
+  );
+  const result = await db.query('SELECT reconciliation_status AS s FROM offline_queue_local WHERE queue_id = ?', [queueId]);
+  return (result.values?.[0] as { s: string } | undefined)?.s === 'attention';
+}
+
+/** Dispatch-status changes that kept failing for non-rule reasons and were given up on (local status was reverted). */
+export async function countDispatchNeedsAttention(): Promise<number> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    "SELECT COUNT(*) AS n FROM offline_queue_local WHERE payload_type = 'dispatch_status' AND reconciliation_status = 'attention'"
+  );
+  return Number((result.values?.[0] as { n: number } | undefined)?.n ?? 0);
+}
+
+/** Manual retry: gives exhausted dispatch-status rows a fresh attempt budget. */
+export async function resetDispatchAttention(): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    `UPDATE offline_queue_local SET reconciliation_status = 'pending', sync_attempts = 0
+     WHERE payload_type = 'dispatch_status' AND reconciliation_status = 'attention'`,
+    [],
+    /* transaction */ false
+  );
 }
 
 export interface SosQueuePayload {

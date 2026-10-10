@@ -822,7 +822,7 @@ function buildSosFallbackCard(settings) {
 
   const statusBox = document.createElement('div');
   statusBox.className = 'settings-gateway-status-box';
-  const configured = Boolean(settings['sos_fallback.backup_contact_number']);
+  const configured = Boolean(settings['sos_fallback.backup_contact_number'] || settings['sos_fallback.gateway_number']);
   statusBox.innerHTML = `
     <div class="settings-sos-status">
       <span class="settings-sos-status__icon" aria-hidden="true">${icons.phone(18)}</span>
@@ -863,13 +863,35 @@ function buildSosFallbackCard(settings) {
 
   numberField.append(numberLabel, numberInput, numberNote);
 
+  const gatewayField = document.createElement('div');
+  gatewayField.className = 'settings-field';
+  const gatewayLabel = document.createElement('label');
+  gatewayLabel.className = 'settings-label';
+  gatewayLabel.htmlFor = 'settings-sos-gateway-number';
+  gatewayLabel.textContent = 'Command Center Gateway Number';
+
+  const gatewayInput = document.createElement('input');
+  gatewayInput.id = 'settings-sos-gateway-number';
+  gatewayInput.type = 'tel';
+  gatewayInput.className = 'settings-input';
+  gatewayInput.placeholder = 'e.g. 09181234567';
+  gatewayInput.value = settings['sos_fallback.gateway_number'] || '';
+  gatewayInput.maxLength = 32;
+
+  const gatewayNote = document.createElement('span');
+  gatewayNote.className = 'settings-help-text';
+  gatewayNote.textContent =
+    'The SIM number of the gateway phone connected to this workstation. When the internet is down but mobile signal still works, the Tanod app texts an encrypted SOS here and it appears on the dashboard. Left blank, only the backup contact above receives a text.';
+
+  gatewayField.append(gatewayLabel, gatewayInput, gatewayNote);
+
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
   submitButton.classList.add('settings-submit');
   submitButton.textContent = 'Save Fallback Contact';
 
-  form.append(numberField, submitButton);
+  form.append(numberField, gatewayField, submitButton);
   bodyEl.appendChild(form);
   card.appendChild(bodyEl);
 
@@ -881,6 +903,7 @@ function buildSosFallbackCard(settings) {
     try {
       await updateSystemSettings({
         'sos_fallback.backup_contact_number': numberInput.value.trim(),
+        'sos_fallback.gateway_number': gatewayInput.value.trim(),
       });
       showToast('SOS fallback contact saved successfully.', { variant: 'success' });
     } catch (err) {

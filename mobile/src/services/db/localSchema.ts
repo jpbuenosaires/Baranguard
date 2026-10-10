@@ -588,7 +588,12 @@ export interface OfflineQueueLocalRow {
   created_offline_at: string;
   sync_attempts: number;
   last_attempt_at: string | null;
-  reconciliation_status: 'pending' | 'success' | 'duplicate' | 'failed';
+  /**
+   * 'attention' is used ONLY by dispatch_status rows whose transient-failure
+   * budget ran out (offlineQueueRepository.markDispatchAttemptFailed); it is a
+   * plain TEXT value, so no DDL/migration is involved.
+   */
+  reconciliation_status: 'pending' | 'success' | 'duplicate' | 'failed' | 'attention';
 }
 
 // --- Migration 6 row types (tanod workflow, 2026-10) ------------------------

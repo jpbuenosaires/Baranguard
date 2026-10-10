@@ -42,7 +42,7 @@ import {
   listFailedWorkflowRows,
   type FailedWorkflowRow,
 } from '../services/db/workflowSync';
-import { isSyncAuthBlocked } from '../services/syncScheduler';
+import { isSyncAuthBlocked, isSyncDeviceBlocked } from '../services/syncScheduler';
 import {
   getNeedsAttentionCounts,
   retryNeedsAttention,
@@ -78,6 +78,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
   const [discardTarget, setDiscardTarget] = useState<FailedWorkflowRow | null>(null);
   // True when queued items are waiting on a fresh login, not on connectivity.
   const [reloginRequired, setReloginRequired] = useState(false);
+  const [deviceBlocked, setDeviceBlocked] = useState(false);
 
   const loadCounts = async () => {
     setLoading(true);
@@ -112,6 +113,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
       setNeedsAttention(await getNeedsAttentionCounts());
       setFailedRows(await listFailedWorkflowRows());
       setReloginRequired(isSyncAuthBlocked() || (await loadSession()) === null);
+      setDeviceBlocked(isSyncDeviceBlocked());
     } catch {
       setIsOnline(false);
     } finally {
@@ -139,6 +141,9 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
       if (err instanceof ApiError && err.status === 401) {
         setReloginRequired(true);
         setSyncError('Session expired — saved items are pending. Log in again to send them.');
+      } else if (err instanceof ApiError && err.status === 422 && err.code === 'DEVICE_NOT_REGISTERED') {
+        setDeviceBlocked(true);
+        setSyncError('This phone is registered to a different account. Saved items are kept but cannot be sent from this account.');
       } else {
         setSyncError(err instanceof Error ? err.message : 'Could not reach workstation for sync.');
       }
@@ -308,6 +313,8 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 The workstation kept rejecting these, so automatic sync stopped retrying. They are still saved on
                 this device.
                 {needsAttention.sos > 0 && ` ${needsAttention.sos} emergency SOS alert(s) — call the barangay desk.`}
+                {needsAttention.dispatch > 0 &&
+                  ` ${needsAttention.dispatch} status change(s) could not be confirmed and were reverted — check your assignment.`}
                 {needsAttention.incidents > 0 && ` ${needsAttention.incidents} incident report(s).`}
                 {needsAttention.evidence > 0 && ` ${needsAttention.evidence} evidence file(s).`}
                 {needsAttention.gps > 0 && ` ${needsAttention.gps} location point(s).`}
@@ -345,6 +352,25 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 <IonIcon icon={syncOutline} slot="start" />
                 Retry failed items
               </IonButton>
+            </div>
+          )}
+
+          {deviceBlocked && totalPending > 0 && (
+            <div
+              style={{
+                background: 'var(--tint-critical-bg)',
+                border: '1px solid var(--color-critical)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px',
+                color: 'var(--pill-critical-text)',
+                fontSize: 'var(--font-size-sm)',
+                marginBottom: '16px',
+              }}
+              role="alert"
+            >
+              <strong>Cannot send from this account.</strong> {totalPending} saved item{totalPending === 1 ? '' : 's'}{' '}
+              belong to a phone registered to a different account. They are kept safely. Log in with the account that
+              saved them, or ask the Chief Tanod to reset this phone.
             </div>
           )}
 

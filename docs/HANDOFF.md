@@ -233,7 +233,7 @@ still be registered — `Unregister-ScheduledTask -TaskName BaranguardAiWorker
    (the user is running this) and a **device pass** of the new mobile
    screens, offline-queue sync of the four new kinds, and the
    `closes_client_event_id` check-out path.
-3. **Device verification still owed** (Infinix X6840): M13's `sms_failed`
+3. **Device verification still owed** (Infinix X6840): the 2026-10-10 SOS envelope SMS to the gateway SIM (set `sos_fallback.gateway_number` in Settings, turn mobile data off, raise SOS, confirm the SOS appears on the dashboard with `fallback_channel` sms and that the later sync does not duplicate it; DEVLOG 2026-10-10); M13's `sms_failed`
    path (airplane mode / no SIM) and `SosSmsPlugin` pre-validation; the
    no-GPS SOS change (kill GPS, raise SOS, confirm it still reaches the
    server or queues); H-09 device-signature keys (confirm

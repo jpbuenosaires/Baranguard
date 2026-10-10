@@ -17,16 +17,18 @@
 
 import { App as CapacitorApp } from '@capacitor/app';
 import { Preferences } from '@capacitor/preferences';
-import { getSosFallbackContact } from './apiService';
+import { getSosFallbackNumbers } from './apiService';
 import { loadSession } from './session';
 
 const CACHE_KEY = 'baranguard.sosFallbackContact';
+const GATEWAY_CACHE_KEY = 'baranguard.sosFallbackGatewayNumber';
 
 /** Best-effort refresh from the server. Never throws — offline or not-yet-configured both just mean "keep whatever was cached before". */
 export async function refreshSosFallbackContact(): Promise<void> {
   try {
-    const number = await getSosFallbackContact();
-    await Preferences.set({ key: CACHE_KEY, value: number ?? '' });
+    const { backupContact, gatewayNumber } = await getSosFallbackNumbers();
+    await Preferences.set({ key: CACHE_KEY, value: backupContact ?? '' });
+    await Preferences.set({ key: GATEWAY_CACHE_KEY, value: gatewayNumber ?? '' });
   } catch {
     // Keep the existing cached value (or lack of one).
   }
@@ -55,5 +57,11 @@ export function startSosFallbackContactResumeRefresh(): void {
 /** The last-refreshed backup contact number, or null if none is configured/cached yet. */
 export async function getCachedSosFallbackContact(): Promise<string | null> {
   const { value } = await Preferences.get({ key: CACHE_KEY });
+  return value && value.trim() !== '' ? value : null;
+}
+
+/** The last-refreshed command-center gateway SIM number, or null if none is configured/cached yet. */
+export async function getCachedSosGatewayNumber(): Promise<string | null> {
+  const { value } = await Preferences.get({ key: GATEWAY_CACHE_KEY });
   return value && value.trim() !== '' ? value : null;
 }

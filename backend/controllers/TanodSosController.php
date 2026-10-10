@@ -5,6 +5,7 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
+use Baranguard\Lib\ClientEventTime;
 use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Services\Notifications\NotificationDispatcher;
@@ -286,7 +287,7 @@ final class TanodSosController
                      triggered_at, received_at, status, client_event_id, fallback_channel)
                  VALUES
                     (:user_id, :barangay_id, :dispatch_id, :latitude, :longitude, :location_source, :location_recorded_at,
-                     UTC_TIMESTAMP(), UTC_TIMESTAMP(), 'active', :client_event_id, :fallback_channel)"
+                     COALESCE(:triggered_at, UTC_TIMESTAMP()), UTC_TIMESTAMP(), 'active', :client_event_id, :fallback_channel)"
             );
             $insertStmt->execute([
                 'user_id' => $identity['user_id'],
@@ -298,6 +299,10 @@ final class TanodSosController
                 'location_recorded_at' => $locationRecordedAt,
                 'client_event_id' => $clientEventId,
                 'fallback_channel' => $fallbackChannel,
+                // When the Tanod pressed SOS, if the phone sent a plausible
+                // `created_offline_at`; otherwise server time as before.
+                // received_at stays server time (audit).
+                'triggered_at' => ClientEventTime::eventOrServerTime($item['created_offline_at'] ?? null),
             ]);
             $sosId = (int) $pdo->lastInsertId();
 
@@ -479,6 +484,13 @@ final class TanodSosController
         AuthMiddleware::requireRole($identity, ['tanod', 'admin']);
 
         $number = SettingsController::get($pdo, 'sos_fallback.backup_contact_number');
-        Http::send(200, ['backup_contact_number' => $number !== '' ? $number : null]);
+        // 2026-10-10: also the gateway phone's SIM number, for the app's
+        // encrypted-envelope SOS SMS (ingested by gsm-ingest-daemon.php).
+        // Same non-secret, tanod/admin-readable exposure as the backup contact.
+        $gatewayNumber = SettingsController::get($pdo, 'sos_fallback.gateway_number');
+        Http::send(200, [
+            'backup_contact_number' => $number !== '' ? $number : null,
+            'gateway_number' => $gatewayNumber !== '' ? $gatewayNumber : null,
+        ]);
     }
 }

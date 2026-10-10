@@ -195,6 +195,32 @@ final class OrsClient
     }
 
     /**
+     * Great-circle (haversine) fallback for when ORS can't answer. NOT a
+     * road route: no geometry, no turns, and the duration is a coarse
+     * guess from a fixed average speed — callers MUST label it as such
+     * (see `DispatchController::route()`'s `straight_line` field).
+     * Pure maths, no network, so it works with ORS down or unconfigured.
+     *
+     * @return array{distance_m:float,rough_duration_s:float,assumed_speed_kmh:int}
+     */
+    public static function straightLine(float $originLat, float $originLng, float $destLat, float $destLng, string $mode): array
+    {
+        $r = 6371000.0;
+        $dLat = deg2rad($destLat - $originLat);
+        $dLng = deg2rad($destLng - $originLng);
+        $a = sin($dLat / 2) ** 2 + cos(deg2rad($originLat)) * cos(deg2rad($destLat)) * sin($dLng / 2) ** 2;
+        $distance = 2 * $r * atan2(sqrt($a), sqrt(1 - $a));
+        // Deliberately conservative round numbers, not measured speeds.
+        $speedKmh = $mode === self::MODE_FOOT ? 5 : 30;
+
+        return [
+            'distance_m' => round($distance, 1),
+            'rough_duration_s' => round($distance / ($speedKmh * 1000 / 3600), 0),
+            'assumed_speed_kmh' => $speedKmh,
+        ];
+    }
+
+    /**
      * Cheap-ish reachability probe for /system/health — a REAL route
      * request against fixed, known points, not just a key-presence
      * check, so an invalid/revoked key or a fully exhausted rate limit

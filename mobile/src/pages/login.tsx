@@ -38,7 +38,7 @@ import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { storeMessageEncryptionKey } from '../services/messageEncryptionKey';
 import { refreshSosFallbackContact } from '../services/sosFallbackContact';
 import { refreshSchoolCache } from '../services/workflowRefresh';
-import { notifyLoggedIn } from '../services/syncScheduler';
+import { clearSyncDeviceBlocked, markSyncDeviceBlocked, notifyLoggedIn } from '../services/syncScheduler';
 
 const GENERIC_FAILURE = 'Unable to sign in with those credentials.';
 const WRONG_APP =
@@ -191,6 +191,7 @@ async function runPostLoginSetup(barangayId: number, isAdmin: boolean): Promise<
     // finding, just without the stronger per-request signature guarantee.
     const devicePublicKeyPem = await getDevicePublicKeyPem();
     const registration = await registerDevice({ deviceId: await getDeviceId(), fcmToken, devicePublicKeyPem });
+    clearSyncDeviceBlocked();
     // Sprint 4 Phase 3: present ONLY on this device_id's first-ever
     // registration — see DevicesController.php's own doc. Stored once,
     // never re-fetched (there is nowhere else to get it from — the
@@ -198,8 +199,13 @@ async function runPostLoginSetup(barangayId: number, isAdmin: boolean): Promise<
     if (registration.messageEncryptionKey) {
       await storeMessageEncryptionKey(registration.messageEncryptionKey);
     }
-  } catch {
-    // Non-fatal by design.
+  } catch (registerError) {
+    // Non-fatal by design, EXCEPT that a 409 means this phone's device id
+    // belongs to a different account: nothing this user saves here can sync
+    // (the server refuses the whole batch). Say so instead of failing silently.
+    if (registerError instanceof ApiError && registerError.status === 409) {
+      markSyncDeviceBlocked();
+    }
   }
 
   // Chief Tanod (admin) stage 1: only the SOS fallback number is useful here.
