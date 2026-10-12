@@ -9,7 +9,7 @@ describePage({
   name: 'Personnel',
   render: renderPersonnelPage,
   // Admin: Users / Scheduler / Swap requests. Secretary and Punong Barangay
-  // land on the Scheduler tab (availability review / roster publishing).
+  // land on the Scheduler tab (read-only availability / roster publishing).
   roles: ['admin', 'secretary', 'punong_barangay'],
   heading: 'Personnel',
 });
@@ -226,18 +226,20 @@ describe('Personnel behaviour', () => {
     assert.ok(buttonByText(/swap requests/i, $('.page-header', ctx.root) ?? ctx.root));
   });
 
-  test('the availability review panel shows for Secretary, not for Punong Barangay', async () => {
+  test('the read-only availability panel shows for Secretary, not for Punong Barangay', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
-    assert.match(text($('.page-content')), /Availability to review/);
-    // One call feeds the review panel (status=submitted); the tanod picker
-    // now comes from GET /users/directory, not from availability.
+    assert.match(text($('.page-content')), /Tanod availability/);
+    assert.doesNotMatch(text($('.page-content')), /Availability to review/);
+    // One call feeds the panel, every status (legacy accepted/revised rows
+    // are still the tanod's statement); the tanod picker comes from
+    // GET /users/directory, not from availability.
     assert.equal(api.callsTo('GET', '/availability').length, 1);
-    assert.equal(api.callsTo('GET', '/availability').filter((c) => c.query?.status === 'submitted').length, 1);
+    assert.equal(api.callsTo('GET', '/availability')[0].query?.status, undefined);
     cleanup();
     mountPage(renderPersonnelPage, { role: 'punong_barangay' });
     await settle();
-    assert.doesNotMatch(text($('.page-content')), /Availability to review/);
+    assert.doesNotMatch(text($('.page-content')), /Tanod availability/);
     assert.equal(api.callsTo('GET', '/availability').length, 0);
   });
 
@@ -440,32 +442,25 @@ describe('Personnel behaviour', () => {
     assert.equal($('.scheduler-publish-warnings'), null);
   });
 
-  test('accepting an availability submission PATCHes status accepted with an Idempotency-Key', async () => {
+  test('availability is read-only fixed blocks per tanod: no accept / ask-to-revise / note controls (2026-10-12)', async () => {
     await openScheduler('admin');
     const panel = $('.availability-panel');
     assert.match(text(panel), /Jose Reyes/, 'the tanod name comes from the roster lookup');
-    assert.match(text(panel), /2026-10-05 08:00–16:00/);
-    type($('input[type="text"]', panel), 'Looks good');
-    click(buttonByText(/^accept$/i, panel));
-    await settle();
-    const [call] = api.callsTo('PATCH', '/availability/:id');
-    assert.ok(call, 'PATCH /availability/:id was not sent');
-    assert.equal(call.body.status, 'accepted');
-    assert.equal(call.body.review_note, 'Looks good');
-    assert.match(call.headers['idempotency-key'] || '', UUID);
-  });
-
-  test('"Ask to revise" sends status revised', async () => {
-    await openScheduler('admin');
-    click(buttonByText(/ask to revise/i, $('.availability-panel')));
-    await settle();
-    assert.equal(api.callsTo('PATCH', '/availability/:id')[0].body.status, 'revised');
+    const chips = $$('.availability-chip', panel).map((c) => text(c));
+    assert.ok(chips.includes('2026-10-05 08:00–16:00'), 'windows are shown as fixed blocks');
+    assert.ok(chips.includes('2026-10-07 06:00–14:00'), "a legacy 'accepted' row is shown like any other");
+    assert.equal(buttonByText(/^accept$/i, panel), undefined);
+    assert.equal(buttonByText(/revise/i, panel), undefined);
+    assert.equal($('input[type="text"]', panel), null, 'no reviewer note field');
+    assert.doesNotMatch(text(panel), /accepted|revised|review/i, 'no review wording');
+    assert.match(text(panel), /Set by each tanod/);
+    assert.equal(api.callsTo('PATCH', '/availability/:id').length, 0);
   });
 
   test('an empty availability queue says so and an availability failure does not blank the shift list', async () => {
     api.on('GET', '/availability', () => ({ status: 200, body: { items: [], page: 1, limit: 25, total: 0 } }));
     await openScheduler('admin');
-    assert.match(text($('.availability-panel')), /No availability submissions are waiting/);
+    assert.match(text($('.availability-panel')), /No tanod has submitted availability yet/);
     cleanup();
     api.on('GET', '/availability', () => ({ status: 500, body: { error: { code: 'SERVER_ERROR', message: 'Availability is down.' } } }));
     await openScheduler('admin');
@@ -553,6 +548,54 @@ describe('Personnel behaviour', () => {
     await settle();
     assert.match(text($('#scheduler-new-start').closest('form')), /Daily scheduled hours exceed 12/);
   });
+  test('an OUTSIDE_AVAILABILITY refusal is shown inline in the New Shift form', async () => {
+    api.on('POST', '/shifts', () => ({ status: 422, body: { error: { code: 'OUTSIDE_AVAILABILITY', message: "This shift is outside Jose Reyes's submitted availability. Available on 2026-10-05: 2026-10-05 08:00-16:00 (Asia/Manila)." } } }));
+    await openScheduler('admin');
+    type($('#scheduler-new-start'), '2026-10-05T16:00');
+    type($('#scheduler-new-end'), '2026-10-05T18:00');
+    const form = $('#scheduler-new-start').closest('form');
+    form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    const box = $('.login-form__error', form);
+    assert.equal(box.hidden, false);
+    assert.match(text(box), /outside Jose Reyes's submitted availability.*08:00-16:00/);
+  });
+
+  test('an OUTSIDE_AVAILABILITY refusal is shown inline in the Edit Shift dialog, which stays open', async () => {
+    api.on('PATCH', '/shifts/:id', () => ({ status: 422, body: { error: { code: 'OUTSIDE_AVAILABILITY', message: 'Jose Reyes has not submitted availability for 2026-10-20, so they cannot be scheduled then.' } } }));
+    const ctx = await openScheduler('admin');
+    click(buttonByText(/Edit Shift/i, ctx.root));
+    await settle();
+    const modal = document.querySelector('.personnel-modal');
+    modal.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    const box = $('.login-form__error', modal);
+    assert.ok(box && !box.hidden, 'inline error box is visible');
+    assert.match(text(box), /has not submitted availability/);
+    assert.ok(document.querySelector('.personnel-modal'), 'the dialog stays open so the times can be fixed');
+    click(modal.querySelector('.personnel-modal__close'));
+  });
+
+  test("the New Shift form shows the selected tanod's upcoming availability windows", async () => {
+    api.on('GET', '/availability', () => ({ status: 200, body: { items: [
+      { avail_id: 50, user_id: 4, full_name: 'Jose Reyes', period_start: '2099-01-01', period_end: '2099-01-07', windows: [{ date: '2099-01-02', start: '08:00', end: '16:00' }], status: 'submitted', version: 1 },
+    ], page: 1, limit: 100, total: 1 } }));
+    await openScheduler('admin');
+    const select = $('#scheduler-new-tanod');
+    select.value = '4';
+    select.dispatchEvent(new window.Event('change', { bubbles: true }));
+    const hint = $('#scheduler-new-availability');
+    assert.equal(hint.hidden, false);
+    assert.match(text(hint), /Available: 2099-01-02 08:00–16:00/);
+    assert.equal(select.getAttribute('aria-describedby'), 'scheduler-new-availability');
+    const other = [...select.options].find((o) => o.value !== '4');
+    if (other) {
+      select.value = other.value;
+      select.dispatchEvent(new window.Event('change', { bubbles: true }));
+      assert.match(text(hint), /no upcoming availability submitted/);
+    }
+  });
+
   test('hand-editing the times after prefill drops source_availability_id and the "Prefilled" note', async () => {
     await openScheduler('admin');
     click(buttonByText(/create shift from this availability/i, $('.availability-panel')));

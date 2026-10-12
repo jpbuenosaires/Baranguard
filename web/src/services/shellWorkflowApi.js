@@ -273,6 +273,7 @@ function mapAvailability(row) {
     periodEnd: row.period_end,
     windows: Array.isArray(windows) ? windows : [],
     status: row.status,
+    // Legacy review fields (rows reviewed before 2026-10-12); not shown.
     reviewedBy: row.reviewed_by ?? null,
     reviewedAt: row.reviewed_at ?? null,
     reviewNote: row.review_note ?? null,
@@ -289,12 +290,8 @@ export async function getAvailability({ status, userId, periodStart, page, limit
   return { items: rows.map(mapAvailability), total: json.total ?? rows.length };
 }
 
-/** PATCH /availability/:id — Admin or Secretary; `status` is accepted|revised. */
-export async function reviewAvailability(availId, { status, reviewNote, idempotencyKey }) {
-  const body = { status };
-  if (reviewNote) body.review_note = reviewNote;
-  return mapAvailability(await request('PATCH', `/availability/${availId}`, { body, idempotencyKey }));
-}
+// PATCH /availability/:id was retired 2026-10-12 (410 AVAILABILITY_NOT_REVIEWED):
+// availability is the tanod's own fixed statement, nobody reviews it.
 
 // --- Schools + C-1 fields on incidents (§7) ---------------------------------
 

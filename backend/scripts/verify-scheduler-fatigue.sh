@@ -154,6 +154,12 @@ extract() {
 # ============================================================
 # W11 — POST/GET/PATCH /shifts
 # ============================================================
+# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
+# verify-roster-accomplishment.sh). This suite tests other rules, so every
+# tanod gets open whole-day availability first.
+"$PHP_BIN" "$BACKEND_DIR/scripts/seed-open-availability.php" | mysql_exec "$VALDB" \
+  && pass "Seeded open availability for every tanod (seed-open-availability.php)" || fail "open availability seed failed"
 step "4. POST /shifts — create, idempotency, overlap rejection, role/tenant gating"
 REQ_KEY="aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa"
 START_T=$(mysql_exec -N -s "$VALDB" -e "SELECT DATE_FORMAT(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), '%Y-%m-%dT%H:%i:%sZ');")
