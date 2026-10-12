@@ -30,18 +30,21 @@ describe('Accomplishment Reports behaviour', () => {
     assert.ok(api.calls.some((c) => c.path === '/accomplishment-reports' && c.query.status === 'noted'));
   });
 
-  test('Note is offered only to a holder of note_report, on a prepared report', async () => {
+  test('paper-first: no in-app Note or Approve buttons; the Admin records the signed paper on a prepared report', async () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 71 } });
     await settle();
-    assert.ok(buttonByText(/^Note this report$/), 'admin holds note_report and report 71 is prepared');
+    assert.ok(!buttonByText(/^Note this report$/), 'the separate note step is gone');
     assert.ok(!buttonByText(/^Approve this report$/));
+    assert.ok(buttonByText(/^Record signed paper$/), 'report 71 is prepared, so the signed paper can be recorded');
+    assert.ok(buttonByText(/^Return to tanod$/), 'admin holds note_report, so Return stays');
   });
 
-  test('Approve is offered to a holder of approve_report on a noted report, not Note', async () => {
+  test('a Punong Barangay is not offered in-app approval and is told the paper is awaited', async () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'punong_barangay', param: { reportId: 72 } });
     await settle();
-    assert.ok(buttonByText(/^Approve this report$/));
-    assert.ok(!buttonByText(/^Note this report$/));
+    assert.ok(!buttonByText(/^Approve this report$/));
+    assert.ok(!buttonByText(/^Record signed paper$/), 'recording the paper is Admin/Secretary work');
+    assert.ok(buttonByText(/^Return to tanod$/), 'the PB holds approve_report and can still return it');
   });
 
   test('a viewer without the authority gets no action buttons', async () => {
@@ -59,15 +62,11 @@ describe('Accomplishment Reports behaviour', () => {
     assert.match(text($('.page-content')), /Check/);
   });
 
-  test('the preparer-must-differ 409 is shown as plain language', async () => {
-    api.on('POST', '/accomplishment-reports/:id/note', () => ({ status: 409, body: { error: { code: 'CONFLICT', message: 'The preparer cannot also approve their own document.' } } }));
-    mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 71 } });
+  test('without Return authority the viewer is told the signed paper is awaited', async () => {
+    api.on('GET', '/users/:id', () => ({ status: 200, body: { user_id: 3, full_name: 'X', role: 'punong_barangay', official_title: null, approval_authority: [] } }));
+    mountPage(renderAccomplishmentReportsPage, { role: 'punong_barangay', param: { reportId: 72 } });
     await settle();
-    click(buttonByText(/^Note this report$/));
-    await settle();
-    click(buttonByText(/^Note report$/));
-    await settle();
-    assert.match(text(document.body), /person who prepared this record cannot also note or approve it/i);
+    assert.match(text($('.page-content')), /Waiting for the signed paper/);
   });
 
   test('Preview & print opens the Accomplishment Report form with 31 day rows', async () => {

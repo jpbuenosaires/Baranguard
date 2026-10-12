@@ -3,7 +3,8 @@ import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { api, mountPage, settle, cleanup, text, click, type, buttonByText, $, $$, window } from '../harness/render.mjs';
 import { renderPersonnelPage } from '../../src/pages/personnel.js';
-import { getMyAuthority, clearAuthorityCache } from '../../src/services/tanodWorkflowUi.js';
+import { getMyAuthority, clearAuthorityCache, manilaToday } from '../../src/services/tanodWorkflowUi.js';
+import { weekStartOf, addDays } from '../../src/services/rosterWeek.js';
 
 describePage({
   name: 'Personnel',
@@ -18,14 +19,49 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const tabLabels = () => $$('.page-tab').map((b) => text(b).replace(/\d+$/, '').trim());
 const tab = (label) => $$('.page-tab').find((b) => new RegExp(label, 'i').test(text(b)));
 
-async function openScheduler(role = 'admin') {
+// The Scheduler opens on the week grid; most older tests exercise the list.
+async function openScheduler(role = 'admin', { view = 'list' } = {}) {
   const ctx = mountPage(renderPersonnelPage, { role });
   await settle();
   if (role === 'admin') {
     click(tab('Scheduler'));
     await settle();
   }
+  if (view === 'list') await showList();
   return ctx;
+}
+
+async function showList() {
+  click($$('.scheduler-view-toggle button').find((b) => text(b) === 'List'));
+  await settle();
+}
+
+// Fixed shifts/availability in the CURRENT Manila week, so the grid tests do
+// not depend on the day they run. Times are wire-format UTC (Manila - 8h).
+const WEEK = weekStartOf(manilaToday());
+const day = (n) => addDays(WEEK, n);
+const utc = (date, hhmm) => {
+  const [y, m, d] = date.split('-').map(Number);
+  const [hh, mm] = hhmm.split(':').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, hh - 8, mm)).toISOString().slice(0, 19).replace('T', ' ');
+};
+function useWeekData({ shifts, availability } = {}) {
+  const shiftRows = shifts ?? [
+    // Mon morning for Jose Reyes (inside availability), draft
+    { shift_id: 601, user_id: 4, patrol_zone: 'Zone 1', start_at: utc(day(0), '06:00'), end_at: utc(day(0), '14:00'), version: 1, approval_status: 'draft', pending_reapproval: 0 },
+    // Tue afternoon for Jose Reyes (outside availability), published
+    { shift_id: 602, user_id: 4, patrol_zone: null, start_at: utc(day(1), '14:00'), end_at: utc(day(1), '22:00'), version: 2, approval_status: 'published', pending_reapproval: 0 },
+    // Last week's Wed morning for Maria Dela Cruz (copy source)
+    { shift_id: 603, user_id: 5, patrol_zone: 'Market', start_at: utc(addDays(WEEK, -5), '06:00'), end_at: utc(addDays(WEEK, -5), '14:00'), version: 1, approval_status: 'published', pending_reapproval: 0 },
+    // Last week's Thu morning for Maria Dela Cruz (she is not available this Thu)
+    { shift_id: 604, user_id: 5, patrol_zone: null, start_at: utc(addDays(WEEK, -4), '06:00'), end_at: utc(addDays(WEEK, -4), '14:00'), version: 1, approval_status: 'published', pending_reapproval: 0 },
+  ];
+  const availRows = availability ?? [
+    { avail_id: 81, user_id: 4, full_name: 'Jose Reyes', period_start: WEEK, period_end: day(6), windows_json: [{ date: day(0), start: '06:00', end: '18:00' }, { date: day(2), start: '06:00', end: '14:00' }], status: 'submitted', version: 1 },
+    { avail_id: 82, user_id: 5, full_name: 'Maria Dela Cruz', period_start: WEEK, period_end: day(6), windows_json: [{ date: day(2), start: '06:00', end: '14:00' }], status: 'submitted', version: 1 },
+  ];
+  api.on('GET', '/shifts', () => ({ status: 200, body: { items: shiftRows, page: 1, limit: 100, total: shiftRows.length } }));
+  api.on('GET', '/availability', () => ({ status: 200, body: { items: availRows, page: 1, limit: 100, total: availRows.length } }));
 }
 
 // The fixture Admin holds no roster authority; give them approve_roster for
@@ -40,12 +76,16 @@ function grantRosterAuthority() {
 describe('Personnel behaviour', () => {
   afterEach(() => cleanup());
 
-  test('without approve_roster the Publish bar and draft checkboxes are hidden and a note says why', async () => {
+  test('paper-first: the Admin publishes with the signed paper, never the in-app Publish button', async () => {
     await openScheduler('admin');
     assert.equal($('#publish-shifts-btn'), null);
-    assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
-    // Admin/Secretary without the authority get the paper route instead.
-    assert.ok($('#publish-shifts-paper-btn'), 'Recorded-from-paper control is offered');
+    assert.match(text($('#publish-shifts-paper-btn')), /Publish with signed paper/);
+    assert.match(text($('.scheduler-publish-bar')), /Print the schedule, have it signed/);
+    cleanup();
+    grantRosterAuthority();
+    await openScheduler('admin');
+    assert.equal($('#publish-shifts-btn'), null, 'even an Admin holding approve_roster records the signed paper');
+    assert.ok($('#publish-shifts-paper-btn'));
   });
 
   test('Recorded from paper: picks a signer holding approve_roster (via directory) + date, then POSTs recorded_from_paper', async () => {
@@ -111,13 +151,14 @@ describe('Personnel behaviour', () => {
     assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only; the Secretary must not call it');
   });
 
-  test('secretary gets the create-shift form and Edit Shift controls; Publish stays authority-gated', async () => {
+  test('secretary gets the create-shift form and Edit Shift controls; publishing goes through the signed paper', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
+    await showList();
     assert.ok($('#scheduler-new-start'), 'the Secretary must be able to create shifts');
     assert.ok(buttonByText(/edit shift/i), 'the Secretary must be able to edit shifts');
-    assert.equal($('#publish-shifts-btn'), null, 'publishing needs approve_roster, which this Secretary does not hold');
-    assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
+    assert.equal($('#publish-shifts-btn'), null, 'the Secretary publishes with the signed paper, not in-app');
+    assert.ok($('#publish-shifts-paper-btn'));
   });
 
   test('the shift picker is built from GET /users/directory?purpose=roster (no GET /users) and names the Chief Tanod', async () => {
@@ -143,6 +184,7 @@ describe('Personnel behaviour', () => {
   test('the edit-shift picker also offers the Chief Tanod', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
+    await showList();
     click(buttonByText(/edit shift/i));
     await settle();
     const opts = $$('select option', $('.personnel-modal')).map((o) => text(o));
@@ -176,6 +218,7 @@ describe('Personnel behaviour', () => {
     api.on('GET', '/users/directory', () => ({ status: 200, body: { items: [] } }));
     const ctx = mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
+    await showList();
     const rows = $$('tbody tr', ctx.root).filter((r) => /Tanod #4/.test(text(r)));
     click(buttonByText(/edit shift/i, rows[0]));
     await settle();
@@ -201,8 +244,7 @@ describe('Personnel behaviour', () => {
     click(tab('Swap'));
     await settle();
     assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only');
-    // one call for the tab badge (the Secretary cannot use nav-counts), one for the tab itself
-    assert.equal(api.callsTo('GET', '/shift-swap-requests').length, 2);
+    assert.ok(api.callsTo('GET', '/shift-swap-requests').length >= 1); // the page walks all pages (audit F-09)
     assert.match(text($('.page-content')), /Jose Reyes|Maria Dela Cruz/, 'names come from availability');
     click(buttonByText(/^approve$/i, ctx.root));
     await settle();
@@ -219,21 +261,16 @@ describe('Personnel behaviour', () => {
     assert.ok(buttonByText(/swap requests/i, $('.page-header', ctx.root) ?? ctx.root));
   });
 
-  test('the availability review panel shows for Secretary, not for Punong Barangay', async () => {
+  test('availability is fixed: no review panel, no accept/revise, and every submission is read for the grid', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
-    assert.match(text($('.page-content')), /Availability to review/);
-    // One call feeds the review panel (status=submitted); the tanod picker
-    // now comes from GET /users/directory, not from availability.
-    // plus status=accepted for the collapsed "Accepted - create shift" list
-    assert.equal(api.callsTo('GET', '/availability').length, 2);
-    assert.equal(api.callsTo('GET', '/availability').filter((c) => c.query?.status === 'submitted').length, 1);
-    assert.equal(api.callsTo('GET', '/availability').filter((c) => c.query?.status === 'accepted').length, 1);
-    cleanup();
-    mountPage(renderPersonnelPage, { role: 'punong_barangay' });
-    await settle();
     assert.doesNotMatch(text($('.page-content')), /Availability to review/);
-    assert.equal(api.callsTo('GET', '/availability').length, 0);
+    assert.equal(buttonByText(/^accept$/i), undefined);
+    assert.equal(buttonByText(/ask to revise/i), undefined);
+    const calls = api.callsTo('GET', '/availability');
+    assert.ok(calls.length >= 1);
+    assert.equal(calls.filter((c) => c.query?.status).length, 0, 'any status: availability is shown as given');
+    assert.equal(api.callsTo('PATCH', '/availability/:id').length, 0);
   });
 
   test('an object param ({ tab }) opens that tab, as the Approvals page sends it', async () => {
@@ -403,8 +440,7 @@ describe('Personnel behaviour', () => {
   });
 
   test('publishing: only drafts are selectable; Publish POSTs shift_ids with an Idempotency-Key and shows coverage warnings', async () => {
-    grantRosterAuthority();
-    await openScheduler('admin');
+    await openScheduler('punong_barangay');
     const publish = $('#publish-shifts-btn');
     assert.equal(publish.disabled, true, 'nothing selected yet');
     assert.equal($$('tbody input[type="checkbox"]').length, 2, 'only the two draft shifts have a checkbox');
@@ -425,9 +461,8 @@ describe('Personnel behaviour', () => {
   });
 
   test('a publish refused for missing authority shows the server message and sends nothing else', async () => {
-    grantRosterAuthority();
     api.on('POST', '/shifts/publish', () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'You are not designated to perform this action.' } } }));
-    await openScheduler('admin');
+    await openScheduler('punong_barangay');
     click(buttonByText(/select all drafts/i));
     click($('#publish-shifts-btn'));
     await settle();
@@ -435,40 +470,6 @@ describe('Personnel behaviour', () => {
     await settle();
     assert.match(text(window.document.body), /not designated to perform this action/);
     assert.equal($('.scheduler-publish-warnings'), null);
-  });
-
-  test('accepting an availability submission PATCHes status accepted with an Idempotency-Key', async () => {
-    await openScheduler('admin');
-    const panel = $('.availability-panel');
-    assert.match(text(panel), /Jose Reyes/, 'the tanod name comes from the roster lookup');
-    assert.match(text(panel), /2026-10-05 08:00–16:00/);
-    type($('input[type="text"]', panel), 'Looks good');
-    click(buttonByText(/^accept$/i, panel));
-    await settle();
-    const [call] = api.callsTo('PATCH', '/availability/:id');
-    assert.ok(call, 'PATCH /availability/:id was not sent');
-    assert.equal(call.body.status, 'accepted');
-    assert.equal(call.body.review_note, 'Looks good');
-    assert.match(call.headers['idempotency-key'] || '', UUID);
-  });
-
-  test('"Ask to revise" sends status revised', async () => {
-    await openScheduler('admin');
-    click(buttonByText(/ask to revise/i, $('.availability-panel')));
-    await settle();
-    assert.equal(api.callsTo('PATCH', '/availability/:id')[0].body.status, 'revised');
-  });
-
-  test('an empty availability queue says so and an availability failure does not blank the shift list', async () => {
-    api.on('GET', '/availability', () => ({ status: 200, body: { items: [], page: 1, limit: 25, total: 0 } }));
-    await openScheduler('admin');
-    assert.match(text($('.availability-panel')), /No availability submissions are waiting/);
-    cleanup();
-    api.on('GET', '/availability', () => ({ status: 500, body: { error: { code: 'SERVER_ERROR', message: 'Availability is down.' } } }));
-    await openScheduler('admin');
-    assert.match(text($('.availability-panel')), /Availability is down/);
-    assert.ok(buttonByText(/retry/i, $('.availability-panel')));
-    assert.ok($$('.shift-approval-pill').length > 0, 'the shift list still renders');
   });
 
   test('Scheduler form dynamically shows proactive fatigue callout on preset or time change', async () => {
@@ -482,7 +483,7 @@ describe('Personnel behaviour', () => {
     const callout = ctx.root.querySelector('.scheduler-fatigue-callout');
     assert.ok(callout, 'Fatigue callout element should be mounted in form');
     assert.equal(callout.hidden, false, 'Callout should become visible once times are filled');
-    assert.match(text(callout), /hrs \/ 12h max/i);
+    assert.match(text(callout), /hrs \/ 56h max/i);
   });
 
   test('Edit Shift modal shows proactive fatigue preview callout', async () => {
@@ -505,69 +506,12 @@ describe('Personnel behaviour', () => {
     await settle();
   });
 
-  test('Scheduler asks the server for a month window (from/to) and the month controls re-query', async () => {
-    await openScheduler('admin');
-    const first = api.callsTo('GET', '/shifts').at(-1);
-    assert.match(first.query.from, /^\d{4}-\d{2}-\d{2}$/);
-    assert.match(first.query.to, /^\d{4}-\d{2}-\d{2}$/);
-    assert.ok(first.query.from < first.query.to);
-    const before = api.callsTo('GET', '/shifts').length;
-    click($('#scheduler-next-month'));
-    await settle();
-    const next = api.callsTo('GET', '/shifts').at(-1);
-    assert.ok(api.callsTo('GET', '/shifts').length > before);
-    assert.ok(next.query.from > first.query.from, 'next month moves the window forward');
-  });
-
-  test('the fatigue callout states the 12 h per day rule, never the old 56 h weekly one', async () => {
-    const ctx = await openScheduler('admin');
-    click(buttonByText(/Morning/i, ctx.root));
-    await settle();
-    const t = text(ctx.root.querySelector('.scheduler-fatigue-callout'));
-    assert.doesNotMatch(t, /56/);
-    assert.match(t, /12h/);
-  });
-
-  test('accepted availability stays reachable in a collapsed "Accepted - create shift" list', async () => {
-    api.on('GET', '/availability', (req) => ({ status: 200, body: { items: req.query?.status === 'accepted'
-      ? [{ avail_id: 77, user_id: 4, user_name: 'Jose Reyes', period_start: '2099-01-01', period_end: '2099-01-07', windows_json: [{ date: '2099-01-02', start: '08:00', end: '16:00' }], windows: [{ date: '2099-01-02', start: '08:00', end: '16:00' }], status: 'accepted', version: 1 }]
-      : [], page: 1, limit: 100, total: req.query?.status === 'accepted' ? 1 : 0 } }));
-    await openScheduler('admin');
-    const details = $('.availability-accepted');
-    assert.ok(details, 'accepted list missing');
-    assert.equal(details.open, false);
-    assert.match(text(details), /Accepted - create shift \(1\)/);
-    assert.ok(buttonByText(/Create shift from this availability/, details));
-  });
-
   test('Punong Barangay can publish drafts (the server checks approve_roster) but cannot edit them', async () => {
     await openScheduler('punong_barangay');
     assert.ok($('#publish-shifts-btn'));
     assert.equal(buttonByText(/edit shift/i), undefined);
     assert.match(text($('.page-content')), /Tanod #5/, 'an assigned shift shows its id when the roster is unavailable, not "Unassigned"');
   });
-  for (const role of ['admin', 'secretary']) {
-    test(`${role}: "Create shift from this availability" prefills the form and POSTs source_availability_id as a draft`, async () => {
-      await openScheduler(role);
-      const panel = $('.availability-panel');
-      const picker = $('select', panel);
-      assert.ok(picker, 'a tanod with several windows gets a window picker');
-      picker.value = '1';
-      click(buttonByText(/create shift from this availability/i, panel));
-      assert.equal($('#scheduler-new-tanod').value, '4');
-      assert.equal($('#scheduler-new-start').value, '2026-10-06T22:00');
-      assert.equal($('#scheduler-new-end').value, '2026-10-06T23:59');
-      $('#scheduler-new-start').closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-      await settle();
-      const [call] = api.callsTo('POST', '/shifts');
-      assert.ok(call, 'POST /shifts was not sent');
-      assert.equal(call.body.source_availability_id, 31);
-      assert.equal(call.body.user_id, 4);
-      assert.match(call.body.request_id, UUID);
-      assert.match(text(window.document.body), /Shift saved as a draft\./);
-    });
-  }
-
   test('a hand-built shift sends no source_availability_id', async () => {
     await openScheduler('admin');
     type($('#scheduler-new-start'), '2026-10-12T08:00');
@@ -575,35 +519,6 @@ describe('Personnel behaviour', () => {
     $('#scheduler-new-start').closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
     await settle();
     assert.equal('source_availability_id' in api.callsTo('POST', '/shifts')[0].body, false);
-  });
-
-  test('a server rejection (daily-hours cap) from an availability-created shift is shown in the form', async () => {
-    api.on('POST', '/shifts', () => ({ status: 422, body: { error: { code: 'DAILY_HOURS_EXCEEDED', message: 'Daily scheduled hours exceed 12.' } } }));
-    await openScheduler('admin');
-    click(buttonByText(/create shift from this availability/i, $('.availability-panel')));
-    $('#scheduler-new-start').closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-    await settle();
-    assert.match(text($('#scheduler-new-start').closest('form')), /Daily scheduled hours exceed 12/);
-  });
-  test('hand-editing the times after prefill drops source_availability_id and the "Prefilled" note', async () => {
-    await openScheduler('admin');
-    click(buttonByText(/create shift from this availability/i, $('.availability-panel')));
-    const form = $('#scheduler-new-start').closest('form');
-    const prefilled = (f) => $$('p.note', f).some((n) => !n.hidden && /Prefilled from the Tanod's submitted availability/.test(text(n)));
-    assert.ok(prefilled(form));
-    type($('#scheduler-new-start'), '2026-10-12T08:00');
-    type($('#scheduler-new-end'), '2026-10-12T16:00');
-    assert.equal(prefilled(form), false);
-    form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-    await settle();
-    assert.equal('source_availability_id' in api.callsTo('POST', '/shifts')[0].body, false);
-  });
-
-  test('a quick preset after prefill also drops the availability link', async () => {
-    await openScheduler('admin');
-    click(buttonByText(/create shift from this availability/i, $('.availability-panel')));
-    click($('.shift-preset-btn'));
-    assert.equal($$('p.note', $('#scheduler-new-start').closest('form')).some((n) => !n.hidden && /Prefilled from/.test(text(n))), false);
   });
 
   test('the Edit Shift dialog has a name, a labelled close button and labelled fields', async () => {
@@ -630,11 +545,221 @@ describe('Personnel behaviour', () => {
     assert.equal(tab('Users').getAttribute('aria-current'), null);
   });
 
-  test('an availability submission with no windows offers no "Create shift" button', async () => {
-    api.on('GET', '/availability', () => ({ status: 200, body: { items: [
-      { avail_id: 40, user_id: 4, full_name: 'Jose Reyes', period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [], status: 'submitted', version: 1 },
-    ], page: 1, limit: 100, total: 1 } }));
-    await openScheduler('admin');
-    assert.equal(buttonByText(/create shift from this availability/i, $('.availability-panel')), undefined);
+});
+
+describe('Scheduler week grid', () => {
+  afterEach(() => cleanup());
+
+  const gridRow = (name) => $$('.week-grid__row').find((r) => text($('.week-grid__name', r)) === name);
+  const cell = (name, dayIndex) => $$('.week-grid__cell', gridRow(name))[dayIndex];
+  const dialog = () => $('[role="alertdialog"], [role="dialog"]');
+  const confirm = async () => { click($$('button', dialog()).filter((b) => !b.disabled).at(-1)); await settle(); };
+  function drop(target, shiftId) {
+    const ev = new window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { getData: () => String(shiftId) } });
+    target.dispatchEvent(ev);
+  }
+
+  test('opens on the week: a row per rostered tanod, fixed availability shaded, coverage per day', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    assert.ok($('.week-grid'), 'the week grid is the default view');
+    assert.ok(gridRow('Jose Reyes') && gridRow('Maria Dela Cruz'), 'every rostered tanod gets a row');
+    assert.ok(gridRow('Ramon Elcano'), 'the Chief Tanod is rosterable too');
+    assert.match($('.week-grid__avail', cell('Jose Reyes', 0)).title, /Available 06:00–18:00/);
+    assert.ok(cell('Maria Dela Cruz', 0).classList.contains('is-unavailable'), 'no availability that day is hatched');
+    const coverage = $$('.week-grid__coverage').map((c) => text(c));
+    assert.equal(coverage[0], '1/3', 'Monday has only the morning covered');
+    assert.match(text($('.scheduler-week-toolbar__label')), /–/);
+  });
+
+  test('a shift outside the tanod\'s availability is flagged; one inside is not', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    const inside = $('.shift-chip[data-shift-id="601"]');
+    const outside = $('.shift-chip[data-shift-id="602"]');
+    assert.ok(inside.classList.contains('shift-chip--draft'));
+    assert.equal(inside.classList.contains('shift-chip--warn'), false);
+    assert.ok(outside.classList.contains('shift-chip--warn'));
+    assert.match(outside.title, /outside availability/);
+    assert.equal(text($('.week-grid__hours', gridRow('Jose Reyes'))), '16', 'week hours per tanod');
+  });
+
+  test('a shift over 56 hours in 7 days is flagged red', async () => {
+    const shifts = [0, 1, 2, 3, 4, 5, 6, 6].map((d, i) => ({
+      shift_id: 700 + i, user_id: 4, patrol_zone: null,
+      start_at: utc(day(d), i === 7 ? '18:00' : '06:00'), end_at: utc(day(d), i === 7 ? '22:00' : '14:00'),
+      version: 1, approval_status: 'draft', pending_reapproval: 0,
+    }));
+    useWeekData({ shifts });
+    await openScheduler('admin', { view: 'week' });
+    assert.ok($('.shift-chip[data-shift-id="707"]').classList.contains('shift-chip--danger'));
+    assert.ok($('.week-grid__hours', gridRow('Jose Reyes')).classList.contains('is-over'));
+  });
+
+  test('+ adds the chosen standard shift as a draft, linked to the availability that covers it', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    click($('.week-grid__add', cell('Jose Reyes', 2)));
+    await settle();
+    assert.equal(dialog(), null, 'no question when the tanod is available');
+    const [call] = api.callsTo('POST', '/shifts');
+    assert.ok(call, 'POST /shifts was not sent');
+    assert.equal(call.body.user_id, 4);
+    assert.equal(call.body.start_at, `${day(2)}T06:00`);
+    assert.equal(call.body.end_at, `${day(2)}T14:00`);
+    assert.equal(call.body.source_availability_id, 81);
+    assert.match(call.body.request_id, UUID);
+  });
+
+  test('the Night preset ends at 06:00 the next day', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    click($$('.scheduler-week-toolbar__tools .filter-chip').find((b) => /^Night/.test(text(b))));
+    await settle();
+    click($('.week-grid__add', cell('Jose Reyes', 3)));
+    await settle();
+    assert.ok(dialog(), 'Jose Reyes gave no availability that night, so it asks first');
+    await confirm();
+    const [call] = api.callsTo('POST', '/shifts');
+    assert.equal(call.body.start_at, `${day(3)}T22:00`);
+    assert.equal(call.body.end_at, `${day(4)}T06:00`);
+    assert.equal('source_availability_id' in call.body && call.body.source_availability_id !== null, false);
+  });
+
+  test('adding a shift where the tanod is not available asks first, and Cancel sends nothing', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    click($('.week-grid__add', cell('Maria Dela Cruz', 0)));
+    await settle();
+    assert.match(text(dialog()), /not available/);
+    click($$('button', dialog()).find((b) => /cancel/i.test(text(b))));
+    await settle();
+    assert.equal(api.callsTo('POST', '/shifts').length, 0);
+  });
+
+  test('a server refusal (12h/day cap) is shown and nothing else changes', async () => {
+    useWeekData();
+    api.on('POST', '/shifts', () => ({ status: 422, body: { error: { code: 'DAILY_HOURS_EXCEEDED', message: 'Daily scheduled hours exceed 12.' } } }));
+    await openScheduler('admin', { view: 'week' });
+    click($('.week-grid__add', cell('Jose Reyes', 2)));
+    await settle();
+    assert.match(text(window.document.body), /Daily scheduled hours exceed 12/);
+  });
+
+  test('Copy last week repeats last week\'s shifts where the tanod is available and skips the rest', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    click($('#scheduler-copy-week-btn'));
+    await settle();
+    assert.match(text(dialog()), /Copy 1 shift/);
+    assert.match(text(dialog()), /1 skipped because the tanod is not available/);
+    assert.equal(api.callsTo('POST', '/shifts').length, 0, 'nothing before confirmation');
+    await confirm();
+    const calls = api.callsTo('POST', '/shifts');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.user_id, 5);
+    assert.equal(calls[0].body.patrol_zone, 'Market');
+    assert.equal(calls[0].body.start_at, `${day(2)}T06:00`);
+    assert.equal(calls[0].body.source_availability_id, 82);
+    assert.match(text(window.document.body), /Copied 1 shift from last week/);
+  });
+
+  test('dragging a chip to another tanod and day PATCHes the shift with its version, after confirming', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    assert.equal($('.shift-chip[data-shift-id="601"]').draggable, true);
+    drop(cell('Maria Dela Cruz', 2), 601);
+    await settle();
+    assert.equal(api.callsTo('PATCH', '/shifts/:id').length, 0, 'nothing before confirmation');
+    await confirm();
+    const [call] = api.callsTo('PATCH', '/shifts/:id');
+    assert.ok(call, 'PATCH /shifts/:id was not sent');
+    assert.equal(call.body.user_id, 5);
+    assert.equal(call.body.start_at, `${day(2)}T06:00`);
+    assert.equal(call.body.end_at, `${day(2)}T14:00`);
+    assert.equal(call.body.version, 1);
+  });
+
+  test('moving a published shift warns that it goes back to draft', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    drop(cell('Jose Reyes', 2), 602);
+    await settle();
+    assert.match(text(dialog()), /back to draft/);
+    assert.match(text(dialog()), /not available/);
+  });
+
+  test('a chip opens the Edit Shift dialog', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    click($('.shift-chip[data-shift-id="601"]'));
+    await settle();
+    assert.ok($('.personnel-modal'));
+    assert.equal($('#scheduler-edit-tanod').value, '4');
+  });
+
+  test('Publish week with signed paper publishes every draft of the shown week in one step', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    const btn = $('#publish-week-paper-btn');
+    assert.match(text(btn), /Publish week with signed paper \(1\)/);
+    click(btn);
+    await settle();
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    type($('#confirm-dialog-field-signedOn', dialog()), today);
+    await confirm();
+    const [pub] = api.callsTo('POST', '/shifts/publish');
+    assert.ok(pub, 'POST /shifts/publish was sent');
+    assert.deepEqual(pub.body.shift_ids, [601]);
+    assert.deepEqual(pub.body.recorded_from_paper, { signer_user_id: 3, signed_on: today });
+  });
+
+  test('Previous / Next week move the grid and This week comes back', async () => {
+    useWeekData();
+    await openScheduler('admin', { view: 'week' });
+    const label = () => text($('.scheduler-week-toolbar__label'));
+    const start = label();
+    click(buttonByText(/previous week/i));
+    await settle();
+    assert.notEqual(label(), start);
+    assert.ok($('.shift-chip[data-shift-id="603"]'), 'last week shows last week\'s shifts');
+    click(buttonByText(/^this week$/i));
+    await settle();
+    assert.equal(label(), start);
+  });
+
+  test('the A4 print of the week is a grid with names, times and signature lines', async () => {
+    useWeekData();
+    const ctx = await openScheduler('admin', { view: 'week' });
+    click(ctx.root.querySelector('#preview-schedule-print-btn'));
+    await settle();
+    const sheet = document.querySelector('#printable-week-roster-sheet');
+    assert.ok(sheet, 'the weekly sheet is mounted');
+    assert.match(text(sheet), /WEEKLY DUTY ROSTER/);
+    assert.match(text(sheet), /Jose Reyes/);
+    assert.match(text(sheet), /06:00–14:00/);
+    assert.match(text(sheet), /Punong Barangay/);
+    click(document.querySelector('#close-print-modal'));
+  });
+
+  test('if availability cannot be loaded the grid still shows the shifts and says so', async () => {
+    useWeekData();
+    api.on('GET', '/availability', () => ({ status: 500, body: { error: { code: 'SERVER_ERROR', message: 'Availability is down.' } } }));
+    await openScheduler('admin', { view: 'week' });
+    assert.ok($('.shift-chip[data-shift-id="601"]'));
+    assert.match(text($('.page-content')), /availability could not be loaded/i);
+    assert.equal($$('.shift-chip--warn').length, 0, 'no warnings without availability');
+  });
+
+  test('Punong Barangay sees the week read-only and publishes the week in-app', async () => {
+    useWeekData();
+    await openScheduler('punong_barangay', { view: 'week' });
+    assert.ok($('.week-grid'));
+    assert.equal($$('.week-grid__add').length, 0, 'no adding');
+    assert.equal($$('button.shift-chip').length, 0, 'chips are not editable');
+    assert.equal($('#scheduler-copy-week-btn'), null);
+    assert.ok($('#publish-week-btn'));
+    assert.match(text($('.page-content')), /Jose Reyes/, 'names come from the availability rows');
   });
 });

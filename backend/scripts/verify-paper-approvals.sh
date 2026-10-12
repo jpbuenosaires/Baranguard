@@ -244,7 +244,7 @@ A_N3=$(mk_acc "$T1_ID" "2026-04" noted)
 A_N4=$(mk_acc "$T2_ID" "2026-05" noted)
 A_N5=$(mk_acc "$T2_ID" "2026-09" noted)
 A_PREP=$(mk_acc "$T1_ID" "2026-06" prepared)
-A_PREP2=$(mk_acc "$T2_ID" "2025-12" prepared)
+A_PREP2=$(mk_acc "$T2_ID" "2026-06" prepared)
 A_OPEN=$(mk_acc "$T1_ID" "2026-07" open)
 A_B2=$(mk_acc "$TB2_ID" "2026-02" noted 2)
 A_LOCK=$(mk_acc "$T1_ID" "$CUR_MONTH" approved)
@@ -353,19 +353,9 @@ api POST "/accomplishment-reports/$A_N1/record-paper-approval" "$ADM2_T" "{\"sig
 expect_code "Cross-tenant recorder is 404" 404
 api POST "/accomplishment-reports/$A_B2/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
 expect_code "Barangay 1 secretary on a barangay 2 report is 404" 404
-api POST "/accomplishment-reports/$A_PREP/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
-expect_code "Report 'prepared' without noter_user_id" 400
-api POST "/accomplishment-reports/$A_PREP/record-paper-approval" "$SEC_T" "{\"signer_user_id\":$KAG_ID,\"noter_user_id\":$T1_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
-expect_code "Report 'prepared': noter is the preparer" 409
-api POST "/accomplishment-reports/$A_PREP/record-paper-approval" "$SEC_T" "{\"signer_user_id\":$KAG_ID,\"noter_user_id\":$SEC2_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
-expect_code "Report 'prepared': noter lacks note_report" 422
-api POST "/accomplishment-reports/$A_PREP/record-paper-approval" "$SEC_T" "{\"signer_user_id\":$T1_ID,\"noter_user_id\":$PB_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
-expect_code "Report 'prepared': signer is the preparer" 409
-expect_eq "  refusals left A_PREP prepared" "$(db_one "SELECT status FROM accomplishment_report WHERE report_id=$A_PREP;")" "prepared"
-api POST "/accomplishment-reports/$A_PREP2/record-paper-approval" "$SEC_T" "{\"signer_user_id\":$KAG_ID,\"noter_user_id\":$PB_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
-expect_code "Report 'prepared' + named noter and signer: paper note+approval recorded" 200
-expect_eq "  approved, noted_by = noter, approved_by = signer, paper mode" "$(jget "$BODY" status)/$(jget "$BODY" noted_by)/$(jget "$BODY" approved_by)/$(jget "$BODY" approval_mode)" "approved/$PB_ID/$KAG_ID/recorded_from_paper"
-expect_eq "  audit metadata carries ids only (incl. noter_user_id)" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_type='accomplishment_report' AND entity_id=$A_PREP2 LIMIT 1;")" '["report_id", "month", "status", "signer_user_id", "idempotency_key", "noter_user_id"]'
+api POST "/accomplishment-reports/$A_PREP2/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
+expect_code "Report 'prepared' (paper-first: no in-app note needed)" 200
+expect_eq "  prepared -> approved from paper, noted_by stays empty" "$(jget "$BODY" status)/$(jget "$BODY" approval_mode)/$(jget "$BODY" approved_by)/$(db_one "SELECT IFNULL(noted_by,'NULL') FROM accomplishment_report WHERE report_id=$A_PREP2;")" "approved/recorded_from_paper/$KAG_ID/NULL"
 api POST "/accomplishment-reports/$A_OPEN/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
 expect_code "Report 'open'" 409
 api POST "/accomplishment-reports/$A_DIG/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"

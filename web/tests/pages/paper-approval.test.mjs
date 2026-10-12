@@ -87,20 +87,20 @@ describe('Paper signature badges (Accomplishment Report)', () => {
     assert.match(text(panel()), /Approval recorded from paper/);
   });
 
-  test('a prepared report offers recording the paper note+approval, but no date control or scans', async () => {
-    mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 71 } });
-    await settle();
-    assert.ok(panel(), 'a prepared report can be recorded from paper');
-    assert.ok(buttonByText(/^Record approval from paper$/, panel()));
-    assert.equal(buttonByText(/^Record paper signature date$/, panel()), undefined);
-    assert.match(text(panel()), /A scan can be attached once this report is approved/);
+  test('an open report (not yet submitted) shows no paper panel at all', async () => {
+    await openAccomplishment('admin', accomplishment({ status: 'open', approved_by: null, approved_at: null, noted_by: null, noted_at: null, paper_pending: false }));
+    assert.equal(panel(), null);
   });
 
-  test('a noted report shows the panel but explains scans wait for approval and does not fetch scans', async () => {
-    mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 72 } });
-    await settle();
-    assert.ok(panel());
-    assert.match(text(panel()), /A scan can be attached once this report is approved/);
+  test('a prepared or noted report shows the panel, says to print and sign it, and does not fetch scans yet', async () => {
+    for (const reportId of [71, 72]) {
+      mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId } });
+      await settle();
+      assert.ok(panel(), `panel missing on report ${reportId}`);
+      assert.match(text(panel()), /Print this report and have it signed/);
+      assert.match(text(panel()), /A scan can be attached once the signed paper is recorded/);
+      cleanup();
+    }
     assert.equal(api.callsTo('GET', '/document-scans').length, 0);
   });
 });
@@ -149,7 +149,7 @@ describe('Record paper signature date', () => {
 
   test('Punong Barangay gets the badge but no controls', async () => {
     await openAccomplishment('punong_barangay', accomplishment());
-    assert.equal(buttonByText(/Record paper signature date|Record approval from paper/, panel()), undefined);
+    assert.equal(buttonByText(/Record paper signature date|Record signed paper/, panel()), undefined);
     assert.equal($('input[type="file"]', panel()), null);
   });
 
@@ -160,22 +160,24 @@ describe('Record paper signature date', () => {
   });
 });
 
-describe('Record approval from paper (Accomplishment Report)', () => {
+describe('Record signed paper (Accomplishment Report)', () => {
   afterEach(() => { cleanup(); clearAuthorityCache(); });
 
-  test('offered on a NOTED report only, and not on prepared or approved ones', async () => {
-    mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 72 } });
-    await settle();
-    assert.ok(buttonByText(/^Record approval from paper$/, panel()));
-    cleanup();
+  test('offered on a PREPARED or NOTED report (paper-first: no in-app note needed), not on an approved one', async () => {
+    for (const reportId of [71, 72]) {
+      mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId } });
+      await settle();
+      assert.ok(buttonByText(/^Record signed paper$/, panel()), `missing on report ${reportId}`);
+      cleanup();
+    }
     await openAccomplishment('admin', accomplishment());
-    assert.equal(buttonByText(/^Record approval from paper$/, panel()), undefined);
+    assert.equal(buttonByText(/^Record signed paper$/, panel()), undefined);
   });
 
   test('Admin picks a signer from users holding approve_report (never the preparer or a non-holder) and a date', async () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 72 } });
     await settle();
-    click(buttonByText(/^Record approval from paper$/, panel()));
+    click(buttonByText(/^Record signed paper$/, panel()));
     await settle();
     assert.ok(dialog(), 'the record dialog did not open');
     const options = $$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o));
@@ -203,7 +205,7 @@ describe('Record approval from paper (Accomplishment Report)', () => {
     api.on('POST', '/accomplishment-reports/:id/record-paper-approval', () => ({ status: 409, body: { error: { code: 'CONFLICT', message: 'The preparer cannot approve their own report.' } } }));
     mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 72 } });
     await settle();
-    click(buttonByText(/^Record approval from paper$/, panel()));
+    click(buttonByText(/^Record signed paper$/, panel()));
     await settle();
     type($('#confirm-dialog-field-signedOn', dialog()), today());
     click(confirmButton());
@@ -216,7 +218,7 @@ describe('Record approval from paper (Accomplishment Report)', () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'secretary', param: { reportId: 72 } });
     await settle();
     const usersCallsBefore = api.callsTo('GET', '/users').length;
-    click(buttonByText(/^Record approval from paper$/, panel()));
+    click(buttonByText(/^Record signed paper$/, panel()));
     await settle();
     assert.equal(api.callsTo('GET', '/users').length, usersCallsBefore, 'the Admin-only user list is never used for the signer lookup');
     const options = $$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o));
@@ -231,7 +233,7 @@ describe('Record approval from paper (Accomplishment Report)', () => {
     api.on('GET', '/users/directory', () => ({ status: 200, body: { items: [] } }));
     mountPage(renderAccomplishmentReportsPage, { role: 'secretary', param: { reportId: 72 } });
     await settle();
-    click(buttonByText(/^Record approval from paper$/, panel()));
+    click(buttonByText(/^Record signed paper$/, panel()));
     await settle();
     assert.equal(dialog(), null);
     assert.match(text(window.document.body), /No active official holds this approval authority/i);
@@ -324,9 +326,9 @@ describe('Paper signature and scans on Annex D', () => {
     assert.equal(panel(), null);
   });
 
-  test('a PREPARED Annex D offers Record approval from paper, listing approve_annex_d holders, and posts to the ssz route', async () => {
+  test('a PREPARED Annex D offers Record signed paper, listing approve_annex_d holders, and posts to the ssz route', async () => {
     await openTerm('admin', termReport());
-    click(buttonByText(/^Record approval from paper$/, panel()));
+    click(buttonByText(/^Record signed paper$/, panel()));
     await settle();
     assert.deepEqual($$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o)), ['Teresa Magbanua (Punong Barangay)']);
     type($('#confirm-dialog-field-signedOn', dialog()), today());
@@ -364,7 +366,7 @@ describe('Paper signature and scans on Annex D', () => {
   test('Punong Barangay sees the Annex D badge only', async () => {
     await openTerm('punong_barangay', termReport({ status: 'approved', paper_pending: true }));
     assert.match(text(panel()), /Paper signature pending/);
-    assert.equal(buttonByText(/Record paper signature date|Record approval from paper/, panel()), undefined);
+    assert.equal(buttonByText(/Record paper signature date|Record signed paper/, panel()), undefined);
     assert.equal(fileInput(), null);
   });
 });
