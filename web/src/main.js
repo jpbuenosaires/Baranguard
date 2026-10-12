@@ -36,6 +36,7 @@ import { renderApprovalsPage } from './pages/approvals.js';
 import { renderAccomplishmentReportsPage } from './pages/accomplishment-reports.js';
 import { renderReferralLogPage } from './pages/referral-log.js';
 import { renderSchoolZonesPage } from './pages/school-zones.js';
+import { renderStyleGuidePage } from './pages/style-guide.js';
 import { DEFAULT_PAGE_KEY } from './pages/settings.js';
 
 const PAGE_ROLES = {
@@ -80,6 +81,7 @@ const PAGE_ROLES = {
   'accomplishment-reports': ['admin', 'secretary', 'punong_barangay'],
   referrals: ['admin', 'secretary', 'punong_barangay'],
   'school-zones': ['admin', 'secretary', 'punong_barangay'],
+  'style-guide': ['admin', 'secretary', 'punong_barangay'],
 };
 
 // Pages that cannot render without a parameter — never chosen as a role's
@@ -303,6 +305,8 @@ function boot(currentPage, param, { notice } = {}) {
     // Optional stop handle (a page that polls returns one), same contract as above.
     const handle = renderSchoolZonesPage(root, session.user, onLoggedOut, navigate, param);
     activeStop = handle?.stop ?? null;
+  } else if (page === 'style-guide') {
+    renderStyleGuidePage(root, session.user, onLoggedOut, navigate);
   }
 
   setDocumentTitle(root);
