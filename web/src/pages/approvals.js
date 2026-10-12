@@ -1,7 +1,6 @@
 /**
  * approvals.js — Approvals queue (contract §10): one place where an
- * official sees every record waiting on THEM — availability to review,
- * draft shifts to publish, accomplishment reports and Annex D term reports
+ * official sees every record waiting on THEM — draft shifts to publish, accomplishment reports and Annex D term reports
  * waiting for their signed paper, and Annex D drafts to prepare — each row
  * deep-linking to the screen where the action is taken.
  *
@@ -9,10 +8,12 @@
  * reports are approved by the Admin/Secretary recording the signed paper,
  * not by separate in-app note/approve clicks (those groups were removed).
  *
+ * Availability is not here (2026-10-12): it is the tanod's own fixed
+ * statement and is not reviewed; it is shown read-only in the Scheduler.
+ *
  * Role/authority gating is UX only (REFERENCE.md §2 Rule 2: the server
  * re-checks every action). A group is shown only when the viewer can act
  * on it:
- *   - availability to review ........ role admin or secretary
  *   - shifts awaiting publish ....... role admin or secretary, or
  *                                     authority approve_roster
  *   - reports waiting for paper ..... role admin or secretary
@@ -27,7 +28,7 @@
 import { StatStrip } from '../components/StatStrip.js';
 import { icons } from '../components/icons.js';
 import {
-  getAvailability, getShiftsByApproval, getAccomplishmentReports, getTermReports, getUserNames,
+  getShiftsByApproval, getAccomplishmentReports, getTermReports, getUserNames,
 } from '../services/tanodWorkflowApi.js';
 import {
   h, mountPageFrame, showLoading, showError, showEmpty, getMyAuthority,
@@ -48,27 +49,6 @@ function buildGroups({ user, navigate, nameOf }) {
   };
 
   return [
-    {
-      id: 'availability',
-      title: 'Availability to review',
-      hint: 'Tanod availability waiting for you to accept or ask them to revise.',
-      visible: () => user.role === 'admin' || user.role === 'secretary',
-      load: async () => {
-        const res = await getAvailability({ status: 'submitted', limit: 100 });
-        await nameOf.ensure(res.items);
-        return {
-          total: res.total,
-          rows: res.items.map((r) => ({
-            key: r.availId,
-            title: person(r),
-            detail: `${formatDateOnly(r.periodStart)} to ${formatDateOnly(r.periodEnd)}`,
-            open: () => navigate('personnel', { tab: 'scheduler' }),
-          })),
-        };
-      },
-      openAll: () => navigate('personnel', { tab: 'scheduler' }),
-      openLabel: 'Open Scheduler',
-    },
     {
       id: 'shifts',
       title: 'Shifts awaiting publish',

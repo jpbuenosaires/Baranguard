@@ -126,6 +126,12 @@ shift_body() { echo "{\"user_id\":$1,\"start_at\":\"$2\",\"end_at\":\"$3\",\"pat
 ADM=$(login_tok chief); ADM2=$(login_tok chief2); SECT=$(login_tok sec1); PBT=$(login_tok pb1)
 [ -n "$ADM" ] && [ "$ADM" != "MISSING" ] && pass "Logged in as the Chief Tanod admin" || { fail "admin login failed"; exit 1; }
 
+# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
+# verify-roster-accomplishment.sh). This suite tests other rules, so every
+# tanod gets open whole-day availability first.
+"$PHP_BIN" "$BACKEND_DIR/scripts/seed-open-availability.php" | mysql_exec "$VALDB" \
+  && pass "Seeded open availability for every tanod (seed-open-availability.php)" || fail "open availability seed failed"
 step "3. POST /shifts: who can be rostered"
 req POST /shifts "$ADM" "$(shift_body $CHIEF '2027-01-12T08:00:00+08:00' '2027-01-12T18:00:00+08:00')"
 expect_eq "$CODE" "201" "Admin (Chief Tanod) account can be assigned a shift"
