@@ -18751,3 +18751,59 @@ git worktrees, merged to local `main`; nothing pushed.
   check on a separate report so the scan-on-prepared 409 check still holds); see
   the PR for whether it was run. Not browser-verified. The UAT instruments
   (P-05, P-06) still describe in-app approval and need rewording.
+
+## 2026-10-12 (2) - Workflow-gap fixes and fixed availability (Claude, project thread)
+
+- **Asked by Jayson** after reading the workflow map: fix the six gaps found
+  (WORKFLOWS_AND_RULES Rules 74-79), using parallel helpers, then combined on
+  `claude/workflow-gap-fixes`. No migration.
+- **#1 swaps:** an approved swap keeps a published shift published
+  (`ShiftSwapRequestsController`; `approved_by` stays the original signer,
+  `approval_reset` always false). Legacy `pending_reapproval` rows keep their
+  display, 409 and re-publish rules.
+- **#2 paper only:** `PaperApproval::refuseInApp()` -> 410
+  `PAPER_APPROVAL_REQUIRED` on accomplishment note/approve and Annex D
+  prepare/approve; `/shifts/publish` requires `recorded_from_paper` for every
+  caller (Admin/Secretary, or a holder of `approve_roster`). A PB holding
+  `approve_roster` may read the signer directory for that authority only.
+- **#3 Annex D:** `record-paper-approval` accepts a draft with
+  `preparer_user_id` (prepare_annex_d, never the signer), recomputes the counts
+  and approves in one step; audit gains `preparer_user_id`.
+- **#4 offline off duty:** `duty_status_updates[]` items take `changed_at`
+  (off_duty only; <= 5 min ahead, stored as server time when ahead; <= 62 days
+  back; not before the last on_duty/responding row -> 409). A late off duty
+  recalculates suggested durations in open/returned months
+  (`AccomplishmentController::refreshSuggestedSince`). Mobile queues it in
+  `offline_queue_local` (new local status `dismissed`), syncs it after dispatch
+  status, keeps a last-known duty status in localStorage, and syncs any
+  pending off duty before going on duty. Not device-verified.
+- **#5 night offers:** `OfferService::recipientsFor()` falls back to on-duty
+  tanods whose availability covers now when no rostered tanod qualifies; a
+  fallback accept stores `FALLBACK_OVERRIDE_REASON` and audit flags only.
+- **#6 phone SOS:** `PATCH /tanod-sos/:id/resolve` added to
+  `ADMIN_DEVICE_ALLOWLIST` as a signed write; mobile "Mark resolved" with an
+  IonAlert confirmation, online only. Rule 72 reversed.
+- **Availability fixed by the tanod (Jayson: "not up for discussion"):**
+  `PATCH /availability/:id` -> 410 `AVAILABILITY_NOT_REVIEWED`; tanods can
+  change any period (legacy accepted rows unlocked). Jayson chose **block**
+  over warn: `ShiftsController::assertWithinAvailability()` refuses create,
+  edit and swap approval with 422 `OUTSIDE_AVAILABILITY` (23:59 = midnight;
+  unassigned shifts, Admin assignees and zone-only edits not checked). Also
+  fixed: editing only the times of an unassigned shift turned `user_id` into 0.
+  New `scripts/seed-open-availability.php` lets suites testing other roster
+  rules seed availability instead of weakening the rule.
+- **Evidence (Linux container, MariaDB 10.11, client `sql_mode` non-strict,
+  combined branch):** wave1a 148/1 (openssl/mysqldump absent), dispatch-offers
+  222/0, roster-accomplishment 374/0, paper-approvals 310/0, school-zones
+  214/0, chief-tanod-mobile 199/0, chief-tanod-roster 44/0, scheduler-fatigue
+  50/0, sprint7-audit 61/0, offline-offduty (new) 36/0, sprint3 43/0,
+  duty-status-map-upload 49/0, sprint4 59/0, device-session 22/0, b2-pentest
+  59/0, h16 59/0; `web/tests` 631/0, `verify-web-wiring.mjs` 770/0; mobile tsc
+  0 errors, lint 17 (was 18), `verify-local-schema.mjs` 230/0. Not browser- or
+  device-verified.
+- **Suites on Linux:** cleanup uses Windows `taskkill`/`netstat`, so the
+  `php -S` server outlives the run; strict `sql_mode` breaks several seeds;
+  `cygpath` is needed. Not fixed in this change.
+- **Open:** UAT rows P-05, P-06 and the Annex D prepare rows still describe
+  in-app steps; PR #3 (0040 notifications) will need a small rebase against
+  this.

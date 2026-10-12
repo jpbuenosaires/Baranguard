@@ -8,9 +8,28 @@ sessions, the abandoned React Native rebuild, the PHP 8.3 swap, the
 Cloudflare tunnel set-up) lives in DEVLOG; only what is still true and
 still actionable is kept here.
 
-**Last updated: 2026-10-09 (after the logic-review decisions).**
+**Last updated: 2026-10-12 (workflow-gap fixes).**
 
 ## Current state
+
+**Workflow-gap fixes (2026-10-12, DEVLOG 2026-10-12 (2)), branch
+`claude/workflow-gap-fixes`, PR to `main`; no migration.** Approved swaps
+keep shifts published; paper is the only approval path (in-app
+note/approve/prepare 410, publish needs `recorded_from_paper`); Annex D is
+prepared and approved from the paper in one step; tanods can go off duty
+offline; night offers fall back to on-duty tanods whose availability covers
+now; the Chief Tanod phone can resolve SOS; availability is the tanod's fixed
+statement (no review) and shifts outside it are refused. Rules 74-79 in
+`docs/WORKFLOWS_AND_RULES.md`. Verified on disposable DBs and jsdom only, NOT
+browser- or device-verified. Builds on main, not on PR #3 (0040
+notifications); expect small conflicts in AccomplishmentController,
+ShiftsController and the docs when both merge. Seeded demo tanods without
+availability can no longer be scheduled until they submit windows.
+**Linux note:** the verify-*.sh suites leak their `php -S` server on Linux
+(cleanup uses Windows `taskkill`), and several seeds fail under strict
+`sql_mode`; run them with a non-strict client `sql_mode` and kill leftover
+servers.
+
 
 **Proposed Changes Review build (2026-10-07, DEVLOG 2026-10-07 (1)) is
 code-complete on local `main`, NOT pushed, verified on disposable DBs / jsdom
