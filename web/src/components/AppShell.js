@@ -170,7 +170,7 @@ let lastPollOkAt = null;
 // nav (LayoutDashboard/Radio/Map from lucide-react) — see icons.js.
 // `countKey`, when present, keys into GET /reports/nav-counts' response
 // (§4.1 of the UI/UX review) — Admin-only, matching that endpoint's own
-// gating, so a nav item shared with Punong Barangay (e.g. Fatigue Flags)
+// gating, so a nav item shared with Punong Barangay
 // still only shows a badge for the Admin viewing it.
 //
 // `group` clusters related items under a small-caps sidebar header (the
@@ -205,17 +205,15 @@ const NAV_ITEMS = [
   // tabbed screen — see pages/analytics.js. Same role pair both already
   // had, so no per-tab gating needed there (unlike Personnel below).
   { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart, group: 'Records & Reporting' },
-  // 2026-09-05 merge of what used to be four separate nav items (Shift
-  // Scheduler/Swap Requests/Fatigue Flags/User Management) into one
-  // tabbed screen — see pages/personnel.js. No countKey here: the two
-  // badges those used to carry (pendingSwapRequests/
-  // unacknowledgedFatigueFlags) moved onto the matching tab chip inside
-  // the page itself instead of the sidebar.
+  // 2026-09-05 merge of what used to be separate nav items (Shift
+  // Scheduler/Swap Requests/User Management) into one tabbed screen — see
+  // pages/personnel.js. No countKey here: the badge those used to carry
+  // (pendingSwapRequests) moved onto the matching tab chip inside the page
+  // itself instead of the sidebar.
   // 2026-10: Secretary and Punong Barangay reach this hub too, but only its
   // Scheduler tab (see personnel.js): read-only tanod availability (Admin/Secretary)
   // and roster publishing (whoever holds approve_roster, typically the PB)
-  // happen there, and the Approvals page deep-links to it. The Fatigue tab
-  // is gone from the hub (contract §10); its code/endpoints are intact.
+  // happen there, and the Approvals page deep-links to it.
   { key: 'personnel', label: 'Personnel', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.users, group: 'Personnel' },
 
   // 2026-10-07: the four Admin-only operational screens live under ONE
@@ -350,8 +348,7 @@ export function AppShell(user, activePage, navigate, onLogout) {
   // 768px breakpoint where the visible label text is hidden via CSS.
   // §4.1 of the UI/UX review — badge dots populated below, once
   // GET /reports/nav-counts resolves (Admin only; see NAV_ITEMS' own
-  // comment on why a shared item like Fatigue Flags still only badges
-  // for an Admin viewer).
+  // comment on why a shared item still only badges for an Admin viewer).
   const countBadges = {};
   let lastRenderedGroup = undefined; // distinct from `null` (dashboard's "no group")
   const openMenus = readOpenMenus();

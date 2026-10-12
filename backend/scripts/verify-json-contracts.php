@@ -205,7 +205,6 @@ $routes = [
     ["/system-settings", $adminToken],
     ["/shift-swap-requests", $adminToken],
     ["/shifts", $adminToken],
-    ["/shifts/fatigue-flags", $pbToken],
     ["/sms/logs", $adminToken],
     ["/sms/conversations", $adminToken],
     ["/sms/conversations/{$smsPhone}/messages", $adminToken],

@@ -1130,7 +1130,7 @@ export async function syncBatch(params: {
   }));
 }
 
-// --- Shifts & swap requests (§6 "Shifts and fatigue" — M8/M9, Phase 4.4) ---
+// --- Shifts & swap requests (§6 "Shifts" — M8/M9, Phase 4.4) ---
 
 export interface ShiftEntry {
   shiftId: number;

@@ -7,14 +7,13 @@ use Baranguard\Lib\ApiError;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
-use Baranguard\Services\Scheduling\FatigueCalculator;
 use PDO;
 
 /**
- * Shift swap requests — Master Reference §6 "Shifts and fatigue" section,
+ * Shift swap requests — Master Reference §6 "Shifts" section,
  * §5 `shift_swap_request` table, §9 W12 Shift Swap Requests ("Approvals
  * occur transactionally and revalidate current users, assignment, time
- * overlap, and fatigue. Open approved requests explicitly show
+ * overlap. Open approved requests explicitly show
  * 'unassigned — Admin action required.'").
  *
  * Resolved decisions, logged in DEVLOG.md:
@@ -41,7 +40,7 @@ use PDO;
  *     reassigned. A direct Admin/Secretary PATCH of who/start/end on a
  *     published shift still reverts it to draft (ShiftsController::update).
  *   - **Re-validation on approve** (§6/§9's own words: "revalidate
- *     current users, assignment, time overlap, and fatigue"): if the
+ *     current users, assignment, time overlap"): if the
  *     shift's *current* occupant no longer matches `requesting_user_id`
  *     (an Admin reassigned it out from under the pending request via a
  *     normal edit in the meantime), approval is rejected with 409 rather
@@ -51,12 +50,7 @@ use PDO;
  *     nullable as of migration 0003 specifically so this can set it to
  *     NULL rather than leaving the requester's name on a shift they were
  *     just released from — matches §6's literal "leaves the shift
- *     unassigned" wording. No fatigue recalculation is triggered for the
- *     released user in this path: `fatigue_flag` rows are keyed to a
- *     specific shift the user is still tied to, and there is no new/
- *     changed shift assignment to anchor a flag to for someone being
- *     removed from one — their historical flags (if any) are untouched,
- *     never deleted, per `FatigueCalculator`'s own doc.
+ *     unassigned" wording.
  */
 final class ShiftSwapRequestsController
 {
@@ -279,7 +273,7 @@ final class ShiftSwapRequestsController
                 // Revalidate current assignment — an Admin may have
                 // reassigned this shift out from under the request since
                 // it was submitted (§9: "revalidate current users,
-                // assignment, time overlap, and fatigue").
+                // assignment, time overlap").
                 if ((int) $row['shift_current_user_id'] !== (int) $row['requesting_user_id']) {
                     throw new ApiError(409, 'CONFLICT', 'The requester is no longer assigned to this shift.');
                 }
@@ -300,8 +294,6 @@ final class ShiftSwapRequestsController
                     ShiftsController::assertWithinAvailability($pdo, $targetUserId, $shiftStartAt, $shiftEndAt);
                     $pdo->prepare('UPDATE shift_schedule SET user_id = :user_id, version = version + 1, updated_at = UTC_TIMESTAMP() WHERE shift_id = :shift_id')
                         ->execute(['user_id' => $targetUserId, 'shift_id' => $shiftId]);
-                    FatigueCalculator::recalculate($pdo, (int) $row['requesting_user_id'], $shiftId);
-                    FatigueCalculator::recalculate($pdo, $targetUserId, $shiftId);
                 } else {
                     // No named target: release to unassigned — see class
                     // doc. No coverage block any more (contract section 8):

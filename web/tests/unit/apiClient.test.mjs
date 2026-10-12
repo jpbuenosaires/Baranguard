@@ -237,7 +237,6 @@ describe('snake_case -> camelCase mapping', () => {
       citizenReports: (await client.getCitizenReports()).items[0],
       shifts: (await client.getShifts()).items[0],
       swaps: (await client.getShiftSwapRequests()).items[0],
-      fatigue: (await client.getFatigueFlags()).items[0],
       audit: (await client.getAuditLog()).items[0],
       smsLogs: (await client.getSmsLogs()).items[0],
       conversations: (await client.getSmsConversations())[0],

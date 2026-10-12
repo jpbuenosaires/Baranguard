@@ -389,7 +389,6 @@ export async function getNavCounts() {
     pendingIncidents: json.pending_incidents,
     unconvertedCitizenReports: json.unconverted_citizen_reports,
     pendingSwapRequests: json.pending_swap_requests,
-    unacknowledgedFatigueFlags: json.unacknowledged_fatigue_flags,
   };
 }
 
@@ -904,7 +903,7 @@ export async function convertCitizenReport(reportId, { incidentType, priority } 
   return { incidentId: json.incident_id, citizenReportId: json.citizen_report_id, convertedAt: json.converted_at };
 }
 
-// --- Shifts / fatigue (W11 Scheduler, W12 Swap Requests, W13 Fatigue Flags) -
+// --- Shifts (W11 Scheduler, W12 Swap Requests) ------------------------------
 
 function mapShift(row) {
   return { shiftId: row.shift_id, userId: row.user_id, patrolZone: row.patrol_zone, startAt: row.start_at, endAt: row.end_at, version: row.version };
@@ -976,35 +975,6 @@ export async function resolveShiftSwapRequest(requestId, status, version) {
     shiftId: json.shift_id,
     targetUserId: json.target_user_id,
   };
-}
-
-/** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
-export async function getFatigueFlags({ page, limit } = {}) {
-  const json = await request('GET', '/shifts/fatigue-flags', { query: { page, limit }, auth: true });
-  return {
-    items: json.items.map((row) => ({
-      flagId: row.flag_id,
-      userId: row.user_id,
-      shiftId: row.shift_id,
-      hoursWorked7Day: row.hours_worked_7day,
-      calculationBasis: row.calculation_basis,
-      flaggedAt: row.flagged_at,
-      acknowledgedAt: row.acknowledged_at,
-      acknowledgedBy: row.acknowledged_by,
-      acknowledgedByName: row.acknowledged_by_name,
-      shiftPatrolZone: row.shift_patrol_zone,
-      shiftStartAt: row.shift_start_at,
-      shiftEndAt: row.shift_end_at,
-    })),
-    page: json.page,
-    limit: json.limit,
-    total: json.total,
-  };
-}
-
-export async function acknowledgeFatigueFlag(flagId) {
-  const json = await request('PATCH', `/fatigue-flags/${flagId}/acknowledge`, { body: {}, auth: true });
-  return { flagId: json.flag_id, acknowledgedBy: json.acknowledged_by, acknowledgedAt: json.acknowledged_at };
 }
 
 // --- Reference / lookup (added 2026-09-02: real backing for the topbar

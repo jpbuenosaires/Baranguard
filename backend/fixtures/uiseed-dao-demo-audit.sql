@@ -65,7 +65,6 @@ INSERT INTO audit_log (barangay_id, actor_user_id, action, entity_type, entity_i
  (1,1,'shift_updated','shift_schedule',11,'{"version":1}','192.168.1.10','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-09-01 03:00:00'),
  (1,1,'swap_request_resolved','shift_swap_request',2,'{"status":"approved"}','192.168.1.10','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-09-03 09:00:00'),
  (1,1,'swap_request_resolved','shift_swap_request',3,'{"status":"denied"}','192.168.1.10','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-09-02 10:00:00'),
- (1,1,'fatigue_flag_acknowledged','fatigue_flag',3,'{"user_id":6}','192.168.1.10','Mozilla/5.0 (Windows NT 10.0; Win64; x64)','2026-09-04 08:00:00'),
 
  -- ---- SOS ----
  (1,6,'tanod_sos_raised','tanod_sos',1,'{"fallback_channel":"app"}',NULL,'Baranguard-Mobile/1.0 (Android)','2026-08-08 13:50:08'),

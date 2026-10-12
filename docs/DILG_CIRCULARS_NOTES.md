@@ -38,7 +38,7 @@
 ## Implications for Baranguard
 - **Requires or aligns:** unarmed tanods who report and refer incidents. This fits the system's dispatch, SOS and offline capture. Disaster/emergency reporting is a likely BDRIS overlap point.
 - **Must not duplicate (BIMSS):** KPIS case records and any blotter/records list (already barred), resident profiling (RBI), clearances, and BDRIS-style disaster planning data. Position Baranguard as complementary (real-time dispatch, GPS, SOS, offline capture).
-- **Safe to build:** patrol and shift scheduling, fatigue tracking, dispatch/SOS, school-zone patrol zone flags (outside premises by default), tanod training/accreditation tracking for local use (only after the real requirements are confirmed), and evidence/photo handling with minimal capture, retention limits and role restriction (aligned with NPC data minimization and the existing evidence rules). Any minors-in-photos rule needs the actual NPC and child-protection texts.
+- **Safe to build:** patrol and shift scheduling, dispatch/SOS, school-zone patrol zone flags (outside premises by default), tanod training/accreditation tracking for local use (only after the real requirements are confirmed), and evidence/photo handling with minimal capture, retention limits and role restriction (aligned with NPC data minimization and the existing evidence rules). Any minors-in-photos rule needs the actual NPC and child-protection texts.
 
 ## Earlier claims: status
 - **20-tanod cap in LGC Sec 393:** PARTIALLY CONFIRMED (secondary). A commentary cites Sec 393(d) as "not exceeding 20", but in the context of insurance/benefits (unverified), not a hard headcount cap. Correct the wording.

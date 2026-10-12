@@ -1,5 +1,19 @@
 # Baranguard — Session Handoff
 
+**2026-10-13 — Fatigue Flags REMOVED entirely (migration 0042, NOT applied to
+any real DB; destructive, back up first).** Table `fatigue_flag`,
+`GET /shifts/fatigue-flags`, `PATCH /fatigue-flags/:id/acknowledge`,
+`FatigueFlagsController`/`FatigueCalculator` (and their `recalculate()` calls in
+shift create/update and swap approval), the `unacknowledged_fatigue_flags`
+nav count, the web Fatigue page, the scheduler's fatigue callouts and
+"[Over/Near Limit]" labels, the 56 h/week red markers and the Smart Fill
+weekly limit are all gone. **Kept:** the 12 h/day scheduled-hours cap (422
+`DAILY_HOURS_EXCEEDED`), the plain weekly "Hours" total in the week grid, and
+old `fatigue_flag_acknowledged` audit rows. `verify-scheduler-fatigue.sh` is now
+`verify-scheduler.sh`. Anywhere below that mentions fatigue flags, the Fatigue
+tab or `verify-scheduler-fatigue.sh` is history. Routes: 105 across 28 files.
+Details and measured results: `backend/DEVLOG.md` 2026-10-13 (1).
+
 **Replaced-in-place snapshot, not a log** — rewrite fresh each session,
 never stack banners. Full history: `backend/DEVLOG.md` (grep by
 date/keyword, don't read front to back). Everything older than this

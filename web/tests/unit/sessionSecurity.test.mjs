@@ -2,7 +2,7 @@
  * Audit 2026-10-09 fixes owned together: V-01 (?api_base= exfiltration),
  * X-02/F-07 (session expiry returns to sign-in with a message and the same
  * screen), the idle lock, V-04 (security headers / CSP hash drift) and the
- * V-03/V-12 XSS sinks (swap requests, fatigue flags, KpiCard, DataTable).
+ * V-03/V-12 XSS sinks (swap requests, KpiCard, DataTable).
  */
 import { api, window, signIn, cleanup, settle, text, $, $$, click, type, mountPage, assertNoInjectedMarkup, XSS } from '../harness/render.mjs';
 import { describe, test, afterEach } from 'node:test';
@@ -13,7 +13,6 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import * as client from '../../src/api/apiClient.js';
 import { renderSwapRequestsTab } from '../../src/pages/swap-requests.js';
-import { renderFatigueFlagsTab } from '../../src/pages/fatigue-flags.js';
 import { KpiCard } from '../../src/components/KpiCard.js';
 import { DataTable, cellContent } from '../../src/components/DataTable.js';
 
@@ -278,22 +277,6 @@ describe('V-03/V-12: free text never becomes markup', () => {
     await settle();
     assert.match(text(host), /Zone 2 - Market/);
     assert.ok(text(host).includes('<img src=x'), 'the zone text should be shown literally');
-    assertNoInjectedMarkup();
-  });
-
-  test('Fatigue flags details: patrol zone and reviewer name render as text', async () => {
-    api.setScenario('xss');
-    signIn('admin');
-    const host = window.document.getElementById('app');
-    renderFatigueFlagsTab(host, { userId: 1, role: 'admin', barangayId: 1, fullName: 'Ramon Elcano' }, () => {}, () => {});
-    await settle();
-    for (const btn of $$('button').filter((b) => /details/i.test(text(b)))) {
-      click(btn);
-      await settle();
-      assertNoInjectedMarkup();
-      const close = $$('button').find((b) => /close/i.test(b.getAttribute('aria-label') || ''));
-      if (close) { click(close); await settle(); }
-    }
     assertNoInjectedMarkup();
   });
 

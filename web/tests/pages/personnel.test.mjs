@@ -450,7 +450,7 @@ describe('Personnel behaviour', () => {
     assert.equal(api.callsTo('POST', '/shifts/publish').length, 1);
   });
 
-  test('Scheduler form dynamically shows proactive fatigue callout on preset or time change', async () => {
+  test('Scheduler create form has no fatigue callout and no "[Over Limit]" labels (fatigue removed)', async () => {
     const ctx = await openScheduler('admin');
 
     const morningPreset = buttonByText(/Morning/i, ctx.root);
@@ -458,13 +458,11 @@ describe('Personnel behaviour', () => {
     click(morningPreset);
     await settle();
 
-    const callout = ctx.root.querySelector('.scheduler-fatigue-callout');
-    assert.ok(callout, 'Fatigue callout element should be mounted in form');
-    assert.equal(callout.hidden, false, 'Callout should become visible once times are filled');
-    assert.match(text(callout), /hrs \/ 56h max/i);
+    assert.equal(ctx.root.querySelector('.scheduler-fatigue-callout'), null, 'no fatigue callout may exist');
+    assert.doesNotMatch(text(ctx.root), /fatigue|Over Limit|Near Limit|56h/i);
   });
 
-  test('Edit Shift modal shows proactive fatigue preview callout', async () => {
+  test('Edit Shift modal shows no fatigue callout (fatigue removed)', async () => {
     const ctx = await openScheduler('admin');
 
     const editBtn = buttonByText(/Edit Shift/i, ctx.root);
@@ -474,9 +472,8 @@ describe('Personnel behaviour', () => {
 
     const modal = document.querySelector('.personnel-modal');
     assert.ok(modal, 'Edit Shift modal should be open');
-    const callout = modal.querySelector('.scheduler-fatigue-callout');
-    assert.ok(callout, 'Fatigue callout element should be in edit modal');
-    assert.equal(callout.hidden, false, 'Callout should display initial capacity in modal');
+    assert.equal(modal.querySelector('.scheduler-fatigue-callout'), null, 'no fatigue callout in the edit modal');
+    assert.doesNotMatch(text(modal), /fatigue|Over Limit|Near Limit|56h/i);
 
     // Close modal
     const closeBtn = modal.querySelector('.personnel-modal__close');
@@ -563,7 +560,7 @@ describe('Scheduler week grid', () => {
     assert.equal(text($('.week-grid__hours', gridRow('Jose Reyes'))), '16', 'week hours per tanod');
   });
 
-  test('a shift over 56 hours in 7 days is flagged red', async () => {
+  test('more than 56 hours in a week is no longer flagged (fatigue removed); the hours cell is just a number', async () => {
     const shifts = [0, 1, 2, 3, 4, 5, 6, 6].map((d, i) => ({
       shift_id: 700 + i, user_id: 4, patrol_zone: null,
       start_at: utc(day(d), i === 7 ? '18:00' : '06:00'), end_at: utc(day(d), i === 7 ? '22:00' : '14:00'),
@@ -571,8 +568,20 @@ describe('Scheduler week grid', () => {
     }));
     useWeekData({ shifts });
     await openScheduler('admin', { view: 'week' });
-    assert.ok($('.shift-chip[data-shift-id="707"]').classList.contains('shift-chip--danger'));
-    assert.ok($('.week-grid__hours', gridRow('Jose Reyes')).classList.contains('is-over'));
+    assert.equal($('.shift-chip[data-shift-id="707"]').classList.contains('shift-chip--danger'), false);
+    assert.equal($('.week-grid__hours', gridRow('Jose Reyes')).classList.contains('is-over'), false);
+    assert.doesNotMatch(text($('.week-grid__legend')), /56|a week/i);
+  });
+
+  test('more than 12 hours in one Manila day is still flagged red (the 12 h/day cap stays)', async () => {
+    const shifts = [
+      { shift_id: 710, user_id: 4, patrol_zone: null, start_at: utc(day(0), '06:00'), end_at: utc(day(0), '14:00'), version: 1, approval_status: 'draft', pending_reapproval: 0 },
+      { shift_id: 711, user_id: 4, patrol_zone: null, start_at: utc(day(0), '14:00'), end_at: utc(day(0), '22:00'), version: 1, approval_status: 'draft', pending_reapproval: 0 },
+    ];
+    useWeekData({ shifts });
+    await openScheduler('admin', { view: 'week' });
+    assert.ok($('.shift-chip[data-shift-id="711"]').classList.contains('shift-chip--danger'));
+    assert.match(text($('.week-grid__legend')), /12 h in one day/);
   });
 
   test('+ adds the chosen standard shift as a draft, linked to the availability that covers it', async () => {

@@ -56572,3 +56572,64 @@ from the provider), `verify-json-contracts.php` and `verify-auth-lockout-revocat
 `baranguard_uiseed` demo DB where `kapitan.dao`/`tanod.delacruz` do not accept `Demo@2026`; the lockout script's cleanup
 step also resets `tanod.delacruz` there), `verify-retention-new-tables-seam.php` (a helper called with arguments by
 `verify-retention-new-tables.sh`, not a suite). Not re-verified here: device behaviour, real-DB migrations 0029-0041.
+
+## 2026-10-13 (1) — Fatigue Flags removed entirely (migration 0042)
+
+**Why**: user decision, "remove all about the fatigue flags ... including the warnings". Planned first (plan mode), scope
+confirmed with the user: (1) remove the feature AND every 56 h/week warning, but KEEP the 12 h/day scheduled-hours cap
+(a roster rule, 422 `DAILY_HOURS_EXCEEDED`); (2) drop the table with a new migration.
+
+**Removed (backend)**: `FatigueFlagsController`, `FatigueCalculator`, `routes/fatigue-flags.php`, `GET /shifts/fatigue-flags`,
+the `recalculate()` calls in `ShiftsController` (create/update) and `ShiftSwapRequestsController` (approve), the
+`unacknowledged_fatigue_flags` nav count, the `fatigue_flag` delete in `RetentionService`'s shift cascade, fatigue rows in
+`seed-ch4.php` and the demo SQL fixtures. **Migration 0042** drops `fatigue_flag` (down file errors; restore a backup to roll
+back). **NOT applied to `baranguard` / `baranguard_uiseed`** — destructive, back up first. Routes 117 -> 105 across 28 files
+(measured; the rest of that drop is 0041's earlier removals).
+
+**Removed (web)**: `pages/fatigue-flags.js`, `getFatigueFlags`/`acknowledgeFatigueFlag`/`unacknowledgedFatigueFlags` in
+`apiClient.js`, the scheduler's fatigue callouts (create + edit), `[Over Limit]`/`[Near Limit]` tanod-select labels, the
+56 h/week red markers, chip problems and legend text in the week grid, the weekly limit in Smart Fill
+(`WEEKLY_HOURS_LIMIT`, `rollingHoursAt`, `suggestAvailableTanods`), and the fatigue CSS (`personnel.css` section 5,
+`.fatigue-hours*`, `.fatigue-table-body`). **Kept**: the 12 h/day cap and its week-grid marker/Smart Fill limit, the plain
+per-tanod weekly "Hours" number, and the `fatigue_flag_acknowledged` audit label (old write-once audit rows still read).
+
+**Tests/suites**: `verify-scheduler-fatigue.sh` renamed `verify-scheduler.sh`, its flag steps replaced by 404 checks for the
+removed routes and the nav count; `verify-sprint7-audit.sh`, `verify-roster-accomplishment.sh`, `verify-json-contracts.php`
+updated; web fixtures/tests updated, with new assertions that no fatigue callout or "Over/Near Limit" wording exists and that
+>56 h/week is no longer flagged while >12 h/day still is.
+
+**Measured**: `web/tests` 738/738, `verify-web-wiring.mjs` 897/0, `php -l` clean on every touched PHP file, `node --check` on every
+touched JS file. Backend suites (disposable DBs, full migration chain incl. 0042 where the suite globs it): scheduler ALL
+PASSED, sprint7-audit 60, sprint7-retention 89, roster-accomplishment ALL PASSED, w2-reports 41, pentest-incidents 74, h16 59,
+retention-new-tables 112, school-zones 204, wave1a 154, chief-tanod-roster ALL PASSED, b2-pentest 59, dispatch-offers ALL
+PASSED, incident-intake ALL PASSED, sprint3 43, sprint4-phase2-3 73, offline-sync-conflicts 93 — all 0 failed.
+**Browser-verified** (demo DB, admin): Personnel > Scheduler week grid and list view, create form and Edit Shift dialog have no
+fatigue wording, no callouts, no 56 h text; tanods at 48 h no longer read "[Near Limit]"; legend reads "Over 12 h in one
+day"; no console errors. **Not verified**: migration 0042 on the real DBs, device behaviour, the live demo DB still has the
+`fatigue_flag` table (unused). Docs reconciled: REFERENCE.md, Master Reference note, HANDOFF banner, SPRINTS, DATA_INVENTORY,
+CHAPTER4_SEED, WORKFLOWS_AND_RULES, FEATURE_PLAN/CONTRACT, REMAINING, DILG_CIRCULARS_NOTES, CLAUDE.md exception note.
+Audit reports under `docs/audit-2026-10-09/` stay as historical records.
+
+## 2026-10-13 (2) — Demo data: every shift was "outside availability" (seed wrote invalid overnight windows)
+
+**Symptom** (user screenshot, Personnel > Scheduler, week Oct 12-18): almost every shift chip amber with "!" =
+"outside availability". **Causes, both in `backend/scripts/seed-ch4.php` (demo data, not product code):**
+1. The seed generated availability for last week and next week only, never the current week, while shifts exist for every week.
+2. Its Night windows were written as `22:00` to `06:00` on one date. `AvailabilityController` rejects a window whose end is not
+   after its start, and `rosterWeek.js` `availabilityIntervals()` silently drops one. An overnight span must be TWO windows:
+   `D 22:00-23:59` and `D+1 00:00-06:00` (the second in whichever weekly row holds D+1; `23:59` is read as midnight).
+   That made every Night shift (14 of 42 chips each week) look uncovered even where the tanod had submitted that day.
+My first repair repeated mistake 2 (inserted 22:00-06:00 rows); the browser still showed 14 amber chips per week, which is how
+it was caught.
+
+**Fix**: (a) one-off repair of the live demo DB `baranguard_ch4` (scratch script, not committed; backup of
+`tanod_availability` taken first): split 90 invalid overnight windows into valid pairs, added windows for any uncovered shift,
+inserted 2 weekly rows, updated 43; shifts and every other column untouched; re-run changes nothing. (b) `seed-ch4.php`
+availability block rewritten: one window per seeded shift (overnight spans split correctly, spill-over lands in the next week's
+row), a weekly row for every week that has any window (accepted for past/current, submitted for future, the one 'revised'
+case kept), plus random spare windows. The extracted block was tested in isolation over 60 random seeds (valid windows,
+dates inside the row's period, every shift covered): 0 failures. **Not run end to end**: the seed only runs against
+`baranguard_ch4` and drops/rebuilds it, so a full re-seed was not done without the user's go-ahead.
+
+**Verified in the browser** (admin, demo DB): Scheduler week grid, weeks Sep 7 to Oct 25 (8 weeks, 0-42 chips each):
+0 "outside availability" chips in every week; 0 over-12h chips.

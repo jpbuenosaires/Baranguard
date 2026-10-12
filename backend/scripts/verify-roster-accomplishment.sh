@@ -912,9 +912,8 @@ expect_code "Chief Tanod (admin account) is not checked (no availability screen)
 step "13. Final spot checks"
 api GET "/shifts?limit=100&approval_status=draft" "$ADMIN_T" ""
 expect_code "Admin GET drafts after everything" 200
-api GET "/fatigue-flags" "$ADMIN_T" ""
 api GET "/shifts/fatigue-flags" "$ADMIN_T" ""
-expect_code "Fatigue endpoints untouched (GET /shifts/fatigue-flags)" 200
+expect_code "Fatigue Flags endpoint is removed (GET /shifts/fatigue-flags is a 404 route miss)" 404
 
 step "Summary"
 echo "PASS=$PASS FAIL=$FAIL"

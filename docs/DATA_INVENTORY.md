@@ -52,7 +52,7 @@ the reference before being reconciled.
 | Citizen reports | `citizen_report` (submitter-supplied name/contact/description) | Ordinary personal data; may contain sensitive content in the free text |
 | Messaging | `sms_log` (`message_body`, phone number), `sms_subscriber`, `notification`/`notification_target`/`notification_delivery` | Ordinary personal data (phone numbers, message content) |
 | Audit | `audit_log` | Identifiers and statuses only (§2 Rule 8) — never narrative, coordinates or credentials |
-| Employment/scheduling | `shift_schedule`, `duty_status`, `fatigue_flag` | Ordinary personal data (Tanod work records) |
+| Employment/scheduling | `shift_schedule`, `duty_status` | Ordinary personal data (Tanod work records) |
 | Authentication | `user.password_hash`, `auth_session` | Ordinary personal data; hashed, never stored in plaintext |
 | Official/approver identity (2026-10-01) | `user.official_title`, `user.approval_authority` | Ordinary personal data (staff title printed under signatures). Retention: pending decision, no purge job |
 | Tanod availability (2026-10-01) | `tanod_availability.windows_json`, period, review note | Ordinary personal data about a named staff member's time. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
