@@ -235,22 +235,36 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
             const flowRow = document.createElement('div');
             flowRow.className = 'swap-flow-cell';
 
-            // Requester
-            const reqParty = document.createElement('span');
-            reqParty.className = 'swap-party';
-            reqParty.innerHTML = `${avatarInitials(requesterName, 24)}<span>${escapeHtml(requesterName)}</span>`;
+            // Requester (Relieving)
+            const reqParty = document.createElement('div');
+            reqParty.className = 'swap-party swap-party--requester';
+            const reqRole = document.createElement('span');
+            reqRole.className = 'swap-role-badge';
+            reqRole.textContent = 'Relief';
+            const reqIdentity = document.createElement('div');
+            reqIdentity.className = 'swap-party__identity';
+            reqIdentity.innerHTML = `${avatarInitials(requesterName, 24)}<span class="swap-party__name">${escapeHtml(requesterName)}</span>`;
+            reqParty.append(reqRole, reqIdentity);
 
-            // Arrow
+            // Direction indicator
             const arrow = document.createElement('span');
             arrow.className = 'swap-arrow';
             arrow.innerHTML = '➔';
+            arrow.title = 'Transfers shift to';
+            arrow.setAttribute('aria-hidden', 'true');
 
-            // Target
+            // Target (Covering)
             flowRow.append(reqParty, arrow);
             if (targetName) {
-              const targetParty = document.createElement('span');
-              targetParty.className = 'swap-party';
-              targetParty.innerHTML = `${avatarInitials(targetName, 24)}<span>${escapeHtml(targetName)}</span>`;
+              const targetParty = document.createElement('div');
+              targetParty.className = 'swap-party swap-party--target';
+              const targetRole = document.createElement('span');
+              targetRole.className = 'swap-role-badge swap-role-badge--target';
+              targetRole.textContent = 'Covering';
+              const targetIdentity = document.createElement('div');
+              targetIdentity.className = 'swap-party__identity';
+              targetIdentity.innerHTML = `${avatarInitials(targetName, 24)}<span class="swap-party__name">${escapeHtml(targetName)}</span>`;
+              targetParty.append(targetRole, targetIdentity);
               flowRow.appendChild(targetParty);
             } else {
               const openBadge = document.createElement('span');
@@ -367,10 +381,12 @@ function renderActionsCell(req, requesterName, shift, onChanged) {
   const approveButton = document.createElement('button');
   approveButton.className = 'user-action-btn user-action-btn--primary';
   approveButton.textContent = 'Approve';
+  approveButton.setAttribute('aria-label', `Approve shift swap for ${requesterName}`);
 
   const denyButton = document.createElement('button');
   denyButton.className = 'user-action-btn user-action-btn--danger';
   denyButton.textContent = 'Deny';
+  denyButton.setAttribute('aria-label', `Deny shift swap for ${requesterName}`);
 
   const shiftDescription = shift
     ? formatShiftRange(shift.startAt, shift.endAt)

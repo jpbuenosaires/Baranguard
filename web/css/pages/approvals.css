@@ -53,3 +53,355 @@
   gap: var(--spacing-sm);
 }
 .tw-approvals__more { font-size: var(--font-size-label); color: var(--color-text-tertiary); }
+
+/* ==========================================================================
+   Approvals Hub Overhaul Styles
+   ========================================================================== */
+
+.appr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: var(--spacing-md);
+  align-items: stretch;
+  flex: 1;
+  min-height: calc(100vh - 13.5rem);
+  margin-bottom: var(--spacing-lg);
+}
+
+.appr-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  height: 100%;
+}
+
+.appr-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+}
+
+.appr-card__head {
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.appr-card__titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  flex: 1;
+}
+
+.appr-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.appr-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.appr-card__title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.3;
+}
+
+.appr-card__subtitle {
+  margin: 0;
+  font-size: 0.775rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.appr-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.45rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.appr-count-badge--active {
+  background: color-mix(in srgb, #D97706 15%, transparent);
+  border-color: color-mix(in srgb, #D97706 35%, transparent);
+  color: #B45309;
+}
+
+.appr-count-badge--error {
+  background: color-mix(in srgb, var(--color-danger, #DC2626) 15%, transparent);
+  border-color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #DC2626);
+}
+
+.appr-card__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding-top: var(--spacing-xs);
+}
+
+.appr-queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+}
+
+.appr-queue__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-xs);
+  border-radius: var(--radius-md);
+  border-bottom: 1px solid var(--color-divider);
+  transition: background 0.15s ease;
+}
+
+.appr-queue__item:hover {
+  background: color-mix(in srgb, var(--color-bg) 60%, var(--color-surface));
+}
+
+.appr-queue__item:last-child {
+  border-bottom: 0;
+}
+
+.appr-queue__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.appr-queue__title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appr-queue__detail {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.appr-review-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: 0.25rem var(--spacing-xs);
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: var(--color-link, #2563eb);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.appr-review-btn:hover {
+  background: color-mix(in srgb, var(--color-link, #2563eb) 10%, transparent);
+  color: var(--color-primary);
+}
+
+.appr-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+}
+
+.appr-more-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  padding: 0.15rem var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.appr-all-shown-note {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.appr-open-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-link, #2563eb);
+  cursor: pointer;
+  background: color-mix(in srgb, var(--color-link, #2563eb) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-link, #2563eb) 20%, transparent);
+  border-radius: var(--radius-md);
+  padding: 0.25rem 0.65rem;
+  transition: all 0.15s ease;
+}
+
+.appr-open-all-btn:hover {
+  background: color-mix(in srgb, var(--color-link, #2563eb) 14%, transparent);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  text-decoration: none;
+  transform: translateX(1px);
+}
+
+/* Empty Queue State */
+.appr-empty-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl) var(--spacing-md);
+  text-align: center;
+  gap: var(--spacing-xs);
+  margin: auto 0;
+}
+
+.appr-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, #16A34A 12%, transparent);
+  color: #16A34A;
+}
+
+.appr-empty-note {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* Smooth Highlight Flash on Tile Jump */
+@keyframes apprFlash {
+  0% { box-shadow: 0 0 0 4px var(--color-primary); }
+  100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+}
+
+.appr-highlight-flash {
+  animation: apprFlash 1.2s ease-out;
+}
+
+/* ==========================================================================
+   Micro-chips and Contextual Checklist Styles
+   ========================================================================== */
+
+.appr-chips-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  margin-top: 0.15rem;
+}
+
+.appr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.725rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+  line-height: 1.25;
+}
+
+.appr-chip--date {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.appr-chip--zone {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+}
+
+.appr-chip--month {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.appr-chip--flag {
+  background: color-mix(in srgb, #D97706 15%, transparent);
+  color: #B45309;
+}
+
+/* Contextual Checklist for low-item cards */
+.appr-annex-summary-card {
+  margin-top: auto;
+  margin-bottom: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-radius: var(--radius-md);
+  font-size: 0.775rem;
+}
+
+.appr-annex-summary-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  color: var(--color-primary);
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.appr-summary-pip {
+  font-size: 0.85rem;
+}
+
+.appr-summary-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
+.appr-summary-list strong {
+  color: var(--color-text-primary);
+}

@@ -653,6 +653,11 @@ html { font-size: 100%; }
   filter: invert(1) brightness(1.8);
 }
 
+/* Universal hidden attribute respect */
+[hidden] {
+  display: none !important;
+}
+
 /* Visually hidden but still reachable by screen readers. */
 .sr-only {
   position: absolute;

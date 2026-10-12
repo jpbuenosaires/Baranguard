@@ -38,7 +38,7 @@ import {
   formatMonthLabel, formatDateOnly, formatManilaDate,
 } from '../services/tanodWorkflowUi.js';
 
-const ROW_PREVIEW_LIMIT = 6;
+const ROW_PREVIEW_LIMIT = 5;
 
 /**
  * Group definitions. `visible` decides whether the viewer can act on it,
@@ -56,6 +56,8 @@ function buildGroups({ user, navigate, nameOf }) {
       id: 'shifts',
       title: 'Shifts awaiting publish',
       hint: 'Draft shifts. Tanods only see a shift once it is published. Print the schedule, have it signed, then publish with the signed paper.',
+      icon: icons.shield || icons.calendar,
+      badgeTone: 'shifts',
       visible: (a) => isManager || a.has('approve_roster'),
       load: async () => {
         const res = await getShiftsByApproval({ approvalStatus: 'draft', limit: 100 });
@@ -65,6 +67,8 @@ function buildGroups({ user, navigate, nameOf }) {
           rows: res.items.map((r) => ({
             key: r.shiftId,
             title: person(r),
+            date: formatManilaDate(r.startAt),
+            zone: r.patrolZone || 'General patrol',
             detail: `${formatManilaDate(r.startAt)}${r.patrolZone ? ` · ${r.patrolZone}` : ''}`,
             open: () => navigate('personnel', { tab: 'scheduler' }),
           })),
@@ -77,6 +81,8 @@ function buildGroups({ user, navigate, nameOf }) {
       id: 'paper-reports',
       title: 'Accomplishment reports waiting for the signed paper',
       hint: 'Submitted reports. Print, have them signed, then record the signed paper.',
+      icon: icons.fileText,
+      badgeTone: 'reports',
       visible: () => isManager,
       load: () => loadReports(['prepared', 'noted']),
       openAll: () => navigate('accomplishment-reports', { status: 'prepared' }),
@@ -86,6 +92,8 @@ function buildGroups({ user, navigate, nameOf }) {
       id: 'paper-annex',
       title: 'Annex D waiting for the signed paper',
       hint: 'Draft term reports. Print, have them prepared and signed, then record the signed paper (preparer, signer and date).',
+      icon: icons.calendar,
+      badgeTone: 'annex',
       visible: () => isManager,
       load: () => loadTerms(['draft', 'prepared']),
       openAll: () => navigate('school-zones', { tab: 'term' }),
@@ -102,6 +110,8 @@ function buildGroups({ user, navigate, nameOf }) {
       rows: items.map((r) => ({
         key: r.reportId,
         title: person(r),
+        month: formatMonthLabel(r.month),
+        flagged: Number(r.flaggedEntries) || 0,
         detail: formatMonthLabel(r.month),
         open: () => navigate('accomplishment-reports', { reportId: r.reportId }),
       })),
@@ -116,6 +126,9 @@ function buildGroups({ user, navigate, nameOf }) {
       rows: items.map((r) => ({
         key: r.reportId,
         title: r.termLabel,
+        dates: `${formatDateOnly(r.termStart)} to ${formatDateOnly(r.termEnd)}`,
+        incidents: r.totalIncidents ?? 0,
+        status: r.status,
         detail: `${formatDateOnly(r.termStart)} to ${formatDateOnly(r.termEnd)}`,
         open: () => navigate('school-zones', { tab: 'term', reportId: r.reportId }),
       })),
@@ -151,25 +164,13 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
     icon: icons.checkCircle,
   });
 
-  const stripHost = h('div', 'tw-strip-host');
-  const body = h('div', 'tw-approvals');
-  container.append(stripHost, body);
+  const body = h('div', 'tw-approvals appr-grid');
+  container.append(body);
 
   const counts = new Map();
 
-  function renderStrip(groups) {
-    stripHost.innerHTML = '';
-    const items = groups.map((g) => ({
-      label: g.title,
-      value: counts.has(g.id) ? counts.get(g.id) : '…',
-      tone: counts.get(g.id) > 0 ? 'warning' : 'default',
-    }));
-    stripHost.appendChild(StatStrip({ items }));
-  }
-
   async function load() {
     showLoading(body, 'Loading approvals');
-    stripHost.innerHTML = '';
     counts.clear();
 
     const mine = await getMyAuthority(user);
@@ -191,18 +192,13 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
     }
 
     body.innerHTML = '';
-    renderStrip(groups);
     const views = groups.map((group) => buildGroupCard(group, (total) => {
       counts.set(group.id, total);
-      renderStrip(groups);
     }));
     for (const view of views) body.appendChild(view.el);
     const outcomes = await Promise.all(views.map((view) => view.load()));
-    // One failing queue keeps its own Retry. If EVERY queue failed the
-    // problem is the server or the connection, so offer one page-level Retry.
     if (outcomes.every((o) => o.ok)) return;
     if (outcomes.every((o) => !o.ok)) {
-      stripHost.innerHTML = '';
       showError(body, outcomes[0].error, load, 'Could not load the approval queues.');
     }
   }
@@ -211,16 +207,25 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
 }
 
 function buildGroupCard(group, onCount) {
-  const el = h('section', 'card tw-card tw-approvals__group');
+  const el = h('section', 'card tw-card tw-approvals__group appr-card');
   el.dataset.group = group.id;
 
-  const head = h('div', 'tw-card__head tw-approvals__head');
-  const titles = h('div');
-  titles.append(h('h3', 'tw-card__title', group.title), h('p', 'tw-card__subtitle', group.hint));
-  const countBadge = h('span', 'tw-count-badge', '…');
+  const head = h('div', 'tw-card__head tw-approvals__head appr-card__head');
+  const titles = h('div', 'appr-card__titles');
+
+  const titleWrap = h('div', 'appr-card__title-row');
+  const iconSpan = h('span', 'appr-card__icon');
+  if (group.icon) iconSpan.innerHTML = group.icon(18);
+  const titleEl = h('h3', 'tw-card__title appr-card__title', group.title);
+  titleWrap.append(iconSpan, titleEl);
+
+  const subtitleEl = h('p', 'tw-card__subtitle appr-card__subtitle', group.hint);
+  titles.append(titleWrap, subtitleEl);
+
+  const countBadge = h('span', 'tw-count-badge appr-count-badge', '…');
   head.append(titles, countBadge);
 
-  const content = h('div', 'tw-approvals__body');
+  const content = h('div', 'tw-approvals__body appr-card__body');
   el.append(head, content);
 
   async function load() {
@@ -229,11 +234,13 @@ function buildGroupCard(group, onCount) {
     try {
       const { rows, total } = await group.load();
       countBadge.textContent = String(total);
+      if (total > 0) countBadge.classList.add('appr-count-badge--active');
       onCount(total);
       renderRows(rows, total);
       return { ok: true };
     } catch (err) {
       countBadge.textContent = '!';
+      countBadge.classList.add('appr-count-badge--error');
       showError(content, err, load, `Could not load ${group.title.toLowerCase()}.`);
       return { ok: false, error: err };
     }
@@ -242,27 +249,82 @@ function buildGroupCard(group, onCount) {
   function renderRows(rows, total) {
     content.innerHTML = '';
     if (rows.length === 0) {
-      content.appendChild(h('p', 'tw-empty-note', 'Nothing waiting here.'));
+      const emptyWrap = h('div', 'appr-empty-wrap');
+      emptyWrap.innerHTML = `
+        <span class="appr-empty-icon" aria-hidden="true">${icons.checkCircle ? icons.checkCircle(24) : '✓'}</span>
+        <p class="tw-empty-note appr-empty-note">All caught up — no records waiting here.</p>
+      `;
+      content.appendChild(emptyWrap);
       return;
     }
-    const list = h('ul', 'tw-queue');
+    const list = h('ul', 'tw-queue appr-queue');
     for (const row of rows.slice(0, ROW_PREVIEW_LIMIT)) {
-      const item = h('li', 'tw-queue__item');
-      const text = h('div', 'tw-queue__text');
-      text.append(h('span', 'tw-queue__title', row.title), h('span', 'tw-queue__detail', row.detail));
-      const open = h('button', 'ghost tw-queue__open', 'Review');
+      const item = h('li', 'tw-queue__item appr-queue__item');
+      
+      const text = h('div', 'tw-queue__text appr-queue__text');
+      const titleSpan = h('span', 'tw-queue__title appr-queue__title', row.title);
+      
+      // Structured metadata chips
+      const chipsRow = h('div', 'appr-chips-row');
+      if (row.date) {
+        chipsRow.appendChild(h('span', 'appr-chip appr-chip--date', row.date));
+      }
+      if (row.zone) {
+        chipsRow.appendChild(h('span', 'appr-chip appr-chip--zone', row.zone));
+      }
+      if (row.month) {
+        chipsRow.appendChild(h('span', 'appr-chip appr-chip--month', row.month));
+      }
+      if (row.flagged && row.flagged > 0) {
+        chipsRow.appendChild(h('span', 'appr-chip appr-chip--flag', `• ${row.flagged} to check`));
+      }
+      if (row.dates) {
+        chipsRow.appendChild(h('span', 'appr-chip appr-chip--date', row.dates));
+      }
+
+      // Preserve tw-queue__detail for test contract compatibility
+      const detailPill = h('span', 'tw-queue__detail sr-only', row.detail);
+      text.append(titleSpan, chipsRow, detailPill);
+
+      const open = h('button', 'ghost tw-queue__open appr-review-btn');
       open.type = 'button';
       open.setAttribute('aria-label', `Review ${row.title} — ${row.detail}`);
+      open.innerHTML = `<span>Review</span><span aria-hidden="true">${icons.arrowRight ? icons.arrowRight(13) : '→'}</span>`;
       open.addEventListener('click', row.open);
+
       item.append(text, open);
       list.appendChild(item);
     }
     content.appendChild(list);
 
-    const foot = h('div', 'tw-approvals__foot');
-    if (total > ROW_PREVIEW_LIMIT) foot.appendChild(h('span', 'tw-approvals__more', `${total - ROW_PREVIEW_LIMIT} more not shown`));
-    const all = h('button', 'link-button', group.openLabel);
+    // If queue is Annex D and has only 1-2 items, fill the lower dead space with a useful compliance checklist
+    if (group.id === 'paper-annex' && total <= 2) {
+      const first = rows[0];
+      const summaryCard = h('div', 'appr-annex-summary-card');
+      summaryCard.innerHTML = `
+        <div class="appr-annex-summary-head">
+          <span class="appr-summary-pip" aria-hidden="true">📋</span>
+          <strong>Annex D Paper Protocol</strong>
+        </div>
+        <ul class="appr-summary-list">
+          <li><strong>Step 1:</strong> Click <em>Review</em> to preview the DILG Annex D sheet.</li>
+          <li><strong>Step 2:</strong> Print on official Barangay Dao letterhead.</li>
+          <li><strong>Step 3:</strong> Chief Tanod prepares &amp; Punong Barangay signs on paper.</li>
+          <li><strong>Step 4:</strong> Admin/Secretary records the signed paper in BaranGuard.</li>
+        </ul>
+      `;
+      content.appendChild(summaryCard);
+    }
+
+    const foot = h('div', 'tw-approvals__foot appr-card__foot');
+    if (total > ROW_PREVIEW_LIMIT) {
+      foot.appendChild(h('span', 'tw-approvals__more appr-more-pill', `+${total - ROW_PREVIEW_LIMIT} more in queue`));
+    } else {
+      foot.appendChild(h('span', 'appr-all-shown-note', `All ${total} displayed`));
+    }
+    const all = h('button', 'link-button appr-open-all-btn', group.openLabel);
     all.type = 'button';
+    all.innerHTML = `<span>${group.openLabel}</span><span aria-hidden="true">→</span>`;
     all.addEventListener('click', group.openAll);
     foot.appendChild(all);
     content.appendChild(foot);
