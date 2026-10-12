@@ -295,6 +295,9 @@ final class ShiftSwapRequestsController
                     ShiftsController::assertTanodEligible($pdo, $targetUserId, (int) $row['barangay_id']);
                     ShiftsController::assertNoOverlap($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
                     ShiftsController::assertDailyHoursCap($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
+                    // Availability is the tanod's own fixed statement (2026-10-12):
+                    // the incoming tanod must be available for the whole shift.
+                    ShiftsController::assertWithinAvailability($pdo, $targetUserId, $shiftStartAt, $shiftEndAt);
                     $pdo->prepare('UPDATE shift_schedule SET user_id = :user_id, version = version + 1, updated_at = UTC_TIMESTAMP() WHERE shift_id = :shift_id')
                         ->execute(['user_id' => $targetUserId, 'shift_id' => $shiftId]);
                     FatigueCalculator::recalculate($pdo, (int) $row['requesting_user_id'], $shiftId);
