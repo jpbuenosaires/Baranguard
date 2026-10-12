@@ -56537,3 +56537,38 @@ migration 0037/0038 and removes the approval steps.
   no paper columns; verify-roster-accomplishment, school-zones, dispatch-offers,
   wave1a, chief-tanod-roster, retention-new-tables and sprint7-retention now
   assert the new model.
+
+## 2026-10-12 (5) — Pre-push verification: 1 real crash, a11y/safety fixes, missing CSS, stale test assumptions
+
+Run before pushing 45 local commits to `origin/main`. Committed HEAD was NOT green when checked: wiring 6 failed,
+`web/tests` 14 failed. Findings and fixes:
+
+- **Real bug:** `web/src/pages/service-health.js` (from 4d248f2) used an undefined `STATUS_META`, so the Service Health
+  page threw and showed "Could not retrieve operational service health" to every Admin. Now uses the existing
+  `STATUS_LABEL`. Browser-verified: the page loads and shows live status.
+- **A11y:** the Accomplishment Reports list wrapped a checkbox in `DataTable`'s keyboard row activator (an unnamed
+  button around an input). `DataTable` columns may now set `activator: false`; the first remaining column gets it.
+- **Safety:** the on-screen C-1 table showed nothing when a referral lookup failed, so a blank "referred to" read as
+  "nothing referred". It now shows the existing "Referral data could not be loaded - do not file this copy" badge
+  (only for a failed lookup, not one still loading).
+- **Missing CSS:** 8 classes used from JS were never defined (`personnel-stat-chip`, `stat-chip__label/__count`,
+  `chip-count`, `scheduler-stat-bar`, `scheduler-table-card`, `personnel-card-stat-strip`,
+  `unified-table-card__header`, `fatigue-table-body`, `citizen-inbox-page-container`, `acc-row-checkbox`,
+  `acc-select-all-checkbox`, `print-orientation-landscape`). Small token-based rules added; the visual design of the
+  stat chips is a judgement call, review it. Also committed the 3 previously uncommitted files
+  (`scheduler.js`, `swap-requests.js`, `user-management.js`: the stat-chip "command bar").
+- **Test assumptions that no longer held (tests changed, product code not):** `verify-roster-accomplishment.sh` synced an
+  entry for "today - 4 days", which lands in the current month's already-`prepared` report except in the first days of
+  a month, and counted `roster_published` audit rows globally; `verify-offline-sync-conflicts.sh` expected a client
+  timestamp to be honoured for `responding`/`on_duty` (now refused by design: going on duty is online-only, only
+  `off_duty` takes `changed_at`), passed a ~35 KB body as a curl argument (Windows 32 KB command-line limit) and
+  compared `db_one` output containing a stray ``. A stale label test (`Print` -> `Print (A4)`) was updated.
+
+**Measured**: `web/tests` 738/738, `verify-web-wiring.mjs` 922/0, mobile `verify-local-schema.mjs` 230/0, `php -l` clean on
+every tracked PHP file, all `verify-*.sh` suites pass (e.g. h16 59, pentest-incidents 74, retention 89 + new-tables 112,
+roster-accomplishment ALL PASSED, offline-sync-conflicts 93, school-zones 204, referrals 147, sprint7-audit 61).
+**Not passing, environmental, not product defects:** `verify-routing.sh` (the ORS key returns HTTP 403 "Quota exceeded"
+from the provider), `verify-json-contracts.php` and `verify-auth-lockout-revocation.php` (they use the live
+`baranguard_uiseed` demo DB where `kapitan.dao`/`tanod.delacruz` do not accept `Demo@2026`; the lockout script's cleanup
+step also resets `tanod.delacruz` there), `verify-retention-new-tables-seam.php` (a helper called with arguments by
+`verify-retention-new-tables.sh`, not a suite). Not re-verified here: device behaviour, real-DB migrations 0029-0041.

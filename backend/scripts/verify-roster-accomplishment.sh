@@ -524,6 +524,7 @@ api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,999999]}" -H "Idempot
 expect_code "Batch containing a nonexistent shift" 404
 
 PUB_KEY=$(uuid)
+AUD_PUB0=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published';")
 api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,$S2_ID]}" -H "Idempotency-Key: $PUB_KEY"
 expect_code "Punong Barangay publishes the roster (D1 + D3 shifts)" 200
 PUB_FIRST="$BODY"
@@ -532,11 +533,11 @@ expect_eq "  already_published empty" "$(jget "$BODY" already_published)" "[]"
 expect_eq "  NO_COVERAGE warning for the uncovered middle day only" "$(jget "$BODY" warnings)" "[{\"code\":\"NO_COVERAGE\",\"date\":\"$D2\"}]"
 expect_eq "  DB: published + approver + timestamp" "$(db_one "SELECT CONCAT(approval_status,'|',approved_by,'|',approved_at IS NOT NULL) FROM shift_schedule WHERE shift_id=$S1_ID;")" "published|$PB_ID|1"
 expect_eq "  DB: shift_schedule has no approval_mode / paper_* columns (0041)" "$(db_one "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='shift_schedule' AND COLUMN_NAME IN ('approval_mode','paper_signed_on','paper_recorded_by','paper_recorded_at');")" "0"
-expect_eq "  audit roster_published count" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.count') FROM audit_log WHERE action='roster_published' LIMIT 1;")" "2"
+expect_eq "  audit roster_published count" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.count') FROM audit_log WHERE action='roster_published' ORDER BY audit_id DESC LIMIT 1;")" "2"
 api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,$S2_ID]}" -H "Idempotency-Key: $PUB_KEY"
 expect_code "Replay with the same Idempotency-Key" 200
 expect_eq "  replay returns the ORIGINAL outcome" "$BODY" "$PUB_FIRST"
-expect_eq "  still exactly one publish audit row, and no roster_published_from_paper row" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published';")/$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published_from_paper';")" "1/0"
+expect_eq "  the replay added exactly one publish audit row (not two), and no roster_published_from_paper row" "$(( $(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published';") - AUD_PUB0 ))/$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published_from_paper';")" "1/0"
 api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID]}" -H "Idempotency-Key: $(uuid)"
 expect_code "Publishing an already-published shift (new key)" 200
 expect_eq "  reported under already_published, not an error" "$(jget "$BODY" already_published)/$(jget "$BODY" published)" "[$S1_ID]/[]"
@@ -827,7 +828,7 @@ expect_code "?status=noted is no longer a valid filter" 400
 step "12. POST /sync/batch — availability[] and accomplishment_entries[] (createItem / createEntryItem)"
 SY_AV_EVT=$(uuid); SY_AC_EVT=$(uuid)
 SY_START=$(dman "+50 days")
-SY_BODY="{\"device_id\":\"dev-rc-t3\",\"availability\":[{\"period_start\":\"$SY_START\",\"period_end\":\"$SY_START\",\"windows\":[{\"date\":\"$SY_START\",\"start\":\"08:00\",\"end\":\"12:00\"}],\"client_event_id\":\"$SY_AV_EVT\"}],\"accomplishment_entries\":[{\"work_date\":\"$(dman '-4 days')\",\"accomplishment_text\":\"Synced entry\",\"duration_minutes\":90,\"client_event_id\":\"$SY_AC_EVT\"},{\"work_date\":\"$(dman '+5 days')\",\"accomplishment_text\":\"Future entry\",\"duration_minutes\":90,\"client_event_id\":\"$(uuid)\"}]}"
+SY_BODY="{\"device_id\":\"dev-rc-t3\",\"availability\":[{\"period_start\":\"$SY_START\",\"period_end\":\"$SY_START\",\"windows\":[{\"date\":\"$SY_START\",\"start\":\"08:00\",\"end\":\"12:00\"}],\"client_event_id\":\"$SY_AV_EVT\"}],\"accomplishment_entries\":[{\"work_date\":\"$(dman '-40 days')\",\"accomplishment_text\":\"Synced entry\",\"duration_minutes\":90,\"client_event_id\":\"$SY_AC_EVT\"},{\"work_date\":\"$(dman '+5 days')\",\"accomplishment_text\":\"Future entry\",\"duration_minutes\":90,\"client_event_id\":\"$(uuid)\"}]}"
 api POST "/sync/batch" "$T3_T" "$SY_BODY"
 expect_code "Sync batch with both new groups" 200
 expect_eq "  availability item: success" "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["results"] as $r){ if($r["client_event_id"]===$argv[1]) echo $r["status"]; }' "$SY_AV_EVT")" "success"
