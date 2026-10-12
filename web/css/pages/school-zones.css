@@ -1,10 +1,115 @@
 /**
- * school-zones.css — Safer School Zones tabs. Count tiles, forms, notices
- * and the Annex B / C-1 / D print layouts are shared in tanod-workflow.css.
+ * school-zones.css — Safer School Zones (DILG MC 2026-037) overhaul.
+ *
+ * Annex B (Schools), Annex C-1 (Incidents), Annex D (Term Report).
+ * Follows Baranguard design system tokens (REFERENCE.md §6).
  */
 
-.tw-ssz .data-table-wrap { max-width: 100%; }
+.tw-ssz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: 100%;
+}
 
-.tw-form-card { max-width: 60rem; }
+.tw-ssz .data-table-wrap {
+  max-width: 100%;
+}
 
-.tw-ssz .tw-toolbar { justify-content: space-between; }
+.tw-form-card {
+  max-width: 60rem;
+}
+
+.tw-ssz .tw-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+/* ==========================================================================
+   Executive Annex D Count Tiles Overhaul
+   ========================================================================== */
+
+.tw-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--spacing-sm-md);
+  width: 100%;
+}
+
+.tw-count-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--color-border);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.tw-count-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card);
+  border-color: var(--color-primary);
+}
+
+.tw-count-tile__value {
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
+.tw-count-tile__label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   School Inventory Tags & Details
+   ========================================================================== */
+
+.tw-school-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: 0.15rem var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-label);
+  font-weight: 600;
+}
+.tw-school-badge--public {
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+}
+.tw-school-badge--private {
+  background: color-mix(in srgb, var(--color-navy) 12%, transparent);
+  color: var(--color-navy);
+}
+[data-theme="dark"] .tw-school-badge--private {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  color: var(--color-accent);
+}
+
+/* ==========================================================================
+   Responsive Adaptations
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .tw-ssz .tw-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

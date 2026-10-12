@@ -1,7 +1,166 @@
 /**
- * referral-log.css — Referral Log. Filters, table and notice styles are
- * shared (tanod-workflow.css); this only keeps the delegation-log notice
- * from stretching wider than the table beneath it.
+ * referral-log.css — Referral Log overhaul.
+ *
+ * Inter-agency delegation registry (PNP, BFP, EMS, VAW Desk, LGU).
+ * Follows Baranguard design system tokens (REFERENCE.md §6).
  */
 
-.tw-referrals__body .data-table-wrap { max-width: 100%; }
+.tw-referrals__body .data-table-wrap {
+  max-width: 100%;
+}
+
+/* ==========================================================================
+   Agency KPI Metrics Strip
+   ========================================================================== */
+
+.tw-ref-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--spacing-sm-md);
+  width: 100%;
+}
+
+.tw-ref-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.tw-ref-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card);
+  border-color: var(--color-primary);
+}
+
+.tw-ref-kpi-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+}
+
+.tw-ref-kpi-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+
+.tw-ref-kpi-card__val {
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
+.tw-ref-kpi-card__label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Agency Badges
+   ========================================================================== */
+
+.tw-ref-agency-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: 0.15rem var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-label);
+  font-weight: 600;
+}
+.tw-ref-agency-pill--pnp {
+  background: color-mix(in srgb, #1D4ED8 15%, transparent);
+  color: #1D4ED8;
+}
+.tw-ref-agency-pill--bfp {
+  background: color-mix(in srgb, #DC2626 15%, transparent);
+  color: #DC2626;
+}
+.tw-ref-agency-pill--ems {
+  background: color-mix(in srgb, #16A34A 15%, transparent);
+  color: #16A34A;
+}
+.tw-ref-agency-pill--vaw {
+  background: color-mix(in srgb, #9333EA 15%, transparent);
+  color: #9333EA;
+}
+.tw-ref-agency-pill--lgu {
+  background: color-mix(in srgb, #D97706 15%, transparent);
+  color: #D97706;
+}
+.tw-ref-agency-pill--other {
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+}
+
+/* ==========================================================================
+   Empty State
+   ========================================================================== */
+
+.tw-ref-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--spacing-xl) var(--spacing-lg);
+  border-radius: var(--radius-lg);
+  background: var(--glass-bg);
+  border: 1px solid var(--color-border);
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
+}
+
+.tw-ref-empty__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.tw-ref-empty__title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.tw-ref-empty__desc {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  max-width: 38rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.tw-ref-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}

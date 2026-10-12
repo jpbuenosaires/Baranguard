@@ -3,19 +3,14 @@
  * barangay delegated to which office (PNP, BFP, ambulance, VAW desk, ...)
  * and when.
  *
- * This is deliberately a DELEGATION log, not a case registry (the DILG
- * BIMSS constraint, REFERENCE.md §1): `GET /referrals` returns only
- * `{referral_id, incident_id, display_id, incident_type, referred_to,
- * other_text, referred_at, reference_no}` — never a narrative, a name, a
- * contact or coordinates — and this page renders exactly those fields.
- * A row opens the incident's own detail screen, where the viewer's normal
- * role rules apply.
- *
- * Roles: admin, secretary, punong_barangay (read-only for all three).
+ * Overhauled with:
+ *   - Agency KPI Summary Strip
+ *   - Color-coded agency badges
+ *   - Direct incident deep links
+ *   - Informative empty state explaining the delegation boundary
  */
 
 import { DataTable } from '../components/DataTable.js';
-import { StatStrip } from '../components/StatStrip.js';
 import { icons } from '../components/icons.js';
 import { getReferrals, REFERRED_TO_LABELS } from '../services/tanodWorkflowApi.js';
 import {
@@ -26,16 +21,32 @@ const PAGE_SIZE = 25;
 
 const COLUMNS = [
   { key: 'incident', label: 'Incident' },
-  { key: 'type', label: 'Type' },
-  { key: 'to', label: 'Referred to' },
-  { key: 'when', label: 'Referred at' },
-  { key: 'ref', label: 'Reference no.' },
+  { key: 'type', label: 'Incident Type' },
+  { key: 'to', label: 'Referred Agency / Office' },
+  { key: 'when', label: 'Referred At' },
+  { key: 'ref', label: 'Reference No.' },
 ];
 
 function typeLabel(value) {
   if (!value) return '—';
   const text = String(value).replace(/_/g, ' ');
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function agencyBadge(referredTo, otherText) {
+  const base = REFERRED_TO_LABELS[referredTo] || referredTo || '—';
+  const label = otherText ? `${base} — ${otherText}` : base;
+
+  let modifier = 'other';
+  if (referredTo === 'pnp') modifier = 'pnp';
+  else if (referredTo === 'bfp') modifier = 'bfp';
+  else if (referredTo === 'ambulance_ems') modifier = 'ems';
+  else if (referredTo === 'vaw_desk') modifier = 'vaw';
+  else if (referredTo === 'higher_lgu' || referredTo === 'social_welfare') modifier = 'lgu';
+
+  const pill = h('span', `tw-ref-agency-pill tw-ref-agency-pill--${modifier}`);
+  pill.textContent = label;
+  return pill;
 }
 
 /**
@@ -49,21 +60,27 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
     root, user, onLoggedOut, navigate,
     activeKey: 'referrals',
     title: 'Referral Log',
-    subtitle: 'Who each incident was delegated to — dates and destinations only',
+    subtitle: 'Inter-agency delegations — incidents referred to PNP, BFP, EMS, and government offices',
     icon: icons.send,
   });
 
   const state = { from: '', to: '', referredTo: '', page: 1 };
 
-  const notice = h('p', 'tw-notice', 'This log shows where incidents were referred, not what happened in them. Open an incident to see its own details, subject to your role.');
+  const notice = h('p', 'tw-notice',
+    'This log tracks inter-agency delegations, maintaining an audit trail of which cases were referred outside barangay jurisdiction pursuant to DILG BIMSS guidelines.'
+  );
+
+  const kpisHost = h('div', 'tw-ref-kpis');
   const filters = h('div', 'tw-filter-bar');
 
   const fromInput = document.createElement('input');
   fromInput.type = 'date';
   fromInput.id = 'tw-ref-from';
+
   const toInput = document.createElement('input');
   toInput.type = 'date';
   toInput.id = 'tw-ref-to';
+
   const destSelect = selectOf(
     Object.entries(REFERRED_TO_LABELS).map(([value, label]) => ({ value, label })),
     { placeholder: 'All destinations' },
@@ -84,7 +101,7 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
   const body = h('div', 'tw-referrals__body');
 
   filters.append(wrapField('From', fromInput), wrapField('To', toInput), wrapField('Referred to', destSelect), clear);
-  container.append(notice, filters, body);
+  container.append(notice, kpisHost, filters, body);
 
   const apply = () => {
     state.from = fromInput.value;
@@ -100,6 +117,42 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
     fromInput.value = ''; toInput.value = ''; destSelect.value = '';
     apply();
   });
+
+  function renderKpiStrip(total, items) {
+    kpisHost.innerHTML = '';
+    const pnpCount = items.filter((r) => r.referredTo === 'pnp').length;
+    const bfpCount = items.filter((r) => r.referredTo === 'bfp').length;
+    const emsCount = items.filter((r) => r.referredTo === 'ambulance_ems').length;
+    const vawCount = items.filter((r) => r.referredTo === 'vaw_desk').length;
+
+    const cards = [
+      { label: 'Total Referrals', val: total, icon: icons.send, filter: '' },
+      { label: 'PNP (Police)', val: pnpCount, icon: icons.shield, filter: 'pnp' },
+      { label: 'BFP (Fire)', val: bfpCount, icon: icons.flame, filter: 'bfp' },
+      { label: 'EMS / Ambulance', val: emsCount, icon: icons.activity, filter: 'ambulance_ems' },
+      { label: 'VAW Desk', val: vawCount, icon: icons.users, filter: 'vaw_desk' },
+    ];
+
+    for (const c of cards) {
+      const cardEl = h('button', 'tw-ref-kpi-card');
+      cardEl.type = 'button';
+
+      const head = h('div', 'tw-ref-kpi-card__head');
+      const iconSpan = h('span', 'tw-ref-kpi-card__icon');
+      iconSpan.innerHTML = c.icon(18);
+      head.append(iconSpan);
+
+      const val = h('span', 'tw-ref-kpi-card__val', String(c.val));
+      const lbl = h('span', 'tw-ref-kpi-card__label', c.label);
+
+      cardEl.append(head, val, lbl);
+      cardEl.addEventListener('click', () => {
+        destSelect.value = c.filter;
+        apply();
+      });
+      kpisHost.appendChild(cardEl);
+    }
+  }
 
   async function load() {
     if (state.from && state.to && state.from > state.to) {
@@ -119,17 +172,34 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
 
   function render(res) {
     body.innerHTML = '';
+    renderKpiStrip(res.total, res.items);
+
     if (res.items.length === 0 && res.total === 0) {
-      showEmpty(
-        body,
-        'No referrals',
+      const empty = h('div', 'tw-ref-empty');
+      const iconSpan = h('div', 'tw-ref-empty__icon');
+      iconSpan.innerHTML = icons.send(36);
+
+      const title = h('h3', 'tw-ref-empty__title',
         state.from || state.to || state.referredTo
-          ? 'No referrals match these filters.'
-          : 'Referrals appear here when an incident is delegated to another office.',
+          ? 'No Referrals Match Filters'
+          : 'No Inter-Agency Referrals'
       );
+
+      const desc = h('p', 'tw-ref-empty__desc',
+        'When an incident is delegated from the Dispatch Center or Incident Management to external emergency units (such as PNP, BFP, VAW Desk, or Hospital EMS), delegation records will be catalogued here.'
+      );
+
+      const actions = h('div', 'tw-ref-empty__actions');
+      const incidentsBtn = h('button', 'primary', 'Go to Incident Management');
+      incidentsBtn.type = 'button';
+      incidentsBtn.addEventListener('click', () => navigate('incident-management'));
+
+      actions.append(incidentsBtn);
+      empty.append(iconSpan, title, desc, actions);
+      body.appendChild(empty);
       return;
     }
-    body.appendChild(StatStrip({ items: [{ label: 'Referrals matching filters', value: res.total }] }));
+
     body.appendChild(DataTable({
       columns: COLUMNS,
       rows: res.items,
@@ -146,10 +216,7 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
         switch (key) {
           case 'incident': return h('span', 'tw-mono', row.displayId || `#${row.incidentId}`);
           case 'type': return h('span', '', typeLabel(row.incidentType));
-          case 'to': {
-            const base = REFERRED_TO_LABELS[row.referredTo] || row.referredTo || '—';
-            return h('span', '', row.otherText ? `${base} — ${row.otherText}` : base);
-          }
+          case 'to': return agencyBadge(row.referredTo, row.otherText);
           case 'when': return h('span', '', formatManilaDateTime(row.referredAt));
           case 'ref': return h('span', 'tw-mono', row.referenceNo || '—');
           default: return '';
