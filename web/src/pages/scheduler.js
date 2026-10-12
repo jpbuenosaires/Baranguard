@@ -13,7 +13,7 @@
 import { createShift, updateShift, getBarangays, ApiClientError } from '../api/apiClient.js';
 import { loadTanodRoster } from '../services/tanodRoster.js';
 import {
-  getShiftsDetailed, publishShifts, getAvailability, reviewAvailability, getOwnApprovalAuthority,
+  getShiftsDetailed, publishShifts, getAvailability, getOwnApprovalAuthority,
 } from '../services/shellWorkflowApi.js';
 import { loadSignerCandidates } from '../services/signerCandidates.js';
 import { formatDateOnly, manilaToday } from '../services/tanodWorkflowUi.js';
@@ -49,7 +49,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // Admin and Secretary manage shifts (create/edit; 2026-10-07 — the
   // Secretary is the Records & Reports Officer who builds the roster the
   // approver then publishes). Punong Barangay reaches this tab to publish
-  // drafts (approve_roster) only. Availability review is Admin/Secretary.
+  // drafts (approve_roster) only. Availability (read-only: it is each
+  // tanod's own fixed statement, 2026-10-12) is shown to Admin/Secretary.
   // The server re-checks role and authority on every action either way.
   // The tanod list comes from loadTanodRoster() (GET /users/directory) for
   // both Admin and Secretary. Paper-first (2026-10-12): Admin/Secretary
@@ -58,17 +59,19 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // still gets the in-app Publish button.
   const isAdmin = user.role === 'admin';
   const canManageShifts = isAdmin || user.role === 'secretary';
-  const canReviewAvailability = canManageShifts;
+  const canSeeAvailability = canManageShifts;
 
   // Stat Strip Host
   const statStripHost = document.createElement('div');
   container.appendChild(statStripHost);
 
-  // Availability review (2026-10, contract §3) — its own host with its own
-  // four states, so a failure here never blanks the shift list below.
+  // Tanod availability (2026-10-12: read-only, the tanod's own fixed
+  // statement; nobody accepts or revises it) — its own host with its own
+  // four states, so a failure here never blanks the shift list below. A
+  // shift must fit inside these windows (server: 422 OUTSIDE_AVAILABILITY).
   const availabilityHost = document.createElement('div');
   availabilityHost.className = 'card availability-panel';
-  if (canReviewAvailability) container.appendChild(availabilityHost);
+  if (canSeeAvailability) container.appendChild(availabilityHost);
 
   // Split Panel Layout
   const layout = document.createElement('div');
@@ -140,21 +143,23 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     listPane.style.flex = '1 1 100%';
   }
   load();
-  if (canReviewAvailability) loadAvailability();
+  if (canSeeAvailability) loadAvailability();
 
   // One Retry re-fetches the whole tab (shifts + availability): a failed
   // server usually fails both, and a single recovery action is clearer than
   // two independent ones.
   function retryAll() {
     load();
-    if (canReviewAvailability) loadAvailability();
+    if (canSeeAvailability) loadAvailability();
   }
 
   async function loadAvailability() {
     availabilityState = { status: 'loading', items: [], message: '' };
     renderAvailability();
     try {
-      const res = await getAvailability({ status: 'submitted', limit: 100 });
+      // Every status: legacy accepted/revised rows are still the tanod's
+      // statement. Newest periods first (server order).
+      const res = await getAvailability({ limit: 100 });
       availabilityState = { status: res.items.length === 0 ? 'empty' : 'ready', items: res.items, message: '' };
     } catch (err) {
       availabilityState = {
@@ -164,6 +169,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       };
     }
     renderAvailability();
+    formPane?.refreshAvailabilityHint?.();
   }
 
   function formatWindow(w) {
@@ -177,9 +183,13 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     const head = document.createElement('div');
     head.className = 'availability-panel__head';
     const heading = document.createElement('h3');
-    heading.textContent = 'Availability to review';
+    heading.textContent = 'Tanod availability';
     head.appendChild(heading);
     availabilityHost.appendChild(head);
+    const intro = document.createElement('p');
+    intro.className = 'note';
+    intro.textContent = 'Set by each tanod on their phone and used as is. A shift must fit inside the tanod\'s windows.';
+    availabilityHost.appendChild(intro);
 
     if (availabilityState.status === 'loading') {
       const wrap = document.createElement('div');
@@ -212,112 +222,85 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     if (availabilityState.status === 'empty') {
       const note = document.createElement('p');
       note.className = 'note';
-      note.textContent = 'No availability submissions are waiting for review.';
+      note.textContent = 'No tanod has submitted availability yet.';
       availabilityHost.appendChild(note);
       return;
     }
 
+    // One block per tanod, each submitted period inside it, windows as
+    // read-only chips.
+    const byTanod = new Map();
     for (const item of availabilityState.items) {
-      const tanodName = item.userName ?? tanods.find((t) => t.userId === item.userId)?.fullName ?? `Tanod #${item.userId}`;
+      if (!byTanod.has(item.userId)) byTanod.set(item.userId, []);
+      byTanod.get(item.userId).push(item);
+    }
+    for (const [userId, periods] of byTanod) {
+      const tanodName = periods[0].userName ?? tanods.find((t) => t.userId === userId)?.fullName ?? `Tanod #${userId}`;
       const row = document.createElement('div');
       row.className = 'availability-item';
-
-      const top = document.createElement('div');
-      top.className = 'availability-item__top';
       const who = document.createElement('strong');
       who.textContent = tanodName;
-      const period = document.createElement('span');
-      period.className = 'text-tertiary';
-      period.textContent = `${item.periodStart} to ${item.periodEnd}`;
-      top.append(who, period);
+      row.appendChild(who);
 
-      const list = document.createElement('ul');
-      list.className = 'availability-item__windows';
-      list.setAttribute('aria-label', `Availability windows for ${tanodName}`);
-      for (const w of item.windows) {
-        const li = document.createElement('li');
-        li.textContent = formatWindow(w);
-        list.appendChild(li);
-      }
+      for (const item of periods) {
+        const top = document.createElement('div');
+        top.className = 'availability-item__top';
+        const period = document.createElement('span');
+        period.className = 'text-tertiary';
+        period.textContent = `${item.periodStart} to ${item.periodEnd}`;
+        top.appendChild(period);
 
-      const actions = document.createElement('div');
-      actions.className = 'availability-item__actions';
-      const note = document.createElement('input');
-      note.type = 'text';
-      note.className = 'personnel-form-input';
-      note.maxLength = 255;
-      note.placeholder = 'Note to the tanod (optional)';
-      note.setAttribute('aria-label', `Review note for ${tanodName}`);
-      const accept = document.createElement('button');
-      accept.type = 'button';
-      accept.className = 'primary';
-      accept.textContent = 'Accept';
-      const revise = document.createElement('button');
-      revise.type = 'button';
-      revise.className = 'ghost';
-      revise.textContent = 'Ask to revise';
+        const list = document.createElement('ul');
+        list.className = 'availability-item__windows';
+        list.setAttribute('aria-label', `Availability windows for ${tanodName}, ${item.periodStart} to ${item.periodEnd}`);
+        for (const w of item.windows) {
+          const li = document.createElement('li');
+          li.className = 'availability-chip';
+          li.textContent = formatWindow(w);
+          list.appendChild(li);
+        }
+        row.append(top, list);
 
-      const review = async (status) => {
-        accept.disabled = true;
-        revise.disabled = true;
-        try {
-          await reviewAvailability(item.availId, {
-            status,
-            reviewNote: note.value.trim(),
-            idempotencyKey: crypto.randomUUID(),
+        // Create a draft shift from one of this period's windows. Opens the
+        // existing New Shift form prefilled; the server re-validates
+        // ownership/tenant (source_availability_id) and every roster rule.
+        // A period with no usable window cannot produce a shift.
+        if (!canManageShifts || item.windows.length === 0) continue;
+        const fromRow = document.createElement('div');
+        fromRow.className = 'availability-item__actions';
+        let windowSelect = null;
+        if (item.windows.length > 1) {
+          windowSelect = document.createElement('select');
+          windowSelect.className = 'personnel-form-select';
+          windowSelect.setAttribute('aria-label', `Window to schedule for ${tanodName}`);
+          item.windows.forEach((w, i) => {
+            const opt = document.createElement('option');
+            opt.value = String(i);
+            opt.textContent = formatWindow(w);
+            windowSelect.appendChild(opt);
           });
-          showToast(status === 'accepted' ? 'Availability accepted.' : 'Marked for revision.', { variant: 'success' });
-          loadAvailability();
-        } catch (err) {
-          accept.disabled = false;
-          revise.disabled = false;
-          showToast(err instanceof ApiClientError ? err.message : 'Could not review this availability.', { variant: 'error' });
         }
-      };
-      accept.addEventListener('click', () => review('accepted'));
-      revise.addEventListener('click', () => review('revised'));
-      actions.append(note, accept, revise);
-
-      // Create a draft shift from one of this availability's windows. Opens
-      // the existing New Shift form prefilled; the server re-validates
-      // ownership/tenant (source_availability_id) and every roster rule.
-      const fromRow = document.createElement('div');
-      fromRow.className = 'availability-item__actions';
-      let windowSelect = null;
-      if (item.windows.length > 1) {
-        windowSelect = document.createElement('select');
-        windowSelect.className = 'personnel-form-select';
-        windowSelect.setAttribute('aria-label', `Window to schedule for ${tanodName}`);
-        item.windows.forEach((w, i) => {
-          const opt = document.createElement('option');
-          opt.value = String(i);
-          opt.textContent = formatWindow(w);
-          windowSelect.appendChild(opt);
+        const createFrom = document.createElement('button');
+        createFrom.type = 'button';
+        createFrom.className = 'ghost';
+        createFrom.textContent = 'Create shift from this availability';
+        createFrom.addEventListener('click', () => {
+          const w = item.windows[windowSelect ? Number(windowSelect.value) : 0];
+          if (!w || !formPane || typeof formPane.applyAvailability !== 'function') {
+            showToast('The New Shift form is not available right now.', { variant: 'error' });
+            return;
+          }
+          const ok = formPane.applyAvailability({ availId: item.availId, userId: item.userId, window: w });
+          if (!ok) {
+            showToast('This Tanod is not in the shift roster list, so a shift cannot be created from here.', { variant: 'error' });
+            return;
+          }
+          formPane.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
         });
+        if (windowSelect) fromRow.appendChild(windowSelect);
+        fromRow.appendChild(createFrom);
+        row.appendChild(fromRow);
       }
-      const createFrom = document.createElement('button');
-      createFrom.type = 'button';
-      createFrom.className = 'ghost';
-      createFrom.textContent = 'Create shift from this availability';
-      createFrom.addEventListener('click', () => {
-        const w = item.windows[windowSelect ? Number(windowSelect.value) : 0];
-        if (!w || !formPane || typeof formPane.applyAvailability !== 'function') {
-          showToast('The New Shift form is not available right now.', { variant: 'error' });
-          return;
-        }
-        const ok = formPane.applyAvailability({ availId: item.availId, userId: item.userId, window: w });
-        if (!ok) {
-          showToast('This Tanod is not in the shift roster list, so a shift cannot be created from here.', { variant: 'error' });
-          return;
-        }
-        formPane.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-      });
-      if (windowSelect) fromRow.appendChild(windowSelect);
-      fromRow.appendChild(createFrom);
-
-      row.append(top, list, actions);
-      // A submission with no usable window cannot produce a shift.
-      if (canManageShifts && item.windows.length > 0) row.appendChild(fromRow);
       availabilityHost.appendChild(row);
     }
   }
@@ -340,7 +323,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
       renderStatStrip();
       if (canManageShifts) {
-        const newFormPane = buildNewShiftForm(tanods, load, shifts);
+        const newFormPane = buildNewShiftForm(tanods, load, shifts, () => availabilityState.items);
         layout.replaceChild(newFormPane, formPane);
         formPane = newFormPane;
       }
@@ -768,7 +751,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
             button.textContent = 'Edit Shift';
             button.addEventListener('click', (event) => {
               event.stopPropagation();
-              openEditModal(shift, tanods, load, shifts);
+              openEditModal(shift, tanods, load, shifts, availabilityState.items);
             });
             return button;
           }
@@ -926,7 +909,25 @@ function rosterLabel(t) {
   return t.officialTitle ? `${t.fullName} - ${t.officialTitle}` : t.fullName;
 }
 
-function buildNewShiftForm(tanods, onCreated, shifts = []) {
+/**
+ * Short "what this tanod said they can do" line for the shift forms, from
+ * the loaded availability rows (read-only; the server is the one that
+ * refuses a shift outside it). Upcoming windows only, at most six.
+ */
+function availabilityHintText(availabilityItems, userId) {
+  if (!userId) return '';
+  const today = manilaToday();
+  const windows = availabilityItems
+    .filter((a) => a.userId === userId)
+    .flatMap((a) => a.windows)
+    .filter((w) => w.date >= today)
+    .sort((x, y) => (x.date + x.start).localeCompare(y.date + y.start));
+  if (windows.length === 0) return 'This tanod has no upcoming availability submitted, so a shift for them will be refused.';
+  const shown = windows.slice(0, 6).map((w) => `${w.date} ${w.start}–${w.end}`).join(', ');
+  return `Available: ${shown}${windows.length > 6 ? ` and ${windows.length - 6} more` : ''}. The shift must fit inside these windows.`;
+}
+
+function buildNewShiftForm(tanods, onCreated, shifts = [], getAvailabilityItems = () => []) {
   const card = document.createElement('div');
   card.className = 'card';
 
@@ -1041,6 +1042,18 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   startInput.addEventListener('input', updateFormFatiguePreview);
   endInput.addEventListener('input', updateFormFatiguePreview);
 
+  // What the selected tanod said they can do (2026-10-12: fixed, binding).
+  const availabilityHint = document.createElement('p');
+  availabilityHint.className = 'note scheduler-availability-hint';
+  availabilityHint.id = 'scheduler-new-availability';
+  const refreshAvailabilityHint = () => {
+    availabilityHint.textContent = availabilityHintText(getAvailabilityItems(), Number(tanodSelect.value));
+    availabilityHint.hidden = availabilityHint.textContent === '';
+  };
+  tanodSelect.setAttribute('aria-describedby', availabilityHint.id);
+  tanodSelect.addEventListener('change', refreshAvailabilityHint);
+  card.refreshAvailabilityHint = refreshAvailabilityHint;
+
   // Set by applyAvailability(); cleared on success or when the user edits the
   // tanod/times by hand away from the chosen window.
   let sourceAvailabilityId = null;
@@ -1060,10 +1073,11 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   card.applyAvailability = ({ availId, userId, window: w }) => {
     if (!tanods.some((t) => t.userId === userId)) return false;
     tanodSelect.value = String(userId);
+    refreshAvailabilityHint();
     startInput.value = `${w.date}T${w.start}`;
     endInput.value = `${w.date}T${w.end}`;
     sourceAvailabilityId = availId;
-    sourceNote.textContent = `Prefilled from the Tanod's submitted availability (${w.date} ${w.start}–${w.end}). Adjust the times if needed; the shift is still saved as a draft.`;
+    sourceNote.textContent = `Prefilled from the Tanod's submitted availability (${w.date} ${w.start}–${w.end}). Adjust the times within that window if needed; the shift is still saved as a draft.`;
     sourceNote.hidden = false;
     errorBox.hidden = true;
     updateFormFatiguePreview();
@@ -1085,6 +1099,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     errorBox,
     presetsWrap,
     tanodLabel, tanodSelect,
+    availabilityHint,
     zoneLabel, zoneInput,
     startLabel, startInput,
     endLabel, endInput,
@@ -1094,6 +1109,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     submitButton
   );
   card.append(heading, form);
+  refreshAvailabilityHint();
 
   if (tanods.length === 0) {
     form.hidden = true;
@@ -1174,7 +1190,7 @@ function applyPreset(type, startInput, endInput) {
 /**
  * Edit Shift Modal
  */
-function openEditModal(shift, tanods, onSaved, shifts = []) {
+function openEditModal(shift, tanods, onSaved, shifts = [], availabilityItems = []) {
   const overlay = document.createElement('div');
   overlay.className = 'personnel-modal-overlay';
 
@@ -1308,7 +1324,25 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
 
   updateEditFatiguePreview();
 
-  body.append(grid, fatigueCallout);
+  const availabilityHint = document.createElement('p');
+  availabilityHint.className = 'note scheduler-availability-hint';
+  availabilityHint.id = 'scheduler-edit-availability';
+  const refreshEditAvailabilityHint = () => {
+    availabilityHint.textContent = availabilityHintText(availabilityItems, Number(tanodSelect.value));
+    availabilityHint.hidden = availabilityHint.textContent === '';
+  };
+  tanodSelect.setAttribute('aria-describedby', availabilityHint.id);
+  tanodSelect.addEventListener('change', refreshEditAvailabilityHint);
+  refreshEditAvailabilityHint();
+
+  // Server refusals (OUTSIDE_AVAILABILITY, DAILY_HOURS_EXCEEDED, overlap)
+  // are shown inline here, next to the fields, not only as a toast.
+  const errorBox = document.createElement('div');
+  errorBox.className = 'login-form__error';
+  errorBox.setAttribute('role', 'alert');
+  errorBox.hidden = true;
+
+  body.append(errorBox, grid, availabilityHint, fatigueCallout);
 
   // Footer
   const footer = document.createElement('div');
@@ -1337,8 +1371,10 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    errorBox.hidden = true;
     if (new Date(endInput.value) <= new Date(startInput.value)) {
-      showToast('End time must be after the start time.', { variant: 'error' });
+      errorBox.textContent = 'End time must be after the start time.';
+      errorBox.hidden = false;
       return;
     }
     saveBtn.disabled = true;
@@ -1356,7 +1392,8 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
       onSaved();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Could not update this shift.';
-      showToast(message, { variant: 'error' });
+      errorBox.textContent = message;
+      errorBox.hidden = false;
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save Changes';
     }

@@ -391,10 +391,8 @@ export function buildRoutes(scenario) {
     { method: 'POST', path: '/shifts', handler: ({ body }) => ({ status: 201, body: { shift_id: 599, user_id: body.user_id, patrol_zone: body.patrol_zone, start_at: body.start_at, end_at: body.end_at, version: 1, approval_status: 'draft', approved_by: null, approved_at: null, source_availability_id: body.source_availability_id ?? null } }) },
     { method: 'POST', path: '/shifts/publish', handler: ({ body }) => ok({ published: body.shift_ids, already_published: [], warnings: [{ code: 'NO_COVERAGE', date: '2026-10-07' }] }) },
     { method: 'GET', path: '/availability', handler: ({ query }) => ok(paginate(availability.filter((a) => (!query.status || a.status === query.status) && (!query.user_id || a.user_id === Number(query.user_id))), query)) },
-    { method: 'PATCH', path: '/availability/:id', handler: ({ params, body }) => {
-      const row = availability.find((a) => a.avail_id === Number(params.id));
-      return row ? ok({ ...row, status: body.status, review_note: body.review_note ?? null, reviewed_by: 1, reviewed_at: sqlAgo(0) }) : notFound('Availability not found.');
-    } },
+    // Retired 2026-10-12: availability is the tanod's fixed statement, never reviewed.
+    { method: 'PATCH', path: '/availability/:id', handler: () => ({ status: 410, body: { error: { code: 'AVAILABILITY_NOT_REVIEWED', message: 'Availability is no longer reviewed.' } } }) },
     { method: 'PATCH', path: '/shifts/:id', handler: ({ params, body }) => ok({ shift_id: Number(params.id), updated_at: sqlAgo(0), version: (body.version || 0) + 1 }) },
     { method: 'GET', path: '/shift-swap-requests', handler: ({ query }) => ok(paginate(swapRequests, query)) },
     { method: 'PATCH', path: '/shift-swap-requests/:id', handler: ({ params, body }) => ok({ request_id: Number(params.id), status: body.status, resolved_at: sqlAgo(0), resolved_by: 1, shift_id: 502, target_user_id: 4 }) },

@@ -337,6 +337,12 @@ case "$BODY" in *"hoax"*) fail "LEAK: cancel reason text reached the Tanod's own
 # ================================================================ shifts: secretary
 step "6. Secretary may create/update shifts, but not publish without approve_roster"
 D1=$("$PHP_BIN" -r 'echo gmdate("Y-m-d", time()+86400*3);')
+# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
+# verify-roster-accomplishment.sh). This suite tests other rules, so every
+# tanod gets open whole-day availability first.
+"$PHP_BIN" "$BACKEND_DIR/scripts/seed-open-availability.php" | mysql_exec "$VALDB" \
+  && pass "Seeded open availability for every tanod (seed-open-availability.php)" || fail "open availability seed failed"
 api POST /shifts "$SEC_T" "{\"user_id\":$T4,\"start_at\":\"${D1}T08:00:00+08:00\",\"end_at\":\"${D1}T14:00:00+08:00\",\"request_id\":\"$(uuid)\",\"patrol_zone\":\"Purok 1\"}"
 expect_code "Secretary POST /shifts" 201
 SS_NEW=$(jget "$BODY" shift_id)
