@@ -16,8 +16,8 @@
  * entries still waiting to sync are pushed first (the server can only submit
  * what it has).
  *
- * Status chip: open / prepared / noted / approved / returned (+ the return
- * reason, shown verbatim). While prepared/noted/approved the entries are locked
+ * Status chip: open / prepared / returned (+ the return
+ * reason, shown verbatim). While prepared the entries are locked
  * on this screen — the server would 409 any change. The text of an entry is
  * never logged, and the form tells the Tanod to leave out victim/student names.
  */
@@ -65,13 +65,11 @@ import { uuid } from '../services/uuid';
 
 const STATUS_PILL: Record<AccomplishmentReportStatus, { label: string; className: string }> = {
   open: { label: 'Open — add your entries', className: 'status-pill--info' },
-  prepared: { label: 'Submitted — waiting for the signed paper', className: 'status-pill--pending' },
-  noted: { label: 'Reviewed — waiting for the signed paper', className: 'status-pill--pending' },
-  approved: { label: 'Approved', className: 'status-pill--success' },
+  prepared: { label: 'Submitted — print and sign it at the barangay hall', className: 'status-pill--success' },
   returned: { label: 'Returned for changes', className: 'status-pill--critical' },
 };
 
-const LOCKED: AccomplishmentReportStatus[] = ['prepared', 'noted', 'approved'];
+const LOCKED: AccomplishmentReportStatus[] = ['prepared'];
 
 interface FormState {
   workDate: string;

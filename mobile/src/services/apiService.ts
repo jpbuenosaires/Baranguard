@@ -1294,7 +1294,12 @@ export async function getMyAvailability(): Promise<AvailabilityEntry[]> {
 }
 
 /** Contract §4 `accomplishment_report.status`. */
-export type AccomplishmentReportStatus = 'open' | 'prepared' | 'noted' | 'approved' | 'returned';
+export type AccomplishmentReportStatus = 'open' | 'prepared' | 'returned';
+
+/** Reports are printed and signed on paper; older cached/server values 'noted'/'approved' mean 'prepared'. */
+function normalizeReportStatus(s: string): AccomplishmentReportStatus {
+  return s === 'noted' || s === 'approved' ? 'prepared' : (s as AccomplishmentReportStatus);
+}
 
 export interface AccomplishmentReportSummary {
   reportId: number;
@@ -1328,7 +1333,7 @@ function mapReport(row: RawReport): AccomplishmentReportSummary {
   return {
     reportId: row.report_id,
     month: row.month,
-    status: row.status,
+    status: normalizeReportStatus(row.status),
     returnReason: row.return_reason ?? null,
     totalMinutes: numberOrNull(row.total_minutes ?? row.total_minutes_confirmed),
     flaggedEntries: numberOrNull(row.flagged_entries),

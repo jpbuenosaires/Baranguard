@@ -8,6 +8,30 @@ sessions, the abandoned React Native rebuild, the PHP 8.3 swap, the
 Cloudflare tunnel set-up) lives in DEVLOG; only what is still true and
 still actionable is kept here.
 
+## 2026-10-12 print-only change (supersedes the paper-first sections below)
+
+**Decision: all reports are printed and signed on paper outside the app; the
+app no longer tracks signatures. It only prints.** Migration **0041**
+(NOT applied to any real DB until you run it) removes the tracking:
+- `accomplishment_report.status` is now `open | prepared | returned`
+  (`noted`/`approved` removed; existing rows migrate to `prepared`).
+  `prepared` = the tanod submitted it, entries are locked, ready to print.
+  Return stays. Annex D (`ssz_term_report`) is `draft | prepared | submitted`.
+- Removed endpoints: `/accomplishment-reports/:id/note|approve|paper-signature|
+  record-paper-approval`, `/ssz-term-reports/:id/paper-signature|
+  record-paper-approval` and the `/document-scans` endpoints.
+  `POST /shifts/publish` is a plain publish (no `recorded_from_paper`).
+- Dropped by 0041: the `approval_mode`/`paper_*` columns, the
+  `noted_by/noted_at/approved_by/approved_at` columns, and the `document_scan`
+  table. **Any scan or paper-signature data in an older DB is dropped**
+  (scan files under `SCANS_DIR` are no longer referenced).
+- Authority flags (`approve_report`, `note_report`, `approve_roster`,
+  `prepare_annex_d`, ...) remain. Accomplishment-report retention now keys on
+  `prepared`. Mobile shows Open / Prepared / Returned; a stale cached
+  `noted`/`approved` is shown as Prepared. **The mobile change needs a new APK.**
+- Rule 80 in `docs/WORKFLOWS_AND_RULES.md` replaces Rules 62-63, 73, 75 and 78.
+The paper-first and workflow-gap passages below are kept as history.
+
 **Last updated: 2026-10-09 (after the web audit fixes, waves 1-3).**
 
 ## Current state

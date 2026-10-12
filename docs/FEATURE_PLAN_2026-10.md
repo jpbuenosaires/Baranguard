@@ -1,5 +1,7 @@
 # Baranguard — Tanod workflow feature plan (2026-10-01)
 
+> **Update 2026-10-12:** the noted -> approved steps and `document_scan` described below were later removed (migration 0041): reports are printed and signed on paper and the app does not track signatures. See `docs/HANDOFF.md`.
+
 **Status: PLAN ONLY. Nothing here is built.** Decisions below were taken by the
 user on 2026-10-01 (recommendations accepted; decision 1 answered directly).
 Evidence for the real workflow is thin: primary texts (DILG MC 2024-086, the
