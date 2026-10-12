@@ -57,6 +57,8 @@ const NOTIFICATION_LABELS = {
   sos: 'Tanod SOS',
   priority_alert: 'Priority alert',
   other: 'Notification',
+  report_update: 'Accomplishment report update',
+  roster_published: 'Duty schedule published',
 };
 
 const INCIDENT_TYPE_LABELS = {

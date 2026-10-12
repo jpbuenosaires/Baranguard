@@ -70,7 +70,7 @@ export function openPrintPreviewModal({
       <button type="button" class="ghost" id="cancel-print-btn">Close</button>
       <div class="print-modal__footer-actions">
         <button type="button" class="primary" id="do-print-btn">
-          ${icons.printer(16)} <span>Print</span>
+          ${icons.printer(16)} <span>Print (A4)</span>
         </button>
       </div>
     </div>

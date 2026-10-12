@@ -215,6 +215,15 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   publish in-app. The note/approve/publish endpoints are unchanged. Approvals
   inbox and dashboard widget show "waiting for the signed paper" queues to
   Admin/Secretary. Rule 73 in `docs/WORKFLOWS_AND_RULES.md`.
+- **0040** (2026-10-12, NOT applied to any real DB) report and roster
+  notifications: `notification.notification_type` gains `report_update` and
+  `roster_published`; `notification.accomplishment_report_id` (FK, SET NULL).
+  A tanod gets an ordinary push (no SMS fallback, never a critical alert)
+  when their report is approved (in-app or from paper) or returned, and when
+  shifts assigned to them are published. Body = month and outcome only. Also
+  2026-10-12: Admin/Secretary always see accomplishment entry text (they print
+  it); every print is A4 (`@page` in `base.css`, A4-sized preview sheet).
+  Rule 74.
 - **Rule 12 amendment:** an Admin login with a well-formed `X-Device-Id` gets a
   device session (24h sliding, 7-day cap) limited to
   `SessionPolicy::ADMIN_DEVICE_ALLOWLIST` (anything else 403
@@ -532,8 +541,8 @@ cross-tenant 404, web writes need `Idempotency-Key`, tanod writes
   `PATCH /availability/:id` (admin|secretary: `accepted`/`revised` + note).
 - **Roster approval** `POST /shifts/publish` (`approve_roster`; 1-100 ids;
   returns `published`, `already_published`, `warnings[NO_COVERAGE]`; a
-  tenant-mismatched id 404s the whole call; no tanod notification is sent
-  — no suitable notification type exists, none was invented).
+  tenant-mismatched id 404s the whole call; each tanod with a newly
+  published shift gets one `roster_published` push, migration 0040).
   `POST /shifts` takes optional `source_availability_id`.
 - **Users** `GET /users/:id` (new) · `PATCH /users/:id` also accepts
   `official_title` and `approval_authority[]` (Admin; see §3).
@@ -541,7 +550,8 @@ cross-tenant 404, web writes need `Idempotency-Key`, tanod writes
   date not future and <= 62 days back; confirmed duration 1-1440 min; the
   server stores its own suggested duration from `duty_status` and sets
   `duration_flag` when they differ by > 30 min) ·
-  `GET /accomplishment-reports` (+`/:id`, entry text for approvers) ·
+  `GET /accomplishment-reports` (+`/:id`, entry text for Admin, Secretary
+  and holders of note/approve authority) ·
   `POST /accomplishment-reports/:id/submit` (tanod, ONLINE-ONLY, not a sync
   kind) · `/note` (`note_report`) · `/approve` (`approve_report`; preparer
   can never note/approve) · `/return` (note or approve authority, reason

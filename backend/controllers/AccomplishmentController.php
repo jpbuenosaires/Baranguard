@@ -10,6 +10,8 @@ use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Lib\PaperApproval;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Notifications\NotificationDispatcher;
+use Baranguard\Services\Notifications\NotificationService;
 use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
@@ -39,9 +41,10 @@ use PDO;
  *   - Submitting with no entries is a 422 (not a transition conflict).
  *   - `return` clears `noted_by`/`noted_at` so a resubmission is noted
  *     afresh; `submit` clears `return_reason`.
- *   - Report text visibility: the owning Tanod sees their own text; other
- *     roles see `accomplishment_text` only if they hold the note_report or
- *     approve_report authority (otherwise null + `text_visible: false`).
+ *   - Report text visibility: the owning Tanod sees their own text; Admin
+ *     and Secretary always see it (they print the form for signing); a
+ *     Punong Barangay sees it only with the note_report or approve_report
+ *     authority (otherwise null + `text_visible: false`).
  *   - No audit row for entry writes (volume / text); the four report
  *     transitions are audited with identifiers and statuses only.
  */
@@ -376,7 +379,9 @@ final class AccomplishmentController
             throw new ApiError(404, 'NOT_FOUND', 'Report not found.');
         }
 
-        $textVisible = $identity['role'] === 'tanod'
+        // Admin/Secretary always see the text: under paper-first signing
+        // (2026-10-12) they print the form that gets signed.
+        $textVisible = in_array($identity['role'], ['tanod', 'admin', 'secretary'], true)
             || ApprovalAuthority::has($pdo, $identity['user_id'], ApprovalAuthority::NOTE_REPORT)
             || ApprovalAuthority::has($pdo, $identity['user_id'], ApprovalAuthority::APPROVE_REPORT);
 
@@ -553,6 +558,9 @@ final class AccomplishmentController
                 'status' => $newStatus,
                 'idempotency_key' => $idempotencyKey,
             ]);
+            $notificationId = in_array($newStatus, ['approved', 'returned'], true)
+                ? self::createReportNotification($pdo, $identity, $reportId, (int) $report['user_id'])
+                : null;
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {
@@ -560,6 +568,7 @@ final class AccomplishmentController
             }
             throw $e;
         }
+        self::sendReportNotification($pdo, $notificationId, $reportId);
 
         Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? []));
     }
@@ -677,6 +686,7 @@ final class AccomplishmentController
                 'signer_user_id' => $signerId,
                 'idempotency_key' => $key,
             ]);
+            $notificationId = self::createReportNotification($pdo, $identity, $reportId, (int) $report['user_id']);
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {
@@ -684,7 +694,40 @@ final class AccomplishmentController
             }
             throw $e;
         }
+        self::sendReportNotification($pdo, $notificationId, $reportId);
         Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? []));
+    }
+
+    /**
+     * Records a `report_update` notification for the tanod who owns the
+     * report (migration 0040), inside the caller's transaction so it exists
+     * only if the transition does.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
+    private static function createReportNotification(PDO $pdo, array $identity, int $reportId, int $tanodUserId): int
+    {
+        return NotificationService::create(
+            $pdo,
+            $identity['barangay_id'],
+            NotificationService::TYPE_REPORT_UPDATE,
+            ['accomplishment_report_id' => $reportId],
+            $identity['user_id'],
+            [$tanodUserId]
+        )['notification_id'];
+    }
+
+    /** Push after commit; a transport problem never fails the request. */
+    private static function sendReportNotification(PDO $pdo, ?int $notificationId, int $reportId): void
+    {
+        if ($notificationId === null) {
+            return;
+        }
+        try {
+            (new NotificationDispatcher())->dispatchAll($pdo, $notificationId);
+        } catch (\Throwable $e) {
+            error_log('[baranguard] report notification failed for report_id=' . $reportId . ': ' . $e->getMessage());
+        }
     }
 
     /**

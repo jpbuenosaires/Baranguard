@@ -484,6 +484,7 @@ stateDiagram-v2
 
 ### XIV. Paper-First Signing (2026-10-12)
 73. The signed paper is the official approval of accomplishment reports, rosters and Annex D. The web dashboard no longer offers separate in-app note/approve clicks: the Admin or Secretary records the signed paper (signer and date), which approves an accomplishment report from `prepared` or `noted`, an Annex D from `prepared`, and publishes draft shifts. The in-app note/approve/publish endpoints are kept, and a Punong Barangay holding `approve_roster` may still publish in-app.
+74. A tanod is notified on the phone (ordinary push, no SMS) when their accomplishment report is approved or returned and when shifts assigned to them are published; the message carries only the month and the outcome. Admin and Secretary always see accomplishment entry text, because they print the form that gets signed. Every printed form is A4.
 
 ---
 
