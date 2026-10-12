@@ -554,7 +554,7 @@ api PATCH "/shifts/$S2_ID" "$ADMIN_T" "{\"start_at\":\"${D3}T09:00:00+08:00\",\"
 expect_code "Admin moves the start time of a PUBLISHED shift" 200
 expect_eq "  reverted to draft again" "$(db_one "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL')) FROM shift_schedule WHERE shift_id=$S2_ID;")" "draft|NULL"
 
-# swap on a draft shift is refused (a Tanod cannot even see it); on a published one it works and un-publishes
+# swap on a draft shift is refused (a Tanod cannot even see it); on a published one it works and KEEPS it published (2026-10-12)
 api POST "/shift-swap-requests" "$T3_T" "{\"shift_id\":$S8C,\"client_request_id\":\"$(uuid)\"}"
 expect_code "Tanod requests a swap on their own DRAFT shift" 404
 api POST "/shift-swap-requests" "$T1_T" "{\"shift_id\":$S1_ID,\"target_user_id\":$T4_ID,\"client_request_id\":\"$(uuid)\"}"
@@ -562,8 +562,8 @@ expect_code "Tanod requests a swap on their PUBLISHED shift" 201
 SWP_ID=$(jget "$BODY" request_id)
 api PATCH "/shift-swap-requests/$SWP_ID" "$ADMIN_T" '{"status":"approved","version":1}'
 expect_code "Admin approves the swap (named target)" 200
-expect_eq "  shift reassigned AND reverted to draft with the approval cleared" "$(db_one "SELECT CONCAT(user_id,'|',approval_status,'|',IFNULL(approved_by,'NULL')) FROM shift_schedule WHERE shift_id=$S1_ID;")" "$T4_ID|draft|NULL"
-expect_eq "  audit swap_request_resolved records approval_reset=true" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SWP_ID LIMIT 1;")" "true"
+expect_eq "  shift reassigned and STILL published, approval kept, no pending_reapproval" "$(db_one "SELECT CONCAT(user_id,'|',approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$S1_ID;")" "$T4_ID|published|$PB_ID|0"
+expect_eq "  audit swap_request_resolved records approval_reset=false" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SWP_ID LIMIT 1;")" "false"
 
 # swap approval uses the same daily cap (named target) and no coverage block
 api GET "/shifts?limit=100" "$ADMIN_T" ""

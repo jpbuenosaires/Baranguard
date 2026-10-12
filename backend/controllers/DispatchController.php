@@ -216,8 +216,17 @@ final class DispatchController
      *        barangay's first Admin (see DispatchOffersController).
      * @param bool $enforcePublishedShift true for POST /dispatch (published-
      *        shift rule, `NO_PUBLISHED_SHIFT` unless `$overrideReason`);
-     *        false for an accepted offer, because its recipients were
-     *        already filtered by that very rule when the offer was built.
+     *        false for an accepted offer, because the offer decided who
+     *        may take it when it was built (published-shift Tanods, or the
+     *        roster fallback — see OfferService).
+     * @param ?string $overrideReason with `$enforcePublishedShift` true: the
+     *        Admin's reason, stored only if the Tanod has no published shift.
+     *        With it false: a non-null value means the CALLER already
+     *        established that the Tanod has no published shift (an offer
+     *        accepted by a roster-fallback recipient, which passes the fixed
+     *        `OfferService::FALLBACK_OVERRIDE_REASON`); it is stored and
+     *        audited as a shift override (`shift_override` = true, text never
+     *        in audit).
      * @param array<string,scalar|null> $extraAudit merged into the
      *        `dispatch_created` metadata (identifiers/booleans only).
      * @return array{dispatch_id:int,notification_id:int,shift_override:bool,is_additional_responder:bool}
@@ -318,17 +327,24 @@ final class DispatchController
         // Review decision 2026-10-07: a dispatch normally goes to a Tanod
         // who is on the PUBLISHED roster right now. The check is a
         // plain UTC compare of now against [start_at, end_at) of a
-        // `published` shift (draft shifts, including a swap awaiting
-        // re-approval, do not count). Without one the call is a 422
+        // `published` shift (draft shifts, including a legacy shift still
+        // flagged pending_reapproval, do not count; an approved swap keeps
+        // the shift published since 2026-10-12). Without one the call is a 422
         // NO_PUBLISHED_SHIFT, unless the Admin supplies an
         // `override_reason` — a deliberate, audited escape hatch for a
         // real emergency, stored on the row.
         //
         // Wave 2: a Tanod who ACCEPTS a night-time offer skips this check
-        // ($enforcePublishedShift = false) — the offer's recipients were
-        // already filtered by this exact rule when it was broadcast.
+        // ($enforcePublishedShift = false) — the offer already decided who
+        // may take it. 2026-10-12 (gap #5): when no rostered Tanod qualified
+        // the offer falls back to every eligible on-duty Tanod whose own
+        // declared availability covers now; such an
+        // accept arrives with the fixed system override reason and is
+        // recorded exactly like an Admin override (row text + audit boolean).
         $overrideUsed = false;
-        if ($enforcePublishedShift) {
+        if (!$enforcePublishedShift) {
+            $overrideUsed = $overrideReason !== null;
+        } else {
             $shiftStmt = $pdo->prepare(
                 "SELECT 1 FROM shift_schedule
                  WHERE user_id = :tanod_id AND barangay_id = :barangay_id

@@ -197,9 +197,10 @@ final class ShiftsController
         if ($identity['role'] === 'tanod') {
             $where[] = 'user_id = :user_id';
             $params['user_id'] = $identity['user_id'];
-            // A published shift, OR one of the Tanod's own whose approved swap
-            // is waiting for the roster to be re-approved (migration 0035) —
-            // the Tanod keeps seeing a shift that is still theirs.
+            // A published shift, OR one of the Tanod's own still flagged
+            // pending_reapproval (migration 0035; only rows from approved swaps
+            // before 2026-10-12 — an approved swap now keeps the shift
+            // published) — the Tanod keeps seeing a shift that is still theirs.
             $where[] = "(approval_status = 'published' OR pending_reapproval = 1)";
         } else {
             $approvalFilter = Http::query('approval_status');
@@ -321,7 +322,7 @@ final class ShiftsController
             $approvalSql = $approvalReset
                 ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL"
                 : '';
-            // A shift waiting on re-approval after an approved swap belongs to
+            // A (legacy) shift still flagged pending_reapproval belongs to
             // the swap's new holder; handing it to someone else clears the
             // waiting state (the new holder never swapped). A time-only edit
             // leaves it as it is.
