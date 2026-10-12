@@ -278,7 +278,7 @@ describe('Personnel behaviour', () => {
     await settle();
     const body = text($('.page-content'));
     assert.match(body, /Chief Tanod/);
-    assert.match(body, /Approve and publish duty roster/);
+    assert.match(body, /Sign and publish the duty roster/);
     const rows = $$('tbody tr');
     const tanodRow = rows.find((r) => /Jose Reyes/.test(text(r)));
     assert.equal(buttonByText(/approval authority/i, tanodRow), undefined, 'a Tanod can never hold an approval authority');

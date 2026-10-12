@@ -18751,3 +18751,31 @@ git worktrees, merged to local `main`; nothing pushed.
   check on a separate report so the scan-on-prepared 409 check still holds); see
   the PR for whether it was run. Not browser-verified. The UAT instruments
   (P-05, P-06) still describe in-app approval and need rewording.
+
+## 2026-10-12 (2) - Paper-first follow-ups and A4 printing (Claude, project thread)
+
+Jayson asked to fix the remaining workflow gaps after paper-first signing in
+one PR, and for every printed paper to be A4. Deliberate multi-item session at
+the user's request.
+
+- **Text visibility:** `AccomplishmentController` shows entry text to Admin and
+  Secretary regardless of authority, since they print the form that gets signed
+  (a Secretary without note/approve authority used to print blank entries).
+- **Labels:** authority labels (web shell + tanod workflow) now say what the
+  person signs on paper; mobile statuses read "waiting for the signed paper".
+- **Notifications (migration 0040):** `report_update` (approved or returned,
+  any path incl. record-paper-approval) to the report's tanod, with
+  `notification.accomplishment_report_id`; `roster_published` to each tanod with
+  a newly published shift. Created inside the transaction, dispatched after
+  commit in try/catch. Push only (message_type '', no SMS), never critical.
+  Bodies carry the month and outcome only.
+- **A4:** global `@page { size: A4 portrait; margin: 12mm }` in `base.css`
+  (Annex B keeps its own landscape page); preview sheets are A4-sized via
+  `--paper-a4-*` tokens; print button reads "Print (A4)". Headless-Chromium PDF
+  render: all media boxes A4; page counts unchanged from main.
+- **Docs:** Rule 74, REFERENCE §1 0040 bullet and roster/text wording,
+  FEATURE_CONTRACT amendment note, HANDOFF.
+
+Evidence: 0040 up/idempotent/down x2/up on a scratch DB; new assertions in
+`verify-roster-accomplishment.sh` pass (pre-existing env-only failures identical
+on main); `web/tests` and wiring verify green.

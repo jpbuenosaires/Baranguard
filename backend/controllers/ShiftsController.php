@@ -10,6 +10,8 @@ use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Lib\ApprovalAuthority;
 use Baranguard\Lib\PaperApproval;
 use Baranguard\Services\Scheduling\FatigueCalculator;
+use Baranguard\Services\Notifications\NotificationDispatcher;
+use Baranguard\Services\Notifications\NotificationService;
 use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
@@ -512,8 +514,9 @@ final class ShiftsController
      * identifiers/dates, nothing personal) so the replay can return the
      * ORIGINAL outcome rather than a recomputed one.
      *
-     * No notification is sent: `NotificationService` has no roster type and
-     * the contract forbids inventing one.
+     * Each tanod with a newly published shift gets one `roster_published`
+     * push (migration 0040, added with the paper-first follow-ups).
+     * Already-published ids and unassigned shifts notify nobody.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -583,7 +586,7 @@ final class ShiftsController
         try {
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             $stmt = $pdo->prepare(
-                "SELECT shift_id, barangay_id, start_at, end_at, approval_status FROM shift_schedule
+                "SELECT shift_id, barangay_id, user_id, start_at, end_at, approval_status FROM shift_schedule
                  WHERE shift_id IN ({$placeholders}) ORDER BY shift_id FOR UPDATE"
             );
             $stmt->execute($ids);
@@ -598,11 +601,15 @@ final class ShiftsController
 
             $published = [];
             $alreadyPublished = [];
+            $tanodsToTell = [];
             foreach ($rows as $row) {
                 if ($row['approval_status'] === 'published') {
                     $alreadyPublished[] = (int) $row['shift_id'];
                 } else {
                     $published[] = (int) $row['shift_id'];
+                    if ($row['user_id'] !== null) {
+                        $tanodsToTell[(int) $row['user_id']] = true;
+                    }
                 }
             }
             if ($published !== []) {
@@ -642,12 +649,31 @@ final class ShiftsController
             }
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], $auditAction, 'shift_schedule', null, $auditMeta);
 
+            // Migration 0040: one roster_published notification to every
+            // tanod who has a newly published shift.
+            $notificationId = $tanodsToTell === [] ? null : NotificationService::create(
+                $pdo,
+                $identity['barangay_id'],
+                NotificationService::TYPE_ROSTER_PUBLISHED,
+                [],
+                $identity['user_id'],
+                array_keys($tanodsToTell)
+            )['notification_id'];
+
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
             throw $e;
+        }
+
+        if ($notificationId !== null) {
+            try {
+                (new NotificationDispatcher())->dispatchAll($pdo, $notificationId);
+            } catch (\Throwable $e) {
+                error_log('[baranguard] roster notification failed: ' . $e->getMessage());
+            }
         }
 
         Http::send(200, [

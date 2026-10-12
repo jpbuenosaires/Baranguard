@@ -77,6 +77,11 @@ html { font-size: 100%; }
  * ─────────────────────────────────────────────────────────────────────── */
 
 :root {
+  /* Paper (2026-10-12): every printed form is A4. The on-screen preview
+     sheet uses the same size and margin as the @page rule below. */
+  --paper-a4-short: 210mm;
+  --paper-a4-long: 297mm;
+  --paper-margin: 12mm;
   --color-navy: #1E3A6E;          --color-primary: #1D4ED8;
   --color-primary-hover: #1E40AF; --color-accent: #3B82F6;
   --color-surface-blue: #E0F2FE;
@@ -1606,5 +1611,15 @@ svg.is-spinning {
   .is-spinning svg,
   svg.is-spinning {
     animation: none;
+  }
+}
+
+/* Every printed page is A4 portrait (wide annexes opt into the named
+   A4-landscape page in tanod-workflow.css). Lives here, not in a page
+   stylesheet, so no screen can print on the browser's default Letter. */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
   }
 }

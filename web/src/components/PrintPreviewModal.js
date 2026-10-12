@@ -20,7 +20,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
  * @param {string} [options.sheetId='printable-sheet'] DOM id for the `.print-sheet` node
  * @param {string} options.sheetHtml Inner HTML of the `.print-sheet` container
  * @param {Array<{label:string, icon?:string, className?:string, onClick:(btn:HTMLButtonElement)=>void}>} [options.extraActions=[]]
- *   Additional footer action buttons placed beside "Print working copy" (e.g. Download Official PDF, Export CSV).
+ *   Additional footer action buttons placed beside "Print (A4)" (e.g. Download Official PDF, Export CSV).
  * @returns {{ close: () => void, overlay: HTMLElement, sheet: HTMLElement }}
  */
 export function openPrintPreviewModal({
@@ -65,7 +65,7 @@ export function openPrintPreviewModal({
       <button type="button" class="ghost" id="cancel-print-btn">Close</button>
       <div class="print-modal__footer-actions">
         <button type="button" class="primary" id="do-print-btn">
-          ${icons.printer(16)} <span>Print working copy</span>
+          ${icons.printer(16)} <span>Print (A4)</span>
         </button>
       </div>
     </div>
