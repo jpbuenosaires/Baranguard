@@ -27,7 +27,7 @@
  */
 
 import { DataTable } from '../components/DataTable.js';
-import { StatStrip } from '../components/StatStrip.js';
+import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { promptText } from '../components/ConfirmDialog.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
@@ -44,18 +44,19 @@ import {
   loadLetterhead, letterheadHtml,
 } from '../services/tanodWorkflowUi.js';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 const STATUS_FILTERS = ['', 'open', 'prepared', 'returned'];
 const TANOD_POSITION = 'Barangay Tanod'; // fallback when the user record carries no official_title
 
 const COLUMNS = [
-  { key: 'person', label: 'Tanod Personnel' },
-  { key: 'month', label: 'Month' },
-  { key: 'status', label: 'Status' },
-  { key: 'entries', label: 'Entries', align: 'right' },
-  { key: 'total', label: 'Total time', align: 'right' },
-  { key: 'flagged', label: 'Flagged', align: 'right' },
-  { key: 'action', label: 'Actions', align: 'right' },
+  { key: 'select', label: '', width: '40px' },
+  { key: 'person', label: 'Tanod Personnel', width: '27%' },
+  { key: 'month', label: 'Month', width: '13%' },
+  { key: 'status', label: 'Status', width: '12%' },
+  { key: 'entries', label: 'Entries', align: 'right', width: '9%' },
+  { key: 'total', label: 'Total time', align: 'right', width: '11%' },
+  { key: 'flagged', label: 'Flagged', align: 'right', width: '11%' },
+  { key: 'action', label: 'Actions', align: 'right', width: '15%' },
 ];
 
 function normalizeParam(param) {
@@ -96,6 +97,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     page: 1,
     names: null,
   };
+  const selectedReportIds = new Set();
   let lastResult = null;
 
   const listHost = h('div', 'tw-reports-list');
@@ -113,6 +115,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
   // ----- list view ----------------------------------------------------------
 
   function buildFilters(onChange) {
+    const wrap = h('div', 'acc-filters-container');
     const bar = h('div', 'acc-control-bar');
 
     // Tanod search input
@@ -125,6 +128,9 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     searchInput.placeholder = 'Search tanod name...';
     searchInput.setAttribute('aria-label', 'Search reports by tanod name');
     searchWrap.appendChild(searchInput);
+
+    // Controls group on the right
+    const controlsRight = h('div', 'acc-control-right');
 
     // Month picker
     const monthWrap = h('div', 'acc-filter-field');
@@ -150,7 +156,11 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     status.id = 'tw-acc-status';
     status.className = 'acc-status-select';
     status.setAttribute('aria-label', 'Filter by report status');
-    status.addEventListener('change', () => { state.status = status.value; state.page = 1; onChange(); });
+    status.addEventListener('change', () => {
+      state.status = status.value;
+      state.page = 1;
+      onChange();
+    });
     statusWrap.append(statusLabel, status);
 
     const clear = h('button', 'ghost acc-clear-btn', 'Clear filters');
@@ -162,6 +172,9 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       onChange();
     });
 
+    controlsRight.append(monthWrap, statusWrap, clear);
+    bar.append(searchWrap, controlsRight);
+
     let searchDebounce = null;
     searchInput.addEventListener('input', () => {
       clearTimeout(searchDebounce);
@@ -171,7 +184,6 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       }, 200);
     });
 
-    bar.append(searchWrap, monthWrap, statusWrap, clear);
     return bar;
   }
 
@@ -184,9 +196,11 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     pageHeader.actions.innerHTML = '';
     if (!listBody) {
       listHost.innerHTML = '';
-      listHost.appendChild(buildFilters(loadList));
+      const tableCard = h('div', 'acc-table-card unified-table-card');
+      tableCard.appendChild(buildFilters(loadList));
       listBody = h('div', 'tw-reports-list__body');
-      listHost.appendChild(listBody);
+      tableCard.appendChild(listBody);
+      listHost.appendChild(tableCard);
     }
     loadList();
   }
@@ -230,16 +244,65 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       return;
     }
 
-    const flaggedOnPage = rows.reduce((sum, r) => sum + (Number(r.flaggedEntries) || 0), 0);
-    const strip = StatStrip({
-      items: [
-        { label: 'Reports matching filters', value: state.search ? rows.length : res.total },
-        { label: 'Flagged entries on this page', value: flaggedOnPage, tone: flaggedOnPage > 0 ? 'warning' : 'default' },
-      ],
-    });
-    listBody.appendChild(strip);
+    // Floating / Docked Batch Action Bar
+    const batchBar = h('div', 'acc-batch-bar');
+    batchBar.hidden = selectedReportIds.size === 0;
 
-    listBody.appendChild(DataTable({
+    function syncBatchBar() {
+      const count = selectedReportIds.size;
+      batchBar.hidden = count === 0;
+      if (count === 0) return;
+      batchBar.innerHTML = '';
+
+      const countLabel = h('div', 'acc-batch-count');
+      countLabel.innerHTML = `<span class="acc-batch-pip"></span><span><strong>${count}</strong> ${count === 1 ? 'report' : 'reports'} selected</span>`;
+
+      const actionsWrap = h('div', 'acc-batch-actions');
+
+      const printBatchBtn = h('button', 'primary acc-batch-btn');
+      printBatchBtn.type = 'button';
+      printBatchBtn.innerHTML = `${icons.printer ? icons.printer(16) : '🖨️'}<span>Batch Preview &amp; print (${count})</span>`;
+      printBatchBtn.addEventListener('click', async () => {
+        printBatchBtn.disabled = true;
+        const selectedReports = rows.filter((r) => selectedReportIds.has(r.reportId));
+        try {
+          showToast(`Preparing print package for ${selectedReports.length} reports...`, { variant: 'info' });
+          const [lh, ...fullReports] = await Promise.all([
+            loadLetterhead(user),
+            ...selectedReports.map((r) => getAccomplishmentReport(r.reportId)),
+          ]);
+          const sheetsHtml = fullReports.map((rep) => {
+            const entries = Array.isArray(rep.entries) ? rep.entries : [];
+            const person = personName(rep);
+            const totalMinutes = rep.totalMinutesConfirmed ?? entries.reduce((s, ent) => s + (Number(ent.durationMinutes) || 0), 0);
+            return `<div class="acc-batch-sheet-break">${buildPrintHtml({ report: rep, entries, person, totalMinutes, lh })}</div>`;
+          }).join('');
+
+          openPrintPreviewModal({
+            title: 'Batch Accomplishment Reports',
+            subtitle: `${selectedReports.length} Tanod Reports`,
+            sheetId: 'printable-accomplishment-report',
+            sheetHtml: sheetsHtml,
+          });
+        } catch (err) {
+          showToast(actionErrorMessage(err, 'Could not prepare batch print preview.'), { variant: 'error' });
+        } finally {
+          printBatchBtn.disabled = false;
+        }
+      });
+
+      const clearBtn = h('button', 'ghost acc-batch-clear-btn', 'Deselect all');
+      clearBtn.type = 'button';
+      clearBtn.addEventListener('click', () => {
+        selectedReportIds.clear();
+        renderList(lastResult);
+      });
+
+      actionsWrap.append(printBatchBtn, clearBtn);
+      batchBar.append(countLabel, actionsWrap);
+    }
+
+    const tableEl = DataTable({
       columns: COLUMNS,
       rows: rows,
       rowKey: (r) => r.reportId,
@@ -253,11 +316,32 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       onPageChange: (next) => { state.page = next; loadList(); },
       renderCell: (row, key) => {
         switch (key) {
+          case 'select': {
+            const wrap = h('label', 'acc-checkbox-cell');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'acc-row-checkbox';
+            cb.checked = selectedReportIds.has(row.reportId);
+            cb.setAttribute('aria-label', `Select report for ${personName(row)}`);
+            cb.addEventListener('click', (e) => e.stopPropagation());
+            cb.addEventListener('change', () => {
+              if (cb.checked) selectedReportIds.add(row.reportId);
+              else selectedReportIds.delete(row.reportId);
+              syncHeaderCheckbox();
+              syncBatchBar();
+            });
+            wrap.appendChild(cb);
+            return wrap;
+          }
           case 'person': {
             const cell = h('div', 'acc-tanod-cell');
+            const avatar = h('div', 'acc-tanod-avatar');
+            avatar.innerHTML = avatarInitials(personName(row), 30);
+            const info = h('div', 'acc-tanod-info');
             const name = h('span', 'acc-tanod-name', personName(row));
             const pos = h('span', 'acc-tanod-pos', row.officialTitle || TANOD_POSITION);
-            cell.append(name, pos);
+            info.append(name, pos);
+            cell.append(avatar, info);
             return cell;
           }
           case 'month': return h('span', 'acc-month-text', formatMonthLabel(row.month));
@@ -274,11 +358,11 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
             const wrap = h('div', 'acc-row-actions');
 
             // Quick Print shortcut from list view
-            const printBtn = h('button', 'ghost acc-row-action-btn');
+            const printBtn = h('button', 'ghost acc-row-action-btn acc-row-action-btn--icon');
             printBtn.type = 'button';
             printBtn.title = `Preview & print ${personName(row)}'s report`;
             printBtn.setAttribute('aria-label', `Preview and print report for ${personName(row)}`);
-            printBtn.innerHTML = `<span aria-hidden="true">${icons.printer ? icons.printer(14) : '🖨️'}</span><span>Print</span>`;
+            printBtn.innerHTML = `<span aria-hidden="true">${icons.printer ? icons.printer(14) : '🖨️'}</span>`;
             printBtn.addEventListener('click', async (e) => {
               e.stopPropagation();
               printBtn.disabled = true;
@@ -320,7 +404,43 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
           default: return '';
         }
       },
-    }));
+    });
+
+    // Mount select-all checkbox in header
+    const firstTh = tableEl.querySelector('thead th');
+    let headerCheckbox = null;
+    if (firstTh) {
+      firstTh.innerHTML = '';
+      const thLabel = h('label', 'acc-checkbox-cell');
+      headerCheckbox = document.createElement('input');
+      headerCheckbox.type = 'checkbox';
+      headerCheckbox.className = 'acc-select-all-checkbox';
+      headerCheckbox.setAttribute('aria-label', 'Select all reports on this page');
+      headerCheckbox.addEventListener('change', () => {
+        const checked = headerCheckbox.checked;
+        rows.forEach((r) => {
+          if (checked) selectedReportIds.add(r.reportId);
+          else selectedReportIds.delete(r.reportId);
+        });
+        tableEl.querySelectorAll('.acc-row-checkbox').forEach((cb) => { cb.checked = checked; });
+        syncBatchBar();
+      });
+      thLabel.appendChild(headerCheckbox);
+      firstTh.appendChild(thLabel);
+    }
+
+    function syncHeaderCheckbox() {
+      if (!headerCheckbox) return;
+      const allSelected = rows.length > 0 && rows.every((r) => selectedReportIds.has(r.reportId));
+      const someSelected = rows.some((r) => selectedReportIds.has(r.reportId));
+      headerCheckbox.checked = allSelected;
+      headerCheckbox.indeterminate = someSelected && !allSelected;
+    }
+
+    syncHeaderCheckbox();
+    syncBatchBar();
+
+    listBody.append(tableEl, batchBar);
   }
 
   // ----- detail view --------------------------------------------------------
@@ -348,22 +468,16 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     const entries = Array.isArray(report.entries) ? report.entries : [];
     const person = personName(report);
     const totalMinutes = report.totalMinutesConfirmed ?? entries.reduce((s, e) => s + (Number(e.durationMinutes) || 0), 0);
-    const flagged = entries.filter((e) => e.durationFlag === true || e.durationFlag === 1).length;
+    const flaggedCount = entries.filter((e) => e.durationFlag === true || e.durationFlag === 1).length;
 
-    // Clean left-aligned breadcrumb bar
-    const breadcrumbBar = h('div', 'acc-breadcrumb-bar');
-    const back = h('button', 'ghost acc-back-btn');
-    back.type = 'button';
-    back.setAttribute('aria-label', 'Return to accomplishment reports list');
-    back.innerHTML = `<span aria-hidden="true">${icons.arrowLeft ? icons.arrowLeft(15) : '←'}</span><span>Back to reports</span>`;
-    back.addEventListener('click', () => { listBody = null; showList(); });
-    breadcrumbBar.appendChild(back);
+    // Filter state for entries detail view: 'all' | 'flagged'
+    let activeFilter = 'all';
 
-    const printBtn = h('button', 'ghost');
-    printBtn.type = 'button';
-    printBtn.innerHTML = `${icons.printer(16)}<span>Preview &amp; print</span>`;
-    printBtn.addEventListener('click', async () => {
-      printBtn.disabled = true;
+    // Top action handlers
+    const canReturn = report.userId !== user.userId && report.status === 'prepared'
+      && (mine.authority.has('note_report') || mine.authority.has('approve_report'));
+
+    async function handlePrint() {
       try {
         const lh = await loadLetterhead(user);
         openPrintPreviewModal({
@@ -372,56 +486,232 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
           sheetId: 'printable-accomplishment-report',
           sheetHtml: buildPrintHtml({ report, entries, person, totalMinutes, lh }),
         });
-      } finally {
-        printBtn.disabled = false;
+      } catch (err) {
+        showToast(actionErrorMessage(err, 'Could not open print preview.'), { variant: 'error' });
       }
-    });
-    pageHeader.actions.innerHTML = '';
-    pageHeader.actions.appendChild(printBtn);
-
-    // header card
-    const head = card();
-    head.classList.add('tw-detail-head', 'acc-detail-head');
-    const titleRow = h('div', 'tw-detail-head__row');
-    const titles = h('div');
-    titles.append(
-      h('h3', 'tw-card__title', person),
-      h('p', 'tw-card__subtitle', `${report.officialTitle || TANOD_POSITION} · ${formatMonthLabel(report.month)}`),
-    );
-    titleRow.append(titles, statusPill(report.status));
-    head.appendChild(titleRow);
-    head.appendChild(StatStrip({
-      items: [
-        { label: 'Entries', value: entries.length },
-        { label: 'Confirmed time', value: formatMinutes(totalMinutes) },
-        { label: 'Entries to check', value: flagged, tone: flagged > 0 ? 'warning' : 'default' },
-      ],
-    }));
-
-    const trail = h('ul', 'tw-trail');
-    const addTrail = (label, value) => {
-      const li = h('li', 'tw-trail__item');
-      li.append(h('span', 'tw-trail__label', label), h('span', 'tw-trail__value', value));
-      trail.appendChild(li);
-    };
-    if (report.preparedAt) addTrail('Submitted by tanod', formatManilaDateTime(report.preparedAt));
-    if (trail.children.length) head.appendChild(trail);
-
-    if (report.status === 'returned' && report.returnReason) {
-      const callout = h('div', 'tw-callout tw-callout--warning');
-      callout.append(h('strong', '', 'Returned to the tanod: '), document.createTextNode(report.returnReason));
-      head.appendChild(callout);
     }
-    detailHost.append(breadcrumbBar, head);
 
-    // entries
-    const entriesCard = card('Entries', flagged > 0
-      ? 'A flagged duration differs from the on-duty time the system recorded by more than 30 minutes. It is a prompt to ask, not an error.'
-      : 'Confirmed by the tanod, alongside the on-duty time the system recorded for that day.');
-    if (entries.length === 0) {
-      entriesCard.appendChild(h('p', 'tw-empty-note', 'This report has no entries yet.'));
+    async function handleReturn() {
+      const reason = await promptText({
+        title: 'Return this report?',
+        description: 'The tanod can edit their entries again and resubmit. Say what needs fixing.',
+        label: 'Reason (shown to the tanod)',
+        placeholder: 'For example: the March 12 duration looks too long.',
+        confirmLabel: 'Return report',
+        onConfirmAsync: async (value) => {
+          const trimmed = (value || '').trim();
+          if (trimmed.length < 1 || trimmed.length > 255) throw new Error('Enter a reason of 1 to 255 characters.');
+          try {
+            await returnAccomplishmentReport(report.reportId, trimmed);
+          } catch (err) {
+            throw new Error(actionErrorMessage(err, 'Could not return this report.'));
+          }
+        },
+      });
+      if (reason !== null) {
+        showToast('Report returned to the tanod.', { variant: 'info' });
+        loadDetail(reportId);
+      }
+    }
+
+    // Top Page Header Actions: back button integrated cleanly into pageHeader.actions
+    pageHeader.actions.innerHTML = '';
+    const backBtn = h('button', 'ghost acc-header-back-btn');
+    backBtn.type = 'button';
+    backBtn.setAttribute('aria-label', 'Return to accomplishment reports list');
+    backBtn.innerHTML = `<span aria-hidden="true">${icons.chevronLeft ? icons.chevronLeft(16) : '←'}</span><span>Back to reports</span>`;
+    backBtn.addEventListener('click', () => { listBody = null; showList(); });
+    pageHeader.actions.appendChild(backBtn);
+
+    // =========================================================================
+    // Single Unified Card (Hero Header + Actions + Guidance + KPI Grid + Table)
+    // =========================================================================
+    const unifiedCard = card();
+    unifiedCard.classList.add('acc-unified-card');
+
+    // 1. Officer Identity & Unified Action Cluster
+    const heroHeader = h('div', 'acc-unified-hero');
+
+    const officerIdentity = h('div', 'acc-officer-identity');
+    const officerAvatar = h('div', 'acc-officer-avatar');
+    officerAvatar.innerHTML = avatarInitials(person, 46);
+
+    const officerInfo = h('div', 'acc-officer-details');
+    officerInfo.innerHTML = `
+      <div class="acc-officer-title-row">
+        <h3 class="acc-officer-name">${escapeHtml(person)}</h3>
+        <span class="acc-officer-tag">${escapeHtml(report.officialTitle || TANOD_POSITION)}</span>
+      </div>
+      <div class="acc-officer-meta">
+        <span class="acc-meta-item">
+          <span class="acc-meta-label">Month:</span>
+          <strong>${escapeHtml(formatMonthLabel(report.month))}</strong>
+        </span>
+        ${report.preparedAt ? `
+          <span class="acc-meta-dot" aria-hidden="true">·</span>
+          <span class="acc-meta-item">
+            <span class="acc-meta-label">Submitted:</span>
+            <span>${escapeHtml(formatManilaDateTime(report.preparedAt))}</span>
+          </span>` : ''}
+      </div>
+    `;
+    officerIdentity.append(officerAvatar, officerInfo);
+
+    // Right-aligned status pill & action controls
+    const heroActions = h('div', 'acc-hero-actions');
+    heroActions.appendChild(statusPill(report.status));
+
+    if (canReturn) {
+      const returnBtn = h('button', 'danger acc-action-btn acc-return-btn', 'Return to tanod');
+      returnBtn.type = 'button';
+      returnBtn.addEventListener('click', handleReturn);
+      heroActions.appendChild(returnBtn);
+    }
+
+    if (report.status === 'prepared') {
+      const printBtn = h('button', 'primary acc-action-btn acc-print-btn');
+      printBtn.type = 'button';
+      printBtn.innerHTML = `${icons.printer ? icons.printer(16) : '🖨️'}<span>Preview &amp; print</span>`;
+      printBtn.addEventListener('click', handlePrint);
+      heroActions.appendChild(printBtn);
+    }
+
+    heroHeader.append(officerIdentity, heroActions);
+    unifiedCard.appendChild(heroHeader);
+
+    // 2. Return Callout or Guidance Notice
+    if (report.status === 'returned' && report.returnReason) {
+      const callout = h('div', 'tw-callout tw-callout--warning acc-return-callout');
+      callout.append(h('strong', '', 'Returned to the tanod: '), document.createTextNode(report.returnReason));
+      unifiedCard.appendChild(callout);
     } else {
-      entriesCard.appendChild(DataTable({
+      const guidanceHint = reasonNoActions(report);
+      if (guidanceHint) {
+        const guidance = h('div', 'acc-guidance-banner');
+        guidance.innerHTML = `
+          <span class="acc-guidance-icon" aria-hidden="true">${icons.info ? icons.info(16) : 'ℹ️'}</span>
+          <span class="acc-guidance-text">${escapeHtml(guidanceHint)}</span>
+        `;
+        unifiedCard.appendChild(guidance);
+      }
+    }
+
+    // 3. Proportional 3-Column Metric KPI Grid
+    const kpiGrid = h('div', 'acc-kpi-grid');
+
+    // KPI 1: Total Logged Entries
+    const kpi1 = h('div', 'card acc-kpi-card');
+    kpi1.innerHTML = `
+      <div class="acc-kpi-header">
+        <span class="acc-kpi-label">Total Logged Entries</span>
+        <span class="icon-badge icon-badge--feature acc-kpi-icon accent-blue" aria-hidden="true">${icons.fileText ? icons.fileText(18) : '📋'}</span>
+      </div>
+      <div class="acc-kpi-value">${entries.length}</div>
+      <div class="acc-kpi-subtext">Logged shifts this month</div>
+    `;
+
+    // KPI 2: Confirmed Time
+    const kpi2 = h('div', 'card acc-kpi-card');
+    kpi2.innerHTML = `
+      <div class="acc-kpi-header">
+        <span class="acc-kpi-label">Confirmed Duty Time</span>
+        <span class="icon-badge icon-badge--feature acc-kpi-icon accent-teal" aria-hidden="true">${icons.clock ? icons.clock(18) : '⏱️'}</span>
+      </div>
+      <div class="acc-kpi-value text-primary">${escapeHtml(formatMinutes(totalMinutes))}</div>
+      <div class="acc-kpi-subtext">Accumulated verified time</div>
+    `;
+
+    // KPI 3: Verification Status
+    const kpi3 = h('div', `card acc-kpi-card ${flaggedCount > 0 ? 'acc-kpi-card--warning' : 'acc-kpi-card--success'}`);
+    const flagIcon = flaggedCount > 0 
+      ? (icons.alertTriangle ? icons.alertTriangle(18) : '⚠️')
+      : (icons.checkCircle ? icons.checkCircle(18) : '✓');
+    const flagTone = flaggedCount > 0 ? 'accent-orange' : 'accent-green';
+    const flagSub = flaggedCount > 0
+      ? `${flaggedCount} entry differs from dispatch by &gt;30m`
+      : 'All shift hours match dispatch logs';
+    kpi3.innerHTML = `
+      <div class="acc-kpi-header">
+        <span class="acc-kpi-label">Entries to check</span>
+        <span class="icon-badge icon-badge--feature acc-kpi-icon ${flagTone}" aria-hidden="true">${flagIcon}</span>
+      </div>
+      <div class="acc-kpi-value ${flaggedCount > 0 ? 'tone-warning' : 'tone-success'}">${flaggedCount}</div>
+      <div class="acc-kpi-subtext">${flagSub}</div>
+    `;
+
+    kpiGrid.append(kpi1, kpi2, kpi3);
+    unifiedCard.appendChild(kpiGrid);
+
+    // 4. Entries Section Header with Segmented Filter Controls
+    const sectionBar = h('div', 'acc-entries-section-bar');
+
+    const titleGroup = h('div', 'acc-section-title-group');
+    titleGroup.innerHTML = `
+      <div class="acc-title-with-badge">
+        <h4 class="acc-section-title">Report Entries</h4>
+        <span class="acc-section-badge" id="acc-visible-count">${entries.length} items</span>
+      </div>
+      <p class="acc-section-hint">
+        <span class="acc-hint-icon" aria-hidden="true">${icons.info ? icons.info(13) : 'ⓘ'}</span>
+        <span>A flagged duration differs from system dispatch on-duty time by &gt;30 mins. It is a prompt to verify, not an error.</span>
+      </p>
+    `;
+
+    // Segmented Filter Control
+    const filterGroup = h('div', 'acc-filter-group');
+    filterGroup.setAttribute('role', 'tablist');
+    filterGroup.setAttribute('aria-label', 'Filter report entries');
+
+    const allFilterBtn = h('button', 'acc-filter-tab is-active', `All Entries (${entries.length})`);
+    allFilterBtn.type = 'button';
+    allFilterBtn.setAttribute('role', 'tab');
+    allFilterBtn.setAttribute('aria-selected', 'true');
+
+    const flagLabel = flaggedCount > 0
+      ? `Flagged to Check (${flaggedCount})`
+      : 'Flagged to Check (0 ✓)';
+    const flagFilterBtn = h('button', `acc-filter-tab ${flaggedCount > 0 ? 'acc-filter-tab--warning' : ''}`, flagLabel);
+    flagFilterBtn.type = 'button';
+    flagFilterBtn.setAttribute('role', 'tab');
+    flagFilterBtn.setAttribute('aria-selected', 'false');
+
+    filterGroup.append(allFilterBtn, flagFilterBtn);
+    sectionBar.append(titleGroup, filterGroup);
+    unifiedCard.appendChild(sectionBar);
+
+    // 5. Entries Table Host
+    const tableHost = h('div', 'acc-entries-table-host');
+    unifiedCard.appendChild(tableHost);
+
+    function formatDateWithWeekday(value) {
+      if (!value || !/^\d{4}-\d{2}-\d{2}/.test(String(value))) return '—';
+      const [y, m, d] = String(value).slice(0, 10).split('-').map(Number);
+      return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-PH', {
+        timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+      });
+    }
+
+    function renderEntriesTable() {
+      tableHost.innerHTML = '';
+      const visibleEntries = activeFilter === 'flagged'
+        ? entries.filter((e) => e.durationFlag === true || e.durationFlag === 1)
+        : entries;
+
+      const countBadge = unifiedCard.querySelector('#acc-visible-count');
+      if (countBadge) {
+        countBadge.textContent = `${visibleEntries.length} ${activeFilter === 'flagged' ? 'flagged' : 'items'}`;
+      }
+
+      if (visibleEntries.length === 0) {
+        if (activeFilter === 'flagged') {
+          tableHost.appendChild(h('div', 'tw-empty-note acc-empty-box', 'No flagged discrepancies found for this month. All entries align with dispatch records.'));
+        } else {
+          tableHost.appendChild(h('div', 'tw-empty-note acc-empty-box', 'This report has no entries yet.'));
+        }
+        return;
+      }
+
+      tableHost.appendChild(DataTable({
         columns: [
           { key: 'date', label: 'Date' },
           { key: 'text', label: 'Accomplishment' },
@@ -429,81 +719,87 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
           { key: 'confirmed', label: 'Confirmed', align: 'right' },
           { key: 'suggested', label: 'System saw on duty', align: 'right' },
         ],
-        rows: entries,
+        rows: visibleEntries,
         rowKey: (e) => e.entryId,
         caption: 'Report entries',
         rowClass: (e) => (e.durationFlag === true || e.durationFlag === 1 ? 'tw-row--flagged' : undefined),
         renderCell: (e, key) => {
           switch (key) {
-            case 'date': return h('span', '', formatDateOnly(e.workDate));
+            case 'date': return h('span', 'acc-date-cell', formatDateWithWeekday(e.workDate));
             case 'text': return e.accomplishmentText === undefined || e.accomplishmentText === null
               ? h('span', 'tw-muted', 'Text is not shown for your role.')
               : h('span', 'tw-entry-text', e.accomplishmentText);
-            case 'time': return h('span', '', e.startTime && e.endTime ? `${trimTime(e.startTime)}–${trimTime(e.endTime)}` : '—');
-            case 'confirmed': return h('span', '', formatMinutes(e.durationMinutes));
+            case 'time': return h('span', 'acc-time-cell', e.startTime && e.endTime ? `${trimTime(e.startTime)}–${trimTime(e.endTime)}` : '—');
+            case 'confirmed': return h('span', 'acc-num-cell', formatMinutes(e.durationMinutes));
             case 'suggested': {
-              const wrap = h('span');
-              wrap.appendChild(document.createTextNode(e.suggestedDurationMinutes === null || e.suggestedDurationMinutes === undefined ? '—' : formatMinutes(e.suggestedDurationMinutes)));
-              if (e.durationFlag === true || e.durationFlag === 1) wrap.appendChild(h('span', 'tw-flag', 'Check'));
+              const wrap = h('div', 'acc-suggested-cell');
+              const baseText = e.suggestedDurationMinutes === null || e.suggestedDurationMinutes === undefined
+                ? '—'
+                : formatMinutes(e.suggestedDurationMinutes);
+              wrap.appendChild(document.createTextNode(baseText));
+
+              if (e.durationFlag === true || e.durationFlag === 1) {
+                const diffMin = (Number(e.durationMinutes) || 0) - (Number(e.suggestedDurationMinutes) || 0);
+                const deltaLabel = diffMin > 0 ? `+${formatMinutes(diffMin)}` : formatMinutes(diffMin);
+                const flagBadge = h('span', 'tw-flag acc-discrepancy-chip', `${deltaLabel} Check`);
+                wrap.appendChild(flagBadge);
+              } else if (e.suggestedDurationMinutes !== null && e.suggestedDurationMinutes !== undefined) {
+                const matchPill = h('span', 'acc-match-pill', '✓ Match');
+                matchPill.title = 'Confirmed time aligns with dispatch records';
+                wrap.appendChild(matchPill);
+              }
               return wrap;
             }
             default: return '';
           }
         },
       }));
-    }
-    detailHost.appendChild(entriesCard);
 
-    // actions
-    const actions = buildActions({ report, mine, reportId });
-    if (actions) detailHost.appendChild(actions);
-  }
-
-  function buildActions({ report, mine, reportId }) {
-    const own = report.userId === user.userId;
-    const canReturn = !own && report.status === 'prepared'
-      && (mine.authority.has('note_report') || mine.authority.has('approve_report'));
-
-    const wrap = card('Actions');
-    if (mine.failed) {
-      wrap.appendChild(h('p', 'tw-empty-note', 'Could not check your approval authority, so no actions are offered. Reload to try again.'));
-      return wrap;
+      // Table Footer Summary Bar
+      const visibleMinutes = visibleEntries.reduce((s, ent) => s + (Number(ent.durationMinutes) || 0), 0);
+      const visibleFlags = visibleEntries.filter((ent) => ent.durationFlag === true || ent.durationFlag === 1).length;
+      const footerBar = h('div', 'acc-table-summary-bar');
+      footerBar.innerHTML = `
+        <div class="acc-summary-item">
+          <span class="acc-summary-label">Showing:</span>
+          <strong>${visibleEntries.length} ${visibleEntries.length === 1 ? 'entry' : 'entries'}</strong>
+        </div>
+        <span class="acc-summary-pip" aria-hidden="true">·</span>
+        <div class="acc-summary-item">
+          <span class="acc-summary-label">Total Time:</span>
+          <strong class="text-primary">${escapeHtml(formatMinutes(visibleMinutes))}</strong>
+        </div>
+        <span class="acc-summary-pip" aria-hidden="true">·</span>
+        <div class="acc-summary-item">
+          <span class="acc-summary-label">Status:</span>
+          <span class="${visibleFlags > 0 ? 'acc-flag-badge' : 'acc-match-badge'}">
+            ${visibleFlags > 0 ? `${visibleFlags} to check` : 'All dispatch verified ✓'}
+          </span>
+        </div>
+      `;
+      tableHost.appendChild(footerBar);
     }
-    if (!canReturn) {
-      wrap.appendChild(h('p', 'tw-empty-note', reasonNoActions(report)));
-      return wrap;
-    }
-    const bar = h('div', 'tw-action-bar');
 
-    if (canReturn) {
-      const btn = h('button', 'danger', 'Return to tanod');
-      btn.type = 'button';
-      btn.addEventListener('click', async () => {
-        const reason = await promptText({
-          title: 'Return this report?',
-          description: 'The tanod can edit their entries again and resubmit. Say what needs fixing.',
-          label: 'Reason (shown to the tanod)',
-          placeholder: 'For example: the March 12 duration looks too long.',
-          confirmLabel: 'Return report',
-          onConfirmAsync: async (value) => {
-            const trimmed = (value || '').trim();
-            if (trimmed.length < 1 || trimmed.length > 255) throw new Error('Enter a reason of 1 to 255 characters.');
-            try {
-              await returnAccomplishmentReport(report.reportId, trimmed);
-            } catch (err) {
-              throw new Error(actionErrorMessage(err, 'Could not return this report.'));
-            }
-          },
-        });
-        if (reason !== null) {
-          showToast('Report returned to the tanod.', { variant: 'info' });
-          loadDetail(reportId);
-        }
-      });
-      bar.appendChild(btn);
-    }
-    wrap.appendChild(bar);
-    return wrap;
+    allFilterBtn.addEventListener('click', () => {
+      activeFilter = 'all';
+      allFilterBtn.classList.add('is-active');
+      allFilterBtn.setAttribute('aria-selected', 'true');
+      flagFilterBtn.classList.remove('is-active');
+      flagFilterBtn.setAttribute('aria-selected', 'false');
+      renderEntriesTable();
+    });
+
+    flagFilterBtn.addEventListener('click', () => {
+      activeFilter = 'flagged';
+      flagFilterBtn.classList.add('is-active');
+      flagFilterBtn.setAttribute('aria-selected', 'true');
+      allFilterBtn.classList.remove('is-active');
+      allFilterBtn.setAttribute('aria-selected', 'false');
+      renderEntriesTable();
+    });
+
+    renderEntriesTable();
+    detailHost.appendChild(unifiedCard);
   }
 
   function reasonNoActions(report) {

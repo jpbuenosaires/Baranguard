@@ -1,10 +1,10 @@
 /**
- * incident-management.js — Redesigned Incident Management console
+ * incident-management.js â€” Redesigned Incident Management console
  * matching the operational design reference (split view, counter chips,
  * structured filter bar, formatted table, and detailed action pane).
  * Includes ergonomic enhancements: sticky scrollable detail, active row border,
  * smart assign shortcut, contact modal (Call + SMS), open-record button,
- * keyboard navigation (↑ / ↓ / Esc), floating quick help guide, and mobile toggle.
+ * keyboard navigation (â†‘ / â†“ / Esc), floating quick help guide, and mobile toggle.
  */
 
 import {
@@ -73,7 +73,7 @@ const COLUMNS = [
  * Format ISO date/time string to YYYY-MM-DD HH:mm (e.g. 2026-06-11 08:42)
  */
 function formatDateTime(isoString) {
-  if (!isoString) return '—';
+  if (!isoString) return 'â€”';
   return formatManilaDateTime(isoString, String(isoString));
 }
 
@@ -112,7 +112,7 @@ function formatRelativeTime(isoStart, isoEnd) {
  */
 /**
  * @param {number} [initialIncidentId] optional deep link, e.g. from Citizen
- *   Reports Inbox's "View in Incident Management" after a conversion —
+ *   Reports Inbox's "View in Incident Management" after a conversion â€”
  *   opens straight to that incident's detail pane rather than the default
  *   full-width list view. Passed through by main.js as the route param.
  */
@@ -300,7 +300,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   const searchInput = document.createElement('input');
   searchInput.type = 'search';
   searchInput.className = 'incident-search-input';
-  searchInput.placeholder = 'Search incidents…';
+  searchInput.placeholder = 'Search incidentsâ€¦';
   searchInput.setAttribute('aria-label', 'Search incidents');
 
   let searchDebounce = null;
@@ -414,7 +414,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   // Deep link: open straight to the requested incident. Independent of
   // load()'s own list-matching logic (which only opens a row already
   // present in the CURRENT filtered/paginated page) so this works
-  // regardless of what page/filter the list happens to be on —
+  // regardless of what page/filter the list happens to be on â€”
   // selectIncident() only needs an incidentId, it re-fetches the detail
   // itself via getIncident().
   if (initialIncidentId != null) {
@@ -838,11 +838,11 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     // 2026-09-13: rebuilt on real `detail.dispatches` data. The previous
     // version fell back to a hardcoded fake name ("Tanod Ramos") and a
     // fake relative time ("2 min later") whenever no real dispatch data
-    // was available for an already-dispatched/resolved incident — a live
-    // §2 Rule 6 violation ("no fabricated statistics... no hardcoded
+    // was available for an already-dispatched/resolved incident â€” a live
+    // Â§2 Rule 6 violation ("no fabricated statistics... no hardcoded
     // identities") found while wiring this card to show more than one
     // responder for docs/REMAINING.md's second-responder feature. An
-    // incident can now have more than one concurrent active dispatch —
+    // incident can now have more than one concurrent active dispatch â€”
     // each gets its own row here.
     const tanodCard = document.createElement('div');
     tanodCard.className = 'incident-tanod-card';
@@ -910,16 +910,16 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         tanodName.textContent = dispatch.tanodName;
         const tanodStatus = document.createElement('div');
         tanodStatus.className = 'incident-tanod-status';
-        tanodStatus.textContent = `${DISPATCH_STATUS_TEXT[dispatch.status] || dispatch.status} • ${bName}`;
+        tanodStatus.textContent = `${DISPATCH_STATUS_TEXT[dispatch.status] || dispatch.status} â€¢ ${bName}`;
         tanodMeta.append(tanodName, tanodStatus);
         tanodLeft.append(avatar, tanodMeta);
 
-        // Contact modal's phone number stays Admin-only (unchanged) — it
+        // Contact modal's phone number stays Admin-only (unchanged) â€” it
         // comes from the separate Admin-only GET /dispatch enrichment
         // call above, not this endpoint. Only the FIRST active dispatch
         // gets the number selectIncident() already fetched; additional
         // responders' numbers aren't separately enriched (Admin can still
-        // find them via Dispatch Center) — a deliberate scope boundary,
+        // find them via Dispatch Center) â€” a deliberate scope boundary,
         // not an oversight.
         const contactBtn = document.createElement('button');
         contactBtn.type = 'button';
@@ -1019,7 +1019,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     } else if (row.status === 'dispatched') {
       // 2026-09-13: an already-dispatched incident can now get an
       // additional concurrent responder too (docs/REMAINING.md G-backlog,
-      // explicit user sign-off — no incident-type/priority gate, Admin's
+      // explicit user sign-off â€” no incident-type/priority gate, Admin's
       // own judgment call). Reuses the exact same promptDispatchTanod()
       // flow as the "Assign" button above; the server is the real
       // enforcement point either way.
@@ -1121,17 +1121,17 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     timelineList.appendChild(s1);
 
     // Stages 2+: one dispatched/arrived(or cancelled) pair per REAL
-    // dispatch row (docs/REMAINING.md G-backlog — an incident can now
+    // dispatch row (docs/REMAINING.md G-backlog â€” an incident can now
     // have more than one). 2026-09-13: this used to render a single
     // "Dispatched to {officerNameText}" stage unconditionally whenever
     // row.status !== 'pending', with a hardcoded fake name and a
     // hardcoded fake "2 min later" whenever real dispatch data was
-    // missing — a live §2 Rule 6 violation ("no fabricated statistics...
+    // missing â€” a live Â§2 Rule 6 violation ("no fabricated statistics...
     // no hardcoded identities"), confirmed against the real
     // baranguard_uiseed data (a resolved incident with ZERO dispatch
-    // rows still showed "Dispatched to Tanod Ramos — 2 min later").
+    // rows still showed "Dispatched to Tanod Ramos â€” 2 min later").
     // Every value below comes from a real `dispatches[]` row; when there
-    // isn't one yet, no stage renders — an honest gap, not an invented one.
+    // isn't one yet, no stage renders â€” an honest gap, not an invented one.
     const allDispatchesSorted = detail.dispatches || [];
     const showTanodInLabel = allDispatchesSorted.length > 1;
     for (const dispatch of allDispatchesSorted) {
@@ -1177,7 +1177,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       }
     }
 
-    // Final stage: resolution itself — unrelated to any one dispatch.
+    // Final stage: resolution itself â€” unrelated to any one dispatch.
     if (row.status === 'resolved') {
       const sResolved = document.createElement('div');
       sResolved.className = 'incident-timeline-item';
@@ -1196,7 +1196,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     timelineSection.appendChild(timelineList);
     rightPanel.appendChild(timelineSection);
 
-    // 2026-10 (contract §5, §7): school link + Annex C-1 fields and the
+    // 2026-10 (contract Â§5, Â§7): school link + Annex C-1 fields and the
     // referrals list. Admin and Secretary are the only roles on this page,
     // and both may edit/add; each card loads and fails on its own.
     const caseCards = document.createElement('div');
@@ -1623,7 +1623,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     overlay.className = 'incident-modal-overlay';
     activeModalEl = overlay;
 
-    // No fabricated fallback number — a Tanod with no contact number on
+    // No fabricated fallback number â€” a Tanod with no contact number on
     // file gets an honest empty state, not a placeholder phone number
     // presented as if it were real (Rule 6: no hardcoded identities).
     const hasContact = Boolean(contactNumber);
@@ -1675,7 +1675,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     });
 
     // The SMS compose section (and its trigger) only exists in the markup
-    // when hasContact is true — nothing to wire up otherwise.
+    // when hasContact is true â€” nothing to wire up otherwise.
     if (hasContact) {
       const smsSection = overlay.querySelector('.sms-compose-section');
       overlay.querySelector('.btn-sms-option').addEventListener('click', () => {
@@ -1761,11 +1761,11 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
           <div class="incident-help-list">
             <div class="incident-help-item">
               <span>Next incident</span>
-              <span class="incident-kbd">↓ Arrow Down</span>
+              <span class="incident-kbd">â†“ Arrow Down</span>
             </div>
             <div class="incident-help-item">
               <span>Previous incident</span>
-              <span class="incident-kbd">↑ Arrow Up</span>
+              <span class="incident-kbd">â†‘ Arrow Up</span>
             </div>
             <div class="incident-help-item">
               <span>Close detail / Cancel</span>
@@ -1784,35 +1784,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     document.body.appendChild(overlay);
   }
 
-  // --- Global Keyboard Navigation Handler ---
-  function handleKeyDown(e) {
-    const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
-    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (lastItems.length === 0) return;
-      const idx = lastItems.findIndex((r) => r.incidentId === selectedIncidentId);
-      if (idx === -1) {
-        selectIncident(lastItems[0]);
-      } else if (idx < lastItems.length - 1) {
-        selectIncident(lastItems[idx + 1]);
-      }
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (lastItems.length === 0) return;
-      const idx = lastItems.findIndex((r) => r.incidentId === selectedIncidentId);
-      if (idx > 0) {
-        selectIncident(lastItems[idx - 1]);
-      }
-    } else if (e.key === 'Escape') {
-      closeActiveModal();
-      if (activeViewMode !== 'detail' || selectedIncidentId != null || layout.classList.contains('has-detail')) {
-        closeDetailPane();
-      }
-    }
-  }
-  window.addEventListener('keydown', handleKeyDown);
 
   // --- Placeholder / Closed State (Collapses to full-width table) ---
   function renderPlaceholder() {

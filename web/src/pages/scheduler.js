@@ -812,46 +812,46 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     });
 
     const cards = strip.querySelectorAll('.stat-card');
-    if (cards[0]) {
-      cards[0].style.cursor = 'pointer';
-      cards[0].title = 'Show all shifts';
-      cards[0].addEventListener('click', () => {
-        selectedStatus = 'all';
-        statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
-        viewMode = 'list';
-        renderMain();
+    const bindInteractiveStat = (card, title, handler) => {
+      if (!card) return;
+      card.style.cursor = 'pointer';
+      card.title = title;
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', title);
+      card.addEventListener('click', handler);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          card.click();
+        }
       });
-    }
-    if (cards[1]) {
-      cards[1].style.cursor = 'pointer';
-      cards[1].title = 'Filter: Active Now';
-      cards[1].addEventListener('click', () => {
-        selectedStatus = 'active';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Active')));
-        viewMode = 'list';
-        renderMain();
-      });
-    }
-    if (cards[2]) {
-      cards[2].style.cursor = 'pointer';
-      cards[2].title = 'Filter: Upcoming';
-      cards[2].addEventListener('click', () => {
-        selectedStatus = 'upcoming';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Upcoming')));
-        viewMode = 'list';
-        renderMain();
-      });
-    }
-    if (cards[3]) {
-      cards[3].style.cursor = 'pointer';
-      cards[3].title = 'Filter: Completed';
-      cards[3].addEventListener('click', () => {
-        selectedStatus = 'completed';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Completed')));
-        viewMode = 'list';
-        renderMain();
-      });
-    }
+    };
+
+    bindInteractiveStat(cards[0], 'Show all shifts', () => {
+      selectedStatus = 'all';
+      statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
+      viewMode = 'list';
+      renderMain();
+    });
+    bindInteractiveStat(cards[1], 'Filter: Active Now', () => {
+      selectedStatus = 'active';
+      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Active')));
+      viewMode = 'list';
+      renderMain();
+    });
+    bindInteractiveStat(cards[2], 'Filter: Upcoming', () => {
+      selectedStatus = 'upcoming';
+      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Upcoming')));
+      viewMode = 'list';
+      renderMain();
+    });
+    bindInteractiveStat(cards[3], 'Filter: Completed', () => {
+      selectedStatus = 'completed';
+      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Completed')));
+      viewMode = 'list';
+      renderMain();
+    });
 
     statStripHost.appendChild(strip);
   }
@@ -2032,5 +2032,6 @@ function openWeekPrintModal({ weekStart, rows, shifts, user, barangayName }) {
     subtitle: 'A4 roster to print and sign on paper, then publish the week',
     sheetId: 'printable-week-roster-sheet',
     sheetHtml,
+    orientation: 'landscape',
   });
 }
