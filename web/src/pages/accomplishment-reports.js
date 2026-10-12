@@ -9,7 +9,7 @@
  *
  * Paper-only (2026-10-12): the paper copy is the official record, so a
  * report is approved ONLY by printing it, having it signed and recording the
- * signed paper (Admin/Secretary, PaperApprovalPanel). There are no in-app
+ * signed paper. There are no in-app
  * Note / Approve buttons; those endpoints answer 410 PAPER_APPROVAL_REQUIRED.
  *
  * Gating, all UX only (REFERENCE.md §2 Rule 2 — the server re-checks):
@@ -32,7 +32,6 @@ import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
 import { promptText } from '../components/ConfirmDialog.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
-import { PaperApprovalPanel } from '../components/PaperApprovalPanel.js';
 import { icons } from '../components/icons.js';
 import {
   getAccomplishmentReports, getAccomplishmentReport,
@@ -51,12 +50,13 @@ const STATUS_FILTERS = ['', 'open', 'prepared', 'noted', 'approved', 'returned']
 const TANOD_POSITION = 'Barangay Tanod'; // fallback when the user record carries no official_title
 
 const COLUMNS = [
-  { key: 'person', label: 'Tanod' },
+  { key: 'person', label: 'Tanod Personnel' },
   { key: 'month', label: 'Month' },
   { key: 'status', label: 'Status' },
   { key: 'entries', label: 'Entries', align: 'right' },
   { key: 'total', label: 'Total time', align: 'right' },
   { key: 'flagged', label: 'Flagged', align: 'right' },
+  { key: 'action', label: 'Actions', align: 'right' },
 ];
 
 function normalizeParam(param) {
@@ -93,9 +93,11 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
   const state = {
     month: typeof initial.month === 'string' ? initial.month : '',
     status: STATUS_FILTERS.includes(initial.status) ? initial.status : '',
+    search: '',
     page: 1,
     names: null,
   };
+  let lastResult = null;
 
   const listHost = h('div', 'tw-reports-list');
   const detailHost = h('div', 'tw-reports-detail');
@@ -112,38 +114,65 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
   // ----- list view ----------------------------------------------------------
 
   function buildFilters(onChange) {
-    const bar = h('div', 'tw-filter-bar');
+    const bar = h('div', 'acc-control-bar');
 
-    const monthWrap = h('div', 'form-stack tw-field');
-    const monthLabel = h('label', 'label', 'Month');
+    // Tanod search input
+    const searchWrap = h('div', 'acc-search-box');
+    searchWrap.innerHTML = `<span class="acc-search-icon" aria-hidden="true">${icons.search ? icons.search(16) : '🔍'}</span>`;
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.className = 'acc-search-input';
+    searchInput.id = 'tw-acc-search';
+    searchInput.placeholder = 'Search tanod name...';
+    searchInput.setAttribute('aria-label', 'Search reports by tanod name');
+    searchWrap.appendChild(searchInput);
+
+    // Month picker
+    const monthWrap = h('div', 'acc-filter-field');
+    const monthLabel = h('label', 'acc-filter-label', 'Month');
     monthLabel.htmlFor = 'tw-acc-month';
     const month = document.createElement('input');
     month.type = 'month';
     month.id = 'tw-acc-month';
+    month.className = 'acc-month-input';
     month.value = state.month;
+    month.setAttribute('aria-label', 'Filter by month');
     month.addEventListener('change', () => { state.month = month.value; state.page = 1; onChange(); });
     monthWrap.append(monthLabel, month);
 
-    const statusWrap = h('div', 'form-stack tw-field');
-    const statusLabel = h('label', 'label', 'Status');
+    // Status select
+    const statusWrap = h('div', 'acc-filter-field');
+    const statusLabel = h('label', 'acc-filter-label', 'Status');
     statusLabel.htmlFor = 'tw-acc-status';
     const status = selectOf(
       STATUS_FILTERS.map((s) => ({ value: s, label: s ? REPORT_STATUS_LABELS[s] : 'All statuses' })),
       { value: state.status },
     );
     status.id = 'tw-acc-status';
+    status.className = 'acc-status-select';
+    status.setAttribute('aria-label', 'Filter by report status');
     status.addEventListener('change', () => { state.status = status.value; state.page = 1; onChange(); });
     statusWrap.append(statusLabel, status);
 
-    const clear = h('button', 'ghost', 'Clear filters');
+    const clear = h('button', 'ghost acc-clear-btn', 'Clear filters');
     clear.type = 'button';
+    clear.setAttribute('aria-label', 'Clear all active filters');
     clear.addEventListener('click', () => {
-      state.month = ''; state.status = ''; state.page = 1;
-      month.value = ''; status.value = '';
+      state.month = ''; state.status = ''; state.search = ''; state.page = 1;
+      month.value = ''; status.value = ''; searchInput.value = '';
       onChange();
     });
 
-    bar.append(monthWrap, statusWrap, clear);
+    let searchDebounce = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        state.search = searchInput.value.trim().toLowerCase();
+        if (lastResult) renderList(lastResult);
+      }, 200);
+    });
+
+    bar.append(searchWrap, monthWrap, statusWrap, clear);
     return bar;
   }
 
@@ -170,6 +199,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
         month: state.month, status: state.status, page: state.page, limit: PAGE_SIZE,
       });
       await ensureNames();
+      lastResult = res;
       renderList(res);
     } catch (err) {
       showError(listBody, err, loadList, 'Could not load accomplishment reports.');
@@ -178,6 +208,13 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
 
   function renderList(res) {
     listBody.innerHTML = '';
+    let rows = res.items;
+
+    if (state.search) {
+      const q = state.search;
+      rows = rows.filter((r) => personName(r).toLowerCase().includes(q));
+    }
+
     if (res.total === 0 && res.items.length === 0) {
       showEmpty(
         listBody,
@@ -188,35 +225,100 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       );
       return;
     }
-    const flaggedOnPage = res.items.reduce((sum, r) => sum + (Number(r.flaggedEntries) || 0), 0);
-    listBody.appendChild(StatStrip({
+
+    if (rows.length === 0) {
+      showEmpty(listBody, 'No matching tanod reports', 'No reports match your search query. Clear or adjust your search keywords.');
+      return;
+    }
+
+    const flaggedOnPage = rows.reduce((sum, r) => sum + (Number(r.flaggedEntries) || 0), 0);
+    const strip = StatStrip({
       items: [
-        { label: 'Reports matching filters', value: res.total },
+        { label: 'Reports matching filters', value: state.search ? rows.length : res.total },
         { label: 'Flagged entries on this page', value: flaggedOnPage, tone: flaggedOnPage > 0 ? 'warning' : 'default' },
       ],
-    }));
+    });
+    listBody.appendChild(strip);
+
     listBody.appendChild(DataTable({
       columns: COLUMNS,
-      rows: res.items,
+      rows: rows,
       rowKey: (r) => r.reportId,
       caption: 'Accomplishment reports',
       emptyMessage: 'No reports on this page.',
       emptyIcon: icons.fileText,
       onRowClick: (r) => openDetail(r.reportId),
       page: res.page,
-      totalItems: res.total,
+      totalItems: state.search ? rows.length : res.total,
       pageSize: PAGE_SIZE,
       onPageChange: (next) => { state.page = next; loadList(); },
       renderCell: (row, key) => {
         switch (key) {
-          case 'person': return h('span', '', personName(row));
-          case 'month': return h('span', '', formatMonthLabel(row.month));
+          case 'person': {
+            const cell = h('div', 'acc-tanod-cell');
+            const name = h('span', 'acc-tanod-name', personName(row));
+            const pos = h('span', 'acc-tanod-pos', row.officialTitle || TANOD_POSITION);
+            cell.append(name, pos);
+            return cell;
+          }
+          case 'month': return h('span', 'acc-month-text', formatMonthLabel(row.month));
           case 'status': return statusPill(row.status);
-          case 'entries': { const n = entryCountOf(row); return h('span', '', n === null ? '—' : n); }
-          case 'total': return h('span', '', row.totalMinutes === undefined || row.totalMinutes === null ? '—' : formatMinutes(row.totalMinutes));
+          case 'entries': { const n = entryCountOf(row); return h('span', 'acc-num-cell', n === null ? '—' : n); }
+          case 'total': return h('span', 'acc-num-cell', row.totalMinutes === undefined || row.totalMinutes === null ? '—' : formatMinutes(row.totalMinutes));
           case 'flagged': {
             const n = Number(row.flaggedEntries) || 0;
-            return n > 0 ? h('span', 'tw-flag', `${n} to check`) : h('span', '', '0');
+            return n > 0 
+              ? h('span', 'tw-flag acc-flag-badge', `${n} to check`) 
+              : h('span', 'acc-num-cell', '0');
+          }
+          case 'action': {
+            const wrap = h('div', 'acc-row-actions');
+
+            // Quick Print shortcut from list view
+            const printBtn = h('button', 'ghost acc-row-action-btn');
+            printBtn.type = 'button';
+            printBtn.title = `Preview & print ${personName(row)}'s report`;
+            printBtn.setAttribute('aria-label', `Preview and print report for ${personName(row)}`);
+            printBtn.innerHTML = `<span aria-hidden="true">${icons.printer ? icons.printer(14) : '🖨️'}</span><span>Print</span>`;
+            printBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              printBtn.disabled = true;
+              try {
+                const [fullReport, mine, lh] = await Promise.all([
+                  getAccomplishmentReport(row.reportId),
+                  getMyAuthority(user),
+                  loadLetterhead(user),
+                ]);
+                const signatories = await resolveSignatories(fullReport, mine);
+                const entries = Array.isArray(fullReport.entries) ? fullReport.entries : [];
+                const person = personName(fullReport);
+                const totalMinutes = fullReport.totalMinutesConfirmed ?? entries.reduce((s, ent) => s + (Number(ent.durationMinutes) || 0), 0);
+
+                openPrintPreviewModal({
+                  title: 'Accomplishment Report',
+                  subtitle: `${person} — ${formatMonthLabel(fullReport.month)}`,
+                  sheetId: 'printable-accomplishment-report',
+                  sheetHtml: buildPrintHtml({ report: fullReport, entries, person, totalMinutes, signatories, lh }),
+                });
+              } catch (err) {
+                showToast(actionErrorMessage(err, 'Could not open print preview.'), { variant: 'error' });
+              } finally {
+                printBtn.disabled = false;
+              }
+            });
+
+            // Review button
+            const reviewBtn = h('button', 'ghost acc-row-action-btn acc-row-action-btn--primary');
+            reviewBtn.type = 'button';
+            reviewBtn.setAttribute('aria-label', `Review accomplishment report for ${personName(row)}`);
+            reviewBtn.innerHTML = `<span>Review</span><span aria-hidden="true">${icons.arrowRight ? icons.arrowRight(14) : '→'}</span>`;
+            reviewBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              openDetail(row.reportId);
+            });
+
+            wrap.append(printBtn, reviewBtn);
+            return wrap;
           }
           default: return '';
         }
@@ -272,9 +374,14 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     const totalMinutes = report.totalMinutesConfirmed ?? entries.reduce((s, e) => s + (Number(e.durationMinutes) || 0), 0);
     const flagged = entries.filter((e) => e.durationFlag === true || e.durationFlag === 1).length;
 
-    const back = h('button', 'ghost', 'Back to reports');
+    // Clean left-aligned breadcrumb bar
+    const breadcrumbBar = h('div', 'acc-breadcrumb-bar');
+    const back = h('button', 'ghost acc-back-btn');
     back.type = 'button';
+    back.setAttribute('aria-label', 'Return to accomplishment reports list');
+    back.innerHTML = `<span aria-hidden="true">${icons.arrowLeft ? icons.arrowLeft(15) : '←'}</span><span>Back to reports</span>`;
     back.addEventListener('click', () => { listBody = null; showList(); });
+    breadcrumbBar.appendChild(back);
 
     const printBtn = h('button', 'ghost');
     printBtn.type = 'button';
@@ -298,7 +405,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
 
     // header card
     const head = card();
-    head.classList.add('tw-detail-head');
+    head.classList.add('tw-detail-head', 'acc-detail-head');
     const titleRow = h('div', 'tw-detail-head__row');
     const titles = h('div');
     titles.append(
@@ -331,23 +438,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       callout.append(h('strong', '', 'Returned to the tanod: '), document.createTextNode(report.returnReason));
       head.appendChild(callout);
     }
-    detailHost.append(back, head);
-
-    // Paper signature + scan: from the point the tanod submits (prepared)
-    // until it is approved and filed. The panel gates its own controls by
-    // role; the server re-checks everything.
-    if (report.status === 'prepared' || report.status === 'noted' || report.status === 'approved') {
-      detailHost.appendChild(PaperApprovalPanel({
-        entityType: 'accomplishment_report',
-        report,
-        user,
-        recordStatuses: ['prepared', 'noted'],
-        signerAuthority: 'approve_report',
-        preparerUserId: report.userId ?? null, // the tanod who prepared (submitted) it
-        approvedStatuses: ['approved'],
-        onChanged: () => loadDetail(reportId),
-      }));
-    }
+    detailHost.append(breadcrumbBar, head);
 
     // entries
     const entriesCard = card('Entries', flagged > 0
