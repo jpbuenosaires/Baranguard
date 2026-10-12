@@ -1007,10 +1007,17 @@ export interface SyncGpsItem {
   client_event_id: string;
 }
 
-/** One item's shape for `duty_status_updates[]` (mirrors POST /duty-status body). */
+/**
+ * One item's shape for `duty_status_updates[]` (POST /duty-status body plus
+ * an optional `changed_at`). `changed_at` is the device time of an OFF-duty
+ * toggled while offline; the server records it as the change time (validated:
+ * <= 5 min ahead, not before the last on-duty record, <= 62 days back) and
+ * refuses it for any other status — going on duty is online-only.
+ */
 export interface SyncDutyStatusItem {
   status: DutyStatus;
   client_event_id: string;
+  changed_at?: string;
 }
 
 /** One item's shape for `dispatch_status_updates[]` (§6: no override_reason from a sync item). */
