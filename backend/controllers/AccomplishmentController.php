@@ -21,10 +21,13 @@ use PDO;
  * the server records, at write time, the duration it would have suggested
  * from the Tanod's own `duty_status` rows and flags a mismatch larger than
  * `DURATION_FLAG_MARGIN_MINUTES`. The month's report then walks
- * open -> prepared (Tanod submits, online only) -> noted -> approved, or is
- * `returned` (entries editable again). Who may note / approve is an
- * authority (`ApprovalAuthority`), never a role, and the preparer can never
- * note or approve their own report (segregation of duties).
+ * open -> prepared (Tanod submits, online only) -> approved, or is
+ * `returned` (entries editable again). Approval happens on the signed paper
+ * only (2026-10-12): an Admin/Secretary records it with
+ * record-paper-approval, naming a signer who holds `approve_report`
+ * (an authority, never a role) and who is never the preparer (segregation
+ * of duties). The old in-app note/approve endpoints answer 410
+ * PAPER_APPROVAL_REQUIRED; `noted` survives only on legacy rows.
  *
  * Resolved decisions where the contract is silent (logged in DEVLOG.md):
  *   - Suggested duration counts ONLY `on_duty` intervals (literal reading of
@@ -421,18 +424,28 @@ final class AccomplishmentController
         self::transition($pdo, $identity, $reportIdParam, 'submitted');
     }
 
-    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    /**
+     * POST /accomplishment-reports/:id/note - retired (paper-only,
+     * 2026-10-12). The signed paper is the approval: 410
+     * PAPER_APPROVAL_REQUIRED for every caller. Kept as a route so an old
+     * client gets a clear answer instead of a 404.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
     public static function note(PDO $pdo, array $identity, string $reportIdParam): void
     {
-        ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::NOTE_REPORT);
-        self::transition($pdo, $identity, $reportIdParam, 'noted');
+        PaperApproval::refuseInApp('Noting an accomplishment report', 'POST /accomplishment-reports/:id/record-paper-approval');
     }
 
-    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    /**
+     * POST /accomplishment-reports/:id/approve - retired (paper-only,
+     * 2026-10-12), 410 PAPER_APPROVAL_REQUIRED like note().
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
     public static function approve(PDO $pdo, array $identity, string $reportIdParam): void
     {
-        ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::APPROVE_REPORT);
-        self::transition($pdo, $identity, $reportIdParam, 'approved');
+        PaperApproval::refuseInApp('Approving an accomplishment report', 'POST /accomplishment-reports/:id/record-paper-approval');
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
@@ -448,10 +461,11 @@ final class AccomplishmentController
     }
 
     /**
-     * One implementation of the four state changes. Order of checks: 403
+     * The two in-app state changes left: submit and return (note/approve
+     * are retired; approval is recordPaperApproval). Order of checks: 403
      * (caller, done by the wrappers) -> 400 (key/body) -> 404 (missing,
      * cross-tenant, other Tanod's) -> idempotent replay (the original
-     * outcome) -> 409 illegal transition -> 409 segregation of duties.
+     * outcome) -> 409 illegal transition.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -496,17 +510,12 @@ final class AccomplishmentController
             $status = (string) $report['status'];
             $legalFrom = match ($action) {
                 'submitted' => ['open', 'returned'],
-                'noted' => ['prepared'],
-                'approved' => ['noted'],
+                // `noted` only exists on reports noted in-app before 2026-10-12.
                 'returned' => ['prepared', 'noted'],
             };
             if (!in_array($status, $legalFrom, true)) {
                 throw new ApiError(409, 'CONFLICT', "A report in '{$status}' status cannot be {$action}.");
             }
-            if ($action === 'noted' || $action === 'approved') {
-                ApprovalAuthority::assertNotPreparer($identity['user_id'], (int) $report['user_id']);
-            }
-
             if ($action === 'submitted') {
                 $sumStmt = $pdo->prepare('SELECT COUNT(*) AS n, COALESCE(SUM(duration_minutes), 0) AS minutes FROM accomplishment_entry WHERE report_id = :id');
                 $sumStmt->execute(['id' => $reportId]);
@@ -521,22 +530,6 @@ final class AccomplishmentController
                       WHERE report_id = :id"
                 )->execute(['minutes' => (int) $sum['minutes'], 'id' => $reportId]);
                 $newStatus = 'prepared';
-            } elseif ($action === 'noted') {
-                $pdo->prepare(
-                    "UPDATE accomplishment_report
-                        SET status = 'noted', noted_by = :actor, noted_at = UTC_TIMESTAMP(),
-                            version = version + 1, updated_at = UTC_TIMESTAMP()
-                      WHERE report_id = :id"
-                )->execute(['actor' => $identity['user_id'], 'id' => $reportId]);
-                $newStatus = 'noted';
-            } elseif ($action === 'approved') {
-                $pdo->prepare(
-                    "UPDATE accomplishment_report
-                        SET status = 'approved', approved_by = :actor, approved_at = UTC_TIMESTAMP(),
-                            version = version + 1, updated_at = UTC_TIMESTAMP()
-                      WHERE report_id = :id"
-                )->execute(['actor' => $identity['user_id'], 'id' => $reportId]);
-                $newStatus = 'approved';
             } else {
                 $pdo->prepare(
                     "UPDATE accomplishment_report
@@ -626,9 +619,9 @@ final class AccomplishmentController
      * happened on paper: `prepared` or `noted` -> `approved`, `approved_by` =
      * the signer (an active same-barangay user holding `approve_report`,
      * never the preparer), `approval_mode` = 'recorded_from_paper'. Paper is
-     * the official record (2026-10-12 paper-first decision), so the in-app
-     * note step is optional: recording from `prepared` leaves `noted_by`
-     * empty, because the noting signature lives on the paper. The recorder
+     * the only approval path (2026-10-12): recording from `prepared` leaves
+     * `noted_by` empty, because the noting signature lives on the paper;
+     * `noted` is accepted only for legacy rows noted in-app before then. The recorder
      * may be the signer (a Secretary can hold the authority). Order: 403 ->
      * 400 -> 404 (report / cross-tenant) -> idempotent replay -> 409 (not
      * prepared or noted)

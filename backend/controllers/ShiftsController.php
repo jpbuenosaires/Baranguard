@@ -497,8 +497,10 @@ final class ShiftsController
     }
 
     /**
-     * POST /shifts/publish — contract section 3. Requires the
-     * `approve_roster` authority (not just a role). Moves the named draft
+     * POST /shifts/publish — contract section 3. Paper-only (2026-10-12):
+     * Admin/Secretary, or a Punong Barangay holding `approve_roster`, records
+     * the signed paper roster (`recorded_from_paper`, required; the signer
+     * must hold `approve_roster`). Moves the named draft
      * shifts to `published`; already-published ids are reported, not
      * errors. Any id that is missing or belongs to another barangay makes
      * the WHOLE call a 404 (existence is never confirmed). Coverage is
@@ -521,26 +523,26 @@ final class ShiftsController
     {
         $body = Http::jsonBody();
 
-        // Wave 2 (migration 0038): `recorded_from_paper: {signer_user_id,
-        // signed_on}` lets an Admin/Secretary record a roster that was
-        // approved ON PAPER by someone holding `approve_roster`, without
-        // holding that authority themselves. Absent -> unchanged behaviour
-        // (the caller must hold approve_roster).
-        $paper = null;
-        if (array_key_exists('recorded_from_paper', $body) && $body['recorded_from_paper'] !== null) {
-            AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
-            $rec = $body['recorded_from_paper'];
-            if (!is_array($rec)) {
-                throw new ApiError(400, 'VALIDATION_ERROR', 'recorded_from_paper must be an object {signer_user_id, signed_on}.');
-            }
-            $paper = [
-                'signer_user_id' => PaperApproval::requirePositiveInt($rec['signer_user_id'] ?? null, 'signer_user_id'),
-                'signed_on' => PaperApproval::requirePastOrTodayDate($rec['signed_on'] ?? null, 'signed_on'),
-            ];
-        } else {
+        // Paper-only (2026-10-12): the signed paper roster is the approval,
+        // so `recorded_from_paper: {signer_user_id, signed_on}` is required
+        // from EVERY caller. Admin/Secretary record it; a Punong Barangay
+        // holding approve_roster may too (naming themselves or another
+        // holder). Order: 403 (caller) -> 422 (no paper) -> 400 (shape).
+        if (!in_array($identity['role'], ['admin', 'secretary'], true)) {
             ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::APPROVE_ROSTER);
         }
-        $auditAction = $paper !== null ? 'roster_published_from_paper' : 'roster_published';
+        $rec = $body['recorded_from_paper'] ?? null;
+        if ($rec === null) {
+            throw new ApiError(422, PaperApproval::REQUIRED_CODE, 'Publishing needs the signed paper roster: send recorded_from_paper {signer_user_id, signed_on}.');
+        }
+        if (!is_array($rec)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'recorded_from_paper must be an object {signer_user_id, signed_on}.');
+        }
+        $paper = [
+            'signer_user_id' => PaperApproval::requirePositiveInt($rec['signer_user_id'] ?? null, 'signer_user_id'),
+            'signed_on' => PaperApproval::requirePastOrTodayDate($rec['signed_on'] ?? null, 'signed_on'),
+        ];
+        $auditAction = 'roster_published_from_paper';
         $idempotencyKey = RosterSupport::requireIdempotencyKey();
 
         $rawIds = $body['shift_ids'] ?? null;
@@ -573,11 +575,7 @@ final class ShiftsController
 
         // Who signed on paper: unknown / other-barangay id -> 404, a same-
         // barangay user who may not approve rosters -> 422 (PaperApproval).
-        $signerId = $identity['user_id'];
-        if ($paper !== null) {
-            $signer = PaperApproval::requireSigner($pdo, (int) $identity['barangay_id'], $paper['signer_user_id'], ApprovalAuthority::APPROVE_ROSTER);
-            $signerId = $signer['user_id'];
-        }
+        $signerId = PaperApproval::requireSigner($pdo, (int) $identity['barangay_id'], $paper['signer_user_id'], ApprovalAuthority::APPROVE_ROSTER)['user_id'];
 
         $pdo->beginTransaction();
         try {

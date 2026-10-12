@@ -403,37 +403,44 @@ describe('Personnel behaviour', () => {
     assert.equal(pills.filter((p) => p === 'Published').length, 2);
   });
 
-  test('publishing: only drafts are selectable; Publish POSTs shift_ids with an Idempotency-Key and shows coverage warnings', async () => {
+  test('publishing (paper-only): only drafts are selectable; the PB records the signed paper and the POST carries shift_ids, recorded_from_paper and an Idempotency-Key', async () => {
     await openScheduler('punong_barangay');
-    const publish = $('#publish-shifts-btn');
+    assert.equal($('#publish-shifts-btn'), null, 'no in-app Publish button: the server refuses a publish without the signed paper');
+    const publish = $('#publish-shifts-paper-btn');
     assert.equal(publish.disabled, true, 'nothing selected yet');
     assert.equal($$('tbody input[type="checkbox"]').length, 2, 'only the two draft shifts have a checkbox');
     click(buttonByText(/select all drafts/i));
-    assert.equal($('#publish-shifts-btn').disabled, false);
-    click($('#publish-shifts-btn'));
+    assert.equal($('#publish-shifts-paper-btn').disabled, false);
+    click($('#publish-shifts-paper-btn'));
     await settle();
     const dialog = $('[role="alertdialog"], [role="dialog"]');
-    assert.ok(dialog, 'publishing must be confirmed');
+    assert.ok(dialog, 'publishing asks for the signer and date');
     assert.equal(api.callsTo('POST', '/shifts/publish').length, 0, 'nothing is sent before confirmation');
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    type($('#confirm-dialog-field-signedOn', dialog), today);
     click($$('button', dialog).filter((b) => !b.disabled).at(-1));
     await settle();
     const [call] = api.callsTo('POST', '/shifts/publish');
     assert.ok(call, 'POST /shifts/publish was not sent');
     assert.deepEqual(call.body.shift_ids.sort(), [502, 503]);
+    assert.deepEqual(call.body.recorded_from_paper, { signer_user_id: 3, signed_on: today });
     assert.match(call.headers['idempotency-key'] || '', UUID);
     assert.match(text($('.scheduler-publish-warnings')), /2026-10-07.*no tanod is scheduled/i);
   });
 
-  test('a publish refused for missing authority shows the server message and sends nothing else', async () => {
+  test('a publish refused by the server shows the server message and sends nothing else', async () => {
     api.on('POST', '/shifts/publish', () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'You are not designated to perform this action.' } } }));
     await openScheduler('punong_barangay');
     click(buttonByText(/select all drafts/i));
-    click($('#publish-shifts-btn'));
+    click($('#publish-shifts-paper-btn'));
     await settle();
-    click($$('button', $('[role="alertdialog"], [role="dialog"]')).filter((b) => !b.disabled).at(-1));
+    const dialog = $('[role="alertdialog"], [role="dialog"]');
+    type($('#confirm-dialog-field-signedOn', dialog), new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10));
+    click($$('button', dialog).filter((b) => !b.disabled).at(-1));
     await settle();
     assert.match(text(window.document.body), /not designated to perform this action/);
     assert.equal($('.scheduler-publish-warnings'), null);
+    assert.equal(api.callsTo('POST', '/shifts/publish').length, 1);
   });
 
   test('accepting an availability submission PATCHes status accepted with an Idempotency-Key', async () => {
@@ -504,9 +511,10 @@ describe('Personnel behaviour', () => {
     await settle();
   });
 
-  test('Punong Barangay can publish drafts (the server checks approve_roster) but cannot edit them', async () => {
+  test('Punong Barangay can publish drafts with the signed paper (the server checks approve_roster) but cannot edit them', async () => {
     await openScheduler('punong_barangay');
-    assert.ok($('#publish-shifts-btn'));
+    assert.ok($('#publish-shifts-paper-btn'));
+    assert.equal($('#publish-shifts-btn'), null, 'no in-app Publish button for anyone');
     assert.equal(buttonByText(/edit shift/i), undefined);
     assert.match(text($('.page-content')), /Tanod #5/, 'an assigned shift shows its id when the roster is unavailable, not "Unassigned"');
   });
