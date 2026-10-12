@@ -850,3 +850,13 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Row / select-all checkboxes: a comfortable, consistent hit target. */
+.acc-row-checkbox,
+.acc-select-all-checkbox {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
