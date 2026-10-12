@@ -206,6 +206,15 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   is resolved as before. **This amends Master Reference §2 rule 21, which
   said only a dispatched incident may be resolved; the Master Reference text
   has not been edited yet.**
+- **Paper-first signing (2026-10-12, no migration):** the signed paper is the
+  approval. Web no longer offers in-app Note/Approve on accomplishment reports
+  or Approve on Annex D; Admin/Secretary "Record signed paper" instead.
+  `POST /accomplishment-reports/:id/record-paper-approval` now also accepts a
+  `prepared` report (`noted_by` stays NULL). Admin/Secretary always publish
+  shifts with `recorded_from_paper`; a PB holding `approve_roster` can still
+  publish in-app. The note/approve/publish endpoints are unchanged. Approvals
+  inbox and dashboard widget show "waiting for the signed paper" queues to
+  Admin/Secretary. Rule 73 in `docs/WORKFLOWS_AND_RULES.md`.
 - **Rule 12 amendment:** an Admin login with a well-formed `X-Device-Id` gets a
   device session (24h sliding, 7-day cap) limited to
   `SessionPolicy::ADMIN_DEVICE_ALLOWLIST` (anything else 403

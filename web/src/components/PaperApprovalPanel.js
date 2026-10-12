@@ -7,11 +7,12 @@
  *   - shows a "Paper signature pending" badge until someone records the date
  *     the paper was signed ("Signed on paper <date>" afterwards) — visible to
  *     every role that can open the detail, Punong Barangay included;
- *   - lets Admin and Secretary record that date ("Record paper signature
- *     date", only on an approved report), record an approval that happened
- *     only on paper ("Record approval from paper", on a noted report — Annex D:
- *     prepared — naming the signer and the date they signed), and attach,
- *     list and download a scan of the signed copy.
+ *   - lets Admin and Secretary record the signed paper ("Record signed
+ *     paper", the normal way a report gets approved since the 2026-10-12
+ *     paper-first decision: on a prepared or noted report — Annex D:
+ *     prepared — naming the signer and the date they signed), correct the
+ *     date later ("Record paper signature date", on an approved report),
+ *     and attach, list and download a scan of the signed copy.
  *
  * Gating here is UX only; the server re-checks role, tenant, status and the
  * signer's authority on every call (REFERENCE.md §2 Rule 2). Every server
@@ -69,7 +70,7 @@ function scanFileName(scan) {
  *   entityType: 'accomplishment_report'|'ssz_term_report',
  *   report: object,            camelCased report from the server
  *   user: {userId:number, fullName:string, role:string},
- *   recordStatus: string,      status in which "Record approval from paper" applies ('noted' | 'prepared')
+ *   recordStatuses: string[],  statuses in which "Record signed paper" applies
  *   signerAuthority: string,   'approve_report' | 'approve_annex_d'
  *   preparerUserId: number|null,
  *   approvedStatuses: string[], statuses from which a scan may be attached (approved or later)
@@ -78,7 +79,7 @@ function scanFileName(scan) {
  * @returns {HTMLElement}
  */
 export function PaperApprovalPanel({
-  entityType, report, user, recordStatus, signerAuthority, preparerUserId, approvedStatuses, onChanged,
+  entityType, report, user, recordStatuses, signerAuthority, preparerUserId, approvedStatuses, onChanged,
 }) {
   const reportId = report.reportId;
   const canManage = user.role === 'admin' || user.role === 'secretary';
@@ -107,7 +108,7 @@ export function PaperApprovalPanel({
   if (!badges.children.length) {
     el.appendChild(h('p', 'tw-empty-note', isApproved || scansAllowed
       ? 'No paper signature has been recorded.'
-      : 'The signed paper copy is recorded here once this report is approved.'));
+      : 'Print this report and have it signed, then record the signed paper here.'));
   }
 
   // ----- controls (Admin / Secretary) --------------------------------------
@@ -116,7 +117,7 @@ export function PaperApprovalPanel({
     const bar = h('div', 'tw-action-bar');
 
     if (isApproved) {
-      const dateBtn = h('button', 'primary', 'Record paper signature date');
+      const dateBtn = h('button', report.paperPending ? 'primary' : 'ghost', 'Record paper signature date');
       dateBtn.type = 'button';
       dateBtn.addEventListener('click', async () => {
         const signed = await promptText({
@@ -142,8 +143,8 @@ export function PaperApprovalPanel({
       bar.appendChild(dateBtn);
     }
 
-    if (report.status === recordStatus) {
-      const approveBtn = h('button', 'ghost', 'Record approval from paper');
+    if (recordStatuses.includes(report.status)) {
+      const approveBtn = h('button', 'primary', 'Record signed paper');
       approveBtn.type = 'button';
       approveBtn.addEventListener('click', async () => {
         approveBtn.disabled = true;
@@ -161,8 +162,8 @@ export function PaperApprovalPanel({
           return;
         }
         const result = await promptFields({
-          title: 'Record approval from paper',
-          description: 'Use this when the approver signed the paper form instead of approving in the system. Pick who signed and the date they signed. The report becomes approved.',
+          title: 'Record signed paper',
+          description: 'Print the report, have it signed, then record it here. Pick the official who signed it as approver and the date they signed. The report becomes approved and locked.',
           fields: [
             { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
             { name: 'signedOn', label: 'Date signed', type: 'date', max: manilaToday() },
@@ -178,7 +179,7 @@ export function PaperApprovalPanel({
           },
         });
         if (result !== null) {
-          showToast('Approval recorded from paper.', { variant: 'success' });
+          showToast('Signed paper recorded. The report is approved.', { variant: 'success' });
           onChanged();
         }
       });
@@ -195,7 +196,7 @@ export function PaperApprovalPanel({
   el.append(scansHead, scansHost);
 
   if (!scansAllowed) {
-    scansHost.appendChild(h('p', 'tw-empty-note', 'A scan can be attached once this report is approved.'));
+    scansHost.appendChild(h('p', 'tw-empty-note', 'A scan can be attached once the signed paper is recorded.'));
     return el;
   }
 
