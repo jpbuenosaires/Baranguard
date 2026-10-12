@@ -18752,7 +18752,42 @@ git worktrees, merged to local `main`; nothing pushed.
   the PR for whether it was run. Not browser-verified. The UAT instruments
   (P-05, P-06) still describe in-app approval and need rewording.
 
-## 2026-10-12 (2) - Workflow-gap fixes and fixed availability (Claude, project thread)
+## 2026-10-12 (3) - Scheduler week grid; availability shown as fixed (Claude, project thread)
+
+- **Decision (Jayson):** a tanod's availability is fixed and not up for
+  discussion, so the web no longer accepts it or asks for a revision. It is
+  shown as given (every submission, any status) and the roster is built around
+  it. Asked for all seven suggested scheduler improvements.
+- **Web only, no backend or migration change.** `PATCH /availability/:id`,
+  `tanod_availability.status` and the mobile Availability screen are untouched;
+  nothing on the web calls the PATCH any more, so new submissions simply stay
+  `submitted` (which also keeps them editable by the tanod).
+- **Scheduler (`scheduler.js`):** opens on a **Week** view (List keeps the old
+  table). `components/ShiftWeekGrid.js` draws one row per rostered tanod and one
+  column per Manila day: a 24 h availability bar per cell (hatched when none),
+  shift chips (dashed = draft), amber when outside availability, red when over
+  56 h in a rolling 7 days or 12 h in a day, week hours per tanod, and a
+  coverage row (of Morning 06-14 / Afternoon 14-22 / Night 22-06, counted when
+  assigned shifts overlap at least half the slot). "+" in a cell creates the
+  chosen standard shift as a draft with `source_availability_id` (asks first
+  when the tanod is not available); dragging a chip PATCHes the tanod/day keeping
+  its times (warns that a published shift goes back to draft); a chip opens Edit
+  Shift. "Copy last week" re-creates last week's assigned shifts +7 days, skipping
+  any the tanod is not available for or that already exist. "Publish week with
+  signed paper" publishes every draft of the shown week (batched by 100; PB gets
+  in-app "Publish week"). The print button prints an A4 week grid with coverage
+  and signature lines. The availability review panel and "Create shift from this
+  availability" are gone, as is the Approvals inbox "Availability to review" queue.
+- **Pure helpers** in `services/rosterWeek.js` (all Manila +08:00, independent of
+  the browser time zone). Shifts and availability are loaded page by page (up to
+  20 pages of 100) because `GET /shifts` has no date filter.
+- **Evidence:** `web/tests` 640/0 (new `unit/rosterWeek.test.mjs` and a "Scheduler
+  week grid" suite; personnel tests also pass with TZ=America/Los_Angeles and
+  Asia/Tokyo), `verify-web-wiring.mjs` 809/0. Headless Chromium render of the grid
+  (light, dark, 390 px) and the A4 week print (1 page) against stubbed data. Not
+  verified against a real backend or by a user in a browser.
+
+## 2026-10-12 (4) - Workflow-gap fixes and fixed availability (Claude, project thread)
 
 - **Asked by Jayson** after reading the workflow map: fix the six gaps found
   (WORKFLOWS_AND_RULES Rules 74-79), using parallel helpers, then combined on

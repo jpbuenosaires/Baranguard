@@ -60,7 +60,7 @@ flowchart TD
 
     Dash --> PersHub["Personnel Hub"]
     PersHub --> UsersTab["Users: Create / Suspend / Set Title & Authorities"]
-    PersHub --> SchedTab["Scheduler: Review Availability & Draft Shifts ('Create shift from this availability' prefills the form)"]
+    PersHub --> SchedTab["Scheduler week grid: fixed availability shaded, '+' adds a draft shift inside it"]
     SchedTab --> PublishShifts["Print Roster, Then Publish With Signed Paper (signer holds approve_roster)"]
     PersHub --> SwapsTab["Shift Swaps: Approve or Reject Tanod Swap Requests"]
 
@@ -572,7 +572,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 ### Scenario 8. Roster: availability to published shift, swap and 12-hour cap
 1. The tanod states their available windows for a period on the phone (Availability). They can change them at any time (the version goes up). Nobody reviews or locks them (Rule 32).
 2. The Admin or Secretary schedules only inside those windows; a shift outside them is refused with `OUTSIDE_AVAILABILITY` (Rule 76).
-3. In Personnel, Scheduler, the Admin presses "Create shift from this availability". The form is prefilled and the shift is saved as `draft` (Rules 26, 69). The tanod cannot see it yet.
+3. In Personnel, Scheduler (week grid), the Admin presses "+" in the tanod's day cell. The chosen standard shift is saved as `draft`, linked to the availability that covers it (Rules 26, 69). The tanod cannot see it yet.
 4. Scheduling the same tanod for more than 12 hours in one Manila day is refused with `DAILY_HOURS_EXCEEDED` (Rule 27). Missing coverage is only a warning at publish (Rule 30).
 5. The Admin or Secretary prints the schedule and the official holding `approve_roster` (usually the Punong Barangay) signs it. The Admin or Secretary then presses "Publish with signed paper", naming the signer and date. The shift becomes visible to the tanod (Rules 26, 63, 73).
 6. A swap request on a `draft` shift returns 404 (Rule 29). On a published shift the swap goes to the Admin or Secretary for review.

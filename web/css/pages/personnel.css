@@ -953,3 +953,330 @@
   gap: var(--spacing-sm);
 }
 
+.availability-item__actions input[type='text'] {
+  flex: 1 1 12rem;
+}
+
+/* ---- Scheduler: weekly roster grid (2026-10-12) ------------------------- */
+
+.split-panel.scheduler-layout--week {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Let the grid scroll inside its wrapper instead of widening the page. */
+.split-panel.scheduler-layout--week > * {
+  min-width: 0;
+}
+
+.scheduler-week-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.scheduler-week-toolbar__nav,
+.scheduler-week-toolbar__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.scheduler-week-toolbar__tools {
+  flex-basis: 100%;
+}
+
+.scheduler-week-toolbar__label {
+  min-width: 11rem;
+  text-align: center;
+}
+
+.scheduler-week-toolbar__step {
+  min-width: var(--control-height);
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+.week-grid-wrap {
+  overflow-x: auto;
+}
+
+.week-grid {
+  display: grid;
+  min-width: 52rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.week-grid__row {
+  display: grid;
+  grid-template-columns: 10rem repeat(7, minmax(5.5rem, 1fr)) 4rem;
+  border-top: 1px solid var(--color-divider);
+}
+
+.week-grid__row--head {
+  border-top: 0;
+  background: var(--tint-neutral-bg);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.week-grid__name,
+.week-grid__day,
+.week-grid__hours,
+.week-grid__cell,
+.week-grid__coverage {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-left: 1px solid var(--color-divider);
+}
+
+.week-grid__name {
+  border-left: 0;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.week-grid__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.week-grid__day.is-today {
+  color: var(--color-link);
+}
+
+.week-grid__dow {
+  font-weight: 700;
+}
+
+.week-grid__date {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  font-size: var(--font-size-xs);
+}
+
+.week-grid__hours {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.week-grid__hours.is-over {
+  color: var(--pill-critical-text);
+  font-weight: 700;
+}
+
+.week-grid__cell {
+  position: relative;
+  min-height: 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.week-grid__cell.is-unavailable {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 5px,
+    var(--color-divider) 5px,
+    var(--color-divider) 6px
+  );
+}
+
+.week-grid__cell.is-drop-target {
+  outline: 2px dashed var(--color-link);
+  outline-offset: -3px;
+}
+
+.week-grid__avail {
+  position: relative;
+  height: 0.375rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-divider);
+  overflow: hidden;
+}
+
+.week-grid__cell.is-unavailable .week-grid__avail {
+  background: transparent;
+}
+
+.week-grid__avail-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--color-success);
+}
+
+.week-grid__chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.week-grid__add {
+  align-self: flex-start;
+  min-height: 0;
+  padding: 0 var(--spacing-sm);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.week-grid__add:hover,
+.week-grid__add:focus-visible {
+  border-color: var(--color-link);
+  color: var(--color-link);
+}
+
+.shift-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 0;
+  padding: 0.125rem var(--spacing-xs);
+  border: 1px solid var(--color-info);
+  border-radius: var(--radius-sm);
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-align: left;
+  line-height: 1.3;
+  cursor: default;
+}
+
+button.shift-chip {
+  cursor: grab;
+}
+
+.shift-chip--draft {
+  border-style: dashed;
+}
+
+.shift-chip--warn {
+  border-color: var(--color-warning);
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.shift-chip--danger {
+  border-color: var(--color-critical);
+  background: var(--tint-critical-bg);
+  color: var(--pill-critical-text);
+}
+
+.shift-chip__zone {
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.week-grid__row--coverage {
+  background: var(--tint-neutral-bg);
+  font-size: var(--font-size-sm);
+}
+
+.week-grid__coverage {
+  text-align: center;
+  font-weight: 700;
+}
+
+.week-grid__coverage--full {
+  color: var(--pill-success-text);
+}
+
+.week-grid__coverage--partial {
+  color: var(--color-warning-text);
+}
+
+.week-grid__coverage--none {
+  color: var(--pill-critical-text);
+}
+
+.week-grid__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.week-grid__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.week-grid__key {
+  display: inline-block;
+  width: 0.875rem;
+  height: 0.625rem;
+  border-radius: 2px;
+  border: 1px solid var(--color-border);
+}
+
+.week-grid__key--avail { background: var(--color-success); border-color: var(--color-success); }
+.week-grid__key--unavail {
+  background: repeating-linear-gradient(45deg, transparent 0, transparent 2px, var(--color-text-tertiary) 2px, var(--color-text-tertiary) 3px);
+}
+.week-grid__key--draft { border: 1px dashed var(--color-info); background: var(--tint-info-bg); }
+.week-grid__key--warn { background: var(--tint-warning-bg); border-color: var(--color-warning); }
+.week-grid__key--danger { background: var(--tint-critical-bg); border-color: var(--color-critical); }
+
+/* Weekly A4 print (inside the print-preview sheet: uses its --sheet-* paper tokens) */
+.week-print th,
+.week-print td {
+  vertical-align: top;
+  font-size: 0.68rem;
+  padding: 4px 5px;
+}
+
+.week-print__shift {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.week-print__shift small {
+  display: block;
+  font-weight: 400;
+  white-space: normal;
+}
+
+.week-print__empty {
+  color: var(--sheet-muted);
+}
+
+.week-print__coverage td {
+  font-weight: 700;
+  border-top: 2px solid var(--sheet-border);
+}
+
+.week-print__note {
+  margin: 6px 0 0;
+  font-size: 0.68rem;
+  color: var(--sheet-muted);
+}
+
+.shift-chip__label {
+  white-space: nowrap;
+}
+
+.scheduler-view-toggle {
+  margin-left: auto;
+}
