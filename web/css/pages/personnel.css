@@ -3,7 +3,7 @@
  * Tokenized with dark mode compatibility, high density, and smooth transitions.
  */
 
-/* ==========================================================================
+/* ===================================================================
    1. Personnel Layout & Tab Transitions
    ========================================================================== */
 
@@ -958,6 +958,1289 @@
   cursor: pointer;
   font-weight: 600;
   color: var(--color-text-secondary);
+
+/* ---- Scheduler: weekly roster grid (2026-10-12) ------------------------- */
+
+.split-panel.scheduler-layout--week {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Let the grid scroll inside its wrapper instead of widening the page. */
+.split-panel.scheduler-layout--week > * {
+  min-width: 0;
+}
+
+.scheduler-week-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.scheduler-week-toolbar__nav,
+.scheduler-week-toolbar__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.scheduler-week-toolbar__tools {
+  flex-basis: 100%;
+}
+
+.scheduler-week-toolbar__label {
+  min-width: 11rem;
+  text-align: center;
+}
+
+.scheduler-week-toolbar__step {
+  min-width: var(--control-height);
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+.week-grid-wrap {
+  overflow-x: auto;
+}
+
+.week-grid {
+  display: grid;
+  min-width: 52rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.week-grid__row {
+  display: grid;
+  grid-template-columns: 10rem repeat(7, minmax(5.5rem, 1fr)) 4rem;
+  border-top: 1px solid var(--color-divider);
+}
+
+.week-grid__row--head {
+  border-top: 0;
+  background: var(--tint-neutral-bg);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.week-grid__name,
+.week-grid__day,
+.week-grid__hours,
+.week-grid__cell,
+.week-grid__coverage {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-left: 1px solid var(--color-divider);
+}
+
+.week-grid__name {
+  border-left: 0;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.week-grid__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.week-grid__day.is-today {
+  color: var(--color-link);
+}
+
+.week-grid__dow {
+  font-weight: 700;
+}
+
+.week-grid__date {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  font-size: var(--font-size-xs);
+}
+
+.week-grid__hours {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.week-grid__hours.is-over {
+  color: var(--pill-critical-text);
+  font-weight: 700;
+}
+
+.week-grid__cell {
+  position: relative;
+  min-height: 3.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.week-grid__cell.is-unavailable {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 5px,
+    var(--color-divider) 5px,
+    var(--color-divider) 6px
+  );
+}
+
+.week-grid__cell.is-drop-target {
+  outline: 2px dashed var(--color-link);
+  outline-offset: -3px;
+}
+
+.week-grid__avail {
+  position: relative;
+  height: 0.375rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-divider);
+  overflow: hidden;
+}
+
+.week-grid__cell.is-unavailable .week-grid__avail {
+  background: transparent;
+}
+
+.week-grid__avail-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--color-success);
+}
+
+.week-grid__chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.week-grid__add {
+  align-self: flex-start;
+  min-height: 0;
+  padding: 0 var(--spacing-sm);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.week-grid__add:hover,
+.week-grid__add:focus-visible {
+  border-color: var(--color-link);
+  color: var(--color-link);
+}
+
+.shift-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 0;
+  padding: 0.125rem var(--spacing-xs);
+  border: 1px solid var(--color-info);
+  border-radius: var(--radius-sm);
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-align: left;
+  line-height: 1.3;
+  cursor: default;
+}
+
+button.shift-chip {
+  cursor: grab;
+}
+
+.shift-chip--draft {
+  border-style: dashed;
+}
+
+.shift-chip--warn {
+  border-color: var(--color-warning);
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.shift-chip--danger {
+  border-color: var(--color-critical);
+  background: var(--tint-critical-bg);
+  color: var(--pill-critical-text);
+}
+
+.shift-chip__zone {
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.week-grid__row--coverage {
+  background: var(--tint-neutral-bg);
+  font-size: var(--font-size-sm);
+}
+
+.week-grid__coverage {
+  text-align: center;
+  font-weight: 700;
+}
+
+.week-grid__coverage--full {
+  color: var(--pill-success-text);
+}
+
+.week-grid__coverage--partial {
+  color: var(--color-warning-text);
+}
+
+.week-grid__coverage--none {
+  color: var(--pill-critical-text);
+}
+
+.week-grid__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.week-grid__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.week-grid__key {
+  display: inline-block;
+  width: 0.875rem;
+  height: 0.625rem;
+  border-radius: 2px;
+  border: 1px solid var(--color-border);
+}
+
+.week-grid__key--avail { background: var(--color-success); border-color: var(--color-success); }
+.week-grid__key--unavail {
+  background: repeating-linear-gradient(45deg, transparent 0, transparent 2px, var(--color-text-tertiary) 2px, var(--color-text-tertiary) 3px);
+}
+.week-grid__key--draft { border: 1px dashed var(--color-info); background: var(--tint-info-bg); }
+.week-grid__key--warn { background: var(--tint-warning-bg); border-color: var(--color-warning); }
+.week-grid__key--danger { background: var(--tint-critical-bg); border-color: var(--color-critical); }
+
+/* Weekly A4 print (inside the print-preview sheet: uses its --sheet-* paper tokens) */
+.week-print th,
+.week-print td {
+  vertical-align: top;
+  font-size: 0.68rem;
+  padding: 4px 5px;
+}
+
+.week-print__shift {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.week-print__shift small {
+  display: block;
+  font-weight: 400;
+  white-space: normal;
+}
+
+.week-print__empty {
+  color: var(--sheet-muted);
+}
+
+.week-print__coverage td {
+  font-weight: 700;
+  border-top: 2px solid var(--sheet-border);
+}
+
+.week-print__note {
+  margin: 6px 0 0;
+  font-size: 0.68rem;
+  color: var(--sheet-muted);
+}
+
+.shift-chip__label {
+  white-space: nowrap;
+}
+
+.scheduler-view-toggle {
+  margin-left: auto;
+}
+=======
+/**
+ * personnel.css — Personnel Console (Users, Scheduler, Swap Requests, Fatigue Flags)
+ * Tokenized with dark mode compatibility, high density, and smooth transitions.
+ */
+
+/* ==========================================================================
+   1. Personnel Layout & Tab Transitions
+   ========================================================================== */
+
+.personnel-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  animation: personnel-tab-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes personnel-tab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+/* Filter Bar for Personnel Tabs */
+.personnel-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.personnel-filter-bar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1 1 300px;
+}
+
+.personnel-filter-bar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  flex-wrap: wrap;
+}
+
+.personnel-search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 24rem;
+  min-width: 180px;
+}
+
+.personnel-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.personnel-search-input {
+  width: 100%;
+  height: var(--control-height);
+  padding-left: 2.25rem;
+  padding-right: var(--spacing-sm-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.personnel-search-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+/* Filter Chips (Role & Status) */
+
+
+
+/* Filter Selects (Role & Status Dropdowns) */
+.personnel-filter-select {
+  height: var(--control-height);
+  padding: 0 2.25rem 0 0.875rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem 1rem;
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  width: auto;
+  min-width: 8.5rem;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+[data-theme="dark"] .personnel-filter-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+.personnel-filter-select:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
+}
+
+.personnel-filter-select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+
+/* ==========================================================================
+   2. Users Tab Styles
+   ========================================================================== */
+
+/* User Name Cell with Avatar & Username */
+.user-identity-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm-md);
+}
+
+.user-identity-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+}
+
+.user-identity-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.user-identity-username {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Role Badges */
+
+
+
+
+
+/* User Action Buttons in Row */
+.user-actions-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+
+.user-action-btn {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.user-action-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-secondary);
+}
+
+.user-action-btn--danger:hover {
+  background: var(--tint-critical-bg);
+  color: var(--color-critical);
+  border-color: var(--color-critical);
+}
+
+.user-action-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+
+.user-action-btn--primary:hover {
+  background: var(--color-primary-hover);
+}
+
+/* Floating Modal Dialog (Add User & Edit Shift) */
+.personnel-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--spacing-md);
+  animation: personnel-modal-fade 0.18s ease-out;
+}
+
+@keyframes personnel-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.personnel-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  width: 100%;
+  max-width: 32rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: personnel-modal-slide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes personnel-modal-slide {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.personnel-modal__header {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface);
+}
+
+.personnel-modal__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.personnel-modal__close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 1.25rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.personnel-modal__close:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.personnel-modal__body {
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.personnel-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-md);
+}
+
+.personnel-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.personnel-form-field--full {
+  grid-column: 1 / -1;
+}
+
+.personnel-form-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.personnel-form-input,
+.personnel-form-select {
+  height: var(--control-height);
+  padding: 0 var(--spacing-sm-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.personnel-form-input:focus,
+.personnel-form-select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.personnel-form-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.personnel-modal__footer {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* ==========================================================================
+   3. Scheduler Tab Styles
+   ========================================================================== */
+
+/* Shift Status Pills */
+.shift-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: var(--spacing-xs) 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shift-status-pill--active {
+  background: var(--tint-success-bg);
+  color: var(--pill-success-text);
+  border: 1px solid var(--color-success);
+}
+
+.shift-status-pill--active::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success-solid);
+  animation: shift-pulse 1.8s infinite;
+}
+
+@keyframes shift-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.shift-status-pill--upcoming {
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+  border: 1px solid var(--color-primary);
+}
+
+.shift-status-pill--completed {
+  background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border);
+}
+
+/* Patrol Zone Tag */
+.shift-zone-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.shift-time-range-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+}
+
+.shift-time-dates {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.shift-time-duration {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* Shift Presets in Creation Form */
+.shift-presets-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+}
+
+.shift-presets-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.shift-presets-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-2xs);
+}
+
+.shift-preset-btn {
+  padding: var(--spacing-2xs) var(--spacing-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.shift-preset-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.shift-preset-btn small {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+}
+
+/* ==========================================================================
+   4. Swap Requests Tab Styles
+   ========================================================================== */
+
+/* Visual Swap Flow Cell */
+.swap-flow-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.swap-party {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.swap-arrow {
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+}
+
+.swap-target--open {
+  color: var(--color-warning-text);
+  background: var(--tint-warning-bg);
+  padding: var(--spacing-3xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.swap-reason-box {
+  margin-top: var(--spacing-xs);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  background: var(--color-bg);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--color-primary);
+  max-width: 22rem;
+}
+
+/* ==========================================================================
+   5. Fatigue Flags Tab Styles
+   ========================================================================== */
+
+/* Tiered Fatigue Risk Progress Bar */
+.fatigue-meter-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 14rem;
+}
+
+.fatigue-meter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+}
+
+.fatigue-meter-hours {
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.fatigue-meter-hours.is-safe { color: var(--color-success); }
+.fatigue-meter-hours.is-moderate { color: var(--color-warning-text); }
+.fatigue-meter-hours.is-high { color: color-mix(in srgb, var(--color-warning) 50%, var(--color-critical)); }
+.fatigue-meter-hours.is-severe { color: var(--color-critical); }
+
+.fatigue-meter-tier {
+  font-weight: 700;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs, 4px);
+}
+
+.fatigue-meter-tier.is-safe {
+  background: var(--tint-success-bg);
+  color: var(--pill-success-text);
+  border: 1px solid var(--color-success);
+}
+
+.fatigue-meter-tier.is-moderate {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning);
+}
+
+.fatigue-meter-tier.is-high {
+  background: color-mix(in srgb, var(--color-critical) 15%, transparent);
+  color: color-mix(in srgb, var(--color-warning) 50%, var(--color-critical));
+  border: 1px solid color-mix(in srgb, var(--color-warning) 50%, var(--color-critical));
+}
+
+.fatigue-meter-tier.is-severe {
+  background: var(--tint-critical-bg);
+  color: var(--color-critical);
+  border: 1px solid var(--color-critical);
+}
+
+.fatigue-meter-track {
+  width: 100%;
+  height: 0.5rem;
+  background: var(--color-border);
+  border-radius: 999px;
+  position: relative;
+}
+
+.fatigue-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.fatigue-meter-fill.is-safe {
+  background: var(--color-success);
+}
+
+.fatigue-meter-fill.is-moderate {
+  background: var(--color-warning);
+}
+
+.fatigue-meter-fill.is-high {
+  background: color-mix(in srgb, var(--color-warning) 50%, var(--color-critical));
+}
+
+.fatigue-meter-fill.is-severe {
+  background: linear-gradient(90deg, var(--color-critical) 0%, var(--color-critical) 100%);
+  animation: severe-glow 2s infinite;
+}
+
+/* Threshold limit indicator on the track (56h / 80h = 70%) */
+.fatigue-meter-threshold-marker {
+  position: absolute;
+  left: 70%;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--color-text-primary);
+  opacity: 0.65;
+  border-radius: 1px;
+  z-index: 2;
+  pointer-events: auto;
+  cursor: help;
+}
+
+.fatigue-meter-threshold-marker::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 4px solid var(--color-text-primary);
+}
+
+@keyframes severe-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+.fatigue-meter-over {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* Fatigue Details Breakdown Modal */
+.fatigue-details-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-sm);
+  background: var(--color-bg);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.fatigue-details-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fatigue-details-stat__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.fatigue-details-stat__value {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+
+.fatigue-details-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.fatigue-details-section__title {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.fatigue-details-card {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+}
+
+/* Proactive Scheduler Fatigue Callout */
+.scheduler-fatigue-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  margin-top: var(--spacing-xs);
+  animation: personnel-tab-enter 0.15s ease-out;
+}
+
+.scheduler-fatigue-callout__title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  font-weight: 700;
+  font-size: var(--font-size-xs);
+}
+
+.scheduler-fatigue-callout__desc {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.scheduler-fatigue-callout--critical {
+  background: var(--tint-critical-bg);
+  border: 1px solid var(--color-critical);
+}
+.scheduler-fatigue-callout--critical .scheduler-fatigue-callout__title {
+  color: var(--color-critical);
+}
+
+.scheduler-fatigue-callout--warning {
+  background: var(--tint-warning-bg);
+  border: 1px solid var(--color-warning);
+}
+.scheduler-fatigue-callout--warning .scheduler-fatigue-callout__title {
+  color: var(--color-warning-text);
+}
+
+.scheduler-fatigue-callout--success {
+  background: var(--tint-success-bg);
+  border: 1px solid var(--color-success);
+}
+.scheduler-fatigue-callout--success .scheduler-fatigue-callout__title {
+  color: var(--pill-success-text);
+}
+
+/* --- Focus Rings ---------------------------------------------------------- */
+.shift-preset-btn:focus-visible,
+.user-action-btn:focus-visible,
+.personnel-modal__close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* --- Responsive ----------------------------------------------------------- */
+@media (max-width: 640px) {
+  .personnel-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .shift-presets-row {
+    grid-template-columns: 1fr;
+  }
+  .personnel-filter-bar__left {
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .personnel-search-wrap {
+    max-width: 100%;
+    min-width: 100%;
+  }
+  .personnel-filter-select {
+    width: 100%;
+  }
+}
+
+/* --- Reduced Motion ------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .personnel-container {
+    animation: none;
+  }
+  .shift-status-pill--active::before {
+    animation: none;
+  }
+  .fatigue-meter-fill.is-severe {
+    animation: none;
+  }
+}
+
+/* --- 2026-10 tanod workflow: approval authority, availability, publish ---- */
+.user-approval-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  max-width: 18rem;
+}
+
+.approval-authority-fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  margin: 0;
+  min-width: 0;
+}
+
+.approval-authority-option {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-2xs) 0;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+/* Draft / published roster badges (Scheduler). Same pill geometry as
+   .shift-status-pill; draft uses the warning tint, published the success one. */
+.shift-approval-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-xs) 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shift-approval-pill--draft {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning);
+}
+
+.shift-approval-pill--published {
+  background: var(--tint-success-bg);
+  color: var(--pill-success-text);
+  border: 1px solid var(--color-success);
+}
+
+.scheduler-publish-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.scheduler-publish-bar__hint {
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.scheduler-publish-warnings {
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  border: 1px solid var(--color-warning);
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border-radius: var(--radius-sm);
+}
+
+.scheduler-publish-warnings ul {
+  margin: var(--spacing-xs) 0 0;
+  padding-left: var(--spacing-lg);
+}
+
+.availability-panel {
+  margin-bottom: var(--spacing-md);
+}
+
+.availability-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.availability-panel__head h3 {
+  margin: 0;
+}
+
+.availability-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm-md) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.availability-item:first-of-type {
+  border-top: 0;
+}
+
+.availability-item__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+/* Read-only fixed blocks (2026-10-12: availability is the tanod's own
+   statement, not reviewed). */
+.availability-item__windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+}
+
+.availability-chip {
+  padding: 0.125rem var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.scheduler-availability-hint {
+  margin: 0;
+}
+
+.availability-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.availability-item__actions input[type='text'] {
+  flex: 1 1 12rem;
+}
 
 /* ---- Scheduler: weekly roster grid (2026-10-12) ------------------------- */
 

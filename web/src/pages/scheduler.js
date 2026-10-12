@@ -393,13 +393,10 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     const preset = SHIFT_PRESETS.find((p) => p.type === activePreset);
     const intervals = availabilityIntervals(availability.items, userId);
     if (availability.status === 'ready' && !isWithinAvailability(range.startMs, range.endMs, intervals)) {
-      const ok = await confirmDialog({
-        title: `${nameOf(userId)} is not available then`,
-        description: `${preset.label} ${preset.start}–${preset.end} on ${shortDateLabel(date)} is outside the availability this tanod gave. Add the shift anyway?`,
-        confirmLabel: 'Add anyway',
-        cancelLabel: 'Cancel',
-      });
-      if (!ok) return;
+      // Availability is the tanod's fixed statement (2026-10-12): the server
+      // refuses a shift outside it (422 OUTSIDE_AVAILABILITY), so say so here.
+      showToast(`${nameOf(userId)} is not available for ${preset.label} ${preset.start}–${preset.end} on ${shortDateLabel(date)}. Shifts must fit inside the availability the tanod gave.`, { variant: 'warning' });
+      return;
     }
     busy = true;
     try {
@@ -430,7 +427,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     }
     if (userId !== null && availability.status === 'ready'
       && !isWithinAvailability(target.startMs, target.endMs, availabilityIntervals(availability.items, userId))) {
-      notes.push(`${who} is not available at that time.`);
+      showToast(`${who} is not available at that time. Shifts must fit inside the availability the tanod gave.`, { variant: 'warning' });
+      return;
     }
     const ok = await confirmDialog({
       title: `Move shift to ${who}, ${shortDateLabel(date)}?`,
@@ -685,57 +683,19 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     const ids = () => (week ? draftShifts.map((s) => s.shiftId) : [...selectedShiftIds]);
     const count = week ? draftShifts.length : selectedShiftIds.size;
 
-    if (canManageShifts) {
-      // Admin/Secretary: publish by recording that an official holding
-      // approve_roster signed the printed roster (paper is the record).
-      const paperBtn = document.createElement('button');
-      paperBtn.type = 'button';
-      paperBtn.id = week ? 'publish-week-paper-btn' : 'publish-shifts-paper-btn';
-      paperBtn.className = 'primary';
-      paperBtn.disabled = count === 0;
-      paperBtn.textContent = week
-        ? `Publish week with signed paper (${count})`
-        : `Publish with signed paper (${count})`;
-      paperBtn.addEventListener('click', () => publishWithPaper(ids(), paperBtn));
-      buttons.appendChild(paperBtn);
-      bar.append(hint, buttons);
-      return bar;
-    }
-    const publish = document.createElement('button');
-    publish.type = 'button';
-    publish.id = week ? 'publish-week-btn' : 'publish-shifts-btn';
-    publish.className = 'primary';
-    publish.disabled = count === 0;
-    const publishLabel = week ? `Publish week (${count})` : `Publish selected (${count})`;
-    publish.textContent = publishLabel;
-    publish.addEventListener('click', async () => {
-      const list = ids();
-      if (list.length === 0) return;
-      const confirmed = await confirmDialog({
-        title: `Publish ${list.length} shift${list.length === 1 ? '' : 's'}?`,
-        description: 'Published shifts become visible to the assigned tanods. You need roster approval authority to do this.',
-        confirmLabel: 'Publish',
-        cancelLabel: 'Cancel',
-      });
-      if (!confirmed) return;
-      publish.disabled = true;
-      publish.textContent = 'Publishing…';
-      try {
-        const result = await publishInBatches(list);
-        publishWarnings = result.warnings;
-        showToast(
-          `${result.published.length} shift${result.published.length === 1 ? '' : 's'} published.`,
-          { variant: 'success' },
-        );
-        selectedShiftIds.clear();
-        load();
-      } catch (err) {
-        publish.disabled = false;
-        publish.textContent = publishLabel;
-        showToast(err instanceof ApiClientError ? err.message : 'Could not publish these shifts.', { variant: 'error' });
-      }
-    });
-    buttons.appendChild(publish);
+    // Paper only (2026-10-12): everyone who may publish (Admin, Secretary,
+    // or a Punong Barangay holding approve_roster) records the signed paper
+    // roster; the server refuses a publish without it.
+    const paperBtn = document.createElement('button');
+    paperBtn.type = 'button';
+    paperBtn.id = week ? 'publish-week-paper-btn' : 'publish-shifts-paper-btn';
+    paperBtn.className = 'primary';
+    paperBtn.disabled = count === 0;
+    paperBtn.textContent = week
+      ? `Publish week with signed paper (${count})`
+      : `Publish with signed paper (${count})`;
+    paperBtn.addEventListener('click', () => publishWithPaper(ids(), paperBtn));
+    buttons.appendChild(paperBtn);
 
     bar.append(hint, buttons);
     return bar;

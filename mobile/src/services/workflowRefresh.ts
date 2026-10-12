@@ -5,8 +5,8 @@
  *
  *   - the school list  (`GET /schools`  -> `school_local`)  on login, app
  *     resume and sync passes, so the school picker works with no connection;
- *   - availability review status (`GET /availability` -> `availability_local`),
- *     which is how `accepted`/`revised` and the desk's note reach the phone;
+ *   - the server copy of the tanod's availability (`GET /availability` ->
+ *     `availability_local`), e.g. a period submitted from another phone;
  *   - an accomplishment month's report status + the server-suggested
  *     durations (`GET /accomplishment-reports`).
  *
@@ -100,15 +100,15 @@ export async function refreshAccomplishmentMonth(
 
 /**
  * The cheap, throttled refresh a sync pass runs after sending: the school
- * cache, and availability status only if the Tanod actually has submissions
- * that could have been reviewed. Never throws.
+ * cache, and the availability copy only if the Tanod actually has synced
+ * submissions. Never throws.
  */
 export async function refreshWorkflowCaches(): Promise<void> {
   try {
     if (!(await loadSession())) return;
     await refreshSchoolCache();
     const rows = await listAvailability();
-    if (rows.some((row) => row.synced === 1 && row.status !== 'accepted')) {
+    if (rows.some((row) => row.synced === 1)) {
       await refreshAvailabilityFromServer();
     }
   } catch {

@@ -1,21 +1,23 @@
 /**
  * availabilityRepository.ts — `availability_local` (contract §3, migration 6).
  *
- * A Tanod submits the dates and time windows they can serve for a period; the
- * desk reviews it (accepted / revised) and builds the roster from it. The
- * write is offline-first (Rule 7): it persists to encrypted SQLite before the
- * screen closes and goes out through `/sync/batch`'s `availability[]`, keyed
- * by `client_event_id`. The server's own status (`accepted`/`revised`,
- * `review_note`) flows back in through `applyServerAvailability()`.
+ * A Tanod submits the dates and time windows they can serve for a period.
+ * Since 2026-10-12 that is the tanod's own fixed statement: it is not
+ * reviewed, never locked, and the desk can only schedule the tanod inside it.
+ * The write is offline-first (Rule 7): it persists to encrypted SQLite before
+ * the screen closes and goes out through `/sync/batch`'s `availability[]`,
+ * keyed by `client_event_id`. The server's copy (version, and on rows from
+ * before 2026-10-12 the legacy `accepted`/`revised` status and `review_note`,
+ * kept but not shown) flows back in through `applyServerAvailability()`.
  *
  * ONE LOCAL ROW PER PERIOD (unique index): the server has UNIQUE(user_id,
- * period_start, period_end) and, for a still-`submitted` period, treats a
- * re-send as an update (version + 1). So an edit re-uses the row, bumps the
+ * period_start, period_end) and treats a re-send with changed windows as an
+ * update (version + 1), whatever the row's status. So an edit re-uses the row, bumps the
  * local version and mints a NEW `client_event_id` — the old event id has
  * already been (or may have been) applied, and an idempotent replay of it
  * would carry the old windows.
  *
- * Nothing in here logs window contents or review notes.
+ * Nothing in here logs window contents.
  */
 
 import { openLocalDatabase } from './localDatabase';
@@ -71,15 +73,10 @@ export function parseLocalWindows(row: Pick<AvailabilityLocalRow, 'windows_json'
   }
 }
 
-/** True when the Tanod may still change this period (the server 409s an accepted one). */
-export function isAvailabilityEditable(status: AvailabilityStatus): boolean {
-  return status !== 'accepted';
-}
-
 /**
  * Persists a submission locally. Re-submitting a period that already has a row
- * updates it (new event id, version + 1, back to unsynced); an `accepted` row
- * is refused here the same way the server would (409).
+ * updates it (new event id, version + 1, back to unsynced), whatever its
+ * status: nothing is locked.
  */
 export async function saveAvailabilityLocally(input: NewAvailabilityInput): Promise<{ localId: string; clientEventId: string }> {
   const problem = validateAvailability(input);
@@ -101,9 +98,6 @@ export async function saveAvailabilityLocally(input: NewAvailabilityInput): Prom
 
     let localId: string;
     if (existing) {
-      if (!isAvailabilityEditable(existing.status)) {
-        throw new Error('This period was already accepted by the desk and can no longer be changed.');
-      }
       localId = existing.local_id;
       await db.run(
         `UPDATE availability_local
@@ -180,14 +174,12 @@ export interface ServerAvailability {
 }
 
 /**
- * Merges the server's view of the Tanod's own submissions. Server status is
- * authoritative for rows already synced (that is how `accepted`/`revised` and
- * the reviewer's note reach the phone); a local row with an UNSENT edit is
- * never overwritten — the Tanod's pending change wins until it is sent — EXCEPT
- * when the server's copy is already `accepted` (it 409s every change to one), where the server's
- * copy is applied and the local row is marked resolved instead of retrying forever. A
- * period the server has but this phone does not (submitted from another
- * device) is added as already-synced.
+ * Merges the server's view of the Tanod's own submissions. The server copy is
+ * authoritative for rows already synced; a local row with an UNSENT edit is
+ * never overwritten — the Tanod's pending change wins until it is sent (the
+ * server takes a change to any period, so it will go through). A period the
+ * server has but this phone does not (submitted from another device) is added
+ * as already-synced.
  */
 export async function applyServerAvailability(entries: ServerAvailability[]): Promise<void> {
   if (entries.length === 0) return;
@@ -218,27 +210,6 @@ export async function applyServerAvailability(entries: ServerAvailability[]): Pr
           entry.version,
           now,
           entry.clientEventId ?? `server-availability-${entry.availId}`,
-        ],
-        /* transaction */ false
-      );
-    } else if (existing.synced === 0 && entry.status === 'accepted') {
-      // The desk already ACCEPTED this period, and the server answers any further change to an
-      // accepted period with a 409 — so an unsent local edit can never succeed and would otherwise
-      // retry (then sit in needs-attention) forever. The server's accepted copy wins and the local
-      // row is resolved. (A `revised` period is NOT treated this way: the server still takes a
-      // resubmission of it, so a pending edit must be sent, not overwritten.)
-      await db.run(
-        `UPDATE availability_local
-           SET server_avail_id = ?, status = ?, review_note = ?, version = ?, windows_json = ?,
-               synced = 1, last_sync_error = NULL, sync_attempts = 0, permanent_failure = 0
-         WHERE local_id = ? AND synced = 0`,
-        [
-          entry.availId,
-          entry.status,
-          entry.reviewNote,
-          entry.version,
-          JSON.stringify(normalizeWindows(entry.windows)),
-          existing.local_id,
         ],
         /* transaction */ false
       );

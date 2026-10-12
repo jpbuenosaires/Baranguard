@@ -439,37 +439,44 @@ describe('Personnel behaviour', () => {
     assert.equal(pills.filter((p) => p === 'Published').length, 2);
   });
 
-  test('publishing: only drafts are selectable; Publish POSTs shift_ids with an Idempotency-Key and shows coverage warnings', async () => {
+  test('publishing (paper-only): only drafts are selectable; the PB records the signed paper and the POST carries shift_ids, recorded_from_paper and an Idempotency-Key', async () => {
     await openScheduler('punong_barangay');
-    const publish = $('#publish-shifts-btn');
+    assert.equal($('#publish-shifts-btn'), null, 'no in-app Publish button: the server refuses a publish without the signed paper');
+    const publish = $('#publish-shifts-paper-btn');
     assert.equal(publish.disabled, true, 'nothing selected yet');
     assert.equal($$('tbody input[type="checkbox"]').length, 2, 'only the two draft shifts have a checkbox');
     click(buttonByText(/select all drafts/i));
-    assert.equal($('#publish-shifts-btn').disabled, false);
-    click($('#publish-shifts-btn'));
+    assert.equal($('#publish-shifts-paper-btn').disabled, false);
+    click($('#publish-shifts-paper-btn'));
     await settle();
     const dialog = $('[role="alertdialog"], [role="dialog"]');
-    assert.ok(dialog, 'publishing must be confirmed');
+    assert.ok(dialog, 'publishing asks for the signer and date');
     assert.equal(api.callsTo('POST', '/shifts/publish').length, 0, 'nothing is sent before confirmation');
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    type($('#confirm-dialog-field-signedOn', dialog), today);
     click($$('button', dialog).filter((b) => !b.disabled).at(-1));
     await settle();
     const [call] = api.callsTo('POST', '/shifts/publish');
     assert.ok(call, 'POST /shifts/publish was not sent');
     assert.deepEqual(call.body.shift_ids.sort(), [502, 503]);
+    assert.deepEqual(call.body.recorded_from_paper, { signer_user_id: 3, signed_on: today });
     assert.match(call.headers['idempotency-key'] || '', UUID);
     assert.match(text($('.scheduler-publish-warnings')), /2026-10-07.*no tanod is scheduled/i);
   });
 
-  test('a publish refused for missing authority shows the server message and sends nothing else', async () => {
+  test('a publish refused by the server shows the server message and sends nothing else', async () => {
     api.on('POST', '/shifts/publish', () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'You are not designated to perform this action.' } } }));
     await openScheduler('punong_barangay');
     click(buttonByText(/select all drafts/i));
-    click($('#publish-shifts-btn'));
+    click($('#publish-shifts-paper-btn'));
     await settle();
-    click($$('button', $('[role="alertdialog"], [role="dialog"]')).filter((b) => !b.disabled).at(-1));
+    const dialog = $('[role="alertdialog"], [role="dialog"]');
+    type($('#confirm-dialog-field-signedOn', dialog), new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10));
+    click($$('button', dialog).filter((b) => !b.disabled).at(-1));
     await settle();
     assert.match(text(window.document.body), /not designated to perform this action/);
     assert.equal($('.scheduler-publish-warnings'), null);
+    assert.equal(api.callsTo('POST', '/shifts/publish').length, 1);
   });
 
   test('Scheduler form dynamically shows proactive fatigue callout on preset or time change', async () => {
@@ -506,9 +513,10 @@ describe('Personnel behaviour', () => {
     await settle();
   });
 
-  test('Punong Barangay can publish drafts (the server checks approve_roster) but cannot edit them', async () => {
+  test('Punong Barangay can publish drafts with the signed paper (the server checks approve_roster) but cannot edit them', async () => {
     await openScheduler('punong_barangay');
-    assert.ok($('#publish-shifts-btn'));
+    assert.ok($('#publish-shifts-paper-btn'));
+    assert.equal($('#publish-shifts-btn'), null, 'no in-app Publish button for anyone');
     assert.equal(buttonByText(/edit shift/i), undefined);
     assert.match(text($('.page-content')), /Tanod #5/, 'an assigned shift shows its id when the roster is unavailable, not "Unassigned"');
   });
@@ -613,28 +621,27 @@ describe('Scheduler week grid', () => {
   });
 
   test('the Night preset ends at 06:00 the next day', async () => {
-    useWeekData();
+    useWeekData({ availability: [
+      { avail_id: 83, user_id: 4, full_name: 'Jose Reyes', period_start: WEEK, period_end: day(6), windows_json: [{ date: day(3), start: '22:00', end: '23:59' }, { date: day(4), start: '00:00', end: '06:00' }], status: 'submitted', version: 1 },
+    ] });
     await openScheduler('admin', { view: 'week' });
     click($$('.scheduler-week-toolbar__tools .filter-chip').find((b) => /^Night/.test(text(b))));
     await settle();
     click($('.week-grid__add', cell('Jose Reyes', 3)));
     await settle();
-    assert.ok(dialog(), 'Jose Reyes gave no availability that night, so it asks first');
-    await confirm();
+    assert.equal(dialog(), null, 'Jose Reyes is available that night, so no question');
     const [call] = api.callsTo('POST', '/shifts');
     assert.equal(call.body.start_at, `${day(3)}T22:00`);
     assert.equal(call.body.end_at, `${day(4)}T06:00`);
-    assert.equal('source_availability_id' in call.body && call.body.source_availability_id !== null, false);
   });
 
-  test('adding a shift where the tanod is not available asks first, and Cancel sends nothing', async () => {
+  test('adding a shift where the tanod is not available is refused and sends nothing (availability is fixed)', async () => {
     useWeekData();
     await openScheduler('admin', { view: 'week' });
     click($('.week-grid__add', cell('Maria Dela Cruz', 0)));
     await settle();
-    assert.match(text(dialog()), /not available/);
-    click($$('button', dialog()).find((b) => /cancel/i.test(text(b))));
-    await settle();
+    assert.equal(dialog(), null, 'no "add anyway" question');
+    assert.match(text(window.document.body), /not available/);
     assert.equal(api.callsTo('POST', '/shifts').length, 0);
   });
 
@@ -682,12 +689,23 @@ describe('Scheduler week grid', () => {
   });
 
   test('moving a published shift warns that it goes back to draft', async () => {
+    useWeekData({ availability: [
+      { avail_id: 81, user_id: 4, full_name: 'Jose Reyes', period_start: WEEK, period_end: day(6), windows_json: [{ date: day(0), start: '06:00', end: '23:59' }], status: 'submitted', version: 1 },
+    ] });
+    await openScheduler('admin', { view: 'week' });
+    drop(cell('Jose Reyes', 0), 602);
+    await settle();
+    assert.match(text(dialog()), /back to draft/);
+  });
+
+  test('moving a shift to a tanod who is not available then is refused and sends nothing', async () => {
     useWeekData();
     await openScheduler('admin', { view: 'week' });
     drop(cell('Jose Reyes', 2), 602);
     await settle();
-    assert.match(text(dialog()), /back to draft/);
-    assert.match(text(dialog()), /not available/);
+    assert.equal(dialog(), null);
+    assert.match(text(window.document.body), /not available/);
+    assert.equal(api.callsTo('PATCH', '/shifts/:id').length, 0);
   });
 
   test('a chip opens the Edit Shift dialog', async () => {
@@ -752,14 +770,15 @@ describe('Scheduler week grid', () => {
     assert.equal($$('.shift-chip--warn').length, 0, 'no warnings without availability');
   });
 
-  test('Punong Barangay sees the week read-only and publishes the week in-app', async () => {
+  test('Punong Barangay sees the week read-only and publishes the week with the signed paper', async () => {
     useWeekData();
     await openScheduler('punong_barangay', { view: 'week' });
     assert.ok($('.week-grid'));
     assert.equal($$('.week-grid__add').length, 0, 'no adding');
     assert.equal($$('button.shift-chip').length, 0, 'chips are not editable');
     assert.equal($('#scheduler-copy-week-btn'), null);
-    assert.ok($('#publish-week-btn'));
+    assert.ok($('#publish-week-paper-btn'));
+    assert.equal($('#publish-week-btn'), null, 'no in-app publish');
     assert.match(text($('.page-content')), /Jose Reyes/, 'names come from the availability rows');
   });
 });

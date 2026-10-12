@@ -350,6 +350,16 @@ function formatDuration(startAt, endAt) {
   return hours % 1 === 0 ? `${hours} hrs` : `${hours.toFixed(1)} hrs`;
 }
 
+// 2026-10-12: approving a swap on a published shift keeps it PUBLISHED —
+// the roster was already signed, only the name changes, so there is no
+// re-approval step. Releasing with no named target leaves it unassigned
+// (assigning someone later is a normal edit, which does return it to draft).
+function swapApproveNote(req) {
+  return req.targetUserId === null
+    ? 'The shift stays published but becomes unassigned until you assign a Tanod.'
+    : 'The shift stays published with the new Tanod; no roster re-approval is needed.';
+}
+
 function renderActionsCell(req, requesterName, shift, onChanged) {
   const wrap = document.createElement('div');
   wrap.className = 'user-actions-group';
@@ -370,10 +380,9 @@ function renderActionsCell(req, requesterName, shift, onChanged) {
     event.stopPropagation();
     const confirmed = await confirmDialog({
       title: status === 'approved' ? 'Approve shift swap request?' : 'Deny shift swap request?',
-      description: `${requesterName} — ${shiftDescription}`
-        + (status === 'approved'
-          ? '. Approving moves or releases the shift and returns it to Draft; it must be approved again before the tanod sees it as final. An open request ("any eligible tanod") leaves the shift unassigned until you reassign it in the Scheduler.'
-          : ''),
+      description: status === 'approved'
+        ? `${requesterName} — ${shiftDescription}. ${swapApproveNote(req)}`
+        : `${requesterName} — ${shiftDescription}`,
       confirmLabel: status === 'approved' ? 'Approve' : 'Deny',
       cancelLabel: 'Cancel',
       danger: status === 'denied',

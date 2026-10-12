@@ -320,10 +320,44 @@ describe('Scanned copies', () => {
 describe('Paper signature and scans on Annex D', () => {
   afterEach(() => { cleanup(); clearAuthorityCache(); });
 
-  test('a draft Annex D shows no paper panel', async () => {
-    mountPage(renderSchoolZonesPage, { role: 'admin', param: { tab: 'term', reportId: 81 } });
+  test('paper-only: a DRAFT Annex D has no Prepare button; Record signed paper asks for the preparer, the signer and the date', async () => {
+    await openTerm('secretary', termReport({ report_id: 81, status: 'draft', prepared_by: null, prepared_at: null, version: 1 }));
+    assert.equal(buttonByText(/^Prepare report$/), undefined, 'in-app Prepare is retired (the server answers 410)');
+    assert.match(text(panel()), /Print this report and have it signed/);
+    assert.equal(api.callsTo('GET', '/document-scans').length, 0, 'no scans before approval');
+    click(buttonByText(/^Record signed paper$/, panel()));
     await settle();
-    assert.equal(panel(), null);
+    const dirCalls = api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'signer').map((c) => c.query.authority).sort();
+    assert.deepEqual(dirCalls, ['approve_annex_d', 'prepare_annex_d']);
+    assert.deepEqual($$('#confirm-dialog-field-preparer option', dialog()).map((o) => text(o)), ['Ramon Elcano (Chief Tanod)']);
+    assert.deepEqual($$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o)), ['Teresa Magbanua (Punong Barangay)']);
+    type($('#confirm-dialog-field-signedOn', dialog()), today());
+    click(confirmButton());
+    await settle();
+    const [call] = api.callsTo('POST', '/ssz-term-reports/:id/record-paper-approval');
+    assert.ok(call);
+    assert.equal(call.path, '/ssz-term-reports/81/record-paper-approval');
+    assert.deepEqual(call.body, { preparer_user_id: 1, signer_user_id: 3, signed_on: today() });
+    assert.match(call.headers['idempotency-key'] || '', UUID);
+    assert.equal(api.callsTo('POST', '/ssz-term-reports/:id/prepare').length, 0);
+  });
+
+  test('a draft Annex D: the same person as preparer and signer is refused client-side', async () => {
+    api.on('GET', '/users/directory', () => ({ status: 200, body: { items: [{ user_id: 3, full_name: 'Teresa Magbanua', official_title: 'Punong Barangay' }] } }));
+    await openTerm('admin', termReport({ report_id: 81, status: 'draft', prepared_by: null, prepared_at: null, version: 1 }));
+    click(buttonByText(/^Record signed paper$/, panel()));
+    await settle();
+    type($('#confirm-dialog-field-signedOn', dialog()), today());
+    click(confirmButton());
+    await settle();
+    assert.match(dialogError(), /preparer and the signer must be different/);
+    assert.equal(api.callsTo('POST', '/ssz-term-reports/:id/record-paper-approval').length, 0);
+  });
+
+  test('Punong Barangay gets no controls on a draft Annex D', async () => {
+    await openTerm('punong_barangay', termReport({ report_id: 81, status: 'draft', prepared_by: null, prepared_at: null, version: 1 }));
+    assert.equal(buttonByText(/^Record signed paper$|^Prepare report$/), undefined);
+    assert.match(text($('.page-content')), /have it prepared and signed on paper/);
   });
 
   test('a PREPARED Annex D offers Record signed paper, listing approve_annex_d holders, and posts to the ssz route', async () => {

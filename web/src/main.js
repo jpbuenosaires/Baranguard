@@ -53,7 +53,7 @@ const PAGE_ROLES = {
   // list is the union of the four; personnel.js gates individual tabs
   // below that.
   // 2026-10: the Fatigue tab left the hub. Secretary and Punong Barangay get
-  // the Scheduler tab only (availability review / roster publishing, which
+  // the Scheduler tab only (read-only availability / roster publishing, which
   // the Approvals page deep-links to); Users and Swap requests stay Admin —
   // see personnel.js. The server gates every action by role + authority.
   personnel: ['admin', 'secretary', 'punong_barangay'],

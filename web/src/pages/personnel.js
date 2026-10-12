@@ -18,7 +18,7 @@
  *
  * 2026-10 (docs/FEATURE_CONTRACT_2026-10.md §10): the Fatigue Flags tab was
  * removed from this hub. Users gained official title/approval authority
- * editing; Scheduler gained availability review, draft/published badges and
+ * editing; Scheduler gained a (read-only since 2026-10-12) availability panel, draft/published badges and
  * a Publish action. Swap requests remain their own tab. Admin sees all
  * three tabs; Secretary sees Scheduler + Swap requests (2026-10-07: the
  * Secretary builds the roster and resolves swaps); Punong Barangay sees the
@@ -75,7 +75,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   const canResolveSwaps = isAdmin || user.role === 'secretary';
 
   // Admin: Users, Scheduler, Swap requests. Secretary: Scheduler and Swap
-  // requests (build the roster, see fixed availability, resolve swaps).
+  // requests (build the roster from tanod availability, resolve swaps).
   // Punong Barangay: Scheduler only (roster publishing). The server checks
   // role and approval authority on every action; the Users endpoints are
   // Admin-only. Swap requests stay a tab of their own so they remain one

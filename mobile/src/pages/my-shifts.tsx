@@ -167,8 +167,9 @@ const MyShiftsPage: React.FC = () => {
     }
   }
 
-  // Calculate schedule summary metrics. A shift flagged `pendingReapproval` (swap approved,
-  // awaiting re-publish) is NOT confirmed duty, so it never counts toward "next duty" or hours.
+  // Calculate schedule summary metrics. A shift flagged `pendingReapproval` (legacy: a swap
+  // approved before 2026-10-12, awaiting re-publish) is NOT confirmed duty, so it never counts
+  // toward "next duty" or hours. An approved swap now keeps the shift published.
   const { nextShift, totalScheduledHours, confirmedCount, pendingReapprovalCount } = useMemo(() => {
     const now = Date.now();
     const confirmed = shifts.filter((s) => !s.pendingReapproval);
@@ -432,7 +433,7 @@ const MyShiftsPage: React.FC = () => {
                       <div className="roster-card__footer">
                         {isPendingReapproval ? (
                           <span className="roster-card__zone-row">
-                            Your swap was approved. The desk must re-publish this shift before it counts as confirmed duty.
+                            This shift is waiting for the desk to re-publish it before it counts as confirmed duty.
                           </span>
                         ) : pendingSwap ? (
                           <div className="status-indicator status-indicator--pending">

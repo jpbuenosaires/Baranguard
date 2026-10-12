@@ -177,7 +177,7 @@ function mapShiftDetailed(row) {
     approvalMode: row.approval_mode ?? 'digital',
     paperSignedOn: row.paper_signed_on ?? null,
     paperRecordedByName: row.paper_recorded_by_name ?? null,
-    // An approved swap on a published shift returns it to draft AND flags it for re-approval.
+    // Legacy (migration 0035): set by approved swaps before 2026-10-12; a swap now keeps the shift published.
     pendingReapproval: Boolean(row.pending_reapproval),
   };
 }
@@ -189,17 +189,18 @@ export async function getShiftsDetailed({ page, limit, approvalStatus, from, to 
 }
 
 /**
- * POST /shifts/publish — requires the approve_roster authority (the server
- * 403s otherwise and the page shows that message as-is).
+ * POST /shifts/publish — paper-only (2026-10-12): `recordedFromPaper`
+ * {signerUserId, signedOn} is required (422 PAPER_APPROVAL_REQUIRED without
+ * it). Callers: Admin/Secretary, or a Punong Barangay holding approve_roster.
  * @returns {Promise<{published:number[], alreadyPublished:number[], warnings:Array<{code:string,date:string}>}>}
  */
-export async function publishShifts(shiftIds, idempotencyKey, { recordedFromPaper } = {}) {
-  const body = { shift_ids: shiftIds };
-  // Admin/Secretary without approve_roster: the signer (who holds it) and the
-  // date they signed the paper roster. The server re-checks both.
-  if (recordedFromPaper) {
-    body.recorded_from_paper = { signer_user_id: recordedFromPaper.signerUserId, signed_on: recordedFromPaper.signedOn };
-  }
+export async function publishShifts(shiftIds, idempotencyKey, { recordedFromPaper }) {
+  // The signer (who holds approve_roster) and the date they signed the paper
+  // roster. The server re-checks both.
+  const body = {
+    shift_ids: shiftIds,
+    recorded_from_paper: { signer_user_id: recordedFromPaper.signerUserId, signed_on: recordedFromPaper.signedOn },
+  };
   const json = await request('POST', '/shifts/publish', { body, idempotencyKey });
   return {
     published: json.published ?? [],
@@ -278,6 +279,7 @@ function mapAvailability(row) {
     periodEnd: row.period_end,
     windows: Array.isArray(windows) ? windows : [],
     status: row.status,
+    // Legacy review fields (rows reviewed before 2026-10-12); not shown.
     reviewedBy: row.reviewed_by ?? null,
     reviewedAt: row.reviewed_at ?? null,
     reviewNote: row.review_note ?? null,
@@ -294,12 +296,8 @@ export async function getAvailability({ status, userId, periodStart, page, limit
   return { items: rows.map(mapAvailability), total: json.total ?? rows.length };
 }
 
-/** PATCH /availability/:id — Admin or Secretary; `status` is accepted|revised. */
-export async function reviewAvailability(availId, { status, reviewNote, idempotencyKey }) {
-  const body = { status };
-  if (reviewNote) body.review_note = reviewNote;
-  return mapAvailability(await request('PATCH', `/availability/${availId}`, { body, idempotencyKey }));
-}
+// PATCH /availability/:id was retired 2026-10-12 (410 AVAILABILITY_NOT_REVIEWED):
+// availability is the tanod's own fixed statement, nobody reviews it.
 
 // --- Schools + C-1 fields on incidents (§7) ---------------------------------
 
@@ -391,9 +389,11 @@ async function countOf(path, query) {
 /**
  * Live counts of work waiting on the signed-in user. There is no dedicated
  * approvals endpoint in the contract, so this composes the existing list
- * endpoints; nothing is invented or estimated. Paper-first (2026-10-12):
- * Admin/Secretary see what is waiting for its signed paper; a non-manager
- * sees only what their own authority lets them act on.
+ * endpoints; nothing is invented or estimated. Paper-only (2026-10-12):
+ * Admin/Secretary see what is waiting for its signed paper (Annex D drafts
+ * included: preparation is on the paper too); a Punong Barangay holding
+ * approve_roster also sees draft shifts, which they may publish by recording
+ * the signed paper roster.
  *
  * @param {string[]} authorities the viewer's own approval_authority
  * @param {string} [role] the viewer's role
@@ -412,14 +412,11 @@ export async function getPendingApprovalCounts(authorities, role) {
       countOf('/accomplishment-reports', { status: 'noted' }),
     ]).then(([prepared, noted]) => ({ key: 'paper-reports', label: 'Accomplishment reports waiting for the signed paper', count: prepared + noted })));
   }
-  if (isManager || has('prepare_annex_d')) {
-    jobs.push(request('GET', '/ssz-term-reports', { query: { limit: 100 } }).then((json) => {
-      const rows = json.items ?? [];
-      const out = [];
-      if (has('prepare_annex_d')) out.push({ key: 'annex-prepare', label: 'Annex D drafts to prepare', count: rows.filter((r) => r.status === 'draft').length });
-      if (isManager) out.push({ key: 'paper-annex', label: 'Annex D waiting for the signed paper', count: rows.filter((r) => r.status === 'prepared').length });
-      return out;
-    }));
+  if (isManager) {
+    jobs.push(Promise.all([
+      countOf('/ssz-term-reports', { status: 'draft' }),
+      countOf('/ssz-term-reports', { status: 'prepared' }),
+    ]).then(([draft, prepared]) => ({ key: 'paper-annex', label: 'Annex D waiting for the signed paper', count: draft + prepared })));
   }
   const results = await Promise.all(jobs);
   return results.flat();

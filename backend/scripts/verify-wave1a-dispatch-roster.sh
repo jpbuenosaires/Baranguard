@@ -2,8 +2,9 @@
 # Baranguard — Wave 1 / Agent A validation (review decisions 2026-10-07):
 # dispatch cancel reason + cancel-from-arrived, dispatch needs a PUBLISHED
 # shift (NO_PUBLISHED_SHIFT / override_reason), Secretary may create/update
-# shifts and review swap requests, approved swap -> draft +
-# pending_reapproval (Tanod keeps seeing it, publish clears it), migrations
+# shifts and review swap requests, approved swap KEEPS a published shift
+# published (2026-10-12; legacy pending_reapproval rows: Tanod keeps seeing
+# them, publish clears it), migrations
 # 0034/0035 (+ down), and backup.sh's "legal hold prunes nothing" rule.
 #
 # Safe to run: disposable database, disposable app-user, throwaway port. The
@@ -335,8 +336,14 @@ expect_eq "  ... and the Tanod's own cancelled dispatch IS in that list" "$(prin
 case "$BODY" in *"hoax"*) fail "LEAK: cancel reason text reached the Tanod's own dispatch list";; *) pass "  cancel reason text absent from the Tanod's response body";; esac
 
 # ================================================================ shifts: secretary
-step "6. Secretary may create/update shifts, but not publish without approve_roster"
+step "6. Secretary may create/update shifts; publishing needs the signed paper (paper-only, 2026-10-12)"
 D1=$("$PHP_BIN" -r 'echo gmdate("Y-m-d", time()+86400*3);')
+# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
+# verify-roster-accomplishment.sh). This suite tests other rules, so every
+# tanod gets open whole-day availability first.
+"$PHP_BIN" "$BACKEND_DIR/scripts/seed-open-availability.php" | mysql_exec "$VALDB" \
+  && pass "Seeded open availability for every tanod (seed-open-availability.php)" || fail "open availability seed failed"
 api POST /shifts "$SEC_T" "{\"user_id\":$T4,\"start_at\":\"${D1}T08:00:00+08:00\",\"end_at\":\"${D1}T14:00:00+08:00\",\"request_id\":\"$(uuid)\",\"patrol_zone\":\"Purok 1\"}"
 expect_code "Secretary POST /shifts" 201
 SS_NEW=$(jget "$BODY" shift_id)
@@ -346,8 +353,13 @@ api PATCH "/shifts/$SS_NEW" "$SEC_T" '{"patrol_zone":"Purok 2","version":1}'
 expect_code "Secretary PATCH /shifts/:id" 200
 expect_eq "  patrol_zone changed" "$(db_one "SELECT patrol_zone FROM shift_schedule WHERE shift_id=$SS_NEW;")" "Purok 2"
 expect_eq "  audit shift_updated actor is the secretary" "$(db_one "SELECT actor_user_id FROM audit_log WHERE action='shift_updated' AND entity_id=$SS_NEW LIMIT 1;")" "$SEC_ID"
+PAPER_DATE=$("$PHP_BIN" -r 'date_default_timezone_set("Asia/Manila"); echo date("Y-m-d");')
+paper() { echo "\"recorded_from_paper\":{\"signer_user_id\":$1,\"signed_on\":\"$PAPER_DATE\"}"; }
 api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SS_NEW]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary WITHOUT approve_roster cannot publish" 403
+expect_code "Secretary cannot publish without the signed paper" 422
+expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
+api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SS_NEW],$(paper "$SEC_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Secretary naming themselves (no approve_roster) as the paper signer" 422
 expect_eq "  shift still draft" "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$SS_NEW;")" "draft"
 api POST /shifts "$SEC2_T" "{\"user_id\":$T4,\"start_at\":\"${D1}T15:00:00+08:00\",\"end_at\":\"${D1}T16:00:00+08:00\",\"request_id\":\"$(uuid)\"}"
 expect_code "Other-barangay Secretary cannot schedule this barangay's Tanod (generic 422)" 422
@@ -362,11 +374,13 @@ expect_code "Tanod still cannot update shifts" 403
 api GET /shifts "$SEC_T" ""
 expect_code "Secretary GET /shifts (unchanged)" 200
 api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$SS_NEW]}" -H "Idempotency-Key: $(uuid)"
-expect_code "PB holding approve_roster publishes the Secretary's draft" 200
+expect_code "PB holding approve_roster cannot publish in-app either (no paper)" 422
+api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SS_NEW],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Secretary records the paper roster the PB signed" 200
 expect_eq "  published" "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$SS_NEW;")" "published"
 
 # ================================================================ swaps
-step "7. Swap review by Secretary; approved swap -> draft + pending_reapproval"
+step "7. Swap review by Secretary; approved swap keeps the shift published (no pending_reapproval)"
 api POST /shift-swap-requests "$T1_T" "{\"shift_id\":$S1,\"target_user_id\":$T4,\"reason\":\"family event\",\"client_request_id\":\"$(uuid)\"}"
 expect_code "T1 requests a swap on their PUBLISHED shift (target T4)" 201
 SW1=$(jget "$BODY" request_id)
@@ -385,40 +399,63 @@ expect_code "Tanod cannot approve a swap" 403
 api PATCH "/shift-swap-requests/$SW1" "$PB_T" '{"status":"approved","version":1}'
 expect_code "Punong Barangay cannot approve a swap" 403
 
+# availability is the tanod's fixed statement: a swap can't put T4 outside it
+mysql_exec "$VALDB" -e "CREATE TABLE wa_avail_hold AS SELECT * FROM tanod_availability WHERE user_id=$T4; DELETE FROM tanod_availability WHERE user_id=$T4;"
+api PATCH "/shift-swap-requests/$SW1" "$SEC_T" '{"status":"approved","version":1}'
+expect_code "Swap to a tanod with no availability for the shift is refused" 422
+expect_eq "  OUTSIDE_AVAILABILITY" "$(jget "$BODY" error.code)" "OUTSIDE_AVAILABILITY"
+expect_eq "  request still pending, shift still T1's" "$(db_one "SELECT CONCAT(r.status,'|',s.user_id) FROM shift_swap_request r JOIN shift_schedule s ON s.shift_id=r.shift_id WHERE r.request_id=$SW1;")" "pending|$T1"
+mysql_exec "$VALDB" -e "INSERT INTO tanod_availability SELECT * FROM wa_avail_hold; DROP TABLE wa_avail_hold;"
+
 api PATCH "/shift-swap-requests/$SW1" "$SEC_T" '{"status":"approved","version":1}'
 expect_code "SECRETARY approves the swap" 200
-expect_eq "  shift reassigned to T4, draft, approval cleared, pending_reapproval=1" \
-  "$(db_one "SELECT CONCAT(user_id,'|',approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$S1;")" "$T4|draft|NULL|1"
+expect_eq "  shift reassigned to T4, STILL published, approver kept, pending_reapproval=0" \
+  "$(db_one "SELECT CONCAT(user_id,'|',approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$S1;")" "$T4|published|$PB_ID|0"
 expect_eq "  audit swap_request_resolved actor is the secretary" "$(db_one "SELECT actor_user_id FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SW1;")" "$SEC_ID"
+expect_eq "  audit approval_reset=false (the approval stands)" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SW1;")" "false"
 
 api GET "/shifts?limit=100" "$T4_T" ""
-expect_eq "New holder T4 SEES the awaiting-re-approval shift" "$(shift_visible "$BODY" $S1)" "1"
-expect_eq "  its pending_reapproval is true" "$(shift_field "$BODY" $S1 pending_reapproval)" "true"
-expect_eq "  its approval_status is draft" "$(shift_field "$BODY" $S1 approval_status)" "draft"
+expect_eq "New holder T4 sees the swapped shift" "$(shift_visible "$BODY" $S1)" "1"
+expect_eq "  as published, pending_reapproval false" "$(shift_field "$BODY" $S1 approval_status)/$(shift_field "$BODY" $S1 pending_reapproval)" "published/false"
 expect_eq "  every shift object carries the boolean (published one is false)" "$(shift_field "$BODY" $SS_NEW pending_reapproval)" "false"
 api GET "/shifts?limit=100" "$T1_T" ""
 expect_eq "Previous holder T1 no longer sees it" "$(shift_visible "$BODY" $S1)" "0"
 api GET "/shifts?limit=100" "$T2_T" ""
 expect_eq "An unrelated Tanod (T2) does not see it" "$(shift_visible "$BODY" $S1)" "0"
+
+# the new holder is on the published roster right away: dispatchable without an override
+mysql_exec "$VALDB" -e "INSERT INTO incident (barangay_id, incident_type, priority, raw_narrative, status, source, created_at, updated_at) VALUES (1,'theft','normal','WA-INC-4','pending','web',UTC_TIMESTAMP(),UTC_TIMESTAMP());"
+INC4=$(db_one "SELECT incident_id FROM incident WHERE raw_narrative='WA-INC-4';")
+api POST /dispatch "$ADMIN_T" "$(dispatch_body $INC4 $T4)"
+expect_code "Swapped-in T4 is dispatched with NO override_reason (shift stayed published)" 201
+SWD=$(jget "$BODY" dispatch_id)
+expect_eq "  no override stored" "$(db_one "SELECT IFNULL(override_reason,'NULL') FROM dispatch WHERE dispatch_id=$SWD;")" "NULL"
+mysql_exec "$VALDB" -e "UPDATE dispatch SET status='cancelled', cancel_reason='test cleanup' WHERE dispatch_id=$SWD; UPDATE incident SET status='pending' WHERE incident_id=$INC4;"
+
+# LEGACY rows: a shift flagged pending_reapproval by a swap approved before
+# 2026-10-12 (draft + flag) keeps its display and rules until re-published.
+mysql_exec "$VALDB" -e "UPDATE shift_schedule SET approval_status='draft', approved_by=NULL, approved_at=NULL, pending_reapproval=1 WHERE shift_id=$S1;"
+api GET "/shifts?limit=100" "$T4_T" ""
+expect_eq "Legacy: holder T4 SEES the awaiting-re-approval shift" "$(shift_visible "$BODY" $S1)" "1"
+expect_eq "  its pending_reapproval is true" "$(shift_field "$BODY" $S1 pending_reapproval)" "true"
+expect_eq "  its approval_status is draft" "$(shift_field "$BODY" $S1 approval_status)" "draft"
 api GET "/shifts?limit=100" "$ADMIN_T" ""
 expect_eq "Admin list shows pending_reapproval=true" "$(shift_field "$BODY" $S1 pending_reapproval)" "true"
 api GET "/shifts?approval_status=draft&limit=100" "$SEC_T" ""
 expect_eq "Secretary sees it under approval_status=draft" "$(shift_visible "$BODY" $S1)" "1"
 
 api POST /shift-swap-requests "$T4_T" "{\"shift_id\":$S1,\"client_request_id\":\"$(uuid)\"}"
-expect_code "New swap request on a pending_reapproval shift" 409
+expect_code "New swap request on a (legacy) pending_reapproval shift" 409
 api POST /shift-swap-requests "$T3_T" "{\"shift_id\":$S3,\"client_request_id\":\"$(uuid)\"}"
 expect_code "Swap request on an ordinary DRAFT shift (not pending) is still 404" 404
 
 # dispatch does not count a pending_reapproval draft as a published shift
-mysql_exec "$VALDB" -e "INSERT INTO incident (barangay_id, incident_type, priority, raw_narrative, status, source, created_at, updated_at) VALUES (1,'theft','low','WA-INC-4','pending','web',UTC_TIMESTAMP(),UTC_TIMESTAMP());"
-INC4=$(db_one "SELECT incident_id FROM incident WHERE raw_narrative='WA-INC-4';")
 api POST /dispatch "$ADMIN_T" "$(dispatch_body $INC4 $T4)"
-expect_code "A draft shift awaiting re-approval does not satisfy the dispatch shift rule" 422
+expect_code "A legacy draft shift awaiting re-approval does not satisfy the dispatch shift rule" 422
 expect_eq "  NO_PUBLISHED_SHIFT" "$(jget "$BODY" error.code)" "NO_PUBLISHED_SHIFT"
 
-api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$S1]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Re-approval: PB publishes the shift" 200
+api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$S1],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Re-approval: PB records the signed paper and publishes the shift" 200
 expect_eq "  published, pending_reapproval cleared, approved_by = PB" "$(db_one "SELECT CONCAT(approval_status,'|',pending_reapproval,'|',approved_by) FROM shift_schedule WHERE shift_id=$S1;")" "published|0|$PB_ID"
 api GET "/shifts?limit=100" "$T4_T" ""
 expect_eq "T4 sees it as published, pending false" "$(shift_field "$BODY" $S1 approval_status)/$(shift_field "$BODY" $S1 pending_reapproval)" "published/false"
@@ -429,13 +466,13 @@ api PATCH "/shift-swap-requests/$SW2" "$SEC_T" '{"status":"denied","version":1}'
 expect_code "Secretary DENIES it" 200
 expect_eq "  denied swap leaves the shift published, pending 0, owner T4" "$(db_one "SELECT CONCAT(user_id,'|',approval_status,'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$S1;")" "$T4|published|0"
 
-# unassigned swap (no target) also flags re-approval
+# unassigned swap (no target) on a published shift: stays published, unassigned, no flag
 api POST /shift-swap-requests "$T2_T" "{\"shift_id\":$S2,\"client_request_id\":\"$(uuid)\"}"
 expect_code "T2 requests a release (no target) on S2" 201
 SW3=$(jget "$BODY" request_id)
 api PATCH "/shift-swap-requests/$SW3" "$ADMIN_T" '{"status":"approved","version":1}'
 expect_code "Admin approves the release" 200
-expect_eq "  S2 unassigned, draft, pending_reapproval=1" "$(db_one "SELECT CONCAT(IFNULL(user_id,'NULL'),'|',approval_status,'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$S2;")" "NULL|draft|1"
+expect_eq "  S2 unassigned, still published, pending_reapproval=0" "$(db_one "SELECT CONCAT(IFNULL(user_id,'NULL'),'|',approval_status,'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$S2;")" "NULL|published|0"
 api GET "/shifts?limit=100" "$T2_T" ""
 expect_eq "  the releasing Tanod no longer sees it" "$(shift_visible "$BODY" $S2)" "0"
 
@@ -446,6 +483,8 @@ expect_code "Admin moves the start of a PUBLISHED shift (SS_NEW, owner T4)" 200
 expect_eq "  reverted to draft, pending_reapproval 0" "$(db_one "SELECT CONCAT(approval_status,'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$SS_NEW;")" "draft|0"
 api GET "/shifts?limit=100" "$T4_T" ""
 expect_eq "  owner does NOT see it (hidden, as before)" "$(shift_visible "$BODY" $SS_NEW)" "0"
+# simulate a LEGACY flagged release (pre-2026-10-12) to keep covering "reassigning clears the flag"
+mysql_exec "$VALDB" -e "UPDATE shift_schedule SET approval_status='draft', approved_by=NULL, approved_at=NULL, pending_reapproval=1 WHERE shift_id=$S2;"
 api PATCH "/shifts/$S2" "$ADMIN_T" "{\"user_id\":$T6,\"version\":$(db_one "SELECT version FROM shift_schedule WHERE shift_id=$S2;")}"
 expect_code "Admin assigns the released (pending_reapproval) shift S2 to T6" 200
 expect_eq "  pending_reapproval cleared by the reassignment, still draft" "$(db_one "SELECT CONCAT(user_id,'|',approval_status,'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$S2;")" "$T6|draft|0"

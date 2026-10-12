@@ -1,8 +1,9 @@
 import { describePage } from '../harness/pageSuite.mjs';
 import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, mountPage, settle, cleanup, text, click, $, $$ } from '../harness/render.mjs';
+import { api, mountPage, settle, cleanup, text, click, $, $$, signIn } from '../harness/render.mjs';
 import { renderApprovalsPage } from '../../src/pages/approvals.js';
+import { getPendingApprovalCounts } from '../../src/services/shellWorkflowApi.js';
 import { clearAuthorityCache } from '../../src/services/tanodWorkflowUi.js';
 
 describePage({
@@ -17,14 +18,14 @@ describe('Approvals behaviour', () => {
 
   const groupTitles = (root) => $$('.tw-approvals__group .tw-card__title', root).map((n) => text(n));
 
-  test('paper-first: an admin sees the signed-paper queues, no in-app note/approve queues', async () => {
+  test('paper-only: an admin sees the signed-paper queues, no in-app note/approve/prepare queues', async () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
     await settle();
     const titles = groupTitles(ctx.root);
-    assert.ok(!titles.includes('Availability to review'), 'availability is fixed per tanod, nothing to review');
+    assert.ok(!titles.includes('Availability to review'), 'availability is not reviewed (2026-10-12)');
     assert.ok(titles.includes('Shifts awaiting publish'), 'admin publishes with the signed paper');
     assert.ok(titles.includes('Accomplishment reports waiting for the signed paper'));
-    assert.ok(titles.includes('Annex D to prepare'));
+    assert.ok(!titles.includes('Annex D to prepare'), 'preparation is on the paper too (2026-10-12)');
     assert.ok(titles.includes('Annex D waiting for the signed paper'));
     assert.ok(!titles.includes('Accomplishment reports to note'));
     assert.ok(!titles.includes('Accomplishment reports to approve'));
@@ -50,6 +51,7 @@ describe('Approvals behaviour', () => {
     assert.deepEqual(ctx.navigations.at(-1), { page: 'accomplishment-reports', param: { reportId: 72 } });
 
     const annex = $('.tw-approvals__group[data-group="paper-annex"]', ctx.root);
+    assert.match(text($('.tw-count-badge', annex)), /^2$/, 'the draft (81) and the prepared (82) Annex D both wait for the signed paper');
     click($('.tw-queue__open', annex));
     assert.equal(ctx.navigations.at(-1).page, 'school-zones');
     assert.equal(ctx.navigations.at(-1).param.tab, 'term');
@@ -63,6 +65,13 @@ describe('Approvals behaviour', () => {
     assert.match(text($('.page-content', ctx.root)), /Nothing for you to approve/);
   });
 
+  test('availability is never an approval queue and is not fetched here (2026-10-12)', async () => {
+    const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
+    await settle();
+    assert.equal($('.tw-approvals__group[data-group="availability"]', ctx.root), null);
+    assert.equal(api.callsTo('GET', '/availability').length, 0);
+  });
+
   test('an Admin/Secretary-only queue is role gated even without any authority', async () => {
     api.on('GET', '/users/:id', () => ({ status: 200, body: { user_id: 2, full_name: 'X', role: 'secretary', official_title: null, approval_authority: [] } }));
     const ctx = mountPage(renderApprovalsPage, { role: 'secretary' });
@@ -72,5 +81,16 @@ describe('Approvals behaviour', () => {
       'Accomplishment reports waiting for the signed paper',
       'Annex D waiting for the signed paper',
     ]);
+  });
+
+  test('dashboard widget counts (paper-only): no "to prepare" count; Annex D drafts and prepared reports both wait for the signed paper', async () => {
+    signIn('admin');
+    const admin = await getPendingApprovalCounts(['note_report', 'prepare_annex_d'], 'admin');
+    assert.deepEqual(admin.map((c) => c.key).sort(), ['paper-annex', 'paper-reports', 'roster']);
+    assert.equal(admin.find((c) => c.key === 'paper-annex').count, 2);
+    const ssz = api.callsTo('GET', '/ssz-term-reports').map((c) => c.query.status).sort();
+    assert.deepEqual(ssz, ['draft', 'prepared']);
+    const pb = await getPendingApprovalCounts(['approve_report', 'approve_roster', 'approve_annex_d'], 'punong_barangay');
+    assert.deepEqual(pb.map((c) => c.key), ['roster'], 'the PB only records the signed paper roster');
   });
 });

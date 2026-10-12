@@ -34,6 +34,7 @@ import { listUnsyncedIncidents } from '../services/db/incidentRepository';
 import { listUnsyncedGpsPoints } from '../services/db/gpsTrackRepository';
 import {
   listPendingDispatchStatusUpdates,
+  listPendingDutyStatusUpdates,
   listPendingSosItems,
 } from '../services/db/offlineQueueRepository';
 import {
@@ -96,8 +97,10 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
       const gps = await listUnsyncedGpsPoints();
       setGpsCount(gps.length);
 
+      // Offline off-duty toggles ride in the same row as dispatch status changes.
       const dispatchUpdates = await listPendingDispatchStatusUpdates();
-      setDispatchStatusCount(dispatchUpdates.length);
+      const dutyUpdates = await listPendingDutyStatusUpdates();
+      setDispatchStatusCount(dispatchUpdates.length + dutyUpdates.length);
 
       const sos = await listPendingSosItems();
       setSosCount(sos.length);
@@ -251,7 +254,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 <div className="sync-queue__row">
                   <div className="sync-queue__row-label">
                     <IonIcon icon={radioOutline} style={{ color: 'var(--color-warning)' }} />
-                    <span>Dispatch Status Updates</span>
+                    <span>Dispatch & Duty Status Updates</span>
                   </div>
                   <span className={`status-pill ${dispatchStatusCount > 0 ? 'status-pill--pending' : 'status-pill--neutral'}`}>
                     {dispatchStatusCount}
@@ -315,6 +318,9 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 {needsAttention.sos > 0 && ` ${needsAttention.sos} emergency SOS alert(s) — call the barangay desk.`}
                 {needsAttention.dispatch > 0 &&
                   ` ${needsAttention.dispatch} status change(s) could not be confirmed and were reverted — check your assignment.`}
+
+                {needsAttention.dutyStatus > 0 &&
+                  ` ${needsAttention.dutyStatus} offline off-duty change(s) were rejected — you may still be on duty at HQ; see Home.`}
                 {needsAttention.incidents > 0 && ` ${needsAttention.incidents} incident report(s).`}
                 {needsAttention.evidence > 0 && ` ${needsAttention.evidence} evidence file(s).`}
                 {needsAttention.gps > 0 && ` ${needsAttention.gps} location point(s).`}
@@ -413,6 +419,9 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                 <strong>Sync Finished:</strong> {syncResult.succeeded} uploaded, {syncResult.duplicates} synced, {syncResult.failed} failed.
                 {syncResult.dispatchRejected > 0 && (
                   <> {syncResult.dispatchRejected} status change(s) were rejected by HQ and reverted.</>
+                )}
+                {syncResult.dutyRejected > 0 && (
+                  <> {syncResult.dutyRejected} offline off-duty change(s) were rejected by HQ — see Home.</>
                 )}
                 {(syncResult.evidenceUploaded > 0 || syncResult.evidenceFailed > 0) && (
                   <>

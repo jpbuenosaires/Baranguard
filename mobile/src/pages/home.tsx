@@ -54,7 +54,15 @@ import tacticalFeedback from '../utils/tacticalFeedback';
 import { getDispatches, getOwnDutyStatus, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
 import { ApiError } from '../services/apiService';
 import { getCurrentPosition } from '../services/geolocation';
-import { countFailedSosItems, enqueueSosItem } from '../services/db/offlineQueueRepository';
+import {
+  countFailedSosItems,
+  dismissRejectedDutyStatus,
+  enqueueOffDuty,
+  enqueueSosItem,
+  listPendingDutyStatusUpdates,
+  listRejectedDutyStatusUpdates,
+  type QueuedDutyStatus,
+} from '../services/db/offlineQueueRepository';
 import { cacheDispatchesFromServer, listActiveCachedDispatches } from '../services/db/dispatchRepository';
 import { listAllLocalIncidents } from '../services/db/incidentRepository';
 import { getOpenSchoolCheckin } from '../services/db/schoolRepository';
@@ -77,6 +85,31 @@ import { retryNeedsAttention } from '../services/syncService';
 import { uuid } from '../services/uuid';
 
 const BARANGAY_NAMES: Record<number, string> = { 1: 'Dao', 2: 'Binanuahan', 3: 'Marifosque', 4: 'Banuyo' };
+
+/**
+ * Last duty status this device learned from the server (or set itself), so a
+ * cold start with no signal can still show it — and still let an on-duty
+ * Tanod go OFF duty offline. A per-device display convenience only: the
+ * server stays the source of truth whenever it is reachable.
+ */
+const LAST_DUTY_STATUS_KEY = 'baranguard.lastKnownDutyStatus';
+
+function readCachedDutyStatus(): DutyStatus | null {
+  try {
+    const value = localStorage.getItem(LAST_DUTY_STATUS_KEY);
+    return value === 'on_duty' || value === 'off_duty' || value === 'responding' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedDutyStatus(value: DutyStatus): void {
+  try {
+    localStorage.setItem(LAST_DUTY_STATUS_KEY, value);
+  } catch {
+    // Storage unavailable — the cache is optional.
+  }
+}
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
@@ -117,6 +150,80 @@ const HomePage: React.FC = () => {
   // belongs to another account: saved reports and SOS alerts cannot leave.
   const [deviceBlocked, setDeviceBlocked] = useState(isSyncDeviceBlocked());
   useEffect(() => subscribeSyncDeviceBlocked(setDeviceBlocked), []);
+
+  // Offline OFF-duty (closes assumption A4): an off-duty toggled with no
+  // signal is queued with the device's tap time and shown locally right
+  // away; going ON duty stays online-only. `pendingOffDutyRef` mirrors the
+  // state for the sync-summary listener, which is subscribed once.
+  const [pendingOffDutyAt, setPendingOffDutyAt] = useState<string | null>(null);
+  const pendingOffDutyRef = useRef<string | null>(null);
+  const [rejectedOffDuty, setRejectedOffDuty] = useState<QueuedDutyStatus | null>(null);
+
+  function applyDutyStatus(next: DutyStatus) {
+    setStatus(next);
+    setKnownDutyStatus(next);
+    writeCachedDutyStatus(next);
+  }
+
+  /** Reads the offline duty queue into state; returns the newest pending off-duty, if any. */
+  async function refreshOfflineDutyState(): Promise<QueuedDutyStatus | null> {
+    try {
+      const pending = (await listPendingDutyStatusUpdates()).at(-1) ?? null;
+      const rejected = (await listRejectedDutyStatusUpdates())[0] ?? null;
+      pendingOffDutyRef.current = pending?.payload.changedAt ?? null;
+      setPendingOffDutyAt(pendingOffDutyRef.current);
+      setRejectedOffDuty(rejected);
+      return pending;
+    } catch {
+      // Local DB unavailable (e.g. web preview) — nothing queued to show.
+      return null;
+    }
+  }
+
+  /** Re-reads the server's status after a queued off-duty settled (synced or rejected). */
+  async function reloadServerDutyStatus(): Promise<DutyStatus | null> {
+    try {
+      const entry = await getOwnDutyStatus();
+      if (!entry) return null;
+      applyDutyStatus(entry.status);
+      if (entry.status === 'on_duty') {
+        try {
+          await startPatrolTracking();
+          setPatrolTracking(true);
+        } catch {
+          setPatrolTracking(false);
+        }
+      }
+      return entry.status;
+    } catch {
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    return subscribeSyncSummary((summary) => {
+      const hadPending = pendingOffDutyRef.current !== null;
+      void refreshOfflineDutyState().then((pending) => {
+        if (pending) return;
+        if (summary.dutyRejected > 0) {
+          setDutyError('HQ did not accept your offline off-duty. See the note below.');
+          void reloadServerDutyStatus();
+        } else if (hadPending) {
+          void reloadServerDutyStatus();
+        }
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleDismissRejectedOffDuty() {
+    if (!rejectedOffDuty) return;
+    try {
+      await dismissRejectedDutyStatus(rejectedOffDuty.queueId);
+    } finally {
+      await refreshOfflineDutyState();
+    }
+  }
 
   async function refreshFailedSosCount() {
     try {
@@ -231,11 +338,17 @@ const HomePage: React.FC = () => {
       else if (session.barangayId === 1) setDeskContact('0917-111-2233');
     });
 
-    getOwnDutyStatus()
-      .then((entry) => {
-        if (!cancelled && entry) {
-          setStatus(entry.status);
-          setKnownDutyStatus(entry.status);
+    async function loadDutyStatus() {
+      // A queued offline off-duty wins over the server until it syncs: the
+      // server still shows the Tanod on duty because it has not seen it yet.
+      const pending = await refreshOfflineDutyState();
+      if (cancelled) return;
+      if (pending) applyDutyStatus('off_duty');
+      try {
+        const entry = await getOwnDutyStatus();
+        if (cancelled || pending) return;
+        if (entry) {
+          applyDutyStatus(entry.status);
           if (entry.status === 'on_duty') {
             startPatrolTracking()
               .then(() => {
@@ -246,19 +359,27 @@ const HomePage: React.FC = () => {
               });
           }
         }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setDutyError(
-            error instanceof ApiError && error.isOffline
-              ? 'Offline — showing cached status.'
-              : 'Could not fetch duty status.'
-          );
+      } catch (error) {
+        if (cancelled || pending) return;
+        const offline = error instanceof ApiError && error.isOffline;
+        const cached = offline ? readCachedDutyStatus() : null;
+        if (cached) {
+          // Display only — no setKnownDutyStatus/tracking change from a guess.
+          setStatus(cached);
+          if (cached === 'on_duty') setPatrolTracking(false);
         }
-      })
-      .finally(() => {
+        setDutyError(
+          offline
+            ? cached
+              ? 'Offline — showing your last known status.'
+              : 'Offline — duty status unknown until you reconnect.'
+            : 'Could not fetch duty status.'
+        );
+      } finally {
         if (!cancelled) setLoadingStatus(false);
-      });
+      }
+    }
+    void loadDutyStatus();
 
     loadDispatches();
     loadTelemetry();
@@ -282,11 +403,32 @@ const HomePage: React.FC = () => {
     setDutyError(null);
     tacticalFeedback.onTap();
 
+    // Going ON duty is online-only, and must never overtake an off-duty
+    // still waiting in the queue (it would land BEFORE the earlier off-duty
+    // and the server would then refuse that off-duty as out of order).
+    if (nextStatus === 'on_duty' && pendingOffDutyRef.current) {
+      await forceSyncNow();
+      const stillPending = await refreshOfflineDutyState();
+      if (stillPending) {
+        tacticalFeedback.onWarning();
+        setDutyError('Your earlier off-duty is still waiting to sync. Connect to the barangay workstation and try again.');
+        setToggling(false);
+        return;
+      }
+      if ((await reloadServerDutyStatus()) === 'on_duty') {
+        setDutyToast('HQ already shows you ON DUTY.');
+        setToggling(false);
+        return;
+      }
+    }
+
+    // The device's own clock at the tap — what the server records if this
+    // off-duty has to wait in the offline queue.
+    const tappedAt = new Date().toISOString();
     const clientEventId = uuid();
     try {
       await setDutyStatus(nextStatus, clientEventId);
-      setStatus(nextStatus);
-      setKnownDutyStatus(nextStatus);
+      applyDutyStatus(nextStatus);
       tacticalFeedback.onSuccess();
 
       if (nextStatus === 'on_duty') {
@@ -303,17 +445,18 @@ const HomePage: React.FC = () => {
         }
         setDutyToast('You are now ON ACTIVE PATROL. Live GPS broadcasting to HQ.');
       } else {
-        await stopPatrolTracking();
-        setPatrolTracking(null);
-        setShiftStartTime(null);
-        localStorage.removeItem('baranguard.shiftStartTime');
+        await endShiftLocally();
         setDutyToast('You are now OFF DUTY. Patrol tracking stopped.');
       }
     } catch (error) {
+      if (nextStatus === 'off_duty' && error instanceof ApiError && error.isOffline) {
+        await goOffDutyOffline(clientEventId, tappedAt);
+        return;
+      }
       tacticalFeedback.onWarning();
       setDutyError(
         error instanceof ApiError && error.isOffline
-          ? 'Cannot change duty status while offline.'
+          ? 'Going on duty needs a connection to the barangay workstation.'
           : error instanceof Error
             ? error.message
             : 'Could not update duty status.'
@@ -321,6 +464,46 @@ const HomePage: React.FC = () => {
     } finally {
       setToggling(false);
     }
+  }
+
+  async function endShiftLocally() {
+    await stopPatrolTracking();
+    setPatrolTracking(null);
+    setShiftStartTime(null);
+    localStorage.removeItem('baranguard.shiftStartTime');
+  }
+
+  /**
+   * No signal: record the off-duty on this phone (encrypted SQLite queue)
+   * at the real tap time and act on it locally. Same block as online — not
+   * while a dispatch is still active (checked against the local cache here;
+   * the server checks again when the item syncs and a rejection reverts it).
+   */
+  async function goOffDutyOffline(clientEventId: string, tappedAt: string) {
+    let activeCount = 0;
+    try {
+      activeCount = (await listActiveCachedDispatches()).length;
+    } catch {
+      activeCount = 0;
+    }
+    if (activeCount > 0) {
+      tacticalFeedback.onWarning();
+      setDutyError('You still have an active dispatch. Complete it before going off duty.');
+      return;
+    }
+    try {
+      await enqueueOffDuty(clientEventId, tappedAt);
+    } catch {
+      tacticalFeedback.onWarning();
+      setDutyError('Offline, and the off-duty could not be saved on this phone. Try again.');
+      return;
+    }
+    pendingOffDutyRef.current = tappedAt;
+    setPendingOffDutyAt(tappedAt);
+    applyDutyStatus('off_duty');
+    tacticalFeedback.onSuccess();
+    await endShiftLocally();
+    setDutyToast(`You are OFF DUTY as of ${formatManilaTime(tappedAt)}. Saved on this phone — waiting to sync with HQ.`);
   }
 
   function handleOpenSosModal() {
@@ -518,6 +701,42 @@ const HomePage: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {pendingOffDutyAt && (
+              <div className="wf-strip" role="status">
+                <span>
+                  Off duty since {formatManilaTime(pendingOffDutyAt)} — saved on this phone, waiting to sync with HQ.
+                </span>
+              </div>
+            )}
+
+            {rejectedOffDuty && !pendingOffDutyAt && (
+              <div
+                style={{
+                  background: 'var(--tint-warning-bg)',
+                  border: '1px solid var(--color-warning)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '6px 10px',
+                  color: 'var(--pill-warning-text)',
+                  fontSize: '0.74rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                }}
+                role="alert"
+              >
+                <span>
+                  Your offline off-duty ({formatManilaTime(rejectedOffDuty.payload.changedAt)}) was not accepted by HQ
+                  {rejectedOffDuty.payload.rejectReason ? `: ${rejectedOffDuty.payload.rejectReason}` : '.'} Your status
+                  above is what HQ has now.
+                </span>
+                <button type="button" className="wf-btn wf-btn--small" onClick={() => void handleDismissRejectedOffDuty()}>
+                  Dismiss
+                </button>
+              </div>
+            )}
 
             {dutyError && (
               <div

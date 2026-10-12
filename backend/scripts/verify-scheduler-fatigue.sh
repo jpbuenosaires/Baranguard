@@ -154,6 +154,12 @@ extract() {
 # ============================================================
 # W11 — POST/GET/PATCH /shifts
 # ============================================================
+# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
+# verify-roster-accomplishment.sh). This suite tests other rules, so every
+# tanod gets open whole-day availability first.
+"$PHP_BIN" "$BACKEND_DIR/scripts/seed-open-availability.php" | mysql_exec "$VALDB" \
+  && pass "Seeded open availability for every tanod (seed-open-availability.php)" || fail "open availability seed failed"
 step "4. POST /shifts — create, idempotency, overlap rejection, role/tenant gating"
 REQ_KEY="aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa"
 START_T=$(mysql_exec -N -s "$VALDB" -e "SELECT DATE_FORMAT(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), '%Y-%m-%dT%H:%i:%sZ');")
@@ -327,8 +333,9 @@ CODE=$(echo "$RESP" | tail -1)
 [ "$CODE" = "200" ] && pass "Approve (named target on the request) -> 200" || fail "Approve -> $CODE (expected 200): $RESP"
 NEW_SHIFT_OWNER=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM shift_schedule WHERE shift_id=$FATIGUE_SHIFT_ID;")
 [ "$NEW_SHIFT_OWNER" = "$TANOD2_ID" ] && pass "Shift actually reassigned from tanod1 to tanod2 in the DB" || fail "shift user_id=$NEW_SHIFT_OWNER (expected $TANOD2_ID)"
-DB_APPR=$(mysql_exec -N -s "$VALDB" -e "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL'),'|',IFNULL(approved_at,'NULL')) FROM shift_schedule WHERE shift_id=$FATIGUE_SHIFT_ID;")
-[ "$DB_APPR" = "draft|NULL|NULL" ] && pass "Fix review finding 1: an approved swap reverts the PUBLISHED shift to draft and clears approved_by/approved_at" || fail "approval after swap='$DB_APPR' (expected draft|NULL|NULL)"
+DB_APPR=$(mysql_exec -N -s "$VALDB" -e "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$FATIGUE_SHIFT_ID;")
+# 2026-10-12: an approved swap KEEPS a published shift published (the roster was signed; only the name changes).
+[ "$DB_APPR" = "published|$ADMIN_ID|0" ] && pass "An approved swap keeps the PUBLISHED shift published, approver kept, no pending_reapproval" || fail "approval after swap='$DB_APPR' (expected published|$ADMIN_ID|0)"
 # Recalculation runs for tanod2 too, but their own total in this window is
 # just the 10h of this one shift -- correctly under the 56h threshold, so
 # NO flag should exist for them (recalculation must not over-flag someone

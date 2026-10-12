@@ -29,8 +29,17 @@ use PDO;
  *     check joins through `shift_schedule` for its `barangay_id`.
  *   - **Secretary may review swaps** (2026-10-07 review decision): list and
  *     approve/deny are open to admin AND secretary, same barangay.
- *   - **Approved swap on a published shift** -> draft + pending_reapproval=1
- *     (migration 0035); ShiftsController::index() shows it to its Tanod.
+ *   - **Approved swap on a published shift STAYS published** (2026-10-12
+ *     decision, superseding the 0035 "draft + pending_reapproval" rule): the
+ *     roster was already signed and only the name on it changes, and the
+ *     swap itself is the reviewed, audited approval of that change. The
+ *     new holder is therefore immediately on the published roster (night
+ *     offers, dispatch without an override). `approved_by`/`approved_at`
+ *     keep naming the original roster signer. `pending_reapproval` is never
+ *     set any more; the column stays (migration 0035) so rows flagged
+ *     before this change keep their badge until they are published or
+ *     reassigned. A direct Admin/Secretary PATCH of who/start/end on a
+ *     published shift still reverts it to draft (ShiftsController::update).
  *   - **Re-validation on approve** (§6/§9's own words: "revalidate
  *     current users, assignment, time overlap, and fatigue"): if the
  *     shift's *current* occupant no longer matches `requesting_user_id`
@@ -113,10 +122,11 @@ final class ShiftSwapRequestsController
             // A Tanod only ever sees PUBLISHED shifts (contract section 3); a
             // draft is not part of the approved roster, so there is nothing to
             // swap. Answered as not-found, same as any shift the caller cannot see.
-            // The one exception: a shift still waiting for re-approval after an
-            // approved swap IS visible to its Tanod (migration 0035), so it is
-            // not "not found" — but it already went through a swap and needs
-            // a fresh publish first, so a new request on it is a 409.
+            // The one exception: a legacy shift still flagged pending_reapproval
+            // (an approved swap from before 2026-10-12, when approval sent the
+            // shift back to draft) IS visible to its Tanod (migration 0035), so
+            // it is not "not found" — but it needs a fresh publish first, so a
+            // new request on it is a 409. New approvals never set the flag.
             if ((int) ($shift['pending_reapproval'] ?? 0) === 1) {
                 throw new ApiError(409, 'CONFLICT', 'This shift is waiting for roster re-approval after a swap; request a swap once it is published again.');
             }
@@ -257,14 +267,13 @@ final class ShiftSwapRequestsController
             $shiftId = (int) $row['shift_id'];
             $targetUserId = $row['target_user_id'] !== null ? (int) $row['target_user_id'] : null;
 
-            // Approving a swap changes who holds the shift, so a published
-            // shift stops matching what the roster approver signed off on:
-            // revert it to draft and clear the approval (a fresh
-            // approve_roster publish is needed).
-            $approvalReset = $status === 'approved' && ($row['shift_approval_status'] ?? 'draft') === 'published';
-            $approvalResetSql = $approvalReset
-                ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL, pending_reapproval = 1"
-                : '';
+            // An approved swap on a published shift keeps it published (see
+            // class doc): no approval reset, no pending_reapproval. The
+            // revalidation below (assignment, eligibility, overlap, 12h cap)
+            // is what makes the name change safe. `approval_reset` stays in
+            // the audit metadata (always false now) so the trail keeps one
+            // shape across old and new rows.
+            $approvalReset = false;
 
             if ($status === 'approved') {
                 // Revalidate current assignment — an Admin may have
@@ -286,7 +295,10 @@ final class ShiftSwapRequestsController
                     ShiftsController::assertTanodEligible($pdo, $targetUserId, (int) $row['barangay_id']);
                     ShiftsController::assertNoOverlap($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
                     ShiftsController::assertDailyHoursCap($pdo, $targetUserId, $shiftStartAt, $shiftEndAt, $shiftId);
-                    $pdo->prepare('UPDATE shift_schedule SET user_id = :user_id, version = version + 1, updated_at = UTC_TIMESTAMP()' . $approvalResetSql . ' WHERE shift_id = :shift_id')
+                    // Availability is the tanod's own fixed statement (2026-10-12):
+                    // the incoming tanod must be available for the whole shift.
+                    ShiftsController::assertWithinAvailability($pdo, $targetUserId, $shiftStartAt, $shiftEndAt);
+                    $pdo->prepare('UPDATE shift_schedule SET user_id = :user_id, version = version + 1, updated_at = UTC_TIMESTAMP() WHERE shift_id = :shift_id')
                         ->execute(['user_id' => $targetUserId, 'shift_id' => $shiftId]);
                     FatigueCalculator::recalculate($pdo, (int) $row['requesting_user_id'], $shiftId);
                     FatigueCalculator::recalculate($pdo, $targetUserId, $shiftId);
@@ -295,7 +307,7 @@ final class ShiftSwapRequestsController
                     // doc. No coverage block any more (contract section 8):
                     // zero coverage is reported as a NO_COVERAGE warning
                     // when the roster is published.
-                    $pdo->prepare('UPDATE shift_schedule SET user_id = NULL, version = version + 1, updated_at = UTC_TIMESTAMP()' . $approvalResetSql . ' WHERE shift_id = :shift_id')
+                    $pdo->prepare('UPDATE shift_schedule SET user_id = NULL, version = version + 1, updated_at = UTC_TIMESTAMP() WHERE shift_id = :shift_id')
                         ->execute(['shift_id' => $shiftId]);
                 }
             }

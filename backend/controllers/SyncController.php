@@ -374,7 +374,9 @@ final class SyncController
                 if (!is_string($status)) {
                     throw new ApiError(400, 'VALIDATION_ERROR', 'status is required.');
                 }
-                $result = DutyStatusController::applyToggle($pdo, $identity, $status, $clientEventId, 'app', $item['created_offline_at'] ?? null);
+                // Optional `changed_at`: the device time of an off-duty
+                // toggled while offline (DutyStatusController class doc).
+                $result = DutyStatusController::applyToggle($pdo, $identity, $status, $clientEventId, 'app', $item['changed_at'] ?? $item['created_offline_at'] ?? null);
                 return [$result['status_id'], $result['wasCreated']];
 
             case 'dispatch_status':

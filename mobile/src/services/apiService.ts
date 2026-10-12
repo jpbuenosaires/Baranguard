@@ -1037,10 +1037,17 @@ export interface SyncGpsItem {
   client_event_id: string;
 }
 
-/** One item's shape for `duty_status_updates[]` (mirrors POST /duty-status body). */
+/**
+ * One item's shape for `duty_status_updates[]` (POST /duty-status body plus
+ * an optional `changed_at`). `changed_at` is the device time of an OFF-duty
+ * toggled while offline; the server records it as the change time (validated:
+ * <= 5 min ahead, not before the last on-duty record, <= 62 days back) and
+ * refuses it for any other status — going on duty is online-only.
+ */
 export interface SyncDutyStatusItem {
   status: DutyStatus;
   client_event_id: string;
+  changed_at?: string;
 }
 
 /** One item's shape for `dispatch_status_updates[]` (§6: no override_reason from a sync item). */
@@ -1134,9 +1141,11 @@ export interface ShiftEntry {
   /** Contract §3: a Tanod only ever receives `published` rows; null from a server that predates the field. */
   approvalStatus: 'draft' | 'published' | null;
   /**
-   * Wave 1-A: an approved swap on a published shift sends it back to `draft` with this flag set — the
-   * server then shows it to its owner only, as "awaiting re-publish". It is NOT confirmed duty: UI must
-   * badge it and keep it out of next-duty/hours logic. `false` from a server that predates the field.
+   * Wave 1-A (legacy): before 2026-10-12 an approved swap on a published shift sent it back to `draft`
+   * with this flag set — the server shows such a row to its owner only, as "awaiting re-publish". It is
+   * NOT confirmed duty: UI must badge it and keep it out of next-duty/hours logic. An approved swap now
+   * keeps the shift published, so only rows flagged before that change carry it. `false` from a server
+   * that predates the field.
    */
   pendingReapproval: boolean;
 }
@@ -1479,7 +1488,8 @@ export async function cancelShiftSwapRequest(requestId: number): Promise<{ succe
 // --- Dispatch offers (Wave 2: night dispatch broadcast; ONLINE-ONLY) -------------
 //
 // An offer is a broadcast "who can take this call" to on-duty tanods holding a
-// published shift. The alert content is deliberately NON-IDENTIFYING (incident
+// published shift (or, when none qualifies, to every eligible on-duty tanod whose own declared
+// availability covers now — the server's roster fallback). The alert content is deliberately NON-IDENTIFYING (incident
 // type, barangay name, time) — no narrative, names, contacts, coordinates or
 // location text — and nothing here is ever written to the offline queue or
 // SQLite: accepting needs the server to arbitrate "first accept wins", so it
@@ -1667,7 +1677,7 @@ export async function getSosAlerts(params: { status?: SosStatus; limit?: number 
   }));
 }
 
-/** PATCH /tanod-sos/:id/acknowledge — idempotent server-side. There is deliberately NO resolve call in this app. */
+/** PATCH /tanod-sos/:id/acknowledge — idempotent server-side. */
 export async function acknowledgeSos(sosId: number, idempotencyKey: string): Promise<{ status: string }> {
   const path = `/tanod-sos/${sosId}/acknowledge`;
   const json = await request<{ status: string }>(path, {
@@ -1676,6 +1686,23 @@ export async function acknowledgeSos(sosId: number, idempotencyKey: string): Pro
     body: {},
   });
   return { status: json.status };
+}
+
+/**
+ * PATCH /tanod-sos/:id/resolve — Chief Tanod phone (gap #6, 2026-10-12): an
+ * active or acknowledged SOS can be closed from the Admin device session.
+ * Signed write, same headers as acknowledge. Online-only; never queued. A
+ * repeat on an already-resolved SOS is a 409 CONFLICT (the caller treats it
+ * as "already closed", e.g. after a dropped reply or the desk got there first).
+ */
+export async function resolveSos(sosId: number, idempotencyKey: string): Promise<{ status: string; resolvedAt: string | null }> {
+  const path = `/tanod-sos/${sosId}/resolve`;
+  const json = await request<{ status: string; resolved_at?: string | null }>(path, {
+    method: 'PATCH',
+    headers: await adminWriteHeaders('PATCH', path, idempotencyKey),
+    body: {},
+  });
+  return { status: json.status, resolvedAt: json.resolved_at ?? null };
 }
 
 export interface AdminDispatchEntry extends DispatchEntry {
