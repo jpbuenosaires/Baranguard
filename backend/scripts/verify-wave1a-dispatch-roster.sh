@@ -335,7 +335,7 @@ expect_eq "  ... and the Tanod's own cancelled dispatch IS in that list" "$(prin
 case "$BODY" in *"hoax"*) fail "LEAK: cancel reason text reached the Tanod's own dispatch list";; *) pass "  cancel reason text absent from the Tanod's response body";; esac
 
 # ================================================================ shifts: secretary
-step "6. Secretary may create/update shifts, but not publish without approve_roster"
+step "6. Secretary may create/update shifts; publishing needs the signed paper (paper-only, 2026-10-12)"
 D1=$("$PHP_BIN" -r 'echo gmdate("Y-m-d", time()+86400*3);')
 api POST /shifts "$SEC_T" "{\"user_id\":$T4,\"start_at\":\"${D1}T08:00:00+08:00\",\"end_at\":\"${D1}T14:00:00+08:00\",\"request_id\":\"$(uuid)\",\"patrol_zone\":\"Purok 1\"}"
 expect_code "Secretary POST /shifts" 201
@@ -346,8 +346,13 @@ api PATCH "/shifts/$SS_NEW" "$SEC_T" '{"patrol_zone":"Purok 2","version":1}'
 expect_code "Secretary PATCH /shifts/:id" 200
 expect_eq "  patrol_zone changed" "$(db_one "SELECT patrol_zone FROM shift_schedule WHERE shift_id=$SS_NEW;")" "Purok 2"
 expect_eq "  audit shift_updated actor is the secretary" "$(db_one "SELECT actor_user_id FROM audit_log WHERE action='shift_updated' AND entity_id=$SS_NEW LIMIT 1;")" "$SEC_ID"
+PAPER_DATE=$("$PHP_BIN" -r 'date_default_timezone_set("Asia/Manila"); echo date("Y-m-d");')
+paper() { echo "\"recorded_from_paper\":{\"signer_user_id\":$1,\"signed_on\":\"$PAPER_DATE\"}"; }
 api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SS_NEW]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary WITHOUT approve_roster cannot publish" 403
+expect_code "Secretary cannot publish without the signed paper" 422
+expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
+api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SS_NEW],$(paper "$SEC_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Secretary naming themselves (no approve_roster) as the paper signer" 422
 expect_eq "  shift still draft" "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$SS_NEW;")" "draft"
 api POST /shifts "$SEC2_T" "{\"user_id\":$T4,\"start_at\":\"${D1}T15:00:00+08:00\",\"end_at\":\"${D1}T16:00:00+08:00\",\"request_id\":\"$(uuid)\"}"
 expect_code "Other-barangay Secretary cannot schedule this barangay's Tanod (generic 422)" 422
@@ -362,7 +367,9 @@ expect_code "Tanod still cannot update shifts" 403
 api GET /shifts "$SEC_T" ""
 expect_code "Secretary GET /shifts (unchanged)" 200
 api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$SS_NEW]}" -H "Idempotency-Key: $(uuid)"
-expect_code "PB holding approve_roster publishes the Secretary's draft" 200
+expect_code "PB holding approve_roster cannot publish in-app either (no paper)" 422
+api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SS_NEW],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Secretary records the paper roster the PB signed" 200
 expect_eq "  published" "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$SS_NEW;")" "published"
 
 # ================================================================ swaps
@@ -417,8 +424,8 @@ api POST /dispatch "$ADMIN_T" "$(dispatch_body $INC4 $T4)"
 expect_code "A draft shift awaiting re-approval does not satisfy the dispatch shift rule" 422
 expect_eq "  NO_PUBLISHED_SHIFT" "$(jget "$BODY" error.code)" "NO_PUBLISHED_SHIFT"
 
-api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$S1]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Re-approval: PB publishes the shift" 200
+api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$S1],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Re-approval: PB records the signed paper and publishes the shift" 200
 expect_eq "  published, pending_reapproval cleared, approved_by = PB" "$(db_one "SELECT CONCAT(approval_status,'|',pending_reapproval,'|',approved_by) FROM shift_schedule WHERE shift_id=$S1;")" "published|0|$PB_ID"
 api GET "/shifts?limit=100" "$T4_T" ""
 expect_eq "T4 sees it as published, pending false" "$(shift_field "$BODY" $S1 approval_status)/$(shift_field "$BODY" $S1 pending_reapproval)" "published/false"
