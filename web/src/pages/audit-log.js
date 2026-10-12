@@ -444,30 +444,11 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   const pageContainer = document.createElement('div');
   pageContainer.className = 'audit-page-container';
 
-  // 1. Statutory Security & Compliance Notice Banner
-  const securityBanner = document.createElement('div');
-  securityBanner.className = 'audit-security-banner';
-  securityBanner.innerHTML = `
-    <div class="audit-security-banner__icon">
-      ${icons.shield(22)}
-    </div>
-    <div class="audit-security-banner__content">
-      <div class="audit-security-banner__title">
-        <span>Permanent Audit Trail</span>
-        <span class="audit-security-banner__badge">Write-once</span>
-      </div>
-      <p class="audit-security-banner__text">
-        Audit entries are write-once. They cannot be edited or deleted from this screen or from the system's API.
-        The only removal is the automatic clean-up of very old entries under the system's retention rules.
-      </p>
-    </div>
-  `;
-  pageContainer.appendChild(securityBanner);
-
-  // 2. Interactive StatStrip Host
+  // Embedded Interactive StatStrip Host (Option A: Unified Command Card)
   const statStripHost = document.createElement('div');
-  statStripHost.className = 'stat-card-grid';
-  pageContainer.appendChild(statStripHost);
+  statStripHost.className = 'personnel-card-stat-strip audit-stat-strip';
+  statStripHost.setAttribute('role', 'toolbar');
+  statStripHost.setAttribute('aria-label', 'Audit category quick filters');
 
   // 3. Full-Width 4-Column Filter Toolbar
   const filterPanel = document.createElement('div');
@@ -598,7 +579,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
 
   const tableCard = document.createElement('div');
   tableCard.className = 'audit-table-card unified-table-card';
-  tableCard.append(filterPanel, resultStatus, tableContainer);
+  tableCard.append(statStripHost, filterPanel, resultStatus, tableContainer);
   pageContainer.appendChild(tableCard);
 
   content.appendChild(pageContainer);
@@ -688,27 +669,29 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     });
 
     const statCardsData = [
-      { id: '', label: 'Total Events Recorded', value: totalCount, tone: 'primary' },
-      { id: 'auth', label: 'Auth & Access Events', value: authCount, tone: 'info' },
+      { id: '', label: 'Total Events', value: totalCount },
+      { id: 'auth', label: 'Auth & Access', value: authCount, tone: 'info' },
       { id: 'ops', label: 'Operations & Dispatch', value: opsCount, tone: 'warning' },
       { id: 'incidents', label: 'Incidents', value: incidentCount, tone: 'success' },
     ];
 
     statCardsData.forEach((stat) => {
+      const isActive = activeFilterCategory === stat.id;
       const card = document.createElement('button');
       card.type = 'button';
-      card.className = `stat-card ${activeFilterCategory === stat.id ? 'is-active' : ''}`;
-      card.setAttribute('aria-label', `Filter by ${stat.label}`);
-
-      const val = document.createElement('span');
-      val.className = `stat-card__value stat-card__value--${stat.tone}`;
-      val.textContent = String(stat.value);
+      card.className = `personnel-stat-chip${isActive ? ' is-active' : ''}`;
+      card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      card.setAttribute('aria-label', `Filter by ${stat.label} (${stat.value})`);
 
       const lbl = document.createElement('span');
-      lbl.className = 'stat-card__label';
+      lbl.className = 'stat-chip__label';
       lbl.textContent = stat.label;
 
-      card.append(val, lbl);
+      const val = document.createElement('span');
+      val.className = `stat-chip__count${stat.tone ? ' tone-' + stat.tone : ''}`;
+      val.textContent = String(stat.value);
+
+      card.append(lbl, val);
 
       card.addEventListener('click', () => {
         if (activeFilterCategory === stat.id) {
@@ -725,6 +708,11 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
 
       statStripHost.appendChild(card);
     });
+
+    const badge = document.createElement('span');
+    badge.className = 'audit-write-once-pill';
+    badge.innerHTML = `${icons.lock(12)} <span>Write-once · Permanent Audit Trail</span>`;
+    statStripHost.appendChild(badge);
   }
 
   function renderList(items, totalItems) {

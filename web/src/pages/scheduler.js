@@ -91,10 +91,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
   // Stat Strip Host (Option A: Integrated Command Bar)
   const statStripHost = document.createElement('div');
-  statStripHost.className = 'scheduler-stat-bar';
+  statStripHost.className = 'personnel-card-stat-strip scheduler-stat-bar';
   statStripHost.setAttribute('role', 'toolbar');
   statStripHost.setAttribute('aria-label', 'Shift summary and quick filters');
-  container.appendChild(statStripHost);
 
   // Split Panel Layout (stacked in the week view: the grid needs the width)
   const layout = document.createElement('div');
@@ -302,7 +301,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     listPane.innerHTML = '';
     const warningsBlock = buildWarningsBlock();
     if (warningsBlock) listPane.appendChild(warningsBlock);
-    listPane.appendChild(buildPublishBar());
+    listPane.append(statStripHost, buildPublishBar());
 
     const toolbar = document.createElement('div');
     toolbar.className = 'scheduler-week-toolbar';
@@ -957,6 +956,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       note.className = 'scheduler-publish-bar__hint';
       note.textContent = 'You do not hold roster approval authority.';
       bar.appendChild(note);
+      if (!week) bar.appendChild(buildViewToggle());
       return bar;
     }
 
@@ -970,6 +970,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
     const buttons = document.createElement('div');
     buttons.className = 'availability-item__actions';
+    if (!week) {
+      buttons.appendChild(buildViewToggle());
+    }
     if (!week && draftShifts.length > 0) {
       const selectAll = document.createElement('button');
       selectAll.type = 'button';
@@ -1058,19 +1061,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   function renderShiftsTable() {
     listPane.innerHTML = '';
     const warningsBlock = buildWarningsBlock();
-    if (warningsBlock) listPane.appendChild(warningsBlock);
-    listPane.appendChild(buildPublishBar());
-    const listToolbar = document.createElement('div');
-    listToolbar.className = 'scheduler-week-toolbar';
-    listToolbar.appendChild(buildViewToggle());
-    listPane.appendChild(listToolbar);
-
+    const publishBar = buildPublishBar();
     const filtered = getFilteredShifts();
-
-    if (shifts.length === 0) {
-      renderEmpty(listPane);
-      return;
-    }
 
     const table = DataTable({
       columns: SCHEDULE_COLUMNS,
@@ -1190,7 +1182,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
     const tableCard = document.createElement('div');
     tableCard.className = 'scheduler-table-card unified-table-card';
-    tableCard.append(filterBar, table);
+    if (warningsBlock) tableCard.appendChild(warningsBlock);
+    tableCard.append(publishBar, filterBar, table);
     listPane.appendChild(tableCard);
   }
 }

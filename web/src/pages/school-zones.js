@@ -275,6 +275,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     }
 
     const formHost = h('div');
+    formHost.hidden = true;
     const tableHost = h('div', 'ssz-table-body');
     const tableCard = h('div', 'unified-table-card ssz-table-card');
     tableCard.append(controlBar, tableHost);
@@ -293,10 +294,15 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
     function openForm(school) {
       formHost.innerHTML = '';
+      formHost.hidden = false;
       formHost.appendChild(buildSchoolForm(school, async () => {
         formHost.innerHTML = '';
+        formHost.hidden = true;
         await load(true);
-      }, () => { formHost.innerHTML = ''; }));
+      }, () => {
+        formHost.innerHTML = '';
+        formHost.hidden = true;
+      }));
       formHost.scrollIntoView?.({ block: 'nearest' });
     }
 
@@ -773,8 +779,8 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
     const tableHost = h('div', 'c1-table-body');
     const tableCard = h('div', 'unified-table-card c1-table-card');
-    tableCard.append(filters, facetsBar, tableHost);
-    host.append(note, tableCard);
+    tableCard.append(note, filters, facetsBar, tableHost);
+    host.appendChild(tableCard);
 
     const printBtn = h('button', 'ghost');
     printBtn.type = 'button';

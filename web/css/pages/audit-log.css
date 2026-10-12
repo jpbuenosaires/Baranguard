@@ -619,3 +619,9 @@
 .audit-btn-copy.is-copied {
   border-color: var(--color-success);
 }
+
+/* Category quick-filter chips at the top of the audit table card. Layout and chip look come from
+   .personnel-card-stat-strip / .personnel-stat-chip; this only adds the divider under the strip. */
+.audit-stat-strip {
+  border-bottom: 1px solid var(--color-border);
+}

@@ -1896,8 +1896,9 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   pageHeader.actions.appendChild(exportButton);
 
   const statStripHost = document.createElement('div');
-  statStripHost.className = 'sms-log-stat-strip';
-  container.appendChild(statStripHost);
+  statStripHost.className = 'personnel-card-stat-strip sms-log-stat-strip';
+  statStripHost.setAttribute('role', 'toolbar');
+  statStripHost.setAttribute('aria-label', 'SMS log quick filters');
 
   const filterPanel = document.createElement('div');
   filterPanel.className = 'sms-log-filter-panel';
@@ -1939,7 +1940,7 @@ function renderActivityLogTab(container, pageHeader, navigate) {
 
   const tableCard = document.createElement('div');
   tableCard.className = 'sms-table-card unified-table-card';
-  tableCard.append(filterPanel, body);
+  tableCard.append(statStripHost, filterPanel, body);
   layout.appendChild(tableCard);
 
   const detailPane = document.createElement('div');
@@ -1980,54 +1981,80 @@ function renderActivityLogTab(container, pageHeader, navigate) {
         getSmsLogs({ ...base, status: 'failed', limit: 1 }),
       ]);
       statStripHost.innerHTML = '';
-      statStripHost.appendChild(StatStrip({
-        items: [
-          {
-            label: 'Total',
-            value: total.total,
-            onClick: () => {
-              directionSelect.select.value = '';
-              statusSelect.select.value = '';
-              currentPage = 1;
-              load();
-              refreshStats();
-            },
+
+      const curDir = directionSelect.select.value;
+      const curStat = statusSelect.select.value;
+
+      const chips = [
+        {
+          label: 'Total',
+          value: total.total,
+          active: !curDir && !curStat,
+          onClick: () => {
+            directionSelect.select.value = '';
+            statusSelect.select.value = '';
+            currentPage = 1;
+            load();
+            refreshStats();
           },
-          {
-            label: 'Inbound',
-            value: inbound.total,
-            tone: 'info',
-            onClick: () => {
-              directionSelect.select.value = 'inbound';
-              currentPage = 1;
-              load();
-              refreshStats();
-            },
+        },
+        {
+          label: 'Inbound',
+          value: inbound.total,
+          tone: 'info',
+          active: curDir === 'inbound' && !curStat,
+          onClick: () => {
+            directionSelect.select.value = 'inbound';
+            currentPage = 1;
+            load();
+            refreshStats();
           },
-          {
-            label: 'Outbound',
-            value: outbound.total,
-            tone: 'info',
-            onClick: () => {
-              directionSelect.select.value = 'outbound';
-              currentPage = 1;
-              load();
-              refreshStats();
-            },
+        },
+        {
+          label: 'Outbound',
+          value: outbound.total,
+          tone: 'info',
+          active: curDir === 'outbound' && !curStat,
+          onClick: () => {
+            directionSelect.select.value = 'outbound';
+            currentPage = 1;
+            load();
+            refreshStats();
           },
-          {
-            label: 'Failed',
-            value: failed.total,
-            tone: failed.total > 0 ? 'critical' : 'default',
-            onClick: () => {
-              statusSelect.select.value = 'failed';
-              currentPage = 1;
-              load();
-              refreshStats();
-            },
+        },
+        {
+          label: 'Failed',
+          value: failed.total,
+          tone: failed.total > 0 ? 'critical' : undefined,
+          active: curStat === 'failed',
+          onClick: () => {
+            statusSelect.select.value = 'failed';
+            currentPage = 1;
+            load();
+            refreshStats();
           },
-        ],
-      }));
+        },
+      ];
+
+      chips.forEach((cfg) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `personnel-stat-chip${cfg.active ? ' is-active' : ''}`;
+        btn.setAttribute('aria-pressed', cfg.active ? 'true' : 'false');
+        btn.setAttribute('aria-label', `${cfg.label} (${cfg.value})`);
+
+        const lbl = document.createElement('span');
+        lbl.className = 'stat-chip__label';
+        lbl.textContent = cfg.label;
+
+        const cnt = document.createElement('span');
+        cnt.className = `stat-chip__count${cfg.tone ? ' tone-' + cfg.tone : ''}`;
+        cnt.textContent = String(cfg.value);
+
+        btn.append(lbl, cnt);
+        btn.addEventListener('click', cfg.onClick);
+        statStripHost.appendChild(btn);
+      });
     } catch {}
   }
 

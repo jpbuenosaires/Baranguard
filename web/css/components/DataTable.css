@@ -208,7 +208,7 @@
    table rows scroll internally inside the card with sticky thead and pinned pagination)
    ========================================================================== */
 
-/* 1. Viewport lock for unified table pages */
+/* 1. Viewport lock for unified table pages (uniform var(--spacing-lg) = 24px margin on all 4 sides) */
 .page-content:has(.unified-table-card:not(.dashboard-recent-table-card)) {
   overflow: hidden !important;
   display: flex;
@@ -227,19 +227,20 @@
   overflow: hidden;
   max-width: 100%;
   width: 100%;
-  margin: 0 auto;
+  margin: 0 auto !important;
+  padding: 0 !important;
 }
 
-/* Page host containers inside .page-container */
+/* Page host containers inside .page-container (single-column / vertical wrappers) */
 .page-content .audit-page-container,
 .page-content .sms-log-page-container,
 .page-content .personnel-container,
+.page-content .tw-container,
 .page-content .tw-ssz,
 .page-content .tw-reports-list,
 .page-content .tw-referrals,
 .page-content .scheduler-page-container,
-.page-content .split-panel:has(.sms-table-card),
-.page-content .page-container > div:has(.unified-table-card:not(.dashboard-recent-table-card)) {
+.page-content .page-container > div:not(.split-panel):has(.unified-table-card:not(.dashboard-recent-table-card)) {
   flex: 1;
   min-height: 0;
   height: 100%;
@@ -247,6 +248,59 @@
   flex-direction: column;
   overflow: hidden;
   width: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Prevent empty placeholder divs (formHost, detailHost, etc.) from generating flex gap above/below the card */
+.page-content .tw-ssz > :empty,
+.page-content .tw-container > :empty,
+.page-content .tw-reports-list > :empty,
+.page-content .personnel-container > :empty,
+.page-content .audit-page-container > :empty,
+.page-content .sms-log-page-container > :empty {
+  display: none !important;
+}
+
+/* Horizontal split-panel layouts containing a unified-table-card (Citizen Reports, Swap Requests, Scheduler List, SMS Activity Log) */
+.page-content .split-panel:has(.unified-table-card:not(.dashboard-recent-table-card)) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch !important;
+  overflow: hidden;
+  width: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.page-content .split-panel > div:has(.unified-table-card:not(.dashboard-recent-table-card)) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  margin: 0 !important;
+}
+
+/* When an inline form, detail drawer, or Term Report calculator panel is actively open above/below the table card, allow vertical scrolling */
+.page-content:has(.d-calculator-panel:not([hidden])),
+.page-content:has(.tw-form-card:not([hidden])),
+.page-content:has(.tw-reports-detail:not([hidden])) {
+  overflow-y: auto !important;
+}
+.page-content:has(.d-calculator-panel:not([hidden])) .page-container,
+.page-content:has(.d-calculator-panel:not([hidden])) .tw-ssz,
+.page-content:has(.tw-form-card:not([hidden])) .page-container,
+.page-content:has(.tw-form-card:not([hidden])) .tw-ssz,
+.page-content:has(.tw-form-card:not([hidden])) .tw-container,
+.page-content:has(.tw-reports-detail:not([hidden])) .page-container,
+.page-content:has(.tw-reports-detail:not([hidden])) .tw-container,
+.page-content:has(.tw-reports-detail:not([hidden])) .tw-reports-list {
+  height: auto !important;
+  overflow: visible !important;
 }
 
 /* Pinned top elements (stat strips, security notices, subtabs) never stretch out of view */
@@ -401,6 +455,55 @@
   .unified-table-card:not(.dashboard-recent-table-card) .data-table-wrap {
     max-height: 550px !important;
   }
+}
+
+/* Integrated KPI strips, notice banners, and publish bars inside unified-table-card (Option A: Unified Command Card) */
+.unified-table-card > .personnel-card-stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  border-bottom: 1px solid var(--color-border) !important;
+  background: color-mix(in srgb, var(--color-bg) 45%, var(--color-surface)) !important;
+  margin: 0 !important;
+  flex-shrink: 0;
+}
+
+.unified-table-card > .c1-notice-card,
+.unified-table-card > .scheduler-publish-bar,
+.unified-table-card > .scheduler-publish-warnings {
+  border: none !important;
+  border-radius: 0 !important;
+  border-bottom: 1px solid var(--color-border) !important;
+  margin: 0 !important;
+  padding: var(--spacing-xs) var(--spacing-md) !important;
+  box-shadow: none !important;
+  flex-shrink: 0;
+}
+
+.audit-write-once-pill {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--tint-neutral-bg);
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.stat-chip__count.tone-critical,
+.stat-chip__count.tone-danger,
+.chip-count.tone-critical,
+.chip-count.tone-danger {
+  color: var(--pill-critical-text, var(--color-critical));
 }
 
 /* Integrated filter bars across all pages when inside unified-table-card */
