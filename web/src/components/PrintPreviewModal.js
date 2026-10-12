@@ -92,6 +92,10 @@ export function openPrintPreviewModal({
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   document.body.classList.add('has-print-modal');
+  // The stamp is also fed to the @page bottom-left margin box so it repeats on
+  // every A4 page without overlapping table rows (see tanod-workflow.css).
+  const stampText = modal.querySelector('.print-sheet__stamp')?.textContent || '';
+  document.documentElement.style.setProperty('--print-stamp', JSON.stringify(stampText));
 
   const onKeyDown = (event) => {
     if (event.key === 'Escape') {
@@ -115,6 +119,7 @@ export function openPrintPreviewModal({
   function close() {
     window.removeEventListener('keydown', onKeyDown);
     document.body.classList.remove('has-print-modal');
+    document.documentElement.style.removeProperty('--print-stamp');
     overlay.remove();
     if (returnFocusTo && typeof returnFocusTo.focus === 'function' && document.contains(returnFocusTo)) returnFocusTo.focus();
   }
