@@ -623,11 +623,15 @@ final class AccomplishmentController
     /**
      * POST /accomplishment-reports/:id/record-paper-approval - admin|secretary.
      * Body {"signer_user_id", "signed_on"}. Records an approval that
-     * happened on paper: `noted` -> `approved`, `approved_by` = the signer
-     * (an active same-barangay user holding `approve_report`, never the
-     * preparer), `approval_mode` = 'recorded_from_paper'. The recorder may
-     * be the signer (a Secretary can hold the authority). Order: 403 -> 400
-     * -> 404 (report / cross-tenant) -> idempotent replay -> 409 (not noted)
+     * happened on paper: `prepared` or `noted` -> `approved`, `approved_by` =
+     * the signer (an active same-barangay user holding `approve_report`,
+     * never the preparer), `approval_mode` = 'recorded_from_paper'. Paper is
+     * the official record (2026-10-12 paper-first decision), so the in-app
+     * note step is optional: recording from `prepared` leaves `noted_by`
+     * empty, because the noting signature lives on the paper. The recorder
+     * may be the signer (a Secretary can hold the authority). Order: 403 ->
+     * 400 -> 404 (report / cross-tenant) -> idempotent replay -> 409 (not
+     * prepared or noted)
      * -> 409 (signer is the preparer) -> 404 (signer in another barangay)
      * -> 422 (signer cannot approve).
      *
@@ -652,7 +656,7 @@ final class AccomplishmentController
                 $pdo->commit();
                 Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? $report));
             }
-            if ($report['status'] !== 'noted') {
+            if (!in_array($report['status'], ['prepared', 'noted'], true)) {
                 throw new ApiError(409, 'CONFLICT', "A report in '{$report['status']}' status cannot have a paper approval recorded.");
             }
             ApprovalAuthority::assertNotPreparer($signerId, (int) $report['user_id']);

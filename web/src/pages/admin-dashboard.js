@@ -416,8 +416,8 @@ async function loadTanodsOnDuty(container, barangayId, role) {
 /**
  * Pending-approvals widget (2026-10, contract §10). Shown to whoever lands
  * on this dashboard (Admin and Punong Barangay): counts of work waiting on
- * THIS user, each gated by the approval authority that would let them act
- * on it (GET /users/:id for self, then the existing list endpoints — there
+ * THIS user (an Admin sees what waits for its signed paper; others what
+ * their approval authority lets them act on) (GET /users/:id for self, then the existing list endpoints — there
  * is no approvals-count endpoint and none is invented). All four states:
  * skeleton, error with Retry, nothing pending / no authority, populated.
  */
@@ -427,7 +427,8 @@ async function loadPendingApprovals(container, user, navigate) {
   host.innerHTML = '<div class="skeleton skeleton--line" role="status" aria-label="Loading pending approvals"></div>';
   try {
     const authorities = await getOwnApprovalAuthority(user.userId, user.role);
-    if (authorities.length === 0) {
+    const isManager = user.role === 'admin' || user.role === 'secretary';
+    if (authorities.length === 0 && !isManager) {
       host.innerHTML = '';
       const note = document.createElement('p');
       note.className = 'note';
@@ -435,7 +436,7 @@ async function loadPendingApprovals(container, user, navigate) {
       host.appendChild(note);
       return;
     }
-    const counts = await getPendingApprovalCounts(authorities);
+    const counts = await getPendingApprovalCounts(authorities, user.role);
     host.innerHTML = '';
     const total = counts.reduce((sum, c) => sum + c.count, 0);
     if (total === 0) {

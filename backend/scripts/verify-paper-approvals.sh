@@ -244,6 +244,7 @@ A_N3=$(mk_acc "$T1_ID" "2026-04" noted)
 A_N4=$(mk_acc "$T2_ID" "2026-05" noted)
 A_N5=$(mk_acc "$T2_ID" "2026-09" noted)
 A_PREP=$(mk_acc "$T1_ID" "2026-06" prepared)
+A_PREP2=$(mk_acc "$T2_ID" "2026-06" prepared)
 A_OPEN=$(mk_acc "$T1_ID" "2026-07" open)
 A_B2=$(mk_acc "$TB2_ID" "2026-02" noted 2)
 A_LOCK=$(mk_acc "$T1_ID" "$CUR_MONTH" approved)
@@ -349,8 +350,9 @@ api POST "/accomplishment-reports/$A_N1/record-paper-approval" "$ADM2_T" "{\"sig
 expect_code "Cross-tenant recorder is 404" 404
 api POST "/accomplishment-reports/$A_B2/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
 expect_code "Barangay 1 secretary on a barangay 2 report is 404" 404
-api POST "/accomplishment-reports/$A_PREP/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
-expect_code "Report 'prepared' (must be noted)" 409
+api POST "/accomplishment-reports/$A_PREP2/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
+expect_code "Report 'prepared' (paper-first: no in-app note needed)" 200
+expect_eq "  prepared -> approved from paper, noted_by stays empty" "$(jget "$BODY" status)/$(jget "$BODY" approval_mode)/$(jget "$BODY" approved_by)/$(db_one "SELECT IFNULL(noted_by,'NULL') FROM accomplishment_report WHERE report_id=$A_PREP2;")" "approved/recorded_from_paper/$KAG_ID/NULL"
 api POST "/accomplishment-reports/$A_OPEN/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
 expect_code "Report 'open'" 409
 api POST "/accomplishment-reports/$A_DIG/record-paper-approval" "$SEC_T" "$RP_BODY" -H "$(ik)"
