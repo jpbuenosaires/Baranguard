@@ -126,14 +126,17 @@ describe('V-04: security headers', () => {
     for (const h of handlers) assert.ok(csp.includes(sha(h)), `CSP lacks the hash for inline handler "${h}"`);
   });
 
-  test('web and API send nosniff, DENY framing and no-referrer; API keeps its Authorization rewrite', () => {
+  test('web and API send nosniff and DENY framing; the API sends no referrer, the web app only its origin; API keeps its Authorization rewrite', () => {
     for (const ht of [webHt, apiHt]) {
       assert.match(ht, /<IfModule mod_headers\.c>/);
       assert.match(ht, /X-Content-Type-Options "nosniff"/);
       assert.match(ht, /X-Frame-Options "DENY"/);
-      assert.match(ht, /Referrer-Policy "no-referrer"/);
       assert.match(ht, /frame-ancestors 'none'/);
     }
+    // The API never needs a referrer; the web app must send its origin so OpenStreetMap
+    // tile servers do not answer 403 "Access blocked" (a path is never sent cross-origin).
+    assert.match(apiHt, /Referrer-Policy "no-referrer"/);
+    assert.match(webHt, /Referrer-Policy "strict-origin-when-cross-origin"/);
     assert.match(apiHt, /RewriteRule \.\* - \[E=HTTP_AUTHORIZATION:%\{HTTP:Authorization\}\]/);
     assert.doesNotMatch(csp, /'unsafe-eval'/);
     assert.doesNotMatch(csp.match(/script-src[^;]*/)[0], /'unsafe-inline'/);
