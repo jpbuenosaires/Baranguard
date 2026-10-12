@@ -259,7 +259,8 @@
 .unified-table-card > .personnel-filter-bar,
 .unified-table-card > .acc-control-bar,
 .unified-table-card > .ref-control-bar,
-.unified-table-card > .audit-filter-panel {
+.unified-table-card > .audit-filter-panel,
+.unified-table-card > .sms-log-filter-panel {
   border: none !important;
   border-radius: 0 !important;
   background: transparent !important;

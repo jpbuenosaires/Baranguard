@@ -300,7 +300,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   const searchInput = document.createElement('input');
   searchInput.type = 'search';
   searchInput.className = 'incident-search-input';
-  searchInput.placeholder = 'Search incidentsâ€¦';
+  searchInput.placeholder = 'Search incidents...';
   searchInput.setAttribute('aria-label', 'Search incidents');
 
   let searchDebounce = null;

@@ -1260,6 +1260,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         const res = await getTermReports();
         listHost.innerHTML = '';
         const el = card('Saved term reports', 'Term records by status: draft, prepared or submitted. Click any row to view the detail, print it or move it along.');
+        el.className += ' unified-table-card d-table-card';
         if (res.items.length === 0) {
           el.appendChild(h('p', 'tw-empty-note', canEdit ? 'No term reports yet. Create a draft above once a term range is chosen.' : 'No term reports have been created yet.'));
         } else {

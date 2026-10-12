@@ -104,10 +104,14 @@ export function renderFatigueFlagsTab(container, user, onCountsChanged, onSwitch
   });
 
   filterBar.append(searchWrap, filterChipsWrap);
-  container.appendChild(filterBar);
 
   const body = document.createElement('div');
-  container.appendChild(body);
+  body.className = 'fatigue-table-body';
+
+  const tableCard = document.createElement('div');
+  tableCard.className = 'personnel-table-card unified-table-card';
+  tableCard.append(filterBar, body);
+  container.appendChild(tableCard);
 
   let allFlags = [];
   let namesById = new Map();

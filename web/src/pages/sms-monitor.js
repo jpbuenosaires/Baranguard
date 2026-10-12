@@ -1929,14 +1929,18 @@ function renderActivityLogTab(container, pageHeader, navigate) {
   col4.append(dateRangePicker.wrapper);
 
   filterPanel.append(col1, col2, col3, col4);
-  container.appendChild(filterPanel);
 
   const layout = document.createElement('div');
   layout.className = 'split-panel';
   container.appendChild(layout);
 
   const body = document.createElement('div');
-  layout.appendChild(body);
+  body.className = 'sms-table-body';
+
+  const tableCard = document.createElement('div');
+  tableCard.className = 'sms-table-card unified-table-card';
+  tableCard.append(filterPanel, body);
+  layout.appendChild(tableCard);
 
   const detailPane = document.createElement('div');
   detailPane.className = 'sms-detail-pane';
