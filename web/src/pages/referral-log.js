@@ -69,29 +69,9 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
   const state = { from: '', to: '', referredTo: '', search: '', page: 1 };
   let lastResult = null;
 
-  // Dismissible notice banner
-  const NOTICE_STORAGE_KEY = 'baranguard_ref_notice_dismissed';
-  const isNoticeDismissed = localStorage.getItem(NOTICE_STORAGE_KEY) === 'true';
-
-  const notice = h('div', 'ref-notice-card');
-  if (isNoticeDismissed) notice.hidden = true;
-  notice.innerHTML = `
-    <div class="ref-notice-content">
-      <span class="ref-notice-icon" aria-hidden="true">${icons.info ? icons.info(18) : 'ℹ️'}</span>
-      <span>This log tracks inter-agency delegations, maintaining an audit trail of which cases were referred outside barangay jurisdiction pursuant to DILG BIMSS guidelines.</span>
-    </div>
-  `;
-  const dismissBtn = h('button', 'ref-notice-dismiss');
-  dismissBtn.type = 'button';
-  dismissBtn.setAttribute('aria-label', 'Dismiss guidance note');
-  dismissBtn.innerHTML = icons.x ? icons.x(14) : '✕';
-  dismissBtn.addEventListener('click', () => {
-    notice.hidden = true;
-    localStorage.setItem(NOTICE_STORAGE_KEY, 'true');
-  });
-  notice.appendChild(dismissBtn);
-
-  const kpisHost = h('div', 'tw-ref-kpis ref-kpis-bar');
+  const kpisHost = h('div', 'personnel-card-stat-strip ref-kpis-bar');
+  kpisHost.setAttribute('role', 'toolbar');
+  kpisHost.setAttribute('aria-label', 'Filter referrals by agency');
 
   // Consolidated 44px Control Bar
   const controlBar = h('div', 'ref-control-bar');
@@ -157,9 +137,9 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
   const body = h('div', 'tw-referrals__body');
 
   const tableCard = h('div', 'ref-table-card unified-table-card');
-  tableCard.append(controlBar, body);
+  tableCard.append(kpisHost, controlBar, body);
 
-  container.append(notice, kpisHost, tableCard);
+  container.appendChild(tableCard);
 
   const apply = () => {
     state.from = fromInput.value;
@@ -198,30 +178,25 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
     const vawCount = items.filter((r) => r.referredTo === 'vaw_desk').length;
 
     const cards = [
-      { label: 'Total Referrals', val: total, icon: icons.send, filter: '' },
-      { label: 'PNP (Police)', val: pnpCount, icon: icons.shield, filter: 'pnp' },
-      { label: 'BFP (Fire)', val: bfpCount, icon: icons.flame, filter: 'bfp' },
-      { label: 'EMS / Ambulance', val: emsCount, icon: icons.activity, filter: 'ambulance_ems' },
-      { label: 'VAW Desk', val: vawCount, icon: icons.users, filter: 'vaw_desk' },
+      { label: 'Total Referrals', val: total, filter: '' },
+      { label: 'PNP (Police)', val: pnpCount, tone: 'info', filter: 'pnp' },
+      { label: 'BFP (Fire)', val: bfpCount, tone: 'warning', filter: 'bfp' },
+      { label: 'EMS / Ambulance', val: emsCount, tone: 'success', filter: 'ambulance_ems' },
+      { label: 'VAW Desk', val: vawCount, filter: 'vaw_desk' },
     ];
 
     for (const c of cards) {
       const isActive = state.referredTo === c.filter;
-      const cardEl = h('button', `tw-ref-kpi-card ref-kpi-card${isActive ? ' is-active' : ''}`);
-      cardEl.type = 'button';
-      cardEl.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-      cardEl.setAttribute('aria-label', `Filter by ${c.label} (${c.val})`);
+      const chipEl = h('button', `personnel-stat-chip${isActive ? ' is-active' : ''}`);
+      chipEl.type = 'button';
+      chipEl.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      chipEl.setAttribute('aria-label', `Filter by ${c.label} (${c.val})`);
 
-      const head = h('div', 'tw-ref-kpi-card__head');
-      const iconSpan = h('span', 'tw-ref-kpi-card__icon');
-      iconSpan.innerHTML = c.icon(18);
-      head.append(iconSpan);
+      const lbl = h('span', 'stat-chip__label', c.label);
+      const val = h('span', `stat-chip__count${c.tone ? ' tone-' + c.tone : ''}`, String(c.val));
 
-      const val = h('span', 'tw-ref-kpi-card__val', String(c.val));
-      const lbl = h('span', 'tw-ref-kpi-card__label', c.label);
-
-      cardEl.append(head, val, lbl);
-      cardEl.addEventListener('click', () => {
+      chipEl.append(lbl, val);
+      chipEl.addEventListener('click', () => {
         if (state.referredTo === c.filter) {
           destSelect.value = '';
         } else {
@@ -229,7 +204,7 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
         }
         apply();
       });
-      kpisHost.appendChild(cardEl);
+      kpisHost.appendChild(chipEl);
     }
   }
 

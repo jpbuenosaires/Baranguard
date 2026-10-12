@@ -9,7 +9,7 @@ describePage({
   render: renderAuditLogPage,
   roles: ['admin'],
   heading: 'Audit Log',
-  expectText: ['Total Events Recorded'],
+  expectText: ['Total Events'],
 });
 
 describe('Audit Log behaviour', () => {
@@ -19,8 +19,8 @@ describe('Audit Log behaviour', () => {
     mountPage(renderAuditLogPage, { role: 'admin' });
     await settle();
     const body = text($('.page-content'));
-    assert.match(body, /3\s*Total Events Recorded/);
-    assert.match(body, /1\s*Auth & Access Events/, 'login_failure is an auth event');
+    assert.match(body, /Total Events\s*3/);
+    assert.match(body, /Auth & Access\s*1/, 'login_failure is an auth event');
   });
 
   test('filtering by action asks the server for exactly that action', async () => {
