@@ -203,10 +203,63 @@
 }
 
 /* ==========================================================================
-   Unified Table Card (Figma reference layout: integrated filter toolbar,
-   sticky thead, seamless table without nested borders, sticky pagination)
+   Unified Table Card (Operational standard matching Incident Management:
+   card is fixed in the viewport, toolbar/header is inside the card at the top,
+   table rows scroll internally inside the card with sticky thead and pinned pagination)
    ========================================================================== */
 
+/* 1. Viewport lock for unified table pages */
+.page-content:has(.unified-table-card:not(.dashboard-recent-table-card)) {
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-lg) !important;
+  height: 100% !important;
+  box-sizing: border-box;
+}
+
+.page-content:has(.unified-table-card:not(.dashboard-recent-table-card)) .page-container {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-width: 100%;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Page host containers inside .page-container */
+.page-content .audit-page-container,
+.page-content .sms-log-page-container,
+.page-content .personnel-container,
+.page-content .tw-ssz,
+.page-content .tw-reports-list,
+.page-content .tw-referrals,
+.page-content .scheduler-page-container,
+.page-content .split-panel:has(.sms-table-card),
+.page-content .page-container > div:has(.unified-table-card:not(.dashboard-recent-table-card)) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+}
+
+/* Pinned top elements (stat strips, security notices, subtabs) never stretch out of view */
+.audit-security-banner,
+.sms-log-stat-strip,
+.stat-card-grid,
+.tw-counts,
+.personnel-filter-bar__summary,
+.tw-ssz > .tw-toolbar {
+  flex-shrink: 0;
+}
+
+/* 2. Unified Table Card Core */
 .unified-table-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -218,39 +271,129 @@
   width: 100%;
 }
 
-.unified-table-card .data-table-wrap {
+.unified-table-card:not(.dashboard-recent-table-card) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  margin: 0 !important;
+}
+
+/* Intermediary host wrappers inside unified-table-card */
+.unified-table-card .audit-table-wrap,
+.unified-table-card .personnel-table-body,
+.unified-table-card .swap-table-body,
+.unified-table-card .sms-table-body,
+.unified-table-card .sms-table-wrap,
+.unified-table-card .ssz-table-body,
+.unified-table-card .tw-reports-list__body,
+.unified-table-card .tw-referrals__body,
+.unified-table-card .c1-table-body,
+.unified-table-card .d-table-body,
+.unified-table-card .citizen-table-wrap {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+}
+
+/* Table scroll region inside the card */
+.unified-table-card:not(.dashboard-recent-table-card) .data-table-wrap {
   border: none;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
   flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  position: relative;
   display: flex;
   flex-direction: column;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-text-tertiary) 30%, transparent) transparent;
 }
-.unified-table-card .data-table-wrap:focus-visible {
+
+.unified-table-card:not(.dashboard-recent-table-card) .data-table-wrap:focus-visible {
   outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
   outline-offset: -2px;
 }
 
-.unified-table-card .data-table {
+.unified-table-card:not(.dashboard-recent-table-card) .data-table {
   width: 100%;
   table-layout: fixed;
+  flex: 1 0 auto;
 }
 
-.unified-table-card .data-table thead th {
+.unified-table-card:not(.dashboard-recent-table-card) .data-table thead th {
   position: sticky;
   top: 0;
   z-index: 10;
   background: var(--color-bg) !important;
-  box-shadow: 0 1px 0 var(--color-border);
+  box-shadow: 0 1px 0 var(--color-border), 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
-.unified-table-card .data-table__pagination {
+.unified-table-card:not(.dashboard-recent-table-card) .data-table__pagination {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
   margin-top: auto;
+  flex-shrink: 0;
   border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface) !important;
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* WebKit scrollbars for unified table cards */
+.unified-table-card:not(.dashboard-recent-table-card) .data-table-wrap::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.unified-table-card:not(.dashboard-recent-table-card) .data-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+.unified-table-card:not(.dashboard-recent-table-card) .data-table-wrap::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-tertiary) 30%, transparent);
+  border-radius: 9999px;
+}
+.unified-table-card:not(.dashboard-recent-table-card) .data-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-text-tertiary) 50%, transparent);
+}
+
+/* Responsive safety release */
+@media (max-width: 1024px) {
+  .page-content:has(.unified-table-card:not(.dashboard-recent-table-card)) {
+    overflow-y: auto !important;
+    height: auto !important;
+  }
+  .page-content:has(.unified-table-card:not(.dashboard-recent-table-card)) .page-container {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .page-content .audit-page-container,
+  .page-content .sms-log-page-container,
+  .page-content .personnel-container,
+  .page-content .tw-ssz,
+  .page-content .tw-reports-list,
+  .page-content .tw-referrals,
+  .page-content .scheduler-page-container,
+  .page-content .split-panel:has(.sms-table-card),
+  .page-content .page-container > div:has(.unified-table-card:not(.dashboard-recent-table-card)) {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .unified-table-card:not(.dashboard-recent-table-card) {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .unified-table-card:not(.dashboard-recent-table-card) .data-table-wrap {
+    max-height: 550px !important;
+  }
 }
 
 /* Integrated filter bars across all pages when inside unified-table-card */

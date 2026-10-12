@@ -269,8 +269,11 @@
 
 .ref-table-card .tw-referrals__body {
   flex: 1;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .ref-table-card .data-table-wrap {
