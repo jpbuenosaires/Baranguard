@@ -692,8 +692,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
               return wrap;
             }
             if (draft && shift.pendingReapproval) {
-              // An approved swap changed this (previously published) shift:
-              // it needs the approver again before the tanod sees it as final.
+              // Legacy flag: before 2026-10-12 an approved swap sent a
+              // published shift back to draft for re-approval. New swaps keep
+              // the shift published, but rows flagged then still show it.
               pill.textContent = 'Draft — swap awaiting re-approval';
             }
             return pill;
