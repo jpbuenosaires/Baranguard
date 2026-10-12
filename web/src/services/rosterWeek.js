@@ -197,14 +197,6 @@ export function segmentsLabel(segments) {
 
 const hoursOf = (s) => Math.max(0, endMsOf(s) - startMsOf(s)) / HOUR_MS;
 
-/** Hours of the shifts a tanod STARTS in the given week. */
-export function weekHours(shifts, userId, weekStart) {
-  const sum = shiftsInWeek(shifts, weekStart)
-    .filter((s) => s.userId === userId)
-    .reduce((acc, s) => acc + hoursOf(s), 0);
-  return Math.round(sum * 10) / 10;
-}
-
 /**
  * Which of the three standard shifts have someone on duty on `date`. A slot
  * counts as covered when assigned shifts overlap at least half of it.

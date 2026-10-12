@@ -12,8 +12,7 @@
 
 /* --- Lock page viewport so Live Tracking fits 100% without outer scroll --- */
 .page-content:has(.gis-layout),
-.page-content:has(.gis-page-container),
-.page-content.gis-page-content {
+.page-content:has(.gis-page-container) {
   overflow: hidden !important;
   display: flex;
   flex-direction: column;
@@ -55,26 +54,6 @@
   min-height: 0;
   gap: var(--spacing-sm);
   overflow: hidden;
-}
-
-.gis-sidebar__header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-3xs);
-}
-
-.gis-sidebar__title {
-  font-size: 1.375rem;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0;
-  line-height: 1.25;
-}
-
-.gis-sidebar__subtitle {
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary, var(--color-text-tertiary));
-  margin: 0;
 }
 
 /* 3 Mini Status Cards Row */
@@ -370,7 +349,6 @@
   color: var(--color-link);
   transform: scale(1.08);
 }
-
 
 /* ─── Right Column: GIS Map & Overlays ─── */
 .gis-map-card {
@@ -692,55 +670,6 @@
   min-width: 12.25rem;
 }
 
-.gis-floating-legend__title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-xs);
-  margin-bottom: var(--spacing-3xs);
-}
-
-.gis-floating-legend__title {
-  font-size: 0.6875rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-secondary);
-  margin-bottom: 0;
-}
-
-.gis-floating-legend__row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--color-text-primary);
-}
-
-.gis-floating-legend__dot {
-  width: 0.6875rem;
-  height: 0.6875rem;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.gis-floating-legend__dot--available {
-  background: var(--color-success);
-}
-
-.gis-floating-legend__dot--dispatched {
-  background: var(--color-primary);
-}
-
-.gis-floating-legend__dot--incident {
-  background: var(--color-warning-solid);
-}
-
-.gis-floating-legend__dot--emergency {
-  background: var(--color-critical);
-}
-
 /* Shared map wrapper — still used by the Analytics screen's Heatmap tab
    (`historical-heatmap.js`), which never adopted this page's own
    `.gis-map-card`/`.gis-map-viewport` shell. The 2026-09-06 GIS redesign
@@ -778,8 +707,7 @@
 /* Responsive layout adjustments */
 @media (max-width: 1024px) {
   .page-content:has(.gis-layout),
-  .page-content:has(.gis-page-container),
-  .page-content.gis-page-content {
+  .page-content:has(.gis-page-container) {
     overflow-y: auto !important;
     height: auto !important;
   }
@@ -1074,8 +1002,6 @@
     grid-template-columns: 1fr;
   }
 }
-
-
 
 .gis-empty-note {
   padding: var(--spacing-md-lg) var(--spacing-sm);

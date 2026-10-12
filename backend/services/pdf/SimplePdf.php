@@ -16,11 +16,10 @@ namespace Baranguard\Services\Pdf;
  * writes one directly.
  *
  * SCOPE, HONESTLY: this produces a plain text document — the base-14
- * Helvetica fonts every PDF reader is required to have, one column, no
- * images, no tables, no embedded fonts. That is exactly what a Lupon
- * packet needs (a case record for the Punong Barangay/Lupon to read and
- * file) and nothing more. It is NOT a general-purpose PDF library and
- * should not grow into one.
+ * Helvetica fonts every PDF reader is required to have, simple vector
+ * boxes and rules, no images, no embedded fonts. It carries only the
+ * elements the statistical report uses. It is NOT a general-purpose PDF
+ * library and should not grow into one.
  *
  * TEXT ENCODING: base-14 Helvetica with `/WinAnsiEncoding` covers
  * Latin-1, which handles Filipino text including ñ/é. Anything outside
@@ -59,24 +58,6 @@ final class SimplePdf
         return new self($title);
     }
 
-    /** Bold section heading with comfortable breathing room. */
-    public function heading(string $text, float $size = 14.0): self
-    {
-        $this->spacer(8);
-        foreach ($this->wrap($text, $size) as $line) {
-            $this->elements[] = [
-                'type' => 'text',
-                'text' => $line,
-                'size' => $size,
-                'font' => self::FONT_BOLD,
-                'leading' => $size * 1.40,
-                'color' => [0.10, 0.15, 0.25],
-            ];
-        }
-        $this->spacer(4);
-        return $this;
-    }
-
     /** Bold sub-heading with subtle accent. */
     public function subheading(string $text, float $size = 11.0): self
     {
@@ -107,46 +88,6 @@ final class SimplePdf
         return $this;
     }
 
-    /** Regular paragraph text with automatic word wrapping. */
-    public function paragraph(string $text, float $size = 9.5): self
-    {
-        foreach (preg_split('/\R/u', $text) ?: [$text] as $sourceLine) {
-            if (trim($sourceLine) === '') {
-                $this->spacer(5);
-                continue;
-            }
-            foreach ($this->wrap($sourceLine, $size) as $line) {
-                $this->elements[] = [
-                    'type' => 'text',
-                    'text' => $line,
-                    'size' => $size,
-                    'font' => self::FONT_REGULAR,
-                    'leading' => $size * 1.45,
-                    'color' => [0.15, 0.20, 0.28],
-                ];
-            }
-        }
-        $this->spacer(4);
-        return $this;
-    }
-
-    /** A "Label: Value" row (Label in bold, Value in regular). */
-    public function keyValue(string $label, string $value, float $size = 9.5): self
-    {
-        $fullText = $label . ': ' . $value;
-        foreach ($this->wrap($fullText, $size) as $index => $line) {
-            $this->elements[] = [
-                'type' => 'text',
-                'text' => $line,
-                'size' => $size,
-                'font' => $index === 0 ? self::FONT_BOLD : self::FONT_REGULAR,
-                'leading' => $size * 1.45,
-                'color' => [0.15, 0.20, 0.28],
-            ];
-        }
-        return $this;
-    }
-
     /** Vertical spacing in points. */
     public function spacer(float $points = 8.0): self
     {
@@ -161,21 +102,6 @@ final class SimplePdf
             'type' => 'rule',
             'thickness' => $thickness,
             'color' => $color,
-            'leading' => $leading,
-        ];
-        return $this;
-    }
-
-    /** Full-width filled colored section banner with crisp text. */
-    public function banner(string $text, float $size = 10.0, array $bgColor = [0.12, 0.23, 0.43], array $textColor = [1.0, 1.0, 1.0], float $height = 20.0, float $leading = 25.0): self
-    {
-        $this->elements[] = [
-            'type' => 'banner',
-            'text' => $text,
-            'size' => $size,
-            'bgColor' => $bgColor,
-            'textColor' => $textColor,
-            'height' => $height,
             'leading' => $leading,
         ];
         return $this;
@@ -222,25 +148,6 @@ final class SimplePdf
         return $this;
     }
 
-    /** Dual side-by-side signature block for Desk Officer and Punong Barangay. */
-    public function signatureBlock(
-        string $leftTitle,
-        string $leftName,
-        string $leftRole,
-        string $rightTitle,
-        string $rightName,
-        string $rightRole,
-        float $leading = 60.0
-    ): self {
-        $this->elements[] = [
-            'type' => 'signatures',
-            'left' => ['title' => $leftTitle, 'name' => $leftName, 'role' => $leftRole],
-            'right' => ['title' => $rightTitle, 'name' => $rightName, 'role' => $rightRole],
-            'leading' => $leading,
-        ];
-        return $this;
-    }
-
     /** Centered navy pill badge matching `.print-sheet__doctype` in the preview modal. */
     public function pillBadge(string $text, float $size = 7.5, float $leading = 20.0): self
     {
@@ -263,23 +170,6 @@ final class SimplePdf
         $this->elements[] = [
             'type' => 'meta_bar',
             'items' => $items,
-            'leading' => $leading,
-        ];
-        return $this;
-    }
-
-    /**
-     * Two side-by-side Party cards with left accent borders matching `.print-sheet__parties`.
-     *
-     * @param array{role:string, name:string, sub:string} $left
-     * @param array{role:string, name:string, sub:string} $right
-     */
-    public function partyCards(array $left, array $right, float $leading = 58.0): self
-    {
-        $this->elements[] = [
-            'type' => 'party_cards',
-            'left' => $left,
-            'right' => $right,
             'leading' => $leading,
         ];
         return $this;
@@ -602,30 +492,6 @@ final class SimplePdf
                     $y -= $leading;
                     break;
 
-                case 'banner':
-                    $size = (float) ($elem['size'] ?? 10.0);
-                    $height = (float) ($elem['height'] ?? 20.0);
-                    $bg = $elem['bgColor'] ?? [0.12, 0.23, 0.43];
-                    $tc = $elem['textColor'] ?? [1.0, 1.0, 1.0];
-                    $boxY = $y - $height;
-                    // Filled rectangle
-                    $stream .= sprintf(
-                        "q %.2f %.2f %.2f rg %.2f %.2f %.2f %.2f re f Q\n",
-                        $bg[0], $bg[1], $bg[2],
-                        self::MARGIN, $boxY, $contentWidth, $height
-                    );
-                    // Text
-                    $baseline = $boxY + (($height - $size) / 2) + 2.0;
-                    $stream .= sprintf(
-                        "q %.2f %.2f %.2f rg BT /%s %.2f Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                        $tc[0], $tc[1], $tc[2],
-                        self::FONT_BOLD, $size,
-                        self::MARGIN + 8.0, $baseline,
-                        self::escape(self::toWinAnsi((string) $elem['text']))
-                    );
-                    $y -= $leading;
-                    break;
-
                 case 'table_header':
                     $headers = (array) ($elem['headers'] ?? []);
                     $widths = (array) ($elem['widths'] ?? []);
@@ -798,66 +664,6 @@ final class SimplePdf
                     $y -= $leading;
                     break;
 
-                case 'signatures':
-                    $left = (array) ($elem['left'] ?? []);
-                    $right = (array) ($elem['right'] ?? []);
-                    $colW = 200.0;
-                    $leftX = self::MARGIN;
-                    $rightX = self::PAGE_WIDTH - self::MARGIN - $colW;
-
-                    // Section titles
-                    $titleY = $y - 10.0;
-                    $stream .= sprintf(
-                        "q 0.35 0.40 0.48 rg BT /%s 8.00 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                        self::FONT_BOLD, $leftX, $titleY,
-                        self::escape(self::toWinAnsi(strtoupper((string) ($left['title'] ?? 'PREPARED BY:'))))
-                    );
-                    $stream .= sprintf(
-                        "q 0.35 0.40 0.48 rg BT /%s 8.00 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                        self::FONT_BOLD, $rightX, $titleY,
-                        self::escape(self::toWinAnsi(strtoupper((string) ($right['title'] ?? 'ATTESTED BY:'))))
-                    );
-
-                    // Signature line
-                    $lineY = $y - 38.0;
-                    $stream .= sprintf(
-                        "q 0.75 w 0.20 0.24 0.30 RG %.2f %.2f m %.2f %.2f l S Q\n",
-                        $leftX, $lineY, $leftX + 180.0, $lineY
-                    );
-                    $stream .= sprintf(
-                        "q 0.75 w 0.20 0.24 0.30 RG %.2f %.2f m %.2f %.2f l S Q\n",
-                        $rightX, $lineY, $rightX + 180.0, $lineY
-                    );
-
-                    // Names (Bold)
-                    $nameY = $lineY - 11.0;
-                    $stream .= sprintf(
-                        "q 0.10 0.15 0.25 rg BT /%s 9.50 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                        self::FONT_BOLD, $leftX, $nameY,
-                        self::escape(self::toWinAnsi((string) ($left['name'] ?? '')))
-                    );
-                    $stream .= sprintf(
-                        "q 0.10 0.15 0.25 rg BT /%s 9.50 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                        self::FONT_BOLD, $rightX, $nameY,
-                        self::escape(self::toWinAnsi((string) ($right['name'] ?? '')))
-                    );
-
-                    // Roles (Regular)
-                    $roleY = $nameY - 10.0;
-                    $stream .= sprintf(
-                        "q 0.35 0.40 0.48 rg BT /%s 8.00 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                        self::FONT_REGULAR, $leftX, $roleY,
-                        self::escape(self::toWinAnsi((string) ($left['role'] ?? '')))
-                    );
-                    $stream .= sprintf(
-                        "q 0.35 0.40 0.48 rg BT /%s 8.00 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                        self::FONT_REGULAR, $rightX, $roleY,
-                        self::escape(self::toWinAnsi((string) ($right['role'] ?? '')))
-                    );
-
-                    $y -= $leading;
-                    break;
-
                 case 'pill_badge':
                     $text = (string) ($elem['text'] ?? '');
                     $size = (float) ($elem['size'] ?? 7.5);
@@ -918,59 +724,6 @@ final class SimplePdf
                             $vc[0], $vc[1], $vc[2],
                             self::FONT_BOLD, $cx, $boxY + 8.5,
                             self::escape(self::toWinAnsi($val))
-                        );
-                    }
-                    $y -= $leading;
-                    break;
-
-                case 'party_cards':
-                    $left = (array) ($elem['left'] ?? []);
-                    $right = (array) ($elem['right'] ?? []);
-                    $gap = 12.0;
-                    $cardW = ($contentWidth - $gap) / 2.0;
-                    $cardH = 50.0;
-                    $boxY = $y - $cardH;
-
-                    $pair = [
-                        ['x' => self::MARGIN, 'data' => $left, 'accent' => [0.12, 0.23, 0.43]],
-                        ['x' => self::MARGIN + $cardW + $gap, 'data' => $right, 'accent' => [0.28, 0.33, 0.41]],
-                    ];
-                    foreach ($pair as $p) {
-                        $cx = $p['x'];
-                        $d = $p['data'];
-                        $ac = $p['accent'];
-
-                        // White card + border + left accent bar
-                        $stream .= sprintf(
-                            "q 1.00 1.00 1.00 rg %.2f %.2f %.2f %.2f re f Q\n",
-                            $cx, $boxY, $cardW, $cardH
-                        );
-                        $stream .= sprintf(
-                            "q 0.75 w 0.80 0.84 0.88 RG %.2f %.2f %.2f %.2f re s Q\n",
-                            $cx, $boxY, $cardW, $cardH
-                        );
-                        $stream .= sprintf(
-                            "q %.2f %.2f %.2f rg %.2f %.2f 3.50 %.2f re f Q\n",
-                            $ac[0], $ac[1], $ac[2], $cx, $boxY, $cardH
-                        );
-
-                        // Role label
-                        $stream .= sprintf(
-                            "q 0.28 0.33 0.41 rg BT /%s 6.80 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                            self::FONT_BOLD, $cx + 10.0, $boxY + 37.5,
-                            self::escape(self::toWinAnsi(strtoupper((string) ($d['role'] ?? ''))))
-                        );
-                        // Party name
-                        $stream .= sprintf(
-                            "q 0.06 0.09 0.16 rg BT /%s 10.20 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                            self::FONT_BOLD, $cx + 10.0, $boxY + 22.5,
-                            self::escape(self::toWinAnsi((string) ($d['name'] ?? '')))
-                        );
-                        // Sub-line
-                        $stream .= sprintf(
-                            "q 0.28 0.33 0.41 rg BT /%s 7.80 Tf %.2f %.2f Td (%s) Tj ET Q\n",
-                            self::FONT_REGULAR, $cx + 10.0, $boxY + 9.0,
-                            self::escape(self::toWinAnsi((string) ($d['sub'] ?? '')))
                         );
                     }
                     $y -= $leading;

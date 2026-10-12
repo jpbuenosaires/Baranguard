@@ -209,11 +209,6 @@
   white-space: nowrap;
 }
 
-.appr-queue__detail {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-}
-
 .appr-review-btn {
   display: inline-flex;
   align-items: center;
@@ -309,16 +304,6 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   margin: 0;
-}
-
-/* Smooth Highlight Flash on Tile Jump */
-@keyframes apprFlash {
-  0% { box-shadow: 0 0 0 4px var(--color-primary); }
-  100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
-}
-
-.appr-highlight-flash {
-  animation: apprFlash 1.2s ease-out;
 }
 
 /* ==========================================================================

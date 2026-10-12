@@ -49,18 +49,6 @@ export interface MbtilesInfo {
   name: string | null;
 }
 
-const MIME_BY_FORMAT: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-};
-
-/** MIME type for the package's declared tile format, for whoever serves the tile bytes onward. */
-export function mimeTypeForFormat(format: string): string {
-  return MIME_BY_FORMAT[format.toLowerCase()] ?? 'image/png';
-}
-
 export class MbtilesReader {
   private constructor(private readonly db: SqlDatabase, readonly info: MbtilesInfo) {}
 

@@ -22,7 +22,7 @@ import {
   warning,
 } from 'ionicons/icons';
 import type { NavigationState } from '../utils/routeProgress';
-import { formatRemainingTime, formatNavDistance } from '../utils/routeProgress';
+import { formatNavDistance } from '../utils/routeProgress';
 import type { RouteStep } from '../services/apiService';
 
 interface Props {

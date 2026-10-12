@@ -64,7 +64,6 @@
 
 .tw-strong { font-weight: 600; color: var(--color-text-primary); }
 .tw-muted { color: var(--color-text-tertiary); }
-.tw-mono { font-family: var(--font-mono); font-size: var(--type-mono-id); }
 .tw-empty-note { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
 .tw-entry-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 
@@ -72,8 +71,7 @@
    Filters, toolbars, forms
    ========================================================================== */
 
-.tw-filter-bar,
-.tw-toolbar {
+.tw-filter-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -304,7 +302,6 @@
   font-weight: 700;
 }
 .tw-print__signame { margin: 0; font-weight: 700; text-transform: uppercase; min-height: 1.25rem; }
-.tw-print__sigtitle { margin: 0; font-size: var(--font-size-label); font-weight: 700; }
 .tw-print__sigcap { margin: 0; font-size: var(--font-size-label); }
 .tw-print__sigparen { margin: 0; font-size: var(--font-size-label); font-style: italic; }
 .tw-print__sigfield { margin: 0; text-align: left; font-size: var(--font-size-label); }
@@ -405,13 +402,3 @@
   }
 }
 
-/* Roster print: classes instead of inline colours (audit design D-12). */
-.print-sheet__empty-row { text-align: center; color: var(--sheet-muted); }
-.print-sheet__eyebrow {
-  margin: 0;
-  font-size: var(--font-size-label);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--sheet-muted);
-}
-.print-sheet__draft-note { margin: 0 0 var(--spacing-sm); font-weight: 700; }

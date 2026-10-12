@@ -20,18 +20,6 @@
   max-width: 60rem;
 }
 
-.tw-ssz .tw-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-sm-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-}
-
 /* ==========================================================================
    Executive Annex D Count Tiles Overhaul
    ========================================================================== */
@@ -228,87 +216,6 @@
   color: var(--color-text-primary);
 }
 
-.ssz-facets-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-xs) var(--spacing-sm);
-  padding: 0 var(--spacing-xs);
-  font-size: 0.775rem;
-}
-
-.ssz-facets-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-  color: var(--color-text-secondary);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.ssz-chip-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-2xs);
-}
-
-.ssz-facet-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-  min-height: 28px;
-  padding: 0.3rem var(--spacing-sm);
-  border-radius: 9999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
-}
-.ssz-facet-chip:focus-visible {
-  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
-  outline-offset: 1px;
-}
-
-.ssz-facet-chip:hover {
-  border-color: var(--color-text-secondary);
-  color: var(--color-text-primary);
-}
-
-.ssz-facet-chip.is-active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
-  font-weight: 600;
-}
-
-.ssz-clear-filters-btn {
-  border: none;
-  background: transparent;
-  color: var(--color-primary);
-  font-size: 0.775rem;
-  font-weight: 600;
-  cursor: pointer;
-  text-decoration: underline;
-  padding: 0.1rem var(--spacing-xs);
-}
-
-.ssz-clear-filters-btn:hover {
-  color: var(--color-link-hover, #1d4ed8);
-}
-
-.ssz-results-counter {
-  margin-left: auto;
-  color: var(--color-text-secondary);
-  font-size: 0.775rem;
-  font-weight: 500;
-}
-
 /* ==========================================================================
    Composite Table Cells & Action Dropdown
    ========================================================================== */
@@ -481,17 +388,12 @@
    ========================================================================== */
 
 @media (max-width: 768px) {
-  .tw-ssz .tw-toolbar,
   .ssz-control-bar {
     flex-direction: column;
     align-items: stretch;
   }
   .ssz-search-box {
     max-width: 100%;
-  }
-  .ssz-results-counter {
-    margin-left: 0;
-    width: 100%;
   }
 }
 

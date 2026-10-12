@@ -54,5 +54,3 @@ export function manilaDateKey(value) {
   const get = (t) => parts.find((p) => p.type === t).value;
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
-
-export const MANILA_ZONE = ZONE;

@@ -19,7 +19,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   IonAlert,
-  IonButton,
   IonContent,
   IonIcon,
   IonModal,
@@ -34,7 +33,6 @@ import {
   swapHorizontalOutline,
   timeOutline,
   checkmarkCircleOutline,
-  closeCircleOutline,
   hourglassOutline,
   alertCircleOutline,
 } from 'ionicons/icons';

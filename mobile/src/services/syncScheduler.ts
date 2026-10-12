@@ -126,11 +126,6 @@ export function notifyLoggedIn(): void {
   void triggerSync();
 }
 
-/** The most recent completed pass's result, for a screen that wants to show it without triggering its own. */
-export function getLastSyncSummary(): SyncSummary | null {
-  return lastSummary;
-}
-
 /** Notified after every scheduler-triggered (or manually forced) pass completes. Returns an unsubscribe function. */
 export function subscribeSyncSummary(listener: (summary: SyncSummary) => void): () => void {
   listeners.add(listener);

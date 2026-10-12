@@ -22,20 +22,6 @@ export function addDays(date, days) {
   return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 
-/** `YYYY-MM` shifted by whole months. */
-export function addMonths(month, delta) {
-  const [y, m] = month.split('-').map(Number);
-  const t = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}`;
-}
-
-/** The month plus a week either side (shifts cross month edges; the print needs the neighbours). */
-export function monthWindow(month) {
-  const first = `${month}-01`;
-  const last = addDays(`${addMonths(month, 1)}-01`, -1);
-  return { from: addDays(first, -7), to: addDays(last, 7) };
-}
-
 /**
  * Walks every page of a list endpoint (up to MAX_PAGES x 100 rows).
  * `fetchPage({page, limit})` returns `{items, total}`.

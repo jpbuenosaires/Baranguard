@@ -77,11 +77,6 @@
    2. StatStrip Quick Metrics
    ========================================================================== */
 
-
-
-
-
-
 /* ==========================================================================
    3. Main Operations Grid (2 Columns: Active Package + Publisher)
    ========================================================================== */
@@ -494,9 +489,6 @@
   .map-pkg-guide-section {
     grid-template-columns: 1fr;
   }
-}
-
-@media (max-width: 560px) {
 }
 
 .map-pkg-detail-val--version {

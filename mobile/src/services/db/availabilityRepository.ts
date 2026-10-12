@@ -23,7 +23,7 @@
 import { openLocalDatabase } from './localDatabase';
 import type { AvailabilityLocalRow, AvailabilityStatus, AvailabilityWindow } from './localSchema';
 import { uuid } from '../uuid';
-import { daysBetween, manilaToday } from '../../utils/manilaTime';
+import { manilaToday } from '../../utils/manilaTime';
 import { markWorkflowSyncFailed } from './workflowSync';
 
 /** Contract §3 limit. */
@@ -230,11 +230,6 @@ export async function applyServerAvailability(entries: ServerAvailability[]): Pr
       );
     }
   }
-}
-
-/** Convenience for the screens: how many days a period spans (inclusive). */
-export function periodLengthDays(periodStart: string, periodEnd: string): number {
-  return daysBetween(periodStart, periodEnd) + 1;
 }
 
 /** True when the period has already ended (Manila), so the list can tuck it away. */

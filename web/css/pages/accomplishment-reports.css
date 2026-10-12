@@ -8,8 +8,6 @@
 
 .tw-reports-list .tw-filter-bar { padding-bottom: var(--spacing-xs); }
 
-.tw-detail-head .stat-strip { margin-top: var(--spacing-xs); }
-
 /* ==========================================================================
    Accomplishment Reports Modernization Styles
    ========================================================================== */
@@ -366,72 +364,9 @@
   break-after: page;
 }
 
-/* Detail Breadcrumb Bar */
-.acc-breadcrumb-bar {
-  display: flex;
-  align-items: center;
-  margin-bottom: var(--spacing-sm);
-}
-
-.acc-detail-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-xs);
-}
-
-.acc-detail-top-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.acc-back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  padding: 0.35rem var(--spacing-sm);
-  border-radius: var(--radius-md);
-  transition: all 0.15s ease;
-}
-
-.acc-back-btn:hover {
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-}
-
 /* ==========================================================================
    Single Unified Card & Detail Layout
    ========================================================================== */
-
-.acc-detail-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-xs);
-}
-
-.acc-back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  padding: 0.35rem var(--spacing-sm);
-  border-radius: var(--radius-md);
-  transition: all 0.15s ease;
-}
-
-.acc-back-btn:hover {
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-}
 
 /* Single Unified Card container */
 .acc-unified-card {

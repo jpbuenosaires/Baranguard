@@ -35,7 +35,6 @@
   flex-shrink: 0;
 }
 
-
 /* --- Main Responsive Split Layout (Full width at first; shrinks when incident selected) --- */
 .incident-layout {
   flex: 1;
@@ -320,7 +319,6 @@
   color: var(--color-success-text);
 }
 
-
 /* Status Indicators in Table */
 .incident-status-indicator {
   display: inline-flex;
@@ -386,7 +384,6 @@
   transform: scale(1.1);
 }
 
-
 /* Row selection highlight */
 .data-table tbody tr {
   border-left: 3px solid transparent;
@@ -397,7 +394,6 @@
   background-color: var(--color-row-active-bg) !important;
   border-left: 3px solid var(--color-primary) !important;
 }
-
 
 /* --- Right Column: Detail Pane (Hidden by default; displays when incident is selected) --- */
 .incident-right-panel {
@@ -503,7 +499,6 @@
   background: var(--tint-info-bg);
 }
 
-
 .btn-incident-close {
   display: inline-flex;
   align-items: center;
@@ -560,26 +555,6 @@
 .incident-detail-badge--high {
   background: var(--tint-warning-bg);
   color: var(--color-warning-text);
-}
-
-/* Classifier mismatch chip — an empty slot collapses to 0 height on its
-   own (no padding/margin here), so nothing renders when the auto-check
-   agrees with what is already on record. */
-.incident-classifier-mismatch-slot:not(:empty) {
-  margin-top: var(--spacing-sm);
-}
-
-.incident-classifier-mismatch-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  border: none;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.incident-classifier-mismatch-chip:hover {
-  filter: brightness(0.96);
 }
 
 .incident-detail-badge--medium,
@@ -993,39 +968,6 @@
 
 .incident-form-cancel:hover {
   background: var(--color-bg);
-}
-
-/* Empty / Placeholder State */
-.incident-placeholder-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 40px var(--spacing-lg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 10px;
-  color: var(--color-text-secondary);
-}
-
-.incident-placeholder-icon {
-  color: var(--color-text-secondary);
-  margin-bottom: var(--spacing-xs);
-}
-
-.incident-placeholder-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.incident-placeholder-text {
-  font-size: 0.84375rem;
-  margin: 0;
-  max-width: 260px;
 }
 
 /* --- Unassigned Tanod Avatar & Button --- */

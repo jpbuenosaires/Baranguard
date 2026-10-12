@@ -136,14 +136,6 @@ function listOf(json) {
 
 // --- Enums (contract §2, §5, §7) --------------------------------------------
 
-export const AUTHORITY_LABELS = {
-  note_report: 'Review and return accomplishment reports',
-  approve_report: 'Sign accomplishment reports as approver',
-  approve_roster: 'Sign and publish the duty roster',
-  prepare_annex_d: 'Prepare Annex D term report',
-  approve_annex_d: 'Sign Annex D term report as approver',
-};
-
 export const REFERRED_TO_LABELS = {
   pnp: 'PNP',
   bfp: 'BFP',

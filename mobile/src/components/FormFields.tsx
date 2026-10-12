@@ -1,6 +1,6 @@
 /**
- * FormFields.tsx — thin wrappers around IonInput/IonTextarea/IonSelect
- * that bind to the underlying custom element's NATIVE events via a ref,
+ * FormFields.tsx — thin wrapper around IonInput
+ * that binds to the underlying custom element's NATIVE events via a ref,
  * instead of React's `onIonInput` / `onIonChange` props.
  *
  * WHY THIS EXISTS (found by browser-testing M1 on 2026-09-02, not by
@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { IonInput, IonSelect, IonSelectOption, IonTextarea } from '@ionic/react';
+import { IonInput } from '@ionic/react';
 
 /**
  * Subscribes to a custom-element event, keeping the latest callback
@@ -91,48 +91,3 @@ export const TextField: React.FC<TextFieldProps> = ({
     />
   );
 };
-
-interface TextAreaFieldProps {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  rows?: number;
-  disabled?: boolean;
-}
-
-export const TextAreaField: React.FC<TextAreaFieldProps> = ({ label, value, onChange, rows = 6, disabled }) => {
-  const attachRef = useElementEvent('ionInput', onChange);
-  return (
-    <IonTextarea
-      ref={attachRef}
-      label={label}
-      labelPlacement="floating"
-      autoGrow
-      rows={rows}
-      value={value}
-      disabled={disabled}
-    />
-  );
-};
-
-interface SelectFieldProps<T extends string> {
-  label: string;
-  value: T;
-  onChange: (value: T) => void;
-  options: readonly { value: T; label: string }[];
-  disabled?: boolean;
-}
-
-export function SelectField<T extends string>({ label, value, onChange, options, disabled }: SelectFieldProps<T>) {
-  // IonSelect commits on selection, so ionChange (not ionInput) is its event.
-  const attachRef = useElementEvent('ionChange', (raw) => onChange(raw as T));
-  return (
-    <IonSelect ref={attachRef} label={label} labelPlacement="floating" value={value} disabled={disabled}>
-      {options.map((option) => (
-        <IonSelectOption key={option.value} value={option.value}>
-          {option.label}
-        </IonSelectOption>
-      ))}
-    </IonSelect>
-  );
-}

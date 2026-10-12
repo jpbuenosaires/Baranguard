@@ -9,26 +9,6 @@
   height: 100%;
   min-height: 20rem;
 }
-.live-map__legend {
-  position: absolute;
-  bottom: var(--spacing-md);
-  left: var(--spacing-md);
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  font-size: var(--font-size-label);
-  box-shadow: var(--shadow-floating);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  z-index: 5;
-  animation: fade-in-up 0.3s ease-out;
-}
-.live-map__legend-row { display: flex; align-items: center; gap: var(--spacing-sm); }
-.live-map__legend-dot { width: 0.75rem; height: 0.75rem; border-radius: 50%; display: inline-block; }
 
 .live-map__marker {
   position: relative;
@@ -350,16 +330,6 @@
 }
 .maplibregl-ctrl-attrib a {
   color: var(--color-text-secondary) !important;
-}
-
-[data-theme="dark"] .live-map__legend {
-  background: rgba(30, 41, 59, 0.9);
-  border-color: rgba(51, 65, 85, 0.85);
-  color: var(--color-text-primary);
-}
-
-@media (max-width: 480px) {
-  .live-map__legend { font-size: 0.625rem; padding: var(--spacing-sm); }
 }
 
 /* Small notice shown by src/utils/mapFallback.js when OSM basemap tiles

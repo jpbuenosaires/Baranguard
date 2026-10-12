@@ -213,7 +213,6 @@ const RequireSession: React.FC<{ children: React.ReactNode }> = ({ children }) =
  */
 const TabbedShell: React.FC = () => {
   const location = useLocation();
-  const navigate = useNavigate();
   const currentPath = location.pathname;
   // Open night-dispatch offers for the Dispatches tab badge (shares the store the cards use).
   const offerCount = useDispatchOffers().offers.length;
