@@ -97,10 +97,14 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
   });
 
   filterBar.append(searchWrap, filterChipsWrap);
-  container.appendChild(filterBar);
 
   const body = document.createElement('div');
-  container.appendChild(body);
+  body.className = 'swap-table-body';
+
+  const tableCard = document.createElement('div');
+  tableCard.className = 'personnel-table-card unified-table-card';
+  tableCard.append(filterBar, body);
+  container.appendChild(tableCard);
 
   let allRequests = [];
   let shiftsById = new Map();
@@ -150,42 +154,42 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
     });
 
     const cards = strip.querySelectorAll('.stat-card');
-    if (cards[0]) {
-      cards[0].style.cursor = 'pointer';
-      cards[0].title = 'Show all requests';
-      cards[0].addEventListener('click', () => {
-        selectedStatus = 'all';
-        statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
-        renderFiltered();
+    const bindInteractiveStat = (card, title, handler) => {
+      if (!card) return;
+      card.style.cursor = 'pointer';
+      card.title = title;
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', title);
+      card.addEventListener('click', handler);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          card.click();
+        }
       });
-    }
-    if (cards[1]) {
-      cards[1].style.cursor = 'pointer';
-      cards[1].title = 'Filter: Pending Review';
-      cards[1].addEventListener('click', () => {
-        selectedStatus = 'pending';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Pending'));
-        renderFiltered();
-      });
-    }
-    if (cards[2]) {
-      cards[2].style.cursor = 'pointer';
-      cards[2].title = 'Filter: Approved';
-      cards[2].addEventListener('click', () => {
-        selectedStatus = 'approved';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Approved'));
-        renderFiltered();
-      });
-    }
-    if (cards[3]) {
-      cards[3].style.cursor = 'pointer';
-      cards[3].title = 'Filter: Denied';
-      cards[3].addEventListener('click', () => {
-        selectedStatus = 'denied';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Denied'));
-        renderFiltered();
-      });
-    }
+    };
+
+    bindInteractiveStat(cards[0], 'Show all requests', () => {
+      selectedStatus = 'all';
+      statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
+      renderFiltered();
+    });
+    bindInteractiveStat(cards[1], 'Filter: Pending Review', () => {
+      selectedStatus = 'pending';
+      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Pending'));
+      renderFiltered();
+    });
+    bindInteractiveStat(cards[2], 'Filter: Approved', () => {
+      selectedStatus = 'approved';
+      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Approved'));
+      renderFiltered();
+    });
+    bindInteractiveStat(cards[3], 'Filter: Denied', () => {
+      selectedStatus = 'denied';
+      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Denied'));
+      renderFiltered();
+    });
 
     statStripHost.appendChild(strip);
   }

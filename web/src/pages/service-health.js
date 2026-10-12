@@ -408,7 +408,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       const card = document.createElement('button');
       card.type = 'button';
       card.className = `stat-card ${activeFilter === item.id ? 'is-active' : ''}`;
-      card.setAttribute('aria-label', `Show only: ${item.label}`);
+      card.setAttribute('aria-label', `${item.label}: ${item.value}. Filter by this status`);
       card.setAttribute('aria-pressed', String(activeFilter === item.id));
 
       const val = document.createElement('span');
@@ -468,7 +468,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
         card.className = `health-service-card health-service-card--${status}`;
         card.setAttribute('role', 'button');
         card.setAttribute('tabindex', '0');
-        card.setAttribute('aria-label', `Inspect ${dep.label} diagnostic details`);
+        card.setAttribute('aria-label', `${dep.label}, status: ${STATUS_META[status]?.label || status}. Inspect diagnostic details`);
 
         // Top row
         const topRow = document.createElement('div');
