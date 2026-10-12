@@ -319,12 +319,12 @@ cat <<EOF
 
   admin.test    Admin ('Chief Tanod'; note_report, prepare_annex_d)
                 -> Approvals, Accomplishment Reports (month $ACC_MONTH), Referral Log,
-                   Safer School Zones (schools + Annex D draft, "Prepare"),
-                   Personnel > Scheduler (draft shifts -> publish), Personnel > Users
-                   (edit title/approval authority)
+                   Safer School Zones (schools + Annex D draft, "Record signed paper"),
+                   Personnel > Scheduler (draft shifts -> publish with signed paper),
+                   Personnel > Users (edit title/approval authority)
   pb.test       Punong Barangay (approve_report, approve_roster, approve_annex_d)
-                -> Approvals: approve the roster, note/approve the 'prepared'
-                   accomplishment report, approve Annex D once prepared by admin
+                -> signs on paper; may record the signed roster (Scheduler
+                   "Publish with signed paper"); reads Approvals / reports
   sec.test      Secretary (no authority) -> Referral Log, schools, incident detail
                 (raw narrative + C-1 fields), read-only on approvals
   kagawad.test  Secretary-role, title 'Kagawad', approve_report only

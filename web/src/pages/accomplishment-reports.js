@@ -7,10 +7,10 @@
  * that mirrors the barangay's own form (letterhead, name / position /
  * month / duration, 31 day rows, Prepared / Noted / Approved By).
  *
- * Paper-first (2026-10-12): the paper copy is the official record, so a
- * report is approved by printing it, having it signed and recording the
- * signed paper (Admin/Secretary, PaperApprovalPanel). The separate in-app
- * Note / Approve buttons were removed from this screen; the endpoints stay.
+ * Paper-only (2026-10-12): the paper copy is the official record, so a
+ * report is approved ONLY by printing it, having it signed and recording the
+ * signed paper (Admin/Secretary, PaperApprovalPanel). There are no in-app
+ * Note / Approve buttons; those endpoints answer 410 PAPER_APPROVAL_REQUIRED.
  *
  * Gating, all UX only (REFERENCE.md §2 Rule 2 — the server re-checks):
  *   - Record signed paper .. status prepared or noted, Admin or Secretary

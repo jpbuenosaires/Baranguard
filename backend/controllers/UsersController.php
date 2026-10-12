@@ -102,7 +102,11 @@ final class UsersController
      * Secretary cannot call the Admin-only GET /users but must still pick a
      * Tanod for a shift or a signer for a paper approval).
      *
-     * admin|secretary only; always scoped to the CALLER's barangay (there is
+     * admin|secretary, plus ONE narrow exception: a Punong Barangay holding
+     * approve_roster may read purpose=signer&authority=approve_roster, the
+     * picker for recording a signed paper roster (POST /shifts/publish is
+     * paper-only since 2026-10-12, and the PB may record it). Always
+     * scoped to the CALLER's barangay (there is
      * no barangay parameter, so cross-tenant reads are impossible); only
      * active, non-suspended accounts. Items are ONLY
      * `{user_id, full_name, official_title}` -- no username, phone, email,
@@ -122,7 +126,14 @@ final class UsersController
      */
     public static function directory(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+        if ($identity['role'] === 'punong_barangay'
+            && Http::query('purpose') === 'signer'
+            && Http::query('authority') === ApprovalAuthority::APPROVE_ROSTER
+        ) {
+            ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::APPROVE_ROSTER);
+        } else {
+            AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
+        }
 
         $purpose = Http::query('purpose');
         if ($purpose !== 'tanod' && $purpose !== 'roster' && $purpose !== 'signer') {

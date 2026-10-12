@@ -632,7 +632,7 @@ expect_eq "No narrative, names, contacts, coordinates or location text in any di
 expect_eq "Offer audit rows exist (opened/accepted/expired/reminder/closed/cancelled)" "$(db_one "SELECT COUNT(DISTINCT action) FROM audit_log WHERE action LIKE 'dispatch_offer%';")" "6"
 
 # ================================================================ roster paper
-step "14. POST /shifts/publish with recorded_from_paper"
+step "14. POST /shifts/publish with recorded_from_paper (required for every caller since 2026-10-12)"
 mk_draft() { db_run "INSERT INTO shift_schedule (barangay_id,user_id,patrol_zone,start_at,end_at,created_by,approval_status) VALUES (1,$1,'P','$2','$3',$ADMIN_ID,'draft');"; db_one "SELECT MAX(shift_id) FROM shift_schedule;"; }
 SH1=$(mk_draft $T4 '2026-11-02 00:00:00' '2026-11-02 08:00:00')
 SH2=$(mk_draft $T4 '2026-11-03 00:00:00' '2026-11-03 08:00:00')
@@ -641,11 +641,12 @@ SH4=$(mk_draft $T4 '2026-11-05 00:00:00' '2026-11-05 08:00:00')
 TODAY=$(date -u +%Y-%m-%d)
 paper() { printf '{"shift_ids":[%s],"recorded_from_paper":{"signer_user_id":%s,"signed_on":"%s"}}' "$1" "$2" "$3"; }
 api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SH1]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary WITHOUT approve_roster and no paper record" 403
+expect_code "Secretary with no paper record" 422
+expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
 api POST /shifts/publish "$T1_T" "$(paper $SH1 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
 expect_code "Tanod cannot record from paper" 403
-api POST /shifts/publish "$PB_T" "$(paper $SH1 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Punong Barangay cannot use the paper path (role admin|secretary only)" 403
+api POST /shifts/publish "$PB_T" "$(paper $SH1 $ADMIN_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
+expect_code "Punong Barangay recording: the named signer must still hold approve_roster" 422
 api POST /shifts/publish "$SEC_T" "$(paper $SH1 $ADMIN_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
 expect_code "Signer without approve_roster" 422
 api POST /shifts/publish "$SEC_T" "$(paper $SH1 $ADMIN2_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
@@ -677,10 +678,13 @@ api GET "/shifts?approval_status=published" "$ADMIN_T" ""
 SHOWN=$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["items"] as $r){ if($r["shift_id"]==(int)$argv[1]) echo $r["approval_mode"]."|".$r["paper_signed_on"]."|".$r["paper_recorded_by_name"]; }' $SH1)
 expect_eq "GET /shifts exposes approval_mode, paper_signed_on, paper_recorded_by_name" "$SHOWN" "recorded_from_paper|2026-10-05|OF Secretary"
 api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$SH3]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Normal publish by an approve_roster holder is unchanged" 200
-expect_eq "  digital mode, no paper fields" "$(db_one "SELECT CONCAT(approval_mode,'/',IFNULL(paper_signed_on,'NULL'),'/',approved_by) FROM shift_schedule WHERE shift_id=$SH3;")" "digital/NULL/$PB_ID"
+expect_code "No in-app publish by an approve_roster holder any more (no paper)" 422
+expect_eq "  still a draft" "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$SH3;")" "draft"
+api POST /shifts/publish "$PB_T" "$(paper $SH3 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
+expect_code "Punong Barangay (approve_roster) records the paper roster they signed" 200
+expect_eq "  paper mode, signer and recorder are the PB" "$(db_one "SELECT CONCAT(approval_mode,'/',paper_signed_on,'/',approved_by,'/',paper_recorded_by) FROM shift_schedule WHERE shift_id=$SH3;")" "recorded_from_paper/$TODAY/$PB_ID/$PB_ID"
 api POST /shifts/publish "$ADMIN_T" "{\"shift_ids\":[$SH4]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Admin without approve_roster and no paper record still 403" 403
+expect_code "Admin with no paper record" 422
 api POST /shifts/publish "$ADMIN_T" "$(paper $SH4 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
 expect_code "Admin may record from paper" 200
 OTHER_T=$(login_as of_t4)

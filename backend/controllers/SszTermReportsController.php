@@ -19,17 +19,18 @@ use PDO;
  *   GET   /ssz-term-reports               admin|secretary|punong_barangay
  *   GET   /ssz-term-reports/:id           admin|secretary|punong_barangay
  *   PATCH /ssz-term-reports/:id           admin|secretary, only while draft
- *   POST  /ssz-term-reports/:id/prepare   PREPARE_ANNEX_D: draft -> prepared (recompute)
- *   POST  /ssz-term-reports/:id/approve   APPROVE_ANNEX_D: prepared -> approved,
- *                                         never by the preparer
+ *   POST  /ssz-term-reports/:id/prepare   retired: 410 PAPER_APPROVAL_REQUIRED
+ *   POST  /ssz-term-reports/:id/approve   retired: 410 PAPER_APPROVAL_REQUIRED
  *   POST  /ssz-term-reports/:id/mark-submitted
  *                                         admin|secretary: approved -> submitted
  *   POST  /ssz-term-reports/:id/paper-signature
  *                                         admin|secretary: record the date on the
  *                                         signed paper of an APPROVED report
  *   POST  /ssz-term-reports/:id/record-paper-approval
- *                                         admin|secretary: prepared -> approved,
- *                                         recorded from paper (signer holds
+ *                                         admin|secretary: draft|prepared ->
+ *                                         approved, recorded from paper
+ *                                         (draft names a preparer holding
+ *                                         prepare_annex_d; signer holds
  *                                         approve_annex_d, never the preparer)
  *
  * Every write needs an Idempotency-Key. `POST` stores it in
@@ -61,10 +62,10 @@ use PDO;
  * coordinates or contact data. Audit metadata is {report_id, status}
  * (+ the idempotency key) -- never counts of a person.
  *
- * `other_institutions` and re-prepare: PATCH may hand-edit it while draft.
- * `prepare` recomputes every count, and recomputes `other_institutions` too
- * unless the report was already edited (version > 1), in which case the
- * preparer's wording is kept.
+ * `other_institutions` and recording: PATCH may hand-edit it while draft.
+ * Recording a draft from paper recomputes every count, and recomputes
+ * `other_institutions` too unless the report was already edited
+ * (version > 1), in which case the edited wording is kept.
  */
 final class SszTermReportsController
 {
@@ -292,100 +293,27 @@ final class SszTermReportsController
         Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? []));
     }
 
-    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    /**
+     * POST /ssz-term-reports/:id/prepare - retired (paper-only, 2026-10-12).
+     * Preparation is on the signed paper too: 410 PAPER_APPROVAL_REQUIRED for
+     * every caller; record-paper-approval names the preparer instead.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
     public static function prepare(PDO $pdo, array $identity, string $reportIdParam): void
     {
-        ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::PREPARE_ANNEX_D);
-        $key = self::requireIdempotencyKey();
-
-        $pdo->beginTransaction();
-        try {
-            $row = self::loadOrFail($pdo, $identity, $reportIdParam, true);
-            $reportId = (int) $row['report_id'];
-
-            if (self::isReplay($pdo, $identity['barangay_id'], 'ssz_term_report_prepared', $reportId, $key)) {
-                $pdo->commit();
-                Http::send(200, self::mapReport($pdo, $row));
-            }
-            if ($row['status'] !== 'draft') {
-                throw new ApiError(409, 'CONFLICT', 'Only a draft term report can be prepared.');
-            }
-
-            $computed = self::compute($pdo, $identity['barangay_id'], (string) $row['term_start'], (string) $row['term_end']);
-            $sets = [];
-            $params = ['id' => $reportId, 'by' => $identity['user_id']];
-            foreach (self::COUNT_COLUMNS as $column) {
-                $sets[] = "{$column} = :{$column}";
-                $params[$column] = $computed[$column];
-            }
-            if ((int) $row['version'] <= 1) {
-                $sets[] = 'other_institutions = :other_institutions';
-                $params['other_institutions'] = $computed['other_institutions'];
-            }
-            $sets[] = "status = 'prepared'";
-            $sets[] = 'prepared_by = :by';
-            $sets[] = 'prepared_at = UTC_TIMESTAMP()';
-            $sets[] = 'version = version + 1';
-            $sets[] = 'updated_at = UTC_TIMESTAMP()';
-            $pdo->prepare('UPDATE ssz_term_report SET ' . implode(', ', $sets) . ' WHERE report_id = :id')->execute($params);
-
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'ssz_term_report_prepared', 'ssz_term_report', $reportId, [
-                'report_id' => $reportId,
-                'status' => 'prepared',
-                'idempotency_key' => $key,
-            ]);
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
-        }
-
-        Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? []));
+        PaperApproval::refuseInApp('Preparing an Annex D term report', 'POST /ssz-term-reports/:id/record-paper-approval with preparer_user_id');
     }
 
-    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    /**
+     * POST /ssz-term-reports/:id/approve - retired (paper-only, 2026-10-12),
+     * 410 PAPER_APPROVAL_REQUIRED like prepare().
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
     public static function approve(PDO $pdo, array $identity, string $reportIdParam): void
     {
-        ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::APPROVE_ANNEX_D);
-        $key = self::requireIdempotencyKey();
-
-        $pdo->beginTransaction();
-        try {
-            $row = self::loadOrFail($pdo, $identity, $reportIdParam, true);
-            $reportId = (int) $row['report_id'];
-
-            if (self::isReplay($pdo, $identity['barangay_id'], 'ssz_term_report_approved', $reportId, $key)) {
-                $pdo->commit();
-                Http::send(200, self::mapReport($pdo, $row));
-            }
-            if ($row['status'] !== 'prepared') {
-                throw new ApiError(409, 'CONFLICT', 'Only a prepared term report can be approved.');
-            }
-            ApprovalAuthority::assertNotPreparer($identity['user_id'], (int) $row['prepared_by']);
-
-            $pdo->prepare(
-                "UPDATE ssz_term_report
-                 SET status = 'approved', approved_by = :by, approved_at = UTC_TIMESTAMP(),
-                     version = version + 1, updated_at = UTC_TIMESTAMP()
-                 WHERE report_id = :id"
-            )->execute(['by' => $identity['user_id'], 'id' => $reportId]);
-
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'ssz_term_report_approved', 'ssz_term_report', $reportId, [
-                'report_id' => $reportId,
-                'status' => 'approved',
-                'idempotency_key' => $key,
-            ]);
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
-        }
-
-        Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? []));
+        PaperApproval::refuseInApp('Approving an Annex D term report', 'POST /ssz-term-reports/:id/record-paper-approval');
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
@@ -504,13 +432,24 @@ final class SszTermReportsController
 
     /**
      * POST /ssz-term-reports/:id/record-paper-approval - admin|secretary.
-     * Body {"signer_user_id", "signed_on"}. Records an approval that
-     * happened on paper: `prepared` -> `approved`, `approved_by` = the signer
-     * (an active same-barangay user holding `approve_annex_d`, never the
-     * preparer), `approval_mode` = 'recorded_from_paper'. Order: 403 -> 400
-     * -> 404 (report / cross-tenant) -> idempotent replay -> 409 (not
-     * prepared) -> 409 (signer is the preparer) -> 404 (signer in another
-     * barangay) -> 422 (signer cannot approve).
+     * Body {"signer_user_id", "signed_on", "preparer_user_id"?}. Records an
+     * Annex D that was prepared and approved on paper (the only path since
+     * 2026-10-12):
+     *
+     *   - `draft`: `preparer_user_id` is required (an active same-barangay
+     *     user holding `prepare_annex_d`). Recomputes the counts exactly as
+     *     the old in-app prepare did, sets prepared_by/prepared_at and
+     *     approves, in one step and one audit row.
+     *   - `prepared` (legacy, prepared in-app before 2026-10-12): approves.
+     *     `preparer_user_id` may be omitted; if sent it must name the
+     *     recorded preparer (409 otherwise).
+     *
+     * `approved_by` = the signer (active same-barangay user holding
+     * `approve_annex_d`, never the preparer), `approval_mode` =
+     * 'recorded_from_paper'. Order: 403 -> 400 (key/body) -> 404 (report /
+     * cross-tenant) -> idempotent replay -> 409 (not draft or prepared) ->
+     * 400 (draft without preparer) -> 409 (preparer mismatch on prepared) ->
+     * 409 (signer is the preparer) -> 404/422 (preparer) -> 404/422 (signer).
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -524,6 +463,10 @@ final class SszTermReportsController
         $body = Http::jsonBody();
         $signerId = PaperApproval::requirePositiveInt($body['signer_user_id'] ?? null, 'signer_user_id');
         $signedOn = PaperApproval::requirePastOrTodayDate($body['signed_on'] ?? null, 'signed_on');
+        $preparerId = null;
+        if (array_key_exists('preparer_user_id', $body) && $body['preparer_user_id'] !== null) {
+            $preparerId = PaperApproval::requirePositiveInt($body['preparer_user_id'], 'preparer_user_id');
+        }
 
         $pdo->beginTransaction();
         try {
@@ -534,26 +477,71 @@ final class SszTermReportsController
                 $pdo->commit();
                 Http::send(200, self::mapReport($pdo, self::fetchRow($pdo, $reportId) ?? $row));
             }
-            if ($row['status'] !== 'prepared') {
-                throw new ApiError(409, 'CONFLICT', 'Only a prepared term report can have a paper approval recorded.');
+            $fromDraft = $row['status'] === 'draft';
+            if (!$fromDraft && $row['status'] !== 'prepared') {
+                throw new ApiError(409, 'CONFLICT', 'Only a draft or prepared term report can have a paper approval recorded.');
             }
-            ApprovalAuthority::assertNotPreparer($signerId, (int) $row['prepared_by']);
+            if ($fromDraft && $preparerId === null) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'preparer_user_id is required: name who prepared and signed the paper Annex D.');
+            }
+            if (!$fromDraft) {
+                if ($preparerId !== null && $preparerId !== (int) $row['prepared_by']) {
+                    throw new ApiError(409, 'CONFLICT', 'This term report is already prepared by someone else; omit preparer_user_id.');
+                }
+                $preparerId = (int) $row['prepared_by'];
+            }
+            ApprovalAuthority::assertNotPreparer($signerId, $preparerId);
+            if ($fromDraft) {
+                PaperApproval::requireSigner(
+                    $pdo,
+                    $identity['barangay_id'],
+                    $preparerId,
+                    ApprovalAuthority::PREPARE_ANNEX_D,
+                    'Preparer not found.',
+                    'The named preparer is not designated to prepare the Annex D report.',
+                );
+            }
             PaperApproval::requireSigner($pdo, $identity['barangay_id'], $signerId, ApprovalAuthority::APPROVE_ANNEX_D);
 
-            $pdo->prepare(
-                "UPDATE ssz_term_report
-                    SET status = 'approved', approved_by = :signer, approved_at = UTC_TIMESTAMP(),
-                        approval_mode = 'recorded_from_paper', paper_signed_on = :signed_on,
-                        paper_recorded_by = :actor, paper_recorded_at = UTC_TIMESTAMP(),
-                        version = version + 1, updated_at = UTC_TIMESTAMP()
-                  WHERE report_id = :id"
-            )->execute(['signer' => $signerId, 'signed_on' => $signedOn, 'actor' => $identity['user_id'], 'id' => $reportId]);
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'approval_recorded_from_paper', 'ssz_term_report', $reportId, [
+            $sets = [];
+            $params = ['id' => $reportId, 'signer' => $signerId, 'signed_on' => $signedOn, 'actor' => $identity['user_id']];
+            if ($fromDraft) {
+                // What the retired in-app prepare did: freeze fresh counts,
+                // keeping a hand-edited other_institutions (version > 1).
+                $computed = self::compute($pdo, $identity['barangay_id'], (string) $row['term_start'], (string) $row['term_end']);
+                foreach (self::COUNT_COLUMNS as $column) {
+                    $sets[] = "{$column} = :{$column}";
+                    $params[$column] = $computed[$column];
+                }
+                if ((int) $row['version'] <= 1) {
+                    $sets[] = 'other_institutions = :other_institutions';
+                    $params['other_institutions'] = $computed['other_institutions'];
+                }
+                $sets[] = 'prepared_by = :preparer';
+                $sets[] = 'prepared_at = UTC_TIMESTAMP()';
+                $params['preparer'] = $preparerId;
+            }
+            $sets[] = "status = 'approved'";
+            $sets[] = 'approved_by = :signer';
+            $sets[] = 'approved_at = UTC_TIMESTAMP()';
+            $sets[] = "approval_mode = 'recorded_from_paper'";
+            $sets[] = 'paper_signed_on = :signed_on';
+            $sets[] = 'paper_recorded_by = :actor';
+            $sets[] = 'paper_recorded_at = UTC_TIMESTAMP()';
+            $sets[] = 'version = version + 1';
+            $sets[] = 'updated_at = UTC_TIMESTAMP()';
+            $pdo->prepare('UPDATE ssz_term_report SET ' . implode(', ', $sets) . ' WHERE report_id = :id')->execute($params);
+
+            $meta = [
                 'report_id' => $reportId,
                 'status' => 'approved',
                 'signer_user_id' => $signerId,
-                'idempotency_key' => $key,
-            ]);
+            ];
+            if ($fromDraft) {
+                $meta['preparer_user_id'] = $preparerId;
+            }
+            $meta['idempotency_key'] = $key;
+            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'approval_recorded_from_paper', 'ssz_term_report', $reportId, $meta);
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {

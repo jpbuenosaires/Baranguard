@@ -232,11 +232,6 @@ export async function getShiftsByApproval({ approvalStatus, page, limit } = {}) 
   }));
 }
 
-/** POST /shifts/publish — needs the approve_roster authority. */
-export async function publishShifts(shiftIds, idempotencyKey) {
-  return camelize(await write('POST', '/shifts/publish', { shift_ids: shiftIds }, idempotencyKey));
-}
-
 // --- Accomplishment reports (§4) --------------------------------------------
 
 export async function getAccomplishmentReports({ month, userId, status, page, limit } = {}) {
@@ -247,14 +242,6 @@ export async function getAccomplishmentReports({ month, userId, status, page, li
 
 export async function getAccomplishmentReport(reportId) {
   return camelize(await request('GET', `/accomplishment-reports/${reportId}`));
-}
-
-export async function noteAccomplishmentReport(reportId, idempotencyKey) {
-  return camelize(await write('POST', `/accomplishment-reports/${reportId}/note`, {}, idempotencyKey));
-}
-
-export async function approveAccomplishmentReport(reportId, idempotencyKey) {
-  return camelize(await write('POST', `/accomplishment-reports/${reportId}/approve`, {}, idempotencyKey));
 }
 
 export async function returnAccomplishmentReport(reportId, reason, idempotencyKey) {
@@ -359,14 +346,6 @@ export async function updateTermReport(reportId, { remarks, otherInstitutions },
   return camelize(await write('PATCH', `/ssz-term-reports/${reportId}`, body, idempotencyKey));
 }
 
-export async function prepareTermReport(reportId, idempotencyKey) {
-  return camelize(await write('POST', `/ssz-term-reports/${reportId}/prepare`, {}, idempotencyKey));
-}
-
-export async function approveTermReport(reportId, idempotencyKey) {
-  return camelize(await write('POST', `/ssz-term-reports/${reportId}/approve`, {}, idempotencyKey));
-}
-
 export async function markTermReportSubmitted(reportId, fields, idempotencyKey) {
   const body = {
     mayor_office_received_by: fields.mayorOfficeReceivedBy,
@@ -397,14 +376,17 @@ export async function recordPaperSignature(entityType, reportId, paperSignedOn, 
 }
 
 /**
- * POST .../record-paper-approval — moves a noted report (Annex D: prepared)
- * to approved on the strength of a paper signature by `signerUserId`.
+ * POST .../record-paper-approval — the only approval path (paper-only,
+ * 2026-10-12): moves a prepared (or legacy noted) accomplishment report, or
+ * an Annex D draft/prepared report, to approved on the strength of a paper
+ * signature by `signerUserId`. An Annex D draft also needs `preparerUserId`.
  */
-export async function recordPaperApproval(entityType, reportId, { signerUserId, signedOn }, idempotencyKey) {
-  return camelize(await write('POST', `${PAPER_ENTITY_PATHS[entityType]}/${reportId}/record-paper-approval`, {
-    signer_user_id: signerUserId,
-    signed_on: signedOn,
-  }, idempotencyKey));
+export async function recordPaperApproval(entityType, reportId, { signerUserId, signedOn, preparerUserId }, idempotencyKey) {
+  const body = { signer_user_id: signerUserId, signed_on: signedOn };
+  // Annex D draft: who prepared the paper (holds prepare_annex_d); the server
+  // sets prepared_by and approves in one step.
+  if (preparerUserId !== undefined && preparerUserId !== null) body.preparer_user_id = preparerUserId;
+  return camelize(await write('POST', `${PAPER_ENTITY_PATHS[entityType]}/${reportId}/record-paper-approval`, body, idempotencyKey));
 }
 
 /** GET /document-scans?entity_type=&entity_id= (admin, secretary, punong_barangay). Never carries a file path. */
