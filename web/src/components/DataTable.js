@@ -273,7 +273,7 @@ export function DataTable({
         const td = document.createElement('td');
         if (col.align === 'right') td.classList.add('is-right');
         const cell = renderCell(row, col.key);
-        if (onRowClick && firstCell) {
+        if (onRowClick && firstCell && col.activator !== false) {
           const activator = document.createElement('button');
           activator.type = 'button';
           activator.className = 'data-table__row-activator';
@@ -290,7 +290,9 @@ export function DataTable({
         } else {
           td.appendChild(cellContent(cell));
         }
-        firstCell = false;
+        // A column that opts out (`activator: false`, e.g. a checkbox column)
+        // does not consume the activator; the next column gets it instead.
+        if (col.activator !== false) firstCell = false;
         tr.appendChild(td);
       }
       tbody.appendChild(tr);

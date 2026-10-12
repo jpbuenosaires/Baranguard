@@ -49,7 +49,7 @@ const STATUS_FILTERS = ['', 'open', 'prepared', 'returned'];
 const TANOD_POSITION = 'Barangay Tanod'; // fallback when the user record carries no official_title
 
 const COLUMNS = [
-  { key: 'select', label: '', width: '40px' },
+  { key: 'select', label: '', width: '40px', activator: false },
   { key: 'person', label: 'Tanod Personnel', width: '27%' },
   { key: 'month', label: 'Month', width: '13%' },
   { key: 'status', label: 'Status', width: '12%' },
