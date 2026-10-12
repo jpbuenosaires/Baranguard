@@ -100,12 +100,11 @@ final class UsersController
      * GET /users/directory?purpose=tanod|roster|signer[&authority=...] -- a
      * deliberately thin picker feed (Wave 3-G; answers the gap that a
      * Secretary cannot call the Admin-only GET /users but must still pick a
-     * Tanod for a shift or a signer for a paper approval).
+     * Tanod for a shift or a holder of an approval authority).
      *
      * admin|secretary, plus ONE narrow exception: a Punong Barangay holding
      * approve_roster may read purpose=signer&authority=approve_roster, the
-     * picker for recording a signed paper roster (POST /shifts/publish is
-     * paper-only since 2026-10-12, and the PB may record it). Always
+     * picker for roster publishers (the PB may publish a roster). Always
      * scoped to the CALLER's barangay (there is
      * no barangay parameter, so cross-tenant reads are impossible); only
      * active, non-suspended accounts. Items are ONLY

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Baranguard — Wave 2 / Agent E validation (review decisions 2026-10-07):
 # night-time dispatch offers (migration 0038), the sweeper, notification
-# payload rules, roster recorded-from-paper, and the dispatch status-override
+# payload rules, plain roster publishing (no paper tracking, 0041), and the dispatch status-override
 # audit fix.
 #
 # Safe to run: disposable database, disposable app-user, throwaway ports
@@ -146,9 +146,11 @@ mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_US
 expect_eq "0038: dispatch_offer table exists" "$(db_one "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME IN ('dispatch_offer','dispatch_offer_recipient');")" "2"
 expect_eq "0038: notification.dispatch_offer_id exists" "$(db_one "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='notification' AND COLUMN_NAME='dispatch_offer_id';")" "1"
 expect_eq "0038: notification_type enum has dispatch_offer" "$(db_one "SELECT COLUMN_TYPE LIKE '%dispatch_offer%' FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='notification' AND COLUMN_NAME='notification_type';")" "1"
-expect_eq "0038: shift_schedule has the 4 paper columns" "$(db_one "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='shift_schedule' AND COLUMN_NAME IN ('approval_mode','paper_signed_on','paper_recorded_by','paper_recorded_at');")" "4"
+expect_eq "0041: the 4 paper columns 0038 added to shift_schedule are dropped again" "$(db_one "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='shift_schedule' AND COLUMN_NAME IN ('approval_mode','paper_signed_on','paper_recorded_by','paper_recorded_at');")" "0"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0038_dispatch_offers_and_roster_paper.sql" >/dev/null 2>&1 \
   && pass "0038 is idempotent (re-applied cleanly)" || fail "0038 re-apply failed"
+mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0041_drop_paper_signature_tracking.sql" >/dev/null 2>&1 \
+  && pass "0041 re-applies cleanly after 0038 re-adds the paper columns (drops them again)" || fail "0041 re-apply failed"
 
 RT_DB="${VALDB}_rt"
 mysql_exec -e "DROP DATABASE IF EXISTS \`$RT_DB\`; CREATE DATABASE \`$RT_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
@@ -632,64 +634,39 @@ expect_eq "No narrative, names, contacts, coordinates or location text in any di
 expect_eq "Offer audit rows exist (opened/accepted/expired/reminder/closed/cancelled)" "$(db_one "SELECT COUNT(DISTINCT action) FROM audit_log WHERE action LIKE 'dispatch_offer%';")" "6"
 
 # ================================================================ roster paper
-step "14. POST /shifts/publish with recorded_from_paper (required for every caller since 2026-10-12)"
+step "14. POST /shifts/publish: plain publish, no paper tracking (0041)"
 mk_draft() { db_run "INSERT INTO shift_schedule (barangay_id,user_id,patrol_zone,start_at,end_at,created_by,approval_status) VALUES (1,$1,'P','$2','$3',$ADMIN_ID,'draft');"; db_one "SELECT MAX(shift_id) FROM shift_schedule;"; }
 SH1=$(mk_draft $T4 '2026-11-02 00:00:00' '2026-11-02 08:00:00')
 SH2=$(mk_draft $T4 '2026-11-03 00:00:00' '2026-11-03 08:00:00')
 SH3=$(mk_draft $T4 '2026-11-04 00:00:00' '2026-11-04 08:00:00')
 SH4=$(mk_draft $T4 '2026-11-05 00:00:00' '2026-11-05 08:00:00')
-TODAY=$(date -u +%Y-%m-%d)
-paper() { printf '{"shift_ids":[%s],"recorded_from_paper":{"signer_user_id":%s,"signed_on":"%s"}}' "$1" "$2" "$3"; }
-api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SH1]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary with no paper record" 422
-expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
-api POST /shifts/publish "$T1_T" "$(paper $SH1 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Tanod cannot record from paper" 403
-api POST /shifts/publish "$PB_T" "$(paper $SH1 $ADMIN_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Punong Barangay recording: the named signer must still hold approve_roster" 422
-api POST /shifts/publish "$SEC_T" "$(paper $SH1 $ADMIN_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Signer without approve_roster" 422
-api POST /shifts/publish "$SEC_T" "$(paper $SH1 $ADMIN2_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Signer from another barangay" 404
-api POST /shifts/publish "$SEC_T" "$(paper $SH1 999999 $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Unknown signer" 404
-api POST /shifts/publish "$SEC_T" "$(paper $SH1 $PB_ID 2099-01-01)" -H "Idempotency-Key: $(uuid)"
-expect_code "Future signed_on" 400
-api POST /shifts/publish "$SEC_T" "$(paper $SH1 $PB_ID 2026-13-45)" -H "Idempotency-Key: $(uuid)"
-expect_code "Malformed signed_on" 400
-api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SH1],\"recorded_from_paper\":\"yes\"}" -H "Idempotency-Key: $(uuid)"
-expect_code "recorded_from_paper not an object" 400
-expect_eq "  none of the refusals published anything" "$(db_one "SELECT COUNT(*) FROM shift_schedule WHERE shift_id=$SH1 AND approval_status='published';")" "0"
+api POST /shifts/publish "$T1_T" "{\"shift_ids\":[$SH1]}" -H "Idempotency-Key: $(uuid)"
+expect_code "Tanod cannot publish" 403
+expect_eq "  nothing published" "$(db_one "SELECT COUNT(*) FROM shift_schedule WHERE shift_id=$SH1 AND approval_status='published';")" "0"
 db_run "UPDATE shift_schedule SET pending_reapproval=1 WHERE shift_id=$SH1;"
 PKEY=$(uuid)
-api POST /shifts/publish "$SEC_T" "$(paper "$SH1,$SH2" $PB_ID 2026-10-05)" -H "Idempotency-Key: $PKEY"
-expect_code "Secretary records a roster approved on paper by the Punong Barangay" 200
+api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SH1,$SH2]}" -H "Idempotency-Key: $PKEY"
+expect_code "Secretary publishes with no paper record" 200
 expect_eq "  both shifts published" "$(jget "$BODY" published)" "[$SH1,$SH2]"
-expect_eq "  approved_by is the SIGNER, not the recorder" "$(db_one "SELECT approved_by FROM shift_schedule WHERE shift_id=$SH1;")" "$PB_ID"
-expect_eq "  mode/date/recorder stored" "$(db_one "SELECT CONCAT(approval_mode,'/',paper_signed_on,'/',paper_recorded_by) FROM shift_schedule WHERE shift_id=$SH1;")" "recorded_from_paper/2026-10-05/$SEC_ID"
-expect_eq "  paper_recorded_at set" "$(db_one "SELECT paper_recorded_at IS NOT NULL FROM shift_schedule WHERE shift_id=$SH1;")" "1"
+expect_eq "  approved_by is the publisher (the Secretary)" "$(db_one "SELECT approved_by FROM shift_schedule WHERE shift_id=$SH1;")" "$SEC_ID"
 expect_eq "  pending_reapproval cleared" "$(db_one "SELECT pending_reapproval FROM shift_schedule WHERE shift_id=$SH1;")" "0"
-expect_eq "  audit roster_published_from_paper (not roster_published)" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published_from_paper';")/$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published' AND JSON_CONTAINS(metadata_json,'$SH1','\$.published');")" "1/0"
-expect_eq "  audit metadata has ids/dates only" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='roster_published_from_paper' LIMIT 1;")" '["count", "published", "already_published", "warning_dates", "idempotency_key", "signer_user_id", "paper_signed_on"]'
-api POST /shifts/publish "$SEC_T" "$(paper "$SH1,$SH2" $PB_ID 2026-10-05)" -H "Idempotency-Key: $PKEY"
+expect_eq "  audit roster_published (no roster_published_from_paper)" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published_from_paper';")/$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published' AND JSON_CONTAINS(metadata_json,'$SH1','\$.published');")" "0/1"
+expect_eq "  audit metadata has ids/dates only" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='roster_published' LIMIT 1;")" '["count", "published", "already_published", "warning_dates", "idempotency_key"]'
+api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SH1,$SH2]}" -H "Idempotency-Key: $PKEY"
 expect_code "Replay with the same Idempotency-Key" 200
 expect_eq "  replays the original outcome" "$(jget "$BODY" published)" "[$SH1,$SH2]"
 api GET "/shifts?approval_status=published" "$ADMIN_T" ""
-SHOWN=$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["items"] as $r){ if($r["shift_id"]==(int)$argv[1]) echo $r["approval_mode"]."|".$r["paper_signed_on"]."|".$r["paper_recorded_by_name"]; }' $SH1)
-expect_eq "GET /shifts exposes approval_mode, paper_signed_on, paper_recorded_by_name" "$SHOWN" "recorded_from_paper|2026-10-05|OF Secretary"
+SHOWN=$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["items"] as $r){ if($r["shift_id"]==(int)$argv[1]) echo (array_key_exists("approval_mode",$r)||array_key_exists("paper_signed_on",$r)||array_key_exists("paper_recorded_by_name",$r)) ? "paper-fields" : "clean"; }' $SH1)
+expect_eq "GET /shifts carries no approval_mode / paper_* fields" "$SHOWN" "clean"
 api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$SH3]}" -H "Idempotency-Key: $(uuid)"
-expect_code "No in-app publish by an approve_roster holder any more (no paper)" 422
-expect_eq "  still a draft" "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$SH3;")" "draft"
-api POST /shifts/publish "$PB_T" "$(paper $SH3 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Punong Barangay (approve_roster) records the paper roster they signed" 200
-expect_eq "  paper mode, signer and recorder are the PB" "$(db_one "SELECT CONCAT(approval_mode,'/',paper_signed_on,'/',approved_by,'/',paper_recorded_by) FROM shift_schedule WHERE shift_id=$SH3;")" "recorded_from_paper/$TODAY/$PB_ID/$PB_ID"
-api POST /shifts/publish "$ADMIN_T" "{\"shift_ids\":[$SH4]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Admin with no paper record" 422
-api POST /shifts/publish "$ADMIN_T" "$(paper $SH4 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Admin may record from paper" 200
+expect_code "Punong Barangay (approve_roster) publishes" 200
+expect_eq "  approved_by is the PB" "$(db_one "SELECT approved_by FROM shift_schedule WHERE shift_id=$SH3;")" "$PB_ID"
+api POST /shifts/publish "$ADMIN_T" "{\"shift_ids\":[$SH4],\"recorded_from_paper\":{\"signer_user_id\":$PB_ID,\"signed_on\":\"2026-10-05\"}}" -H "Idempotency-Key: $(uuid)"
+expect_code "Admin publishes; a legacy recorded_from_paper field is accepted and ignored" 200
+expect_eq "  approved_by is the Admin, not the named signer" "$(db_one "SELECT approved_by FROM shift_schedule WHERE shift_id=$SH4;")" "$ADMIN_ID"
 OTHER_T=$(login_as of_t4)
 api GET /shifts "$OTHER_T" ""
-expect_eq "A draft-then-paper-published shift is visible to its tanod only once published" "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $n=0; foreach(($d["items"] ?? []) as $r){ if($r["shift_id"]==(int)$argv[1]) $n++; } echo $n;' $SH4)" "1"
+expect_eq "A published shift is visible to its tanod" "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $n=0; foreach(($d["items"] ?? []) as $r){ if($r["shift_id"]==(int)$argv[1]) $n++; } echo $n;' $SH4)" "1"
 
 # ================================================================ audit-reason fix
 step "15. Dispatch status override audit never stores the reason text"

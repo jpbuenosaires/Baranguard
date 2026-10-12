@@ -163,7 +163,7 @@ expect_contains "$LIST_OUT" "Legal hold" "--list states legal hold is the only e
 # with no period set. They must be listed, flagged pending, and accepted by
 # --only; the deep behaviour is in verify-retention-new-tables.sh.
 expect_contains "$LIST_OUT" "pending_barangay_confirmation" "--list flags the new-table rules as pending barangay confirmation"
-expect_contains "$LIST_OUT" "document_scan" "--list notes document_scan follows its parent report"
+case "$LIST_OUT" in *document_scan*) fail "--list still mentions document_scan (dropped by 0041)";; *) pass "--list no longer mentions document_scan";; esac
 expect_contains "$LIST_OUT" "ssz_term_report" "--list names the Annex D (ssz_term_report) rule"
 expect_contains "$LIST_OUT" "deliberately NOT time-purged" "--list records that school has no rule by design"
 PEND_OUT="$(run_job --only=tanod_availability,accomplishment_report,school_checkin,incident_referral,ssz_term_report)"

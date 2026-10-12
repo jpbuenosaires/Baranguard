@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Route table for the Annex D term report (docs/FEATURE_CONTRACT_2026-10.md
- * section 7, migration 0033): draft -> prepared -> approved -> submitted.
+ * section 7, migration 0033): draft -> prepared -> submitted.
  * The live, non-persisted computation is GET /reports/school-term
  * (routes/reports.php).
  */
@@ -16,8 +16,5 @@ return [
     ['GET', '#^/ssz-term-reports/(\d+)$#', [SszTermReportsController::class, 'show'], true],
     ['PATCH', '#^/ssz-term-reports/(\d+)$#', [SszTermReportsController::class, 'update'], true],
     ['POST', '#^/ssz-term-reports/(\d+)/prepare$#', [SszTermReportsController::class, 'prepare'], true],
-    ['POST', '#^/ssz-term-reports/(\d+)/approve$#', [SszTermReportsController::class, 'approve'], true],
     ['POST', '#^/ssz-term-reports/(\d+)/mark-submitted$#', [SszTermReportsController::class, 'markSubmitted'], true],
-    ['POST', '#^/ssz-term-reports/(\d+)/paper-signature$#', [SszTermReportsController::class, 'paperSignature'], true],
-    ['POST', '#^/ssz-term-reports/(\d+)/record-paper-approval$#', [SszTermReportsController::class, 'recordPaperApproval'], true],
 ];

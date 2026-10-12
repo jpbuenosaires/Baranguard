@@ -56496,3 +56496,44 @@ git worktrees, merged to local `main`; nothing pushed.
 - **Open:** UAT rows P-05, P-06 and the Annex D prepare rows still describe
   in-app steps; PR #3 (0040 notifications) will need a small rebase against
   this.
+
+## 2026-10-12 (5) - Paper signatures dropped: the app only tracks "printed" (Claude, project thread, backend agent)
+
+Jayson: "all reports are printed and signed on paper; tracking signatures in the
+app is useless - just printed, drop". This reverses the paper-first tracking of
+migration 0037/0038 and removes the approval steps.
+
+- **Migration 0041_drop_paper_signature_tracking** (+ `.down.sql`): rows with
+  `accomplishment_report.status` noted/approved become `prepared`, Annex D
+  `approved` becomes `prepared`; the ENUMs shrink to `open|prepared|returned`
+  and `draft|prepared|submitted`; dropped columns: `noted_by/noted_at/
+  approved_by/approved_at/approval_mode/paper_signed_on/paper_recorded_by/
+  paper_recorded_at` (accomplishment_report), `approved_by/approved_at` + the
+  four paper columns (ssz_term_report), the four paper columns
+  (shift_schedule; its `approved_by/approved_at` stay = who published);
+  `DROP TABLE document_scan` (files under `SCANS_DIR` are left on disk). The
+  down migration recreates everything empty; old statuses/signers/scans are
+  not restored.
+- **Endpoints removed (404, no 410 stubs):** `POST /accomplishment-reports/:id/
+  note|approve|paper-signature|record-paper-approval`; `POST /ssz-term-reports/
+  :id/approve|paper-signature|record-paper-approval`; `POST|GET /document-scans`
+  and `/document-scans/:id/download`. `lib/PaperApproval.php`,
+  `DocumentScansController.php`, `verify-paper-approvals.sh` deleted.
+- **Kept / changed:** accomplishment report `submit` -> `prepared`, `return`
+  (note_report or approve_report holder, prepared only) keeps its `report_update`
+  push (now only for returns). Annex D `prepare` is a real action again
+  (prepare_annex_d holder, draft -> prepared, recomputes counts as the pre-
+  paper version did); `mark-submitted` now requires `prepared`. `POST
+  /shifts/publish` is a plain publish by admin/secretary or an approve_roster
+  holder; `recorded_from_paper` is accepted and ignored; `approved_by` is the
+  publisher; audit action `roster_published` (no `roster_published_from_paper`).
+  Responses lose `approval_mode`, `paper_*`, `noted_*`, `approved_*` (reports) and
+  `paper_pending`; `?status=` accepts only the new sets (400 otherwise);
+  `GET /ssz-term-reports` same. Shift objects keep `approved_by/approved_at`.
+- **Retention:** accomplishment retention (still no period set) is re-keyed to
+  `status='prepared'` aged from `prepared_at`; the document_scan cleanup and the
+  `FOLLOWS_PARENT` entry are gone (constant is now empty).
+- **Seed/suites:** `seed-ch4.php` writes only open/prepared/returned reports and
+  no paper columns; verify-roster-accomplishment, school-zones, dispatch-offers,
+  wave1a, chief-tanod-roster, retention-new-tables and sprint7-retention now
+  assert the new model.

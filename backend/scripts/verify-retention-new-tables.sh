@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Baranguard — Wave 3 / Agent H validation: placeholder retention rules for
-# the tables added by migrations 0030-0033 (+ document_scan, 0037).
+# the tables added by migrations 0030-0033 (document_scan, 0037, was dropped by 0041).
 #
 # Review decision 10: retention for these tables is NOT yet decided by the
 # barangay/COA, so the rules ship with NO duration (null / status
@@ -8,12 +8,12 @@
 # but unreachable in production. This suite proves, on a disposable DB:
 #
 #   A. with the SHIPPED constants, a full non-dry-run run deletes NOTHING
-#      (row counts of every table, and the scan files on disk, before/after),
+#      (row counts of every table, before/after),
 #      writes no audit row, and --list shows each rule as pending;
 #   B. with the TEST-ONLY constructor seam given a duration, the purge
 #      removes only EXPIRED rows, never an accomplishment report that is not
-#      `approved`, never rows newer than the cutoff, respects legal hold,
-#      removes the scans (rows + files) of a purged report only, and its
+#      `prepared`, never rows newer than the cutoff, respects legal hold,
+#      and its
 #      audit metadata is counts only;
 #   C. the seam rejects bad values, and nothing outside the suite reaches it
 #      (env var / production caller).
@@ -72,16 +72,10 @@ db_one() {
 # Native (Windows-style) path for php.exe; harmless on Linux.
 native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
 
-SCANS_DIR_POSIX="$BACKEND_DIR/scripts/.retnew-scans"
-SCANS_DIR_NATIVE="$(native_path "$SCANS_DIR_POSIX")"
-ESCAPE_FILE="$BACKEND_DIR/scripts/.retnew-escape-sentinel.txt"
-
 cleanup() {
   step "Cleanup"
   mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`;" 2>/dev/null
   mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost';" 2>/dev/null
-  rm -rf "$SCANS_DIR_POSIX"
-  rm -f "$ESCAPE_FILE"
   echo "Dropped $VALDB / user '$APP_USER'. The real databases were never touched."
 }
 trap cleanup EXIT
@@ -93,7 +87,6 @@ php_run() {
     DB_HOST="$XAMPP_MYSQL_HOST" DB_PORT="$XAMPP_MYSQL_PORT" DB_NAME="$VALDB" \
     DB_USER="$APP_USER" DB_PASSWORD="$APP_PASSWORD" \
     EVIDENCE_DIR="$BACKEND_DIR/scripts/.retnew-evidence" \
-    SCANS_DIR="$SCANS_DIR_NATIVE" \
     "$PHP_BIN" "$@" 2>&1 )
 }
 # Pull a dotted path out of a JSON document read from stdin.
@@ -111,10 +104,11 @@ for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || { fail "migration $m failed"; MIG_FAILED=1; }
 done
 [ "$MIG_FAILED" -eq 0 ] && pass "Full migration chain applied (all migrations/*.sql, globbed)"
-for t in tanod_availability accomplishment_report accomplishment_entry school_checkin incident_referral document_scan ssz_term_report school; do
+for t in tanod_availability accomplishment_report accomplishment_entry school_checkin incident_referral ssz_term_report school; do
   N=$(db_one "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='$t';")
   expect_eq "$N" "1" "table $t exists in the chain"
 done
+expect_eq "$(db_one "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME='document_scan';")" "0" "table document_scan is gone (0041)"
 mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost'; CREATE USER '$APP_USER'@'localhost' IDENTIFIED BY '$APP_PASSWORD'; GRANT ALL PRIVILEGES ON \`$VALDB\`.* TO '$APP_USER'@'localhost'; FLUSH PRIVILEGES;"
 
 HASH="$("$PHP_BIN" -r "echo password_hash('x-retnew-Pw1', PASSWORD_ARGON2ID);")"
@@ -127,11 +121,8 @@ ADMIN_ID=$(db_one "SELECT user_id FROM user WHERE username='rn_admin';")
 TANOD_ID=$(db_one "SELECT user_id FROM user WHERE username='rn_tanod';")
 
 # --------------------------------------------------------------------------
-step "1. Seed expired + fresh rows in every new table (and scan files)"
+step "1. Seed expired + fresh rows in every new table"
 # --------------------------------------------------------------------------
-mkdir -p "$SCANS_DIR_POSIX"
-for f in scan-r1-a.pdf scan-r1-b.png scan-r2.pdf scan-r3.pdf scan-ssz.pdf scan-ssz-old-a.pdf scan-ssz-old-b.png scan-ssz-fresh.pdf scan-ssz-appr.pdf; do echo "scan bytes $f" > "$SCANS_DIR_POSIX/$f"; done
-echo "must survive: outside SCANS_DIR" > "$ESCAPE_FILE"
 
 mysql_exec "$VALDB" <<SQL
 -- tanod_availability: 60d-expired (cited by a shift), 29d-old (inside a 30d window), future period.
@@ -146,13 +137,13 @@ INSERT INTO shift_schedule (barangay_id, user_id, start_at, end_at, created_by, 
  VALUES (1, $TANOD_ID, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 DAY), $ADMIN_ID, $AV_OLD);
 
 -- accomplishment_report: statuses x ages. months are unique per tanod.
-INSERT INTO accomplishment_report (barangay_id, user_id, month, status, noted_by, noted_at, approved_by, approved_at, created_at) VALUES
- (1, $TANOD_ID, '2025-01', 'approved', $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 61 DAY), $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)),
- (1, $TANOD_ID, '2025-02', 'approved', $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 11 DAY), $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 40 DAY)),
- (1, $TANOD_ID, '2025-03', 'noted',    $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 100 DAY), NULL, NULL, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY)),
- (1, $TANOD_ID, '2025-04', 'prepared', NULL, NULL, NULL, NULL, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY)),
- (1, $TANOD_ID, '2025-05', 'returned', NULL, NULL, $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 100 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY)),
- (1, $TANOD_ID, '2025-06', 'open',     NULL, NULL, NULL, NULL, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY));
+INSERT INTO accomplishment_report (barangay_id, user_id, month, status, prepared_at, created_at) VALUES
+ (1, $TANOD_ID, '2025-01', 'prepared', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)),
+ (1, $TANOD_ID, '2025-02', 'prepared', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 40 DAY)),
+ (1, $TANOD_ID, '2025-03', 'returned', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 100 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY)),
+ (1, $TANOD_ID, '2025-04', 'prepared', NULL, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY)),
+ (1, $TANOD_ID, '2025-05', 'returned', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 100 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY)),
+ (1, $TANOD_ID, '2025-06', 'open',     NULL, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY));
 SQL
 R1=$(db_one "SELECT report_id FROM accomplishment_report WHERE month='2025-01';")
 R2=$(db_one "SELECT report_id FROM accomplishment_report WHERE month='2025-02';")
@@ -164,35 +155,17 @@ INSERT INTO accomplishment_entry (report_id, barangay_id, user_id, work_date, ac
  ($R2, 1, $TANOD_ID, DATE_SUB(UTC_DATE(), INTERVAL 20 DAY), 'patrol C', 120, UUID(), UTC_TIMESTAMP()),
  ($R3, 1, $TANOD_ID, DATE_SUB(UTC_DATE(), INTERVAL 110 DAY), 'patrol D', 120, UUID(), UTC_TIMESTAMP());
 
--- document_scan: two on R1 (expired parent), one on R2 (fresh), one on R3 (noted),
--- one on an ssz_term_report whose id equals R1 (entity_type must isolate it),
--- and one R1 row whose stored_path tries to climb out of SCANS_DIR.
-INSERT INTO document_scan (barangay_id, entity_type, entity_id, stored_path, mime_type, size_bytes, sha256, uploaded_by, uploaded_at) VALUES
- (1, 'accomplishment_report', $R1, 'scan-r1-a.pdf', 'application/pdf', 20, REPEAT('1',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'accomplishment_report', $R1, 'scan-r1-b.png', 'image/png',      20, REPEAT('2',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'accomplishment_report', $R1, '../.retnew-escape-sentinel.txt', 'application/pdf', 20, REPEAT('6',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'accomplishment_report', $R2, 'scan-r2.pdf',   'application/pdf', 20, REPEAT('3',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'accomplishment_report', $R3, 'scan-r3.pdf',   'application/pdf', 20, REPEAT('4',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'ssz_term_report',       $R1, 'scan-ssz.pdf',  'application/pdf', 20, REPEAT('5',64), $ADMIN_ID, UTC_TIMESTAMP());
-
--- ssz_term_report (Annex D). Explicit report_ids COLLIDE with the accomplishment
--- report ids on purpose (entity_type must isolate them):
---   R2 submitted, mayor-office date 60d ago -> the ONLY eligible one (2 scans + a ../ traversal row)
---   R1 approved (old approved_at), never submitted  -> kept (has scan-ssz.pdf above)
---   R3 submitted 10d ago (inside a 30d window)       -> kept (1 scan)
---   9001 prepared, old;  9002 approved, old          -> kept (9002 has 1 scan)
-INSERT INTO ssz_term_report (report_id, barangay_id, term_label, term_start, term_end, status, approved_by, approved_at, mayor_office_received_by, mayor_office_received_at, created_at, updated_at) VALUES
- ($R2, 1, 'T-submitted-old',   DATE_SUB(UTC_DATE(), INTERVAL 200 DAY), DATE_SUB(UTC_DATE(), INTERVAL 100 DAY), 'submitted', $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 70 DAY), 'Mayor Office', DATE_SUB(UTC_DATE(), INTERVAL 60 DAY), UTC_TIMESTAMP(), UTC_TIMESTAMP()),
- ($R1, 1, 'T-approved-old',    DATE_SUB(UTC_DATE(), INTERVAL 300 DAY), DATE_SUB(UTC_DATE(), INTERVAL 250 DAY), 'approved',  $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY), NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
- ($R3, 1, 'T-submitted-fresh', DATE_SUB(UTC_DATE(), INTERVAL 90 DAY),  DATE_SUB(UTC_DATE(), INTERVAL 30 DAY),  'submitted', $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 DAY), 'Mayor Office', DATE_SUB(UTC_DATE(), INTERVAL 10 DAY), UTC_TIMESTAMP(), UTC_TIMESTAMP()),
- (9001, 1, 'T-prepared-old',   DATE_SUB(UTC_DATE(), INTERVAL 400 DAY), DATE_SUB(UTC_DATE(), INTERVAL 350 DAY), 'prepared',  NULL, NULL, NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
- (9002, 1, 'T-approved-old2',  DATE_SUB(UTC_DATE(), INTERVAL 400 DAY), DATE_SUB(UTC_DATE(), INTERVAL 350 DAY), 'approved',  $ADMIN_ID, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 300 DAY), NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP());
-INSERT INTO document_scan (barangay_id, entity_type, entity_id, stored_path, mime_type, size_bytes, sha256, uploaded_by, uploaded_at) VALUES
- (1, 'ssz_term_report', $R2,  'scan-ssz-old-a.pdf', 'application/pdf', 20, REPEAT('7',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'ssz_term_report', $R2,  'scan-ssz-old-b.png', 'image/png',      20, REPEAT('8',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'ssz_term_report', $R2,  '../.retnew-escape-sentinel.txt', 'application/pdf', 20, REPEAT('9',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'ssz_term_report', $R3,  'scan-ssz-fresh.pdf', 'application/pdf', 20, REPEAT('a',64), $ADMIN_ID, UTC_TIMESTAMP()),
- (1, 'ssz_term_report', 9002, 'scan-ssz-appr.pdf',  'application/pdf', 20, REPEAT('b',64), $ADMIN_ID, UTC_TIMESTAMP());
+-- ssz_term_report (Annex D):
+--   R2 submitted, mayor-office date 60d ago -> the ONLY eligible one
+--   R1 prepared long ago, never submitted    -> kept
+--   R3 submitted 10d ago (inside a 30d window) -> kept
+--   9001 prepared, old;  9002 prepared, old   -> kept
+INSERT INTO ssz_term_report (report_id, barangay_id, term_label, term_start, term_end, status, prepared_at, mayor_office_received_by, mayor_office_received_at, created_at, updated_at) VALUES
+ ($R2, 1, 'T-submitted-old',   DATE_SUB(UTC_DATE(), INTERVAL 200 DAY), DATE_SUB(UTC_DATE(), INTERVAL 100 DAY), 'submitted', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 70 DAY), 'Mayor Office', DATE_SUB(UTC_DATE(), INTERVAL 60 DAY), UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+ ($R1, 1, 'T-prepared-old',    DATE_SUB(UTC_DATE(), INTERVAL 300 DAY), DATE_SUB(UTC_DATE(), INTERVAL 250 DAY), 'prepared',  DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY), NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+ ($R3, 1, 'T-submitted-fresh', DATE_SUB(UTC_DATE(), INTERVAL 90 DAY),  DATE_SUB(UTC_DATE(), INTERVAL 30 DAY),  'submitted', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 DAY), 'Mayor Office', DATE_SUB(UTC_DATE(), INTERVAL 10 DAY), UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+ (9001, 1, 'T-prepared-old',   DATE_SUB(UTC_DATE(), INTERVAL 400 DAY), DATE_SUB(UTC_DATE(), INTERVAL 350 DAY), 'prepared',  NULL, NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+ (9002, 1, 'T-prepared-old2',  DATE_SUB(UTC_DATE(), INTERVAL 400 DAY), DATE_SUB(UTC_DATE(), INTERVAL 350 DAY), 'prepared',  DATE_SUB(UTC_TIMESTAMP(), INTERVAL 300 DAY), NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP());
 
 -- school + school_checkin: 60d, 29d, and a recent still-open check-in.
 INSERT INTO school (barangay_id, name, school_type, level, address, created_by, created_at, updated_at)
@@ -221,23 +194,21 @@ count_all() {
   echo "av=$(db_one 'SELECT COUNT(*) FROM tanod_availability;')" \
        "rep=$(db_one 'SELECT COUNT(*) FROM accomplishment_report;')" \
        "ent=$(db_one 'SELECT COUNT(*) FROM accomplishment_entry;')" \
-       "scan=$(db_one 'SELECT COUNT(*) FROM document_scan;')" \
        "chk=$(db_one 'SELECT COUNT(*) FROM school_checkin;')" \
        "ref=$(db_one 'SELECT COUNT(*) FROM incident_referral;')" \
        "ssz=$(db_one 'SELECT COUNT(*) FROM ssz_term_report;')" \
        "sch=$(db_one 'SELECT COUNT(*) FROM school;')" \
        "inc=$(db_one 'SELECT COUNT(*) FROM incident;')" \
-       "shift=$(db_one 'SELECT COUNT(*) FROM shift_schedule;')" \
-       "files=$(ls "$SCANS_DIR_POSIX" | wc -l | tr -d ' ')"
+       "shift=$(db_one 'SELECT COUNT(*) FROM shift_schedule;')"
 }
 BASELINE="$(count_all)"
-expect_eq "$BASELINE" "av=3 rep=6 ent=4 scan=11 chk=4 ref=3 ssz=5 sch=1 inc=2 shift=1 files=9" "baseline row counts seeded"
+expect_eq "$BASELINE" "av=3 rep=6 ent=4 chk=4 ref=3 ssz=5 sch=1 inc=2 shift=1" "baseline row counts seeded"
 
 # --------------------------------------------------------------------------
 step "2. A — SHIPPED constants: --list shows every rule as pending"
 # --------------------------------------------------------------------------
 LIST_OUT="$(php_run scripts/retention-job.php --list)"
-for r in tanod_availability accomplishment_report school_checkin incident_referral ssz_term_report document_scan; do
+for r in tanod_availability accomplishment_report school_checkin incident_referral ssz_term_report; do
   expect_contains "$LIST_OUT" "$r" "--list names $r"
 done
 expect_contains "$LIST_OUT" "pending_barangay_confirmation" "--list shows the pending status marker"
@@ -246,7 +217,7 @@ expect_contains "$LIST_OUT" "2557" "--list still prints the existing 7-year cons
 PENDING_COUNT=$(echo "$LIST_OUT" | grep -c "pending_barangay_confirmation")
 expect_eq "$PENDING_COUNT" "5" "exactly five rules carry the pending marker"
 expect_contains "$LIST_OUT" "deliberately NOT time-purged" "--list records school as a deliberate no-rule decision"
-expect_contains "$LIST_OUT" "follows accomplishment_report, ssz_term_report" "--list says document_scan follows both parent report kinds"
+case "$LIST_OUT" in *document_scan*) fail "--list still mentions document_scan (dropped by 0041)";; *) pass "--list no longer mentions document_scan";; esac
 
 # --------------------------------------------------------------------------
 step "3. A — SHIPPED constants: a full non-dry-run job deletes NOTHING from the new tables"
@@ -260,7 +231,7 @@ expect_contains "$FULL_OUT" "ssz_term_report: pending barangay confirmation" "fu
 AFTER_FULL="$(count_all)"
 # Existing rules may legitimately act on the seeded incidents (none are 90 days old
 # or 7 years old here), so every count must be identical.
-expect_eq "$AFTER_FULL" "$BASELINE" "every table + scan file count identical after a full non-dry-run job"
+expect_eq "$AFTER_FULL" "$BASELINE" "every table count identical after a full non-dry-run job"
 
 SHIPPED_JSON="$(php_run scripts/verify-retention-new-tables-seam.php shipped)"
 for r in tanod_availability accomplishment_report school_checkin incident_referral ssz_term_report; do
@@ -277,7 +248,7 @@ expect_eq "$NEW_AUDIT" "0" "pending rules write no audit row"
 step "4. C — the seam is not reachable from production paths or the environment"
 # --------------------------------------------------------------------------
 ENV_RUN="$( cd "$BACKEND_DIR" && RETENTION_TANOD_AVAILABILITY_DAYS=1 RETENTION_ACCOMPLISHMENT_REPORT_DAYS=1 RETENTION_SCHOOL_CHECKIN_DAYS=1 RETENTION_INCIDENT_REFERRAL_DAYS=1 RETENTION_SSZ_TERM_REPORT_DAYS=1 \
-  DB_HOST="$XAMPP_MYSQL_HOST" DB_PORT="$XAMPP_MYSQL_PORT" DB_NAME="$VALDB" DB_USER="$APP_USER" DB_PASSWORD="$APP_PASSWORD" SCANS_DIR="$SCANS_DIR_NATIVE" \
+  DB_HOST="$XAMPP_MYSQL_HOST" DB_PORT="$XAMPP_MYSQL_PORT" DB_NAME="$VALDB" DB_USER="$APP_USER" DB_PASSWORD="$APP_PASSWORD" \
   "$PHP_BIN" scripts/retention-job.php 2>&1 )"
 expect_eq "$(count_all)" "$BASELINE" "env vars named like retention periods change nothing"
 if grep -n "new RetentionService" "$BACKEND_DIR/scripts/retention-job.php" | grep -q "durationOverrides\|\[.*=>"; then
@@ -302,7 +273,7 @@ step "5. B — TEST SEAM (30-day override): dry-run counts but deletes nothing"
 # --------------------------------------------------------------------------
 DRY_JSON="$(php_run scripts/verify-retention-new-tables-seam.php override 30 --dry-run)"
 expect_eq "$(echo "$DRY_JSON" | jget results.tanod_availability.eligible)" "1" "dry-run: 1 expired availability"
-expect_eq "$(echo "$DRY_JSON" | jget results.accomplishment_report.eligible)" "1" "dry-run: 1 eligible report (only the 60d-approved one)"
+expect_eq "$(echo "$DRY_JSON" | jget results.accomplishment_report.eligible)" "1" "dry-run: 1 eligible report (only the 60d-prepared one)"
 expect_eq "$(echo "$DRY_JSON" | jget results.school_checkin.eligible)" "2" "dry-run: 2 expired check-ins"
 expect_eq "$(echo "$DRY_JSON" | jget results.incident_referral.eligible)" "1" "dry-run: 1 eligible referral"
 expect_eq "$(echo "$DRY_JSON" | jget results.incident_referral.held)" "1" "dry-run: 1 referral protected by legal hold"
@@ -328,39 +299,19 @@ expect_eq "$(db_one 'SELECT COUNT(*) FROM shift_schedule;')" "1" "the shift citi
 expect_eq "$(db_one 'SELECT source_availability_id IS NULL FROM shift_schedule;')" "1" "...its source_availability_id pointer was nulled"
 
 # accomplishment_report
-expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE report_id = $R1;")" "0" "approved report past cutoff deleted"
+expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE report_id = $R1;")" "0" "prepared report past cutoff deleted"
 expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_entry WHERE report_id = $R1;")" "0" "its entries deleted with it"
-expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE report_id = $R2;")" "1" "approved report INSIDE the window kept"
+expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE report_id = $R2;")" "1" "prepared report INSIDE the window kept"
 expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_entry WHERE report_id = $R2;")" "1" "its entry kept"
-expect_eq "$(db_one "SELECT GROUP_CONCAT(status ORDER BY month) FROM accomplishment_report WHERE month IN ('2025-03','2025-04','2025-05','2025-06');")" "noted,prepared,returned,open" "noted/prepared/returned/open reports ALL kept, however old"
-expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE status='returned' AND approved_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY);")" "1" "(a returned report carrying an old approved_at survived: the status guard works)"
-expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_entry WHERE report_id = $R3;")" "1" "entries of a not-yet-approved report kept"
+expect_eq "$(db_one "SELECT GROUP_CONCAT(status ORDER BY month) FROM accomplishment_report WHERE month IN ('2025-03','2025-04','2025-05','2025-06');")" "returned,prepared,returned,open" "returned / prepared-without-prepared_at / open reports ALL kept, however old"
+expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE status='returned' AND prepared_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY);")" "2" "(two returned reports carrying an old prepared_at survived: the status guard works)"
+expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_entry WHERE report_id = $R3;")" "1" "entries of a returned report kept"
 
-# document_scan rows + files follow the parent report only
-expect_eq "$(db_one "SELECT COUNT(*) FROM document_scan WHERE entity_type='accomplishment_report' AND entity_id = $R1;")" "0" "scan rows of the purged report deleted"
-expect_eq "$(db_one 'SELECT COUNT(*) FROM document_scan;')" "5" "scans of other reports (both entity types) kept: r2, r3, ssz R1, ssz fresh, ssz approved"
-expect_eq "$(db_one "SELECT COUNT(*) FROM document_scan WHERE entity_type='ssz_term_report' AND entity_id = $R1;")" "1" "same entity_id but entity_type ssz_term_report: untouched"
-[ ! -e "$SCANS_DIR_POSIX/scan-r1-a.pdf" ] && pass "scan file scan-r1-a.pdf unlinked from SCANS_DIR" || fail "scan-r1-a.pdf still on disk"
-[ ! -e "$SCANS_DIR_POSIX/scan-r1-b.png" ] && pass "scan file scan-r1-b.png unlinked from SCANS_DIR" || fail "scan-r1-b.png still on disk"
-[ -e "$SCANS_DIR_POSIX/scan-r2.pdf" ] && pass "scan file of the kept approved report remains" || fail "scan-r2.pdf was deleted"
-[ -e "$SCANS_DIR_POSIX/scan-r3.pdf" ] && pass "scan file of the noted report remains" || fail "scan-r3.pdf was deleted"
-[ -e "$SCANS_DIR_POSIX/scan-ssz.pdf" ] && pass "scan file of the ssz_term_report entity remains" || fail "scan-ssz.pdf was deleted"
-[ -e "$ESCAPE_FILE" ] && pass "a stored_path of ../ could not steer an unlink outside SCANS_DIR" || fail "file outside SCANS_DIR was deleted (path traversal)"
-
-# ssz_term_report (Annex D): only the old SUBMITTED report goes, with its OWN scans
+# ssz_term_report (Annex D): only the old SUBMITTED report goes
 expect_eq "$(db_one "SELECT COUNT(*) FROM ssz_term_report WHERE report_id = $R2;")" "0" "old submitted Annex D report deleted"
-expect_eq "$(db_one "SELECT GROUP_CONCAT(status ORDER BY report_id) FROM ssz_term_report;")" "approved,submitted,prepared,approved" "approved(old)/fresh submitted/prepared/approved Annex D reports ALL kept, however old"
-expect_eq "$(db_one "SELECT COUNT(*) FROM ssz_term_report WHERE status='approved' AND approved_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY);")" "2" "(two old approved reports survived: the submitted-only guard works)"
-expect_eq "$(db_one "SELECT COUNT(*) FROM document_scan WHERE entity_type='ssz_term_report' AND entity_id = $R2;")" "0" "scan rows of the purged Annex D report deleted"
-expect_eq "$(db_one "SELECT COUNT(*) FROM document_scan WHERE entity_type='accomplishment_report' AND entity_id = $R2;")" "1" "accomplishment report with the SAME numeric id: its scan row untouched"
-expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE report_id = $R2;")" "1" "...and that accomplishment report itself untouched"
-[ ! -e "$SCANS_DIR_POSIX/scan-ssz-old-a.pdf" ] && pass "Annex D scan file scan-ssz-old-a.pdf unlinked" || fail "scan-ssz-old-a.pdf still on disk"
-[ ! -e "$SCANS_DIR_POSIX/scan-ssz-old-b.png" ] && pass "Annex D scan file scan-ssz-old-b.png unlinked" || fail "scan-ssz-old-b.png still on disk"
-[ -e "$SCANS_DIR_POSIX/scan-r2.pdf" ] && pass "same-id accomplishment report's scan FILE survives the Annex D purge" || fail "scan-r2.pdf deleted by the Annex D purge"
-[ -e "$SCANS_DIR_POSIX/scan-ssz-fresh.pdf" ] && pass "fresh submitted Annex D scan file remains" || fail "scan-ssz-fresh.pdf deleted"
-[ -e "$SCANS_DIR_POSIX/scan-ssz-appr.pdf" ] && pass "approved-not-submitted Annex D scan file remains" || fail "scan-ssz-appr.pdf deleted"
-[ -e "$SCANS_DIR_POSIX/scan-ssz.pdf" ] && pass "scan file of the kept approved Annex D report remains" || fail "scan-ssz.pdf deleted"
-expect_eq "$(ls "$SCANS_DIR_POSIX" | wc -l | tr -d ' ')" "5" "exactly five scan files remain on disk"
+expect_eq "$(db_one "SELECT GROUP_CONCAT(status ORDER BY report_id) FROM ssz_term_report;")" "prepared,submitted,prepared,prepared" "prepared(old)/fresh submitted/prepared/prepared Annex D reports ALL kept, however old"
+expect_eq "$(db_one "SELECT COUNT(*) FROM ssz_term_report WHERE status='prepared' AND prepared_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY);")" "2" "(two old prepared reports survived: the submitted-only guard works)"
+expect_eq "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE report_id = $R2;")" "1" "accomplishment report with the SAME numeric id as the purged Annex D report untouched"
 expect_eq "$(db_one 'SELECT COUNT(*) FROM school;')" "1" "school (Annex B master list) has no rule and is never touched"
 
 # school_checkin
@@ -382,7 +333,7 @@ expect_eq "$(db_one "SELECT metadata_json FROM audit_log WHERE action='retention
 expect_eq "$(db_one "SELECT metadata_json FROM audit_log WHERE action='retention_ssz_term_report_purged';")" '{"purged":1,"failed":0}' "Annex D audit metadata is counts only"
 expect_eq "$(db_one "SELECT metadata_json FROM audit_log WHERE action='retention_incident_referral_purged';")" '{"purged":1,"held":1}' "referral audit metadata is counts only"
 LEAK=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action LIKE 'retention_%' AND (metadata_json LIKE '%patrol%' OR metadata_json LIKE '%scan-%' OR metadata_json LIKE '%RN %');")
-expect_eq "$LEAK" "0" "no entry text / file names / names in retention audit metadata"
+expect_eq "$LEAK" "0" "no entry text / names in retention audit metadata"
 
 # --------------------------------------------------------------------------
 step "7. B — idempotent: a second override run finds nothing; shipped run still deletes nothing"
