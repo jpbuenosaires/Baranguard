@@ -25,9 +25,10 @@ thing twice in the same context.
 - **`docs/Baranguard_Master_Reference_FINAL .md`** — the real source of
   truth; `REFERENCE.md` summarises it with section numbers. **If the two
   disagree, this file wins** and `REFERENCE.md` should be corrected —
-  **except** where it describes the Electronic Blotter, the Lupon packet
-  or the AI/Ollama pipeline: it predates migration 0029 (2026-10-01),
-  which removed all of those, so `REFERENCE.md` wins there. Its own
+  **except** where it describes the Electronic Blotter, the Lupon packet,
+  the AI/Ollama pipeline or Fatigue Flags: it predates migrations 0029
+  (2026-10-01) and 0042 (2026-10-13), which removed those, so
+  `REFERENCE.md` wins there. Its own
   closing "Document status" note says how current it is.
 - **`docs/Baranguard_Sprint_Prompts.md`** — Sprints 0–7 verbatim, all
   complete; pure history.

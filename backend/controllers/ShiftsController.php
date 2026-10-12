@@ -8,17 +8,15 @@ use Baranguard\Lib\Audit;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Lib\ApprovalAuthority;
-use Baranguard\Services\Scheduling\FatigueCalculator;
 use Baranguard\Services\Notifications\NotificationDispatcher;
 use Baranguard\Services\Notifications\NotificationService;
 use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
 /**
- * Shifts — Master Reference §6 "Shifts and fatigue" section, §5
+ * Shifts — Master Reference §6 "Shifts" section, §5
  * `shift_schedule` table, §9 W11 Shift & Roster Scheduler ("Week view
- * uses real start_at/end_at. Overlaps are rejected. Fatigue recalculates
- * on create/edit/reassignment and shows its calculation basis.").
+ * uses real start_at/end_at. Overlaps are rejected.").
  *
  * Resolved decisions, logged in DEVLOG.md:
  *   - **`barangay_id?` in the POST body is accepted but ignored.** Every
@@ -38,7 +36,7 @@ use PDO;
  *     "unassigned" per §6, and so an Admin can directly unassign a shift
  *     via a normal edit (`user_id: null`) without needing the swap-
  *     request flow. A currently-unassigned shift has no user to validate/
- *     lock against and contributes nothing to anyone's fatigue total.
+ *     lock against.
  *   - **`GET /shifts` ordering**: `start_at ASC` — §6 doesn't state one,
  *     but a week/roster view needs chronological order, not insertion
  *     order.
@@ -144,8 +142,6 @@ final class ShiftsController
                 'source_availability_id' => $sourceAvailabilityId,
             ]);
             $shiftId = (int) $pdo->lastInsertId();
-
-            FatigueCalculator::recalculate($pdo, $userId, $shiftId);
 
             // Rule 17 names "shift changes" explicitly. This controller
             // had no audit coverage at all before Sprint 7's
@@ -368,16 +364,6 @@ final class ShiftsController
                 'shift_id' => $shiftId,
                 'version' => $version,
             ]);
-
-            // Recalculate for whoever is affected: the previous assignee
-            // (their load just changed/dropped), and the new assignee if
-            // this is a reassignment.
-            if ($oldUserId !== null) {
-                FatigueCalculator::recalculate($pdo, $oldUserId, $shiftId);
-            }
-            if ($newUserId !== null && $newUserId !== $oldUserId) {
-                FatigueCalculator::recalculate($pdo, $newUserId, $shiftId);
-            }
 
             // Rule 17: "shift changes". A reassignment is the audit event
             // that actually matters here, so both sides of it are

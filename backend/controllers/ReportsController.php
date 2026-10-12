@@ -412,12 +412,12 @@ final class ReportsController
      * logged addition, same precedent as `GET /barangays`/`GET /search`
      * earlier this project: the sidebar needs a small, real count per
      * relevant nav item (Dispatch Center's pending queue, the Citizen
-     * Reports inbox, Swap Requests, Fatigue Flags), and fetching that as
-     * FOUR separate round-trips on every single page load — every
+     * Reports inbox, Swap Requests), and fetching that as
+     * THREE separate round-trips on every single page load — every
      * navigation, not just once — would be real, avoidable load for
      * something that isn't time-critical. One small object instead.
      *
-     * Admin-only: every one of the four counts feeds a nav item that is
+     * Admin-only: every one of the three counts feeds a nav item that is
      * itself Admin-only (`AppShell.js`'s `NAV_ITEMS`), so a non-Admin has
      * no use for this and no route to it either — same reasoning
      * `GET /system/health` already uses.
@@ -441,20 +441,10 @@ final class ReportsController
             'sh.barangay_id = :b AND ssr.status = :s',
             ['b' => $barangayId, 's' => 'pending']
         );
-        // fatigue_flag has no barangay_id of its own either — scoped via
-        // the flagged user.
-        $unacknowledgedFatigueFlags = (int) self::countWhere(
-            $pdo,
-            'fatigue_flag ff JOIN user u ON u.user_id = ff.user_id',
-            'u.barangay_id = :b AND ff.acknowledged_at IS NULL',
-            ['b' => $barangayId]
-        );
-
         Http::send(200, [
             'pending_incidents' => $pendingIncidents,
             'unconverted_citizen_reports' => $unconvertedCitizenReports,
             'pending_swap_requests' => $pendingSwapRequests,
-            'unacknowledged_fatigue_flags' => $unacknowledgedFatigueFlags,
         ]);
     }
 

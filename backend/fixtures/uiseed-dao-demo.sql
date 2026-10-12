@@ -37,7 +37,6 @@ TRUNCATE TABLE duty_status;
 TRUNCATE TABLE gps_track;
 TRUNCATE TABLE shift_schedule;
 TRUNCATE TABLE shift_swap_request;
-TRUNCATE TABLE fatigue_flag;
 TRUNCATE TABLE sms_log;
 TRUNCATE TABLE tanod_sos;
 TRUNCATE TABLE audit_log;
@@ -281,12 +280,12 @@ INSERT INTO shift_schedule (shift_id, barangay_id, user_id, patrol_zone, start_a
  (10,1, 7,'Purok 1-2 / National Road','2026-09-09 22:00:00','2026-09-10 06:00:00',1,1,UUID(),NULL),
  (11,1, NULL,'Purok 3-4 / Riverside', '2026-09-10 22:00:00','2026-09-11 06:00:00',1,1,UUID(),NULL),
  (12,1, 8,'Purok 5-6 / Chapel',       '2026-09-11 22:00:00','2026-09-12 06:00:00',1,1,UUID(),NULL),
- -- Historical shifts ensuring Jomar Reyes has exactly 56.0 hours on Sep 6 fatigue alert
+ -- Historical shifts (a heavy week for one tanod, for realistic scheduler history)
  (13, 1, 4,'Purok 1-2 / National Road','2026-08-31 22:00:00','2026-09-01 06:00:00',1,1,UUID(),NULL),
  (14, 1, 4,'Purok 3-4 / Riverside',    '2026-09-02 22:00:00','2026-09-03 06:00:00',1,1,UUID(),NULL),
  (15, 1, 4,'Purok 5-6 / Chapel',       '2026-09-03 22:00:00','2026-09-04 06:00:00',1,1,UUID(),NULL),
  (16, 1, 4,'Purok 1-2 / National Road','2026-09-04 22:00:00','2026-09-05 06:00:00',1,1,UUID(),NULL),
- -- Current week shifts (Sep 21-28) giving realistic live scheduler rosters and fatigue warning data
+ -- Current week shifts (Sep 21-28) giving realistic live scheduler rosters
  (17, 1, 4,'Purok 1-2 / National Road','2026-09-21 06:00:00','2026-09-21 14:00:00',1,1,UUID(),NULL),
  (18, 1, 4,'Purok 1-2 / National Road','2026-09-22 06:00:00','2026-09-22 14:00:00',1,1,UUID(),NULL),
  (19, 1, 4,'Purok 3-4 / Riverside',    '2026-09-23 06:00:00','2026-09-23 14:00:00',1,1,UUID(),NULL),
@@ -301,15 +300,6 @@ INSERT INTO shift_schedule (shift_id, barangay_id, user_id, patrol_zone, start_a
  (28, 1, 6,'Purok 5-6 / Chapel',       '2026-09-26 22:00:00','2026-09-27 06:00:00',1,1,UUID(),NULL),
  (29, 1, 6,'Purok 5-6 / Chapel',       '2026-09-27 22:00:00','2026-09-28 06:00:00',1,1,UUID(),NULL),
  (30, 1, 7,'Purok 1-2 / National Road','2026-09-27 08:00:00','2026-09-27 16:00:00',1,1,UUID(),NULL);
-
--- ------------------------------------------------------------
--- FATIGUE FLAGS — one acknowledged, two outstanding (the outstanding
--- count drives the Personnel tab badge).
--- ------------------------------------------------------------
-INSERT INTO fatigue_flag (flag_id, user_id, shift_id, hours_worked_7day, calculation_basis, flagged_at, acknowledged_by, acknowledged_at) VALUES
- (1, 4, 7, 56.00,'scheduled_hours','2026-09-06 06:10:00',NULL,NULL),
- (2, 5, 8, 48.50,'scheduled_hours','2026-09-06 06:10:00',NULL,NULL),
- (3, 6, 9, 52.00,'scheduled_hours','2026-09-04 06:10:00',1,'2026-09-04 08:00:00');
 
 -- ------------------------------------------------------------
 -- SWAP REQUESTS — one of each status.

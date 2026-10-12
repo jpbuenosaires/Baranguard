@@ -1,7 +1,7 @@
 /**
- * personnel.js — Personnel (2026-09-05 UX pass): merges the four
- * standalone W10-W13 screens (User Management, Shift Scheduler, Swap
- * Requests, Fatigue Flags) into one tabbed screen, the same
+ * personnel.js — Personnel (2026-09-05 UX pass): merges the
+ * standalone W10-W12 screens (User Management, Shift Scheduler, Swap
+ * Requests) into one tabbed screen, the same
  * shared-AppShell/PageHeader/`.page-tabs` tab pattern
  * `sms-monitor.js` already established for Conversations/Activity Log.
  *
@@ -16,15 +16,14 @@
  * user-management.js's `renderUsersTab`, etc.) — only the outer
  * AppShell/PageHeader/tab-switching shell is new here.
  *
- * 2026-10 (docs/FEATURE_CONTRACT_2026-10.md §10): the Fatigue Flags tab was
- * removed from this hub. Users gained official title/approval authority
+ * 2026-10 (docs/FEATURE_CONTRACT_2026-10.md §10): Users gained official title/approval authority
  * editing; Scheduler gained a (read-only since 2026-10-12) availability panel, draft/published badges and
  * a Publish action. Swap requests remain their own tab. Admin sees all
  * three tabs; Secretary sees Scheduler + Swap requests (2026-10-07: the
  * Secretary builds the roster and resolves swaps); Punong Barangay sees the
  * Scheduler only (roster approval lives there).
  *
- * Sidebar badges (`pendingSwapRequests`/`unacknowledgedFatigueFlags`)
+ * Sidebar badges (`pendingSwapRequests`)
  * used to live on their own separate nav items via `GET
  * /reports/nav-counts` (Admin only). With those nav items gone, this
  * page fetches the same counts itself and shows them on the matching tab
@@ -40,9 +39,6 @@ import { icons } from '../components/icons.js';
 import { renderUsersTab } from './user-management.js';
 import { renderSchedulerTab } from './scheduler.js';
 import { renderSwapRequestsTab } from './swap-requests.js';
-// fatigue-flags.js (and its endpoints) are intentionally left in the repo
-// but are no longer mounted here: the 2026-10 tanod-workflow contract
-// (§8, §10) removes the Fatigue tab from the hub.
 
 /**
  * @param {HTMLElement} root

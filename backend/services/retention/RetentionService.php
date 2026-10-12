@@ -50,8 +50,8 @@ use PDO;
  *                          period (1 year), the closest real-world
  *                          analog for an attendance/on-duty log.
  *   shift_schedule          1 year from end_at — same H-15 sign-off,
- *                          same DTR analog. Purges its two RESTRICT
- *                          dependents (fatigue_flag, shift_swap_request)
+ *                          same DTR analog. Purges its RESTRICT
+ *                          dependent (shift_swap_request)
  *                          in the same per-row transaction, same shape
  *                          as purgeOneIncident()'s cascade below.
  *   notification            1 year from created_at — same H-15 sign-off,
@@ -606,10 +606,10 @@ final class RetentionService
     }
 
     /**
-     * `fatigue_flag` and `shift_swap_request` are both ON DELETE RESTRICT
-     * against `shift_schedule` (§5), so an old shift can't simply be
-     * deleted — same RESTRICT shape `purgeOneIncident()` already handles,
-     * scaled down to a two-table cascade instead of five. One transaction
+     * `shift_swap_request` is ON DELETE RESTRICT against `shift_schedule`
+     * (§5), so an old shift can't simply be deleted — same RESTRICT shape
+     * `purgeOneIncident()` already handles, scaled down to a one-dependent
+     * cascade. One transaction
      * per shift so a failure on one row never blocks the rest of the run.
      *
      * @return array{purged:int, held:int, eligible:int, failed?:int}
@@ -635,7 +635,6 @@ final class RetentionService
             $shiftId = (int) $shiftId;
             $this->pdo->beginTransaction();
             try {
-                $this->exec('DELETE FROM fatigue_flag WHERE shift_id = :id', $shiftId);
                 $this->exec('DELETE FROM shift_swap_request WHERE shift_id = :id', $shiftId);
                 $this->exec('DELETE FROM shift_schedule WHERE shift_id = :id', $shiftId);
                 $this->pdo->commit();
@@ -648,7 +647,7 @@ final class RetentionService
         }
 
         $this->audit('retention_shift_schedule_purged', 'shift_schedule', ['purged' => $purged, 'failed' => $failed]);
-        $this->note("shift_schedule: purged {$purged}, {$failed} failed (with dependent fatigue_flag/shift_swap_request rows)");
+        $this->note("shift_schedule: purged {$purged}, {$failed} failed (with dependent shift_swap_request rows)");
         return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible, 'failed' => $failed];
     }
 

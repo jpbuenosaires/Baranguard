@@ -178,11 +178,6 @@ export function buildRoutes(scenario) {
     { request_id: 602, requesting_user_id: 4, shift_id: 504, target_user_id: null, reason: null, status: 'approved', requested_at: sqlAgo(4 * 1440), resolved_at: sqlAgo(3.5 * 1440), resolved_by: 1, version: 2 },
   ];
 
-  const fatigueFlags = empty ? [] : [
-    { flag_id: 801, user_id: 4, shift_id: 501, hours_worked_7day: 62.5, calculation_basis: 'scheduled_hours', flagged_at: sqlAgo(30), acknowledged_at: null, acknowledged_by: null, acknowledged_by_name: null, shift_patrol_zone: t('Purok 4'), shift_start_at: sqlAgo(60), shift_end_at: sqlAgo(0) },
-    { flag_id: 802, user_id: 5, shift_id: 502, hours_worked_7day: 49, calculation_basis: 'scheduled_hours', flagged_at: sqlAgo(2 * 1440), acknowledged_at: sqlAgo(1440), acknowledged_by: 1, acknowledged_by_name: t('Admin Dao'), shift_patrol_zone: t('Purok 2'), shift_start_at: sqlAgo(2 * 1440), shift_end_at: sqlAgo(2 * 1440 - 480) },
-  ];
-
   const sos = empty ? [] : [
     { sos_id: 91, user_id: 5, dispatch_id: 7001, latitude: 12.9175, longitude: 123.6658, location_source: 'live', location_recorded_at: null, triggered_at: sqlAgo(3), received_at: sqlAgo(3), status: 'active', acknowledged_at: null, resolved_at: null },
   ];
@@ -237,7 +232,7 @@ export function buildRoutes(scenario) {
       response_time_trend: empty ? [] : trendDays.map((d, i) => ({ date: d.date, avg_minutes: i % 4 === 0 ? null : 15 + (i % 7) })),
     }) },
     { method: 'GET', path: '/reports/heatmap', handler: () => ok({ items: incidents.filter((i) => i.latitude !== null).map((i) => ({ latitude: i.latitude, longitude: i.longitude, weight: 1, incident_type: i.incident_type, priority: i.priority, status: i.status })) }) },
-    { method: 'GET', path: '/reports/nav-counts', handler: () => ok({ pending_incidents: empty ? 0 : 2, unconverted_citizen_reports: empty ? 0 : 2, pending_swap_requests: empty ? 0 : 1, unacknowledged_fatigue_flags: empty ? 0 : 1 }) },
+    { method: 'GET', path: '/reports/nav-counts', handler: () => ok({ pending_incidents: empty ? 0 : 2, unconverted_citizen_reports: empty ? 0 : 2, pending_swap_requests: empty ? 0 : 1 }) },
     { method: 'GET', path: '/reports/export', handler: ({ query }) => ok({ file_url: `/reports/export/download?format=${query.format || 'csv'}`, format: query.format || 'csv', generated_at: sqlAgo(0) }) },
     { method: 'GET', path: '/reports/export/download', handler: () => ({ status: 200, raw: 'incident_id,type\r\n901,theft\r\n', headers: { 'Content-Type': 'text/csv' } }) },
     // Periodic PB digest (REMAINING.md section G, DEVLOG (37)) -- no
@@ -395,8 +390,6 @@ export function buildRoutes(scenario) {
     { method: 'PATCH', path: '/shifts/:id', handler: ({ params, body }) => ok({ shift_id: Number(params.id), updated_at: sqlAgo(0), version: (body.version || 0) + 1 }) },
     { method: 'GET', path: '/shift-swap-requests', handler: ({ query }) => ok(paginate(swapRequests, query)) },
     { method: 'PATCH', path: '/shift-swap-requests/:id', handler: ({ params, body }) => ok({ request_id: Number(params.id), status: body.status, resolved_at: sqlAgo(0), resolved_by: 1, shift_id: 502, target_user_id: 4 }) },
-    { method: 'GET', path: '/shifts/fatigue-flags', handler: ({ query }) => ok(paginate(fatigueFlags, query)) },
-    { method: 'PATCH', path: '/fatigue-flags/:id/acknowledge', handler: ({ params }) => ok({ flag_id: Number(params.id), acknowledged_by: 1, acknowledged_at: sqlAgo(0) }) },
 
     // --- Lookup ---
     { method: 'GET', path: '/barangays', handler: () => ok({ items: [

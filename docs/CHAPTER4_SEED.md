@@ -7,7 +7,7 @@
 - One barangay only: Dao (barangay_id 1).
 - A separate database, `baranguard_ch4`. It never touches `baranguard` or `baranguard_uiseed`; the seed script refuses to run on any other name.
 - 11 accounts, all with password `Demo@2026`: `admin.dao` (Chief Tanod), `secretary.dao`, `punong.dao`, and eight tanods (`tanod.reyes`, `tanod.delacruz`, `tanod.gubaton`, `tanod.dichoso`, `tanod.espinosa`, `tanod.banares`, `tanod.candelaria`, and `tanod.olayvar`, who is suspended on purpose).
-- About 30 days of history covering every current screen: incidents (English, Tagalog, Bikol narratives; every status), dispatches with simulated routes, night dispatch offers, SOS alerts (app and SMS fallback), GPS tracks (live positions for tanods on shift right now), shifts and rosters (including a paper-recorded week and a re-approval case), availability, swap requests, fatigue flags, accomplishment reports, referrals, Safer School Zones (3 schools, check-ins, a prepared term report), SMS log, citizen reports, audit log, health checks.
+- About 30 days of history covering every current screen: incidents (English, Tagalog, Bikol narratives; every status), dispatches with simulated routes, night dispatch offers, SOS alerts (app and SMS fallback), GPS tracks (live positions for tanods on shift right now), shifts and rosters (including a paper-recorded week and a re-approval case), availability, swap requests, accomplishment reports, referrals, Safer School Zones (3 schools, check-ins, a prepared term report), SMS log, citizen reports, audit log, health checks.
 - Not seeded: evidence photos and voice files (no files exist for them), and the mobile app's own offline queue (that lives on the phone).
 
 ## Reset before each test session

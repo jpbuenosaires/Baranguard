@@ -178,9 +178,9 @@ Remove `MIN_REST_HOURS` hard block (`assertMinRest`) and the min-coverage hard
 block (`assertMinCoverage`). Replace with: constant `MAX_DAILY_SCHEDULED_HOURS = 12`
 per tanod per Manila day (hard 422 `DAILY_HOURS_EXCEEDED`), and coverage becomes
 a `warnings[]` item on publish (§3). Keep `assertNoOverlap`. Update the existing
-suites that assert the old rules (`verify-scheduler-fatigue.sh`,
+suites that assert the old rules (`verify-scheduler.sh` (then named `verify-scheduler-fatigue.sh`),
 `verify-sprint7-audit.sh`, others you find by grep) to the new documented
-behaviour, listing every changed assertion. Fatigue endpoints stay untouched;
+behaviour, listing every changed assertion. Fatigue endpoints stayed untouched at that time (removed later, 2026-10-13, migration 0042);
 only the web nav item goes.
 
 ## 9. Mobile (agent M)

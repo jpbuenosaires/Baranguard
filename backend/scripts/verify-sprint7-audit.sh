@@ -274,12 +274,6 @@ expect_audit "swap_request_resolved" "an Admin approving a swap"
 expect_eq "$(db_one "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$SHIFT_ID;")" "published|$ADMIN_ID|0" "an approved swap keeps a published shift published with its approver, no pending_reapproval"
 expect_eq "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SWAP_ID LIMIT 1;")" "false" "swap_request_resolved audit metadata records approval_reset=false (a flag, no personal data)"
 
-# Fatigue acknowledgement — seeded directly, since producing a real flag
-# needs 56 scheduled hours and that is FatigueCalculator's own suite.
-mysql_exec "$VALDB" -e "INSERT INTO fatigue_flag (user_id, shift_id, hours_worked_7day, calculation_basis, flagged_at) VALUES ($TANOD_ID, $SHIFT_ID, 58.00, 'rolling_7day', UTC_TIMESTAMP());"
-FLAG_ID=$(db_one "SELECT flag_id FROM fatigue_flag LIMIT 1;")
-curl -s -X PATCH "$BASE_URL/fatigue-flags/$FLAG_ID/acknowledge" -H "Authorization: Bearer $ADMIN_TOKEN" >/dev/null
-expect_audit "fatigue_flag_acknowledged" "an Admin acknowledging a fatigue flag"
 
 # --------------------------------------------------------------------------
 step "5. SOS lifecycle + device changes + duty status"

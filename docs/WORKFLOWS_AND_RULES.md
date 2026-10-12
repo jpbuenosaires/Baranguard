@@ -578,7 +578,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 5. The Admin or Secretary prints the schedule; the officials sign it on paper outside the app (not tracked). The Admin or Secretary then publishes the week. The shift becomes visible to the tanod (Rules 26, 80).
 6. A swap request on a `draft` shift returns 404 (Rule 29). On a published shift the swap goes to the Admin or Secretary for review.
 7. Changing the tanod, start or end of a published shift reverts it to `draft` (Rule 28). An approved swap keeps it published with the new tanod, who must be available for it (Rules 74, 76).
-- **State:** 4 and the availability appendix below. **Evidence:** `verify-roster-accomplishment.sh` (332), `verify-scheduler-fatigue.sh`, `verify-paper-approvals.sh`. **UAT:** S-19, A-19, P-05. **Not demonstrated:** the 12-hour cap under real concurrent writes.
+- **State:** 4 and the availability appendix below. **Evidence:** `verify-roster-accomplishment.sh` (332), `verify-scheduler.sh`, `verify-paper-approvals.sh`. **UAT:** S-19, A-19, P-05. **Not demonstrated:** the 12-hour cap under real concurrent writes.
 
 ### Scenario 9. Monthly accomplishment report
 1. During the month the tanod enters daily work on the phone with a confirmed duration of 1 to 1440 minutes. A work date in the future or more than 62 days back is refused (Rule 33).

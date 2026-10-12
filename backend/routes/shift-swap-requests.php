@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Route table for /shift-swap-requests (§6 "Shifts and fatigue" section). */
+/** Route table for /shift-swap-requests (§6 "Shifts" section). */
 
 use Baranguard\Controllers\ShiftSwapRequestsController;
 

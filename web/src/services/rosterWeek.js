@@ -26,8 +26,6 @@ export const SHIFT_PRESETS = [
   { type: 'night', label: 'Night', short: 'Night', start: '22:00', end: '06:00' },
 ];
 
-/** Hours a tanod may be scheduled in a rolling 7 days before a fatigue flag. */
-export const WEEKLY_HOURS_LIMIT = 56;
 /** Server hard cap per tanod per Manila day (422 DAILY_HOURS_EXCEEDED). */
 export const DAILY_HOURS_LIMIT = 12;
 
@@ -208,21 +206,6 @@ export function weekHours(shifts, userId, weekStart) {
 }
 
 /**
- * Rolling 7-day hours ending at this shift's end, the shift included (same
- * window as the backend FatigueCalculator: starts in [end - 7 days, end)).
- */
-export function rollingHoursAt(shifts, shift) {
-  if (!shift.userId) return 0;
-  const end = endMsOf(shift);
-  const from = end - 7 * DAY_MS;
-  const sum = shifts
-    .filter((s) => s.userId === shift.userId)
-    .filter((s) => { const t = startMsOf(s); return t >= from && t < end; })
-    .reduce((acc, s) => acc + hoursOf(s), 0);
-  return Math.round(sum * 10) / 10;
-}
-
-/**
  * Which of the three standard shifts have someone on duty on `date`. A slot
  * counts as covered when assigned shifts overlap at least half of it.
  * @returns {{covered:string[], missing:string[]}} preset types
@@ -280,7 +263,7 @@ export function moveToDay(shift, date) {
 
 /**
  * Returns tanods who are available for a given slot, not already scheduled in an overlapping
- * shift, and who won't exceed daily (12h) or weekly (56h) limits.
+ * shift, and who won't exceed the 12h/day cap.
  * Ranked by lowest weekly hours first for balanced duty distribution.
  */
 export function suggestAvailableTanods(shifts, availability, date, presetType, tanods) {
@@ -302,12 +285,6 @@ export function suggestAvailableTanods(shifts, availability, date, presetType, t
     const sameDayShifts = shiftsOnDay(shifts.filter((s) => s.userId === t.userId), date);
     const dayHours = sameDayShifts.reduce((acc, s) => acc + hoursOf(s), 0) + slotDuration;
     if (dayHours > DAILY_HOURS_LIMIT) continue;
-
-    const rollingStart = slot.endMs - 7 * DAY_MS;
-    const rollingHours = shifts
-      .filter((s) => s.userId === t.userId && startMsOf(s) >= rollingStart && startMsOf(s) < slot.endMs)
-      .reduce((acc, s) => acc + hoursOf(s), 0) + slotDuration;
-    if (rollingHours > WEEKLY_HOURS_LIMIT) continue;
 
     const currentWeekTotal = shifts
       .filter((s) => s.userId === t.userId)

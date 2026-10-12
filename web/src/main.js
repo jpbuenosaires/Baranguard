@@ -49,11 +49,10 @@ const PAGE_ROLES = {
   // already had, so (unlike `personnel` below) no per-tab role gating.
   analytics: ['admin', 'punong_barangay'],
   'citizen-inbox': ['admin', 'secretary'],
-  // 2026-09-05 merge of W10-W13 (User Management/Scheduler/Swap Requests/
-  // Fatigue Flags) into one tabbed screen — see pages/personnel.js. Role
-  // list is the union of the four; personnel.js gates individual tabs
-  // below that.
-  // 2026-10: the Fatigue tab left the hub. Secretary and Punong Barangay get
+  // 2026-09-05 merge of W10-W12 (User Management/Scheduler/Swap Requests)
+  // into one tabbed screen — see pages/personnel.js. Role list is the
+  // union of the three; personnel.js gates individual tabs below that.
+  // 2026-10: Secretary and Punong Barangay get
   // the Scheduler tab only (read-only availability / roster publishing, which
   // the Approvals page deep-links to); Users and Swap requests stay Admin —
   // see personnel.js. The server gates every action by role + authority.

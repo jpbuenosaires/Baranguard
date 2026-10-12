@@ -5,8 +5,8 @@
  * thin 24-hour bar of the tanod's fixed availability for that day (shaded
  * where available, hatched when not available at all) and the shifts that
  * start that day as chips. A chip turns amber when the shift falls outside
- * the tanod's availability, and red when it takes them past 56 hours in a
- * rolling 7 days or past 12 hours in one day. A coverage row under the grid
+ * the tanod's availability, and red when it takes them past 12 hours in one
+ * day. A coverage row under the grid
  * counts how many of the three standard shifts (06-14, 14-22, 22-06) have
  * somebody on duty each day.
  *
@@ -31,9 +31,9 @@
  */
 
 import {
-  WEEK_DAY_LABELS, SHIFT_PRESETS, WEEKLY_HOURS_LIMIT, DAILY_HOURS_LIMIT,
+  WEEK_DAY_LABELS, SHIFT_PRESETS, DAILY_HOURS_LIMIT,
   availabilityIntervals, availableSegmentsOnDay, segmentsLabel, isWithinAvailability,
-  shiftsOnDay, shiftChipLabel, manilaParts, shiftTimeLabel, rollingHoursAt, dayCoverage, shortDateLabel,
+  shiftsOnDay, shiftChipLabel, manilaParts, shiftTimeLabel, dayCoverage, shortDateLabel,
 } from '../services/rosterWeek.js';
 
 const DAY_MINUTES = 24 * 60;
@@ -134,10 +134,6 @@ export function ShiftWeekGrid({
     hoursCell.setAttribute('role', 'cell');
     const rounded = Math.round(hours * 10) / 10;
     hoursCell.textContent = row.userId === null ? '' : `${rounded}`;
-    if (row.userId !== null && rounded > WEEKLY_HOURS_LIMIT) {
-      hoursCell.classList.add('is-over');
-      hoursCell.title = `Over ${WEEKLY_HOURS_LIMIT} hours this week`;
-    }
     tr.appendChild(hoursCell);
     return tr;
   }
@@ -224,8 +220,6 @@ export function ShiftWeekGrid({
       if (!isWithinAvailability(startMs, endMs, intervals)) problems.push({ tone: 'warn', text: 'outside availability' });
     }
     if (row.userId !== null) {
-      const rolling = rollingHoursAt(allShifts, shift);
-      if (rolling > WEEKLY_HOURS_LIMIT) problems.push({ tone: 'danger', text: `${rolling} h in 7 days (over ${WEEKLY_HOURS_LIMIT})` });
       const sameDay = shiftsOnDay(allShifts.filter((s) => s.userId === row.userId), manilaParts(shift.startAt).date);
       const dayHours = sameDay.reduce((acc, s) => acc + (new Date(s.endAt) - new Date(s.startAt)) / 3600000, 0);
       if (dayHours > DAILY_HOURS_LIMIT) problems.push({ tone: 'danger', text: `${Math.round(dayHours * 10) / 10} h in one day (over ${DAILY_HOURS_LIMIT})` });
@@ -304,7 +298,7 @@ function buildLegend(availabilityLoaded) {
     ['week-grid__key--unavail', 'Not available'],
     ['week-grid__key--draft', 'Draft'],
     ['week-grid__key--warn', 'Outside availability'],
-    ['week-grid__key--danger', `Over ${WEEKLY_HOURS_LIMIT} h a week or ${DAILY_HOURS_LIMIT} h a day`],
+    ['week-grid__key--danger', `Over ${DAILY_HOURS_LIMIT} h in one day`],
   ];
   for (const [cls, label] of items) {
     if (!availabilityLoaded && (cls.endsWith('avail') || cls.endsWith('warn'))) continue;

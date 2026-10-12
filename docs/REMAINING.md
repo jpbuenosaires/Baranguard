@@ -273,6 +273,8 @@ coding session's scope:**
   schedules needed their own two-table cascade
   (`fatigue_flag`/`shift_swap_request`, both `ON DELETE RESTRICT`), same
   shape as `purgeOneIncident()`'s 5-table cascade, scaled down.
+  (`fatigue_flag` was dropped 2026-10-13, migration 0042; only
+  `shift_swap_request` remains in that cascade.)
 - **H-16/M-03 (incident duplicate/merge, lifecycle states) CLOSED.**
   Migration 0025 widens `incident.status` with `duplicate`/`invalid`/
   `cancelled`/`reopened` and adds `duplicate_of_incident_id`/
@@ -307,7 +309,7 @@ coding session's scope:**
   `create()`/`update()` and `ShiftSwapRequestsController::update()`'s
   approval path (both the reassignment branch and the
   release-to-unassigned branch, which is the one that can actually zero
-  out coverage). `verify-scheduler-fatigue.sh` extended with 6 new
+  out coverage). `verify-scheduler-fatigue.sh` (now `verify-scheduler.sh`) extended with 6 new
   assertions proving both directions: unassigning the ONLY covering
   shift is blocked, unassigning one of TWO covering shifts succeeds, and
   unassigning the last remaining one is blocked again. 47/47 passing (up
@@ -672,7 +674,7 @@ obsolete (its use case no longer exists post-F7).
 
 Dispatch response-time metric, Valid JSON contracts, Auth/session
 revocation + lockout, Tenant/ownership pentest (non-incident resource),
-Raw-PII exposure audit, Fatigue audit trail, Offline-map availability
+Raw-PII exposure audit, Fatigue audit trail (obsolete: feature removed 2026-10-13), Offline-map availability
 (server side), and one end-to-end UAT scenario (citizen report →
 resolution) are all done with real evidence — see `backend/DEVLOG.md`
 2026-09-17/18 entries. **Remaining Sprint 8 boxes are genuinely

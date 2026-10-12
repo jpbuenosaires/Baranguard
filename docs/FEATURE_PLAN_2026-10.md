@@ -44,7 +44,7 @@ auditor what attendance evidence payroll actually accepts.
 | 3 | Server duty-on/off sum is shown as a **suggestion**; the tanod confirms or edits; **both values stored**; a difference beyond a set margin is flagged to the noter. |
 | 4 | **Ambulance/EMS is its own referral value** in the app. On the printed Annex D it maps into DOH or Other agencies (Secretary confirms which); the circular's printed categories are not altered. |
 | 5 | **Keep the Secretary role, redefined as Records & Reports Officer** (citizen reports, school inventory, referral log, preparing/filing annexes). |
-| 6 | **Fatigue Flags removed from navigation**; table and data kept; revisit from actual accomplishment hours later. |
+| 6 | **Fatigue Flags removed from navigation**; table and data kept; revisit from actual accomplishment hours later. **Superseded 2026-10-13: the feature was removed entirely (migration 0042).** |
 | 7 | `raw_narrative` stays on the **90-day** purge. A separate short, factual, non-identifying school-incident narrative (Annex C-1) is stored with its own retention for the reporting cycle. **Retention numbers need an architecture review (Rule 10) and a barangay council decision; no legal retention rule is cited.** |
 
 Also decided: add a **Chief Tanod** flag on a user (signature blocks), and

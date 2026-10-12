@@ -625,22 +625,6 @@ try {
     }
     $M['shifts'] = count($shifts);
 
-    // fatigue flags: the two tanods with the most scheduled hours in a 7-day window
-    $hours = [];
-    foreach ($shifts as $sh) if (!$sh['draft'] && $sh['start'] <= $now && $sh['start'] > $now->modify('-7 days')) $hours[$sh['user']] = ($hours[$sh['user']] ?? 0) + 8;
-    arsort($hours);
-    $fatigue = 0;
-    foreach (array_slice(array_keys($hours), 0, 2, true) as $u) {
-        foreach (array_reverse($shifts) as $sh) {
-            if ($sh['user'] === $u && !$sh['draft'] && $sh['start'] <= $now) {
-                $ack = $fatigue === 0;
-                $pdo->prepare('INSERT INTO fatigue_flag (user_id, shift_id, hours_worked_7day, calculation_basis, flagged_at, acknowledged_by, acknowledged_at) VALUES (?,?,?,?,?,?,?)')
-                    ->execute([$u, $sh['id'], max(48.0, (float) $hours[$u]), 'scheduled_hours', fmt($sh['start']->modify('-1 hour')), $ack ? $SEC : null, $ack ? fmt($sh['start']->modify('+2 hours')) : null]);
-                $fatigue++; break;
-            }
-        }
-    }
-
     // swap requests (future shifts)
     $futureByUser = [];
     foreach ($shifts as $sh) if (!$sh['draft'] && $sh['start'] > $now->modify('+1 day')) $futureByUser[$sh['user']][] = $sh;
@@ -657,20 +641,49 @@ try {
     // ---------------------------------------------------------- availability
     $dowToday = (int) $now->modify('+8 hours')->format('N'); // 1=Mon
     $thisMon = $today->modify('-' . ($dowToday - 1) . ' days');
-    $periods = [[$thisMon->modify('-7 days'), $thisMon->modify('-1 day'), 'accepted'], [$thisMon->modify('+7 days'), $thisMon->modify('+13 days'), 'submitted']];
+    // Availability is the tanod's fixed statement and every shift must fit inside it. Window contract (see
+    // AvailabilityController): end AFTER start, date inside the weekly row, "23:59" = midnight, so an overnight
+    // span (22:00-06:00) is TWO windows (D 22:00-23:59 and D+1 00:00-06:00, the latter in D+1's weekly row).
     $insAv = $pdo->prepare('INSERT INTO tanod_availability (barangay_id,user_id,period_start,period_end,windows_json,status,reviewed_by,reviewed_at,review_note,version,client_event_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?)');
+    $mondayOf = function (string $date): string {
+        $d = new DateTimeImmutable($date . ' 00:00:00');
+        return $d->modify('-' . ((int) $d->format('N') - 1) . ' days')->format('Y-m-d');
+    };
+    $spanWindows = function (DateTimeImmutable $ms, DateTimeImmutable $me): array {
+        $sd = $ms->format('Y-m-d'); $ed = $me->format('Y-m-d');
+        if ($sd === $ed) return [['date' => $sd, 'start' => $ms->format('H:i'), 'end' => $me->format('H:i')]];
+        return [['date' => $sd, 'start' => $ms->format('H:i'), 'end' => '23:59'], ['date' => $ed, 'start' => '00:00', 'end' => $me->format('H:i')]];
+    };
+    $presets = [['06:00', '14:00'], ['14:00', '22:00'], ['22:00', '06:00']];
     foreach ($TANODS as $ti => $t) {
-        foreach ($periods as $pi => [$ps, $pe, $status]) {
-            $win = [];
+        $byWeek = []; // monday => [windows]
+        $put = function (array $w) use (&$byWeek, $mondayOf) {
+            $m = $mondayOf($w['date']);
+            foreach ($byWeek[$m] ?? [] as $x) if ($x == $w) return;
+            $byWeek[$m][] = $w;
+        };
+        // 1) a window for every seeded shift (Manila time = UTC+8; DateTimes here are naive wall-clock, so shift by hand).
+        foreach ($shifts as $sh) {
+            if ($sh['user'] !== $t) continue;
+            foreach ($spanWindows($sh['start']->modify('+8 hours'), $sh['end']->modify('+8 hours')) as $w) $put($w);
+        }
+        // 2) a few extra windows around last week / this week / next week so the grid shows spare availability.
+        foreach ([-7, 0, 7] as $off) {
             for ($dd = 0; $dd < 7; $dd++) {
-                if (chance(30)) continue;
-                $day = $ps->modify("+{$dd} days")->format('Y-m-d');
-                $w = pick([['06:00', '14:00'], ['14:00', '22:00'], ['22:00', '06:00']]);
-                $win[] = ['date' => $day, 'start' => $w[0], 'end' => $w[1]];
+                if (chance(40)) continue;
+                $day = $thisMon->modify(sprintf('%+d days', $off + $dd));
+                $p = pick($presets);
+                $endDay = $p[1] <= $p[0] ? $day->modify('+1 day') : $day;
+                foreach ($spanWindows(new DateTimeImmutable($day->format('Y-m-d') . ' ' . $p[0] . ':00'), new DateTimeImmutable($endDay->format('Y-m-d') . ' ' . $p[1] . ':00')) as $w) $put($w);
             }
-            if (!$win) $win[] = ['date' => $ps->format('Y-m-d'), 'start' => '06:00', 'end' => '14:00'];
-            $st2 = $status; $note = null; $rev = $status === 'accepted' ? $SEC : null;
-            if ($pi === 1 && $ti === 2) { $st2 = 'revised'; $rev = $SEC; $note = 'Please also add a night window; we are short on 22:00-06:00.'; }
+        }
+        ksort($byWeek);
+        foreach ($byWeek as $mon => $win) {
+            usort($win, fn ($a, $b) => [$a['date'], $a['start']] <=> [$b['date'], $b['start']]);
+            $ps = new DateTimeImmutable($mon . ' 00:00:00'); $pe = $ps->modify('+6 days');
+            $future = $ps >= $thisMon->modify('+7 days');
+            $st2 = $future ? 'submitted' : 'accepted'; $note = null; $rev = $future ? null : $SEC;
+            if ($future && $ti === 2 && $ps == $thisMon->modify('+7 days')) { $st2 = 'revised'; $rev = $SEC; $note = 'Please also add a night window; we are short on 22:00-06:00.'; }
             $created = $ps->modify('-' . mt_rand(3, 6) . ' days');
             $insAv->execute([BARANGAY_ID, $t, $ps->format('Y-m-d'), $pe->format('Y-m-d'), json_encode($win, JSON_UNESCAPED_SLASHES), $st2, $rev, $rev ? fmt($created->modify('+1 day')) : null, $note, uuidv4(), fmt($created), fmt($created)]);
         }

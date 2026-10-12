@@ -13,6 +13,17 @@ or roles not listed here — check §5/§6/§7 first. **If this file and
 `docs/REFERENCE.md` (the compact working summary) ever disagree, this
 file wins** and REFERENCE.md gets corrected.
 
+**Reconciliation note (2026-10-13) — READ FIRST.** Migration 0042
+(`backend/migrations/0042_drop_fatigue_flag.sql`) removed the Fatigue Flags
+feature: table `fatigue_flag`, `GET /shifts/fatigue-flags`,
+`PATCH /fatigue-flags/:id/acknowledge`, the `unacknowledged_fatigue_flags`
+nav count, the web tab and every 56 h/week warning in the scheduler. Where this
+file still mentions fatigue (§5 `fatigue_flag`, the §6 shift endpoints, the §7
+role matrix rows "fatigue ack" / "View fatigue flags", the §9 screen list and
+the §11 `shift_schedule` retention cascade), read it as removed;
+`docs/REFERENCE.md` wins. The 12 h/day scheduled-hours cap (422
+`DAILY_HOURS_EXCEEDED`) is a roster rule and stays.
+
 **Reconciliation note (2026-10-01) — READ FIRST.** Migration 0029
 (`backend/migrations/0029_remove_blotter_and_ai_pipeline.sql`) removed the
 Electronic Blotter and the entire local-AI pipeline (redaction, summary,

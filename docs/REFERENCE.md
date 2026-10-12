@@ -224,6 +224,19 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   `/record-paper-approval`, `/document-scans*` removed; `POST /shifts/publish`
   is plain (no `recorded_from_paper`). Authority flags remain. Older paper/scan
   data is dropped.
+- **0042** (2026-10-13, NOT applied to any real DB; destructive, back up first)
+  **Fatigue Flags removed.** Drops table `fatigue_flag`. Gone: `GET
+  /shifts/fatigue-flags`, `PATCH /fatigue-flags/:id/acknowledge`,
+  `FatigueFlagsController`, `FatigueCalculator` (its `recalculate()` calls in
+  shift create/update and swap approval), `unacknowledged_fatigue_flags` in
+  `GET /reports/nav-counts`, the web Fatigue page, the scheduler's fatigue
+  callouts / "[Over/Near Limit]" labels, the 56 h/week red markers and Smart
+  Fill limit, and the `fatigue_flag` delete in the shift retention cascade.
+  **Kept on purpose:** the 12 h/day scheduled-hours cap (422
+  `DAILY_HOURS_EXCEEDED`, week-grid marker, Smart Fill limit), the per-tanod
+  weekly "Hours" total as a plain number, and historical `audit_log` rows
+  `fatigue_flag_acknowledged` (write-once). Routes 117 -> 105 (the rest of that
+  drop is 0041's removals). **Do not rebuild without an explicit new decision.**
 - **0040** (2026-10-12, NOT applied to any real DB) report and roster
   notifications: `notification.notification_type` gains `report_update` and
   `roster_published`; `notification.accomplishment_report_id` (FK, SET NULL).
@@ -377,7 +390,7 @@ edits title/authorities; audit `user_approval_authority_changed`.
 
 ---
 
-## 4. Schema map (§5 — 23 tables at the Master Reference; +7 tables from migrations 0030-0033, minus 4 dropped by 0029)
+## 4. Schema map (§5 — 23 tables at the Master Reference; +7 tables from migrations 0030-0033, minus 4 dropped by 0029, minus `fatigue_flag` dropped by 0042)
 
 Core chain: `barangay → user → mobile_device → incident → dispatch →
 tanod_sos → notification → notification_target → notification_delivery`.
@@ -390,7 +403,7 @@ migration 0025, duplicate_of_incident_id/lifecycle_changed_by/
 lifecycle_changed_at) · `dispatch` · `evidence_attachment` (files outside web
 root, legal_hold) · `citizen_report`
 (legal_hold) · `duty_status` · `gps_track` · `shift_schedule` (user_id
-nullable) · `shift_swap_request` · `fatigue_flag` · `sms_log` (barangay_id,
+nullable) · `shift_swap_request` · `sms_log` (barangay_id,
 message_body/read_at, `message_type` incl. `manual`, legal_hold) ·
 `sms_envelope_replay` · `audit_log` (write-once except retention) ·
 `offline_queue` · `auth_session` · `map_package` · `user`
@@ -462,7 +475,7 @@ an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 ---
 
-## 5. Endpoints (117 live `/api/v1` routes across 30 route files, all built)
+## 5. Endpoints (105 live `/api/v1` routes across 28 route files, all built; measured 2026-10-13)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -525,9 +538,9 @@ accomplishment_entry · school_checkin, processed in that order; request
 keys `referrals[]`, `availability[]`, `accomplishment_entries[]`,
 `school_checkins[]` added 2026-10-01; each new kind is signature-checked
 PER ITEM, SOS never is)
-**Scheduling** shifts (list/create/update/**publish**) · swap requests ·
-fatigue flags (endpoints and table kept; the web nav item was removed
-2026-10-01). **Roster rules changed 2026-10-01** (supersedes H-17): the 8h
+**Scheduling** shifts (list/create/update/**publish**) · swap requests.
+(**Fatigue Flags were removed entirely 2026-10-13**, migration 0042: no table,
+endpoints, nav count, tab or 56 h/week warning.) **Roster rules changed 2026-10-01** (supersedes H-17): the 8h
 minimum-rest block and the min-1-on-duty hard block are GONE; replaced by
 a hard cap of 12 scheduled hours per tanod per Manila day (422
 `DAILY_HOURS_EXCEEDED`, writes per tanod serialized by a user-row lock);
@@ -697,8 +710,8 @@ incident into one card) · W4 GIS · W7 incident detail (routed
 Secretary lifecycle actions) ·
 Analytics (tabbed Reports/Heatmap, Admin+PB) · Personnel
 (tabbed Users/Scheduler/Swap requests — Admin sees all three, Secretary
-and PB the Scheduler only; the **Fatigue flags tab was removed from nav
-2026-10-01**, `fatigue-flags.js` and its endpoints are kept, unmounted) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
+and PB the Scheduler only; the **Fatigue flags tab, page, endpoints and table
+were removed 2026-10-13**, migration 0042) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
 settings (+General/SMS Gateway, Admin-only) · W16 citizen inbox
 (+Convert to Incident) · W17 audit log · W18 map package management ·
 W19 public report (REMOVED 2026-10-07) · W20 service health · Incident Management (search,
@@ -871,7 +884,7 @@ controls that do nothing.
 | `verify-w2-reports.sh` | 31 |
 | `verify-w3-w4-dispatch-gis.sh` | 38 |
 | `verify-sprint1-remaining.sh` | `ALL CHECKS PASSED` (count not captured) |
-| `verify-scheduler-fatigue.sh` | 49 (assertions updated to the 12h/day cap and draft/published rules) |
+| `verify-scheduler.sh` (renamed from `verify-scheduler-fatigue.sh` 2026-10-13) | ALL CHECKS PASSED (flag assertions replaced by 404 checks for the removed routes) |
 | `verify-devices-map-packages.sh` | 57 |
 | `verify-duty-status-map-upload.sh` | 49 |
 | `verify-public-transparency.sh` | 17 |
@@ -891,7 +904,7 @@ controls that do nothing.
 | verify-f5 / f6 / f8 suites | 16 / 8 / 8 |
 | verify-h16 lifecycle suite | 30 |
 | `verify-referrals.sh` (new 2026-10-01) | 147 |
-| `verify-roster-accomplishment.sh` (new 2026-10-01) | 332 (a final run prints `ALL CHECKS PASSED`; the roster half of the earlier scheduler-fatigue run likewise, counts not captured) |
+| `verify-roster-accomplishment.sh` (new 2026-10-01) | 332 (a final run prints `ALL CHECKS PASSED`; the roster half of the earlier scheduler run likewise, counts not captured) |
 | `verify-school-zones.sh` (new 2026-10-01) | 213 |
 | `restore-drill.sh` | 12 (real DB; last run 2026-09-26, not re-run since 0030-0033) |
 | `verify-web-wiring.mjs` | 733 passed, 0 failed (2026-10-01) |

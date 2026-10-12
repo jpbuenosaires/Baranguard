@@ -601,7 +601,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
     const ok = await confirmDialog({
       title: `Smart Fill: Schedule ${plan.toCreate.length} shift${plan.toCreate.length === 1 ? '' : 's'}?`,
-      description: `Found ${plan.toCreate.length} open shift slots that match tanods' submitted availability without exceeding fatigue limits. They will be added as drafts.${plan.unfilledCount ? ` (${plan.unfilledCount} slots have no available tanods).` : ''}`,
+      description: `Found ${plan.toCreate.length} open shift slots that match tanods' submitted availability without double-booking anyone or going past the 12 h/day cap. They will be added as drafts.${plan.unfilledCount ? ` (${plan.unfilledCount} slots have no available tanods).` : ''}`,
       confirmLabel: 'Fill Roster',
       cancelLabel: 'Cancel',
     });
@@ -1230,11 +1230,8 @@ function formatShiftTimeRange(startAt, endAt) {
   return `${s.toLocaleDateString([], dateOpts)} ${s.toLocaleTimeString([], timeOpts)} – ${e.toLocaleDateString([], dateOpts)} ${e.toLocaleTimeString([], timeOpts)}`;
 }
 
-const FATIGUE_THRESHOLD_HOURS = 56.0;
-
 /**
  * Calculates total scheduled shift hours for a tanod in the 7-day rolling window ending at targetEndAt.
- * Mirrors backend FatigueCalculator logic: window = [end_at - 7 days, end_at).
  */
 function calculateTanodHoursInWindow(shifts, userId, targetEndAt, excludeShiftId = null) {
   if (!userId || !targetEndAt || !Array.isArray(shifts)) return 0;
@@ -1254,80 +1251,6 @@ function calculateTanodHoursInWindow(shifts, userId, targetEndAt, excludeShiftId
     }
   }
   return Math.round(sum * 10) / 10;
-}
-
-/**
- * Computes projected rolling hours if the given shift is assigned.
- */
-function previewShiftFatigue(shifts, userId, startAt, endAt, excludeShiftId = null) {
-  if (!userId || !startAt || !endAt || !Array.isArray(shifts)) return null;
-  const s = new Date(startAt).getTime();
-  const e = new Date(endAt).getTime();
-  if (isNaN(s) || isNaN(e) || e <= s) return null;
-
-  const shiftDuration = (e - s) / (1000 * 60 * 60);
-  const priorHours = calculateTanodHoursInWindow(shifts, userId, endAt, excludeShiftId);
-  const projectedHours = priorHours + shiftDuration;
-  const overBy = projectedHours - FATIGUE_THRESHOLD_HOURS;
-
-  let status = 'safe';
-  if (projectedHours > FATIGUE_THRESHOLD_HOURS) {
-    status = 'critical';
-  } else if (projectedHours >= 48) {
-    status = 'caution';
-  }
-
-  return {
-    shiftDuration,
-    priorHours,
-    projectedHours,
-    overBy,
-    status,
-  };
-}
-
-function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod') {
-  if (!preview) {
-    calloutEl.hidden = true;
-    calloutEl.innerHTML = '';
-    return;
-  }
-
-  calloutEl.hidden = false;
-  if (preview.status === 'critical') {
-    calloutEl.className = 'scheduler-fatigue-callout scheduler-fatigue-callout--critical';
-    calloutEl.innerHTML = `
-      <div class="scheduler-fatigue-callout__title">
-        <span style="display:flex;align-items:center;">${icons.batteryWarning(16)}</span>
-        <span>Fatigue Safety Warning: Exceeds Safe Limit</span>
-      </div>
-      <div class="scheduler-fatigue-callout__desc">
-        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${escapeHtml(tanodName)}'s 7-day schedule to <strong>${preview.projectedHours.toFixed(1)} hrs</strong> (+${preview.overBy.toFixed(1)}h over the 56h threshold). A fatigue safety flag will be triggered.
-      </div>
-    `;
-  } else if (preview.status === 'caution') {
-    calloutEl.className = 'scheduler-fatigue-callout scheduler-fatigue-callout--warning';
-    calloutEl.innerHTML = `
-      <div class="scheduler-fatigue-callout__title">
-        <span style="display:flex;align-items:center;">${icons.alertTriangle(16)}</span>
-        <span>Approaching Weekly Safety Limit</span>
-      </div>
-      <div class="scheduler-fatigue-callout__desc">
-        Adding this <strong>${preview.shiftDuration.toFixed(1)}h</strong> shift brings ${escapeHtml(tanodName)} to <strong>${preview.projectedHours.toFixed(1)} hrs / 56h max</strong> (${(FATIGUE_THRESHOLD_HOURS - preview.projectedHours).toFixed(1)}h remaining before safety limit).
-      </div>
-    `;
-  } else {
-    calloutEl.className = 'scheduler-fatigue-callout scheduler-fatigue-callout--success';
-    calloutEl.innerHTML = `
-      <div class="scheduler-fatigue-callout__title">
-        <span style="display:flex;align-items:center;">${icons.checkCircle(16)}</span>
-        <span>Schedule Capacity: Safe</span>
-      </div>
-      <div class="scheduler-fatigue-callout__desc">
-        Projected 7-day schedule: <strong>${preview.projectedHours.toFixed(1)} hrs / 56h max</strong> (within safe operational limits).
-      </div>
-    `;
-  }
 }
 
 /**
@@ -1374,7 +1297,6 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     btn.innerHTML = `${p.label}<small>${p.hours}</small>`;
     btn.addEventListener('click', () => {
       applyPreset(p.type, startInput, endInput);
-      updateFormFatiguePreview();
     });
     presetsRow.appendChild(btn);
   });
@@ -1393,8 +1315,7 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     const currentHours = calculateTanodHoursInWindow(shifts, t.userId, new Date().toISOString());
     const option = document.createElement('option');
     option.value = String(t.userId);
-    const badge = currentHours > FATIGUE_THRESHOLD_HOURS ? ' [Over Limit]' : (currentHours >= 48 ? ' [Near Limit]' : '');
-    option.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled${badge})`;
+    option.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled)`;
     tanodSelect.appendChild(option);
   }
 
@@ -1430,23 +1351,6 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   endInput.className = 'personnel-form-input';
   endInput.required = true;
 
-  // Proactive Fatigue Preview Callout
-  const fatigueCallout = document.createElement('div');
-  fatigueCallout.className = 'scheduler-fatigue-callout';
-  fatigueCallout.hidden = true;
-
-  const updateFormFatiguePreview = () => {
-    const selectedUserId = Number(tanodSelect.value);
-    const selectedTanod = tanods.find((t) => t.userId === selectedUserId);
-    const tanodName = selectedTanod ? selectedTanod.fullName : 'this Tanod';
-    const preview = previewShiftFatigue(shifts, selectedUserId, startInput.value, endInput.value);
-    updateFatigueCalloutElement(fatigueCallout, preview, tanodName);
-  };
-
-  tanodSelect.addEventListener('change', updateFormFatiguePreview);
-  startInput.addEventListener('input', updateFormFatiguePreview);
-  endInput.addEventListener('input', updateFormFatiguePreview);
-
   const draftNote = document.createElement('p');
   draftNote.className = 'note';
   draftNote.textContent = 'New shifts are saved as drafts. Tanods see a shift only after it is published.';
@@ -1464,7 +1368,6 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     zoneLabel, zoneInput,
     startLabel, startInput,
     endLabel, endInput,
-    fatigueCallout,
     draftNote,
     submitButton
   );
@@ -1507,7 +1410,6 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
       zoneInput.value = '';
       startInput.value = '';
       endInput.value = '';
-      fatigueCallout.hidden = true;
       onCreated();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Could not create this shift.';
@@ -1606,8 +1508,7 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
     const currentHours = calculateTanodHoursInWindow(shifts, t.userId, new Date().toISOString(), shift.shiftId);
     const opt = document.createElement('option');
     opt.value = String(t.userId);
-    const badge = currentHours > FATIGUE_THRESHOLD_HOURS ? ' [Over Limit]' : (currentHours >= 48 ? ' [Near Limit]' : '');
-    opt.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled${badge})`;
+    opt.textContent = `${rosterLabel(t)} (${currentHours.toFixed(1)}h scheduled)`;
     if (t.userId === shift.userId) opt.selected = true;
     tanodSelect.appendChild(opt);
   }
@@ -1657,31 +1558,7 @@ function openEditModal(shift, tanods, onSaved, shifts = []) {
 
   grid.append(tanodField, zoneField, startField, endField);
 
-  // Proactive Fatigue Preview Callout in Edit Modal
-  const fatigueCallout = document.createElement('div');
-  fatigueCallout.className = 'scheduler-fatigue-callout';
-  fatigueCallout.hidden = true;
-
-  const updateEditFatiguePreview = () => {
-    const selectedUserId = Number(tanodSelect.value);
-    if (!selectedUserId) {
-      fatigueCallout.hidden = true;
-      fatigueCallout.innerHTML = '';
-      return;
-    }
-    const selectedTanod = tanods.find((t) => t.userId === selectedUserId);
-    const tanodName = selectedTanod ? selectedTanod.fullName : 'this Tanod';
-    const preview = previewShiftFatigue(shifts, selectedUserId, startInput.value, endInput.value, shift.shiftId);
-    updateFatigueCalloutElement(fatigueCallout, preview, tanodName);
-  };
-
-  tanodSelect.addEventListener('change', updateEditFatiguePreview);
-  startInput.addEventListener('input', updateEditFatiguePreview);
-  endInput.addEventListener('input', updateEditFatiguePreview);
-
-  updateEditFatiguePreview();
-
-  body.append(grid, fatigueCallout);
+  body.append(grid);
 
   // Footer
   const footer = document.createElement('div');

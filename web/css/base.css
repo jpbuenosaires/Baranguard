@@ -1147,20 +1147,6 @@ button.icon-btn--danger:hover { background: var(--tint-critical-bg); color: var(
 }
 .privacy-notice { line-height: 1.5; }
 
-/* Fatigue hours against the 56-hour safety threshold (W13) — the figure,
-   a proportional bar, and how far over. */
-.fatigue-hours { display: flex; flex-direction: column; gap: 0.1875rem; min-width: 8rem; }
-.fatigue-hours__figure { font-weight: 600; font-variant-numeric: tabular-nums; }
-.fatigue-hours__bar {
-  display: block;
-  height: 0.3125rem;
-  border-radius: 999px;
-  background: var(--color-border);
-  overflow: hidden;
-}
-.fatigue-hours__fill { display: block; height: 100%; background: var(--color-critical-solid); }
-.fatigue-hours__over { font-size: var(--font-size-label); color: var(--color-text-tertiary); }
-
 /* Password requirement checklist (W15). Each rule ticks as it is met, so
    the policy is visible before submitting rather than after a rejection. */
 .password-rules {

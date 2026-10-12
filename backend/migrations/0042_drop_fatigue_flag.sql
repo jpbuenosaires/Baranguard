@@ -1,0 +1,22 @@
+-- ============================================================
+-- 0042_drop_fatigue_flag.sql — removes the Fatigue Flags feature.
+--
+-- Why: the feature (a calculator that wrote a `fatigue_flag` row whenever a
+-- tanod's scheduled hours in a rolling 7 days passed 56, an acknowledge
+-- endpoint, a nav badge count and a web tab) is removed along with every
+-- 56 h/week warning in the scheduler. The Fatigue tab had already left the
+-- navigation on 2026-10-01 (0030+ tanod-workflow build). The 12 h/day
+-- scheduled-hours cap in ShiftsController is a roster rule and STAYS.
+--
+-- DESTRUCTIVE AND NOT REVERSIBLE FROM DATA: this DROPs every row in
+-- fatigue_flag. Take a backup first (`backend/scripts/backup.sh`) and apply as
+-- DBA/root — baranguard_app has no DROP (REFERENCE.md §8). Apply in numeric
+-- order after 0041.
+--
+-- Kept on purpose: historical `audit_log` rows with action
+-- `fatigue_flag_acknowledged` (audit_log is write-once).
+-- ============================================================
+
+-- fatigue_flag holds the foreign keys (to user and shift_schedule); nothing
+-- references fatigue_flag, so it can be dropped directly.
+DROP TABLE IF EXISTS fatigue_flag;

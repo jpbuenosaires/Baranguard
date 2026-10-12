@@ -85,7 +85,7 @@ Today's cut — pick exactly ONE evaluation hook or ONE UAT scenario:
       dispatch.arrived_at, per §6's own definition. Don't invent a
       different formula for the UAT report.
   [ ] Offline-map availability
-  [ ] Fatigue audit trail
+  [x] ~~Fatigue audit trail~~ — OBSOLETE: Fatigue Flags were removed (migration 0042, 2026-10-13).
   [ ] Valid JSON contracts (schema-validate every §6 response shape)
   [x] ~~AI dataset evaluation run / Bikol language-quality validation~~
       — OBSOLETE: migration 0029 (2026-10-01) removed the AI pipeline, the

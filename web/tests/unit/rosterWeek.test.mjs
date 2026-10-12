@@ -4,7 +4,7 @@ import {
   manilaToMs, manilaParts, msToManilaLocal, addDays, weekStartOf, weekDays, presetRange,
   availabilityIntervals, uncoveredMinutes, isWithinAvailability, sourceAvailabilityFor,
   availableSegmentsOnDay, dayCoverage, planCopyFromPreviousWeek, moveToDay, shiftsInWeek,
-  rollingHoursAt, shiftChipLabel, weekRangeLabel,
+  shiftChipLabel, weekRangeLabel,
   suggestAvailableTanods, planSmartCoverage,
 } from '../../src/services/rosterWeek.js';
 
@@ -94,14 +94,13 @@ test('moving to another day keeps the times, overnight included', () => {
   assert.equal(moved.endLocal, '2026-10-16T06:00');
 });
 
-test('week membership, rolling hours and chip labels', () => {
+test('week membership and chip labels', () => {
   const shifts = [
     shift(1, 4, '2026-10-11', '22:00', '2026-10-12', '06:00'), // Sunday before: not in the week
     shift(2, 4, '2026-10-12', '06:00', '2026-10-12', '14:00'),
     shift(3, 4, '2026-10-18', '08:30', '2026-10-18', '12:00'),
   ];
   assert.deepEqual(shiftsInWeek(shifts, '2026-10-12').map((s) => s.shiftId), [2, 3]);
-  assert.equal(rollingHoursAt(shifts, shifts[2]), 19.5);
   assert.equal(shiftChipLabel(shifts[1]), 'AM');
   assert.equal(shiftChipLabel(shifts[0]), 'Night');
   assert.equal(shiftChipLabel(shifts[2]), '08:30–12:00');
