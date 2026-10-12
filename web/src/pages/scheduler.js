@@ -52,8 +52,10 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // drafts (approve_roster) only. Availability review is Admin/Secretary.
   // The server re-checks role and authority on every action either way.
   // The tanod list comes from loadTanodRoster() (GET /users/directory) for
-  // both Admin and Secretary. Admin/Secretary without approve_roster publish
-  // by recording an official's paper approval ("Recorded from paper").
+  // both Admin and Secretary. Paper-first (2026-10-12): Admin/Secretary
+  // always publish by recording the signed paper roster ("Publish with
+  // signed paper"); only a non-manager holding approve_roster (the PB)
+  // still gets the in-app Publish button.
   const isAdmin = user.role === 'admin';
   const canManageShifts = isAdmin || user.role === 'secretary';
   const canReviewAvailability = canManageShifts;
@@ -504,7 +506,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     hint.textContent = draftShifts.length === 0
       ? 'No draft shifts. New shifts are saved as drafts and are only visible to tanods once published.'
       : `${draftShifts.length} draft shift${draftShifts.length === 1 ? '' : 's'} not yet visible to tanods.`
-        + (canApproveRoster ? '' : ' You do not hold roster approval authority. Record the official\'s paper approval to publish.');
+        + (canManageShifts ? ' Print the schedule, have it signed, then publish with the signed paper.' : '');
 
     const buttons = document.createElement('div');
     buttons.className = 'availability-item__actions';
@@ -520,15 +522,15 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       });
       buttons.appendChild(selectAll);
     }
-    if (!canApproveRoster) {
-      // Admin/Secretary without approve_roster: publish by recording that an
-      // official who DOES hold it approved the roster on paper.
+    if (canManageShifts) {
+      // Admin/Secretary: publish by recording that an official holding
+      // approve_roster signed the printed roster (paper is the record).
       const paperBtn = document.createElement('button');
       paperBtn.type = 'button';
       paperBtn.id = 'publish-shifts-paper-btn';
       paperBtn.className = 'primary';
       paperBtn.disabled = selectedShiftIds.size === 0;
-      paperBtn.textContent = `Publish: recorded from paper (${selectedShiftIds.size})`;
+      paperBtn.textContent = `Publish with signed paper (${selectedShiftIds.size})`;
       paperBtn.addEventListener('click', async () => {
         const ids = [...selectedShiftIds];
         if (ids.length === 0) return;
@@ -548,8 +550,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
         }
         const today = manilaToday();
         const result = await promptFields({
-          title: `Publish ${ids.length} shift${ids.length === 1 ? '' : 's'} (recorded from paper)?`,
-          description: 'Use this when the roster was approved on a signed paper copy. Pick the official who signed and the date they signed. The shifts become visible to the assigned tanods.',
+          title: `Publish ${ids.length} shift${ids.length === 1 ? '' : 's'} with the signed paper?`,
+          description: 'Pick the official who signed the printed roster and the date they signed. The shifts become visible to the assigned tanods.',
           fields: [
             { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
             { name: 'signedOn', label: 'Date signed on paper', type: 'date', max: today },

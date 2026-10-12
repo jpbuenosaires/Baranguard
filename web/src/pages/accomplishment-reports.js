@@ -1,15 +1,21 @@
 /**
  * accomplishment-reports.js — monthly Accomplishment Reports for Barangay
  * Tanods (contract §4 / §10): list by person, month and status; a detail
- * view with every entry (system-flagged durations marked); note / approve /
- * return actions for officials who hold the authority; and a print layout
+ * view with every entry (system-flagged durations marked); a return action
+ * for officials who hold the authority; recording the signed paper (the
+ * Paper signature panel); and a print layout
  * that mirrors the barangay's own form (letterhead, name / position /
  * month / duration, 31 day rows, Prepared / Noted / Approved By).
  *
+ * Paper-first (2026-10-12): the paper copy is the official record, so a
+ * report is approved by printing it, having it signed and recording the
+ * signed paper (Admin/Secretary, PaperApprovalPanel). The separate in-app
+ * Note / Approve buttons were removed from this screen; the endpoints stay.
+ *
  * Gating, all UX only (REFERENCE.md §2 Rule 2 — the server re-checks):
- *   - Note ........ status prepared, viewer holds note_report
- *   - Approve ..... status noted, viewer holds approve_report
- *   - Return ...... status prepared or noted, viewer holds either
+ *   - Record signed paper .. status prepared or noted, Admin or Secretary
+ *   - Return ............... status prepared or noted, viewer holds
+ *                            note_report or approve_report
  * A 409 for the preparer-must-differ rule is shown as a plain-language
  * message, not a raw error.
  *
@@ -24,13 +30,13 @@
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
-import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
+import { promptText } from '../components/ConfirmDialog.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { PaperApprovalPanel } from '../components/PaperApprovalPanel.js';
 import { icons } from '../components/icons.js';
 import {
-  getAccomplishmentReports, getAccomplishmentReport, noteAccomplishmentReport,
-  approveAccomplishmentReport, returnAccomplishmentReport, getUserNames, getUserById,
+  getAccomplishmentReports, getAccomplishmentReport,
+  returnAccomplishmentReport, getUserNames, getUserById,
   REPORT_STATUS_LABELS,
 } from '../services/tanodWorkflowApi.js';
 import {
@@ -80,7 +86,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     root, user, onLoggedOut, navigate,
     activeKey: 'accomplishment-reports',
     title: 'Accomplishment Reports',
-    subtitle: 'Monthly reports by Barangay Tanods — review, note, approve or return',
+    subtitle: 'Monthly reports by Barangay Tanods — review, print for signing, record the signed paper or return',
     icon: icons.fileText,
   });
 
@@ -327,15 +333,15 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     }
     detailHost.append(back, head);
 
-    // Paper signature + scan (Wave 1): from the point the report can be
-    // approved on paper (noted) until it is approved and filed. The panel
-    // gates its own controls by role; the server re-checks everything.
-    if (report.status === 'noted' || report.status === 'approved') {
+    // Paper signature + scan: from the point the tanod submits (prepared)
+    // until it is approved and filed. The panel gates its own controls by
+    // role; the server re-checks everything.
+    if (report.status === 'prepared' || report.status === 'noted' || report.status === 'approved') {
       detailHost.appendChild(PaperApprovalPanel({
         entityType: 'accomplishment_report',
         report,
         user,
-        recordStatus: 'noted',
+        recordStatuses: ['prepared', 'noted'],
         signerAuthority: 'approve_report',
         preparerUserId: report.userId ?? null, // the tanod who prepared (submitted) it
         approvedStatuses: ['approved'],
@@ -390,8 +396,6 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
 
   function buildActions({ report, mine, reportId }) {
     const own = report.userId === user.userId;
-    const canNote = !own && report.status === 'prepared' && mine.authority.has('note_report');
-    const canApprove = !own && report.status === 'noted' && mine.authority.has('approve_report');
     const canReturn = !own && (report.status === 'prepared' || report.status === 'noted')
       && (mine.authority.has('note_report') || mine.authority.has('approve_report'));
 
@@ -400,38 +404,12 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       wrap.appendChild(h('p', 'tw-empty-note', 'Could not check your approval authority, so no actions are offered. Reload to try again.'));
       return wrap;
     }
-    if (!canNote && !canApprove && !canReturn) {
-      wrap.appendChild(h('p', 'tw-empty-note', reasonNoActions(report, mine)));
+    if (!canReturn) {
+      wrap.appendChild(h('p', 'tw-empty-note', reasonNoActions(report)));
       return wrap;
     }
     const bar = h('div', 'tw-action-bar');
 
-    if (canNote) {
-      const btn = h('button', 'primary', 'Note this report');
-      btn.type = 'button';
-      btn.addEventListener('click', () => runDecision({
-        title: 'Note this report?',
-        description: 'Noting confirms you have reviewed it. It then goes on for approval.',
-        confirmLabel: 'Note report',
-        call: () => noteAccomplishmentReport(report.reportId),
-        success: 'Report noted.',
-        reportId,
-      }));
-      bar.appendChild(btn);
-    }
-    if (canApprove) {
-      const btn = h('button', 'primary', 'Approve this report');
-      btn.type = 'button';
-      btn.addEventListener('click', () => runDecision({
-        title: 'Approve this report?',
-        description: 'Approval is final. The signed printout can be filed afterwards.',
-        confirmLabel: 'Approve report',
-        call: () => approveAccomplishmentReport(report.reportId),
-        success: 'Report approved.',
-        reportId,
-      }));
-      bar.appendChild(btn);
-    }
     if (canReturn) {
       const btn = h('button', 'danger', 'Return to tanod');
       btn.type = 'button';
@@ -463,31 +441,12 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     return wrap;
   }
 
-  function reasonNoActions(report, mine) {
-    if (report.userId === user.userId) return 'You cannot note or approve your own report.';
+  function reasonNoActions(report) {
+    if (report.userId === user.userId) return 'You cannot return or sign your own report.';
     if (report.status === 'approved') return 'This report is approved. Nothing further to do.';
     if (report.status === 'open' || report.status === 'returned') return 'Waiting for the tanod to submit this report.';
-    if (report.status === 'prepared') return 'This report is waiting to be noted by an official with the note authority.';
-    if (report.status === 'noted') return 'This report is waiting for an official with the approve authority.';
+    if (report.status === 'prepared' || report.status === 'noted') return 'Waiting for the signed paper. Print the report, have it signed, then the Secretary or Admin records it above.';
     return 'No actions are available for you on this report.';
-  }
-
-  async function runDecision({ title, description, confirmLabel, call, success, reportId }) {
-    const ok = await confirmDialog({
-      title, description, confirmLabel,
-      onConfirmAsync: async () => {
-        try {
-          await call();
-        } catch (err) {
-          // Thrown inside the dialog's async hook => shown inline, dialog stays open.
-          throw new Error(actionErrorMessage(err));
-        }
-      },
-    });
-    if (ok) {
-      showToast(success, { variant: 'success' });
-      loadDetail(reportId);
-    }
   }
 
   // ----- boot ---------------------------------------------------------------

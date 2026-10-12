@@ -384,32 +384,35 @@ async function countOf(path, query) {
 }
 
 /**
- * Live counts of work waiting on the signed-in user, each gated by the
- * authority that would let them act on it. There is no dedicated approvals
- * endpoint in the contract, so this composes the existing list endpoints;
- * nothing is invented or estimated.
+ * Live counts of work waiting on the signed-in user. There is no dedicated
+ * approvals endpoint in the contract, so this composes the existing list
+ * endpoints; nothing is invented or estimated. Paper-first (2026-10-12):
+ * Admin/Secretary see what is waiting for its signed paper; a non-manager
+ * sees only what their own authority lets them act on.
  *
  * @param {string[]} authorities the viewer's own approval_authority
+ * @param {string} [role] the viewer's role
  * @returns {Promise<Array<{key:string,label:string,count:number}>>}
  */
-export async function getPendingApprovalCounts(authorities) {
+export async function getPendingApprovalCounts(authorities, role) {
   const has = (a) => authorities.includes(a);
+  const isManager = role === 'admin' || role === 'secretary';
   const jobs = [];
-  if (has('approve_roster')) {
+  if (isManager || has('approve_roster')) {
     jobs.push(countOf('/shifts', { approval_status: 'draft' }).then((count) => ({ key: 'roster', label: 'Draft shifts to publish', count })));
   }
-  if (has('note_report')) {
-    jobs.push(countOf('/accomplishment-reports', { status: 'prepared' }).then((count) => ({ key: 'notes', label: 'Accomplishment reports to note', count })));
+  if (isManager) {
+    jobs.push(Promise.all([
+      countOf('/accomplishment-reports', { status: 'prepared' }),
+      countOf('/accomplishment-reports', { status: 'noted' }),
+    ]).then(([prepared, noted]) => ({ key: 'paper-reports', label: 'Accomplishment reports waiting for the signed paper', count: prepared + noted })));
   }
-  if (has('approve_report')) {
-    jobs.push(countOf('/accomplishment-reports', { status: 'noted' }).then((count) => ({ key: 'approve-reports', label: 'Accomplishment reports to approve', count })));
-  }
-  if (has('prepare_annex_d') || has('approve_annex_d')) {
+  if (isManager || has('prepare_annex_d')) {
     jobs.push(request('GET', '/ssz-term-reports', { query: { limit: 100 } }).then((json) => {
       const rows = json.items ?? [];
       const out = [];
       if (has('prepare_annex_d')) out.push({ key: 'annex-prepare', label: 'Annex D drafts to prepare', count: rows.filter((r) => r.status === 'draft').length });
-      if (has('approve_annex_d')) out.push({ key: 'annex-approve', label: 'Annex D reports to approve', count: rows.filter((r) => r.status === 'prepared').length });
+      if (isManager) out.push({ key: 'paper-annex', label: 'Annex D waiting for the signed paper', count: rows.filter((r) => r.status === 'prepared').length });
       return out;
     }));
   }
