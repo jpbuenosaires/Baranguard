@@ -18809,3 +18809,63 @@ NOT verified: any real phone or SQLite run of the new retry/defer logic; a plaus
 - New `backend/scripts/reset-ch4.ps1` and `Reset Chapter 4 Data.bat`: drop/rebuild `baranguard_ch4`, apply all migrations, grant the .env DB user SELECT/INSERT/UPDATE/DELETE, seed, optionally point `backend/.env` at it (`-PointAppTo ch4|uiseed`, backup `.env.bak-before-ch4`). NOT run on Windows yet; the PowerShell script is untested.
 - `docs/CHAPTER4_SEED.md` explains the data is simulated and how to cite it.
 - Evidence photos/voice are not seeded (no files).
+
+## 2026-10-12 (1) - Paper-first signing (Claude, project thread)
+
+- **Decision (Jayson):** the signed paper is the final record, so the separate
+  in-app note/approve clicks are redundant. Kept the statuses, the locking and
+  the roster publish gate (dispatch and night offers depend on `published`).
+- **Backend:** `AccomplishmentController::recordPaperApproval` accepts `prepared`
+  as well as `noted` (prepared -> approved leaves `noted_by` NULL; the noting
+  signature lives on the paper). No migration. Note/approve/publish endpoints
+  unchanged.
+- **Web:** `PaperApprovalPanel` button renamed "Record signed paper" and offered on
+  every `recordStatuses` entry (accomplishment: prepared + noted; Annex D:
+  prepared). Removed the Note/Approve buttons (accomplishment-reports.js) and the
+  Approve button (school-zones.js); Return stays. Scheduler: Admin/Secretary always
+  get "Publish with signed paper"; only a non-manager with `approve_roster` (PB)
+  keeps in-app Publish. Approvals inbox and the dashboard widget replace the
+  note/approve queues with "waiting for the signed paper" queues for
+  Admin/Secretary.
+- **Docs:** WORKFLOWS_AND_RULES states 3-5, Secretary/PB flows, scenarios 8-10,
+  new Rule 73; REFERENCE.md §1 bullet.
+- **Evidence:** `web/tests` 625/0, `verify-web-wiring.mjs` 775/0 (4 fewer checks:
+  removed imports). `verify-paper-approvals.sh` updated (new prepared -> approved
+  check on a separate report so the scan-on-prepared 409 check still holds); see
+  the PR for whether it was run. Not browser-verified. The UAT instruments
+  (P-05, P-06) still describe in-app approval and need rewording.
+
+## 2026-10-12 (3) - Scheduler week grid; availability shown as fixed (Claude, project thread)
+
+- **Decision (Jayson):** a tanod's availability is fixed and not up for
+  discussion, so the web no longer accepts it or asks for a revision. It is
+  shown as given (every submission, any status) and the roster is built around
+  it. Asked for all seven suggested scheduler improvements.
+- **Web only, no backend or migration change.** `PATCH /availability/:id`,
+  `tanod_availability.status` and the mobile Availability screen are untouched;
+  nothing on the web calls the PATCH any more, so new submissions simply stay
+  `submitted` (which also keeps them editable by the tanod).
+- **Scheduler (`scheduler.js`):** opens on a **Week** view (List keeps the old
+  table). `components/ShiftWeekGrid.js` draws one row per rostered tanod and one
+  column per Manila day: a 24 h availability bar per cell (hatched when none),
+  shift chips (dashed = draft), amber when outside availability, red when over
+  56 h in a rolling 7 days or 12 h in a day, week hours per tanod, and a
+  coverage row (of Morning 06-14 / Afternoon 14-22 / Night 22-06, counted when
+  assigned shifts overlap at least half the slot). "+" in a cell creates the
+  chosen standard shift as a draft with `source_availability_id` (asks first
+  when the tanod is not available); dragging a chip PATCHes the tanod/day keeping
+  its times (warns that a published shift goes back to draft); a chip opens Edit
+  Shift. "Copy last week" re-creates last week's assigned shifts +7 days, skipping
+  any the tanod is not available for or that already exist. "Publish week with
+  signed paper" publishes every draft of the shown week (batched by 100; PB gets
+  in-app "Publish week"). The print button prints an A4 week grid with coverage
+  and signature lines. The availability review panel and "Create shift from this
+  availability" are gone, as is the Approvals inbox "Availability to review" queue.
+- **Pure helpers** in `services/rosterWeek.js` (all Manila +08:00, independent of
+  the browser time zone). Shifts and availability are loaded page by page (up to
+  20 pages of 100) because `GET /shifts` has no date filter.
+- **Evidence:** `web/tests` 640/0 (new `unit/rosterWeek.test.mjs` and a "Scheduler
+  week grid" suite; personnel tests also pass with TZ=America/Los_Angeles and
+  Asia/Tokyo), `verify-web-wiring.mjs` 809/0. Headless Chromium render of the grid
+  (light, dark, 390 px) and the A4 week print (1 page) against stubbed data. Not
+  verified against a real backend or by a user in a browser.

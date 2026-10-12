@@ -17,39 +17,39 @@ describe('Approvals behaviour', () => {
 
   const groupTitles = (root) => $$('.tw-approvals__group .tw-card__title', root).map((n) => text(n));
 
-  test('shows only the queues the viewer holds the authority for (admin: review + Annex D prepare)', async () => {
+  test('paper-first: an admin sees the signed-paper queues, no in-app note/approve queues', async () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
     await settle();
     const titles = groupTitles(ctx.root);
-    assert.ok(titles.includes('Availability to review'));
-    assert.ok(titles.includes('Accomplishment reports to note'));
+    assert.ok(!titles.includes('Availability to review'), 'availability is fixed per tanod, nothing to review');
+    assert.ok(titles.includes('Shifts awaiting publish'), 'admin publishes with the signed paper');
+    assert.ok(titles.includes('Accomplishment reports waiting for the signed paper'));
     assert.ok(titles.includes('Annex D to prepare'));
-    assert.ok(!titles.includes('Shifts awaiting publish'), 'admin holds no approve_roster authority');
+    assert.ok(titles.includes('Annex D waiting for the signed paper'));
+    assert.ok(!titles.includes('Accomplishment reports to note'));
     assert.ok(!titles.includes('Accomplishment reports to approve'));
     assert.ok(!titles.includes('Annex D to approve'));
   });
 
-  test('Punong Barangay sees the approve queues but no availability review', async () => {
+  test('Punong Barangay sees only roster publishing, no report queues and no availability review', async () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'punong_barangay' });
     await settle();
-    const titles = groupTitles(ctx.root);
-    assert.ok(titles.includes('Shifts awaiting publish'));
-    assert.ok(titles.includes('Accomplishment reports to approve'));
-    assert.ok(titles.includes('Annex D to approve'));
-    assert.ok(!titles.includes('Availability to review'), 'availability review is an Admin/Secretary job');
-    assert.ok(!titles.includes('Annex D to prepare'));
+    assert.deepEqual(groupTitles(ctx.root), ['Shifts awaiting publish']);
   });
 
   test('queue counts come from the server and rows deep-link to the right screen', async () => {
-    const ctx = mountPage(renderApprovalsPage, { role: 'punong_barangay' });
+    const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
     await settle();
-    const group = $('.tw-approvals__group[data-group="approve"]', ctx.root);
-    assert.ok(group, 'approve group present');
-    assert.match(text($('.tw-count-badge', group)), /^1$/);
-    click($('.tw-queue__open', group));
+    const group = $('.tw-approvals__group[data-group="paper-reports"]', ctx.root);
+    assert.ok(group, 'signed-paper report group present');
+    assert.match(text($('.tw-count-badge', group)), /^2$/, 'one prepared (71) plus one noted (72)');
+    const opens = $$('.tw-queue__open', group);
+    click(opens[0]);
+    assert.deepEqual(ctx.navigations.at(-1), { page: 'accomplishment-reports', param: { reportId: 71 } });
+    click(opens[1]);
     assert.deepEqual(ctx.navigations.at(-1), { page: 'accomplishment-reports', param: { reportId: 72 } });
 
-    const annex = $('.tw-approvals__group[data-group="annex-approve"]', ctx.root);
+    const annex = $('.tw-approvals__group[data-group="paper-annex"]', ctx.root);
     click($('.tw-queue__open', annex));
     assert.equal(ctx.navigations.at(-1).page, 'school-zones');
     assert.equal(ctx.navigations.at(-1).param.tab, 'term');
@@ -67,6 +67,10 @@ describe('Approvals behaviour', () => {
     api.on('GET', '/users/:id', () => ({ status: 200, body: { user_id: 2, full_name: 'X', role: 'secretary', official_title: null, approval_authority: [] } }));
     const ctx = mountPage(renderApprovalsPage, { role: 'secretary' });
     await settle();
-    assert.deepEqual(groupTitles(ctx.root), ['Availability to review', 'Swap requests waiting', 'Approved, paper signature pending']);
+    assert.deepEqual(groupTitles(ctx.root), [
+      'Shifts awaiting publish',
+      'Accomplishment reports waiting for the signed paper',
+      'Annex D waiting for the signed paper',
+    ]);
   });
 });

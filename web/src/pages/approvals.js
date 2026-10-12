@@ -1,19 +1,23 @@
 /**
  * approvals.js — Approvals queue (contract §10): one place where an
- * official sees every record waiting on THEM — availability to review,
- * draft shifts to publish, accomplishment reports to note / approve, and
- * Annex D term reports to prepare / approve — each row deep-linking to the
- * screen where the action is taken.
+ * official sees every record waiting on THEM — draft shifts to publish, accomplishment reports and Annex D term reports
+ * waiting for their signed paper, and Annex D drafts to prepare — each row
+ * deep-linking to the screen where the action is taken.
+ *
+ * Paper-first (2026-10-12): the signed paper is the official record, so
+ * reports are approved by the Admin/Secretary recording the signed paper,
+ * not by separate in-app note/approve clicks (those groups were removed).
+ * Tanod availability is fixed per tanod, so there is no availability
+ * review queue any more (it shows as given in the Scheduler's week grid).
  *
  * Role/authority gating is UX only (REFERENCE.md §2 Rule 2: the server
  * re-checks every action). A group is shown only when the viewer can act
  * on it:
- *   - availability to review ........ role admin or secretary
- *   - shifts awaiting publish ....... authority approve_roster
- *   - reports to note ............... authority note_report
- *   - reports to approve ............ authority approve_report
+ *   - shifts awaiting publish ....... role admin or secretary, or
+ *                                     authority approve_roster
+ *   - reports waiting for paper ..... role admin or secretary
  *   - Annex D to prepare ............ authority prepare_annex_d
- *   - Annex D to approve ............ authority approve_annex_d
+ *   - Annex D waiting for paper ..... role admin or secretary
  * The viewer's authority comes from GET /users/:id (their own record).
  *
  * Each group has its own Loading / Empty / Error-with-retry / Populated
@@ -24,7 +28,7 @@ import { StatStrip } from '../components/StatStrip.js';
 import { getShiftSwapRequests } from '../api/apiClient.js';
 import { icons } from '../components/icons.js';
 import {
-  getAvailability, getShiftsByApproval, getAccomplishmentReports, getTermReports, getUserNames,
+  getShiftsByApproval, getAccomplishmentReports, getTermReports, getUserNames,
 } from '../services/tanodWorkflowApi.js';
 import {
   h, mountPageFrame, showLoading, showError, showEmpty, getMyAuthority,
@@ -39,6 +43,7 @@ const ROW_PREVIEW_LIMIT = 6;
  * `load` returns `{rows, total}` where each row is `{key, title, detail, open}`.
  */
 function buildGroups({ user, navigate, nameOf }) {
+  const isManager = user.role === 'admin' || user.role === 'secretary';
   const person = (row) => {
     if (row.userId === null || row.userId === undefined) return 'Unassigned shift';
     return row.fullName || nameOf(row.userId) || `Tanod #${row.userId}`;
@@ -46,31 +51,10 @@ function buildGroups({ user, navigate, nameOf }) {
 
   return [
     {
-      id: 'availability',
-      title: 'Availability to review',
-      hint: 'Tanod availability waiting for you to accept or ask them to revise.',
-      visible: () => user.role === 'admin' || user.role === 'secretary',
-      load: async () => {
-        const res = await getAvailability({ status: 'submitted', limit: 100 });
-        await nameOf.ensure(res.items);
-        return {
-          total: res.total,
-          rows: res.items.map((r) => ({
-            key: r.availId,
-            title: person(r),
-            detail: `${formatDateOnly(r.periodStart)} to ${formatDateOnly(r.periodEnd)}`,
-            open: () => navigate('personnel', { tab: 'scheduler' }),
-          })),
-        };
-      },
-      openAll: () => navigate('personnel', { tab: 'scheduler' }),
-      openLabel: 'Open Scheduler',
-    },
-    {
       id: 'shifts',
       title: 'Shifts awaiting publish',
-      hint: 'Draft shifts. Tanods only see a shift once it is published.',
-      visible: (a) => a.has('approve_roster'),
+      hint: 'Draft shifts. Tanods only see a shift once it is published. Print the schedule, have it signed, then publish with the signed paper.',
+      visible: (a) => isManager || a.has('approve_roster'),
       load: async () => {
         // Drafts that have not finished yet (shifts end_at after the start of a week ago); older
         // drafts would otherwise fill the oldest-first 100-row page and hide the ones being planned.
@@ -90,64 +74,12 @@ function buildGroups({ user, navigate, nameOf }) {
       openLabel: 'Open Scheduler',
     },
     {
-      id: 'swaps',
-      title: 'Swap requests waiting',
-      hint: 'Tanod shift swap requests nobody has approved or denied yet.',
-      visible: () => user.role === 'admin' || user.role === 'secretary',
-      load: async () => {
-        const res = await getShiftSwapRequests({ limit: 100 });
-        const pending = res.items.filter((r) => r.status === 'pending');
-        await nameOf.ensure([{ fullName: '' }]);
-        return {
-          total: pending.length,
-          rows: pending.map((r) => ({
-            key: r.requestId,
-            title: nameOf(r.requestingUserId) || `Tanod #${r.requestingUserId}`,
-            detail: r.targetUserId ? 'Swap with a named tanod' : 'Open request (any eligible tanod)',
-            open: () => navigate('personnel', { tab: 'swaps' }),
-          })),
-        };
-      },
-      openAll: () => navigate('personnel', { tab: 'swaps' }),
-      openLabel: 'Open Swap requests',
-    },
-    {
-      id: 'paper',
-      title: 'Approved, paper signature pending',
-      hint: 'Approved accomplishment reports whose signed paper copy has not been recorded. The paper is the official record.',
-      visible: () => user.role === 'admin' || user.role === 'secretary',
-      load: async () => {
-        const res = await getAccomplishmentReports({ status: 'approved', paperPending: true, limit: 100 });
-        await nameOf.ensure(res.items);
-        return {
-          total: res.total,
-          rows: res.items.map((r) => ({
-            key: r.reportId,
-            title: person(r),
-            detail: formatMonthLabel(r.month),
-            open: () => navigate('accomplishment-reports', { reportId: r.reportId }),
-          })),
-        };
-      },
-      openAll: () => navigate('accomplishment-reports', { status: 'approved', paperPending: true }),
-      openLabel: 'Open reports',
-    },
-    {
-      id: 'note',
-      title: 'Accomplishment reports to note',
-      hint: 'Reports a tanod has submitted and nobody has noted yet.',
-      visible: (a) => a.has('note_report'),
-      load: () => loadReports('prepared'),
+      id: 'paper-reports',
+      title: 'Accomplishment reports waiting for the signed paper',
+      hint: 'Submitted reports. Print, have them signed, then record the signed paper.',
+      visible: () => isManager,
+      load: () => loadReports(['prepared', 'noted']),
       openAll: () => navigate('accomplishment-reports', { status: 'prepared' }),
-      openLabel: 'Open reports',
-    },
-    {
-      id: 'approve',
-      title: 'Accomplishment reports to approve',
-      hint: 'Noted reports waiting for final approval.',
-      visible: (a) => a.has('approve_report'),
-      load: () => loadReports('noted'),
-      openAll: () => navigate('accomplishment-reports', { status: 'noted' }),
       openLabel: 'Open reports',
     },
     {
@@ -160,22 +92,23 @@ function buildGroups({ user, navigate, nameOf }) {
       openLabel: 'Open Term Report',
     },
     {
-      id: 'annex-approve',
-      title: 'Annex D to approve',
-      hint: 'Prepared term reports waiting for approval.',
-      visible: (a) => a.has('approve_annex_d'),
+      id: 'paper-annex',
+      title: 'Annex D waiting for the signed paper',
+      hint: 'Prepared term reports. Print, have them signed, then record the signed paper.',
+      visible: () => isManager,
       load: () => loadTerms('prepared'),
       openAll: () => navigate('school-zones', { tab: 'term' }),
       openLabel: 'Open Term Report',
     },
   ];
 
-  async function loadReports(status) {
-    const res = await getAccomplishmentReports({ status, limit: 100 });
-    await nameOf.ensure(res.items);
+  async function loadReports(statuses) {
+    const pages = await Promise.all(statuses.map((status) => getAccomplishmentReports({ status, limit: 100 })));
+    const items = pages.flatMap((res) => res.items);
+    await nameOf.ensure(items);
     return {
-      total: res.total,
-      rows: res.items.map((r) => ({
+      total: pages.reduce((sum, res) => sum + res.total, 0),
+      rows: items.map((r) => ({
         key: r.reportId,
         title: person(r),
         detail: formatMonthLabel(r.month),
@@ -222,7 +155,7 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
     root, user, onLoggedOut, navigate,
     activeKey: 'approvals',
     title: 'Approvals',
-    subtitle: 'Everything waiting on your review, note, approval or publish',
+    subtitle: 'Everything waiting on your review, signed paper or publish',
     icon: icons.checkCircle,
   });
 

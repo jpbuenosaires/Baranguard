@@ -54,6 +54,16 @@ sensitive map test can fail in a full run, passes alone), h16 59, wave1a 145, ro
 accomplishment 339, paper-approvals 280, w2-reports 41, pentest-incidents 74, sprint4-
 phase2-3 73, sprint7-audit 60, scheduler-fatigue 55.
 
+**Scheduler week grid (2026-10-12, DEVLOG 2026-10-12 (3), PR #4), web only, no
+migration.** Tanod availability is fixed per tanod: the web shows it as given and
+never accepts or revises it (review panel and Approvals queue removed; the
+`PATCH /availability/:id` endpoint and mobile are unchanged). Personnel >
+Scheduler opens on a week grid (add standard shifts with "+", drag to move,
+outside-availability / 56 h / 12 h warnings, coverage row, Copy last week,
+Publish week with signed paper, A4 week print); List keeps the old table.
+`web/tests` 640/0, wiring 809/0, headless-Chromium render with stub data only;
+not tested against a real backend.
+
 **Logic review (2026-10-09, DEVLOG 2026-10-09 (1)), local `main`, not pushed:**
 an Admin can now resolve a `pending`/`reopened` incident that needed no dispatch
 with a mandatory reason (migration **0039** `incident.resolve_reason`, not applied

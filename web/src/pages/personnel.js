@@ -75,7 +75,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   const canResolveSwaps = isAdmin || user.role === 'secretary';
 
   // Admin: Users, Scheduler, Swap requests. Secretary: Scheduler and Swap
-  // requests (build the roster, review availability, resolve swaps).
+  // requests (build the roster, see fixed availability, resolve swaps).
   // Punong Barangay: Scheduler only (roster publishing). The server checks
   // role and approval authority on every action; the Users endpoints are
   // Admin-only. Swap requests stay a tab of their own so they remain one

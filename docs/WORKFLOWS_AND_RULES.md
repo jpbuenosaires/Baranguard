@@ -117,13 +117,13 @@ flowchart TD
 
     Login --> AccReports["Accomplishment Reports Hub"]
     AccReports --> ReviewEntries["Inspect Tanod Duty Entries (back-dated up to 62 days) & Flagged Variances"]
-    ReviewEntries --> NoteOrApprove["Note or Approve Report (If granted note_report / approve_report)"]
+    ReviewEntries --> PrintSign["Print Report, Have It Signed on Paper"]
     ReviewEntries --> ReturnReport["Return Report to Tanod (Mandatory return_reason)"]
 
     Login --> Pers["Personnel Hub"]
-    Pers --> ViewSched["Scheduler Tab: Create / Edit Draft Shifts (Publish needs approve_roster)"]
+    Pers --> ViewSched["Scheduler Tab: Create / Edit Draft Shifts, Print, Publish With Signed Paper"]
     Pers --> SwapRev["Swap Requests Tab: Approve or Reject"]
-    AccReports --> PaperRec["Record Paper Signature Date / Record Approval From Paper / Upload Scan"]
+    PrintSign --> PaperRec["Record Signed Paper (signer + date) / Correct Paper Date / Upload Scan"]
 ```
 
 ---
@@ -148,9 +148,8 @@ flowchart TD
     Dash --> ClickInc["Click Specific Recent Incident → Incident Detail (Read-Only)"]
     
     Dash --> ApprInbox["Approvals Inbox"]
-    ApprInbox --> PubRoster["Approve & Publish Rosters (approve_roster)"]
-    ApprInbox --> SignAccomp["Note / Approve Monthly Accomplishment Reports (note_report / approve_report)"]
-    ApprInbox --> SignAnnexD["Approve Annex D Term Reports (approve_annex_d)"]
+    ApprInbox --> PubRoster["Publish Rosters (approve_roster)"]
+    Dash --> SignPaper["Sign Printed Accomplishment Reports, Rosters and Annex D on Paper (recorded by the Secretary/Admin)"]
 
     Dash --> GIS["GIS Live Map"]
     GIS --> MonitorPatrols["View Active Tanod Patrol Positions & Sector Heatmaps"]
@@ -295,27 +294,28 @@ stateDiagram-v2
 
 ### 3. Monthly Accomplishment Report
 * **Database Column:** `accomplishment_report.status` (`open`, `prepared`, `noted`, `approved`, `returned`)
-* **Authority Gate:** Tanod submits; holders of `note_report` note; holders of `approve_report` approve. Preparer can never note/approve (`assertNotPreparer`).
+* **Authority Gate:** Tanod submits; the report is printed and signed on paper, then an Admin/Secretary records the signed paper naming a signer who holds `approve_report` (paper-first, 2026-10-12). The in-app note/approve endpoints still exist but the web no longer offers them. Preparer can never be the signer (`assertNotPreparer`).
 
 ```mermaid
 stateDiagram-v2
     [*] --> open : Created for Tanod for month YYYY-MM
     open --> prepared : Tanod submits month (Online only)
-    prepared --> noted : Desk / Official notes report (Requires note_report)
-    noted --> approved : Punong Barangay approves report (Requires approve_report)
+    prepared --> approved : Admin/Secretary records the signed paper (signer holds approve_report)
+    prepared --> noted : (API only) official notes in-app (note_report)
+    noted --> approved : Admin/Secretary records the signed paper, or (API only) in-app approve
     
     prepared --> returned : Official returns report with return_reason
     noted --> returned : Official returns report with return_reason
     
     returned --> prepared : Tanod edits entries & resubmits
-    approved --> [*] : Locked in-system; flagged "paper signature pending" until the paper date is recorded (paper is the official copy)
+    approved --> [*] : Locked in-system; paper is the official copy (the paper date is already known when approved from paper)
 ```
 
 ---
 
 ### 4. Shift Schedule & Roster Publication
 * **Database Column:** `shift_schedule.approval_status` (`draft`, `published`) plus `pending_reapproval`
-* **Authority Gate:** Admin or Secretary creates draft; holder of `approve_roster` publishes (or Secretary/Admin records a paper approval naming a signer who holds it).
+* **Authority Gate:** Admin or Secretary creates draft, prints it and has it signed, then publishes with the signed paper naming a signer who holds `approve_roster`. A Punong Barangay holding `approve_roster` can still publish in-app.
 
 ```mermaid
 stateDiagram-v2
@@ -332,13 +332,13 @@ stateDiagram-v2
 
 ### 5. Safer School Zones Annex D Term Report
 * **Database Column:** `ssz_term_report.status` (`draft`, `prepared`, `approved`, `submitted`)
-* **Authority Gate:** Admin/Secretary drafts; `prepare_annex_d` prepares; `approve_annex_d` approves; Admin/Secretary marks submitted. Preparer cannot approve.
+* **Authority Gate:** Admin/Secretary drafts; `prepare_annex_d` prepares; it is printed and signed, then Admin/Secretary records the signed paper naming a signer holding `approve_annex_d`; Admin/Secretary marks submitted. Preparer cannot be the signer.
 
 ```mermaid
 stateDiagram-v2
     [*] --> draft : Created with live Annex D term counts
     draft --> prepared : Prepared by designated official (prepare_annex_d)
-    prepared --> approved : Approved by Punong Barangay (approve_annex_d)
+    prepared --> approved : Admin/Secretary records the signed paper (signer holds approve_annex_d)
     approved --> submitted : Marked as submitted to DILG (Admin/Secretary)
     submitted --> [*] : Final statutory filing
 ```
@@ -482,6 +482,9 @@ stateDiagram-v2
 71. An incident that needed no dispatch (a phone call or an on-the-spot walk-in settled it) is closed by the Admin as `resolved` with a mandatory reason, so it is counted as handled and never has to be mislabelled `cancelled`; it has no dispatch and therefore no response time.
 72. Resolving an SOS is a desk action on the web dashboard; the Chief Tanod's phone may acknowledge only, so the desk (Admin on the web) must resolve it before the alert clears.
 
+### XIV. Paper-First Signing (2026-10-12)
+73. The signed paper is the official approval of accomplishment reports, rosters and Annex D. The web dashboard no longer offers separate in-app note/approve clicks: the Admin or Secretary records the signed paper (signer and date), which approves an accomplishment report from `prepared` or `noted`, an Annex D from `prepared`, and publishes draft shifts. The in-app note/approve/publish endpoints are kept, and a Punong Barangay holding `approve_roster` may still publish in-app.
+
 ---
 
 # Part 4: Scenario Walk-Throughs (for checking)
@@ -565,7 +568,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 2. The Admin or Secretary reviews it: `accepted`, or `revised` with a note (a revised period can be resubmitted).
 3. In Personnel, Scheduler, the Admin presses "Create shift from this availability". The form is prefilled and the shift is saved as `draft` (Rules 26, 69). The tanod cannot see it yet.
 4. Scheduling the same tanod for more than 12 hours in one Manila day is refused with `DAILY_HOURS_EXCEEDED` (Rule 27). Missing coverage is only a warning at publish (Rule 30).
-5. An official holding `approve_roster` (usually the Punong Barangay) publishes. The shift becomes visible to the tanod. If nobody with that authority is present, a Secretary or Admin can record a paper approval naming a signer who holds it (Rules 26, 63).
+5. The Admin or Secretary prints the schedule and the official holding `approve_roster` (usually the Punong Barangay) signs it. The Admin or Secretary then presses "Publish with signed paper", naming the signer and date. The shift becomes visible to the tanod (Rules 26, 63, 73).
 6. A swap request on a `draft` shift returns 404 (Rule 29). On a published shift the swap goes to the Admin or Secretary for review.
 7. Changing the tanod, start or end of a published shift reverts it to `draft` (Rule 28). An approved swap also sets it to `draft` with `pending_reapproval`, but the tanod still sees it.
 - **State:** 4 and the availability appendix below. **Evidence:** `verify-roster-accomplishment.sh` (332), `verify-scheduler-fatigue.sh`, `verify-paper-approvals.sh`. **UAT:** S-19, A-19, P-05. **Not demonstrated:** the 12-hour cap under real concurrent writes.
@@ -574,16 +577,16 @@ Each scenario is one realistic story you can follow step by step and compare wit
 1. During the month the tanod enters daily work on the phone with a confirmed duration of 1 to 1440 minutes. A work date in the future or more than 62 days back is refused (Rule 33).
 2. The server stores its own suggested duration from on-duty time. If the two differ by more than 30 minutes the entry is flagged for the approver (Rule 33).
 3. The tanod submits the whole month online. It cannot be queued offline (Rule 34). Status goes `open` to `prepared`.
-4. An official with `note_report` notes it (`noted`). An official with `approve_report` approves it (`approved`). The tanod, as preparer, can never note or approve their own report (Rule 35).
+4. The Admin or Secretary prints the report and the officials sign it on paper. The Admin or Secretary then presses "Record signed paper", naming the approving signer (who holds `approve_report`) and the date. The report goes straight from `prepared` to `approved`. The tanod, as preparer, can never be the signer (Rules 35, 73).
 5. An official who disagrees returns it with a reason (1 to 255 characters). The tanod edits and resubmits.
-6. An approved report is locked. It shows "paper signature pending" until the Secretary or Admin records the date it was signed on paper, and the paper copy is the official record (Rule 62).
+6. An approved report is locked, and the paper copy is the official record. A scan of the signed paper can be attached (Rules 62, 64).
 7. An Admin cannot grant or remove their own `approve_*` authorities; a second Admin must (Rule 36).
 - **State:** 3. **Evidence:** `verify-roster-accomplishment.sh`, `verify-paper-approvals.sh` (271). **UAT:** P-06.
 
 ### Scenario 10. Annex D term report and school check-in
 1. The tanod checks in at a school on the phone and later checks out. A check-in time more than 5 minutes ahead or more than 62 days back is refused. A check-out before the check-in, or more than 24 hours after it, is refused (Rules 39, 40).
 2. The Secretary maintains the school list (Annex B). On an incident the school link and the short Annex C-1 text are stored apart from the narrative, with no student names (Rule 43). On a mobile report an unusable `school_id` is saved as empty so the offline report still goes through (Rule 41).
-3. The Secretary or Admin creates the Annex D term report from live term counts (`draft`). An official with `prepare_annex_d` prepares it. A different official with `approve_annex_d` approves it. The Secretary or Admin marks it submitted (Rule 42).
+3. The Secretary or Admin creates the Annex D term report from live term counts (`draft`). An official with `prepare_annex_d` prepares it. It is printed and signed by a different official holding `approve_annex_d`, and the Secretary or Admin records the signed paper. The Secretary or Admin marks it submitted (Rules 42, 73).
 - **State:** 5. **Evidence:** `verify-school-zones.sh` (213). **UAT:** S-10 to S-12, P-07. **Open:** the circular's deadlines and Annex A are unknown, so no deadline is hardcoded.
 
 ### Scenario 11. Who can read the confidential narrative

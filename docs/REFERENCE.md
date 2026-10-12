@@ -206,6 +206,15 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   is resolved as before. **This amends Master Reference §2 rule 21, which
   said only a dispatched incident may be resolved; the Master Reference text
   has not been edited yet.**
+- **Paper-first signing (2026-10-12, no migration):** the signed paper is the
+  approval. Web no longer offers in-app Note/Approve on accomplishment reports
+  or Approve on Annex D; Admin/Secretary "Record signed paper" instead.
+  `POST /accomplishment-reports/:id/record-paper-approval` now also accepts a
+  `prepared` report (`noted_by` stays NULL). Admin/Secretary always publish
+  shifts with `recorded_from_paper`; a PB holding `approve_roster` can still
+  publish in-app. The note/approve/publish endpoints are unchanged. Approvals
+  inbox and dashboard widget show "waiting for the signed paper" queues to
+  Admin/Secretary. Rule 73 in `docs/WORKFLOWS_AND_RULES.md`.
 - **Rule 12 amendment:** an Admin login with a well-formed `X-Device-Id` gets a
   device session (24h sliding, 7-day cap) limited to
   `SessionPolicy::ADMIN_DEVICE_ALLOWLIST` (anything else 403
@@ -660,8 +669,10 @@ note/approve/return only for holders of the authority, print layout) ·
 (tabs Schools/Annex B + print, Incidents/C-1 + print, Term Report/Annex D
 live counts + create/prepare/approve/mark-submitted + signature page; no
 deadline hardcoded) · Personnel: Users tab edits `official_title` and
-approval authorities (Admin); Scheduler tab gained availability review,
-draft/published badges, Publish with coverage warnings · Dashboard
+approval authorities (Admin); Scheduler tab gained draft/published badges
+and Publish with coverage warnings (its availability review was replaced
+2026-10-12 by a week grid that shows availability as fixed, see DEVLOG
+2026-10-12 (3)) · Dashboard
 pending-approvals widget (PB landing) · Dispatch "Delegated to" action ·
 Incident Detail/Management school link, C-1 fields and referrals section.
 Secretary nav gained Approvals, Accomplishment Reports, Referral Log, Safer

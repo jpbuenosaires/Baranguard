@@ -12,9 +12,9 @@
  *                separate from `raw_narrative` on purpose — no student or
  *                victim names appear anywhere here.
  *   Term Report  Annex D: live counts for a term range, then draft ->
- *                prepared -> approved -> submitted with the authority
- *                gating the contract names, and the Annex D + signature
- *                page print. No deadline is hardcoded anywhere; the form
+ *                prepared -> approved -> submitted. Approval is recorded
+ *                from the signed paper (Admin/Secretary, paper-first
+ *                2026-10-12), and the Annex D + signature page print. No deadline is hardcoded anywhere; the form
  *                text defers to the circular exactly as the user's file does.
  *
  * Authority gating is UX only (REFERENCE.md §2 Rule 2); the server
@@ -37,7 +37,7 @@ import { icons } from '../components/icons.js';
 import {
   getSchools, createSchool, updateSchool, getSchoolIncidents, getIncidentReferrals,
   getSchoolTermLive, getTermReports, getTermReport, createTermReport, updateTermReport,
-  prepareTermReport, approveTermReport, markTermReportSubmitted, getUserById, getUserNames,
+  prepareTermReport, markTermReportSubmitted, getUserById, getUserNames,
   REFERRED_TO_LABELS, SCHOOL_LEVEL_LABELS, SCHOOL_TYPE_LABELS, TERM_STATUS_LABELS,
 } from '../services/tanodWorkflowApi.js';
 import {
@@ -859,14 +859,15 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
       detailHost.append(back, head);
 
-      // Paper signature + scan (Wave 1) once the report is prepared, i.e.
-      // from the point it can be approved on paper.
+      // Paper signature + scan once the report is prepared. Paper-first
+      // (2026-10-12): recording the signed paper is how Annex D is approved;
+      // the separate in-app Approve button was removed (endpoint kept).
       if (report.status !== 'draft') {
         detailHost.appendChild(PaperApprovalPanel({
           entityType: 'ssz_term_report',
           report,
           user,
-          recordStatus: 'prepared',
+          recordStatuses: ['prepared'],
           signerAuthority: 'approve_annex_d',
           preparerUserId: report.preparedBy ?? null,
           approvedStatuses: ['approved', 'submitted'],
@@ -912,7 +913,6 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       const preparedBySelf = report.preparedBy === user.userId;
 
       const canPrepare = report.status === 'draft' && mine.authority.has('prepare_annex_d');
-      const canApprove = report.status === 'prepared' && mine.authority.has('approve_annex_d') && !preparedBySelf;
       const canSubmit = report.status === 'approved' && canEdit;
 
       if (canPrepare) {
@@ -921,25 +921,11 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         btn.addEventListener('click', async () => {
           const ok = await confirmDialog({
             title: 'Prepare this term report?',
-            description: 'The counts are recomputed from live data and the report moves to Prepared. Someone else must approve it.',
+            description: 'The counts are recomputed from live data and the report moves to Prepared. Then print it, have it signed and record the signed paper.',
             confirmLabel: 'Prepare report',
             onConfirmAsync: async () => { try { await prepareTermReport(report.reportId); } catch (err) { throw new Error(actionErrorMessage(err)); } },
           });
           if (ok) { showToast('Term report prepared.', { variant: 'success' }); loadDetail(report.reportId); }
-        });
-        bar.appendChild(btn);
-      }
-      if (canApprove) {
-        const btn = h('button', 'primary', 'Approve report');
-        btn.type = 'button';
-        btn.addEventListener('click', async () => {
-          const ok = await confirmDialog({
-            title: 'Approve this term report?',
-            description: 'Approval is final. It can then be printed, signed and marked as submitted.',
-            confirmLabel: 'Approve report',
-            onConfirmAsync: async () => { try { await approveTermReport(report.reportId); } catch (err) { throw new Error(actionErrorMessage(err)); } },
-          });
-          if (ok) { showToast('Term report approved.', { variant: 'success' }); loadDetail(report.reportId); }
         });
         bar.appendChild(btn);
       }
@@ -957,8 +943,8 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       if (mine.failed) return 'Could not check your approval authority, so no actions are offered. Reload to try again.';
       if (report.status === 'draft') return 'Waiting for someone with the Annex D prepare authority to prepare this report.';
       if (report.status === 'prepared') return preparedBySelf
-        ? 'You prepared this report, so someone else with the approve authority must approve it.'
-        : 'Waiting for an official with the Annex D approve authority.';
+        ? 'You prepared this report, so someone else with the approve authority must sign it. Print it, have it signed, then record the signed paper above.'
+        : 'Waiting for the signed paper. Print the report, have it signed, then the Secretary or Admin records it above.';
       if (report.status === 'approved') return 'Approved. An Admin or Secretary records receipt once it is submitted.';
       return 'This report has been submitted. Nothing further to do.';
     }

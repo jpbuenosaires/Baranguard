@@ -74,15 +74,17 @@ describe('Safer School Zones behaviour', () => {
     assert.ok(!buttonByText(/^Approve report$/));
   });
 
-  test('a prepared report offers Approve only to an approve_annex_d holder who did not prepare it', async () => {
+  test('paper-first: a prepared report has no in-app Approve button; the PB is told the signed paper is awaited', async () => {
     mountPage(renderSchoolZonesPage, { role: 'punong_barangay', param: { tab: 'term', reportId: 82 } });
     await settle();
-    assert.ok(buttonByText(/^Approve report$/));
+    assert.ok(!buttonByText(/^Approve report$/));
+    assert.match(text($('.page-content')), /Waiting for the signed paper/);
     cleanup();
     clearAuthorityCache();
     mountPage(renderSchoolZonesPage, { role: 'admin', param: { tab: 'term', reportId: 82 } });
     await settle();
-    assert.ok(!buttonByText(/^Approve report$/), 'admin lacks approve_annex_d (and prepared it)');
+    assert.ok(!buttonByText(/^Approve report$/));
+    assert.ok(buttonByText(/^Record signed paper$/), 'the Admin records the signed paper instead');
   });
 
   test('the Annex D preview carries the term label from the report and no hardcoded deadline', async () => {
