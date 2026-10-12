@@ -30,12 +30,12 @@ describe('Accomplishment Reports behaviour', () => {
     assert.ok(api.calls.some((c) => c.path === '/accomplishment-reports' && c.query.status === 'noted'));
   });
 
-  test('paper-first: no in-app Note or Approve buttons; the Admin records the signed paper on a prepared report', async () => {
+  test('no in-app Note or Approve buttons and no paper panel on a prepared report', async () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 71 } });
     await settle();
     assert.ok(!buttonByText(/^Note this report$/), 'the separate note step is gone');
     assert.ok(!buttonByText(/^Approve this report$/));
-    assert.ok(buttonByText(/^Record signed paper$/), 'report 71 is prepared, so the signed paper can be recorded');
+    assert.ok(!buttonByText(/^Record signed paper$/), 'the paper panel was removed from this screen');
     assert.ok(buttonByText(/^Return to tanod$/), 'admin holds note_report, so Return stays');
   });
 
