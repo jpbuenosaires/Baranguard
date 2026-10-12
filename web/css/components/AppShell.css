@@ -494,11 +494,11 @@
 .topbar__search input[type="search"]::placeholder {
   color: var(--color-text-tertiary);
 }
-.topbar__search input[type="search"]:focus {
+.topbar__search input[type="search"]:focus-visible {
   background: var(--color-surface);
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
-  outline: none;
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 1px;
 }
 .topbar__search-kbd {
   position: absolute;

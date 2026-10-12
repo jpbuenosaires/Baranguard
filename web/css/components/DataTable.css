@@ -201,3 +201,198 @@
 .data-table__stacked-primary {
   font-weight: 500;
 }
+
+/* ==========================================================================
+   Unified Table Card (Figma reference layout: integrated filter toolbar,
+   sticky thead, seamless table without nested borders, sticky pagination)
+   ========================================================================== */
+
+.unified-table-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+}
+
+.unified-table-card .data-table-wrap {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.unified-table-card .data-table-wrap:focus-visible {
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+.unified-table-card .data-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.unified-table-card .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-bg) !important;
+  box-shadow: 0 1px 0 var(--color-border);
+}
+
+.unified-table-card .data-table__pagination {
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+/* Integrated filter bars across all pages when inside unified-table-card */
+.unified-table-card > .c1-filters,
+.unified-table-card > .ssz-control-bar,
+.unified-table-card > .personnel-filter-bar,
+.unified-table-card > .acc-control-bar,
+.unified-table-card > .ref-control-bar,
+.unified-table-card > .audit-filter-panel {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  border-bottom: 1px solid var(--color-border) !important;
+  padding: var(--spacing-sm) var(--spacing-md) !important;
+}
+
+.unified-table-card > .c1-facets-bar {
+  border: none !important;
+  border-bottom: 1px solid var(--color-border) !important;
+  background: color-mix(in srgb, var(--color-bg) 50%, transparent) !important;
+  padding: var(--spacing-xs) var(--spacing-md) !important;
+  margin: 0 !important;
+}
+
+/* ==========================================================================
+   Standard Table Header Controls: Search Inputs & Dropdowns with Arrow Down
+   ========================================================================== */
+
+/* 1. Standard Header Filter Selects with Arrow Down */
+.unified-table-card select,
+.acc-status-select,
+.ref-select,
+.c1-select,
+.incident-filter-select,
+.personnel-filter-select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  height: var(--control-height, 2.25rem);
+  min-height: var(--control-height, 2.25rem);
+  padding: 0 2.25rem 0 0.85rem !important;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background-color: var(--color-surface) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.75rem center !important;
+  background-size: 1rem 1rem !important;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+[data-theme="dark"] .unified-table-card select,
+[data-theme="dark"] .acc-status-select,
+[data-theme="dark"] .ref-select,
+[data-theme="dark"] .c1-select,
+[data-theme="dark"] .incident-filter-select,
+[data-theme="dark"] .personnel-filter-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") !important;
+}
+
+.unified-table-card select:focus-visible,
+.acc-status-select:focus-visible,
+.ref-select:focus-visible,
+.c1-select:focus-visible,
+.incident-filter-select:focus-visible,
+.personnel-filter-select:focus-visible {
+  border-color: var(--color-primary);
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+/* 2. Standard Header Search Input with Icon */
+.unified-table-card .acc-search-box,
+.unified-table-card .ref-search-box,
+.unified-table-card .audit-search-field,
+.unified-table-card .personnel-search-wrap,
+.unified-table-card .c1-search-box,
+.unified-table-card .incident-search-wrap,
+.unified-table-card .citizen-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 140px;
+  max-width: 24rem;
+}
+
+.unified-table-card .acc-search-icon,
+.unified-table-card .ref-search-icon,
+.unified-table-card .audit-search-field__icon,
+.unified-table-card .personnel-search-icon,
+.unified-table-card .c1-search-icon,
+.unified-table-card .incident-search-icon,
+.unified-table-card .citizen-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.unified-table-card .acc-search-input,
+.unified-table-card .ref-search-input,
+.unified-table-card .audit-search-field input,
+.unified-table-card .personnel-search-input,
+.unified-table-card .c1-search-box input,
+.unified-table-card .incident-search-input,
+.unified-table-card .citizen-search-input {
+  width: 100%;
+  height: var(--control-height, 2.25rem);
+  min-height: var(--control-height, 2.25rem);
+  padding-left: 36px !important;
+  padding-right: var(--spacing-sm-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.unified-table-card .acc-search-input:focus-visible,
+.unified-table-card .ref-search-input:focus-visible,
+.unified-table-card .audit-search-field input:focus-visible,
+.unified-table-card .personnel-search-input:focus-visible,
+.unified-table-card .c1-search-box input:focus-visible,
+.unified-table-card .incident-search-input:focus-visible,
+.unified-table-card .citizen-search-input:focus-visible {
+  border-color: var(--color-primary);
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 1px;
+}
