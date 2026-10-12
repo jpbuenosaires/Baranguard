@@ -529,6 +529,8 @@ expect_eq "Tanod now sees the legacy + 2 newly published shifts" "$(jget "$BODY"
 api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S_UN_ID]}" -H "Idempotency-Key: $(uuid)"
 expect_code "Publishing an unassigned shift" 200
 expect_eq "  unassigned shift does not provide coverage -> NO_COVERAGE for its date" "$(jget "$BODY" warnings)" "[{\"code\":\"NO_COVERAGE\",\"date\":\"$D5\"}]"
+expect_eq "0040: exactly one roster_published notification so far (replay, already-published and unassigned publishes notify nobody)" "$(db_one "SELECT COUNT(*) FROM notification WHERE notification_type='roster_published';")" "1"
+expect_eq "  its targets are exactly the assignees of the two newly published shifts" "$(db_one "SELECT COUNT(*) FROM notification_target nt JOIN notification n ON n.notification_id=nt.notification_id WHERE n.notification_type='roster_published';")" "$(db_one "SELECT COUNT(DISTINCT user_id) FROM shift_schedule WHERE shift_id IN ($S1_ID,$S2_ID) AND user_id IS NOT NULL;")"
 # authority, not role: grant the secretary approve_roster and she can publish
 api POST "/shifts/publish" "$SEC2_T" "{\"shift_ids\":[$S8B]}" -H "Idempotency-Key: $(uuid)"
 expect_code "Secretary holding approve_roster (granted in section 3) publishes" 200
@@ -722,7 +724,7 @@ api GET "/accomplishment-reports/999999" "$ADMIN_T" ""
 expect_code "GET nonexistent report" 404
 api GET "/accomplishment-reports/$R2_ID" "$SEC_T" ""
 expect_code "Secretary WITHOUT note/approve authority GET it" 200
-expect_eq "  records officer reads the entry text (needed for the printed paper report)" "$(jget "$BODY" entries.0.accomplishment_text)/$(jget "$BODY" text_visible)/$(jget "$BODY" entries.0.duration_minutes)" "T2 first entry edited/true/300"
+expect_eq "  text visible anyway (paper-first: the Secretary prints the form)" "$(jget "$BODY" entries.0.accomplishment_text)/$(jget "$BODY" text_visible)/$(jget "$BODY" entries.0.duration_minutes)" "T2 first entry edited/true/300"
 api GET "/accomplishment-reports/$R2_ID" "$ADMIN_T" ""
 expect_eq "Admin (holds note_report) sees the text" "$(jget "$BODY" text_visible)" "true"
 expect_eq "  entry duration_flag / suggested exposed" "$(jget "$BODY" entries.0.duration_flag)/$(jget "$BODY" entries.0.suggested_duration_minutes)" "false/null"
@@ -786,6 +788,7 @@ api POST "/accomplishment-reports/$R2_ID/approve" "$PB_T" "" -H "Idempotency-Key
 expect_code "Replay of the approval (same key)" 200
 api POST "/accomplishment-reports/$R2_ID/approve" "$PB_T" "" -H "Idempotency-Key: $(uuid)"
 expect_code "Approve an already-approved report" 409
+expect_eq "0040: one report_update notification for the approval, to the owning tanod only (replay added none)" "$(db_one "SELECT CONCAT(COUNT(DISTINCT n.notification_id),'/',GROUP_CONCAT(nt.user_id)) FROM notification n JOIN notification_target nt ON nt.notification_id=n.notification_id WHERE n.notification_type='report_update' AND n.accomplishment_report_id=$R2_ID;")" "1/$T2_ID"
 api POST "/accomplishment-reports/$R2_ID/return" "$PB_T" '{"reason":"too late"}' -H "Idempotency-Key: $(uuid)"
 expect_code "Return an approved report" 409
 mkentry "$T2_T" "$D_T2" "$TODAY" "after approval" 30
@@ -817,6 +820,7 @@ expect_code "Admin (note_report) returns a prepared report" 200
 expect_eq "  status returned + reason" "$(jget "$BODY" status)/$(jget "$BODY" return_reason)" "returned/Please add the Tuesday patrol"
 api POST "/accomplishment-reports/$R3_ID/return" "$ADMIN_T" '{"reason":"Please add the Tuesday patrol"}' -H "Idempotency-Key: $RET_KEY"
 expect_code "Replay of the return (same key)" 200
+expect_eq "0040: one report_update notification for the return (replay added none)" "$(db_one "SELECT COUNT(*) FROM notification WHERE notification_type='report_update' AND accomplishment_report_id=$R3_ID;")" "1"
 api PATCH "/accomplishment-entries/$E3_ID" "$T3_T" '{"duration_minutes":45}' -H "$D_T3"
 expect_code "Entries are editable again after a return" 200
 mkentry "$T3_T" "$D_T3" "$TODAY" "added after return" 20

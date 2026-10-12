@@ -84,11 +84,11 @@ async function request(method, path, { query, body, idempotencyKey } = {}) {
 
 /** Contract §2: the five approval authorities (a MariaDB SET, as an array). */
 export const APPROVAL_AUTHORITIES = [
-  { value: 'note_report', label: 'Note accomplishment reports' },
-  { value: 'approve_report', label: 'Approve accomplishment reports' },
-  { value: 'approve_roster', label: 'Approve and publish duty roster' },
+  { value: 'note_report', label: 'Review and return accomplishment reports' },
+  { value: 'approve_report', label: 'Sign accomplishment reports as approver' },
+  { value: 'approve_roster', label: 'Sign and publish the duty roster' },
   { value: 'prepare_annex_d', label: 'Prepare Annex D term report' },
-  { value: 'approve_annex_d', label: 'Approve Annex D term report' },
+  { value: 'approve_annex_d', label: 'Sign Annex D term report as approver' },
 ];
 
 /** Roles that may hold an authority (ApprovalAuthority::ELIGIBLE_ROLES). */

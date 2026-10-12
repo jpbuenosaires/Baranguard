@@ -65,8 +65,8 @@ import { uuid } from '../services/uuid';
 
 const STATUS_PILL: Record<AccomplishmentReportStatus, { label: string; className: string }> = {
   open: { label: 'Open — add your entries', className: 'status-pill--info' },
-  prepared: { label: 'Submitted — waiting to be noted', className: 'status-pill--pending' },
-  noted: { label: 'Noted — waiting for approval', className: 'status-pill--pending' },
+  prepared: { label: 'Submitted — waiting for the signed paper', className: 'status-pill--pending' },
+  noted: { label: 'Reviewed — waiting for the signed paper', className: 'status-pill--pending' },
   approved: { label: 'Approved', className: 'status-pill--success' },
   returned: { label: 'Returned for changes', className: 'status-pill--critical' },
 };
