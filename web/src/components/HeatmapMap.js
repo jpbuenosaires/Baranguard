@@ -46,6 +46,7 @@ export function HeatmapMap(container) {
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
     attributionControl: false,
+    preserveDrawingBuffer: true,
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');

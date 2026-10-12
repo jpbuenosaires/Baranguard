@@ -32,6 +32,7 @@ export function openPrintPreviewModal({
   sheetHtml = '',
   extraActions = [],
   printedBy = '',
+  orientation = 'portrait',
 } = {}) {
   const returnFocusTo = document.activeElement;
   // Remove any existing print modal first so two never stack
@@ -47,6 +48,8 @@ export function openPrintPreviewModal({
   modal.setAttribute('aria-modal', 'true');
   modal.setAttribute('aria-label', title);
 
+  const isLandscape = orientation === 'landscape';
+
   modal.innerHTML = `
     <div class="print-modal__header">
       <div class="print-modal__title-group">
@@ -60,7 +63,7 @@ export function openPrintPreviewModal({
     </div>
 
     <div class="print-modal__viewport">
-      <div id="${escapeHtml(sheetId)}" class="print-sheet">
+      <div id="${escapeHtml(sheetId)}" class="print-sheet ${isLandscape ? 'print-sheet--landscape' : ''}">
         ${sheetHtml}
         <p class="print-sheet__stamp">Printed ${escapeHtml(formatManilaDateTime(new Date()))} (Philippine time)${printedBy ? ` by ${escapeHtml(printedBy)}` : ''}</p>
       </div>
@@ -92,6 +95,7 @@ export function openPrintPreviewModal({
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   document.body.classList.add('has-print-modal');
+  if (isLandscape) document.body.classList.add('print-orientation-landscape');
   // The stamp is also fed to the @page bottom-left margin box so it repeats on
   // every A4 page without overlapping table rows (see tanod-workflow.css).
   const stampText = modal.querySelector('.print-sheet__stamp')?.textContent || '';
@@ -119,6 +123,7 @@ export function openPrintPreviewModal({
   function close() {
     window.removeEventListener('keydown', onKeyDown);
     document.body.classList.remove('has-print-modal');
+    document.body.classList.remove('print-orientation-landscape');
     document.documentElement.style.removeProperty('--print-stamp');
     overlay.remove();
     if (returnFocusTo && typeof returnFocusTo.focus === 'function' && document.contains(returnFocusTo)) returnFocusTo.focus();

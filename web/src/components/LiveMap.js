@@ -93,6 +93,7 @@ export function LiveMap(container, options = {}) {
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
     attributionControl: false,
+    preserveDrawingBuffer: true,
   });
   if (options.showNavControl !== false) {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
