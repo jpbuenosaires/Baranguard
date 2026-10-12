@@ -859,7 +859,6 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // Filter Bar elements
   const filterBar = document.createElement('div');
   filterBar.className = 'personnel-filter-bar';
-  filterBar.style.marginBottom = 'var(--spacing-md)';
 
   const searchWrap = document.createElement('div');
   searchWrap.className = 'personnel-search-wrap';
@@ -1047,7 +1046,6 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     listToolbar.className = 'scheduler-week-toolbar';
     listToolbar.appendChild(buildViewToggle());
     listPane.appendChild(listToolbar);
-    listPane.appendChild(filterBar);
 
     const filtered = getFilteredShifts();
 
@@ -1172,7 +1170,10 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       },
     });
 
-    listPane.appendChild(table);
+    const tableCard = document.createElement('div');
+    tableCard.className = 'scheduler-table-card unified-table-card';
+    tableCard.append(filterBar, table);
+    listPane.appendChild(tableCard);
   }
 }
 

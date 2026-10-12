@@ -789,7 +789,7 @@ function renderPopulated(container, summary, navigate, role) {
   breakdownGrid.className = 'two-col-grid dashboard-row';
 
   const recentCard = document.createElement('div');
-  recentCard.className = 'card';
+  recentCard.className = 'card unified-table-card dashboard-recent-table-card';
   recentCard.appendChild(cardHeader(
     'Recent Incidents', 'Newest six reports', icons.fileText,
     'The six most recently reported incidents, regardless of the date range above.',
