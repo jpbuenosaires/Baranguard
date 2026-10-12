@@ -25,7 +25,10 @@
   line-height: 1.6;
   font-size: var(--font-size-md);
 }
-.privacy-main:focus { outline: none; }
+.privacy-main:focus-visible {
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 2px;
+}
 .privacy-main h1 { margin: var(--spacing-lg) 0 var(--spacing-sm); }
 .privacy-main h2 {
   font-size: var(--font-size-xl);

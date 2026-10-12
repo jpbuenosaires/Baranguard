@@ -417,6 +417,26 @@ html { font-size: 100%; }
   --shadow-lg: var(--shadow-floating);
   --color-critical-subtle: var(--tint-critical-bg);
 
+  /* Canonical Aliases & Missing Token Fallbacks (Phase 1 Token Consolidation) */
+  --color-danger: var(--color-critical);
+  --color-critical-text: var(--pill-critical-text);
+  --color-neutral-text: var(--pill-neutral-text);
+  --shadow-md: var(--shadow-elevated);
+  --type-action-title: var(--font-size-md);
+
+  /* Semantic Tint Borders (Tested for WCAG non-text 3:1 boundary) */
+  --tint-critical-border: #FCA5A5;
+  --tint-warning-border: #FCD34D;
+  --tint-success-border: #86EFAC;
+  --tint-info-border: #7DD3FC;
+  --tint-neutral-border: #CBD5E1;
+
+  /* Universal Focus Indicator Tokens (WCAG 2.2 SC 2.4.7 / 2.4.13) */
+  --focus-ring-color: #2563EB;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-style: solid;
+
   /* ─── LAYERING SCALE (audit 2026-10-09 D-16) ──────────────────────────
      Toasts sat at 300, under the shared modal (400), ConfirmDialog (400),
      every page modal (999-1000) and the fullscreen maps / print modal
@@ -547,9 +567,11 @@ html { font-size: 100%; }
     --shadow-elevated: var(--dark-shadow-elevated);
     --shadow-floating: var(--dark-shadow-floating);
     --status-responding-text: var(--dark-info);
-    --status-responding-bg: color-mix(in srgb, var(--dark-info) 18%, var(--dark-surface));
     --status-responding-border: color-mix(in srgb, var(--dark-info) 35%, transparent);
     --shadow-card-subtle: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --focus-ring-color: #60A5FA;
+    --color-critical-text: var(--dark-pill-critical-text);
+    --color-neutral-text: var(--dark-pill-neutral-text);
   }
 }
 :root[data-theme="dark"] {
@@ -597,6 +619,9 @@ html { font-size: 100%; }
   --status-responding-bg: color-mix(in srgb, var(--dark-info) 18%, var(--dark-surface));
   --status-responding-border: color-mix(in srgb, var(--dark-info) 35%, transparent);
   --shadow-card-subtle: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --focus-ring-color: #60A5FA;
+  --color-critical-text: var(--dark-pill-critical-text);
+  --color-neutral-text: var(--dark-pill-neutral-text);
 }
 
 * {
@@ -684,7 +709,12 @@ html { font-size: 100%; }
   z-index: var(--z-toast);
   transition: top .2s ease;
 }
-.skip-link:focus { top: var(--spacing-md); outline: none; }
+.skip-link:focus {
+  top: var(--spacing-md);
+  outline: 3px solid var(--color-white);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--color-primary);
+}
 
 /* --- Icon badges --------------------------------------------------------
    "colored box, centered icon, white glyph" — sidebar brand mark, login

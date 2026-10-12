@@ -1,10 +1,4 @@
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* Personnel & Scheduler Stylesheet */
 
 
 /* Filter Bar for Personnel Tabs */
@@ -15,6 +9,27 @@
   gap: var(--spacing-sm);
   flex-wrap: wrap;
   width: 100%;
+}
+
+.personnel-table-card.unified-table-card {
+  margin-top: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.personnel-table-card .personnel-filter-bar {
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  margin-bottom: 0;
+  box-sizing: border-box;
+}
+
+.personnel-table-card .data-table-wrap {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .personnel-filter-bar__left {
@@ -174,7 +189,7 @@
 
 .user-action-btn--danger:hover {
   background: var(--tint-critical-bg);
-  color: var(--color-critical);
+  color: var(--color-critical-text);
   border-color: var(--color-critical);
 }
 
@@ -600,7 +615,7 @@
 
 .fatigue-meter-tier.is-severe {
   background: var(--tint-critical-bg);
-  color: var(--color-critical);
+  color: var(--color-critical-text);
   border: 1px solid var(--color-critical);
 }
 
@@ -760,7 +775,7 @@
   border: 1px solid var(--color-critical);
 }
 .scheduler-fatigue-callout--critical .scheduler-fatigue-callout__title {
-  color: var(--color-critical);
+  color: var(--color-critical-text);
 }
 
 .scheduler-fatigue-callout--warning {
