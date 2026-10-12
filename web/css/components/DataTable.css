@@ -391,7 +391,8 @@
 .unified-table-card .personnel-search-input:focus-visible,
 .unified-table-card .c1-search-box input:focus-visible,
 .unified-table-card .incident-search-input:focus-visible,
-.unified-table-card .citizen-search-input:focus-visible {
+.unified-table-card .citizen-search-input:focus-visible,
+.unified-table-card .ssz-search-input:focus-visible {
   border-color: var(--color-primary);
   outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
   outline-offset: 1px;
