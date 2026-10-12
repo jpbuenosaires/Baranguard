@@ -76,7 +76,12 @@ final class SessionPolicy
      * same X-Device-Id (+ H-09 signature when the device has a key on file)
      * that a Tanod's mobile writes carry — see AuthMiddleware.
      *
-     * Deliberately NOT here: PATCH /tanod-sos/:id/resolve, GET /users, the
+     * PATCH /tanod-sos/:id/resolve was added 2026-10-12 (workflow gap #6):
+     * the Chief Tanod's phone may close an SOS when nobody is at the desk at
+     * night. Signed write, same as acknowledge; the controller still demands
+     * role admin + same tenant, so a Tanod device session cannot resolve.
+     *
+     * Deliberately NOT here: GET /users, the
      * audit log, incident resolve/lifecycle, reports/export, system
      * settings, availability, shift publishing, notifications/ack-all.
      * `/dispatch-offers*` is listed by pattern ahead of its routes landing
@@ -85,6 +90,7 @@ final class SessionPolicy
     public const ADMIN_DEVICE_ALLOWLIST = [
         ['GET', '#^/tanod-sos$#', false],
         ['PATCH', '#^/tanod-sos/\d+/acknowledge$#', true],
+        ['PATCH', '#^/tanod-sos/\d+/resolve$#', true],
         ['GET', '#^/tanod-sos/fallback-contact$#', false],
         ['GET', '#^/dispatch$#', false],
         ['POST', '#^/dispatch$#', true],
