@@ -56633,3 +56633,22 @@ dates inside the row's period, every shift covered): 0 failures. **Not run end t
 
 **Verified in the browser** (admin, demo DB): Scheduler week grid, weeks Sep 7 to Oct 25 (8 weeks, 0-42 chips each):
 0 "outside availability" chips in every week; 0 over-12h chips.
+
+## 2026-10-13 (3) — Migration 0042 applied to `baranguard_uiseed`
+
+Applied by explicit user request, as root, to the demo/seed DB `baranguard_uiseed` only (NOT `baranguard`, the real DB).
+State before: schema at migration 0040 (0029-0040 present; 0041 NOT applied: `document_scan` still exists and
+`accomplishment_report.status` still has `noted`/`approved`), `fatigue_flag` held 3 rows (2 unacknowledged). Backed up first:
+`backend/backups/pre-0042-baranguard_uiseed-fatigue_flag-20261012T215640Z.sql` (gitignored). After: `fatigue_flag` gone;
+`shift_schedule` (12), `shift_swap_request` (3) and `user` (10) rows intact; re-applying is a no-op (`DROP TABLE IF EXISTS`).
+**0041 was pending at that moment; applied right after, see (4).** `baranguard` (real DB) has none of 0029-0042 applied. `baranguard_ch4` was rebuilt from scratch the same day and has all 42.
+
+## 2026-10-13 (4) — Migration 0041 applied to `baranguard_uiseed`
+
+Applied by explicit user request, as root, to `baranguard_uiseed` only. Backup of the four tables it touches first:
+`backend/backups/pre-0041-baranguard_uiseed-20261012T215749Z.sql` (gitignored). Little data was affected: `document_scan` 0 rows,
+no accomplishment or term reports, `shift_schedule` 12 rows (kept). After: `document_scan` gone; `accomplishment_report.status` is
+`enum('open','prepared','returned')`, `ssz_term_report.status` is `enum('draft','prepared','submitted')`; the paper/approval columns
+(`approval_mode`, `paper_*`, `noted_*`, `approved_*` on the two report tables, `approval_mode`/`paper_*` on `shift_schedule`) are gone;
+`shift_schedule.approval_status`/`approved_by`/`approved_at` (roster publish) are kept; re-apply is a no-op. `baranguard_uiseed` is now at
+migration 0042 (0001-0042). The real `baranguard` DB still has none of 0029-0042; `baranguard_ch4` has all 42.

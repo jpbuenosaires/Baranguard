@@ -1,7 +1,8 @@
 # Baranguard — Session Handoff
 
-**2026-10-13 — Fatigue Flags REMOVED entirely (migration 0042, NOT applied to
-any real DB; destructive, back up first).** Table `fatigue_flag`,
+**2026-10-13 — Fatigue Flags REMOVED entirely (migration 0042; applied to the demo DBs
+`baranguard_ch4` (rebuilt) and `baranguard_uiseed` (which is now at migration 0042, 0041 included), NOT to the
+real `baranguard`; destructive, back up first).** Table `fatigue_flag`,
 `GET /shifts/fatigue-flags`, `PATCH /fatigue-flags/:id/acknowledge`,
 `FatigueFlagsController`/`FatigueCalculator` (and their `recalculate()` calls in
 shift create/update and swap approval), the `unacknowledged_fatigue_flags`
