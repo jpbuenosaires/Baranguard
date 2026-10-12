@@ -1635,7 +1635,7 @@ export async function getSosAlerts(params: { status?: SosStatus; limit?: number 
   }));
 }
 
-/** PATCH /tanod-sos/:id/acknowledge — idempotent server-side. There is deliberately NO resolve call in this app. */
+/** PATCH /tanod-sos/:id/acknowledge — idempotent server-side. */
 export async function acknowledgeSos(sosId: number, idempotencyKey: string): Promise<{ status: string }> {
   const path = `/tanod-sos/${sosId}/acknowledge`;
   const json = await request<{ status: string }>(path, {
@@ -1644,6 +1644,23 @@ export async function acknowledgeSos(sosId: number, idempotencyKey: string): Pro
     body: {},
   });
   return { status: json.status };
+}
+
+/**
+ * PATCH /tanod-sos/:id/resolve — Chief Tanod phone (gap #6, 2026-10-12): an
+ * active or acknowledged SOS can be closed from the Admin device session.
+ * Signed write, same headers as acknowledge. Online-only; never queued. A
+ * repeat on an already-resolved SOS is a 409 CONFLICT (the caller treats it
+ * as "already closed", e.g. after a dropped reply or the desk got there first).
+ */
+export async function resolveSos(sosId: number, idempotencyKey: string): Promise<{ status: string; resolvedAt: string | null }> {
+  const path = `/tanod-sos/${sosId}/resolve`;
+  const json = await request<{ status: string; resolved_at?: string | null }>(path, {
+    method: 'PATCH',
+    headers: await adminWriteHeaders('PATCH', path, idempotencyKey),
+    body: {},
+  });
+  return { status: json.status, resolvedAt: json.resolved_at ?? null };
 }
 
 export interface AdminDispatchEntry extends DispatchEntry {
