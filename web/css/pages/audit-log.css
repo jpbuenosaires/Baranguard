@@ -103,8 +103,10 @@
 }
 
 .audit-table-card.unified-table-card {
-  margin-top: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
 .audit-table-card .audit-filter-panel {

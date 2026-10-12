@@ -107,6 +107,11 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   header.appendChild(pageHeader.el);
 
   // Main Container & Master-Detail Split Grid
+  content.classList.add('citizen-inbox-page-container');
+  if (content.parentElement) {
+    content.parentElement.classList.add('page-content--no-scroll');
+  }
+
   const container = document.createElement('div');
   container.className = 'citizen-inbox-container';
 
@@ -117,7 +122,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
   // Left Panel (Table & Filters)
   const leftPanel = document.createElement('div');
-  leftPanel.className = 'citizen-inbox-left-panel';
+  leftPanel.className = 'citizen-inbox-left-panel unified-table-card';
   layout.appendChild(leftPanel);
 
   // Right Panel slot (Detail pane)
