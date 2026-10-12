@@ -468,7 +468,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
         card.className = `health-service-card health-service-card--${status}`;
         card.setAttribute('role', 'button');
         card.setAttribute('tabindex', '0');
-        card.setAttribute('aria-label', `${dep.label}, status: ${STATUS_META[status]?.label || status}. Inspect diagnostic details`);
+        card.setAttribute('aria-label', `${dep.label}, status: ${STATUS_LABEL[status] || status}. Inspect diagnostic details`);
 
         // Top row
         const topRow = document.createElement('div');

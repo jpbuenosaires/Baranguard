@@ -50,7 +50,7 @@ describe('Wave 2: printed forms', () => {
     const preview = openPrintPreviewModal({ title: 'T', sheetHtml: '<p>x</p>', printedBy: printedByLabel({ role: 'secretary' }) });
     const stamp = text(preview.sheet.querySelector('.print-sheet__stamp'));
     assert.match(stamp, /Printed .*\(Philippine time\) by Barangay Secretary/);
-    assert.equal(buttonByText(/^Print$/i, preview.overlay) !== undefined, true);
+    assert.equal(buttonByText(/^Print \(A4\)$/i, preview.overlay) !== undefined, true);
     preview.close();
   });
 });

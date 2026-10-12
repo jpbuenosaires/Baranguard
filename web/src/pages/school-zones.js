@@ -1033,6 +1033,10 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
                 }
                 const refBadge = h('span', `c1-referral-badge c1-referral-badge--${badgeTone}`, `• ${refText}`);
                 badgesWrap.appendChild(refBadge);
+              } else if (referralCache.has(i.incidentId) && entry === null) {
+                // The lookup FAILED (null), as opposed to still loading (no entry yet).
+                // A blank "referred to" would look like "nothing was referred".
+                badgesWrap.appendChild(h('span', 'c1-referral-badge c1-referral-badge--other', REFERRAL_UNAVAILABLE));
               }
               if (c1.status && c1.status !== '—') {
                 badgesWrap.appendChild(h('span', 'c1-referral-badge c1-referral-badge--brgy', c1.status));
