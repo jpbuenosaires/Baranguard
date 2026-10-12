@@ -14,11 +14,17 @@
 # Safe to double-click more than once: each piece is skipped if it's
 # already running.
 
+# -Quiet: for the Windows-login auto-start (see install-startup-shortcut.ps1).
+# Skips opening the browser and the "press any key" wait, and gives the
+# machine a moment to finish logging in before touching XAMPP.
+param([switch]$Quiet)
+
 $ErrorActionPreference = "Continue"
 $backendDir = Split-Path -Parent $PSScriptRoot
 
 Write-Host "Starting Baranguard..."
 Write-Host ""
+if ($Quiet) { Start-Sleep -Seconds 15 }
 
 # 1. Apache
 if (Get-Process httpd -ErrorAction SilentlyContinue) {
@@ -124,7 +130,13 @@ if ($cfSvc) {
     }
 }
 
-# 6. Open the dashboard
+if ($Quiet) {
+    Write-Host ""
+    Write-Host "Done (quiet start)."
+    exit 0
+}
+
+# 5. Open the dashboard
 Write-Host ""
 Write-Host "Opening the dashboard..."
 Start-Sleep -Seconds 1
