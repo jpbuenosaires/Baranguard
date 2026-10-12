@@ -123,7 +123,9 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
   roleSelect.addEventListener('change', () => {
     selectedRole = roleSelect.value;
-    currentPage = 1; renderFilteredList();
+    currentPage = 1;
+    syncChipStates();
+    renderFilteredList();
   });
 
   const statusSelect = document.createElement('select');
@@ -148,15 +150,19 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
   statusSelect.addEventListener('change', () => {
     selectedStatus = statusSelect.value;
-    currentPage = 1; renderFilteredList();
+    currentPage = 1;
+    syncChipStates();
+    renderFilteredList();
   });
 
   filterRight.append(roleSelect, statusSelect);
   filterBar.append(filterLeft, filterRight);
 
-  // Stat Strip Host
+  // Stat Strip Host — embedded inside the top of tableCard (Option A: Unified Command Card)
   const statStripHost = document.createElement('div');
-  container.appendChild(statStripHost);
+  statStripHost.className = 'personnel-card-stat-strip';
+  statStripHost.setAttribute('role', 'toolbar');
+  statStripHost.setAttribute('aria-label', 'User quick filters');
 
   // Main Content Body
   const body = document.createElement('div');
@@ -164,12 +170,27 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
   const tableCard = document.createElement('div');
   tableCard.className = 'personnel-table-card unified-table-card';
-  tableCard.append(filterBar, body);
+  tableCard.append(statStripHost, filterBar, body);
   container.appendChild(tableCard);
 
   let currentPage = 1;
   let allItems = [];
   let currentTotal = 0;
+  let chipButtons = [];
+
+  function syncChipStates() {
+    chipButtons.forEach(({ btn, key }) => {
+      let active = false;
+      if (key === 'all' && selectedRole === 'all' && selectedStatus === 'all') active = true;
+      else if (key === 'active' && selectedRole === 'all' && selectedStatus === 'active') active = true;
+      else if (key === 'admin' && selectedRole === 'admin' && selectedStatus === 'all') active = true;
+      else if (key === 'tanod' && selectedRole === 'tanod' && selectedStatus === 'all') active = true;
+
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
   load();
 
   async function load() {
@@ -193,58 +214,91 @@ export function renderUsersTab(container, pageHeader, viewer) {
     const adminCount = items.filter((u) => u.role === 'admin').length;
     const tanodCount = items.filter((u) => u.role === 'tanod').length;
     statStripHost.innerHTML = '';
+    chipButtons = [];
 
-    const strip = StatStrip({
-      items: [
-        { label: 'Total Users', value: items.length },
-        { label: 'Active', value: activeCount, tone: 'success' },
-        { label: 'Admins', value: adminCount, tone: 'info' },
-        { label: 'Tanods', value: tanodCount },
-      ],
-    });
+    const chipConfigs = [
+      {
+        key: 'all',
+        label: 'All Users',
+        count: items.length,
+        title: 'Show All Users',
+        handler: () => {
+          selectedRole = 'all';
+          selectedStatus = 'all';
+          roleSelect.value = 'all';
+          statusSelect.value = 'all';
+        },
+      },
+      {
+        key: 'active',
+        label: 'Active',
+        count: activeCount,
+        tone: 'success',
+        title: 'Filter: Active Only',
+        handler: () => {
+          selectedRole = 'all';
+          selectedStatus = 'active';
+          roleSelect.value = 'all';
+          statusSelect.value = 'active';
+        },
+      },
+      {
+        key: 'admin',
+        label: 'Admins',
+        count: adminCount,
+        tone: 'info',
+        title: 'Filter: Admins Only',
+        handler: () => {
+          selectedRole = 'admin';
+          selectedStatus = 'all';
+          roleSelect.value = 'admin';
+          statusSelect.value = 'all';
+        },
+      },
+      {
+        key: 'tanod',
+        label: 'Tanods',
+        count: tanodCount,
+        tone: 'neutral',
+        title: 'Filter: Tanods Only',
+        handler: () => {
+          selectedRole = 'tanod';
+          selectedStatus = 'all';
+          roleSelect.value = 'tanod';
+          statusSelect.value = 'all';
+        },
+      },
+    ];
 
-    // Make stats interactive shortcuts with full keyboard operability
-    const statCards = strip.querySelectorAll('.stat-card');
-    const bindInteractiveStat = (card, title, handler) => {
-      if (!card) return;
-      card.style.cursor = 'pointer';
-      card.title = title;
-      card.setAttribute('tabindex', '0');
-      card.setAttribute('role', 'button');
-      card.setAttribute('aria-label', title);
-      card.addEventListener('click', handler);
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          card.click();
-        }
+    chipConfigs.forEach((cfg) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'personnel-stat-chip';
+      btn.title = cfg.title;
+      btn.setAttribute('aria-label', `${cfg.title} (${cfg.count})`);
+
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'stat-chip__label';
+      labelSpan.textContent = cfg.label;
+
+      const countSpan = document.createElement('span');
+      countSpan.className = `stat-chip__count${cfg.tone ? ' tone-' + cfg.tone : ''}`;
+      countSpan.textContent = String(cfg.count);
+
+      btn.append(labelSpan, countSpan);
+
+      btn.addEventListener('click', () => {
+        cfg.handler();
+        currentPage = 1;
+        syncChipStates();
+        renderFilteredList();
       });
-    };
 
-    bindInteractiveStat(statCards[0], 'Show All Users', () => {
-      selectedRole = 'all';
-      selectedStatus = 'all';
-      roleSelect.value = 'all';
-      statusSelect.value = 'all';
-      currentPage = 1; renderFilteredList();
-    });
-    bindInteractiveStat(statCards[1], 'Filter: Active Only', () => {
-      selectedStatus = 'active';
-      statusSelect.value = 'active';
-      currentPage = 1; renderFilteredList();
-    });
-    bindInteractiveStat(statCards[2], 'Filter: Admins Only', () => {
-      selectedRole = 'admin';
-      roleSelect.value = 'admin';
-      currentPage = 1; renderFilteredList();
-    });
-    bindInteractiveStat(statCards[3], 'Filter: Tanods Only', () => {
-      selectedRole = 'tanod';
-      roleSelect.value = 'tanod';
-      currentPage = 1; renderFilteredList();
+      statStripHost.appendChild(btn);
+      chipButtons.push({ btn, key: cfg.key });
     });
 
-    statStripHost.appendChild(strip);
+    syncChipStates();
   }
 
   function getFilteredItems() {

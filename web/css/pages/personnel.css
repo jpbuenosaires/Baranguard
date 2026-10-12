@@ -1443,3 +1443,80 @@ button.shift-chip {
 .scheduler-view-toggle {
   margin-left: auto;
 }
+
+/* ---- Stat chips: summary counts that double as filters (Scheduler, Users) ----
+   Same look as the shared .filter-chip; the count pill carries the tone. */
+.scheduler-stat-bar,
+.personnel-card-stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.personnel-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-2xs) var(--spacing-sm-md);
+  min-height: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.personnel-stat-chip:hover {
+  border-color: var(--color-link);
+  color: var(--color-link);
+}
+.personnel-stat-chip:focus-visible {
+  outline: 2px solid var(--color-link);
+  outline-offset: 1px;
+}
+.personnel-stat-chip.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+
+.stat-chip__label {
+  line-height: 1;
+}
+
+.stat-chip__count,
+.chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  padding: var(--spacing-3xs) var(--spacing-2xs);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  line-height: 1;
+  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+}
+.stat-chip__count.tone-success,
+.chip-count.tone-success { color: var(--color-success-text); }
+.stat-chip__count.tone-info,
+.chip-count.tone-info { color: var(--color-info-text); }
+.stat-chip__count.tone-warning,
+.chip-count.tone-warning { color: var(--color-warning-text); }
+.personnel-stat-chip.is-active .stat-chip__count,
+.personnel-stat-chip.is-active .chip-count,
+.filter-chip.is-active .chip-count {
+  color: inherit;
+  background: color-mix(in srgb, var(--color-white) 22%, transparent);
+}
+
+/* The scheduler's table card is a .unified-table-card; this only lets its
+   flex children shrink instead of forcing horizontal page scroll. */
+.scheduler-table-card {
+  min-width: 0;
+}

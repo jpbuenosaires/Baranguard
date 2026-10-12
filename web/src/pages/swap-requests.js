@@ -42,9 +42,6 @@ const COLUMNS = [
  * @param {() => void} [onCountsChanged] re-fetches badge counters
  */
 export function renderSwapRequestsTab(container, user, onCountsChanged) {
-  const statStripHost = document.createElement('div');
-  container.appendChild(statStripHost);
-
   // Filter Bar
   const filterBar = document.createElement('div');
   filterBar.className = 'personnel-filter-bar';
@@ -66,33 +63,49 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
   });
   searchWrap.append(searchIcon, searchInput);
 
-  // Status Chips
+  // Status Chips with integrated KPI counters (Option A: Unified Command Card)
   const filterChipsWrap = document.createElement('div');
   filterChipsWrap.className = 'personnel-filter-bar__right';
+  filterChipsWrap.setAttribute('role', 'toolbar');
+  filterChipsWrap.setAttribute('aria-label', 'Filter requests by status');
 
   const statusOptions = [
     { id: 'all', label: 'All Requests' },
-    { id: 'pending', label: 'Pending' },
-    { id: 'approved', label: 'Approved' },
+    { id: 'pending', label: 'Pending', tone: 'warning' },
+    { id: 'approved', label: 'Approved', tone: 'success' },
     { id: 'denied', label: 'Denied' },
   ];
 
   let selectedStatus = 'all';
   let searchQuery = '';
 
-  const statusChipBtns = [];
+  const statusChips = [];
   statusOptions.forEach((opt) => {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = `filter-chip ${selectedStatus === opt.id ? 'is-active' : ''}`;
-    chip.textContent = opt.label;
+    chip.setAttribute('aria-pressed', selectedStatus === opt.id ? 'true' : 'false');
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = opt.label;
+
+    const countSpan = document.createElement('span');
+    countSpan.className = `chip-count${opt.tone ? ' tone-' + opt.tone : ''}`;
+    countSpan.textContent = '0';
+
+    chip.append(labelSpan, countSpan);
+
     chip.addEventListener('click', () => {
       selectedStatus = opt.id;
-      statusChipBtns.forEach((b) => b.classList.remove('is-active'));
-      chip.classList.add('is-active');
+      statusChips.forEach(({ btn, id }) => {
+        const isActive = id === selectedStatus;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
       renderFiltered();
     });
-    statusChipBtns.push(chip);
+
+    statusChips.push({ btn: chip, id: opt.id, countSpan, label: opt.label });
     filterChipsWrap.appendChild(chip);
   });
 
@@ -130,7 +143,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
       shiftsById = new Map(shiftsRes.items.map((s) => [s.shiftId, s]));
       namesById = new Map(tanodsRes.items.map((t) => [t.userId, t.fullName]));
 
-      renderStatStrip(allRequests);
+      updateFilterChipCounts(allRequests);
       renderFiltered();
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading swap requests.';
@@ -138,60 +151,25 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
     }
   }
 
-  function renderStatStrip(requests) {
-    statStripHost.innerHTML = '';
+  function updateFilterChipCounts(requests) {
     const pendingCount = requests.filter((r) => r.status === 'pending').length;
     const approvedCount = requests.filter((r) => r.status === 'approved').length;
     const deniedCount = requests.filter((r) => r.status === 'denied').length;
 
-    const strip = StatStrip({
-      items: [
-        { label: 'Total Requests', value: requests.length },
-        { label: 'Pending Review', value: pendingCount, tone: pendingCount > 0 ? 'warning' : 'neutral' },
-        { label: 'Approved', value: approvedCount, tone: 'success' },
-        { label: 'Denied', value: deniedCount },
-      ],
-    });
-
-    const cards = strip.querySelectorAll('.stat-card');
-    const bindInteractiveStat = (card, title, handler) => {
-      if (!card) return;
-      card.style.cursor = 'pointer';
-      card.title = title;
-      card.setAttribute('tabindex', '0');
-      card.setAttribute('role', 'button');
-      card.setAttribute('aria-label', title);
-      card.addEventListener('click', handler);
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          card.click();
-        }
-      });
+    const counts = {
+      all: requests.length,
+      pending: pendingCount,
+      approved: approvedCount,
+      denied: deniedCount,
     };
 
-    bindInteractiveStat(cards[0], 'Show all requests', () => {
-      selectedStatus = 'all';
-      statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
-      renderFiltered();
+    statusChips.forEach(({ id, countSpan, label }) => {
+      const val = counts[id] ?? 0;
+      countSpan.textContent = String(val);
+      if (id === 'pending') {
+        countSpan.className = `chip-count${val > 0 ? ' tone-warning' : ''}`;
+      }
     });
-    bindInteractiveStat(cards[1], 'Filter: Pending Review', () => {
-      selectedStatus = 'pending';
-      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Pending'));
-      renderFiltered();
-    });
-    bindInteractiveStat(cards[2], 'Filter: Approved', () => {
-      selectedStatus = 'approved';
-      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Approved'));
-      renderFiltered();
-    });
-    bindInteractiveStat(cards[3], 'Filter: Denied', () => {
-      selectedStatus = 'denied';
-      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Denied'));
-      renderFiltered();
-    });
-
-    statStripHost.appendChild(strip);
   }
 
   function getFilteredRequests() {

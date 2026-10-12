@@ -1767,3 +1767,13 @@ svg.is-spinning {
     margin: 12mm;
   }
 }
+
+/* PrintPreviewModal adds this to <body> for wide sheets (e.g. batch/landscape
+   forms). @page size cannot be switched by a class, so wide sheets simply stop
+   being constrained to the portrait column width when printed. */
+@media print {
+  body.print-orientation-landscape .print-sheet {
+    max-width: none;
+    width: 100%;
+  }
+}

@@ -89,8 +89,11 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   const isAdmin = user.role === 'admin';
   const canManageShifts = isAdmin || user.role === 'secretary';
 
-  // Stat Strip Host
+  // Stat Strip Host (Option A: Integrated Command Bar)
   const statStripHost = document.createElement('div');
+  statStripHost.className = 'scheduler-stat-bar';
+  statStripHost.setAttribute('role', 'toolbar');
+  statStripHost.setAttribute('aria-label', 'Shift summary and quick filters');
   container.appendChild(statStripHost);
 
   // Split Panel Layout (stacked in the week view: the grid needs the width)
@@ -787,6 +790,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     await load();
   }
 
+  let shiftCountMap = { all: 0, active: 0, upcoming: 0, completed: 0 };
+  const statusChipBtns = [];
+
   function renderStatStrip() {
     statStripHost.innerHTML = '';
     const now = Date.now();
@@ -802,58 +808,54 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       else completed++;
     });
 
-    const strip = StatStrip({
-      items: [
-        { label: 'Total Shifts', value: shifts.length },
-        { label: 'Active Now', value: activeNow, tone: 'success' },
-        { label: 'Upcoming', value: upcoming, tone: 'info' },
-        { label: 'Completed', value: completed },
-      ],
-    });
-
-    const cards = strip.querySelectorAll('.stat-card');
-    const bindInteractiveStat = (card, title, handler) => {
-      if (!card) return;
-      card.style.cursor = 'pointer';
-      card.title = title;
-      card.setAttribute('tabindex', '0');
-      card.setAttribute('role', 'button');
-      card.setAttribute('aria-label', title);
-      card.addEventListener('click', handler);
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          card.click();
-        }
-      });
+    shiftCountMap = {
+      all: shifts.length,
+      active: activeNow,
+      upcoming,
+      completed,
     };
 
-    bindInteractiveStat(cards[0], 'Show all shifts', () => {
-      selectedStatus = 'all';
-      statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
-      viewMode = 'list';
-      renderMain();
-    });
-    bindInteractiveStat(cards[1], 'Filter: Active Now', () => {
-      selectedStatus = 'active';
-      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Active')));
-      viewMode = 'list';
-      renderMain();
-    });
-    bindInteractiveStat(cards[2], 'Filter: Upcoming', () => {
-      selectedStatus = 'upcoming';
-      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Upcoming')));
-      viewMode = 'list';
-      renderMain();
-    });
-    bindInteractiveStat(cards[3], 'Filter: Completed', () => {
-      selectedStatus = 'completed';
-      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent.includes('Completed')));
-      viewMode = 'list';
-      renderMain();
+    const statConfigs = [
+      { id: 'all', label: 'Total Shifts', count: shifts.length, title: 'Show all shifts' },
+      { id: 'active', label: 'Active Now', count: activeNow, tone: 'success', title: 'Filter: Active Now' },
+      { id: 'upcoming', label: 'Upcoming', count: upcoming, tone: 'info', title: 'Filter: Upcoming' },
+      { id: 'completed', label: 'Completed', count: completed, title: 'Filter: Completed' },
+    ];
+
+    statConfigs.forEach((cfg) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const isActive = viewMode === 'list' && selectedStatus === cfg.id;
+      btn.className = `personnel-stat-chip${isActive ? ' is-active' : ''}`;
+      btn.title = cfg.title;
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      btn.setAttribute('aria-label', `${cfg.title} (${cfg.count})`);
+
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'stat-chip__label';
+      labelSpan.textContent = cfg.label;
+
+      const countSpan = document.createElement('span');
+      countSpan.className = `stat-chip__count${cfg.tone ? ' tone-' + cfg.tone : ''}`;
+      countSpan.textContent = String(cfg.count);
+
+      btn.append(labelSpan, countSpan);
+
+      btn.addEventListener('click', () => {
+        selectedStatus = cfg.id;
+        viewMode = 'list';
+        renderMain();
+      });
+
+      statStripHost.appendChild(btn);
     });
 
-    statStripHost.appendChild(strip);
+    // Update list view filter chips if already initialized
+    statusChipBtns.forEach((item) => {
+      if (item.countSpan) {
+        item.countSpan.textContent = String(shiftCountMap[item.id] ?? 0);
+      }
+    });
   }
 
   // Filter Bar elements
@@ -881,27 +883,43 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
   const filterChipsWrap = document.createElement('div');
   filterChipsWrap.className = 'personnel-filter-bar__right';
+  filterChipsWrap.setAttribute('role', 'toolbar');
+  filterChipsWrap.setAttribute('aria-label', 'Filter shifts by status');
 
   const statusOptions = [
     { id: 'all', label: 'All Shifts' },
-    { id: 'active', label: 'Active Now' },
-    { id: 'upcoming', label: 'Upcoming' },
+    { id: 'active', label: 'Active Now', tone: 'success' },
+    { id: 'upcoming', label: 'Upcoming', tone: 'info' },
     { id: 'completed', label: 'Completed' },
   ];
 
-  const statusChipBtns = [];
   statusOptions.forEach((opt) => {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = `filter-chip ${selectedStatus === opt.id ? 'is-active' : ''}`;
-    chip.textContent = opt.label;
+    chip.setAttribute('aria-pressed', selectedStatus === opt.id ? 'true' : 'false');
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = opt.label;
+
+    const countSpan = document.createElement('span');
+    countSpan.className = `chip-count${opt.tone ? ' tone-' + opt.tone : ''}`;
+    countSpan.textContent = String(shiftCountMap[opt.id] ?? 0);
+
+    chip.append(labelSpan, countSpan);
+
     chip.addEventListener('click', () => {
       selectedStatus = opt.id;
-      statusChipBtns.forEach((b) => b.classList.remove('is-active'));
-      chip.classList.add('is-active');
+      statusChipBtns.forEach((item) => {
+        const isActive = item.id === selectedStatus;
+        item.btn.classList.toggle('is-active', isActive);
+        item.btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+      renderStatStrip();
       renderShiftsTable();
     });
-    statusChipBtns.push(chip);
+
+    statusChipBtns.push({ btn: chip, id: opt.id, countSpan });
     filterChipsWrap.appendChild(chip);
   });
 
