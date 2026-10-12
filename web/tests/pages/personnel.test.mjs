@@ -76,55 +76,32 @@ function grantRosterAuthority() {
 describe('Personnel behaviour', () => {
   afterEach(() => cleanup());
 
-  test('paper-first: the Admin publishes with the signed paper, never the in-app Publish button', async () => {
+  test('the Admin sees a plain Publish button and the print-and-sign reminder', async () => {
     await openScheduler('admin');
-    assert.equal($('#publish-shifts-btn'), null);
-    assert.match(text($('#publish-shifts-paper-btn')), /Publish with signed paper/);
-    assert.match(text($('.scheduler-publish-bar')), /Print the schedule, have it signed/);
-    cleanup();
-    grantRosterAuthority();
-    await openScheduler('admin');
-    assert.equal($('#publish-shifts-btn'), null, 'even an Admin holding approve_roster records the signed paper');
-    assert.ok($('#publish-shifts-paper-btn'));
+    assert.equal($('#publish-shifts-paper-btn'), null, 'no signed-paper publish any more');
+    assert.match(text($('#publish-shifts-btn')), /^Publish \(0\)$/);
+    assert.match(text($('.scheduler-publish-bar')), /Print the schedule and have it signed on paper/);
+    assert.doesNotMatch(text(window.document.body), /signed paper/i);
   });
 
-  test('Recorded from paper: picks a signer holding approve_roster (via directory) + date, then POSTs recorded_from_paper', async () => {
+  test('Publish: a simple confirm (no signer or date), then POST /shifts/publish with only shift_ids', async () => {
     await openScheduler('admin');
     const dialog = () => $('[role="alertdialog"]');
     $$('tbody input[type="checkbox"]')[0].click();
     await settle();
-    click($('#publish-shifts-paper-btn'));
+    click($('#publish-shifts-btn'));
     await settle();
-    assert.ok(dialog(), 'the paper dialog opens');
-    const call = api.callsTo('GET', '/users/directory').find((c) => c.query?.purpose === 'signer');
-    assert.equal(call.query.authority, 'approve_roster');
-    assert.equal(api.callsTo('GET', '/users').filter((c) => c.query?.authority).length, 0);
-    const options = $$('#confirm-dialog-field-signer option', dialog()).map((o) => text(o));
-    assert.deepEqual(options, ['Teresa Magbanua (Punong Barangay)']);
-    const future = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
-    type($('#confirm-dialog-field-signedOn', dialog()), future);
-    click($$('button', dialog()).at(-1));
-    await settle();
-    assert.equal(api.callsTo('POST', '/shifts/publish').length, 0, 'a future signing date is refused client-side');
-    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-    type($('#confirm-dialog-field-signedOn', dialog()), today);
-    click($$('button', dialog()).at(-1));
+    assert.ok(dialog(), 'the confirm dialog opens');
+    assert.equal($('#confirm-dialog-field-signer', dialog()), null, 'no signer picker');
+    assert.equal($('#confirm-dialog-field-signedOn', dialog()), null, 'no signed-on date');
+    assert.equal(api.callsTo('GET', '/users/directory').filter((c) => c.query?.purpose === 'signer').length, 0);
+    assert.equal(api.callsTo('POST', '/shifts/publish').length, 0, 'nothing is sent before confirmation');
+    click($$('button', dialog()).filter((b) => !b.disabled).at(-1));
     await settle();
     const [pub] = api.callsTo('POST', '/shifts/publish');
     assert.ok(pub, 'POST /shifts/publish was sent');
-    assert.deepEqual(pub.body.recorded_from_paper, { signer_user_id: 3, signed_on: today });
-    assert.match(text(window.document.body), /recorded from paper/i);
-  });
-
-  test('a published shift recorded on paper shows "Approved on paper <date>" with the recorder', async () => {
-    api.on('GET', '/shifts', () => ({ status: 200, body: { items: [
-      { shift_id: 520, user_id: 4, patrol_zone: 'Zone 1', start_at: '2026-10-20 00:00:00', end_at: '2026-10-20 08:00:00', version: 1, approval_status: 'published', pending_reapproval: 0, approved_by: 3, approved_at: '2026-10-06 01:00:00', source_availability_id: null, approval_mode: 'recorded_from_paper', paper_signed_on: '2026-10-05', paper_recorded_by_name: 'Liwayway Ferrer' },
-      { shift_id: 521, user_id: 5, patrol_zone: 'Zone 2', start_at: '2026-10-21 00:00:00', end_at: '2026-10-21 08:00:00', version: 1, approval_status: 'published', pending_reapproval: 0, approved_by: 3, approved_at: '2026-10-06 01:00:00', source_availability_id: null, approval_mode: 'digital', paper_signed_on: null, paper_recorded_by_name: null },
-    ], page: 1, limit: 100, total: 2 } }));
-    await openScheduler('admin');
-    const notes = $$('.text-tertiary').filter((n) => /Approved on paper/.test(text(n))).map((n) => text(n));
-    assert.equal(notes.length, 1, 'only the paper-approved shift carries the label');
-    assert.match(notes[0], /^Approved on paper Oct 5, 2026 \(recorded by Liwayway Ferrer\)$/);
+    assert.equal(pub.body.recorded_from_paper, undefined);
+    assert.deepEqual(Object.keys(pub.body), ['shift_ids']);
   });
 
   test('Admin sees Users, Scheduler and Swap requests, and no Fatigue tab (contract §10)', async () => {
@@ -151,14 +128,13 @@ describe('Personnel behaviour', () => {
     assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only; the Secretary must not call it');
   });
 
-  test('secretary gets the create-shift form and Edit Shift controls; publishing goes through the signed paper', async () => {
+  test('secretary gets the create-shift form and Edit Shift controls and can publish', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
     await showList();
     assert.ok($('#scheduler-new-start'), 'the Secretary must be able to create shifts');
     assert.ok(buttonByText(/edit shift/i), 'the Secretary must be able to edit shifts');
-    assert.equal($('#publish-shifts-btn'), null, 'the Secretary publishes with the signed paper, not in-app');
-    assert.ok($('#publish-shifts-paper-btn'));
+    assert.ok($('#publish-shifts-btn'));
   });
 
   test('the shift picker is built from GET /users/directory?purpose=roster (no GET /users) and names the Chief Tanod', async () => {
@@ -439,27 +415,23 @@ describe('Personnel behaviour', () => {
     assert.equal(pills.filter((p) => p === 'Published').length, 2);
   });
 
-  test('publishing (paper-only): only drafts are selectable; the PB records the signed paper and the POST carries shift_ids, recorded_from_paper and an Idempotency-Key', async () => {
+  test('publishing: only drafts are selectable; the PB publishes after a plain confirm and the POST carries shift_ids and an Idempotency-Key', async () => {
     await openScheduler('punong_barangay');
-    assert.equal($('#publish-shifts-btn'), null, 'no in-app Publish button: the server refuses a publish without the signed paper');
-    const publish = $('#publish-shifts-paper-btn');
+    const publish = $('#publish-shifts-btn');
     assert.equal(publish.disabled, true, 'nothing selected yet');
     assert.equal($$('tbody input[type="checkbox"]').length, 2, 'only the two draft shifts have a checkbox');
     click(buttonByText(/select all drafts/i));
-    assert.equal($('#publish-shifts-paper-btn').disabled, false);
-    click($('#publish-shifts-paper-btn'));
+    assert.equal($('#publish-shifts-btn').disabled, false);
+    click($('#publish-shifts-btn'));
     await settle();
     const dialog = $('[role="alertdialog"], [role="dialog"]');
-    assert.ok(dialog, 'publishing asks for the signer and date');
+    assert.ok(dialog, 'publishing asks for a confirmation');
     assert.equal(api.callsTo('POST', '/shifts/publish').length, 0, 'nothing is sent before confirmation');
-    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-    type($('#confirm-dialog-field-signedOn', dialog), today);
     click($$('button', dialog).filter((b) => !b.disabled).at(-1));
     await settle();
     const [call] = api.callsTo('POST', '/shifts/publish');
     assert.ok(call, 'POST /shifts/publish was not sent');
     assert.deepEqual(call.body.shift_ids.sort(), [502, 503]);
-    assert.deepEqual(call.body.recorded_from_paper, { signer_user_id: 3, signed_on: today });
     assert.match(call.headers['idempotency-key'] || '', UUID);
     assert.match(text($('.scheduler-publish-warnings')), /2026-10-07.*no tanod is scheduled/i);
   });
@@ -468,10 +440,9 @@ describe('Personnel behaviour', () => {
     api.on('POST', '/shifts/publish', () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'You are not designated to perform this action.' } } }));
     await openScheduler('punong_barangay');
     click(buttonByText(/select all drafts/i));
-    click($('#publish-shifts-paper-btn'));
+    click($('#publish-shifts-btn'));
     await settle();
     const dialog = $('[role="alertdialog"], [role="dialog"]');
-    type($('#confirm-dialog-field-signedOn', dialog), new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10));
     click($$('button', dialog).filter((b) => !b.disabled).at(-1));
     await settle();
     assert.match(text(window.document.body), /not designated to perform this action/);
@@ -513,10 +484,9 @@ describe('Personnel behaviour', () => {
     await settle();
   });
 
-  test('Punong Barangay can publish drafts with the signed paper (the server checks approve_roster) but cannot edit them', async () => {
+  test('Punong Barangay can publish drafts (the server checks approve_roster) but cannot edit them', async () => {
     await openScheduler('punong_barangay');
-    assert.ok($('#publish-shifts-paper-btn'));
-    assert.equal($('#publish-shifts-btn'), null, 'no in-app Publish button for anyone');
+    assert.ok($('#publish-shifts-btn'));
     assert.equal(buttonByText(/edit shift/i), undefined);
     assert.match(text($('.page-content')), /Tanod #5/, 'an assigned shift shows its id when the roster is unavailable, not "Unassigned"');
   });
@@ -717,20 +687,21 @@ describe('Scheduler week grid', () => {
     assert.equal($('#scheduler-edit-tanod').value, '4');
   });
 
-  test('Publish week with signed paper publishes every draft of the shown week in one step', async () => {
+  test('Publish week publishes every draft of the shown week in one step after a plain confirm', async () => {
     useWeekData();
     await openScheduler('admin', { view: 'week' });
-    const btn = $('#publish-week-paper-btn');
-    assert.match(text(btn), /Publish week with signed paper \(1\)/);
+    const btn = $('#publish-week-btn');
+    assert.match(text(btn), /^Publish week \(1\)$/);
+    assert.equal($('#publish-week-paper-btn'), null);
     click(btn);
     await settle();
-    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-    type($('#confirm-dialog-field-signedOn', dialog()), today);
+    assert.equal($('#confirm-dialog-field-signer', dialog()), null, 'no signer picker');
+    assert.equal($('#confirm-dialog-field-signedOn', dialog()), null, 'no signed-on date');
     await confirm();
     const [pub] = api.callsTo('POST', '/shifts/publish');
     assert.ok(pub, 'POST /shifts/publish was sent');
     assert.deepEqual(pub.body.shift_ids, [601]);
-    assert.deepEqual(pub.body.recorded_from_paper, { signer_user_id: 3, signed_on: today });
+    assert.equal(pub.body.recorded_from_paper, undefined);
   });
 
   test('Previous / Next week move the grid and This week comes back', async () => {
@@ -770,15 +741,14 @@ describe('Scheduler week grid', () => {
     assert.equal($$('.shift-chip--warn').length, 0, 'no warnings without availability');
   });
 
-  test('Punong Barangay sees the week read-only and publishes the week with the signed paper', async () => {
+  test('Punong Barangay sees the week read-only and publishes the week', async () => {
     useWeekData();
     await openScheduler('punong_barangay', { view: 'week' });
     assert.ok($('.week-grid'));
     assert.equal($$('.week-grid__add').length, 0, 'no adding');
     assert.equal($$('button.shift-chip').length, 0, 'chips are not editable');
     assert.equal($('#scheduler-copy-week-btn'), null);
-    assert.ok($('#publish-week-paper-btn'));
-    assert.equal($('#publish-week-btn'), null, 'no in-app publish');
+    assert.ok($('#publish-week-btn'));
     assert.match(text($('.page-content')), /Jose Reyes/, 'names come from the availability rows');
   });
 });

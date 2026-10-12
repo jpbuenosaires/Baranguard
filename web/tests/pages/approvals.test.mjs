@@ -18,15 +18,16 @@ describe('Approvals behaviour', () => {
 
   const groupTitles = (root) => $$('.tw-approvals__group .tw-card__title', root).map((n) => text(n));
 
-  test('paper-only: an admin sees the signed-paper queues, no in-app note/approve/prepare queues', async () => {
+  test('an admin sees shifts, prepared reports and Annex D, and no signed-paper tracking queues', async () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
     await settle();
     const titles = groupTitles(ctx.root);
     assert.ok(!titles.includes('Availability to review'), 'availability is not reviewed (2026-10-12)');
-    assert.ok(titles.includes('Shifts awaiting publish'), 'admin publishes with the signed paper');
-    assert.ok(titles.includes('Accomplishment reports waiting for the signed paper'));
-    assert.ok(!titles.includes('Annex D to prepare'), 'preparation is on the paper too (2026-10-12)');
-    assert.ok(titles.includes('Annex D waiting for the signed paper'));
+    assert.ok(titles.includes('Shifts awaiting publish'));
+    assert.ok(titles.includes('Accomplishment reports prepared'));
+    assert.ok(titles.includes('Annex D to prepare'));
+    assert.ok(!titles.includes('Accomplishment reports waiting for the signed paper'), 'signatures are not tracked in the app');
+    assert.ok(!titles.includes('Annex D waiting for the signed paper'), 'signatures are not tracked in the app');
     assert.ok(!titles.includes('Accomplishment reports to note'));
     assert.ok(!titles.includes('Accomplishment reports to approve'));
     assert.ok(!titles.includes('Annex D to approve'));
@@ -41,17 +42,16 @@ describe('Approvals behaviour', () => {
   test('queue counts come from the server and rows deep-link to the right screen', async () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
     await settle();
-    const group = $('.tw-approvals__group[data-group="paper-reports"]', ctx.root);
-    assert.ok(group, 'signed-paper report group present');
-    assert.match(text($('.tw-count-badge', group)), /^2$/, 'one prepared (71) plus one noted (72)');
+    const group = $('.tw-approvals__group[data-group="reports-prepared"]', ctx.root);
+    assert.ok(group, 'prepared reports group present');
+    assert.match(text($('.tw-count-badge', group)), /^1$/, 'only the prepared report (71); 72 is returned');
     const opens = $$('.tw-queue__open', group);
     click(opens[0]);
     assert.deepEqual(ctx.navigations.at(-1), { page: 'accomplishment-reports', param: { reportId: 71 } });
-    click(opens[1]);
-    assert.deepEqual(ctx.navigations.at(-1), { page: 'accomplishment-reports', param: { reportId: 72 } });
+    assert.deepEqual(api.callsTo('GET', '/accomplishment-reports').map((c) => c.query.status), ['prepared']);
 
-    const annex = $('.tw-approvals__group[data-group="paper-annex"]', ctx.root);
-    assert.match(text($('.tw-count-badge', annex)), /^2$/, 'the draft (81) and the prepared (82) Annex D both wait for the signed paper');
+    const annex = $('.tw-approvals__group[data-group="annex-d"]', ctx.root);
+    assert.match(text($('.tw-count-badge', annex)), /^2$/, 'the draft (81) and the prepared (82) Annex D');
     click($('.tw-queue__open', annex));
     assert.equal(ctx.navigations.at(-1).page, 'school-zones');
     assert.equal(ctx.navigations.at(-1).param.tab, 'term');
@@ -62,7 +62,7 @@ describe('Approvals behaviour', () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'punong_barangay' });
     await settle();
     assert.deepEqual(groupTitles(ctx.root), []);
-    assert.match(text($('.page-content', ctx.root)), /Nothing for you to approve/);
+    assert.match(text($('.page-content', ctx.root)), /Nothing waiting for you/);
   });
 
   test('availability is never an approval queue and is not fetched here (2026-10-12)', async () => {
@@ -78,19 +78,19 @@ describe('Approvals behaviour', () => {
     await settle();
     assert.deepEqual(groupTitles(ctx.root), [
       'Shifts awaiting publish',
-      'Accomplishment reports waiting for the signed paper',
-      'Annex D waiting for the signed paper',
+      'Accomplishment reports prepared',
+      'Annex D to prepare',
     ]);
   });
 
-  test('dashboard widget counts (paper-only): no "to prepare" count; Annex D drafts and prepared reports both wait for the signed paper', async () => {
+  test('dashboard widget counts: prepared reports, Annex D to prepare or submit, and draft shifts', async () => {
     signIn('admin');
     const admin = await getPendingApprovalCounts(['note_report', 'prepare_annex_d'], 'admin');
-    assert.deepEqual(admin.map((c) => c.key).sort(), ['paper-annex', 'paper-reports', 'roster']);
-    assert.equal(admin.find((c) => c.key === 'paper-annex').count, 2);
+    assert.deepEqual(admin.map((c) => c.key).sort(), ['annex-d', 'reports-prepared', 'roster']);
+    assert.equal(admin.find((c) => c.key === 'annex-d').count, 2);
     const ssz = api.callsTo('GET', '/ssz-term-reports').map((c) => c.query.status).sort();
     assert.deepEqual(ssz, ['draft', 'prepared']);
     const pb = await getPendingApprovalCounts(['approve_report', 'approve_roster', 'approve_annex_d'], 'punong_barangay');
-    assert.deepEqual(pb.map((c) => c.key), ['roster'], 'the PB only records the signed paper roster');
+    assert.deepEqual(pb.map((c) => c.key), ['roster'], 'the PB only sees roster publishing');
   });
 });

@@ -217,8 +217,8 @@ export function trimTime(value) {
 
 // --- Status pills -----------------------------------------------------------
 
-const REPORT_TONE = { open: 'neutral', prepared: 'pending', noted: 'info', approved: 'success', returned: 'critical' };
-const TERM_TONE = { draft: 'neutral', prepared: 'pending', approved: 'success', submitted: 'info' };
+const REPORT_TONE = { open: 'neutral', prepared: 'pending', returned: 'critical' };
+const TERM_TONE = { draft: 'neutral', prepared: 'pending', submitted: 'info' };
 
 export function statusPill(status, kind = 'report') {
   const labels = kind === 'term' ? TERM_STATUS_LABELS : REPORT_STATUS_LABELS;

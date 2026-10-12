@@ -12,10 +12,9 @@
  *                separate from `raw_narrative` on purpose — no student or
  *                victim names appear anywhere here.
  *   Term Report  Annex D: live counts for a term range, then draft ->
- *                approved -> submitted. Preparation AND approval happen on
- *                the signed paper (paper-only, 2026-10-12): the
- *                Admin/Secretary records it, naming the preparer and the
- *                signer, and the Annex D + signature page print. No
+ *                prepared -> submitted. The report is printed and signed on
+ *                paper outside the app; the app only prints it (blank
+ *                signature lines) and records receipt on submission. No
  *                deadline is hardcoded anywhere; the form text defers to
  *                the circular exactly as the user's file does.
  *
@@ -35,12 +34,11 @@ import { showToast } from '../components/Toast.js';
 import { confirmDialog } from '../components/ConfirmDialog.js';
 import { manilaDateKey } from '../utils/manilaTime.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
-import { PaperApprovalPanel } from '../components/PaperApprovalPanel.js';
 import { icons } from '../components/icons.js';
 import {
   getSchools, createSchool, updateSchool, getSchoolIncidents, getIncidentReferrals,
   getSchoolTermLive, getTermReports, getTermReport, createTermReport, updateTermReport,
-  markTermReportSubmitted, getUserById, getUserNames,
+  prepareTermReport, markTermReportSubmitted,
   REFERRED_TO_LABELS, SCHOOL_LEVEL_LABELS, SCHOOL_TYPE_LABELS, TERM_STATUS_LABELS,
 } from '../services/tanodWorkflowApi.js';
 import {
@@ -1343,7 +1341,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       try {
         const res = await getTermReports();
         listHost.innerHTML = '';
-        const el = card('Saved term reports', 'Official term records submitted or awaiting paper endorsements. Click any row to view detail and record signed papers.');
+        const el = card('Saved term reports', 'Term records by status: draft, prepared or submitted. Click any row to view the detail, print it or move it along.');
         if (res.items.length === 0) {
           el.appendChild(h('p', 'tw-empty-note', canEdit ? 'No term reports yet. Create a draft above once a term range is chosen.' : 'No term reports have been created yet.'));
         } else {
@@ -1394,17 +1392,13 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
                     printBtn.disabled = true;
                     try {
                       const fullReport = await getTermReport(r.reportId);
-                      const [lh, preparedByName, approvedByName] = await Promise.all([
-                        loadLetterhead(user),
-                        fullReport.preparedByName ? Promise.resolve(fullReport.preparedByName) : personName(fullReport.preparedBy),
-                        fullReport.approvedByName ? Promise.resolve(fullReport.approvedByName) : personName(fullReport.approvedBy),
-                      ]);
+                      const lh = await loadLetterhead(user);
                       warnIfLetterheadMissing(lh);
                       openPrintPreviewModal({
                         title: 'Annex D — Safer School Zones Term-Based Report',
                         subtitle: `${fullReport.termLabel} · ${TERM_STATUS_LABELS[fullReport.status] || fullReport.status}`,
                         sheetId: 'printable-annex-d',
-                        sheetHtml: buildAnnexDHtml(fullReport, lh, { preparedByName, approvedByName }),
+                        sheetHtml: buildAnnexDHtml(fullReport, lh),
                         printedBy: printedByLabel(user),
                       });
                     } catch (err) {
@@ -1451,13 +1445,6 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       }
     }
 
-    async function personName(id) {
-      if (!id) return '';
-      if (id === user.userId) return user.fullName;
-      try { return (await getUserById(id)).fullName; } catch { /* fall through */ }
-      try { return (await getUserNames()).get(id) || ''; } catch { return ''; }
-    }
-
     function renderDetail(report) {
       detailHost.innerHTML = '';
       pageHeader.actions.innerHTML = '';
@@ -1472,17 +1459,13 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       printBtn.addEventListener('click', async () => {
         printBtn.disabled = true;
         try {
-          const [lh, preparedByName, approvedByName] = await Promise.all([
-            loadLetterhead(user),
-            report.preparedByName ? Promise.resolve(report.preparedByName) : personName(report.preparedBy),
-            report.approvedByName ? Promise.resolve(report.approvedByName) : personName(report.approvedBy),
-          ]);
+          const lh = await loadLetterhead(user);
           warnIfLetterheadMissing(lh);
           openPrintPreviewModal({
             title: 'Annex D — Safer School Zones Term-Based Report',
             subtitle: `${report.termLabel} · ${TERM_STATUS_LABELS[report.status] || report.status}`,
             sheetId: 'printable-annex-d',
-            sheetHtml: buildAnnexDHtml(report, lh, { preparedByName, approvedByName }),
+            sheetHtml: buildAnnexDHtml(report, lh),
             printedBy: printedByLabel(user),
           });
         } finally {
@@ -1502,7 +1485,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       head.appendChild(row);
       head.appendChild(countsGrid(report));
       if (report.status === 'draft') {
-        head.appendChild(h('p', 'tw-notice', 'These counts are a snapshot from when the draft was created. Recording the signed paper recomputes them from live data.'));
+        head.appendChild(h('p', 'tw-notice', 'These counts are a snapshot from when the draft was created. Marking it prepared recomputes them from live data.'));
       }
       if (report.otherInstitutions) head.appendChild(h('p', 'tw-other-inst', `Other institutions: ${report.otherInstitutions}`));
       if (report.remarks && !(report.status === 'draft' && canEdit)) head.appendChild(h('p', 'tw-remarks', `Remarks: ${report.remarks}`));
@@ -1514,28 +1497,11 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         trail.appendChild(li);
       };
       if (report.preparedAt) addTrail('Prepared', formatManilaDateTime(report.preparedAt));
-      if (report.approvedAt) addTrail('Approved', formatManilaDateTime(report.approvedAt));
       if (report.mayorOfficeReceivedBy) addTrail('Received by Office of the Mayor', `${report.mayorOfficeReceivedBy}${report.mayorOfficeReceivedAt ? ` · ${formatDateOnly(report.mayorOfficeReceivedAt)}` : ''}`);
       if (report.dilgReceivedBy || report.dilgDateReceived) addTrail('DILG copy received', `${report.dilgReceivedBy || '—'}${report.dilgDateReceived ? ` · ${formatDateOnly(report.dilgDateReceived)}` : ''}`);
       if (trail.children.length) head.appendChild(trail);
 
       detailHost.append(back, head);
-
-      // Paper signature + scan. Paper-only (2026-10-12): recording the
-      // signed paper is how Annex D is prepared and approved; on a draft the
-      // form also names the preparer. The in-app Prepare/Approve endpoints
-      // answer 410, so no button offers them.
-      detailHost.appendChild(PaperApprovalPanel({
-        entityType: 'ssz_term_report',
-        report,
-        user,
-        recordStatuses: ['prepared'],
-        prepareFromPaper: { statuses: ['draft'], authority: 'prepare_annex_d' },
-        signerAuthority: 'approve_annex_d',
-        preparerUserId: report.preparedBy ?? null,
-        approvedStatuses: ['approved', 'submitted'],
-        onChanged: () => loadDetail(report.reportId),
-      }));
 
       if (report.status === 'draft' && canEdit) detailHost.appendChild(buildDraftEditor(report));
       detailHost.appendChild(buildTermActions(report));
@@ -1571,31 +1537,53 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
     function buildTermActions(report) {
       const el = card('Actions');
-      const preparedBySelf = report.preparedBy === user.userId;
 
-      const canSubmit = report.status === 'approved' && canEdit;
+      const canPrepare = report.status === 'draft' && canEdit;
+      const canSubmit = report.status === 'prepared' && canEdit;
 
+      if (canPrepare) el.appendChild(buildPrepareForm(report));
       if (canSubmit) el.appendChild(buildSubmitForm(report));
 
-      if (!canSubmit) {
-        el.appendChild(h('p', 'tw-empty-note', termNoActionText(report, preparedBySelf)));
+      if (!canPrepare && !canSubmit) {
+        el.appendChild(h('p', 'tw-empty-note', termNoActionText(report)));
       }
       return el;
     }
 
-    function termNoActionText(report, preparedBySelf) {
-      if (report.status === 'draft') return 'Print this draft, have it prepared and signed on paper, then the Secretary or Admin records the signed paper above.';
-      if (report.status === 'prepared') return preparedBySelf
-        ? 'You prepared this report, so someone else with the approve authority must sign it. Print it, have it signed, then record the signed paper above.'
-        : 'Waiting for the signed paper. Print the report, have it signed, then the Secretary or Admin records it above.';
-      if (report.status === 'approved') return 'Approved. An Admin or Secretary records receipt once it is submitted.';
+    function termNoActionText(report) {
+      if (report.status === 'draft') return 'Waiting for the Secretary or Admin to mark this draft prepared.';
+      if (report.status === 'prepared') return 'Prepared. Print it and have it signed on paper; the Secretary or Admin marks it submitted once the Office of the Mayor has received it.';
       return 'This report has been submitted. Nothing further to do.';
+    }
+
+    function buildPrepareForm(report) {
+      const wrap = h('div', 'tw-submit-form');
+      wrap.appendChild(h('h4', 'tw-subhead', 'Mark as prepared'));
+      wrap.appendChild(h('p', 'tw-card__subtitle', 'Fixes the counts from live data. Then print the report and have it signed on paper.'));
+      const error = h('p', 'tw-form-error'); error.setAttribute('role', 'alert'); error.hidden = true;
+      const btn = h('button', 'primary', 'Mark as prepared');
+      btn.type = 'button';
+      btn.addEventListener('click', async () => {
+        error.hidden = true;
+        btn.disabled = true;
+        try {
+          await prepareTermReport(report.reportId);
+          showToast('Report marked as prepared. Print it and have it signed on paper.', { variant: 'success' });
+          loadDetail(report.reportId);
+        } catch (err) {
+          error.textContent = actionErrorMessage(err, 'Could not mark this report as prepared.');
+          error.hidden = false;
+          btn.disabled = false;
+        }
+      });
+      wrap.append(error, btn);
+      return wrap;
     }
 
     function buildSubmitForm(report) {
       const wrap = h('div', 'tw-submit-form');
       wrap.appendChild(h('h4', 'tw-subhead', 'Mark as submitted'));
-      wrap.appendChild(h('p', 'tw-card__subtitle', 'Record who at the Office of the Mayor received the signed report, and the DILG copy if known.'));
+      wrap.appendChild(h('p', 'tw-card__subtitle', 'Record who at the Office of the Mayor received the signed (on paper) report, and the DILG copy if known.'));
       const mayorBy = document.createElement('input'); mayorBy.maxLength = 120;
       const mayorAt = document.createElement('input'); mayorAt.type = 'date';
       const dilgBy = document.createElement('input'); dilgBy.maxLength = 120;
@@ -1827,7 +1815,7 @@ function buildAnnexC1Html(rows, lh, meta = {}) {
     </div>`;
 }
 
-function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
+function buildAnnexDHtml(report, lh) {
   const letterheadD = !letterheadUsable(lh) ? LETTERHEAD_WARNING_HTML : `
     <div class="tw-print__letterhead">
       <p class="tw-print__republic">Republic of the Philippines</p>
@@ -1837,11 +1825,10 @@ function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
     </div>`;
   const titleD = `<p class="tw-print__title">ANNEX &ldquo;D&rdquo; &ndash; SAFER SCHOOL ZONES TERM-BASED REPORT FORM &ndash; ${escapeHtml((report.termLabel || '').toUpperCase())}</p>`;
   const cell = (v) => `<td>${escapeHtml(v === undefined || v === null ? '' : String(v))}</td>`;
-  // Draft and prepared reports carry snapshot counts and no approval; they
-  // must not look like a finished, signed-off filing.
-  const isFinal = report.status === 'approved' || report.status === 'submitted';
+  // A draft carries snapshot counts; it must not look like a finished filing.
+  const isFinal = report.status === 'prepared' || report.status === 'submitted';
   const statusText = TERM_STATUS_LABELS[report.status] || report.status || 'Unknown';
-  const draftMark = isFinal ? '' : `<p class="tw-print__draft-mark">DRAFT - NOT FOR SUBMISSION (status: ${escapeHtml(statusText)}; not yet approved)</p>`;
+  const draftMark = isFinal ? '' : `<p class="tw-print__draft-mark">DRAFT - NOT FOR SUBMISSION (status: ${escapeHtml(statusText)})</p>`;
 
   return `
     <div class="tw-print">
@@ -1896,8 +1883,6 @@ function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
             <p class="tw-print__siglbl">Prepared by:</p>
             <div class="tw-print__sigline"></div>
             <p class="tw-print__sigparen">Name and signature over printed name</p>
-            <p class="tw-print__signame">${escapeHtml(preparedByName || '')}</p>
-            ${report.preparedByTitle ? `<p class="tw-print__sigtitle">${escapeHtml(report.preparedByTitle)}</p>` : ''}
             <p class="tw-print__sigcap">Chief Tanod/ Executive Officer</p>
             <p class="tw-print__sigfield">Date signed: <span></span></p>
           </div>
@@ -1905,8 +1890,6 @@ function buildAnnexDHtml(report, lh, { preparedByName, approvedByName }) {
             <p class="tw-print__siglbl">Approved by:</p>
             <div class="tw-print__sigline"></div>
             <p class="tw-print__sigparen">Name and signature over printed name</p>
-            <p class="tw-print__signame">${escapeHtml(approvedByName || '')}</p>
-            ${report.approvedByTitle ? `<p class="tw-print__sigtitle">${escapeHtml(report.approvedByTitle)}</p>` : ''}
             <p class="tw-print__sigcap">Punong Barangay/ BPOC Chairperson</p>
             <p class="tw-print__sigfield">Date signed: <span></span></p>
           </div>

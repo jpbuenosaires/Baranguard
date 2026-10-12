@@ -280,12 +280,12 @@ describe('Official printouts (Annex B, C-1, D)', () => {
     await settle();
     const sheet = document.querySelector('#printable-annex-d');
     assert.ok(sheet);
-    assert.match(text(sheet), /DRAFT - NOT FOR SUBMISSION \(status: Draft; not yet approved\)/i);
+    assert.match(text(sheet), /DRAFT - NOT FOR SUBMISSION \(status: Draft\)/i);
     assert.match(text(sheet), /Report status when printed: Draft/i);
     click(document.querySelector('#close-print-modal'));
   });
 
-  test('a prepared (not yet approved) Annex D is also marked, and an approved one is not', async () => {
+  test('only a draft Annex D is marked; a prepared one (ready to sign) is not', async () => {
     const stub = (status) => api.on('GET', '/ssz-term-reports/:id', ({ params }) => ({
       status: 200,
       body: {
@@ -293,11 +293,10 @@ describe('Official printouts (Annex B, C-1, D)', () => {
         total_tanods: 3, total_schools: 2, total_deployment_days: 12, total_incidents: 0, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0,
         incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: 0, other_institutions: null, remarks: null,
         prepared_by: 1, prepared_by_name: 'A', prepared_by_title: 'Chief Tanod', prepared_at: null,
-        approved_by: 3, approved_by_name: 'B', approved_by_title: 'Punong Barangay', approved_at: null,
         mayor_office_received_by: null, mayor_office_received_at: null, dilg_received_by: null, dilg_date_received: null, version: 2,
       },
     }));
-    stub('prepared');
+    stub('draft');
     mountPage(renderSchoolZonesPage, { role: 'admin', param: { tab: 'term', reportId: 82 } });
     await settle();
     click(buttonByText(/Annex D/));
@@ -306,7 +305,7 @@ describe('Official printouts (Annex B, C-1, D)', () => {
     click(document.querySelector('#close-print-modal'));
     cleanup();
     clearAuthorityCache();
-    stub('approved');
+    stub('prepared');
     mountPage(renderSchoolZonesPage, { role: 'admin', param: { tab: 'term', reportId: 82 } });
     await settle();
     click(buttonByText(/Annex D/));

@@ -509,8 +509,8 @@ async function loadTanodsOnDuty(container, barangayId, role) {
 /**
  * Pending-approvals widget (2026-10, contract §10). Shown to whoever lands
  * on this dashboard (Admin and Punong Barangay): counts of work waiting on
- * THIS user (an Admin sees what waits for its signed paper; others what
- * their approval authority lets them act on) (GET /users/:id for self, then the existing list endpoints — there
+ * THIS user (an Admin sees reports to print and sign and Annex D to prepare; others
+ * what their approval authority lets them act on) (GET /users/:id for self, then the existing list endpoints — there
  * is no approvals-count endpoint and none is invented). All four states:
  * skeleton, error with Retry, nothing pending / no authority, populated.
  */
@@ -535,7 +535,7 @@ async function loadPendingApprovals(container, user, navigate) {
     if (total === 0) {
       const note = document.createElement('p');
       note.className = 'note';
-      note.textContent = 'Nothing is waiting for your approval right now.';
+      note.textContent = 'Nothing is waiting for you right now.';
       host.appendChild(note);
     } else {
       const list = document.createElement('ul');
