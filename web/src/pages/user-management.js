@@ -35,14 +35,14 @@ const ROLE_LABELS = {
 const CREATABLE_ROLES = ['admin', 'secretary', 'tanod', 'punong_barangay'];
 
 const COLUMNS = [
-  { key: 'user', label: 'User' },
-  { key: 'role', label: 'Role' },
-  { key: 'contactNumber', label: 'Contact' },
-  { key: 'approval', label: 'Title & authority' },
-  { key: 'status', label: 'Status' },
-  { key: 'lastLoginAt', label: 'Last Login' },
-  { key: 'createdAt', label: 'Created' },
-  { key: 'actions', label: 'Actions', align: 'right' },
+  { key: 'user', label: 'User', width: '20%' },
+  { key: 'role', label: 'Role', width: '10%' },
+  { key: 'contactNumber', label: 'Contact', width: '11%' },
+  { key: 'approval', label: 'Title & authority', width: '18%' },
+  { key: 'status', label: 'Status', width: '8%' },
+  { key: 'lastLoginAt', label: 'Last Login', width: '12%' },
+  { key: 'createdAt', label: 'Created', width: '8%' },
+  { key: 'actions', label: 'Actions', align: 'right', width: '13%' },
 ];
 
 /**
@@ -632,7 +632,7 @@ function renderActionsCell(row, viewer, reload) {
     const authButton = document.createElement('button');
     authButton.type = 'button';
     authButton.className = 'user-action-btn';
-    authButton.textContent = 'Approval authority';
+    authButton.textContent = 'Authority';
     authButton.setAttribute('aria-label', `Edit title and approval authority for ${row.fullName}`);
     authButton.addEventListener('click', (event) => {
       event.stopPropagation();

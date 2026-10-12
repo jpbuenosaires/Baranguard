@@ -30,8 +30,14 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  overflow-x: auto;
+  overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch;
+}
+
+.personnel-table-card .data-table thead th,
+.personnel-table-card .data-table tbody td {
+  padding-left: var(--spacing-sm, 8px) !important;
+  padding-right: var(--spacing-sm, 8px) !important;
 }
 
 .personnel-filter-bar__left {
@@ -137,25 +143,35 @@
 .user-identity-cell {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm-md);
+  gap: var(--spacing-xs, 6px);
+  min-width: 0;
+  width: 100%;
 }
 
 .user-identity-info {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-3xs);
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .user-identity-name {
   font-weight: 600;
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .user-identity-username {
   font-size: 0.75rem;
   color: var(--color-text-tertiary);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Role Badges */
@@ -166,13 +182,15 @@
 
 /* User Action Buttons in Row */
 .user-actions-group {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: var(--spacing-2xs);
+  justify-content: flex-end;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .user-action-btn {
-  padding: var(--spacing-xs) var(--spacing-sm);
+  padding: 3px 8px;
   font-size: 0.75rem;
   font-weight: 600;
   border-radius: var(--radius-sm);
@@ -180,7 +198,9 @@
   background: var(--color-surface);
   color: var(--color-text-secondary);
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .user-action-btn:hover {
@@ -844,7 +864,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3xs);
-  max-width: 18rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .approval-authority-fieldset {
