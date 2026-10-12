@@ -42,6 +42,8 @@ function paginate(items, query) {
 
 const ok = (body) => ({ status: 200, body });
 const notFound = (message = 'Not found.') => ({ status: 404, body: { error: { code: 'NOT_FOUND', message } } });
+// The retired in-app approval endpoints (paper-only, 2026-10-12).
+const paperRequired = () => ({ status: 410, body: { error: { code: 'PAPER_APPROVAL_REQUIRED', message: 'In-app approval is no longer supported: the signed paper is the approval. Print it, have it signed, then record the signed paper.' } } });
 
 // ---------------------------------------------------------------------------
 
@@ -310,15 +312,16 @@ export function buildRoutes(scenario) {
       { checkin_id: 1, school_id: 11, user_id: 4, checked_in_at: sqlAgo(600), checked_out_at: sqlAgo(540) },
     ], query)) },
     { method: 'GET', path: '/reports/school-term', handler: () => ok({ total_tanods: empty ? 0 : 3, total_schools: schools.filter((s) => s.is_active).length, total_deployment_days: empty ? 0 : 12, total_incidents: empty ? 0 : 1, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0, incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: empty ? 0 : 1, other_institutions: empty ? null : 'Ambulance/EMS' }) },
-    { method: 'GET', path: '/ssz-term-reports', handler: ({ query }) => ok(paginate(sszTermReports, query)) },
+    { method: 'GET', path: '/ssz-term-reports', handler: ({ query }) => ok(paginate(sszTermReports.filter((r) => !query.status || r.status === query.status), query)) },
     { method: 'POST', path: '/ssz-term-reports', handler: ({ body }) => ({ status: 201, body: { ...sszTermReports[0], report_id: 89, term_label: body.term_label, term_start: body.term_start, term_end: body.term_end, status: 'draft' } }) },
     { method: 'GET', path: '/ssz-term-reports/:id', handler: ({ params }) => {
       const row = sszTermReports.find((r) => r.report_id === Number(params.id));
       return row ? ok(row) : notFound('Report not found.');
     } },
     { method: 'PATCH', path: '/ssz-term-reports/:id', handler: ({ params }) => ok({ report_id: Number(params.id), updated: true }) },
-    { method: 'POST', path: '/ssz-term-reports/:id/prepare', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'prepared' }) },
-    { method: 'POST', path: '/ssz-term-reports/:id/approve', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved' }) },
+    // Paper-only (2026-10-12): the in-app approval endpoints are retired.
+    { method: 'POST', path: '/ssz-term-reports/:id/prepare', handler: () => paperRequired() },
+    { method: 'POST', path: '/ssz-term-reports/:id/approve', handler: () => paperRequired() },
     // --- Paper signatures + scanned copies (Wave 1, contract C) ---
     { method: 'POST', path: '/accomplishment-reports/:id/paper-signature', handler: ({ params, body }) => ok({ report_id: Number(params.id), paper_signed_on: body.paper_signed_on }) },
     { method: 'POST', path: '/ssz-term-reports/:id/paper-signature', handler: ({ params, body }) => ok({ report_id: Number(params.id), paper_signed_on: body.paper_signed_on }) },
@@ -334,8 +337,8 @@ export function buildRoutes(scenario) {
       const row = accomplishmentReports.find((r) => r.report_id === Number(params.id));
       return row ? ok({ ...row, entries: accomplishmentEntries(row.report_id) }) : notFound('Report not found.');
     } },
-    { method: 'POST', path: '/accomplishment-reports/:id/note', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'noted' }) },
-    { method: 'POST', path: '/accomplishment-reports/:id/approve', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved' }) },
+    { method: 'POST', path: '/accomplishment-reports/:id/note', handler: () => paperRequired() },
+    { method: 'POST', path: '/accomplishment-reports/:id/approve', handler: () => paperRequired() },
     { method: 'POST', path: '/accomplishment-reports/:id/return', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'returned' }) },
     { method: 'PATCH', path: '/incidents/:id/status', handler: ({ params }) => ok({ incident_id: Number(params.id), status: 'resolved' }) },
     { method: 'GET', path: '/incidents/:id/evidence', handler: ({ params }) => ok({ items: evidence.filter((e) => e.incident_id === Number(params.id)) }) },
@@ -389,7 +392,10 @@ export function buildRoutes(scenario) {
     // --- Scheduling ---
     { method: 'GET', path: '/shifts', handler: ({ query }) => ok(paginate(shifts.filter((s) => !query.approval_status || s.approval_status === query.approval_status), query)) },
     { method: 'POST', path: '/shifts', handler: ({ body }) => ({ status: 201, body: { shift_id: 599, user_id: body.user_id, patrol_zone: body.patrol_zone, start_at: body.start_at, end_at: body.end_at, version: 1, approval_status: 'draft', approved_by: null, approved_at: null, source_availability_id: body.source_availability_id ?? null } }) },
-    { method: 'POST', path: '/shifts/publish', handler: ({ body }) => ok({ published: body.shift_ids, already_published: [], warnings: [{ code: 'NO_COVERAGE', date: '2026-10-07' }] }) },
+    // Paper-only (2026-10-12): recorded_from_paper is required from every caller.
+    { method: 'POST', path: '/shifts/publish', handler: ({ body }) => (body.recorded_from_paper
+      ? ok({ published: body.shift_ids, already_published: [], warnings: [{ code: 'NO_COVERAGE', date: '2026-10-07' }] })
+      : { status: 422, body: { error: { code: 'PAPER_APPROVAL_REQUIRED', message: 'Publishing needs the signed paper roster: send recorded_from_paper {signer_user_id, signed_on}.' } } }) },
     { method: 'GET', path: '/availability', handler: ({ query }) => ok(paginate(availability.filter((a) => (!query.status || a.status === query.status) && (!query.user_id || a.user_id === Number(query.user_id))), query)) },
     // Retired 2026-10-12: availability is the tanod's fixed statement, never reviewed.
     { method: 'PATCH', path: '/availability/:id', handler: () => ({ status: 410, body: { error: { code: 'AVAILABILITY_NOT_REVIEWED', message: 'Availability is no longer reviewed.' } } }) },

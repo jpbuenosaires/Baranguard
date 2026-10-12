@@ -188,8 +188,10 @@ expect_eq "$CODE" "422" "PATCH to a secretary -> 422"
 step "5. Draft/published, re-draft on edit, NO_COVERAGE"
 req GET "/shifts?approval_status=draft&limit=100" "$ADM"
 expect_eq "$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo count(array_filter($d["items"],fn($i)=>(int)$i["user_id"]===(int)$argv[1]));' "$CHIEF")" "3" "Admin's 3 shifts are listed as drafts"
-req POST /shifts/publish "$PBT" "{\"shift_ids\":[$S1,$S2,$S3]}" -H "Idempotency-Key: $(uuid)"
-expect_eq "$CODE" "200" "approve_roster holder (PB) publishes the admin's shifts"
+# Paper-only (2026-10-12): publishing records the signed paper roster.
+PAPER="\"recorded_from_paper\":{\"signer_user_id\":$PBID,\"signed_on\":\"$(TZ=Asia/Manila date +%F)\"}"
+req POST /shifts/publish "$PBT" "{\"shift_ids\":[$S1,$S2,$S3],$PAPER}" -H "Idempotency-Key: $(uuid)"
+expect_eq "$CODE" "200" "approve_roster holder (PB) records the signed paper roster for the admin's shifts"
 expect_eq "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$S1;")" "published" "  admin shift is published"
 req POST /shifts "$ADM" "$(shift_body $CHIEF '2027-01-15T08:00:00+08:00' '2027-01-15T10:00:00+08:00')"
 S4=$(bj shift_id)
@@ -198,7 +200,7 @@ S5=$(bj shift_id)
 VER5=$(db_one "SELECT version FROM shift_schedule WHERE shift_id=$S5;")
 req PATCH "/shifts/$S5" "$ADM" "{\"version\":$VER5,\"user_id\":null}"
 expect_eq "$CODE" "200" "Unassigning an admin shift is allowed"
-req POST /shifts/publish "$PBT" "{\"shift_ids\":[$S4,$S5]}" -H "Idempotency-Key: $(uuid)"
+req POST /shifts/publish "$PBT" "{\"shift_ids\":[$S4,$S5],$PAPER}" -H "Idempotency-Key: $(uuid)"
 expect_eq "$(bj warnings)" "[{\"code\":\"NO_COVERAGE\",\"date\":\"2027-01-16\"},{\"code\":\"NO_COVERAGE\",\"date\":\"2027-01-17\"}]" "NO_COVERAGE for the uncovered 16th and the unassigned 17th, not the 15th the admin covers"
 VER1=$(db_one "SELECT version FROM shift_schedule WHERE shift_id=$S1;")
 req PATCH "/shifts/$S1" "$ADM" "{\"version\":$VER1,\"end_at\":\"2027-01-12T17:00:00+08:00\"}"

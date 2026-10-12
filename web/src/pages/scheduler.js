@@ -17,7 +17,7 @@ import {
 } from '../services/shellWorkflowApi.js';
 import { loadSignerCandidates } from '../services/signerCandidates.js';
 import { formatDateOnly, manilaToday } from '../services/tanodWorkflowUi.js';
-import { confirmDialog, promptFields } from '../components/ConfirmDialog.js';
+import { promptFields } from '../components/ConfirmDialog.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { showToast } from '../components/Toast.js';
@@ -53,10 +53,10 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // tanod's own fixed statement, 2026-10-12) is shown to Admin/Secretary.
   // The server re-checks role and authority on every action either way.
   // The tanod list comes from loadTanodRoster() (GET /users/directory) for
-  // both Admin and Secretary. Paper-first (2026-10-12): Admin/Secretary
-  // always publish by recording the signed paper roster ("Publish with
-  // signed paper"); only a non-manager holding approve_roster (the PB)
-  // still gets the in-app Publish button.
+  // both Admin and Secretary. Paper-only (2026-10-12): everyone who may
+  // publish (Admin/Secretary, or the PB holding approve_roster) does it by
+  // recording the signed paper roster ("Publish with signed paper"); the
+  // server refuses a publish without it (422 PAPER_APPROVAL_REQUIRED).
   const isAdmin = user.role === 'admin';
   const canManageShifts = isAdmin || user.role === 'secretary';
   const canSeeAvailability = canManageShifts;
@@ -489,7 +489,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     hint.textContent = draftShifts.length === 0
       ? 'No draft shifts. New shifts are saved as drafts and are only visible to tanods once published.'
       : `${draftShifts.length} draft shift${draftShifts.length === 1 ? '' : 's'} not yet visible to tanods.`
-        + (canManageShifts ? ' Print the schedule, have it signed, then publish with the signed paper.' : '');
+        + ' Print the schedule, have it signed, then publish with the signed paper.';
 
     const buttons = document.createElement('div');
     buttons.className = 'availability-item__actions';
@@ -505,99 +505,61 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       });
       buttons.appendChild(selectAll);
     }
-    if (canManageShifts) {
-      // Admin/Secretary: publish by recording that an official holding
-      // approve_roster signed the printed roster (paper is the record).
-      const paperBtn = document.createElement('button');
-      paperBtn.type = 'button';
-      paperBtn.id = 'publish-shifts-paper-btn';
-      paperBtn.className = 'primary';
-      paperBtn.disabled = selectedShiftIds.size === 0;
-      paperBtn.textContent = `Publish with signed paper (${selectedShiftIds.size})`;
-      paperBtn.addEventListener('click', async () => {
-        const ids = [...selectedShiftIds];
-        if (ids.length === 0) return;
-        paperBtn.disabled = true;
-        let loaded;
-        try {
-          loaded = await loadSignerCandidates(user, 'approve_roster', null);
-        } catch (err) {
-          paperBtn.disabled = false;
-          showToast(err instanceof ApiClientError ? err.message : 'Could not load the list of officials.', { variant: 'error' });
-          return;
-        }
-        paperBtn.disabled = false;
-        if (loaded.candidates.length === 0) {
-          showToast('No active official holds roster approval authority.', { variant: 'warning' });
-          return;
-        }
-        const today = manilaToday();
-        const result = await promptFields({
-          title: `Publish ${ids.length} shift${ids.length === 1 ? '' : 's'} with the signed paper?`,
-          description: 'Pick the official who signed the printed roster and the date they signed. The shifts become visible to the assigned tanods.',
-          fields: [
-            { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
-            { name: 'signedOn', label: 'Date signed on paper', type: 'date', max: today },
-          ],
-          confirmLabel: 'Publish',
-          onConfirmAsync: async (values) => {
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(values.signedOn || '')) throw new Error('Enter the date signed on paper as a date.');
-            if (values.signedOn > today) throw new Error('The date signed on paper cannot be in the future.');
-            try {
-              const res = await publishShifts(ids, crypto.randomUUID(), {
-                recordedFromPaper: { signerUserId: Number(values.signer), signedOn: values.signedOn },
-              });
-              publishWarnings = res.warnings;
-              publishedCount = res.published.length;
-            } catch (err) {
-              throw new Error(err instanceof ApiClientError ? err.message : 'Could not publish these shifts.');
-            }
-          },
-        });
-        if (result !== null) {
-          showToast(`${publishedCount} shift${publishedCount === 1 ? '' : 's'} published (recorded from paper).`, { variant: 'success' });
-          selectedShiftIds.clear();
-          load();
-        }
-      });
-      buttons.appendChild(paperBtn);
-      bar.append(hint, buttons);
-      return bar;
-    }
-    const publish = document.createElement('button');
-    publish.type = 'button';
-    publish.id = 'publish-shifts-btn';
-    publish.className = 'primary';
-    publish.disabled = selectedShiftIds.size === 0;
-    publish.textContent = `Publish selected (${selectedShiftIds.size})`;
-    publish.addEventListener('click', async () => {
+    // Publish by recording that an official holding approve_roster signed
+    // the printed roster (paper is the record and the only approval).
+    const paperBtn = document.createElement('button');
+    paperBtn.type = 'button';
+    paperBtn.id = 'publish-shifts-paper-btn';
+    paperBtn.className = 'primary';
+    paperBtn.disabled = selectedShiftIds.size === 0;
+    paperBtn.textContent = `Publish with signed paper (${selectedShiftIds.size})`;
+    paperBtn.addEventListener('click', async () => {
       const ids = [...selectedShiftIds];
       if (ids.length === 0) return;
-      const confirmed = await confirmDialog({
-        title: `Publish ${ids.length} shift${ids.length === 1 ? '' : 's'}?`,
-        description: 'Published shifts become visible to the assigned tanods. You need roster approval authority to do this.',
-        confirmLabel: 'Publish',
-        cancelLabel: 'Cancel',
-      });
-      if (!confirmed) return;
-      publish.disabled = true;
-      publish.textContent = 'Publishing…';
+      paperBtn.disabled = true;
+      let loaded;
       try {
-        const result = await publishShifts(ids, crypto.randomUUID());
-        publishWarnings = result.warnings;
-        showToast(
-          `${result.published.length} shift${result.published.length === 1 ? '' : 's'} published.`,
-          { variant: 'success' },
-        );
+        loaded = await loadSignerCandidates(user, 'approve_roster', null);
+      } catch (err) {
+        paperBtn.disabled = false;
+        showToast(err instanceof ApiClientError ? err.message : 'Could not load the list of officials.', { variant: 'error' });
+        return;
+      }
+      paperBtn.disabled = false;
+      if (loaded.candidates.length === 0) {
+        showToast('No active official holds roster approval authority.', { variant: 'warning' });
+        return;
+      }
+      const today = manilaToday();
+      const result = await promptFields({
+        title: `Publish ${ids.length} shift${ids.length === 1 ? '' : 's'} with the signed paper?`,
+        description: 'Pick the official who signed the printed roster and the date they signed. The shifts become visible to the assigned tanods.',
+        fields: [
+          { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
+          { name: 'signedOn', label: 'Date signed on paper', type: 'date', max: today },
+        ],
+        confirmLabel: 'Publish',
+        onConfirmAsync: async (values) => {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(values.signedOn || '')) throw new Error('Enter the date signed on paper as a date.');
+          if (values.signedOn > today) throw new Error('The date signed on paper cannot be in the future.');
+          try {
+            const res = await publishShifts(ids, crypto.randomUUID(), {
+              recordedFromPaper: { signerUserId: Number(values.signer), signedOn: values.signedOn },
+            });
+            publishWarnings = res.warnings;
+            publishedCount = res.published.length;
+          } catch (err) {
+            throw new Error(err instanceof ApiClientError ? err.message : 'Could not publish these shifts.');
+          }
+        },
+      });
+      if (result !== null) {
+        showToast(`${publishedCount} shift${publishedCount === 1 ? '' : 's'} published (recorded from paper).`, { variant: 'success' });
         selectedShiftIds.clear();
         load();
-      } catch (err) {
-        publish.disabled = false;
-        publish.textContent = `Publish selected (${selectedShiftIds.size})`;
-        showToast(err instanceof ApiClientError ? err.message : 'Could not publish these shifts.', { variant: 'error' });
       }
     });
-    buttons.appendChild(publish);
+    buttons.appendChild(paperBtn);
 
     bar.append(hint, buttons);
     return bar;

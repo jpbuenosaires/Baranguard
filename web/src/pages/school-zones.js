@@ -12,10 +12,12 @@
  *                separate from `raw_narrative` on purpose — no student or
  *                victim names appear anywhere here.
  *   Term Report  Annex D: live counts for a term range, then draft ->
- *                prepared -> approved -> submitted. Approval is recorded
- *                from the signed paper (Admin/Secretary, paper-first
- *                2026-10-12), and the Annex D + signature page print. No deadline is hardcoded anywhere; the form
- *                text defers to the circular exactly as the user's file does.
+ *                approved -> submitted. Preparation AND approval happen on
+ *                the signed paper (paper-only, 2026-10-12): the
+ *                Admin/Secretary records it, naming the preparer and the
+ *                signer, and the Annex D + signature page print. No
+ *                deadline is hardcoded anywhere; the form text defers to
+ *                the circular exactly as the user's file does.
  *
  * Authority gating is UX only (REFERENCE.md §2 Rule 2); the server
  * re-checks. The preparer-must-differ rule surfaces as a plain message on
@@ -36,12 +38,12 @@ import { icons } from '../components/icons.js';
 import {
   getSchools, createSchool, updateSchool, getSchoolIncidents, getIncidentReferrals,
   getSchoolTermLive, getTermReports, getTermReport, createTermReport, updateTermReport,
-  prepareTermReport, markTermReportSubmitted, getUserById, getUserNames,
+  markTermReportSubmitted, getUserById, getUserNames,
   REFERRED_TO_LABELS, SCHOOL_LEVEL_LABELS, SCHOOL_TYPE_LABELS, TERM_STATUS_LABELS,
 } from '../services/tanodWorkflowApi.js';
 import {
   h, escapeHtml, mountPageFrame, buildTabBar, showLoading, showError, showEmpty, card, field,
-  selectOf, getMyAuthority, statusPill, formatDateOnly, formatManilaDateTime, actionErrorMessage,
+  selectOf, statusPill, formatDateOnly, formatManilaDateTime, actionErrorMessage,
   loadLetterhead, letterheadHtml, applyPrintOrientation, SSZ_PURSUANT_HTML,
 } from '../services/tanodWorkflowUi.js';
 
@@ -585,7 +587,6 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
   // =========================================================================
 
   function renderTermTab(host) {
-    let mine = { authority: new Set(), officialTitle: null, failed: false };
     const livePanel = h('div');
     const listHost = h('div');
     const detailHost = h('div');
@@ -797,7 +798,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       head.appendChild(row);
       head.appendChild(countsGrid(report));
       if (report.status === 'draft') {
-        head.appendChild(h('p', 'tw-notice', 'These counts are a snapshot from when the draft was created. Preparing the report recomputes them from live data.'));
+        head.appendChild(h('p', 'tw-notice', 'These counts are a snapshot from when the draft was created. Recording the signed paper recomputes them from live data.'));
       }
       if (report.otherInstitutions) head.appendChild(h('p', 'tw-other-inst', `Other institutions: ${report.otherInstitutions}`));
       if (report.remarks && !(report.status === 'draft' && canEdit)) head.appendChild(h('p', 'tw-remarks', `Remarks: ${report.remarks}`));
@@ -816,21 +817,21 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
       detailHost.append(back, head);
 
-      // Paper signature + scan once the report is prepared. Paper-first
-      // (2026-10-12): recording the signed paper is how Annex D is approved;
-      // the separate in-app Approve button was removed (endpoint kept).
-      if (report.status !== 'draft') {
-        detailHost.appendChild(PaperApprovalPanel({
-          entityType: 'ssz_term_report',
-          report,
-          user,
-          recordStatuses: ['prepared'],
-          signerAuthority: 'approve_annex_d',
-          preparerUserId: report.preparedBy ?? null,
-          approvedStatuses: ['approved', 'submitted'],
-          onChanged: () => loadDetail(report.reportId),
-        }));
-      }
+      // Paper signature + scan. Paper-only (2026-10-12): recording the
+      // signed paper is how Annex D is prepared and approved; on a draft the
+      // form also names the preparer. The in-app Prepare/Approve endpoints
+      // answer 410, so no button offers them.
+      detailHost.appendChild(PaperApprovalPanel({
+        entityType: 'ssz_term_report',
+        report,
+        user,
+        recordStatuses: ['prepared'],
+        prepareFromPaper: { statuses: ['draft'], authority: 'prepare_annex_d' },
+        signerAuthority: 'approve_annex_d',
+        preparerUserId: report.preparedBy ?? null,
+        approvedStatuses: ['approved', 'submitted'],
+        onChanged: () => loadDetail(report.reportId),
+      }));
 
       if (report.status === 'draft' && canEdit) detailHost.appendChild(buildDraftEditor(report));
       detailHost.appendChild(buildTermActions(report));
@@ -866,39 +867,20 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
     function buildTermActions(report) {
       const el = card('Actions');
-      const bar = h('div', 'tw-action-bar');
       const preparedBySelf = report.preparedBy === user.userId;
 
-      const canPrepare = report.status === 'draft' && mine.authority.has('prepare_annex_d');
       const canSubmit = report.status === 'approved' && canEdit;
-
-      if (canPrepare) {
-        const btn = h('button', 'primary', 'Prepare report');
-        btn.type = 'button';
-        btn.addEventListener('click', async () => {
-          const ok = await confirmDialog({
-            title: 'Prepare this term report?',
-            description: 'The counts are recomputed from live data and the report moves to Prepared. Then print it, have it signed and record the signed paper.',
-            confirmLabel: 'Prepare report',
-            onConfirmAsync: async () => { try { await prepareTermReport(report.reportId); } catch (err) { throw new Error(actionErrorMessage(err)); } },
-          });
-          if (ok) { showToast('Term report prepared.', { variant: 'success' }); loadDetail(report.reportId); }
-        });
-        bar.appendChild(btn);
-      }
-      if (bar.children.length) el.appendChild(bar);
 
       if (canSubmit) el.appendChild(buildSubmitForm(report));
 
-      if (!bar.children.length && !canSubmit) {
+      if (!canSubmit) {
         el.appendChild(h('p', 'tw-empty-note', termNoActionText(report, preparedBySelf)));
       }
       return el;
     }
 
     function termNoActionText(report, preparedBySelf) {
-      if (mine.failed) return 'Could not check your approval authority, so no actions are offered. Reload to try again.';
-      if (report.status === 'draft') return 'Waiting for someone with the Annex D prepare authority to prepare this report.';
+      if (report.status === 'draft') return 'Print this draft, have it prepared and signed on paper, then the Secretary or Admin records the signed paper above.';
       if (report.status === 'prepared') return preparedBySelf
         ? 'You prepared this report, so someone else with the approve authority must sign it. Print it, have it signed, then record the signed paper above.'
         : 'Waiting for the signed paper. Print the report, have it signed, then the Secretary or Admin records it above.';
@@ -955,7 +937,6 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     // ----- boot ---------------------------------------------------------------
 
     (async () => {
-      mine = await getMyAuthority(user);
       buildLivePanel();
       if (pendingReportId !== null) {
         const id = pendingReportId;

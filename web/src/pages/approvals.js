@@ -1,12 +1,14 @@
 /**
  * approvals.js — Approvals queue (contract §10): one place where an
- * official sees every record waiting on THEM — draft shifts to publish, accomplishment reports and Annex D term reports
- * waiting for their signed paper, and Annex D drafts to prepare — each row
+ * official sees every record waiting on THEM — draft shifts to publish
+ * with the signed paper, and accomplishment reports and Annex D term
+ * reports waiting for their signed paper — each row
  * deep-linking to the screen where the action is taken.
  *
- * Paper-first (2026-10-12): the signed paper is the official record, so
- * reports are approved by the Admin/Secretary recording the signed paper,
- * not by separate in-app note/approve clicks (those groups were removed).
+ * Paper-only (2026-10-12): the signed paper is the ONLY approval, so
+ * reports (and Annex D preparation) are recorded by the Admin/Secretary from
+ * the signed paper. There are no in-app note/approve/prepare queues: those
+ * endpoints answer 410 PAPER_APPROVAL_REQUIRED.
  *
  * Availability is not here (2026-10-12): it is the tanod's own fixed
  * statement and is not reviewed; it is shown read-only in the Scheduler.
@@ -15,10 +17,11 @@
  * re-checks every action). A group is shown only when the viewer can act
  * on it:
  *   - shifts awaiting publish ....... role admin or secretary, or
- *                                     authority approve_roster
+ *                                     authority approve_roster (records the
+ *                                     signed paper roster)
  *   - reports waiting for paper ..... role admin or secretary
- *   - Annex D to prepare ............ authority prepare_annex_d
- *   - Annex D waiting for paper ..... role admin or secretary
+ *   - Annex D waiting for paper ..... role admin or secretary (drafts and
+ *                                     legacy prepared reports)
  * The viewer's authority comes from GET /users/:id (their own record).
  *
  * Each group has its own Loading / Empty / Error-with-retry / Populated
@@ -80,20 +83,11 @@ function buildGroups({ user, navigate, nameOf }) {
       openLabel: 'Open reports',
     },
     {
-      id: 'annex-prepare',
-      title: 'Annex D to prepare',
-      hint: 'Draft term reports. Preparing recomputes the counts from live data.',
-      visible: (a) => a.has('prepare_annex_d'),
-      load: () => loadTerms('draft'),
-      openAll: () => navigate('school-zones', { tab: 'term' }),
-      openLabel: 'Open Term Report',
-    },
-    {
       id: 'paper-annex',
       title: 'Annex D waiting for the signed paper',
-      hint: 'Prepared term reports. Print, have them signed, then record the signed paper.',
+      hint: 'Draft term reports. Print, have them prepared and signed, then record the signed paper (preparer, signer and date).',
       visible: () => isManager,
-      load: () => loadTerms('prepared'),
+      load: () => loadTerms(['draft', 'prepared']),
       openAll: () => navigate('school-zones', { tab: 'term' }),
       openLabel: 'Open Term Report',
     },
@@ -114,11 +108,12 @@ function buildGroups({ user, navigate, nameOf }) {
     };
   }
 
-  async function loadTerms(status) {
-    const res = await getTermReports({ status, limit: 100 });
+  async function loadTerms(statuses) {
+    const pages = await Promise.all(statuses.map((status) => getTermReports({ status, limit: 100 })));
+    const items = pages.flatMap((res) => res.items);
     return {
-      total: res.total,
-      rows: res.items.map((r) => ({
+      total: pages.reduce((sum, res) => sum + res.total, 0),
+      rows: items.map((r) => ({
         key: r.reportId,
         title: r.termLabel,
         detail: `${formatDateOnly(r.termStart)} to ${formatDateOnly(r.termEnd)}`,

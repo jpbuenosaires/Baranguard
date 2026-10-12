@@ -8,9 +8,10 @@
  *     the paper was signed ("Signed on paper <date>" afterwards) — visible to
  *     every role that can open the detail, Punong Barangay included;
  *   - lets Admin and Secretary record the signed paper ("Record signed
- *     paper", the normal way a report gets approved since the 2026-10-12
- *     paper-first decision: on a prepared or noted report — Annex D:
- *     prepared — naming the signer and the date they signed), correct the
+ *     paper", the ONLY way a report gets approved since the 2026-10-12
+ *     paper-only decision: on a prepared or (legacy) noted report, naming
+ *     the signer and the date they signed; on an Annex D draft also naming
+ *     who prepared it on paper — `prepareFromPaper`), correct the
  *     date later ("Record paper signature date", on an approved report),
  *     and attach, list and download a scan of the signed copy.
  *
@@ -73,6 +74,10 @@ function scanFileName(scan) {
  *   recordStatuses: string[],  statuses in which "Record signed paper" applies
  *   signerAuthority: string,   'approve_report' | 'approve_annex_d'
  *   preparerUserId: number|null,
+ *   prepareFromPaper?: {statuses: string[], authority: string}
+ *                              statuses in which the form also asks who
+ *                              PREPARED the paper (Annex D draft:
+ *                              {statuses:['draft'], authority:'prepare_annex_d'})
  *   approvedStatuses: string[], statuses from which a scan may be attached (approved or later)
  *   onChanged: () => void,     parent reloads the detail after a state change
  * }} opts
@@ -80,6 +85,7 @@ function scanFileName(scan) {
  */
 export function PaperApprovalPanel({
   entityType, report, user, recordStatuses, signerAuthority, preparerUserId, approvedStatuses, onChanged,
+  prepareFromPaper = null,
 }) {
   const reportId = report.reportId;
   const canManage = user.role === 'admin' || user.role === 'secretary';
@@ -143,36 +149,60 @@ export function PaperApprovalPanel({
       bar.appendChild(dateBtn);
     }
 
-    if (recordStatuses.includes(report.status)) {
+    const namesPreparer = Boolean(prepareFromPaper && prepareFromPaper.statuses.includes(report.status));
+    if (recordStatuses.includes(report.status) || namesPreparer) {
       const approveBtn = h('button', 'primary', 'Record signed paper');
       approveBtn.type = 'button';
       approveBtn.addEventListener('click', async () => {
         approveBtn.disabled = true;
-        let loaded;
+        let signers;
+        let preparers = null;
         try {
-          loaded = await loadSignerCandidates(user, signerAuthority, preparerUserId ?? null);
+          [signers, preparers] = await Promise.all([
+            loadSignerCandidates(user, signerAuthority, namesPreparer ? null : (preparerUserId ?? null)),
+            namesPreparer ? loadSignerCandidates(user, prepareFromPaper.authority, null) : Promise.resolve(null),
+          ]);
         } catch (err) {
           approveBtn.disabled = false;
           showToast(actionErrorMessage(err, 'Could not load the list of officials.'), { variant: 'error' });
           return;
         }
         approveBtn.disabled = false;
-        if (loaded.candidates.length === 0) {
-          showToast('No active official holds this approval authority (other than the person who prepared the report).', { variant: 'warning' });
+        if (namesPreparer && preparers.candidates.length === 0) {
+          showToast('No active official holds the authority to prepare this report.', { variant: 'warning' });
           return;
         }
+        if (signers.candidates.length === 0) {
+          showToast(namesPreparer
+            ? 'No active official holds this approval authority.'
+            : 'No active official holds this approval authority (other than the person who prepared the report).', { variant: 'warning' });
+          return;
+        }
+        const toOptions = (list) => list.candidates.map((c) => ({ value: c.userId, label: c.label }));
+        const fields = [];
+        if (namesPreparer) fields.push({ name: 'preparer', label: 'Prepared by', type: 'select', options: toOptions(preparers) });
+        fields.push(
+          { name: 'signer', label: 'Signer', type: 'select', options: toOptions(signers) },
+          { name: 'signedOn', label: 'Date signed', type: 'date', max: manilaToday() },
+        );
         const result = await promptFields({
           title: 'Record signed paper',
-          description: 'Print the report, have it signed, then record it here. Pick the official who signed it as approver and the date they signed. The report becomes approved and locked.',
-          fields: [
-            { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
-            { name: 'signedOn', label: 'Date signed', type: 'date', max: manilaToday() },
-          ],
+          description: namesPreparer
+            ? 'Print the report, have it prepared and signed, then record it here. Pick who prepared it, the official who signed it as approver (a different person), and the date they signed. The counts are recomputed from live data and the report becomes approved and locked.'
+            : 'Print the report, have it signed, then record it here. Pick the official who signed it as approver and the date they signed. The report becomes approved and locked.',
+          fields,
           confirmLabel: 'Record approval',
           onConfirmAsync: async (values) => {
             const signedOn = validateSignedOn(values.signedOn, 'date signed');
+            const payload = { signerUserId: Number(values.signer), signedOn };
+            if (namesPreparer) {
+              payload.preparerUserId = Number(values.preparer);
+              if (payload.preparerUserId === payload.signerUserId) {
+                throw new Error('The preparer and the signer must be different people.');
+              }
+            }
             try {
-              await recordPaperApproval(entityType, reportId, { signerUserId: Number(values.signer), signedOn });
+              await recordPaperApproval(entityType, reportId, payload);
             } catch (err) {
               throw new Error(actionErrorMessage(err, 'Could not record the approval.'));
             }
