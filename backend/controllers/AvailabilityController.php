@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Baranguard\Controllers;
 
 use Baranguard\Lib\ApiError;
-use Baranguard\Lib\Audit;
 use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
@@ -21,23 +20,30 @@ use PDO;
  *                              POST /sync/batch.
  *   GET   /availability        tanod: own rows only; admin / secretary /
  *                              punong_barangay: the whole barangay.
- *   PATCH /availability/:id    admin or secretary reviews a `submitted`
- *                              row -> `accepted` | `revised`; web
- *                              Idempotency-Key.
+ *   PATCH /availability/:id    retired 2026-10-12: always 410
+ *                              `AVAILABILITY_NOT_REVIEWED`.
+ *
+ * Owner decision 2026-10-12: availability is the tanod's own fixed statement
+ * and is NOT reviewed. Nobody accepts it, asks for changes or locks it; the
+ * Admin / Secretary schedules against it as stated (a shift outside it is
+ * reported as an `OUTSIDE_AVAILABILITY` warning by POST/PATCH /shifts, see
+ * services/scheduling/AvailabilityCoverage.php).
  *
  * Resolved decisions where the contract is silent (logged in DEVLOG.md):
- *   - A period (user_id, period_start, period_end) is one row. Re-submitting
- *     it while `submitted` replaces the windows and bumps `version`; an
- *     `accepted` period is a 409. A `revised` period (the reviewer asked
- *     for changes) is resubmittable and goes back to `submitted` with the
- *     previous review fields cleared — otherwise `revised` would be a dead
- *     end. A resubmission stores the new client_event_id so the sync
- *     ledger's lookup of that id finds the row again (an exact replay of the
- *     same windows is a no-op, never a second version bump).
- *   - Only a `submitted` row can be reviewed (any other state is a 409).
+ *   - A period (user_id, period_start, period_end) is one row. The tanod can
+ *     re-submit it at any time: changed windows replace the old ones, bump
+ *     `version` and store the new client_event_id (so the sync ledger's
+ *     lookup of that id finds the row again). An exact replay of the same
+ *     windows is a no-op, never a second version bump.
+ *   - Legacy rows: `status` (submitted | accepted | revised) and the review
+ *     fields stay in the table and in every response so rows reviewed before
+ *     2026-10-12 still display. New rows are always `submitted`. A legacy
+ *     `accepted` row is no longer locked (it used to 409): changing its
+ *     windows sets it back to `submitted` and clears the old review fields,
+ *     exactly like a legacy `revised` row.
  *   - A Tanod asking for another user's rows via `user_id=` gets 404.
  *   - No audit row is written for the Tanod's own submission (same as
- *     GPS / duty-status writes); the review decision is audited.
+ *     GPS / duty-status writes).
  */
 final class AvailabilityController
 {
@@ -46,7 +52,6 @@ final class AvailabilityController
     private const STATUSES = ['submitted', 'accepted', 'revised'];
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
-    private const REVIEW_NOTE_MAX = 255;
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
@@ -109,11 +114,11 @@ final class AvailabilityController
             $existing = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($existing !== false) {
-                if ($existing['status'] === 'accepted') {
-                    throw new ApiError(409, 'CONFLICT', 'This availability period has already been accepted and can no longer be changed.');
-                }
+                // Availability is the tanod's own statement and is never
+                // locked (2026-10-12): any status, including a legacy
+                // `accepted` one, takes a resubmission.
                 $sameWindows = json_encode(json_decode((string) $existing['windows_json'], true), JSON_UNESCAPED_SLASHES) === $windowsJson;
-                if ($sameWindows && $existing['status'] === 'submitted') {
+                if ($sameWindows) {
                     // Same content, new event id: no version bump, but remember
                     // the latest event id so an exact replay of it stays idempotent.
                     $pdo->prepare('UPDATE tanod_availability SET client_event_id = :cid WHERE avail_id = :id')
@@ -245,69 +250,20 @@ final class AvailabilityController
         Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total]);
     }
 
-    /** @param array{user_id:int,barangay_id:int,role:string} $identity */
+    /**
+     * PATCH /availability/:id — retired 2026-10-12 (owner decision:
+     * availability is the tanod's fixed statement, not reviewed). Kept as a
+     * route so an old web build gets a clear answer instead of a 404.
+     *
+     * @param array{user_id:int,barangay_id:int,role:string} $identity
+     */
     public static function review(PDO $pdo, array $identity, string $availIdParam): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
-        if (!ctype_digit($availIdParam)) {
-            throw new ApiError(404, 'NOT_FOUND', 'Availability not found.');
-        }
-        $availId = (int) $availIdParam;
-        $idempotencyKey = RosterSupport::requireIdempotencyKey();
-
-        $body = Http::jsonBody();
-        $status = $body['status'] ?? null;
-        if (!is_string($status) || !in_array($status, ['accepted', 'revised'], true)) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'status must be accepted or revised.');
-        }
-        $note = $body['review_note'] ?? null;
-        if ($note !== null && (!is_string($note) || mb_strlen($note) > self::REVIEW_NOTE_MAX)) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'review_note must be a string of at most ' . self::REVIEW_NOTE_MAX . ' characters.');
-        }
-        if (is_string($note) && trim($note) === '') {
-            $note = null;
-        }
-
-        $pdo->beginTransaction();
-        try {
-            $stmt = $pdo->prepare('SELECT * FROM tanod_availability WHERE avail_id = :id FOR UPDATE');
-            $stmt->execute(['id' => $availId]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($row === false) {
-                throw new ApiError(404, 'NOT_FOUND', 'Availability not found.');
-            }
-            AuthMiddleware::requireTenant($identity, (int) $row['barangay_id']);
-
-            $replay = RosterSupport::findAuditReplay($pdo, $identity['barangay_id'], 'availability_reviewed', $availId, $idempotencyKey);
-            if ($replay !== null) {
-                $pdo->commit();
-                Http::send(200, self::mapRow($row));
-            }
-            if ($row['status'] !== 'submitted') {
-                throw new ApiError(409, 'CONFLICT', "An availability submission in '{$row['status']}' status cannot be reviewed.");
-            }
-
-            $pdo->prepare(
-                'UPDATE tanod_availability
-                    SET status = :status, reviewed_by = :reviewed_by, reviewed_at = UTC_TIMESTAMP(), review_note = :note,
-                        version = version + 1, updated_at = UTC_TIMESTAMP()
-                  WHERE avail_id = :id'
-            )->execute(['status' => $status, 'reviewed_by' => $identity['user_id'], 'note' => $note, 'id' => $availId]);
-
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'availability_reviewed', 'tanod_availability', $availId, [
-                'avail_id' => $availId,
-                'status' => $status,
-                'idempotency_key' => $idempotencyKey,
-            ]);
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
-        }
-
-        Http::send(200, self::mapRow(self::findById($pdo, $availId) ?? []));
+        throw new ApiError(
+            410,
+            'AVAILABILITY_NOT_REVIEWED',
+            "Availability is no longer reviewed. It is the tanod's own fixed statement; schedule against it as submitted."
+        );
     }
 
     /**

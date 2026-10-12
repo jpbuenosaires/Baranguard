@@ -21,7 +21,7 @@ describe('Approvals behaviour', () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
     await settle();
     const titles = groupTitles(ctx.root);
-    assert.ok(titles.includes('Availability to review'));
+    assert.ok(!titles.includes('Availability to review'), 'availability is not reviewed (2026-10-12)');
     assert.ok(titles.includes('Shifts awaiting publish'), 'admin publishes with the signed paper');
     assert.ok(titles.includes('Accomplishment reports waiting for the signed paper'));
     assert.ok(titles.includes('Annex D to prepare'));
@@ -63,12 +63,18 @@ describe('Approvals behaviour', () => {
     assert.match(text($('.page-content', ctx.root)), /Nothing for you to approve/);
   });
 
+  test('availability is never an approval queue and is not fetched here (2026-10-12)', async () => {
+    const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
+    await settle();
+    assert.equal($('.tw-approvals__group[data-group="availability"]', ctx.root), null);
+    assert.equal(api.callsTo('GET', '/availability').length, 0);
+  });
+
   test('an Admin/Secretary-only queue is role gated even without any authority', async () => {
     api.on('GET', '/users/:id', () => ({ status: 200, body: { user_id: 2, full_name: 'X', role: 'secretary', official_title: null, approval_authority: [] } }));
     const ctx = mountPage(renderApprovalsPage, { role: 'secretary' });
     await settle();
     assert.deepEqual(groupTitles(ctx.root), [
-      'Availability to review',
       'Shifts awaiting publish',
       'Accomplishment reports waiting for the signed paper',
       'Annex D waiting for the signed paper',

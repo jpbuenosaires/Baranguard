@@ -126,6 +126,7 @@ final class ShiftsController
             if ($sourceAvailabilityId !== null) {
                 self::assertSourceAvailability($pdo, $sourceAvailabilityId, $userId, $identity['barangay_id']);
             }
+            self::assertWithinAvailability($pdo, $userId, $startAt, $endAt);
 
             // approval_status is left to its column default ('draft'):
             // a new shift is never visible to the Tanod until published.
@@ -274,7 +275,10 @@ final class ShiftsController
             }
 
             $hasUserId = array_key_exists('user_id', $body);
-            $newUserId = $hasUserId ? $body['user_id'] : (int) $row['user_id'];
+            // An untouched user_id keeps the row's own value, including NULL
+            // (an unassigned shift): `(int) null` would turn it into user 0 and
+            // a time-only edit of an unassigned shift would 422.
+            $newUserId = $hasUserId ? $body['user_id'] : ($row['user_id'] !== null ? (int) $row['user_id'] : null);
             if ($hasUserId && $newUserId !== null) {
                 if (!is_int($newUserId) && !(is_string($newUserId) && ctype_digit($newUserId))) {
                     throw new ApiError(400, 'VALIDATION_ERROR', 'user_id must be an integer or null.');
@@ -306,6 +310,15 @@ final class ShiftsController
                 self::assertTanodEligible($pdo, $newUserId, $identity['barangay_id'], true);
                 self::assertNoOverlap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
                 self::assertDailyHoursCap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
+                // Availability is checked only when the assignee or the times
+                // change, so a patrol-zone-only edit of an older shift is not
+                // refused over a rule that did not exist when it was made.
+                $timesOrAssigneeChanged = $newUserId !== $oldUserId
+                    || $newStartAt->format('Y-m-d H:i:s') !== (string) $row['start_at']
+                    || $newEndAt->format('Y-m-d H:i:s') !== (string) $row['end_at'];
+                if ($timesOrAssigneeChanged) {
+                    self::assertWithinAvailability($pdo, $newUserId, $newStartAt, $newEndAt);
+                }
             }
             // Unassigning (user_id -> null) is no longer blocked on coverage
             // grounds (contract section 8): zero coverage is surfaced as a
@@ -478,6 +491,87 @@ final class ShiftsController
             }
             $day = (new \DateTimeImmutable($day, $utc))->modify('+1 day')->format('Y-m-d');
         }
+    }
+
+    /**
+     * Owner decision 2026-10-12: availability is the tanod's own fixed
+     * statement, so a tanod may only be scheduled inside it. Refuses
+     * (422 `OUTSIDE_AVAILABILITY`) a shift for a `tanod` account unless every
+     * minute of [$startAt, $endAt) falls inside the union of the windows the
+     * tanod submitted (any `tanod_availability` row of theirs, whatever its
+     * legacy status). Windows are Asia/Manila local times; a window ending
+     * 23:59 counts as running to midnight so a night shift can span two
+     * consecutive windows (22:00-23:59 then 00:00-06:00).
+     *
+     * Not checked: an unassigned shift (callers pass only a real user id) and
+     * an `admin` assignee (the Chief Tanod is rostered from an admin account
+     * and has no availability screen). Reusable from any scheduling path
+     * (shift create/update, swap approval). Read-only; call it inside the
+     * same transaction as the other assert* helpers.
+     */
+    public static function assertWithinAvailability(PDO $pdo, int $userId, \DateTimeImmutable $startAt, \DateTimeImmutable $endAt): void
+    {
+        $userStmt = $pdo->prepare('SELECT role, full_name FROM user WHERE user_id = :user_id LIMIT 1');
+        $userStmt->execute(['user_id' => $userId]);
+        $user = $userStmt->fetch(PDO::FETCH_ASSOC);
+        if ($user === false || $user['role'] !== 'tanod') {
+            return;
+        }
+
+        $firstDay = RosterSupport::manilaDateOf($startAt);
+        $lastDay = RosterSupport::manilaDateOf($endAt->modify('-1 second'));
+        $stmt = $pdo->prepare(
+            'SELECT windows_json FROM tanod_availability
+              WHERE user_id = :user_id AND period_start <= :last_day AND period_end >= :first_day'
+        );
+        $stmt->execute(['user_id' => $userId, 'first_day' => $firstDay, 'last_day' => $lastDay]);
+
+        $manila = new \DateTimeZone(RosterSupport::MANILA_OFFSET);
+        $windows = [];   // "date start-end" => [startTs, endTs], de-duplicated
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $json) {
+            $decoded = json_decode((string) $json, true);
+            foreach (is_array($decoded) ? $decoded : [] as $w) {
+                if (!is_array($w) || !isset($w['date'], $w['start'], $w['end'])) {
+                    continue;
+                }
+                $date = (string) $w['date'];
+                if ($date < $firstDay || $date > $lastDay) {
+                    continue;
+                }
+                $from = new \DateTimeImmutable("{$date} {$w['start']}:00", $manila);
+                $to = $w['end'] === '23:59'
+                    ? (new \DateTimeImmutable("{$date} 00:00:00", $manila))->modify('+1 day')
+                    : new \DateTimeImmutable("{$date} {$w['end']}:00", $manila);
+                $windows["{$date} {$w['start']}-{$w['end']}"] = [$from->getTimestamp(), $to->getTimestamp()];
+            }
+        }
+
+        // Walk the shift forward through the windows sorted by start.
+        $intervals = array_values($windows);
+        usort($intervals, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        $cursor = $startAt->getTimestamp();
+        $end = $endAt->getTimestamp();
+        foreach ($intervals as [$from, $to]) {
+            if ($from > $cursor) {
+                break;
+            }
+            $cursor = max($cursor, $to);
+            if ($cursor >= $end) {
+                return;
+            }
+        }
+
+        $name = (string) $user['full_name'];
+        $days = $firstDay === $lastDay ? $firstDay : "{$firstDay} to {$lastDay}";
+        if ($windows === []) {
+            $message = "{$name} has not submitted availability for {$days}, so they cannot be scheduled then.";
+        } else {
+            $labels = array_keys($windows);
+            sort($labels);
+            $message = "This shift is outside {$name}'s submitted availability. Available on {$days}: "
+                . implode(', ', $labels) . ' (Asia/Manila).';
+        }
+        throw new ApiError(422, 'OUTSIDE_AVAILABILITY', $message);
     }
 
     private static function overlapSeconds(\DateTimeImmutable $aStart, \DateTimeImmutable $aEnd, \DateTimeImmutable $bStart, \DateTimeImmutable $bEnd): int

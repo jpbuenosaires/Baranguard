@@ -273,7 +273,7 @@ api PATCH "/users/$ADMIN_ID" "$ADMIN_T" '{"approval_authority":["prepare_annex_d
 expect_code "Admin re-submits their own list with NO approving change (non-approving authorities stay editable)" 200
 
 # ================================================================ availability
-step "4. Availability — POST /availability, GET /availability, PATCH /availability/:id"
+step "4. Availability — POST /availability, GET /availability, PATCH /availability/:id retired (410)"
 P_START=$(dman "+15 days"); P_END=$(dman "+21 days"); P_MID=$(dman "+17 days")
 AV_EVT=$(uuid)
 AV_BODY="{\"period_start\":\"$P_START\",\"period_end\":\"$P_END\",\"windows\":[{\"date\":\"$P_MID\",\"start\":\"08:00\",\"end\":\"16:00\"},{\"date\":\"$P_END\",\"start\":\"20:00\",\"end\":\"23:30\"}],\"client_event_id\":\"$AV_EVT\"}"
@@ -338,44 +338,49 @@ expect_eq "Barangay-2 admin sees 0 (tenant isolation)" "$(jget "$BODY" total)" "
 api GET "/availability?status=bogus" "$ADMIN_T" ""
 expect_code "Bad status filter" 400
 
-AV_REV_KEY=$(uuid)
-api PATCH "/availability/$AV1_ID" "$T1_T" '{"status":"accepted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Tanod PATCH /availability/:id" 403
-api PATCH "/availability/$AV1_ID" "$PB_T" '{"status":"accepted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Punong Barangay PATCH /availability/:id (admin or secretary only)" 403
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"accepted"}'
-expect_code "PATCH without Idempotency-Key" 400
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"submitted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "PATCH with an invalid status value" 400
-api PATCH "/availability/$AV1_ID" "$ADMIN2_T" '{"status":"accepted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Barangay-2 admin PATCH (cross-tenant)" 404
-api PATCH "/availability/999999" "$ADMIN_T" '{"status":"accepted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "PATCH a nonexistent availability" 404
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"accepted","review_note":"ok"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Admin accepts" 200
-expect_eq "  status/reviewed_by" "$(jget "$BODY" status)/$(jget "$BODY" reviewed_by)" "accepted/$ADMIN_ID"
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"accepted","review_note":"ok"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Replay of the review (same key)" 200
-expect_eq "  exactly one review audit row" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='availability_reviewed' AND entity_id=$AV1_ID;")" "1"
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"revised"}' -H "Idempotency-Key: $(uuid)"
-expect_code "Reviewing an already-accepted row (new key)" 409
-api POST "/availability" "$T1_T" "$AV_BODY3" -H "$D_T1"
-expect_code "Replay of the accepted period's event id stays idempotent" 200
-api POST "/availability" "$T1_T" "$(printf '%s' "$AV_BODY" | sed "s/\"client_event_id\":\"[^\"]*\"/\"client_event_id\":\"$(uuid)\"/")" -H "$D_T1"
-expect_code "Changing an ACCEPTED period" 409
+# Owner decision 2026-10-12: availability is the tanod's own fixed statement.
+# PATCH /availability/:id is retired (410 AVAILABILITY_NOT_REVIEWED) for every
+# caller; nothing is reviewed, accepted or locked.
+for who in "$ADMIN_T:Admin" "$SEC_T:Secretary" "$PB_T:Punong Barangay" "$T1_T:Tanod"; do
+  api PATCH "/availability/$AV1_ID" "${who%%:*}" '{"status":"accepted","review_note":"ok"}' -H "Idempotency-Key: $(uuid)"
+  expect_code "${who#*:} PATCH /availability/:id (review retired)" 410
+  expect_eq "  error code AVAILABILITY_NOT_REVIEWED" "$(jget "$BODY" error.code)" "AVAILABILITY_NOT_REVIEWED"
+done
+api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"revised"}'
+expect_code "PATCH without Idempotency-Key is also just 410" 410
+api PATCH "/availability/999999" "$ADMIN_T" '{"status":"accepted"}' -H "Idempotency-Key: $(uuid)"
+expect_code "PATCH a nonexistent availability (410, no lookup)" 410
+expect_eq "  row untouched: still submitted, version 2, no reviewer" "$(db_one "SELECT CONCAT(status,'|',version,'|',IFNULL(reviewed_by,'NULL')) FROM tanod_availability WHERE avail_id=$AV1_ID;")" "submitted|2|NULL"
+expect_eq "  no availability_reviewed audit row" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='availability_reviewed';")" "0"
 
-# revised -> resubmit flow (T2, secretary reviews)
+# Legacy rows reviewed before 2026-10-12 stay readable, and are NOT locked.
+mysql_exec "$VALDB" -e "UPDATE tanod_availability SET status='accepted', reviewed_by=$ADMIN_ID, reviewed_at=UTC_TIMESTAMP(), review_note='ok' WHERE avail_id=$AV1_ID;"
+api GET "/availability?user_id=$T1_ID" "$ADMIN_T" ""
+expect_eq "Legacy 'accepted' row still listed with its review fields" "$(jget "$BODY" items.0.status)/$(jget "$BODY" items.0.reviewed_by)/$(jget "$BODY" items.0.review_note)" "accepted/$ADMIN_ID/ok"
+api GET "/availability?status=accepted" "$ADMIN_T" ""
+expect_eq "  ?status=accepted still filters legacy rows" "$(jget "$BODY" total)" "1"
+api POST "/availability" "$T1_T" "$AV_BODY3" -H "$D_T1"
+expect_code "Replay of a legacy-accepted period's event id stays idempotent" 200
+api POST "/availability" "$T1_T" "$(printf '%s' "$AV_BODY2" | sed "s/\"client_event_id\":\"[^\"]*\"/\"client_event_id\":\"$(uuid)\"/")" -H "$D_T1"
+expect_code "Same windows, new event id on a legacy-accepted period" 200
+expect_eq "  no-op: no version bump, legacy status kept" "$(jget "$BODY" version)/$(jget "$BODY" status)" "2/accepted"
+api POST "/availability" "$T1_T" "$(printf '%s' "$AV_BODY" | sed "s/\"client_event_id\":\"[^\"]*\"/\"client_event_id\":\"$(uuid)\"/")" -H "$D_T1"
+expect_code "Tanod CHANGES a legacy-accepted period (no longer locked; was 409)" 200
+expect_eq "  same row, version 3, back to submitted, review cleared" "$(jget "$BODY" avail_id)/$(jget "$BODY" version)/$(jget "$BODY" status)/$(jget "$BODY" reviewed_by)/$(jget "$BODY" review_note)" "$AV1_ID/3/submitted/null/null"
+
+# Legacy 'revised' row (T2): readable with its note; a resubmission clears it.
 P2_START=$(dman "+30 days"); P2_END=$(dman "+36 days")
 AV2_BODY="{\"period_start\":\"$P2_START\",\"period_end\":\"$P2_END\",\"windows\":[{\"date\":\"$P2_START\",\"start\":\"06:00\",\"end\":\"12:00\"}],\"client_event_id\":\"$(uuid)\"}"
 api POST "/availability" "$T2_T" "$AV2_BODY" -H "$D_T2"
+expect_code "T2 POST /availability" 201
 AV2_ID=$(jget "$BODY" avail_id)
-api PATCH "/availability/$AV2_ID" "$SEC_T" '{"status":"revised","review_note":"please add weekends"}' -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary marks T2's availability 'revised'" 200
-expect_eq "  review_note stored" "$(jget "$BODY" review_note)" "please add weekends"
+mysql_exec "$VALDB" -e "UPDATE tanod_availability SET status='revised', reviewed_by=$SEC_ID, reviewed_at=UTC_TIMESTAMP(), review_note='please add weekends' WHERE avail_id=$AV2_ID;"
+api GET "/availability" "$T2_T" ""
+expect_eq "Tanod still reads a legacy 'revised' row and its note" "$(jget "$BODY" items.0.status)/$(jget "$BODY" items.0.review_note)" "revised/please add weekends"
 AV2_BODY_B=$(printf '%s' "$AV2_BODY" | sed "s/\"client_event_id\":\"[^\"]*\"/\"client_event_id\":\"$(uuid)\"/; s/06:00/05:00/")
 api POST "/availability" "$T2_T" "$AV2_BODY_B" -H "$D_T2"
-expect_code "T2 resubmits a 'revised' period" 200
-expect_eq "  back to submitted, version 3, review cleared" "$(jget "$BODY" status)/$(jget "$BODY" version)/$(jget "$BODY" reviewed_by)" "submitted/3/null"
+expect_code "T2 changes a legacy 'revised' period" 200
+expect_eq "  back to submitted, version 2, review cleared" "$(jget "$BODY" status)/$(jget "$BODY" version)/$(jget "$BODY" reviewed_by)" "submitted/2/null"
 
 # ================================================================ device signature
 step "5. Device signature convention on availability writes (H-09)"
@@ -396,6 +401,13 @@ dev-rc-t4
 %s' "$TS" | "$OPENSSL_BIN" dgst -sha256 -sign "$TMP_DIR/t4.key" | base64 -w0)
 api POST "/availability" "$T4_T" "$SIG_BODY" -H "$D_T4" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $SIG"
 expect_code "Same request with a valid signature" 201
+
+# Since 2026-10-12 a tanod can only be scheduled inside their submitted
+# availability (422 OUTSIDE_AVAILABILITY, tested in section 14). The roster
+# rules below (overlap, 12h/day cap, publish, swaps) are about something
+# else, so every tanod gets open whole-day availability first.
+"$PHP_BIN" "$BACKEND_DIR/scripts/seed-open-availability.php" | mysql_exec "$VALDB" \
+  && pass "Seeded open availability for every tanod (seed-open-availability.php)" || fail "open availability seed failed"
 
 # ================================================================ shifts
 step "6. Shifts — draft/published, tanod visibility, 12h/day cap (contract sections 3 and 8)"
@@ -880,6 +892,53 @@ SIG=$(printf 'POST\n/api/v1/sync/batch\n%s\n%s' "dev-rc-t4" "$TS" | "$OPENSSL_BI
 api POST "/sync/batch" "$T4_T" "$SIGV_BODY" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $SIG"
 expect_eq "Same batch with a valid signature: availability item succeeds" "$(res_of "$SIGV_AV" status)" "success"
 expect_eq "  accomplishment item succeeds" "$(res_of "$SIGV_AC" status)" "success"
+
+# ================================================================ availability is binding
+step "14. Scheduling must stay inside the tanod's submitted availability (422 OUTSIDE_AVAILABILITY)"
+mysql_exec "$VALDB" -e "INSERT INTO user (barangay_id, username, password_hash, full_name, role, is_active, created_at) VALUES (1, 'rc_t5', '$HASH', 'RC Tanod Five', 'tanod', 1, UTC_TIMESTAMP());"
+T5_ID=$(uid rc_t5)
+AA=$(dman "+60 days"); AB=$(dman "+61 days"); AC=$(dman "+63 days"); AZ=$(dman "+90 days")
+mysql_exec "$VALDB" -e "INSERT INTO tanod_availability (barangay_id, user_id, period_start, period_end, windows_json, status, version, client_event_id, created_at, updated_at) VALUES (1, $T5_ID, '$AA', '$(dman '+66 days')', '[{\"date\":\"$AA\",\"start\":\"08:00\",\"end\":\"16:00\"},{\"date\":\"$AA\",\"start\":\"22:00\",\"end\":\"23:59\"},{\"date\":\"$AB\",\"start\":\"00:00\",\"end\":\"06:00\"}]', 'submitted', 1, '$(uuid)', UTC_TIMESTAMP(), UTC_TIMESTAMP());"
+mkshift "$ADMIN_T" "$T5_ID" "$AA" "07:00" "12:00"
+expect_code "Shift only partly inside a window" 422
+mkshift "$ADMIN_T" "$T5_ID" "$AA" "08:00" "16:00"
+expect_code "Shift exactly inside a window" 201
+S5_IN=$(jget "$BODY" shift_id)
+mkshift "$ADMIN_T" "$T5_ID" "$AA" "22:00" "06:00" "" "$AB"
+expect_code "Night shift across midnight covered by 22:00-23:59 + 00:00-06:00" 201
+mkshift "$SEC_T" "$T5_ID" "$AA" "16:00" "18:00"
+expect_code "Secretary: shift starting at the window's end (outside)" 422
+expect_eq "  error code OUTSIDE_AVAILABILITY" "$(jget "$BODY" error.code)" "OUTSIDE_AVAILABILITY"
+expect_eq "  message names the tanod's windows" "$(printf '%s' "$(jget "$BODY" error.message)" | grep -c "RC Tanod Five.*$AA 08:00-16:00, $AA 22:00-23:59")" "1"
+mkshift "$ADMIN_T" "$T5_ID" "$AC" "08:00" "12:00"
+expect_code "Day inside the period but with no window" 422
+mkshift "$ADMIN_T" "$T5_ID" "$AZ" "08:00" "12:00"
+expect_code "Date with no availability submitted at all" 422
+expect_eq "  message says nothing was submitted" "$(printf '%s' "$(jget "$BODY" error.message)" | grep -c "has not submitted availability")" "1"
+expect_eq "  refused shifts wrote nothing (T5 has exactly 2 shifts)" "$(db_one "SELECT COUNT(*) FROM shift_schedule WHERE user_id=$T5_ID;")" "2"
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"end_at\":\"${AA}T17:00:00+08:00\",\"version\":1}"
+expect_code "PATCH extending the shift past the window" 422
+expect_eq "  error code OUTSIDE_AVAILABILITY" "$(jget "$BODY" error.code)" "OUTSIDE_AVAILABILITY"
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"end_at\":\"${AA}T15:00:00+08:00\",\"version\":1}"
+expect_code "PATCH shortening it (still inside)" 200
+api PATCH "/shifts/$S8C" "$ADMIN_T" "{\"user_id\":$T5_ID,\"version\":$(db_one "SELECT version FROM shift_schedule WHERE shift_id=$S8C;")}"
+expect_code "PATCH reassigning another tanod's shift to T5 outside T5's availability" 422
+expect_eq "  shift kept its assignee" "$(db_one "SELECT user_id FROM shift_schedule WHERE shift_id=$S8C;")" "$T3_ID"
+s5v() { db_one "SELECT version FROM shift_schedule WHERE shift_id=$S5_IN;"; }
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"user_id\":null,\"version\":$(s5v)}"
+expect_code "Unassigning (user_id null) is not checked" 200
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"start_at\":\"${AC}T08:00:00+08:00\",\"end_at\":\"${AC}T12:00:00+08:00\",\"version\":$(s5v)}"
+expect_code "Moving an UNASSIGNED shift to any time is not checked" 200
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"user_id\":$T5_ID,\"version\":$(s5v)}"
+expect_code "Assigning it to T5 on a day with no window" 422
+mysql_exec "$VALDB" -e "UPDATE shift_schedule SET user_id=$T5_ID WHERE shift_id=$S5_IN;"
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"patrol_zone\":\"Zone legacy\",\"version\":$(s5v)}"
+expect_code "patrol_zone-only edit of a shift already outside availability is allowed" 200
+mysql_exec "$VALDB" -e "UPDATE tanod_availability SET status='accepted' WHERE user_id=$T5_ID;"
+mkshift "$ADMIN_T" "$T5_ID" "$AA" "09:00" "10:00"
+expect_code "A legacy 'accepted' row counts as availability like any other" 201
+mkshift "$ADMIN_T" "$ADMIN_ID" "$AZ" "08:00" "12:00"
+expect_code "Chief Tanod (admin account) is not checked (no availability screen)" 201
 
 step "13. Final spot checks"
 api GET "/shifts?limit=100&approval_status=draft" "$ADMIN_T" ""
