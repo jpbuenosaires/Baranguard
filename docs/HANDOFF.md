@@ -8,9 +8,20 @@ sessions, the abandoned React Native rebuild, the PHP 8.3 swap, the
 Cloudflare tunnel set-up) lives in DEVLOG; only what is still true and
 still actionable is kept here.
 
-**Last updated: 2026-10-09 (after the logic-review decisions).**
+**Last updated: 2026-10-12 (paper-first signing and its follow-ups).**
 
 ## Current state
+
+**Paper-first signing (2026-10-12, DEVLOG 2026-10-12 (1) and (2)), on GitHub
+`main` via PRs.** The signed paper is the approval: Admin/Secretary "Record
+signed paper" approves accomplishment reports (`prepared` or `noted`) and
+Annex D; rosters use "Publish with signed paper". In-app Note/Approve buttons
+are gone from the web (Rules 73-74). Follow-ups: Admin/Secretary always see
+entry text; authority and mobile status labels say "signed paper"; a tanod gets
+an ordinary push when a report is approved/returned or their shifts are
+published (migration **0040**, NOT applied to any real DB, apply after 0039);
+every print is A4. **The mobile label change needs a new APK build.** Verified
+on disposable DBs, jsdom and a headless-Chromium A4 PDF render only.
 
 **Proposed Changes Review build (2026-10-07, DEVLOG 2026-10-07 (1)) is
 code-complete on local `main`, NOT pushed, verified on disposable DBs / jsdom

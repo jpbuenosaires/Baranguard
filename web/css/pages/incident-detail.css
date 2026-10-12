@@ -813,9 +813,14 @@
   --sheet-muted: #475569;
   --sheet-border: #cbd5e1;
   --sheet-Subtle-bg: #f8fafc;
-  max-width: 46rem;
+  /* On screen the preview is an A4 page with the printed margin, so what
+     the Secretary sees is what comes out of the printer. */
+  box-sizing: border-box;
+  width: var(--paper-a4-short);
+  max-width: 100%;
+  min-height: var(--paper-a4-long);
   margin: 0 auto;
-  padding: var(--spacing-xl);
+  padding: var(--paper-margin);
   background: var(--color-white);
   color: var(--sheet-ink);
   border: 1px solid var(--sheet-border);
@@ -1209,10 +1214,7 @@
 /* Print Sheet Styling */
 
 @media print {
-@page {
-    size: A4 portrait;
-    margin: 12mm;
-  }
+/* The A4 @page rule is global, in base.css. */
 html,
   body {
     height: auto !important;
@@ -1290,6 +1292,7 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
     display: block !important;
     max-width: none !important;
     width: 100% !important;
+    min-height: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
     border: 0 !important;

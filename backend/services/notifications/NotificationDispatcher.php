@@ -88,12 +88,12 @@ final class NotificationDispatcher
     }
 
     /**
-     * @return array{notification_type:string,barangay_id:int,dispatch_id:?int,sos_id:?int,incident_id:?int,dispatch_offer_id:?int}|null
+     * @return array{notification_type:string,barangay_id:int,dispatch_id:?int,sos_id:?int,incident_id:?int,dispatch_offer_id:?int,accomplishment_report_id:?int}|null
      */
     private function loadNotification(PDO $pdo, int $notificationId): ?array
     {
         $stmt = $pdo->prepare(
-            'SELECT notification_type, barangay_id, dispatch_id, sos_id, incident_id, dispatch_offer_id
+            'SELECT notification_type, barangay_id, dispatch_id, sos_id, incident_id, dispatch_offer_id, accomplishment_report_id
              FROM notification WHERE notification_id = :id'
         );
         $stmt->execute(['id' => $notificationId]);
@@ -108,6 +108,7 @@ final class NotificationDispatcher
             'sos_id' => $row['sos_id'] !== null ? (int) $row['sos_id'] : null,
             'incident_id' => $row['incident_id'] !== null ? (int) $row['incident_id'] : null,
             'dispatch_offer_id' => $row['dispatch_offer_id'] !== null ? (int) $row['dispatch_offer_id'] : null,
+            'accomplishment_report_id' => $row['accomplishment_report_id'] !== null ? (int) $row['accomplishment_report_id'] : null,
         ];
     }
 
@@ -252,6 +253,38 @@ final class NotificationDispatcher
                     'message_type' => 'priority_alert',
                 ];
 
+            // Migration 0040. Ordinary pushes: message_type '' means no SMS
+            // fallback (a report outcome is not urgent and SMS costs load).
+            // Month and outcome only; never the return reason or entry text.
+            case 'report_update':
+                if (($notification['accomplishment_report_id'] ?? null) === null) {
+                    return null;
+                }
+                $stmt = $pdo->prepare('SELECT status, month FROM accomplishment_report WHERE report_id = :id');
+                $stmt->execute(['id' => $notification['accomplishment_report_id']]);
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($row === false || !in_array($row['status'], ['approved', 'returned'], true)) {
+                    return null;
+                }
+                $month = self::formatMonth((string) $row['month']);
+                $returned = $row['status'] === 'returned';
+                return [
+                    'title' => $returned ? 'Accomplishment report returned' : 'Accomplishment report approved',
+                    'body' => $returned
+                        ? "Your {$month} accomplishment report was returned. Open the app to see what to fix."
+                        : "Your {$month} accomplishment report was approved.",
+                    'sms' => '',
+                    'message_type' => '',
+                ];
+
+            case 'roster_published':
+                return [
+                    'title' => 'Duty schedule published',
+                    'body' => 'Your duty schedule was updated. Open the app to see your shifts.',
+                    'sms' => '',
+                    'message_type' => '',
+                ];
+
             default: // 'other' — no caller in this codebase creates one yet.
                 return [
                     'title' => 'Baranguard notification',
@@ -335,6 +368,13 @@ final class NotificationDispatcher
             }
         }
         return $data;
+    }
+
+    /** 'YYYY-MM' -> 'September 2026' for a push body; the raw value if malformed. */
+    private static function formatMonth(string $month): string
+    {
+        $date = \DateTimeImmutable::createFromFormat('!Y-m', $month);
+        return $date === false ? $month : $date->format('F Y');
     }
 
     /**

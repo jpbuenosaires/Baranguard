@@ -37,8 +37,15 @@ final class NotificationService
     public const TYPE_OTHER = 'other';
     /** Migration 0038: a night-time dispatch offer broadcast to on-duty Tanods. */
     public const TYPE_DISPATCH_OFFER = 'dispatch_offer';
+    /** Migration 0040: a tanod's accomplishment report was returned or approved. */
+    public const TYPE_REPORT_UPDATE = 'report_update';
+    /** Migration 0040: shifts assigned to a tanod were published. */
+    public const TYPE_ROSTER_PUBLISHED = 'roster_published';
 
-    private const TYPES = [self::TYPE_DISPATCH, self::TYPE_SOS, self::TYPE_PRIORITY_ALERT, self::TYPE_OTHER, self::TYPE_DISPATCH_OFFER];
+    private const TYPES = [
+        self::TYPE_DISPATCH, self::TYPE_SOS, self::TYPE_PRIORITY_ALERT, self::TYPE_OTHER, self::TYPE_DISPATCH_OFFER,
+        self::TYPE_REPORT_UPDATE, self::TYPE_ROSTER_PUBLISHED,
+    ];
 
     /**
      * Creates one logical notification plus a target row per recipient.
@@ -51,7 +58,7 @@ final class NotificationService
      * @param int[] $targetUserIds recipients; duplicates are collapsed, and
      *        the empty case is allowed (a notification with nothing to
      *        deliver is still a true record that the event occurred).
-     * @param array{dispatch_id?:?int,sos_id?:?int,incident_id?:?int,dispatch_offer_id?:?int} $entities
+     * @param array{dispatch_id?:?int,sos_id?:?int,incident_id?:?int,dispatch_offer_id?:?int,accomplishment_report_id?:?int} $entities
      * @return array{notification_id:int,target_count:int}
      */
     public static function create(
@@ -70,13 +77,14 @@ final class NotificationService
         $sosId = $entities['sos_id'] ?? null;
         $incidentId = $entities['incident_id'] ?? null;
         $offerId = $entities['dispatch_offer_id'] ?? null;
-        self::assertEntityIntegrity($type, $dispatchId, $sosId, $incidentId, $offerId);
+        $reportId = $entities['accomplishment_report_id'] ?? null;
+        self::assertEntityIntegrity($type, $dispatchId, $sosId, $incidentId, $offerId, $reportId);
 
         $insert = $pdo->prepare(
             'INSERT INTO notification
-                (barangay_id, notification_type, dispatch_id, sos_id, incident_id, dispatch_offer_id, created_by, created_at)
+                (barangay_id, notification_type, dispatch_id, sos_id, incident_id, dispatch_offer_id, accomplishment_report_id, created_by, created_at)
              VALUES
-                (:barangay_id, :notification_type, :dispatch_id, :sos_id, :incident_id, :dispatch_offer_id, :created_by, UTC_TIMESTAMP())'
+                (:barangay_id, :notification_type, :dispatch_id, :sos_id, :incident_id, :dispatch_offer_id, :accomplishment_report_id, :created_by, UTC_TIMESTAMP())'
         );
         $insert->execute([
             'barangay_id' => $barangayId,
@@ -85,6 +93,7 @@ final class NotificationService
             'sos_id' => $sosId,
             'incident_id' => $incidentId,
             'dispatch_offer_id' => $offerId,
+            'accomplishment_report_id' => $reportId,
             'created_by' => $createdBy,
         ]);
         $notificationId = (int) $pdo->lastInsertId();
@@ -214,7 +223,7 @@ final class NotificationService
      * §5's notification entity-integrity matrix. See the class doc for why
      * this lives in PHP and not in a CHECK constraint.
      */
-    private static function assertEntityIntegrity(string $type, ?int $dispatchId, ?int $sosId, ?int $incidentId, ?int $offerId = null): void
+    private static function assertEntityIntegrity(string $type, ?int $dispatchId, ?int $sosId, ?int $incidentId, ?int $offerId = null, ?int $reportId = null): void
     {
         $problem = match ($type) {
             self::TYPE_DISPATCH => $dispatchId === null
@@ -227,6 +236,12 @@ final class NotificationService
             // its incident, so the feed can show the incident type).
             self::TYPE_DISPATCH_OFFER => ($offerId === null || $incidentId === null)
                 ? 'A dispatch_offer notification requires dispatch_offer_id and incident_id.' : null,
+            // Migration 0040: about ONE report and nothing else.
+            self::TYPE_REPORT_UPDATE => ($reportId === null || $dispatchId !== null || $sosId !== null || $incidentId !== null || $offerId !== null)
+                ? 'A report_update notification requires accomplishment_report_id and no other entity.' : null,
+            // Migration 0040: about the tanod's own published shifts; no entity row.
+            self::TYPE_ROSTER_PUBLISHED => ($reportId !== null || $dispatchId !== null || $sosId !== null || $incidentId !== null || $offerId !== null)
+                ? 'A roster_published notification carries no entity.' : null,
             // §5: "'other' may use a documented entity relationship" — no
             // combination is mandated, so nothing to reject.
             default => null,

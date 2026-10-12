@@ -261,7 +261,7 @@
    Printed forms (always dark-on-white paper; see file header)
    ========================================================================== */
 
-.tw-print-sheet--landscape { max-width: 72rem; }
+.tw-print-sheet--landscape { width: var(--paper-a4-long); max-width: 100%; min-height: var(--paper-a4-short); }
 
 .tw-print {
   display: flex;
@@ -392,5 +392,5 @@
 @page tw-landscape { size: A4 landscape; margin: 12mm 15mm; }
 
 @media print {
-  .tw-print-sheet--landscape { max-width: none; }
+  .tw-print-sheet--landscape { max-width: none; min-height: 0; }
 }

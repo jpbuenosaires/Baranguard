@@ -111,6 +111,15 @@ Endpoints (all barangay-scoped; tanod only touches own rows; others 404):
 - `POST /accomplishment-reports/:id/return` — NOTE or APPROVE authority; body `{reason}` (1..255); prepared|noted -> returned (entries editable again).
 Web actions need Idempotency-Key; replay returns the original outcome. Illegal transition -> 409. Audit actions `accomplishment_report_submitted|noted|approved|returned`, metadata `{report_id, month, status}` only — never text, minutes of a person, or names.
 
+> **Amended 2026-10-12 (paper-first signing, Rules 73-74 of `docs/WORKFLOWS_AND_RULES.md`).**
+> The signed paper is the approval. The web no longer offers `/note` or `/approve`;
+> an Admin/Secretary records the signed paper via
+> `POST /accomplishment-reports/:id/record-paper-approval` (migration 0037), which
+> now accepts `prepared` as well as `noted`. Admin and Secretary always see entry
+> text (they print the form). Approve and return (any path) and roster publishing
+> notify the tanod (migration 0040, `report_update` / `roster_published`). The
+> endpoints above are unchanged and still work.
+
 ## 5. Referral (migration 0032, B1)
 
 `incident_referral`: `referral_id`, `incident_id` FK, `barangay_id`, `referred_to ENUM('pnp','bfp','ambulance_ems','barangay_official','vaw_desk','social_welfare','higher_lgu','doh','dpwh','other')`, `other_text VARCHAR(100) NULL` (required when `other`; for others optional free label), `contact_name VARCHAR(100) NULL` (responder/unit/official, NEVER a citizen), `referred_at DATETIME NOT NULL`, `reference_no VARCHAR(64) NULL`, `created_by`, `client_event_id CHAR(36) NULL`, `created_at`. UNIQUE(created_by, client_event_id). Multiple referrals per incident allowed.
