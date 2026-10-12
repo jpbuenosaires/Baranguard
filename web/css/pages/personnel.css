@@ -939,26 +939,6 @@
   flex: 1 1 12rem;
 }
 
-/* Scheduler month window (audit F-09) and accepted-availability list (R-03) */
-.scheduler-month-nav {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  width: 100%;
-}
-
-.availability-accepted {
-  margin-top: var(--spacing-sm);
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--spacing-sm);
-}
-
-.availability-accepted > summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-
 /* ---- Scheduler: weekly roster grid (2026-10-12) ------------------------- */
 
 .split-panel.scheduler-layout--week {
