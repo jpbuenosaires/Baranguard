@@ -40,7 +40,7 @@ const DAY_MINUTES = 24 * 60;
 
 export function ShiftWeekGrid({
   days, today, rows, weekShifts, allShifts, availability, availabilityLoaded,
-  canEdit, addLabel, onAdd, onOpen, onMove,
+  canEdit, addLabel, onAdd, onOpen, onMove, selectedShiftIds, onToggleSelect,
 }) {
   const wrap = document.createElement('div');
   wrap.className = 'week-grid-wrap';
@@ -210,10 +210,12 @@ export function ShiftWeekGrid({
 
   function buildChip(row, shift, intervals) {
     const draft = shift.approvalStatus === 'draft';
+    const isSelected = Boolean(selectedShiftIds && selectedShiftIds.has(shift.shiftId));
     const chip = document.createElement(canEdit ? 'button' : 'span');
     if (canEdit) chip.type = 'button';
-    chip.className = `shift-chip shift-chip--${draft ? 'draft' : 'published'}`;
+    chip.className = `shift-chip shift-chip--${draft ? 'draft' : 'published'}${isSelected ? ' is-selected' : ''}`;
     chip.dataset.shiftId = String(shift.shiftId);
+    if (isSelected) chip.setAttribute('aria-selected', 'true');
 
     const problems = [];
     if (row.userId !== null && availabilityLoaded) {
@@ -233,7 +235,21 @@ export function ShiftWeekGrid({
 
     const label = document.createElement('span');
     label.className = 'shift-chip__label';
-    label.textContent = shiftChipLabel(shift) + (problems.length ? ' !' : '');
+    if (isSelected) {
+      const check = document.createElement('span');
+      check.className = 'shift-chip__check';
+      check.textContent = '✓ ';
+      label.appendChild(check);
+    }
+    label.appendChild(document.createTextNode(shiftChipLabel(shift)));
+    if (problems.length) {
+      const warnBadge = document.createElement('span');
+      warnBadge.className = 'shift-chip__alert';
+      warnBadge.textContent = '!';
+      warnBadge.setAttribute('aria-hidden', 'true');
+      label.appendChild(document.createTextNode(' '));
+      label.appendChild(warnBadge);
+    }
     chip.appendChild(label);
     if (shift.patrolZone) {
       const zone = document.createElement('span');
@@ -245,14 +261,19 @@ export function ShiftWeekGrid({
     const parts = [
       `${shiftTimeLabel(shift)}${shift.patrolZone ? `, ${shift.patrolZone}` : ''}`,
       draft ? (shift.pendingReapproval ? 'draft, swap awaiting re-approval' : 'draft') : 'published',
+      isSelected ? 'selected' : '',
       ...problems.map((p) => p.text),
-    ];
+    ].filter(Boolean);
     chip.title = parts.join(' · ');
-    chip.setAttribute('aria-label', `${row.name}: ${parts.join(', ')}${canEdit ? '. Open to edit.' : ''}`);
+    chip.setAttribute('aria-label', `${row.name}: ${parts.join(', ')}${canEdit ? '. Open to edit or Ctrl-click to select.' : ''}`);
 
     if (canEdit) {
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (onToggleSelect && (e.ctrlKey || e.metaKey || e.shiftKey || (selectedShiftIds && selectedShiftIds.size > 0))) {
+          onToggleSelect(shift.shiftId);
+          return;
+        }
         onOpen?.(shift);
       });
       if (onMove) {

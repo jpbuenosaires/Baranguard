@@ -277,3 +277,91 @@ export function moveToDay(shift, date) {
   const endMs = endMsOf(shift) + delta;
   return { startMs, endMs, startLocal: msToManilaLocal(startMs), endLocal: msToManilaLocal(endMs) };
 }
+
+/**
+ * Returns tanods who are available for a given slot, not already scheduled in an overlapping
+ * shift, and who won't exceed daily (12h) or weekly (56h) limits.
+ * Ranked by lowest weekly hours first for balanced duty distribution.
+ */
+export function suggestAvailableTanods(shifts, availability, date, presetType, tanods) {
+  const slot = presetRange(date, presetType);
+  const slotDuration = (slot.endMs - slot.startMs) / HOUR_MS;
+  const eligible = [];
+
+  for (const t of tanods) {
+    if (!t.userId) continue;
+    const intervals = availabilityIntervals(availability, t.userId);
+    if (!isWithinAvailability(slot.startMs, slot.endMs, intervals)) continue;
+
+    const overlaps = shifts.some((s) => {
+      if (s.userId !== t.userId) return false;
+      return Math.max(startMsOf(s), slot.startMs) < Math.min(endMsOf(s), slot.endMs);
+    });
+    if (overlaps) continue;
+
+    const sameDayShifts = shiftsOnDay(shifts.filter((s) => s.userId === t.userId), date);
+    const dayHours = sameDayShifts.reduce((acc, s) => acc + hoursOf(s), 0) + slotDuration;
+    if (dayHours > DAILY_HOURS_LIMIT) continue;
+
+    const rollingStart = slot.endMs - 7 * DAY_MS;
+    const rollingHours = shifts
+      .filter((s) => s.userId === t.userId && startMsOf(s) >= rollingStart && startMsOf(s) < slot.endMs)
+      .reduce((acc, s) => acc + hoursOf(s), 0) + slotDuration;
+    if (rollingHours > WEEKLY_HOURS_LIMIT) continue;
+
+    const currentWeekTotal = shifts
+      .filter((s) => s.userId === t.userId)
+      .reduce((acc, s) => acc + hoursOf(s), 0);
+
+    eligible.push({
+      userId: t.userId,
+      fullName: t.fullName,
+      officialTitle: t.officialTitle || null,
+      currentHours: Math.round(currentWeekTotal * 10) / 10,
+      sourceAvailabilityId: sourceAvailabilityFor(slot.startMs, intervals),
+    });
+  }
+
+  eligible.sort((a, b) => a.currentHours - b.currentHours || a.fullName.localeCompare(b.fullName));
+  return eligible;
+}
+
+/**
+ * Automatically creates a plan to cover uncovered standard shift slots across the shown week.
+ * Matches available tanods with lowest weekly workload without exceeding limits.
+ */
+export function planSmartCoverage(shifts, availability, weekStart, tanods) {
+  const days = weekDays(weekStart);
+  const simulatedShifts = [...shifts];
+  const toCreate = [];
+  let filledCount = 0;
+  let unfilledCount = 0;
+
+  for (const date of days) {
+    const { missing } = dayCoverage(simulatedShifts, date);
+    for (const presetType of missing) {
+      const candidates = suggestAvailableTanods(simulatedShifts, availability, date, presetType, tanods);
+      if (candidates.length === 0) {
+        unfilledCount++;
+        continue;
+      }
+      const chosen = candidates[0];
+      const slot = presetRange(date, presetType);
+      const newShift = {
+        userId: chosen.userId,
+        patrolZone: null,
+        startAt: slot.startLocal,
+        endAt: slot.endLocal,
+        startLocal: slot.startLocal,
+        endLocal: slot.endLocal,
+        sourceAvailabilityId: chosen.sourceAvailabilityId,
+      };
+      toCreate.push(newShift);
+      simulatedShifts.push(newShift);
+      filledCount++;
+    }
+  }
+
+  return { toCreate, filledCount, unfilledCount };
+}
+

@@ -5,6 +5,7 @@ import {
   availabilityIntervals, uncoveredMinutes, isWithinAvailability, sourceAvailabilityFor,
   availableSegmentsOnDay, dayCoverage, planCopyFromPreviousWeek, moveToDay, shiftsInWeek,
   rollingHoursAt, shiftChipLabel, weekRangeLabel,
+  suggestAvailableTanods, planSmartCoverage,
 } from '../../src/services/rosterWeek.js';
 
 // Shifts carry UTC ISO strings, as apiClient revives them.
@@ -105,3 +106,43 @@ test('week membership, rolling hours and chip labels', () => {
   assert.equal(shiftChipLabel(shifts[0]), 'Night');
   assert.equal(shiftChipLabel(shifts[2]), '08:30–12:00');
 });
+
+test('suggestAvailableTanods: recommends eligible tanods ranked by lowest weekly hours', () => {
+  const tanods = [
+    { userId: 4, fullName: 'Jose Reyes' },
+    { userId: 5, fullName: 'Maria Dela Cruz' },
+  ];
+  const availability = [
+    { availId: 10, userId: 4, windows: [{ date: '2026-10-12', start: '06:00', end: '14:00' }] },
+    { availId: 11, userId: 5, windows: [{ date: '2026-10-12', start: '06:00', end: '14:00' }] },
+  ];
+  // Jose already has 8 hours scheduled on Tuesday
+  const shifts = [
+    shift(1, 4, '2026-10-13', '06:00', '2026-10-13', '14:00'),
+  ];
+  const candidates = suggestAvailableTanods(shifts, availability, '2026-10-12', 'morning', tanods);
+  assert.equal(candidates.length, 2);
+  // Maria has 0 hours, so ranked first; Jose has 8 hours, ranked second
+  assert.equal(candidates[0].userId, 5);
+  assert.equal(candidates[0].currentHours, 0);
+  assert.equal(candidates[1].userId, 4);
+  assert.equal(candidates[1].currentHours, 8);
+});
+
+test('planSmartCoverage: covers open slots with available tanods', () => {
+  const tanods = [
+    { userId: 4, fullName: 'Jose Reyes' },
+    { userId: 5, fullName: 'Maria Dela Cruz' },
+  ];
+  const availability = [
+    { availId: 10, userId: 4, windows: [{ date: '2026-10-12', start: '06:00', end: '14:00' }] },
+    { availId: 11, userId: 5, windows: [{ date: '2026-10-12', start: '14:00', end: '22:00' }] },
+  ];
+  const plan = planSmartCoverage([], availability, '2026-10-12', tanods);
+  assert.ok(plan.toCreate.length >= 2);
+  assert.equal(plan.toCreate[0].userId, 4);
+  assert.equal(plan.toCreate[0].startLocal, '2026-10-12T06:00');
+  assert.equal(plan.toCreate[1].userId, 5);
+  assert.equal(plan.toCreate[1].startLocal, '2026-10-12T14:00');
+});
+

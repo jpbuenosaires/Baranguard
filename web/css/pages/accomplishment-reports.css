@@ -9,3 +9,207 @@
 .tw-reports-list .tw-filter-bar { padding-bottom: var(--spacing-xs); }
 
 .tw-detail-head .stat-strip { margin-top: var(--spacing-xs); }
+
+/* ==========================================================================
+   Accomplishment Reports Modernization Styles
+   ========================================================================== */
+
+/* 44px Unified Control Bar */
+.acc-control-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  margin-bottom: var(--spacing-md);
+}
+
+.acc-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 14rem;
+  max-width: 22rem;
+}
+
+.acc-search-icon {
+  position: absolute;
+  left: var(--spacing-sm);
+  pointer-events: none;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.acc-search-input {
+  width: 100%;
+  height: 2.25rem;
+  padding: 0.35rem var(--spacing-sm) 0.35rem 2.25rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.acc-search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+
+.acc-filter-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+
+.acc-filter-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.acc-month-input {
+  height: 2.25rem;
+  padding: 0.2rem var(--spacing-xs);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.acc-status-select {
+  height: 2.25rem;
+  padding: 0.2rem var(--spacing-md) 0.2rem var(--spacing-xs);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.acc-clear-btn {
+  font-size: var(--font-size-sm);
+  min-height: 2.25rem;
+  padding: 0.25rem var(--spacing-sm);
+}
+
+/* Composite Table Cells & Actions */
+.acc-tanod-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.acc-tanod-name {
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.acc-tanod-pos {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.acc-month-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.acc-num-cell {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.acc-flag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: 0.15rem var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: color-mix(in srgb, #D97706 15%, transparent);
+  color: #B45309;
+}
+
+.acc-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.acc-row-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: 0.2rem var(--spacing-xs);
+  font-size: 0.775rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  transition: all 0.15s ease;
+}
+
+.acc-row-action-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.acc-row-action-btn--primary {
+  color: var(--color-link, #2563eb);
+}
+
+.acc-row-action-btn--primary:hover {
+  background: color-mix(in srgb, var(--color-link, #2563eb) 10%, transparent);
+  color: var(--color-primary);
+}
+
+/* Detail Breadcrumb Bar */
+.acc-breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.acc-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  padding: 0.35rem var(--spacing-sm);
+  border-radius: var(--radius-md);
+  transition: all 0.15s ease;
+}
+
+.acc-back-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.acc-detail-head {
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+@media (max-width: 768px) {
+  .acc-control-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .acc-search-box {
+    max-width: 100%;
+  }
+}

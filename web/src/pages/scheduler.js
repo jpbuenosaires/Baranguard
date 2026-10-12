@@ -25,6 +25,7 @@ import {
   SHIFT_PRESETS, addDays, weekStartOf, weekDays, weekRangeLabel, shortDateLabel, presetRange,
   shiftsInWeek, shiftsOnDay, availabilityIntervals, isWithinAvailability, sourceAvailabilityFor,
   planCopyFromPreviousWeek, moveToDay, shiftTimeLabel, dayCoverage, WEEK_DAY_LABELS,
+  suggestAvailableTanods, planSmartCoverage,
 } from '../services/rosterWeek.js';
 import { confirmDialog, promptFields } from '../components/ConfirmDialog.js';
 import { DataTable } from '../components/DataTable.js';
@@ -51,6 +52,10 @@ const SCHEDULE_COLUMNS = [
 const MAX_PAGES = 20;
 // POST /shifts/publish takes 1-100 ids per call.
 const PUBLISH_BATCH = 100;
+
+function rosterLabel(t) {
+  return t.officialTitle ? `${t.fullName} - ${t.officialTitle}` : t.fullName;
+}
 
 async function fetchAllPages(fetchPage) {
   const items = [];
@@ -172,8 +177,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     if (found) barangayName = `Barangay ${found.name}`;
   }).catch(() => {});
 
-  if (!canManageShifts) {
+  if (!canManageShifts || viewMode === 'week') {
     formPane.hidden = true;
+    formPane.style.display = 'none';
     listPane.style.flex = '1 1 100%';
   }
   load();
@@ -231,8 +237,21 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
   function renderMain() {
     layout.classList.toggle('scheduler-layout--week', viewMode === 'week');
-    if (viewMode === 'week') renderWeekView();
-    else renderShiftsTable();
+    if (viewMode === 'week') {
+      if (formPane) {
+        formPane.hidden = true;
+        formPane.style.display = 'none';
+      }
+      listPane.style.flex = '1 1 100%';
+      renderWeekView();
+    } else {
+      if (canManageShifts && formPane) {
+        formPane.hidden = false;
+        formPane.style.display = '';
+        listPane.style.flex = '1 1 65%';
+      }
+      renderShiftsTable();
+    }
   }
 
   function buildViewToggle() {
@@ -306,6 +325,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     if (canManageShifts) {
       const tools = document.createElement('div');
       tools.className = 'scheduler-week-toolbar__tools';
+      const presetsWrap = document.createElement('div');
+      presetsWrap.className = 'scheduler-week-toolbar__presets';
       const presetLabel = document.createElement('span');
       presetLabel.className = 'scheduler-publish-bar__hint';
       presetLabel.textContent = '+ adds:';
@@ -322,13 +343,31 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
         b.addEventListener('click', () => { activePreset = p.type; renderMain(); });
         presets.appendChild(b);
       }
+      presetsWrap.append(presetLabel, presets);
       const copy = document.createElement('button');
       copy.type = 'button';
       copy.id = 'scheduler-copy-week-btn';
       copy.className = 'ghost';
       copy.innerHTML = `${icons.repeat(15)} <span>Copy last week</span>`;
       copy.addEventListener('click', copyLastWeek);
-      tools.append(presetLabel, presets, copy);
+
+      const smartFill = document.createElement('button');
+      smartFill.type = 'button';
+      smartFill.id = 'scheduler-smart-fill-btn';
+      smartFill.className = 'ghost';
+      smartFill.innerHTML = `${icons.checkCircle(15)} <span>Smart Fill</span>`;
+      smartFill.title = 'Automatically fill open slots with available, low-hours tanods';
+      smartFill.addEventListener('click', runSmartFill);
+
+      const customShift = document.createElement('button');
+      customShift.type = 'button';
+      customShift.id = 'scheduler-custom-shift-btn';
+      customShift.className = 'ghost';
+      customShift.innerHTML = `${icons.plus(15)} <span>Custom Shift</span>`;
+      customShift.title = 'Create a custom shift in a dialog';
+      customShift.addEventListener('click', () => openNewShiftModal(tanods, load, shifts));
+
+      tools.append(presetsWrap, copy, smartFill, customShift);
       toolbar.appendChild(tools);
     }
     listPane.appendChild(toolbar);
@@ -374,7 +413,17 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       onAdd: addPresetShift,
       onOpen: (shift) => openEditModal(shift, tanods, load, shifts),
       onMove: moveShift,
+      selectedShiftIds,
+      onToggleSelect: (shiftId) => {
+        if (selectedShiftIds.has(shiftId)) selectedShiftIds.delete(shiftId);
+        else selectedShiftIds.add(shiftId);
+        renderMain();
+      },
     }));
+
+    if (canManageShifts && selectedShiftIds.size > 0) {
+      listPane.appendChild(buildFloatingBulkBar());
+    }
   }
 
   function navButton(textValue, labelValue, onClick) {
@@ -387,15 +436,253 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     return b;
   }
 
+  function buildFloatingBulkBar() {
+    const bar = document.createElement('div');
+    bar.className = 'scheduler-bulk-bar';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', 'Bulk shift actions');
+
+    const countBadge = document.createElement('span');
+    countBadge.className = 'scheduler-bulk-bar__count';
+    countBadge.textContent = `${selectedShiftIds.size} shift${selectedShiftIds.size === 1 ? '' : 's'} selected`;
+
+    const actions = document.createElement('div');
+    actions.className = 'scheduler-bulk-bar__actions';
+
+    const zoneBtn = document.createElement('button');
+    zoneBtn.type = 'button';
+    zoneBtn.className = 'ghost scheduler-bulk-btn';
+    zoneBtn.innerHTML = `${icons.map(14)} <span>Set Zone</span>`;
+    zoneBtn.addEventListener('click', bulkSetZone);
+
+    const reassignBtn = document.createElement('button');
+    reassignBtn.type = 'button';
+    reassignBtn.className = 'ghost scheduler-bulk-btn';
+    reassignBtn.innerHTML = `${icons.users(14)} <span>Reassign</span>`;
+    reassignBtn.addEventListener('click', bulkReassign);
+
+    const unassignBtn = document.createElement('button');
+    unassignBtn.type = 'button';
+    unassignBtn.className = 'ghost scheduler-bulk-btn';
+    unassignBtn.innerHTML = `<span>Unassign</span>`;
+    unassignBtn.addEventListener('click', bulkUnassign);
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'ghost scheduler-bulk-btn';
+    clearBtn.innerHTML = `${icons.x(14)} <span>Clear</span>`;
+    clearBtn.addEventListener('click', () => {
+      selectedShiftIds.clear();
+      renderMain();
+    });
+
+    actions.append(zoneBtn, reassignBtn, unassignBtn, clearBtn);
+    bar.append(countBadge, actions);
+    return bar;
+  }
+
+  async function bulkSetZone() {
+    const selected = shifts.filter((s) => selectedShiftIds.has(s.shiftId));
+    if (selected.length === 0) return;
+
+    const result = await promptFields({
+      title: `Set Patrol Zone for ${selected.length} shift${selected.length === 1 ? '' : 's'}?`,
+      description: 'Enter the patrol zone or sector name to apply to all selected shifts.',
+      fields: [
+        { name: 'zone', label: 'Patrol Zone / Sector', type: 'text', placeholder: 'e.g. Purok 1-2, National Road' },
+      ],
+      confirmLabel: 'Apply Zone',
+    });
+    if (!result) return;
+
+    busy = true;
+    let updated = 0;
+    for (const s of selected) {
+      try {
+        await updateShift(s.shiftId, {
+          patrolZone: (result.zone || '').trim() || null,
+          version: s.version ?? 1,
+        });
+        updated++;
+      } catch {
+        // continue
+      }
+    }
+    busy = false;
+    showToast(`Updated patrol zone for ${updated} shift${updated === 1 ? '' : 's'}.`, { variant: 'success' });
+    selectedShiftIds.clear();
+    await load();
+  }
+
+  async function bulkReassign() {
+    const selected = shifts.filter((s) => selectedShiftIds.has(s.shiftId));
+    if (selected.length === 0) return;
+
+    const options = tanods.map((t) => ({ value: String(t.userId), label: rosterLabel(t) }));
+    const result = await promptFields({
+      title: `Reassign ${selected.length} shift${selected.length === 1 ? '' : 's'}?`,
+      description: 'Choose which tanod to assign to all selected shifts.',
+      fields: [
+        { name: 'tanod', label: 'New Assignee', type: 'select', options },
+      ],
+      confirmLabel: 'Reassign',
+    });
+    if (!result || !result.tanod) return;
+
+    const newUserId = Number(result.tanod);
+    const targetTanod = tanods.find((t) => t.userId === newUserId);
+    busy = true;
+    let updated = 0;
+    let failed = 0;
+    for (const s of selected) {
+      try {
+        await updateShift(s.shiftId, {
+          userId: newUserId,
+          version: s.version ?? 1,
+        });
+        updated++;
+      } catch {
+        failed++;
+      }
+    }
+    busy = false;
+    if (failed) {
+      showToast(`Reassigned ${updated} shift(s); ${failed} failed availability or limit checks.`, { variant: 'warning' });
+    } else {
+      showToast(`Reassigned ${updated} shift${updated === 1 ? '' : 's'} to ${targetTanod?.fullName || 'Tanod'}.`, { variant: 'success' });
+    }
+    selectedShiftIds.clear();
+    await load();
+  }
+
+  async function bulkUnassign() {
+    const selected = shifts.filter((s) => selectedShiftIds.has(s.shiftId));
+    if (selected.length === 0) return;
+
+    const ok = await confirmDialog({
+      title: `Unassign ${selected.length} shift${selected.length === 1 ? '' : 's'}?`,
+      description: 'The shifts will become Unassigned and no longer count toward any tanod\'s weekly hours.',
+      confirmLabel: 'Unassign',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+
+    busy = true;
+    let updated = 0;
+    for (const s of selected) {
+      try {
+        await updateShift(s.shiftId, {
+          userId: null,
+          version: s.version ?? 1,
+        });
+        updated++;
+      } catch {
+        // continue
+      }
+    }
+    busy = false;
+    showToast(`Unassigned ${updated} shift${updated === 1 ? '' : 's'}.`, { variant: 'success' });
+    selectedShiftIds.clear();
+    await load();
+  }
+
+  async function runSmartFill() {
+    if (busy) return;
+    if (availability.status !== 'ready') {
+      showToast('Availability is still loading. Please wait a moment before using Smart Fill.', { variant: 'warning' });
+      return;
+    }
+    const plan = planSmartCoverage(shifts, availability.items, weekStart, tanods);
+    if (plan.toCreate.length === 0) {
+      showToast('All standard shifts are already covered, or no available tanods match the open slots.', { variant: 'info' });
+      return;
+    }
+
+    const ok = await confirmDialog({
+      title: `Smart Fill: Schedule ${plan.toCreate.length} shift${plan.toCreate.length === 1 ? '' : 's'}?`,
+      description: `Found ${plan.toCreate.length} open shift slots that match tanods' submitted availability without exceeding fatigue limits. They will be added as drafts.${plan.unfilledCount ? ` (${plan.unfilledCount} slots have no available tanods).` : ''}`,
+      confirmLabel: 'Fill Roster',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+
+    busy = true;
+    let created = 0;
+    for (const item of plan.toCreate) {
+      try {
+        await createShift({
+          userId: item.userId,
+          patrolZone: null,
+          startAt: item.startLocal,
+          endAt: item.endLocal,
+          requestId: crypto.randomUUID(),
+          sourceAvailabilityId: item.sourceAvailabilityId,
+        });
+        created++;
+      } catch {
+        // continue
+      }
+    }
+    busy = false;
+    showToast(`Smart Fill scheduled ${created} draft shift${created === 1 ? '' : 's'}.`, { variant: 'success' });
+    await load();
+  }
+
+  function openNewShiftModal(tanodsList, onCreated, shiftList = []) {
+    const overlay = document.createElement('div');
+    overlay.className = 'personnel-modal-overlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'personnel-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'scheduler-create-modal-title');
+
+    const header = document.createElement('div');
+    header.className = 'personnel-modal__header';
+
+    const title = document.createElement('h3');
+    title.id = 'scheduler-create-modal-title';
+    title.className = 'personnel-modal__title';
+    title.innerHTML = `<span aria-hidden="true">${icons.calendar(20)}</span><span>New Shift</span>`;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'personnel-modal__close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.innerHTML = icons.x(18);
+    closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+
+    header.append(title, closeBtn);
+
+    const formCard = buildNewShiftForm(tanodsList, () => {
+      document.body.removeChild(overlay);
+      onCreated();
+    }, shiftList);
+
+    const innerHeading = formCard.querySelector('h3');
+    if (innerHeading) innerHeading.remove();
+    formCard.className = 'personnel-modal__body';
+
+    modal.append(header, formCard);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) document.body.removeChild(overlay);
+    });
+  }
+
   async function addPresetShift(userId, date) {
     if (busy) return;
     const range = presetRange(date, activePreset);
     const preset = SHIFT_PRESETS.find((p) => p.type === activePreset);
     const intervals = availabilityIntervals(availability.items, userId);
     if (availability.status === 'ready' && !isWithinAvailability(range.startMs, range.endMs, intervals)) {
-      // Availability is the tanod's fixed statement (2026-10-12): the server
-      // refuses a shift outside it (422 OUTSIDE_AVAILABILITY), so say so here.
-      showToast(`${nameOf(userId)} is not available for ${preset.label} ${preset.start}–${preset.end} on ${shortDateLabel(date)}. Shifts must fit inside the availability the tanod gave.`, { variant: 'warning' });
+      const candidates = suggestAvailableTanods(shifts, availability.items, date, activePreset, tanods);
+      const suggestions = candidates.slice(0, 3).map((c) => c.fullName).join(', ');
+      const suggestionText = suggestions ? ` Available on this day: ${suggestions}.` : '';
+      showToast(`${nameOf(userId)} is not available for ${preset.label} ${preset.start}–${preset.end} on ${shortDateLabel(date)}. Shifts must fit inside the availability the tanod gave.${suggestionText}`, { variant: 'warning' });
       return;
     }
     busy = true;
@@ -1064,11 +1351,6 @@ function updateFatigueCalloutElement(calloutEl, preview, tanodName = 'this Tanod
 /**
  * Builds the right-hand form for creating a new shift with preset buttons.
  */
-/** Picker label: the Chief Tanod (an Admin account) is told apart by official title. */
-function rosterLabel(t) {
-  return t.officialTitle ? `${t.fullName} - ${t.officialTitle}` : t.fullName;
-}
-
 function buildNewShiftForm(tanods, onCreated, shifts = []) {
   const card = document.createElement('div');
   card.className = 'card';
