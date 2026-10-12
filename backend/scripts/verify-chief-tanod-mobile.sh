@@ -257,7 +257,7 @@ req GET "/users/directory?purpose=tanod" "$SEC"
 expect_eq "$(rost)" "Tanod NoDuty|Tanod OffDuty|Tanod OnDuty|Tanod Raiser|Tanod Respond" "(control) purpose=tanod is unchanged: still no admins"
 mysql_exec "$VALDB" -e "DELETE FROM user WHERE username IN ('adm_susp','adm_off');"
 req GET "/users/directory?purpose=tanod" "$PB"; expect_eq "$CODE" "403" "Punong Barangay -> 403"
-# Paper-only (2026-10-12): the PB may record a signed paper roster, so a PB holding approve_roster may read
+# A PB holding approve_roster may publish rosters, so they may read
 # exactly the roster-signer list -- nothing else.
 req GET "/users/directory?purpose=signer&authority=approve_roster" "$PB"; expect_eq "$CODE" "200" "signer/approve_roster: Punong Barangay holding approve_roster -> 200"
 expect_eq "$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo implode("|",array_map(fn($i)=>$i["full_name"],$d["items"]));')" "Punong One" "  ...same list the Admin sees (only the Punong Barangay holds approve_roster)"

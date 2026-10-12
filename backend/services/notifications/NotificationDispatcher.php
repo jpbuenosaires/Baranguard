@@ -263,16 +263,13 @@ final class NotificationDispatcher
                 $stmt = $pdo->prepare('SELECT status, month FROM accomplishment_report WHERE report_id = :id');
                 $stmt->execute(['id' => $notification['accomplishment_report_id']]);
                 $row = $stmt->fetch(PDO::FETCH_ASSOC);
-                if ($row === false || !in_array($row['status'], ['approved', 'returned'], true)) {
+                if ($row === false || $row['status'] !== 'returned') {
                     return null;
                 }
                 $month = self::formatMonth((string) $row['month']);
-                $returned = $row['status'] === 'returned';
                 return [
-                    'title' => $returned ? 'Accomplishment report returned' : 'Accomplishment report approved',
-                    'body' => $returned
-                        ? "Your {$month} accomplishment report was returned. Open the app to see what to fix."
-                        : "Your {$month} accomplishment report was approved.",
+                    'title' => 'Accomplishment report returned',
+                    'body' => "Your {$month} accomplishment report was returned. Open the app to see what to fix.",
                     'sms' => '',
                     'message_type' => '',
                 ];

@@ -602,7 +602,7 @@ try {
     $zones = ['Purok 1-2', 'Purok 3-4', 'Purok 5-6', 'National road', 'Seawall / fish landing', 'School zone'];
     $shiftDefs = [[6, 14], [14, 22], [22, 30]]; // PHT hours; 30 = 06:00 next day
     $insShift = $pdo->prepare('INSERT INTO shift_schedule (barangay_id,user_id,patrol_zone,start_at,end_at,created_by,version,client_request_id,updated_at,approval_status,approved_by,approved_at,
-        pending_reapproval,approval_mode,paper_signed_on,paper_recorded_by,paper_recorded_at) VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?)');
+        pending_reapproval) VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?)');
     $shifts = []; $slot = 0; $reapprovalLeft = 2;
     for ($dayOff = -$DAYS; $dayOff <= 7; $dayOff++) {
         $dayStart = $today->modify(($dayOff >= 0 ? '+' : '') . $dayOff . ' days');
@@ -613,15 +613,12 @@ try {
                 $end = $dayStart->setTime(0, 0)->modify(sprintf('%+d hours', $h2 - PHT_OFFSET_H));
                 $future = $start > $now;
                 $isDraft = $dayOff >= 5;
-                $paper = ($dayOff <= -($DAYS - 8) && $dayOff >= -($DAYS - 1)); // the oldest week was recorded from a paper roster
                 $reappr = (!$isDraft && $future && $reapprovalLeft > 0 && $k === 1 && $s === 1 && $dayOff >= 2) ? 1 : 0;
                 if ($reappr) $reapprovalLeft--;
                 $created = $start->modify('-10 days');
                 $approvedAt = $isDraft ? null : $start->modify('-' . mt_rand(2, 4) . ' days');
                 $insShift->execute([BARANGAY_ID, $tanod, $zones[($s * 2 + $k) % count($zones)], fmt($start), fmt($end), $SEC, uuidv4(), fmt($created),
-                    $isDraft ? 'draft' : 'published', $isDraft ? null : $PB, $approvedAt ? fmt($approvedAt) : null, $reappr,
-                    $paper ? 'recorded_from_paper' : 'digital', $paper && $approvedAt ? $approvedAt->format('Y-m-d') : null, $paper ? $SEC : null,
-                    $paper && $approvedAt ? fmt($approvedAt->modify('+1 day')) : null]);
+                    $isDraft ? 'draft' : 'published', $isDraft ? null : $PB, $approvedAt ? fmt($approvedAt) : null, $reappr]);
                 $shifts[] = ['id' => (int) $pdo->lastInsertId(), 'user' => $tanod, 'start' => $start, 'end' => $end, 'draft' => $isDraft, 'dayOff' => $dayOff];
             }
         }
@@ -776,13 +773,13 @@ try {
     $accReports = []; $accStat = [];
     $prevMonthStart = $today->modify('first day of last month'); $thisMonthStart = $today->modify('first day of this month');
     $prevM = $prevMonthStart->format('Y-m'); $thisM = $thisMonthStart->format('Y-m');
-    $insRep = $pdo->prepare('INSERT INTO accomplishment_report (barangay_id,user_id,month,status,prepared_at,noted_by,noted_at,approved_by,approved_at,return_reason,total_minutes_confirmed,version,created_at,updated_at,approval_mode,paper_signed_on,paper_recorded_by,paper_recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)');
+    $insRep = $pdo->prepare('INSERT INTO accomplishment_report (barangay_id,user_id,month,status,prepared_at,return_reason,total_minutes_confirmed,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,?,?)');
     $insEnt = [];
-    $plan = [  // [tanod index, month key, status, mode]
-        [0, 'prev', 'approved', 'digital'], [1, 'prev', 'approved', 'digital'], [2, 'prev', 'approved', 'recorded_from_paper'], [3, 'prev', 'returned', 'digital'], [4, 'prev', 'approved', 'digital'],
-        [0, 'this', 'open', 'digital'], [1, 'this', 'prepared', 'digital'], [2, 'this', 'open', 'digital'], [3, 'this', 'noted', 'digital'], [4, 'this', 'prepared', 'digital'],
+    $plan = [  // [tanod index, month key, status]
+        [0, 'prev', 'prepared'], [1, 'prev', 'prepared'], [2, 'prev', 'prepared'], [3, 'prev', 'returned'], [4, 'prev', 'prepared'],
+        [0, 'this', 'open'], [1, 'this', 'prepared'], [2, 'this', 'open'], [3, 'this', 'prepared'], [4, 'this', 'prepared'],
     ];
-    foreach ($plan as [$ti, $mk, $status, $mode]) {
+    foreach ($plan as [$ti, $mk, $status]) {
         $t = $TANODS[$ti]; $mStart = $mk === 'prev' ? $prevMonthStart : $thisMonthStart; $month = $mStart->format('Y-m');
         $days = (int) $mStart->format('t');
         $workDays = [];
@@ -802,12 +799,9 @@ try {
             $sum += $dur;
         }
         $created = $mStart->modify('+1 day');
-        $prepared = in_array($status, ['prepared', 'noted', 'approved', 'returned'], true) ? ($mk === 'prev' ? $thisMonthStart->modify('+1 day') : $today->modify('-1 day')) : null;
-        $noted = in_array($status, ['noted', 'approved'], true) ? $SEC : null; $notedAt = $noted ? ($mk === 'prev' ? $thisMonthStart->modify('+2 days') : $today) : null;
-        $appr = $status === 'approved' ? $PB : null; $apprAt = $appr ? $thisMonthStart->modify('+4 days') : null;
-        $insRep->execute([BARANGAY_ID, $t, $month, $status, $prepared ? fmt($prepared) : null, $noted, $notedAt ? fmt($notedAt) : null, $appr, $apprAt ? fmt($apprAt) : null,
-            $status === 'returned' ? 'Please add the time out for the 3rd week entries.' : null, $status === 'approved' ? $sum : null, fmt($created), fmt($prepared ?? $created),
-            $mode, $mode === 'recorded_from_paper' && $apprAt ? $apprAt->format('Y-m-d') : null, $mode === 'recorded_from_paper' ? $SEC : null, $mode === 'recorded_from_paper' && $apprAt ? fmt($apprAt->modify('+1 day')) : null]);
+        $prepared = in_array($status, ['prepared', 'returned'], true) ? ($mk === 'prev' ? $thisMonthStart->modify('+1 day') : $today->modify('-1 day')) : null;
+        $insRep->execute([BARANGAY_ID, $t, $month, $status, $prepared ? fmt($prepared) : null,
+            $status === 'returned' ? 'Please add the time out for the 3rd week entries.' : null, $status === 'prepared' ? $sum : null, fmt($created), fmt($prepared ?? $created)]);
         $rid = (int) $pdo->lastInsertId();
         foreach ($entries as $e) {
             $insEnt[] = ['report_id' => $rid, 'barangay_id' => BARANGAY_ID, 'user_id' => $t, 'work_date' => $e['date'], 'accomplishment_text' => $e['text'], 'start_time' => $e['st'], 'end_time' => $e['en'],

@@ -3,11 +3,12 @@
 # section 7, migration 0033): schools CRUD, Tanod school check-ins (incl. the
 # close-by-resend rule), incident school_id + Annex C-1 fields, the live
 # GET /reports/school-term Annex D computation, and the ssz_term_report
-# draft -> prepared -> approved -> submitted state machine.
+# draft -> prepared -> submitted state machine (no approval step since 0041:
+# the report is printed and signed on paper).
 #
 # Covers per endpoint: no token (401), wrong role (403), cross-tenant (404),
 # Idempotency-Key handling, the state machine incl. segregation of duties
-# (preparer != approver) and 409 on an illegal transition, counts correctness
+# (prepare needs prepare_annex_d) and 409 on an illegal transition, counts correctness
 # against seeded incidents/referrals/check-ins (multi-referral incidents, the
 # barangay-only count, Manila-day bucketing at the term boundaries, the
 # ambulance_ems mapping setting), c1 field round-trip, and privacy (no
@@ -188,7 +189,6 @@ POST /ssz-term-reports
 GET /ssz-term-reports/1
 PATCH /ssz-term-reports/1
 POST /ssz-term-reports/1/prepare
-POST /ssz-term-reports/1/approve
 POST /ssz-term-reports/1/mark-submitted
 ENDPOINTS
 
@@ -513,8 +513,9 @@ expect_eq "$(db_one "SELECT COUNT(*) FROM ssz_term_report WHERE barangay_id=1;")
 
 call GET /ssz-term-reports "$PB"
 expect_eq "$CODE|$(jf total)" "200|1" "Punong Barangay lists term reports"
-call GET "/ssz-term-reports?status=approved" "$PB"
+call GET "/ssz-term-reports?status=prepared" "$PB"
 expect_eq "$(jf total)" "0" "status filter works"
+expect_eq "$(code_of GET "/ssz-term-reports?status=approved" "$PB")" "400" "status=approved is no longer valid (0041)"
 expect_eq "$(code_of GET "/ssz-term-reports?status=bogus" "$PB")" "400" "Invalid status filter is 400"
 call GET /ssz-term-reports/$R1 "$PB"
 expect_eq "$CODE|$(jf term_label)" "200|Term 3 S.Y. 2025-2026" "Punong Barangay reads one term report"
@@ -537,53 +538,38 @@ expect_eq "$(code_of PATCH /ssz-term-reports/$R1 "$ADMIN2" '{"remarks":"x"}' -H 
 expect_eq "$(code_of PATCH /ssz-term-reports/$R1 "$ADMIN" '{"remarks":"x"}')" "400" "PATCH without Idempotency-Key is 400"
 
 # --- illegal transitions out of draft
-KA=$(uuid)
-expect_eq "$(code_of POST /ssz-term-reports/$R1/approve "$PB" '{}' -H "Idempotency-Key: $KA")" "410" "In-app approve is retired (paper-only, 2026-10-12): 410 even on a DRAFT"
 expect_eq "$(code_of POST /ssz-term-reports/$R1/mark-submitted "$SEC" '{"mayor_office_received_by":"Clerk","mayor_office_received_at":"2026-04-02"}' -H "Idempotency-Key: $(uuid)")" "409" "Submitting a DRAFT is 409"
 
-# --- in-app prepare/approve are retired: 410 PAPER_APPROVAL_REQUIRED for every caller
-I12=$(mk_inc $S1 '2026-03-25 02:00:00')   # a new school incident AFTER the snapshot, no referral
-call POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}' -H "Idempotency-Key: $(uuid)"
-expect_eq "$CODE|$(jf error.code)" "410|PAPER_APPROVAL_REQUIRED" "Preparer holding prepare_annex_d: in-app prepare is retired"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$T1" '{}' -H "Idempotency-Key: $(uuid)")" "410" "Any caller gets the same answer (tanod prepare)"
-call POST /ssz-term-reports/$R1/approve "$PB" '{}' -H "Idempotency-Key: $(uuid)"
-expect_eq "$CODE|$(jf error.code)" "410|PAPER_APPROVAL_REQUIRED" "Punong Barangay holding approve_annex_d: in-app approve is retired"
-expect_eq "$(db_one "SELECT CONCAT(status,'|',version) FROM ssz_term_report WHERE report_id=$R1;")" "draft|2" "Report 1 is still an untouched draft"
+# --- removed endpoints (0041): no approve / paper-signature / record-paper-approval routes
+for ep in approve paper-signature record-paper-approval; do
+  expect_eq "$(code_of POST /ssz-term-reports/$R1/$ep "$PB" '{}' -H "Idempotency-Key: $(uuid)")" "404" "POST /ssz-term-reports/:id/$ep is gone (404)"
+done
 
-# --- record the signed paper: draft -> approved, naming the preparer and the signer
-rp() { echo "{\"preparer_user_id\":$1,\"signer_user_id\":$2,\"signed_on\":\"2026-04-01\"}"; }
+# --- prepare: draft -> prepared by a prepare_annex_d holder (freezes the counts)
 NOAUTH_ID=$(uid sz_admin_noauth); SEC_ID=$(uid sz_sec)
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$ADMIN_ID" "$PB_ID")")" "400" "Record without Idempotency-Key is 400"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$PB" "$(rp "$ADMIN_ID" "$PB_ID")" -H "Idempotency-Key: $(uuid)")" "403" "Punong Barangay cannot record (Admin/Secretary only)"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$T1" "$(rp "$ADMIN_ID" "$PB_ID")" -H "Idempotency-Key: $(uuid)")" "403" "Tanod cannot record"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$ADMIN2" "$(rp "$ADMIN_ID" "$PB_ID")" -H "Idempotency-Key: $(uuid)")" "404" "Cross-tenant record is 404"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "{\"signer_user_id\":$PB_ID,\"signed_on\":\"2026-04-01\"}" -H "Idempotency-Key: $(uuid)")" "400" "A draft needs preparer_user_id (400)"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$NOAUTH_ID" "$PB_ID")" -H "Idempotency-Key: $(uuid)")" "422" "Named preparer without prepare_annex_d is 422"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$SEC_ID" "$PB_ID")" -H "Idempotency-Key: $(uuid)")" "422" "Secretary without prepare_annex_d cannot be the preparer"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$PB_ID" "$BOTH_ID")" -H "Idempotency-Key: $(uuid)")" "422" "Punong Barangay holds only approve_annex_d -- cannot be the preparer"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$BOTH_ID" "$ADMIN_ID")" -H "Idempotency-Key: $(uuid)")" "422" "Named signer WITHOUT approve_annex_d is 422"
-# A second report, the same account holding both authorities named as preparer AND signer -> refused
-call POST /ssz-term-reports "$SEC" '{"term_label":"Segregation test","term_start":"2026-03-01","term_end":"2026-03-31"}' -H "Idempotency-Key: $(uuid)"
-R2=$(jf report_id)
-call POST /ssz-term-reports/$R2/record-paper-approval "$SEC" "$(rp "$BOTH_ID" "$BOTH_ID")" -H "Idempotency-Key: $(uuid)"
-expect_eq "$CODE" "409" "The PREPARER cannot also be the signer (segregation of duties, 409)"
-expect_eq "$(db_one "SELECT CONCAT(status,'|',IFNULL(prepared_by,'NULL')) FROM ssz_term_report WHERE report_id=$R2;")" "draft|NULL" "Report 2 stays a draft after the blocked self-approval"
-# Legacy: report 2 prepared in-app before 2026-10-12 by the account holding both authorities
-mysql_exec "$VALDB" -e "UPDATE ssz_term_report SET status='prepared', prepared_by=$BOTH_ID, prepared_at=UTC_TIMESTAMP(), version=version+1 WHERE report_id=$R2;"
-expect_eq "$(code_of POST /ssz-term-reports/$R2/record-paper-approval "$SEC" "{\"signer_user_id\":$BOTH_ID,\"signed_on\":\"2026-04-01\"}" -H "Idempotency-Key: $(uuid)")" "409" "Legacy prepared report: its preparer cannot be the signer (409)"
-expect_eq "$(db_one "SELECT status FROM ssz_term_report WHERE report_id=$R2;")" "prepared" "Report 2 stays prepared"
+I12=$(mk_inc $S1 '2026-03-25 02:00:00')   # a new school incident AFTER the snapshot, no referral
+expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$T1" '{}' -H "Idempotency-Key: $(uuid)")" "403" "Tanod cannot prepare"
+expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$PB" '{}' -H "Idempotency-Key: $(uuid)")" "403" "Punong Barangay holding only approve_annex_d cannot prepare"
+expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$SEC" '{}' -H "Idempotency-Key: $(uuid)")" "403" "Secretary without prepare_annex_d cannot prepare"
+expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}')" "400" "Prepare without Idempotency-Key is 400"
+expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$ADMIN2" '{}' -H "Idempotency-Key: $(uuid)")" "404" "Cross-tenant prepare is 404"
+expect_eq "$(db_one "SELECT CONCAT(status,'|',version) FROM ssz_term_report WHERE report_id=$R1;")" "draft|2" "Report 1 is still an untouched draft after the refusals"
 KPR=$(uuid)
-call POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$ADMIN_ID" "$PB_ID")" -H "Idempotency-Key: $KPR"
-expect_eq "$CODE|$(jf status)|$(jf prepared_by)|$(jf approved_by)" "200|approved|$ADMIN_ID|$PB_ID" "Secretary records the signed paper: draft -> approved, preparer and signer named"
-expect_eq "$(jf total_incidents)|$(jf incidents_barangay_only)" "8|3" "Recording RECOMPUTED the snapshot (new school incident included: 8 total, 3 barangay-only)"
-expect_eq "$(jf other_institutions)" "Sorsogon PNP; Pilar RHU; Hand-added" "Recording kept the hand-edited other_institutions (report was edited)"
-expect_eq "$(jf approval_mode)|$(jf paper_signed_on)|$(jf paper_pending)" "recorded_from_paper|2026-04-01|false" "Paper fields on the recorded report (approval_mode / paper_signed_on / paper_pending)"
+call POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}' -H "Idempotency-Key: $KPR"
+expect_eq "$CODE|$(jf status)|$(jf prepared_by)" "200|prepared|$ADMIN_ID" "Admin holding prepare_annex_d prepares: draft -> prepared, preparer recorded"
+expect_eq "$(jf total_incidents)|$(jf incidents_barangay_only)" "8|3" "Prepare RECOMPUTED the snapshot (new school incident included: 8 total, 3 barangay-only)"
+expect_eq "$(jf other_institutions)" "Sorsogon PNP; Pilar RHU; Hand-added" "Prepare kept the hand-edited other_institutions (report was edited)"
+expect_eq "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $bad=[]; foreach(["approval_mode","paper_signed_on","paper_recorded_by_name","paper_recorded_at","paper_pending","approved_by","approved_at","approved_by_name","approved_by_title"] as $k){ if(array_key_exists($k,$d)) $bad[]=$k; } echo $bad ? implode(",",$bad) : "none";')" "none" "Term report carries no approval / paper fields (0041)"
 expect_eq "$(db_one "SELECT prepared_at IS NOT NULL FROM ssz_term_report WHERE report_id=$R1;")" "1" "prepared_at is set"
-call POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$ADMIN_ID" "$PB_ID")" -H "Idempotency-Key: $KPR"
-expect_eq "$CODE|$(jf status)" "200|approved" "Record replay (same key) returns the report, not 409"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$ADMIN_ID" "$PB_ID")" -H "Idempotency-Key: $(uuid)")" "409" "Recording an already-approved report with a new key is 409"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}' -H "Idempotency-Key: $(uuid)")" "410" "Prepare on an approved report: still the retired 410"
-expect_eq "$(code_of PATCH /ssz-term-reports/$R1 "$ADMIN" '{"remarks":"x"}' -H "Idempotency-Key: $(uuid)")" "409" "PATCH after approval is 409"
+call POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}' -H "Idempotency-Key: $KPR"
+expect_eq "$CODE|$(jf status)" "200|prepared" "Prepare replay (same key) returns the report, not 409"
+expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}' -H "Idempotency-Key: $(uuid)")" "409" "Preparing an already-prepared report with a new key is 409"
+expect_eq "$(code_of PATCH /ssz-term-reports/$R1 "$ADMIN" '{"remarks":"x"}' -H "Idempotency-Key: $(uuid)")" "409" "PATCH after prepare is 409"
+# A second report prepared by the account holding both authorities
+call POST /ssz-term-reports "$SEC" '{"term_label":"Second prepared","term_start":"2026-03-01","term_end":"2026-03-31"}' -H "Idempotency-Key: $(uuid)"
+R2=$(jf report_id)
+call POST /ssz-term-reports/$R2/prepare "$BOTH" '{}' -H "Idempotency-Key: $(uuid)"
+expect_eq "$CODE|$(jf status)|$(jf prepared_by)" "200|prepared|$BOTH_ID" "A second prepare_annex_d holder prepares report 2"
 
 # --- mark submitted
 expect_eq "$(code_of POST /ssz-term-reports/$R1/mark-submitted "$PB" '{"mayor_office_received_by":"Clerk","mayor_office_received_at":"2026-04-02"}' -H "Idempotency-Key: $(uuid)")" "403" "Punong Barangay cannot mark submitted"
@@ -594,38 +580,37 @@ expect_eq "$(code_of POST /ssz-term-reports/$R1/mark-submitted "$SEC" '{"mayor_o
 expect_eq "$(code_of POST /ssz-term-reports/$R1/mark-submitted "$ADMIN2" '{"mayor_office_received_by":"Clerk","mayor_office_received_at":"2026-04-02"}' -H "Idempotency-Key: $(uuid)")" "404" "Cross-tenant mark-submitted is 404"
 KS=$(uuid)
 call POST /ssz-term-reports/$R1/mark-submitted "$SEC" '{"mayor_office_received_by":"Mayor Office Clerk","mayor_office_received_at":"2026-04-02","dilg_received_by":"DILG Officer","dilg_date_received":"2026-04-05"}' -H "Idempotency-Key: $KS"
-expect_eq "$CODE|$(jf status)|$(jf mayor_office_received_by)|$(jf mayor_office_received_at)|$(jf dilg_received_by)|$(jf dilg_date_received)" "200|submitted|Mayor Office Clerk|2026-04-02|DILG Officer|2026-04-05" "Secretary marks an approved report submitted with the receipt details"
+expect_eq "$CODE|$(jf status)|$(jf mayor_office_received_by)|$(jf mayor_office_received_at)|$(jf dilg_received_by)|$(jf dilg_date_received)" "200|submitted|Mayor Office Clerk|2026-04-02|DILG Officer|2026-04-05" "Secretary marks a prepared report submitted with the receipt details"
 call POST /ssz-term-reports/$R1/mark-submitted "$SEC" '{"mayor_office_received_by":"Mayor Office Clerk","mayor_office_received_at":"2026-04-02"}' -H "Idempotency-Key: $KS"
 expect_eq "$CODE|$(jf status)" "200|submitted" "mark-submitted replay (same key) returns the report"
 expect_eq "$(code_of POST /ssz-term-reports/$R1/mark-submitted "$SEC" '{"mayor_office_received_by":"Again","mayor_office_received_at":"2026-04-03"}' -H "Idempotency-Key: $(uuid)")" "409" "Marking an already-submitted report with a new key is 409"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/record-paper-approval "$SEC" "$(rp "$ADMIN_ID" "$PB_ID")" -H "Idempotency-Key: $(uuid)")" "409" "Nothing moves a submitted report backwards (record-paper-approval is 409)"
-expect_eq "$(db_one "SELECT CONCAT(status,'|',version) FROM ssz_term_report WHERE report_id=$R1;")" "submitted|4" "Terminal state reached; version counts every accepted write (patch, record from paper, submit)"
+expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}' -H "Idempotency-Key: $(uuid)")" "409" "Nothing moves a submitted report backwards (prepare is 409)"
+expect_eq "$(db_one "SELECT CONCAT(status,'|',version) FROM ssz_term_report WHERE report_id=$R1;")" "submitted|4" "Terminal state reached; version counts every accepted write (patch, prepare, submit)"
 
-# --- fix review finding 10: preparer / approver names + titles joined server-side
+# --- fix review finding 10: preparer name + title joined server-side
 mysql_exec "$VALDB" -e "UPDATE user SET official_title='Chief Tanod' WHERE user_id=$ADMIN_ID; UPDATE user SET official_title='Punong Barangay' WHERE user_id=$PB_ID;"
 call GET /ssz-term-reports/$R1 "$SEC"
-expect_eq "$CODE|$(jf prepared_by_name)|$(jf prepared_by_title)|$(jf approved_by_name)|$(jf approved_by_title)" "200|SZ Admin Preparer|Chief Tanod|SZ Punong Barangay|Punong Barangay" "GET /ssz-term-reports/:id (as Secretary, who cannot read /users) carries preparer + approver name and title"
+expect_eq "$CODE|$(jf prepared_by_name)|$(jf prepared_by_title)" "200|SZ Admin Preparer|Chief Tanod" "GET /ssz-term-reports/:id (as Secretary, who cannot read /users) carries the preparer's name and title"
 call GET /ssz-term-reports "$PB"
-expect_eq "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["items"] as $r){ if($r["report_id"]==(int)$argv[1]) echo $r["prepared_by_name"]."|".$r["approved_by_title"]; }' "$R1")" "SZ Admin Preparer|Punong Barangay" "GET /ssz-term-reports list carries the same names"
+expect_eq "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["items"] as $r){ if($r["report_id"]==(int)$argv[1]) echo $r["prepared_by_name"]; }' "$R1")" "SZ Admin Preparer" "GET /ssz-term-reports list carries the same name"
 call GET /ssz-term-reports/$R2 "$PB"
-expect_eq "$(jf prepared_by_name)|$(jf approved_by_name)|$(jf approved_by_title)" "SZ Admin Both|null|null" "A prepared-but-not-approved report has the preparer's name and null approver fields"
+expect_eq "$(jf prepared_by_name)" "SZ Admin Both" "A prepared report shows its preparer's name"
 
 # --- skip-state attempt on a fresh draft
 call POST /ssz-term-reports "$ADMIN" '{"term_label":"Skip test","term_start":"2026-03-01","term_end":"2026-03-31"}' -H "Idempotency-Key: $(uuid)"
 R3=$(jf report_id)
-expect_eq "$(code_of POST /ssz-term-reports/$R3/approve "$PB" '{}' -H "Idempotency-Key: $(uuid)")" "410" "No in-app draft -> approved jump either (approve is retired, 410)"
 expect_eq "$(code_of POST /ssz-term-reports/$R3/mark-submitted "$SEC" '{"mayor_office_received_by":"Clerk","mayor_office_received_at":"2026-04-02"}' -H "Idempotency-Key: $(uuid)")" "409" "draft -> submitted is not a legal jump (409)"
 
 # ============================================================
 step "7. Audit trail and privacy"
 # ============================================================
-for a in ssz_term_report_created ssz_term_report_updated approval_recorded_from_paper ssz_term_report_submitted school_created school_updated; do
+for a in ssz_term_report_created ssz_term_report_updated ssz_term_report_prepared ssz_term_report_submitted school_created school_updated; do
   expect_eq "$([ "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='$a';")" -ge 1 ] && echo yes)" "yes" "Audit action recorded: $a"
 done
-expect_eq "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action IN ('ssz_term_report_prepared','ssz_term_report_approved');")" "0" "No in-app prepare/approve audit rows (both retired)"
-META="$(db_one "SELECT metadata_json FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_type='ssz_term_report' AND entity_id=$R1 LIMIT 1;")"
+expect_eq "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action IN ('ssz_term_report_approved','approval_recorded_from_paper','paper_signature_recorded');")" "0" "No approval / paper audit rows exist"
+META="$(db_one "SELECT metadata_json FROM audit_log WHERE action='ssz_term_report_prepared' AND entity_type='ssz_term_report' AND entity_id=$R1 LIMIT 1;")"
 KEYS="$(printf '%s' "$META" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $k=array_keys($d); sort($k); echo implode(",",$k);')"
-expect_eq "$KEYS" "idempotency_key,preparer_user_id,report_id,signer_user_id,status" "Approval audit metadata = ids/status (+idempotency key) only -- no counts, names or text"
+expect_eq "$KEYS" "idempotency_key,report_id,status" "Prepare audit metadata = ids/status (+idempotency key) only -- no counts, names or text"
 SCHEMA_HITS="$(db_one "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$VALDB' AND TABLE_NAME IN ('school','school_checkin','ssz_term_report') AND (COLUMN_NAME REGEXP 'student|victim|pupil|learner|child|guardian|parent');")"
 expect_eq "$SCHEMA_HITS" "0" "No student/victim/pupil/guardian column in school, school_checkin or ssz_term_report"
 call GET /incidents/$INC_A "$SEC"

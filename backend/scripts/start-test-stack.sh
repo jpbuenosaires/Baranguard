@@ -319,16 +319,16 @@ cat <<EOF
 
   admin.test    Admin ('Chief Tanod'; note_report, prepare_annex_d)
                 -> Approvals, Accomplishment Reports (month $ACC_MONTH), Referral Log,
-                   Safer School Zones (schools + Annex D draft, "Record signed paper"),
-                   Personnel > Scheduler (draft shifts -> publish with signed paper),
+                   Safer School Zones (schools + Annex D draft -> prepare -> print),
+                   Personnel > Scheduler (draft shifts -> publish),
                    Personnel > Users (edit title/approval authority)
   pb.test       Punong Barangay (approve_report, approve_roster, approve_annex_d)
-                -> signs on paper; may record the signed roster (Scheduler
-                   "Publish with signed paper"); reads Approvals / reports
+                -> signs on paper (nothing is tracked in the app); may publish the
+                   roster (Scheduler "Publish"); reads Approvals / reports
   sec.test      Secretary (no authority) -> Referral Log, schools, incident detail
                 (raw narrative + C-1 fields), read-only on approvals
   kagawad.test  Secretary-role, title 'Kagawad', approve_report only
-                -> Accomplishment Reports: can approve a noted report only
+                -> Accomplishment Reports: can return a prepared report only
   tanod.one     Tanod (mobile only; web login lands on the 'no screen' page)
   tanod.two     Tanod (has a submitted availability; an OPEN accomplishment report)
 

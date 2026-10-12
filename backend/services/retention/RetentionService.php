@@ -106,8 +106,8 @@ use PDO;
  * PLACEHOLDER RULES (2026-10, review decision 10) — the tables the
  * tanod-workflow build added (migrations 0030-0033): `tanod_availability`,
  * `accomplishment_report` (+ `accomplishment_entry`), `school_checkin`,
- * `incident_referral`, `ssz_term_report` (Annex D); `document_scan` (0037)
- * follows its parent report (accomplishment report OR Annex D report).
+ * `incident_referral`, `ssz_term_report` (Annex D). (`document_scan`, migration 0037, was dropped
+ * by 0041: reports are printed and signed on paper, nothing is scanned.)
  *
  * `school` (Annex B inventory) is DELIBERATELY NOT time-purged and has no
  * rule, so this is a recorded decision, not a gap: it is a standing master
@@ -173,8 +173,8 @@ final class RetentionService
         'accomplishment_report' => [
             'days' => null,
             'status' => self::PENDING_BARANGAY_CONFIRMATION,
-            'clock' => 'approved_at',
-            'summary' => 'APPROVED monthly accomplishment reports + entries + attached paper scans, aged from approval; reports not yet approved are never purged',
+            'clock' => 'prepared_at',
+            'summary' => 'PREPARED monthly accomplishment reports + entries, aged from submission (prepared_at); open and returned reports are never purged',
         ],
         'school_checkin' => [
             'days' => null,
@@ -192,7 +192,7 @@ final class RetentionService
             'days' => null,
             'status' => self::PENDING_BARANGAY_CONFIRMATION,
             'clock' => 'mayor_office_received_at',
-            'summary' => 'SUBMITTED Annex D term reports + attached paper scans, aged from the mayor-office received date (the only submission date the table stores); draft/prepared/approved reports are never purged',
+            'summary' => 'SUBMITTED Annex D term reports, aged from the mayor-office received date (the only submission date the table stores); draft/prepared reports are never purged',
         ],
     ];
 
@@ -201,9 +201,7 @@ final class RetentionService
      * as the parent record. If a purge of the parent is ever enabled it MUST
      * also remove these rows and their files (see purgeOneAccomplishmentReport).
      */
-    public const FOLLOWS_PARENT = [
-        'document_scan' => 'accomplishment_report, ssz_term_report',
-    ];
+    public const FOLLOWS_PARENT = [];
 
     /** Every rule name this service knows, in the order a full run applies them. */
     public const RULES = [
@@ -758,15 +756,13 @@ final class RetentionService
 
     /**
      * `accomplishment_report` (+ `accomplishment_entry`, ON DELETE
-     * RESTRICT, + `document_scan` rows and files, which have no FK but
-     * follow the parent). ONLY `status = 'approved'` reports are ever
-     * eligible, aged from `approved_at`: an open/prepared/noted/returned
-     * report is live work and must never be purged by an age clock. No
-     * `legal_hold` column exists on these tables, so `held` is always 0.
+     * RESTRICT). ONLY `status = 'prepared'` reports are ever eligible, aged
+     * from `prepared_at` (the submission time; there is no approval step
+     * since migration 0041): an open/returned report is live work and must
+     * never be purged by an age clock. No `legal_hold` column exists on
+     * these tables, so `held` is always 0.
      *
-     * One transaction per report. Scan FILES are unlinked after the commit
-     * (same recoverable direction as evidence in purgeOneIncident: an
-     * orphaned file is reportable, a row pointing at missing bytes is not).
+     * One transaction per report.
      *
      * @return array{purged:int, held:int, eligible?:int, failed?:int, note?:string}
      */
@@ -776,8 +772,8 @@ final class RetentionService
         if ($days === null) {
             return $this->pendingResult('accomplishment_report');
         }
-        $where = "status = 'approved' AND approved_at IS NOT NULL
-                  AND approved_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)";
+        $where = "status = 'prepared' AND prepared_at IS NOT NULL
+                  AND prepared_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)";
 
         try {
             $stmt = $this->pdo->prepare("SELECT report_id FROM accomplishment_report WHERE {$where} ORDER BY report_id");
@@ -807,44 +803,25 @@ final class RetentionService
         }
 
         $this->audit('retention_accomplishment_report_purged', 'accomplishment_report', ['purged' => $purged, 'failed' => $failed]);
-        $this->note("accomplishment_report: purged {$purged}, {$failed} failed (with entries and attached scans)");
+        $this->note("accomplishment_report: purged {$purged}, {$failed} failed (with entries)");
         return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible, 'failed' => $failed];
     }
 
     private function purgeOneAccomplishmentReport(int $reportId, int $days): bool
     {
-        // document_scan may not exist on a DB without migration 0037.
-        $paths = [];
-        try {
-            $s = $this->pdo->prepare("SELECT stored_path FROM document_scan WHERE entity_type = 'accomplishment_report' AND entity_id = :id");
-            $s->execute(['id' => $reportId]);
-            $paths = $s->fetchAll(PDO::FETCH_COLUMN);
-        } catch (\PDOException $e) {
-            if (!$this->isMissingTable($e)) {
-                throw $e;
-            }
-        }
-
         $this->pdo->beginTransaction();
         try {
             // Re-check eligibility INSIDE the transaction (row-locked): the
             // report could have changed since the id scan.
             $chk = $this->pdo->prepare(
                 "SELECT 1 FROM accomplishment_report
-                  WHERE report_id = :id AND status = 'approved' AND approved_at IS NOT NULL
-                    AND approved_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY) FOR UPDATE"
+                  WHERE report_id = :id AND status = 'prepared' AND prepared_at IS NOT NULL
+                    AND prepared_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY) FOR UPDATE"
             );
             $chk->execute(['id' => $reportId, 'days' => $days]);
             if ($chk->fetchColumn() === false) {
                 $this->pdo->rollBack();
                 return false;
-            }
-            try {
-                $this->execById("DELETE FROM document_scan WHERE entity_type = 'accomplishment_report' AND entity_id = :id", $reportId);
-            } catch (\PDOException $e) {
-                if (!$this->isMissingTable($e)) {
-                    throw $e;
-                }
             }
             $this->execById('DELETE FROM accomplishment_entry WHERE report_id = :id', $reportId);
             $this->execById('DELETE FROM accomplishment_report WHERE report_id = :id', $reportId);
@@ -857,12 +834,6 @@ final class RetentionService
             return false;
         }
 
-        foreach ($paths as $path) {
-            $resolved = $this->resolveScanPath((string) $path);
-            if ($resolved !== null && is_file($resolved) && !@unlink($resolved)) {
-                $this->note("accomplishment_report #{$reportId}: scan file could not be removed — {$resolved}");
-            }
-        }
         return true;
     }
 
@@ -871,12 +842,9 @@ final class RetentionService
      * eligible, aged from `mayor_office_received_at` (a DATE the Secretary
      * enters on mark-submitted; required for that transition, so it is
      * never NULL on a submitted report, and the table stores no other
-     * submission timestamp). draft/prepared/approved reports are live work
-     * and never purged by an age clock. Their `document_scan` rows
-     * (`entity_type = 'ssz_term_report'` ONLY, never an accomplishment
-     * report that happens to share the numeric id) and files go with them.
-     * No `legal_hold` column exists, so `held` is always 0. One transaction
-     * per report; scan files unlinked after the commit.
+     * submission timestamp). draft/prepared reports are live work
+     * and never purged by an age clock. No `legal_hold` column exists, so
+     * `held` is always 0. One transaction per report.
      *
      * @return array{purged:int, held:int, eligible?:int, failed?:int, note?:string}
      */
@@ -917,7 +885,7 @@ final class RetentionService
         }
 
         $this->audit('retention_ssz_term_report_purged', 'ssz_term_report', ['purged' => $purged, 'failed' => $failed]);
-        $this->note("ssz_term_report: purged {$purged}, {$failed} failed (with attached scans)");
+        $this->note("ssz_term_report: purged {$purged}, {$failed} failed");
         return ['purged' => $purged, 'held' => 0, 'eligible' => $eligible, 'failed' => $failed];
     }
 
@@ -926,17 +894,6 @@ final class RetentionService
 
     private function purgeOneSszTermReport(int $reportId, int $days): bool
     {
-        $paths = [];
-        try {
-            $s = $this->pdo->prepare("SELECT stored_path FROM document_scan WHERE entity_type = 'ssz_term_report' AND entity_id = :id");
-            $s->execute(['id' => $reportId]);
-            $paths = $s->fetchAll(PDO::FETCH_COLUMN);
-        } catch (\PDOException $e) {
-            if (!$this->isMissingTable($e)) {
-                throw $e;
-            }
-        }
-
         $this->pdo->beginTransaction();
         try {
             // Re-check eligibility INSIDE the transaction (row-locked).
@@ -948,13 +905,6 @@ final class RetentionService
                 $this->pdo->rollBack();
                 return false;
             }
-            try {
-                $this->execById("DELETE FROM document_scan WHERE entity_type = 'ssz_term_report' AND entity_id = :id", $reportId);
-            } catch (\PDOException $e) {
-                if (!$this->isMissingTable($e)) {
-                    throw $e;
-                }
-            }
             $this->execById('DELETE FROM ssz_term_report WHERE report_id = :id', $reportId);
             $this->pdo->commit();
         } catch (\Throwable $e) {
@@ -965,39 +915,7 @@ final class RetentionService
             return false;
         }
 
-        foreach ($paths as $path) {
-            $resolved = $this->resolveScanPath((string) $path);
-            if ($resolved !== null && is_file($resolved) && !@unlink($resolved)) {
-                $this->note("ssz_term_report #{$reportId}: scan file could not be removed — {$resolved}");
-            }
-        }
         return true;
-    }
-
-    /**
-     * Scans live flat in `SCANS_DIR` (default `backend/storage/scans`, outside
-     * the web root); `stored_path` is a bare file name. Same containment
-     * discipline as resolveEvidencePath(): a crafted value must never steer
-     * an unlink outside the directory.
-     */
-    private function resolveScanPath(string $storedPath): ?string
-    {
-        if (!preg_match('/^[A-Za-z0-9._-]+$/', $storedPath)) {
-            return null;
-        }
-        $base = baranguard_env('SCANS_DIR');
-        $baseDir = ($base !== false && trim((string) $base) !== '')
-            ? rtrim((string) $base, '/\\')
-            : dirname(__DIR__, 2) . '/storage/scans';
-        $realBase = realpath($baseDir);
-        if ($realBase === false) {
-            return null;
-        }
-        $candidate = realpath($baseDir . DIRECTORY_SEPARATOR . $storedPath);
-        if ($candidate === false || !str_starts_with($candidate, $realBase)) {
-            return null;
-        }
-        return $candidate;
     }
 
     /** @return array{purged:int, held:int, eligible?:int, note?:string} */

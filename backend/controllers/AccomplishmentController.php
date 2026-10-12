@@ -8,7 +8,6 @@ use Baranguard\Lib\ApprovalAuthority;
 use Baranguard\Lib\Audit;
 use Baranguard\Lib\DeviceSignature;
 use Baranguard\Lib\Http;
-use Baranguard\Lib\PaperApproval;
 use Baranguard\Middleware\AuthMiddleware;
 use Baranguard\Services\Notifications\NotificationDispatcher;
 use Baranguard\Services\Notifications\NotificationService;
@@ -23,13 +22,10 @@ use PDO;
  * the server records, at write time, the duration it would have suggested
  * from the Tanod's own `duty_status` rows and flags a mismatch larger than
  * `DURATION_FLAG_MARGIN_MINUTES`. The month's report then walks
- * open -> prepared (Tanod submits, online only) -> approved, or is
- * `returned` (entries editable again). Approval happens on the signed paper
- * only (2026-10-12): an Admin/Secretary records it with
- * record-paper-approval, naming a signer who holds `approve_report`
- * (an authority, never a role) and who is never the preparer (segregation
- * of duties). The old in-app note/approve endpoints answer 410
- * PAPER_APPROVAL_REQUIRED; `noted` survives only on legacy rows.
+ * open -> prepared (Tanod submits, online only, entries locked, ready to
+ * print), or is `returned` (entries editable again) by an authority holder.
+ * Reports are printed and signed on paper (2026-10-12), so the app tracks no
+ * signatures or approvals: there is no note/approve step (migration 0041).
  *
  * Resolved decisions where the contract is silent (logged in DEVLOG.md):
  *   - Suggested duration counts ONLY `on_duty` intervals (literal reading of
@@ -42,8 +38,7 @@ use PDO;
  *     is 0 (no basis to compare). A day with history but no on_duty time
  *     suggests 0 minutes.
  *   - Submitting with no entries is a 422 (not a transition conflict).
- *   - `return` clears `noted_by`/`noted_at` so a resubmission is noted
- *     afresh; `submit` clears `return_reason`.
+ *   - `submit` clears `return_reason`.
  *   - Report text visibility: the owning Tanod sees their own text; Admin
  *     and Secretary always see it (they print the form for signing); a
  *     Punong Barangay sees it only with the note_report or approve_report
@@ -62,7 +57,7 @@ final class AccomplishmentController
     private const TIME_PATTERN = '/^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/';
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
-    private const STATUSES = ['open', 'prepared', 'noted', 'approved', 'returned'];
+    private const STATUSES = ['open', 'prepared', 'returned'];
 
     // ------------------------------------------------------------------
     // Entries
@@ -320,13 +315,12 @@ final class AccomplishmentController
         $total = (int) $countStmt->fetchColumn();
 
         $stmt = $pdo->prepare(
-            "SELECT r.*, u.full_name, u.official_title, pr.full_name AS paper_recorded_by_name,
+            "SELECT r.*, u.full_name, u.official_title,
                     (SELECT COUNT(*) FROM accomplishment_entry e WHERE e.report_id = r.report_id) AS entry_count,
                     (SELECT COALESCE(SUM(e2.duration_minutes), 0) FROM accomplishment_entry e2 WHERE e2.report_id = r.report_id) AS total_minutes,
                     (SELECT COUNT(*) FROM accomplishment_entry e3 WHERE e3.report_id = r.report_id AND e3.duration_flag = 1) AS flagged_entries
              FROM accomplishment_report r
              JOIN user u ON u.user_id = r.user_id
-             LEFT JOIN user pr ON pr.user_id = r.paper_recorded_by
              WHERE {$whereSql}
              ORDER BY r.month DESC, u.full_name ASC, r.report_id DESC
              LIMIT :limit OFFSET :offset"
@@ -361,15 +355,9 @@ final class AccomplishmentController
         $reportId = (int) $reportIdParam;
 
         $stmt = $pdo->prepare(
-            'SELECT r.*, u.full_name, u.official_title,
-                    nb.full_name AS noted_by_name, nb.official_title AS noted_by_title,
-                    ab.full_name AS approved_by_name, ab.official_title AS approved_by_title,
-                    pr.full_name AS paper_recorded_by_name
+            'SELECT r.*, u.full_name, u.official_title
              FROM accomplishment_report r
              JOIN user u ON u.user_id = r.user_id
-             LEFT JOIN user nb ON nb.user_id = r.noted_by
-             LEFT JOIN user ab ON ab.user_id = r.approved_by
-             LEFT JOIN user pr ON pr.user_id = r.paper_recorded_by
              WHERE r.report_id = :id'
         );
         $stmt->execute(['id' => $reportId]);
@@ -382,8 +370,8 @@ final class AccomplishmentController
             throw new ApiError(404, 'NOT_FOUND', 'Report not found.');
         }
 
-        // Admin/Secretary always see the text: under paper-first signing
-        // (2026-10-12) they print the form that gets signed.
+        // Admin/Secretary always see the text: they print the form that gets
+        // signed on paper.
         $textVisible = in_array($identity['role'], ['tanod', 'admin', 'secretary'], true)
             || ApprovalAuthority::has($pdo, $identity['user_id'], ApprovalAuthority::NOTE_REPORT)
             || ApprovalAuthority::has($pdo, $identity['user_id'], ApprovalAuthority::APPROVE_REPORT);
@@ -405,10 +393,6 @@ final class AccomplishmentController
         $report = self::mapReport($row);
         $report['full_name'] = $row['full_name'];
         $report['official_title'] = $row['official_title'];
-        $report['noted_by_name'] = $row['noted_by_name'];
-        $report['noted_by_title'] = $row['noted_by_title'];
-        $report['approved_by_name'] = $row['approved_by_name'];
-        $report['approved_by_title'] = $row['approved_by_title'];
         $report['entry_count'] = count($entries);
         $report['total_minutes'] = $total;
         $report['flagged_entries'] = $flagged;
@@ -429,30 +413,6 @@ final class AccomplishmentController
         self::transition($pdo, $identity, $reportIdParam, 'submitted');
     }
 
-    /**
-     * POST /accomplishment-reports/:id/note - retired (paper-only,
-     * 2026-10-12). The signed paper is the approval: 410
-     * PAPER_APPROVAL_REQUIRED for every caller. Kept as a route so an old
-     * client gets a clear answer instead of a 404.
-     *
-     * @param array{user_id:int,barangay_id:int,role:string} $identity
-     */
-    public static function note(PDO $pdo, array $identity, string $reportIdParam): void
-    {
-        PaperApproval::refuseInApp('Noting an accomplishment report', 'POST /accomplishment-reports/:id/record-paper-approval');
-    }
-
-    /**
-     * POST /accomplishment-reports/:id/approve - retired (paper-only,
-     * 2026-10-12), 410 PAPER_APPROVAL_REQUIRED like note().
-     *
-     * @param array{user_id:int,barangay_id:int,role:string} $identity
-     */
-    public static function approve(PDO $pdo, array $identity, string $reportIdParam): void
-    {
-        PaperApproval::refuseInApp('Approving an accomplishment report', 'POST /accomplishment-reports/:id/record-paper-approval');
-    }
-
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function returnReport(PDO $pdo, array $identity, string $reportIdParam): void
     {
@@ -466,8 +426,7 @@ final class AccomplishmentController
     }
 
     /**
-     * The two in-app state changes left: submit and return (note/approve
-     * are retired; approval is recordPaperApproval). Order of checks: 403
+     * The two state changes: submit and return. Order of checks: 403
      * (caller, done by the wrappers) -> 400 (key/body) -> 404 (missing,
      * cross-tenant, other Tanod's) -> idempotent replay (the original
      * outcome) -> 409 illegal transition.
@@ -515,8 +474,7 @@ final class AccomplishmentController
             $status = (string) $report['status'];
             $legalFrom = match ($action) {
                 'submitted' => ['open', 'returned'],
-                // `noted` only exists on reports noted in-app before 2026-10-12.
-                'returned' => ['prepared', 'noted'],
+                'returned' => ['prepared'],
             };
             if (!in_array($status, $legalFrom, true)) {
                 throw new ApiError(409, 'CONFLICT', "A report in '{$status}' status cannot be {$action}.");
@@ -538,7 +496,7 @@ final class AccomplishmentController
             } else {
                 $pdo->prepare(
                     "UPDATE accomplishment_report
-                        SET status = 'returned', return_reason = :reason, noted_by = NULL, noted_at = NULL,
+                        SET status = 'returned', return_reason = :reason,
                             version = version + 1, updated_at = UTC_TIMESTAMP()
                       WHERE report_id = :id"
                 )->execute(['reason' => $reason, 'id' => $reportId]);
@@ -551,7 +509,7 @@ final class AccomplishmentController
                 'status' => $newStatus,
                 'idempotency_key' => $idempotencyKey,
             ]);
-            $notificationId = in_array($newStatus, ['approved', 'returned'], true)
+            $notificationId = $newStatus === 'returned'
                 ? self::createReportNotification($pdo, $identity, $reportId, (int) $report['user_id'])
                 : null;
             $pdo->commit();
@@ -563,131 +521,6 @@ final class AccomplishmentController
         }
         self::sendReportNotification($pdo, $notificationId, $reportId);
 
-        Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? []));
-    }
-
-    // ------------------------------------------------------------------
-    // Reports: paper signature (migration 0037)
-    // ------------------------------------------------------------------
-
-    /**
-     * POST /accomplishment-reports/:id/paper-signature - admin|secretary.
-     * Records (or overwrites) the date written on the signed paper of an
-     * APPROVED report. It never changes status or any report content, so it
-     * does not reopen the lock on an approved report; it is the one write an
-     * approved report accepts. Order: 403 -> 400 (key/body) -> 404 (missing /
-     * cross-tenant) -> idempotent replay -> 409 (not approved).
-     *
-     * @param array{user_id:int,barangay_id:int,role:string} $identity
-     */
-    public static function paperSignature(PDO $pdo, array $identity, string $reportIdParam): void
-    {
-        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
-        if (!ctype_digit($reportIdParam)) {
-            throw new ApiError(404, 'NOT_FOUND', 'Report not found.');
-        }
-        $reportId = (int) $reportIdParam;
-        $key = RosterSupport::requireIdempotencyKey();
-        $body = Http::jsonBody();
-        $signedOn = PaperApproval::requirePastOrTodayDate($body['paper_signed_on'] ?? null, 'paper_signed_on');
-
-        $pdo->beginTransaction();
-        try {
-            $report = self::lockReport($pdo, $identity, $reportId);
-            if (PaperApproval::isReplay($pdo, $identity['barangay_id'], 'paper_signature_recorded', 'accomplishment_report', $reportId, $key)) {
-                $pdo->commit();
-                Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? $report));
-            }
-            if ($report['status'] !== 'approved') {
-                throw new ApiError(409, 'CONFLICT', "A paper signature can only be recorded on an approved report (this one is '{$report['status']}').");
-            }
-            $pdo->prepare(
-                'UPDATE accomplishment_report
-                    SET paper_signed_on = :signed_on, paper_recorded_by = :actor, paper_recorded_at = UTC_TIMESTAMP(),
-                        version = version + 1, updated_at = UTC_TIMESTAMP()
-                  WHERE report_id = :id'
-            )->execute(['signed_on' => $signedOn, 'actor' => $identity['user_id'], 'id' => $reportId]);
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'paper_signature_recorded', 'accomplishment_report', $reportId, [
-                'report_id' => $reportId,
-                'status' => 'approved',
-                'idempotency_key' => $key,
-            ]);
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
-        }
-        Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? []));
-    }
-
-    /**
-     * POST /accomplishment-reports/:id/record-paper-approval - admin|secretary.
-     * Body {"signer_user_id", "signed_on"}. Records an approval that
-     * happened on paper: `prepared` or `noted` -> `approved`, `approved_by` =
-     * the signer (an active same-barangay user holding `approve_report`,
-     * never the preparer), `approval_mode` = 'recorded_from_paper'. Paper is
-     * the only approval path (2026-10-12): recording from `prepared` leaves
-     * `noted_by` empty, because the noting signature lives on the paper;
-     * `noted` is accepted only for legacy rows noted in-app before then. The recorder
-     * may be the signer (a Secretary can hold the authority). Order: 403 ->
-     * 400 -> 404 (report / cross-tenant) -> idempotent replay -> 409 (not
-     * prepared or noted)
-     * -> 409 (signer is the preparer) -> 404 (signer in another barangay)
-     * -> 422 (signer cannot approve).
-     *
-     * @param array{user_id:int,barangay_id:int,role:string} $identity
-     */
-    public static function recordPaperApproval(PDO $pdo, array $identity, string $reportIdParam): void
-    {
-        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
-        if (!ctype_digit($reportIdParam)) {
-            throw new ApiError(404, 'NOT_FOUND', 'Report not found.');
-        }
-        $reportId = (int) $reportIdParam;
-        $key = RosterSupport::requireIdempotencyKey();
-        $body = Http::jsonBody();
-        $signerId = PaperApproval::requirePositiveInt($body['signer_user_id'] ?? null, 'signer_user_id');
-        $signedOn = PaperApproval::requirePastOrTodayDate($body['signed_on'] ?? null, 'signed_on');
-
-        $pdo->beginTransaction();
-        try {
-            $report = self::lockReport($pdo, $identity, $reportId);
-            if (PaperApproval::isReplay($pdo, $identity['barangay_id'], 'approval_recorded_from_paper', 'accomplishment_report', $reportId, $key)) {
-                $pdo->commit();
-                Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? $report));
-            }
-            if (!in_array($report['status'], ['prepared', 'noted'], true)) {
-                throw new ApiError(409, 'CONFLICT', "A report in '{$report['status']}' status cannot have a paper approval recorded.");
-            }
-            ApprovalAuthority::assertNotPreparer($signerId, (int) $report['user_id']);
-            PaperApproval::requireSigner($pdo, $identity['barangay_id'], $signerId, ApprovalAuthority::APPROVE_REPORT);
-
-            $pdo->prepare(
-                "UPDATE accomplishment_report
-                    SET status = 'approved', approved_by = :signer, approved_at = UTC_TIMESTAMP(),
-                        approval_mode = 'recorded_from_paper', paper_signed_on = :signed_on,
-                        paper_recorded_by = :actor, paper_recorded_at = UTC_TIMESTAMP(),
-                        version = version + 1, updated_at = UTC_TIMESTAMP()
-                  WHERE report_id = :id"
-            )->execute(['signer' => $signerId, 'signed_on' => $signedOn, 'actor' => $identity['user_id'], 'id' => $reportId]);
-            Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'approval_recorded_from_paper', 'accomplishment_report', $reportId, [
-                'report_id' => $reportId,
-                'month' => $report['month'],
-                'status' => 'approved',
-                'signer_user_id' => $signerId,
-                'idempotency_key' => $key,
-            ]);
-            $notificationId = self::createReportNotification($pdo, $identity, $reportId, (int) $report['user_id']);
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
-        }
-        self::sendReportNotification($pdo, $notificationId, $reportId);
         Http::send(200, self::mapReport(self::fetchReportRow($pdo, $reportId) ?? []));
     }
 
@@ -723,34 +556,10 @@ final class AccomplishmentController
         }
     }
 
-    /**
-     * Loads one report FOR UPDATE inside the caller's transaction; 404 for a
-     * missing row and another barangay's row alike.
-     *
-     * @param array{user_id:int,barangay_id:int,role:string} $identity
-     * @return array<string,mixed>
-     */
-    private static function lockReport(PDO $pdo, array $identity, int $reportId): array
-    {
-        $stmt = $pdo->prepare('SELECT * FROM accomplishment_report WHERE report_id = :id FOR UPDATE');
-        $stmt->execute(['id' => $reportId]);
-        $report = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($report === false) {
-            throw new ApiError(404, 'NOT_FOUND', 'Report not found.');
-        }
-        AuthMiddleware::requireTenant($identity, (int) $report['barangay_id']);
-        return $report;
-    }
-
-    /** @return array<string,mixed>|null the report row plus `paper_recorded_by_name` */
+    /** @return array<string,mixed>|null the report row */
     private static function fetchReportRow(PDO $pdo, int $reportId): ?array
     {
-        $stmt = $pdo->prepare(
-            'SELECT r.*, pr.full_name AS paper_recorded_by_name
-               FROM accomplishment_report r
-               LEFT JOIN user pr ON pr.user_id = r.paper_recorded_by
-              WHERE r.report_id = :id'
-        );
+        $stmt = $pdo->prepare('SELECT r.* FROM accomplishment_report r WHERE r.report_id = :id');
         $stmt->execute(['id' => $reportId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row === false ? null : $row;
@@ -819,8 +628,8 @@ final class AccomplishmentController
      * report is still editable (open/returned). Called when a duty_status row
      * is recorded AFTER the fact (a queued offline off-duty, see
      * DutyStatusController), which changes the on-duty intervals those
-     * entries' suggestions were computed from. Prepared/noted/approved
-     * months are left as signed off.
+     * entries' suggestions were computed from. Prepared
+     * months are left as submitted.
      */
     public static function refreshSuggestedSince(PDO $pdo, int $userId, \DateTimeImmutable $fromUtc): void
     {
@@ -986,15 +795,11 @@ final class AccomplishmentController
             'month' => $row['month'] ?? null,
             'status' => $row['status'] ?? null,
             'prepared_at' => $row['prepared_at'] ?? null,
-            'noted_by' => isset($row['noted_by']) ? (int) $row['noted_by'] : null,
-            'noted_at' => $row['noted_at'] ?? null,
-            'approved_by' => isset($row['approved_by']) ? (int) $row['approved_by'] : null,
-            'approved_at' => $row['approved_at'] ?? null,
             'return_reason' => $row['return_reason'] ?? null,
             'total_minutes_confirmed' => isset($row['total_minutes_confirmed']) ? (int) $row['total_minutes_confirmed'] : null,
             'version' => (int) ($row['version'] ?? 1),
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
-        ] + PaperApproval::fields($row, isset($row['paper_recorded_by_name']) ? (string) $row['paper_recorded_by_name'] : null);
+        ];
     }
 }
