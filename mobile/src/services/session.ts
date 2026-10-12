@@ -89,6 +89,12 @@ export async function storeRenewedToken(token: string): Promise<void> {
 export async function clearSession(): Promise<void> {
   cached = null;
   await Preferences.remove({ key: SESSION_KEY });
+  // Home's last-known duty status belongs to the user who just signed out.
+  try {
+    localStorage.removeItem('baranguard.lastKnownDutyStatus');
+  } catch {
+    // Storage unavailable — nothing cached.
+  }
 }
 
 /** True only if a session exists AND has not already expired locally. */

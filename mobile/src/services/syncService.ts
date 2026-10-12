@@ -32,10 +32,17 @@
  * reverts the optimistic local status and refreshes from the server; a
  * failed SOS is retried, never silently terminal.
  *
- * `duty_status_updates` is always sent empty: M2's duty toggle already
- * always calls `POST /duty-status` directly online (Sprint 2) — there is
- * no offline duty-toggle queue in this codebase (see localSchema.ts's file
- * header for why `duty_status_local` doesn't exist).
+ * `duty_status_updates` carries only OFF-duty toggles made offline
+ * (going ON duty stays online-only), each with the device's tap time as
+ * `changed_at`, which the server records instead of the arrival time. They
+ * go out right AFTER dispatch status (so a dispatch completed offline
+ * reaches the server before the off-duty that depends on it — the server
+ * refuses off-duty while a dispatch is active) and BEFORE accomplishment
+ * entries (whose suggested duration is computed from duty_status). A
+ * server 'failed' is a permanent rejection (Rule 48): the queue row is
+ * marked failed with the reason, `dutyRejected` is reported, and Home
+ * re-reads the server's duty status and shows the rejection until the
+ * Tanod dismisses it.
  *
  * TANOD WORKFLOW KINDS (2026-10, contract §6/§9): referrals, availability,
  * accomplishment entries and school check-ins ride the same chunked, capped,
@@ -66,6 +73,7 @@ import {
   uploadEvidence,
   type SyncBatchResult,
   type SyncDispatchStatusItem,
+  type SyncDutyStatusItem,
   type SyncAccomplishmentItem,
   type SyncAvailabilityItem,
   type SyncGpsItem,
@@ -91,7 +99,10 @@ import {
 import {
   countFailedSosItems,
   listPendingDispatchStatusUpdates,
+  listPendingDutyStatusUpdates,
   listPendingSosItems,
+  listRejectedDutyStatusUpdates,
+  markDutyStatusRejected,
   markQueueItemResolved,
   markSosAttemptFailed,
   resetFailedSosItems,
@@ -139,6 +150,8 @@ export interface SyncSummary {
   evidenceFailed: number;
   /** Queued dispatch-status changes the server refused this pass (local status reverted/refreshed). */
   dispatchRejected: number;
+  /** Queued offline off-duty toggles the server refused this pass (Home reverts to the server's status). */
+  dutyRejected: number;
 }
 
 interface ChunkCounts {
@@ -147,6 +160,7 @@ interface ChunkCounts {
   duplicates: number;
   failed: number;
   dispatchRejected: number;
+  dutyRejected: number;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -170,13 +184,14 @@ export async function runSyncPass(): Promise<SyncSummary> {
   const pendingDispatchStatus = await listPendingDispatchStatusUpdates();
   const pendingSos = await listPendingSosItems();
 
-  const totals: ChunkCounts = { attempted: 0, succeeded: 0, duplicates: 0, failed: 0, dispatchRejected: 0 };
+  const totals: ChunkCounts = { attempted: 0, succeeded: 0, duplicates: 0, failed: 0, dispatchRejected: 0, dutyRejected: 0 };
   const add = (c: ChunkCounts) => {
     totals.attempted += c.attempted;
     totals.succeeded += c.succeeded;
     totals.duplicates += c.duplicates;
     totals.failed += c.failed;
     totals.dispatchRejected += c.dispatchRejected;
+    totals.dutyRejected += c.dutyRejected;
   };
 
   // 1. Urgent: SOS first, then dispatch status. Tiny lists in practice, so
@@ -186,6 +201,11 @@ export async function runSyncPass(): Promise<SyncSummary> {
   }
   for (const part of chunk(pendingDispatchStatus, SYNC_CHUNK_SIZE)) {
     add(await syncChunk(deviceId, { dispatch: part }));
+  }
+  // Offline off-duty: read only NOW, after dispatch status was applied, and
+  // sent in its own request so the server sees the dispatch completion first.
+  for (const part of chunk(await listPendingDutyStatusUpdates(), SYNC_CHUNK_SIZE)) {
+    add(await syncChunk(deviceId, { duty: part }));
   }
   // 2. Incident reports.
   for (const part of chunk(unsyncedIncidents, SYNC_CHUNK_SIZE)) {
@@ -253,6 +273,7 @@ export async function runSyncPass(): Promise<SyncSummary> {
     evidenceUploaded,
     evidenceFailed,
     dispatchRejected: totals.dispatchRejected,
+    dutyRejected: totals.dutyRejected,
   };
 }
 
@@ -260,6 +281,7 @@ interface ChunkInput {
   incidents?: Awaited<ReturnType<typeof listUnsyncedIncidents>>;
   gps?: Awaited<ReturnType<typeof listUnsyncedGpsPoints>>;
   dispatch?: Awaited<ReturnType<typeof listPendingDispatchStatusUpdates>>;
+  duty?: Awaited<ReturnType<typeof listPendingDutyStatusUpdates>>;
   sos?: Awaited<ReturnType<typeof listPendingSosItems>>;
   referrals?: Awaited<ReturnType<typeof listUnsyncedReferrals>>;
   availability?: Awaited<ReturnType<typeof listUnsyncedAvailability>>;
@@ -272,6 +294,7 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
   const incidents = input.incidents ?? [];
   const gps = input.gps ?? [];
   const dispatch = input.dispatch ?? [];
+  const duty = input.duty ?? [];
   const sos = input.sos ?? [];
   const referrals = input.referrals ?? [];
   const availability = input.availability ?? [];
@@ -356,6 +379,12 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     client_event_id: clientEventId,
   }));
 
+  const dutyStatusItems: SyncDutyStatusItem[] = duty.map(({ clientEventId, payload }) => ({
+    status: payload.status,
+    client_event_id: clientEventId,
+    changed_at: payload.changedAt,
+  }));
+
   const sosItems: SyncSosItem[] = sos.map(({ clientEventId, createdOfflineAt, payload }) => ({
     latitude: payload.latitude,
     longitude: payload.longitude,
@@ -369,6 +398,7 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     incidents: incidentItems,
     gpsTracks: gpsItems,
     dispatchStatusUpdates: dispatchStatusItems,
+    dutyStatusUpdates: dutyStatusItems,
     sosItems,
     referrals: referralItems,
     availability: availabilityItems,
@@ -419,6 +449,18 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     } catch {
       // Offline refresh is best-effort — the local revert above already
       // stopped the cache lying; the next Assignments load re-syncs it.
+    }
+  }
+
+  let dutyRejected = 0;
+  for (const item of duty) {
+    const result = byEventId.get(item.clientEventId);
+    if (!result) continue;
+    if (result.status === 'failed') {
+      dutyRejected += 1;
+      await markDutyStatusRejected(item, result.reason ?? 'Rejected by the barangay workstation.');
+    } else {
+      await markQueueItemResolved(item.queueId, result.status);
     }
   }
 
@@ -496,6 +538,7 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     duplicates: results.filter((r) => r.status === 'duplicate').length,
     failed: results.filter((r) => r.status === 'failed').length,
     dispatchRejected,
+    dutyRejected,
   };
 }
 
@@ -509,12 +552,14 @@ export interface NeedsAttentionCounts {
   availability: number;
   accomplishments: number;
   schoolCheckins: number;
+  /** Offline off-duty toggles the server rejected and the Tanod has not dismissed yet. */
+  dutyStatus: number;
   total: number;
 }
 
 /** Items the automatic sync has given up on — shown as a warning, never hidden. */
 export async function getNeedsAttentionCounts(): Promise<NeedsAttentionCounts> {
-  const [incidents, gps, evidence, sos, referrals, availability, accomplishments, schoolCheckins] = await Promise.all([
+  const [incidents, gps, evidence, sos, referrals, availability, accomplishments, schoolCheckins, dutyRejected] = await Promise.all([
     countPermanentlyFailedIncidents(),
     countPermanentlyFailedGpsPoints(),
     countPermanentlyFailedEvidence(),
@@ -523,7 +568,9 @@ export async function getNeedsAttentionCounts(): Promise<NeedsAttentionCounts> {
     countWorkflowPermanentFailures('availability_local'),
     countWorkflowPermanentFailures('accomplishment_entry_local'),
     countWorkflowPermanentFailures('school_checkin_local'),
+    listRejectedDutyStatusUpdates(),
   ]);
+  const dutyStatus = dutyRejected.length;
   return {
     incidents,
     gps,
@@ -533,7 +580,8 @@ export async function getNeedsAttentionCounts(): Promise<NeedsAttentionCounts> {
     availability,
     accomplishments,
     schoolCheckins,
-    total: incidents + gps + evidence + sos + referrals + availability + accomplishments + schoolCheckins,
+    dutyStatus,
+    total: incidents + gps + evidence + sos + referrals + availability + accomplishments + schoolCheckins + dutyStatus,
   };
 }
 
