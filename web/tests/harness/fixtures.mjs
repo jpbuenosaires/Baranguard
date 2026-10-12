@@ -42,9 +42,6 @@ function paginate(items, query) {
 
 const ok = (body) => ({ status: 200, body });
 const notFound = (message = 'Not found.') => ({ status: 404, body: { error: { code: 'NOT_FOUND', message } } });
-// The retired in-app approval endpoints (paper-only, 2026-10-12).
-const paperRequired = () => ({ status: 410, body: { error: { code: 'PAPER_APPROVAL_REQUIRED', message: 'In-app approval is no longer supported: the signed paper is the approval. Print it, have it signed, then record the signed paper.' } } });
-
 // ---------------------------------------------------------------------------
 
 export function buildRoutes(scenario) {
@@ -120,8 +117,8 @@ export function buildRoutes(scenario) {
     { avail_id: 32, barangay_id: 1, user_id: 5, full_name: tanodName(5), period_start: '2026-10-05', period_end: '2026-10-11', windows_json: [{ date: '2026-10-07', start: '06:00', end: '14:00' }], status: 'accepted', reviewed_by: 1, reviewed_at: sqlAgo(60), review_note: t('Thanks.'), version: 1, created_at: sqlAgo(400), updated_at: sqlAgo(60) },
   ];
   const accomplishmentReports = empty ? [] : [
-    { report_id: 71, barangay_id: 1, user_id: 4, full_name: tanodName(4), month: '2026-09', status: 'prepared', entry_count: 2, total_minutes: 960, flagged_entries: 1, total_minutes_confirmed: null, prepared_at: sqlAgo(1440), noted_by: null, noted_at: null, approved_by: null, approved_at: null, return_reason: null, version: 2 },
-    { report_id: 72, barangay_id: 1, user_id: 5, full_name: tanodName(5), month: '2026-09', status: 'noted', entry_count: 1, total_minutes: 480, flagged_entries: 0, total_minutes_confirmed: null, prepared_at: sqlAgo(2880), noted_by: 2, noted_at: sqlAgo(1440), approved_by: null, approved_at: null, return_reason: null, version: 3 },
+    { report_id: 71, barangay_id: 1, user_id: 4, full_name: tanodName(4), month: '2026-09', status: 'prepared', entry_count: 2, total_minutes: 960, flagged_entries: 1, total_minutes_confirmed: null, prepared_at: sqlAgo(1440), return_reason: null, version: 2 },
+    { report_id: 72, barangay_id: 1, user_id: 5, full_name: tanodName(5), month: '2026-09', status: 'returned', entry_count: 1, total_minutes: 480, flagged_entries: 0, total_minutes_confirmed: null, prepared_at: sqlAgo(2880), return_reason: 'Please re-check the September 5 entry.', version: 3 },
   ];
   const accomplishmentEntries = (reportId) => (reportId === 71 ? [
     { entry_id: 501, report_id: 71, user_id: 4, work_date: '2026-09-03', accomplishment_text: t('Foot patrol, Purok 3 and 4.'), start_time: '08:00:00', end_time: '16:00:00', duration_minutes: 480, suggested_duration_minutes: 470, duration_flag: 0 },
@@ -130,8 +127,8 @@ export function buildRoutes(scenario) {
     { entry_id: 503, report_id: 72, user_id: 5, work_date: '2026-09-05', accomplishment_text: t('Traffic assistance.'), start_time: null, end_time: null, duration_minutes: 480, suggested_duration_minutes: 480, duration_flag: 0 },
   ]);
   const sszTermReports = empty ? [] : [
-    { report_id: 81, barangay_id: 1, term_label: 'Term 1 S.Y. 2026-2027', term_start: '2026-08-24', term_end: '2026-10-30', status: 'draft', total_tanods: 3, total_schools: 2, total_deployment_days: 12, total_incidents: 1, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0, incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: 1, other_institutions: 'Ambulance/EMS', remarks: null, prepared_by: null, prepared_at: null, approved_by: null, approved_at: null, mayor_office_received_by: null, mayor_office_received_at: null, dilg_received_by: null, dilg_date_received: null, version: 1 },
-    { report_id: 82, barangay_id: 1, term_label: 'Term 4 S.Y. 2025-2026', term_start: '2026-03-02', term_end: '2026-04-10', status: 'prepared', total_tanods: 3, total_schools: 2, total_deployment_days: 20, total_incidents: 0, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0, incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: 0, other_institutions: null, remarks: null, prepared_by: 1, prepared_at: sqlAgo(1440), approved_by: null, approved_at: null, mayor_office_received_by: null, mayor_office_received_at: null, dilg_received_by: null, dilg_date_received: null, version: 2 },
+    { report_id: 81, barangay_id: 1, term_label: 'Term 1 S.Y. 2026-2027', term_start: '2026-08-24', term_end: '2026-10-30', status: 'draft', total_tanods: 3, total_schools: 2, total_deployment_days: 12, total_incidents: 1, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0, incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: 1, other_institutions: 'Ambulance/EMS', remarks: null, prepared_by: null, prepared_at: null, mayor_office_received_by: null, mayor_office_received_at: null, dilg_received_by: null, dilg_date_received: null, version: 1 },
+    { report_id: 82, barangay_id: 1, term_label: 'Term 4 S.Y. 2025-2026', term_start: '2026-03-02', term_end: '2026-04-10', status: 'prepared', total_tanods: 3, total_schools: 2, total_deployment_days: 20, total_incidents: 0, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0, incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: 0, other_institutions: null, remarks: null, prepared_by: 1, prepared_at: sqlAgo(1440), mayor_office_received_by: null, mayor_office_received_at: null, dilg_received_by: null, dilg_date_received: null, version: 2 },
   ];
 
   const dispatches = empty ? [] : [
@@ -330,17 +327,7 @@ export function buildRoutes(scenario) {
       return row ? ok(row) : notFound('Report not found.');
     } },
     { method: 'PATCH', path: '/ssz-term-reports/:id', handler: ({ params }) => ok({ report_id: Number(params.id), updated: true }) },
-    // Paper-only (2026-10-12): the in-app approval endpoints are retired.
-    { method: 'POST', path: '/ssz-term-reports/:id/prepare', handler: () => paperRequired() },
-    { method: 'POST', path: '/ssz-term-reports/:id/approve', handler: () => paperRequired() },
-    // --- Paper signatures + scanned copies (Wave 1, contract C) ---
-    { method: 'POST', path: '/accomplishment-reports/:id/paper-signature', handler: ({ params, body }) => ok({ report_id: Number(params.id), paper_signed_on: body.paper_signed_on }) },
-    { method: 'POST', path: '/ssz-term-reports/:id/paper-signature', handler: ({ params, body }) => ok({ report_id: Number(params.id), paper_signed_on: body.paper_signed_on }) },
-    { method: 'POST', path: '/accomplishment-reports/:id/record-paper-approval', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved', approval_mode: 'recorded_from_paper' }) },
-    { method: 'POST', path: '/ssz-term-reports/:id/record-paper-approval', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'approved', approval_mode: 'recorded_from_paper' }) },
-    { method: 'GET', path: '/document-scans', handler: () => ok({ items: [], page: 1, limit: 25, total: 0 }) },
-    { method: 'POST', path: '/document-scans', handler: () => ({ status: 201, body: { scan_id: 9001, entity_type: 'accomplishment_report', entity_id: 1, mime_type: 'application/pdf', size_bytes: 1234, sha256: 'a'.repeat(64), uploaded_by: 1, uploaded_at: sqlAgo(0) } }) },
-    { method: 'GET', path: '/document-scans/:id/download', handler: () => ({ status: 200, raw: '%PDF-1.4 fake', headers: { 'Content-Type': 'application/pdf' } }) },
+    { method: 'POST', path: '/ssz-term-reports/:id/prepare', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'prepared' }) },
     { method: 'POST', path: '/ssz-term-reports/:id/mark-submitted', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'submitted' }) },
     { method: 'GET', path: '/accomplishment-reports', handler: ({ query }) => ok(paginate(accomplishmentReports
       .filter((r) => (!query.status || r.status === query.status) && (!query.month || r.month === query.month) && (!query.user_id || r.user_id === Number(query.user_id))), query)) },
@@ -348,8 +335,6 @@ export function buildRoutes(scenario) {
       const row = accomplishmentReports.find((r) => r.report_id === Number(params.id));
       return row ? ok({ ...row, entries: accomplishmentEntries(row.report_id) }) : notFound('Report not found.');
     } },
-    { method: 'POST', path: '/accomplishment-reports/:id/note', handler: () => paperRequired() },
-    { method: 'POST', path: '/accomplishment-reports/:id/approve', handler: () => paperRequired() },
     { method: 'POST', path: '/accomplishment-reports/:id/return', handler: ({ params }) => ok({ report_id: Number(params.id), status: 'returned' }) },
     { method: 'PATCH', path: '/incidents/:id/status', handler: ({ params }) => ok({ incident_id: Number(params.id), status: 'resolved' }) },
     { method: 'GET', path: '/incidents/:id/evidence', handler: ({ params }) => ok({ items: evidence.filter((e) => e.incident_id === Number(params.id)) }) },
@@ -403,10 +388,7 @@ export function buildRoutes(scenario) {
     // --- Scheduling ---
     { method: 'GET', path: '/shifts', handler: ({ query }) => ok(paginate(shifts.filter((s) => !query.approval_status || s.approval_status === query.approval_status), query)) },
     { method: 'POST', path: '/shifts', handler: ({ body }) => ({ status: 201, body: { shift_id: 599, user_id: body.user_id, patrol_zone: body.patrol_zone, start_at: body.start_at, end_at: body.end_at, version: 1, approval_status: 'draft', approved_by: null, approved_at: null, source_availability_id: body.source_availability_id ?? null } }) },
-    // Paper-only (2026-10-12): recorded_from_paper is required from every caller.
-    { method: 'POST', path: '/shifts/publish', handler: ({ body }) => (body.recorded_from_paper
-      ? ok({ published: body.shift_ids, already_published: [], warnings: [{ code: 'NO_COVERAGE', date: '2026-10-07' }] })
-      : { status: 422, body: { error: { code: 'PAPER_APPROVAL_REQUIRED', message: 'Publishing needs the signed paper roster: send recorded_from_paper {signer_user_id, signed_on}.' } } }) },
+    { method: 'POST', path: '/shifts/publish', handler: ({ body }) => ok({ published: body.shift_ids, already_published: [], warnings: [{ code: 'NO_COVERAGE', date: '2026-10-07' }] }) },
     { method: 'GET', path: '/availability', handler: ({ query }) => ok(paginate(availability.filter((a) => (!query.status || a.status === query.status) && (!query.user_id || a.user_id === Number(query.user_id))), query)) },
     // Retired 2026-10-12: availability is the tanod's fixed statement, never reviewed.
     { method: 'PATCH', path: '/availability/:id', handler: () => ({ status: 410, body: { error: { code: 'AVAILABILITY_NOT_REVIEWED', message: 'Availability is no longer reviewed.' } } }) },

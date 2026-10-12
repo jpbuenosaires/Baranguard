@@ -173,10 +173,6 @@ function mapShiftDetailed(row) {
     approvedBy: row.approved_by ?? null,
     approvedAt: row.approved_at ?? null,
     sourceAvailabilityId: row.source_availability_id ?? null,
-    // Wave 2: how the roster approval was recorded (paper fields only on a published shift).
-    approvalMode: row.approval_mode ?? 'digital',
-    paperSignedOn: row.paper_signed_on ?? null,
-    paperRecordedByName: row.paper_recorded_by_name ?? null,
     // Legacy (migration 0035): set by approved swaps before 2026-10-12; a swap now keeps the shift published.
     pendingReapproval: Boolean(row.pending_reapproval),
   };
@@ -189,18 +185,13 @@ export async function getShiftsDetailed({ page, limit, approvalStatus, from, to 
 }
 
 /**
- * POST /shifts/publish — paper-only (2026-10-12): `recordedFromPaper`
- * {signerUserId, signedOn} is required (422 PAPER_APPROVAL_REQUIRED without
- * it). Callers: Admin/Secretary, or a Punong Barangay holding approve_roster.
+ * POST /shifts/publish — a plain publish: the schedule is printed and signed
+ * on paper outside the app, so there is nothing to record here. Callers:
+ * Admin/Secretary, or a Punong Barangay holding approve_roster.
  * @returns {Promise<{published:number[], alreadyPublished:number[], warnings:Array<{code:string,date:string}>}>}
  */
-export async function publishShifts(shiftIds, idempotencyKey, { recordedFromPaper }) {
-  // The signer (who holds approve_roster) and the date they signed the paper
-  // roster. The server re-checks both.
-  const body = {
-    shift_ids: shiftIds,
-    recorded_from_paper: { signer_user_id: recordedFromPaper.signerUserId, signed_on: recordedFromPaper.signedOn },
-  };
+export async function publishShifts(shiftIds, idempotencyKey) {
+  const body = { shift_ids: shiftIds };
   const json = await request('POST', '/shifts/publish', { body, idempotencyKey });
   return {
     published: json.published ?? [],
@@ -389,11 +380,10 @@ async function countOf(path, query) {
 /**
  * Live counts of work waiting on the signed-in user. There is no dedicated
  * approvals endpoint in the contract, so this composes the existing list
- * endpoints; nothing is invented or estimated. Paper-only (2026-10-12):
- * Admin/Secretary see what is waiting for its signed paper (Annex D drafts
- * included: preparation is on the paper too); a Punong Barangay holding
- * approve_roster also sees draft shifts, which they may publish by recording
- * the signed paper roster.
+ * endpoints; nothing is invented or estimated. Admin/Secretary see prepared
+ * accomplishment reports (ready to print and sign on paper) and Annex D
+ * reports still to prepare or submit; a Punong Barangay holding
+ * approve_roster also sees draft shifts awaiting publish.
  *
  * @param {string[]} authorities the viewer's own approval_authority
  * @param {string} [role] the viewer's role
@@ -407,16 +397,12 @@ export async function getPendingApprovalCounts(authorities, role) {
     jobs.push(countOf('/shifts', { approval_status: 'draft' }).then((count) => ({ key: 'roster', label: 'Draft shifts to publish', count })));
   }
   if (isManager) {
-    jobs.push(Promise.all([
-      countOf('/accomplishment-reports', { status: 'prepared' }),
-      countOf('/accomplishment-reports', { status: 'noted' }),
-    ]).then(([prepared, noted]) => ({ key: 'paper-reports', label: 'Accomplishment reports waiting for the signed paper', count: prepared + noted })));
-  }
-  if (isManager) {
+    jobs.push(countOf('/accomplishment-reports', { status: 'prepared' })
+      .then((count) => ({ key: 'reports-prepared', label: 'Accomplishment reports ready to print and sign', count })));
     jobs.push(Promise.all([
       countOf('/ssz-term-reports', { status: 'draft' }),
       countOf('/ssz-term-reports', { status: 'prepared' }),
-    ]).then(([draft, prepared]) => ({ key: 'paper-annex', label: 'Annex D waiting for the signed paper', count: draft + prepared })));
+    ]).then(([draft, prepared]) => ({ key: 'annex-d', label: 'Annex D to prepare or submit', count: draft + prepared })));
   }
   const results = await Promise.all(jobs);
   return results.flat();

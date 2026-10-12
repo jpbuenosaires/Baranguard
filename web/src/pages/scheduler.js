@@ -19,8 +19,7 @@ import { loadTanodRoster } from '../services/tanodRoster.js';
 import {
   getShiftsDetailed, publishShifts, getAvailability, getOwnApprovalAuthority,
 } from '../services/shellWorkflowApi.js';
-import { loadSignerCandidates } from '../services/signerCandidates.js';
-import { formatDateOnly, manilaToday } from '../services/tanodWorkflowUi.js';
+import { manilaToday } from '../services/tanodWorkflowUi.js';
 import {
   SHIFT_PRESETS, addDays, weekStartOf, weekDays, weekRangeLabel, shortDateLabel, presetRange,
   shiftsInWeek, shiftsOnDay, availabilityIntervals, isWithinAvailability, sourceAvailabilityFor,
@@ -82,10 +81,9 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // approver then publishes). Punong Barangay reaches this tab to publish
   // drafts (approve_roster) only. The server re-checks role and authority on
   // every action either way. The tanod list comes from loadTanodRoster()
-  // (GET /users/directory) for both Admin and Secretary. Paper-first
-  // (2026-10-12): Admin/Secretary always publish by recording the signed
-  // paper roster ("Publish with signed paper"); only a non-manager holding
-  // approve_roster (the PB) still gets the in-app Publish button.
+  // (GET /users/directory) for both Admin and Secretary. The roster is
+  // printed and signed on paper outside the app; publishing is a plain
+  // confirm with nothing to record.
   // Availability is fixed per tanod (2026-10-12): it is shown in the week
   // grid as submitted, never accepted or sent back for revision here.
   const isAdmin = user.role === 'admin';
@@ -710,7 +708,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     const who = userId === null ? 'Unassigned' : nameOf(userId);
     const notes = [];
     if (shift.approvalStatus === 'published') {
-      notes.push('This shift is published. Moving it puts it back to draft, so it needs the signed paper again.');
+      notes.push('This shift is published. Moving it puts it back to draft, so it needs to be published again.');
     }
     if (userId !== null && availability.status === 'ready'
       && !isWithinAvailability(target.startMs, target.endMs, availabilityIntervals(availability.items, userId))) {
@@ -951,7 +949,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     hint.textContent = draftShifts.length === 0
       ? `No draft shifts${scope}. New shifts are saved as drafts and are only visible to tanods once published.`
       : `${draftShifts.length} draft shift${draftShifts.length === 1 ? '' : 's'}${scope} not yet visible to tanods.`
-        + (canManageShifts ? ' Print the schedule, have it signed, then publish with the signed paper.' : '');
+        + (canManageShifts ? ' Print the schedule and have it signed on paper, then publish.' : '');
 
     const buttons = document.createElement('div');
     buttons.className = 'availability-item__actions';
@@ -970,68 +968,43 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     const ids = () => (week ? draftShifts.map((s) => s.shiftId) : [...selectedShiftIds]);
     const count = week ? draftShifts.length : selectedShiftIds.size;
 
-    // Paper only (2026-10-12): everyone who may publish (Admin, Secretary,
-    // or a Punong Barangay holding approve_roster) records the signed paper
-    // roster; the server refuses a publish without it.
-    const paperBtn = document.createElement('button');
-    paperBtn.type = 'button';
-    paperBtn.id = week ? 'publish-week-paper-btn' : 'publish-shifts-paper-btn';
-    paperBtn.className = 'primary';
-    paperBtn.disabled = count === 0;
-    paperBtn.textContent = week
-      ? `Publish week with signed paper (${count})`
-      : `Publish with signed paper (${count})`;
-    paperBtn.addEventListener('click', () => publishWithPaper(ids(), paperBtn));
-    buttons.appendChild(paperBtn);
+    const publishBtn = document.createElement('button');
+    publishBtn.type = 'button';
+    publishBtn.id = week ? 'publish-week-btn' : 'publish-shifts-btn';
+    publishBtn.className = 'primary';
+    publishBtn.disabled = count === 0;
+    publishBtn.textContent = week
+      ? `Publish week (${count})`
+      : `Publish (${count})`;
+    publishBtn.addEventListener('click', () => publishDrafts(ids()));
+    buttons.appendChild(publishBtn);
 
     bar.append(hint, buttons);
     return bar;
   }
 
   /** POST /shifts/publish in chunks of 100; warnings are merged by date. */
-  async function publishInBatches(list, options) {
+  async function publishInBatches(list) {
     const published = [];
     const warnings = new Map();
     for (let i = 0; i < list.length; i += PUBLISH_BATCH) {
-      const res = await publishShifts(list.slice(i, i + PUBLISH_BATCH), crypto.randomUUID(), options);
+      const res = await publishShifts(list.slice(i, i + PUBLISH_BATCH), crypto.randomUUID());
       published.push(...res.published);
       for (const w of res.warnings) warnings.set(`${w.code}|${w.date}`, w);
     }
     return { published, warnings: [...warnings.values()] };
   }
 
-  async function publishWithPaper(list, button) {
+  async function publishDrafts(list) {
     if (list.length === 0) return;
-    button.disabled = true;
-    let loaded;
-    try {
-      loaded = await loadSignerCandidates(user, 'approve_roster', null);
-    } catch (err) {
-      button.disabled = false;
-      showToast(err instanceof ApiClientError ? err.message : 'Could not load the list of officials.', { variant: 'error' });
-      return;
-    }
-    button.disabled = false;
-    if (loaded.candidates.length === 0) {
-      showToast('No active official holds roster approval authority.', { variant: 'warning' });
-      return;
-    }
-    const today = manilaToday();
-    const result = await promptFields({
-      title: `Publish ${list.length} shift${list.length === 1 ? '' : 's'} with the signed paper?`,
-      description: 'Pick the official who signed the printed roster and the date they signed. The shifts become visible to the assigned tanods.',
-      fields: [
-        { name: 'signer', label: 'Signer', type: 'select', options: loaded.candidates.map((c) => ({ value: c.userId, label: c.label })) },
-        { name: 'signedOn', label: 'Date signed on paper', type: 'date', max: today },
-      ],
+    const n = list.length;
+    const result = await confirmDialog({
+      title: `Publish ${n} shift${n === 1 ? '' : 's'}?`,
+      description: 'The shifts become visible to the assigned tanods. Printing and signing the schedule is done on paper, outside the app.',
       confirmLabel: 'Publish',
-      onConfirmAsync: async (values) => {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(values.signedOn || '')) throw new Error('Enter the date signed on paper as a date.');
-        if (values.signedOn > today) throw new Error('The date signed on paper cannot be in the future.');
+      onConfirmAsync: async () => {
         try {
-          const res = await publishInBatches(list, {
-            recordedFromPaper: { signerUserId: Number(values.signer), signedOn: values.signedOn },
-          });
+          const res = await publishInBatches(list);
           publishWarnings = res.warnings;
           publishedCount = res.published.length;
         } catch (err) {
@@ -1039,8 +1012,8 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
         }
       },
     });
-    if (result !== null) {
-      showToast(`${publishedCount} shift${publishedCount === 1 ? '' : 's'} published (recorded from paper).`, { variant: 'success' });
+    if (result) {
+      showToast(`${publishedCount} shift${publishedCount === 1 ? '' : 's'} published.`, { variant: 'success' });
       selectedShiftIds.clear();
       load();
     }
@@ -1111,16 +1084,6 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
             const draft = shift.approvalStatus === 'draft';
             pill.className = `shift-approval-pill shift-approval-pill--${draft ? 'draft' : 'published'}`;
             pill.textContent = draft ? 'Draft' : 'Published';
-            if (!draft && shift.approvalMode === 'recorded_from_paper') {
-              const wrap = document.createElement('div');
-              const note = document.createElement('div');
-              note.className = 'text-tertiary';
-              const date = shift.paperSignedOn ? ` ${formatDateOnly(shift.paperSignedOn)}` : '';
-              const who = shift.paperRecordedByName ? ` (recorded by ${shift.paperRecordedByName})` : '';
-              note.textContent = `Approved on paper${date}${who}`;
-              wrap.append(pill, note);
-              return wrap;
-            }
             if (draft && shift.pendingReapproval) {
               // An approved swap changed this (previously published) shift:
               // it needs the approver again before the tanod sees it as final.
@@ -1964,7 +1927,7 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
 
 /**
  * A4 print of one week as a grid (rows = tanods, columns = days), for the
- * official to sign before the week is published with the signed paper.
+ * official to sign on paper before the week is published.
  */
 function openWeekPrintModal({ weekStart, rows, shifts, user, barangayName }) {
   const days = weekDays(weekStart);
@@ -2067,7 +2030,7 @@ function openWeekPrintModal({ weekStart, rows, shifts, user, barangayName }) {
 
   openPrintPreviewModal({
     title: 'Weekly Duty Roster — Print Preview',
-    subtitle: 'A4 roster for signing, then publish the week with the signed paper',
+    subtitle: 'A4 roster to print and sign on paper, then publish the week',
     sheetId: 'printable-week-roster-sheet',
     sheetHtml,
   });

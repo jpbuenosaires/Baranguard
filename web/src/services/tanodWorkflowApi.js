@@ -173,15 +173,12 @@ export const SCHOOL_TYPE_LABELS = { public: 'Public', private: 'Private' };
 export const REPORT_STATUS_LABELS = {
   open: 'Open',
   prepared: 'Prepared',
-  noted: 'Noted',
-  approved: 'Approved',
   returned: 'Returned',
 };
 
 export const TERM_STATUS_LABELS = {
   draft: 'Draft',
   prepared: 'Prepared',
-  approved: 'Approved',
   submitted: 'Submitted',
 };
 
@@ -239,9 +236,9 @@ export async function getShiftsByApproval({ approvalStatus, from, to, page, limi
 
 // --- Accomplishment reports (§4) --------------------------------------------
 
-export async function getAccomplishmentReports({ month, userId, status, paperPending, page, limit } = {}) {
+export async function getAccomplishmentReports({ month, userId, status, page, limit } = {}) {
   return listOf(await request('GET', '/accomplishment-reports', {
-    query: { month, user_id: userId, status, paper_pending: paperPending ? 1 : undefined, page, limit },
+    query: { month, user_id: userId, status, page, limit },
   }));
 }
 
@@ -351,6 +348,11 @@ export async function updateTermReport(reportId, { remarks, otherInstitutions },
   return camelize(await write('PATCH', `/ssz-term-reports/${reportId}`, body, idempotencyKey));
 }
 
+/** POST /ssz-term-reports/:id/prepare — draft -> prepared (ready to print and sign on paper). */
+export async function prepareTermReport(reportId, idempotencyKey) {
+  return camelize(await write('POST', `/ssz-term-reports/${reportId}/prepare`, {}, idempotencyKey));
+}
+
 export async function markTermReportSubmitted(reportId, fields, idempotencyKey) {
   const body = {
     mayor_office_received_by: fields.mayorOfficeReceivedBy,
@@ -359,80 +361,4 @@ export async function markTermReportSubmitted(reportId, fields, idempotencyKey) 
   if (fields.dilgReceivedBy) body.dilg_received_by = fields.dilgReceivedBy;
   if (fields.dilgDateReceived) body.dilg_date_received = fields.dilgDateReceived;
   return camelize(await write('POST', `/ssz-term-reports/${reportId}/mark-submitted`, body, idempotencyKey));
-}
-
-// --- Paper signatures and scanned copies (Wave 1, item 6) -------------------
-// An approved Accomplishment Report or Annex D stays locked in the system; the
-// signed paper copy is the real record, so staff (Admin/Secretary) record WHEN
-// it was signed, may record an approval that happened only on paper, and may
-// attach a scan of the signed copy.
-
-/** Entity types a paper signature / scan can attach to (contract C). */
-export const PAPER_ENTITY_PATHS = {
-  accomplishment_report: '/accomplishment-reports',
-  ssz_term_report: '/ssz-term-reports',
-};
-
-/** POST .../paper-signature — only on an approved report; sets/overwrites the date. */
-export async function recordPaperSignature(entityType, reportId, paperSignedOn, idempotencyKey) {
-  return camelize(await write('POST', `${PAPER_ENTITY_PATHS[entityType]}/${reportId}/paper-signature`, {
-    paper_signed_on: paperSignedOn,
-  }, idempotencyKey));
-}
-
-/**
- * POST .../record-paper-approval — the only approval path (paper-only,
- * 2026-10-12): moves a prepared (or legacy noted) accomplishment report, or
- * an Annex D draft/prepared report, to approved on the strength of a paper
- * signature by `signerUserId`. An Annex D draft also needs `preparerUserId`.
- */
-export async function recordPaperApproval(entityType, reportId, { signerUserId, signedOn, preparerUserId }, idempotencyKey) {
-  const body = { signer_user_id: signerUserId, signed_on: signedOn };
-  // Annex D draft: who prepared the paper (holds prepare_annex_d); the server
-  // sets prepared_by and approves in one step.
-  if (preparerUserId !== undefined && preparerUserId !== null) body.preparer_user_id = preparerUserId;
-  return camelize(await write('POST', `${PAPER_ENTITY_PATHS[entityType]}/${reportId}/record-paper-approval`, body, idempotencyKey));
-}
-
-/** GET /document-scans?entity_type=&entity_id= (admin, secretary, punong_barangay). Never carries a file path. */
-export async function getDocumentScans(entityType, entityId) {
-  return listOf(await request('GET', '/document-scans', { query: { entity_type: entityType, entity_id: entityId } }));
-}
-
-/**
- * POST /document-scans (multipart: entity_type, entity_id, file). PDF, JPEG or
- * PNG only (the server checks the real bytes), max 10 MB. There is no
- * Idempotency-Key on multipart; the server de-dupes by sha256 + entity.
- */
-export async function uploadDocumentScan(entityType, entityId, file) {
-  const form = new FormData();
-  form.append('entity_type', entityType);
-  form.append('entity_id', String(entityId));
-  form.append('file', file);
-  return camelize(await request('POST', '/document-scans', { body: form }));
-}
-
-/** GET /document-scans/:id/download — authenticated bytes as a Blob (a plain link would 401). */
-export async function downloadDocumentScan(scanId) {
-  const session = getSession();
-  if (!session) throw new ApiClientError(401, 'UNAUTHORIZED', 'Not signed in.');
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}/document-scans/${scanId}/download`, {
-      headers: { Authorization: `Bearer ${session.token}` },
-    });
-  } catch {
-    throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
-  }
-  // F-08/X-02: a server 401 ends the session app-wide (back to sign-in with
-  // a message), exactly as apiClient.js does, instead of leaving this page
-  // on an error state whose Retry can never succeed. Only when the token
-  // that failed is still the current one (a newer sign-in is left alone).
-  if (response.status === 401 && getSession()?.token === session.token) expireSession('unauthorized');
-  if (!response.ok) {
-    let message = 'Could not download this scan.';
-    try { message = (await response.json())?.error?.message || message; } catch { /* not JSON */ }
-    throw new ApiClientError(response.status, 'DOWNLOAD_FAILED', message);
-  }
-  return response.blob();
 }

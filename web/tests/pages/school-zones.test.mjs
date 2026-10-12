@@ -67,26 +67,27 @@ describe('Safer School Zones behaviour', () => {
     assert.equal(call.query.term_end, '2026-10-30');
   });
 
-  test('paper-only: a draft term report offers no Prepare/Approve, even to a prepare_annex_d holder; the Admin records the signed paper', async () => {
+  test('a draft term report offers Mark as prepared (no approve, no paper panel)', async () => {
     mountPage(renderSchoolZonesPage, { role: 'admin', param: { tab: 'term', reportId: 81 } });
     await settle();
-    assert.ok(!buttonByText(/^Prepare report$/));
+    assert.ok(buttonByText(/^Mark as prepared$/));
     assert.ok(!buttonByText(/^Approve report$/));
-    assert.ok(buttonByText(/^Record signed paper$/));
-    assert.match(text($('.page-content')), /Recording the signed paper recomputes them/);
+    assert.ok(!buttonByText(/^Record signed paper$/));
+    assert.equal($('.tw-paper-panel'), null);
+    assert.match(text($('.page-content')), /Marking it prepared recomputes them/);
   });
 
-  test('paper-first: a prepared report has no in-app Approve button; the PB is told the signed paper is awaited', async () => {
+  test('a prepared report offers Mark as submitted to staff; the PB gets no action', async () => {
     mountPage(renderSchoolZonesPage, { role: 'punong_barangay', param: { tab: 'term', reportId: 82 } });
     await settle();
-    assert.ok(!buttonByText(/^Approve report$/));
-    assert.match(text($('.page-content')), /Waiting for the signed paper/);
+    assert.ok(!buttonByText(/^Mark as submitted$/));
+    assert.match(text($('.page-content')), /Print it and have it signed on paper/);
     cleanup();
     clearAuthorityCache();
     mountPage(renderSchoolZonesPage, { role: 'admin', param: { tab: 'term', reportId: 82 } });
     await settle();
-    assert.ok(!buttonByText(/^Approve report$/));
-    assert.ok(buttonByText(/^Record signed paper$/), 'the Admin records the signed paper instead');
+    assert.ok(buttonByText(/^Mark as submitted$/), 'staff can submit once prepared');
+    assert.ok(!buttonByText(/^Record signed paper$/));
   });
 
   test('the Annex D preview carries the term label from the report and no hardcoded deadline', async () => {
@@ -142,7 +143,7 @@ describe('2026-10 review fixes', () => {
     assert.match(text(card), /8:30/);
   });
 
-  test('the Annex D signature block prints the names and official titles from the report', async () => {
+  test('the Annex D signature block prints blank signature lines with captions only', async () => {
     api.on('GET', '/ssz-term-reports/:id', ({ params }) => ({
       status: 200,
       body: {
@@ -150,7 +151,6 @@ describe('2026-10 review fixes', () => {
         total_tanods: 3, total_schools: 2, total_deployment_days: 12, total_incidents: 0, incidents_barangay_only: 0, incidents_pnp: 0, incidents_bfp: 0,
         incidents_higher_lgu: 0, incidents_doh: 0, incidents_dpwh: 0, incidents_other_agencies: 0, other_institutions: null, remarks: null,
         prepared_by: 1, prepared_by_name: 'Cesar Dimaano', prepared_by_title: 'Chief Tanod', prepared_at: null,
-        approved_by: 3, approved_by_name: 'Teresa Magbanua', approved_by_title: 'Punong Barangay', approved_at: null,
         mayor_office_received_by: null, mayor_office_received_at: null, dilg_received_by: null, dilg_date_received: null, version: 2,
       },
     }));
@@ -160,13 +160,13 @@ describe('2026-10 review fixes', () => {
     await settle();
     const sheet = document.querySelector('#printable-annex-d');
     assert.ok(sheet);
-    const lines = $$('.tw-print__signame', sheet).map((n) => text(n));
-    assert.ok(lines.includes('Cesar Dimaano'));
-    assert.ok(lines.includes('Teresa Magbanua'));
+    assert.equal($$('.tw-print__signame', sheet).length, 0, 'no names are pulled into the signature block');
+    assert.match(text(sheet), /Prepared by:/);
+    assert.match(text(sheet), /Approved by:/);
     assert.match(text(sheet), /Name and signature over printed name/);
     assert.match(text(sheet), /Date signed:/);
-    const titles = $$('.tw-print__sigtitle', sheet).map((n) => text(n));
-    assert.deepEqual(titles, ['Chief Tanod', 'Punong Barangay']);
+    assert.match(text(sheet), /Chief Tanod\/ Executive Officer/);
+    assert.match(text(sheet), /Punong Barangay\/ BPOC Chairperson/);
     click(document.querySelector('#close-print-modal'));
   });
 });

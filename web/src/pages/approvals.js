@@ -1,14 +1,12 @@
 /**
  * approvals.js — Approvals queue (contract §10): one place where an
- * official sees every record waiting on THEM — draft shifts to publish
- * with the signed paper, and accomplishment reports and Annex D term
- * reports waiting for their signed paper — each row
- * deep-linking to the screen where the action is taken.
+ * official sees every record waiting on THEM — draft shifts to publish,
+ * accomplishment reports prepared and ready to print and sign, and Annex D
+ * term reports still to prepare or submit — each row deep-linking to the
+ * screen where the action is taken.
  *
- * Paper-only (2026-10-12): the signed paper is the ONLY approval, so
- * reports (and Annex D preparation) are recorded by the Admin/Secretary from
- * the signed paper. There are no in-app note/approve/prepare queues: those
- * endpoints answer 410 PAPER_APPROVAL_REQUIRED.
+ * Signing happens on paper, outside the app: the app only prints. Nothing
+ * here tracks signatures or approval of a printed copy.
  *
  * Availability is not here (2026-10-12): it is the tanod's own fixed
  * statement and is not reviewed; it is shown read-only in the Scheduler.
@@ -17,11 +15,10 @@
  * re-checks every action). A group is shown only when the viewer can act
  * on it:
  *   - shifts awaiting publish ....... role admin or secretary, or
- *                                     authority approve_roster (records the
- *                                     signed paper roster)
- *   - reports waiting for paper ..... role admin or secretary
- *   - Annex D waiting for paper ..... role admin or secretary (drafts and
- *                                     legacy prepared reports)
+ *                                     authority approve_roster
+ *   - reports prepared .............. role admin or secretary
+ *   - Annex D to prepare ............ role admin or secretary (draft and
+ *                                     prepared term reports)
  * The viewer's authority comes from GET /users/:id (their own record).
  *
  * Each group has its own Loading / Empty / Error-with-retry / Populated
@@ -55,7 +52,7 @@ function buildGroups({ user, navigate, nameOf }) {
     {
       id: 'shifts',
       title: 'Shifts awaiting publish',
-      hint: 'Draft shifts. Tanods only see a shift once it is published. Print the schedule, have it signed, then publish with the signed paper.',
+      hint: 'Draft shifts. Tanods only see a shift once it is published. Print the schedule and have it signed on paper, then publish the week.',
       icon: icons.shield || icons.calendar,
       badgeTone: 'shifts',
       visible: (a) => isManager || a.has('approve_roster'),
@@ -78,20 +75,20 @@ function buildGroups({ user, navigate, nameOf }) {
       openLabel: 'Open Scheduler',
     },
     {
-      id: 'paper-reports',
-      title: 'Accomplishment reports waiting for the signed paper',
-      hint: 'Submitted reports. Print, have them signed, then record the signed paper.',
+      id: 'reports-prepared',
+      title: 'Accomplishment reports prepared',
+      hint: 'Ready to print and sign. Printing and signing happen on paper, outside the app.',
       icon: icons.fileText,
       badgeTone: 'reports',
       visible: () => isManager,
-      load: () => loadReports(['prepared', 'noted']),
+      load: () => loadReports(['prepared']),
       openAll: () => navigate('accomplishment-reports', { status: 'prepared' }),
       openLabel: 'Open reports',
     },
     {
-      id: 'paper-annex',
-      title: 'Annex D waiting for the signed paper',
-      hint: 'Draft term reports. Print, have them prepared and signed, then record the signed paper (preparer, signer and date).',
+      id: 'annex-d',
+      title: 'Annex D to prepare',
+      hint: 'Draft and prepared term reports. Prepare the report, print it and have it signed on paper, then submit it.',
       icon: icons.calendar,
       badgeTone: 'annex',
       visible: () => isManager,
@@ -160,7 +157,7 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
     root, user, onLoggedOut, navigate,
     activeKey: 'approvals',
     title: 'Approvals',
-    subtitle: 'Everything waiting on your review, signed paper or publish',
+    subtitle: 'Everything waiting on you. Printing and signing are done on paper',
     icon: icons.checkCircle,
   });
 
@@ -185,7 +182,7 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
     if (groups.length === 0) {
       showEmpty(
         body,
-        'Nothing for you to approve',
+        'Nothing waiting for you',
         'Your account holds no approval authority. An Admin can assign one under Personnel > Users.',
       );
       return;
@@ -298,19 +295,19 @@ function buildGroupCard(group, onCount) {
     content.appendChild(list);
 
     // If queue is Annex D and has only 1-2 items, fill the lower dead space with a useful compliance checklist
-    if (group.id === 'paper-annex' && total <= 2) {
+    if (group.id === 'annex-d' && total <= 2) {
       const first = rows[0];
       const summaryCard = h('div', 'appr-annex-summary-card');
       summaryCard.innerHTML = `
         <div class="appr-annex-summary-head">
           <span class="appr-summary-pip" aria-hidden="true">📋</span>
-          <strong>Annex D Paper Protocol</strong>
+          <strong>Annex D Steps</strong>
         </div>
         <ul class="appr-summary-list">
           <li><strong>Step 1:</strong> Click <em>Review</em> to preview the DILG Annex D sheet.</li>
           <li><strong>Step 2:</strong> Print on official Barangay Dao letterhead.</li>
-          <li><strong>Step 3:</strong> Chief Tanod prepares &amp; Punong Barangay signs on paper.</li>
-          <li><strong>Step 4:</strong> Admin/Secretary records the signed paper in BaranGuard.</li>
+          <li><strong>Step 3:</strong> Prepare the report here, then print it; the Punong Barangay signs on paper.</li>
+          <li><strong>Step 4:</strong> Mark it submitted once it has been delivered.</li>
         </ul>
       `;
       content.appendChild(summaryCard);

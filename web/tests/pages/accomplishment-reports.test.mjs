@@ -25,31 +25,38 @@ describe('Accomplishment Reports behaviour', () => {
   test('the status filter asks the server for exactly that status', async () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'admin' });
     await settle();
-    type($('#tw-acc-status'), 'noted');
+    type($('#tw-acc-status'), 'returned');
     await settle();
-    assert.ok(api.calls.some((c) => c.path === '/accomplishment-reports' && c.query.status === 'noted'));
+    assert.ok(api.calls.some((c) => c.path === '/accomplishment-reports' && c.query.status === 'returned'));
   });
 
-  test('no in-app Note or Approve buttons and no paper panel on a prepared report', async () => {
+  test('the status filter offers only Open, Prepared and Returned', async () => {
+    mountPage(renderAccomplishmentReportsPage, { role: 'admin' });
+    await settle();
+    const values = $$('#tw-acc-status option').map((o) => o.value);
+    assert.deepEqual(values, ['', 'open', 'prepared', 'returned']);
+  });
+
+  test('no Note, Approve or paper controls on a prepared report; Return stays', async () => {
     mountPage(renderAccomplishmentReportsPage, { role: 'admin', param: { reportId: 71 } });
     await settle();
     assert.ok(!buttonByText(/^Note this report$/), 'the separate note step is gone');
     assert.ok(!buttonByText(/^Approve this report$/));
     assert.ok(!buttonByText(/^Record signed paper$/), 'the paper panel was removed from this screen');
+    assert.ok(!$('.tw-paper-panel'));
     assert.ok(buttonByText(/^Return to tanod$/), 'admin holds note_report, so Return stays');
   });
 
-  test('a Punong Barangay is not offered in-app approval and is told the paper is awaited', async () => {
-    mountPage(renderAccomplishmentReportsPage, { role: 'punong_barangay', param: { reportId: 72 } });
+  test('a Punong Barangay is not offered approval but can still return a prepared report', async () => {
+    mountPage(renderAccomplishmentReportsPage, { role: 'punong_barangay', param: { reportId: 71 } });
     await settle();
     assert.ok(!buttonByText(/^Approve this report$/));
-    assert.ok(!buttonByText(/^Record signed paper$/), 'recording the paper is Admin/Secretary work');
     assert.ok(buttonByText(/^Return to tanod$/), 'the PB holds approve_report and can still return it');
   });
 
   test('a viewer without the authority gets no action buttons', async () => {
     api.on('GET', '/users/:id', () => ({ status: 200, body: { user_id: 3, full_name: 'X', role: 'punong_barangay', official_title: null, approval_authority: [] } }));
-    mountPage(renderAccomplishmentReportsPage, { role: 'punong_barangay', param: { reportId: 72 } });
+    mountPage(renderAccomplishmentReportsPage, { role: 'punong_barangay', param: { reportId: 71 } });
     await settle();
     assert.ok(!buttonByText(/^Approve this report$/));
     assert.ok(!buttonByText(/^Return to tanod$/));
@@ -62,11 +69,11 @@ describe('Accomplishment Reports behaviour', () => {
     assert.match(text($('.page-content')), /Check/);
   });
 
-  test('without Return authority the viewer is told the signed paper is awaited', async () => {
+  test('without Return authority the viewer is told the report is ready to print', async () => {
     api.on('GET', '/users/:id', () => ({ status: 200, body: { user_id: 3, full_name: 'X', role: 'punong_barangay', official_title: null, approval_authority: [] } }));
-    mountPage(renderAccomplishmentReportsPage, { role: 'punong_barangay', param: { reportId: 72 } });
+    mountPage(renderAccomplishmentReportsPage, { role: 'punong_barangay', param: { reportId: 71 } });
     await settle();
-    assert.match(text($('.page-content')), /Waiting for the signed paper/);
+    assert.match(text($('.page-content')), /Ready to print/);
   });
 
   test('Preview & print opens the Accomplishment Report form with 31 day rows', async () => {
@@ -78,6 +85,9 @@ describe('Accomplishment Reports behaviour', () => {
     assert.ok(sheet, 'print sheet mounted');
     assert.equal(sheet.querySelectorAll('.tw-acc-form__log tbody tr').length, 31);
     assert.match(text(sheet), /Prepared By:.*Noted By:.*Approved By:/);
+    assert.equal(sheet.querySelectorAll('.tw-sign__line').length, 3, 'three signature lines');
+    assert.equal(text(sheet.querySelectorAll('.tw-sign__line')[1]), '', 'Noted By is left blank for the paper signature');
+    assert.equal(text(sheet.querySelectorAll('.tw-sign__line')[2]), '', 'Approved By is left blank for the paper signature');
     click(document.querySelector('#close-print-modal'));
   });
 });

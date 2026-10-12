@@ -2,19 +2,18 @@
  * accomplishment-reports.js — monthly Accomplishment Reports for Barangay
  * Tanods (contract §4 / §10): list by person, month and status; a detail
  * view with every entry (system-flagged durations marked); a return action
- * for officials who hold the authority; recording the signed paper (the
- * Paper signature panel); and a print layout
+ * for officials who hold the authority; and a print layout
  * that mirrors the barangay's own form (letterhead, name / position /
  * month / duration, 31 day rows, Prepared / Noted / Approved By).
  *
- * Paper-only (2026-10-12): the paper copy is the official record, so a
- * report is approved ONLY by printing it, having it signed and recording the
- * signed paper. There are no in-app
- * Note / Approve buttons; those endpoints answer 410 PAPER_APPROVAL_REQUIRED.
+ * Printed and signed on paper: the app only prints. It does not track who
+ * noted or approved a report; the signature lines print blank.
+ *
+ * Statuses: open (tanod still editing), prepared (submitted by the tanod),
+ * returned (sent back by an official).
  *
  * Gating, all UX only (REFERENCE.md §2 Rule 2 — the server re-checks):
- *   - Record signed paper .. status prepared or noted, Admin or Secretary
- *   - Return ............... status prepared or noted, viewer holds
+ *   - Return ............... status prepared, viewer holds
  *                            note_report or approve_report
  * A 409 for the preparer-must-differ rule is shown as a plain-language
  * message, not a raw error.
@@ -35,7 +34,7 @@ import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { icons } from '../components/icons.js';
 import {
   getAccomplishmentReports, getAccomplishmentReport,
-  returnAccomplishmentReport, getUserNames, getUserById,
+  returnAccomplishmentReport, getUserNames,
   REPORT_STATUS_LABELS,
 } from '../services/tanodWorkflowApi.js';
 import {
@@ -46,7 +45,7 @@ import {
 } from '../services/tanodWorkflowUi.js';
 
 const PAGE_SIZE = 25;
-const STATUS_FILTERS = ['', 'open', 'prepared', 'noted', 'approved', 'returned'];
+const STATUS_FILTERS = ['', 'open', 'prepared', 'returned'];
 const TANOD_POSITION = 'Barangay Tanod'; // fallback when the user record carries no official_title
 
 const COLUMNS = [
@@ -86,7 +85,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     root, user, onLoggedOut, navigate,
     activeKey: 'accomplishment-reports',
     title: 'Accomplishment Reports',
-    subtitle: 'Monthly reports by Barangay Tanods — review, print for signing, record the signed paper or return',
+    subtitle: 'Monthly reports by Barangay Tanods — review, print for signing on paper or return',
     icon: icons.fileText,
   });
 
@@ -284,12 +283,10 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
               e.stopPropagation();
               printBtn.disabled = true;
               try {
-                const [fullReport, mine, lh] = await Promise.all([
+                const [fullReport, lh] = await Promise.all([
                   getAccomplishmentReport(row.reportId),
-                  getMyAuthority(user),
                   loadLetterhead(user),
                 ]);
-                const signatories = await resolveSignatories(fullReport, mine);
                 const entries = Array.isArray(fullReport.entries) ? fullReport.entries : [];
                 const person = personName(fullReport);
                 const totalMinutes = fullReport.totalMinutesConfirmed ?? entries.reduce((s, ent) => s + (Number(ent.durationMinutes) || 0), 0);
@@ -298,7 +295,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
                   title: 'Accomplishment Report',
                   subtitle: `${person} — ${formatMonthLabel(fullReport.month)}`,
                   sheetId: 'printable-accomplishment-report',
-                  sheetHtml: buildPrintHtml({ report: fullReport, entries, person, totalMinutes, signatories, lh }),
+                  sheetHtml: buildPrintHtml({ report: fullReport, entries, person, totalMinutes, lh }),
                 });
               } catch (err) {
                 showToast(actionErrorMessage(err, 'Could not open print preview.'), { variant: 'error' });
@@ -340,34 +337,13 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     try {
       const [report, mine] = await Promise.all([getAccomplishmentReport(reportId), getMyAuthority(user)]);
       await ensureNames();
-      const signatories = await resolveSignatories(report, mine);
-      renderDetail(report, mine, signatories, reportId);
+      renderDetail(report, mine, reportId);
     } catch (err) {
       showError(detailHost, err, () => loadDetail(reportId), 'Could not load this report.');
     }
   }
 
-  /** Name + official title for whoever noted / approved, for the printed signature block. */
-  async function resolveSignatories(report, mine) {
-    const one = async (id, name, title) => {
-      if (!id) return { name: '', title: '' };
-      if (name) return { name, title: title || '' };
-      if (id === user.userId) return { name: user.fullName, title: mine.officialTitle || '' };
-      try {
-        const u = await getUserById(id);
-        return { name: u.fullName, title: u.officialTitle || '' };
-      } catch {
-        return { name: state.names?.get(id) || '', title: '' };
-      }
-    };
-    const [noted, approved] = await Promise.all([
-      one(report.notedBy, report.notedByName, report.notedByTitle),
-      one(report.approvedBy, report.approvedByName, report.approvedByTitle),
-    ]);
-    return { noted, approved };
-  }
-
-  function renderDetail(report, mine, signatories, reportId) {
+  function renderDetail(report, mine, reportId) {
     detailHost.innerHTML = '';
     const entries = Array.isArray(report.entries) ? report.entries : [];
     const person = personName(report);
@@ -394,7 +370,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
           title: 'Accomplishment Report',
           subtitle: `${person} — ${formatMonthLabel(report.month)}`,
           sheetId: 'printable-accomplishment-report',
-          sheetHtml: buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh }),
+          sheetHtml: buildPrintHtml({ report, entries, person, totalMinutes, lh }),
         });
       } finally {
         printBtn.disabled = false;
@@ -429,8 +405,6 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       trail.appendChild(li);
     };
     if (report.preparedAt) addTrail('Submitted by tanod', formatManilaDateTime(report.preparedAt));
-    if (report.notedAt) addTrail(`Noted${signatories.noted.name ? ` by ${signatories.noted.name}` : ''}`, formatManilaDateTime(report.notedAt));
-    if (report.approvedAt) addTrail(`Approved${signatories.approved.name ? ` by ${signatories.approved.name}` : ''}`, formatManilaDateTime(report.approvedAt));
     if (trail.children.length) head.appendChild(trail);
 
     if (report.status === 'returned' && report.returnReason) {
@@ -487,7 +461,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
 
   function buildActions({ report, mine, reportId }) {
     const own = report.userId === user.userId;
-    const canReturn = !own && (report.status === 'prepared' || report.status === 'noted')
+    const canReturn = !own && report.status === 'prepared'
       && (mine.authority.has('note_report') || mine.authority.has('approve_report'));
 
     const wrap = card('Actions');
@@ -533,10 +507,9 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
   }
 
   function reasonNoActions(report) {
-    if (report.userId === user.userId) return 'You cannot return or sign your own report.';
-    if (report.status === 'approved') return 'This report is approved. Nothing further to do.';
+    if (report.userId === user.userId) return 'You cannot return your own report.';
     if (report.status === 'open' || report.status === 'returned') return 'Waiting for the tanod to submit this report.';
-    if (report.status === 'prepared' || report.status === 'noted') return 'Waiting for the signed paper. Print the report, have it signed, then the Secretary or Admin records it above.';
+    if (report.status === 'prepared') return 'Ready to print. Use Preview & print, then have it signed on paper.';
     return 'No actions are available for you on this report.';
   }
 
@@ -548,7 +521,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
 
 // ----- print layout (mirrors the barangay's own Accomplishment Report form) --
 
-function buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh }) {
+function buildPrintHtml({ report, entries, person, totalMinutes, lh }) {
   const position = report.officialTitle || TANOD_POSITION;
   const days = 31;
   const byDay = new Map();
@@ -569,10 +542,10 @@ function buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh
     rows += `<tr class="${dim.trim()}"><td class="tw-acc-form__day">${day}.</td><td>${escapeHtml(text)}</td><td class="tw-acc-form__time">${escapeHtml(time)}</td></tr>`;
   }
 
-  const sign = (caption, name, title, underline) => `
+  const sign = (caption, name, title) => `
     <div class="tw-sign__col">
       <div class="tw-sign__cap">${escapeHtml(caption)}</div>
-      <div class="${underline ? 'tw-sign__name' : 'tw-sign__line'}">${escapeHtml(name || '')}</div>
+      <div class="tw-sign__line">${escapeHtml(name || '')}</div>
       <div class="tw-sign__pos">${escapeHtml(title || '')}</div>
     </div>`;
 
@@ -595,10 +568,10 @@ function buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh
         <tbody>${rows}</tbody>
       </table>
       <div class="tw-sign">
-        ${sign('Prepared By:', person, position, false)}
-        ${sign('Noted By:', signatories.noted.name, signatories.noted.title, true)}
-        ${sign('Approved By:', signatories.approved.name, signatories.approved.title, true)}
+        ${sign('Prepared By:', person, position)}
+        ${sign('Noted By:', '', '')}
+        ${sign('Approved By:', '', '')}
       </div>
-      <p class="tw-print__footnote">Approval status at printing: ${escapeHtml(REPORT_STATUS_LABELS[report.status] || report.status || '')} · Printed ${escapeHtml(formatManilaDate(new Date().toISOString()))}</p>
+      <p class="tw-print__footnote">Report status: ${escapeHtml(REPORT_STATUS_LABELS[report.status] || report.status || '')} · Printed ${escapeHtml(formatManilaDate(new Date().toISOString()))}</p>
     </div>`;
 }

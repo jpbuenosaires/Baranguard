@@ -252,8 +252,8 @@ export function promptText({ title, description, label, placeholder, inputType =
 
 /**
  * A dialog with several labelled fields (select, date or text), for actions
- * that need more than one value at once — e.g. recording an approval from a
- * paper signature needs the signer AND the date they signed. Same shell as the
+ * that need more than one value at once — e.g. adding a shift needs a zone AND
+ * a date. Same shell as the
  * other dialogs: `onConfirmAsync(values)` is the validation/submit hook, and
  * throwing inside it shows the message inline and keeps the dialog open.
  *
