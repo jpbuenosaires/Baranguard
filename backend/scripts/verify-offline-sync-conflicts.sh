@@ -76,16 +76,26 @@ code_for() { # method url [token] [body] [extra_header]
   local args=(-s -o /dev/null -w '%{http_code}' -X "$method" "$url")
   [ -n "$token" ] && args+=(-H "Authorization: Bearer $token")
   [ -n "$hdr" ] && args+=(-H "$hdr")
-  [ -n "$body" ] && args+=(-H 'Content-Type: application/json' -d "$body")
-  curl "${args[@]}"
+  # Body goes through stdin: a 200-item batch (~35 KB) exceeds the Windows 32 KB command-line limit as a -d argument.
+  if [ -n "$body" ]; then
+    args+=(-H 'Content-Type: application/json' --data-binary @-)
+    printf '%s' "$body" | curl "${args[@]}"
+  else
+    curl "${args[@]}"
+  fi
 }
 body_for() {
   local method="$1" url="$2" token="${3:-}" body="${4:-}" hdr="${5:-}"
   local args=(-s -X "$method" "$url")
   [ -n "$token" ] && args+=(-H "Authorization: Bearer $token")
   [ -n "$hdr" ] && args+=(-H "$hdr")
-  [ -n "$body" ] && args+=(-H 'Content-Type: application/json' -d "$body")
-  curl "${args[@]}"
+  # Body goes through stdin: a 200-item batch (~35 KB) exceeds the Windows 32 KB command-line limit as a -d argument.
+  if [ -n "$body" ]; then
+    args+=(-H 'Content-Type: application/json' --data-binary @-)
+    printf '%s' "$body" | curl "${args[@]}"
+  else
+    curl "${args[@]}"
+  fi
 }
 json_field() { "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); $k=explode(".",$argv[1]); $v=$d; foreach($k as $p){$v=is_array($v)?($v[$p]??null):null;} echo is_scalar($v)?$v:json_encode($v);' "$1"; }
 uuid() { "$PHP_BIN" -r 'printf("%s-%s-4%s-8%s-%s", bin2hex(random_bytes(4)), bin2hex(random_bytes(2)), substr(bin2hex(random_bytes(2)),1), substr(bin2hex(random_bytes(2)),1), bin2hex(random_bytes(6)));'; }
@@ -295,7 +305,7 @@ expect_eq "$(echo "$R" | json_field results.0.status)" "success" "the same clien
 step "7. Ordering: SOS first; batch size cap"
 # ============================================================
 R=$(sync "{\"device_id\":\"$DEVICE_ID\",\"gps_tracks\":[{\"latitude\":13.0,\"longitude\":123.7,\"accuracy_m\":10,\"recorded_at\":\"$(now_iso)\",\"client_event_id\":\"$(uuid)\"}],\"incidents\":[{\"incident_type\":\"theft\",\"raw_narrative\":\"order\",\"latitude\":13.0,\"longitude\":123.7,\"client_event_id\":\"$(uuid)\"}],\"sos\":[{\"latitude\":13.0,\"longitude\":123.7,\"client_event_id\":\"$(uuid)\"}]}")
-SOSROW=$(db_one "SELECT payload_type FROM offline_queue ORDER BY queue_id DESC LIMIT 3;" | tr '\n' ',')
+SOSROW=$(db_one "SELECT payload_type FROM offline_queue ORDER BY queue_id DESC LIMIT 3;" | tr -d '\r' | tr '\n' ',')
 expect_eq "$SOSROW" "gps,incident,sos," "(body listed gps, incident, sos; ledger rows, newest first, show processing order was sos -> incident -> gps)"
 expect_eq "$(echo "$R" | json_field results.0.status)/$(echo "$R" | json_field results.1.status)/$(echo "$R" | json_field results.2.status)" "success/success/success" "mixed batch all succeed"
 # prove results[] order == processing order by item identity
@@ -366,10 +376,12 @@ done
 
 DE3=$(uuid); T_DUTY=$(iso_ago "1 hour")
 R=$(sync "{\"device_id\":\"$DEVICE_ID\",\"duty_status_updates\":[{\"status\":\"responding\",\"client_event_id\":\"$DE3\",\"created_offline_at\":\"$T_DUTY\"}]}")
-expect_eq "$(echo "$R" | json_field results.0.status)/$(fmt_col x changed_at duty_status "client_event_id='$DE3'")" "success/$T_DUTY" "duty_status with created_offline_at: changed_at = the Tanod's time"
+# A client timestamp is only honoured for off_duty (going on duty is online-only, DutyStatusController::applyToggle);
+# the positive off_duty case is covered by verify-offline-offduty.sh. Here: any other status carrying one is refused.
+expect_eq "$(echo "$R" | json_field results.0.status)/$(db_one "SELECT COUNT(*) FROM duty_status WHERE client_event_id='$DE3';")" "failed/0" "responding with created_offline_at is refused and writes nothing (client time is off_duty-only)"
 DE4=$(uuid)
 R=$(sync "{\"device_id\":\"$DEVICE_ID\",\"duty_status_updates\":[{\"status\":\"on_duty\",\"client_event_id\":\"$DE4\",\"created_offline_at\":\"2099-01-01T00:00:00Z\"}]}")
-expect_eq "$(echo "$R" | json_field results.0.status)/$(near_now changed_at duty_status "client_event_id='$DE4'")" "success/server-now" "duty_status with a future created_offline_at: accepted, server time used"
+expect_eq "$(echo "$R" | json_field results.0.status)/$(db_one "SELECT COUNT(*) FROM duty_status WHERE client_event_id='$DE4';")" "failed/0" "on_duty with a client timestamp is refused and writes nothing (going on duty is online-only)"
 
 for CASE in "future|2099-01-01T00:00:00Z" "garbage|not-a-date" "toofar|$(iso_ago "40 days")"; do
   LBL="${CASE%%|*}"; VAL="${CASE#*|}"; IX=$(uuid)
