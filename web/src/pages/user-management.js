@@ -153,7 +153,6 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
   filterRight.append(roleSelect, statusSelect);
   filterBar.append(filterLeft, filterRight);
-  container.appendChild(filterBar);
 
   // Stat Strip Host
   const statStripHost = document.createElement('div');
@@ -161,7 +160,12 @@ export function renderUsersTab(container, pageHeader, viewer) {
 
   // Main Content Body
   const body = document.createElement('div');
-  container.appendChild(body);
+  body.className = 'personnel-table-body';
+
+  const tableCard = document.createElement('div');
+  tableCard.className = 'personnel-table-card unified-table-card';
+  tableCard.append(filterBar, body);
+  container.appendChild(tableCard);
 
   let currentPage = 1;
   let allItems = [];
@@ -199,46 +203,46 @@ export function renderUsersTab(container, pageHeader, viewer) {
       ],
     });
 
-    // Make stats interactive shortcuts
+    // Make stats interactive shortcuts with full keyboard operability
     const statCards = strip.querySelectorAll('.stat-card');
-    if (statCards[0]) {
-      statCards[0].style.cursor = 'pointer';
-      statCards[0].title = 'Show All Users';
-      statCards[0].addEventListener('click', () => {
-        selectedRole = 'all';
-        selectedStatus = 'all';
-        roleSelect.value = 'all';
-        statusSelect.value = 'all';
-        currentPage = 1; renderFilteredList();
+    const bindInteractiveStat = (card, title, handler) => {
+      if (!card) return;
+      card.style.cursor = 'pointer';
+      card.title = title;
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', title);
+      card.addEventListener('click', handler);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          card.click();
+        }
       });
-    }
-    if (statCards[1]) {
-      statCards[1].style.cursor = 'pointer';
-      statCards[1].title = 'Filter: Active Only';
-      statCards[1].addEventListener('click', () => {
-        selectedStatus = 'active';
-        statusSelect.value = 'active';
-        currentPage = 1; renderFilteredList();
-      });
-    }
-    if (statCards[2]) {
-      statCards[2].style.cursor = 'pointer';
-      statCards[2].title = 'Filter: Admins Only';
-      statCards[2].addEventListener('click', () => {
-        selectedRole = 'admin';
-        roleSelect.value = 'admin';
-        currentPage = 1; renderFilteredList();
-      });
-    }
-    if (statCards[3]) {
-      statCards[3].style.cursor = 'pointer';
-      statCards[3].title = 'Filter: Tanods Only';
-      statCards[3].addEventListener('click', () => {
-        selectedRole = 'tanod';
-        roleSelect.value = 'tanod';
-        currentPage = 1; renderFilteredList();
-      });
-    }
+    };
+
+    bindInteractiveStat(statCards[0], 'Show All Users', () => {
+      selectedRole = 'all';
+      selectedStatus = 'all';
+      roleSelect.value = 'all';
+      statusSelect.value = 'all';
+      currentPage = 1; renderFilteredList();
+    });
+    bindInteractiveStat(statCards[1], 'Filter: Active Only', () => {
+      selectedStatus = 'active';
+      statusSelect.value = 'active';
+      currentPage = 1; renderFilteredList();
+    });
+    bindInteractiveStat(statCards[2], 'Filter: Admins Only', () => {
+      selectedRole = 'admin';
+      roleSelect.value = 'admin';
+      currentPage = 1; renderFilteredList();
+    });
+    bindInteractiveStat(statCards[3], 'Filter: Tanods Only', () => {
+      selectedRole = 'tanod';
+      roleSelect.value = 'tanod';
+      currentPage = 1; renderFilteredList();
+    });
 
     statStripHost.appendChild(strip);
   }

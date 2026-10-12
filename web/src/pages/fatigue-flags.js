@@ -152,33 +152,37 @@ export function renderFatigueFlagsTab(container, user, onCountsChanged, onSwitch
     });
 
     const cards = strip.querySelectorAll('.stat-card');
-    if (cards[0]) {
-      cards[0].style.cursor = 'pointer';
-      cards[0].title = 'Show all flags';
-      cards[0].addEventListener('click', () => {
-        selectedStatus = 'all';
-        statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
-        renderFiltered();
+    const bindInteractiveStat = (card, title, handler) => {
+      if (!card) return;
+      card.style.cursor = 'pointer';
+      card.title = title;
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', title);
+      card.addEventListener('click', handler);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          card.click();
+        }
       });
-    }
-    if (cards[1]) {
-      cards[1].style.cursor = 'pointer';
-      cards[1].title = 'Filter: Needs Review';
-      cards[1].addEventListener('click', () => {
-        selectedStatus = 'review';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Needs Review'));
-        renderFiltered();
-      });
-    }
-    if (cards[2]) {
-      cards[2].style.cursor = 'pointer';
-      cards[2].title = 'Filter: Acknowledged';
-      cards[2].addEventListener('click', () => {
-        selectedStatus = 'acknowledged';
-        statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Acknowledged'));
-        renderFiltered();
-      });
-    }
+    };
+
+    bindInteractiveStat(cards[0], 'Show all flags', () => {
+      selectedStatus = 'all';
+      statusChipBtns.forEach((b, i) => b.classList.toggle('is-active', i === 0));
+      renderFiltered();
+    });
+    bindInteractiveStat(cards[1], 'Filter: Needs Review', () => {
+      selectedStatus = 'review';
+      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Needs Review'));
+      renderFiltered();
+    });
+    bindInteractiveStat(cards[2], 'Filter: Acknowledged', () => {
+      selectedStatus = 'acknowledged';
+      statusChipBtns.forEach((b) => b.classList.toggle('is-active', b.textContent === 'Acknowledged'));
+      renderFiltered();
+    });
 
     statStripHost.appendChild(strip);
   }

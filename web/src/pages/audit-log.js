@@ -586,18 +586,20 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   });
 
   filterPanel.append(searchField, categoryWrapper, actionWrapper, rangePicker.el);
-  pageContainer.appendChild(filterPanel);
 
   // Announces the result count to screen readers after each filter or page change.
   const resultStatus = document.createElement('p');
   resultStatus.className = 'sr-only';
   resultStatus.setAttribute('role', 'status');
-  pageContainer.appendChild(resultStatus);
 
   // 4. Data Table Container
   const tableContainer = document.createElement('div');
   tableContainer.className = 'audit-table-wrap';
-  pageContainer.appendChild(tableContainer);
+
+  const tableCard = document.createElement('div');
+  tableCard.className = 'audit-table-card unified-table-card';
+  tableCard.append(filterPanel, resultStatus, tableContainer);
+  pageContainer.appendChild(tableCard);
 
   content.appendChild(pageContainer);
 
@@ -965,14 +967,17 @@ function renderAuditCell(row, key, navigate) {
 
       // Provide deep navigation link if entity is a known route
       if (row.entityType === 'user' && row.entityId) {
-        chip.className += ' audit-entity-chip--interactive';
-        chip.title = `View Personnel #${row.entityId}`;
-        chip.textContent = `User #${row.entityId} ↗`;
-        chip.addEventListener('click', (e) => {
+        const chipBtn = document.createElement('button');
+        chipBtn.type = 'button';
+        chipBtn.className = 'audit-entity-chip audit-entity-chip--interactive';
+        chipBtn.title = `View Personnel #${row.entityId}`;
+        chipBtn.setAttribute('aria-label', `View Personnel #${row.entityId}`);
+        chipBtn.textContent = `User #${row.entityId} ↗`;
+        chipBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           navigate('personnel', { userId: row.entityId });
         });
-        return chip;
+        return chipBtn;
       }
 
       const label = row.entityId !== null ? `${row.entityType} #${row.entityId}` : (row.entityType || '—');
