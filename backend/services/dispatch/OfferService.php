@@ -17,7 +17,26 @@ use PDO;
  * newly created PENDING incident automatically opens an *offer*: a broadcast
  * to every Tanod who is on duty (latest `duty_status` = `on_duty`, so not
  * `responding`), holds a PUBLISHED shift covering now, is active and
- * unsuspended, and has no active dispatch. The first accept the server
+ * unsuspended, and has no active dispatch.
+ *
+ * ROSTER FALLBACK (2026-10-12 decision, gap #5). The published-shift Tanods
+ * are always the first choice. Only when NOT ONE Tanod qualifies with a
+ * published shift does a round go instead to every otherwise-eligible Tanod
+ * (same barangay, active, unsuspended, on duty, no active dispatch) whose OWN
+ * declared availability covers now — so an on-duty Tanod who said they are
+ * available is asked before the call escalates to the Admin. A Tanod's
+ * availability is fixed and set by the Tanod, never negotiated, so every
+ * `tanod_availability` row counts whatever its review status; "covers now"
+ * = a row whose period contains today's Manila date with a window
+ * {date = today, start <= HH:MM < end} (Manila local, `end` "23:59" read as
+ * end of day, since a window cannot cross midnight). A Tanod with no such
+ * window is never offered. The offer escalates only when nobody qualifies
+ * either way. Each round re-decides this
+ * (`recipientsFor()`), and its audit row records `fallback` (a boolean).
+ * A fallback recipient who accepts gets a dispatch whose `override_reason`
+ * is the fixed system text FALLBACK_OVERRIDE_REASON (never free text), with
+ * `shift_override` = true in the `dispatch_created` audit, exactly as an
+ * Admin's direct override is recorded. The first accept the server
  * records wins and becomes an ordinary `dispatch` row (via
  * `DispatchController::createWithinTransaction`, the same code path as
  * `POST /dispatch`); the other recipients are released. During the day
@@ -29,7 +48,7 @@ use PDO;
  * live offer whose `expires_at` has passed: the current recipients become
  * `expired`, the barangay's Admin(s) get a `priority_alert`, and — up to
  * MAX_ROUNDS rounds in total — the offer is re-broadcast to every Tanod who
- * qualifies at that moment. If nobody qualifies, or round 3 has run out, the
+ * qualifies at that moment (roster fallback included). If nobody qualifies, or round 3 has run out, the
  * offer is `escalated`: no Tanod can accept it any more, and the Admin(s)
  * keep being reminded on a backoff (see ESCALATION_REMINDER_DELAYS: +3, +6,
  * +12 min, then every 30 min, max MAX_ESCALATION_REMINDERS = 8 reminders,
@@ -86,6 +105,14 @@ final class OfferService
     public const ESCALATION_REMINDER_DELAYS = [180, 360, 720, 1800];
     public const MAX_ESCALATION_REMINDERS = 8;
 
+    /**
+     * `dispatch.override_reason` written when an offer is accepted by a Tanod
+     * holding no published shift covering now (a roster-fallback recipient).
+     * Fixed system text: never user-supplied, never copied into audit
+     * metadata (the audit carries `shift_override` + `offer_fallback` booleans).
+     */
+    public const FALLBACK_OVERRIDE_REASON = 'System: night offer accepted without a published shift (roster fallback: no rostered Tanod qualified; on duty within own declared availability).';
+
     private const MANILA_OFFSET = '+08:00';
     private const SWEEP_BATCH = 100;
 
@@ -131,13 +158,22 @@ final class OfferService
 
     /**
      * Tanods who may be offered a call right now: same barangay, active,
-     * unsuspended, latest duty status exactly `on_duty`, a PUBLISHED shift
-     * covering `$now`, and no active dispatch anywhere.
+     * unsuspended, latest duty status exactly `on_duty`, no active dispatch
+     * anywhere and — when `$requirePublishedShift` — a PUBLISHED shift
+     * covering `$now`.
      *
      * @return int[]
      */
-    public static function qualifyingTanods(PDO $pdo, int $barangayId, \DateTimeImmutable $now): array
+    public static function qualifyingTanods(PDO $pdo, int $barangayId, \DateTimeImmutable $now, bool $requirePublishedShift = true): array
     {
+        $shiftSql = $requirePublishedShift
+            ? "AND EXISTS (
+                    SELECT 1 FROM shift_schedule s
+                     WHERE s.user_id = u.user_id AND s.barangay_id = u.barangay_id
+                       AND s.approval_status = 'published'
+                       AND s.start_at <= :now_start AND s.end_at > :now_end
+                )"
+            : '';
         $stmt = $pdo->prepare(
             "SELECT u.user_id
                FROM user u
@@ -148,24 +184,115 @@ final class OfferService
                      WHERE ds.user_id = u.user_id AND ds.status = 'on_duty'
                        AND ds.changed_at = (SELECT MAX(ds2.changed_at) FROM duty_status ds2 WHERE ds2.user_id = u.user_id)
                 )
-                AND EXISTS (
-                    SELECT 1 FROM shift_schedule s
-                     WHERE s.user_id = u.user_id AND s.barangay_id = u.barangay_id
-                       AND s.approval_status = 'published'
-                       AND s.start_at <= :now_start AND s.end_at > :now_end
-                )
+                {$shiftSql}
                 AND NOT EXISTS (
                     SELECT 1 FROM dispatch d
                      WHERE d.tanod_id = u.user_id AND d.status IN ('assigned','en_route','arrived')
                 )
               ORDER BY u.user_id"
         );
+        $params = ['barangay_id' => $barangayId];
+        if ($requirePublishedShift) {
+            $params['now_start'] = self::fmt($now);
+            $params['now_end'] = self::fmt($now);
+        }
+        $stmt->execute($params);
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * Who one broadcast round goes to (see the class doc's ROSTER FALLBACK):
+     * the published-shift Tanods when there is at least one; otherwise every
+     * otherwise-eligible on-duty Tanod whose declared availability covers now
+     * (`fallback` = true); empty only when nobody qualifies either way.
+     *
+     * @return array{recipients:int[],fallback:bool}
+     */
+    public static function recipientsFor(PDO $pdo, int $barangayId, \DateTimeImmutable $now): array
+    {
+        $rostered = self::qualifyingTanods($pdo, $barangayId, $now, true);
+        if ($rostered !== []) {
+            return ['recipients' => $rostered, 'fallback' => false];
+        }
+        $available = self::filterByAvailability(
+            $pdo,
+            self::qualifyingTanods($pdo, $barangayId, $now, false),
+            $barangayId,
+            $now
+        );
+        return ['recipients' => $available, 'fallback' => $available !== []];
+    }
+
+    /**
+     * Keeps only the Tanods whose own `tanod_availability` has a window
+     * covering `$now` (see the class doc's ROSTER FALLBACK for the exact
+     * rule). Read-only; availability endpoints are not involved.
+     *
+     * @param int[] $userIds
+     * @return int[]
+     */
+    public static function filterByAvailability(PDO $pdo, array $userIds, int $barangayId, \DateTimeImmutable $now): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+        $local = $now->setTimezone(new \DateTimeZone(self::MANILA_OFFSET));
+        $today = $local->format('Y-m-d');
+        $hhmm = $local->format('H:i');
+
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $stmt = $pdo->prepare(
+            "SELECT user_id, windows_json FROM tanod_availability
+              WHERE barangay_id = ? AND period_start <= ? AND period_end >= ?
+                AND user_id IN ({$placeholders})"
+        );
+        $stmt->execute(array_merge([$barangayId, $today, $today], array_values($userIds)));
+
+        $covered = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $windows = json_decode((string) $row['windows_json'], true);
+            if (!is_array($windows)) {
+                continue;
+            }
+            foreach ($windows as $window) {
+                if (!is_array($window) || ($window['date'] ?? null) !== $today) {
+                    continue;
+                }
+                $start = $window['start'] ?? null;
+                $end = $window['end'] ?? null;
+                if (!is_string($start) || !is_string($end)) {
+                    continue;
+                }
+                if ($start <= $hhmm && ($hhmm < $end || $end === '23:59')) {
+                    $covered[(int) $row['user_id']] = true;
+                    break;
+                }
+            }
+        }
+        return array_values(array_filter($userIds, static fn (int $id): bool => isset($covered[$id])));
+    }
+
+    /**
+     * Does this Tanod hold a PUBLISHED shift in the barangay covering `$now`?
+     * Used when an offer is accepted, to tell a rostered recipient from a
+     * roster-fallback one.
+     */
+    public static function hasPublishedShift(PDO $pdo, int $userId, int $barangayId, \DateTimeImmutable $now): bool
+    {
+        $stmt = $pdo->prepare(
+            "SELECT 1 FROM shift_schedule
+              WHERE user_id = :user_id AND barangay_id = :barangay_id
+                AND approval_status = 'published'
+                AND start_at <= :now_start AND end_at > :now_end
+              LIMIT 1"
+        );
         $stmt->execute([
+            'user_id' => $userId,
             'barangay_id' => $barangayId,
             'now_start' => self::fmt($now),
             'now_end' => self::fmt($now),
         ]);
-        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        return $stmt->fetchColumn() !== false;
     }
 
     /**
@@ -242,8 +369,10 @@ final class OfferService
      * (the caller must not have one open) and sends the notifications after
      * commit.
      *
-     * With nobody qualifying the offer is created already `escalated` (zero
-     * recipients) and the Admin(s) are alerted straight away.
+     * Recipients come from `recipientsFor()` (published-shift Tanods first,
+     * else every eligible on-duty Tanod within their declared availability). With nobody qualifying at all the
+     * offer is created already `escalated` (zero recipients) and the Admin(s)
+     * are alerted straight away.
      *
      * @param ?int    $createdBy  NULL = opened by the system (night auto-trigger)
      * @param ?string $requestKey Idempotency-Key of a manual open
@@ -281,7 +410,8 @@ final class OfferService
             }
 
             $now = self::now();
-            $recipients = self::qualifyingTanods($pdo, $barangayId, $now);
+            $selection = self::recipientsFor($pdo, $barangayId, $now);
+            $recipients = $selection['recipients'];
             $status = $recipients === [] ? 'escalated' : 'open';
             $expires = $now->modify('+' . self::ACCEPT_TIMEOUT_SECONDS . ' seconds');
 
@@ -314,6 +444,7 @@ final class OfferService
                 'round' => 1,
                 'status' => $status,
                 'recipient_count' => count($recipients),
+                'fallback' => $selection['fallback'],
                 'auto' => $auto,
             ]);
 
@@ -550,10 +681,13 @@ final class OfferService
 
             $roundAfter = $roundBefore;
             $recipientCount = 0;
+            $fallback = false;
             $statusAfter = 'escalated';
             if ($roundBefore < self::MAX_ROUNDS) {
                 $roundAfter = $roundBefore + 1;
-                $recipients = self::qualifyingTanods($pdo, $barangayId, $now);
+                $selection = self::recipientsFor($pdo, $barangayId, $now);
+                $recipients = $selection['recipients'];
+                $fallback = $selection['fallback'];
                 $recipientCount = count($recipients);
                 if ($recipients !== []) {
                     $notificationIds[] = self::broadcast($pdo, $offerId, $incidentId, $barangayId, null, $recipients, $now);
@@ -576,6 +710,7 @@ final class OfferService
                 'round_after' => $roundAfter,
                 'status_after' => $statusAfter,
                 'recipient_count' => $recipientCount,
+                'fallback' => $fallback,
                 'admin_alerted' => $alertId !== null,
             ]);
 

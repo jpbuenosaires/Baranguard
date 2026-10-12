@@ -32,7 +32,10 @@ use PDO;
  *   - The dispatch an accept creates uses `DispatchController::
  *     createWithinTransaction` (the SAME path as POST /dispatch — every
  *     double-booking/eligibility check stays) minus the published-shift
- *     check (recipients were already filtered by it). Its `dispatched_by` is
+ *     check (the offer already chose its recipients). A recipient with no
+ *     published shift covering now (roster fallback, see OfferService) gets
+ *     `override_reason` = OfferService::FALLBACK_OVERRIDE_REASON and
+ *     `shift_override`/`offer_fallback` = true in the audit. Its `dispatched_by` is
  *     the offer's creator when a person opened it, else the barangay's first
  *     (lowest user_id) active Admin; only if the barangay has no Admin at all
  *     does it fall back to the accepting Tanod (the column is NOT NULL).
@@ -311,6 +314,17 @@ final class DispatchOffersController
             $incidentId = (int) $offer['incident_id'];
             $dispatchedBy = self::resolveDispatchedBy($pdo, $offer, (int) $identity['user_id']);
 
+            // Roster fallback (OfferService class doc): a recipient with no
+            // published shift covering now was offered the call only because
+            // no rostered Tanod qualified. The dispatch records that with the
+            // fixed system override reason, never free text.
+            $withoutShift = !OfferService::hasPublishedShift(
+                $pdo,
+                (int) $identity['user_id'],
+                (int) $offer['barangay_id'],
+                OfferService::now()
+            );
+
             try {
                 $created = DispatchController::createWithinTransaction(
                     $pdo,
@@ -320,8 +334,13 @@ final class DispatchOffersController
                     (int) $identity['user_id'],
                     $requestId,
                     false,
-                    null,
-                    ['via_offer' => true, 'offer_id' => $offerId, 'offer_round' => (int) $offer['round']]
+                    $withoutShift ? OfferService::FALLBACK_OVERRIDE_REASON : null,
+                    [
+                        'via_offer' => true,
+                        'offer_id' => $offerId,
+                        'offer_round' => (int) $offer['round'],
+                        'offer_fallback' => $withoutShift,
+                    ]
                 );
             } catch (\PDOException $e) {
                 if (str_contains($e->getMessage(), 'uq_dispatch_client_request')) {
