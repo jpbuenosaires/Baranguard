@@ -27,6 +27,16 @@ rosterable, retention placeholders (purge OFF), System Tools web menu. Plan and
 decisions: `docs/WORKFLOWS_AND_RULES.md` Part 3 rules 56-66 and REFERENCE.md §1.
 Route count 117 across 30 files.
 
+**Scheduler week grid (2026-10-12, DEVLOG 2026-10-12 (3), PR #4), web only, no
+migration.** Tanod availability is fixed per tanod: the web shows it as given and
+never accepts or revises it (review panel and Approvals queue removed; the
+`PATCH /availability/:id` endpoint and mobile are unchanged). Personnel >
+Scheduler opens on a week grid (add standard shifts with "+", drag to move,
+outside-availability / 56 h / 12 h warnings, coverage row, Copy last week,
+Publish week with signed paper, A4 week print); List keeps the old table.
+`web/tests` 640/0, wiring 809/0, headless-Chromium render with stub data only;
+not tested against a real backend.
+
 **Logic review (2026-10-09, DEVLOG 2026-10-09 (1)), local `main`, not pushed:**
 an Admin can now resolve a `pending`/`reopened` incident that needed no dispatch
 with a mandatory reason (migration **0039** `incident.resolve_reason`, not applied
