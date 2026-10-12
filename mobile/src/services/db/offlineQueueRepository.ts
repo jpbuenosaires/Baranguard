@@ -10,6 +10,13 @@
  * sync state is read directly off `incident_local`/`gps_track_local`'s
  * own `synced` columns instead — this repository is NOT a generic
  * mirror of those.
+ *
+ * Also stages an OFF-duty toggle made while offline (`payload_type=
+ * 'duty_status'`, closes WORKFLOWS_AND_RULES assumption A4): the queue row
+ * IS the local record of the event (there is no `duty_status_local` table),
+ * holding the device's real tap time, which the server records as
+ * `duty_status.changed_at`. Going ON duty stays online-only, so only
+ * `off_duty` is ever queued.
  */
 
 import { openLocalDatabase } from './localDatabase';
@@ -165,6 +172,97 @@ export async function markQueueItemResolved(
        SET reconciliation_status = ?, sync_attempts = sync_attempts + 1, last_attempt_at = ?
      WHERE queue_id = ?`,
     [status, new Date().toISOString(), queueId],
+    /* transaction */ false
+  );
+}
+
+// --- Offline OFF-duty (duty_status) -----------------------------------------
+
+export interface DutyStatusQueuePayload {
+  status: 'off_duty';
+  /** ISO 8601 UTC — when the Tanod actually tapped "End Shift" on the device. */
+  changedAt: string;
+  /** Server's reason, filled in only when the server rejected the item. */
+  rejectReason?: string;
+}
+
+export interface QueuedDutyStatus {
+  queueId: number;
+  clientEventId: string;
+  payload: DutyStatusQueuePayload;
+}
+
+function toQueuedDutyStatus(row: OfflineQueueLocalRow): QueuedDutyStatus {
+  return {
+    queueId: row.queue_id,
+    clientEventId: row.client_event_id,
+    payload: JSON.parse(row.payload_json) as DutyStatusQueuePayload,
+  };
+}
+
+/**
+ * Stages an off-duty toggle made offline, keyed by the client_event_id that
+ * was already sent (or attempted) to `POST /duty-status` — so if that live
+ * request actually landed and only the response was lost, the queued replay
+ * is answered 'duplicate' instead of recording a second change.
+ */
+export async function enqueueOffDuty(clientEventId: string, changedAt: string): Promise<void> {
+  const db = await openLocalDatabase();
+  const payload: DutyStatusQueuePayload = { status: 'off_duty', changedAt };
+  await db.run(
+    `INSERT INTO offline_queue_local (client_event_id, payload_type, payload_json, created_offline_at)
+     VALUES (?, 'duty_status', ?, ?)`,
+    [clientEventId, JSON.stringify(payload), changedAt],
+    /* transaction */ false
+  );
+}
+
+/** Pending duty_status queue items, oldest first (§5 sync invariants). */
+export async function listPendingDutyStatusUpdates(): Promise<QueuedDutyStatus[]> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    `SELECT * FROM offline_queue_local
+     WHERE payload_type = 'duty_status' AND reconciliation_status = 'pending'
+     ORDER BY created_offline_at ASC`
+  );
+  return ((result.values ?? []) as OfflineQueueLocalRow[]).map(toQueuedDutyStatus);
+}
+
+/**
+ * Records the server's refusal of a queued off-duty (Rule 48): terminal,
+ * never auto-retried (a future/too-old time or an active dispatch will not
+ * fix itself), and kept on the device with the reason until the Tanod
+ * dismisses it on Home.
+ */
+export async function markDutyStatusRejected(item: QueuedDutyStatus, reason: string): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    `UPDATE offline_queue_local
+       SET reconciliation_status = 'failed', payload_json = ?, sync_attempts = sync_attempts + 1, last_attempt_at = ?
+     WHERE queue_id = ?`,
+    [JSON.stringify({ ...item.payload, rejectReason: reason }), new Date().toISOString(), item.queueId],
+    /* transaction */ false
+  );
+}
+
+/** Rejected off-duty toggles the Tanod has not dismissed yet, newest first. */
+export async function listRejectedDutyStatusUpdates(): Promise<QueuedDutyStatus[]> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    `SELECT * FROM offline_queue_local
+     WHERE payload_type = 'duty_status' AND reconciliation_status = 'failed'
+     ORDER BY created_offline_at DESC`
+  );
+  return ((result.values ?? []) as OfflineQueueLocalRow[]).map(toQueuedDutyStatus);
+}
+
+/** The Tanod has seen a rejected off-duty: it stops counting as needing attention. */
+export async function dismissRejectedDutyStatus(queueId: number): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run(
+    `UPDATE offline_queue_local SET reconciliation_status = 'dismissed'
+     WHERE queue_id = ? AND payload_type = 'duty_status' AND reconciliation_status = 'failed'`,
+    [queueId],
     /* transaction */ false
   );
 }

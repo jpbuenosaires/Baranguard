@@ -777,6 +777,37 @@ final class AccomplishmentController
         return (int) round($seconds / 60);
     }
 
+    /**
+     * Recomputes `suggested_duration_minutes`/`duration_flag` for the Tanod's
+     * entries on or after the Manila date of `$fromUtc`, in months whose
+     * report is still editable (open/returned). Called when a duty_status row
+     * is recorded AFTER the fact (a queued offline off-duty, see
+     * DutyStatusController), which changes the on-duty intervals those
+     * entries' suggestions were computed from. Prepared/noted/approved
+     * months are left as signed off.
+     */
+    public static function refreshSuggestedSince(PDO $pdo, int $userId, \DateTimeImmutable $fromUtc): void
+    {
+        $stmt = $pdo->prepare(
+            "SELECT e.entry_id, e.work_date, e.duration_minutes FROM accomplishment_entry e
+             JOIN accomplishment_report r ON r.report_id = e.report_id
+             WHERE e.user_id = :user_id AND e.work_date >= :from_date AND r.status IN ('open','returned')"
+        );
+        $stmt->execute(['user_id' => $userId, 'from_date' => RosterSupport::manilaDateOf($fromUtc)]);
+        $update = $pdo->prepare(
+            'UPDATE accomplishment_entry SET suggested_duration_minutes = :suggested, duration_flag = :flag
+             WHERE entry_id = :id'
+        );
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $suggested = self::computeSuggestedMinutes($pdo, $userId, (string) $row['work_date']);
+            $update->execute([
+                'suggested' => $suggested,
+                'flag' => self::computeFlag((int) $row['duration_minutes'], $suggested),
+                'id' => (int) $row['entry_id'],
+            ]);
+        }
+    }
+
     private static function computeFlag(int $confirmed, ?int $suggested): int
     {
         if ($suggested === null) {
