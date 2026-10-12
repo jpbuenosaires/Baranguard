@@ -669,8 +669,10 @@ note/approve/return only for holders of the authority, print layout) ·
 (tabs Schools/Annex B + print, Incidents/C-1 + print, Term Report/Annex D
 live counts + create/prepare/approve/mark-submitted + signature page; no
 deadline hardcoded) · Personnel: Users tab edits `official_title` and
-approval authorities (Admin); Scheduler tab gained availability review,
-draft/published badges, Publish with coverage warnings · Dashboard
+approval authorities (Admin); Scheduler tab gained draft/published badges
+and Publish with coverage warnings (its availability review was replaced
+2026-10-12 by a week grid that shows availability as fixed, see DEVLOG
+2026-10-12 (3)) · Dashboard
 pending-approvals widget (PB landing) · Dispatch "Delegated to" action ·
 Incident Detail/Management school link, C-1 fields and referrals section.
 Secretary nav gained Approvals, Accomplishment Reports, Referral Log, Safer
