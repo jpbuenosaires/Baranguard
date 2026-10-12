@@ -189,7 +189,7 @@ describe('Personnel behaviour', () => {
     assert.match(text($('option:checked', select)), /Tanod #4 \(current\)/);
   });
 
-  test('a shift awaiting re-approval after a swap is labelled as such (pending_reapproval)', async () => {
+  test('a legacy shift still flagged pending_reapproval (pre-2026-10-12 swap) keeps its label', async () => {
     api.on('GET', '/shifts', () => ({ status: 200, body: { items: [
       { shift_id: 510, user_id: 4, patrol_zone: 'Zone 1', start_at: '2026-10-20 00:00:00', end_at: '2026-10-20 08:00:00', version: 3, approval_status: 'draft', pending_reapproval: 1, approved_by: null, approved_at: null, source_availability_id: null },
       { shift_id: 511, user_id: 5, patrol_zone: 'Zone 2', start_at: '2026-10-21 00:00:00', end_at: '2026-10-21 08:00:00', version: 1, approval_status: 'draft', pending_reapproval: 0, approved_by: null, approved_at: null, source_availability_id: null },
@@ -210,7 +210,11 @@ describe('Personnel behaviour', () => {
     click(buttonByText(/^approve$/i, ctx.root));
     await settle();
     const dialog = $('[role="alertdialog"]');
-    if (dialog) { click($$('button', dialog).at(-1)); await settle(); }
+    assert.ok(dialog, 'approving asks for confirmation');
+    // 2026-10-12: an approved swap keeps the shift published (no re-approval step).
+    assert.match(text(dialog), /stays published/i);
+    assert.doesNotMatch(text(dialog), /re-approval is required|awaiting re-approval|returns? (it )?to draft/i);
+    click($$('button', dialog).at(-1)); await settle();
     const [call] = api.callsTo('PATCH', '/shift-swap-requests/:id');
     assert.ok(call, 'PATCH /shift-swap-requests/:id was not sent');
     assert.equal(call.body.status, 'approved');

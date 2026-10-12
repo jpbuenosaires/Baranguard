@@ -172,7 +172,7 @@ function mapShiftDetailed(row) {
     approvalMode: row.approval_mode ?? 'digital',
     paperSignedOn: row.paper_signed_on ?? null,
     paperRecordedByName: row.paper_recorded_by_name ?? null,
-    // An approved swap on a published shift returns it to draft AND flags it for re-approval.
+    // Legacy (migration 0035): set by approved swaps before 2026-10-12; a swap now keeps the shift published.
     pendingReapproval: Boolean(row.pending_reapproval),
   };
 }

@@ -2,7 +2,8 @@
  * DispatchOfferCards.tsx — the night-dispatch "offer" cards (Wave 2).
  *
  * At night the server broadcasts a call to every on-duty tanod holding a
- * published shift; the first to accept (as recorded by the server) gets a
+ * published shift (if none qualifies, to every eligible on-duty tanod whose own
+ * declared availability covers now); the first to accept (as recorded by the server) gets a
  * normal dispatch, everyone else is released. This renders the open offers
  * on Home and on the Dispatches tab.
  *
