@@ -18726,3 +18726,28 @@ git worktrees, merged to local `main`; nothing pushed.
   baseline). jsdom only: nothing browser- or device-verified.
 - Left on purpose: accepted availability leaves the review list; Edit Shift has no Escape
   or focus trap; print sheet hardcodes two colours; draft-checkbox re-render drops focus.
+
+## 2026-10-12 (1) - Paper-first signing (Claude, project thread)
+
+- **Decision (Jayson):** the signed paper is the final record, so the separate
+  in-app note/approve clicks are redundant. Kept the statuses, the locking and
+  the roster publish gate (dispatch and night offers depend on `published`).
+- **Backend:** `AccomplishmentController::recordPaperApproval` accepts `prepared`
+  as well as `noted` (prepared -> approved leaves `noted_by` NULL; the noting
+  signature lives on the paper). No migration. Note/approve/publish endpoints
+  unchanged.
+- **Web:** `PaperApprovalPanel` button renamed "Record signed paper" and offered on
+  every `recordStatuses` entry (accomplishment: prepared + noted; Annex D:
+  prepared). Removed the Note/Approve buttons (accomplishment-reports.js) and the
+  Approve button (school-zones.js); Return stays. Scheduler: Admin/Secretary always
+  get "Publish with signed paper"; only a non-manager with `approve_roster` (PB)
+  keeps in-app Publish. Approvals inbox and the dashboard widget replace the
+  note/approve queues with "waiting for the signed paper" queues for
+  Admin/Secretary.
+- **Docs:** WORKFLOWS_AND_RULES states 3-5, Secretary/PB flows, scenarios 8-10,
+  new Rule 73; REFERENCE.md §1 bullet.
+- **Evidence:** `web/tests` 625/0, `verify-web-wiring.mjs` 775/0 (4 fewer checks:
+  removed imports). `verify-paper-approvals.sh` updated (new prepared -> approved
+  check on a separate report so the scan-on-prepared 409 check still holds); see
+  the PR for whether it was run. Not browser-verified. The UAT instruments
+  (P-05, P-06) still describe in-app approval and need rewording.

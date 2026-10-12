@@ -40,12 +40,16 @@ function grantRosterAuthority() {
 describe('Personnel behaviour', () => {
   afterEach(() => cleanup());
 
-  test('without approve_roster the Publish bar and draft checkboxes are hidden and a note says why', async () => {
+  test('paper-first: the Admin publishes with the signed paper, never the in-app Publish button', async () => {
     await openScheduler('admin');
     assert.equal($('#publish-shifts-btn'), null);
-    assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
-    // Admin/Secretary without the authority get the paper route instead.
-    assert.ok($('#publish-shifts-paper-btn'), 'Recorded-from-paper control is offered');
+    assert.match(text($('#publish-shifts-paper-btn')), /Publish with signed paper/);
+    assert.match(text($('.scheduler-publish-bar')), /Print the schedule, have it signed/);
+    cleanup();
+    grantRosterAuthority();
+    await openScheduler('admin');
+    assert.equal($('#publish-shifts-btn'), null, 'even an Admin holding approve_roster records the signed paper');
+    assert.ok($('#publish-shifts-paper-btn'));
   });
 
   test('Recorded from paper: picks a signer holding approve_roster (via directory) + date, then POSTs recorded_from_paper', async () => {
@@ -111,13 +115,13 @@ describe('Personnel behaviour', () => {
     assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only; the Secretary must not call it');
   });
 
-  test('secretary gets the create-shift form and Edit Shift controls; Publish stays authority-gated', async () => {
+  test('secretary gets the create-shift form and Edit Shift controls; publishing goes through the signed paper', async () => {
     mountPage(renderPersonnelPage, { role: 'secretary' });
     await settle();
     assert.ok($('#scheduler-new-start'), 'the Secretary must be able to create shifts');
     assert.ok(buttonByText(/edit shift/i), 'the Secretary must be able to edit shifts');
-    assert.equal($('#publish-shifts-btn'), null, 'publishing needs approve_roster, which this Secretary does not hold');
-    assert.match(text($('.scheduler-publish-bar')), /You do not hold roster approval authority\./);
+    assert.equal($('#publish-shifts-btn'), null, 'the Secretary publishes with the signed paper, not in-app');
+    assert.ok($('#publish-shifts-paper-btn'));
   });
 
   test('the shift picker is built from GET /users/directory?purpose=roster (no GET /users) and names the Chief Tanod', async () => {
@@ -400,8 +404,7 @@ describe('Personnel behaviour', () => {
   });
 
   test('publishing: only drafts are selectable; Publish POSTs shift_ids with an Idempotency-Key and shows coverage warnings', async () => {
-    grantRosterAuthority();
-    await openScheduler('admin');
+    await openScheduler('punong_barangay');
     const publish = $('#publish-shifts-btn');
     assert.equal(publish.disabled, true, 'nothing selected yet');
     assert.equal($$('tbody input[type="checkbox"]').length, 2, 'only the two draft shifts have a checkbox');
@@ -422,9 +425,8 @@ describe('Personnel behaviour', () => {
   });
 
   test('a publish refused for missing authority shows the server message and sends nothing else', async () => {
-    grantRosterAuthority();
     api.on('POST', '/shifts/publish', () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'You are not designated to perform this action.' } } }));
-    await openScheduler('admin');
+    await openScheduler('punong_barangay');
     click(buttonByText(/select all drafts/i));
     click($('#publish-shifts-btn'));
     await settle();
