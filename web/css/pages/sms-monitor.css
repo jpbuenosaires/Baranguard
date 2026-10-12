@@ -140,12 +140,14 @@
   }
 }
 
-/* Thin Custom Scrollbars */
+/* Thin Custom Scrollbars & Mobile Touch Scroll */
 .sms-contact-list,
 .sms-thread-messages,
 .sms-feed-list {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sms-contact-list::-webkit-scrollbar,

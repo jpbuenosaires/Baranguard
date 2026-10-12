@@ -102,6 +102,29 @@
   align-items: center;
 }
 
+.audit-table-card.unified-table-card {
+  margin-top: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.audit-table-card .audit-filter-panel {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.audit-table-card .audit-table-wrap .data-table-wrap {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Search input with icon */
 .audit-search-field {
   position: relative;
@@ -334,6 +357,12 @@
   color: var(--color-link, var(--color-primary));
   cursor: pointer;
   transition: all 0.12s ease;
+  font-family: inherit;
+  border-style: solid;
+}
+.audit-entity-chip--interactive:focus-visible {
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 1px;
 }
 
 .audit-entity-chip--interactive:hover {

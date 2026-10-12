@@ -396,7 +396,13 @@
 }
 @media print {
   .print-sheet { padding-bottom: 10mm !important; }
-  .print-sheet__stamp { display: none; }
+  .print-sheet__stamp {
+    display: block !important;
+    color: #334155 !important;
+    border-top: 1px solid #CBD5E1 !important;
+    padding-top: 6px !important;
+    break-inside: avoid;
+  }
 }
 
 /* Roster print: classes instead of inline colours (audit design D-12). */

@@ -67,7 +67,8 @@
 .login-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
 .login-form__error {
   background: var(--tint-critical-bg);
-  color: var(--color-critical);
+  color: var(--color-critical-text);
+  border: 1px solid var(--tint-critical-border);
   border-radius: var(--radius-md);
   padding: var(--spacing-sm) var(--spacing-md);
   font-size: var(--font-size-sm);

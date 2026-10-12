@@ -1057,6 +1057,17 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     for (const item of sorted) {
       const card = document.createElement('div');
       card.className = `queue-incident-card${item.priority === 'critical' ? ' is-critical' : ''}`;
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', `View incident ${formatIncidentCode(item)}, priority ${item.priority || 'normal'} on map`);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target === card) {
+            e.preventDefault();
+            card.click();
+          }
+        }
+      });
 
       // "Delegated to" (2026-10, contract §5): records that the incident was
       // referred to another party (PNP, BFP, EMS ...). It only writes a
@@ -1079,9 +1090,13 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       idGroup.className = 'queue-incident-card__id';
       const bullet = document.createElement('span');
       bullet.className = `queue-bullet ${getIncidentColorBullet(item.incidentType, item.priority, item.itemStatus)}`;
+      bullet.setAttribute('aria-hidden', 'true');
+      const srPriority = document.createElement('span');
+      srPriority.className = 'sr-only';
+      srPriority.textContent = `Priority ${item.priority || 'normal'}: `;
       const idText = document.createElement('span');
       idText.textContent = formatIncidentCode(item);
-      idGroup.append(bullet, idText);
+      idGroup.append(srPriority, bullet, idText);
 
       const badge = document.createElement('span');
       badge.className = `queue-badge ${item.itemStatus === 'pending' ? 'queue-badge--pending' : 'queue-badge--dispatched'}`;

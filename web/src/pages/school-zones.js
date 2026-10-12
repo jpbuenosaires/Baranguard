@@ -1400,6 +1400,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
                         sheetId: 'printable-annex-d',
                         sheetHtml: buildAnnexDHtml(fullReport, lh),
                         printedBy: printedByLabel(user),
+                        orientation: 'landscape',
                       });
                     } catch (err) {
                       showToast(actionErrorMessage(err, 'Could not open print preview.'), { variant: 'error' });
@@ -1467,6 +1468,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
             sheetId: 'printable-annex-d',
             sheetHtml: buildAnnexDHtml(report, lh),
             printedBy: printedByLabel(user),
+            orientation: 'landscape',
           });
         } finally {
           printBtn.disabled = false;

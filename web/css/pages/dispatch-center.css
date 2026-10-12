@@ -5,16 +5,27 @@
  * and Live Map card container with Recenter & Full Screen controls.
  */
 
-/* --- Lock page viewport so Dispatch Center fits 100% without outer scroll --- */
-.page-content:has(.dispatch-layout),
-.page-content:has(.dispatch-page-container),
-.page-content.dispatch-page-content {
-  overflow: hidden !important;
-  display: flex;
-  flex-direction: column;
-  padding: var(--spacing-lg) !important;
-  height: 100% !important;
-  box-sizing: border-box;
+@media (min-width: 1024px) {
+  .page-content:has(.dispatch-layout),
+  .page-content:has(.dispatch-page-container),
+  .page-content.dispatch-page-content {
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing-lg) !important;
+    height: 100% !important;
+    box-sizing: border-box;
+  }
+}
+@media (max-width: 1023px) {
+  .page-content:has(.dispatch-layout),
+  .page-content:has(.dispatch-page-container),
+  .page-content.dispatch-page-content {
+    overflow-y: auto !important;
+    height: auto !important;
+    min-height: 100vh;
+    padding: var(--spacing-md) !important;
+  }
 }
 
 .dispatch-page-container,
@@ -461,12 +472,19 @@
 .queue-incident-card__cancel-btn {
   background: transparent;
   border: none;
-  color: var(--color-critical);
+  min-height: 24px;
+  min-width: 24px;
+  color: var(--color-critical-text);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  padding: var(--spacing-xs);
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
   flex-shrink: 0;
+}
+.queue-incident-card__cancel-btn:focus-visible {
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 1px;
 }
 
 .queue-incident-card__cancel-btn:hover {
@@ -724,11 +742,18 @@
 .legend-reset-btn {
   background: transparent;
   border: none;
-  padding: 0;
-  font-size: 0.6875rem;
+  min-height: 24px;
+  min-width: 24px;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--color-link);
   cursor: pointer;
+}
+.legend-reset-btn:focus-visible {
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 1px;
 }
 .legend-reset-btn:hover {
   text-decoration: underline;

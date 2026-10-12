@@ -75,7 +75,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
@@ -137,18 +137,22 @@
 }
 
 .incident-filter-select {
+  appearance: none;
+  -webkit-appearance: none;
   width: auto !important;
   min-width: 125px;
   max-width: 160px;
   flex: 0 0 auto;
   height: var(--control-height);
   min-height: var(--control-height);
-  padding: 0 var(--spacing-xl) 0 var(--spacing-sm-md);
+  padding: 0 2.25rem 0 var(--spacing-sm-md);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background-color: var(--color-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
+  background-size: 1rem 1rem;
   color: var(--color-text-primary);
   font-size: 0.8125rem;
   font-weight: 500;
@@ -156,11 +160,16 @@
   outline: none;
   white-space: nowrap;
   text-overflow: ellipsis;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+[data-theme="dark"] .incident-filter-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 .incident-filter-select:focus {
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 /* --- Table Rows & Cells (Scrollable Table with Sticky Header) --- */
@@ -292,12 +301,12 @@
 
 .incident-priority-pill--critical {
   background: var(--tint-critical-bg);
-  color: var(--color-critical);
+  color: var(--color-critical-text);
 }
 
 .incident-priority-pill--high {
   background: var(--tint-warning-bg);
-  color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .incident-priority-pill--medium,
@@ -308,7 +317,7 @@
 
 .incident-priority-pill--low {
   background: var(--tint-success-solid);
-  color: var(--color-success);
+  color: var(--color-success-text);
 }
 
 
@@ -545,7 +554,7 @@
 
 .incident-detail-badge--critical {
   background: var(--tint-critical-bg);
-  color: var(--color-critical);
+  color: var(--color-critical-text);
 }
 
 .incident-detail-badge--high {
@@ -587,7 +596,7 @@
 .incident-detail-badge--active,
 .incident-detail-badge--pending {
   background: var(--tint-critical-bg);
-  color: var(--color-critical);
+  color: var(--color-critical-text);
 }
 
 .incident-detail-badge--responding,

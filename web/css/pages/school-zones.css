@@ -258,16 +258,21 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-2xs);
-  padding: 0.2rem var(--spacing-xs);
+  min-height: 28px;
+  padding: 0.3rem var(--spacing-sm);
   border-radius: 9999px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  font-size: 0.775rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
+}
+.ssz-facet-chip:focus-visible {
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 1px;
 }
 
 .ssz-facet-chip:hover {
@@ -688,15 +693,20 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-2xs);
-  padding: 0.2rem var(--spacing-xs);
+  min-height: 28px;
+  padding: 0.3rem var(--spacing-sm);
   border-radius: 9999px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  font-size: 0.775rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+.c1-facet-chip:focus-visible {
+  outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  outline-offset: 1px;
 }
 
 .c1-facet-chip:hover {

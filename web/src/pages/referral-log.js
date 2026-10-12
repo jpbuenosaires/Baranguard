@@ -156,7 +156,10 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
 
   const body = h('div', 'tw-referrals__body');
 
-  container.append(notice, kpisHost, controlBar, body);
+  const tableCard = h('div', 'ref-table-card unified-table-card');
+  tableCard.append(controlBar, body);
+
+  container.append(notice, kpisHost, tableCard);
 
   const apply = () => {
     state.from = fromInput.value;
