@@ -85,8 +85,9 @@ Endpoints:
 ## 4. Accomplishment report (migration 0031, B2)
 
 `accomplishment_report`: `report_id`, `barangay_id`, `user_id`, `month CHAR(7)`
-('YYYY-MM'), `status ENUM('open','prepared','noted','approved','returned')`
-DEFAULT 'open', `prepared_at`, `noted_by`,`noted_at`, `approved_by`,`approved_at`,
+('YYYY-MM'), `status ENUM('open','prepared','returned')` (amended by migration 0041; `noted`/`approved`
+and the `noted_*`/`approved_*` columns were removed)
+DEFAULT 'open', `prepared_at`,
 `return_reason VARCHAR(255) NULL`, `total_minutes_confirmed INT NULL`, `version`,
 `created_at`,`updated_at`. UNIQUE(user_id, month).
 
@@ -106,12 +107,18 @@ Endpoints (all barangay-scoped; tanod only touches own rows; others 404):
 - `GET /accomplishment-reports?month=&user_id=&status=` — tanod own; admin/secretary/punong_barangay barangay-wide. Rows include entries aggregated counts and `total_minutes`, `flagged_entries`.
 - `GET /accomplishment-reports/:id` — full report with entries (text included for approvers only; audit-log reads NOT recorded as content).
 - `POST /accomplishment-reports/:id/submit` — tanod own; open|returned -> prepared; needs >=1 entry; **online-only action** (not a sync kind).
-- `POST /accomplishment-reports/:id/note` — `require(NOTE_REPORT)`; prepared -> noted; `assertNotPreparer`.
-- `POST /accomplishment-reports/:id/approve` — `require(APPROVE_REPORT)`; noted -> approved; `assertNotPreparer`; the noter MAY also approve if they hold both authorities (user decision: officials are few) but never the preparer.
-- `POST /accomplishment-reports/:id/return` — NOTE or APPROVE authority; body `{reason}` (1..255); prepared|noted -> returned (entries editable again).
-Web actions need Idempotency-Key; replay returns the original outcome. Illegal transition -> 409. Audit actions `accomplishment_report_submitted|noted|approved|returned`, metadata `{report_id, month, status}` only — never text, minutes of a person, or names.
+- `POST /accomplishment-reports/:id/note` — REMOVED (migration 0041, print-only).
+- `POST /accomplishment-reports/:id/approve` — REMOVED (migration 0041, print-only).
+- `POST /accomplishment-reports/:id/return` — NOTE or APPROVE authority; body `{reason}` (1..255); prepared -> returned (entries editable again).
+Web actions need Idempotency-Key; replay returns the original outcome. Illegal transition -> 409. Audit actions `accomplishment_report_submitted|returned`, metadata `{report_id, month, status}` only — never text, minutes of a person, or names.
 
-> **Amended 2026-10-12 (paper-first signing, Rules 73-74 of `docs/WORKFLOWS_AND_RULES.md`).**
+> **Amended 2026-10-12 (print-only, migration 0041; supersedes the paper-first note below).**
+> Reports are printed and signed on paper outside the app and the app does not
+> track signatures. Statuses are `open|prepared|returned`; `/note`, `/approve`,
+> `/paper-signature`, `/record-paper-approval` and `/document-scans*` are removed;
+> the paper columns and `document_scan` are dropped. Authority flags remain.
+
+> **Amended 2026-10-12 (paper-first signing, now superseded; Rules 73-74 of `docs/WORKFLOWS_AND_RULES.md`).**
 > The signed paper is the approval. The web no longer offers `/note` or `/approve`;
 > an Admin/Secretary records the signed paper via
 > `POST /accomplishment-reports/:id/record-paper-approval` (migration 0037), which
@@ -199,7 +206,7 @@ build an APK. Not device-verifiable: say so.
 
 New nav (roles in brackets) — W2 wires nav/routes/PAGE_ROLES, W1 builds pages:
 - `approvals` "Approvals" [admin, secretary, punong_barangay] — queues: availability to review (admin/secretary), shifts to publish, reports to note, reports to approve, Annex D to prepare/approve; each row deep-links.
-- `accomplishment-reports` "Accomplishment Reports" [admin, secretary, punong_barangay] — monthly list by status/person, detail with entries (flagged durations marked), note/approve/return actions shown only if the viewer holds the authority (from `/users` or a `/auth` payload — use GET `/users/:id` for self), print via `PrintPreviewModal` using the user's form layout (header with province/municipality/barangay from settings or editable fields, name, position, month, duration hours, 31-day rows, Prepared/Noted/Approved by with `official_title`).
+- `accomplishment-reports` "Accomplishment Reports" [admin, secretary, punong_barangay] — monthly list by status/person, detail with entries (flagged durations marked), return action shown only if the viewer holds note/approve authority (no in-app note/approve since 0041) (from `/users` or a `/auth` payload — use GET `/users/:id` for self), print via `PrintPreviewModal` using the user's form layout (header with province/municipality/barangay from settings or editable fields, name, position, month, duration hours, 31-day rows, Prepared/Noted/Approved by with `official_title`).
 - `referrals` "Referral Log" [admin, secretary, punong_barangay].
 - `school-zones` "Safer School Zones" [admin, secretary, punong_barangay(read)] with tabs Schools (Annex B + print), Incidents (C-1 view of incidents with `school_id` + print), Term Report (Annex D: live counts, create/prepare/approve/mark-submitted, print incl. signature page Prepared by Chief Tanod / Approved by Punong Barangay / Received by Office of the Mayor / DILG copy). Forms mirror the user's files at `…/scratchpad/drive/*.html` (read them); do NOT hardcode a deadline.
 - `personnel` hub: tabs Users (+ official_title and approval_authority editing, Admin) | Scheduler (+ availability review panel, draft/published badges, publish action with coverage warnings; swap requests as a section) — **Fatigue tab removed from nav/hub** (code and endpoints stay).

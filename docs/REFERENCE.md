@@ -140,8 +140,8 @@ have no DTR, and submit a monthly accomplishment report as their
 attendance; rosters are built from stated availability and approved by a
 barangay official; large matters are referred (PNP/BFP/EMS/officials),
 never handled; MC 2026-037 adds school-zone reporting. So: availability +
-draft/published rosters, monthly accomplishment reports (prepared -> noted
--> approved), incident referrals, a school inventory + check-ins + a
+draft/published rosters, monthly accomplishment reports (open -> prepared ->
+returned; printed and signed on paper, not tracked), incident referrals, a school inventory + check-ins + a
 per-incident Annex C-1 summary + an Annex D term report. **Code-complete,
 verified on disposable DBs and jsdom only — not browser-verified by an
 agent, not device-verified, migrations 0029-0033 not applied to either
@@ -184,7 +184,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   `incident.related_incident_id`; `PATCH /incidents/:id/related`
   (admin|secretary, no status change, allowed with an open dispatch). Public
   `POST /citizen-reports` removed (405: GET shares the path).
-- **0037** paper approvals: `approval_mode`/`paper_signed_on`/`paper_recorded_*`
+- **0037** paper approvals (**superseded: columns, routes and `document_scan` dropped by 0041, below**): `approval_mode`/`paper_signed_on`/`paper_recorded_*`
   on `accomplishment_report` and `ssz_term_report`; `POST .../paper-signature`
   and `POST .../record-paper-approval` (admin|secretary); table `document_scan`
   + `POST /document-scans`, `GET /document-scans`, `GET /document-scans/:id/download`
@@ -215,6 +215,15 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   publish in-app. The note/approve/publish endpoints are unchanged. Approvals
   inbox and dashboard widget show "waiting for the signed paper" queues to
   Admin/Secretary. Rule 73 in `docs/WORKFLOWS_AND_RULES.md`.
+- **0041** (2026-10-12, print-only; NOT applied to any real DB) reports are
+  printed and signed on paper and the app does not track signatures.
+  `accomplishment_report.status` = open|prepared|returned (rows `noted`/`approved`
+  become `prepared`); `ssz_term_report.status` = draft|prepared|submitted.
+  Dropped: `approval_mode`/`paper_*` columns, `noted_*`/`approved_*` columns,
+  table `document_scan`; routes `/note`, `/approve`, `/paper-signature`,
+  `/record-paper-approval`, `/document-scans*` removed; `POST /shifts/publish`
+  is plain (no `recorded_from_paper`). Authority flags remain. Older paper/scan
+  data is dropped.
 - **0040** (2026-10-12, NOT applied to any real DB) report and roster
   notifications: `notification.notification_type` gains `report_update` and
   `roster_published`; `notification.accomplishment_report_id` (FK, SET NULL).
@@ -259,7 +268,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
 - **Retention:** placeholder rules (`RetentionService::NEW_TABLE_RULES`, period
   `null`, purge OFF) for availability, accomplishment reports, school check-ins,
   referrals and Annex D (`ssz_term_report`, submitted only); `document_scan`
-  follows its parent report; `school` is deliberately never purged. Needs a
+  was dropped by 0041; `school` is deliberately never purged. Needs a
   council/COA decision (Rule 10).
 - **Web:** System Tools menu groups SMS Monitor, Audit Log, Service Health, Map
   Packages (Admin only; Settings unchanged); reason dialogs; offer state on the
@@ -397,8 +406,8 @@ legal-hold treatment, see migration 0023's own doc comment).
 no retention/purge defined — Rule 10 decision pending):**
 `tanod_availability` (per tanod + period, `windows_json`, status
 submitted/accepted/revised, `client_event_id`) · `accomplishment_report`
-(per tanod + `month` 'YYYY-MM', status open/prepared/noted/approved/
-returned, noted_by/approved_by) · `accomplishment_entry` (work_date, text,
+(per tanod + `month` 'YYYY-MM', status open/prepared/
+returned) · `accomplishment_entry` (work_date, text,
 confirmed `duration_minutes`, server `suggested_duration_minutes`,
 `duration_flag`) · `incident_referral` (referred_to enum incl.
 `ambulance_ems`, never a citizen name) · `school` (Annex B, no student data;
@@ -577,9 +586,10 @@ cross-tenant 404, web writes need `Idempotency-Key`, tanod writes
   `GET /accomplishment-reports` (+`/:id`, entry text for Admin, Secretary
   and holders of note/approve authority) ·
   `POST /accomplishment-reports/:id/submit` (tanod, ONLINE-ONLY, not a sync
-  kind) · `/note` (`note_report`) · `/approve` (`approve_report`; preparer
-  can never note/approve) · `/return` (note or approve authority, reason
-  1-255). open|returned -> prepared -> noted -> approved; illegal -> 409.
+  kind) · `/return` (note or approve authority, reason
+  1-255). open|returned -> prepared (locked; printed and signed on paper, not
+  tracked) ; prepared -> returned; illegal -> 409. `/note` and `/approve` were
+  removed (0041).
 - **Referrals** `POST /incidents/:id/referrals` (tanod own/dispatched,
   admin, secretary; does not change dispatch/incident status; records a
   handoff, never acceptance) · `GET /incidents/:id/referrals` ·
