@@ -385,6 +385,7 @@
 /* Page footer on every printed sheet (audit S-13): "Page N of M" in the
    page margin box, and a "Printed <Manila time> by <role>" stamp. */
 @page {
+  @bottom-left { content: var(--print-stamp, ''); font-size: 9pt; color: #000; }
   @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #000; }
 }
 .print-sheet__stamp {
@@ -395,15 +396,7 @@
 }
 @media print {
   .print-sheet { padding-bottom: 10mm !important; }
-  .print-sheet__stamp {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    margin: 0;
-    color: #000;
-    font-size: 9pt;
-  }
+  .print-sheet__stamp { display: none; }
 }
 
 /* Roster print: classes instead of inline colours (audit design D-12). */

@@ -1954,7 +1954,6 @@ function openWeekPrintModal({ weekStart, rows, shifts, user, barangayName }) {
     const { covered } = dayCoverage(shifts, d);
     return `<td>${covered.length}/${SHIFT_PRESETS.length}</td>`;
   }).join('');
-  const drafts = week.filter((s) => s.approvalStatus === 'draft').length;
   const generatedStamp = new Date().toLocaleString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   });
@@ -1976,7 +1975,7 @@ function openWeekPrintModal({ weekStart, rows, shifts, user, barangayName }) {
       </div>
       <div class="print-sheet__meta-cell">
         <span class="print-sheet__meta-label">Shifts</span>
-        <span class="print-sheet__meta-val print-sheet__meta-val--mono">${week.length} (${drafts} awaiting signature)</span>
+        <span class="print-sheet__meta-val print-sheet__meta-val--mono">${week.length}</span>
       </div>
       <div class="print-sheet__meta-cell">
         <span class="print-sheet__meta-label">Generated On</span>
