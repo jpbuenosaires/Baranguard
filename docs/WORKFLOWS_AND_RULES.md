@@ -61,13 +61,11 @@ flowchart TD
     Dash --> PersHub["Personnel Hub"]
     PersHub --> UsersTab["Users: Create / Suspend / Set Title & Authorities"]
     PersHub --> SchedTab["Scheduler: Review Availability & Draft Shifts ('Create shift from this availability' prefills the form)"]
-    SchedTab --> PublishShifts["Publish Roster (Requires approve_roster authority)"]
+    SchedTab --> PublishShifts["Print Roster, Then Publish With Signed Paper (signer holds approve_roster)"]
     PersHub --> SwapsTab["Shift Swaps: Approve or Reject Tanod Swap Requests"]
 
     Dash --> ApprInbox["Approvals Inbox"]
-    ApprInbox --> ApprAvail["Review Tanod Availability Windows"]
-    ApprInbox --> NoteReports["Note Accomplishment Reports (Requires note_report authority)"]
-    ApprInbox --> PrepAnnexD["Prepare Annex D Report (Requires prepare_annex_d authority)"]
+    ApprInbox --> PaperQueues["Reports, Annex D and Rosters Waiting for the Signed Paper"]
 
     Dash --> SysHealth["Service Health & Ops"]
     SysHealth --> CheckProbes["Check MariaDB / ORS / GSM Gateway / FCM / Cloudflared"]
@@ -148,7 +146,7 @@ flowchart TD
     Dash --> ClickInc["Click Specific Recent Incident → Incident Detail (Read-Only)"]
     
     Dash --> ApprInbox["Approvals Inbox"]
-    ApprInbox --> PubRoster["Publish Rosters (approve_roster)"]
+    ApprInbox --> PubRoster["Record a Signed Roster (approve_roster; signer + date)"]
     Dash --> SignPaper["Sign Printed Accomplishment Reports, Rosters and Annex D on Paper (recorded by the Secretary/Admin)"]
 
     Dash --> GIS["GIS Live Map"]
@@ -176,9 +174,9 @@ flowchart TD
 flowchart TD
     Login["1. Log In (Mobile)"] --> Home["2. Home Patrol Console"]
 
-    Home --> DutyToggle{"Toggle Duty Status (Online Only)"}
+    Home --> DutyToggle{"Toggle Duty Status (On duty needs signal; off duty works offline)"}
     DutyToggle -->|Go On Duty| StartPatrol["Start Background GPS Telemetry + Local Shift Timer"]
-    DutyToggle -->|Go Off Duty| ConfirmOff["Confirm Dialog (Blocked if active dispatch exists)"]
+    DutyToggle -->|Go Off Duty| ConfirmOff["Confirm Dialog (Blocked if active dispatch exists; offline it is queued with the tap time)"]
 
     Home --> OfferCard["Dispatch Offer Card (type, barangay, time, countdown): Accept needs a connection"]
     OfferCard --> OfferWin["First accept recorded by server wins -> normal dispatch; others released"]
@@ -207,7 +205,7 @@ flowchart TD
 
     Home --> Workflows["Profile / Drawer Workflows"]
     Workflows --> SwapScreen["My Shifts: View Published Shifts & Request a Shift Swap"]
-    Workflows --> AvailScreen["Availability: Submit Available Date/Time Windows"]
+    Workflows --> AvailScreen["Availability: State Own Fixed Date/Time Windows (never reviewed)"]
     Workflows --> AccompScreen["Accomplishments: Enter Daily Work & Confirmed Minutes"]
     AccompScreen --> SubmitMonth["Submit Full Month for Honoraria Review (Online Only)"]
     Workflows --> SchoolCheckin["School Check-In: Select School -> Check In -> Check Out"]
@@ -218,12 +216,12 @@ flowchart TD
 ## 5. Chief Tanod on the phone (Admin account, one account)
 
 * **Platform:** the same Android app; an Admin login on a phone gets a device session limited to a fixed allow-list.
-* **Stage 1 (built):** acknowledge SOS (never resolve), list/assign/cancel dispatches (cancel needs a reason; assigning without a published shift needs an override reason), broadcast or cancel dispatch offers, read incidents. Resolution stays on the web dashboard.
+* **Stage 1 (built):** acknowledge and resolve SOS (resolve added 2026-10-12, online only, after a confirmation), list/assign/cancel dispatches (cancel needs a reason; assigning without a published shift needs an override reason), broadcast or cancel dispatch offers, read incidents. Incident resolution stays on the web dashboard.
 * **Not on the phone:** user management, reports, exports, settings, availability, accomplishments.
 
 ```mermaid
 flowchart TD
-    Login["Log In (Admin, with device id)"] --> SOS["SOS tab: acknowledge only"]
+    Login["Log In (Admin, with device id)"] --> SOS["SOS tab: acknowledge / mark resolved"]
     Login --> Disp["Dispatch tab: assign more responders / cancel with reason"]
     Disp --> Offers["Offers: take over (broadcast) / cancel broadcast"]
     Login --> Inc["Incidents tab (read only)"]
@@ -301,8 +299,7 @@ stateDiagram-v2
     [*] --> open : Created for Tanod for month YYYY-MM
     open --> prepared : Tanod submits month (Online only)
     prepared --> approved : Admin/Secretary records the signed paper (signer holds approve_report)
-    prepared --> noted : (API only) official notes in-app (note_report)
-    noted --> approved : Admin/Secretary records the signed paper, or (API only) in-app approve
+    noted --> approved : Legacy rows only (noted before 2026-10-12): Admin/Secretary records the signed paper
     
     prepared --> returned : Official returns report with return_reason
     noted --> returned : Official returns report with return_reason
@@ -323,7 +320,7 @@ stateDiagram-v2
     draft --> published : Official publishes via POST /shifts/publish (approve_roster, or Secretary/Admin recording a paper approval)
     
     published --> draft : Material edit to shift user_id, start_at, or end_at
-    published --> draft : Shift swap approved (flag pending_reapproval; tanod still sees the shift)
+    published --> published : Shift swap approved (only the name changes; the incoming tanod must be available)
     
     note right of published : Visible on Tanod mobile app
 ```
@@ -337,8 +334,8 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
     [*] --> draft : Created with live Annex D term counts
-    draft --> prepared : Prepared by designated official (prepare_annex_d)
-    prepared --> approved : Admin/Secretary records the signed paper (signer holds approve_annex_d)
+    draft --> approved : Admin/Secretary records the signed paper (preparer holds prepare_annex_d, signer holds approve_annex_d, different people)
+    prepared --> approved : Legacy rows only (prepared in-app before 2026-10-12): records the signed paper
     approved --> submitted : Marked as submitted to DILG (Admin/Secretary)
     submitted --> [*] : Final statutory filing
 ```
@@ -354,7 +351,7 @@ stateDiagram-v2
     [*] --> open : Broadcast to on-duty tanods with a published shift (round 1 of 3)
     open --> accepted : First accept recorded by the server wins; others released
     open --> open : 180 s with no accept: next round re-broadcast, Admins alerted
-    open --> escalated : No qualifying tanod or round 3 expired
+    open --> escalated : Nobody qualifies (no rostered tanod AND no on-duty tanod whose availability covers now) or round 3 expired
     escalated --> accepted : A tanod accepts
     open --> closed : Admin assigns directly (POST /dispatch) or the incident is no longer open
     escalated --> closed : Admin assigns directly (POST /dispatch) or the incident is no longer open
@@ -414,19 +411,19 @@ stateDiagram-v2
 ### IV. Emergency SOS & Field Safety
 22. The emergency SOS broadcast must never be blocked by a missing or failed GPS fix; the server records a fallback position or flags the alert as `no_fix`.
 23. If the server is unreachable, the mobile app sends a direct emergency SMS to the cached backup contact number via the phone's native SIM.
-24. Acknowledging an SOS alert notifies the operator but does not dismiss the visual emergency alert banner until the distress is explicitly marked resolved.
+24. Acknowledging an SOS alert notifies the operator but does not dismiss the visual emergency alert banner until the distress is explicitly marked resolved (on the web, or from the Chief Tanod phone).
 25. The SOS mobile trigger opens a tactical confirmation dialog to prevent accidental triggers while guaranteeing immediate transmission upon confirmation.
 
 ### V. Scheduling, Rostering & Duty Limits
 26. Newly created shifts (by an Admin or Secretary) default to `draft` status and remain invisible on the mobile app until published by an official holding `approve_roster` authority, or recorded as approved on paper by a Secretary or Admin naming a signer who holds it.
 27. A Tanod cannot be scheduled for more than 12 hours within a single Asia/Manila calendar day.
-28. Materially editing a published shift's assigned officer, start time, or end time reverts it to `draft` and revokes its approval; when the cause is an approved swap the shift stays visible to the tanod flagged `pending_reapproval` until it is re-published.
+28. Materially editing a published shift's assigned officer, start time, or end time reverts it to `draft` and revokes its approval. An approved swap does not: the shift stays published with the new tanod (Rule 74). `pending_reapproval` survives only on rows flagged before 2026-10-12.
 29. Shift swap requests raised against `draft` shifts return a `404 Not Found` because draft rosters are hidden from field personnel.
 30. Missing duty coverage across a patrol zone generates a warning during roster publication but does not block publication.
 31. *(Merged into Rule 28; number kept so older citations still line up.)*
 
 ### VI. Tanod Availability & Accomplishment Reports
-32. A Tanod can revise and resubmit duty availability time windows for a period while its status is `submitted` (or `revised`, when a reviewer asked for changes), but modifications are locked once `accepted`.
+32. A Tanod's availability is their own fixed statement: they can change a period's windows at any time (version +1), and nobody reviews, accepts, revises or locks it (`PATCH /availability/:id` answers 410 `AVAILABILITY_NOT_REVIEWED`). Legacy `accepted`/`revised` rows are history only.
 33. The server computes suggested duty durations from recorded `on_duty` intervals and flags any accomplishment entry where the Tanod's confirmed duration differs by more than 30 minutes.
 34. Final monthly accomplishment reports must be submitted online and cannot be queued through the offline sync worker.
 35. The preparer of an accomplishment report can never note or approve their own report.
@@ -449,7 +446,7 @@ stateDiagram-v2
 46. The mobile app sends sync payloads in chunks of 50 items, the server rejects a batch above 200 items, and GPS breadcrumbs are capped at 200 points per sync pass.
 47. Duplicate sync payloads matching an existing `client_event_id` return the existing server row rather than throwing an error.
 48. Non-transient client sync rejections revert optimistic local status changes and mark the queue item as requiring attention.
-49. Duty status cannot be toggled while offline, and an officer cannot declare themselves off-duty while an active dispatch assignment remains open.
+49. Going on duty needs a connection; going off duty works offline and is queued with the phone's tap time, then recorded at that time when it syncs (at most 5 minutes ahead, 62 days back, never before the last on-duty row). An officer cannot go off duty while an active dispatch remains open; a queued off duty the server rejects is reverted and shown to the tanod.
 
 ### X. Data Retention, Backup & System Governance
 50. Retention rules are enforced as constants in code, and modifications require architectural and council policy approval.
@@ -461,29 +458,38 @@ stateDiagram-v2
 
 ### XI. Review-Decision Additions (2026-10-07)
 56. The anonymous public citizen report form no longer exists; walk-ins are logged by the Secretary or Admin and every incident records a report channel from a fixed list (tanod-alerted, walk-in, SMS, other).
-57. A dispatch offer is broadcast only to active, on-duty tanods who hold a published shift covering the current time and have no active dispatch, and its alert shows only incident type, barangay and time.
+57. A dispatch offer goes to active, on-duty tanods with no active dispatch who hold a published shift covering the current time; if none qualifies, it goes to such on-duty tanods whose own availability covers the current time (Rule 77). Its alert shows only incident type, barangay and time.
 58. Accepting a dispatch offer is online-only, never queued; the first accept the server records wins, all other recipients are released, and an Admin can still assign additional responders.
 59. An offer nobody accepts within 180 seconds re-broadcasts (up to three rounds) and alerts the Admins, then stays escalated with spaced Admin reminders until someone assigns or cancels.
 60. At night (18:00 inclusive to 06:00 exclusive, Asia/Manila) every new pending incident opens an offer automatically; during the day the Admin assigns.
 61. A related-incident link between two incidents of the same barangay changes no status and may be set while a dispatch is open; the Secretary finalizes a duplicate only after the dispatch closes.
 62. An approved accomplishment report or Annex D is locked in the system; it shows "paper signature pending" until a Secretary or Admin records the signed-on-paper date, and the paper copy is the official record.
-63. A Secretary or Admin may record an approval from paper for an absent signer, who must hold the matching authority and must not be the preparer; the signer, date and recorder are stored and audited.
+63. Recording the signed paper is the only approval path (Rule 75). The Secretary or Admin names the signer, who must hold the matching authority and must not be the preparer; for an Annex D draft they also name the preparer. Signer, preparer, date and recorder are stored and audited.
 64. A scan attached to a report must be a PDF, JPG or PNG of at most 10 MB, is visible to Admin, Secretary and Punong Barangay, lives as long as its parent report, and must contain no student names.
 65. Retention periods for availability, accomplishment reports, school check-ins and referrals are placeholders pending barangay confirmation, so nothing is purged from those tables yet.
-66. An Admin (Chief Tanod) may sign in on the mobile app with a device session limited to SOS acknowledgement, dispatch override and read access.
+66. An Admin (Chief Tanod) may sign in on the mobile app with a device session limited to SOS acknowledgement and resolution, dispatch override and read access.
 
 ### XII. Gap-X Additions (2026-10-08)
 67. A `reopened` incident is treated like a `pending` one for dispatching and dispatch offers, and appears in the Dispatch Center queue and the GIS active-incident filter.
 68. Dispatch and Resolve controls in Incident Management are shown to the Admin only; the Secretary sees a read-only note (the server already enforced this).
-69. A draft shift can be created from a submitted availability entry; it is prefilled from the tanod's window and is still saved as `draft`.
+69. A draft shift can be created from a tanod's availability; it is prefilled from the tanod's window and is still saved as `draft`. Every shift for a tanod must fit inside their availability (Rule 76).
 70. A tanod can capture photo or voice evidence on an assigned incident while offline; it shows as waiting for a connection until the server confirms the upload.
 
 ### XIII. Logic-Review Decisions (2026-10-09)
 71. An incident that needed no dispatch (a phone call or an on-the-spot walk-in settled it) is closed by the Admin as `resolved` with a mandatory reason, so it is counted as handled and never has to be mislabelled `cancelled`; it has no dispatch and therefore no response time.
-72. Resolving an SOS is a desk action on the web dashboard; the Chief Tanod's phone may acknowledge only, so the desk (Admin on the web) must resolve it before the alert clears.
+72. An SOS is resolved by the Admin on the web dashboard or from the Chief Tanod's phone (online only, after a confirmation, a signed device write). Superseded 2026-10-12; it was web-only before.
 
 ### XIV. Paper-First Signing (2026-10-12)
-73. The signed paper is the official approval of accomplishment reports, rosters and Annex D. The web dashboard no longer offers separate in-app note/approve clicks: the Admin or Secretary records the signed paper (signer and date), which approves an accomplishment report from `prepared` or `noted`, an Annex D from `prepared`, and publishes draft shifts. The in-app note/approve/publish endpoints are kept, and a Punong Barangay holding `approve_roster` may still publish in-app.
+73. The signed paper is the official approval of accomplishment reports, rosters and Annex D. The web dashboard no longer offers separate in-app note/approve clicks: the Admin or Secretary records the signed paper (signer and date), which approves an accomplishment report from `prepared` or `noted`, an Annex D from `prepared`, and publishes draft shifts. Tightened the same day by Rule 75: the in-app endpoints now refuse.
+
+
+### XV. Workflow-Gap Fixes (2026-10-12)
+74. Approving a shift swap keeps a published shift published: only the name changes, `approved_by` stays the original signer, and the incoming tanod must pass the eligibility, overlap, 12-hour and availability checks.
+75. In-app approvals are retired: `POST /accomplishment-reports/:id/note` and `/approve`, and `POST /ssz-term-reports/:id/prepare` and `/approve`, answer 410 `PAPER_APPROVAL_REQUIRED`; `POST /shifts/publish` requires `recorded_from_paper` from every caller (422 otherwise). A Punong Barangay holding `approve_roster` may record a signed roster, naming themselves or another holder. Returning a report is unchanged.
+76. A shift may only be scheduled inside the assigned tanod's own availability; create, edit and swap approval refuse with 422 `OUTSIDE_AVAILABILITY` otherwise. A window ending 23:59 runs to midnight. Unassigned shifts and Admin (Chief Tanod) assignees are not checked, nor is a patrol-zone-only edit.
+77. When no on-duty tanod with a published shift qualifies for a night offer, the offer goes to on-duty tanods (active, same barangay, no active dispatch) whose own availability covers the current time. A fallback accept stores a fixed system reason in `dispatch.override_reason` and audit flags only; the offer escalates only when nobody qualifies either way.
+78. An Annex D draft is prepared and approved in one step by recording the signed paper, naming the preparer (`prepare_annex_d`) and the signer (`approve_annex_d`), who must be different people; the term counts are recomputed at that moment.
+79. A back-dated off duty that syncs late recalculates the suggested duty durations of that tanod's entries in months still `open` or `returned`.
 
 ---
 
@@ -520,7 +526,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 
 ### Scenario 2. Night incident: dispatch offer, first accept wins
 1. A new incident is created at 22:30 Manila time. Between 18:00 (inclusive) and 06:00 (exclusive) an offer opens automatically (Rule 60). The Admin can also broadcast one by hand in the day ("Broadcast to on-duty tanods").
-2. Only active, on-duty tanods with a published shift covering now and no active dispatch receive it. The alert shows only type, barangay and time (Rule 57).
+2. Active, on-duty tanods with a published shift covering now and no active dispatch receive it. If none qualifies, on-duty tanods whose own availability covers now receive it instead (Rule 77). The alert shows only type, barangay and time (Rule 57).
 3. Two tanods tap Accept. Accepting needs a connection and is never queued. The server records the first accept as the winner and releases the other (Rule 58).
 4. The winner gets a normal dispatch. The Admin can still add more responders.
 5. Variation: nobody accepts within 180 seconds. The offer re-broadcasts and alerts the Admins, for up to three rounds, then stays `escalated` with spaced Admin reminders until someone assigns or cancels (Rule 59; reminders at +3, +6, +12 minutes, then every 30, at most 8).
@@ -559,18 +565,18 @@ Each scenario is one realistic story you can follow step by step and compare wit
 1. Online with GPS: the tanod presses SOS and confirms ("Confirm & Broadcast SOS"). The server stores it `active`, and on-duty tanods and every active Admin are alerted.
 2. Online without a GPS fix: the SOS is still accepted. It uses the tanod's last known position, or is stored with `location_source = no_fix` and no coordinates (Rule 22).
 3. No signal (or the server times out after 5 seconds): the SOS is queued locally and the phone sends a direct SMS to the cached backup contact through its own SIM (Rule 23). The app shows a badge for the SMS result (`sent_by_sms`, `sms_pending`, `sms_failed`).
-4. The Admin acknowledges (`acknowledged`) from the web or from the Chief Tanod phone console. Acknowledging does not clear the alert; only an explicit resolve on the web does (Rule 24). The Chief Tanod phone can acknowledge but never resolve; the desk must resolve on the web (Rule 72).
+4. The Admin acknowledges (`acknowledged`) from the web or from the Chief Tanod phone console. Acknowledging does not clear the alert; only an explicit resolve does (Rule 24). The resolve can be done on the web or, after a confirmation, from the Chief Tanod phone (Rule 72).
 5. The Admin can also resolve an `active` SOS directly.
 - **State:** 7. **Evidence:** `verify-sprint4.sh`. **Device-verified once (2026-09-24):** the successful `sent_by_sms` path only; the `sms_failed` path and the no-GPS change are code-only. **UAT:** T-05 to T-08.
 
 ### Scenario 8. Roster: availability to published shift, swap and 12-hour cap
-1. The tanod submits available windows for a period on the phone (Availability). While `submitted` the tanod can edit and resubmit (the version goes up); once `accepted` it is locked (Rule 32).
-2. The Admin or Secretary reviews it: `accepted`, or `revised` with a note (a revised period can be resubmitted).
+1. The tanod states their available windows for a period on the phone (Availability). They can change them at any time (the version goes up). Nobody reviews or locks them (Rule 32).
+2. The Admin or Secretary schedules only inside those windows; a shift outside them is refused with `OUTSIDE_AVAILABILITY` (Rule 76).
 3. In Personnel, Scheduler, the Admin presses "Create shift from this availability". The form is prefilled and the shift is saved as `draft` (Rules 26, 69). The tanod cannot see it yet.
 4. Scheduling the same tanod for more than 12 hours in one Manila day is refused with `DAILY_HOURS_EXCEEDED` (Rule 27). Missing coverage is only a warning at publish (Rule 30).
 5. The Admin or Secretary prints the schedule and the official holding `approve_roster` (usually the Punong Barangay) signs it. The Admin or Secretary then presses "Publish with signed paper", naming the signer and date. The shift becomes visible to the tanod (Rules 26, 63, 73).
 6. A swap request on a `draft` shift returns 404 (Rule 29). On a published shift the swap goes to the Admin or Secretary for review.
-7. Changing the tanod, start or end of a published shift reverts it to `draft` (Rule 28). An approved swap also sets it to `draft` with `pending_reapproval`, but the tanod still sees it.
+7. Changing the tanod, start or end of a published shift reverts it to `draft` (Rule 28). An approved swap keeps it published with the new tanod, who must be available for it (Rules 74, 76).
 - **State:** 4 and the availability appendix below. **Evidence:** `verify-roster-accomplishment.sh` (332), `verify-scheduler-fatigue.sh`, `verify-paper-approvals.sh`. **UAT:** S-19, A-19, P-05. **Not demonstrated:** the 12-hour cap under real concurrent writes.
 
 ### Scenario 9. Monthly accomplishment report
@@ -586,7 +592,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 ### Scenario 10. Annex D term report and school check-in
 1. The tanod checks in at a school on the phone and later checks out. A check-in time more than 5 minutes ahead or more than 62 days back is refused. A check-out before the check-in, or more than 24 hours after it, is refused (Rules 39, 40).
 2. The Secretary maintains the school list (Annex B). On an incident the school link and the short Annex C-1 text are stored apart from the narrative, with no student names (Rule 43). On a mobile report an unusable `school_id` is saved as empty so the offline report still goes through (Rule 41).
-3. The Secretary or Admin creates the Annex D term report from live term counts (`draft`). An official with `prepare_annex_d` prepares it. It is printed and signed by a different official holding `approve_annex_d`, and the Secretary or Admin records the signed paper. The Secretary or Admin marks it submitted (Rules 42, 73).
+3. The Secretary or Admin creates the Annex D term report from live term counts (`draft`). It is printed; the preparer (holds `prepare_annex_d`) and a different signer (holds `approve_annex_d`) sign the paper, and the Secretary or Admin records both names and the date in one step (Rule 78). The Secretary or Admin marks it submitted (Rules 42, 73).
 - **State:** 5. **Evidence:** `verify-school-zones.sh` (213). **UAT:** S-10 to S-12, P-07. **Open:** the circular's deadlines and Annex A are unknown, so no deadline is hardcoded.
 
 ### Scenario 11. Who can read the confidential narrative
@@ -623,11 +629,8 @@ Each scenario is one realistic story you can follow step by step and compare wit
 ```mermaid
 stateDiagram-v2
     [*] --> submitted : Tanod submits windows for a period
-    submitted --> submitted : Tanod edits and resubmits (version +1)
-    submitted --> accepted : Admin or Secretary accepts
-    submitted --> revised : Admin or Secretary asks for changes (note)
-    revised --> submitted : Tanod resubmits
-    accepted --> [*] : Locked (409 on any change)
+    submitted --> submitted : Tanod changes the windows (version +1); nobody reviews it (2026-10-12)
+    note right of submitted : Legacy accepted/revised rows go back to submitted when the tanod changes them
 ```
 
 ## What did not fit, found during this re-check
@@ -653,11 +656,11 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 | # | Finding | Outcome |
 |---|---|---|
 | 1 | No honest way to close an incident that needed no dispatch | **Fixed in code.** Admin resolves `pending`/`reopened` with a mandatory reason (Rules 11, 71). Migration `0039_incident_resolve_reason`, `IncidentsController::updateStatus`, web "Resolve without dispatch" button, `verify-h16` step 19, one web test. **Note:** Master Reference §6 still says only a dispatched incident can be resolved; by the project rule it should be corrected (open). |
-| 2 | SOS resolve is web-only | **Decided, kept.** Stated as Rule 72; the phone acknowledges only. |
+| 2 | SOS resolve is web-only | **Reversed 2026-10-12.** The Chief Tanod phone can resolve (Rule 72). |
 | 3 | Separation of duties is per account, not per person | **Assumption A1** (below). |
 | 4 | A rostered Chief Tanod has no operational effect | **Assumption A2.** |
-| 5 | Offers need a published shift but direct dispatch can override | **Assumption A3.** |
-| 6 | A tanod cannot go off duty while offline | **Assumption A4.** |
+| 5 | Offers need a published shift but direct dispatch can override | **Fixed 2026-10-12.** Availability fallback for offers (Rule 77); A3 narrowed. |
+| 6 | A tanod cannot go off duty while offline | **Fixed 2026-10-12.** Offline off duty (Rule 49); A4 narrowed. |
 | 7 | Legal hold stops all backup pruning, so backups grow | **Assumption A5.** |
 | 8 | 1-year purge of shifts and duty data may delete evidence before a COA-facing report period is decided | **Assumption A6** (blocks Rule 51 sign-off). |
 | 9 | 90-day narrative purge not policy-confirmed | **Assumption A7.** |
@@ -666,8 +669,8 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 ### Stated assumptions (each needs an owner to confirm; none changes behaviour)
 - **A1 (owner: barangay and thesis adviser).** The preparer rule and the no-self-edit rule are enforced per account. A second Admin can grant approving authority, and one person could hold two accounts. The design assumes honest staffing in a four-barangay setting; state this in the thesis limitations.
 - **A2 (owner: Chief Tanod).** The Chief Tanod can be rostered so their presence is recorded, but is never dispatchable, receives no offers and cannot enter accomplishments. If the Chief Tanod should respond to incidents, that is a new decision.
-- **A3 (owner: Chief Tanod).** Direct dispatch may override a missing published shift with a reason; night offers may not. An on-duty tanod with no published shift can be assigned by the Admin but is never offered a night incident. Intentional: offers are automatic and so must follow the roster; direct dispatch is a human judgement.
-- **A4 (owner: developer, tested on a device).** Duty status is online-only (Rule 49). A tanod who loses signal at the end of a shift stays "on duty" until reconnecting, which may inflate the server's suggested duty duration (not tested). The 30-minute flag (Rule 33) only helps when the tanod confirms a different figure.
+- **A3 (owner: Chief Tanod).** Direct dispatch may override a missing published shift with a free-text reason. Night offers reach a tanod without a published shift only through the availability fallback (Rule 77), which stores a fixed system reason. An on-duty tanod with neither a shift nor availability covering now is never offered a night incident.
+- **A4 (owner: developer, tested on a device).** Off duty works offline since 2026-10-12 (Rule 49) and is recorded at the phone's tap time. The remaining assumption is that the phone clock is right to within 5 minutes; a clock further ahead is rejected. Not device-verified.
 - **A5 (owner: barangay, storage).** While any legal hold is active no backup is pruned (Rule 53), so backups grow without limit. Give every hold a review date and watch the backup disk.
 - **A6 (owner: barangay, treasurer, COA).** Retention for accomplishment reports and Annex D is undecided (Rule 65), while shifts and duty status purge at 1 year (Rule 51). Decide the report periods first, then check Rule 51 against them.
 - **A7 (owner: barangay council).** Every raw narrative expires at 90 days because no approved-redaction path exists (Rule 19). Consistent with the barangay keeping its own binder, but it needs written confirmation.
