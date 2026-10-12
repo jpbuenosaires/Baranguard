@@ -21,7 +21,7 @@ describe('Approvals behaviour', () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'admin' });
     await settle();
     const titles = groupTitles(ctx.root);
-    assert.ok(titles.includes('Availability to review'));
+    assert.ok(!titles.includes('Availability to review'), 'availability is fixed per tanod, nothing to review');
     assert.ok(titles.includes('Shifts awaiting publish'), 'admin publishes with the signed paper');
     assert.ok(titles.includes('Accomplishment reports waiting for the signed paper'));
     assert.ok(titles.includes('Annex D to prepare'));
@@ -68,7 +68,6 @@ describe('Approvals behaviour', () => {
     const ctx = mountPage(renderApprovalsPage, { role: 'secretary' });
     await settle();
     assert.deepEqual(groupTitles(ctx.root), [
-      'Availability to review',
       'Shifts awaiting publish',
       'Accomplishment reports waiting for the signed paper',
       'Annex D waiting for the signed paper',
