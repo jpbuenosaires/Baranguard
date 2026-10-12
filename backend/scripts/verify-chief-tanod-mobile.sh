@@ -24,6 +24,11 @@
 #      excluding the sender, and an admin with a registered device gets an
 #      FCM-channel delivery row (which only fails because no FCM project is
 #      configured in the test env — Rule 12 then falls back to SMS).
+#   6b. Workflow gap #6 (2026-10-12): the Admin device session may RESOLVE an
+#      SOS (PATCH /tanod-sos/:id/resolve is on the allow-list as a signed
+#      write: header 400, ownership 422, H-09 signature 401), active or
+#      acknowledged; a Tanod session (web or device) still cannot (403); a
+#      barangay-2 Admin device gets 404 for a barangay-1 SOS (tenant rule).
 #   7. GET /users/directory (admin|secretary): thin {user_id, full_name,
 #      official_title} feed, own barangay only, active + non-suspended only,
 #      purpose=tanod | purpose=signer&authority=..., other roles 403.
@@ -141,9 +146,9 @@ INSERT INTO duty_status (user_id, status, channel, changed_at) VALUES
   ($(uid tan3), 'off_duty',   'app', UTC_TIMESTAMP() - INTERVAL 1 HOUR),
   ($(uid tan5), 'responding', 'app', UTC_TIMESTAMP()),
   ($(uid tan_b2), 'on_duty',  'app', UTC_TIMESTAMP());
-INSERT INTO incident (barangay_id, reported_by, incident_type, priority, status, location_description, created_at) VALUES
-  (1, $(uid tan1), 'theft', 'normal', 'pending', 'seed one', UTC_TIMESTAMP()),
-  (1, $(uid tan1), 'theft', 'normal', 'pending', 'seed two', UTC_TIMESTAMP());
+INSERT INTO incident (barangay_id, reported_by, incident_type, priority, status, location_description, created_at, updated_at) VALUES
+  (1, $(uid tan1), 'theft', 'normal', 'pending', 'seed one', UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+  (1, $(uid tan1), 'theft', 'normal', 'pending', 'seed two', UTC_TIMESTAMP(), UTC_TIMESTAMP());
 SQL
 INC1=$(db_one "SELECT MIN(incident_id) FROM incident;"); INC2=$(db_one "SELECT MAX(incident_id) FROM incident;")
 pass "Seeded 3 admins+3 spare, secretary/PB, 8 tanods, a second barangay, duty rows and 2 incidents (INC1=$INC1 INC2=$INC2)"
@@ -252,6 +257,14 @@ req GET "/users/directory?purpose=tanod" "$SEC"
 expect_eq "$(rost)" "Tanod NoDuty|Tanod OffDuty|Tanod OnDuty|Tanod Raiser|Tanod Respond" "(control) purpose=tanod is unchanged: still no admins"
 mysql_exec "$VALDB" -e "DELETE FROM user WHERE username IN ('adm_susp','adm_off');"
 req GET "/users/directory?purpose=tanod" "$PB"; expect_eq "$CODE" "403" "Punong Barangay -> 403"
+# Paper-only (2026-10-12): the PB may record a signed paper roster, so a PB holding approve_roster may read
+# exactly the roster-signer list -- nothing else.
+req GET "/users/directory?purpose=signer&authority=approve_roster" "$PB"; expect_eq "$CODE" "200" "signer/approve_roster: Punong Barangay holding approve_roster -> 200"
+expect_eq "$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo implode("|",array_map(fn($i)=>$i["full_name"],$d["items"]));')" "Punong One" "  ...same list the Admin sees (only the Punong Barangay holds approve_roster)"
+req GET "/users/directory?purpose=signer&authority=approve_report" "$PB"; expect_eq "$CODE" "403" "signer/approve_report: Punong Barangay -> 403 (only the roster signer list is opened)"
+mysql_exec "$VALDB" -e "UPDATE user SET approval_authority='approve_report,approve_annex_d' WHERE username='pb1';"
+req GET "/users/directory?purpose=signer&authority=approve_roster" "$PB"; expect_eq "$CODE" "403" "signer/approve_roster: Punong Barangay WITHOUT approve_roster -> 403"
+mysql_exec "$VALDB" -e "UPDATE user SET approval_authority='approve_report,approve_roster,approve_annex_d' WHERE username='pb1';"
 req GET "/users/directory?purpose=tanod" "$TANW"; expect_eq "$CODE" "403" "Tanod -> 403"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/users/directory?purpose=tanod"); expect_eq "$CODE" "401" "No token -> 401"
 req GET "/users/directory" "$SEC"; expect_eq "$CODE" "400" "Missing purpose -> 400"
@@ -287,6 +300,7 @@ expect_reached POST /dispatch-offers "$A1D" '{}'
 expect_reached PATCH /dispatch-offers/1/cancel "$A1D" '{}'
 expect_reached POST /notifications/999999/ack "$A1D" '{}'
 expect_reached PATCH /tanod-sos/999999/acknowledge "$A1D" '{}'
+expect_reached PATCH /tanod-sos/999999/resolve "$A1D" '{}'
 expect_reached POST /dispatch "$A1D" '{}'
 expect_reached PATCH /dispatch/999999/cancel "$A1D" '{}'
 expect_reached PATCH "/devices/does-not-exist-xyz/deactivate" "$A1D" '{}'
@@ -308,7 +322,6 @@ expect_scope PATCH "/incidents/$INC1" "$A1D" '{"priority":"high"}'
 expect_scope POST /incidents "$A1D" '{}'
 expect_scope GET  "/incidents/nearby?latitude=12.9&longitude=123.6" "$A1D"
 expect_scope GET  "/incidents/$INC1/evidence" "$A1D"
-expect_scope PATCH /tanod-sos/999999/resolve "$A1D" '{}'
 expect_scope POST /tanod-sos "$A1D" '{}'
 expect_scope GET  /reports/export "$A1D"
 expect_scope GET  "/reports/summary" "$A1D"
@@ -373,9 +386,14 @@ expect_eq "$CODE" "422" "adm1 borrowing adm2's device id -> 422 (ownership check
 req PATCH "/tanod-sos/$SOS1/acknowledge" "$A1D" '{}' -H "X-Device-Id: $DEV_A"
 expect_eq "$CODE" "200" "Own registered device, no key on file (phased rollout) -> allowed: header + ownership only, exactly today's Tanod baseline"
 expect_eq "$(db_one "SELECT status FROM tanod_sos WHERE sos_id=$SOS1;")" "acknowledged" "SOS is now acknowledged"
-req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}' -H "X-Device-Id: $DEV_A"
-expect_eq "$(outcome)" "SCOPE" "Resolve over the device session is denied by scope even with a valid device header"
-expect_eq "$(db_one "SELECT status FROM tanod_sos WHERE sos_id=$SOS1;")" "acknowledged" "...and the SOS stays acknowledged (nothing changed)"
+# Resolve (gap #6) is on the allow-list as a SIGNED write: same header/ownership rules as acknowledge.
+req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}'
+expect_eq "$CODE" "400" "Resolve from the admin device without X-Device-Id -> 400 (signed-write class, not the scope gate)"
+req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}' -H "X-Device-Id: and-$(gen_uuid)"
+expect_eq "$CODE" "422" "Resolve with an X-Device-Id not registered to this account -> 422"
+req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}' -H "X-Device-Id: $DEV_B"
+expect_eq "$CODE" "422" "Resolve borrowing adm2's device id -> 422"
+expect_eq "$(db_one "SELECT status FROM tanod_sos WHERE sos_id=$SOS1;")" "acknowledged" "...and the SOS stays acknowledged after those rejected resolves (resolved below with a signature)"
 
 # POST /dispatch + cancel from the device.
 D_REQ=$(gen_uuid)
@@ -424,6 +442,26 @@ expect_eq "$CODE" "401" "A signature minted for a DIFFERENT path cannot be repla
 GSIG=$(sign_request PATCH "$P_ACK" "$DEV_K" "$TS" "$KEY_DIR/k.key")
 req PATCH "/tanod-sos/$SOS1/acknowledge" "$A1D" '{}' -H "X-Device-Id: $DEV_K" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $GSIG"
 expect_eq "$CODE" "200" "Keyed device, valid signature -> 200"
+# Resolve from the keyed device: signature enforced exactly like acknowledge.
+P_RES="/api/v1/tanod-sos/$SOS1/resolve"
+req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}' -H "X-Device-Id: $DEV_K"
+expect_eq "$CODE" "401" "Resolve from a keyed admin device, NO signature -> 401"
+TS=$(date +%s); RWSIG=$(sign_request PATCH "$P_RES" "$DEV_K" "$TS" "$KEY_DIR/wrong.key")
+req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}' -H "X-Device-Id: $DEV_K" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $RWSIG"
+expect_eq "$CODE" "401" "Resolve signed with a DIFFERENT private key -> 401"
+TS=$(date +%s); RASIG=$(sign_request PATCH "$P_ACK" "$DEV_K" "$TS" "$KEY_DIR/k.key")
+req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}' -H "X-Device-Id: $DEV_K" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $RASIG"
+expect_eq "$CODE" "401" "An acknowledge signature cannot be replayed onto resolve -> 401"
+expect_eq "$(db_one "SELECT status FROM tanod_sos WHERE sos_id=$SOS1;")" "acknowledged" "...SOS still acknowledged after the rejected signed resolves"
+TS=$(date +%s); RSIG=$(sign_request PATCH "$P_RES" "$DEV_K" "$TS" "$KEY_DIR/k.key")
+req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}' -H "X-Device-Id: $DEV_K" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $RSIG"
+expect_eq "$CODE" "200" "Resolve an ACKNOWLEDGED SOS from the keyed admin device with a valid signature -> 200"
+expect_eq "$(echo "$BODY" | jget status)" "resolved" "Response status is resolved"
+expect_eq "$(db_one "SELECT CONCAT(status,':',resolved_by,':',resolved_at IS NOT NULL) FROM tanod_sos WHERE sos_id=$SOS1;")" "resolved:$(uid adm1):1" "tanod_sos row: resolved, resolved_by = the Chief Tanod (adm1), resolved_at set"
+expect_eq "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='tanod_sos_resolved' AND entity_id=$SOS1 AND actor_user_id=$(uid adm1);")" "1" "Resolve from the phone is audited (tanod_sos_resolved, actor adm1)"
+TS=$(date +%s); RSIG=$(sign_request PATCH "$P_RES" "$DEV_K" "$TS" "$KEY_DIR/k.key")
+req PATCH "/tanod-sos/$SOS1/resolve" "$A1D" '{}' -H "X-Device-Id: $DEV_K" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $RSIG"
+expect_eq "$CODE" "409" "Resolving it again -> 409 CONFLICT (unchanged rule)"
 # Keyed dispatch create/cancel.
 D2_REQ=$(gen_uuid)
 D2_BODY="{\"incident_id\":$INC2,\"tanod_id\":$(uid tan2),\"request_id\":\"$D2_REQ\",\"override_reason\":\"Chief Tanod phone test, signed\"}"
@@ -460,6 +498,27 @@ SOS_CID3=$(gen_uuid)
 req POST /tanod-sos "$TAN1D" "{\"latitude\":12.93,\"longitude\":123.67,\"client_event_id\":\"$SOS_CID3\"}"
 SOS3=$(echo "$BODY" | jget sos_id); NOTIF3=$(db_one "SELECT notification_id FROM notification WHERE sos_id=$SOS3;")
 expect_eq "$(db_one "SELECT GROUP_CONCAT(u.username ORDER BY u.username SEPARATOR ',') FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF3;")" "adm_cp,adm_rv,adm1,adm2,tan5" "Deactivated admin and now-off-duty tanod drop out of the fan-out"
+
+step "11b. Gap #6 — who may resolve an SOS from a phone (tenant + role rules unchanged)"
+expect_eq "$(db_one "SELECT status FROM tanod_sos WHERE sos_id=$SOS3;")" "active" "SOS3 is still active (never acknowledged)"
+# A Tanod, web or device session, still cannot resolve.
+req PATCH "/tanod-sos/$SOS3/resolve" "$TAN1D" '{}' -H "X-Device-Id: $DEV_T"
+expect_eq "$CODE" "403" "Tanod DEVICE session cannot resolve an SOS (403, role rule)"
+req PATCH "/tanod-sos/$SOS3/resolve" "$TANW" '{}'
+expect_eq "$CODE" "403" "Tanod WEB session cannot resolve an SOS (403)"
+# Cross-tenant: a barangay-2 Admin on its own registered phone gets 404 for a barangay-1 SOS.
+DEV_B2="and-$(gen_uuid)"
+AB2D=$(login_tok adm_b2 "$DEV_B2"); expect_eq "$(kind_of_jti "$(jwt_claim "$AB2D" jti)")" "device" "adm_b2 (barangay 2) has a device session"
+req POST /devices/register "$AB2D" "{\"device_id\":\"$DEV_B2\",\"platform\":\"android\"}"; expect_eq "$CODE" "200" "adm_b2 registers its own phone"
+req PATCH "/tanod-sos/$SOS3/resolve" "$AB2D" '{}' -H "X-Device-Id: $DEV_B2"
+expect_eq "$CODE" "404" "Barangay-2 Admin device resolving a barangay-1 SOS -> 404 (existence not leaked)"
+expect_eq "$(db_one "SELECT status FROM tanod_sos WHERE sos_id=$SOS3;")" "active" "...SOS3 untouched by the rejected resolves"
+# adm2 (barangay 1, keyless phone from step 9) resolves an ACTIVE SOS straight from the phone.
+req PATCH "/tanod-sos/$SOS3/resolve" "$A2D" '{}'
+expect_eq "$CODE" "400" "adm2 resolve without X-Device-Id -> 400"
+req PATCH "/tanod-sos/$SOS3/resolve" "$A2D" '{}' -H "X-Device-Id: $DEV_B"
+expect_eq "$CODE" "200" "Admin device resolves an ACTIVE SOS (keyless device: header + ownership, phased rollout)"
+expect_eq "$(db_one "SELECT CONCAT(status,':',resolved_by,':',acknowledged_at IS NULL) FROM tanod_sos WHERE sos_id=$SOS3;")" "resolved:$(uid adm2):1" "SOS3 resolved by adm2 directly from active (no acknowledge needed, same as web)"
 
 step "12. Revocation still kills an admin device session on the very next request"
 RV=$(login_tok adm_rv "and-$(gen_uuid)")

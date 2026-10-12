@@ -7,10 +7,10 @@
  * that mirrors the barangay's own form (letterhead, name / position /
  * month / duration, 31 day rows, Prepared / Noted / Approved By).
  *
- * Paper-first (2026-10-12): the paper copy is the official record, so a
- * report is approved by printing it, having it signed and recording the
- * signed paper (Admin/Secretary, PaperApprovalPanel). The separate in-app
- * Note / Approve buttons were removed from this screen; the endpoints stay.
+ * Paper-only (2026-10-12): the paper copy is the official record, so a
+ * report is approved ONLY by printing it, having it signed and recording the
+ * signed paper (Admin/Secretary, PaperApprovalPanel). There are no in-app
+ * Note / Approve buttons; those endpoints answer 410 PAPER_APPROVAL_REQUIRED.
  *
  * Gating, all UX only (REFERENCE.md §2 Rule 2 — the server re-checks):
  *   - Record signed paper .. status prepared or noted, Admin or Secretary
@@ -41,9 +41,9 @@ import {
 } from '../services/tanodWorkflowApi.js';
 import {
   h, escapeHtml, mountPageFrame, showLoading, showError, showEmpty, card, selectOf,
-  getMyAuthority, statusPill, formatMonthLabel, formatMinutes, minutesToHours,
+  getMyAuthority, statusPill, formatMonthLabel, formatMinutes, minutesToHours, formatManilaDate,
   formatManilaDateTime, formatDateOnly, trimTime, daysInMonth, actionErrorMessage,
-  loadLetterhead, letterheadHtml, signatureBlockHtml, printedByLabel,
+  loadLetterhead, letterheadHtml,
 } from '../services/tanodWorkflowUi.js';
 
 const PAGE_SIZE = 25;
@@ -57,7 +57,6 @@ const COLUMNS = [
   { key: 'entries', label: 'Entries', align: 'right' },
   { key: 'total', label: 'Total time', align: 'right' },
   { key: 'flagged', label: 'Flagged', align: 'right' },
-  { key: 'paper', label: 'Paper signature' },
 ];
 
 function normalizeParam(param) {
@@ -94,7 +93,6 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
   const state = {
     month: typeof initial.month === 'string' ? initial.month : '',
     status: STATUS_FILTERS.includes(initial.status) ? initial.status : '',
-    paperPending: Boolean(initial.paperPending),
     page: 1,
     names: null,
   };
@@ -137,29 +135,15 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     status.addEventListener('change', () => { state.status = status.value; state.page = 1; onChange(); });
     statusWrap.append(statusLabel, status);
 
-    // Approved reports whose signed paper copy has not been recorded yet (Rule 62: paper is the official record).
-    const paperWrap = h('div', 'form-stack tw-field');
-    const paperLabel = h('label', 'label', 'Paper signature');
-    paperLabel.htmlFor = 'tw-acc-paper';
-    const paperBox = document.createElement('input');
-    paperBox.type = 'checkbox';
-    paperBox.id = 'tw-acc-paper';
-    paperBox.checked = state.paperPending;
-    paperBox.addEventListener('change', () => { state.paperPending = paperBox.checked; state.page = 1; onChange(); });
-    const paperText = h('span', '', ' Approved, paper signature pending');
-    const paperRow = h('label', '', '');
-    paperRow.append(paperBox, paperText);
-    paperWrap.append(paperLabel, paperRow);
-
     const clear = h('button', 'ghost', 'Clear filters');
     clear.type = 'button';
     clear.addEventListener('click', () => {
-      state.month = ''; state.status = ''; state.paperPending = false; state.page = 1;
-      month.value = ''; status.value = ''; paperBox.checked = false;
+      state.month = ''; state.status = ''; state.page = 1;
+      month.value = ''; status.value = '';
       onChange();
     });
 
-    bar.append(monthWrap, statusWrap, paperWrap, clear);
+    bar.append(monthWrap, statusWrap, clear);
     return bar;
   }
 
@@ -183,7 +167,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     showLoading(listBody, 'Loading accomplishment reports');
     try {
       const res = await getAccomplishmentReports({
-        month: state.month, status: state.status, paperPending: state.paperPending, page: state.page, limit: PAGE_SIZE,
+        month: state.month, status: state.status, page: state.page, limit: PAGE_SIZE,
       });
       await ensureNames();
       renderList(res);
@@ -198,7 +182,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
       showEmpty(
         listBody,
         'No accomplishment reports',
-        state.month || state.status || state.paperPending
+        state.month || state.status
           ? 'No reports match these filters.'
           : 'Reports appear here once a tanod logs accomplishments for a month.',
       );
@@ -230,11 +214,6 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
           case 'status': return statusPill(row.status);
           case 'entries': { const n = entryCountOf(row); return h('span', '', n === null ? '—' : n); }
           case 'total': return h('span', '', row.totalMinutes === undefined || row.totalMinutes === null ? '—' : formatMinutes(row.totalMinutes));
-          case 'paper': {
-            if (row.paperPending) return h('span', 'status-pill status-pill--pending', 'Pending');
-            if (row.paperSignedOn) return h('span', '', formatDateOnly(row.paperSignedOn));
-            return h('span', 'text-tertiary', '—');
-          }
           case 'flagged': {
             const n = Number(row.flaggedEntries) || 0;
             return n > 0 ? h('span', 'tw-flag', `${n} to check`) : h('span', '', '0');
@@ -309,7 +288,6 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
           subtitle: `${person} — ${formatMonthLabel(report.month)}`,
           sheetId: 'printable-accomplishment-report',
           sheetHtml: buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh }),
-          printedBy: printedByLabel(user),
         });
       } finally {
         printBtn.disabled = false;
@@ -500,7 +478,12 @@ function buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh
     rows += `<tr class="${dim.trim()}"><td class="tw-acc-form__day">${day}.</td><td>${escapeHtml(text)}</td><td class="tw-acc-form__time">${escapeHtml(time)}</td></tr>`;
   }
 
-  const sign = (caption, name, title) => signatureBlockHtml(caption, name, title);
+  const sign = (caption, name, title, underline) => `
+    <div class="tw-sign__col">
+      <div class="tw-sign__cap">${escapeHtml(caption)}</div>
+      <div class="${underline ? 'tw-sign__name' : 'tw-sign__line'}">${escapeHtml(name || '')}</div>
+      <div class="tw-sign__pos">${escapeHtml(title || '')}</div>
+    </div>`;
 
   return `
     <div class="tw-print tw-acc-form">
@@ -517,14 +500,14 @@ function buildPrintHtml({ report, entries, person, totalMinutes, signatories, lh
         </tr>
       </table>
       <table class="tw-acc-form__log">
-        <thead><tr><th scope="col" class="tw-acc-form__c-day">Day</th><th scope="col" class="tw-acc-form__c-acc">Accomplishment</th><th scope="col" class="tw-acc-form__c-time">Time</th></tr></thead>
+        <thead><tr><th class="tw-acc-form__c-day">Day</th><th class="tw-acc-form__c-acc">Accomplishment</th><th class="tw-acc-form__c-time">Time</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="tw-sign">
-        ${sign('Prepared By:', person, position)}
-        ${sign('Noted By:', signatories.noted.name, signatories.noted.title)}
-        ${sign('Approved By:', signatories.approved.name, signatories.approved.title)}
+        ${sign('Prepared By:', person, position, false)}
+        ${sign('Noted By:', signatories.noted.name, signatories.noted.title, true)}
+        ${sign('Approved By:', signatories.approved.name, signatories.approved.title, true)}
       </div>
-      <p class="tw-print__footnote">Approval status at printing: ${escapeHtml(REPORT_STATUS_LABELS[report.status] || report.status || '')}</p>
+      <p class="tw-print__footnote">Approval status at printing: ${escapeHtml(REPORT_STATUS_LABELS[report.status] || report.status || '')} · Printed ${escapeHtml(formatManilaDate(new Date().toISOString()))}</p>
     </div>`;
 }

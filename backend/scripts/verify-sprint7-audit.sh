@@ -236,6 +236,12 @@ expect_audit "incident_resolved" "an Admin closing an incident"
 # --------------------------------------------------------------------------
 step "4. Shift changes + swap decisions (both were audit GAPS)"
 # --------------------------------------------------------------------------
+# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
+# verify-roster-accomplishment.sh). This suite tests other rules, so every
+# tanod gets open whole-day availability first.
+"$PHP_BIN" "$BACKEND_DIR/scripts/seed-open-availability.php" | mysql_exec "$VALDB" \
+  && pass "Seeded open availability for every tanod (seed-open-availability.php)" || fail "open availability seed failed"
 SREQ=$("$PHP_BIN" -r 'printf("%s-%s-4%s-8%s-%s", bin2hex(random_bytes(4)), bin2hex(random_bytes(2)), substr(bin2hex(random_bytes(2)),1), substr(bin2hex(random_bytes(2)),1), bin2hex(random_bytes(6)));')
 SHIFT_ID=$(curl -s -X POST "$BASE_URL/shifts" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d "{\"user_id\":$TANOD_ID,\"patrol_zone\":\"Zone A\",\"start_at\":\"2027-01-05T08:00:00\",\"end_at\":\"2027-01-05T16:00:00\",\"request_id\":\"$SREQ\"}" \
@@ -263,9 +269,10 @@ SWAP_ID=$(curl -s -X POST "$BASE_URL/shift-swap-requests" -H "Authorization: Bea
 curl -s -X PATCH "$BASE_URL/shift-swap-requests/$SWAP_ID" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d '{"status":"approved","version":1}' >/dev/null
 expect_audit "swap_request_resolved" "an Admin approving a swap"
-# Fix review finding 1: the approved swap un-publishes the shift, and the audit row says so (flag only).
-expect_eq "$(db_one "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL')) FROM shift_schedule WHERE shift_id=$SHIFT_ID;")" "draft|NULL" "an approved swap reverts a published shift to draft and clears the approver"
-expect_eq "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SWAP_ID LIMIT 1;")" "true" "swap_request_resolved audit metadata records approval_reset (a flag, no personal data)"
+# 2026-10-12: an approved swap KEEPS a published shift published (only the
+# name changes); the audit row still carries the approval_reset flag, now false.
+expect_eq "$(db_one "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$SHIFT_ID;")" "published|$ADMIN_ID|0" "an approved swap keeps a published shift published with its approver, no pending_reapproval"
+expect_eq "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SWAP_ID LIMIT 1;")" "false" "swap_request_resolved audit metadata records approval_reset=false (a flag, no personal data)"
 
 # Fatigue acknowledgement — seeded directly, since producing a real flag
 # needs 56 scheduled hours and that is FatigueCalculator's own suite.

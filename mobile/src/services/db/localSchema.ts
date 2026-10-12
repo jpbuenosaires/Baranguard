@@ -8,13 +8,13 @@
  * `gps_track_local`, and `offline_queue_local` — M5/M6/M7's cache tables
  * and the sync-reconciliation ledger.
  *
- * `duty_status_local` is deliberately NOT created. §5 lists it, but M2's
- * duty toggle already always calls `POST /duty-status` directly online
- * (Sprint 2) and nothing in this cut adds an offline duty-toggle path — an
- * empty table nothing reads would repeat exactly the mistake Sprint 2's
- * own precedent warned against ("adding them early would create empty
- * tables no code reads"). Add it if/when an offline duty-toggle queue is
- * actually built.
+ * `duty_status_local` is deliberately NOT created. §5 lists it, but the
+ * only offline duty toggle (going OFF duty while offline, 2026-10-12) is a
+ * single pending event, not a history to cache: it is staged in
+ * `offline_queue_local` (`payload_type='duty_status'`, payload holds the
+ * device tap time) exactly like an offline SOS, and that row is the local
+ * record. Going ON duty stays online-only. A separate table would be a
+ * second copy of the same row.
  *
  * `offline_queue_local` earns a real, used purpose in this cut rather than
  * being a second generic mirror of what `incident_local`/`gps_track_local`
@@ -589,11 +589,12 @@ export interface OfflineQueueLocalRow {
   sync_attempts: number;
   last_attempt_at: string | null;
   /**
-   * 'attention' is used ONLY by dispatch_status rows whose transient-failure
-   * budget ran out (offlineQueueRepository.markDispatchAttemptFailed); it is a
-   * plain TEXT value, so no DDL/migration is involved.
+   * 'attention': dispatch_status rows whose transient-failure budget ran out
+   * (offlineQueueRepository.markDispatchAttemptFailed). 'dismissed': a rejected
+   * off-duty the Tanod acknowledged on Home (duty_status only). Plain TEXT
+   * values, so no DDL/migration is involved.
    */
-  reconciliation_status: 'pending' | 'success' | 'duplicate' | 'failed' | 'attention';
+  reconciliation_status: 'pending' | 'success' | 'duplicate' | 'failed' | 'attention' | 'dismissed';
 }
 
 // --- Migration 6 row types (tanod workflow, 2026-10) ------------------------

@@ -3,14 +3,15 @@
  * CONTRACT_2026-10.md §9).
  *
  * A Tanod tells the desk which dates and time windows they can serve in a
- * period; the Admin/Secretary accepts it or asks for a revision, and builds
- * the published roster from it. This screen is OFFLINE-FIRST (Rule 7): Save
- * writes to encrypted SQLite before the form closes and the record goes out
- * through `/sync/batch` (`availability[]`). The chip beside every period says
- * only what the row can prove — "Saved on phone" until a sync confirms it.
- * The desk's own verdict (submitted / accepted / revised + note) comes back via
- * `refreshAvailabilityFromServer()`; an accepted period is read-only (the server
- * would 409 a change).
+ * period. Since 2026-10-12 this is the tanod's own FIXED statement: nobody at
+ * the desk accepts it or asks for changes, and the desk can only schedule the
+ * tanod inside these windows (the server refuses a shift outside them). The
+ * tanod can change a period at any time (the server bumps its version). This
+ * screen is OFFLINE-FIRST (Rule 7): Save writes to encrypted SQLite before the
+ * form closes and the record goes out through `/sync/batch` (`availability[]`).
+ * The chip beside every period says only what the row can prove — "Saved on
+ * phone" until a sync confirms it. Legacy review fields from before
+ * 2026-10-12 are kept in the local row but no longer shown.
  *
  * Dates are plain Manila `YYYY-MM-DD` strings (utils/manilaTime.ts); times are
  * `HH:MM`. Native <input type="date|time"> keep this working with the WebView's
@@ -24,7 +25,6 @@ import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { Banner, SyncChip } from '../components/WorkflowBits';
 import {
-  isAvailabilityEditable,
   isPeriodPast,
   listAvailability,
   MAX_AVAILABILITY_WINDOWS,
@@ -32,22 +32,16 @@ import {
   saveAvailabilityLocally,
   validateAvailability,
 } from '../services/db/availabilityRepository';
-import type { AvailabilityLocalRow, AvailabilityStatus, AvailabilityWindow } from '../services/db/localSchema';
+import type { AvailabilityLocalRow, AvailabilityWindow } from '../services/db/localSchema';
 import { forceSyncNow, subscribeSyncSummary } from '../services/syncScheduler';
 import { refreshAvailabilityFromServer } from '../services/workflowRefresh';
 import { addDays, daysBetween, eachDate, formatDayLabel, formatPeriodLabel, manilaToday } from '../utils/manilaTime';
 import tacticalFeedback from '../utils/tacticalFeedback';
 
-/** A single period longer than this is hard to review on a phone; the form asks for a shorter one. */
+/** A single period longer than this is hard to read on a phone; the form asks for a shorter one. */
 const MAX_PERIOD_DAYS = 31;
 const DEFAULT_START = '08:00';
 const DEFAULT_END = '17:00';
-
-const STATUS_PILL: Record<AvailabilityStatus, { label: string; className: string }> = {
-  submitted: { label: 'Submitted — waiting for review', className: 'status-pill--info' },
-  accepted: { label: 'Accepted by the desk', className: 'status-pill--success' },
-  revised: { label: 'Desk asked for changes', className: 'status-pill--pending' },
-};
 
 interface DraftWindow extends AvailabilityWindow {
   key: number;
@@ -353,15 +347,15 @@ const AvailabilityPage: React.FC = () => {
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
         <div className="wf-page">
           <Banner tone="info">
-            Tell the desk when you can serve. The desk reviews it and publishes the duty roster — only published shifts
-            appear in My Shifts.
+            Tell the desk when you can serve. This is your own statement: the desk can only schedule you inside these
+            windows, and you can change them any time. Only published shifts appear in My Shifts.
           </Banner>
 
           {note && <Banner tone="success">{note}</Banner>}
           {loadError && <Banner tone="critical">{loadError}</Banner>}
           {serverCopyStale && !loadError && (
             <Banner tone="warning">
-              Could not reach the workstation, so review status may be out of date. Your saved submissions are shown.
+              Could not reach the workstation. Your saved submissions are shown.
             </Banner>
           )}
 
@@ -375,7 +369,6 @@ const AvailabilityPage: React.FC = () => {
           ) : (
             rows.map((row) => {
               const windows = parseLocalWindows(row);
-              const pill = STATUS_PILL[row.status] ?? STATUS_PILL.submitted;
               const dayCount = new Set(windows.map((w) => w.date)).size;
               return (
                 <div key={row.local_id} className="wf-card">
@@ -389,21 +382,13 @@ const AvailabilityPage: React.FC = () => {
                     </div>
                     <SyncChip row={row} />
                   </div>
-                  <div className="wf-row">
-                    <span className={`status-pill ${pill.className}`}>{pill.label}</span>
-                  </div>
-                  {row.status === 'revised' && (
-                    <Banner tone="warning">
-                      {row.review_note ? `Desk note: ${row.review_note}` : 'The desk asked for changes. Update and resubmit.'}
-                    </Banner>
-                  )}
                   {row.last_sync_error && row.synced === 0 && (
                     <span className="wf-muted">The desk could not save this yet: {row.last_sync_error}</span>
                   )}
-                  {isAvailabilityEditable(row.status) && !isPeriodPast(row.period_end) && (
+                  {!isPeriodPast(row.period_end) && (
                     <button type="button" className="wf-btn wf-btn--small" onClick={() => openEdit(row)}>
                       <IonIcon icon={createOutline} />
-                      <span>{row.status === 'revised' ? 'Revise & Resubmit' : 'Edit'}</span>
+                      <span>Edit</span>
                     </button>
                   )}
                 </div>

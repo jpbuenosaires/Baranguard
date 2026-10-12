@@ -212,7 +212,7 @@ const NAV_ITEMS = [
   // unacknowledgedFatigueFlags) moved onto the matching tab chip inside
   // the page itself instead of the sidebar.
   // 2026-10: Secretary and Punong Barangay reach this hub too, but only its
-  // Scheduler tab (see personnel.js): availability review (Admin/Secretary)
+  // Scheduler tab (see personnel.js): read-only tanod availability (Admin/Secretary)
   // and roster publishing (whoever holds approve_roster, typically the PB)
   // happen there, and the Approvals page deep-links to it. The Fatigue tab
   // is gone from the hub (contract §10); its code/endpoints are intact.

@@ -67,11 +67,13 @@ describe('Safer School Zones behaviour', () => {
     assert.equal(call.query.term_end, '2026-10-30');
   });
 
-  test('a draft term report offers Prepare to a prepare_annex_d holder', async () => {
+  test('paper-only: a draft term report offers no Prepare/Approve, even to a prepare_annex_d holder; the Admin records the signed paper', async () => {
     mountPage(renderSchoolZonesPage, { role: 'admin', param: { tab: 'term', reportId: 81 } });
     await settle();
-    assert.ok(buttonByText(/^Prepare report$/));
+    assert.ok(!buttonByText(/^Prepare report$/));
     assert.ok(!buttonByText(/^Approve report$/));
+    assert.ok(buttonByText(/^Record signed paper$/));
+    assert.match(text($('.page-content')), /Recording the signed paper recomputes them/);
   });
 
   test('paper-first: a prepared report has no in-app Approve button; the PB is told the signed paper is awaited', async () => {

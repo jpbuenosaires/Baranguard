@@ -273,7 +273,7 @@ api PATCH "/users/$ADMIN_ID" "$ADMIN_T" '{"approval_authority":["prepare_annex_d
 expect_code "Admin re-submits their own list with NO approving change (non-approving authorities stay editable)" 200
 
 # ================================================================ availability
-step "4. Availability — POST /availability, GET /availability, PATCH /availability/:id"
+step "4. Availability — POST /availability, GET /availability, PATCH /availability/:id retired (410)"
 P_START=$(dman "+15 days"); P_END=$(dman "+21 days"); P_MID=$(dman "+17 days")
 AV_EVT=$(uuid)
 AV_BODY="{\"period_start\":\"$P_START\",\"period_end\":\"$P_END\",\"windows\":[{\"date\":\"$P_MID\",\"start\":\"08:00\",\"end\":\"16:00\"},{\"date\":\"$P_END\",\"start\":\"20:00\",\"end\":\"23:30\"}],\"client_event_id\":\"$AV_EVT\"}"
@@ -338,44 +338,49 @@ expect_eq "Barangay-2 admin sees 0 (tenant isolation)" "$(jget "$BODY" total)" "
 api GET "/availability?status=bogus" "$ADMIN_T" ""
 expect_code "Bad status filter" 400
 
-AV_REV_KEY=$(uuid)
-api PATCH "/availability/$AV1_ID" "$T1_T" '{"status":"accepted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Tanod PATCH /availability/:id" 403
-api PATCH "/availability/$AV1_ID" "$PB_T" '{"status":"accepted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Punong Barangay PATCH /availability/:id (admin or secretary only)" 403
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"accepted"}'
-expect_code "PATCH without Idempotency-Key" 400
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"submitted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "PATCH with an invalid status value" 400
-api PATCH "/availability/$AV1_ID" "$ADMIN2_T" '{"status":"accepted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Barangay-2 admin PATCH (cross-tenant)" 404
-api PATCH "/availability/999999" "$ADMIN_T" '{"status":"accepted"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "PATCH a nonexistent availability" 404
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"accepted","review_note":"ok"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Admin accepts" 200
-expect_eq "  status/reviewed_by" "$(jget "$BODY" status)/$(jget "$BODY" reviewed_by)" "accepted/$ADMIN_ID"
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"accepted","review_note":"ok"}' -H "Idempotency-Key: $AV_REV_KEY"
-expect_code "Replay of the review (same key)" 200
-expect_eq "  exactly one review audit row" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='availability_reviewed' AND entity_id=$AV1_ID;")" "1"
-api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"revised"}' -H "Idempotency-Key: $(uuid)"
-expect_code "Reviewing an already-accepted row (new key)" 409
-api POST "/availability" "$T1_T" "$AV_BODY3" -H "$D_T1"
-expect_code "Replay of the accepted period's event id stays idempotent" 200
-api POST "/availability" "$T1_T" "$(printf '%s' "$AV_BODY" | sed "s/\"client_event_id\":\"[^\"]*\"/\"client_event_id\":\"$(uuid)\"/")" -H "$D_T1"
-expect_code "Changing an ACCEPTED period" 409
+# Owner decision 2026-10-12: availability is the tanod's own fixed statement.
+# PATCH /availability/:id is retired (410 AVAILABILITY_NOT_REVIEWED) for every
+# caller; nothing is reviewed, accepted or locked.
+for who in "$ADMIN_T:Admin" "$SEC_T:Secretary" "$PB_T:Punong Barangay" "$T1_T:Tanod"; do
+  api PATCH "/availability/$AV1_ID" "${who%%:*}" '{"status":"accepted","review_note":"ok"}' -H "Idempotency-Key: $(uuid)"
+  expect_code "${who#*:} PATCH /availability/:id (review retired)" 410
+  expect_eq "  error code AVAILABILITY_NOT_REVIEWED" "$(jget "$BODY" error.code)" "AVAILABILITY_NOT_REVIEWED"
+done
+api PATCH "/availability/$AV1_ID" "$ADMIN_T" '{"status":"revised"}'
+expect_code "PATCH without Idempotency-Key is also just 410" 410
+api PATCH "/availability/999999" "$ADMIN_T" '{"status":"accepted"}' -H "Idempotency-Key: $(uuid)"
+expect_code "PATCH a nonexistent availability (410, no lookup)" 410
+expect_eq "  row untouched: still submitted, version 2, no reviewer" "$(db_one "SELECT CONCAT(status,'|',version,'|',IFNULL(reviewed_by,'NULL')) FROM tanod_availability WHERE avail_id=$AV1_ID;")" "submitted|2|NULL"
+expect_eq "  no availability_reviewed audit row" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='availability_reviewed';")" "0"
 
-# revised -> resubmit flow (T2, secretary reviews)
+# Legacy rows reviewed before 2026-10-12 stay readable, and are NOT locked.
+mysql_exec "$VALDB" -e "UPDATE tanod_availability SET status='accepted', reviewed_by=$ADMIN_ID, reviewed_at=UTC_TIMESTAMP(), review_note='ok' WHERE avail_id=$AV1_ID;"
+api GET "/availability?user_id=$T1_ID" "$ADMIN_T" ""
+expect_eq "Legacy 'accepted' row still listed with its review fields" "$(jget "$BODY" items.0.status)/$(jget "$BODY" items.0.reviewed_by)/$(jget "$BODY" items.0.review_note)" "accepted/$ADMIN_ID/ok"
+api GET "/availability?status=accepted" "$ADMIN_T" ""
+expect_eq "  ?status=accepted still filters legacy rows" "$(jget "$BODY" total)" "1"
+api POST "/availability" "$T1_T" "$AV_BODY3" -H "$D_T1"
+expect_code "Replay of a legacy-accepted period's event id stays idempotent" 200
+api POST "/availability" "$T1_T" "$(printf '%s' "$AV_BODY2" | sed "s/\"client_event_id\":\"[^\"]*\"/\"client_event_id\":\"$(uuid)\"/")" -H "$D_T1"
+expect_code "Same windows, new event id on a legacy-accepted period" 200
+expect_eq "  no-op: no version bump, legacy status kept" "$(jget "$BODY" version)/$(jget "$BODY" status)" "2/accepted"
+api POST "/availability" "$T1_T" "$(printf '%s' "$AV_BODY" | sed "s/\"client_event_id\":\"[^\"]*\"/\"client_event_id\":\"$(uuid)\"/")" -H "$D_T1"
+expect_code "Tanod CHANGES a legacy-accepted period (no longer locked; was 409)" 200
+expect_eq "  same row, version 3, back to submitted, review cleared" "$(jget "$BODY" avail_id)/$(jget "$BODY" version)/$(jget "$BODY" status)/$(jget "$BODY" reviewed_by)/$(jget "$BODY" review_note)" "$AV1_ID/3/submitted/null/null"
+
+# Legacy 'revised' row (T2): readable with its note; a resubmission clears it.
 P2_START=$(dman "+30 days"); P2_END=$(dman "+36 days")
 AV2_BODY="{\"period_start\":\"$P2_START\",\"period_end\":\"$P2_END\",\"windows\":[{\"date\":\"$P2_START\",\"start\":\"06:00\",\"end\":\"12:00\"}],\"client_event_id\":\"$(uuid)\"}"
 api POST "/availability" "$T2_T" "$AV2_BODY" -H "$D_T2"
+expect_code "T2 POST /availability" 201
 AV2_ID=$(jget "$BODY" avail_id)
-api PATCH "/availability/$AV2_ID" "$SEC_T" '{"status":"revised","review_note":"please add weekends"}' -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary marks T2's availability 'revised'" 200
-expect_eq "  review_note stored" "$(jget "$BODY" review_note)" "please add weekends"
+mysql_exec "$VALDB" -e "UPDATE tanod_availability SET status='revised', reviewed_by=$SEC_ID, reviewed_at=UTC_TIMESTAMP(), review_note='please add weekends' WHERE avail_id=$AV2_ID;"
+api GET "/availability" "$T2_T" ""
+expect_eq "Tanod still reads a legacy 'revised' row and its note" "$(jget "$BODY" items.0.status)/$(jget "$BODY" items.0.review_note)" "revised/please add weekends"
 AV2_BODY_B=$(printf '%s' "$AV2_BODY" | sed "s/\"client_event_id\":\"[^\"]*\"/\"client_event_id\":\"$(uuid)\"/; s/06:00/05:00/")
 api POST "/availability" "$T2_T" "$AV2_BODY_B" -H "$D_T2"
-expect_code "T2 resubmits a 'revised' period" 200
-expect_eq "  back to submitted, version 3, review cleared" "$(jget "$BODY" status)/$(jget "$BODY" version)/$(jget "$BODY" reviewed_by)" "submitted/3/null"
+expect_code "T2 changes a legacy 'revised' period" 200
+expect_eq "  back to submitted, version 2, review cleared" "$(jget "$BODY" status)/$(jget "$BODY" version)/$(jget "$BODY" reviewed_by)" "submitted/2/null"
 
 # ================================================================ device signature
 step "5. Device signature convention on availability writes (H-09)"
@@ -396,6 +401,13 @@ dev-rc-t4
 %s' "$TS" | "$OPENSSL_BIN" dgst -sha256 -sign "$TMP_DIR/t4.key" | base64 -w0)
 api POST "/availability" "$T4_T" "$SIG_BODY" -H "$D_T4" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $SIG"
 expect_code "Same request with a valid signature" 201
+
+# Since 2026-10-12 a tanod can only be scheduled inside their submitted
+# availability (422 OUTSIDE_AVAILABILITY, tested in section 14). The roster
+# rules below (overlap, 12h/day cap, publish, swaps) are about something
+# else, so every tanod gets open whole-day availability first.
+"$PHP_BIN" "$BACKEND_DIR/scripts/seed-open-availability.php" | mysql_exec "$VALDB" \
+  && pass "Seeded open availability for every tanod (seed-open-availability.php)" || fail "open availability seed failed"
 
 # ================================================================ shifts
 step "6. Shifts — draft/published, tanod visibility, 12h/day cap (contract sections 3 and 8)"
@@ -482,62 +494,79 @@ mkshift "$ADMIN2_T" "$T1_ID" "$D9" "06:00" "07:00"
 expect_code "Barangay-2 admin scheduling a barangay-1 tanod" 422
 
 # ================================================================ publish
-step "7. POST /shifts/publish — authority, tenant, replay, warnings"
+step "7. POST /shifts/publish — paper-only (2026-10-12): recorded_from_paper required, signer authority, tenant, replay, warnings"
+PDATE=$(dman "today")
+# paper JSON naming SIGNER_ID as the person who signed the paper roster
+paper() { echo "\"recorded_from_paper\":{\"signer_user_id\":$1,\"signed_on\":\"$PDATE\"}"; }
+api POST "/shifts/publish" "$T1_T" "{\"shift_ids\":[$S1_ID],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Tanod (even with a paper body)" 403
 api POST "/shifts/publish" "$ADMIN_T" "{\"shift_ids\":[$S1_ID]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Admin WITHOUT approve_roster" 403
+expect_code "Admin without recorded_from_paper" 422
+expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
 api POST "/shifts/publish" "$SEC_T" "{\"shift_ids\":[$S1_ID]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary WITHOUT approve_roster" 403
-api POST "/shifts/publish" "$T1_T" "{\"shift_ids\":[$S1_ID]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Tanod" 403
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID]}"
+expect_code "Secretary without recorded_from_paper" 422
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID]}" -H "Idempotency-Key: $(uuid)"
+expect_code "Punong Barangay holding approve_roster, no paper: no more in-app publish" 422
+expect_eq "  error code PAPER_APPROVAL_REQUIRED, shift still a draft" "$(jget "$BODY" error.code)/$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$S1_ID;")" "PAPER_APPROVAL_REQUIRED/draft"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID],\"recorded_from_paper\":null}" -H "Idempotency-Key: $(uuid)"
+expect_code "recorded_from_paper: null is the same as missing" 422
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID],\"recorded_from_paper\":\"yes\"}" -H "Idempotency-Key: $(uuid)"
+expect_code "recorded_from_paper not an object" 400
+api POST "/shifts/publish" "$ADMIN_T" "{\"shift_ids\":[$S1_ID],$(paper "$ADMIN_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Admin names a signer who does not hold approve_roster (themselves)" 422
+mysql_exec "$VALDB" -e "UPDATE user SET approval_authority='note_report,approve_report,approve_annex_d' WHERE user_id=$PB_ID;"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID],$(paper "$SEC2_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Punong Barangay WITHOUT approve_roster may not record (only Admin/Secretary or a holder)" 403
+mysql_exec "$VALDB" -e "UPDATE user SET approval_authority='note_report,approve_report,approve_roster,approve_annex_d' WHERE user_id=$PB_ID;"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID],$(paper "$PB_ID")}"
 expect_code "Publish without Idempotency-Key" 400
-api POST "/shifts/publish" "$PB_T" '{"shift_ids":[]}' -H "Idempotency-Key: $(uuid)"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
 expect_code "Empty shift_ids" 400
-api POST "/shifts/publish" "$PB_T" '{"shift_ids":["a"]}' -H "Idempotency-Key: $(uuid)"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[\"a\"],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
 expect_code "Non-integer shift id" 400
 BIG=$("$PHP_BIN" -r 'echo json_encode(range(1,101));')
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":$BIG}" -H "Idempotency-Key: $(uuid)"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":$BIG,$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
 expect_code "101 shift ids (max 100)" 400
 B2_SHIFT_START=$(mu "$D1" "08:00"); B2_SHIFT_END=$(mu "$D1" "16:00")
 mysql_exec "$VALDB" -e "INSERT INTO shift_schedule (barangay_id, user_id, patrol_zone, start_at, end_at, created_by, client_request_id) VALUES (2, $TB2_ID, 'B2', '$B2_SHIFT_START', '$B2_SHIFT_END', $ADMIN2_ID, 'b2-shift-00000000000000000000000000000');"
 SB2_ID=$(db_one "SELECT shift_id FROM shift_schedule WHERE barangay_id=2;")
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,$SB2_ID]}" -H "Idempotency-Key: $(uuid)"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,$SB2_ID],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
 expect_code "Batch containing a barangay-2 shift (whole call 404)" 404
 expect_eq "  the barangay-1 shift in that call stayed a draft" "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$S1_ID;")" "draft"
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,999999]}" -H "Idempotency-Key: $(uuid)"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,999999],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
 expect_code "Batch containing a nonexistent shift" 404
 
 PUB_KEY=$(uuid)
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,$S2_ID]}" -H "Idempotency-Key: $PUB_KEY"
-expect_code "Punong Barangay publishes D1 + D3 shifts" 200
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,$S2_ID],$(paper "$PB_ID")}" -H "Idempotency-Key: $PUB_KEY"
+expect_code "Punong Barangay records the paper roster they signed (D1 + D3 shifts)" 200
 PUB_FIRST="$BODY"
 expect_eq "  published ids" "$(jget "$BODY" published)" "[$S1_ID,$S2_ID]"
 expect_eq "  already_published empty" "$(jget "$BODY" already_published)" "[]"
 expect_eq "  NO_COVERAGE warning for the uncovered middle day only" "$(jget "$BODY" warnings)" "[{\"code\":\"NO_COVERAGE\",\"date\":\"$D2\"}]"
 expect_eq "  DB: published + approver + timestamp" "$(db_one "SELECT CONCAT(approval_status,'|',approved_by,'|',approved_at IS NOT NULL) FROM shift_schedule WHERE shift_id=$S1_ID;")" "published|$PB_ID|1"
-expect_eq "  audit roster_published count" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.count') FROM audit_log WHERE action='roster_published' LIMIT 1;")" "2"
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,$S2_ID]}" -H "Idempotency-Key: $PUB_KEY"
+expect_eq "  DB: approval_mode recorded_from_paper, paper date + recorder" "$(db_one "SELECT CONCAT(approval_mode,'|',paper_signed_on,'|',paper_recorded_by) FROM shift_schedule WHERE shift_id=$S1_ID;")" "recorded_from_paper|$PDATE|$PB_ID"
+expect_eq "  audit roster_published_from_paper count" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.count') FROM audit_log WHERE action='roster_published_from_paper' LIMIT 1;")" "2"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID,$S2_ID],$(paper "$PB_ID")}" -H "Idempotency-Key: $PUB_KEY"
 expect_code "Replay with the same Idempotency-Key" 200
 expect_eq "  replay returns the ORIGINAL outcome" "$BODY" "$PUB_FIRST"
-expect_eq "  still exactly one roster_published audit row" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published';")" "1"
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID]}" -H "Idempotency-Key: $(uuid)"
+expect_eq "  still exactly one publish audit row, and no in-app roster_published row" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published_from_paper';")/$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='roster_published';")" "1/0"
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S1_ID],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
 expect_code "Publishing an already-published shift (new key)" 200
 expect_eq "  reported under already_published, not an error" "$(jget "$BODY" already_published)/$(jget "$BODY" published)" "[$S1_ID]/[]"
 expect_eq "  version was not bumped again" "$(db_one "SELECT version FROM shift_schedule WHERE shift_id=$S1_ID;")" "2"
 api GET "/shifts?limit=100" "$T1_T" ""
 expect_eq "Tanod now sees the legacy + 2 newly published shifts" "$(jget "$BODY" total)" "3"
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S_UN_ID]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Publishing an unassigned shift" 200
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S_UN_ID],$(paper "$SEC2_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Punong Barangay records a paper roster signed by another holder (Kagawad)" 200
 expect_eq "  unassigned shift does not provide coverage -> NO_COVERAGE for its date" "$(jget "$BODY" warnings)" "[{\"code\":\"NO_COVERAGE\",\"date\":\"$D5\"}]"
-expect_eq "0040: exactly one roster_published notification so far (replay, already-published and unassigned publishes notify nobody)" "$(db_one "SELECT COUNT(*) FROM notification WHERE notification_type='roster_published';")" "1"
-expect_eq "  its targets are exactly the assignees of the two newly published shifts" "$(db_one "SELECT COUNT(*) FROM notification_target nt JOIN notification n ON n.notification_id=nt.notification_id WHERE n.notification_type='roster_published';")" "$(db_one "SELECT COUNT(DISTINCT user_id) FROM shift_schedule WHERE shift_id IN ($S1_ID,$S2_ID) AND user_id IS NOT NULL;")"
-# authority, not role: grant the secretary approve_roster and she can publish
-api POST "/shifts/publish" "$SEC2_T" "{\"shift_ids\":[$S8B]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary holding approve_roster (granted in section 3) publishes" 200
-expect_eq "  approved_by is that secretary" "$(db_one "SELECT approved_by FROM shift_schedule WHERE shift_id=$S8B;")" "$SEC2_ID"
+expect_eq "  approved_by is the named signer, recorder the PB" "$(db_one "SELECT CONCAT(approved_by,'|',paper_recorded_by) FROM shift_schedule WHERE shift_id=$S_UN_ID;")" "$SEC2_ID|$PB_ID"
+# authority, not role: the SIGNER must hold approve_roster (the recorder is Admin/Secretary)
+api POST "/shifts/publish" "$SEC_T" "{\"shift_ids\":[$S8B],$(paper "$SEC2_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Secretary records a paper roster signed by the Kagawad holding approve_roster (granted in section 3)" 200
+expect_eq "  approved_by is that Kagawad, recorder the secretary" "$(db_one "SELECT CONCAT(approved_by,'|',paper_recorded_by) FROM shift_schedule WHERE shift_id=$S8B;")" "$SEC2_ID|$SEC_ID"
 api PATCH "/users/$SEC2_ID" "$ADMIN_T" '{"approval_authority":["note_report","approve_report"]}'
-api POST "/shifts/publish" "$SEC2_T" "{\"shift_ids\":[$S8C]}" -H "Idempotency-Key: $(uuid)"
-expect_code "...and after the authority is removed she cannot" 403
+api POST "/shifts/publish" "$SEC_T" "{\"shift_ids\":[$S8C],$(paper "$SEC2_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "...and after the Kagawad's authority is removed they cannot be the signer" 422
 api PATCH "/users/$SEC2_ID" "$ADMIN_T" '{"approval_authority":["note_report","approve_report","approve_roster"]}'
 
 # --- fix review finding 1: material edits to a PUBLISHED shift drop the approval
@@ -550,13 +579,13 @@ expect_eq "  reverted to draft, approved_by/approved_at cleared" "$(db_one "SELE
 expect_eq "  audit shift_updated records approval_reset=true" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='shift_updated' AND entity_id=$S2_ID ORDER BY audit_id DESC LIMIT 1;")" "true"
 api GET "/shifts?limit=100" "$T4_T" ""
 expect_eq "  the new assignee does not see it (draft)" "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $n=0; foreach($d["items"] as $r){ if($r["shift_id"]==(int)$argv[1]) $n++; } echo $n;' "$S2_ID")" "0"
-api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S2_ID]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Re-publish it" 200
+api POST "/shifts/publish" "$PB_T" "{\"shift_ids\":[$S2_ID],$(paper "$PB_ID")}" -H "Idempotency-Key: $(uuid)"
+expect_code "Re-publish it (with the signed paper)" 200
 api PATCH "/shifts/$S2_ID" "$ADMIN_T" "{\"start_at\":\"${D3}T09:00:00+08:00\",\"version\":5}"
 expect_code "Admin moves the start time of a PUBLISHED shift" 200
 expect_eq "  reverted to draft again" "$(db_one "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL')) FROM shift_schedule WHERE shift_id=$S2_ID;")" "draft|NULL"
 
-# swap on a draft shift is refused (a Tanod cannot even see it); on a published one it works and un-publishes
+# swap on a draft shift is refused (a Tanod cannot even see it); on a published one it works and KEEPS it published (2026-10-12)
 api POST "/shift-swap-requests" "$T3_T" "{\"shift_id\":$S8C,\"client_request_id\":\"$(uuid)\"}"
 expect_code "Tanod requests a swap on their own DRAFT shift" 404
 api POST "/shift-swap-requests" "$T1_T" "{\"shift_id\":$S1_ID,\"target_user_id\":$T4_ID,\"client_request_id\":\"$(uuid)\"}"
@@ -564,8 +593,8 @@ expect_code "Tanod requests a swap on their PUBLISHED shift" 201
 SWP_ID=$(jget "$BODY" request_id)
 api PATCH "/shift-swap-requests/$SWP_ID" "$ADMIN_T" '{"status":"approved","version":1}'
 expect_code "Admin approves the swap (named target)" 200
-expect_eq "  shift reassigned AND reverted to draft with the approval cleared" "$(db_one "SELECT CONCAT(user_id,'|',approval_status,'|',IFNULL(approved_by,'NULL')) FROM shift_schedule WHERE shift_id=$S1_ID;")" "$T4_ID|draft|NULL"
-expect_eq "  audit swap_request_resolved records approval_reset=true" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SWP_ID LIMIT 1;")" "true"
+expect_eq "  shift reassigned and STILL published, approval kept, no pending_reapproval" "$(db_one "SELECT CONCAT(user_id,'|',approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$S1_ID;")" "$T4_ID|published|$PB_ID|0"
+expect_eq "  audit swap_request_resolved records approval_reset=false" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SWP_ID LIMIT 1;")" "false"
 
 # swap approval uses the same daily cap (named target) and no coverage block
 api GET "/shifts?limit=100" "$ADMIN_T" ""
@@ -729,7 +758,7 @@ api GET "/accomplishment-reports/$R2_ID" "$ADMIN_T" ""
 expect_eq "Admin (holds note_report) sees the text" "$(jget "$BODY" text_visible)" "true"
 expect_eq "  entry duration_flag / suggested exposed" "$(jget "$BODY" entries.0.duration_flag)/$(jget "$BODY" entries.0.suggested_duration_minutes)" "false/null"
 
-step "11. Report state machine — submit / note / approve / return, segregation of duties"
+step "11. Report state machine — submit / return / record the signed paper (note/approve retired: 410), segregation of duties"
 # an empty report (cannot arise through the API: a report is only created with its first entry)
 mysql_exec "$VALDB" -e "INSERT INTO accomplishment_report (barangay_id, user_id, month, status, created_at) VALUES (1, $T3_ID, '2025-01', 'open', UTC_TIMESTAMP());"
 EMPTY_R=$(db_one "SELECT report_id FROM accomplishment_report WHERE user_id=$T3_ID AND month='2025-01';")
@@ -744,7 +773,7 @@ expect_code "Admin submits (tanod only)" 403
 api POST "/accomplishment-reports/$R2_ID/submit" "$T2_T" ""
 expect_code "Submit without Idempotency-Key" 400
 api POST "/accomplishment-reports/$R2_ID/note" "$PB_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Note an 'open' report" 409
+expect_code "Note an 'open' report (in-app note is retired)" 410
 api POST "/accomplishment-reports/$R2_ID/submit" "$T2_T" "" -H "Idempotency-Key: $SUB_KEY"
 expect_code "T2 submits the month" 200
 expect_eq "  status prepared, total_minutes_confirmed = 300+60" "$(jget "$BODY" status)/$(jget "$BODY" total_minutes_confirmed)" "prepared/360"
@@ -758,45 +787,42 @@ expect_code "New entry on a prepared report" 409
 api PATCH "/accomplishment-entries/$E2A_ID" "$T2_T" '{"duration_minutes":10}' -H "$D_T2"
 expect_code "Edit an entry of a prepared report" 409
 
-api POST "/accomplishment-reports/$R2_ID/approve" "$PB_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Approve a 'prepared' report (must be noted first)" 409
-api POST "/accomplishment-reports/$R2_ID/note" "$T2_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Tanod notes" 403
-api POST "/accomplishment-reports/$R2_ID/note" "$SEC_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary WITHOUT note_report notes" 403
-api POST "/accomplishment-reports/$R2_ID/note" "$ADMIN2_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Barangay-2 admin (holds note_report) notes B1's report (cross-tenant)" 404
-api POST "/accomplishment-reports/$R2_ID/note" "$PB_T" ""
-expect_code "Note without Idempotency-Key" 400
-NOTE_KEY=$(uuid)
-api POST "/accomplishment-reports/$R2_ID/note" "$ADMIN_T" "" -H "Idempotency-Key: $NOTE_KEY"
-expect_code "Admin holding note_report notes" 200
-expect_eq "  status noted, noted_by" "$(jget "$BODY" status)/$(jget "$BODY" noted_by)" "noted/$ADMIN_ID"
-api POST "/accomplishment-reports/$R2_ID/note" "$ADMIN_T" "" -H "Idempotency-Key: $NOTE_KEY"
-expect_code "Replay of the note (same key)" 200
+# Paper-only (2026-10-12): in-app note/approve answer 410; the signed paper is recorded instead.
 api POST "/accomplishment-reports/$R2_ID/note" "$ADMIN_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Note an already-noted report (new key)" 409
-api POST "/accomplishment-reports/$R2_ID/approve" "$ADMIN_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Admin WITHOUT approve_report approves" 403
-api POST "/accomplishment-reports/$R2_ID/approve" "$T2_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Tanod approves" 403
-APP_KEY=$(uuid)
-api POST "/accomplishment-reports/$R2_ID/approve" "$PB_T" "" -H "Idempotency-Key: $APP_KEY"
-expect_code "Punong Barangay approves" 200
-expect_eq "  status approved, approved_by" "$(jget "$BODY" status)/$(jget "$BODY" approved_by)" "approved/$PB_ID"
-api POST "/accomplishment-reports/$R2_ID/approve" "$PB_T" "" -H "Idempotency-Key: $APP_KEY"
-expect_code "Replay of the approval (same key)" 200
+expect_code "Admin holding note_report: in-app note is retired" 410
+expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
 api POST "/accomplishment-reports/$R2_ID/approve" "$PB_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Approve an already-approved report" 409
-expect_eq "0040: one report_update notification for the approval, to the owning tanod only (replay added none)" "$(db_one "SELECT CONCAT(COUNT(DISTINCT n.notification_id),'/',GROUP_CONCAT(nt.user_id)) FROM notification n JOIN notification_target nt ON nt.notification_id=n.notification_id WHERE n.notification_type='report_update' AND n.accomplishment_report_id=$R2_ID;")" "1/$T2_ID"
+expect_code "Punong Barangay holding approve_report: in-app approve is retired" 410
+expect_eq "  error code PAPER_APPROVAL_REQUIRED, report still prepared" "$(jget "$BODY" error.code)/$(db_one "SELECT status FROM accomplishment_report WHERE report_id=$R2_ID;")" "PAPER_APPROVAL_REQUIRED/prepared"
+rpa() { echo "{\"signer_user_id\":$1,\"signed_on\":\"$TODAY\"}"; }
+api POST "/accomplishment-reports/$R2_ID/record-paper-approval" "$T2_T" "$(rpa "$PB_ID")" -H "Idempotency-Key: $(uuid)"
+expect_code "Tanod records the signed paper" 403
+api POST "/accomplishment-reports/$R2_ID/record-paper-approval" "$PB_T" "$(rpa "$PB_ID")" -H "Idempotency-Key: $(uuid)"
+expect_code "Punong Barangay records (admin|secretary only)" 403
+api POST "/accomplishment-reports/$R2_ID/record-paper-approval" "$ADMIN2_T" "$(rpa "$PB_ID")" -H "Idempotency-Key: $(uuid)"
+expect_code "Barangay-2 admin records B1's report (cross-tenant)" 404
+api POST "/accomplishment-reports/$R2_ID/record-paper-approval" "$SEC_T" "$(rpa "$PB_ID")"
+expect_code "Record without Idempotency-Key" 400
+api POST "/accomplishment-reports/$R2_ID/record-paper-approval" "$SEC_T" "$(rpa "$ADMIN_ID")" -H "Idempotency-Key: $(uuid)"
+expect_code "Signer WITHOUT approve_report (the Admin)" 422
+APP_KEY=$(uuid)
+api POST "/accomplishment-reports/$R2_ID/record-paper-approval" "$SEC_T" "$(rpa "$PB_ID")" -H "Idempotency-Key: $APP_KEY"
+expect_code "Secretary records the paper signed by the Punong Barangay" 200
+expect_eq "  status approved, approved_by, mode, noted_by empty" "$(jget "$BODY" status)/$(jget "$BODY" approved_by)/$(jget "$BODY" approval_mode)/$(jget "$BODY" noted_by)" "approved/$PB_ID/recorded_from_paper/null"
+api POST "/accomplishment-reports/$R2_ID/record-paper-approval" "$SEC_T" "$(rpa "$PB_ID")" -H "Idempotency-Key: $APP_KEY"
+expect_code "Replay of the recording (same key)" 200
+api POST "/accomplishment-reports/$R2_ID/record-paper-approval" "$SEC_T" "$(rpa "$PB_ID")" -H "Idempotency-Key: $(uuid)"
+expect_code "Record an already-approved report (new key)" 409
 api POST "/accomplishment-reports/$R2_ID/return" "$PB_T" '{"reason":"too late"}' -H "Idempotency-Key: $(uuid)"
 expect_code "Return an approved report" 409
 mkentry "$T2_T" "$D_T2" "$TODAY" "after approval" 30
 expect_code "New entry on an approved report" 409
 api GET "/accomplishment-reports/$R2_ID" "$PB_T" ""
-expect_eq "Detail shows noted/approved by name + official_title for the print layout" "$(jget "$BODY" noted_by_title)|$(jget "$BODY" approved_by_title)|$(jget "$BODY" approved_by_name)" "Chief Tanod|Punong Barangay|RC Punong"
+expect_eq "Detail shows the approver's name + official_title for the print layout (no in-app noter)" "$(jget "$BODY" noted_by_title)|$(jget "$BODY" approved_by_title)|$(jget "$BODY" approved_by_name)" "null|Punong Barangay|RC Punong"
 expect_eq "Audit metadata of report transitions carries only ids/statuses (no text)" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action LIKE 'accomplishment_report_%' AND metadata_json LIKE '%SECRETWORDS%';")" "0"
-expect_eq "  keys are exactly report_id/month/status/idempotency_key" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='accomplishment_report_approved' LIMIT 1;")" '["report_id", "month", "status", "idempotency_key"]'
+expect_eq "  keys are exactly report_id/month/status/idempotency_key" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='accomplishment_report_submitted' LIMIT 1;")" '["report_id", "month", "status", "idempotency_key"]'
+expect_eq "  paper approval keys are ids/status only" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_id=$R2_ID LIMIT 1;")" '["report_id", "month", "status", "signer_user_id", "idempotency_key"]'
+expect_eq "  no in-app noted/approved audit rows exist" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action IN ('accomplishment_report_noted','accomplishment_report_approved');")" "0"
 expect_eq "No audit row anywhere contains the entry text" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE metadata_json LIKE '%SECRETWORDS%';")" "0"
 
 # return flow on T3's report
@@ -828,24 +854,21 @@ expect_code "New entry on a returned report" 201
 api POST "/accomplishment-reports/$R3_ID/submit" "$T3_T" "" -H "Idempotency-Key: $(uuid)"
 expect_code "Resubmit after return" 200
 expect_eq "  prepared again, return_reason cleared, total recomputed (45+20+...)" "$(jget "$BODY" status)/$(jget "$BODY" return_reason)/$(jget "$BODY" total_minutes_confirmed)" "prepared/null/65"
-api POST "/accomplishment-reports/$R3_ID/note" "$ADMIN_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Noted (round 2)" 200
+# A legacy report noted in-app before 2026-10-12 can still be returned.
+mysql_exec "$VALDB" -e "UPDATE accomplishment_report SET status='noted', noted_by=$ADMIN_ID, noted_at=UTC_TIMESTAMP(), version=version+1 WHERE report_id=$R3_ID;"
 api POST "/accomplishment-reports/$R3_ID/return" "$PB_T" '{"reason":"Approver sends it back"}' -H "Idempotency-Key: $(uuid)"
-expect_code "A noted report can be returned by an approver" 200
+expect_code "A (legacy) noted report can be returned by an approver" 200
 expect_eq "  return clears noted_by/noted_at" "$(db_one "SELECT CONCAT(IFNULL(noted_by,'NULL'),'|',IFNULL(noted_at,'NULL')) FROM accomplishment_report WHERE report_id=$R3_ID;")" "NULL|NULL"
 
 # segregation of duties: a report PREPARED BY an official who also holds the authority
 mysql_exec "$VALDB" -e "INSERT INTO accomplishment_report (barangay_id, user_id, month, status, prepared_at, created_at) VALUES (1, $SEC2_ID, '2025-02', 'prepared', UTC_TIMESTAMP(), UTC_TIMESTAMP());"
 SEG_R=$(db_one "SELECT report_id FROM accomplishment_report WHERE user_id=$SEC2_ID;")
-api POST "/accomplishment-reports/$SEG_R/note" "$SEC2_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Preparer (holds note_report) notes their OWN report" 409
+api POST "/accomplishment-reports/$SEG_R/record-paper-approval" "$SEC_T" "$(rpa "$SEC2_ID")" -H "Idempotency-Key: $(uuid)"
+expect_code "Paper signer is the preparer (holds approve_report) of their OWN report" 409
 expect_eq "  stayed prepared" "$(db_one "SELECT status FROM accomplishment_report WHERE report_id=$SEG_R;")" "prepared"
-api POST "/accomplishment-reports/$SEG_R/note" "$PB_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "A different official notes it" 200
-api POST "/accomplishment-reports/$SEG_R/approve" "$SEC2_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Preparer (holds approve_report) approves their OWN report" 409
-api POST "/accomplishment-reports/$SEG_R/approve" "$PB_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "The noter (also holds approve_report) MAY approve - officials are few" 200
+api POST "/accomplishment-reports/$SEG_R/record-paper-approval" "$SEC_T" "$(rpa "$PB_ID")" -H "Idempotency-Key: $(uuid)"
+expect_code "A different official signed the paper" 200
+expect_eq "  approved_by is the signer, recorder the secretary" "$(db_one "SELECT CONCAT(approved_by,'|',paper_recorded_by) FROM accomplishment_report WHERE report_id=$SEG_R;")" "$PB_ID|$SEC_ID"
 
 # ================================================================ sync
 step "12. POST /sync/batch — availability[] and accomplishment_entries[] (createItem / createEntryItem)"
@@ -884,6 +907,53 @@ SIG=$(printf 'POST\n/api/v1/sync/batch\n%s\n%s' "dev-rc-t4" "$TS" | "$OPENSSL_BI
 api POST "/sync/batch" "$T4_T" "$SIGV_BODY" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $SIG"
 expect_eq "Same batch with a valid signature: availability item succeeds" "$(res_of "$SIGV_AV" status)" "success"
 expect_eq "  accomplishment item succeeds" "$(res_of "$SIGV_AC" status)" "success"
+
+# ================================================================ availability is binding
+step "14. Scheduling must stay inside the tanod's submitted availability (422 OUTSIDE_AVAILABILITY)"
+mysql_exec "$VALDB" -e "INSERT INTO user (barangay_id, username, password_hash, full_name, role, is_active, created_at) VALUES (1, 'rc_t5', '$HASH', 'RC Tanod Five', 'tanod', 1, UTC_TIMESTAMP());"
+T5_ID=$(uid rc_t5)
+AA=$(dman "+60 days"); AB=$(dman "+61 days"); AC=$(dman "+63 days"); AZ=$(dman "+90 days")
+mysql_exec "$VALDB" -e "INSERT INTO tanod_availability (barangay_id, user_id, period_start, period_end, windows_json, status, version, client_event_id, created_at, updated_at) VALUES (1, $T5_ID, '$AA', '$(dman '+66 days')', '[{\"date\":\"$AA\",\"start\":\"08:00\",\"end\":\"16:00\"},{\"date\":\"$AA\",\"start\":\"22:00\",\"end\":\"23:59\"},{\"date\":\"$AB\",\"start\":\"00:00\",\"end\":\"06:00\"}]', 'submitted', 1, '$(uuid)', UTC_TIMESTAMP(), UTC_TIMESTAMP());"
+mkshift "$ADMIN_T" "$T5_ID" "$AA" "07:00" "12:00"
+expect_code "Shift only partly inside a window" 422
+mkshift "$ADMIN_T" "$T5_ID" "$AA" "08:00" "16:00"
+expect_code "Shift exactly inside a window" 201
+S5_IN=$(jget "$BODY" shift_id)
+mkshift "$ADMIN_T" "$T5_ID" "$AA" "22:00" "06:00" "" "$AB"
+expect_code "Night shift across midnight covered by 22:00-23:59 + 00:00-06:00" 201
+mkshift "$SEC_T" "$T5_ID" "$AA" "16:00" "18:00"
+expect_code "Secretary: shift starting at the window's end (outside)" 422
+expect_eq "  error code OUTSIDE_AVAILABILITY" "$(jget "$BODY" error.code)" "OUTSIDE_AVAILABILITY"
+expect_eq "  message names the tanod's windows" "$(printf '%s' "$(jget "$BODY" error.message)" | grep -c "RC Tanod Five.*$AA 08:00-16:00, $AA 22:00-23:59")" "1"
+mkshift "$ADMIN_T" "$T5_ID" "$AC" "08:00" "12:00"
+expect_code "Day inside the period but with no window" 422
+mkshift "$ADMIN_T" "$T5_ID" "$AZ" "08:00" "12:00"
+expect_code "Date with no availability submitted at all" 422
+expect_eq "  message says nothing was submitted" "$(printf '%s' "$(jget "$BODY" error.message)" | grep -c "has not submitted availability")" "1"
+expect_eq "  refused shifts wrote nothing (T5 has exactly 2 shifts)" "$(db_one "SELECT COUNT(*) FROM shift_schedule WHERE user_id=$T5_ID;")" "2"
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"end_at\":\"${AA}T17:00:00+08:00\",\"version\":1}"
+expect_code "PATCH extending the shift past the window" 422
+expect_eq "  error code OUTSIDE_AVAILABILITY" "$(jget "$BODY" error.code)" "OUTSIDE_AVAILABILITY"
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"end_at\":\"${AA}T15:00:00+08:00\",\"version\":1}"
+expect_code "PATCH shortening it (still inside)" 200
+api PATCH "/shifts/$S8C" "$ADMIN_T" "{\"user_id\":$T5_ID,\"version\":$(db_one "SELECT version FROM shift_schedule WHERE shift_id=$S8C;")}"
+expect_code "PATCH reassigning another tanod's shift to T5 outside T5's availability" 422
+expect_eq "  shift kept its assignee" "$(db_one "SELECT user_id FROM shift_schedule WHERE shift_id=$S8C;")" "$T3_ID"
+s5v() { db_one "SELECT version FROM shift_schedule WHERE shift_id=$S5_IN;"; }
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"user_id\":null,\"version\":$(s5v)}"
+expect_code "Unassigning (user_id null) is not checked" 200
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"start_at\":\"${AC}T08:00:00+08:00\",\"end_at\":\"${AC}T12:00:00+08:00\",\"version\":$(s5v)}"
+expect_code "Moving an UNASSIGNED shift to any time is not checked" 200
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"user_id\":$T5_ID,\"version\":$(s5v)}"
+expect_code "Assigning it to T5 on a day with no window" 422
+mysql_exec "$VALDB" -e "UPDATE shift_schedule SET user_id=$T5_ID WHERE shift_id=$S5_IN;"
+api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"patrol_zone\":\"Zone legacy\",\"version\":$(s5v)}"
+expect_code "patrol_zone-only edit of a shift already outside availability is allowed" 200
+mysql_exec "$VALDB" -e "UPDATE tanod_availability SET status='accepted' WHERE user_id=$T5_ID;"
+mkshift "$ADMIN_T" "$T5_ID" "$AA" "09:00" "10:00"
+expect_code "A legacy 'accepted' row counts as availability like any other" 201
+mkshift "$ADMIN_T" "$ADMIN_ID" "$AZ" "08:00" "12:00"
+expect_code "Chief Tanod (admin account) is not checked (no availability screen)" 201
 
 step "13. Final spot checks"
 api GET "/shifts?limit=100&approval_status=draft" "$ADMIN_T" ""

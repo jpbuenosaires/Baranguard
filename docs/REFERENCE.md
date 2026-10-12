@@ -224,6 +224,30 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   2026-10-12: Admin/Secretary always see accomplishment entry text (they print
   it); every print is A4 (`@page` in `base.css`, A4-sized preview sheet).
   Rule 74.
+
+- **Workflow-gap fixes (2026-10-12, no migration; Rules 74-79 in
+  `docs/WORKFLOWS_AND_RULES.md`):** (1) an approved swap keeps a published
+  shift published (`swap_request_resolved.approval_reset` always false);
+  (2) paper is the only approval: `/accomplishment-reports/:id/note|approve`
+  and `/ssz-term-reports/:id/prepare|approve` answer 410
+  `PAPER_APPROVAL_REQUIRED`, `POST /shifts/publish` requires
+  `recorded_from_paper` from every caller (422), a PB holding `approve_roster`
+  may record it and may read `GET /users/directory?purpose=signer&authority=approve_roster`;
+  (3) `POST /ssz-term-reports/:id/record-paper-approval` accepts a `draft`
+  with `preparer_user_id` (prepare_annex_d, never the signer); (4) tanods
+  can go off duty offline: `duty_status_updates[]` items take an optional
+  `changed_at` (off_duty only; <= 5 min ahead, <= 62 days back, not before
+  the last on_duty/responding row, else 409), and a late off duty
+  recalculates suggested durations in open/returned months; (5) night offers
+  fall back to on-duty tanods whose availability covers now when no rostered
+  tanod qualifies (fixed `OfferService::FALLBACK_OVERRIDE_REASON`, audit
+  `fallback`/`offer_fallback` flags); (6) the Admin device session may
+  `PATCH /tanod-sos/:id/resolve` (signed write; six device writes now).
+  **Availability is fixed by the tanod:** `PATCH /availability/:id` answers
+  410 `AVAILABILITY_NOT_REVIEWED`, a tanod may change any period at any time,
+  and shift create/edit/swap approval refuse with 422 `OUTSIDE_AVAILABILITY`
+  when a tanod would be scheduled outside their windows (unassigned shifts
+  and Admin assignees not checked).
 - **Rule 12 amendment:** an Admin login with a well-formed `X-Device-Id` gets a
   device session (24h sliding, 7-day cap) limited to
   `SessionPolicy::ADMIN_DEVICE_ALLOWLIST` (anything else 403

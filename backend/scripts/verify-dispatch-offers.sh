@@ -206,6 +206,10 @@ INSERT INTO shift_schedule (barangay_id,user_id,patrol_zone,start_at,end_at,crea
 INSERT INTO shift_schedule (barangay_id,user_id,patrol_zone,start_at,end_at,created_by,approval_status,approved_by,approved_at) VALUES
   (1,$T8,'Z','2026-10-08 00:00:00','2026-10-08 10:00:00',$ADMIN_ID,'published',$PB_ID,UTC_TIMESTAMP());
 SQL
+# t4 (draft shift only) DECLARED availability covering the fake night: it must
+# still not be offered while a rostered tanod qualifies (roster fallback is a
+# fallback only).
+db_run "INSERT INTO tanod_availability (barangay_id,user_id,period_start,period_end,windows_json,status,client_event_id,created_at) VALUES (1,$T4,'2026-10-05','2026-10-11','[{\"date\":\"2026-10-08\",\"start\":\"18:00\",\"end\":\"23:59\"}]','submitted','$(uuid)',UTC_TIMESTAMP());"
 # devices (no FCM token -> straight to SMS, whose body lands in sms_log)
 for t in $T1 $T2 $T3 $T6 $TB2; do
   db_run "INSERT INTO mobile_device (device_id,user_id,platform,fcm_token,last_seen_at,is_active,created_at) VALUES ('dev-of-$t',$t,'android','',UTC_TIMESTAMP(),1,UTC_TIMESTAMP());"
@@ -281,6 +285,7 @@ OFFER1=$(db_one "SELECT offer_id FROM dispatch_offer WHERE incident_id=$INC1;")
 [ -n "$OFFER1" ] && pass "NIGHT: an offer #$OFFER1 was opened automatically" || fail "NIGHT: no offer opened"
 expect_eq "  status open, round 1, created_by NULL (system)" "$(offer_field $OFFER1 "CONCAT(status,'/',\`round\`,'/',IFNULL(created_by,'NULL'))")" "open/1/NULL"
 expect_eq "  recipients = exactly t1,t2 (off-duty, responding, draft shift, ended shift, busy, suspended, other barangay all excluded)" "$(recips $OFFER1)" "$T1,$T2"
+expect_eq "  roster first: t4 (draft shift, availability covers now) is NOT offered while rostered tanods qualify" "$(recip_status $OFFER1 $T4)" ""
 expect_eq "  expires_at is created_at + 180 s" "$(db_one "SELECT TIMESTAMPDIFF(SECOND,created_at,expires_at) FROM dispatch_offer WHERE offer_id=$OFFER1;")" "180"
 expect_eq "  created_at is the injected clock" "$(offer_field $OFFER1 "DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%sZ')")" "$FAKE_NIGHT"
 expect_eq "  incident stays pending (an offer is not a dispatch)" "$(db_one "SELECT status FROM incident WHERE incident_id=$INC1;")" "pending"
@@ -490,7 +495,7 @@ expect_eq "  alert targets the Admin(s) only (t2/secretary/pb excluded)" "$(db_o
 ASMS=$(db_one "SELECT message_body FROM sms_log WHERE receiver_number='+639170000100' AND message_body LIKE '%No Tanod has accepted%' ORDER BY log_id DESC LIMIT 1;")
 EXPECTED_ALERT="BARANGUARD PRIORITY ALERT: No Tanod has accepted: a vandalism incident reported in $B1NAME at $(db_one "SELECT DATE_FORMAT(DATE_ADD(created_at,INTERVAL 8 HOUR),'%H:%i') FROM dispatch_offer WHERE offer_id=$OFFER5;"). Assign a responder."
 expect_eq "  (exact alert text, Manila clock)" "$ASMS" "$EXPECTED_ALERT"
-expect_eq "  audit dispatch_offer_expired has ids/counts only" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='dispatch_offer_expired' AND entity_id=$OFFER5 ORDER BY audit_id DESC LIMIT 1;")" '["incident_id", "round_before", "round_after", "status_after", "recipient_count", "admin_alerted"]'
+expect_eq "  audit dispatch_offer_expired has ids/counts only" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='dispatch_offer_expired' AND entity_id=$OFFER5 ORDER BY audit_id DESC LIMIT 1;")" '["incident_id", "round_before", "round_after", "status_after", "recipient_count", "fallback", "admin_alerted"]'
 expect_eq "  the other expired offer (#$OFFER4B) also moved to round 2" "$(offer_field $OFFER4B "\`round\`")" "2"
 
 # round 2 -> 3
@@ -627,7 +632,7 @@ expect_eq "No narrative, names, contacts, coordinates or location text in any di
 expect_eq "Offer audit rows exist (opened/accepted/expired/reminder/closed/cancelled)" "$(db_one "SELECT COUNT(DISTINCT action) FROM audit_log WHERE action LIKE 'dispatch_offer%';")" "6"
 
 # ================================================================ roster paper
-step "14. POST /shifts/publish with recorded_from_paper"
+step "14. POST /shifts/publish with recorded_from_paper (required for every caller since 2026-10-12)"
 mk_draft() { db_run "INSERT INTO shift_schedule (barangay_id,user_id,patrol_zone,start_at,end_at,created_by,approval_status) VALUES (1,$1,'P','$2','$3',$ADMIN_ID,'draft');"; db_one "SELECT MAX(shift_id) FROM shift_schedule;"; }
 SH1=$(mk_draft $T4 '2026-11-02 00:00:00' '2026-11-02 08:00:00')
 SH2=$(mk_draft $T4 '2026-11-03 00:00:00' '2026-11-03 08:00:00')
@@ -636,11 +641,12 @@ SH4=$(mk_draft $T4 '2026-11-05 00:00:00' '2026-11-05 08:00:00')
 TODAY=$(date -u +%Y-%m-%d)
 paper() { printf '{"shift_ids":[%s],"recorded_from_paper":{"signer_user_id":%s,"signed_on":"%s"}}' "$1" "$2" "$3"; }
 api POST /shifts/publish "$SEC_T" "{\"shift_ids\":[$SH1]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary WITHOUT approve_roster and no paper record" 403
+expect_code "Secretary with no paper record" 422
+expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
 api POST /shifts/publish "$T1_T" "$(paper $SH1 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
 expect_code "Tanod cannot record from paper" 403
-api POST /shifts/publish "$PB_T" "$(paper $SH1 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
-expect_code "Punong Barangay cannot use the paper path (role admin|secretary only)" 403
+api POST /shifts/publish "$PB_T" "$(paper $SH1 $ADMIN_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
+expect_code "Punong Barangay recording: the named signer must still hold approve_roster" 422
 api POST /shifts/publish "$SEC_T" "$(paper $SH1 $ADMIN_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
 expect_code "Signer without approve_roster" 422
 api POST /shifts/publish "$SEC_T" "$(paper $SH1 $ADMIN2_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
@@ -672,10 +678,13 @@ api GET "/shifts?approval_status=published" "$ADMIN_T" ""
 SHOWN=$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["items"] as $r){ if($r["shift_id"]==(int)$argv[1]) echo $r["approval_mode"]."|".$r["paper_signed_on"]."|".$r["paper_recorded_by_name"]; }' $SH1)
 expect_eq "GET /shifts exposes approval_mode, paper_signed_on, paper_recorded_by_name" "$SHOWN" "recorded_from_paper|2026-10-05|OF Secretary"
 api POST /shifts/publish "$PB_T" "{\"shift_ids\":[$SH3]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Normal publish by an approve_roster holder is unchanged" 200
-expect_eq "  digital mode, no paper fields" "$(db_one "SELECT CONCAT(approval_mode,'/',IFNULL(paper_signed_on,'NULL'),'/',approved_by) FROM shift_schedule WHERE shift_id=$SH3;")" "digital/NULL/$PB_ID"
+expect_code "No in-app publish by an approve_roster holder any more (no paper)" 422
+expect_eq "  still a draft" "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$SH3;")" "draft"
+api POST /shifts/publish "$PB_T" "$(paper $SH3 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
+expect_code "Punong Barangay (approve_roster) records the paper roster they signed" 200
+expect_eq "  paper mode, signer and recorder are the PB" "$(db_one "SELECT CONCAT(approval_mode,'/',paper_signed_on,'/',approved_by,'/',paper_recorded_by) FROM shift_schedule WHERE shift_id=$SH3;")" "recorded_from_paper/$TODAY/$PB_ID/$PB_ID"
 api POST /shifts/publish "$ADMIN_T" "{\"shift_ids\":[$SH4]}" -H "Idempotency-Key: $(uuid)"
-expect_code "Admin without approve_roster and no paper record still 403" 403
+expect_code "Admin with no paper record" 422
 api POST /shifts/publish "$ADMIN_T" "$(paper $SH4 $PB_ID $TODAY)" -H "Idempotency-Key: $(uuid)"
 expect_code "Admin may record from paper" 200
 OTHER_T=$(login_as of_t4)
@@ -702,6 +711,100 @@ OFFERR=$(jget "$BODY" offer_id)
 expect_eq "  incident stays reopened until someone accepts" "$(db_one "SELECT status FROM incident WHERE incident_id=$INCR;")" "reopened"
 expect_eq "  offer audit carries ids only (no narrative)" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE entity_type='dispatch_offer' AND entity_id=$OFFERR AND metadata_json LIKE '%OF-INC-REOPEN%';")" "0"
 db_run "UPDATE dispatch_offer SET status='cancelled' WHERE offer_id=$OFFERR;"
+
+# ================================================================ roster fallback (gap #5)
+step "17. Roster fallback: no rostered tanod -> on-duty tanods whose OWN availability covers now"
+# Barangay 3 had no tanods at all (step 11). Fake now = 2026-10-08 21:00 Manila.
+mysql_exec "$VALDB" <<SQL
+INSERT INTO user (barangay_id, username, password_hash, full_name, role, contact_number, is_active, is_suspended, created_at) VALUES
+  (3, 'of_f9',  '$HASH', 'OF Fallback Nine',   'tanod', '+639170000009', 1, 0, UTC_TIMESTAMP()),
+  (3, 'of_f10', '$HASH', 'OF Fallback Ten',    'tanod', '+639170000010', 1, 0, UTC_TIMESTAMP()),
+  (3, 'of_f11', '$HASH', 'OF Fallback Eleven', 'tanod', '+639170000011', 1, 0, UTC_TIMESTAMP()),
+  (3, 'of_f12', '$HASH', 'OF Fallback Twelve', 'tanod', '+639170000012', 1, 0, UTC_TIMESTAMP()),
+  (3, 'of_f13', '$HASH', 'OF Fallback Thirteen','tanod','+639170000013', 1, 1, UTC_TIMESTAMP());
+SQL
+F9=$(uid of_f9); F10=$(uid of_f10); F11=$(uid of_f11); F12=$(uid of_f12); F13=$(uid of_f13)
+for t in $F9 $F10 $F11 $F13; do db_run "INSERT INTO duty_status (user_id,status,channel,changed_at) VALUES ($t,'on_duty','app',UTC_TIMESTAMP());"; done
+db_run "INSERT INTO duty_status (user_id,status,channel,changed_at) VALUES ($F12,'off_duty','app',UTC_TIMESTAMP());"
+db_run "INSERT INTO mobile_device (device_id,user_id,platform,fcm_token,last_seen_at,is_active,created_at) VALUES ('dev-of-$F9',$F9,'android','',UTC_TIMESTAMP(),1,UTC_TIMESTAMP());"
+# f10: DRAFT shift covering now (does not count) and availability only in the morning.
+db_run "INSERT INTO shift_schedule (barangay_id,user_id,patrol_zone,start_at,end_at,created_by,approval_status) VALUES (3,$F10,'Z','2026-10-08 08:00:00','2026-10-08 20:00:00',$ADMIN3_ID,'draft');"
+avail() { # user period_start period_end windows-json status
+  db_run "INSERT INTO tanod_availability (barangay_id,user_id,period_start,period_end,windows_json,status,client_event_id,created_at) VALUES (3,$1,'$2','$3','$4','$5','$(uuid)',UTC_TIMESTAMP());"
+}
+# f9 covers 21:00 (status 'submitted': availability is the tanod's own and is never negotiated)
+avail $F9  2026-10-05 2026-10-11 '[{"date":"2026-10-07","start":"18:00","end":"23:59"},{"date":"2026-10-08","start":"20:00","end":"23:00"}]' submitted
+# f10 is outside its availability at 21:00 (06:00-12:00 today; tomorrow evening)
+avail $F10 2026-10-05 2026-10-11 '[{"date":"2026-10-08","start":"06:00","end":"12:00"},{"date":"2026-10-09","start":"18:00","end":"23:59"}]' accepted
+# f11 declared nothing; f12 covers now but is off duty; f13 covers now but is suspended
+avail $F12 2026-10-05 2026-10-11 '[{"date":"2026-10-08","start":"18:00","end":"23:59"}]' submitted
+avail $F13 2026-10-05 2026-10-11 '[{"date":"2026-10-08","start":"18:00","end":"23:59"}]' submitted
+[ -n "$F9" ] && [ -n "$F13" ] && pass "Seeded barangay-3 tanods f9..f13 with availability" || fail "fallback seed failed"
+
+cat > "$TMP_DIR/availfilter.php" <<PHP
+<?php
+require '$BOOT_PATH';
+use Baranguard\Services\Dispatch\OfferService;
+\$ids = [(int) \$argv[1]];
+\$out = [];
+foreach (['2026-10-08T11:59:59Z', '2026-10-08T12:00:00Z', '2026-10-08T14:59:59Z', '2026-10-08T15:00:00Z', '2026-10-07T15:59:30Z'] as \$iso) {
+    \$out[] = count(OfferService::filterByAvailability(\$pdo, \$ids, 3, new DateTimeImmutable(\$iso)));
+}
+echo implode(',', \$out);
+PHP
+# f9 window 2026-10-08 20:00-23:00 Manila = 12:00Z-15:00Z; 2026-10-07 18:00-23:59 Manila covers 23:59:30 (end-of-day)
+expect_eq "Availability window bounds for f9 (19:59:59 no, 20:00 yes, 22:59:59 yes, 23:00 no, 23:59:30 on a '23:59' window yes)" "$(php_run "$FAKE_NIGHT" "$TMP_DIR/availfilter.php" $F9)" "0,1,1,0,1"
+
+db_run "INSERT INTO incident (barangay_id,incident_type,priority,raw_narrative,status,source,created_at,updated_at) VALUES (3,'theft','normal','OF-FB-1','pending','web',UTC_TIMESTAMP(),UTC_TIMESTAMP()),(3,'theft','normal','OF-FB-2','pending','web',UTC_TIMESTAMP(),UTC_TIMESTAMP());"
+INCF1=$(iid OF-FB-1); INCF2=$(iid OF-FB-2)
+api POST /dispatch-offers "$ADMIN3_T" "{\"incident_id\":$INCF1}" -H "Idempotency-Key: $(uuid)"
+expect_code "Open an offer in a barangay with NO rostered tanod" 201
+OFFERF1=$(jget "$BODY" offer_id)
+expect_eq "  open (not escalated), one recipient" "$(jget "$BODY" status)/$(jget "$BODY" recipient_count)" "open/1"
+expect_eq "  recipients = exactly f9 (f10 outside availability, f11 none declared, f12 off duty, f13 suspended)" "$(recips $OFFERF1)" "$F9"
+expect_eq "  a tanod outside their availability (f10) is not offered" "$(recip_status $OFFERF1 $F10)" ""
+expect_eq "  a tanod with no availability (f11) is not offered" "$(recip_status $OFFERF1 $F11)" ""
+expect_eq "  audit dispatch_offer_opened records fallback=true" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.fallback') FROM audit_log WHERE action='dispatch_offer_opened' AND entity_id=$OFFERF1;")" "true"
+expect_eq "  rostered offers record fallback=false (#$OFFER3)" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.fallback') FROM audit_log WHERE action='dispatch_offer_opened' AND entity_id=$OFFER3;")" "false"
+expect_eq "  the dispatch_offer notification targets f9 only" "$(db_one "SELECT GROUP_CONCAT(nt.user_id) FROM notification n JOIN notification_target nt ON nt.notification_id=n.notification_id WHERE n.dispatch_offer_id=$OFFERF1 AND n.notification_type='dispatch_offer';")" "$F9"
+expect_eq "  no Admin priority_alert (somebody was asked)" "$(db_one "SELECT COUNT(*) FROM notification WHERE dispatch_offer_id=$OFFERF1 AND notification_type='priority_alert';")" "0"
+
+F9_T=$(login_as of_f9)
+api POST "/dispatch-offers/$OFFERF1/accept" "$F9_T" "{\"request_id\":\"$(uuid)\"}" -H "$(dev $F9)"
+expect_code "Fallback recipient f9 accepts (no NO_PUBLISHED_SHIFT)" 200
+DF=$(jget "$BODY" dispatch_id)
+expect_eq "  dispatch row: f9, assigned" "$(db_one "SELECT CONCAT(tanod_id,'/',status) FROM dispatch WHERE dispatch_id=$DF;")" "$F9/assigned"
+FB_REASON='System: night offer accepted without a published shift (roster fallback: no rostered Tanod qualified; on duty within own declared availability).'
+expect_eq "  override_reason is the fixed system text" "$(db_one "SELECT override_reason FROM dispatch WHERE dispatch_id=$DF;")" "$FB_REASON"
+expect_eq "  audit dispatch_created: shift_override=true, offer_fallback=true, via_offer=true" "$(db_one "SELECT CONCAT(JSON_EXTRACT(metadata_json,'\$.shift_override'),'/',JSON_EXTRACT(metadata_json,'\$.offer_fallback'),'/',JSON_EXTRACT(metadata_json,'\$.via_offer')) FROM audit_log WHERE action='dispatch_created' AND entity_id=$DF;")" "true/true/true"
+expect_eq "  the reason text never enters audit metadata" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE metadata_json LIKE '%roster fallback%' OR metadata_json LIKE '%System:%';")" "0"
+expect_eq "  a ROSTERED accept stores no override_reason and offer_fallback=false (D1)" "$(db_one "SELECT CONCAT(IFNULL(d.override_reason,'NULL'),'/',JSON_EXTRACT(a.metadata_json,'\$.shift_override'),'/',JSON_EXTRACT(a.metadata_json,'\$.offer_fallback')) FROM dispatch d JOIN audit_log a ON a.action='dispatch_created' AND a.entity_id=d.dispatch_id WHERE d.dispatch_id=$D1;")" "NULL/false/false"
+
+api POST /dispatch-offers "$ADMIN3_T" "{\"incident_id\":$INCF2}" -H "Idempotency-Key: $(uuid)"
+OFFERF2=$(jget "$BODY" offer_id)
+expect_eq "Nobody qualifies either way (f9 now busy): created escalated, zero recipients" "$(jget "$BODY" status)/$(jget "$BODY" recipient_count)" "escalated/0"
+expect_eq "  audit fallback=false" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.fallback') FROM audit_log WHERE action='dispatch_offer_opened' AND entity_id=$OFFERF2;")" "false"
+# A rostered tanod appears (f10 gets a PUBLISHED shift) and f11 declares availability covering now:
+# the next round goes to the rostered tanod only.
+db_run "UPDATE shift_schedule SET approval_status='published', approved_by=$ADMIN3_ID, approved_at=UTC_TIMESTAMP() WHERE user_id=$F10;"
+avail $F11 2026-10-05 2026-10-11 '[{"date":"2026-10-08","start":"18:00","end":"23:59"}]' submitted
+db_run "UPDATE dispatch_offer SET expires_at='2026-10-08 12:59:00' WHERE offer_id=$OFFERF2;"
+php_run "$FAKE_NIGHT" "$BACKEND_DIR/scripts/dispatch-offer-sweeper.php" --once >/dev/null
+expect_eq "Sweeper re-broadcast: round 2 open, rostered f10 only (f11's availability is the fallback, not needed)" "$(offer_field $OFFERF2 "CONCAT(\`round\`,'/',status)")/$(recips $OFFERF2)" "2/open/$F10"
+expect_eq "  audit dispatch_offer_expired fallback=false" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.fallback') FROM audit_log WHERE action='dispatch_offer_expired' AND entity_id=$OFFERF2 ORDER BY audit_id DESC LIMIT 1;")" "false"
+# f10's shift goes back to draft: the next round falls back to f11 (availability covers now)
+db_run "UPDATE shift_schedule SET approval_status='draft' WHERE user_id=$F10; UPDATE dispatch_offer SET expires_at='2026-10-08 12:59:00' WHERE offer_id=$OFFERF2;"
+php_run "$FAKE_NIGHT" "$BACKEND_DIR/scripts/dispatch-offer-sweeper.php" --once >/dev/null
+expect_eq "Round 3 falls back to f11 (f10 outside availability is expired, not re-offered)" "$(offer_field $OFFERF2 "CONCAT(\`round\`,'/',status)")/$(recip_status $OFFERF2 $F11)/$(recip_status $OFFERF2 $F10)" "3/open/offered/expired"
+expect_eq "  audit dispatch_offer_expired fallback=true" "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.fallback') FROM audit_log WHERE action='dispatch_offer_expired' AND entity_id=$OFFERF2 ORDER BY audit_id DESC LIMIT 1;")" "true"
+db_run "UPDATE dispatch_offer SET status='cancelled' WHERE offer_id=$OFFERF2;"
+
+BASE_URL="$DAY_URL"
+db_run "INSERT INTO incident (barangay_id,incident_type,priority,raw_narrative,status,source,created_at,updated_at) VALUES (3,'theft','normal','OF-FB-DAY','pending','web',UTC_TIMESTAMP(),UTC_TIMESTAMP());"
+api POST /dispatch "$ADMIN3_T" "{\"incident_id\":$(iid OF-FB-DAY),\"tanod_id\":$F11,\"request_id\":\"$(uuid)\"}"
+expect_code "Daytime direct dispatch is unchanged: no published shift and no override_reason" 422
+expect_eq "  NO_PUBLISHED_SHIFT (availability does not replace the roster for direct dispatch)" "$(jget "$BODY" error.code)" "NO_PUBLISHED_SHIFT"
+BASE_URL="$NIGHT_URL"
 
 echo
 echo "================================================================"

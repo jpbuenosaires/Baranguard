@@ -3,7 +3,11 @@
 #   POST /accomplishment-reports/:id/paper-signature
 #   POST /accomplishment-reports/:id/record-paper-approval
 #   POST /ssz-term-reports/:id/paper-signature
-#   POST /ssz-term-reports/:id/record-paper-approval
+#   POST /ssz-term-reports/:id/record-paper-approval (draft -> approved with a
+#        paper preparer, or legacy prepared -> approved)
+#   the retired in-app approval endpoints (410 PAPER_APPROVAL_REQUIRED,
+#   paper-only decision 2026-10-12): accomplishment .../note and .../approve,
+#   Annex D .../prepare and .../approve
 #   POST|GET /document-scans, GET /document-scans/:id/download
 # against a REAL local XAMPP MariaDB + PHP.
 #
@@ -269,9 +273,6 @@ expect_eq "  tanod sees paper_pending too" "$(jget "$BODY" paper_pending)" "true
 api GET "/accomplishment-reports?status=approved&limit=100" "$ADM_T" ""
 expect_eq "List items carry the new fields" "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $ok=0; foreach($d["items"] as $i){ if(array_key_exists("paper_pending",$i)&&array_key_exists("approval_mode",$i)&&array_key_exists("paper_signed_on",$i)&&array_key_exists("paper_recorded_by_name",$i)&&array_key_exists("paper_recorded_at",$i)) $ok++; } echo $ok."/".count($d["items"]);')" "3/3"
 
-api GET "/accomplishment-reports?paper_pending=1&limit=100" "$SEC_T" ""
-expect_eq "paper_pending=1 lists only approved reports with no paper date (matches the DB)" "$(jget "$BODY" total)/$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $ok=0; foreach($d["items"] as $i){ if($i["status"]==="approved" && $i["paper_pending"]===true) $ok++; } echo $ok;')" "$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE barangay_id=1 AND status='approved' AND paper_signed_on IS NULL;")/$(db_one "SELECT COUNT(*) FROM accomplishment_report WHERE barangay_id=1 AND status='approved' AND paper_signed_on IS NULL;")"
-
 # ================================================================ B. paper-signature
 step "3. POST /accomplishment-reports/:id/paper-signature"
 PS_BODY="{\"paper_signed_on\":\"$YESTERDAY\"}"
@@ -408,11 +409,30 @@ expect_eq "  approved_by = the PB, recorder = admin" "$(jget "$BODY" approved_by
 api POST "/accomplishment-reports/$A_N5/record-paper-approval" "$ADM_T" "{\"signer_user_id\":\"$KAG_ID\",\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
 expect_code "signer_user_id sent as a digit string is accepted" 200
 
+# ================================================================ C2. retired in-app approval
+step "4b. In-app note/approve are retired: 410 PAPER_APPROVAL_REQUIRED (paper-only, 2026-10-12)"
+A_PREP_STATE=$(db_one "SELECT CONCAT(status,'/',version,'/',IFNULL(noted_by,'NULL'),'/',IFNULL(approved_by,'NULL')) FROM accomplishment_report WHERE report_id=$A_PREP;")
+api POST "/accomplishment-reports/$A_PREP/note" "$PB_T" '{}' -H "$(ik)"
+expect_code "PB (holds note_report) .../note on a prepared report" 410
+expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
+expect_eq "  message points at the signed paper" "$(jget "$BODY" error.message | grep -c 'record the signed paper')" "1"
+api POST "/accomplishment-reports/$A_PREP/approve" "$PB_T" '{}' -H "$(ik)"
+expect_code "PB (holds approve_report) .../approve on a prepared report" 410
+expect_eq "  error code PAPER_APPROVAL_REQUIRED" "$(jget "$BODY" error.code)" "PAPER_APPROVAL_REQUIRED"
+api POST "/accomplishment-reports/$A_N2/approve" "$KAG_T" '{}' -H "$(ik)"
+expect_code "Kagawad .../approve on a legacy noted report" 410
+api POST "/accomplishment-reports/$A_PREP/note" "$T1_T" '{}' -H "$(ik)"
+expect_code "Any caller gets the same answer (tanod .../note)" 410
+api POST "/accomplishment-reports/99999999/approve" "$PB_T" '{}' -H "$(ik)"
+expect_code "Unknown id: still 410 (refused before any lookup)" 410
+expect_eq "  refusals changed nothing" "$(db_one "SELECT CONCAT(status,'/',version,'/',IFNULL(noted_by,'NULL'),'/',IFNULL(approved_by,'NULL')) FROM accomplishment_report WHERE report_id=$A_PREP;")" "$A_PREP_STATE"
+expect_eq "  no note/approve audit rows" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action IN ('accomplishment_report_noted','accomplishment_report_approved');")" "0"
+
 # ================================================================ D. locked after approval
 step "5. An approved accomplishment report is locked on EVERY edit path"
 # Paths that write to an accomplishment report or its entries:
 #   POST /accomplishment-entries, PATCH /accomplishment-entries/:id, POST /sync/batch (accomplishment_entries[]),
-#   POST .../submit, .../note, .../approve, .../return, .../record-paper-approval.
+#   POST .../submit, .../return, .../record-paper-approval (.../note and .../approve are retired: 410).
 # The ONLY write an approved report accepts is .../paper-signature (a date; no content).
 ENTRY_COUNT_BEFORE=$(db_one "SELECT COUNT(*) FROM accomplishment_entry WHERE report_id=$A_LOCK;")
 LOCK_STATE_BEFORE=$(db_one "SELECT CONCAT(status,'/',version,'/',total_minutes_confirmed) FROM accomplishment_report WHERE report_id=$A_LOCK;")
@@ -427,9 +447,9 @@ expect_eq "  the sync item itself is reported failed" "$(printf '%s' "$BODY" | "
 api POST "/accomplishment-reports/$A_LOCK/submit" "$T1_T" '{}' -H "$(ik)"
 expect_code ".../submit by the owner" 409
 api POST "/accomplishment-reports/$A_LOCK/note" "$PB_T" '{}' -H "$(ik)"
-expect_code ".../note" 409
+expect_code ".../note (retired)" 410
 api POST "/accomplishment-reports/$A_LOCK/approve" "$PB_T" '{}' -H "$(ik)"
-expect_code ".../approve a second time" 409
+expect_code ".../approve (retired)" 410
 api POST "/accomplishment-reports/$A_LOCK/return" "$PB_T" '{"reason":"change my mind"}' -H "$(ik)"
 expect_code ".../return an approved report" 409
 api POST "/accomplishment-reports/$A_LOCK/return" "$KAG_T" '{"reason":"change my mind"}' -H "$(ik)"
@@ -455,18 +475,30 @@ mk_ssz() { # label -> report id (admin creates a draft)
   api POST "/ssz-term-reports" "$ADM_T" "{\"term_label\":\"$1\",\"term_start\":\"2026-06-01\",\"term_end\":\"2026-10-01\"}" -H "$(ik)"
   jget "$BODY" report_id
 }
-prep_ssz() { api POST "/ssz-term-reports/$1/prepare" "$ADM_T" '{}' -H "$(ik)"; }
-S_FLOW=$(mk_ssz "Flow Term"); prep_ssz "$S_FLOW"
-expect_code "Admin prepares the flow report" 200
+# In-app prepare/approve are retired (paper-only, 2026-10-12). Reports that
+# were prepared (or digitally approved) in-app before that are legacy rows,
+# seeded here straight into the DB as such.
+legacy_prep_ssz() { mysql_exec "$VALDB" -e "UPDATE ssz_term_report SET status='prepared', prepared_by=$ADM_ID, prepared_at=UTC_TIMESTAMP(), version=version+1 WHERE report_id=$1;"; }
+S_FLOW=$(mk_ssz "Flow Term")
+api POST "/ssz-term-reports/$S_FLOW/prepare" "$ADM_T" '{}' -H "$(ik)"
+expect_code "Admin (holds prepare_annex_d) .../prepare is retired" 410
+expect_eq "  error code PAPER_APPROVAL_REQUIRED, report still draft" "$(jget "$BODY" error.code)/$(db_one "SELECT status FROM ssz_term_report WHERE report_id=$S_FLOW;")" "PAPER_APPROVAL_REQUIRED/draft"
+legacy_prep_ssz "$S_FLOW"
 api POST "/ssz-term-reports/$S_FLOW/approve" "$PB_T" '{}' -H "$(ik)"
-expect_code "Punong Barangay approves digitally" 200
-expect_eq "  digital approval: approval_mode digital, paper_pending true" "$(jget "$BODY" approval_mode)/$(jget "$BODY" paper_pending)" "digital/true"
-S_REC=$(mk_ssz "Paper Term"); prep_ssz "$S_REC"
+expect_code "PB (holds approve_annex_d) .../approve is retired" 410
+expect_eq "  error code PAPER_APPROVAL_REQUIRED, report still prepared" "$(jget "$BODY" error.code)/$(db_one "SELECT status FROM ssz_term_report WHERE report_id=$S_FLOW;")" "PAPER_APPROVAL_REQUIRED/prepared"
+expect_eq "  no in-app prepare/approve audit rows" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action IN ('ssz_term_report_prepared','ssz_term_report_approved');")" "0"
+# S_FLOW becomes a legacy DIGITAL approval (approved in-app before 2026-10-12).
+mysql_exec "$VALDB" -e "UPDATE ssz_term_report SET status='approved', approved_by=$PB_ID, approved_at=UTC_TIMESTAMP(), version=version+1 WHERE report_id=$S_FLOW;"
+api GET "/ssz-term-reports/$S_FLOW" "$PB_T" ""
+expect_eq "  legacy digital approval: approval_mode digital, paper_pending true" "$(jget "$BODY" approval_mode)/$(jget "$BODY" paper_pending)" "digital/true"
+S_REC=$(mk_ssz "Paper Term"); legacy_prep_ssz "$S_REC"
 S_DRAFT=$(mk_ssz "Draft Term")
-S_BAD=$(mk_ssz "Refusal Term"); prep_ssz "$S_BAD"
+S_BAD=$(mk_ssz "Refusal Term"); legacy_prep_ssz "$S_BAD"
+S_DP=$(mk_ssz "Draft Paper Term")
 api POST "/ssz-term-reports" "$ADM2_T" '{"term_label":"B2 Term","term_start":"2026-06-01","term_end":"2026-10-01"}' -H "$(ik)"
 S_B2=$(jget "$BODY" report_id)
-[ -n "$S_FLOW" ] && [ -n "$S_REC" ] && [ -n "$S_DRAFT" ] && [ -n "$S_BAD" ] && [ -n "$S_B2" ] && pass "Created Annex D reports through the API (flow/paper/draft/refusal + a barangay 2 one)" || fail "Annex D fixture creation failed"
+[ -n "$S_FLOW" ] && [ -n "$S_REC" ] && [ -n "$S_DRAFT" ] && [ -n "$S_BAD" ] && [ -n "$S_DP" ] && [ -n "$S_B2" ] && pass "Created Annex D reports through the API (flow/paper/draft/refusal/draft-paper + a barangay 2 one)" || fail "Annex D fixture creation failed"
 
 api POST "/ssz-term-reports/$S_FLOW/paper-signature" "$T1_T" "$PS_BODY" -H "$(ik)"
 expect_code "Annex D paper-signature: tanod" 403
@@ -512,7 +544,7 @@ expect_code "Annex D record-paper-approval: future signed_on" 400
 api POST "/ssz-term-reports/$S_REC/record-paper-approval" "$ADM2_T" "{\"signer_user_id\":$PB2_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
 expect_code "Annex D record-paper-approval: cross-tenant" 404
 api POST "/ssz-term-reports/$S_DRAFT/record-paper-approval" "$SEC_T" "$SRP_BODY" -H "$(ik)"
-expect_code "Annex D record-paper-approval: draft" 409
+expect_code "Annex D record-paper-approval: draft without preparer_user_id" 400
 api POST "/ssz-term-reports/$S_FLOW/record-paper-approval" "$SEC_T" "$SRP_BODY" -H "$(ik)"
 expect_code "Annex D record-paper-approval: already approved" 409
 api POST "/ssz-term-reports/$S_BAD/record-paper-approval" "$SEC_T" "{\"signer_user_id\":$ADM_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
@@ -529,6 +561,8 @@ api POST "/ssz-term-reports/$S_BAD/record-paper-approval" "$SEC_T" "{\"signer_us
 expect_code "Annex D signer inactive" 422
 api POST "/ssz-term-reports/$S_BAD/record-paper-approval" "$SEC_T" "{\"signer_user_id\":$TAUTH_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
 expect_code "Annex D signer is a tanod" 422
+api POST "/ssz-term-reports/$S_BAD/record-paper-approval" "$SEC_T" "{\"preparer_user_id\":$KAG_ID,\"signer_user_id\":$PB_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
+expect_code "Annex D legacy prepared: preparer_user_id naming someone other than the recorded preparer" 409
 expect_eq "  refusals left the report prepared" "$(db_one "SELECT CONCAT(status,'/',approval_mode,'/',IFNULL(approved_by,'NULL')) FROM ssz_term_report WHERE report_id=$S_BAD;")" "prepared/digital/NULL"
 SRPA_KEY=$(uuid)
 api POST "/ssz-term-reports/$S_REC/record-paper-approval" "$SEC_T" "$SRP_BODY" -H "Idempotency-Key: $SRPA_KEY"
@@ -541,20 +575,53 @@ api POST "/ssz-term-reports/$S_REC/record-paper-approval" "$SEC_T" "$SRP_BODY" -
 expect_code "Annex D record-paper-approval replay" 200
 expect_eq "  one audit row; metadata ids/status only" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_type='ssz_term_report' AND entity_id=$S_REC;")/$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_type='ssz_term_report' AND entity_id=$S_REC LIMIT 1;")" '1/["report_id", "status", "signer_user_id", "idempotency_key"]'
 
+# Draft -> approved in one step: preparation comes from the paper too.
+dp_body() { echo "{\"preparer_user_id\":$1,\"signer_user_id\":$2,\"signed_on\":\"$YESTERDAY\"}"; }
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "{\"preparer_user_id\":\"abc\",\"signer_user_id\":$KAG_ID,\"signed_on\":\"$YESTERDAY\"}" -H "$(ik)"
+expect_code "Annex D draft: preparer_user_id not an integer" 400
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$PB_T" "$(dp_body "$ADM_ID" "$KAG_ID")" -H "$(ik)"
+expect_code "Annex D draft: Punong Barangay may not record (admin|secretary only)" 403
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "$(dp_body "$KAG_ID" "$KAG_ID")" -H "$(ik)"
+expect_code "Annex D draft: preparer and signer are the same person" 409
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "$(dp_body "$ADM2_ID" "$KAG_ID")" -H "$(ik)"
+expect_code "Annex D draft: preparer in another barangay -> 404" 404
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "$(dp_body 99999999 "$KAG_ID")" -H "$(ik)"
+expect_code "Annex D draft: preparer id does not exist -> 404" 404
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "$(dp_body "$SEC2_ID" "$KAG_ID")" -H "$(ik)"
+expect_code "Annex D draft: preparer lacks prepare_annex_d" 422
+expect_eq "  ...message names the preparer" "$(jget "$BODY" error.message | grep -c 'preparer')" "1"
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "$(dp_body "$TAUTH_ID" "$KAG_ID")" -H "$(ik)"
+expect_code "Annex D draft: preparer is a tanod" 422
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "$(dp_body "$KAG_ID" "$ADM_ID")" -H "$(ik)"
+expect_code "Annex D draft: signer lacks approve_annex_d" 422
+expect_eq "  refusals left the report a draft, nobody named" "$(db_one "SELECT CONCAT(status,'/',IFNULL(prepared_by,'NULL'),'/',IFNULL(approved_by,'NULL'),'/',version) FROM ssz_term_report WHERE report_id=$S_DP;")" "draft/NULL/NULL/1"
+SDP_KEY=$(uuid)
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "$(dp_body "$ADM_ID" "$PB_ID")" -H "Idempotency-Key: $SDP_KEY"
+expect_code "Annex D draft -> approved from paper (Admin prepared, PB signed)" 200
+expect_eq "  status/prepared_by/approved_by/approval_mode" "$(jget "$BODY" status)/$(jget "$BODY" prepared_by)/$(jget "$BODY" approved_by)/$(jget "$BODY" approval_mode)" "approved/$ADM_ID/$PB_ID/recorded_from_paper"
+expect_eq "  names: preparer / signer / recorder" "$(jget "$BODY" prepared_by_name)/$(jget "$BODY" approved_by_name)/$(jget "$BODY" paper_recorded_by_name)" "PA Admin/PA Punong/PA Secretary"
+expect_eq "  prepared_at and approved_at set, paper date known" "$(db_one "SELECT CONCAT(prepared_at IS NOT NULL,'/',approved_at IS NOT NULL,'/',paper_signed_on) FROM ssz_term_report WHERE report_id=$S_DP;")/$(jget "$BODY" paper_pending)" "1/1/$YESTERDAY/false"
+expect_eq "  counts frozen at recording (total_tanods = active tanods)" "$(jget "$BODY" total_tanods)" "$(db_one "SELECT COUNT(*) FROM user WHERE barangay_id=1 AND role='tanod' AND is_active=1;")"
+expect_eq "  one audit row; metadata ids/status only (with the preparer)" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_type='ssz_term_report' AND entity_id=$S_DP;")/$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_type='ssz_term_report' AND entity_id=$S_DP LIMIT 1;")" '1/["report_id", "status", "signer_user_id", "preparer_user_id", "idempotency_key"]'
+expect_eq "  audit preparer/signer ids" "$(db_one "SELECT CONCAT(JSON_EXTRACT(metadata_json,'\$.preparer_user_id'),'/',JSON_EXTRACT(metadata_json,'\$.signer_user_id')) FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_type='ssz_term_report' AND entity_id=$S_DP LIMIT 1;")" "$ADM_ID/$PB_ID"
+api POST "/ssz-term-reports/$S_DP/record-paper-approval" "$SEC_T" "$(dp_body "$ADM_ID" "$PB_ID")" -H "Idempotency-Key: $SDP_KEY"
+expect_code "Annex D draft record replay" 200
+expect_eq "  still one audit row, same version" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='approval_recorded_from_paper' AND entity_type='ssz_term_report' AND entity_id=$S_DP;")/$(jget "$BODY" version)" "1/2"
+
 # Lock: an approved Annex D report
-# Paths that write to a term report: PATCH /:id (draft only), /prepare (draft only), /approve (prepared only),
-# /record-paper-approval (prepared only), /mark-submitted (approved -> submitted, the intended forward step).
-for sid in "$S_FLOW" "$S_REC"; do
+# Paths that write to a term report: PATCH /:id (draft only), /record-paper-approval (draft or prepared only),
+# /mark-submitted (approved -> submitted, the intended forward step). /prepare and /approve are retired (410).
+for sid in "$S_FLOW" "$S_REC" "$S_DP"; do
   api PATCH "/ssz-term-reports/$sid" "$ADM_T" '{"remarks":"edited after approval"}' -H "$(ik)"
   expect_code "Annex D #$sid: PATCH after approval" 409
   api POST "/ssz-term-reports/$sid/prepare" "$ADM_T" '{}' -H "$(ik)"
-  expect_code "Annex D #$sid: prepare again" 409
+  expect_code "Annex D #$sid: prepare (retired)" 410
   api POST "/ssz-term-reports/$sid/approve" "$PB_T" '{}' -H "$(ik)"
-  expect_code "Annex D #$sid: approve again" 409
+  expect_code "Annex D #$sid: approve (retired)" 410
   api POST "/ssz-term-reports/$sid/record-paper-approval" "$SEC_T" "$SRP_BODY" -H "$(ik)"
   expect_code "Annex D #$sid: record-paper-approval again" 409
 done
-expect_eq "  remarks untouched on the approved reports" "$(db_one "SELECT COUNT(*) FROM ssz_term_report WHERE report_id IN ($S_FLOW,$S_REC) AND remarks IS NOT NULL;")" "0"
+expect_eq "  remarks untouched on the approved reports" "$(db_one "SELECT COUNT(*) FROM ssz_term_report WHERE report_id IN ($S_FLOW,$S_REC,$S_DP) AND remarks IS NOT NULL;")" "0"
 
 # ================================================================ F. scans
 step "7. Scan fixtures"

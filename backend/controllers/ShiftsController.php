@@ -128,6 +128,7 @@ final class ShiftsController
             if ($sourceAvailabilityId !== null) {
                 self::assertSourceAvailability($pdo, $sourceAvailabilityId, $userId, $identity['barangay_id']);
             }
+            self::assertWithinAvailability($pdo, $userId, $startAt, $endAt);
 
             // approval_status is left to its column default ('draft'):
             // a new shift is never visible to the Tanod until published.
@@ -199,9 +200,10 @@ final class ShiftsController
         if ($identity['role'] === 'tanod') {
             $where[] = 'user_id = :user_id';
             $params['user_id'] = $identity['user_id'];
-            // A published shift, OR one of the Tanod's own whose approved swap
-            // is waiting for the roster to be re-approved (migration 0035) —
-            // the Tanod keeps seeing a shift that is still theirs.
+            // A published shift, OR one of the Tanod's own still flagged
+            // pending_reapproval (migration 0035; only rows from approved swaps
+            // before 2026-10-12 — an approved swap now keeps the shift
+            // published) — the Tanod keeps seeing a shift that is still theirs.
             $where[] = "(approval_status = 'published' OR pending_reapproval = 1)";
         } else {
             $approvalFilter = Http::query('approval_status');
@@ -293,7 +295,10 @@ final class ShiftsController
             }
 
             $hasUserId = array_key_exists('user_id', $body);
-            $newUserId = $hasUserId ? $body['user_id'] : (int) $row['user_id'];
+            // An untouched user_id keeps the row's own value, including NULL
+            // (an unassigned shift): `(int) null` would turn it into user 0 and
+            // a time-only edit of an unassigned shift would 422.
+            $newUserId = $hasUserId ? $body['user_id'] : ($row['user_id'] !== null ? (int) $row['user_id'] : null);
             if ($hasUserId && $newUserId !== null) {
                 if (!is_int($newUserId) && !(is_string($newUserId) && ctype_digit($newUserId))) {
                     throw new ApiError(400, 'VALIDATION_ERROR', 'user_id must be an integer or null.');
@@ -325,6 +330,15 @@ final class ShiftsController
                 self::assertTanodEligible($pdo, $newUserId, $identity['barangay_id'], true);
                 self::assertNoOverlap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
                 self::assertDailyHoursCap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
+                // Availability is checked only when the assignee or the times
+                // change, so a patrol-zone-only edit of an older shift is not
+                // refused over a rule that did not exist when it was made.
+                $timesOrAssigneeChanged = $newUserId !== $oldUserId
+                    || $newStartAt->format('Y-m-d H:i:s') !== (string) $row['start_at']
+                    || $newEndAt->format('Y-m-d H:i:s') !== (string) $row['end_at'];
+                if ($timesOrAssigneeChanged) {
+                    self::assertWithinAvailability($pdo, $newUserId, $newStartAt, $newEndAt);
+                }
             }
             // Unassigning (user_id -> null) is no longer blocked on coverage
             // grounds (contract section 8): zero coverage is surfaced as a
@@ -341,7 +355,7 @@ final class ShiftsController
             $approvalSql = $approvalReset
                 ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL"
                 : '';
-            // A shift waiting on re-approval after an approved swap belongs to
+            // A (legacy) shift still flagged pending_reapproval belongs to
             // the swap's new holder; handing it to someone else clears the
             // waiting state (the new holder never swapped). A time-only edit
             // leaves it as it is.
@@ -499,6 +513,87 @@ final class ShiftsController
         }
     }
 
+    /**
+     * Owner decision 2026-10-12: availability is the tanod's own fixed
+     * statement, so a tanod may only be scheduled inside it. Refuses
+     * (422 `OUTSIDE_AVAILABILITY`) a shift for a `tanod` account unless every
+     * minute of [$startAt, $endAt) falls inside the union of the windows the
+     * tanod submitted (any `tanod_availability` row of theirs, whatever its
+     * legacy status). Windows are Asia/Manila local times; a window ending
+     * 23:59 counts as running to midnight so a night shift can span two
+     * consecutive windows (22:00-23:59 then 00:00-06:00).
+     *
+     * Not checked: an unassigned shift (callers pass only a real user id) and
+     * an `admin` assignee (the Chief Tanod is rostered from an admin account
+     * and has no availability screen). Reusable from any scheduling path
+     * (shift create/update, swap approval). Read-only; call it inside the
+     * same transaction as the other assert* helpers.
+     */
+    public static function assertWithinAvailability(PDO $pdo, int $userId, \DateTimeImmutable $startAt, \DateTimeImmutable $endAt): void
+    {
+        $userStmt = $pdo->prepare('SELECT role, full_name FROM user WHERE user_id = :user_id LIMIT 1');
+        $userStmt->execute(['user_id' => $userId]);
+        $user = $userStmt->fetch(PDO::FETCH_ASSOC);
+        if ($user === false || $user['role'] !== 'tanod') {
+            return;
+        }
+
+        $firstDay = RosterSupport::manilaDateOf($startAt);
+        $lastDay = RosterSupport::manilaDateOf($endAt->modify('-1 second'));
+        $stmt = $pdo->prepare(
+            'SELECT windows_json FROM tanod_availability
+              WHERE user_id = :user_id AND period_start <= :last_day AND period_end >= :first_day'
+        );
+        $stmt->execute(['user_id' => $userId, 'first_day' => $firstDay, 'last_day' => $lastDay]);
+
+        $manila = new \DateTimeZone(RosterSupport::MANILA_OFFSET);
+        $windows = [];   // "date start-end" => [startTs, endTs], de-duplicated
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $json) {
+            $decoded = json_decode((string) $json, true);
+            foreach (is_array($decoded) ? $decoded : [] as $w) {
+                if (!is_array($w) || !isset($w['date'], $w['start'], $w['end'])) {
+                    continue;
+                }
+                $date = (string) $w['date'];
+                if ($date < $firstDay || $date > $lastDay) {
+                    continue;
+                }
+                $from = new \DateTimeImmutable("{$date} {$w['start']}:00", $manila);
+                $to = $w['end'] === '23:59'
+                    ? (new \DateTimeImmutable("{$date} 00:00:00", $manila))->modify('+1 day')
+                    : new \DateTimeImmutable("{$date} {$w['end']}:00", $manila);
+                $windows["{$date} {$w['start']}-{$w['end']}"] = [$from->getTimestamp(), $to->getTimestamp()];
+            }
+        }
+
+        // Walk the shift forward through the windows sorted by start.
+        $intervals = array_values($windows);
+        usort($intervals, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        $cursor = $startAt->getTimestamp();
+        $end = $endAt->getTimestamp();
+        foreach ($intervals as [$from, $to]) {
+            if ($from > $cursor) {
+                break;
+            }
+            $cursor = max($cursor, $to);
+            if ($cursor >= $end) {
+                return;
+            }
+        }
+
+        $name = (string) $user['full_name'];
+        $days = $firstDay === $lastDay ? $firstDay : "{$firstDay} to {$lastDay}";
+        if ($windows === []) {
+            $message = "{$name} has not submitted availability for {$days}, so they cannot be scheduled then.";
+        } else {
+            $labels = array_keys($windows);
+            sort($labels);
+            $message = "This shift is outside {$name}'s submitted availability. Available on {$days}: "
+                . implode(', ', $labels) . ' (Asia/Manila).';
+        }
+        throw new ApiError(422, 'OUTSIDE_AVAILABILITY', $message);
+    }
+
     private static function overlapSeconds(\DateTimeImmutable $aStart, \DateTimeImmutable $aEnd, \DateTimeImmutable $bStart, \DateTimeImmutable $bEnd): int
     {
         $start = max($aStart->getTimestamp(), $bStart->getTimestamp());
@@ -517,8 +612,10 @@ final class ShiftsController
     }
 
     /**
-     * POST /shifts/publish — contract section 3. Requires the
-     * `approve_roster` authority (not just a role). Moves the named draft
+     * POST /shifts/publish — contract section 3. Paper-only (2026-10-12):
+     * Admin/Secretary, or a Punong Barangay holding `approve_roster`, records
+     * the signed paper roster (`recorded_from_paper`, required; the signer
+     * must hold `approve_roster`). Moves the named draft
      * shifts to `published`; already-published ids are reported, not
      * errors. Any id that is missing or belongs to another barangay makes
      * the WHOLE call a 404 (existence is never confirmed). Coverage is
@@ -542,26 +639,26 @@ final class ShiftsController
     {
         $body = Http::jsonBody();
 
-        // Wave 2 (migration 0038): `recorded_from_paper: {signer_user_id,
-        // signed_on}` lets an Admin/Secretary record a roster that was
-        // approved ON PAPER by someone holding `approve_roster`, without
-        // holding that authority themselves. Absent -> unchanged behaviour
-        // (the caller must hold approve_roster).
-        $paper = null;
-        if (array_key_exists('recorded_from_paper', $body) && $body['recorded_from_paper'] !== null) {
-            AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
-            $rec = $body['recorded_from_paper'];
-            if (!is_array($rec)) {
-                throw new ApiError(400, 'VALIDATION_ERROR', 'recorded_from_paper must be an object {signer_user_id, signed_on}.');
-            }
-            $paper = [
-                'signer_user_id' => PaperApproval::requirePositiveInt($rec['signer_user_id'] ?? null, 'signer_user_id'),
-                'signed_on' => PaperApproval::requirePastOrTodayDate($rec['signed_on'] ?? null, 'signed_on'),
-            ];
-        } else {
+        // Paper-only (2026-10-12): the signed paper roster is the approval,
+        // so `recorded_from_paper: {signer_user_id, signed_on}` is required
+        // from EVERY caller. Admin/Secretary record it; a Punong Barangay
+        // holding approve_roster may too (naming themselves or another
+        // holder). Order: 403 (caller) -> 422 (no paper) -> 400 (shape).
+        if (!in_array($identity['role'], ['admin', 'secretary'], true)) {
             ApprovalAuthority::require($pdo, $identity, ApprovalAuthority::APPROVE_ROSTER);
         }
-        $auditAction = $paper !== null ? 'roster_published_from_paper' : 'roster_published';
+        $rec = $body['recorded_from_paper'] ?? null;
+        if ($rec === null) {
+            throw new ApiError(422, PaperApproval::REQUIRED_CODE, 'Publishing needs the signed paper roster: send recorded_from_paper {signer_user_id, signed_on}.');
+        }
+        if (!is_array($rec)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'recorded_from_paper must be an object {signer_user_id, signed_on}.');
+        }
+        $paper = [
+            'signer_user_id' => PaperApproval::requirePositiveInt($rec['signer_user_id'] ?? null, 'signer_user_id'),
+            'signed_on' => PaperApproval::requirePastOrTodayDate($rec['signed_on'] ?? null, 'signed_on'),
+        ];
+        $auditAction = 'roster_published_from_paper';
         $idempotencyKey = RosterSupport::requireIdempotencyKey();
 
         $rawIds = $body['shift_ids'] ?? null;
@@ -594,11 +691,7 @@ final class ShiftsController
 
         // Who signed on paper: unknown / other-barangay id -> 404, a same-
         // barangay user who may not approve rosters -> 422 (PaperApproval).
-        $signerId = $identity['user_id'];
-        if ($paper !== null) {
-            $signer = PaperApproval::requireSigner($pdo, (int) $identity['barangay_id'], $paper['signer_user_id'], ApprovalAuthority::APPROVE_ROSTER);
-            $signerId = $signer['user_id'];
-        }
+        $signerId = PaperApproval::requireSigner($pdo, (int) $identity['barangay_id'], $paper['signer_user_id'], ApprovalAuthority::APPROVE_ROSTER)['user_id'];
 
         $pdo->beginTransaction();
         try {

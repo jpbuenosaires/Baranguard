@@ -35,12 +35,31 @@ use PDO;
  * `applyToggle()` (Sprint 3 cut) is `public` so `SyncController::batch()`
  * (POST /sync/batch's `duty_status_updates[]` items) reuses the exact same
  * lookup-then-insert logic `create()` already used inline.
+ *
+ * OFFLINE OFF-DUTY (closes the A4 / Rule 49 gap): going OFF duty may be
+ * queued on the device while offline and arrive later through
+ * `/sync/batch`'s `duty_status_updates[]` carrying the device's real tap
+ * time as `changed_at`. `applyToggle()` then records the row AT THAT TIME
+ * (not the arrival time), so the suggested duty duration
+ * (`AccomplishmentController::computeSuggestedMinutes()`) ends the on-duty
+ * interval when the Tanod actually went off duty. Going ON duty stays
+ * online-only: a client `changed_at` is refused for any status other than
+ * off_duty. Validation of the client time: not more than
+ * FUTURE_SKEW_SECONDS ahead of the server clock, not older than
+ * MAX_BACKDATE_DAYS, and not before the Tanod's latest on_duty/responding
+ * row (the off-duty must close the shift it belongs to). The active-
+ * dispatch block (H-02) applies exactly as for a live toggle, so a queued
+ * off-duty is rejected while the server still sees an active dispatch.
  */
 final class DutyStatusController
 {
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
     private const VALID_STATUSES = ['on_duty', 'responding', 'off_duty'];
+    /** Tolerated device-clock skew for a client changed_at (matches GpsController / SchoolCheckinsController). */
+    private const FUTURE_SKEW_SECONDS = 300;
+    /** Oldest client changed_at accepted (matches the other offline-queued kinds' 62-day window). */
+    private const MAX_BACKDATE_DAYS = 62;
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
@@ -123,10 +142,19 @@ final class DutyStatusController
      *        caller that passes 'sms', and only after resolving the
      *        caller's identity server-side from the device mapping, never
      *        from anything embedded in the SMS payload.
+     * @param mixed $clientChangedAt Optional device time (ISO-8601 with Z or
+     *        offset) of a queued OFF-duty toggle — see the class doc. Only
+     *        `SyncController` passes it; null keeps the server-time behaviour.
      * @return array{status_id:int,status:string,channel:string,changed_at:string,wasCreated:bool}
      */
-    public static function applyToggle(PDO $pdo, array $identity, string $status, mixed $clientEventId, string $channel = 'app', mixed $clientEventTime = null): array
-    {
+    public static function applyToggle(
+        PDO $pdo,
+        array $identity,
+        string $status,
+        mixed $clientEventId,
+        string $channel = 'app',
+        mixed $clientChangedAt = null
+    ): array {
         if (!in_array($status, self::VALID_STATUSES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of on_duty, responding, off_duty.');
         }
@@ -151,6 +179,18 @@ final class DutyStatusController
                 'changed_at' => $existing['changed_at'],
                 'wasCreated' => false,
             ];
+        }
+
+        // Client-timestamped (queued offline) toggle: validated AFTER the
+        // idempotent-retry return above, so a replay of an already-recorded
+        // event still short-circuits to the original row even once its
+        // changed_at has aged out of the window.
+        $changedAt = null;
+        if ($clientChangedAt !== null) {
+            if ($status !== 'off_duty') {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'changed_at is only accepted for off_duty; going on duty is online-only.');
+            }
+            $changedAt = self::validateClientChangedAt($pdo, (int) $identity['user_id'], $clientChangedAt);
         }
 
         // Code-review finding H-02 (2026-09-24): nothing here checked
@@ -182,11 +222,16 @@ final class DutyStatusController
             'status' => $status,
             'channel' => in_array($channel, ['app', 'sms'], true) ? $channel : 'app',
             'client_event_id' => $clientEventId,
-            // Sync items only: plausible client time (ClientEventTime), else
-            // null -> server time. Online callers never pass one.
-            'changed_at' => ClientEventTime::eventOrServerTime($clientEventTime),
+            'changed_at' => $changedAt?->format('Y-m-d H:i:s'),
         ]);
         $statusId = (int) $pdo->lastInsertId();
+
+        // Accomplishment entries already written for the days this back-dated
+        // off-duty now cuts short carry a suggested duration computed while
+        // the shift still looked open; refresh them (editable months only).
+        if ($changedAt !== null) {
+            AccomplishmentController::refreshSuggestedSince($pdo, (int) $identity['user_id'], $changedAt);
+        }
 
         $readBack = $pdo->prepare('SELECT status, channel, changed_at FROM duty_status WHERE status_id = :id');
         $readBack->execute(['id' => $statusId]);
@@ -199,6 +244,51 @@ final class DutyStatusController
             'changed_at' => $created['changed_at'],
             'wasCreated' => true,
         ];
+    }
+
+    /**
+     * Parses and range-checks a queued off-duty's device time. Returns it
+     * in UTC, truncated to whole seconds (`duty_status.changed_at` is a
+     * DATETIME).
+     */
+    private static function validateClientChangedAt(PDO $pdo, int $userId, mixed $value): \DateTimeImmutable
+    {
+        if (!is_string($value)
+            || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:?\d{2})$/', $value)
+        ) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'changed_at must be an ISO-8601 timestamp with a Z or UTC offset.');
+        }
+        try {
+            $parsed = (new \DateTimeImmutable($value))->setTimezone(new \DateTimeZone('UTC'));
+        } catch (\Exception) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'changed_at must be an ISO-8601 timestamp with a Z or UTC offset.');
+        }
+        $parsed = $parsed->setTime((int) $parsed->format('H'), (int) $parsed->format('i'), (int) $parsed->format('s'));
+
+        $now = time();
+        if ($parsed->getTimestamp() > $now + self::FUTURE_SKEW_SECONDS) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'changed_at cannot be in the future.');
+        }
+        if ($parsed->getTimestamp() < $now - self::MAX_BACKDATE_DAYS * 86400) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'changed_at cannot be more than ' . self::MAX_BACKDATE_DAYS . ' days in the past.');
+        }
+
+        $lastOnStmt = $pdo->prepare(
+            "SELECT MAX(changed_at) FROM duty_status WHERE user_id = :user_id AND status IN ('on_duty','responding')"
+        );
+        $lastOnStmt->execute(['user_id' => $userId]);
+        $lastOn = $lastOnStmt->fetchColumn();
+        if (is_string($lastOn) && $lastOn !== '') {
+            $lastOnAt = new \DateTimeImmutable($lastOn, new \DateTimeZone('UTC'));
+            if ($parsed < $lastOnAt) {
+                throw new ApiError(409, 'CONFLICT', 'changed_at is before your last on-duty record; this off-duty cannot be recorded.');
+            }
+        }
+
+        // A future-skewed (but tolerated) device time is clamped to the
+        // server clock so no duty_status row is ever dated in the future.
+        $serverNow = new \DateTimeImmutable('@' . $now);
+        return $parsed > $serverNow ? $serverNow : $parsed;
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */

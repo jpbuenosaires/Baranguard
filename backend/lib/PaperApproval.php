@@ -18,11 +18,36 @@ use PDO;
  * Baranguard is the working copy, not the legal original: the paper stays
  * the signed record, and this only tracks that it exists, who recorded it
  * and when. Both endpoints are admin|secretary and need an Idempotency-Key.
+ *
+ * Paper-only (2026-10-12): the signed paper is the ONLY approval path. The
+ * old in-app approval endpoints (accomplishment note/approve, Annex D
+ * prepare/approve) are kept as routes but refuse with
+ * {@see self::refuseInApp()}, and POST /shifts/publish needs
+ * `recorded_from_paper` for every caller.
  */
 final class PaperApproval
 {
     public const MODE_DIGITAL = 'digital';
     public const MODE_PAPER = 'recorded_from_paper';
+
+    public const REQUIRED_CODE = 'PAPER_APPROVAL_REQUIRED';
+
+    /**
+     * 410 PAPER_APPROVAL_REQUIRED for a retired in-app approval endpoint.
+     * Thrown before any lookup, so it never confirms whether the id exists.
+     *
+     * @param string $action  what the caller tried, e.g. "Noting an accomplishment report"
+     * @param string $recordPath the endpoint to use instead
+     */
+    public static function refuseInApp(string $action, string $recordPath): never
+    {
+        throw new ApiError(
+            410,
+            self::REQUIRED_CODE,
+            "{$action} in the app is no longer supported: the signed paper is the approval. "
+            . "Print it, have it signed, then record the signed paper ({$recordPath})."
+        );
+    }
 
     /** A paper date may not be a future Manila date. Strict YYYY-MM-DD, else 400. */
     public static function requirePastOrTodayDate(mixed $value, string $field): string
@@ -47,7 +72,8 @@ final class PaperApproval
     }
 
     /**
-     * Resolves the person who signed on paper. They must be an active,
+     * Resolves the person who signed on paper (or, with $authority =
+     * prepare_annex_d, the person who prepared it on paper). They must be an active,
      * unsuspended user of the SAME barangay with an eligible role holding
      * `$authority`.
      *
@@ -57,8 +83,14 @@ final class PaperApproval
      *
      * @return array{user_id:int,barangay_id:int,role:string}
      */
-    public static function requireSigner(PDO $pdo, int $barangayId, int $signerUserId, string $authority): array
-    {
+    public static function requireSigner(
+        PDO $pdo,
+        int $barangayId,
+        int $signerUserId,
+        string $authority,
+        string $notFound = 'Signer not found.',
+        string $notDesignated = 'The named signer is not designated to approve this document.',
+    ): array {
         $stmt = $pdo->prepare(
             'SELECT user_id, barangay_id, role, is_active, is_suspended, approval_authority
              FROM user WHERE user_id = :id AND barangay_id = :b LIMIT 1'
@@ -66,7 +98,7 @@ final class PaperApproval
         $stmt->execute(['id' => $signerUserId, 'b' => $barangayId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($row === false) {
-            throw new ApiError(404, 'NOT_FOUND', 'Signer not found.');
+            throw new ApiError(404, 'NOT_FOUND', $notFound);
         }
         $held = $row['approval_authority'] === null || $row['approval_authority'] === ''
             ? []
@@ -76,7 +108,7 @@ final class PaperApproval
             || !in_array($row['role'], ApprovalAuthority::ELIGIBLE_ROLES, true)
             || !in_array($authority, $held, true)
         ) {
-            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'The named signer is not designated to approve this document.');
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', $notDesignated);
         }
         return ['user_id' => (int) $row['user_id'], 'barangay_id' => (int) $row['barangay_id'], 'role' => (string) $row['role']];
     }
