@@ -23,16 +23,3 @@ export const DISPATCH_STATUS_LABELS = Object.freeze({
   completed: 'Completed',
   cancelled: 'Cancelled',
 });
-
-function humanise(value) {
-  const text = String(value ?? '').replace(/_/g, ' ').trim();
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'Unknown';
-}
-
-export function incidentStatusLabel(status) {
-  return INCIDENT_STATUS_LABELS[status] || humanise(status);
-}
-
-export function dispatchStatusLabel(status) {
-  return DISPATCH_STATUS_LABELS[status] || humanise(status);
-}

@@ -44,7 +44,6 @@ import {
   checkmarkCircle,
   checkmarkCircleOutline,
   checkmarkOutline,
-  compassOutline,
   copyOutline,
   documentTextOutline,
   flameOutline,
@@ -56,7 +55,6 @@ import {
   pawOutline,
   refreshOutline,
   shieldCheckmarkOutline,
-  stopOutline,
   syncOutline,
   timeOutline,
   warningOutline,
@@ -103,13 +101,6 @@ const STATUS_LABEL: Record<string, string> = {
   en_route: 'En Route',
   arrived: 'Arrived at Scene',
   completed: 'Completed',
-};
-
-const STEPPER_LABELS: Record<string, string> = {
-  assigned: 'Assigned',
-  en_route: 'En Route',
-  arrived: 'On Scene',
-  completed: 'Resolved',
 };
 
 const STAGE_ORDER: Record<string, number> = {

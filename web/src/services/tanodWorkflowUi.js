@@ -153,12 +153,6 @@ export function toManilaDatetimeLocal(value) {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
 
-/** `YYYY-MM-DD` plus `days` calendar days (pure date arithmetic, no time zone involved). */
-export function addDaysToDateKey(dateKey, days) {
-  const [y, m, d] = dateKey.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
 const MANILA_MONTH_DAY = new Intl.DateTimeFormat('en-PH', { timeZone: MANILA, month: 'short', day: 'numeric' });
 
 /** Shift window as staff read it: "Oct 9 · 6:00 am – 2:00 pm" (Manila time, 12-hour). */
@@ -175,10 +169,6 @@ export function formatShiftRange(startAt, endAt) {
 /** `YYYY-MM-DD` of "today" in Manila (a fixed +08:00 offset, never CONVERT_TZ-style tz data). */
 export function manilaToday() {
   return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-}
-
-export function manilaMonth() {
-  return manilaToday().slice(0, 7);
 }
 
 /** `YYYY-MM` -> "March 2026". */
@@ -241,19 +231,6 @@ export function actionErrorMessage(err, fallback = 'That action could not be com
   }
   if (err.status === 403) return 'Your account does not hold the approval authority this action needs.';
   return err.message || fallback;
-}
-
-/** Disables a button while an async action runs, restoring it afterwards. */
-export async function withBusy(button, busyLabel, task) {
-  const original = button.textContent;
-  button.disabled = true;
-  button.textContent = busyLabel;
-  try {
-    return await task();
-  } finally {
-    button.disabled = false;
-    button.textContent = original;
-  }
 }
 
 // --- Viewer approval authority (cached) -------------------------------------

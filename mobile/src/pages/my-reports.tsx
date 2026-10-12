@@ -35,7 +35,6 @@ import {
   cameraOutline,
   carOutline,
   checkmarkDoneOutline,
-  chevronForwardOutline,
   closeCircleOutline,
   cloudUploadOutline,
   documentTextOutline,
@@ -45,7 +44,6 @@ import {
   searchOutline,
   shieldCheckmarkOutline,
   syncOutline,
-  timeOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';

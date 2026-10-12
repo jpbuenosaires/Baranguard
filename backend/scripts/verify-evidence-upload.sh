@@ -118,8 +118,6 @@ export DB_HOST="$XAMPP_MYSQL_HOST" DB_PORT="$XAMPP_MYSQL_PORT" DB_USER="$APP_USE
 export JWT_SECRET="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(32));')"
 export JWT_EXPIRES_IN_MINUTES=30
 export CORS_ALLOWED_ORIGIN='*'
-export OLLAMA_URL="http://127.0.0.1:59999"
-export OLLAMA_MODEL="test/seeded-model"
 export EVIDENCE_DIR="$EVIDENCE_DIR"
 "$PHP_BIN" -S "127.0.0.1:${API_PORT}" -t "$BACKEND_DIR/public" >"$BACKEND_DIR/scripts/.evidchk-server.log" 2>&1 &
 SERVER_PID=$!

@@ -62,12 +62,6 @@ final class FcmClient
         return $this->loadAccount() !== false;
     }
 
-    public function projectId(): ?string
-    {
-        $account = $this->loadAccount();
-        return $account !== false ? $account['project_id'] : null;
-    }
-
     /**
      * Sends one high-priority data+notification message to one device.
      *

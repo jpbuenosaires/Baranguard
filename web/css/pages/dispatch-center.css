@@ -7,8 +7,7 @@
 
 @media (min-width: 1024px) {
   .page-content:has(.dispatch-layout),
-  .page-content:has(.dispatch-page-container),
-  .page-content.dispatch-page-content {
+  .page-content:has(.dispatch-page-container) {
     overflow: hidden !important;
     display: flex;
     flex-direction: column;
@@ -19,8 +18,7 @@
 }
 @media (max-width: 1023px) {
   .page-content:has(.dispatch-layout),
-  .page-content:has(.dispatch-page-container),
-  .page-content.dispatch-page-content {
+  .page-content:has(.dispatch-page-container) {
     overflow-y: auto !important;
     height: auto !important;
     min-height: 100vh;
@@ -250,9 +248,6 @@
   scrollbar-width: none;
 }
 .dispatch-filter-chips::-webkit-scrollbar { display: none; }
-
-
-
 
 /* Scrollable Queue Card Stream */
 .dispatch-queue-card__list {

@@ -434,10 +434,6 @@
   color: var(--color-text-primary);
   font-weight: 600;
 }
-.topbar__crumb--detail {
-  color: var(--color-link);
-  font-weight: 500;
-}
 
 .topbar__role-tag {
   display: inline-flex;
@@ -759,8 +755,6 @@
   z-index: var(--z-raised);
 }
 
-.topbar__user-name { font-weight: 500; color: var(--color-text-primary); }
-
 .page-content {
   flex: 1;
   min-height: 0;
@@ -789,38 +783,6 @@
   from { opacity: 0; transform: translateY(0.75rem) scale(0.998); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-
-/* Filter bar as its own full-bleed white band directly under the page
-   header (the reference's list-screen pattern), as opposed to the plain
-   `.filter-bar` utility which sits inline within padded content. */
-.filter-panel {
-  /* Glassmorphism, moderate scope — the band itself is chrome, not the
-     dense data below it, so it's in scope; its child inputs stay opaque
-     per base.css's global input rule, unaffected by this parent blur. */
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border-bottom: 1px solid var(--glass-border);
-  padding: var(--spacing-sm-md) var(--spacing-lg);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm-md);
-  flex-wrap: wrap;
-  flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(15,23,42,0.03);
-}
-.filter-panel__search { position: relative; flex: 1; min-width: 12rem; max-width: 26.25rem; }
-.filter-panel__search input { padding-left: 2.25rem; }
-.filter-panel__search-icon {
-  position: absolute;
-  left: var(--spacing-sm-md);
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--color-text-tertiary);
-  display: flex;
-  pointer-events: none;
-}
-.filter-panel select { width: auto; min-width: 9rem; }
 
 /* --- Responsive -----------------------------------------------------------
    audit A13. The old rule turned the sidebar into a permanent 4.5rem icon
@@ -972,10 +934,8 @@
 }
 
 @media (max-width: 900px) {
-  .topbar__user-name { display: none; }
   .status-badge__text { display: none; }
   .status-badge { padding: var(--spacing-sm); }
-  .topbar__signout-label { display: none; }
   .topbar__clock { display: none; }
   .topbar__divider { display: none; }
   .topbar__crumb--group, .topbar__crumb-sep { display: none; }
@@ -990,10 +950,6 @@
   }
   .topbar {
     background: var(--color-surface);
-    border-bottom-color: var(--color-border);
-  }
-  .filter-panel {
-    background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg) 100%);
     border-bottom-color: var(--color-border);
   }
   .topbar__search-results {

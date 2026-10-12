@@ -53,7 +53,6 @@ import {
   navigateOutline,
   pawOutline,
   playOutline,
-  radioOutline,
   refreshOutline,
   searchOutline,
   shieldCheckmarkOutline,

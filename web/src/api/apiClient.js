@@ -713,28 +713,6 @@ export async function getGpsLive(barangayId) {
   }));
 }
 
-export async function getGpsHistory({ userId, dateFrom, dateTo, page, limit }) {
-  const json = await request('GET', '/gps/history', {
-    query: { user_id: userId, date_from: dateFrom, date_to: dateTo, page, limit },
-    auth: true,
-  });
-  return {
-    items: json.items.map((row) => ({
-      trackId: row.track_id,
-      userId: row.user_id,
-      dispatchId: row.dispatch_id,
-      latitude: row.latitude,
-      longitude: row.longitude,
-      accuracyM: row.accuracy_m,
-      recordedAt: row.recorded_at,
-      receivedAt: row.received_at,
-    })),
-    page: json.page,
-    limit: json.limit,
-    total: json.total,
-  };
-}
-
 // --- Tanod SOS --------------------------------------------------------------
 
 /** @returns {Promise<Array<object>>} */
@@ -852,22 +830,6 @@ export async function updateProfile(userId, { fullName, contactNumber } = {}) {
 }
 
 // --- Citizen reports (W16 inbox; the public submit form was removed 2026-10-07) ---------------------------
-
-/** GET /public/transparency?barangay_id= — no auth (H-13/L-03: published deliberately, not an internal endpoint). */
-export async function getPublicTransparency(barangayId) {
-  const json = await request('GET', '/public/transparency', { query: { barangay_id: barangayId }, auth: false });
-  return {
-    barangay: json.barangay,
-    periodMonths: json.period_months,
-    generatedAt: json.generated_at,
-    totalIncidents: json.total_incidents,
-    resolvedIncidents: json.resolved_incidents,
-    resolutionRatePercent: json.resolution_rate_percent,
-    byType: json.by_type.map((row) => ({ type: row.type, label: row.label, incidents: row.incidents })),
-    byMonth: json.by_month.map((row) => ({ month: row.month, incidents: row.incidents })),
-    notes: json.notes,
-  };
-}
 
 /** GET /citizen-reports (W16 inbox — list only, no convert action yet). */
 export async function getCitizenReports({ status, page, limit } = {}) {

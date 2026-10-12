@@ -8,8 +8,6 @@
    1. Tab Switcher Navigation
    ========================================================================== */
 
-
-
 /* ==========================================================================
    2. Segmented KPI Card in Header Actions
    ========================================================================== */
@@ -578,39 +576,6 @@
   background: var(--color-surface);
 }
 
-/* Date Divider */
-.sms-date-divider {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: var(--spacing-xs) 0;
-  position: relative;
-}
-
-.sms-date-divider::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--color-border);
-  z-index: 0;
-}
-
-.sms-date-divider__badge {
-  position: relative;
-  z-index: 1;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-tertiary);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  padding: var(--spacing-3xs) 0.65rem;
-  border-radius: 999px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 /* Message Bubbles */
 .sms-bubble-row {
   display: flex;
@@ -701,17 +666,6 @@
   background: color-mix(in srgb, var(--color-white) 20%, transparent);
   color: var(--color-white);
   border-color: color-mix(in srgb, var(--color-white) 30%, transparent);
-}
-
-.sms-bubble__failure {
-  margin-top: var(--spacing-2xs);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius-sm);
-  background: var(--tint-critical-bg);
-  color: var(--color-critical);
-  border: 1px solid color-mix(in srgb, var(--color-critical) 30%, transparent);
-  font-size: 0.75rem;
-  font-weight: 600;
 }
 
 /* ==========================================================================
@@ -1308,7 +1262,6 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
-
 /* Detail Pane (Right Column of Split Panel) */
 .sms-detail-pane {
   min-width: 0;
@@ -1408,8 +1361,6 @@
   background: color-mix(in srgb, var(--color-primary) 25%, transparent);
   color: var(--color-link);
 }
-
-
 
 .sms-detail-body-box {
   padding: 0.875rem;
@@ -1520,7 +1471,6 @@
   height: var(--control-height);
   font-size: 0.8125rem;
 }
-
 
 /* ==========================================================================
    Advisory List tab (migration 0018)

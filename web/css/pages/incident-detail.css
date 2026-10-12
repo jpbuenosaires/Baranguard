@@ -85,12 +85,6 @@
   flex-shrink: 0;
 }
 
-.incident-id-badge--incident {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-}
-
 /* Case Hero Card & Dossier */
 
 .case-hero {
@@ -158,18 +152,6 @@
   width: 100%;
 }
 
-.dossier-section-title {
-  font-size: var(--font-size-label);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-secondary);
-  margin: 0 0 var(--spacing-3xs) 0;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-}
-
 /* Involved Parties Cards — Side by side with ample room */
 
 .parties-grid {
@@ -205,12 +187,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
-}
-
-.party-card__hint {
-  font-size: var(--font-size-label);
-  color: var(--color-text-tertiary);
-  font-weight: 500;
 }
 
 .party-card__tag {
@@ -363,20 +339,6 @@
   gap: var(--spacing-sm);
 }
 
-.doc-privacy-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-  font-size: var(--font-size-label);
-  padding: var(--spacing-3xs) var(--spacing-xs);
-  border-radius: var(--radius-sm);
-  background: var(--tint-success-bg);
-  border: 1px solid transparent;
-  color: var(--color-success-text);
-  font-weight: 600;
-  line-height: 1.2;
-}
-
 .doc-blockquote {
   margin: 0;
   padding: var(--spacing-sm-md) var(--spacing-md);
@@ -430,28 +392,6 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-}
-
-.evidence-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: var(--spacing-md) var(--spacing-sm);
-  gap: var(--spacing-2xs);
-  color: var(--color-text-secondary);
-}
-
-.evidence-empty__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 999px;
-  background: var(--color-border);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-tertiary);
 }
 
 .evidence-item {
@@ -589,25 +529,6 @@
   font-weight: 500;
 }
 
-.timeline__status-badge {
-  font-size: var(--font-size-label);
-  padding: var(--spacing-3xs) var(--spacing-xs);
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.timeline__status-badge--done {
-  background: var(--tint-success-bg);
-  color: var(--color-success-text);
-}
-
-.timeline__status-badge--pending {
-  background: var(--color-bg);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-}
-
 .timeline__value {
   font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
@@ -652,46 +573,7 @@
   line-height: 1.45;
 }
 
-.resolution-badge-card__meta {
-  margin-top: var(--spacing-xs);
-  padding-top: var(--spacing-xs);
-  border-top: 1px solid var(--color-divider);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2xs);
-  font-size: var(--font-size-label);
-  color: var(--color-text-secondary);
-}
-
 /* Legal Notice Card */
-
-.legal-notice-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2xs);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-}
-
-.legal-notice-card__title {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-  font-size: var(--font-size-label);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-secondary);
-}
-
-.legal-notice-card__text {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-  margin: 0;
-  line-height: 1.45;
-}
 
 /* Digest manifest tiles (used by the Punong Barangay weekly digest card) */
 
@@ -1059,47 +941,6 @@
   font-family: var(--font-mono);
 }
 
-.print-sheet__parties {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-md);
-}
-
-.print-sheet__party {
-  padding: var(--spacing-sm-md);
-  border: 1px solid var(--sheet-border);
-  border-left: 4px solid var(--color-navy);
-  border-radius: var(--radius-sm);
-  background: var(--color-white);
-}
-
-.print-sheet__party--respondent {
-  border-left-color: var(--sheet-muted);
-}
-
-.print-sheet__party-role {
-  display: block;
-  font-size: var(--font-size-label);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--sheet-muted);
-  margin-bottom: var(--spacing-3xs);
-}
-
-.print-sheet__party-name {
-  margin: 0;
-  font-size: var(--font-size-md);
-  font-weight: 700;
-  color: var(--sheet-ink);
-}
-
-.print-sheet__party-sub {
-  margin: var(--spacing-3xs) 0 0 0;
-  font-size: var(--font-size-xs);
-  color: var(--sheet-muted);
-}
-
 .print-sheet__grid-2col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1204,7 +1045,6 @@
 @media screen and (max-width: 640px) {
 .print-sheet__meta-bar,
   .print-sheet__kpi-grid,
-  .print-sheet__parties,
   .print-sheet__grid-2col,
   .print-sheet__signatures {
     grid-template-columns: 1fr;
@@ -1235,8 +1075,6 @@ body.has-print-modal #app,
   .print-modal__footer,
   .sidebar,
   .topbar,
-  .app-shell__sidebar,
-  .app-shell__header,
   .incident-detail-header-actions,
   .btn-copy,
   button {
@@ -1320,7 +1158,6 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   }
 .print-sheet__meta-bar,
   .print-sheet__kpi-grid,
-  .print-sheet__parties,
   .print-sheet__grid-2col,
   .print-sheet__signatures {
     break-inside: avoid;

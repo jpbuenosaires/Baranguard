@@ -80,11 +80,6 @@ const EFFECTIVE_API_BASE_URL_KEY = 'baranguard.effectiveApiBaseUrl';
   }
 })();
 
-/** The URL every request in this file uses. */
-export function getApiBaseUrl(): string {
-  return API_BASE_URL;
-}
-
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -328,13 +323,6 @@ export async function registerDevice(params: {
     }
   );
   return { deviceId: json.device_id, registered: json.registered, messageEncryptionKey: json.message_encryption_key };
-}
-
-/** PATCH /devices/:id/deactivate — own device only, server-enforced. */
-export async function deactivateDevice(deviceId: string): Promise<void> {
-  await request<{ success: boolean }>(`/devices/${encodeURIComponent(deviceId)}/deactivate`, {
-    method: 'PATCH',
-  });
 }
 
 // --- Map packages (§6, M1) -------------------------------------------------

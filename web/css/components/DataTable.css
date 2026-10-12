@@ -95,7 +95,6 @@
 
 /* Sort arrow rotation animation. */
 .data-table__sort-icon { transition: transform 0.2s ease; }
-.data-table__sort-icon.is-desc { transform: rotate(180deg); }
 
 /* audit A11: the first cell of a clickable row is a real button carrying
    the row's accessible name — the row itself stays a row, so header/cell
@@ -125,10 +124,6 @@
 .data-table tbody tr:has(.data-table__row-activator:focus-visible) {
   background: var(--color-row-active-bg);
 }
-.data-table tbody tr:has(.data-table__row-activator:focus-visible) .row-open-hint {
-  opacity: 1;
-  color: var(--color-link);
-}
 
 /* Secondary line inside a cell (e.g. a timestamp under an ID). */
 .data-table__sub {
@@ -139,23 +134,6 @@
 }
 /* Row action cluster (view / edit / delete icon buttons). */
 .data-table__actions { display: flex; align-items: center; gap: var(--spacing-xs); justify-content: flex-end; }
-
-/* Visual cue that a DataTable row opens a detail screen. Paired with
-   `.is-clickable` above, which supplies the cursor and hover state. Added
-   after real use showed that a clickable row with no affordance reads as
-   static — W7/W8 have no sidebar entry, so the row IS the only way in. */
-.row-open-hint {
-  display: inline-flex;
-  align-items: center;
-  color: var(--color-text-secondary);
-  opacity: 0.55;
-  transition: opacity .15s ease, color .15s ease;
-}
-.data-table tbody tr.is-clickable:hover .row-open-hint,
-.data-table tbody tr.is-clickable:focus-visible .row-open-hint {
-  opacity: 1;
-  color: var(--color-link);
-}
 
 /* --- Empty state + pagination (§3.3 of the UI/UX review) ---------------- */
 
@@ -198,10 +176,6 @@
   gap: var(--spacing-3xs);
 }
 
-.data-table__stacked-primary {
-  font-weight: 500;
-}
-
 /* ==========================================================================
    Unified Table Card (Operational standard matching Incident Management:
    card is fixed in the viewport, toolbar/header is inside the card at the top,
@@ -238,8 +212,6 @@
 .page-content .tw-container,
 .page-content .tw-ssz,
 .page-content .tw-reports-list,
-.page-content .tw-referrals,
-.page-content .scheduler-page-container,
 .page-content .page-container > div:not(.split-panel):has(.unified-table-card:not(.dashboard-recent-table-card)) {
   flex: 1;
   min-height: 0;
@@ -304,12 +276,9 @@
 }
 
 /* Pinned top elements (stat strips, security notices, subtabs) never stretch out of view */
-.audit-security-banner,
 .sms-log-stat-strip,
 .stat-card-grid,
-.tw-counts,
-.personnel-filter-bar__summary,
-.tw-ssz > .tw-toolbar {
+.tw-counts {
   flex-shrink: 0;
 }
 
@@ -337,12 +306,10 @@
 .unified-table-card .personnel-table-body,
 .unified-table-card .swap-table-body,
 .unified-table-card .sms-table-body,
-.unified-table-card .sms-table-wrap,
 .unified-table-card .ssz-table-body,
 .unified-table-card .tw-reports-list__body,
 .unified-table-card .tw-referrals__body,
 .unified-table-card .c1-table-body,
-.unified-table-card .d-table-body,
 .unified-table-card .citizen-table-wrap {
   flex: 1;
   min-height: 0;
@@ -441,8 +408,6 @@
   .page-content .personnel-container,
   .page-content .tw-ssz,
   .page-content .tw-reports-list,
-  .page-content .tw-referrals,
-  .page-content .scheduler-page-container,
   .page-content .split-panel:has(.sms-table-card),
   .page-content .page-container > div:has(.unified-table-card:not(.dashboard-recent-table-card)) {
     height: auto !important;

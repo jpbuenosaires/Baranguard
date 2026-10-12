@@ -257,16 +257,6 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-primary);
 }
-.menu__header-meta {
-  font-size: var(--font-size-label);
-  color: var(--color-text-tertiary);
-}
-.menu__empty {
-  padding: var(--spacing-md) var(--spacing-sm-md);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-  text-align: center;
-}
 
 /* --- Topbar triggers ---------------------------------------------------- */
 

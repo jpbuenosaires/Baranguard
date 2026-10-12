@@ -117,35 +117,7 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
-.citizen-status-select {
-  height: var(--control-height);
-  min-height: var(--control-height);
-  padding: 0 var(--spacing-xl) 0 var(--spacing-sm-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background-color: var(--color-surface);
-  background-repeat: no-repeat;
-  background-position: right 0.75rem center;
-  color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
-  font-family: inherit;
-  font-weight: 500;
-  cursor: pointer;
-  outline: none;
-  white-space: nowrap;
-  transition: border-color 0.15s ease;
-}
-
-.citizen-status-select:focus {
-  border-color: var(--color-primary);
-}
-
 /* Status Filter Tabs / Chips */
-
-
-
-
-
 
 /* Table Container (Internally Scrollable with Sticky Header) */
 .citizen-table-wrap {
@@ -506,12 +478,6 @@
   flex: 0 0 auto;
 }
 
-.citizen-triage-row {
-  display: flex;
-  gap: var(--spacing-sm);
-  align-items: center;
-}
-
 .citizen-triage-select {
   width: 100%;
   height: var(--control-height);
@@ -668,8 +634,6 @@
 .citizen-inbox-layout.has-detail .data-table td:nth-child(7) {
   display: none;
 }
-
-
 
 .citizen-mini-map-pin {
   display: flex;

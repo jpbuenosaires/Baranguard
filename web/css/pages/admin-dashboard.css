@@ -555,7 +555,6 @@
   gap: var(--spacing-2xs);
 }
 
-
 /* Key Insights 3-column feature grid */
 .insights-grid {
   display: grid;
@@ -956,7 +955,6 @@
   flex-direction: column;
   gap: var(--spacing-md);
 }
-
 
 /* 2026-10: pending-approvals widget. */
 .dashboard-approvals-list {
