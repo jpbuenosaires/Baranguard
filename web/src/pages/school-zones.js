@@ -165,8 +165,6 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     let schools = [];
     let filterStatus = 'active'; // 'active' | 'deactivated' | 'all'
     let searchQuery = '';
-    const selectedTypes = new Set();
-    const selectedLevels = new Set();
 
     // Consolidated Top Control Bar: Segmented Status Tabs + Search Box
     const controlBar = h('div', 'ssz-control-bar');
@@ -248,84 +246,6 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     searchBox.append(searchIcon, searchInput, clearSearchBtn);
     controlBar.append(tabsWrap, searchBox);
 
-    // Multi-Select Facets Bar (Classification & Educational Level)
-    const facetsBar = h('div', 'ssz-facets-bar');
-    const facetsLabel = h('span', 'ssz-facets-label');
-    facetsLabel.innerHTML = `<span aria-hidden="true">${icons.filter(14)}</span><span>Filters:</span>`;
-
-    const chipsGroup = h('div', 'ssz-chip-group');
-
-    // Classification Chips: Public, Private
-    const typeChips = [
-      { id: 'public', label: 'Public' },
-      { id: 'private', label: 'Private' },
-    ];
-    for (const tc of typeChips) {
-      const chip = h('button', 'ssz-facet-chip', tc.label);
-      chip.type = 'button';
-      chip.setAttribute('role', 'checkbox');
-      chip.setAttribute('aria-checked', 'false');
-      chip.addEventListener('click', () => {
-        if (selectedTypes.has(tc.id)) {
-          selectedTypes.delete(tc.id);
-          chip.classList.remove('is-active');
-          chip.setAttribute('aria-checked', 'false');
-        } else {
-          selectedTypes.add(tc.id);
-          chip.classList.add('is-active');
-          chip.setAttribute('aria-checked', 'true');
-        }
-        renderFilteredView();
-      });
-      chipsGroup.appendChild(chip);
-    }
-
-    // Educational Level Chips
-    const levelChips = [
-      { id: 'preschool', label: 'Preschool / Daycare' },
-      { id: 'primary', label: 'Elementary' },
-      { id: 'secondary', label: 'High School' },
-      { id: 'tertiary', label: 'College / Tertiary' },
-    ];
-    for (const lc of levelChips) {
-      const chip = h('button', 'ssz-facet-chip', lc.label);
-      chip.type = 'button';
-      chip.setAttribute('role', 'checkbox');
-      chip.setAttribute('aria-checked', 'false');
-      chip.addEventListener('click', () => {
-        if (selectedLevels.has(lc.id)) {
-          selectedLevels.delete(lc.id);
-          chip.classList.remove('is-active');
-          chip.setAttribute('aria-checked', 'false');
-        } else {
-          selectedLevels.add(lc.id);
-          chip.classList.add('is-active');
-          chip.setAttribute('aria-checked', 'true');
-        }
-        renderFilteredView();
-      });
-      chipsGroup.appendChild(chip);
-    }
-
-    const clearFiltersBtn = h('button', 'ssz-clear-filters-btn', 'Clear filters');
-    clearFiltersBtn.type = 'button';
-    clearFiltersBtn.hidden = true;
-    clearFiltersBtn.addEventListener('click', () => {
-      selectedTypes.clear();
-      selectedLevels.clear();
-      searchInput.value = '';
-      searchQuery = '';
-      clearSearchBtn.hidden = true;
-      for (const btn of chipsGroup.querySelectorAll('.ssz-facet-chip')) {
-        btn.classList.remove('is-active');
-        btn.setAttribute('aria-checked', 'false');
-      }
-      renderFilteredView();
-    });
-
-    const resultsCounter = h('span', 'ssz-results-counter');
-    facetsBar.append(facetsLabel, chipsGroup, clearFiltersBtn, resultsCounter);
-
     // Print & Add School in pageHeader.actions
     const printBtn = h('button', 'ghost');
     printBtn.type = 'button';
@@ -355,8 +275,10 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     }
 
     const formHost = h('div');
-    const tableHost = h('div');
-    host.append(controlBar, facetsBar, formHost, tableHost);
+    const tableHost = h('div', 'ssz-table-body');
+    const tableCard = h('div', 'unified-table-card ssz-table-card');
+    tableCard.append(controlBar, tableHost);
+    host.append(formHost, tableCard);
 
     function updateCounts() {
       const activeCount = schools.filter((s) => s.isActive !== false && s.isActive !== 0).length;
@@ -396,9 +318,6 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         if (filterStatus === 'active' && !isActive) return false;
         if (filterStatus === 'deactivated' && isActive) return false;
 
-        if (selectedTypes.size > 0 && !selectedTypes.has(s.schoolType)) return false;
-        if (selectedLevels.size > 0 && !selectedLevels.has(s.level)) return false;
-
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
           const matchName = (s.name || '').toLowerCase().includes(q);
@@ -418,34 +337,31 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       tableHost.innerHTML = '';
       updateCounts();
 
-      const hasActiveFilters = Boolean(searchQuery || selectedTypes.size > 0 || selectedLevels.size > 0);
-      clearFiltersBtn.hidden = !hasActiveFilters;
-
       if (schools.length === 0) {
         showEmpty(
           tableHost,
           'No schools yet',
           canEdit ? 'Add the schools in this barangay to build the Annex B inventory.' : 'No schools have been added to the inventory yet.',
         );
-        resultsCounter.textContent = '0 schools';
         return;
       }
 
       const rows = getFilteredRows();
-      resultsCounter.textContent = `Showing ${rows.length} of ${schools.length} school${schools.length === 1 ? '' : 's'}`;
 
       if (rows.length === 0) {
         const emptyWrap = h('div', 'tw-notice');
-        emptyWrap.style.margin = 'var(--spacing-md) 0';
+        emptyWrap.style.margin = 'var(--spacing-md)';
         emptyWrap.innerHTML = `
-          <p class="tw-strong">No schools match your search or filters.</p>
-          <p class="tw-muted">Try adjusting your keywords or clearing the active filters.</p>
+          <p class="tw-strong">No schools match your search.</p>
+          <p class="tw-muted">Try adjusting your keywords or switching status tabs.</p>
         `;
-        const resetBtn = h('button', 'primary', 'Clear all filters');
+        const resetBtn = h('button', 'primary', 'Clear search');
         resetBtn.type = 'button';
         resetBtn.style.marginTop = 'var(--spacing-sm)';
         resetBtn.addEventListener('click', () => {
-          clearFiltersBtn.click();
+          searchInput.value = '';
+          searchQuery = '';
+          clearSearchBtn.hidden = true;
           setFilterStatus('active');
         });
         emptyWrap.appendChild(resetBtn);
@@ -756,7 +672,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     note.append(noteContent, dismissBtn);
 
     // Consolidated Control Bar (Dates, School, Search, Clear)
-    const filters = h('div', 'c1-control-bar tw-filter-bar');
+    const filters = h('div', 'c1-control-bar c1-filters tw-filter-bar');
 
     // Date Pickers Group
     const dateGroup = h('div', 'c1-date-group');
@@ -855,8 +771,10 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       facetsBar.appendChild(btn);
     }
 
-    const tableHost = h('div');
-    host.append(note, filters, facetsBar, tableHost);
+    const tableHost = h('div', 'c1-table-body');
+    const tableCard = h('div', 'unified-table-card c1-table-card');
+    tableCard.append(filters, facetsBar, tableHost);
+    host.append(note, tableCard);
 
     const printBtn = h('button', 'ghost');
     printBtn.type = 'button';
