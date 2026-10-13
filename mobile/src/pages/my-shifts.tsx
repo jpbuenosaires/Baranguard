@@ -168,22 +168,14 @@ const MyShiftsPage: React.FC = () => {
   // Calculate schedule summary metrics. A shift flagged `pendingReapproval` (legacy: a swap
   // approved before 2026-10-12, awaiting re-publish) is NOT confirmed duty, so it never counts
   // toward "next duty" or hours. An approved swap now keeps the shift published.
-  const { nextShift, totalScheduledHours, confirmedCount, pendingReapprovalCount } = useMemo(() => {
+  const { nextShift, confirmedCount, pendingReapprovalCount } = useMemo(() => {
     const now = Date.now();
     const confirmed = shifts.filter((s) => !s.pendingReapproval);
     const upcoming = confirmed.filter((s) => new Date(s.endAt).getTime() >= now);
     const next = upcoming[0] ?? confirmed[0] ?? null;
 
-    let hours = 0;
-    for (const s of confirmed) {
-      const start = new Date(s.startAt).getTime();
-      const end = new Date(s.endAt).getTime();
-      hours += Math.max(0, Math.round((end - start) / (1000 * 60 * 60)));
-    }
-
     return {
       nextShift: next,
-      totalScheduledHours: hours,
       confirmedCount: confirmed.length,
       pendingReapprovalCount: shifts.length - confirmed.length,
     };
@@ -192,14 +184,12 @@ const MyShiftsPage: React.FC = () => {
   const nextShiftTiming = nextShift ? parseShiftTiming(nextShift.startAt, nextShift.endAt) : null;
 
   // Calculate swap metrics
-  const { pendingSwapCount, resolvedSwapCount } = useMemo(() => {
+  const { pendingSwapCount } = useMemo(() => {
     let pending = 0;
-    let resolved = 0;
     for (const r of swapRequests) {
       if (r.status === 'pending') pending++;
-      else resolved++;
     }
-    return { pendingSwapCount: pending, resolvedSwapCount: resolved };
+    return { pendingSwapCount: pending };
   }, [swapRequests]);
 
   return (
