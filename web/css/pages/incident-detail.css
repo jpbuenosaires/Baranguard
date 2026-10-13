@@ -1489,43 +1489,76 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   margin-bottom: var(--spacing-2xs);
 }
 
-/* Horizontal Metadata Strip */
+/* --- Option 1 Polish: Borderless Metadata, Quiet Privacy, and Compact Layout --- */
+
+.case-dossier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.case-dossier .dossier-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-divider);
+}
+
+.dossier-subheading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--type-table-th);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--spacing-2xs);
+}
+
+/* Clean Borderless Horizontal Metadata Strip */
 .meta-strip {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  gap: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-2xs) 0 var(--spacing-sm) 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-divider);
+  border-radius: 0;
   width: 100%;
 }
 
 .meta-strip .meta-tile {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-2xs) var(--spacing-xs);
+  gap: var(--spacing-3xs);
+  padding: 0;
   background: transparent;
   border: none;
   min-width: 0;
 }
 
 .meta-strip .meta-tile:not(:last-child) {
-  border-right: 1px solid var(--color-divider);
-  padding-right: var(--spacing-sm);
+  border-right: none;
+  padding-right: 0;
 }
 
 .meta-strip .meta-tile__icon {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface);
-  color: var(--color-link);
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
   flex-shrink: 0;
 }
 
@@ -1533,21 +1566,22 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   display: flex;
   flex-direction: row;
   align-items: baseline;
-  gap: var(--spacing-2xs);
+  gap: var(--spacing-3xs);
   min-width: 0;
 }
 
 .meta-strip .meta-tile__label {
   font-size: var(--type-table-th);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--color-text-tertiary);
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .meta-strip .meta-tile__label::after {
   content: ":";
+  margin-right: 2px;
 }
 
 .meta-strip .meta-tile__value {
@@ -1565,27 +1599,22 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
     align-items: stretch;
     gap: var(--spacing-xs);
   }
-  .meta-strip .meta-tile:not(:last-child) {
-    border-right: none;
-    border-bottom: 1px solid var(--color-divider);
-    padding-bottom: var(--spacing-2xs);
-  }
 }
 
-/* Unified Confidential Records Shield Callout */
+/* Quiet, Dignified Confidential Records Callout */
 .dossier-privacy-shield {
   display: flex;
   align-items: flex-start;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-md);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
   background: var(--tint-neutral-bg, var(--color-bg));
   border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-primary);
+  border-left: 3px solid var(--color-text-tertiary);
 }
 
 .dossier-privacy-shield__icon {
-  color: var(--color-primary);
+  color: var(--color-text-tertiary);
   flex-shrink: 0;
   margin-top: 2px;
   display: inline-flex;
@@ -1600,12 +1629,9 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 }
 
 .dossier-privacy-shield__title {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  font-size: var(--font-size-sm);
-  font-weight: 700;
-  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
 .dossier-privacy-shield__citation {
@@ -1615,17 +1641,30 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 }
 
 .dossier-privacy-shield__desc {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   margin: 0;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 .dossier-privacy-shield__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
-  margin-top: var(--spacing-2xs);
+  gap: var(--spacing-2xs);
+  margin-top: var(--spacing-3xs);
+}
+
+.privacy-pill {
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  padding: 1px var(--spacing-xs) !important;
+  border-radius: var(--radius-xs) !important;
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-divider) !important;
+  color: var(--color-text-secondary) !important;
+  line-height: 1.35 !important;
 }
 
 /* Command Panels in Aside */
@@ -1633,8 +1672,8 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 .case-refs-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -1683,14 +1722,8 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 
 .case-ops-panel > .card:not(.resolution-badge-card) + .card,
 .case-refs-panel > .card + .card {
-  padding-top: var(--spacing-sm) !important;
+  padding-top: var(--spacing-xs) !important;
   border-top: 1px solid var(--color-divider) !important;
-}
-
-.party-card__tag--narrative {
-  background: var(--tint-neutral-bg);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
 }
 
 /* Compact Timeline in Operational Command */
@@ -1700,11 +1733,40 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 }
 
 .case-ops-panel .incident-card-heading {
-  margin: 0 0 var(--spacing-xs) 0;
+  margin: 0 0 var(--spacing-2xs) 0;
 }
 
 .case-ops-panel .responders-table-wrap {
   margin-top: var(--spacing-2xs);
+}
+
+.case-ops-panel .note,
+.case-refs-panel .note {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+/* Compact Inline Related Incident Row */
+.related-incident-inline-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+}
+
+.related-incident-inline-row input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--spacing-2xs) var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+.related-incident-inline-row button {
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: var(--spacing-2xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
 }
 
 /* Subtle borderless empty evidence bar */
@@ -1719,6 +1781,9 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 /* Compact School Link Card */
 .case-card--school {
   padding: var(--spacing-sm) var(--spacing-md) !important;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
 }
 
 .case-card--school .case-card__header-row {

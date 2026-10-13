@@ -525,14 +525,15 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
 
   if (!canEdit) return card;
 
-  const form = el('form', 'form-stack');
+  const form = el('form', 'form-stack related-incident-form');
   form.noValidate = true;
   const errorBox = el('div', 'login-form__error');
   errorBox.setAttribute('role', 'alert');
   errorBox.hidden = true;
   const inputId = `related-incident-${incidentId}`;
-  const label = el('label', 'label', 'Related incident number');
+  const label = el('label', 'label sr-only', 'Related incident number');
   label.htmlFor = inputId;
+  const row = el('div', 'related-incident-inline-row');
   const input = el('input', 'personnel-form-input');
   input.id = inputId;
   input.type = 'text';
@@ -540,17 +541,17 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
   input.placeholder = 'e.g. INC-2026-048';
   if (relatedIncident) input.value = relatedIncident.displayId || String(relatedIncident.incidentId);
 
-  const actions = el('div', 'availability-item__actions');
   const save = el('button', 'secondary', relatedIncident ? 'Change link' : 'Link incident');
   save.type = 'submit';
-  actions.appendChild(save);
+  row.appendChild(input);
+  row.appendChild(save);
   let remove = null;
   if (relatedIncident) {
     remove = el('button', 'ghost', 'Remove link');
     remove.type = 'button';
-    actions.appendChild(remove);
+    row.appendChild(remove);
   }
-  form.append(errorBox, label, input, actions);
+  form.append(errorBox, label, row);
   card.appendChild(form);
 
   async function submit(nextId) {
