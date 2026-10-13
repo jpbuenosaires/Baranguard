@@ -542,6 +542,7 @@ const LiveMapPage: React.FC = () => {
                   ? 'live-map-status-dot--live'
                   : 'live-map-status-dot--stale'
               }`}
+              aria-hidden="true"
             />
             <IonIcon
               icon={
@@ -707,6 +708,15 @@ const LiveMapPage: React.FC = () => {
                 else if (drawerMode === 'selected') setDrawerMode('peek');
               }}
               title="Toggle drawer"
+              role="button"
+              tabIndex={0}
+              aria-label="Toggle map details drawer"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.currentTarget.click();
+                }
+              }}
             >
               <div className="live-map-drawer__handle-pill" />
             </div>
@@ -878,7 +888,15 @@ const LiveMapPage: React.FC = () => {
                       <div
                         key={`inc-${incident.incidentId}`}
                         className="live-map-list-item"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleSelectIncident(incident)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleSelectIncident(incident);
+                          }
+                        }}
                       >
                         <div>
                           <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--color-text-primary)' }}>
@@ -909,7 +927,15 @@ const LiveMapPage: React.FC = () => {
                       <div
                         key={`tanod-${tanod.userId}`}
                         className="live-map-list-item"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleSelectTanod(tanod)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleSelectTanod(tanod);
+                          }
+                        }}
                       >
                         <div>
                           <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--color-text-primary)' }}>

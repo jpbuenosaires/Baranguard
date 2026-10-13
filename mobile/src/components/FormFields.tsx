@@ -21,7 +21,7 @@
  * PascalCase filename per §4 (components).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { IonInput } from '@ionic/react';
 
 /**
@@ -68,6 +68,13 @@ interface TextFieldProps {
   type?: 'text' | 'password';
   disabled?: boolean;
   autocapitalize?: 'off' | 'on';
+  inputMode?: 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' | 'decimal' | 'search';
+  autoComplete?: string;
+  enterKeyHint?: 'enter' | 'done' | 'go' | 'next' | 'previous' | 'search' | 'send';
+  autoCorrect?: 'on' | 'off';
+  required?: boolean;
+  /** Validation message; rendered under the field and tied to it via aria-describedby. */
+  error?: string;
 }
 
 export const TextField: React.FC<TextFieldProps> = ({
@@ -77,9 +84,16 @@ export const TextField: React.FC<TextFieldProps> = ({
   type = 'text',
   disabled,
   autocapitalize,
+  inputMode,
+  autoComplete,
+  enterKeyHint,
+  autoCorrect,
+  required,
+  error,
 }) => {
   const attachRef = useElementEvent('ionInput', onChange);
-  return (
+  const errorId = useId();
+  const input = (
     <IonInput
       ref={attachRef}
       label={label}
@@ -88,6 +102,22 @@ export const TextField: React.FC<TextFieldProps> = ({
       value={value}
       disabled={disabled}
       autocapitalize={autocapitalize}
+      inputmode={inputMode}
+      autocomplete={autoComplete as never}
+      enterkeyhint={enterKeyHint}
+      autocorrect={autoCorrect === undefined ? undefined : autoCorrect === 'on'}
+      required={required}
+      aria-invalid={error ? 'true' : undefined}
+      aria-describedby={error ? errorId : undefined}
     />
+  );
+  if (!error) return input;
+  return (
+    <>
+      {input}
+      <div id={errorId} role="alert" className="text-field-error">
+        {error}
+      </div>
+    </>
   );
 };

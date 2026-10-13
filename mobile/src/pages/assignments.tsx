@@ -535,6 +535,7 @@ const AssignmentsPage: React.FC = () => {
                     aria-label={`Dispatch #${row.server_dispatch_id ?? row.local_id.slice(0, 6)}: ${row.redacted_incident_type ?? 'Incident'}, priority ${row.priority}, status ${row.status}`}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
                         tacticalFeedback.onTap();
                         navigate(`/tabs/assignments/${encodeURIComponent(row.local_id)}`);
                       }

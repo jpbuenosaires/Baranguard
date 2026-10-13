@@ -3,10 +3,10 @@
 .p1-note-toast {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  gap: var(--spacing-sm);
   max-width: calc(100% - 32px);
   white-space: normal;
-  border-radius: var(--radius-lg, 16px);
+  border-radius: var(--radius-lg);
 }
 
 .p1-note-dismiss {
@@ -21,7 +21,7 @@
   background: transparent;
   border: 0;
   color: inherit;
-  font-size: 1.25rem;
+  font-size: var(--text-lg);
   cursor: pointer;
 }
 

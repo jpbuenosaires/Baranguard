@@ -702,12 +702,12 @@ const HomePage: React.FC = () => {
                       <IonSpinner name="dots" style={{ width: '14px', height: '14px' }} />
                     ) : status === 'on_duty' ? (
                       <>
-                        <span className="duty-dot duty-dot--pulse" />
+                        <span className="duty-dot duty-dot--pulse" aria-hidden="true" />
                         <span>On Duty</span>
                       </>
                     ) : (
                       <>
-                        <span className="duty-dot" />
+                        <span className="duty-dot" aria-hidden="true" />
                         <span>Go On Duty</span>
                       </>
                     )}

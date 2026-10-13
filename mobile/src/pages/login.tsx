@@ -134,6 +134,9 @@ const LoginPage: React.FC = () => {
                     <TextField
                       label="Username"
                       autocapitalize="off"
+                      autoComplete="username"
+                      autoCorrect="off"
+                      enterKeyHint="next"
                       value={username}
                       onChange={setUsername}
                       disabled={busy}
@@ -144,6 +147,8 @@ const LoginPage: React.FC = () => {
                     <TextField
                       label="Password"
                       type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      enterKeyHint="go"
                       value={password}
                       onChange={setPassword}
                       disabled={busy}
@@ -179,7 +184,7 @@ const LoginPage: React.FC = () => {
             {/* 3. Diagnostic & Network Footer */}
             <div className="mobile-login-footer">
               <div className="mobile-login-network-pill" role="status" aria-label={isOnline ? 'Workstation Network Connected' : 'Offline Mode'}>
-                <span className={`mobile-login-dot ${isOnline ? 'mobile-login-dot--online' : 'mobile-login-dot--offline'}`} />
+                <span className={`mobile-login-dot ${isOnline ? 'mobile-login-dot--online' : 'mobile-login-dot--offline'}`} aria-hidden="true" />
                 <span>{isOnline ? 'Workstation Network Connected' : 'Offline · Check Cellular / Wi-Fi'}</span>
               </div>
               <p className="mobile-login-help-text">Tanod &amp; Chief Tanod Field Personnel Only</p>

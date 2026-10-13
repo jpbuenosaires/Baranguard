@@ -1,47 +1,40 @@
 /**
  * WorkflowBits.tsx — two tiny presentational pieces the 2026-10 tanod
- * workflow screens share: the sync-state chip and the banner strip. Both are
- * thin wrappers over classes that already exist (`.status-pill`,
- * `tanod-workflow.css`'s `.wf-banner`), so every screen words and colours a
- * record's journey to the server identically.
+ * workflow screens share: the sync-state chip and the banner strip. Since the
+ * Phase 2 UI overhaul both delegate to `components/ui` (SyncLabel, Banner), so
+ * there is ONE implementation and one wording; the exports and props are
+ * unchanged for existing callers.
  */
 
 import type { ReactNode } from 'react';
-import { IonIcon } from '@ionic/react';
-import {
-  alertCircleOutline,
-  checkmarkCircleOutline,
-  informationCircleOutline,
-  warningOutline,
-} from 'ionicons/icons';
-import {
-  deriveWorkflowSyncState,
-  WORKFLOW_SYNC_STATE_LABEL,
-  type WorkflowSyncState,
-} from '../services/db/workflowSync';
+import { deriveWorkflowSyncState, type WorkflowSyncState } from '../services/db/workflowSync';
+import { Banner as UiBanner, type BannerTone as UiBannerTone } from './ui/Banner';
+import { SyncLabel } from './ui/SyncLabel';
+import type { SyncState } from './ui/syncText';
 
-const CHIP_CLASS: Record<WorkflowSyncState, string> = {
-  saved_locally: 'status-pill--pending',
-  synced: 'status-pill--success',
-  needs_attention: 'status-pill--critical',
+const SYNC_STATE: Record<WorkflowSyncState, SyncState> = {
+  saved_locally: 'saved_on_phone',
+  synced: 'sent',
+  needs_attention: 'failed',
 };
 
 /**
- * "Saved on phone" / "Synced" / "Needs attention" — derived strictly from the
+ * "Saved on phone" / "Sent" / "Needs attention" — derived strictly from the
  * row's own flags, so it never claims server receipt the row cannot prove.
+ * A permanent failure will not auto-retry, hence `willRetry={false}`.
  */
 export const SyncChip: React.FC<{ row: { synced: number; permanent_failure: number } }> = ({ row }) => {
   const state = deriveWorkflowSyncState(row);
-  return <span className={`status-pill ${CHIP_CLASS[state]}`}>{WORKFLOW_SYNC_STATE_LABEL[state]}</span>;
+  return <SyncLabel state={SYNC_STATE[state]} willRetry={false} />;
 };
 
 type BannerTone = 'info' | 'warning' | 'critical' | 'success';
 
-const BANNER_ICON: Record<BannerTone, string> = {
-  info: informationCircleOutline,
-  warning: warningOutline,
-  critical: alertCircleOutline,
-  success: checkmarkCircleOutline,
+const TONE: Record<BannerTone, UiBannerTone> = {
+  info: 'info',
+  warning: 'warning',
+  critical: 'error',
+  success: 'success',
 };
 
 export const Banner: React.FC<{ tone?: BannerTone; children: ReactNode; role?: 'alert' | 'status' }> = ({
@@ -49,8 +42,7 @@ export const Banner: React.FC<{ tone?: BannerTone; children: ReactNode; role?: '
   children,
   role = tone === 'critical' || tone === 'warning' ? 'alert' : 'status',
 }) => (
-  <div className={`wf-banner wf-banner--${tone}`} role={role}>
-    <IonIcon icon={BANNER_ICON[tone]} aria-hidden="true" />
-    <div>{children}</div>
-  </div>
+  <UiBanner tone={TONE[tone]} role={role}>
+    {children}
+  </UiBanner>
 );
