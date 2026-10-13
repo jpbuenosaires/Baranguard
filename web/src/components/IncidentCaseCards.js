@@ -523,8 +523,6 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
     card.appendChild(byRow);
   }
 
-  card.appendChild(el('p', 'note', 'A reference link between two incidents. It does not change either incident’s status or dispatch.'));
-
   if (!canEdit) return card;
 
   const form = el('form', 'form-stack');

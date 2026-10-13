@@ -188,24 +188,49 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const aside = document.createElement('div');
     aside.className = 'incident-detail__aside';
 
+    // Left Column: Unified Master Dossier + School C-1
     main.appendChild(buildDossierCard());
-    main.appendChild(buildNarrative());
-    main.appendChild(buildEvidence());
-    // 2026-10 (contract §5, §7): school link + Annex C-1 fields (Admin and
-    // Secretary edit, Punong Barangay reads) and the referrals list. Both
-    // cards load and fail independently of the rest of the record.
     main.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary }));
 
+    // Right Column: Panel 1 - Operational Command & Timeline
+    const opsPanel = document.createElement('div');
+    opsPanel.className = 'card case-ops-panel';
+
+    const opsHeader = document.createElement('div');
+    opsHeader.className = 'panel-command-header';
+    opsHeader.innerHTML = `
+      <div class="panel-command-header__title">
+        <span class="panel-command-header__icon" aria-hidden="true">${icons.clock(16)}</span>
+        <h4 class="panel-command-title">Operational Command</h4>
+      </div>
+    `;
+    opsPanel.appendChild(opsHeader);
+
     if (incident.status === 'resolved') {
-      aside.appendChild(buildResolvedStatusCard());
+      opsPanel.appendChild(buildResolvedStatusCard());
     } else if (user.role === 'admin') {
-      aside.appendChild(buildAdminResolvePanel());
+      opsPanel.appendChild(buildAdminResolvePanel());
     }
-    if (isSecretary) aside.appendChild(buildLifecycleCard());
-    // Reference link to another incident (admin|secretary may change it;
-    // Punong Barangay reads it). Separate from the Secretary's duplicate
-    // lifecycle action above, and it never changes status or dispatch.
-    aside.appendChild(RelatedIncidentCard({
+    opsPanel.appendChild(buildTimeline());
+    opsPanel.appendChild(buildResponders());
+    aside.appendChild(opsPanel);
+
+    // Right Column: Panel 2 - Case Connections & References
+    const refsPanel = document.createElement('div');
+    refsPanel.className = 'card case-refs-panel';
+
+    const refsHeader = document.createElement('div');
+    refsHeader.className = 'panel-command-header';
+    refsHeader.innerHTML = `
+      <div class="panel-command-header__title">
+        <span class="panel-command-header__icon" aria-hidden="true">${icons.layers(16)}</span>
+        <h4 class="panel-command-title">Case Connections & References</h4>
+      </div>
+    `;
+    refsPanel.appendChild(refsHeader);
+
+    if (isSecretary) refsPanel.appendChild(buildLifecycleCard());
+    refsPanel.appendChild(RelatedIncidentCard({
       incidentId,
       relatedIncident: incident.relatedIncident,
       relatedBy: incident.relatedBy,
@@ -213,25 +238,24 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       navigate,
       onChanged: load,
     }));
-    aside.appendChild(ReferralsCard({
+    refsPanel.appendChild(ReferralsCard({
       incidentId,
       canAdd: user.role === 'admin' || isSecretary,
       incidentLabel: formatIncidentCode(incidentId, incident.displayId),
     }));
-    aside.appendChild(buildResponders());
-    aside.appendChild(buildTimeline());
+    aside.appendChild(refsPanel);
 
     layout.append(main, aside);
     body.appendChild(layout);
   }
 
   /**
-   * Unified Case Dossier: Combines Incident Type, Badges, Involved Parties,
-   * and Incident Particulars into a clear, spacious tiered layout with zero truncation.
+   * Unified Master Case Dossier: Combines Incident Type, Badges, Horizontal Metadata Strip,
+   * Involved Parties / Privacy Shield, Narrative, and Evidence into a single cohesive sheet.
    */
   function buildDossierCard() {
     const card = document.createElement('div');
-    card.className = 'card case-hero';
+    card.className = 'card case-hero case-dossier';
 
     const incidentDisplayId = formatIncidentCode(incident.incidentId, incident.displayId);
 
@@ -282,12 +306,12 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const dossierBody = document.createElement('div');
     dossierBody.className = 'dossier-body';
 
-    // 1. Incident Particulars - 4-tile responsive grid
+    // 1. Incident Particulars - Compact Horizontal Metadata Strip
     const metaSection = document.createElement('div');
     metaSection.className = 'dossier-section';
 
     const metaGrid = document.createElement('div');
-    metaGrid.className = 'meta-grid-4col';
+    metaGrid.className = 'meta-strip meta-grid-4col';
 
     // Location
     const locTile = document.createElement('div');
@@ -321,8 +345,6 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     // Channel
     const channelTile = document.createElement('div');
     channelTile.className = 'meta-tile';
-    // `report_channel` (migration 0036) says how the matter was reported;
-    // an older row/server without it falls back to the creating client.
     const channelLabel = reportChannelLabel(incident.reportChannel)
       || (incident.source === 'app' ? 'Mobile App' : incident.source === 'walkin' ? 'Walk-in Desk' : 'Not recorded');
     channelTile.innerHTML = `
@@ -348,33 +370,41 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     metaGrid.append(locTile, dateTile, channelTile, officerTile);
     metaSection.appendChild(metaGrid);
 
-    // 2. Involved Parties - Clean 2-column grid without filler text
+    // 2. Involved Parties & Privacy Section
     const partiesSection = document.createElement('div');
-    partiesSection.className = 'dossier-section';
+    partiesSection.className = 'dossier-section dossier-section--parties';
+
+    const missingParty = isSecretary ? 'Not recorded' : RESTRICTED_TO_SECRETARY;
 
     if (!isSecretary) {
-      const notice = document.createElement('div');
-      notice.className = 'party-privacy-notice';
-      notice.setAttribute('role', 'note');
-      notice.innerHTML = `
-        <span class="party-privacy-notice__icon" aria-hidden="true">${icons.shield(14)}</span>
-        <span>Confidential Records (RA 10173 & RA 7160 §394) — Complainant, respondent, and narrative details are restricted to the Barangay Secretary.</span>
+      const shield = document.createElement('div');
+      shield.className = 'dossier-privacy-shield';
+      shield.setAttribute('role', 'note');
+      shield.innerHTML = `
+        <div class="dossier-privacy-shield__icon" aria-hidden="true">${icons.shield(18)}</div>
+        <div class="dossier-privacy-shield__body">
+          <div class="dossier-privacy-shield__header">
+            <span class="dossier-privacy-shield__title">Confidential Records Protection</span>
+            <span class="dossier-privacy-shield__citation">RA 10173 & RA 7160 §394</span>
+          </div>
+          <p class="dossier-privacy-shield__desc">
+            Complainant, respondent, and narrative details are <strong>${RESTRICTED_TO_SECRETARY}</strong> as designated records custodian.
+          </p>
+          <div class="dossier-privacy-shield__tags">
+            <span class="party-card__tag party-card__tag--complainant">Complainant: ${RESTRICTED_TO_SECRETARY}</span>
+            <span class="party-card__tag party-card__tag--respondent">Respondent: ${RESTRICTED_TO_SECRETARY}</span>
+          </div>
+        </div>
       `;
-      partiesSection.appendChild(notice);
-    }
+      partiesSection.appendChild(shield);
+    } else {
+      const partiesGrid = document.createElement('div');
+      partiesGrid.className = 'parties-grid';
 
-    const partiesGrid = document.createElement('div');
-    partiesGrid.className = 'parties-grid';
-
-    const compCard = document.createElement('div');
-    compCard.className = 'party-card';
-    // Party fields are returned to the Secretary only (Rule 1). Anyone else
-    // gets an honest "restricted" label, never wording that reads like a fact.
-    const missingParty = isSecretary ? 'Not recorded' : RESTRICTED_TO_SECRETARY;
-    const compName = incident.complainantName || missingParty;
-    const compContact = incident.complainantContactNumber || missingParty;
-
-    if (isSecretary) {
+      const compCard = document.createElement('div');
+      compCard.className = 'party-card';
+      const compName = incident.complainantName || missingParty;
+      const compContact = incident.complainantContactNumber || missingParty;
       compCard.innerHTML = `
         <div class="party-card__role">
           <span class="party-card__tag party-card__tag--complainant">Complainant</span>
@@ -385,45 +415,49 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
           <span>${escapeHtml(compContact)}</span>
         </div>
       `;
-    } else {
-      compCard.innerHTML = `
-        <div class="party-card__role">
-          <span class="party-card__tag party-card__tag--complainant">Complainant</span>
-        </div>
-        <div class="party-card__name party-card__name--restricted">
-          <span class="party-card__restricted-icon" aria-hidden="true">${icons.shield(13)}</span>
-          <span>${escapeHtml(compName)}</span>
-        </div>
-      `;
-    }
 
-    const respCard = document.createElement('div');
-    respCard.className = 'party-card';
-    const respName = incident.respondentName || missingParty;
-
-    if (isSecretary) {
+      const respCard = document.createElement('div');
+      respCard.className = 'party-card';
+      const respName = incident.respondentName || missingParty;
       respCard.innerHTML = `
         <div class="party-card__role">
           <span class="party-card__tag party-card__tag--respondent">Respondent</span>
         </div>
         <div class="party-card__name">${escapeHtml(respName)}</div>
       `;
-    } else {
-      respCard.innerHTML = `
-        <div class="party-card__role">
-          <span class="party-card__tag party-card__tag--respondent">Respondent</span>
-        </div>
-        <div class="party-card__name party-card__name--restricted">
-          <span class="party-card__restricted-icon" aria-hidden="true">${icons.shield(13)}</span>
-          <span>${escapeHtml(respName)}</span>
-        </div>
-      `;
+
+      partiesGrid.append(compCard, respCard);
+      partiesSection.appendChild(partiesGrid);
     }
 
-    partiesGrid.append(compCard, respCard);
-    partiesSection.appendChild(partiesGrid);
+    // 3. Narrative Section
+    const narrativeSection = document.createElement('div');
+    narrativeSection.className = 'dossier-section dossier-section--narrative';
 
-    dossierBody.append(metaSection, partiesSection);
+    const narrativeHeader = document.createElement('div');
+    narrativeHeader.className = 'dossier-subheading';
+    narrativeHeader.innerHTML = `<span>Incident Narrative</span>`;
+    narrativeSection.appendChild(narrativeHeader);
+
+    const narrativeText = isSecretary
+      ? (incident.rawNarrative || missingNarrativeText())
+      : 'The narrative is restricted to the Barangay Secretary (RA 10173).';
+
+    const narrativeBody = document.createElement('div');
+    narrativeBody.className = 'doc-blockquote' + (isSecretary ? '' : ' doc-blockquote--restricted');
+    if (isSecretary) {
+      narrativeBody.textContent = narrativeText;
+    } else {
+      narrativeBody.innerHTML = `<span class="doc-blockquote__icon" aria-hidden="true">${icons.shield(14)}</span><span>${escapeHtml(narrativeText)}</span>`;
+    }
+    narrativeSection.appendChild(narrativeBody);
+
+    // 4. Digital Evidence Section
+    const evidenceSection = document.createElement('div');
+    evidenceSection.className = 'dossier-section dossier-section--evidence';
+    evidenceSection.appendChild(buildEvidence());
+
+    dossierBody.append(metaSection, partiesSection, narrativeSection, evidenceSection);
     card.appendChild(dossierBody);
 
     return card;
