@@ -843,6 +843,7 @@ export async function getCitizenReports({ status, page, limit } = {}) {
       longitude: row.longitude,
       submittedAt: row.submitted_at,
       incidentId: row.incident_id,
+      incidentDisplayId: row.incident_display_id ?? null,
     })),
     page: json.page,
     limit: json.limit,
@@ -954,7 +955,7 @@ export async function getBarangays() {
 export async function search(q) {
   const json = await request('GET', '/search', { query: { q }, auth: true });
   return json.items.map((row) => ({
-    incidentId: row.incident_id, incidentType: row.incident_type, status: row.status,
+    incidentId: row.incident_id, displayId: row.display_id ?? null, incidentType: row.incident_type, status: row.status,
     priority: row.priority, createdAt: row.created_at,
   }));
 }
@@ -1063,6 +1064,7 @@ export async function getAuditLog({ action, dateFrom, dateTo, page, limit } = {}
       action: row.action,           // free-form VARCHAR, not an enum — passed through
       entityType: row.entity_type,
       entityId: row.entity_id,
+      entityDisplayId: row.entity_display_id ?? null, // INC-YYYY-NNN for incident entries, null otherwise
       metadataJson: row.metadata_json,
       createdAt: row.created_at,
     })),
@@ -1216,6 +1218,7 @@ export async function getSmsConversationMessages(phoneNumber) {
     status: row.status,
     failureReason: row.failure_reason,
     incidentId: row.incident_id,
+    incidentDisplayId: row.incident_display_id ?? null,
     dispatchId: row.dispatch_id,
     reportId: row.report_id,
     createdAt: row.created_at,
@@ -1280,6 +1283,7 @@ export async function getSmsLogs({ messageType, direction, status, dateFrom, dat
       logId: row.log_id,
       reportId: row.report_id,
       incidentId: row.incident_id,
+      incidentDisplayId: row.incident_display_id ?? null,
       dispatchId: row.dispatch_id,
       transport: row.transport,
       messageType: row.message_type,

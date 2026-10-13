@@ -1485,7 +1485,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
         searchInput.className = 'ssz-search-input';
-        searchInput.placeholder = 'Search saved term reports by label, reference code (ANX-D-xxxx), or dates…';
+        searchInput.placeholder = 'Search saved term reports by label, reference code (ANX-D-0007), or dates…';
         searchInput.setAttribute('aria-label', 'Search saved term reports');
         searchInput.value = termSearchQuery;
         searchWrap.append(searchIcon, searchInput);

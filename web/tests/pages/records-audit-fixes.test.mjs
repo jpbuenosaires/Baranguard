@@ -40,6 +40,18 @@ describe('Incident Management: no invented content', () => {
     await settle();
     const pane = text($('.incident-right-panel'));
     assert.doesNotMatch(pane, FORBIDDEN_FABRICATIONS);
+    // The Admin now reads the party details (Rule 1 amended 2026-10-13), so "By" is the complainant's name.
+    assert.match(pane, /By: Juan Santos/);
+    assert.doesNotMatch(pane, /By: \d+/);
+  });
+
+  test('"Reported - By" falls back to the channel when the server sends no complainant name', async () => {
+    withDetailOverride(902, (b) => ({ ...b, complainant_name: null }));
+    const ctx = mountPage(renderIncidentManagementPage, { role: 'admin' });
+    await settle();
+    click(buttonByText(/^INC-2026-902/, ctx.root));
+    await settle();
+    const pane = text($('.incident-right-panel'));
     assert.match(pane, /Channel: SMS/);
     assert.doesNotMatch(pane, /By: \d+/);
   });
@@ -131,8 +143,8 @@ describe('Incident Management: walk-in form', () => {
 describe('Incident detail: honest wording', () => {
   afterEach(() => cleanup());
 
-  test('Admin and Punong Barangay see "Restricted to the Barangay Secretary", never "Under Investigation"', async () => {
-    for (const role of ['admin', 'punong_barangay']) {
+  test('Punong Barangay sees "Restricted to the Barangay Secretary...", never "Under Investigation"; Admin reads the details', async () => {
+    for (const role of ['punong_barangay']) {
       const ctx = mountPage(renderIncidentDetailPage, { role, param: 903 });
       await settle();
       const body = text(ctx.root);
@@ -140,6 +152,15 @@ describe('Incident detail: honest wording', () => {
       assert.match(body, /Restricted to the Barangay Secretary/, `${role}`);
       cleanup();
     }
+  });
+
+  test('the Admin sees the confidential details, with no "Restricted" wording and no invented text', async () => {
+    const ctx = mountPage(renderIncidentDetailPage, { role: 'admin', param: 903 });
+    await settle();
+    const body = text(ctx.root);
+    assert.doesNotMatch(body, FORBIDDEN_FABRICATIONS);
+    assert.match(body, /RAW-NARRATIVE-903/);
+    assert.doesNotMatch(body, /Restricted to the Barangay Secretary/);
   });
 
   test('the Secretary sees "Not recorded" for a missing respondent, plus honest location and officer fallbacks', async () => {

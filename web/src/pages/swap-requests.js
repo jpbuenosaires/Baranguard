@@ -28,10 +28,10 @@ const STATUS_PILL_CLASS = {
 };
 
 const COLUMNS = [
-  { key: 'swapFlow', label: 'Swap Flow & Reason' },
-  { key: 'shift', label: 'Shift Details' },
-  { key: 'status', label: 'Status' },
-  { key: 'actions', label: 'Actions', align: 'right' },
+  { key: 'swapFlow', label: 'Swap Flow & Reason', width: '40%' },
+  { key: 'shift', label: 'Shift Details', width: '28%' },
+  { key: 'status', label: 'Status', width: '14%' },
+  { key: 'actions', label: 'Actions', align: 'right', width: '18%' },
 ];
 
 /**
@@ -212,33 +212,40 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
         switch (key) {
           case 'swapFlow': {
             const cell = document.createElement('div');
+            cell.className = 'swap-cell-wrapper';
+            const swapCode = formatSwapCode(req.requestId);
+            const targetDisplay = targetName || 'Any eligible Tanod';
+            cell.setAttribute(
+              'aria-label',
+              `Swap request ${swapCode}: ${requesterName} (Relief) transferring shift to ${targetDisplay} (Covering). Reason: ${req.reason || 'None provided'}`
+            );
 
             // Swap code pill (SWP-xxxx)
+            const metaRow = document.createElement('div');
+            metaRow.className = 'swap-cell-meta';
             const codePill = document.createElement('span');
-            codePill.className = 'c1-inc-code-pill';
-            codePill.style.cssText = 'width: fit-content; margin-bottom: 4px;';
-            codePill.textContent = formatSwapCode(req.requestId);
-            cell.appendChild(codePill);
+            codePill.className = 'c1-inc-code-pill font-mono';
+            codePill.textContent = swapCode;
+            metaRow.appendChild(codePill);
+            cell.appendChild(metaRow);
 
             // Flow row: Requester ➔ Target
             const flowRow = document.createElement('div');
             flowRow.className = 'swap-flow-cell';
 
-            // Requester (Relieving)
+            // Requester (Relief)
             const reqParty = document.createElement('div');
             reqParty.className = 'swap-party swap-party--requester';
-            const reqRole = document.createElement('span');
-            reqRole.className = 'swap-role-badge';
-            reqRole.textContent = 'Relief';
-            const reqIdentity = document.createElement('div');
-            reqIdentity.className = 'swap-party__identity';
-            reqIdentity.innerHTML = `${avatarInitials(requesterName, 24)}<span class="swap-party__name">${escapeHtml(requesterName)}</span>`;
-            reqParty.append(reqRole, reqIdentity);
+            reqParty.innerHTML = `
+              ${avatarInitials(requesterName, 22)}
+              <span class="swap-party__name">${escapeHtml(requesterName)}</span>
+              <span class="swap-role-tag swap-role-tag--relief">Relief</span>
+            `;
 
-            // Direction indicator
+            // Direction indicator (Crisp SVG arrow)
             const arrow = document.createElement('span');
             arrow.className = 'swap-arrow';
-            arrow.innerHTML = '➔';
+            arrow.innerHTML = icons.arrowRight ? icons.arrowRight(14) : '➔';
             arrow.title = 'Transfers shift to';
             arrow.setAttribute('aria-hidden', 'true');
 
@@ -247,13 +254,11 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
             if (targetName) {
               const targetParty = document.createElement('div');
               targetParty.className = 'swap-party swap-party--target';
-              const targetRole = document.createElement('span');
-              targetRole.className = 'swap-role-badge swap-role-badge--target';
-              targetRole.textContent = 'Covering';
-              const targetIdentity = document.createElement('div');
-              targetIdentity.className = 'swap-party__identity';
-              targetIdentity.innerHTML = `${avatarInitials(targetName, 24)}<span class="swap-party__name">${escapeHtml(targetName)}</span>`;
-              targetParty.append(targetRole, targetIdentity);
+              targetParty.innerHTML = `
+                ${avatarInitials(targetName, 22)}
+                <span class="swap-party__name">${escapeHtml(targetName)}</span>
+                <span class="swap-role-tag swap-role-tag--covering">Covering</span>
+              `;
               flowRow.appendChild(targetParty);
             } else {
               const openBadge = document.createElement('span');
@@ -264,11 +269,11 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
 
             cell.appendChild(flowRow);
 
-            // Optional Reason Quote
+            // Optional Reason Quote (Flat subtle chip, no left color border)
             if (req.reason) {
               const reasonBox = document.createElement('div');
               reasonBox.className = 'swap-reason-box';
-              reasonBox.textContent = `"${req.reason}"`;
+              reasonBox.textContent = `“${req.reason}”`;
               cell.appendChild(reasonBox);
             }
 

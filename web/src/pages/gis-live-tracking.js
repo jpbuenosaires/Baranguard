@@ -49,6 +49,7 @@ import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatIncidentCode } from '../services/tanodWorkflowUi.js';
 import { formatManilaTime, formatManilaTimeSeconds } from '../utils/manilaTime.js';
 
 const POLL_INTERVAL_MS = 15000;
@@ -447,7 +448,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       .filter((i) => i.latitude != null && i.longitude != null)
       .map((i) => ({
         incidentId: i.incidentId,
-        displayId: i.displayId || `INC-${i.incidentId}`,
+        displayId: formatIncidentCode(i.incidentId, i.displayId),
         latitude: i.latitude,
         longitude: i.longitude,
         incidentType: i.incidentType || 'other',
@@ -460,7 +461,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
     renderCurrentRosterAndMap = renderRosterAndMap;
     renderRosterAndMap();
-    renderActivityFeed(floatingActivityListEl, dispatches, dutyStatuses, openSos, gpsItems);
+    renderActivityFeed(floatingActivityListEl, dispatches, dutyStatuses, openSos, gpsItems, incidents);
 
     function renderGisLegend(availMapCount, dispMapCount, incMapCount, sosMapCount) {
       if (!legendWidgetEl || !liveMap) return;
@@ -544,7 +545,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
           isDispatched: dispatchedIds.has(g.userId),
           hasActiveSos,
           incidentId: disp?.incidentId || null,
-          incidentCode: disp ? `INC-${String(disp.incidentId).padStart(3, '0')}` : null,
+          incidentCode: disp ? formatIncidentCode(disp.incidentId, incidents.find((i) => i.incidentId === disp.incidentId)?.displayId) : null,
           onViewIncident: isAdmin ? (incId) => navigate('incident-detail', incId) : undefined,
         };
       }));
@@ -633,7 +634,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
             : 'On duty';
 
         const incidentBadgeHtml = (isDispatched && dispatchObj)
-          ? `<span class="gis-personnel-card__incident-pill">INC-${String(dispatchObj.incidentId).padStart(3, '0')}</span>`
+          ? `<span class="gis-personnel-card__incident-pill">${escapeHtml(formatIncidentCode(dispatchObj.incidentId, incidents.find((i) => i.incidentId === dispatchObj.incidentId)?.displayId))}</span>`
           : '';
 
         const contactNumber = tanodUser?.contactNumber;
@@ -702,7 +703,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   /**
    * Client-side derived event feed matching the live activity card in the sample image
    */
-  function renderActivityFeed(container, dispatches, dutyStatuses, openSos, gpsItems) {
+  function renderActivityFeed(container, dispatches, dutyStatuses, openSos, gpsItems, incidents = []) {
     if (!container) return;
     const gpsNameById = new Map(gpsItems.map((g) => [g.userId, g.fullName]));
     const resolveName = (id) => tanodRosterById.get(id)?.fullName || gpsNameById.get(id) || `Tanod #${id}`;
@@ -710,7 +711,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     const events = [];
     for (const d of dispatches) {
       const code = resolveName(d.tanodId);
-      const incCode = `INC-${String(d.incidentId).padStart(3, '0')}`;
+      const incCode = formatIncidentCode(d.incidentId, incidents.find((i) => i.incidentId === d.incidentId)?.displayId);
       if (d.dispatchedAt) {
         events.push({
           ts: d.dispatchedAt,

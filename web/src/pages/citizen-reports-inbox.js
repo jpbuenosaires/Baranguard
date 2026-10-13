@@ -698,7 +698,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
       const bannerTitle = document.createElement('div');
       bannerTitle.className = 'citizen-converted-banner__title';
-      bannerTitle.innerHTML = `${icons.checkCircle(16)} Official Incident Created (${escapeHtml(formatIncidentCode(report.incidentId))})`;
+      bannerTitle.innerHTML = `${icons.checkCircle(16)} Official Incident Created (${escapeHtml(formatIncidentCode(report.incidentId, report.incidentDisplayId))})`;
 
       const bannerDesc = document.createElement('div');
       bannerDesc.className = 'citizen-converted-banner__desc';

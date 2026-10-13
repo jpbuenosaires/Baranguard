@@ -119,7 +119,7 @@ const DUTY_STATUS_LABELS = { on_duty: 'On Duty', responding: 'Responding', off_d
 const DUTY_STATUS_PILL_CLASS = { on_duty: 'status-pill--success', responding: 'status-pill--info', off_duty: 'status-pill--neutral' };
 
 const RECENT_INCIDENTS_COLUMNS = [
-  { key: 'id', label: 'ID', width: '4.5rem' },
+  { key: 'id', label: 'ID', width: '8rem' },
   { key: 'type', label: 'Type' },
   { key: 'status', label: 'Status' },
   { key: 'date', label: 'Date', align: 'right' },

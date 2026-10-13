@@ -60,7 +60,6 @@
 }
 .data-table tbody tr.is-selected {
   background: var(--color-row-active-bg);
-  border-left: 3px solid var(--color-primary);
 }
 
 .data-table .is-right { text-align: right; }

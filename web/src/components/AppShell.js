@@ -259,11 +259,12 @@ function writeOpenMenus(openMenus) {
  * @param {string} activePage
  * @param {(page: string) => void} navigate
  * @param {() => void} onLogout
+ * @param {{breadcrumbTrail?: Array<{label:string, page?:string, param?:any, current?:boolean}>}} [options]
  * @returns {{el:HTMLElement, header:HTMLElement, content:HTMLElement, logoutButton:HTMLButtonElement, setFullName:(fullName:string)=>void}}
  *   `header` is a full-bleed slot above the scrolling content area —
  *   mount a PageHeader into it. `content` is the padded scroll area.
  */
-export function AppShell(user, activePage, navigate, onLogout) {
+export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   const handleLogout = () => {
     resetNotificationBaselineOnLogout();
     onLogout();
@@ -550,35 +551,71 @@ export function AppShell(user, activePage, navigate, onLogout) {
   jurisdictionChip.hidden = true;
   applyBarangayName(jurisdictionChip, user.barangayId, { setTitle: true });
 
-  // Compute breadcrumb path from activePage and NAV_ITEMS
-  const currentNav = NAV_ITEMS.find((i) => i.key === activePage);
-  let groupTitle = currentNav?.menu || currentNav?.group;
-  let pageTitle = currentNav?.label;
-
-  if (!groupTitle && activePage === 'dashboard') {
-    groupTitle = 'Overview';
-    pageTitle = 'Dashboard';
-  } else if (!pageTitle) {
-    pageTitle = activePage.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-
   const breadcrumbs = document.createElement('nav');
   breadcrumbs.className = 'topbar__breadcrumbs';
   breadcrumbs.setAttribute('aria-label', 'Breadcrumb navigation');
 
-  let breadcrumbsHtml = `
-    <span class="topbar__crumb topbar__crumb--group">${groupTitle || 'Overview'}</span>
-    <span class="topbar__crumb-sep" aria-hidden="true">/</span>
-    <span class="topbar__crumb topbar__crumb--current" aria-current="page">${pageTitle}</span>
-  `;
+  if (options && Array.isArray(options.breadcrumbTrail) && options.breadcrumbTrail.length > 0) {
+    options.breadcrumbTrail.forEach((crumb, index) => {
+      if (index > 0) {
+        const sep = document.createElement('span');
+        sep.className = 'topbar__crumb-sep';
+        sep.setAttribute('aria-hidden', 'true');
+        sep.textContent = '/';
+        breadcrumbs.appendChild(sep);
+      }
+      if (crumb.current) {
+        const currentSpan = document.createElement('span');
+        currentSpan.className = 'topbar__crumb topbar__crumb--current';
+        currentSpan.setAttribute('aria-current', 'page');
+        currentSpan.textContent = crumb.label;
+        breadcrumbs.appendChild(currentSpan);
+      } else if (crumb.page) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'topbar__crumb topbar__crumb--link';
+        btn.textContent = crumb.label;
+        btn.addEventListener('click', () => navigate(crumb.page, crumb.param));
+        breadcrumbs.appendChild(btn);
+      } else {
+        const groupSpan = document.createElement('span');
+        groupSpan.className = 'topbar__crumb topbar__crumb--group';
+        groupSpan.textContent = crumb.label;
+        breadcrumbs.appendChild(groupSpan);
+      }
+    });
+  } else {
+    // Compute breadcrumb path from activePage and NAV_ITEMS
+    const currentNav = NAV_ITEMS.find((i) => i.key === activePage);
+    let groupTitle = currentNav?.menu || currentNav?.group;
+    let pageTitle = currentNav?.label;
 
-  if (user.role === 'punong_barangay') {
+    if (!groupTitle && activePage === 'dashboard') {
+      groupTitle = 'Overview';
+      pageTitle = 'Dashboard';
+    } else if (!pageTitle) {
+      pageTitle = activePage.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    let breadcrumbsHtml = '';
+    if (groupTitle && groupTitle !== pageTitle) {
+      breadcrumbsHtml += `
+        <span class="topbar__crumb topbar__crumb--group">${groupTitle}</span>
+        <span class="topbar__crumb-sep" aria-hidden="true">/</span>
+      `;
+    }
     breadcrumbsHtml += `
-      <span class="topbar__role-tag" title="Punong Barangay: oversight and approvals">Executive</span>
+      <span class="topbar__crumb topbar__crumb--current" aria-current="page">${pageTitle}</span>
     `;
-  }
 
-  breadcrumbs.innerHTML = breadcrumbsHtml;
+    if (user.role === 'punong_barangay') {
+      breadcrumbsHtml += `
+        <span class="topbar__role-tag" title="Punong Barangay: oversight and approvals">Executive</span>
+      `;
+    }
+
+    breadcrumbs.innerHTML = breadcrumbsHtml;
+  }
   topbarContext.append(jurisdictionChip, breadcrumbs);
   topbar.appendChild(topbarContext);
 

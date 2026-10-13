@@ -30,19 +30,27 @@ describePage({
 describe('Incident detail behaviour', () => {
   afterEach(() => cleanup());
 
-  test('the Secretary sees the raw narrative (Rule 1: Secretary-only)', async () => {
-    const ctx = mountPage(renderIncidentDetailPage, { role: 'secretary', param: 903 });
-    await settle();
-    assert.match(text(ctx.root), /RAW-NARRATIVE-903/);
-  });
-
-  for (const role of ['admin', 'punong_barangay']) {
-    test(`${role} never sees the raw narrative (Rule 1)`, async () => {
+  for (const role of ['secretary', 'admin']) {
+    test(`${role} sees the raw narrative and the party details (Rule 1, amended: Secretary and Chief Tanod)`, async () => {
       const ctx = mountPage(renderIncidentDetailPage, { role, param: 903 });
       await settle();
-      assert.doesNotMatch(text(), /RAW-NARRATIVE/);
-      assert.match(text(ctx.root), /restricted to the Barangay Secretary/i);
+      assert.match(text(ctx.root), /RAW-NARRATIVE-903/);
+      assert.match(text(ctx.root), /Complainant/);
+      assert.match(text(ctx.root), /Juan Santos/);
+      assert.match(text(ctx.root), /Carlos Mendoza/);
+      assert.equal($('.dossier-privacy-shield', ctx.root), null, `${role} must not see the "restricted" note`);
     });
+  }
+
+  for (const role of ['admin', 'punong_barangay']) {
+    if (role === 'punong_barangay') {
+      test('punong_barangay never sees the raw narrative (Rule 1)', async () => {
+        const ctx = mountPage(renderIncidentDetailPage, { role, param: 903 });
+        await settle();
+        assert.doesNotMatch(text(), /RAW-NARRATIVE/);
+        assert.match(text(ctx.root), /restricted to the Barangay Secretary and the Chief Tanod/i);
+      });
+    }
 
     test(`${role} gets no lifecycle controls (Secretary-only, §3)`, async () => {
       const ctx = mountPage(renderIncidentDetailPage, { role, param: 902 });
@@ -81,6 +89,41 @@ describe('Incident detail behaviour', () => {
     await settle();
     assert.match(text(ctx.root), /scene\.jpg|photo/i);
     assert.doesNotMatch(ctx.root.innerHTML, /storage[\/]|[A-Z]:\|\/var\//, 'a filesystem path leaked into the page');
+  });
+
+  test('2026-10 UI pass: Admin gets a Dispatch Tanod button on a pending incident; nobody else, and not once dispatched', async () => {
+    let ctx = mountPage(renderIncidentDetailPage, { role: 'admin', param: 901 });
+    await settle();
+    assert.ok(buttonByText(/^dispatch tanod$/i, $('.console-hero-header__actions', ctx.root)), 'Admin should see Dispatch Tanod in the header');
+    cleanup();
+    for (const [role, param] of [['secretary', 901], ['punong_barangay', 901], ['admin', 902], ['admin', 903]]) {
+      ctx = mountPage(renderIncidentDetailPage, { role, param });
+      await settle();
+      assert.equal(buttonByText(/^dispatch tanod$/i, ctx.root), undefined, `${role} on ${param} must not get Dispatch Tanod`);
+      cleanup();
+    }
+  });
+
+  test('2026-10 UI pass: the timeline states real elapsed time and what it is waiting for', async () => {
+    let ctx = mountPage(renderIncidentDetailPage, { role: 'admin', param: 901 });
+    await settle();
+    assert.match(text(ctx.root), /Waiting for dispatch\. Filed 1[0-9] min ago\./);
+    assert.match(text(ctx.root), /Awaiting dispatch/);
+    cleanup();
+    ctx = mountPage(renderIncidentDetailPage, { role: 'admin', param: 903 });
+    await settle();
+    assert.match(text(ctx.root), /\+\d+ (min|h)[^.]* after filing/, 'a reached stage shows its elapsed time since filing');
+    assert.doesNotMatch(text(ctx.root), /Waiting for dispatch/);
+  });
+
+  test('2026-10 UI pass: tabs use short names and the privacy note is one line that still says Restricted to the Barangay Secretary', async () => {
+    const ctx = mountPage(renderIncidentDetailPage, { role: 'punong_barangay', param: 902 });
+    await settle();
+    const tabs = $$('[role="tab"]', ctx.root).map((t) => text(t).trim());
+    assert.deepEqual(tabs, ['Details', 'Timeline & links']);
+    const shield = $('.dossier-privacy-shield--compact', ctx.root);
+    assert.ok(shield, 'compact privacy line missing');
+    assert.match(text(shield), /Restricted to the Barangay Secretary/);
   });
 
   test('Back returns each role to a screen it can actually open', async () => {
@@ -217,5 +260,30 @@ describe('Incident detail behaviour', () => {
     assert.ok(pills.length >= 2, 'expected status and priority pills');
     assert.ok(pills.some((p) => /RESPONDING/i.test(text(p))));
     assert.ok(pills.some((p) => /CRITICAL PRIORITY/i.test(text(p))));
+  });
+});
+
+describe('Incident detail document title and reference lookup', () => {
+  afterEach(() => cleanup());
+
+  test('the tab title carries the real display code once the incident has loaded', async () => {
+    mountPage(renderIncidentDetailPage, { role: 'admin', param: 902 });
+    await settle();
+    assert.equal(globalThis.document.title, 'Incident Record — INC-2026-902 — Baranguard');
+  });
+
+  test('a lower-case code with spaces, or a bare number, still resolves the incident', async () => {
+    for (const typed of ['  inc-2026-902 ', '902']) {
+      const ctx = mountPage(renderIncidentDetailPage, { role: 'admin', param: 901 });
+      await settle();
+      const card = $('.case-card--related', ctx.root);
+      type($('input', card), typed);
+      card.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+      await settle();
+      const dialog = $('[role="alertdialog"]');
+      assert.ok(dialog, `no confirmation for "${typed}"`);
+      assert.match(text(dialog), /INC-2026-902: medical emergency/);
+      cleanup();
+    }
   });
 });

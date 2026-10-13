@@ -384,11 +384,12 @@ export function selectOf(options, { value = '', placeholder, ariaLabel } = {}) {
 
 // --- Formal Record Reference Code Formatters (Option A) ---------------------
 
-function padCode(prefix, id, width = 4) {
+export function padCode(prefix, id, width = 4) {
   const num = Number(id);
-  if (Number.isFinite(num) && num > 0) return `${prefix}-${String(num).padStart(width, '0')}`;
-  if (id !== null && id !== undefined && String(id).trim() !== '') return `${prefix}-${String(id).trim()}`;
-  return `${prefix}-${'0'.repeat(width)}`;
+  if (id !== null && id !== undefined && String(id).trim() !== '' && Number.isFinite(num) && num > 0) {
+    return `${prefix}-${String(Math.trunc(num)).padStart(width, '0')}`;
+  }
+  return '—';
 }
 
 export function formatShiftCode(id) {
@@ -411,14 +412,23 @@ export function formatSwapCode(id) {
   return padCode('SWP', id, 4);
 }
 
+// The official code is the server's display_id (INC-2026-159). It cannot be
+// derived from the numeric id, so without it we show a visibly unofficial
+// fallback (INC-#159) and never an invented INC-YYYY-NNN code.
 export function formatIncidentCode(incOrId, displayId) {
-  if (displayId && String(displayId).trim()) return String(displayId).trim();
+  const clean = (v) => (v !== null && v !== undefined && String(v).trim() ? String(v).trim() : '');
+  if (clean(displayId)) return clean(displayId);
+  let rawId = incOrId;
   if (incOrId && typeof incOrId === 'object') {
-    if (incOrId.displayId && String(incOrId.displayId).trim()) return String(incOrId.displayId).trim();
-    if (incOrId.incidentDisplayId && String(incOrId.incidentDisplayId).trim()) return String(incOrId.incidentDisplayId).trim();
-    return padCode('INC', incOrId.incidentId ?? incOrId.id, 4);
+    const d = clean(incOrId.displayId) || clean(incOrId.incidentDisplayId);
+    if (d) return d;
+    rawId = incOrId.incidentId ?? incOrId.id;
   }
-  return padCode('INC', incOrId, 4);
+  const num = Number(rawId);
+  if (rawId !== null && rawId !== undefined && String(rawId).trim() !== '' && Number.isFinite(num) && num > 0) {
+    return `INC-#${Math.trunc(num)}`;
+  }
+  return '—';
 }
 
 export function formatCitizenReportCode(id) {

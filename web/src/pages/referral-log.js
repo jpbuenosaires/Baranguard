@@ -40,7 +40,7 @@ function typeLabel(value) {
 
 function formatReferralCode(referralId) {
   const num = Number(referralId);
-  if (!Number.isFinite(num) || num <= 0) return 'REF-0000';
+  if (!Number.isFinite(num) || num <= 0) return '—';
   return `REF-${String(num).padStart(4, '0')}`;
 }
 
@@ -108,7 +108,7 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
   searchInput.type = 'search';
   searchInput.className = 'ref-search-input';
   searchInput.id = 'tw-ref-search';
-  searchInput.placeholder = 'Search incident ID (INC-xxxx), referral code (REF-xxxx), incident type, agency, or reference no.…';
+  searchInput.placeholder = 'Search incident ID (INC-2026-048), referral code (REF-0012), incident type, agency, or reference no.…';
   searchInput.setAttribute('aria-label', 'Search referrals by incident ID, type, agency, or reference number');
 
   const searchClearBtn = h('button', 'ref-search-clear');

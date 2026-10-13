@@ -150,8 +150,8 @@ export function buildRoutes(scenario) {
       has_active_dispatch: own.some((d) => ['assigned', 'en_route', 'arrived'].includes(d.status)),
       dispatches: own.map(({ dispatch_id, tanod_id, tanod_name, status, dispatched_at, en_route_at, arrived_at, completed_at, cancelled_at }) => ({ dispatch_id, tanod_id, tanod_name, status, dispatched_at, en_route_at, arrived_at, completed_at, cancelled_at })),
     };
-    // REFERENCE.md §2 Rule 1: raw narrative + party fields reach a Secretary only.
-    if (role === 'secretary') {
+    // REFERENCE.md §2 Rule 1 (amended 2026-10-13): raw narrative + party fields reach the Secretary and the (web) Admin only.
+    if (role === 'secretary' || role === 'admin') {
       detail.raw_narrative = t(`RAW-NARRATIVE-${inc.incident_id}: Complainant Juan Santos reported the incident at 0917-555-0101.`);
       detail.complainant_name = t('Juan Santos');
       detail.respondent_name = inc.incident_id === 903 ? t('Carlos Mendoza') : null;

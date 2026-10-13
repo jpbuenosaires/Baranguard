@@ -894,7 +894,7 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
 
 function renderIncidentTypeDonutCard(counts) {
   const card = document.createElement('div');
-  card.className = 'card';
+  card.className = 'card incident-type-donut-card';
 
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const entries = Object.entries(counts);
@@ -954,7 +954,7 @@ function renderIncidentTypeDonutCard(counts) {
 
 function renderBreakdownCard(title, counts, labels, pillClasses) {
   const card = document.createElement('div');
-  card.className = 'card';
+  card.className = 'card breakdown-status-card';
 
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
@@ -984,7 +984,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
   }
 
   const list = document.createElement('div');
-  list.className = 'stack';
+  list.className = 'breakdown-status-grid';
   for (const [key, count] of Object.entries(counts)) {
     if (!CORE_STATUSES.has(key) && STATUS_LABELS[key] && count === 0) continue;
     const pct = total > 0 ? Math.round((count / total) * 100) : 0;
