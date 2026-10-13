@@ -29,6 +29,20 @@ const TYPE_LABELS = {
   other: 'Other',
 };
 
+const TYPE_COLOR_TOKENS = {
+  theft: 'var(--cat-theft, #2563EB)',
+  physical_injury: 'var(--cat-injury, #E11D48)',
+  disturbance: 'var(--cat-disturbance, #D97706)',
+  domestic_dispute: 'var(--cat-dispute, #DC2626)',
+  vandalism: 'var(--cat-vandalism, #0D9488)',
+  traffic_incident: 'var(--cat-traffic, #EA580C)',
+  fire: 'var(--cat-fire, #B91C1C)',
+  medical_emergency: 'var(--cat-medical, #DB2777)',
+  missing_person: 'var(--cat-missing, #7C3AED)',
+  animal_complaint: 'var(--cat-animal, #16A34A)',
+  other: 'var(--cat-other, #64748B)',
+};
+
 /** Below this many plotted incidents the colour scale is too coarse to read as a trend. */
 const SMALL_SAMPLE = 10;
 
@@ -209,35 +223,70 @@ export function renderHeatmapTab(container, pageHeader, user) {
 
     const bdList = document.createElement('div');
     bdList.className = 'heatmap-breakdown-list';
+    bdList.setAttribute('role', 'region');
+    bdList.setAttribute('aria-label', 'Incident categories ranked by occurrence');
 
-    for (const [typeKey, count] of sortedTypes) {
-      const pct = Math.round((count / points.length) * 100);
-      const row = document.createElement('div');
-      row.className = 'heatmap-breakdown-row';
+    function renderBreakdownRows() {
+      bdList.innerHTML = '';
+      for (const [typeKey, count] of sortedTypes) {
+        const pct = Math.round((count / points.length) * 100);
+        const row = document.createElement('div');
+        row.className = 'heatmap-breakdown-row';
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '0');
+        row.setAttribute('data-category', typeKey);
+        row.title = `Click to filter map by ${formatIncidentType(typeKey)}`;
 
-      const head = document.createElement('div');
-      head.className = 'heatmap-breakdown-row__head';
+        const isRowActive = activeCategory === typeKey;
+        const isDimmed = activeCategory !== 'all' && !isRowActive;
+        if (isRowActive) row.classList.add('heatmap-breakdown-row--active');
+        if (isDimmed) row.classList.add('heatmap-breakdown-row--dimmed');
 
-      const nameEl = document.createElement('span');
-      nameEl.className = 'heatmap-breakdown-row__name';
-      nameEl.textContent = formatIncidentType(typeKey);
+        const head = document.createElement('div');
+        head.className = 'heatmap-breakdown-row__head';
 
-      const statEl = document.createElement('span');
-      statEl.className = 'heatmap-breakdown-row__stat';
-      statEl.textContent = `${count} (${pct}%)`;
+        const nameEl = document.createElement('span');
+        nameEl.className = 'heatmap-breakdown-row__name';
+        nameEl.textContent = formatIncidentType(typeKey);
 
-      head.append(nameEl, statEl);
+        const statEl = document.createElement('span');
+        statEl.className = 'heatmap-breakdown-row__stat';
+        statEl.textContent = `${count} (${pct}%)`;
 
-      const track = document.createElement('div');
-      track.className = 'heatmap-breakdown-row__track';
-      const fill = document.createElement('div');
-      fill.className = 'heatmap-breakdown-row__fill';
-      fill.style.width = `${Math.max(pct, 4)}%`;
-      track.appendChild(fill);
+        head.append(nameEl, statEl);
 
-      row.append(head, track);
-      bdList.appendChild(row);
+        const track = document.createElement('div');
+        track.className = 'heatmap-breakdown-row__track';
+        track.setAttribute('role', 'progressbar');
+        track.setAttribute('aria-valuenow', pct);
+        track.setAttribute('aria-valuemin', '0');
+        track.setAttribute('aria-valuemax', '100');
+        track.setAttribute('aria-label', `${formatIncidentType(typeKey)}: ${count} incidents (${pct}%)`);
+
+        const fill = document.createElement('div');
+        fill.className = 'heatmap-breakdown-row__fill';
+        fill.style.width = `${Math.max(pct, 4)}%`;
+        fill.style.background = TYPE_COLOR_TOKENS[typeKey] || 'var(--color-primary)';
+        track.appendChild(fill);
+
+        row.append(head, track);
+
+        const toggleFromRow = () => {
+          applyCategoryFilter(activeCategory === typeKey ? 'all' : typeKey);
+        };
+        row.addEventListener('click', toggleFromRow);
+        row.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleFromRow();
+          }
+        });
+
+        bdList.appendChild(row);
+      }
     }
+
+    renderBreakdownRows();
 
     const bdSummary = document.createElement('div');
     bdSummary.className = 'heatmap-breakdown-summary';
@@ -267,6 +316,19 @@ export function renderHeatmapTab(container, pageHeader, user) {
     heatmap = HeatmapMap(mapWrapper);
     heatmap.setPoints(points);
 
+    function applyCategoryFilter(catKey) {
+      activeCategory = catKey;
+      const filtered = activeCategory === 'all'
+        ? points
+        : points.filter((p) => (p.incidentType || 'other') === activeCategory);
+      renderFilterChips();
+      renderStats(filtered.length);
+      renderBreakdownRows();
+      if (heatmap) {
+        heatmap.setPoints(filtered);
+      }
+    }
+
     function renderFilterChips() {
       chipsWrap.innerHTML = '';
       const options = [
@@ -274,14 +336,25 @@ export function renderHeatmapTab(container, pageHeader, user) {
         ...sortedTypes.map(([k, c]) => ({ key: k, label: formatIncidentType(k), count: c })),
       ];
 
-      for (const opt of options) {
+      for (let i = 0; i < options.length; i++) {
+        const opt = options[i];
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'heatmap-chip';
-        if (activeCategory === opt.key) {
+        const isSelected = activeCategory === opt.key;
+        if (isSelected) {
           btn.classList.add('heatmap-chip--active');
         }
-        btn.setAttribute('aria-pressed', activeCategory === opt.key ? 'true' : 'false');
+        btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        btn.setAttribute('data-category', opt.key);
+
+        if (opt.key !== 'all') {
+          const dot = document.createElement('span');
+          dot.className = 'heatmap-chip__dot';
+          dot.style.background = TYPE_COLOR_TOKENS[opt.key] || 'var(--color-primary)';
+          dot.setAttribute('aria-hidden', 'true');
+          btn.appendChild(dot);
+        }
 
         const labelSpan = document.createElement('span');
         labelSpan.textContent = opt.label;
@@ -291,16 +364,22 @@ export function renderHeatmapTab(container, pageHeader, user) {
         countSpan.textContent = String(opt.count);
 
         btn.append(labelSpan, countSpan);
-        btn.addEventListener('click', () => {
-          activeCategory = opt.key;
-          const filtered = activeCategory === 'all'
-            ? points
-            : points.filter((p) => (p.incidentType || 'other') === activeCategory);
-          renderFilterChips();
-          renderStats(filtered.length);
-          if (heatmap) {
-            heatmap.setPoints(filtered);
+
+        // Arrow key roving navigation across category chips
+        btn.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const nextIdx = (i + (e.key === 'ArrowRight' ? 1 : options.length - 1)) % options.length;
+            const nextBtn = chipsWrap.children[nextIdx];
+            if (nextBtn) {
+              nextBtn.focus();
+              nextBtn.click();
+            }
           }
+        });
+
+        btn.addEventListener('click', () => {
+          applyCategoryFilter(opt.key);
         });
         chipsWrap.appendChild(btn);
       }
