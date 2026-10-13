@@ -519,7 +519,7 @@ final class DispatchController
             "SELECT d.dispatch_id, d.incident_id, d.tanod_id, d.priority, d.route_json, d.route_status,
                     d.status, d.dispatched_at, d.en_route_at, d.arrived_at, d.completed_at, d.cancelled_at,
                     d.cancel_reason,
-                    i.incident_type, i.latitude, i.longitude,
+                    i.incident_type, i.latitude, i.longitude, i.display_id AS incident_display_id,
                     tanod.full_name AS tanod_name
              FROM dispatch d
              JOIN incident i ON i.incident_id = d.incident_id
@@ -544,6 +544,7 @@ final class DispatchController
             $item = [
                 'dispatch_id' => (int) $row['dispatch_id'],
                 'incident_id' => (int) $row['incident_id'],
+                'incident_display_id' => $row['incident_display_id'] ?? null,
                 'tanod_id' => (int) $row['tanod_id'],
                 'priority' => $row['priority'],
                 'route_json' => $row['route_json'] !== null ? json_decode((string) $row['route_json'], true) : null,

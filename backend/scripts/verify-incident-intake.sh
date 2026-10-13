@@ -311,7 +311,7 @@ expect_eq "$(echo "$RESP_BODY" | json_field related_incident_id)" "$I_SMS" "show
 call GET "$BASE_URL/incidents/$I_SMS" "$ADMIN" ""
 expect_eq "$(echo "$RESP_BODY" | json_field related_by.0.incident_id)" "$I_WEB" "show() on the target: related_by lists the incident pointing at it"
 expect_eq "$(echo "$RESP_BODY" | json_keys related_by.0)" "display_id,incident_id" "related_by entries carry ONLY incident_id + display_id"
-expect_eq "$(echo "$RESP_BODY" | json_field raw_narrative)" "null" "Admin show() still has no raw_narrative"
+expect_eq "$(echo "$RESP_BODY" | json_field raw_narrative)" "RAW-INTAKE-SMS" "Admin (web session) show() returns raw_narrative (Rule 1 amended 2026-10-13)"
 call GET "$BASE_URL/incidents/$I_SMS" "$SEC" ""
 expect_eq "$(echo "$RESP_BODY" | json_field raw_narrative)" "RAW-INTAKE-SMS" "Secretary show() still returns raw_narrative"
 

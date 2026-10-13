@@ -149,7 +149,7 @@ final class NotificationDispatcher
                     return null;
                 }
                 $stmt = $pdo->prepare(
-                    'SELECT i.incident_type, i.latitude, i.longitude, d.priority
+                    'SELECT i.incident_type, i.latitude, i.longitude, i.display_id, d.priority
                      FROM dispatch d JOIN incident i ON i.incident_id = d.incident_id
                      WHERE d.dispatch_id = :id'
                 );
@@ -159,10 +159,13 @@ final class NotificationDispatcher
                     return null;
                 }
                 $location = self::formatLocation($row['latitude'], $row['longitude']);
+                // The incident code (INC-YYYY-NNN) is an identifier, not personal data: it lets the responder tie this
+                // message to the incident the Chief Tanod and the Secretary are looking at. Omitted for old rows without one.
+                $ref = ($row['display_id'] ?? '') !== '' ? " Ref: {$row['display_id']}." : '';
                 return [
                     'title' => 'New dispatch assigned',
-                    'body' => "You've been assigned a {$row['incident_type']} incident{$location}. Open the app for details.",
-                    'sms' => "BARANGUARD DISPATCH: You've been assigned a {$row['incident_type']} incident{$location}. Priority: {$row['priority']}. Open the app.",
+                    'body' => "You've been assigned a {$row['incident_type']} incident{$location}.{$ref} Open the app for details.",
+                    'sms' => "BARANGUARD DISPATCH: You've been assigned a {$row['incident_type']} incident{$location}.{$ref} Priority: {$row['priority']}. Open the app.",
                     'message_type' => 'dispatch',
                 ];
 

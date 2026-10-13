@@ -115,7 +115,8 @@ final class SmsController
 
         $stmt = $pdo->prepare(
             "SELECT log_id, report_id, incident_id, dispatch_id, transport, message_type, direction, status,
-                    correlation_id, gateway_message_id, modem_message_id, sent_at, received_at, created_at, failure_reason
+                    correlation_id, gateway_message_id, modem_message_id, sent_at, received_at, created_at, failure_reason,
+                    (SELECT i.display_id FROM incident i WHERE i.incident_id = sms_log.incident_id) AS incident_display_id
              FROM sms_log
              WHERE {$whereSql}
              ORDER BY created_at DESC
@@ -133,6 +134,7 @@ final class SmsController
                 'log_id' => (int) $row['log_id'],
                 'report_id' => $row['report_id'] !== null ? (int) $row['report_id'] : null,
                 'incident_id' => $row['incident_id'] !== null ? (int) $row['incident_id'] : null,
+                'incident_display_id' => $row['incident_display_id'] ?? null,
                 'dispatch_id' => $row['dispatch_id'] !== null ? (int) $row['dispatch_id'] : null,
                 'transport' => $row['transport'],
                 'message_type' => $row['message_type'],
@@ -242,7 +244,8 @@ final class SmsController
 
         $stmt = $pdo->prepare(
             "SELECT log_id, direction, message_type, message_body, status, failure_reason,
-                    incident_id, dispatch_id, report_id, created_at, sent_at, received_at
+                    incident_id, dispatch_id, report_id, created_at, sent_at, received_at,
+                    (SELECT i.display_id FROM incident i WHERE i.incident_id = sms_log.incident_id) AS incident_display_id
              FROM sms_log
              WHERE barangay_id = :barangay_id AND COALESCE(sender_number, receiver_number) = :phone
              ORDER BY created_at ASC
@@ -260,6 +263,7 @@ final class SmsController
                 'status' => $row['status'],
                 'failure_reason' => $row['failure_reason'],
                 'incident_id' => $row['incident_id'] !== null ? (int) $row['incident_id'] : null,
+                'incident_display_id' => $row['incident_display_id'] ?? null,
                 'dispatch_id' => $row['dispatch_id'] !== null ? (int) $row['dispatch_id'] : null,
                 'report_id' => $row['report_id'] !== null ? (int) $row['report_id'] : null,
                 'created_at' => $row['created_at'],

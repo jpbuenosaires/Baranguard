@@ -223,7 +223,8 @@ final class SyncController
         if ($existingQueue !== false && $existingQueue['reconciliation_status'] === 'success') {
             $metadata = json_decode((string) $existingQueue['sync_metadata_json'], true);
             $serverId = is_array($metadata) && isset($metadata['server_id']) ? (int) $metadata['server_id'] : null;
-            return ['client_event_id' => $clientEventId, 'server_id' => $serverId, 'status' => 'duplicate'];
+            return ['client_event_id' => $clientEventId, 'server_id' => $serverId, 'status' => 'duplicate']
+                + self::displayIdField($pdo, $payloadType, $serverId);
         }
 
         if ($existingQueue === false) {
@@ -250,7 +251,7 @@ final class SyncController
                 'client_event_id' => $clientEventId,
                 'server_id' => $serverId,
                 'status' => $wasCreated ? 'success' : 'duplicate',
-            ];
+            ] + self::displayIdField($pdo, $payloadType, $serverId);
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -304,6 +305,23 @@ final class SyncController
                 'reason' => $reason,
             ];
         }
+    }
+
+    /**
+     * `display_id` for an incident item's sync result, so the phone can show the official INC-YYYY-NNN right after sync
+     * instead of the numeric row id. Other payload types (sos, gps, referral ...) carry no display code: returns [].
+     *
+     * @return array<string,string>
+     */
+    private static function displayIdField(PDO $pdo, string $payloadType, ?int $serverId): array
+    {
+        if ($payloadType !== 'incident' || $serverId === null) {
+            return [];
+        }
+        $stmt = $pdo->prepare('SELECT display_id FROM incident WHERE incident_id = :id');
+        $stmt->execute(['id' => $serverId]);
+        $code = $stmt->fetchColumn();
+        return is_string($code) && $code !== '' ? ['display_id' => $code] : [];
     }
 
     /** Looks up the original row's id for a unique-key duplicate; null if unknown. */

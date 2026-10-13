@@ -109,7 +109,8 @@ final class AuditLogController
 
         $stmt = $pdo->prepare(
             "SELECT a.audit_id, a.actor_user_id, a.action, a.entity_type, a.entity_id,
-                    a.metadata_json, a.created_at, u.username AS actor_username
+                    a.metadata_json, a.created_at, u.username AS actor_username,
+                    (SELECT i.display_id FROM incident i WHERE a.entity_type = 'incident' AND i.incident_id = a.entity_id) AS entity_display_id
              FROM audit_log a
              LEFT JOIN user u ON u.user_id = a.actor_user_id
              WHERE {$whereSql}
@@ -131,6 +132,7 @@ final class AuditLogController
                 'action' => $row['action'],
                 'entity_type' => $row['entity_type'],
                 'entity_id' => $row['entity_id'] !== null ? (int) $row['entity_id'] : null,
+                'entity_display_id' => $row['entity_display_id'] ?? null,
                 'metadata_json' => $row['metadata_json'] !== null
                     ? json_decode((string) $row['metadata_json'], true)
                     : null,
