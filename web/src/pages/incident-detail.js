@@ -352,6 +352,17 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const partiesSection = document.createElement('div');
     partiesSection.className = 'dossier-section';
 
+    if (!isSecretary) {
+      const notice = document.createElement('div');
+      notice.className = 'party-privacy-notice';
+      notice.setAttribute('role', 'note');
+      notice.innerHTML = `
+        <span class="party-privacy-notice__icon" aria-hidden="true">${icons.shield(14)}</span>
+        <span>Confidential Records (RA 10173 & RA 7160 §394) — Complainant, respondent, and narrative details are restricted to the Barangay Secretary.</span>
+      `;
+      partiesSection.appendChild(notice);
+    }
+
     const partiesGrid = document.createElement('div');
     partiesGrid.className = 'parties-grid';
 
@@ -362,26 +373,52 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const missingParty = isSecretary ? 'Not recorded' : RESTRICTED_TO_SECRETARY;
     const compName = incident.complainantName || missingParty;
     const compContact = incident.complainantContactNumber || missingParty;
-    compCard.innerHTML = `
-      <div class="party-card__role">
-        <span class="party-card__tag party-card__tag--complainant">Complainant</span>
-      </div>
-      <div class="party-card__name">${escapeHtml(compName)}</div>
-      <div class="party-card__contact">
-        ${icons.phone(13)}
-        <span>${escapeHtml(compContact)}</span>
-      </div>
-    `;
+
+    if (isSecretary) {
+      compCard.innerHTML = `
+        <div class="party-card__role">
+          <span class="party-card__tag party-card__tag--complainant">Complainant</span>
+        </div>
+        <div class="party-card__name">${escapeHtml(compName)}</div>
+        <div class="party-card__contact">
+          ${icons.phone(13)}
+          <span>${escapeHtml(compContact)}</span>
+        </div>
+      `;
+    } else {
+      compCard.innerHTML = `
+        <div class="party-card__role">
+          <span class="party-card__tag party-card__tag--complainant">Complainant</span>
+        </div>
+        <div class="party-card__name party-card__name--restricted">
+          <span class="party-card__restricted-icon" aria-hidden="true">${icons.shield(13)}</span>
+          <span>${escapeHtml(compName)}</span>
+        </div>
+      `;
+    }
 
     const respCard = document.createElement('div');
     respCard.className = 'party-card';
     const respName = incident.respondentName || missingParty;
-    respCard.innerHTML = `
-      <div class="party-card__role">
-        <span class="party-card__tag party-card__tag--respondent">Respondent</span>
-      </div>
-      <div class="party-card__name">${escapeHtml(respName)}</div>
-    `;
+
+    if (isSecretary) {
+      respCard.innerHTML = `
+        <div class="party-card__role">
+          <span class="party-card__tag party-card__tag--respondent">Respondent</span>
+        </div>
+        <div class="party-card__name">${escapeHtml(respName)}</div>
+      `;
+    } else {
+      respCard.innerHTML = `
+        <div class="party-card__role">
+          <span class="party-card__tag party-card__tag--respondent">Respondent</span>
+        </div>
+        <div class="party-card__name party-card__name--restricted">
+          <span class="party-card__restricted-icon" aria-hidden="true">${icons.shield(13)}</span>
+          <span>${escapeHtml(respName)}</span>
+        </div>
+      `;
+    }
 
     partiesGrid.append(compCard, respCard);
     partiesSection.appendChild(partiesGrid);
@@ -423,8 +460,12 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     card.appendChild(header);
 
     const body = document.createElement('div');
-    body.className = 'doc-blockquote';
-    body.textContent = narrativeText;
+    body.className = 'doc-blockquote' + (isSecretary ? '' : ' doc-blockquote--restricted');
+    if (isSecretary) {
+      body.textContent = narrativeText;
+    } else {
+      body.innerHTML = `<span class="doc-blockquote__icon" aria-hidden="true">${icons.shield(14)}</span><span>${escapeHtml(narrativeText)}</span>`;
+    }
     card.appendChild(body);
 
     return card;
@@ -606,6 +647,9 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       card.appendChild(none);
       return card;
     }
+    const wrap = document.createElement('div');
+    wrap.className = 'responders-table-wrap';
+
     const table = document.createElement('table');
     table.className = 'responders-table';
     const caption = document.createElement('caption');
@@ -639,7 +683,8 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
-    card.appendChild(table);
+    wrap.appendChild(table);
+    card.appendChild(wrap);
     return card;
   }
 
@@ -660,10 +705,18 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     headerRow.append(iconWrap, heading);
     card.appendChild(headerRow);
 
+    const isResolved = incident.status === 'resolved';
+    const firstDispatch = Array.isArray(incident.dispatches) ? incident.dispatches[0] : null;
+    const effectiveDispatchedAt = incident.dispatchedAt || firstDispatch?.dispatchedAt || null;
+    const effectiveArrivedAt = incident.arrivedAt || firstDispatch?.arrivedAt || null;
+    const resolvedTs = incident.resolvedAt
+      || (isResolved ? (incident.dispatches?.find((d) => d.completedAt)?.completedAt || incident.createdAt) : null);
+
     const stages = [
       ['Reported', incident.createdAt],
-      ['Dispatched', incident.dispatchedAt],
-      ['Arrived on scene', incident.arrivedAt],
+      ['Dispatched', effectiveDispatchedAt],
+      ['Arrived on scene', effectiveArrivedAt],
+      ['Resolved', isResolved ? (resolvedTs || incident.createdAt) : null],
     ];
 
     const visibleStages = stages;
@@ -673,21 +726,35 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       if (ts) lastReachedIdx = idx;
     });
 
-    const list = document.createElement('div');
+    const list = document.createElement('ol');
     list.className = 'timeline';
+    list.setAttribute('role', 'list');
+    list.setAttribute('aria-label', 'Incident response timeline');
+
     visibleStages.forEach(([label, timestamp], i) => {
       const reached = Boolean(timestamp);
-      const isLatest = i === lastReachedIdx;
+      // When resolved, all reached nodes are done; none pulse as in-progress!
+      const isLatest = !isResolved && (i === lastReachedIdx);
 
-      const item = document.createElement('div');
+      const item = document.createElement('li');
       item.className = 'timeline__item';
+      item.setAttribute('role', 'listitem');
+      if (isLatest) {
+        item.setAttribute('aria-current', 'step');
+      }
 
       const rail = document.createElement('div');
       rail.className = 'timeline__rail';
       const node = document.createElement('span');
       let nodeClass = 'timeline__node';
       if (reached) {
-        nodeClass += isLatest ? ' timeline__node--current' : ' timeline__node--done';
+        if (isLatest) {
+          nodeClass += ' timeline__node--current';
+        } else if (isResolved && i === visibleStages.length - 1) {
+          nodeClass += ' timeline__node--resolved';
+        } else {
+          nodeClass += ' timeline__node--done';
+        }
       }
       node.className = nodeClass;
       rail.appendChild(node);
@@ -695,7 +762,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       if (i < visibleStages.length - 1) {
         const connector = document.createElement('span');
         const nextReached = Boolean(visibleStages[i + 1][1]);
-        connector.className = 'timeline__connector' + (reached && nextReached ? ' timeline__connector--done' : '');
+        connector.className = 'timeline__connector' + (reached && nextReached ? (isResolved ? ' timeline__connector--done timeline__connector--resolved' : ' timeline__connector--done') : '');
         rail.appendChild(connector);
       }
 
@@ -711,7 +778,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
       const value = document.createElement('span');
       value.className = 'timeline__value';
-      value.textContent = reached ? (formatDateTime(timestamp) || 'Not recorded') : 'Pending';
+      value.textContent = reached ? (formatDateTime(timestamp) || (isResolved && label === 'Resolved' ? 'Resolved' : 'Completed')) : 'Pending';
 
       row.append(name, value);
       body.appendChild(row);
@@ -1028,11 +1095,14 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   function buildResolvedStatusCard() {
     const card = document.createElement('div');
     card.className = 'card resolution-badge-card';
+    const resolvedTime = incident.resolvedAt
+      ? formatDateTime(incident.resolvedAt)
+      : (incident.dispatches?.find((d) => d.completedAt)?.completedAt ? formatDateTime(incident.dispatches.find((d) => d.completedAt).completedAt) : null);
     card.innerHTML = `
       <div class="resolution-badge-card__icon">${icons.checkCircle(20)}</div>
       <div style="flex:1;min-width:0;">
         <h4 class="resolution-badge-card__title">Case Closed & Resolved</h4>
-        <p class="resolution-badge-card__desc">This incident has been marked resolved.</p>
+        <p class="resolution-badge-card__desc">This incident has been marked resolved.${resolvedTime ? ` (${escapeHtml(resolvedTime)})` : ''}</p>
       </div>
     `;
     return card;

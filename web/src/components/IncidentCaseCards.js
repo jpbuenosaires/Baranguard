@@ -122,7 +122,24 @@ export function SchoolC1Card({ incidentId, canEdit }) {
 
   function render() {
     card.innerHTML = '';
-    card.appendChild(cardHeading(icons.mapPin, 'School link and C-1'));
+
+    const headerRow = el('div', 'case-card__header-row');
+    const heading = el('h3', 'case-card__heading');
+    heading.style.cssText = 'margin:0; display:flex; align-items:center; gap:var(--spacing-xs);';
+    const icon = el('span');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = icons.mapPin(18);
+    heading.append(icon, el('span', '', 'School link and C-1'));
+    headerRow.appendChild(heading);
+
+    if (canEdit && !editing) {
+      const edit = el('button', 'ghost case-card__edit-btn', 'Edit school and C-1');
+      edit.type = 'button';
+      edit.addEventListener('click', () => { editing = true; render(); });
+      headerRow.appendChild(edit);
+    }
+    card.appendChild(headerRow);
+
     if (editing) {
       card.appendChild(buildForm());
       return;
@@ -134,13 +151,11 @@ export function SchoolC1Card({ incidentId, canEdit }) {
       card.appendChild(el('p', 'note', 'This incident is not linked to a school and has no C-1 details.'));
     } else {
       card.appendChild(fieldRow('School', linked ? schoolName(data.schoolId) : 'Not linked'));
-      for (const f of C1_FIELDS) card.appendChild(fieldRow(f.label, data[f.key] || '—'));
-    }
-    if (canEdit) {
-      const edit = el('button', 'ghost', 'Edit school and C-1');
-      edit.type = 'button';
-      edit.addEventListener('click', () => { editing = true; render(); });
-      card.appendChild(edit);
+      for (const f of C1_FIELDS) {
+        if (data[f.key] || f.key !== 'c1StatusNotes') {
+          card.appendChild(fieldRow(f.label, data[f.key] || '—'));
+        }
+      }
     }
   }
 
@@ -528,7 +543,7 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
   if (relatedIncident) input.value = relatedIncident.displayId || String(relatedIncident.incidentId);
 
   const actions = el('div', 'availability-item__actions');
-  const save = el('button', 'primary', relatedIncident ? 'Change link' : 'Link incident');
+  const save = el('button', 'secondary', relatedIncident ? 'Change link' : 'Link incident');
   save.type = 'submit';
   actions.appendChild(save);
   let remove = null;
