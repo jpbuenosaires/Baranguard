@@ -188,11 +188,10 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const aside = document.createElement('div');
     aside.className = 'incident-detail__aside';
 
-    // Left Column: Unified Master Dossier + School C-1
+    // Left Column: Exactly 1 Unified Master Dossier (contains Particulars, Privacy, Evidence, and School C-1)
     main.appendChild(buildDossierCard());
-    main.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary }));
 
-    // Right Column: Panel 1 - Operational Command & Timeline
+    // Right Column: Exactly 1 Unified Command & Audit Rail
     const opsPanel = document.createElement('div');
     opsPanel.className = 'card case-ops-panel';
 
@@ -201,7 +200,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     opsHeader.innerHTML = `
       <div class="panel-command-header__title">
         <span class="panel-command-header__icon" aria-hidden="true">${icons.clock(16)}</span>
-        <h4 class="panel-command-title">Operational Command</h4>
+        <h4 class="panel-command-title">Operational Command & Timeline</h4>
       </div>
     `;
     opsPanel.appendChild(opsHeader);
@@ -213,24 +212,19 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     }
     opsPanel.appendChild(buildTimeline());
     opsPanel.appendChild(buildResponders());
-    aside.appendChild(opsPanel);
-
-    // Right Column: Panel 2 - Case Connections & References
-    const refsPanel = document.createElement('div');
-    refsPanel.className = 'card case-refs-panel';
 
     const refsHeader = document.createElement('div');
-    refsHeader.className = 'panel-command-header';
+    refsHeader.className = 'panel-command-header panel-command-header--sub';
     refsHeader.innerHTML = `
       <div class="panel-command-header__title">
         <span class="panel-command-header__icon" aria-hidden="true">${icons.layers(16)}</span>
         <h4 class="panel-command-title">Case Connections & References</h4>
       </div>
     `;
-    refsPanel.appendChild(refsHeader);
+    opsPanel.appendChild(refsHeader);
 
-    if (isSecretary) refsPanel.appendChild(buildLifecycleCard());
-    refsPanel.appendChild(RelatedIncidentCard({
+    if (isSecretary) opsPanel.appendChild(buildLifecycleCard());
+    opsPanel.appendChild(RelatedIncidentCard({
       incidentId,
       relatedIncident: incident.relatedIncident,
       relatedBy: incident.relatedBy,
@@ -238,12 +232,12 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       navigate,
       onChanged: load,
     }));
-    refsPanel.appendChild(ReferralsCard({
+    opsPanel.appendChild(ReferralsCard({
       incidentId,
       canAdd: user.role === 'admin' || isSecretary,
       incidentLabel: formatIncidentCode(incidentId, incident.displayId),
     }));
-    aside.appendChild(refsPanel);
+    aside.appendChild(opsPanel);
 
     layout.append(main, aside);
     body.appendChild(layout);
@@ -456,6 +450,9 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     evidenceSection.className = 'dossier-section dossier-section--evidence';
     evidenceSection.appendChild(buildEvidence());
     dossierBody.appendChild(evidenceSection);
+
+    // 5. Safer School Zone (Annex C-1) Subsection
+    dossierBody.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary }));
 
     card.appendChild(dossierBody);
 
