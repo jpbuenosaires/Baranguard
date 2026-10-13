@@ -841,12 +841,12 @@ const NewIncidentPage: React.FC = () => {
             {/* Staged Evidence Items Gallery */}
             {staged.length > 0 && (
               <div className="media-grid" style={{ marginTop: '4px' }}>
-                {staged.map((item) => (
+                {staged.map((item, stagedIndex) => (
                   <div key={item.key} className="media-tile">
                     {item.attachment.type === 'photo' ? (
                       <img
                         src={Capacitor.convertFileSrc(item.attachment.filePath)}
-                        alt="Captured evidence"
+                        alt={`Photo attached to this report, ${stagedIndex + 1} of ${staged.length}`}
                         className="media-tile__img"
                         onError={(e) => {
                           (e.target as HTMLElement).style.display = 'none';

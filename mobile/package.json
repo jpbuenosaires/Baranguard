@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test.unit": "vitest",
     "lint": "eslint",
-    "verify.schema": "node scripts/verify-local-schema.mjs"
+    "verify.schema": "node scripts/verify-local-schema.mjs",
+    "verify.contrast": "node scripts/verify-contrast.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.0",

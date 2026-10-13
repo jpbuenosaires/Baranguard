@@ -38,6 +38,11 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
     }
   }
 
+  /** Action button colours: the severity fill with its matching on-fill text (contrast-checked tokens, both themes). */
+  function actionColors(severity: 'critical' | 'warning' | 'info') {
+    return { background: `var(--color-${severity})`, color: `var(--color-on-${severity})` };
+  }
+
   function getStyles(severity: 'critical' | 'warning' | 'info') {
     switch (severity) {
       case 'critical':
@@ -103,8 +108,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
               minHeight: '44px',
               padding: '0 14px',
               borderRadius: 'var(--radius-sm, 6px)',
-              background: 'currentColor',
-              color: primaryStyle.bg,
+              ...actionColors(primary.severity),
               border: 'none',
               fontWeight: 700,
               fontSize: '0.8125rem',
@@ -115,9 +119,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
               justifyContent: 'center',
             }}
           >
-            <span style={{ color: primary.severity === 'warning' ? '#000000' : '#ffffff' }}>
-              {primary.actionLabel}
-            </span>
+            {primary.actionLabel}
           </button>
         )}
       </div>
@@ -192,7 +194,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
                           minHeight: '40px',
                           padding: '0 10px',
                           borderRadius: 'var(--radius-sm, 6px)',
-                          background: 'currentColor',
+                          ...actionColors(item.severity),
                           border: 'none',
                           fontWeight: 700,
                           fontSize: '0.75rem',
@@ -200,9 +202,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
                           flexShrink: 0,
                         }}
                       >
-                        <span style={{ color: item.severity === 'warning' ? '#000000' : '#ffffff' }}>
-                          {item.actionLabel}
-                        </span>
+                        {item.actionLabel}
                       </button>
                     )}
                   </div>

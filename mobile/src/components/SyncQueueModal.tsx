@@ -194,8 +194,8 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
       <IonHeader>
         <IonToolbar className="mobile-topbar">
           <IonTitle>Sync & Offline Telemetry</IonTitle>
-          <IonButton fill="clear" slot="end" onClick={onClose} color="light">
-            <IonIcon icon={closeOutline} />
+          <IonButton fill="clear" slot="end" onClick={onClose} color="light" aria-label="Close sync queue">
+            <IonIcon icon={closeOutline} aria-hidden="true" />
           </IonButton>
         </IonToolbar>
       </IonHeader>
@@ -401,6 +401,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
           {/* Sync Result Banner */}
           {syncResult && (
             <div
+              role="status"
               style={{
                 background: 'var(--tint-success-bg)',
                 border: '1px solid var(--color-success)',

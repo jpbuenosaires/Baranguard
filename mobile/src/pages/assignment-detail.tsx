@@ -886,6 +886,7 @@ const AssignmentDetailPage: React.FC = () => {
                 aria-label="Open turn-by-turn navigation"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
                     setNavigationActive(true);
                   }
                 }}

@@ -93,10 +93,35 @@
   --color-text-disabled: #94a3b8;
   --color-row-active-bg: #eff6ff;
 
+  /* Status fills. Darkened (Phase 2) so WHITE text on them, and the fills
+     themselves as text on white / the page bg, all clear 4.5:1 in light mode.
+     In dark mode the fills are the light variants and carry dark text. */
   --color-critical: #dc2626;
-  --color-warning: #d97706;
-  --color-success: #16a34a;
-  --color-info: #0891b2;
+  --color-warning: #b45309;
+  --color-success: #15803d;
+  --color-info: #0e7490;
+
+  /* Theme-independent solids: the same hue in light and dark, always paired
+     with WHITE text (map pins, SOS sheet, badges). Each is >= 4.5:1 with white. */
+  --color-critical-solid: #dc2626;
+  --color-critical-deep: #b91c1c;
+  --color-success-solid: #15803d;
+  --color-warning-solid: #b45309;
+  --color-info-solid: #0e7490;
+
+  /* Text/icon colour to put ON a solid fill (white in light, dark in dark). */
+  --color-on-primary: #ffffff;
+  --color-on-critical: #ffffff;
+  --color-on-success: #ffffff;
+  --color-on-warning: #ffffff;
+  --color-on-info: #ffffff;
+
+  /* Primary colour used as TEXT (links, text buttons). */
+  --color-link: #1d4ed8;
+  /* Input placeholder text (4.5:1). Disabled text stays --color-text-disabled. */
+  --color-placeholder: #64748b;
+  /* Keyboard focus ring (3:1 on surface and bg in both themes). */
+  --color-focus: #1d4ed8;
 
   /* Contrast-audited pill text tokens (WCAG AA compliant against tints) */
   --pill-success-text: #15803d;
@@ -122,8 +147,8 @@
   --glow-critical: none;
 
   /* Standardized 4-point spacing scale */
-  --spacing-2xs: 4px;
   --spacing-xs: 4px;
+  --spacing-2xs: var(--spacing-xs); /* alias: was a duplicate of xs */
   --spacing-sm: 8px;
   --spacing-md: 16px;
   --spacing-lg: 20px;
@@ -139,18 +164,34 @@
 
   --font-base: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'SFMono-Regular', 'JetBrains Mono', Consolas, Menlo, monospace;
-  --font-size-label: 0.75rem;
-  --font-size-sm: 0.875rem;
-  --font-size-md: 1rem;
-  --font-size-lg: 1.25rem;
-  --font-size-xl: 1.75rem;
-  --font-size-2xl: 2.25rem;
+  /* Type scale (Phase 2): seven steps, nothing essential under 0.8rem. */
+  --text-xs: 0.8rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+  /* Legacy names kept as aliases so nothing that still uses them breaks. */
+  --font-size-label: var(--text-xs);
+  --font-size-sm: var(--text-sm);
+  --font-size-md: var(--text-md);
+  --font-size-lg: var(--text-lg);
+  --font-size-xl: var(--text-2xl);
+  --font-size-2xl: var(--text-3xl);
 
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-full: 9999px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --radius-xl: var(--radius-lg); /* legacy alias */
+  --radius-full: var(--radius-pill); /* legacy alias */
+
+  /* Elevation: three steps, centred so they read from any edge (sheets,
+     bars and toasts all use them). Overridden for dark below. */
+  --shadow-1: 0 0 4px rgba(15, 23, 42, 0.16), 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-2: 0 2px 14px rgba(15, 23, 42, 0.18);
+  --shadow-3: 0 0 32px rgba(15, 23, 42, 0.3);
 
   /* Pure flat elevations — crisp borders instead of diffuse shadows */
   --shadow-card: none;
@@ -189,19 +230,19 @@
   --ion-color-secondary-shade: #1a3361;
   --ion-color-secondary-tint: #354e7d;
 
-  --ion-color-success: #16a34a;
-  --ion-color-success-rgb: 22, 163, 74;
+  --ion-color-success: #15803d;
+  --ion-color-success-rgb: 21, 128, 61;
   --ion-color-success-contrast: #ffffff;
   --ion-color-success-contrast-rgb: 255, 255, 255;
-  --ion-color-success-shade: #138f41;
-  --ion-color-success-tint: #2dac5c;
+  --ion-color-success-shade: #127036;
+  --ion-color-success-tint: #2c8c52;
 
-  --ion-color-warning: #d97706;
-  --ion-color-warning-rgb: 217, 119, 6;
+  --ion-color-warning: #b45309;
+  --ion-color-warning-rgb: 180, 83, 9;
   --ion-color-warning-contrast: #ffffff;
   --ion-color-warning-contrast-rgb: 255, 255, 255;
-  --ion-color-warning-shade: #bf6905;
-  --ion-color-warning-tint: #dd8524;
+  --ion-color-warning-shade: #9f4a08;
+  --ion-color-warning-tint: #bc6422;
 
   /* Ionic's "danger" is §8's critical. */
   --ion-color-danger: #dc2626;
@@ -228,7 +269,7 @@
   --dark-border: #334155;
   --dark-border-subtle: #1e293b;
   --dark-text-primary: #f1f5f9;
-  --dark-text-secondary: #94a3b8;
+  --dark-text-secondary: #a3b1c6;
   --dark-text-tertiary: #93a2b4;
   --dark-text-disabled: #64748b;
   --dark-critical: #f87171;
@@ -236,12 +277,20 @@
   --dark-warning-text: #fde68a;
   --dark-success: #4ade80;
   --dark-info: #38bdf8;
-  --dark-primary: #2563eb;
+  --dark-primary: #316cf0;
   --dark-primary-hover: #1d4ed8;
   --dark-accent: #60a5fa;
   --dark-row-active-bg: #1e3a5f;
   --dark-border-blue: #1d4ed8;
   --dark-surface-blue: #1e293b;
+
+  --dark-on-fill: #0f172a; /* dark text on the light status fills */
+  --dark-link: #93c5fd;
+  --dark-placeholder: #94a3b8;
+  --dark-focus: #93c5fd;
+  --dark-shadow-1: 0 0 4px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --dark-shadow-2: 0 2px 14px rgba(0, 0, 0, 0.5);
+  --dark-shadow-3: 0 0 32px rgba(0, 0, 0, 0.65);
 
   --dark-pill-info-text: #bae6fd;
   --dark-pill-critical-text: #fca5a5;
@@ -292,6 +341,18 @@
     --color-row-active-bg: var(--dark-row-active-bg);
     --color-border-blue: var(--dark-border-blue);
     --color-surface-blue: var(--dark-surface-blue);
+
+    --color-on-primary: #ffffff;
+    --color-on-critical: var(--dark-on-fill);
+    --color-on-success: var(--dark-on-fill);
+    --color-on-warning: var(--dark-on-fill);
+    --color-on-info: var(--dark-on-fill);
+    --color-link: var(--dark-link);
+    --color-placeholder: var(--dark-placeholder);
+    --color-focus: var(--dark-focus);
+    --shadow-1: var(--dark-shadow-1);
+    --shadow-2: var(--dark-shadow-2);
+    --shadow-3: var(--dark-shadow-3);
 
     --pill-success-text: var(--dark-pill-success-text);
     --pill-critical-text: var(--dark-pill-critical-text);
@@ -344,6 +405,18 @@
   --color-row-active-bg: var(--dark-row-active-bg);
   --color-border-blue: var(--dark-border-blue);
   --color-surface-blue: var(--dark-surface-blue);
+
+  --color-on-primary: #ffffff;
+  --color-on-critical: var(--dark-on-fill);
+  --color-on-success: var(--dark-on-fill);
+  --color-on-warning: var(--dark-on-fill);
+  --color-on-info: var(--dark-on-fill);
+  --color-link: var(--dark-link);
+  --color-placeholder: var(--dark-placeholder);
+  --color-focus: var(--dark-focus);
+  --shadow-1: var(--dark-shadow-1);
+  --shadow-2: var(--dark-shadow-2);
+  --shadow-3: var(--dark-shadow-3);
 
   --pill-success-text: var(--dark-pill-success-text);
   --pill-critical-text: var(--dark-pill-critical-text);

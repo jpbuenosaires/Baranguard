@@ -18,20 +18,20 @@ import { IonSpinner } from '@ionic/react';
 export function LoadingBlock({ label, compact = false }: { label?: string; compact?: boolean }) {
   if (compact) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+      <div role="status" aria-busy="true" aria-label="Loading" style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
         <IonSpinner name="dots" />
       </div>
     );
   }
   if (!label) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
+      <div role="status" aria-busy="true" aria-label="Loading" style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
         <IonSpinner name="dots" />
       </div>
     );
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 64, gap: 12 }}>
+    <div role="status" aria-busy="true" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 64, gap: 12 }}>
       <IonSpinner name="dots" />
       <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{label}</span>
     </div>

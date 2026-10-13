@@ -92,6 +92,7 @@ import './theme/admin-console.css';
 import './theme/phase1-home.css';
 import './theme/phase1-dispatch.css';
 import './theme/phase1-nav.css';
+import './theme/ui.css';
 
 setupIonicReact();
 

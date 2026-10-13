@@ -269,14 +269,14 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
         </p>
       ) : (
         <div className="media-grid" style={{ marginTop: 8 }}>
-          {items.map((item) => {
+          {items.map((item, itemIndex) => {
             const st = stateOf(item);
             return (
               <div key={item.local_id} className="media-tile" title={st.label}>
                 {item.type === 'photo' && item.file_path ? (
                   <img
                     src={Capacitor.convertFileSrc(item.file_path)}
-                    alt="Evidence photo"
+                    alt={`Evidence photo ${itemIndex + 1} of ${items.length}`}
                     className="media-tile__img"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
