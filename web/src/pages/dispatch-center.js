@@ -42,6 +42,7 @@ import { openReferralDialog } from '../components/IncidentCaseCards.js';
 import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
 import { formatManilaTime } from '../utils/manilaTime.js';
 import { DISPATCH_STATUS_LABELS as SHARED_DISPATCH_STATUS_LABELS } from '../utils/statusLabels.js';
+import { formatSosCode, formatDispatchCode } from '../services/tanodWorkflowUi.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 
@@ -607,9 +608,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
     const handleResolveSingleSos = async (sosId) => {
       const sos = openSos.find((s) => s.sosId === sosId);
-      const tanodName = sos?.fullName || (sos ? `Tanod #${sos.userId}` : `SOS #${sosId}`);
+      const sosCode = formatSosCode(sosId);
+      const tanodName = sos?.fullName || (sos ? `Tanod #${sos.userId}` : sosCode);
       const confirmed = await confirmDialog({
-        title: `Resolve SOS Emergency #${sosId}?`,
+        title: `Resolve SOS Emergency (${sosCode})?`,
         description: `Confirm that ${tanodName} is secure and the emergency response is complete. This will mark the SOS as resolved and remove the alert.`,
         confirmLabel: 'Mark Resolved',
         cancelLabel: 'Keep Active',
@@ -617,7 +619,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       if (!confirmed) return;
       try {
         await resolveTanodSos(sosId);
-        showToast(`SOS #${sosId} for ${tanodName} marked as resolved.`, { variant: 'success' });
+        showToast(`${sosCode} for ${tanodName} marked as resolved.`, { variant: 'success' });
         onQueueChanged();
       } catch (err) {
         showToast(err instanceof ApiClientError ? err.message : 'Could not resolve SOS.', { variant: 'error' });
@@ -628,10 +630,11 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     // clear the alert, which stays until someone explicitly resolves it.
     const handleAcknowledgeSos = async (sosId) => {
       const sos = openSos.find((s) => s.sosId === sosId);
-      const tanodName = sos?.fullName || (sos ? `Tanod #${sos.userId}` : `SOS #${sosId}`);
+      const sosCode = formatSosCode(sosId);
+      const tanodName = sos?.fullName || (sos ? `Tanod #${sos.userId}` : sosCode);
       try {
         await acknowledgeTanodSos(sosId);
-        showToast(`SOS #${sosId} for ${tanodName} acknowledged. It stays active until resolved.`, { variant: 'success' });
+        showToast(`${sosCode} for ${tanodName} acknowledged. It stays active until resolved.`, { variant: 'success' });
         onQueueChanged();
       } catch (err) {
         showToast(err instanceof ApiClientError ? err.message : 'Could not acknowledge SOS.', { variant: 'error' });
@@ -870,7 +873,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const name = document.createElement('span');
       name.className = 'dispatch-sos-row__name';
       const who = sos.fullName || `Tanod #${sos.userId}`;
-      name.textContent = `SOS #${sos.sosId} - ${who} - ${sos.status === 'acknowledged' ? 'Acknowledged' : 'Active'}`;
+      name.textContent = `${formatSosCode(sos.sosId)} · ${who} · ${sos.status === 'acknowledged' ? 'Acknowledged' : 'Active'}`;
       const loc = document.createElement('span');
       loc.className = 'dispatch-sos-row__loc';
       if (sosHasNoLocation(sos)) {
@@ -1232,7 +1235,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
               ? ' This responder has already arrived at the scene.'
               : '';
             const reason = await promptText({
-              title: `Cancel dispatch #${dispatch.dispatchId}?`,
+              title: `Cancel dispatch (${formatDispatchCode(dispatch.dispatchId)})?`,
               // 2026-09-13: was "The incident will return to the pending
               // queue" unconditionally — no longer always true once a
               // second responder can stay active after this cancellation.
@@ -1245,7 +1248,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
               },
             });
             if (reason === null) return;
-            showToast(`Dispatch #${dispatch.dispatchId} cancelled`, { variant: 'info' });
+            showToast(`${formatDispatchCode(dispatch.dispatchId)} cancelled`, { variant: 'info' });
             onQueueChanged();
           });
           actionsGroup.appendChild(cancelBtn);

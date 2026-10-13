@@ -41,7 +41,7 @@ import {
   h, escapeHtml, mountPageFrame, showLoading, showError, showEmpty, card, selectOf,
   getMyAuthority, statusPill, formatMonthLabel, formatMinutes, minutesToHours, formatManilaDate,
   formatManilaDateTime, formatDateOnly, trimTime, daysInMonth, actionErrorMessage,
-  loadLetterhead, letterheadHtml,
+  loadLetterhead, letterheadHtml, formatAccomplishmentCode,
 } from '../services/tanodWorkflowUi.js';
 
 const PAGE_SIZE = 10;
@@ -125,7 +125,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     searchInput.type = 'search';
     searchInput.className = 'acc-search-input';
     searchInput.id = 'tw-acc-search';
-    searchInput.placeholder = 'Search tanod name...';
+    searchInput.placeholder = 'Search tanod name or report code (AR-xxxx)...';
     searchInput.setAttribute('aria-label', 'Search reports by tanod name');
     searchWrap.appendChild(searchInput);
 
@@ -225,7 +225,11 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
 
     if (state.search) {
       const q = state.search;
-      rows = rows.filter((r) => personName(r).toLowerCase().includes(q));
+      rows = rows.filter(
+        (r) => personName(r).toLowerCase().includes(q)
+          || formatAccomplishmentCode(r.reportId).toLowerCase().includes(q)
+          || String(r.reportId).includes(q),
+      );
     }
 
     if (res.total === 0 && res.items.length === 0) {
@@ -339,7 +343,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
             avatar.innerHTML = avatarInitials(personName(row), 30);
             const info = h('div', 'acc-tanod-info');
             const name = h('span', 'acc-tanod-name', personName(row));
-            const pos = h('span', 'acc-tanod-pos', row.officialTitle || TANOD_POSITION);
+            const pos = h('span', 'acc-tanod-pos', `${formatAccomplishmentCode(row.reportId)} · ${row.officialTitle || TANOD_POSITION}`);
             info.append(name, pos);
             cell.append(avatar, info);
             return cell;
@@ -540,6 +544,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     officerInfo.innerHTML = `
       <div class="acc-officer-title-row">
         <h3 class="acc-officer-name">${escapeHtml(person)}</h3>
+        <span class="acc-officer-tag">${escapeHtml(formatAccomplishmentCode(report.reportId))}</span>
         <span class="acc-officer-tag">${escapeHtml(report.officialTitle || TANOD_POSITION)}</span>
       </div>
       <div class="acc-officer-meta">

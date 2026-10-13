@@ -22,6 +22,7 @@ import { avatarInitials } from '../components/Avatar.js';
 import { showToast } from '../components/Toast.js';
 import { icons } from '../components/icons.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatUserCode } from '../services/tanodWorkflowUi.js';
 
 const ROLE_LABELS = {
   admin: 'Admin',
@@ -249,7 +250,7 @@ function buildProfileCard(user, onFullNameSaved) {
 
   const idChip = document.createElement('span');
   idChip.className = 'settings-user-id-chip';
-  idChip.textContent = `User #${user.userId}`;
+  idChip.textContent = formatUserCode(user.userId);
 
   badgesRow.append(rolePill, idChip);
   identityBlock.append(nameEl, badgesRow);

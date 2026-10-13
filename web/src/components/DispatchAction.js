@@ -15,6 +15,7 @@ import { createDispatch, getGpsLive, ApiClientError } from '../api/apiClient.js'
 import { promptSelect, promptText } from './ConfirmDialog.js';
 import { requireReason } from '../utils/reasonText.js';
 import { showToast } from './Toast.js';
+import { formatIncidentCode } from '../services/tanodWorkflowUi.js';
 
 const PRIORITY_LABELS = { normal: 'Normal', high: 'High', critical: 'Critical' };
 
@@ -145,7 +146,7 @@ export async function promptDispatchTanod({ incident, incidentTypeLabel, eligibl
   const { options, ranked } = rankByProximity(eligibleTanods, positions, incident);
 
   const tanodId = await promptSelect({
-    title: `Assign incident #${incident.incidentId}`,
+    title: `Assign incident (${formatIncidentCode(incident.incidentId, incident.displayId)})`,
     description: `${incidentTypeLabel} · ${PRIORITY_LABELS[incident.priority] || incident.priority} priority. The assigned Tanod is notified immediately.`
       + (ranked ? ' Ordered nearest first from each Tanod’s last known position — you still choose.' : ''),
     label: 'On-duty Tanod',

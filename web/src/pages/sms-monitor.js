@@ -36,6 +36,7 @@ import { DateRangePicker } from '../components/DateRangePicker.js';
 import { avatarInitials } from '../components/Avatar.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatManilaDate, formatManilaDateTime, formatManilaTime, manilaDateKey } from '../utils/manilaTime.js';
+import { formatIncidentCode, formatDispatchCode, formatCitizenReportCode, formatSmsCode } from '../services/tanodWorkflowUi.js';
 
 const PAGE_SIZE = 25;
 const LIVE_FEED_POLL_MS = 10000;
@@ -1082,7 +1083,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
           const incidentLink = document.createElement('button');
           incidentLink.type = 'button';
           incidentLink.className = 'sms-bubble__linked-tag';
-          incidentLink.innerHTML = `<span aria-hidden="true">${icons.fileText(12)}</span><span>Incident #${msg.incidentId}</span>`;
+          incidentLink.innerHTML = `<span aria-hidden="true">${icons.fileText(12)}</span><span>${formatIncidentCode(msg.incidentId)}</span>`;
           incidentLink.addEventListener('click', (e) => {
             e.stopPropagation();
             navigate('incident-detail', msg.incidentId);
@@ -1091,7 +1092,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
         } else if (msg.dispatchId) {
           const dispatchTag = document.createElement('span');
           dispatchTag.className = 'sms-bubble__linked-tag';
-          dispatchTag.innerHTML = `<span>Dispatch #${msg.dispatchId}</span>`;
+          dispatchTag.innerHTML = `<span>${formatDispatchCode(msg.dispatchId)}</span>`;
           bubble.appendChild(dispatchTag);
         }
 
@@ -2128,7 +2129,7 @@ function renderRowDetail(pane, row, navigate) {
 
   const title = document.createElement('h3');
   title.className = 'sms-detail-title';
-  title.textContent = `Message #${row.logId}`;
+  title.textContent = formatSmsCode(row.logId);
 
   const dirBadge = document.createElement('span');
   const isInbound = row.direction === 'inbound';
@@ -2205,9 +2206,9 @@ function renderRowDetail(pane, row, navigate) {
   addField('Tracking ID', row.correlationId, true);
   addField('Gateway message ID', row.gatewayMessageId, true);
   addField('Phone message ID', row.modemMessageId, true);
-  addField('Incident', row.incidentId ? `#${row.incidentId}` : null);
-  addField('Dispatch', row.dispatchId ? `#${row.dispatchId}` : null);
-  addField('Citizen Report', row.reportId ? `#${row.reportId}` : null);
+  addField('Incident', row.incidentId ? formatIncidentCode(row.incidentId) : null);
+  addField('Dispatch', row.dispatchId ? formatDispatchCode(row.dispatchId) : null);
+  addField('Citizen Report', row.reportId ? formatCitizenReportCode(row.reportId) : null);
   addField('Sent at', row.sentAt ? formatManilaDateTime(row.sentAt) : null);
   addField('Received at', row.receivedAt ? formatManilaDateTime(row.receivedAt) : null);
   addField('Logged at', formatManilaDateTime(row.createdAt));
@@ -2225,7 +2226,7 @@ function renderRowDetail(pane, row, navigate) {
     const jumpBtn = document.createElement('button');
     jumpBtn.type = 'button';
     jumpBtn.className = 'primary sms-detail-action-btn';
-    jumpBtn.innerHTML = `<span aria-hidden="true">${icons.fileText(14)}</span><span>Open Incident #${row.incidentId}</span>`;
+    jumpBtn.innerHTML = `<span aria-hidden="true">${icons.fileText(14)}</span><span>Open Incident ${formatIncidentCode(row.incidentId)}</span>`;
     jumpBtn.addEventListener('click', () => navigate('incident-detail', row.incidentId));
     card.appendChild(jumpBtn);
   }
@@ -2255,7 +2256,7 @@ function buildFilterSelect(id, srLabel, allLabel, options) {
 function renderSmsLogCell(row, key, navigate) {
   switch (key) {
     case 'id':
-      return `#${row.logId}`;
+      return formatSmsCode(row.logId);
     case 'direction': {
       const span = document.createElement('span');
       span.className = 'data-table__sub';
@@ -2280,7 +2281,7 @@ function renderSmsLogCell(row, key, navigate) {
         const link = document.createElement('button');
         link.type = 'button';
         link.className = 'link-button';
-        link.textContent = `Incident #${row.incidentId}`;
+        link.textContent = formatIncidentCode(row.incidentId);
         link.addEventListener('click', (event) => {
           event.stopPropagation();
           navigate('incident-detail', row.incidentId);
@@ -2288,8 +2289,8 @@ function renderSmsLogCell(row, key, navigate) {
         span.appendChild(link);
       }
       const restParts = [];
-      if (row.dispatchId) restParts.push(`Dispatch #${row.dispatchId}`);
-      if (row.reportId) restParts.push(`Report #${row.reportId}`);
+      if (row.dispatchId) restParts.push(formatDispatchCode(row.dispatchId));
+      if (row.reportId) restParts.push(formatCitizenReportCode(row.reportId));
       if (restParts.length) {
         if (row.incidentId) span.append(' · ');
         span.append(restParts.join(' · '));

@@ -46,6 +46,7 @@ import {
   selectOf, statusPill, formatDateOnly, formatManilaDateTime, actionErrorMessage,
   loadLetterhead, letterheadHtml, applyPrintOrientation, SSZ_PURSUANT_HTML,
   signatureBlockHtml, printedByLabel,
+  formatSchoolCode, formatAnnexDCode, formatIncidentCode,
 } from '../services/tanodWorkflowUi.js';
 
 const TABS = [
@@ -326,12 +327,13 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
+          const matchCode = formatSchoolCode(s.schoolId).toLowerCase().includes(q);
           const matchName = (s.name || '').toLowerCase().includes(q);
           const matchAddress = (s.address || '').toLowerCase().includes(q);
           const matchFocal = (s.focalPerson || '').toLowerCase().includes(q);
           const matchContact = (s.focalContact || '').toLowerCase().includes(q);
           const matchRemarks = (s.remarks || '').toLowerCase().includes(q);
-          if (!matchName && !matchAddress && !matchFocal && !matchContact && !matchRemarks) {
+          if (!matchCode && !matchName && !matchAddress && !matchFocal && !matchContact && !matchRemarks) {
             return false;
           }
         }
@@ -400,10 +402,11 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
               const cell = h('div', 'ssz-school-cell');
               const nameEl = h('div', 'ssz-school-name', s.name);
               const metaEl = h('div', 'ssz-school-meta');
+              const codeBadge = h('span', 'c1-inc-code-pill', formatSchoolCode(s.schoolId));
               const isPriv = s.schoolType === 'private';
               const typeBadge = h('span', `tw-school-badge tw-school-badge--${isPriv ? 'private' : 'public'}`, SCHOOL_TYPE_LABELS[s.schoolType] || s.schoolType || 'Public');
               const levelBadge = h('span', 'ssz-level-tag', SCHOOL_LEVEL_LABELS[s.level] || s.level || '—');
-              metaEl.append(typeBadge, levelBadge);
+              metaEl.append(codeBadge, typeBadge, levelBadge);
               cell.append(nameEl, metaEl);
               return cell;
             }
@@ -648,12 +651,34 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
   function renderIncidentsTab(host) {
     const referralCache = new Map(); // incidentId -> {kinds, labels} | null (fetch failed)
-    const state = { from: '', to: '', schoolId: '', page: 1 };
+    const state = { from: '', to: '', schoolId: '', sortBy: 'when_who', sortDir: 'desc', page: 1 };
     let searchQuery = '';
     let selectedReferralKind = 'all';
     let all = [];
     let schoolNames = new Map();
     let truncated = false;
+
+    function isEmsKind(k) {
+      return k === 'ambulance_ems' || k === 'doh' || k === 'ambulance' || k === 'hospital';
+    }
+
+    function matchesReferralFacet(incidentId, kind) {
+      if (kind === 'all') return true;
+      const entry = referralCache.get(incidentId);
+      if (!entry || !entry.kinds) return false;
+      if (kind === 'barangay') {
+        return !entry.kinds.some((k) => !BARANGAY_LEVEL_DESTINATIONS.has(k));
+      }
+      if (kind === 'pnp') return entry.kinds.includes('pnp');
+      if (kind === 'ems') return entry.kinds.some(isEmsKind);
+      if (kind === 'bfp') return entry.kinds.includes('bfp');
+      if (kind === 'other') {
+        return entry.kinds.some(
+          (k) => !BARANGAY_LEVEL_DESTINATIONS.has(k) && k !== 'pnp' && k !== 'bfp' && !isEmsKind(k),
+        );
+      }
+      return true;
+    }
 
     // Dismissible Privacy & Regulatory Callout Card
     const note = h('div', 'c1-notice-card tw-notice');
@@ -677,8 +702,27 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     } catch {}
     note.append(noteContent, dismissBtn);
 
-    // Consolidated Control Bar (Dates, School, Search, Clear)
+    // Consolidated Single-Row Control Bar (Search First, Dates, School, Sort, Clear)
     const filters = h('div', 'c1-control-bar c1-filters tw-filter-bar');
+
+    // Primary Search Input Box (Leading Control)
+    const searchBox = h('div', 'c1-search-box');
+    const searchIcon = h('span', 'c1-search-icon');
+    searchIcon.setAttribute('aria-hidden', 'true');
+    searchIcon.innerHTML = icons.search(16);
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.id = 'tw-c1-search';
+    searchInput.className = 'c1-search-input';
+    searchInput.placeholder = 'Search case ID, school, summary, location, officer...';
+    searchInput.setAttribute('aria-label', 'Search school incident reports');
+
+    const clearSearchBtn = h('button', 'c1-search-clear');
+    clearSearchBtn.type = 'button';
+    clearSearchBtn.setAttribute('aria-label', 'Clear search query');
+    clearSearchBtn.innerHTML = icons.x(14);
+    clearSearchBtn.hidden = true;
 
     // Date Pickers Group
     const dateGroup = h('div', 'c1-date-group');
@@ -695,8 +739,8 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     const arrowSpan = h('span', 'c1-date-arrow', '➔');
     dateGroup.append(fromField, arrowSpan, toField);
 
-    // School Dropdown Group
-    const schoolField = h('div', 'c1-select-field form-stack tw-field');
+    // School Dropdown Group (Inline label + select, aligned with date & sort controls)
+    const schoolField = h('div', 'c1-select-field');
     const schoolSelect = selectOf([], { placeholder: 'All schools' });
     schoolSelect.id = 'tw-c1-school';
     schoolSelect.className = 'c1-select';
@@ -704,23 +748,64 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     schoolLabel.htmlFor = schoolSelect.id;
     schoolField.append(schoolLabel, schoolSelect);
 
-    // Search Input Box
-    const searchBox = h('div', 'c1-search-box');
-    const searchIcon = h('span', 'c1-search-icon');
-    searchIcon.setAttribute('aria-hidden', 'true');
-    searchIcon.innerHTML = icons.search(16);
+    // Sort Controls Group
+    const sortGroup = h('div', 'c1-sort-group');
+    const sortSelect = document.createElement('select');
+    sortSelect.id = 'tw-c1-sort';
+    sortSelect.className = 'c1-select c1-sort-select';
+    sortSelect.setAttribute('aria-label', 'Sort school incidents by');
+    const sortOptions = [
+      { value: 'when_who', label: 'Sort: Reported Date' },
+      { value: 'incident', label: 'Sort: School' },
+      { value: 'action_referral', label: 'Sort: Escalation' },
+    ];
+    for (const so of sortOptions) {
+      const opt = document.createElement('option');
+      opt.value = so.value;
+      opt.textContent = so.label;
+      sortSelect.appendChild(opt);
+    }
+    sortSelect.value = state.sortBy;
 
-    const searchInput = document.createElement('input');
-    searchInput.type = 'search';
-    searchInput.className = 'c1-search-input';
-    searchInput.placeholder = 'Search summary, location, officer...';
-    searchInput.setAttribute('aria-label', 'Search school incident reports');
+    const sortDirBtn = h('button', 'ghost c1-sort-dir-btn');
+    sortDirBtn.type = 'button';
+    const syncSortControls = () => {
+      sortSelect.value = state.sortBy;
+      const isDesc = state.sortDir === 'desc';
+      sortDirBtn.textContent = isDesc ? '↓ Desc' : '↑ Asc';
+      sortDirBtn.setAttribute('aria-label', isDesc ? 'Sort descending (newest first)' : 'Sort ascending (oldest first)');
+      sortDirBtn.title = isDesc ? 'Descending order (click to toggle ascending)' : 'Ascending order (click to toggle descending)';
+    };
+    syncSortControls();
 
-    const clearSearchBtn = h('button', 'c1-search-clear');
-    clearSearchBtn.type = 'button';
-    clearSearchBtn.setAttribute('aria-label', 'Clear search query');
-    clearSearchBtn.innerHTML = icons.x(14);
-    clearSearchBtn.hidden = true;
+    sortSelect.addEventListener('change', () => {
+      state.sortBy = sortSelect.value;
+      state.page = 1;
+      renderTable();
+    });
+    sortDirBtn.addEventListener('click', () => {
+      state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc';
+      syncSortControls();
+      state.page = 1;
+      renderTable();
+    });
+    sortGroup.append(sortSelect, sortDirBtn);
+
+    const clear = h('button', 'ghost c1-clear-btn', 'Clear filters');
+    clear.type = 'button';
+    clear.disabled = true;
+    clear.setAttribute('aria-label', 'Clear all incident filters');
+
+    function updateClearButtonState() {
+      let activeCount = 0;
+      if (state.from) activeCount += 1;
+      if (state.to) activeCount += 1;
+      if (state.schoolId) activeCount += 1;
+      if (selectedReferralKind !== 'all') activeCount += 1;
+      if (searchQuery) activeCount += 1;
+      clear.disabled = activeCount === 0;
+      clear.textContent = activeCount > 0 ? `Clear filters (${activeCount})` : 'Clear filters';
+    }
 
     clearSearchBtn.addEventListener('click', () => {
       searchInput.value = '';
@@ -728,6 +813,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       clearSearchBtn.hidden = true;
       searchInput.focus();
       state.page = 1;
+      updateClearButtonState();
       renderTable();
     });
 
@@ -735,6 +821,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     searchInput.addEventListener('input', () => {
       searchQuery = searchInput.value.trim();
       clearSearchBtn.hidden = !searchQuery;
+      updateClearButtonState();
       if (searchTimer) clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
         state.page = 1;
@@ -743,37 +830,45 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     });
     searchBox.append(searchIcon, searchInput, clearSearchBtn);
 
-    const clear = h('button', 'ghost c1-clear-btn', 'Clear filters');
-    clear.type = 'button';
-    clear.setAttribute('aria-label', 'Clear all incident filters');
+    filters.append(searchBox, dateGroup, schoolField, sortGroup, clear);
 
-    filters.append(dateGroup, schoolField, searchBox, clear);
-
-    // Quick Referral Destination Facets Bar
+    // Unified Escalation Summary & Interactive Filter Bar (Replaces redundant StatStrip row)
     const facetsBar = h('div', 'c1-facets-bar');
+    facetsBar.setAttribute('role', 'group');
+    facetsBar.setAttribute('aria-label', 'Filter by escalation agency');
     const facetsLabel = h('span', 'c1-facets-label');
     facetsLabel.innerHTML = `<span aria-hidden="true">${icons.filter(14)}</span><span>Escalation:</span>`;
     facetsBar.appendChild(facetsLabel);
 
     const facetItems = [
-      { id: 'all', label: 'All Incidents' },
+      { id: 'all', label: 'All School Incidents' },
       { id: 'barangay', label: 'Barangay Only' },
       { id: 'pnp', label: 'Police / PNP' },
       { id: 'ems', label: 'Medical / EMS' },
       { id: 'bfp', label: 'Fire / BFP' },
+      { id: 'other', label: 'Other Agencies' },
     ];
-    const facetButtons = [];
+    const facetButtons = new Map();
     for (const fi of facetItems) {
-      const btn = h('button', `c1-facet-chip ${fi.id === 'all' ? 'is-active' : ''}`, fi.label);
+      const btn = h('button', `c1-facet-chip ${fi.id === 'all' ? 'is-active' : ''}`);
       btn.type = 'button';
+      btn.dataset.facet = fi.id;
+      btn.setAttribute('aria-pressed', String(fi.id === 'all'));
+      const lblSpan = h('span', 'c1-facet-chip__label', fi.label);
+      const countSpan = h('span', 'c1-facet-chip__count', '0');
+      btn.append(lblSpan, countSpan);
       btn.addEventListener('click', () => {
         selectedReferralKind = fi.id;
-        for (const b of facetButtons) b.classList.remove('is-active');
-        btn.classList.add('is-active');
+        for (const [id, entry] of facetButtons.entries()) {
+          const active = id === fi.id;
+          entry.btn.classList.toggle('is-active', active);
+          entry.btn.setAttribute('aria-pressed', String(active));
+        }
         state.page = 1;
+        updateClearButtonState();
         renderTable();
       });
-      facetButtons.push(btn);
+      facetButtons.set(fi.id, { btn, countSpan });
       facetsBar.appendChild(btn);
     }
 
@@ -824,7 +919,11 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     });
 
     const apply = () => {
-      state.from = fromInput.value; state.to = toInput.value; state.schoolId = schoolSelect.value; state.page = 1;
+      state.from = fromInput.value;
+      state.to = toInput.value;
+      state.schoolId = schoolSelect.value;
+      state.page = 1;
+      updateClearButtonState();
       renderTable();
     };
     fromInput.addEventListener('change', apply);
@@ -838,56 +937,86 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       searchQuery = '';
       clearSearchBtn.hidden = true;
       selectedReferralKind = 'all';
-      for (const b of facetButtons) b.classList.remove('is-active');
-      facetButtons[0]?.classList.add('is-active');
+      for (const [id, entry] of facetButtons.entries()) {
+        const active = id === 'all';
+        entry.btn.classList.toggle('is-active', active);
+        entry.btn.setAttribute('aria-pressed', String(active));
+      }
       apply();
     });
 
-    function filtered() {
+    function baseFiltered() {
       return all.filter((i) => {
         const day = manilaDateOf(i.createdAt);
         if (state.from && day < state.from) return false;
         if (state.to && day > state.to) return false;
         if (state.schoolId && String(i.schoolId) !== state.schoolId) return false;
 
-        // Referral facet
-        if (selectedReferralKind !== 'all') {
-          const entry = referralCache.get(i.incidentId);
-          if (entry && entry.kinds) {
-            if (selectedReferralKind === 'barangay') {
-              const hasExternal = entry.kinds.some((k) => !BARANGAY_LEVEL_DESTINATIONS.has(k));
-              if (hasExternal) return false;
-            } else if (selectedReferralKind === 'ems') {
-              const hasEms = entry.kinds.some((k) => k === 'doh' || k === 'ambulance' || k === 'hospital');
-              if (!hasEms) return false;
-            } else if (selectedReferralKind === 'pnp') {
-              if (!entry.kinds.includes('pnp')) return false;
-            } else if (selectedReferralKind === 'bfp') {
-              if (!entry.kinds.includes('bfp')) return false;
-            }
-          }
-        }
-
-        // Keyword query
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
+          const code = formatIncidentCode(i).toLowerCase();
           const sName = (schoolNames.get(i.schoolId) || i.schoolName || '').toLowerCase();
           const narrative = (i.c1Summary || '').toLowerCase();
           const location = (i.locationDescription || '').toLowerCase();
           const action = (i.c1ActionTaken || '').toLowerCase();
           const officer = (i.officerName || '').toLowerCase();
-          if (!sName.includes(q) && !narrative.includes(q) && !location.includes(q) && !action.includes(q) && !officer.includes(q)) {
+          if (
+            !code.includes(q)
+            && !sName.includes(q)
+            && !narrative.includes(q)
+            && !location.includes(q)
+            && !action.includes(q)
+            && !officer.includes(q)
+          ) {
             return false;
           }
         }
-
         return true;
       });
+    }
+
+    function updateFacetCounts(baseRows) {
+      for (const fi of facetItems) {
+        const entry = facetButtons.get(fi.id);
+        if (!entry) continue;
+        const count = fi.id === 'all'
+          ? baseRows.length
+          : baseRows.filter((i) => matchesReferralFacet(i.incidentId, fi.id)).length;
+        entry.countSpan.textContent = String(count);
+      }
+    }
+
+    function sortIncidentRows(rows) {
+      const dir = state.sortDir === 'asc' ? 1 : -1;
+      return [...rows].sort((a, b) => {
+        if (state.sortBy === 'incident') {
+          const sA = (schoolNames.get(a.schoolId) || a.schoolName || '').toLowerCase();
+          const sB = (schoolNames.get(b.schoolId) || b.schoolName || '').toLowerCase();
+          if (sA !== sB) return sA.localeCompare(sB) * dir;
+        } else if (state.sortBy === 'action_referral') {
+          const rA = (referredText(a.incidentId) || '').toLowerCase();
+          const rB = (referredText(b.incidentId) || '').toLowerCase();
+          if (rA !== rB) return rA.localeCompare(rB) * dir;
+        }
+        const tA = String(a.createdAt || '');
+        const tB = String(b.createdAt || '');
+        if (tA !== tB) return tA.localeCompare(tB) * dir;
+        return (Number(a.incidentId) - Number(b.incidentId)) * dir;
+      });
+    }
+
+    function filtered() {
+      const base = baseFiltered();
+      const facetFiltered = selectedReferralKind === 'all'
+        ? base
+        : base.filter((i) => matchesReferralFacet(i.incidentId, selectedReferralKind));
+      return sortIncidentRows(facetFiltered);
     }
 
     async function ensureReferrals(rows) {
       // A failed lookup is cached as null; retry those rather than trusting them.
       const missing = rows.filter((r) => !referralCache.get(r.incidentId));
+      if (missing.length === 0) return;
       const results = await Promise.allSettled(missing.map((r) => getIncidentReferrals(r.incidentId)));
       results.forEach((res, idx) => {
         const id = missing[idx].incidentId;
@@ -914,7 +1043,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
     function toC1Row(i) {
       return {
-        schoolName: schoolNames.get(i.schoolId) || i.schoolName || `School #${i.schoolId}`,
+        schoolName: schoolNames.get(i.schoolId) || i.schoolName || formatSchoolCode(i.schoolId),
         // The API has no incident-occurrence time, only when the record was
         // logged, so the cell says so rather than passing it off as "when it happened".
         when: `Reported: ${formatManilaDateTime(i.createdAt)}`,
@@ -941,6 +1070,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         }
         all = incidents.items;
         truncated = incidents.truncated;
+        await ensureReferrals(all);
         await renderTable();
       } catch (err) {
         showError(tableHost, err, load, 'Could not load school incidents.');
@@ -948,6 +1078,8 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     }
 
     async function renderTable() {
+      const base = baseFiltered();
+      updateFacetCounts(base);
       const rows = filtered();
       tableHost.innerHTML = '';
       if (all.length === 0) {
@@ -955,25 +1087,23 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         return;
       }
       if (rows.length === 0) {
-        showEmpty(tableHost, 'No incidents match', 'Adjust the dates, search keywords, or school filter.');
+        showEmpty(tableHost, 'No incidents match', 'Adjust the dates, search keywords, escalation filter, or school filter.');
         return;
       }
       const start = (state.page - 1) * INCIDENT_PAGE_SIZE;
       const slice = rows.slice(start, start + INCIDENT_PAGE_SIZE);
-      showLoading(tableHost, 'Loading referrals');
       await ensureReferrals(slice);
+      updateFacetCounts(base);
       tableHost.innerHTML = '';
 
-      const items = [{ label: 'School incidents', value: rows.length }];
-      tableHost.appendChild(StatStrip({ items }));
       if (truncated) {
         tableHost.appendChild(h('p', 'tw-notice tw-notice--warning', 'Only the most recent incidents were scanned for school links. Older school incidents may be missing here.'));
       }
       tableHost.appendChild(DataTable({
         columns: [
-          { key: 'incident', label: 'Incident Summary & Location' },
-          { key: 'when_who', label: 'Reported & Personnel' },
-          { key: 'action_referral', label: 'Action Taken & Escalation' },
+          { key: 'incident', label: 'School & Incident Summary', sortable: true },
+          { key: 'when_who', label: 'Reported & Personnel', sortable: true },
+          { key: 'action_referral', label: 'Action Taken & Escalation', sortable: true },
           { key: 'action', label: 'Action', align: 'right' },
         ],
         rows: slice,
@@ -981,6 +1111,15 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         caption: 'School incidents (Annex C-1)',
         emptyMessage: 'No incidents on this page.',
         emptyIcon: icons.shield,
+        sortKey: state.sortBy,
+        sortDir: state.sortDir,
+        onSort: (key, dir) => {
+          state.sortBy = key;
+          state.sortDir = dir;
+          syncSortControls();
+          state.page = 1;
+          renderTable();
+        },
         onRowClick: (i) => navigate('incident-detail', i.incidentId),
         page: state.page,
         totalItems: rows.length,
@@ -991,26 +1130,36 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
           switch (key) {
             case 'incident': {
               const cell = h('div', 'c1-incident-cell');
-              const schoolPill = h('div', 'c1-school-pill');
+              const metaRow = h('div', 'c1-incident-meta');
+              const incCodePill = h('span', 'c1-inc-code-pill', formatIncidentCode(i));
+              const schoolPill = h('span', 'c1-school-pill');
               schoolPill.innerHTML = `<span aria-hidden="true">${icons.shield(12)}</span><span>${escapeHtml(c1.schoolName)}</span>`;
-              const narrative = h('div', 'c1-narrative-title', c1.narrative || '—');
-              const locationLine = h('div', 'c1-location-line');
-              if (canViewGis && c1.location) {
-                const mapBtn = h('button', 'c1-location-link');
-                mapBtn.type = 'button';
-                mapBtn.setAttribute('aria-label', `View ${c1.location} near ${c1.schoolName} on Live GIS Map`);
-                mapBtn.title = 'View on Live GIS Map';
-                mapBtn.innerHTML = `<span aria-hidden="true">${icons.mapPin(14)}</span><span>${escapeHtml(c1.location)}</span>`;
-                mapBtn.addEventListener('click', (e) => {
-                  e.stopPropagation();
-                  showToast(`Opening Live Map centered on ${c1.schoolName} (${c1.location})...`, { variant: 'info' });
-                  navigate('gis', { focusAddress: c1.location, schoolName: c1.schoolName });
-                });
-                locationLine.appendChild(mapBtn);
-              } else {
-                locationLine.innerHTML = `<span aria-hidden="true">${icons.mapPin(14)}</span><span>${escapeHtml(c1.location || '—')}</span>`;
+              metaRow.append(incCodePill, schoolPill);
+
+              if (c1.location) {
+                if (canViewGis) {
+                  const mapBtn = h('button', 'c1-location-link');
+                  mapBtn.type = 'button';
+                  mapBtn.setAttribute('aria-label', `View ${c1.location} near ${c1.schoolName} on Live GIS Map`);
+                  mapBtn.title = 'View on Live GIS Map';
+                  mapBtn.innerHTML = `<span aria-hidden="true">${icons.mapPin(13)}</span><span>${escapeHtml(c1.location)}</span>`;
+                  mapBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showToast(`Opening Live Map centered on ${c1.schoolName} (${c1.location})...`, { variant: 'info' });
+                    navigate('gis', { focusAddress: c1.location, schoolName: c1.schoolName });
+                  });
+                  metaRow.appendChild(mapBtn);
+                } else {
+                  const locSpan = h('span', 'c1-location-line');
+                  locSpan.innerHTML = `<span aria-hidden="true">${icons.mapPin(13)}</span><span>${escapeHtml(c1.location)}</span>`;
+                  metaRow.appendChild(locSpan);
+                }
               }
-              cell.append(schoolPill, narrative, locationLine);
+
+              const narrativeText = c1.narrative || 'No C-1 summary recorded';
+              const narrative = h('div', `c1-narrative-title${c1.narrative ? '' : ' is-muted'}`, narrativeText);
+              if (c1.narrative) narrative.title = c1.narrative;
+              cell.append(metaRow, narrative);
               return cell;
             }
             case 'when_who': {
@@ -1024,7 +1173,8 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
             }
             case 'action_referral': {
               const cell = h('div', 'c1-action-referral-cell');
-              const actionText = h('div', 'c1-action-text', c1.action || '—');
+              const actionText = h('div', `c1-action-text${c1.action ? '' : ' is-muted'}`, c1.action || 'No C-1 action recorded');
+              if (c1.action) actionText.title = c1.action;
               const badgesWrap = h('div', 'c1-badges-wrap');
 
               const entry = referralCache.get(i.incidentId);
@@ -1032,12 +1182,16 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
               if (refText) {
                 let badgeTone = 'brgy';
                 if (entry?.kinds) {
-                  if (entry.kinds.some((k) => k === 'doh' || k === 'ambulance' || k === 'hospital')) badgeTone = 'ems';
+                  if (entry.kinds.some(isEmsKind)) badgeTone = 'ems';
                   else if (entry.kinds.includes('pnp')) badgeTone = 'pnp';
                   else if (entry.kinds.includes('bfp')) badgeTone = 'bfp';
                   else if (entry.kinds.some((k) => !BARANGAY_LEVEL_DESTINATIONS.has(k))) badgeTone = 'other';
                 }
-                const refBadge = h('span', `c1-referral-badge c1-referral-badge--${badgeTone}`, `• ${refText}`);
+                const refBadge = h('span', `c1-referral-badge c1-referral-badge--${badgeTone}`);
+                const dot = h('span', 'c1-referral-badge__dot');
+                dot.setAttribute('aria-hidden', 'true');
+                const txt = h('span', 'c1-referral-badge__text', refText);
+                refBadge.append(dot, txt);
                 badgesWrap.appendChild(refBadge);
               } else if (referralCache.has(i.incidentId) && entry === null) {
                 // The lookup FAILED (null), as opposed to still loading (no entry yet).
@@ -1045,7 +1199,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
                 badgesWrap.appendChild(h('span', 'c1-referral-badge c1-referral-badge--other', REFERRAL_UNAVAILABLE));
               }
               if (c1.status && c1.status !== '—') {
-                badgesWrap.appendChild(h('span', 'c1-referral-badge c1-referral-badge--brgy', c1.status));
+                badgesWrap.appendChild(h('span', 'c1-status-note-badge', `Status: ${c1.status}`));
               }
               cell.append(actionText, badgesWrap);
               return cell;
@@ -1075,9 +1229,9 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
   // =========================================================================
 
   function renderTermTab(host) {
-    const livePanel = h('div');
-    const listHost = h('div');
-    const detailHost = h('div');
+    const livePanel = h('div', 'd-term-live-host');
+    const listHost = h('div', 'd-term-list-host');
+    const detailHost = h('div', 'tw-reports-detail d-term-detail-host');
     detailHost.hidden = true;
     host.append(livePanel, listHost, detailHost);
 
@@ -1101,41 +1255,78 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     function buildLivePanel() {
       livePanel.innerHTML = '';
       const el = h('div', 'card d-calculator-panel');
-      
-      const head = h('div', 'd-panel-header');
-      head.innerHTML = `
-        <div class="d-panel-header__titles">
-          <div class="d-panel-badge"><span aria-hidden="true">${icons.calendar ? icons.calendar(14) : ''}</span> Annex D Statutory Aggregator</div>
-          <h3 class="tw-card__title">Live Term Metrics &amp; Draft Generator</h3>
-          <p class="tw-card__subtitle">Calculates aggregated deployment coverage, tanod patrols, and agency incident escalations dynamically. Creating a draft locks in a formal snapshot for paper signing.</p>
-        </div>
-      `;
-      el.appendChild(head);
 
-      const label = document.createElement('input'); 
+      const label = document.createElement('input');
       label.className = 'd-input-text';
-      label.maxLength = 40; 
+      label.maxLength = 40;
       label.placeholder = 'e.g. Term 1 S.Y. 2026-2027';
 
-      const start = document.createElement('input'); 
+      const start = document.createElement('input');
       start.type = 'date';
       start.id = 'term-start-input';
       start.className = 'd-input-date';
       start.setAttribute('aria-label', 'Term starts');
 
-      const end = document.createElement('input'); 
+      const end = document.createElement('input');
       end.type = 'date';
       end.id = 'term-end-input';
       end.className = 'd-input-date';
       end.setAttribute('aria-label', 'Term ends');
 
-      const remarks = document.createElement('textarea'); 
-      remarks.className = 'd-input-textarea';
-      remarks.rows = 2; 
+      const remarks = document.createElement('input');
+      remarks.type = 'text';
+      remarks.className = 'd-input-text';
       remarks.maxLength = 1000;
-      remarks.placeholder = 'Record observations, technical assistance needs, key issues encountered, or good practices (optional)...';
+      remarks.placeholder = 'Observations, TA needs, or good practices (optional)…';
 
-      // Term selection control bar
+      // Top header row with quick Academic Term Presets (3 Philippine school year terms)
+      const head = h('div', 'd-panel-header d-panel-header--row');
+      const titles = h('div', 'd-panel-header__titles');
+      titles.innerHTML = `
+        <div class="d-panel-title-line">
+          <h3 class="tw-card__title">Live Term Metrics &amp; Draft Generator</h3>
+          <span class="d-panel-badge"><span aria-hidden="true">${icons.calendar ? icons.calendar(13) : ''}</span> Annex D Statutory Aggregator</span>
+        </div>
+        <p class="tw-card__subtitle">Select a term date window (or use a quick term preset) to compute real-time Annex D counts and lock in a formal draft snapshot.</p>
+      `;
+
+      const presetsBar = h('div', 'd-term-presets');
+      presetsBar.appendChild(h('span', 'd-term-presets__label', 'Quick Fill:'));
+      const presets = [
+        { text: 'Term 1 S.Y. 26–27', termLabel: 'Term 1 S.Y. 2026-2027', start: '2026-08-01', end: '2026-11-30' },
+        { text: 'Term 2 S.Y. 26–27', termLabel: 'Term 2 S.Y. 2026-2027', start: '2026-12-01', end: '2027-02-28' },
+        { text: 'Term 3 S.Y. 26–27', termLabel: 'Term 3 S.Y. 2026-2027', start: '2027-03-01', end: '2027-05-31' },
+      ];
+      for (const p of presets) {
+        const pBtn = h('button', 'ghost d-preset-chip', p.text);
+        pBtn.type = 'button';
+        pBtn.addEventListener('click', () => {
+          if (!label.value.trim() || presets.some((pr) => pr.termLabel === label.value.trim())) {
+            label.value = p.termLabel;
+          }
+          start.value = p.start;
+          end.value = p.end;
+          refreshCounts();
+        });
+        presetsBar.appendChild(pBtn);
+      }
+
+      const resetBtn = h('button', 'ghost d-preset-chip d-preset-chip--reset', 'Reset');
+      resetBtn.type = 'button';
+      resetBtn.hidden = true;
+      resetBtn.addEventListener('click', () => {
+        label.value = '';
+        start.value = '';
+        end.value = '';
+        remarks.value = '';
+        refreshCounts();
+      });
+      presetsBar.appendChild(resetBtn);
+
+      head.append(titles, presetsBar);
+      el.appendChild(head);
+
+      // Compact single-row composer control bar
       const controlBar = h('div', 'd-term-control-bar');
       const labelField = h('div', 'd-term-field d-term-field--label');
       labelField.innerHTML = `<label for="term-label-input">Term Label <span class="d-required">*</span></label>`;
@@ -1145,7 +1336,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       const dateField = h('div', 'd-term-field d-term-field--dates');
       dateField.innerHTML = `<label>Term Window (Start &amp; End) <span class="d-required">*</span></label>`;
       const dateInputsWrap = h('div', 'd-date-inputs-group');
-      
+
       const startWrap = h('div', 'd-date-subfield');
       const startLbl = h('label', 'sr-only', 'Term starts');
       startLbl.htmlFor = 'term-start-input';
@@ -1160,60 +1351,51 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       dateField.appendChild(dateInputsWrap);
 
       controlBar.append(labelField, dateField);
-      el.appendChild(controlBar);
 
-      const countsHost = h('div', 'tw-counts-host d-counts-host');
-      const error = h('p', 'tw-form-error'); 
-      error.setAttribute('role', 'alert'); 
-      error.hidden = true;
-
-      el.appendChild(countsHost);
-
-      let draftSection = null;
       let createBtn = null;
       if (canEdit) {
-        draftSection = h('div', 'd-draft-compose-section');
-        const remarksLabel = h('label', 'd-remarks-label', 'Term Remarks & Observations (Annex D Form Block)');
-        remarksLabel.htmlFor = 'term-remarks-input';
+        const remarksField = h('div', 'd-term-field d-term-field--remarks');
+        remarksField.innerHTML = `<label for="term-remarks-input">Term Remarks &amp; Observations <span class="d-optional-tag">(Optional)</span></label>`;
         remarks.id = 'term-remarks-input';
-        
-        const actionsBar = h('div', 'd-draft-actions-bar');
-        const helperText = h('p', 'd-draft-helper', 'Once created, you can preview and print the official DILG letterhead sheet for wet-ink signature recording.');
+        remarksField.appendChild(remarks);
+
+        const actionField = h('div', 'd-term-field d-term-field--cta');
         createBtn = h('button', 'primary d-create-draft-btn');
         createBtn.type = 'button';
         createBtn.innerHTML = `<span aria-hidden="true">${icons.plus ? icons.plus(15) : '+'}</span><span>Create draft term report</span>`;
+        actionField.appendChild(createBtn);
 
-        actionsBar.append(helperText, createBtn);
-        draftSection.append(remarksLabel, remarks, actionsBar);
-        el.appendChild(draftSection);
+        controlBar.append(remarksField, actionField);
       }
-      
-      el.appendChild(error);
+
+      el.appendChild(controlBar);
+
+      const countsHost = h('div', 'tw-counts-host d-counts-host');
+      const error = h('p', 'tw-form-error');
+      error.setAttribute('role', 'alert');
+      error.hidden = true;
+
+      el.append(countsHost, error);
       livePanel.appendChild(el);
 
       let seq = 0;
       async function refreshCounts() {
         error.hidden = true;
+        resetBtn.hidden = !(start.value || end.value || label.value.trim());
         if (!start.value || !end.value) {
           countsHost.innerHTML = `
-            <div class="d-empty-prompt">
-              <div class="d-empty-prompt__icon" aria-hidden="true">${icons.calendar ? icons.calendar(24) : '📅'}</div>
-              <div class="d-empty-prompt__text">
-                <strong>Select term start and end dates above</strong>
-                <span>BaranGuard will compute real-time tanod deployments, covered schools, and incident referrals across the period.</span>
-              </div>
+            <div class="d-empty-prompt d-empty-prompt--compact">
+              <span class="d-empty-prompt__icon" aria-hidden="true">${icons.calendar ? icons.calendar(16) : '📅'}</span>
+              <span class="d-empty-prompt__inline-text"><strong>Select term start and end dates above</strong> — BaranGuard will compute real-time tanod deployments, covered schools, and incident referrals across the period.</span>
             </div>
           `;
           return;
         }
         if (start.value > end.value) {
           countsHost.innerHTML = `
-            <div class="d-empty-prompt d-empty-prompt--error">
-              <div class="d-empty-prompt__icon" aria-hidden="true">${icons.alertTriangle ? icons.alertTriangle(24) : '⚠️'}</div>
-              <div class="d-empty-prompt__text">
-                <strong>Invalid date window</strong>
-                <span>The term start date cannot be after the term end date. Please adjust the range.</span>
-              </div>
+            <div class="d-empty-prompt d-empty-prompt--compact d-empty-prompt--error">
+              <span class="d-empty-prompt__icon" aria-hidden="true">${icons.alertTriangle ? icons.alertTriangle(16) : '⚠️'}</span>
+              <span class="d-empty-prompt__inline-text"><strong>Invalid date window</strong> — The term start date cannot be after the term end date. Please adjust the range.</span>
             </div>
           `;
           return;
@@ -1264,28 +1446,110 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
     // ----- saved reports list -------------------------------------------------
 
+    let termStatusFilter = 'all';
+    let termSearchQuery = '';
+    let termSortDesc = true;
+
     async function loadList() {
       showLoading(listHost, 'Loading term reports');
       try {
         const res = await getTermReports();
+        const allItems = res.items || [];
         listHost.innerHTML = '';
         const el = card('Saved term reports', 'Term records by status: draft, prepared or submitted. Click any row to view the detail, print it or move it along.');
         el.className += ' unified-table-card d-table-card';
-        if (res.items.length === 0) {
+
+        if (allItems.length === 0) {
           el.appendChild(h('p', 'tw-empty-note', canEdit ? 'No term reports yet. Create a draft above once a term range is chosen.' : 'No term reports have been created yet.'));
-        } else {
-          el.appendChild(DataTable({
+          listHost.appendChild(el);
+          return;
+        }
+
+        // Toolbar with Status Filter Tabs, Full-Width Search & Sort Order Toggle
+        const toolbar = h('div', 'ssz-control-bar d-list-toolbar');
+        const statusTabs = h('div', 'ssz-segmented-tabs');
+        statusTabs.setAttribute('role', 'group');
+        statusTabs.setAttribute('aria-label', 'Filter term reports by workflow status');
+
+        const countsByStatus = {
+          all: allItems.length,
+          draft: allItems.filter((r) => r.status === 'draft').length,
+          prepared: allItems.filter((r) => r.status === 'prepared').length,
+          submitted: allItems.filter((r) => r.status === 'submitted').length,
+        };
+
+        const searchWrap = h('div', 'ssz-search-box');
+        const searchIcon = h('span', 'ssz-search-icon');
+        searchIcon.setAttribute('aria-hidden', 'true');
+        searchIcon.innerHTML = icons.search ? icons.search(15) : '🔍';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'search';
+        searchInput.className = 'ssz-search-input';
+        searchInput.placeholder = 'Search saved term reports by label, reference code (ANX-D-xxxx), or dates…';
+        searchInput.setAttribute('aria-label', 'Search saved term reports');
+        searchInput.value = termSearchQuery;
+        searchWrap.append(searchIcon, searchInput);
+
+        const sortBtn = h('button', 'ghost d-sort-btn');
+        sortBtn.type = 'button';
+        const updateSortBtnLabel = () => {
+          sortBtn.innerHTML = `<span>Sort: ${termSortDesc ? '↓ Newest' : '↑ Oldest'}</span>`;
+          sortBtn.setAttribute('aria-label', `Sort term reports (${termSortDesc ? 'Newest first' : 'Oldest first'})`);
+        };
+        updateSortBtnLabel();
+
+        const tableMount = h('div', 'd-table-mount');
+
+        function renderFilteredTable() {
+          statusTabs.innerHTML = '';
+          const tabDefs = [
+            ['all', 'All'],
+            ['draft', 'Draft'],
+            ['prepared', 'Prepared'],
+            ['submitted', 'Submitted'],
+          ];
+          for (const [key, lbl] of tabDefs) {
+            const btn = h('button', `ssz-tab-btn${termStatusFilter === key ? ' is-active' : ''}`);
+            btn.type = 'button';
+            btn.setAttribute('aria-pressed', termStatusFilter === key ? 'true' : 'false');
+            btn.append(
+              h('span', '', lbl),
+              h('span', 'ssz-tab-count', String(countsByStatus[key] ?? 0)),
+            );
+            btn.addEventListener('click', () => {
+              termStatusFilter = key;
+              renderFilteredTable();
+            });
+            statusTabs.appendChild(btn);
+          }
+
+          const q = termSearchQuery.trim().toLowerCase();
+          const filtered = allItems
+            .filter((r) => (termStatusFilter === 'all' ? true : r.status === termStatusFilter))
+            .filter((r) => {
+              if (!q) return true;
+              const hay = `${r.termLabel || ''} ${formatAnnexDCode(r.reportId)} #${r.reportId} ${r.termStart || ''} ${r.termEnd || ''} ${r.status || ''}`.toLowerCase();
+              return hay.includes(q);
+            })
+            .slice()
+            .sort((a, b) => {
+              const cmp = String(a.termStart || '').localeCompare(String(b.termStart || '')) || ((a.reportId || 0) - (b.reportId || 0));
+              return termSortDesc ? -cmp : cmp;
+            });
+
+          tableMount.innerHTML = '';
+          tableMount.appendChild(DataTable({
             columns: [
               { key: 'label', label: 'Term & Coverage' },
               { key: 'range', label: 'Term Window' },
               { key: 'status', label: 'Workflow Status' },
-              { key: 'incidents', label: 'Incidents', align: 'right' },
+              { key: 'incidents', label: 'Coverage & Incidents' },
               { key: 'actions', label: 'Actions', align: 'right' },
             ],
-            rows: res.items,
+            rows: filtered,
             rowKey: (r) => r.reportId,
             caption: 'Saved term reports',
-            emptyMessage: 'No term reports.',
+            emptyMessage: 'No matching term reports.',
             emptyIcon: icons.fileText,
             onRowClick: (r) => openDetail(r.reportId),
             renderCell: (r, key) => {
@@ -1293,7 +1557,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
                 case 'label': {
                   const cell = h('div', 'd-term-title-cell');
                   const title = h('span', 'd-term-title-text', r.termLabel);
-                  const sub = h('span', 'd-term-sub-text', `Report #${r.reportId}`);
+                  const sub = h('span', 'd-term-sub-text', `${formatAnnexDCode(r.reportId)} · Annex D Term Report`);
                   cell.append(title, sub);
                   return cell;
                 }
@@ -1304,12 +1568,17 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
                 }
                 case 'status': return statusPill(r.status, 'term');
                 case 'incidents': {
-                  const cell = h('span', 'd-incidents-badge', `${r.totalIncidents ?? 0}`);
-                  return cell;
+                  const wrap = h('div', 'd-row-metrics');
+                  if (r.totalSchools != null) {
+                    wrap.appendChild(h('span', 'd-metric-pill', `${r.totalSchools} school${r.totalSchools === 1 ? '' : 's'}`));
+                  }
+                  const incBadge = h('span', 'd-incidents-badge', `${r.totalIncidents ?? 0} incident${(r.totalIncidents ?? 0) === 1 ? '' : 's'}`);
+                  wrap.appendChild(incBadge);
+                  return wrap;
                 }
                 case 'actions': {
                   const wrap = h('div', 'd-row-actions');
-                  
+
                   // Quick Print preview shortcut
                   const printBtn = h('button', 'ghost d-row-action-btn');
                   printBtn.type = 'button';
@@ -1357,6 +1626,21 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
             },
           }));
         }
+
+        searchInput.addEventListener('input', () => {
+          termSearchQuery = searchInput.value;
+          renderFilteredTable();
+        });
+
+        sortBtn.addEventListener('click', () => {
+          termSortDesc = !termSortDesc;
+          updateSortBtnLabel();
+          renderFilteredTable();
+        });
+
+        toolbar.append(statusTabs, searchWrap, sortBtn);
+        el.append(toolbar, tableMount);
+        renderFilteredTable();
         listHost.appendChild(el);
       } catch (err) {
         showError(listHost, err, loadList, 'Could not load saved term reports.');
@@ -1379,8 +1663,9 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       detailHost.innerHTML = '';
       pageHeader.actions.innerHTML = '';
 
-      const back = h('button', 'ghost', 'Back to term reports');
+      const back = h('button', 'ghost d-back-btn');
       back.type = 'button';
+      back.innerHTML = `<span aria-hidden="true">←</span><span>Back to term reports</span>`;
       back.addEventListener('click', () => { pageHeader.actions.innerHTML = ''; showList(); });
 
       const printBtn = h('button', 'ghost');
@@ -1406,46 +1691,127 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       pageHeader.actions.appendChild(printBtn);
 
       const head = card();
-      const row = h('div', 'tw-detail-head__row');
-      const titles = h('div');
-      titles.append(
-        h('h3', 'tw-card__title', report.termLabel),
-        h('p', 'tw-card__subtitle', `${formatDateOnly(report.termStart)} to ${formatDateOnly(report.termEnd)}`),
-      );
-      row.append(titles, statusPill(report.status, 'term'));
-      head.appendChild(row);
-      head.appendChild(countsGrid(report));
-      if (report.status === 'draft') {
-        head.appendChild(h('p', 'tw-notice', 'These counts are a snapshot from when the draft was created. Marking it prepared recomputes them from live data.'));
-      }
-      if (report.otherInstitutions) head.appendChild(h('p', 'tw-other-inst', `Other institutions: ${report.otherInstitutions}`));
-      if (report.remarks && !(report.status === 'draft' && canEdit)) head.appendChild(h('p', 'tw-remarks', `Remarks: ${report.remarks}`));
+      head.classList.add('d-detail-card');
 
-      const trail = h('ul', 'tw-trail');
+      // Unified top header bar integrating Back button, Term title, ID badge, Date range, and Status pill
+      const topBar = h('div', 'd-detail-top-bar');
+      const leftNav = h('div', 'd-detail-top-bar__left');
+      const titles = h('div', 'd-detail-titles');
+      const titleRow = h('div', 'd-detail-title-row');
+      titleRow.append(
+        h('h3', 'tw-card__title d-detail-title', report.termLabel),
+        h('span', 'd-report-id-pill', formatAnnexDCode(report.reportId)),
+      );
+      const subRow = h('p', 'tw-card__subtitle d-detail-subtitle');
+      subRow.innerHTML = `<span aria-hidden="true">${icons.calendar ? icons.calendar(14) : ''}</span><span>${escapeHtml(formatDateOnly(report.termStart))} to ${escapeHtml(formatDateOnly(report.termEnd))}</span>`;
+      titles.append(titleRow, subRow);
+      leftNav.append(back, h('span', 'd-detail-divider', ''), titles);
+
+      const rightStatus = h('div', 'd-detail-top-bar__right');
+      rightStatus.appendChild(statusPill(report.status, 'term'));
+      topBar.append(leftNav, rightStatus);
+      head.appendChild(topBar);
+
+      // 3-Step Statutory Workflow Stepper
+      head.appendChild(buildWorkflowStepper(report.status));
+
+      // Balanced 2-Row Metric Clusters
+      head.appendChild(countsGrid(report));
+
+      if (report.status === 'draft') {
+        const notice = h('div', 'tw-notice d-snapshot-notice');
+        notice.innerHTML = `<span class="d-snapshot-notice__icon" aria-hidden="true">${icons.info ? icons.info(16) : 'ℹ️'}</span><span>These counts are a snapshot from when the draft was created. Marking it prepared recomputes them from live data.</span>`;
+        head.appendChild(notice);
+      }
+
+      // Structured Metadata, Remarks & Statutory Audit Trail strip
+      const metaStrip = h('div', 'd-meta-callout-grid');
+      if (report.otherInstitutions) {
+        const instBox = h('div', 'd-meta-callout');
+        instBox.append(
+          h('span', 'd-meta-callout__label', 'Other Institutions Referred To'),
+          h('p', 'd-meta-callout__value tw-other-inst', `Other institutions: ${report.otherInstitutions}`),
+        );
+        metaStrip.appendChild(instBox);
+      }
+      if (report.remarks && !(report.status === 'draft' && canEdit)) {
+        const remBox = h('div', 'd-meta-callout');
+        remBox.append(
+          h('span', 'd-meta-callout__label', 'Term Remarks & Observations'),
+          h('p', 'd-meta-callout__value tw-remarks', `Remarks: ${report.remarks}`),
+        );
+        metaStrip.appendChild(remBox);
+      }
+
+      const trail = h('ul', 'tw-trail d-audit-trail');
       const addTrail = (label, value) => {
-        const li = h('li', 'tw-trail__item');
-        li.append(h('span', 'tw-trail__label', label), h('span', 'tw-trail__value', value));
+        const li = h('li', 'tw-trail__item d-audit-trail__item');
+        li.append(h('span', 'tw-trail__label d-audit-trail__label', label), h('span', 'tw-trail__value d-audit-trail__value', value));
         trail.appendChild(li);
       };
       if (report.preparedAt) addTrail('Prepared', formatManilaDateTime(report.preparedAt));
       if (report.mayorOfficeReceivedBy) addTrail('Received by Office of the Mayor', `${report.mayorOfficeReceivedBy}${report.mayorOfficeReceivedAt ? ` · ${formatDateOnly(report.mayorOfficeReceivedAt)}` : ''}`);
       if (report.dilgReceivedBy || report.dilgDateReceived) addTrail('DILG copy received', `${report.dilgReceivedBy || '—'}${report.dilgDateReceived ? ` · ${formatDateOnly(report.dilgDateReceived)}` : ''}`);
-      if (trail.children.length) head.appendChild(trail);
+      if (trail.children.length) {
+        const trailBox = h('div', 'd-meta-callout d-meta-callout--trail');
+        trailBox.append(h('span', 'd-meta-callout__label', 'Statutory Sign-Off & Submission Trail'), trail);
+        metaStrip.appendChild(trailBox);
+      }
 
-      detailHost.append(back, head);
+      if (metaStrip.children.length) head.appendChild(metaStrip);
+
+      detailHost.appendChild(head);
 
       if (report.status === 'draft' && canEdit) detailHost.appendChild(buildDraftEditor(report));
       detailHost.appendChild(buildTermActions(report));
     }
 
+    function buildWorkflowStepper(status) {
+      const steps = [
+        { key: 'draft', num: '1', title: 'Draft & Remarks', desc: 'Snapshot counts & narrative' },
+        { key: 'prepared', num: '2', title: 'Prepared (Print & Sign)', desc: 'Recomputed & signed on paper' },
+        { key: 'submitted', num: '3', title: 'Submitted to Mayor / DILG', desc: 'Official receipt logged' },
+      ];
+      const order = { draft: 0, prepared: 1, submitted: 2 };
+      const currentIdx = order[status] ?? 0;
+
+      const nav = h('div', 'd-workflow-stepper');
+      nav.setAttribute('aria-label', 'Annex D statutory workflow progress');
+
+      steps.forEach((step, idx) => {
+        const item = h('div', 'd-stepper-item');
+        if (idx < currentIdx || status === 'submitted') item.classList.add('is-done');
+        else if (idx === currentIdx) {
+          item.classList.add('is-current');
+          item.setAttribute('aria-current', 'step');
+        }
+
+        const badge = h('span', 'd-stepper-badge', idx < currentIdx || status === 'submitted' ? '✓' : step.num);
+        const textWrap = h('div', 'd-stepper-text');
+        textWrap.append(
+          h('span', 'd-stepper-title', step.title),
+          h('span', 'd-stepper-desc', step.desc),
+        );
+        item.append(badge, textWrap);
+        nav.appendChild(item);
+      });
+
+      return nav;
+    }
+
     function buildDraftEditor(report) {
       const el = card('Remarks and other institutions', 'Editable while the report is a draft.');
+      el.classList.add('d-workflow-card');
       const remarks = document.createElement('textarea'); remarks.rows = 3; remarks.maxLength = 1000; remarks.value = report.remarks ?? '';
       const other = document.createElement('input'); other.maxLength = 500; other.value = report.otherInstitutions ?? '';
-      el.append(
+
+      const editorGrid = h('div', 'd-draft-editor-grid');
+      editorGrid.append(
         field('Remarks (technical assistance needed, key issues, good practices)', remarks).wrap,
         field('Other institutions referred to (separate with semicolons)', other).wrap,
       );
+      el.appendChild(editorGrid);
+
       const error = h('p', 'tw-form-error'); error.setAttribute('role', 'alert'); error.hidden = true;
       const save = h('button', 'primary', 'Save remarks');
       save.type = 'button';
@@ -1462,21 +1828,40 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
           save.disabled = false;
         }
       });
-      el.append(error, save);
+
+      const footer = h('div', 'd-submit-actions-bar');
+      footer.append(
+        h('span', 'd-submit-actions-bar__hint', 'Changes are included on the printed Annex D sheet.'),
+        save,
+      );
+      el.append(error, footer);
       return el;
     }
 
     function buildTermActions(report) {
-      const el = card('Actions');
-
       const canPrepare = report.status === 'draft' && canEdit;
       const canSubmit = report.status === 'prepared' && canEdit;
+
+      const title = canPrepare
+        ? 'Finalize & Mark as Prepared'
+        : canSubmit
+          ? 'Record Statutory Submission'
+          : 'Workflow Status & Next Step';
+
+      const subtitle = canPrepare
+        ? 'Fixes the counts from live data. Then print the report and have it signed on paper.'
+        : canSubmit
+          ? 'Record who at the Office of the Mayor received the signed (on paper) report, and the DILG copy if known.'
+          : undefined;
+
+      const el = card(title, subtitle);
+      el.classList.add('d-workflow-card');
 
       if (canPrepare) el.appendChild(buildPrepareForm(report));
       if (canSubmit) el.appendChild(buildSubmitForm(report));
 
       if (!canPrepare && !canSubmit) {
-        el.appendChild(h('p', 'tw-empty-note', termNoActionText(report)));
+        el.appendChild(h('p', 'tw-empty-note d-workflow-status-note', termNoActionText(report)));
       }
       return el;
     }
@@ -1488,9 +1873,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     }
 
     function buildPrepareForm(report) {
-      const wrap = h('div', 'tw-submit-form');
-      wrap.appendChild(h('h4', 'tw-subhead', 'Mark as prepared'));
-      wrap.appendChild(h('p', 'tw-card__subtitle', 'Fixes the counts from live data. Then print the report and have it signed on paper.'));
+      const wrap = h('div', 'tw-submit-form d-action-form');
       const error = h('p', 'tw-form-error'); error.setAttribute('role', 'alert'); error.hidden = true;
       const btn = h('button', 'primary', 'Mark as prepared');
       btn.type = 'button';
@@ -1507,25 +1890,52 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
           btn.disabled = false;
         }
       });
-      wrap.append(error, btn);
+      const footer = h('div', 'd-submit-actions-bar');
+      footer.append(
+        h('span', 'd-submit-actions-bar__hint', 'Recomputes all 11 Annex D indicators from live patrol and incident records.'),
+        btn,
+      );
+      wrap.append(error, footer);
       return wrap;
     }
 
     function buildSubmitForm(report) {
-      const wrap = h('div', 'tw-submit-form');
-      wrap.appendChild(h('h4', 'tw-subhead', 'Mark as submitted'));
-      wrap.appendChild(h('p', 'tw-card__subtitle', 'Record who at the Office of the Mayor received the signed (on paper) report, and the DILG copy if known.'));
-      const mayorBy = document.createElement('input'); mayorBy.maxLength = 120;
+      const wrap = h('div', 'tw-submit-form d-action-form');
+      const mayorBy = document.createElement('input'); mayorBy.maxLength = 120; mayorBy.placeholder = 'e.g. Maria Santos, Records Officer';
       const mayorAt = document.createElement('input'); mayorAt.type = 'date';
-      const dilgBy = document.createElement('input'); dilgBy.maxLength = 120;
+      const dilgBy = document.createElement('input'); dilgBy.maxLength = 120; dilgBy.placeholder = 'e.g. LGOO V Juan Dela Cruz';
       const dilgAt = document.createElement('input'); dilgAt.type = 'date';
-      const grid = h('div', 'tw-form-grid');
-      grid.append(
+
+      const groupsGrid = h('div', 'd-submit-groups-grid');
+
+      const mayorGroup = h('div', 'd-submit-group d-submit-group--required');
+      const mayorHead = h('div', 'd-submit-group__head');
+      mayorHead.append(
+        h('span', 'd-submit-group__title', 'Office of the Mayor Receipt'),
+        h('span', 'd-submit-group__badge d-submit-group__badge--req', 'Required'),
+      );
+      const mayorFields = h('div', 'd-submit-group__fields');
+      mayorFields.append(
         field('Received by (Office of the Mayor)', mayorBy).wrap,
         field('Date received', mayorAt).wrap,
+      );
+      mayorGroup.append(mayorHead, mayorFields);
+
+      const dilgGroup = h('div', 'd-submit-group');
+      const dilgHead = h('div', 'd-submit-group__head');
+      dilgHead.append(
+        h('span', 'd-submit-group__title', 'DILG Field Office Copy'),
+        h('span', 'd-submit-group__badge', 'Optional'),
+      );
+      const dilgFields = h('div', 'd-submit-group__fields');
+      dilgFields.append(
         field('DILG copy received by (optional)', dilgBy).wrap,
         field('DILG date received (optional)', dilgAt).wrap,
       );
+      dilgGroup.append(dilgHead, dilgFields);
+
+      groupsGrid.append(mayorGroup, dilgGroup);
+
       const error = h('p', 'tw-form-error'); error.setAttribute('role', 'alert'); error.hidden = true;
       const btn = h('button', 'primary', 'Mark as submitted');
       btn.type = 'button';
@@ -1553,7 +1963,13 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         });
         if (ok) { showToast('Marked as submitted.', { variant: 'success' }); loadDetail(report.reportId); }
       });
-      wrap.append(grid, error, btn);
+
+      const footer = h('div', 'd-submit-actions-bar');
+      footer.append(
+        h('span', 'd-submit-actions-bar__hint', 'Ensure wet-ink signatures from the Punong Barangay are completed before logging submission.'),
+        btn,
+      );
+      wrap.append(groupsGrid, error, footer);
       return wrap;
     }
 
@@ -1574,49 +1990,22 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
   setTab(activeTab);
 }
 
-/** Tiles for the Annex D counts, categorized by operational domain. */
+/** Tiles for the Annex D counts, arranged in a balanced 2-row bento grid. */
 function countsGrid(counts) {
   const container = h('div', 'd-counts-clusters-wrap');
 
-  const groups = [
-    {
-      title: 'Coverage & Patrol Deployments',
-      icon: icons.shield ? icons.shield(16) : '🛡️',
-      keys: [
-        ['totalTanods', 'Tanods Deployed'],
-        ['totalSchools', 'Schools Covered'],
-        ['totalDeploymentDays', 'Days with Patrol Deployment'],
-      ],
-    },
-    {
-      title: 'Incident Volume & Local Resolution',
-      icon: icons.alertCircle ? icons.alertCircle(16) : '⚠️',
-      keys: [
-        ['totalIncidents', 'Total Incidents Logged'],
-        ['incidentsBarangayOnly', 'Barangay Handled (No Escalation)'],
-      ],
-    },
-    {
-      title: 'Multi-Agency External Referrals',
-      icon: icons.users ? icons.users(16) : '👥',
-      keys: [
-        ['incidentsPnp', 'Referred to PNP'],
-        ['incidentsBfp', 'Referred to BFP'],
-        ['incidentsHigherLgu', 'Referred to Higher LGU'],
-        ['incidentsDoh', 'Referred to DOH / EMS'],
-        ['incidentsDpwh', 'Referred to DPWH'],
-        ['incidentsOtherAgencies', 'Referred to Other Agencies'],
-      ],
-    },
-  ];
-
-  for (const group of groups) {
-    const cluster = h('div', 'd-counts-cluster');
+  const buildCluster = (group) => {
+    const cluster = h('div', `d-counts-cluster ${group.modClass || ''}`.trim());
     const header = h('div', 'd-cluster-header');
-    header.innerHTML = `<span class="d-cluster-icon" aria-hidden="true">${group.icon}</span><h4 class="d-cluster-title">${escapeHtml(group.title)}</h4>`;
+    const titleWrap = h('div', 'd-cluster-header__left');
+    titleWrap.innerHTML = `<span class="d-cluster-icon" aria-hidden="true">${group.icon}</span><h4 class="d-cluster-title">${escapeHtml(group.title)}</h4>`;
+    header.appendChild(titleWrap);
+    if (group.badgeText) {
+      header.appendChild(h('span', 'd-cluster-badge', group.badgeText));
+    }
     cluster.appendChild(header);
 
-    const grid = h('div', 'tw-counts d-counts-grid');
+    const grid = h('div', `tw-counts d-counts-grid ${group.gridClass || ''}`.trim());
     for (const [key, label] of group.keys) {
       const tile = h('div', 'tw-count-tile d-count-tile');
       const val = counts[key] ?? 0;
@@ -1627,9 +2016,61 @@ function countsGrid(counts) {
       grid.appendChild(tile);
     }
     cluster.appendChild(grid);
-    container.appendChild(cluster);
-  }
+    return cluster;
+  };
 
+  const totalReferrals =
+    (Number(counts.incidentsPnp) || 0) +
+    (Number(counts.incidentsBfp) || 0) +
+    (Number(counts.incidentsHigherLgu) || 0) +
+    (Number(counts.incidentsDoh) || 0) +
+    (Number(counts.incidentsDpwh) || 0) +
+    (Number(counts.incidentsOtherAgencies) || 0);
+
+  const topRow = h('div', 'd-counts-top-row');
+  topRow.append(
+    buildCluster({
+      title: 'Coverage & Patrol Deployments',
+      icon: icons.shield ? icons.shield(16) : '🛡️',
+      modClass: 'd-counts-cluster--coverage',
+      gridClass: 'd-counts-grid--3col',
+      badgeText: 'Annex D · Part I',
+      keys: [
+        ['totalTanods', 'Tanods Deployed'],
+        ['totalSchools', 'Schools Covered'],
+        ['totalDeploymentDays', 'Days with Patrol Deployment'],
+      ],
+    }),
+    buildCluster({
+      title: 'Incident Volume & Local Resolution',
+      icon: icons.alertCircle ? icons.alertCircle(16) : '⚠️',
+      modClass: 'd-counts-cluster--incidents',
+      gridClass: 'd-counts-grid--2col',
+      badgeText: 'Annex D · Part II',
+      keys: [
+        ['totalIncidents', 'Total Incidents Logged'],
+        ['incidentsBarangayOnly', 'Barangay Handled (No Escalation)'],
+      ],
+    }),
+  );
+
+  const bottomCluster = buildCluster({
+    title: 'Multi-Agency External Referrals',
+    icon: icons.users ? icons.users(16) : '👥',
+    modClass: 'd-counts-cluster--referrals',
+    gridClass: 'd-counts-grid--6col',
+    badgeText: `${totalReferrals} External Referral${totalReferrals === 1 ? '' : 's'}`,
+    keys: [
+      ['incidentsPnp', 'Referred to PNP'],
+      ['incidentsBfp', 'Referred to BFP'],
+      ['incidentsHigherLgu', 'Referred to Higher LGU'],
+      ['incidentsDoh', 'Referred to DOH / EMS'],
+      ['incidentsDpwh', 'Referred to DPWH'],
+      ['incidentsOtherAgencies', 'Referred to Other Agencies'],
+    ],
+  });
+
+  container.append(topRow, bottomCluster);
   return container;
 }
 

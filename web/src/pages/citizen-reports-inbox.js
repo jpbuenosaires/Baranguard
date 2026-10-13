@@ -14,8 +14,9 @@ import { DataTable } from '../components/DataTable.js';
 import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
-import { formatManilaDateTime } from '../utils/manilaTime.js';
+import { formatManilaDate, formatManilaDateTime } from '../utils/manilaTime.js';
 import { attachBasemapFallback, OSM_TILE_URL } from '../utils/mapFallback.js';
+import { formatIncidentCode, formatCitizenReportCode } from '../services/tanodWorkflowUi.js';
 
 // Same 11-member enum as `incident.incident_type` (§5)
 const INCIDENT_TYPE_OPTIONS = [
@@ -39,18 +40,36 @@ const PRIORITY_OPTIONS = [
 ];
 
 const COLUMNS = [
-  { key: 'id', label: 'ID', width: '4.5rem' },
+  { key: 'id', label: 'REFERENCE', width: '7rem', sortable: true, sortValue: (row) => Number(row.reportId) || 0 },
   { key: 'description', label: 'SUMMARY' },
-  { key: 'location', label: 'LOCATION', width: '7.5rem' },
-  { key: 'contact', label: 'CONTACT', width: '8.5rem' },
-  { key: 'status', label: 'STATUS', width: '7rem' },
-  { key: 'submitted', label: 'SUBMITTED', width: '7.5rem' },
-  { key: 'actions', label: '', width: '4.5rem', align: 'right' },
+  { key: 'location', label: 'LOCATION', width: '9.5rem' },
+  { key: 'contact', label: 'CONTACT', width: '9rem' },
+  { key: 'status', label: 'STATUS', width: '10.5rem', sortable: true, sortValue: (row) => (row.incidentId ? 1 : 0) },
+  { key: 'submitted', label: 'SUBMITTED', width: '8.5rem', sortable: true, sortValue: (row) => (row.submittedAt ? new Date(row.submittedAt).getTime() : 0) },
+  { key: 'actions', label: 'ACTION', width: '6.5rem', align: 'right' },
 ];
+
+function formatReportCode(id) {
+  return `CR-${String(id).padStart(4, '0')}`;
+}
+
+function formatContactNumber(raw) {
+  if (!raw) return '';
+  const digits = String(raw).replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('09')) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+  }
+  return String(raw);
+}
 
 function formatDateTime(isoString) {
   if (!isoString) return '—';
   return formatManilaDateTime(isoString, String(isoString));
+}
+
+function formatShortDate(isoString) {
+  if (!isoString) return '';
+  return formatManilaDate(isoString, '');
 }
 
 function timeAgo(isoString) {
@@ -88,22 +107,11 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   }
   root.appendChild(shell.el);
 
-  // Modern PageHeader with counter pills in actions slot
   const pageHeader = PageHeader({
     title: 'Citizen Reports',
     subtitle: 'Earlier citizen submissions on file (the public form is no longer open) — triage & convert to incidents',
     icon: icons.inbox,
   });
-
-  const pendingPill = document.createElement('span');
-  pendingPill.className = 'status-pill status-pill--pending';
-  pendingPill.innerHTML = `<strong>Pending:</strong> <span id="inbox-pending-count">—</span>`;
-
-  const totalPill = document.createElement('span');
-  totalPill.className = 'status-pill status-pill--info';
-  totalPill.innerHTML = `<strong>Total:</strong> <span id="inbox-total-count">—</span>`;
-
-  pageHeader.actions.append(pendingPill, totalPill);
   header.appendChild(pageHeader.el);
 
   // Main Container & Master-Detail Split Grid
@@ -120,10 +128,45 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   container.appendChild(layout);
   content.appendChild(container);
 
-  // Left Panel (Table & Filters)
+  // Left Panel (Option A Unified Command Card: KPI Strip + Toolbar + Flush Table)
   const leftPanel = document.createElement('div');
   leftPanel.className = 'citizen-inbox-left-panel unified-table-card';
   layout.appendChild(leftPanel);
+
+  // Embedded 4-KPI Summary Strip
+  const kpiStrip = document.createElement('div');
+  kpiStrip.className = 'command-card-kpis';
+  kpiStrip.innerHTML = `
+    <div class="command-kpi">
+      <div class="command-kpi__icon command-kpi__icon--info" aria-hidden="true">${icons.inbox(18)}</div>
+      <div class="command-kpi__body">
+        <span class="command-kpi__label">Total Reports</span>
+        <strong class="command-kpi__value" id="inbox-total-count">—</strong>
+      </div>
+    </div>
+    <div class="command-kpi">
+      <div class="command-kpi__icon command-kpi__icon--warning" aria-hidden="true">${icons.clock(18)}</div>
+      <div class="command-kpi__body">
+        <span class="command-kpi__label">Pending Review</span>
+        <strong class="command-kpi__value" id="inbox-pending-count">—</strong>
+      </div>
+    </div>
+    <div class="command-kpi">
+      <div class="command-kpi__icon command-kpi__icon--success" aria-hidden="true">${icons.checkCircle(18)}</div>
+      <div class="command-kpi__body">
+        <span class="command-kpi__label">Converted</span>
+        <strong class="command-kpi__value" id="inbox-converted-count">—</strong>
+      </div>
+    </div>
+    <div class="command-kpi">
+      <div class="command-kpi__icon command-kpi__icon--info" aria-hidden="true">${icons.mapPin(18)}</div>
+      <div class="command-kpi__body">
+        <span class="command-kpi__label">GPS Shared</span>
+        <strong class="command-kpi__value" id="inbox-gps-count">—</strong>
+      </div>
+    </div>
+  `;
+  leftPanel.appendChild(kpiStrip);
 
   // Right Panel slot (Detail pane)
   let detailPanel = null;
@@ -150,12 +193,15 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   searchInput.id = 'citizen-inbox-search';
   searchInput.type = 'search';
   searchInput.className = 'citizen-search-input';
-  searchInput.placeholder = 'Search by ID, description, or contact…';
+  searchInput.placeholder = 'Search by reference (CR-0001), summary, or contact…';
   searchWrap.append(searchIcon, searchLabel, searchInput);
 
-  // Status Filter Chips
+  // Status Filter Chips + Sort (Desc / Asc) Controls
+  const toolbarRight = document.createElement('div');
+  toolbarRight.className = 'citizen-toolbar-right';
+
   const filterChips = document.createElement('div');
-  filterChips.className = 'filter-chips';
+  filterChips.className = 'filter-chips citizen-filter-chips';
 
   const statusChips = [
     { key: 'all', label: 'All', countId: 'chip-count-all' },
@@ -164,6 +210,9 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
   ];
 
   let currentStatusFilter = 'all';
+  // Default order matches the database query (ORDER BY submitted_at DESC)
+  let currentSortField = 'submitted';
+  let currentSortDir = 'desc';
 
   statusChips.forEach(({ key, label, countId }) => {
     const btn = document.createElement('button');
@@ -181,7 +230,82 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     filterChips.appendChild(btn);
   });
 
-  filterBar.append(searchWrap, filterChips);
+  // Sort Controls (Field + DESC / ASC toggle)
+  const sortControls = document.createElement('div');
+  sortControls.className = 'citizen-sort-controls';
+
+  const sortSelectLabel = document.createElement('label');
+  sortSelectLabel.className = 'sr-only';
+  sortSelectLabel.htmlFor = 'citizen-inbox-sort-field';
+  sortSelectLabel.textContent = 'Sort reports by';
+
+  const sortSelect = document.createElement('select');
+  sortSelect.id = 'citizen-inbox-sort-field';
+  sortSelect.className = 'citizen-sort-select';
+  sortSelect.setAttribute('aria-label', 'Sort reports by');
+  [
+    { value: 'submitted', label: 'Sort: Submitted' },
+    { value: 'id', label: 'Sort: Reference (CR)' },
+    { value: 'status', label: 'Sort: Status' },
+  ].forEach(({ value, label }) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    if (value === currentSortField) opt.selected = true;
+    sortSelect.appendChild(opt);
+  });
+
+  const sortDirGroup = document.createElement('div');
+  sortDirGroup.className = 'citizen-sort-dir-group';
+  sortDirGroup.setAttribute('role', 'group');
+  sortDirGroup.setAttribute('aria-label', 'Sort direction');
+
+  const descBtn = document.createElement('button');
+  descBtn.type = 'button';
+  descBtn.className = 'citizen-sort-dir-btn is-active';
+  descBtn.dataset.dir = 'desc';
+  descBtn.setAttribute('aria-label', 'Sort descending');
+  descBtn.title = 'Descending (Newest / Highest ID first)';
+  descBtn.textContent = '↓ Desc';
+
+  const ascBtn = document.createElement('button');
+  ascBtn.type = 'button';
+  ascBtn.className = 'citizen-sort-dir-btn';
+  ascBtn.dataset.dir = 'asc';
+  ascBtn.setAttribute('aria-label', 'Sort ascending');
+  ascBtn.title = 'Ascending (Oldest / Lowest ID first)';
+  ascBtn.textContent = '↑ Asc';
+
+  function syncToolbarSortUI() {
+    sortSelect.value = currentSortField;
+    descBtn.classList.toggle('is-active', currentSortDir === 'desc');
+    ascBtn.classList.toggle('is-active', currentSortDir === 'asc');
+  }
+
+  sortSelect.addEventListener('change', () => {
+    currentSortField = sortSelect.value;
+    applyFilter();
+  });
+
+  descBtn.addEventListener('click', () => {
+    if (currentSortDir === 'desc') return;
+    currentSortDir = 'desc';
+    syncToolbarSortUI();
+    applyFilter();
+  });
+
+  ascBtn.addEventListener('click', () => {
+    if (currentSortDir === 'asc') return;
+    currentSortDir = 'asc';
+    syncToolbarSortUI();
+    applyFilter();
+  });
+
+  sortDirGroup.append(descBtn, ascBtn);
+  sortControls.append(sortSelectLabel, sortSelect, sortDirGroup);
+
+  toolbarRight.append(filterChips, sortControls);
+  filterBar.append(searchWrap, toolbarRight);
   leftPanel.appendChild(filterBar);
 
   // Table wrapper
@@ -231,11 +355,16 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     const totalCount = allItems.length;
     const pendingCount = allItems.filter((r) => !r.incidentId).length;
     const convertedCount = allItems.filter((r) => !!r.incidentId).length;
+    const gpsCount = allItems.filter((r) => r.latitude !== null && r.longitude !== null).length;
 
     const pendingEl = document.getElementById('inbox-pending-count');
     if (pendingEl) pendingEl.textContent = String(pendingCount);
     const totalEl = document.getElementById('inbox-total-count');
     if (totalEl) totalEl.textContent = String(totalCount);
+    const convertedEl = document.getElementById('inbox-converted-count');
+    if (convertedEl) convertedEl.textContent = String(convertedCount);
+    const gpsEl = document.getElementById('inbox-gps-count');
+    if (gpsEl) gpsEl.textContent = String(gpsCount);
 
     const chipAll = document.getElementById('chip-count-all');
     if (chipAll) chipAll.textContent = String(totalCount);
@@ -247,7 +376,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
   function applyFilter() {
     const q = searchInput.value.trim().toLowerCase();
-    let filtered = allItems;
+    let filtered = [...allItems];
 
     if (currentStatusFilter === 'unconverted') {
       filtered = filtered.filter((r) => !r.incidentId);
@@ -259,6 +388,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       filtered = filtered.filter(
         (r) =>
           String(r.reportId).includes(q) ||
+          formatReportCode(r.reportId).toLowerCase().includes(q) ||
           (r.description && r.description.toLowerCase().includes(q)) ||
           (r.contactNumber && r.contactNumber.toLowerCase().includes(q))
       );
@@ -303,7 +433,8 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
     // Re-render table row highlight
     tableWrap.querySelectorAll('.data-table tbody tr').forEach((tr) => {
-      tr.classList.toggle('is-selected', tr.dataset.reportId === String(report.reportId));
+      const rowId = tr.dataset.reportId || tr.dataset.rowKey;
+      tr.classList.toggle('is-selected', rowId === String(report.reportId));
     });
 
     if (window.innerWidth <= 1024) {
@@ -329,6 +460,8 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     pane.innerHTML = '';
 
     const isConverted = Boolean(report.incidentId);
+    const hasCoords = report.latitude !== null && report.longitude !== null;
+    const reportCode = formatReportCode(report.reportId);
 
     // 1. STICKY HEADER
     const detailHeader = document.createElement('div');
@@ -337,15 +470,19 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     const headerLeft = document.createElement('div');
     headerLeft.className = 'citizen-detail-header__left';
 
+    const codeBadge = document.createElement('span');
+    codeBadge.className = 'incident-id-badge citizen-id-badge';
+    codeBadge.textContent = reportCode;
+
     const title = document.createElement('h3');
     title.className = 'citizen-detail-header__title';
-    title.textContent = `Report #${report.reportId}`;
+    title.textContent = reportCode;
 
     const statusPill = document.createElement('span');
     statusPill.className = `status-pill ${isConverted ? 'status-pill--success' : 'status-pill--pending'}`;
     statusPill.textContent = isConverted ? 'Converted to an incident' : 'Pending Review';
 
-    headerLeft.append(title, statusPill);
+    headerLeft.append(codeBadge, title, statusPill);
 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
@@ -358,53 +495,25 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     detailHeader.append(headerLeft, closeBtn);
     pane.appendChild(detailHeader);
 
-    // 2. SCROLLABLE BODY (Only narrative, contact, and map scroll)
+    // 2. SCROLLABLE BODY (Unified Narrative + Metadata Card, and Geolocation Map Card)
     const body = document.createElement('div');
     body.className = 'citizen-detail-body';
 
-    // Metadata Strip
-    const metaGrid = document.createElement('div');
-    metaGrid.className = 'citizen-detail-meta-grid';
-
-    const hasCoords = report.latitude !== null && report.longitude !== null;
-
-    metaGrid.innerHTML = `
-      <div class="citizen-detail-meta-item">
-        <span class="citizen-detail-meta-label">Submitted</span>
-        <span class="citizen-detail-meta-val" title="${escapeHtml(formatDateTime(report.submittedAt))}">${escapeHtml(timeAgo(report.submittedAt))}</span>
-      </div>
-      <div class="citizen-detail-meta-item">
-        <span class="citizen-detail-meta-label">Coordinates</span>
-        <span class="citizen-detail-meta-val">${hasCoords ? `${report.latitude.toFixed(4)}, ${report.longitude.toFixed(4)}` : 'Not shared'}</span>
-      </div>
-      <div class="citizen-detail-meta-item">
-        <span class="citizen-detail-meta-label">Contact</span>
-        <span class="citizen-detail-meta-val">${escapeHtml(report.contactNumber || 'Anonymous')}</span>
-      </div>
-      <div class="citizen-detail-meta-item">
-        <span class="citizen-detail-meta-label">Status</span>
-        <span class="citizen-detail-meta-val">${isConverted ? 'Converted to an incident' : 'Awaiting Review'}</span>
-      </div>
-    `;
-    body.appendChild(metaGrid);
-
-    // Full Citizen Narrative Card
-    const narrativeCard = document.createElement('div');
-    narrativeCard.className = 'citizen-narrative-card';
+    // Unified Narrative & Reporter Overview Card (no left color stripe)
+    const overviewCard = document.createElement('div');
+    overviewCard.className = 'citizen-overview-card';
 
     const narrativeHeader = document.createElement('div');
-    narrativeHeader.style.display = 'flex';
-    narrativeHeader.style.alignItems = 'center';
-    narrativeHeader.style.justifyContent = 'space-between';
+    narrativeHeader.className = 'citizen-overview-card__header';
 
     const narrativeTitle = document.createElement('h4');
     narrativeTitle.className = 'citizen-narrative-card__title';
-    narrativeTitle.innerHTML = `${icons.megaphone(16)} Citizen Narrative`;
+    narrativeTitle.innerHTML = `${icons.megaphone(15)} Citizen Narrative`;
 
     const wordCount = (report.description || '').trim().split(/\s+/).filter(Boolean).length;
     const countBadge = document.createElement('span');
-    countBadge.className = 'citizen-detail-meta-label';
-    countBadge.textContent = `${wordCount} words`;
+    countBadge.className = 'citizen-word-count-chip';
+    countBadge.textContent = `${wordCount} ${wordCount === 1 ? 'word' : 'words'}`;
 
     narrativeHeader.append(narrativeTitle, countBadge);
 
@@ -412,47 +521,64 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     narrativeText.className = 'citizen-narrative-card__text';
     narrativeText.textContent = report.description || 'No description provided.';
 
-    narrativeCard.append(narrativeHeader, narrativeText);
-    body.appendChild(narrativeCard);
+    // Combined 3-Column Metadata & Contact Footer inside Overview Card
+    const metaGrid = document.createElement('div');
+    metaGrid.className = 'citizen-overview-meta';
 
-    // Reporter Contact Card
-    const contactCard = document.createElement('div');
-    contactCard.className = 'citizen-contact-card';
-
-    const contactInfo = document.createElement('div');
-    contactInfo.className = 'citizen-contact-card__info';
-
-    const contactIcon = document.createElement('div');
-    contactIcon.className = 'citizen-contact-card__icon';
-    contactIcon.innerHTML = icons.phone(16);
-
-    const contactText = document.createElement('div');
-    contactText.innerHTML = `
-      <div class="citizen-detail-meta-label">Reporter Contact Number</div>
-      <div class="citizen-contact-card__phone">${escapeHtml(report.contactNumber || 'No contact number provided')}</div>
+    const submittedItem = document.createElement('div');
+    submittedItem.className = 'citizen-detail-meta-item';
+    submittedItem.innerHTML = `
+      <span class="citizen-detail-meta-label">Submitted</span>
+      <span class="citizen-detail-meta-val">${escapeHtml(timeAgo(report.submittedAt))}</span>
+      <span class="citizen-detail-meta-sub">${escapeHtml(formatDateTime(report.submittedAt))}</span>
     `;
-    contactInfo.append(contactIcon, contactText);
-    contactCard.appendChild(contactInfo);
+
+    const contactItem = document.createElement('div');
+    contactItem.className = 'citizen-detail-meta-item';
+    const contactLabel = document.createElement('span');
+    contactLabel.className = 'citizen-detail-meta-label';
+    contactLabel.textContent = 'Reporter Contact';
+
+    const contactRow = document.createElement('div');
+    contactRow.className = 'citizen-detail-contact-inline';
+    const contactVal = document.createElement('span');
+    contactVal.className = 'citizen-detail-meta-val';
+    contactVal.textContent = report.contactNumber ? formatContactNumber(report.contactNumber) : 'Anonymous';
+    contactRow.appendChild(contactVal);
 
     if (report.contactNumber) {
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
-      copyBtn.className = 'ghost';
-      copyBtn.innerHTML = `${icons.copy(14)} Copy`;
+      copyBtn.className = 'citizen-copy-inline-btn';
+      copyBtn.title = 'Copy contact number';
+      copyBtn.setAttribute('aria-label', 'Copy contact number');
+      copyBtn.innerHTML = `${icons.copy(12)} <span>Copy</span>`;
       copyBtn.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(report.contactNumber);
-          copyBtn.textContent = 'Copied!';
+          copyBtn.innerHTML = `${icons.checkCircle(12)} <span>Copied</span>`;
           setTimeout(() => {
-            copyBtn.innerHTML = `${icons.copy(14)} Copy`;
+            copyBtn.innerHTML = `${icons.copy(12)} <span>Copy</span>`;
           }, 2000);
         } catch {
           showToast('Failed to copy contact number', { variant: 'error' });
         }
       });
-      contactCard.appendChild(copyBtn);
+      contactRow.appendChild(copyBtn);
     }
-    body.appendChild(contactCard);
+    contactItem.append(contactLabel, contactRow);
+
+    const coordsItem = document.createElement('div');
+    coordsItem.className = 'citizen-detail-meta-item';
+    coordsItem.innerHTML = `
+      <span class="citizen-detail-meta-label">Coordinates</span>
+      <span class="citizen-detail-meta-val">${hasCoords ? `${report.latitude.toFixed(4)}, ${report.longitude.toFixed(4)}` : 'Not shared'}</span>
+      <span class="citizen-detail-meta-sub">${hasCoords ? 'GPS pin attached' : 'No GPS telemetry'}</span>
+    `;
+
+    metaGrid.append(submittedItem, contactItem, coordsItem);
+    overviewCard.append(narrativeHeader, narrativeText, metaGrid);
+    body.appendChild(overviewCard);
 
     // Geolocation & Mini-Map Card
     const locationCard = document.createElement('div');
@@ -462,30 +588,25 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
     locationHeader.className = 'citizen-location-card__header';
 
     const locTitle = document.createElement('span');
+    locTitle.className = 'citizen-location-card__title';
     locTitle.innerHTML = `${icons.mapPin(15)} Geolocation Context`;
 
     const locActions = document.createElement('div');
-    locActions.style.display = 'flex';
-    locActions.style.alignItems = 'center';
-    locActions.style.gap = 'var(--spacing-xs)';
+    locActions.className = 'citizen-location-card__actions';
 
     let mapVisible = true;
 
     if (hasCoords) {
       const toggleMapBtn = document.createElement('button');
       toggleMapBtn.type = 'button';
-      toggleMapBtn.className = 'ghost';
-      toggleMapBtn.style.padding = '0.2rem 0.5rem';
-      toggleMapBtn.style.fontSize = '0.75rem';
+      toggleMapBtn.className = 'ghost citizen-loc-btn';
       toggleMapBtn.textContent = 'Hide Map';
 
       const gmapsLink = document.createElement('a');
       gmapsLink.href = `https://www.google.com/maps?q=${report.latitude},${report.longitude}`;
       gmapsLink.target = '_blank';
       gmapsLink.rel = 'noopener noreferrer';
-      gmapsLink.className = 'ghost';
-      gmapsLink.style.padding = '0.2rem 0.5rem';
-      gmapsLink.style.fontSize = '0.75rem';
+      gmapsLink.className = 'ghost citizen-loc-btn';
       gmapsLink.innerHTML = `${icons.externalLink(12)} Google Maps`;
 
       locActions.append(toggleMapBtn, gmapsLink);
@@ -509,7 +630,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       // Initialize MapLibre Mini Map asynchronously
       setTimeout(() => {
         if (!window.maplibregl) {
-          mapContainer.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:0.8125rem;color:var(--color-text-secondary);padding:1rem;">Map preview requires MapLibre GL library. Coordinates: ${report.latitude.toFixed(6)}, ${report.longitude.toFixed(6)}</div>`;
+          mapContainer.innerHTML = `<div class="citizen-map-fallback">Map preview requires MapLibre GL library. Coordinates: ${report.latitude.toFixed(6)}, ${report.longitude.toFixed(6)}</div>`;
           return;
         }
 
@@ -527,7 +648,6 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
                 },
               },
               layers: [
-                // Plain fallback so the pin still sits on a neutral map when tiles cannot load.
                 { id: 'background', type: 'background', paint: { 'background-color': '#E0F2FE' } },
                 { id: 'osm-tiles', type: 'raster', source: 'osm-tiles' },
               ],
@@ -540,7 +660,6 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
           currentMiniMap.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), 'top-right');
           detachMiniMapFallback = attachBasemapFallback(currentMiniMap, 'osm-tiles');
 
-          // Branded map pin
           const pinEl = document.createElement('div');
           pinEl.className = 'citizen-mini-map-pin';
           pinEl.innerHTML = icons.mapPin(15);
@@ -550,7 +669,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
             .addTo(currentMiniMap);
         } catch (err) {
           console.warn('Mini-map initialization failed:', err);
-          mapContainer.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:0.8125rem;color:var(--color-text-secondary);padding:1rem;">Could not initialize interactive map. Coordinates: ${report.latitude.toFixed(6)}, ${report.longitude.toFixed(6)}</div>`;
+          mapContainer.innerHTML = `<div class="citizen-map-fallback">Could not initialize interactive map. Coordinates: ${report.latitude.toFixed(6)}, ${report.longitude.toFixed(6)}</div>`;
         }
       }, 50);
     } else {
@@ -558,15 +677,18 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       locationCard.appendChild(locationHeader);
 
       const emptyLoc = document.createElement('div');
-      emptyLoc.style.padding = 'var(--spacing-md)';
-      emptyLoc.style.color = 'var(--color-text-secondary)';
-      emptyLoc.style.fontSize = 'var(--font-size-sm)';
+      emptyLoc.className = 'citizen-location-empty';
       emptyLoc.textContent = 'Citizen did not share GPS location with this report.';
       locationCard.appendChild(emptyLoc);
       body.appendChild(locationCard);
     }
 
-    // Triage Action Card / Converted Banner
+    pane.appendChild(body);
+
+    // 3. PINNED BOTTOM ACTION FOOTER (Always visible without scrolling)
+    const footer = document.createElement('div');
+    footer.className = 'citizen-detail-footer';
+
     if (isConverted) {
       const banner = document.createElement('div');
       banner.className = 'citizen-converted-banner';
@@ -576,7 +698,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
       const bannerTitle = document.createElement('div');
       bannerTitle.className = 'citizen-converted-banner__title';
-      bannerTitle.innerHTML = `${icons.checkCircle(16)} Official Incident Created`;
+      bannerTitle.innerHTML = `${icons.checkCircle(16)} Official Incident Created (${escapeHtml(formatIncidentCode(report.incidentId))})`;
 
       const bannerDesc = document.createElement('div');
       bannerDesc.className = 'citizen-converted-banner__desc';
@@ -586,33 +708,34 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
 
       const viewIncidentBtn = document.createElement('button');
       viewIncidentBtn.type = 'button';
-      viewIncidentBtn.className = 'primary';
-      viewIncidentBtn.style.padding = '0.5rem 1rem';
-      viewIncidentBtn.style.fontSize = 'var(--font-size-sm)';
-      viewIncidentBtn.style.whiteSpace = 'nowrap';
-      viewIncidentBtn.textContent = 'View in Incident Management →';
+      viewIncidentBtn.className = 'primary citizen-view-inc-btn';
+      viewIncidentBtn.textContent = 'View Incident →';
       viewIncidentBtn.addEventListener('click', () => {
         navigate('incident-management', report.incidentId);
       });
 
       banner.append(bannerInfo, viewIncidentBtn);
-      body.appendChild(banner);
+      footer.appendChild(banner);
     } else {
       const triageCard = document.createElement('div');
       triageCard.className = 'citizen-triage-card';
 
+      const triageHeader = document.createElement('div');
+      triageHeader.className = 'citizen-triage-card__header';
+
       const triageTitle = document.createElement('h4');
       triageTitle.className = 'citizen-triage-card__title';
-      triageTitle.innerHTML = `⚡ Triage & Incident Conversion`;
+      triageTitle.innerHTML = `${icons.shield(15)} Triage & Incident Conversion`;
 
       const triageDesc = document.createElement('p');
       triageDesc.className = 'citizen-triage-card__desc';
       triageDesc.textContent = 'Classify this submission and escalate it to an official dispatch incident.';
 
+      triageHeader.append(triageTitle, triageDesc);
+
       const form = document.createElement('form');
       form.className = 'citizen-triage-form';
 
-      // Responsive controls row grouping Category & Priority
       const controlsRow = document.createElement('div');
       controlsRow.className = 'citizen-triage-controls-row';
 
@@ -670,7 +793,7 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       const submitBtn = document.createElement('button');
       submitBtn.type = 'submit';
       submitBtn.className = 'btn-convert-incident';
-      submitBtn.innerHTML = `⚡ Convert to Official Incident`;
+      submitBtn.innerHTML = `${icons.checkCircle(16)} <span>Convert to Official Incident</span>`;
 
       form.append(controlsRow, submitBtn);
 
@@ -691,16 +814,16 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
           openDetailPane(report);
         } catch (err) {
           submitBtn.disabled = false;
-          submitBtn.innerHTML = `⚡ Convert to Official Incident`;
+          submitBtn.innerHTML = `${icons.checkCircle(16)} <span>Convert to Official Incident</span>`;
           showToast(err instanceof ApiClientError ? err.message : 'Could not convert report.', { variant: 'error' });
         }
       });
 
-      triageCard.append(triageTitle, triageDesc, form);
-      body.appendChild(triageCard);
+      triageCard.append(triageHeader, form);
+      footer.appendChild(triageCard);
     }
 
-    pane.appendChild(body);
+    pane.appendChild(footer);
   }
 
   function renderTable(container, items) {
@@ -709,6 +832,16 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
       columns: COLUMNS,
       rows: items,
       rowKey: (row) => row.reportId,
+      selectedKey: selectedReportId,
+      rowAriaLabel: (row) => `#${row.reportId}`,
+      initialSort: { key: currentSortField, direction: currentSortDir },
+      onSortChange: ({ key, direction }) => {
+        if (key) {
+          currentSortField = key;
+          currentSortDir = direction;
+          syncToolbarSortUI();
+        }
+      },
       caption: 'Citizen reports inbox',
       rowClass: (row) => (row.reportId === selectedReportId ? 'is-selected' : undefined),
       onRowClick: (row) => {
@@ -722,8 +855,9 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
         switch (key) {
           case 'id': {
             const span = document.createElement('span');
-            span.className = 'citizen-id-cell';
-            span.textContent = `#${row.reportId}`;
+            span.className = 'incident-id-badge citizen-id-badge';
+            span.textContent = formatReportCode(row.reportId);
+            span.title = formatCitizenReportCode(row.reportId);
             return span;
           }
           case 'description': {
@@ -740,44 +874,86 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
               span.textContent = 'Not shared';
               return span;
             }
-            const span = document.createElement('span');
-            span.className = 'citizen-location-badge';
-            span.title = `${row.latitude}, ${row.longitude}`;
-            span.innerHTML = `${icons.mapPin(13)} GPS`;
-            return span;
+            const wrap = document.createElement('div');
+            wrap.className = 'citizen-location-cell';
+            wrap.title = `${row.latitude}, ${row.longitude}`;
+
+            const badge = document.createElement('span');
+            badge.className = 'citizen-location-badge';
+            badge.innerHTML = `${icons.mapPin(12)} GPS`;
+
+            const coords = document.createElement('span');
+            coords.className = 'citizen-location-coords';
+            coords.textContent = `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`;
+
+            wrap.append(badge, coords);
+            return wrap;
           }
           case 'contact': {
             const span = document.createElement('span');
-            span.style.fontSize = 'var(--font-size-sm)';
-            span.textContent = row.contactNumber || '—';
-            return span;
-          }
-          case 'status': {
-            const span = document.createElement('span');
-            if (row.incidentId) {
-              span.className = 'status-pill status-pill--success';
-              span.textContent = 'Converted';
+            if (!row.contactNumber) {
+              span.className = 'citizen-contact-cell citizen-contact-cell--anon';
+              span.textContent = 'Anonymous';
             } else {
-              span.className = 'status-pill status-pill--pending';
-              span.textContent = 'Pending';
+              span.className = 'citizen-contact-cell';
+              span.textContent = formatContactNumber(row.contactNumber);
             }
             return span;
           }
-          case 'submitted': {
+          case 'status': {
+            if (row.incidentId) {
+              const wrap = document.createElement('div');
+              wrap.className = 'citizen-status-stack';
+
+              const pill = document.createElement('span');
+              pill.className = 'status-pill status-pill--success';
+              pill.textContent = 'Converted';
+
+              const incBadge = document.createElement('span');
+              incBadge.className = 'citizen-linked-inc-badge';
+              incBadge.textContent = formatIncidentCode(row.incidentId, row.incidentDisplayId);
+
+              wrap.append(pill, incBadge);
+              return wrap;
+            }
             const span = document.createElement('span');
-            span.style.fontSize = 'var(--font-size-xs)';
-            span.style.color = 'var(--color-text-secondary)';
-            span.textContent = timeAgo(row.submittedAt);
-            span.title = formatDateTime(row.submittedAt);
+            span.className = 'status-pill status-pill--pending';
+            span.textContent = 'Pending Review';
             return span;
           }
+          case 'submitted': {
+            const wrap = document.createElement('div');
+            wrap.className = 'citizen-submitted-cell';
+            wrap.title = formatDateTime(row.submittedAt);
+
+            const rel = document.createElement('span');
+            rel.className = 'citizen-submitted-cell__rel';
+            rel.textContent = timeAgo(row.submittedAt);
+
+            const dateStr = formatShortDate(row.submittedAt);
+            if (dateStr) {
+              const sub = document.createElement('span');
+              sub.className = 'citizen-submitted-cell__date';
+              sub.textContent = dateStr;
+              wrap.append(rel, sub);
+            } else {
+              wrap.appendChild(rel);
+            }
+            return wrap;
+          }
           case 'actions': {
+            const isSelected = row.reportId === selectedReportId;
+            const isPending = !row.incidentId;
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'ghost';
-            button.style.padding = '0.25rem 0.5rem';
-            button.style.fontSize = 'var(--font-size-xs)';
-            button.textContent = row.reportId === selectedReportId ? 'Hide' : 'Inspect';
+            button.className = `citizen-action-btn ${
+              isSelected
+                ? 'citizen-action-btn--active'
+                : isPending
+                  ? 'citizen-action-btn--review'
+                  : 'citizen-action-btn--view'
+            }`;
+            button.textContent = isSelected ? 'Close' : isPending ? 'Review →' : 'View';
             button.addEventListener('click', (event) => {
               event.stopPropagation();
               if (selectedReportId === row.reportId) {
@@ -792,17 +968,6 @@ export function renderCitizenReportsInboxPage(root, user, onLoggedOut, navigate)
             return '';
         }
       },
-    });
-
-    // Tag table rows with dataset for fast DOM selection
-    table.querySelectorAll('tbody tr').forEach((tr, index) => {
-      const item = items[index];
-      if (item) {
-        tr.dataset.reportId = String(item.reportId);
-        if (item.reportId === selectedReportId) {
-          tr.classList.add('is-selected');
-        }
-      }
     });
 
     container.appendChild(table);

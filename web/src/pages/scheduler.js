@@ -19,7 +19,7 @@ import { loadTanodRoster } from '../services/tanodRoster.js';
 import {
   getShiftsDetailed, publishShifts, getAvailability, getOwnApprovalAuthority,
 } from '../services/shellWorkflowApi.js';
-import { manilaToday } from '../services/tanodWorkflowUi.js';
+import { manilaToday, formatShiftCode } from '../services/tanodWorkflowUi.js';
 import {
   SHIFT_PRESETS, addDays, weekStartOf, weekDays, weekRangeLabel, shortDateLabel, presetRange,
   shiftsInWeek, shiftsOnDay, availabilityIntervals, isWithinAvailability, sourceAvailabilityFor,
@@ -1078,7 +1078,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
             const box = document.createElement('input');
             box.type = 'checkbox';
             box.checked = selectedShiftIds.has(shift.shiftId);
-            box.setAttribute('aria-label', `Select draft shift #${shift.shiftId} for publishing`);
+            box.setAttribute('aria-label', `Select draft shift ${formatShiftCode(shift.shiftId)} for publishing`);
             box.addEventListener('change', () => {
               if (box.checked) selectedShiftIds.add(shift.shiftId);
               else selectedShiftIds.delete(shift.shiftId);
@@ -1671,7 +1671,7 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
         const duration = formatDuration(shift.startAt, shift.endAt).replace(/^Duration:\s*/i, '') || '—';
         return `
           <tr>
-            <td class="print-sheet__table--mono">#${escapeHtml(String(shift.shiftId))}</td>
+            <td class="print-sheet__table--mono">${escapeHtml(formatShiftCode(shift.shiftId))}</td>
             <td><strong>${escapeHtml(tanodName)}</strong></td>
             <td>${escapeHtml(shift.patrolZone || 'General Patrol')}</td>
             <td>${escapeHtml(formatShiftTimeRange(shift.startAt, shift.endAt))}</td>

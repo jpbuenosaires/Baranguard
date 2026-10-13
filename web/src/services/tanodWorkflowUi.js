@@ -381,3 +381,67 @@ export function selectOf(options, { value = '', placeholder, ariaLabel } = {}) {
   select.value = value;
   return select;
 }
+
+// --- Formal Record Reference Code Formatters (Option A) ---------------------
+
+function padCode(prefix, id, width = 4) {
+  const num = Number(id);
+  if (Number.isFinite(num) && num > 0) return `${prefix}-${String(num).padStart(width, '0')}`;
+  if (id !== null && id !== undefined && String(id).trim() !== '') return `${prefix}-${String(id).trim()}`;
+  return `${prefix}-${'0'.repeat(width)}`;
+}
+
+export function formatShiftCode(id) {
+  return padCode('SHF', id, 4);
+}
+
+export function formatAccomplishmentCode(id) {
+  return padCode('AR', id, 4);
+}
+
+export function formatAnnexDCode(id) {
+  return padCode('ANX-D', id, 4);
+}
+
+export function formatSchoolCode(id) {
+  return padCode('SCH', id, 4);
+}
+
+export function formatSwapCode(id) {
+  return padCode('SWP', id, 4);
+}
+
+export function formatIncidentCode(incOrId, displayId) {
+  if (displayId && String(displayId).trim()) return String(displayId).trim();
+  if (incOrId && typeof incOrId === 'object') {
+    if (incOrId.displayId && String(incOrId.displayId).trim()) return String(incOrId.displayId).trim();
+    if (incOrId.incidentDisplayId && String(incOrId.incidentDisplayId).trim()) return String(incOrId.incidentDisplayId).trim();
+    return padCode('INC', incOrId.incidentId ?? incOrId.id, 4);
+  }
+  return padCode('INC', incOrId, 4);
+}
+
+export function formatCitizenReportCode(id) {
+  return padCode('CR', id, 4);
+}
+
+export function formatDispatchCode(id) {
+  return padCode('DSP', id, 4);
+}
+
+export function formatSosCode(id) {
+  return padCode('SOS', id, 4);
+}
+
+export function formatSmsCode(id) {
+  return padCode('SMS', id, 4);
+}
+
+export function formatAuditCode(id) {
+  return padCode('AUD', id, 5);
+}
+
+export function formatUserCode(id) {
+  return padCode('USR', id, 4);
+}
+

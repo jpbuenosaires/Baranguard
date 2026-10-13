@@ -11,7 +11,7 @@
 
 import { getShiftSwapRequests, getShifts, resolveShiftSwapRequest, ApiClientError } from '../api/apiClient.js';
 import { loadTanodRoster } from '../services/tanodRoster.js';
-import { manilaToday, formatShiftRange } from '../services/tanodWorkflowUi.js';
+import { manilaToday, formatShiftRange, formatShiftCode, formatSwapCode } from '../services/tanodWorkflowUi.js';
 import { addDays, fetchAllPages } from '../services/rosterWindow.js';
 import { DataTable } from '../components/DataTable.js';
 import { StatStrip } from '../components/StatStrip.js';
@@ -213,6 +213,13 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
           case 'swapFlow': {
             const cell = document.createElement('div');
 
+            // Swap code pill (SWP-xxxx)
+            const codePill = document.createElement('span');
+            codePill.className = 'c1-inc-code-pill';
+            codePill.style.cssText = 'width: fit-content; margin-bottom: 4px;';
+            codePill.textContent = formatSwapCode(req.requestId);
+            cell.appendChild(codePill);
+
             // Flow row: Requester ➔ Target
             const flowRow = document.createElement('div');
             flowRow.className = 'swap-flow-cell';
@@ -273,7 +280,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
             wrap.className = 'shift-time-range-wrap';
 
             if (!shift) {
-              wrap.textContent = `Shift #${req.shiftId}`;
+              wrap.textContent = formatShiftCode(req.shiftId);
               return wrap;
             }
 
@@ -372,7 +379,7 @@ function renderActionsCell(req, requesterName, shift, onChanged) {
 
   const shiftDescription = shift
     ? formatShiftRange(shift.startAt, shift.endAt)
-    : `Shift #${req.shiftId}`;
+    : formatShiftCode(req.shiftId);
 
   const resolve = async (status, button, event) => {
     event.stopPropagation();

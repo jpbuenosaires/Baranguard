@@ -30,6 +30,7 @@ import { confirmDialog } from './ConfirmDialog.js';
 import { showToast } from './Toast.js';
 import { icons } from './icons.js';
 import { formatManilaDateTime } from '../utils/manilaTime.js';
+import { formatSchoolCode, formatIncidentCode } from '../services/tanodWorkflowUi.js';
 
 const C1_FIELDS = [
   { key: 'c1Summary', label: 'Summary (Annex C-1)', hint: 'Short and factual.' },
@@ -116,7 +117,7 @@ export function SchoolC1Card({ incidentId, canEdit }) {
 
   function schoolName(id) {
     if (id == null) return null;
-    return schools.find((s) => s.schoolId === id)?.name ?? `School #${id}`;
+    return schools.find((s) => s.schoolId === id)?.name ?? formatSchoolCode(id);
   }
 
   function render() {
@@ -167,7 +168,7 @@ export function SchoolC1Card({ incidentId, canEdit }) {
       select.appendChild(opt);
     }
     if (data.schoolId != null && !schools.some((s) => s.schoolId === data.schoolId)) {
-      const opt = el('option', '', `School #${data.schoolId}`);
+      const opt = el('option', '', formatSchoolCode(data.schoolId));
       opt.value = String(data.schoolId);
       opt.selected = true;
       select.appendChild(opt);
@@ -450,7 +451,7 @@ export async function resolveIncidentReference(text) {
 
 /** One plain line identifying an incident so staff can confirm it is the right one. */
 export function describeIncidentRef(ref) {
-  const label = ref.displayId || `#${ref.incidentId}`;
+  const label = formatIncidentCode(ref);
   const type = String(ref.incidentType || 'incident').replace(/_/g, ' ');
   const when = ref.createdAt
     ? formatManilaDateTime(String(ref.createdAt).includes('T') ? ref.createdAt : String(ref.createdAt).replace(' ', 'T') + 'Z')
@@ -486,7 +487,7 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
   card.appendChild(cardHeading(icons.layers, 'Related incident'));
 
   const linkButton = (link) => {
-    const label = link.displayId || `#${link.incidentId}`;
+    const label = formatIncidentCode(link);
     const btn = el('button', 'link-button', label);
     btn.type = 'button';
     btn.title = `Open incident ${label}`;
