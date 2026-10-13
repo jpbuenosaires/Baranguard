@@ -6,6 +6,10 @@
 # touches a database named exactly "baranguard_ch4" - never `baranguard` or
 # `baranguard_uiseed`.
 #
+# -Profile uat builds the FINAL-TESTING database `baranguard_uat` instead (same simulated
+# Dao data plus the fixtures the UAT sign-off scenarios need; docs/UAT_DATA_REQUIREMENTS.md).
+# Normally via "Reset UAT Data.bat". It likewise only ever touches its own database.
+#
 # Usage (normally via "Reset Chapter 4 Data.bat" at the repo root):
 #   powershell -ExecutionPolicy Bypass -File backend\scripts\reset-ch4.ps1
 #   ... -PointAppTo ch4        make backend\.env use baranguard_ch4 (backs .env up first)
@@ -18,7 +22,8 @@
 
 param(
     [switch]$Yes,
-    [ValidateSet("", "ch4", "uiseed")][string]$PointAppTo = "",
+    [ValidateSet("", "ch4", "uat", "uiseed")][string]$PointAppTo = "",
+    [ValidateSet("ch4", "uat")][string]$Profile = "ch4",
     [int]$Days = 30,
     [int]$Seed = 2026
 )
@@ -27,7 +32,7 @@ $ErrorActionPreference = "Stop"
 # Keep a log next to the other runtime files so a failed run can be diagnosed afterwards.
 try { $logDir = Join-Path (Split-Path -Parent $PSScriptRoot) "storage"; if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }; Start-Transcript -Path (Join-Path $logDir "ch4-reset.log") -Force | Out-Null } catch { }
 trap { Write-Host "[FAIL] $($_.Exception.Message)"; try { Stop-Transcript | Out-Null } catch { }; exit 1 }
-$DbName = "baranguard_ch4"
+$DbName = if ($Profile -eq "uat") { "baranguard_uat" } else { "baranguard_ch4" }
 $scriptDir = $PSScriptRoot
 $backendDir = Split-Path -Parent $scriptDir
 $migDir = Join-Path $backendDir "migrations"
@@ -49,7 +54,7 @@ function Set-AppDatabase([string]$target) {
     if (-not (Test-Path $envFile)) { Write-Host "[FAIL] $envFile not found."; exit 1 }
     $bak = "$envFile.bak-before-ch4"
     if (-not (Test-Path $bak)) { Copy-Item $envFile $bak; Write-Host "[OK] Backed up .env to $bak" }
-    $newName = if ($target -eq "ch4") { "baranguard_ch4" } else { "baranguard_uiseed" }
+    $newName = switch ($target) { "ch4" { "baranguard_ch4" } "uat" { "baranguard_uat" } default { "baranguard_uiseed" } }
     $text = Get-Content $envFile -Raw
     if ($text -notmatch "(?m)^\s*DB_NAME\s*=") { Write-Host "[FAIL] DB_NAME not found in .env"; exit 1 }
     $text = [regex]::Replace($text, "(?m)^(\s*DB_NAME\s*=).*$", ('${1}' + $newName))
@@ -63,7 +68,7 @@ $appUser = Get-EnvValue "DB_USER" ""
 
 if ($PointAppTo -eq "uiseed") { Set-AppDatabase "uiseed"; exit 0 }
 
-Write-Host "Chapter 4 reset - database $DbName on ${dbHost}:${dbPort}"
+Write-Host "Reset ($Profile profile) - database $DbName on ${dbHost}:${dbPort}"
 if (-not $Yes) {
     $a = Read-Host "This DROPS and rebuilds $DbName (simulated data only). Type RESET to continue"
     if ($a -ne "RESET") { Write-Host "Cancelled."; exit 1 }
@@ -113,12 +118,12 @@ if ($appUser) {
 # --- seed ---
 $env:CH4_DB_USER = "root"
 $env:CH4_DB_PASSWORD = $env:MYSQL_PWD
-& $php (Join-Path $scriptDir "seed-ch4.php") "--db=$DbName" "--seed=$Seed" "--days=$Days"
+& $php (Join-Path $scriptDir "seed-ch4.php") "--db=$DbName" "--profile=$Profile" "--seed=$Seed" "--days=$Days"
 if ($LASTEXITCODE -ne 0) { Write-Host "[FAIL] Seed script failed."; exit 1 }
 $env:MYSQL_PWD = ""; $env:CH4_DB_PASSWORD = ""
 
-if ($PointAppTo -eq "ch4") { Set-AppDatabase "ch4" }
-else { Write-Host "[INFO] The app still uses its current database. Re-run with -PointAppTo ch4 to switch backend\.env to $DbName." }
+if ($PointAppTo -in @("ch4", "uat")) { Set-AppDatabase $PointAppTo }
+else { Write-Host "[INFO] The app still uses its current database. Re-run with -PointAppTo $Profile to switch backend\.env to $DbName." }
 Write-Host ""
 Write-Host "Done. Accounts: admin.dao, secretary.dao, punong.dao, tanod.reyes (and 6 more tanods), password Demo@2026"
 Write-Host "All data is SIMULATED test data - label it that way in Chapter 4."
