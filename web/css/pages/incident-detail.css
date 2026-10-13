@@ -1711,7 +1711,6 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 
 /* Seamless Child Cards inside Panels */
 .case-ops-panel > .card:not(.resolution-badge-card),
-.case-refs-panel > .card,
 .case-dossier .dossier-section--evidence > .card {
   padding: 0 !important;
   background: transparent !important;
@@ -1720,10 +1719,15 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   margin: 0 !important;
 }
 
-.case-ops-panel > .card:not(.resolution-badge-card) + .card,
-.case-refs-panel > .card + .card {
+.case-ops-panel > .card:not(.resolution-badge-card) + .card {
   padding-top: var(--spacing-xs) !important;
   border-top: 1px solid var(--color-divider) !important;
+}
+
+.panel-command-header--sub {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--color-divider);
 }
 
 /* Compact Timeline in Operational Command */
@@ -1740,8 +1744,7 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   margin-top: var(--spacing-2xs);
 }
 
-.case-ops-panel .note,
-.case-refs-panel .note {
+.case-ops-panel .note {
   font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
   margin: 0;
@@ -1778,12 +1781,15 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   font-size: var(--font-size-xs);
 }
 
-/* Compact School Link Card */
-.case-card--school {
-  padding: var(--spacing-sm) var(--spacing-md) !important;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+/* Seamless School C-1 embedded in Master Dossier */
+.case-dossier .case-card--school {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: var(--spacing-sm) 0 0 0 !important;
+  border-top: 1px solid var(--color-divider) !important;
+  border-radius: 0 !important;
+  margin-top: var(--spacing-xs);
 }
 
 .case-card--school .case-card__header-row {
