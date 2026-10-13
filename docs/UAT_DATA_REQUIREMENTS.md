@@ -1,10 +1,9 @@
 # UAT / final-evaluation database: what each scenario needs
 
-Database `baranguard_uat` (Barangay Dao only, **simulated data**). Built by the `uat` profile of
+Database `baranguard_uiseed` (Barangay Dao only, **simulated data**; the project keeps only the real `baranguard` and this one). Built by the `uat` profile of
 `backend/scripts/seed-ch4.php`; reset with **`Reset UAT Data.bat`** at the repo root
 (`backend\scripts\reset-ch4.ps1 -Profile uat -PointAppTo uat`). Ground truth for each build:
-`backend/storage/uat-seed-manifest.json` (key `uat_fixtures`). It never touches `baranguard`,
-`baranguard_uiseed` or `baranguard_ch4`.
+`backend/storage/uat-seed-manifest.json` (key `uat_fixtures`). It never touches the real `baranguard`.
 
 Source of the scenarios: `docs/chapter4-instruments/04-uat-signoff.html` (BG-UAT-01, 92 scenarios).
 The ISO/IEC 25010 sheets (03a-d) rate the system after a short facilitator-guided task set on the
@@ -50,6 +49,15 @@ same setup and need no data of their own.
 * 6 unconverted legacy citizen reports; 3 schools; 1 prepared Annex D term report; 38 referrals; 4 related links.
 * System settings: SOS backup contact `09170000099` and gateway `09170000001` (fictitious), so T-08 has a number to text.
 * No dispatch offer is pre-opened (a pre-opened one would block the facilitator's "Broadcast to on-duty tanods").
+
+## What is behind each screen (so no list is empty)
+
+The UAT profile adds history on top of the 30-day Chapter 4 dataset (`uat_richness` in the manifest):
+
+* **`tanod.reyes` (the phone tester):** 15 incidents he filed (3 school-zone reports at the school gate/road, 4 with a photo), 20 completed dispatches with routes, 5 referrals, 27 past and 3 future published shifts plus 4 drafts, availability (6 accepted, 1 submitted), a swap history (1 approved, 1 denied), accomplishment reports for August (prepared), September (open, with one entry flagged "differs from the duty record") and October (open), 2 past SOS, school check-ins, 6 notifications (1 unread: the roster).
+* **All roles:** notifications (priority alerts and SOS for the Chief Tanod and the Secretary, dispatches and rosters for the tanods, night offers, a returned report), 4 evidence photos, 3 offline map packages (newest published, the files under `backend/storage/map-packages`), 6 SMS subscribers (1 opted out).
+* **Evidence photos are flat striped placeholder images** named `SIMULATED-evidence-photo-N.png`, not photographs; real photos come from T-13 and T-28. No voice evidence is seeded (the upload path only accepts real AAC recordings).
+* The Punong Barangay gets no notifications: the system sends none to that role.
 
 ## Scenario by scenario
 
@@ -168,6 +176,7 @@ finds nothing for the first group.
 * **A-N1** (Admin must not see the confidential narrative and party details) no longer holds: since 2026-10-13 the
   Admin's web session reads them (REFERENCE.md Rule 1, amended). The Punong Barangay still sees the "Restricted" note,
   and the Admin's phone console still gets no narrative (C-06 unchanged).
+* **C-02** says no option to resolve is offered on the phone, and **C-N1** says resolving an SOS stays on the web: since 2026-10-12 the Chief Tanod phone console can resolve an SOS (offered only after Acknowledge, owner decision 2026-10-14). Update both rows before use.
 * **T-N1** expects a page saying the tanod role "has no built web screen"; `web/src/main.js` has such a page
   but the wording differs.
 
@@ -185,7 +194,7 @@ before changing the form.
 
 ## Verification done when this was written (2026-10-13)
 
-Build ran clean on a fresh `baranguard_uat` (42 migrations, seed loaded). Checked against the database: each
+Build ran clean on a fresh `baranguard_uiseed` (42 migrations, seed loaded). Checked against the database: each
 tanod's duty state, active dispatch count and published-shift cover (as in the account table); 12 pending
 incidents with no dispatch or offer; 2 active dispatches, none created before its incident; 2 active SOS;
 4 pending swaps on published future shifts; 3 open accomplishment reports and reyes' latest entry before

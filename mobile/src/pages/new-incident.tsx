@@ -32,8 +32,6 @@ import {
   alertCircleOutline,
   cameraOutline,
   carOutline,
-  chevronDownOutline,
-  chevronUpOutline,
   closeOutline,
   flameOutline,
   locateOutline,
@@ -56,6 +54,13 @@ import MobileHeader from '../components/MobileHeader';
 import { C1_FIELD_MAX, saveIncidentLocally, type IncidentType } from '../services/db/incidentRepository';
 import { saveEvidenceLocally } from '../services/db/evidenceRepository';
 import { listCachedSchools } from '../services/db/schoolRepository';
+import {
+  clearIncidentDraft,
+  isDraftEmpty,
+  loadIncidentDraft,
+  saveIncidentDraft,
+  type IncidentDraft,
+} from '../services/db/draftRepository';
 import type { SchoolLocalRow } from '../services/db/localSchema';
 import { refreshSchoolCache } from '../services/workflowRefresh';
 import {
@@ -144,11 +149,94 @@ const NewIncidentPage: React.FC = () => {
   const [c1ActionTaken, setC1ActionTaken] = useState('');
   const [c1StatusNotes, setC1StatusNotes] = useState('');
 
+  // --- Draft autosave (schema v9). Not part of the draft: photos and voice notes. ---
+  const [userId, setUserId] = useState<number | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const submittedRef = useRef(false);
+  const latestDraftRef = useRef<IncidentDraft | null>(null);
+
   useEffect(() => {
-    loadSession().then((session) => {
+    let cancelled = false;
+    loadSession().then(async (session) => {
+      if (cancelled) return;
       if (session) setBarangayId(session.barangayId);
+      const uid = session?.userId ?? null;
+      setUserId(uid);
+      try {
+        const draft = await loadIncidentDraft(uid);
+        if (!cancelled && draft && !isDraftEmpty(draft)) {
+          setIncidentType(draft.incidentType as IncidentType);
+          setNarrative(draft.narrative);
+          if (draft.latitude !== null && draft.longitude !== null) {
+            setLocation({ latitude: draft.latitude, longitude: draft.longitude, accuracyM: draft.accuracyM });
+          }
+          setSchoolId(draft.schoolId);
+          setC1Summary(draft.c1Summary);
+          setC1ActionTaken(draft.c1ActionTaken);
+          setC1StatusNotes(draft.c1StatusNotes);
+          setDraftRestored(true);
+        }
+      } catch {
+        // Local store unavailable (web preview): the form simply starts blank.
+      }
+      if (!cancelled) setDraftReady(true);
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const draft: IncidentDraft = {
+      incidentType,
+      narrative,
+      latitude: location?.latitude ?? null,
+      longitude: location?.longitude ?? null,
+      accuracyM: location?.accuracyM ?? null,
+      schoolId,
+      c1Summary,
+      c1ActionTaken,
+      c1StatusNotes,
+    };
+    latestDraftRef.current = draft;
+    const timer = window.setTimeout(() => {
+      if (!submittedRef.current) void saveIncidentDraft(userId, draft).catch(() => undefined);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [draftReady, userId, incidentType, narrative, location, schoolId, c1Summary, c1ActionTaken, c1StatusNotes]);
+
+  // Flush immediately when the page is hidden or the form unmounts.
+  useEffect(() => {
+    function flush() {
+      const draft = latestDraftRef.current;
+      if (draft && !submittedRef.current) void saveIncidentDraft(userId, draft).catch(() => undefined);
+    }
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', flush);
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [userId]);
+
+  function handleDiscardDraft() {
+    tacticalFeedback.onTap();
+    submittedRef.current = true; // stop pending autosaves until the form changes again
+    void clearIncidentDraft(userId).catch(() => undefined);
+    setIncidentType('theft');
+    setNarrative('');
+    setLocation(null);
+    setSchoolId('');
+    setC1Summary('');
+    setC1ActionTaken('');
+    setC1StatusNotes('');
+    setDraftRestored(false);
+    latestDraftRef.current = null;
+    submittedRef.current = false;
+  }
 
   // The picker reads the local cache (works offline). If it has never been
   // filled, try one best-effort fetch — never blocks the form.
@@ -334,6 +422,8 @@ const NewIncidentPage: React.FC = () => {
         return;
       }
 
+      submittedRef.current = true;
+      await clearIncidentDraft(userId).catch(() => undefined);
       tacticalFeedback.onSuccess();
       navigate(`/incidents/${encodeURIComponent(saved.localId)}/submitted`, { replace: true });
     } catch (err) {
@@ -359,6 +449,14 @@ const NewIncidentPage: React.FC = () => {
 
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
         <div className="intake-overhaul-container">
+          {draftRestored && (
+            <div className="draft-note" role="status">
+              <span>Draft restored</span>
+              <button type="button" className="draft-note__btn" onClick={handleDiscardDraft} disabled={saving}>
+                Discard draft
+              </button>
+            </div>
+          )}
           {/* Section 1: Incident Classification */}
           <div className="intake-block">
             <div className="intake-block-header">

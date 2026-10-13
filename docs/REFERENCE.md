@@ -275,7 +275,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   `SessionPolicy::ADMIN_DEVICE_ALLOWLIST` (anything else 403
   `DEVICE_SESSION_SCOPE`); five writes require the device header/signature. The
   mobile app serves the Chief Tanod (Admin) with a 4-tab console: SOS
-  acknowledge (never resolve), dispatch assign/cancel/offers, read-only incidents.
+  acknowledge and resolve (owner decision 2026-10-14, matching the 2026-10-12 backend change and Rule 72; Resolve is offered only after Acknowledge), dispatch assign/cancel/offers, read-only incidents.
   `GET /users/directory?purpose=tanod|roster|signer` (admin|secretary) returns `{user_id, full_name,
   official_title}` for tanod and signer pickers.
 - **Retention:** placeholder rules (`RetentionService::NEW_TABLE_RULES`, period

@@ -18,8 +18,8 @@
  * own pickers.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IonContent, IonIcon, IonPage, IonSpinner } from '@ionic/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { IonAlert, IonContent, IonIcon, IonPage, IonSpinner } from '@ionic/react';
 import { addOutline, calendarOutline, closeOutline, createOutline, trashOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
@@ -82,6 +82,10 @@ const AvailabilityPage: React.FC = () => {
   const [drafts, setDrafts] = useState<DraftWindow[]>([]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Snapshot taken when the editor opens, to tell whether the drafts changed.
+  const initialSnapshot = useRef('');
+  const snapshot = (s: string, e: string, d: DraftWindow[]) => JSON.stringify([s, e, d.map((w) => [w.date, w.start, w.end])]);
 
   const reload = useCallback(async () => {
     try {
@@ -115,6 +119,7 @@ const AvailabilityPage: React.FC = () => {
     const start = addDays(manilaToday(), 1);
     setPeriodStart(start);
     setPeriodEnd(addDays(start, 6));
+    initialSnapshot.current = snapshot(start, addDays(start, 6), []);
     setDrafts([]);
     setFormError(null);
     setNote(null);
@@ -125,11 +130,38 @@ const AvailabilityPage: React.FC = () => {
     tacticalFeedback.onTap();
     setPeriodStart(row.period_start);
     setPeriodEnd(row.period_end);
-    setDrafts(parseLocalWindows(row).map((w) => newDraft(w.date, w.start, w.end)));
+    const loaded = parseLocalWindows(row).map((w) => newDraft(w.date, w.start, w.end));
+    initialSnapshot.current = snapshot(row.period_start, row.period_end, loaded);
+    setDrafts(loaded);
     setFormError(null);
     setNote(null);
     setEditing({ existing: row });
   }
+
+  const isDirty = editing !== null && snapshot(periodStart, periodEnd, drafts) !== initialSnapshot.current;
+
+  function closeEditor() {
+    tacticalFeedback.onTap();
+    if (isDirty && !saving) {
+      setConfirmDiscard(true);
+      return;
+    }
+    setEditing(null);
+  }
+
+  // Hardware back inside the editor closes the editor (not the screen).
+  const closeEditorRef = useRef(closeEditor);
+  closeEditorRef.current = closeEditor;
+  const editorOpen = editing !== null;
+  useEffect(() => {
+    if (!editorOpen) return undefined;
+    const onBack = (e: Event) => {
+      e.preventDefault();
+      if (!saving) closeEditorRef.current();
+    };
+    window.addEventListener('baranguard:hardware-back', onBack);
+    return () => window.removeEventListener('baranguard:hardware-back', onBack);
+  }, [editorOpen, saving]);
 
   const periodLength = periodStart && periodEnd ? daysBetween(periodStart, periodEnd) + 1 : 0;
   const periodValid = periodLength >= 1 && periodLength <= MAX_PERIOD_DAYS;
@@ -187,7 +219,30 @@ const AvailabilityPage: React.FC = () => {
     const isEdit = editing.existing !== null;
     return (
       <IonPage>
-        <MobileHeader title={isEdit ? 'Edit Availability' : 'New Availability'} />
+        <MobileHeader
+          title={isEdit ? 'Edit Availability' : 'New Availability'}
+          rightSlot={
+            <button type="button" className="mobile-topbar__theme-toggle" aria-label="Close editor" disabled={saving} onClick={closeEditor}>
+              <IonIcon icon={closeOutline} />
+            </button>
+          }
+        />
+        <IonAlert
+          isOpen={confirmDiscard}
+          onDidDismiss={() => setConfirmDiscard(false)}
+          header="Discard changes?"
+          message="Your changes to this availability have not been saved."
+          buttons={[
+            { text: 'Keep editing', role: 'cancel' },
+            {
+              text: 'Discard',
+              role: 'destructive',
+              handler: () => {
+                setEditing(null);
+              },
+            },
+          ]}
+        />
         <IonContent style={{ '--background': 'var(--color-bg)' }}>
           <div className="wf-page">
             <div className="intake-block">
@@ -343,7 +398,7 @@ const AvailabilityPage: React.FC = () => {
   // ------------------------------------------------------------------ list ---
   return (
     <IonPage>
-      <MobileHeader title="My Availability" showBack defaultBackHref="/tabs/shifts" />
+      <MobileHeader title="My Availability" showBack defaultBackHref="/tabs/profile" />
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
         <div className="wf-page">
           <Banner tone="info">

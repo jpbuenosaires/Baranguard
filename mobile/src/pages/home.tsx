@@ -134,7 +134,7 @@ const HomePage: React.FC = () => {
   });
   const [shiftElapsed, setShiftElapsed] = useState<string>('0m');
   const [todayIncidentCount, setTodayIncidentCount] = useState<number>(0);
-  const [deskContact, setDeskContact] = useState<string>('0917-000-0000');
+  const [deskContact, setDeskContact] = useState<string | null>(null);
 
   const [dutyToast, setDutyToast] = useState<string | null>(null);
   const [confirmingSos, setConfirmingSos] = useState(false);
@@ -335,9 +335,16 @@ const HomePage: React.FC = () => {
       if (cancelled || !session) return;
       setFullName(session.fullName);
       setBarangayName(BARANGAY_NAMES[session.barangayId] ?? `Barangay ${session.barangayId}`);
-      if (session.barangayId === 4) setDeskContact('0918-222-3344');
-      else if (session.barangayId === 1) setDeskContact('0917-111-2233');
     });
+
+    // Backup contact comes from the cached SOS fallback number only; no number cached = no tile.
+    getCachedSosFallbackContact()
+      .then((n) => {
+        if (!cancelled) setDeskContact(n);
+      })
+      .catch(() => {
+        // Preferences unavailable: no tile rather than a made-up number.
+      });
 
     async function loadDutyStatus() {
       // A queued offline off-duty wins over the server until it syncs: the
@@ -674,7 +681,7 @@ const HomePage: React.FC = () => {
       <MobileHeader title="Baranguard" subtitle="Dashboard" />
 
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
-        <div className="console-overhaul-container">
+        <div className="console-overhaul-container console-overhaul-container--docked-sos">
           {/* 1. Compact Duty Command Strip */}
           <div className="console-duty-strip">
             <div className="console-duty-strip__header">
@@ -835,15 +842,16 @@ const HomePage: React.FC = () => {
             </span>
 
             <div className="console-dial-grid">
-              <a
-                href={`tel:${deskContact.replace(/[^0-9+]/g, '') || '911'}`}
-                className="console-dial-tile"
-                onClick={() => tacticalFeedback.onTap()}
-              >
-                <IonIcon icon={callOutline} className="console-dial-icon" />
-                <span className="console-dial-name">Barangay Desk</span>
-                <span className="console-dial-sub">Desk Hotline</span>
-              </a>
+              {deskContact && deskContact.replace(/[^0-9+]/g, '') !== '' && (
+                <a
+                  href={`tel:${deskContact.replace(/[^0-9+]/g, '')}`}
+                  className="console-dial-tile"
+                  onClick={() => tacticalFeedback.onTap()}
+                >
+                  <IonIcon icon={callOutline} className="console-dial-icon" />
+                  <span className="console-dial-name">Call backup contact</span>
+                </a>
+              )}
 
               <a
                 href="tel:911"
@@ -864,39 +872,6 @@ const HomePage: React.FC = () => {
                 <span className="console-dial-name">MDRRMO</span>
                 <span className="console-dial-sub">Rescue / BFP</span>
               </a>
-            </div>
-          </div>
-
-          {/* 5. Full-Width Emergency SOS Module (Tap to open red confirmation modal) */}
-          <div
-            className="console-sos-container"
-            onClick={handleOpenSosModal}
-            role="button"
-            tabIndex={0}
-            aria-label="Tap to open emergency SOS broadcast confirmation"
-          >
-            <div className="console-sos-content">
-              <div className="console-sos-left">
-                <div className="console-sos-icon-box" aria-hidden="true">
-                  <IonIcon icon={warningOutline} />
-                </div>
-                <div className="console-sos-text-group">
-                  <span className="console-sos-heading">
-                    {raisingSos ? 'Transmitting Alert…' : 'EMERGENCY SOS DISTRESS'}
-                  </span>
-                  <span className="console-sos-hint">
-                    Tap to open emergency broadcast confirmation
-                  </span>
-                </div>
-              </div>
-
-              <div className="console-sos-badge">
-                {raisingSos ? (
-                  <IonSpinner name="dots" style={{ width: '14px', height: '14px', color: '#ffffff' }} />
-                ) : (
-                  'ACTIVATE'
-                )}
-              </div>
             </div>
           </div>
 
@@ -964,6 +939,25 @@ const HomePage: React.FC = () => {
               {sosError}
             </div>
           )}
+        </div>
+
+        {/* 5. SOS control: docked above the tab bar so it never needs scrolling. Same confirm sheet and send flow. */}
+        <div slot="fixed" className="home-sos-dock">
+          <button
+            type="button"
+            className="home-sos-button"
+            onClick={handleOpenSosModal}
+            disabled={raisingSos}
+            aria-label={raisingSos ? 'Transmitting emergency SOS' : 'Emergency SOS. Opens confirmation.'}
+          >
+            <span className="home-sos-button__icon" aria-hidden="true">
+              <IonIcon icon={warningOutline} />
+            </span>
+            <span className="home-sos-button__label">
+              {raisingSos ? 'Transmitting alert…' : 'EMERGENCY SOS'}
+            </span>
+            {raisingSos && <IonSpinner name="dots" className="home-sos-button__spinner" />}
+          </button>
         </div>
 
         {/* Toasts */}

@@ -7,6 +7,7 @@ import {
 } from '@ionic/react';
 import {
   alertCircleOutline,
+  checkmarkCircleOutline,
   closeOutline,
   flameOutline,
   layersOutline,
@@ -83,6 +84,8 @@ const LiveMapPage: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
 
   const lastBroadcastAt = useRef(0);
+  /** Outcome of the most recent location broadcast: server confirmed, or only saved on the phone. */
+  const [broadcastState, setBroadcastState] = useState<'unknown' | 'confirmed' | 'saved'>('unknown');
   const mapCanvasRef = useRef<LiveMapCanvasHandle | null>(null);
 
   useEffect(() => {
@@ -116,7 +119,9 @@ const LiveMapPage: React.FC = () => {
           recordedAt: point.recordedAt,
           clientEventId: uuid(),
         });
+        setBroadcastState('confirmed');
       } catch {
+        setBroadcastState('saved');
         await saveGpsPointLocally({
           latitude: point.latitude,
           longitude: point.longitude,
@@ -538,12 +543,28 @@ const LiveMapPage: React.FC = () => {
                   : 'live-map-status-dot--stale'
               }`}
             />
+            <IonIcon
+              icon={
+                !position || positionError || !isLive || broadcastState === 'saved'
+                  ? positionError || !position
+                    ? alertCircleOutline
+                    : timeOutline
+                  : checkmarkCircleOutline
+              }
+              aria-hidden="true"
+            />
             <span>
-              {position
-                ? `Sharing Location · ±${position.accuracyM.toFixed(0)}m`
-                : positionError
-                ? 'GPS Unavailable'
-                : 'Acquiring GPS…'}
+              {positionError
+                ? 'No GPS fix'
+                : !position
+                ? 'Acquiring GPS…'
+                : !isLive
+                ? 'Location stale'
+                : broadcastState === 'saved'
+                ? 'Saved on phone, will send'
+                : broadcastState === 'confirmed'
+                ? `Sharing location · ±${position.accuracyM.toFixed(0)}m`
+                : `GPS fix · ±${position.accuracyM.toFixed(0)}m`}
             </span>
           </div>
 

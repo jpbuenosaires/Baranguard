@@ -225,6 +225,20 @@ const EXPECTED = {
   },
 };
 
+EXPECTED.incident_draft = {
+  draft_id:        ['TEXT', 1, null, 1],
+  incident_type:   ['TEXT', 1, null, 0],
+  narrative:       ['TEXT', 1, "''", 0],
+  latitude:        ['REAL', 0, null, 0],
+  longitude:       ['REAL', 0, null, 0],
+  accuracy_m:      ['REAL', 0, null, 0],
+  school_id:       ['TEXT', 0, null, 0],
+  c1_summary:      ['TEXT', 0, null, 0],
+  c1_action_taken: ['TEXT', 0, null, 0],
+  c1_status_notes: ['TEXT', 0, null, 0],
+  updated_at:      ['TEXT', 1, null, 0],
+};
+
 /** Applies LOCAL_MIGRATIONS exactly the way localDatabase.ts does. */
 function migrate(db) {
   const current = Number(db.prepare('PRAGMA user_version').get().user_version ?? 0);
@@ -576,6 +590,34 @@ check(db.prepare('SELECT incident_display_id FROM dispatch_local WHERE local_id 
     check(v5Db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n === 0, `v5 -> v6: ${t} is created empty`);
   }
   v5Db.close();
+}
+
+// --- 6b. v8 -> v9: the draft table is added in place, queued writes survive ---
+{
+  const v8Db = new DatabaseSync(':memory:');
+  for (let v = 0; v < 8; v += 1) {
+    for (const statement of LOCAL_MIGRATIONS[v]) v8Db.exec(statement);
+    v8Db.exec(`PRAGMA user_version = ${v + 1}`);
+  }
+  v8Db.prepare(
+    `INSERT INTO incident_local
+       (local_id, barangay_id, incident_type, raw_narrative, source, created_offline_at, client_event_id)
+     VALUES ('queued-1', 1, 'theft', 'queued offline', 'app', '2026-10-01T00:00:00Z', 'evt-queued-1')`
+  ).run();
+  check(Number(v8Db.prepare('PRAGMA user_version').get().user_version) === 8, 'Simulated device is on schema v8 before the draft upgrade');
+  migrate(v8Db);
+  check(Number(v8Db.prepare('PRAGMA user_version').get().user_version) === 9, 'A device on schema v8 upgrades to v9');
+  check(v8Db.prepare('SELECT COUNT(*) AS n FROM incident_local').get().n === 1, 'v8 -> v9: queued offline incident survives (Rule 7)');
+  check(v8Db.prepare('SELECT COUNT(*) AS n FROM incident_draft').get().n === 0, 'v8 -> v9: incident_draft is created empty');
+  v8Db.prepare(`INSERT INTO incident_draft (draft_id, incident_type, updated_at) VALUES ('user-1', 'theft', 't1')`).run();
+  let dupRejected = false;
+  try {
+    v8Db.prepare(`INSERT INTO incident_draft (draft_id, incident_type, updated_at) VALUES ('user-1', 'fire', 't2')`).run();
+  } catch {
+    dupRejected = true;
+  }
+  check(dupRejected, 'incident_draft: one row per user (draft_id is the primary key)');
+  v8Db.close();
 }
 
 // --- 7. Migration is idempotent (re-running must not error or double-apply) -

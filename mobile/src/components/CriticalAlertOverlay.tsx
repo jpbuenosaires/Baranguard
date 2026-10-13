@@ -32,7 +32,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IonButton, IonIcon } from '@ionic/react';
 import { warningOutline } from 'ionicons/icons';
-import { subscribeToCriticalAlert, dismissCriticalAlert, type CriticalAlert } from '../services/criticalAlertStore';
+import { subscribeToCriticalAlert, dismissCriticalAlert, setSosTapHandler, type CriticalAlert } from '../services/criticalAlertStore';
 import { acknowledgeNotification } from '../services/apiService';
 import { loadSession } from '../services/session';
 import { incidentTypeLabel } from '../utils/dispatchOfferFormat';
@@ -52,6 +52,16 @@ const CriticalAlertOverlay: React.FC = () => {
 
   useEffect(() => subscribeToCriticalAlert(setAlert), []);
 
+  // Tapping an SOS notification in the tray opens the SOS tab for the Chief Tanod only.
+  useEffect(() => {
+    setSosTapHandler(() => {
+      void loadSession().then((s) => {
+        if (s?.role === 'admin') navigate('/tabs/sos');
+      });
+    });
+    return () => setSosTapHandler(null);
+  }, [navigate]);
+
   if (!alert) {
     return null;
   }
@@ -69,6 +79,7 @@ const CriticalAlertOverlay: React.FC = () => {
   };
 
   const isOffer = alert.notificationType === 'dispatch_offer';
+  const isSos = alert.notificationType === 'sos';
 
   // dispatch_offer shows ONLY incident type, barangay and time (never a
   // narrative); falls back to the server-composed body of the same facts.
@@ -94,6 +105,22 @@ const CriticalAlertOverlay: React.FC = () => {
       setAcknowledging(false);
       dismissCriticalAlert();
       navigate(target);
+    }
+  };
+
+  // SOS: acknowledge the notification (best-effort) and, for the Chief Tanod only, open the SOS tab.
+  const handleOpenSos = async () => {
+    setAcknowledging(true);
+    let admin = false;
+    try {
+      admin = (await loadSession())?.role === 'admin';
+      await acknowledgeNotification(alert.notificationId);
+    } catch {
+      // Fire-and-forget on failure, same as handleAcknowledge
+    } finally {
+      setAcknowledging(false);
+      dismissCriticalAlert();
+      if (admin) navigate('/tabs/sos');
     }
   };
 
@@ -128,7 +155,7 @@ const CriticalAlertOverlay: React.FC = () => {
             color="danger"
             fill={isOffer ? 'outline' : 'solid'}
             disabled={acknowledging}
-            onClick={handleAcknowledge}
+            onClick={isSos ? handleOpenSos : handleAcknowledge}
             style={{ fontWeight: 700, height: '44px' }}
           >
             {acknowledging ? 'Acknowledging…' : 'Acknowledge Alert'}

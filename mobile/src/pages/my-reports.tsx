@@ -252,7 +252,7 @@ const MyReportsPage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="My Reports" showBack defaultBackHref="/tabs/home" />
+      <MobileHeader title="My Reports" showBack defaultBackHref="/tabs/profile" />
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <IonRefresher slot="fixed" onIonRefresh={handleRefresh}>

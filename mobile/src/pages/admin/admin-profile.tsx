@@ -83,8 +83,8 @@ const AdminProfilePage: React.FC = () => {
           <div className="wf-card" style={{ marginTop: 14 }}>
             <strong className="wf-card__title">What this phone can do</strong>
             <span className="wf-muted">
-              Acknowledge SOS alerts, assign or cancel dispatches, open night-dispatch offers, and read incidents. Everything needs a
-              connection and nothing is queued. Resolving an SOS, reports and settings stay on the web dashboard.
+              Acknowledge and resolve SOS alerts, assign or cancel dispatches, open night-dispatch offers, and read incidents. Everything
+              needs a connection and nothing is queued. Reports and settings stay on the web dashboard.
             </span>
           </div>
 
