@@ -51,6 +51,7 @@ import {
 import { Capacitor } from '@capacitor/core';
 import LocationPickerModal from '../components/LocationPickerModal';
 import MobileHeader from '../components/MobileHeader';
+import { Banner } from '../components/ui';
 import { C1_FIELD_MAX, saveIncidentLocally, type IncidentType } from '../services/db/incidentRepository';
 import { saveEvidenceLocally } from '../services/db/evidenceRepository';
 import { listCachedSchools } from '../services/db/schoolRepository';
@@ -609,19 +610,9 @@ const NewIncidentPage: React.FC = () => {
             </div>
 
             {locationError && (
-              <div
-                style={{
-                  background: 'var(--tint-critical-bg)',
-                  border: '1px solid var(--color-critical)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '6px 10px',
-                  color: 'var(--pill-critical-text)',
-                  fontSize: '0.74rem',
-                }}
-                role="alert"
-              >
+              <Banner tone="error" role="alert">
                 {locationError}
-              </div>
+              </Banner>
             )}
           </div>
 
@@ -823,19 +814,9 @@ const NewIncidentPage: React.FC = () => {
             )}
 
             {captureError && (
-              <div
-                style={{
-                  background: 'var(--tint-critical-bg)',
-                  border: '1px solid var(--color-critical)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '6px 10px',
-                  color: 'var(--pill-critical-text)',
-                  fontSize: '0.74rem',
-                }}
-                role="alert"
-              >
+              <Banner tone="error" role="alert">
                 {captureError}
-              </div>
+              </Banner>
             )}
 
             {/* Staged Evidence Items Gallery */}
@@ -877,24 +858,9 @@ const NewIncidentPage: React.FC = () => {
 
           {/* Error Banner */}
           {error && (
-            <div
-              style={{
-                background: 'var(--tint-critical-bg)',
-                border: '1px solid var(--color-critical)',
-                borderRadius: 'var(--radius-md)',
-                padding: '10px 14px',
-                color: 'var(--pill-critical-text)',
-                fontSize: '0.84rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-              role="alert"
-            >
-              <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.1rem', flexShrink: 0 }} />
-              <span>{error}</span>
-            </div>
+            <Banner tone="error" role="alert">
+              {error}
+            </Banner>
           )}
 
           {/* Sticky Tactical Bottom CTA Dock */}

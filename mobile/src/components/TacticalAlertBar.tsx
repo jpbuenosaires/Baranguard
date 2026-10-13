@@ -105,7 +105,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
               primary.onAction?.();
             }}
             style={{
-              minHeight: '44px',
+              minHeight: 'var(--touch-min-size, 48px)',
               padding: '0 14px',
               borderRadius: 'var(--radius-sm, 6px)',
               ...actionColors(primary.severity),
@@ -147,7 +147,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
               gap: '6px',
               cursor: 'pointer',
               alignSelf: 'flex-start',
-              minHeight: '36px',
+              minHeight: 'var(--touch-min-size, 48px)',
             }}
             aria-expanded={expanded}
           >
@@ -191,7 +191,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
                           item.onAction?.();
                         }}
                         style={{
-                          minHeight: '40px',
+                          minHeight: 'var(--touch-min-size, 48px)',
                           padding: '0 10px',
                           borderRadius: 'var(--radius-sm, 6px)',
                           ...actionColors(item.severity),

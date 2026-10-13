@@ -79,7 +79,7 @@
 }
 
 .draft-note__btn {
-  min-height: 44px;
+  min-height: var(--touch-min-size, 48px);
   padding: 0 12px;
   border: 0;
   background: transparent;

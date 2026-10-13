@@ -28,6 +28,7 @@ import { addOutline, chevronBackOutline, chevronForwardOutline, closeOutline, pa
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { Banner, SyncChip } from '../components/WorkflowBits';
+import { EmptyState, ErrorState } from '../components/ui';
 import {
   ApiError,
   checkHealth,
@@ -396,17 +397,17 @@ const AccomplishmentsPage: React.FC = () => {
           </div>
 
           {note && <Banner tone={note.tone}>{note.text}</Banner>}
-          {loadError && <Banner tone="critical">{loadError}</Banner>}
+          {loadError && entries.length > 0 && <Banner tone="critical">{loadError}</Banner>}
 
           {loading ? (
             <LoadingBlock label="Loading your entries…" />
+          ) : loadError && entries.length === 0 ? (
+            <ErrorState message={loadError} onRetry={() => void reloadEntries(month)} />
           ) : entries.length === 0 ? (
-            <div className="wf-card" style={{ textAlign: 'center', alignItems: 'center' }}>
-              <h3 className="wf-card__title">No entries for {formatMonthLabel(month)}</h3>
-              <p className="wf-card__sub">
-                Add what you did on each work day. Entries are saved on your phone even without a signal.
-              </p>
-            </div>
+            <EmptyState
+              title={`No entries for ${formatMonthLabel(month)}`}
+              body="Add what you did on each work day. Entries are saved on your phone even without a signal."
+            />
           ) : (
             <div className="wf-stack">
               {entries.map((entry) => {
@@ -617,7 +618,7 @@ const AccomplishmentsPage: React.FC = () => {
             </Banner>
           ) : (
             <span className="wf-hint">
-              A suggested duration (from your on-duty time) is shown once the entry has synced to the desk.
+              A suggested duration (from your on-duty time) is shown once the entry has been sent to the desk.
             </span>
           )}
 

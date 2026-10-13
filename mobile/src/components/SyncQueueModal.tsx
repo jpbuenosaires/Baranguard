@@ -16,18 +16,7 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/react';
-import {
-  checkmarkCircleOutline,
-  closeOutline,
-  documentTextOutline,
-  navigateOutline,
-  swapHorizontalOutline,
-  timeOutline,
-  radioOutline,
-  syncOutline,
-  trashOutline,
-  warningOutline,
-} from 'ionicons/icons';
+import { closeOutline, syncOutline, trashOutline } from 'ionicons/icons';
 import { ApiError, checkHealth } from '../services/apiService';
 import { loadSession } from '../services/session';
 import { listUnsyncedIncidents } from '../services/db/incidentRepository';
@@ -53,6 +42,8 @@ import {
 } from '../services/syncService';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { LoadingBlock } from './LoadingBlock';
+import { Banner, SyncLabel } from './ui';
+import { buildQueueRows, formatQueueHeader, formatSyncResult } from './syncQueueSummary';
 
 interface SyncQueueModalProps {
   isOpen: boolean;
@@ -188,12 +179,33 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
 
   const totalPending = incidentCount + gpsCount + dispatchStatusCount + sosCount + referralCount + dutyRecordCount;
   const attentionTotal = needsAttention?.total ?? 0;
+  const na = needsAttention;
+  const rows = buildQueueRows(
+    {
+      sos: sosCount,
+      incidents: incidentCount,
+      dispatchAndDuty: dispatchStatusCount,
+      referrals: referralCount,
+      workflowRecords: dutyRecordCount,
+      gps: gpsCount,
+    },
+    {
+      sos: na?.sos ?? 0,
+      incidents: (na?.incidents ?? 0) + (na?.evidence ?? 0),
+      dispatchAndDuty: (na?.dispatch ?? 0) + (na?.dutyStatus ?? 0),
+      referrals: na?.referrals ?? 0,
+      workflowRecords: (na?.availability ?? 0) + (na?.accomplishments ?? 0) + (na?.schoolCheckins ?? 0),
+      gps: na?.gps ?? 0,
+    },
+    isOnline
+  );
+  const result = syncResult ? formatSyncResult(syncResult) : null;
 
   return (
     <IonModal isOpen={isOpen} onDidDismiss={onClose} initialBreakpoint={0.75} breakpoints={[0, 0.75, 1.0]}>
       <IonHeader>
         <IonToolbar className="mobile-topbar">
-          <IonTitle>Sync & Offline Telemetry</IonTitle>
+          <IonTitle>Sync queue</IonTitle>
           <IonButton fill="clear" slot="end" onClick={onClose} color="light" aria-label="Close sync queue">
             <IonIcon icon={closeOutline} aria-hidden="true" />
           </IonButton>
@@ -202,17 +214,15 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="app-column" style={{ paddingTop: 0 }}>
-          {/* Connection Telemetry */}
+          {/* Connectivity of the phone, not the state of any record */}
           <div className="card--elevated sync-queue__section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="ui-queue__conn">
               <div>
-                <div className="sync-queue__title">
-                  Barangay Desk Connection
-                </div>
+                <div className="sync-queue__title">Barangay Desk connection</div>
                 <div className="sync-queue__subtitle">
                   {isOnline
                     ? `Connected (${latencyMs ?? 0}ms)`
-                    : 'Barangay Desk unreachable — saved offline'}
+                    : 'Barangay Desk unreachable. Saved items stay on this phone.'}
                 </div>
               </div>
               <span className={`status-pill ${isOnline ? 'status-pill--success' : 'status-pill--pending'}`}>
@@ -221,123 +231,65 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
             </div>
           </div>
 
-          {/* Pending Queue Breakdown */}
+          {/* Queue: header with counts, then one row per kind, SOS first */}
           <div className="card--elevated sync-queue__section">
-            <div className="sync-queue__category-label">
-              Saved Items Waiting to Sync ({totalPending})
+            <div className="sync-queue__category-label" role="status">
+              {loading ? 'Checking the queue' : formatQueueHeader(totalPending, attentionTotal)}
             </div>
 
             {loading ? (
               <LoadingBlock compact />
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div className="sync-queue__row">
-                  <div className="sync-queue__row-label">
-                    <IonIcon icon={documentTextOutline} style={{ color: 'var(--color-primary)' }} />
-                    <span>Incident Reports</span>
-                  </div>
-                  <span className={`status-pill ${incidentCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
-                    {incidentCount}
-                  </span>
-                </div>
-
-                <div className="sync-queue__row">
-                  <div className="sync-queue__row-label">
-                    <IonIcon icon={navigateOutline} style={{ color: 'var(--color-success)' }} />
-                    <span>Location History</span>
-                  </div>
-                  <span className={`status-pill ${gpsCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
-                    {gpsCount}
-                  </span>
-                </div>
-
-                <div className="sync-queue__row">
-                  <div className="sync-queue__row-label">
-                    <IonIcon icon={radioOutline} style={{ color: 'var(--color-warning)' }} />
-                    <span>Dispatch & Duty Status Updates</span>
-                  </div>
-                  <span className={`status-pill ${dispatchStatusCount > 0 ? 'status-pill--pending' : 'status-pill--neutral'}`}>
-                    {dispatchStatusCount}
-                  </span>
-                </div>
-
-                <div className="sync-queue__row">
-                  <div className="sync-queue__row-label">
-                    <IonIcon icon={swapHorizontalOutline} style={{ color: 'var(--color-primary)' }} />
-                    <span>Referrals</span>
-                  </div>
-                  <span className={`status-pill ${referralCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
-                    {referralCount}
-                  </span>
-                </div>
-
-                <div className="sync-queue__row">
-                  <div className="sync-queue__row-label">
-                    <IonIcon icon={timeOutline} style={{ color: 'var(--color-primary)' }} />
-                    <span>Availability, Accomplishments & School Check-ins</span>
-                  </div>
-                  <span className={`status-pill ${dutyRecordCount > 0 ? 'status-pill--info' : 'status-pill--neutral'}`}>
-                    {dutyRecordCount}
-                  </span>
-                </div>
-
-                <div className="sync-queue__row">
-                  <div className="sync-queue__row-label">
-                    <IonIcon icon={warningOutline} style={{ color: 'var(--color-critical)' }} />
-                    <span>Emergency SOS Alerts</span>
-                  </div>
-                  <span className={`status-pill ${sosCount > 0 ? 'status-pill--critical is-urgent' : 'status-pill--neutral'}`}>
-                    {sosCount}
-                  </span>
-                </div>
-              </div>
+              <ul className="ui-queue__list">
+                {rows.map((row) => (
+                  <li
+                    key={row.kind}
+                    className={`ui-queue__row${row.kind === 'sos' && row.pending + row.failed > 0 ? ' ui-queue__row--urgent' : ''}`}
+                  >
+                    <div className="ui-queue__main">
+                      <span className="ui-queue__label">{row.label}</span>
+                      <span className="ui-queue__count" aria-label={`${row.pending} waiting`}>
+                        {row.pending}
+                      </span>
+                    </div>
+                    {row.state ? (
+                      <SyncLabel state={row.state} willRetry={false} />
+                    ) : (
+                      <span className="ui-queue__none">None waiting</span>
+                    )}
+                    {row.failed > 0 && (
+                      <div className="ui-queue__fail">
+                        {row.failed} not sent after repeated tries.
+                        {row.note ? ` ${row.note}` : ''}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 
-          {/* Needs attention: items the automatic sync gave up on. Never hidden. */}
-          {attentionTotal > 0 && needsAttention && (
-            <div
-              style={{
-                background: 'var(--tint-warning-bg)',
-                border: '1px solid var(--color-warning)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px',
-                color: 'var(--pill-warning-text)',
-                fontSize: 'var(--font-size-sm)',
-                marginBottom: '16px',
-              }}
+          {/* Records the automatic sync gave up on, each with its reason. Never hidden. */}
+          {attentionTotal > 0 && (
+            <Banner
+              tone="error"
               role="alert"
+              action={
+                <IonButton size="small" color="warning" disabled={syncing || !isOnline} onClick={handleRetryFailed}>
+                  <IonIcon icon={syncOutline} slot="start" />
+                  Retry failed items
+                </IonButton>
+              }
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <IonIcon icon={warningOutline} style={{ fontSize: '1.4rem' }} />
-                <strong>Needs attention ({attentionTotal})</strong>
-              </div>
-              <div style={{ marginBottom: '8px' }}>
-                The workstation kept rejecting these, so automatic sync stopped retrying. They are still saved on
-                this device.
-                {needsAttention.sos > 0 && ` ${needsAttention.sos} emergency SOS alert(s) — call the barangay desk.`}
-                {needsAttention.dispatch > 0 &&
-                  ` ${needsAttention.dispatch} status change(s) could not be confirmed and were reverted — check your assignment.`}
-
-                {needsAttention.dutyStatus > 0 &&
-                  ` ${needsAttention.dutyStatus} offline off-duty change(s) were rejected — you may still be on duty at HQ; see Home.`}
-                {needsAttention.incidents > 0 && ` ${needsAttention.incidents} incident report(s).`}
-                {needsAttention.evidence > 0 && ` ${needsAttention.evidence} evidence file(s).`}
-                {needsAttention.gps > 0 && ` ${needsAttention.gps} location point(s).`}
-                {needsAttention.referrals > 0 && ` ${needsAttention.referrals} referral(s).`}
-                {needsAttention.availability + needsAttention.accomplishments + needsAttention.schoolCheckins > 0 &&
-                  ` ${needsAttention.availability + needsAttention.accomplishments + needsAttention.schoolCheckins} availability / accomplishment / school check-in record(s).`}
-              </div>
+              <strong>{attentionTotal} not sent.</strong> The workstation kept rejecting these, so automatic sync
+              stopped retrying. They are still saved on this phone.
               {failedRows.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                <ul className="ui-queue__failed">
                   {failedRows.map((row) => (
-                    <div
-                      key={`${row.table}:${row.localId}`}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 600 }}>{row.label}</div>
-                        {row.lastError && <div style={{ opacity: 0.85 }}>{row.lastError}</div>}
+                    <li key={`${row.table}:${row.localId}`} className="ui-queue__failed-row">
+                      <div className="ui-queue__failed-text">
+                        <div className="ui-queue__failed-label">{row.label}</div>
+                        {row.lastError && <div>Reason: {row.lastError}</div>}
                       </div>
                       <IonButton
                         size="small"
@@ -350,109 +302,43 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
                         <IonIcon icon={trashOutline} slot="start" />
                         Discard
                       </IonButton>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
-              <IonButton size="small" color="warning" disabled={syncing || !isOnline} onClick={handleRetryFailed}>
-                <IonIcon icon={syncOutline} slot="start" />
-                Retry failed items
-              </IonButton>
-            </div>
+            </Banner>
           )}
 
           {deviceBlocked && totalPending > 0 && (
-            <div
-              style={{
-                background: 'var(--tint-critical-bg)',
-                border: '1px solid var(--color-critical)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px',
-                color: 'var(--pill-critical-text)',
-                fontSize: 'var(--font-size-sm)',
-                marginBottom: '16px',
-              }}
-              role="alert"
-            >
+            <Banner tone="error" role="alert">
               <strong>Cannot send from this account.</strong> {totalPending} saved item{totalPending === 1 ? '' : 's'}{' '}
               belong to a phone registered to a different account. They are kept safely. Log in with the account that
               saved them, or ask the Chief Tanod to reset this phone.
-            </div>
+            </Banner>
           )}
 
           {reloginRequired && totalPending > 0 && (
-            <div
-              style={{
-                background: 'var(--tint-warning-bg)',
-                border: '1px solid var(--color-warning)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px',
-                color: 'var(--pill-warning-text)',
-                fontSize: 'var(--font-size-sm)',
-                marginBottom: '16px',
-              }}
-              role="alert"
-            >
-              <strong>Pending — re-login required.</strong> {totalPending} saved item{totalPending === 1 ? '' : 's'}{' '}
+            <Banner tone="warning" role="alert">
+              <strong>Waiting for you to log in again.</strong> {totalPending} saved item{totalPending === 1 ? '' : 's'}{' '}
               will send automatically after you log in again.
-            </div>
+            </Banner>
           )}
 
-          {/* Sync Result Banner */}
-          {syncResult && (
-            <div
-              role="status"
-              style={{
-                background: 'var(--tint-success-bg)',
-                border: '1px solid var(--color-success)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px',
-                color: 'var(--pill-success-text)',
-                fontSize: 'var(--font-size-sm)',
-                marginBottom: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              <IonIcon icon={checkmarkCircleOutline} style={{ fontSize: '1.4rem' }} />
-              <div>
-                <strong>Sync Finished:</strong> {syncResult.succeeded} uploaded, {syncResult.duplicates} synced, {syncResult.failed} failed.
-                {syncResult.dispatchRejected > 0 && (
-                  <> {syncResult.dispatchRejected} status change(s) were rejected by HQ and reverted.</>
-                )}
-                {syncResult.dutyRejected > 0 && (
-                  <> {syncResult.dutyRejected} offline off-duty change(s) were rejected by HQ — see Home.</>
-                )}
-                {(syncResult.evidenceUploaded > 0 || syncResult.evidenceFailed > 0) && (
-                  <>
-                    {' '}
-                    {syncResult.evidenceUploaded} evidence file{syncResult.evidenceUploaded === 1 ? '' : 's'} uploaded
-                    {syncResult.evidenceFailed > 0 ? `, ${syncResult.evidenceFailed} pending retry` : ''}.
-                  </>
-                )}
-              </div>
-            </div>
+          {result && (
+            <Banner tone={result.tone} role="status">
+              <strong>{result.tone === 'success' ? 'Result:' : 'Some items were not sent:'}</strong> {result.headline}
+              {result.details.map((d) => (
+                <div key={d}>{d}</div>
+              ))}
+            </Banner>
           )}
 
           {syncError && (
-            <div
-              style={{
-                background: 'var(--tint-critical-bg)',
-                border: '1px solid var(--color-critical)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px',
-                color: 'var(--pill-critical-text)',
-                fontSize: 'var(--font-size-sm)',
-                marginBottom: '16px',
-              }}
-              role="alert"
-            >
+            <Banner tone="error" role="alert">
               {syncError}
-            </div>
+            </Banner>
           )}
 
-          {/* Action Button */}
           <IonButton
             expand="block"
             disabled={syncing || !isOnline}
@@ -467,12 +353,12 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
             {syncing ? (
               <>
                 <IonSpinner name="dots" />
-                <span style={{ marginLeft: '8px' }}>Synchronizing with HQ…</span>
+                <span style={{ marginLeft: '8px' }}>Sending to HQ…</span>
               </>
             ) : (
               <>
                 <IonIcon icon={syncOutline} slot="start" />
-                Synchronize All Records Now
+                Send all saved items now
               </>
             )}
           </IonButton>

@@ -20,6 +20,7 @@ import { logInOutline, logOutOutline, schoolOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { Banner, SyncChip } from '../components/WorkflowBits';
+import { Button, EmptyState, ErrorState } from '../components/ui';
 import {
   endSchoolCheckin,
   getOpenSchoolCheckin,
@@ -149,10 +150,12 @@ const SchoolCheckinPage: React.FC = () => {
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
         <div className="wf-page" style={{ paddingBottom: 28 }}>
           {note && <Banner tone={note.tone}>{note.text}</Banner>}
-          {loadError && <Banner tone="critical">{loadError}</Banner>}
+          {loadError && (open || schools.length > 0) && <Banner tone="critical">{loadError}</Banner>}
 
           {loading ? (
             <LoadingBlock label="Loading…" />
+          ) : loadError && !open && schools.length === 0 ? (
+            <ErrorState message={loadError} onRetry={() => void reload()} />
           ) : open ? (
             <div className="wf-card">
               <div className="wf-card__head">
@@ -172,16 +175,15 @@ const SchoolCheckinPage: React.FC = () => {
               </button>
             </div>
           ) : schools.length === 0 ? (
-            <div className="wf-card" style={{ alignItems: 'center', textAlign: 'center' }}>
-              <h3 className="wf-card__title">No schools saved on this phone</h3>
-              <p className="wf-card__sub">
-                The school list downloads automatically when you are connected. If your barangay has schools registered
-                and none appear, ask the desk to add them.
-              </p>
-              <button type="button" className="wf-btn" onClick={handleRefreshSchools} disabled={refreshing}>
-                {refreshing ? <IonSpinner name="dots" /> : <span>Download school list</span>}
-              </button>
-            </div>
+            <EmptyState
+              title="No schools saved on this phone"
+              body="The school list downloads automatically when you are connected. If your barangay has schools registered and none appear, ask the desk to add them."
+              action={
+                <Button variant="secondary" onClick={handleRefreshSchools} loading={refreshing}>
+                  Download school list
+                </Button>
+              }
+            />
           ) : (
             <div className="wf-card">
               <div className="wf-card__head">

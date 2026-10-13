@@ -10,6 +10,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { IonContent, IonPage, IonRefresher, IonRefresherContent, IonSpinner } from '@ionic/react';
 import MobileHeader from '../../components/MobileHeader';
 import { Banner } from '../../components/WorkflowBits';
+import { LoadingBlock } from '../../components/LoadingBlock';
+import { EmptyState, ErrorState } from '../../components/ui';
 import { useOnline } from '../../components/useOnline';
 import { AdminIncidentSheet, ReasonSheet } from '../../components/AdminBits';
 import { formatServerTime, humanize, isActiveDispatchStatus, NEEDS_CONNECTION } from '../../components/adminFormat';
@@ -119,20 +121,11 @@ const AdminDispatchPage: React.FC = () => {
           {notice && <Banner tone="success">{notice}</Banner>}
 
           <h2 className="admin-section-title">Active dispatches</h2>
-          {loading && (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
-              <IonSpinner name="dots" />
-            </div>
+          {loading && <LoadingBlock compact />}
+          {error && <ErrorState message={error} onRetry={() => void load()} />}
+          {!loading && !error && dispatches && dispatches.length === 0 && (
+            <EmptyState title="No active dispatches" body="No Tanod is on an active dispatch right now." />
           )}
-          {error && (
-            <>
-              <Banner tone="critical">{error}</Banner>
-              <button type="button" className="wf-btn" onClick={() => void load()}>
-                Retry
-              </button>
-            </>
-          )}
-          {!loading && !error && dispatches && dispatches.length === 0 && <div className="wf-card wf-muted">No active dispatches.</div>}
           {dispatches?.map((d) => (
             <div key={d.dispatchId} className="wf-card">
               <div className="wf-card__head">
@@ -164,8 +157,10 @@ const AdminDispatchPage: React.FC = () => {
           ))}
 
           <h2 className="admin-section-title">Dispatch offers</h2>
-          {offersError && <Banner tone="critical">{offersError}</Banner>}
-          {!loading && !offersError && offers && offers.length === 0 && <div className="wf-card wf-muted">No offers yet.</div>}
+          {offersError && <ErrorState message={offersError} onRetry={() => void load()} />}
+          {!loading && !offersError && offers && offers.length === 0 && (
+            <EmptyState title="No offers yet" body="Night dispatch offers will appear here once one is sent." />
+          )}
           {offers?.map((o) => (
             <div key={o.offerId} className="wf-card">
               <div className="wf-card__head">

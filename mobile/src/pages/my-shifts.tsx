@@ -39,6 +39,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
+import { Button, EmptyState, ErrorState } from '../components/ui';
 import {
   ApiError,
   cancelShiftSwapRequest,
@@ -314,57 +315,21 @@ const MyShiftsPage: React.FC = () => {
           {loading ? (
             <LoadingBlock label="Loading duty schedule…" />
           ) : error ? (
-            <div
-              style={{
-                background: 'var(--tint-warning-bg)',
-                border: '1px solid var(--color-warning)',
-                borderRadius: 'var(--radius-md)',
-                padding: 'var(--spacing-md)',
-                color: 'var(--pill-warning-text)',
-                fontSize: 'var(--font-size-sm)',
-                fontWeight: 600,
+            <ErrorState
+              message={error}
+              onRetry={() => {
+                setLoading(true);
+                void load().finally(() => setLoading(false));
               }}
-              role="alert"
-            >
-              {error}
-            </div>
+            />
           ) : activeTab === 'schedule' ? (
             /* Tab 1: Upcoming Schedule */
             shifts.length === 0 ? (
-              <div
-                className="card--elevated"
-                style={{
-                  textAlign: 'center',
-                  padding: 'var(--spacing-2xl) var(--spacing-lg)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  marginTop: 'var(--spacing-md)',
-                }}
-              >
-                <div
-                  style={{
-                    width: '56px',
-                    height: '56px',
-                    borderRadius: '50%',
-                    background: 'var(--tint-neutral-bg)',
-                    color: 'var(--color-text-secondary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.5rem',
-                    marginBottom: 'var(--spacing-md)',
-                  }}
-                >
-                  <IonIcon icon={calendarOutline} />
-                </div>
-                <h3 style={{ margin: '0 0 var(--spacing-xs)', fontSize: 'var(--font-size-lg)', fontWeight: 700 }}>
-                  No Upcoming Shifts
-                </h3>
-                <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', maxWidth: '280px' }}>
-                  No published duties right now. Submit your availability, then check back once the desk publishes the roster.
-                </p>
-              </div>
+              <EmptyState
+                icon={calendarOutline}
+                title="No upcoming shifts"
+                body="No published duties right now. Submit your availability, then check back once the desk publishes the roster."
+              />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
                 {shifts.map((shift) => {
@@ -452,26 +417,23 @@ const MyShiftsPage: React.FC = () => {
           ) : (
             /* Tab 2: Swap Requests */
             swapRequests.length === 0 ? (
-              <div className="roster-empty-card" role="region" aria-label="No Swap Requests">
-                <div className="roster-empty-icon" aria-hidden="true">
-                  <IonIcon icon={swapHorizontalOutline} />
-                </div>
-                <h3 className="roster-empty-title">No Swap Requests</h3>
-                <p className="roster-empty-desc">
-                  You haven't requested any shift coverage. If you have an upcoming conflict, select a shift from your duty schedule to request coverage.
-                </p>
-                <button
-                  type="button"
-                  className="roster-empty-cta"
-                  onClick={() => {
-                    tacticalFeedback.onTap();
-                    setActiveTab('schedule');
-                  }}
-                >
-                  <IonIcon icon={calendarOutline} />
-                  <span>View Duty Schedule</span>
-                </button>
-              </div>
+              <EmptyState
+                icon={swapHorizontalOutline}
+                title="No swap requests"
+                body="You haven't requested any shift coverage. If you have an upcoming conflict, select a shift from your duty schedule to request coverage."
+                action={
+                  <Button
+                    variant="secondary"
+                    icon={calendarOutline}
+                    onClick={() => {
+                      tacticalFeedback.onTap();
+                      setActiveTab('schedule');
+                    }}
+                  >
+                    View duty schedule
+                  </Button>
+                }
+              />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
                 {swapRequests.map((r) => {
