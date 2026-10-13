@@ -32,3 +32,7 @@ Dates are relative to the moment of the reset, so the "pending" queue, the activ
 - The delays and response times are drawn from ranges chosen by the script, so they show the system computing them correctly, not how fast real responders are.
 - Names, contact numbers, school names and reference numbers are made up (`SIM-` prefixes where a reference is needed).
 - The sync-latency and offline-durability figures for objective 2 still need real phone runs (docs/ISO25010_EVALUATION_PLAN.md).
+
+## Final testing / UAT database
+
+For the UAT sign-off and the ISO evaluation sessions use `baranguard_uat` instead (`Reset UAT Data.bat`, reset before each tester). Same simulated Dao data plus fixtures arranged for every UAT scenario; see `docs/UAT_DATA_REQUIREMENTS.md`.

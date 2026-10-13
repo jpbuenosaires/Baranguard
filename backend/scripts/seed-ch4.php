@@ -18,8 +18,9 @@ declare(strict_types=1);
  * always looks "recent", which means individual rows can differ slightly between
  * runs on different days; the manifest records the exact figures of each run.
  *
- * SAFETY: refuses to run unless --db is literally "baranguard_ch4". It never
- * touches `baranguard` or `baranguard_uiseed`. Normally run through
+ * SAFETY: refuses to run unless --db is literally "baranguard_ch4" (or, with
+ * --profile=uat, "baranguard_uat"). It never touches `baranguard` or
+ * `baranguard_uiseed`. Normally run through
  * backend/scripts/reset-ch4.ps1, which drops + recreates the database,
  * applies every migration, then calls this.
  *
@@ -33,12 +34,18 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 
-$opts = getopt('', ['db::', 'seed::', 'days::']);
+$opts = getopt('', ['db::', 'seed::', 'days::', 'profile::']);
 $dbName = (string) ($opts['db'] ?? 'baranguard_ch4');
 $seedNo = (int) ($opts['seed'] ?? 2026);
 $DAYS = max(7, min(90, (int) ($opts['days'] ?? 30)));
-if ($dbName !== 'baranguard_ch4') {
-    fwrite(STDERR, "Refusing to run: --db is '{$dbName}', not 'baranguard_ch4'.\n");
+// Profile "uat" (database baranguard_uat) is the final-testing dataset: the same
+// simulated Dao history, plus fixtures arranged so every scenario in the UAT
+// sign-off form (docs/chapter4-instruments/04-uat-signoff.html) has the data it
+// needs. See docs/UAT_DATA_REQUIREMENTS.md. Any other combination is refused.
+$PROFILE = (string) ($opts['profile'] ?? ($dbName === 'baranguard_uat' ? 'uat' : 'ch4'));
+$UAT = $PROFILE === 'uat';
+if (!in_array($dbName, ['baranguard_ch4', 'baranguard_uat'], true) || $UAT !== ($dbName === 'baranguard_uat')) {
+    fwrite(STDERR, "Refusing to run: --db '{$dbName}' with --profile '{$PROFILE}'. Allowed: baranguard_ch4 (profile ch4) or baranguard_uat (profile uat).\n");
     exit(1);
 }
 
@@ -127,7 +134,7 @@ $LOCATIONS = [
     ['Barangay hall, Dao proper', 12.9223, 123.6725],
     ['Barangay hall perimeter wall', 12.9224, 123.6726],
     ['Near the elementary school gate', 12.9208, 123.6716],
-    ['Elementary school covered court', 12.9206, 123.6714],
+    ['Road in front of the elementary school', 12.9206, 123.6714],
     ['Waiting shed, national road', 12.9244, 123.6708],
     ['Seawall near the Fishery Brokers\' Center', 12.9198, 123.6702],
     ['Fish landing area beside the seawall', 12.9195, 123.6705],
@@ -346,6 +353,25 @@ $PRIORITY_BY_TYPE = [
     'vandalism' => 'normal', 'other' => 'normal',
 ];
 $RESPONDENT_ELIGIBLE_TYPES = ['domestic_dispute', 'physical_injury', 'vandalism'];
+// Annex C-1 text for a school-zone incident: short, factual, no names, and always about what the tanod met OUTSIDE the school.
+$C1_SUMMARY = [
+    'theft' => 'Report of a lost or stolen item on the road outside the school gate.',
+    'disturbance' => 'Disturbance on the road outside the school gate during the school day.',
+    'animal_complaint' => 'Stray dogs gathered outside the school gate around dismissal time.',
+    'vandalism' => 'Damage to a wall or fence along the school perimeter, seen from the road.',
+    'traffic_incident' => 'Traffic incident on the road in front of the school.',
+    'fire' => 'Small grass fire near the school perimeter, outside the grounds.',
+    'medical_emergency' => 'Person needing medical help on the road outside the school.',
+    'missing_person' => 'Report of a child who did not reach home after school; searched outside the grounds.',
+    'physical_injury' => 'Person injured on the road near the school gate.',
+    'domestic_dispute' => 'Dispute between adults on the road near the school gate.',
+    'other' => 'Street or drainage concern on the road beside the school.',
+];
+$C1_ACTION = [
+    'Tanod responded at the gate and the road outside; the school head was informed.',
+    'Tanod kept the road clear outside the school and referred the matter to the proper office.',
+    'Tanod responded outside the school grounds and stayed until the area was safe.',
+];
 // Hour-of-day (Philippine time) weights: evenings and late nights are busier.
 $HOUR_W = [0 => 3, 1 => 2, 2 => 2, 3 => 1, 4 => 1, 5 => 2, 6 => 3, 7 => 4, 8 => 4, 9 => 4, 10 => 4, 11 => 4,
     12 => 4, 13 => 4, 14 => 4, 15 => 5, 16 => 6, 17 => 7, 18 => 9, 19 => 10, 20 => 10, 21 => 9, 22 => 7, 23 => 5];
@@ -416,7 +442,9 @@ try {
 
     // ------------------------------------------------------------- incidents
     $N = (int) round($DAYS * 5.3);
-    $statusPlan = array_merge(array_fill(0, 4, 'pending'), array_fill(0, 5, 'dispatched'), array_fill(0, 3, 'cancelled'),
+    // UAT: a deeper pending queue (every scenario that dispatches, broadcasts or reopens consumes one) and
+    // five dispatched incidents (2 live + 3 whose dispatches are all completed, awaiting the Admin's resolve).
+    $statusPlan = array_merge(array_fill(0, $UAT ? 12 : 4, 'pending'), array_fill(0, 5, 'dispatched'), array_fill(0, 3, 'cancelled'),
         array_fill(0, 4, 'duplicate'), array_fill(0, 3, 'invalid'), array_fill(0, 2, 'reopened'));
     $statusPlan = array_pad($statusPlan, $N, 'resolved');
     // shuffle (seeded) except we want pending/dispatched to be the newest
@@ -425,7 +453,7 @@ try {
     foreach ($statusPlan as $st) {
         $type = wpick($TYPE_W);
         if (in_array($st, $recentStatuses, true)) {
-            $created = $now->modify('-' . mt_rand(12, 1700) . ' minutes');
+            $created = $UAT ? $now->modify('-' . mt_rand(90, 600) . ' minutes') : $now->modify('-' . mt_rand(12, 1700) . ' minutes');
         } else {
             $try = 0;
             do {
@@ -476,6 +504,8 @@ try {
         if (in_array($st, ['duplicate', 'invalid', 'cancelled', 'reopened'], true)) {
             $lifeBy = $SEC; $lifeAt = fmt($created->modify('+' . mt_rand(15, 240) . ' minutes'));
         }
+        // A school-zone incident is something a tanod met OUTSIDE the school (gate, perimeter, the road in front). What
+        // happens inside the grounds is the school's own matter, not the tanod's, so no seeded location is inside one.
         $sch = (stripos($sp['loc'], 'school') !== false) ? $schoolId[0] : null;
         $respondent = in_array($type, $RESPONDENT_ELIGIBLE_TYPES, true) && chance(60) ? pick($NAMES) : null;
         $display = sprintf('INC-%s-%03d', $created->modify('+8 hours')->format('Y'), $idx + 1);
@@ -484,7 +514,7 @@ try {
         $insInc->execute([BARANGAY_ID, $reportedBy, $deviceId, $type, $PRIORITY_BY_TYPE[$type], $narr, $redacted, $redBy, $redAt,
             $st, $lifeBy, $lifeAt, $src, $channel, $sp['lat'], $sp['lng'], fmt($created), $offAt, $cevt, $syncedAt, fmt($created),
             pick($NAMES), $respondent, chance(70) ? '09' . mt_rand(100000000, 999999999) : null, $sp['loc'], $display, $sch,
-            $sch ? mb_substr($narr, 0, 240) : null, $sch ? 'Tanod deployed to the school; parent/guardian informed.' : null, $resolveReason]);
+            $sch ? ($C1_SUMMARY[$type] ?? $C1_SUMMARY['other']) : null, $sch ? pick($C1_ACTION) : null, $resolveReason]);
         $iid = (int) $pdo->lastInsertId();
         $incs[$idx] = $sp + ['id' => $iid, 'src' => $src, 'channel' => $channel, 'reported_by' => $reportedBy, 'priority' => $PRIORITY_BY_TYPE[$type],
             'noDispatch' => $noDispatchResolve, 'narr' => $narr, 'display' => $display, 'school' => $sch];
@@ -513,6 +543,7 @@ try {
         cancelled_at, cancelled_by, created_client_request_id, cancel_reason, override_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     $dispatches = []; // dispatch_id => info
     $firstArrive = []; // incident idx => minutes created->first arrival (resolved/reopened, completed trips)
+    $uatDispatchedSeen = 0; $uatFixture = [];   // UAT: which dispatched incident is which scenario fixture
     $overrideReasons = ['Nearest tanod was on break; assigned next available tanod.', 'Assigned a second responder because the situation needed more than one tanod.'];
     foreach ($incs as $idx => &$inc) {
         $st = $inc['status'];
@@ -520,8 +551,23 @@ try {
         if (!$needsDispatch) continue;
         $created = $inc['created'];
         $nTan = (in_array($inc['priority'], ['critical', 'high'], true) && chance(22)) ? 2 : 1;
+        $uatRole = null;
+        if ($UAT && $st === 'dispatched') {
+            // 1st = LIVE en_route (espinosa), 2nd = LIVE arrived (banares), the rest = all dispatches completed
+            // (the incident still reads "dispatched" until the Admin resolves it).
+            $uatRole = ['live_en_route', 'live_arrived', 'completed', 'completed', 'completed'][$uatDispatchedSeen] ?? 'completed';
+            $uatDispatchedSeen++;
+            $nTan = 1;
+        }
         $chosen = [];
-        while (count($chosen) < $nTan) { $t = pick($TANODS); if (!in_array($t, $chosen, true)) $chosen[] = $t; }
+        if ($uatRole === 'live_en_route') $chosen = [$uid['tanod.espinosa']];
+        elseif ($uatRole === 'live_arrived') $chosen = [$uid['tanod.banares']];
+        elseif ($uatRole === 'completed') $chosen = [pick([$uid['tanod.delacruz'], $uid['tanod.gubaton']])];
+        else {
+            // UAT: reyes/delacruz/gubaton/dichoso/espinosa/banares must start with NO active dispatch except the two live ones above,
+            // so history dispatches (completed/cancelled) may use anyone: they are not active.
+            while (count($chosen) < $nTan) { $t = pick($TANODS); if (!in_array($t, $chosen, true)) $chosen[] = $t; }
+        }
         $dBy = chance(60) ? $ADMIN : $SEC;
         foreach ($chosen as $k => $tanod) {
             $dAt = $created->modify('+' . ($inc['priority'] === 'critical' ? mt_rand(60, 180) : mt_rand(90, 420)) . ' seconds');
@@ -530,7 +576,13 @@ try {
             $arAt = $enAt->modify("+{$travel} seconds");
             $coAt = $arAt->modify('+' . mt_rand(600, 4500) . ' seconds');
             $status = 'completed'; $cancelAt = null; $cancelBy = null; $cancelReason = null;
-            if ($st === 'dispatched') {
+            if ($uatRole === 'live_en_route') {
+                $dAt = $now->modify('-17 minutes'); $enAt = $now->modify('-14 minutes'); $arAt = $coAt = null; $status = 'en_route';
+            } elseif ($uatRole === 'live_arrived') {
+                $dAt = $now->modify('-45 minutes'); $enAt = $now->modify('-41 minutes'); $arAt = $now->modify('-27 minutes'); $coAt = null; $status = 'arrived';
+            } elseif ($uatRole === 'completed') {
+                $dAt = $now->modify('-' . mt_rand(60, 170) . ' minutes'); $enAt = $dAt->modify('+2 minutes'); $arAt = $enAt->modify('+9 minutes'); $coAt = $arAt->modify('+35 minutes'); $status = 'completed';
+            } elseif ($st === 'dispatched') {
                 if ($now < $enAt) { $status = 'assigned'; $enAt = $arAt = $coAt = null; }
                 elseif ($now < $arAt) { $status = 'en_route'; $arAt = $coAt = null; }
                 else { $status = 'arrived'; $coAt = null; }
@@ -552,6 +604,14 @@ try {
             $insDisp->execute([$inc['id'], $dBy, $tanod, $inc['priority'], $route, 'available', $status, fmt($dAt), $enAt ? fmt($enAt) : null,
                 $arAt ? fmt($arAt) : null, $coAt ? fmt($coAt) : null, $cancelAt ? fmt($cancelAt) : null, $cancelBy, uuidv4(), $cancelReason, $override]);
             $did = (int) $pdo->lastInsertId();
+            if ($uatRole) {
+                $uatFixture[$uatRole][] = $inc['display'];
+                if ($inc['created'] >= $dAt) {
+                    $newCreated = $dAt->modify('-3 minutes');
+                    $pdo->prepare('UPDATE incident SET created_at = ?, updated_at = ? WHERE incident_id = ?')->execute([fmt($newCreated), fmt($newCreated), $inc['id']]);
+                    $inc['created'] = $newCreated; $created = $newCreated;
+                }
+            }
             $dispatches[$did] = ['id' => $did, 'inc' => $idx, 'incident_id' => $inc['id'], 'tanod' => $tanod, 'by' => $dBy, 'status' => $status,
                 'd' => $dAt, 'en' => $enAt, 'ar' => $arAt, 'co' => $coAt, 'cancelled' => $cancelAt, 'cancel_reason' => $cancelReason];
             if ($arAt && (!isset($firstArrive[$idx]) || $arAt < $firstArrive[$idx]['t'])) {
@@ -588,6 +648,7 @@ try {
         $offers++;
     }
     foreach ($incs as $inc) {
+        if ($UAT) break;   // UAT: no pre-opened offer; the facilitator opens one (T-14, A-09, C-05), and it must not already exist
         if ($inc['status'] !== 'pending') continue;
         $offerAt = $now->modify('-' . mt_rand(20, 80) . ' seconds');
         $insOffer->execute([$inc['id'], BARANGAY_ID, 1, 'open', fmt($offerAt), fmt($offerAt->modify('+120 seconds')), null, null, $ADMIN, null, uuidv4()]);
@@ -604,6 +665,35 @@ try {
     $insShift = $pdo->prepare('INSERT INTO shift_schedule (barangay_id,user_id,patrol_zone,start_at,end_at,created_by,version,client_request_id,updated_at,approval_status,approved_by,approved_at,
         pending_reapproval) VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?)');
     $shifts = []; $slot = 0; $reapprovalLeft = 2;
+    // ---- UAT roster. "Rostered window" W = from three hours ago to nine hours ahead, so a session started within
+    // nine hours of the reset finds published shifts covering "now". 12 h = the daily cap (422 DAILY_HOURS_EXCEEDED).
+    $wStart = $now->setTime((int) $now->format('G'), 0, 0)->modify('-3 hours'); $wEnd = $wStart->modify('+12 hours');
+    $uatHours = [];   // user => PHT date => hours already rostered (the 12 h/day cap must hold in the seed too)
+    $uatAddHours = function (int $user, DateTimeImmutable $a, DateTimeImmutable $b) use (&$uatHours) {
+        for ($c = $a; $c < $b;) {
+            $pht = $c->modify('+8 hours'); $nextMid = $pht->setTime(0, 0)->modify('+1 day')->modify('-8 hours');
+            $segEnd = $b < $nextMid ? $b : $nextMid;
+            $k = $pht->format('Y-m-d'); $uatHours[$user][$k] = ($uatHours[$user][$k] ?? 0) + ($segEnd->getTimestamp() - $c->getTimestamp()) / 3600;
+            $c = $segEnd;
+        }
+    };
+    $uatFits = function (int $user, DateTimeImmutable $a, DateTimeImmutable $b) use (&$uatHours) {
+        for ($c = $a; $c < $b;) {
+            $pht = $c->modify('+8 hours'); $nextMid = $pht->setTime(0, 0)->modify('+1 day')->modify('-8 hours');
+            $segEnd = $b < $nextMid ? $b : $nextMid;
+            if (($uatHours[$user][$pht->format('Y-m-d')] ?? 0) + ($segEnd->getTimestamp() - $c->getTimestamp()) / 3600 > 12) return false;
+            $c = $segEnd;
+        }
+        return true;
+    };
+    $uatShiftSeen = [];
+    if ($UAT) {
+        foreach (['tanod.reyes' => 'Purok 1-2', 'tanod.delacruz' => 'Purok 3-4', 'tanod.gubaton' => 'Purok 5-6', 'tanod.espinosa' => 'National road', 'tanod.banares' => 'Seawall / fish landing'] as $un => $zone) {
+            $insShift->execute([BARANGAY_ID, $uid[$un], $zone, fmt($wStart), fmt($wEnd), $SEC, uuidv4(), fmt($wStart->modify('-5 days')), 'published', $PB, fmt($wStart->modify('-3 days')), 0]);
+            $shifts[] = ['id' => (int) $pdo->lastInsertId(), 'user' => $uid[$un], 'start' => $wStart, 'end' => $wEnd, 'draft' => false, 'dayOff' => 0, 'noduty' => $un === 'tanod.reyes'];
+            $uatAddHours($uid[$un], $wStart, $wEnd);
+        }
+    }
     for ($dayOff = -$DAYS; $dayOff <= 7; $dayOff++) {
         $dayStart = $today->modify(($dayOff >= 0 ? '+' : '') . $dayOff . ' days');
         foreach ($shiftDefs as $s => [$h1, $h2]) {
@@ -611,6 +701,13 @@ try {
                 $tanod = $TANODS[$slot % count($TANODS)]; $slot++;
                 $start = $dayStart->setTime(0, 0)->modify(sprintf('%+d hours', $h1 - PHT_OFFSET_H));
                 $end = $dayStart->setTime(0, 0)->modify(sprintf('%+d hours', $h2 - PHT_OFFSET_H));
+                if ($UAT && $dayOff >= -1) {
+                    // inside W the roster is the fixed UAT one; reyes and candelaria keep controlled futures (see below)
+                    if ($end > $wStart && $start < $wEnd) continue;
+                    if ($dayOff >= 1 && $dayOff <= 4 && in_array($tanod, [$uid['tanod.reyes'], $uid['tanod.candelaria']], true)) continue;
+                    if (!$uatFits($tanod, $start, $end)) continue;
+                    $uatAddHours($tanod, $start, $end);
+                }
                 $future = $start > $now;
                 $isDraft = $dayOff >= 5;
                 $reappr = (!$isDraft && $future && $reapprovalLeft > 0 && $k === 1 && $s === 1 && $dayOff >= 2) ? 1 : 0;
@@ -623,16 +720,32 @@ try {
             }
         }
     }
+    if ($UAT) {
+        // reyes (the Tanod tester): two published shifts to ask a swap on, one draft that must NOT appear on his phone (T-23, T-24).
+        // candelaria: nothing rostered on D+2..D+4, with whole-day availability there (A-13, A-14, A-19).
+        foreach ([[1, 6, 14, 'published', 'National road'], [2, 14, 22, 'published', 'Purok 3-4'], [3, 6, 14, 'published', 'School zone'], [6, 6, 14, 'draft', 'Purok 1-2']] as [$dOff, $h1, $h2, $stt, $zone]) {
+            $dayStart = $today->modify("+{$dOff} days");
+            $a = $dayStart->setTime(0, 0)->modify(sprintf('%+d hours', $h1 - PHT_OFFSET_H)); $b = $dayStart->setTime(0, 0)->modify(sprintf('%+d hours', $h2 - PHT_OFFSET_H));
+            $pub = $stt === 'published';
+            $insShift->execute([BARANGAY_ID, $uid['tanod.reyes'], $zone, fmt($a), fmt($b), $SEC, uuidv4(), fmt($a->modify('-6 days')), $stt, $pub ? $PB : null, $pub ? fmt($a->modify('-2 days')) : null, 0]);
+            $shifts[] = ['id' => (int) $pdo->lastInsertId(), 'user' => $uid['tanod.reyes'], 'start' => $a, 'end' => $b, 'draft' => !$pub, 'dayOff' => $dOff];
+        }
+    }
     $M['shifts'] = count($shifts);
 
     // swap requests (future shifts)
     $futureByUser = [];
     foreach ($shifts as $sh) if (!$sh['draft'] && $sh['start'] > $now->modify('+1 day')) $futureByUser[$sh['user']][] = $sh;
     $swapDefs = [['pending', null], ['pending', null], ['approved', $SEC], ['denied', $SEC]];
+    $swapReq = [0, 1, 2, 3];
+    if ($UAT) {   // four pending requests for the Admin to approve (A-16) from tanods other than reyes, who files his own (T-24)
+        $swapDefs = [['pending', null], ['pending', null], ['pending', null], ['pending', null], ['approved', $SEC], ['denied', $SEC]];
+        $swapReq = [1, 2, 3, 5, 4, 6];
+    }
     foreach ($swapDefs as $i => [$stt, $by]) {
-        $req = $TANODS[$i]; $list = $futureByUser[$req] ?? [];
+        $req = $TANODS[$swapReq[$i]]; $list = $futureByUser[$req] ?? [];
         if (!$list) continue;
-        $sh = $list[0]; $target = $TANODS[($i + 3) % count($TANODS)];
+        $sh = $list[0]; $target = $TANODS[($swapReq[$i] + 3) % count($TANODS)];
         $reqAt = $now->modify('-' . mt_rand(1, 5) . ' days');
         $pdo->prepare('INSERT INTO shift_swap_request (requesting_user_id, shift_id, target_user_id, reason, status, requested_at, resolved_at, resolved_by, version, client_request_id) VALUES (?,?,?,?,?,?,?,?,1,?)')
             ->execute([$req, $sh['id'], $target, pick(['Family event that day.', 'Clinic appointment.', 'Needs to attend a school meeting.', 'Fiesta preparations.']), $stt, fmt($reqAt), $by ? fmt($reqAt->modify('+1 day')) : null, $by, uuidv4()]);
@@ -677,6 +790,9 @@ try {
                 foreach ($spanWindows(new DateTimeImmutable($day->format('Y-m-d') . ' ' . $p[0] . ':00'), new DateTimeImmutable($endDay->format('Y-m-d') . ' ' . $p[1] . ':00')) as $w) $put($w);
             }
         }
+        if ($UAT && $t === $uid['tanod.candelaria']) {
+            foreach ([2, 3, 4] as $off) $put(['date' => $today->modify("+{$off} days")->format('Y-m-d'), 'start' => '00:00', 'end' => '23:59']);
+        }
         ksort($byWeek);
         foreach ($byWeek as $mon => $win) {
             usort($win, fn ($a, $b) => [$a['date'], $a['start']] <=> [$b['date'], $b['start']]);
@@ -693,9 +809,10 @@ try {
     $insSos = $pdo->prepare('INSERT INTO tanod_sos (user_id,barangay_id,dispatch_id,latitude,longitude,location_source,location_recorded_at,triggered_at,received_at,status,acknowledged_by,acknowledged_at,resolved_by,resolved_at,client_event_id,fallback_channel) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     $sosDelays = ['app' => [], 'sms' => []]; $sosN = 14; $sosRows = [];
     for ($i = 0; $i < $sosN; $i++) {
-        $chan = $i % 3 === 2 || $i === 4 ? 'sms' : 'app';           // 5 sms, 9 app
-        $trig = ($i === 0) ? $now->modify('-' . mt_rand(3, 6) . ' minutes') : phtMoment($today, mt_rand(0, $DAYS - 1), (int) wpick($HOUR_W), mt_rand(0, 59), mt_rand(0, 59));
-        if ($i > 0 && $trig > $now->modify('-30 minutes')) $trig = $trig->modify('-3 days');
+        $uatActive = $UAT && $i === 2;                              // UAT: a second ACTIVE SOS, so the web tester and the phone console tester each have one to acknowledge
+        $chan = $uatActive ? 'app' : ($i % 3 === 2 || $i === 4 ? 'sms' : 'app');           // 5 sms, 9 app
+        $trig = ($i === 0 || $uatActive) ? $now->modify('-' . mt_rand(3, 9) . ' minutes') : phtMoment($today, mt_rand(0, $DAYS - 1), (int) wpick($HOUR_W), mt_rand(0, 59), mt_rand(0, 59));
+        if ($i > 0 && !$uatActive && $trig > $now->modify('-30 minutes')) $trig = $trig->modify('-3 days');
         $delay = $chan === 'app' ? mt_rand(1, 6) : mt_rand(9, 48);
         $recv = $trig->modify("+{$delay} seconds");
         $sosDelays[$chan][] = $delay;
@@ -703,7 +820,7 @@ try {
         [$sd, $sla, $sln] = pick($LOCATIONS);                                  // always a real land point
         $lat = $locSrc === 'no_fix' ? null : round($sla + mt_rand(-12, 12) / 100000, 7);
         $lng = $locSrc === 'no_fix' ? null : round($sln + mt_rand(-12, 12) / 100000, 7);
-        if ($i === 0) { $status = 'active'; } elseif ($i === 1) { $status = 'acknowledged'; } else { $status = 'resolved'; }
+        if ($i === 0 || $uatActive) { $status = 'active'; } elseif ($i === 1) { $status = 'acknowledged'; } else { $status = 'resolved'; }
         $ackAt = $status === 'active' ? null : $recv->modify('+' . mt_rand(20, 150) . ' seconds');
         $resAt = $status === 'resolved' ? $ackAt->modify('+' . mt_rand(300, 2400) . ' seconds') : null;
         $sosRows[] = ['user' => pick($TANODS), 'chan' => $chan, 'trig' => $trig, 'recv' => $recv];
@@ -718,7 +835,7 @@ try {
     $gpsFrom = $now->modify('-48 hours');
     $walk = []; // per-tanod last position
     foreach ($shifts as $sh) {
-        if ($sh['draft'] || $sh['end'] < $now->modify('-7 days') || $sh['start'] > $now) continue;
+        if ($sh['draft'] || $sh['end'] < $now->modify('-7 days') || $sh['start'] > $now || !empty($sh['noduty'])) continue;
         $u = $sh['user'];
         $duty[] = ['user_id' => $u, 'status' => 'on_duty', 'channel' => chance(94) ? 'app' : 'sms', 'client_event_id' => uuidv4(), 'changed_at' => fmt($sh['start']->modify('+' . mt_rand(0, 6) . ' minutes'))];
         if ($sh['end'] <= $now) $duty[] = ['user_id' => $u, 'status' => 'off_duty', 'channel' => 'app', 'client_event_id' => uuidv4(), 'changed_at' => fmt($sh['end']->modify('+' . mt_rand(0, 8) . ' minutes'))];
@@ -754,6 +871,25 @@ try {
         }
         $duty[] = ['user_id' => $d['tanod'], 'status' => 'responding', 'channel' => 'app', 'client_event_id' => uuidv4(), 'changed_at' => fmt($d['en'])];
         if ($d['co']) $duty[] = ['user_id' => $d['tanod'], 'status' => 'on_duty', 'channel' => 'app', 'client_event_id' => uuidv4(), 'changed_at' => fmt($d['co'])];
+    }
+    if ($UAT) {
+        // Current duty state of the tanods the UAT scenarios depend on. reyes + candelaria: OFF duty now (T-01/T-02, and the
+        // off-duty tanod the Admin must not be offered, A-05). dichoso: ON duty with NO published shift covering now, last
+        // heard 40 min ago, so the map shows a stale unit (A-02) and the Admin gets the override prompt (A-04).
+        $cut = fmt($now->modify('-14 hours'));
+        $quiet = [$uid['tanod.reyes'], $uid['tanod.candelaria'], $uid['tanod.dichoso']];
+        $duty = array_values(array_filter($duty, fn($r) => !(in_array($r['user_id'], $quiet, true) && $r['changed_at'] > $cut)));
+        $gps = array_values(array_filter($gps, fn($r) => !(in_array($r['user_id'], $quiet, true) && $r['recorded_at'] > $cut)));
+        foreach ([$uid['tanod.reyes'], $uid['tanod.candelaria']] as $u) {
+            $duty[] = ['user_id' => $u, 'status' => 'off_duty', 'channel' => 'app', 'client_event_id' => uuidv4(), 'changed_at' => fmt($now->modify('-20 minutes'))];
+        }
+        $duty[] = ['user_id' => $uid['tanod.dichoso'], 'status' => 'on_duty', 'channel' => 'app', 'client_event_id' => uuidv4(), 'changed_at' => fmt($now->modify('-95 minutes'))];
+        [$d0, $la, $ln] = pick($LOCATIONS);
+        for ($ts = $now->modify('-95 minutes'); $ts <= $now->modify('-40 minutes'); $ts = $ts->modify('+2 minutes')) {
+            $la += mt_rand(-2, 2) / 100000; $ln += mt_rand(-2, 2) / 100000;
+            $gps[] = ['user_id' => $uid['tanod.dichoso'], 'dispatch_id' => null, 'latitude' => round($la, 7), 'longitude' => round($ln, 7), 'accuracy_m' => round(frand(4, 22), 2),
+                'recorded_at' => fmt($ts), 'received_at' => fmt($ts->modify('+3 seconds')), 'synced_at' => null, 'client_event_id' => uuidv4()];
+        }
     }
     bulk($pdo, 'gps_track', $gps, 500);
     bulk($pdo, 'duty_status', $duty, 500);
@@ -792,13 +928,14 @@ try {
         [0, 'prev', 'prepared'], [1, 'prev', 'prepared'], [2, 'prev', 'prepared'], [3, 'prev', 'returned'], [4, 'prev', 'prepared'],
         [0, 'this', 'open'], [1, 'this', 'prepared'], [2, 'this', 'open'], [3, 'this', 'prepared'], [4, 'this', 'prepared'],
     ];
+    if ($UAT) $plan[0] = [0, 'prev', 'open'];   // reyes (Tanod tester): BOTH months open, so he can submit one online (T-21) and try the other offline (T-22)
     foreach ($plan as [$ti, $mk, $status]) {
         $t = $TANODS[$ti]; $mStart = $mk === 'prev' ? $prevMonthStart : $thisMonthStart; $month = $mStart->format('Y-m');
         $days = (int) $mStart->format('t');
         $workDays = [];
         for ($dd = 1; $dd <= $days; $dd++) {
             $day = $mStart->modify('+' . ($dd - 1) . ' days');
-            if ($day >= $today) break;                     // never in the future
+            if ($day >= ($UAT && $ti === 0 ? $today->modify('-3 days') : $today)) break;   // never in the future (UAT: reyes keeps the last 3 days free for the T-20 entry)
             if (chance(55)) $workDays[] = $day;
         }
         $entries = []; $sum = 0;
@@ -883,10 +1020,14 @@ try {
     $M['sms_log_rows'] = count($sms);
 
     // ---------------------------------------------------- citizen reports, health, audit
-    $cr = [];
+    $cr = []; $usedForCitizen = [];
     foreach (range(1, 10) as $i) {
         $conv = $i <= 4; $sub = $now->modify('-' . mt_rand(1, 20) . ' days');
-        $linked = $conv ? $incs[mt_rand(5, count($incs) - 5)] : null;
+        $linked = null;
+        if ($conv) {   // one citizen report per incident (uq_citizen_report_incident), so never reuse an incident
+            do { $cand = $incs[mt_rand(5, count($incs) - 5)]; } while (isset($usedForCitizen[$cand['id']]));
+            $usedForCitizen[$cand['id']] = true; $linked = $cand;
+        }
         $cl = pick($LOCATIONS);
         $cr[] = ['barangay_id' => BARANGAY_ID, 'incident_id' => $linked['id'] ?? null, 'contact_number' => chance(70) ? '09' . mt_rand(100000000, 999999999) : null,
             'description' => pick(['Streetlight beside the chapel is out again.', 'Stray dogs near the school gate in the afternoon.', 'Loud karaoke past midnight in Purok 3.', 'Garbage piling up near the creek crossing.', 'Suspicious person seen near the seawall.']),
@@ -920,6 +1061,13 @@ try {
     usort($audit, fn($a, $b) => strcmp($a['created_at'], $b['created_at']));
     bulk($pdo, 'audit_log', $audit);
 
+    if ($UAT) {
+        // SOS fallback numbers (T-07/T-08): fictitious, valid PH mobile format. The phone only texts the backup number.
+        $insSet = $pdo->prepare('INSERT INTO system_settings (setting_key, setting_value, updated_at, updated_by) VALUES (?,?,?,?)');
+        $insSet->execute(['sos_fallback.backup_contact_number', '09170000099', fmt($now), $ADMIN]);
+        $insSet->execute(['sos_fallback.gateway_number', '09170000001', fmt($now), $ADMIN]);
+    }
+
     $pdo->commit();
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
@@ -937,15 +1085,42 @@ $M['incidents']['by_type'] = $byType; $M['incidents']['by_source'] = $bySrc;
 $M['incidents']['offline_captured'] = ['count' => count($offlineDelays), 'capture_to_sync_delay_minutes' => stats($offlineDelays)];
 $M['dispatches'] = count($dispatches);
 $M['accounts'] = array_keys($uid);
+if ($UAT) {
+    $M['label'] = 'SIMULATED TEST DATA - UAT / final-evaluation seed (Barangay Dao only, not field data)';
+    $q = fn(string $sql, array $a = []) => (function () use ($pdo, $sql, $a) { $st = $pdo->prepare($sql); $st->execute($a); return $st->fetchAll(); })();
+    $col = fn(array $rows) => array_map(fn($r) => array_values($r)[0], $rows);
+    $M['uat_fixtures'] = [
+        'rostered_window_utc' => [fmt($wStart), fmt($wEnd)],
+        'tanod_tester_account' => 'tanod.reyes: OFF duty, published shift covering the window, nothing active; both accomplishment months open',
+        'on_duty_free_with_published_shift' => ['tanod.delacruz', 'tanod.gubaton'],
+        'on_duty_without_published_shift' => 'tanod.dichoso (last GPS fix 40 min ago = stale unit)',
+        'busy_tanods' => ['tanod.espinosa (en_route)', 'tanod.banares (arrived)'],
+        'off_duty' => ['tanod.reyes', 'tanod.candelaria'],
+        'suspended' => 'tanod.olayvar',
+        'pending_incidents_no_dispatch' => $col($q("SELECT display_id FROM incident WHERE status='pending' ORDER BY created_at")),
+        'dispatched_live_en_route' => $uatFixture['live_en_route'] ?? [], 'dispatched_live_arrived' => $uatFixture['live_arrived'] ?? [],
+        'dispatched_all_completed_awaiting_resolve' => $uatFixture['completed'] ?? [],
+        'reopened_incidents' => $col($q("SELECT display_id FROM incident WHERE status='reopened'")),
+        'resolved_incidents_for_duplicate_target' => (int) $q("SELECT COUNT(*) c FROM incident WHERE status='resolved'")[0]['c'],
+        'active_sos' => (int) $q("SELECT COUNT(*) c FROM tanod_sos WHERE status='active'")[0]['c'],
+        'pending_swap_requests' => (int) $q("SELECT COUNT(*) c FROM shift_swap_request WHERE status='pending'")[0]['c'],
+        'draft_shifts_awaiting_publish' => (int) $q("SELECT COUNT(*) c FROM shift_schedule WHERE approval_status='draft'")[0]['c'],
+        'accomplishment_reports_by_status' => $q("SELECT status, COUNT(*) c FROM accomplishment_report GROUP BY status"),
+        'flagged_duration_entries' => (int) $q("SELECT COUNT(*) c FROM accomplishment_entry WHERE duration_flag=1")[0]['c'],
+        'unconverted_citizen_reports' => (int) $q("SELECT COUNT(*) c FROM citizen_report WHERE incident_id IS NULL")[0]['c'],
+        'school_linked_incidents' => (int) $q("SELECT COUNT(*) c FROM incident WHERE school_id IS NOT NULL")[0]['c'],
+        'sos_fallback_numbers' => 'backup 09170000099, gateway 09170000001 (fictitious)',
+    ];
+}
 $M['live_state'] = 'pending/dispatched incidents, the active SOS and the open dispatch offer are timed relative to the moment the seed ran; re-run the reset for a fresh "now".';
 $dir = dirname(__DIR__) . '/storage';
 if (!is_dir($dir)) @mkdir($dir, 0775, true);
-file_put_contents($dir . '/ch4-seed-manifest.json', json_encode($M, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+file_put_contents($dir . ($UAT ? '/uat-seed-manifest.json' : '/ch4-seed-manifest.json'), json_encode($M, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
-echo "Chapter 4 seed loaded into {$dbName} (SIMULATED TEST DATA).\n";
+echo ($UAT ? "UAT seed" : "Chapter 4 seed") . " loaded into {$dbName} (SIMULATED TEST DATA).\n";
 echo sprintf("  incidents %d | dispatches %d | shifts %d | gps fixes %d | sos %d | referrals %d | sms_log %d\n",
     count($incs), count($dispatches), count($shifts), count($gps), $sosN, count($refs), count($sms));
-echo "  manifest: backend/storage/ch4-seed-manifest.json\n  login: admin.dao / secretary.dao / punong.dao / tanod.reyes ... password Demo@2026\n";
+echo "  manifest: backend/storage/" . ($UAT ? 'uat' : 'ch4') . "-seed-manifest.json\n  login: admin.dao / secretary.dao / punong.dao / tanod.reyes ... password Demo@2026\n";
 
 function stats(array $v): array
 {
