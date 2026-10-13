@@ -1799,3 +1799,178 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 .case-card--school .case-card__field {
   margin-bottom: var(--spacing-2xs);
 }
+
+/* ==========================================================================
+   Executive 2-Tab Master Console Overhaul
+   ========================================================================== */
+
+.incident-console-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) !important;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  width: 100%;
+}
+
+/* 1. Persistent Console Header */
+.console-hero-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.console-hero-header__left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.console-hero-header__titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+}
+
+.console-hero-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.console-hero-header__actions .resolution-badge-card {
+  margin: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--tint-success-bg, rgba(16, 185, 129, 0.08));
+  border: 1px solid var(--color-success, #10b981);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.console-hero-header__actions .resolution-badge-card__icon {
+  color: var(--color-success, #10b981);
+  display: flex;
+  align-items: center;
+}
+
+.console-hero-header__actions .resolution-badge-card__title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.console-hero-header__actions .resolution-badge-card__desc {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.console-hero-header__actions .doc-card {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.console-hero-header__actions .doc-card__header {
+  display: none;
+}
+
+.console-hero-header__actions .doc-card__body {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+/* 2. Accessible Tab Navigation */
+.console-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  border-bottom: 2px solid var(--color-divider);
+  margin-top: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
+.console-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s ease-in-out;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.console-tab:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
+}
+
+.console-tab--active {
+  color: var(--color-link, #2563eb);
+  font-weight: 600;
+  border-bottom-color: var(--color-link, #2563eb);
+  background: transparent;
+}
+
+.console-tab:focus-visible {
+  outline: 2px solid var(--color-focus, #3b82f6);
+  outline-offset: -2px;
+}
+
+.console-tab__icon {
+  display: flex;
+  align-items: center;
+  color: inherit;
+}
+
+/* 3. Tab Panels */
+.console-panels {
+  width: 100%;
+}
+
+.tab-panel {
+  width: 100%;
+}
+
+.tab-panel:not(.tab-panel--active) {
+  display: none !important;
+}
+
+.tab-panel--active {
+  display: block;
+}
+
+.tab-panel:focus-visible {
+  outline: none;
+}
+
+/* 4. Operations Body Subsections */
+.operations-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.operations-body .card {
+  margin: 0;
+}

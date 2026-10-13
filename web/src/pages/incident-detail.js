@@ -180,132 +180,63 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record — <span class="page-header__id-pill font-mono">${escapeHtml(incidentDisplayId)}</span>`;
     }
 
-    const layout = document.createElement('div');
-    layout.className = 'split-panel';
+    // Exactly 1 Master Console Card on the entire screen
+    const consoleCard = document.createElement('div');
+    consoleCard.className = 'card incident-console-card case-dossier';
 
-    const main = document.createElement('div');
-    main.className = 'incident-detail__main';
-    const aside = document.createElement('div');
-    aside.className = 'incident-detail__aside';
+    // 1. Persistent Console Header: Hero & Quick Action
+    const heroHeader = document.createElement('div');
+    heroHeader.className = 'console-hero-header';
 
-    // Left Column: Exactly 1 Unified Master Dossier (contains Particulars, Privacy, Evidence, and School C-1)
-    main.appendChild(buildDossierCard());
-
-    // Right Column: Exactly 1 Unified Command & Audit Rail
-    const opsPanel = document.createElement('div');
-    opsPanel.className = 'card case-ops-panel';
-
-    const opsHeader = document.createElement('div');
-    opsHeader.className = 'panel-command-header';
-    opsHeader.innerHTML = `
-      <div class="panel-command-header__title">
-        <span class="panel-command-header__icon" aria-hidden="true">${icons.clock(16)}</span>
-        <h4 class="panel-command-title">Operational Command & Timeline</h4>
-      </div>
-    `;
-    opsPanel.appendChild(opsHeader);
-
-    if (incident.status === 'resolved') {
-      opsPanel.appendChild(buildResolvedStatusCard());
-    } else if (user.role === 'admin') {
-      opsPanel.appendChild(buildAdminResolvePanel());
-    }
-    opsPanel.appendChild(buildTimeline());
-    opsPanel.appendChild(buildResponders());
-
-    const refsHeader = document.createElement('div');
-    refsHeader.className = 'panel-command-header panel-command-header--sub';
-    refsHeader.innerHTML = `
-      <div class="panel-command-header__title">
-        <span class="panel-command-header__icon" aria-hidden="true">${icons.layers(16)}</span>
-        <h4 class="panel-command-title">Case Connections & References</h4>
-      </div>
-    `;
-    opsPanel.appendChild(refsHeader);
-
-    if (isSecretary) opsPanel.appendChild(buildLifecycleCard());
-    opsPanel.appendChild(RelatedIncidentCard({
-      incidentId,
-      relatedIncident: incident.relatedIncident,
-      relatedBy: incident.relatedBy,
-      canEdit: user.role === 'admin' || isSecretary,
-      navigate,
-      onChanged: load,
-    }));
-    opsPanel.appendChild(ReferralsCard({
-      incidentId,
-      canAdd: user.role === 'admin' || isSecretary,
-      incidentLabel: formatIncidentCode(incidentId, incident.displayId),
-    }));
-    aside.appendChild(opsPanel);
-
-    layout.append(main, aside);
-    body.appendChild(layout);
-  }
-
-  /**
-   * Unified Master Case Dossier: Combines Incident Type, Badges, Horizontal Metadata Strip,
-   * Involved Parties / Privacy Shield, Narrative, and Evidence into a single cohesive sheet.
-   */
-  function buildDossierCard() {
-    const card = document.createElement('div');
-    card.className = 'card case-hero case-dossier';
-
-    const incidentDisplayId = formatIncidentCode(incident.incidentId, incident.displayId);
-
-    // Header Row: Type + Icon + Badges
-    const headerRow = document.createElement('div');
-    headerRow.className = 'case-hero__header';
-
-    const titleGroup = document.createElement('div');
-    titleGroup.className = 'case-hero__title-group';
+    const leftGroup = document.createElement('div');
+    leftGroup.className = 'console-hero-header__left';
 
     const iconWrap = document.createElement('div');
     iconWrap.className = 'case-hero__icon';
     iconWrap.innerHTML = icons.fileText(22);
 
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'console-hero-header__titles';
+
     const title = document.createElement('h3');
     title.className = 'case-hero__title';
     title.textContent = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
 
-    titleGroup.append(iconWrap, title);
-
     const badges = document.createElement('div');
     badges.className = 'case-hero__badges';
-
-    const badgesToAppend = [];
 
     const incidentBadge = document.createElement('span');
     incidentBadge.className = 'incident-id-badge';
     incidentBadge.innerHTML = `${icons.fileText(13)} <span>${escapeHtml(incidentDisplayId)}</span>`;
     incidentBadge.title = `Incident Reference ID ${escapeHtml(incidentDisplayId)}`;
-    badgesToAppend.push(incidentBadge);
 
     const statusPill = document.createElement('span');
     statusPill.className = `status-pill ${STATUS_PILL_CLASS[incident.status] || 'status-pill--neutral'}`;
     statusPill.textContent = statusLabel(incident.status);
     statusPill.setAttribute('aria-label', `Status: ${statusLabel(incident.status)}`);
-    badgesToAppend.push(statusPill);
 
     const priorityPill = document.createElement('span');
     priorityPill.className = `status-pill ${incident.priority === 'urgent' || incident.priority === 'critical' ? 'status-pill--critical' : incident.priority === 'high' ? 'status-pill--warning' : 'status-pill--neutral'}`;
     priorityPill.textContent = `${PRIORITY_LABELS[incident.priority] || 'Normal'} priority`;
-    badgesToAppend.push(priorityPill);
 
-    badges.append(...badgesToAppend);
-    headerRow.append(titleGroup, badges);
-    card.appendChild(headerRow);
+    badges.append(incidentBadge, statusPill, priorityPill);
+    titleGroup.append(title, badges);
+    leftGroup.append(iconWrap, titleGroup);
 
-    // Dossier Body
-    const dossierBody = document.createElement('div');
-    dossierBody.className = 'dossier-body';
+    const rightActions = document.createElement('div');
+    rightActions.className = 'console-hero-header__actions';
+    if (incident.status === 'resolved') {
+      rightActions.appendChild(buildResolvedStatusCard());
+    } else if (user.role === 'admin') {
+      rightActions.appendChild(buildAdminResolvePanel());
+    }
 
-    // 1. Incident Particulars - Compact Horizontal Metadata Strip
-    const metaSection = document.createElement('div');
-    metaSection.className = 'dossier-section';
+    heroHeader.append(leftGroup, rightActions);
+    consoleCard.appendChild(heroHeader);
 
-    const metaGrid = document.createElement('div');
-    metaGrid.className = 'meta-strip';
+    // 2. Persistent Borderless Metadata Strip
+    const metaStrip = document.createElement('div');
+    metaStrip.className = 'meta-strip';
 
     // Location
     const locTile = document.createElement('div');
@@ -317,7 +248,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       ? (locCoords ? `${incident.locationDescription} (${locCoords})` : incident.locationDescription)
       : (locCoords || 'No location recorded');
     locTile.innerHTML = `
-      <div class="meta-tile__icon">${icons.mapPin(16)}</div>
+      <div class="meta-tile__icon">${icons.mapPin(15)}</div>
       <div class="meta-tile__content">
         <span class="meta-tile__label">Location</span>
         <span class="meta-tile__value" title="${escapeHtml(locDesc)}">${escapeHtml(locDesc)}</span>
@@ -329,7 +260,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     dateTile.className = 'meta-tile';
     const filedDate = escapeHtml(formatDateTime(incident.createdAt) || 'Not recorded');
     dateTile.innerHTML = `
-      <div class="meta-tile__icon">${icons.clock(16)}</div>
+      <div class="meta-tile__icon">${icons.clock(15)}</div>
       <div class="meta-tile__content">
         <span class="meta-tile__label">Date & Time Filed</span>
         <span class="meta-tile__value">${filedDate}</span>
@@ -342,7 +273,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const channelLabel = reportChannelLabel(incident.reportChannel)
       || (incident.source === 'app' ? 'Mobile App' : incident.source === 'walkin' ? 'Walk-in Desk' : 'Not recorded');
     channelTile.innerHTML = `
-      <div class="meta-tile__icon">${icons.phone(16)}</div>
+      <div class="meta-tile__icon">${icons.phone(15)}</div>
       <div class="meta-tile__content">
         <span class="meta-tile__label">Report channel</span>
         <span class="meta-tile__value">${channelLabel}</span>
@@ -354,17 +285,123 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     officerTile.className = 'meta-tile';
     const officerName = incident.officerName || 'Not recorded';
     officerTile.innerHTML = `
-      <div class="meta-tile__icon">${icons.users(16)}</div>
+      <div class="meta-tile__icon">${icons.users(15)}</div>
       <div class="meta-tile__content">
         <span class="meta-tile__label">Recording Officer</span>
         <span class="meta-tile__value">${escapeHtml(officerName)}</span>
       </div>
     `;
 
-    metaGrid.append(locTile, dateTile, channelTile, officerTile);
-    metaSection.appendChild(metaGrid);
+    metaStrip.append(locTile, dateTile, channelTile, officerTile);
+    consoleCard.appendChild(metaStrip);
 
-    // 2. Involved Parties & Privacy Section
+    // 3. WAI-ARIA Tab Navigation Strip
+    const tabList = document.createElement('div');
+    tabList.className = 'console-tabs';
+    tabList.setAttribute('role', 'tablist');
+    tabList.setAttribute('aria-label', 'Incident record sections');
+
+    const tabDossier = document.createElement('button');
+    tabDossier.type = 'button';
+    tabDossier.className = 'console-tab console-tab--active';
+    tabDossier.setAttribute('role', 'tab');
+    tabDossier.id = 'tab-dossier';
+    tabDossier.setAttribute('aria-selected', 'true');
+    tabDossier.setAttribute('aria-controls', 'panel-dossier');
+    tabDossier.setAttribute('tabindex', '0');
+    tabDossier.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.fileText(15)}</span><span>Incident Dossier & School C-1</span>`;
+
+    const tabOperations = document.createElement('button');
+    tabOperations.type = 'button';
+    tabOperations.className = 'console-tab';
+    tabOperations.setAttribute('role', 'tab');
+    tabOperations.id = 'tab-operations';
+    tabOperations.setAttribute('aria-selected', 'false');
+    tabOperations.setAttribute('aria-controls', 'panel-operations');
+    tabOperations.setAttribute('tabindex', '-1');
+    tabOperations.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.clock(15)}</span><span>Response Timeline & Case Links</span>`;
+
+    tabList.append(tabDossier, tabOperations);
+    consoleCard.appendChild(tabList);
+
+    // 4. Tab Panels Container
+    const panelsWrap = document.createElement('div');
+    panelsWrap.className = 'console-panels';
+
+    // Panel 1: Dossier Body
+    const panelDossier = document.createElement('div');
+    panelDossier.className = 'tab-panel tab-panel--active';
+    panelDossier.id = 'panel-dossier';
+    panelDossier.setAttribute('role', 'tabpanel');
+    panelDossier.setAttribute('aria-labelledby', 'tab-dossier');
+    panelDossier.setAttribute('tabindex', '0');
+    panelDossier.appendChild(buildDossierBody());
+    panelsWrap.appendChild(panelDossier);
+
+    // Panel 2: Operations Body
+    const panelOperations = document.createElement('div');
+    panelOperations.className = 'tab-panel';
+    panelOperations.id = 'panel-operations';
+    panelOperations.setAttribute('role', 'tabpanel');
+    panelOperations.setAttribute('aria-labelledby', 'tab-operations');
+    panelOperations.setAttribute('tabindex', '0');
+    panelOperations.appendChild(buildOperationsBody());
+    panelsWrap.appendChild(panelOperations);
+
+    consoleCard.appendChild(panelsWrap);
+    body.appendChild(consoleCard);
+
+    // Tab Switching Logic
+    const tabs = [tabDossier, tabOperations];
+    const panels = [panelDossier, panelOperations];
+
+    function activateTab(index) {
+      tabs.forEach((t, i) => {
+        const isActive = i === index;
+        t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        t.setAttribute('tabindex', isActive ? '0' : '-1');
+        t.classList.toggle('console-tab--active', isActive);
+      });
+      panels.forEach((p, i) => {
+        p.classList.toggle('tab-panel--active', i === index);
+      });
+    }
+
+    tabDossier.addEventListener('click', () => activateTab(0));
+    tabOperations.addEventListener('click', () => activateTab(1));
+
+    tabList.addEventListener('keydown', (e) => {
+      let currentIndex = tabs.findIndex((t) => t.getAttribute('aria-selected') === 'true');
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = (currentIndex + 1) % tabs.length;
+        activateTab(next);
+        tabs[next].focus();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = (currentIndex - 1 + tabs.length) % tabs.length;
+        activateTab(prev);
+        tabs[prev].focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        activateTab(0);
+        tabs[0].focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        activateTab(tabs.length - 1);
+        tabs[tabs.length - 1].focus();
+      }
+    });
+  }
+
+  /**
+   * Tab 1: Incident Dossier & Safer School Zone (Annex C-1) Body.
+   */
+  function buildDossierBody() {
+    const dossierBody = document.createElement('div');
+    dossierBody.className = 'dossier-body';
+
+    // 1. Involved Parties & Privacy Section
     const partiesSection = document.createElement('div');
     partiesSection.className = 'dossier-section dossier-section--parties';
 
@@ -425,9 +462,9 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       partiesSection.appendChild(partiesGrid);
     }
 
-    dossierBody.append(metaSection, partiesSection);
+    dossierBody.appendChild(partiesSection);
 
-    // 3. Narrative Section (Secretary-only readable view)
+    // 2. Narrative Section (Secretary-only readable view)
     if (isSecretary) {
       const narrativeSection = document.createElement('div');
       narrativeSection.className = 'dossier-section dossier-section--narrative';
@@ -445,18 +482,54 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       dossierBody.appendChild(narrativeSection);
     }
 
-    // 4. Digital Evidence Section
+    // 3. Digital Evidence Section
     const evidenceSection = document.createElement('div');
     evidenceSection.className = 'dossier-section dossier-section--evidence';
     evidenceSection.appendChild(buildEvidence());
     dossierBody.appendChild(evidenceSection);
 
-    // 5. Safer School Zone (Annex C-1) Subsection
+    // 4. Safer School Zone (Annex C-1) Subsection
     dossierBody.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary }));
 
-    card.appendChild(dossierBody);
+    return dossierBody;
+  }
 
-    return card;
+  /**
+   * Tab 2: Response Timeline, Responders, Case Lifecycle & Links Body.
+   */
+  function buildOperationsBody() {
+    const opsBody = document.createElement('div');
+    opsBody.className = 'operations-body case-ops-panel';
+
+    opsBody.appendChild(buildTimeline());
+    opsBody.appendChild(buildResponders());
+
+    const refsHeader = document.createElement('div');
+    refsHeader.className = 'panel-command-header panel-command-header--sub';
+    refsHeader.innerHTML = `
+      <div class="panel-command-header__title">
+        <span class="panel-command-header__icon" aria-hidden="true">${icons.layers(16)}</span>
+        <h4 class="panel-command-title">Case Connections & References</h4>
+      </div>
+    `;
+    opsBody.appendChild(refsHeader);
+
+    if (isSecretary) opsBody.appendChild(buildLifecycleCard());
+    opsBody.appendChild(RelatedIncidentCard({
+      incidentId,
+      relatedIncident: incident.relatedIncident,
+      relatedBy: incident.relatedBy,
+      canEdit: user.role === 'admin' || isSecretary,
+      navigate,
+      onChanged: load,
+    }));
+    opsBody.appendChild(ReferralsCard({
+      incidentId,
+      canAdd: user.role === 'admin' || isSecretary,
+      incidentLabel: formatIncidentCode(incidentId, incident.displayId),
+    }));
+
+    return opsBody;
   }
 
   /**
