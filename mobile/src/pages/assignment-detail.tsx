@@ -38,6 +38,7 @@ import {
 } from '@ionic/react';
 import {
   alertCircleOutline,
+  closeOutline,
   callOutline,
   cameraOutline,
   checkmarkCircle,
@@ -81,6 +82,7 @@ import { enqueueDispatchStatusChange } from '../services/db/offlineQueueReposito
 import type { DispatchLocalRow } from '../services/db/localSchema';
 import { getCurrentPosition, watchPosition, type DevicePosition } from '../services/geolocation';
 import { loadSession } from '../services/session';
+import { getCachedSosFallbackContact } from '../services/sosFallbackContact';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { formatIncidentCode } from '../utils/incidentCode';
 import {
@@ -113,7 +115,15 @@ const AssignmentDetailPage: React.FC = () => {
   const [row, setRow] = useState<DispatchLocalRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNoteRaw] = useState<string | null>(null);
+  /** 'info' auto-clears; 'queued' and 'error' stay until the Tanod dismisses them. */
+  const [noteKind, setNoteKind] = useState<'info' | 'queued' | 'error'>('info');
+  const pendingNoteKindRef = useRef<'info' | 'queued' | 'error'>('info');
+  const setNote = (text: string | null) => {
+    setNoteRaw(text);
+    setNoteKind(text ? pendingNoteKindRef.current : 'info');
+    pendingNoteKindRef.current = 'info';
+  };
   const [position, setPosition] = useState<DevicePosition | null>(null);
   const [barangayId, setBarangayId] = useState<number | null>(null);
   const [route, setRoute] = useState<RouteData | null>(null);
@@ -122,19 +132,30 @@ const AssignmentDetailPage: React.FC = () => {
   const [navState, setNavState] = useState<NavigationState | null>(null);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   const [copiedCoords, setCopiedCoords] = useState(false);
+  const [backupContact, setBackupContact] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getCachedSosFallbackContact().then((n) => {
+      if (!cancelled) setBackupContact(n);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** Prevents the arrival prompt from firing more than once per navigation session. */
   const arrivalPromptedRef = useRef(false);
   const mapRef = useRef<LiveMapCanvasHandle>(null);
 
-  // Auto-dismiss transient note notifications after 4 seconds
+  // Auto-dismiss plain info notes after 4 seconds; queued/error notes persist until dismissed.
   useEffect(() => {
-    if (!note) return;
+    if (!note || noteKind !== 'info') return;
     const timer = setTimeout(() => {
       setNote(null);
     }, 4000);
     return () => clearTimeout(timer);
-  }, [note]);
+  }, [note, noteKind]);
 
   useEffect(() => {
     setLoading(true);
@@ -272,6 +293,7 @@ const AssignmentDetailPage: React.FC = () => {
         const transient =
           !(error instanceof ApiError) || error.isOffline || error.status >= 500 || error.status === 401;
         if (transient) {
+          pendingNoteKindRef.current = 'queued';
           await enqueueDispatchStatusChange(clientEventId, {
             dispatchLocalId: row.local_id,
             serverDispatchId: row.server_dispatch_id,
@@ -285,6 +307,7 @@ const AssignmentDetailPage: React.FC = () => {
                 : `Workstation unreachable â€” status updated locally and queued.`
           );
         } else {
+          pendingNoteKindRef.current = 'error';
           await revertLocalStatusChange(row.local_id, next);
           try {
             // Pull the server's real state so the card shows what actually
@@ -496,8 +519,16 @@ const AssignmentDetailPage: React.FC = () => {
             </button>
 
             {note && (
-              <div className="toast--tactical" role="status">
+              <div
+                className={`toast--tactical${noteKind !== 'info' ? ' toast--tactical--warning' : ''} p1-note-toast`}
+                role={noteKind === 'error' ? 'alert' : 'status'}
+              >
                 <span>{note}</span>
+                {noteKind !== 'info' && (
+                  <button type="button" className="p1-note-dismiss" aria-label="Dismiss message" onClick={() => setNote(null)}>
+                    <IonIcon icon={closeOutline} aria-hidden="true" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -574,7 +605,7 @@ const AssignmentDetailPage: React.FC = () => {
                 <button
                   type="button"
                   className={`nav-primary-action-btn ${
-                    next === 'arrived' ? 'nav-primary-action-btn--arrived' : 'nav-primary-action-btn--complete'
+                    next === 'arrived' || next === 'en_route' ? 'nav-primary-action-btn--arrived' : 'nav-primary-action-btn--complete'
                   }`}
                   disabled={updating}
                   onClick={() => {
@@ -591,6 +622,11 @@ const AssignmentDetailPage: React.FC = () => {
                     <>
                       <IonIcon icon={checkmarkCircle} />
                       <span>Mark Arrived at Scene</span>
+                    </>
+                  ) : next === 'en_route' ? (
+                    <>
+                      <IonIcon icon={navigateOutline} />
+                      <span>Go En Route</span>
                     </>
                   ) : (
                     <>
@@ -685,10 +721,15 @@ const AssignmentDetailPage: React.FC = () => {
                   alignItems: 'center',
                   gap: '8px',
                 }}
-                role="status"
+                role={noteKind === 'error' ? 'alert' : 'status'}
               >
                 <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.1rem', flexShrink: 0 }} />
-                <span>{note}</span>
+                <span style={{ flex: 1 }}>{note}</span>
+                {noteKind !== 'info' && (
+                  <button type="button" className="p1-note-dismiss" aria-label="Dismiss message" onClick={() => setNote(null)}>
+                    <IonIcon icon={closeOutline} aria-hidden="true" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -892,18 +933,20 @@ const AssignmentDetailPage: React.FC = () => {
                     </div>
                   </button>
 
-                  <a
-                    href="tel:911"
-                    className="dispatch-scene-tool-btn"
-                    onClick={() => tacticalFeedback.onTap()}
-                    title="Call Emergency Dispatch or Barangay Desk"
-                  >
-                    <IonIcon icon={callOutline} style={{ color: 'var(--color-danger)' }} />
-                    <div className="dispatch-scene-tool-text">
-                      <span className="dispatch-scene-tool-label">Call Dispatch HQ</span>
-                      <span className="dispatch-scene-tool-sub">Emergency backup</span>
-                    </div>
-                  </a>
+                  {backupContact && (
+                    <a
+                      href={`tel:${backupContact}`}
+                      className="dispatch-scene-tool-btn"
+                      onClick={() => tacticalFeedback.onTap()}
+                      title="Call the barangay backup contact"
+                    >
+                      <IonIcon icon={callOutline} style={{ color: 'var(--color-danger)' }} />
+                      <div className="dispatch-scene-tool-text">
+                        <span className="dispatch-scene-tool-label">Call backup contact</span>
+                        <span className="dispatch-scene-tool-sub">{backupContact}</span>
+                      </div>
+                    </a>
+                  )}
                 </div>
               </div>
             )}

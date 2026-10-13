@@ -5,7 +5,7 @@
  * and, since 2026-10-12 (workflow gap #6), MARK RESOLVED an active or
  * acknowledged one after an in-app confirmation, so an SOS raised at night
  * with nobody at the desk does not stay open. Online-only: both actions are
- * disabled offline ("Needs a connection"), nothing is queued, and a success
+ * disabled offline, nothing is queued, and a success
  * is shown only after the server's 200. An SOS record carries no narrative;
  * cards show who, when, and how trustworthy the location is.
  */
@@ -15,7 +15,7 @@ import { IonAlert, IonContent, IonPage, IonRefresher, IonRefresherContent, IonSp
 import MobileHeader from '../../components/MobileHeader';
 import { Banner } from '../../components/WorkflowBits';
 import { useOnline } from '../../components/useOnline';
-import { formatServerTime, NEEDS_CONNECTION } from '../../components/adminFormat';
+import { formatServerTime, humanize, NEEDS_CONNECTION } from '../../components/adminFormat';
 import {
   acknowledgeSos,
   adminErrorMessage,
@@ -27,6 +27,8 @@ import {
   type AdminSosAlert,
 } from '../../services/apiService';
 import { uuid } from '../../services/uuid';
+import { publishActiveSosCount } from '../../services/adminSosCount';
+import { activeSosCount, splitSosAlerts } from '../../utils/sosBadge';
 import tacticalFeedback from '../../utils/tacticalFeedback';
 
 const LOCATION_LABEL: Record<string, string> = {
@@ -56,12 +58,15 @@ const AdminSosPage: React.FC = () => {
   const [resolveTarget, setResolveTarget] = useState<AdminSosAlert | null>(null);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const resolveKeys = useRef<Map<number, string>>(new Map());
+  const [showEarlier, setShowEarlier] = useState(false);
   const busy = ackingId !== null || resolvingId !== null;
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      setAlerts(await getSosAlerts());
+      const fresh = await getSosAlerts();
+      setAlerts(fresh);
+      publishActiveSosCount(activeSosCount(fresh));
     } catch (err) {
       setError(adminErrorMessage(err, 'Could not load SOS alerts.'));
     } finally {
@@ -133,50 +138,12 @@ const AdminSosPage: React.FC = () => {
     }
   }
 
-  return (
-    <IonPage>
-      <MobileHeader title="SOS Alerts" subtitle="Chief Tanod Console" hideStatusIndicator />
-      <IonContent>
-        <IonRefresher slot="fixed" onIonRefresh={(e) => void load().finally(() => e.detail.complete())}>
-          <IonRefresherContent />
-        </IonRefresher>
-        <div className="wf-page">
-          {!online && <Banner tone="warning">{NEEDS_CONNECTION}. Showing the last loaded list; acknowledging and resolving are disabled.</Banner>}
-          {notice && <Banner tone="success">{notice}</Banner>}
-          {fallbackNumber !== undefined && (
-            <div className="wf-card">
-              <strong className="wf-card__title">SMS fallback number</strong>
-              {fallbackNumber ? (
-                <a className="admin-fallback-number" href={`tel:${fallbackNumber}`}>
-                  {fallbackNumber}
-                </a>
-              ) : (
-                <span className="wf-muted">No backup contact number has been configured.</span>
-              )}
-              <span className="wf-hint">Where a Tanod's phone sends the SOS text if it cannot reach the workstation.</span>
-            </div>
-          )}
-
-          {loading && (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
-              <IonSpinner name="dots" />
-            </div>
-          )}
-          {error && (
-            <>
-              <Banner tone="critical">{error}</Banner>
-              <button type="button" className="wf-btn" onClick={() => void load()}>
-                Retry
-              </button>
-            </>
-          )}
-          {!loading && !error && alerts && alerts.length === 0 && <div className="wf-card wf-muted">No SOS alerts on record.</div>}
-
-          {alerts?.map((a) => (
+  function renderAlert(a: AdminSosAlert) {
+    return (
             <div key={a.sosId} className="wf-card">
               <div className="wf-card__head">
                 <strong className="wf-card__title">{names.get(a.userId) ?? `Tanod #${a.userId}`}</strong>
-                <span className={`status-pill ${STATUS_PILL[a.status] ?? 'status-pill--neutral'}`}>{a.status}</span>
+                <span className={`status-pill ${STATUS_PILL[a.status] ?? 'status-pill--neutral'}`}>{humanize(a.status)}</span>
               </div>
               <div className="wf-card__sub">Raised: {formatServerTime(a.triggeredAt)}</div>
               <div className="wf-card__sub">Received: {formatServerTime(a.receivedAt)}</div>
@@ -194,21 +161,78 @@ const AdminSosPage: React.FC = () => {
                   disabled={!online || busy}
                   onClick={() => void acknowledge(a.sosId)}
                 >
-                  {ackingId === a.sosId ? <IonSpinner name="dots" /> : <span>{online ? 'Acknowledge' : NEEDS_CONNECTION}</span>}
+                  {ackingId === a.sosId ? <IonSpinner name="dots" /> : <span>Acknowledge</span>}
                 </button>
               )}
-              {(a.status === 'active' || a.status === 'acknowledged') && (
-                <button
-                  type="button"
-                  className="dispatch-primary-cta dispatch-primary-cta--green"
-                  disabled={!online || busy}
-                  onClick={() => setResolveTarget(a)}
-                >
-                  {resolvingId === a.sosId ? <IonSpinner name="dots" /> : <span>{online ? 'Mark resolved' : NEEDS_CONNECTION}</span>}
+              {a.status === 'acknowledged' && (
+                <button type="button" className="sos-resolve-btn" disabled={!online || busy} onClick={() => setResolveTarget(a)}>
+                  {resolvingId === a.sosId ? <IonSpinner name="dots" /> : <span>Mark resolved</span>}
                 </button>
               )}
             </div>
-          ))}
+    );
+  }
+
+  return (
+    <IonPage>
+      <MobileHeader title="SOS" subtitle="Chief Tanod Console" hideStatusIndicator />
+      <IonContent>
+        <IonRefresher slot="fixed" onIonRefresh={(e) => void load().finally(() => e.detail.complete())}>
+          <IonRefresherContent />
+        </IonRefresher>
+        <div className="wf-page">
+          {!online && <Banner tone="warning">{NEEDS_CONNECTION}. Showing the last loaded list; acknowledging and resolving are disabled.</Banner>}
+          {notice && <Banner tone="success">{notice}</Banner>}
+          {loading && (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
+              <IonSpinner name="dots" />
+            </div>
+          )}
+          {error && (
+            <>
+              <Banner tone="critical">{error}</Banner>
+              <button type="button" className="wf-btn" onClick={() => void load()}>
+                Retry
+              </button>
+            </>
+          )}
+          {!loading && !error && alerts && alerts.length === 0 && <div className="wf-card wf-muted">No SOS alerts on record.</div>}
+
+          {(() => {
+            const { current, earlier } = splitSosAlerts(alerts ?? []);
+            return (
+              <>
+                {current.map(renderAlert)}
+                {earlier.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="sos-earlier-toggle"
+                      aria-expanded={showEarlier}
+                      onClick={() => setShowEarlier((v) => !v)}
+                    >
+                      <span>Earlier alerts ({earlier.length})</span>
+                      <span aria-hidden="true">{showEarlier ? 'Hide' : 'Show'}</span>
+                    </button>
+                    {showEarlier && earlier.map(renderAlert)}
+                  </>
+                )}
+              </>
+            );
+          })()}
+          {fallbackNumber !== undefined && (
+            <div className="wf-card">
+              <strong className="wf-card__title">SMS fallback number</strong>
+              {fallbackNumber ? (
+                <a className="admin-fallback-number" href={`tel:${fallbackNumber}`}>
+                  {fallbackNumber}
+                </a>
+              ) : (
+                <span className="wf-muted">No backup contact number has been configured.</span>
+              )}
+              <span className="wf-hint">Where a Tanod's phone sends the SOS text if it cannot reach the workstation.</span>
+            </div>
+          )}
         </div>
 
         <IonAlert

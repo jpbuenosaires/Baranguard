@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, Route, useLocation, useNavigate } from 'react-router-dom';
 import {
   IonApp,
@@ -10,7 +10,11 @@ import {
   IonTabButton,
   IonTabs,
   setupIonicReact,
+  useIonRouter,
 } from '@ionic/react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import { alertController } from '@ionic/core';
 import { IonReactRouter } from '@ionic/react-router';
 import {
   add,
@@ -50,6 +54,9 @@ import { hasStoredSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
 import { startSyncScheduler } from './services/syncScheduler';
 import { useDispatchOffers } from './services/useDispatchOffers';
+import { useActiveSosCount } from './services/adminSosCount';
+import { decideBack, homePathForRole, isTabRoot } from './utils/backNavigation';
+import { sosTabLabel } from './utils/sosBadge';
 import { startSosFallbackContactResumeRefresh } from './services/sosFallbackContact';
 import { startSchoolCacheResumeRefresh } from './services/workflowRefresh';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
@@ -289,7 +296,7 @@ const TabbedShell: React.FC = () => {
           href="/tabs/incidents/new"
           className="mobile-tab-button--center"
           onClick={() => tacticalFeedback.onTap()}
-          aria-label="Report Incident"
+          aria-label="Report"
         >
           <div className="tab-center-fab" aria-hidden="true">
             <IonIcon icon={add} />
@@ -302,7 +309,7 @@ const TabbedShell: React.FC = () => {
           href="/tabs/map"
           onClick={() => !isMap && tacticalFeedback.onTap()}
           className={isMap ? 'tab-item--active' : ''}
-          aria-label="Live Map"
+          aria-label="Map"
         >
           <div className="tab-pill-container">
             <IonIcon icon={isMap ? map : mapOutline} />
@@ -315,7 +322,7 @@ const TabbedShell: React.FC = () => {
           href="/tabs/profile"
           onClick={() => !isProfile && tacticalFeedback.onTap()}
           className={isProfile ? 'tab-item--active' : ''}
-          aria-label="Tanod Profile"
+          aria-label="Profile"
         >
           <div className="tab-pill-container">
             <IonIcon icon={isProfile ? person : personOutline} />
@@ -344,6 +351,7 @@ const ADMIN_TABS = [
 
 const AdminShell: React.FC = () => {
   const currentPath = useLocation().pathname;
+  const activeSos = useActiveSosCount();
 
   return (
     <IonTabs>
@@ -359,6 +367,7 @@ const AdminShell: React.FC = () => {
       <IonTabBar slot="bottom" className="mobile-tab-bar">
         {ADMIN_TABS.map((t) => {
           const active = currentPath === t.path;
+          const badge = t.tab === 'sos' ? activeSos : 0;
           return (
             <IonTabButton
               key={t.tab}
@@ -366,11 +375,16 @@ const AdminShell: React.FC = () => {
               href={t.path}
               onClick={() => !active && tacticalFeedback.onTap()}
               className={active ? 'tab-item--active' : ''}
-              aria-label={t.label}
+              aria-label={t.tab === 'sos' ? sosTabLabel(activeSos) : t.label}
             >
-              <div className="tab-pill-container">
+              <div className={`tab-pill-container${badge > 0 ? ' tab-pill-container--has-badge' : ''}`}>
                 <IonIcon icon={active ? t.activeIcon : t.icon} />
                 <IonLabel>{t.label}</IonLabel>
+                {badge > 0 && (
+                  <span className="tab-offer-badge" aria-hidden="true">
+                    {badge}
+                  </span>
+                )}
               </div>
             </IonTabButton>
           );
@@ -407,6 +421,72 @@ const RoleShell: React.FC = () => {
   if (role === 'admin') return <AdminShell />;
   // A stored session with a role this app does not support goes back to login.
   return role === 'tanod' ? <TabbedShell /> : <Navigate to="/login" replace />;
+};
+
+/**
+ * Android hardware back button. Registered once; the decision order lives in
+ * utils/backNavigation.ts (overlay, router back, home tab, confirm exit).
+ * Renders nothing; mounted inside the router so useIonRouter works.
+ */
+const OVERLAY_SELECTOR = 'ion-modal, ion-alert, ion-action-sheet, ion-popover';
+
+const HardwareBackHandler: React.FC = () => {
+  const router = useIonRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return undefined;
+    let confirming = false;
+    const handle = CapacitorApp.addListener('backButton', async () => {
+      const overlays = Array.from(document.querySelectorAll<HTMLElement>(OVERLAY_SELECTOR));
+      const role = await getSessionRole().catch(() => null);
+      const pathname = window.location.pathname;
+      const action = decideBack(
+        {
+          overlayOpen: overlays.length > 0 || confirming,
+          blockingOverlayOpen: document.querySelector('ion-loading') !== null,
+          canGoBack: routerRef.current.canGoBack(),
+          pathname,
+          homePath: homePathForRole(role),
+        },
+        isTabRoot(pathname, role)
+      );
+      // A screen with an in-page editor (or a request in flight) may claim back.
+      if (
+        (action === 'router-back' || action === 'go-home' || action === 'confirm-exit') &&
+        !window.dispatchEvent(new CustomEvent('baranguard:hardware-back', { cancelable: true }))
+      ) {
+        return;
+      }
+      if (action === 'dismiss-overlay') {
+        const top = overlays[overlays.length - 1] as (HTMLElement & { dismiss?: (d?: unknown, r?: string) => Promise<boolean> }) | undefined;
+        await top?.dismiss?.(undefined, 'backdrop');
+      } else if (action === 'router-back') {
+        routerRef.current.goBack();
+      } else if (action === 'go-home') {
+        routerRef.current.push(homePathForRole(role) ?? '/tabs/home', 'root', 'replace');
+      } else if (action === 'confirm-exit') {
+        confirming = true;
+        const dialog = await alertController.create({
+          header: 'Exit Baranguard?',
+          buttons: [
+            { text: 'Stay', role: 'cancel' },
+            { text: 'Exit', role: 'confirm', handler: () => void CapacitorApp.exitApp() },
+          ],
+        });
+        dialog.onDidDismiss().then(() => {
+          confirming = false;
+        });
+        await dialog.present();
+      }
+    });
+    return () => {
+      void handle.then((h) => h.remove());
+    };
+  }, []);
+
+  return null;
 };
 
 /**
@@ -456,6 +536,7 @@ const App: React.FC = () => {
         {/* Inside the router (outside the outlet) so the dispatch_offer overlay can navigate. */}
         <CriticalAlertOverlay />
         <SessionExpiryWatcher />
+        <HardwareBackHandler />
         <IonRouterOutlet>
           <Route path="/login" element={<LoginPage />} />
           {/* M4. Reads the stored row and derives its own state — it never

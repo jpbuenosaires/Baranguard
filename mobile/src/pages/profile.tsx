@@ -271,8 +271,23 @@ const ProfilePage: React.FC = () => {
             </button>
           </div>
 
-          {/* 2026-10 tanod workflow: accomplishment report + school check-in */}
+          {/* 2026-10 tanod workflow: availability, accomplishment report + school check-in */}
           <div className="profile-prominent-nav">
+            <button type="button" className="profile-nav-card" onClick={() => navigate('/tabs/availability')}>
+              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--green">
+                <IonIcon icon={calendarOutline} />
+              </div>
+              <div className="profile-nav-card__body">
+                <div className="profile-nav-card__title-row">
+                  <h3 className="profile-nav-card__title">My Availability</h3>
+                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                </div>
+                <p className="profile-nav-card__sub">
+                  Tell the desk when you can serve so your shifts can be scheduled.
+                </p>
+              </div>
+            </button>
+
             <button type="button" className="profile-nav-card" onClick={() => navigate('/tabs/accomplishments')}>
               <div className="profile-nav-card__icon-box profile-nav-card__icon-box--blue">
                 <IonIcon icon={documentTextOutline} />

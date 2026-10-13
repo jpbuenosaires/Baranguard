@@ -173,7 +173,7 @@ const AdminDispatchPage: React.FC = () => {
                   {formatIncidentCode({ displayId: o.incidentDisplayId ?? codes[o.incidentId], serverIncidentId: o.incidentId })} · {humanize(o.incidentType)}
                 </strong>
                 <span className={`status-pill ${LIVE_OFFER_STATUSES.includes(o.status) ? 'status-pill--pending' : 'status-pill--neutral'}`}>
-                  {o.status}
+                  {humanize(o.status)}
                 </span>
               </div>
               <div className="wf-card__sub">

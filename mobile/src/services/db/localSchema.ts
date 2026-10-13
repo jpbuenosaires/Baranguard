@@ -50,7 +50,7 @@
  * unsynced field captures, which Rule 2 ("offline capture is durable
  * until reconciliation") forbids.
  */
-export const LOCAL_SCHEMA_VERSION = 8;
+export const LOCAL_SCHEMA_VERSION = 9;
 
 /** Statements for schema version 1 (Sprint 2 baseline cut). */
 const MIGRATION_001_BASELINE: readonly string[] = [
@@ -440,6 +440,29 @@ const MIGRATION_008_SERVER_HISTORY: readonly string[] = [
 ];
 
 /**
+ * Statements for schema version 9: the unsent incident-report draft (one row per
+ * user, `draft_id` = 'user-<id>'). Autosaved while typing so a back-swipe or app
+ * kill does not lose the narrative. A draft is NOT a report: it is never queued
+ * or synced, and is deleted once the report is saved locally or discarded.
+ * CREATE only: queued offline writes are untouched (Rule 7).
+ */
+const MIGRATION_009_INCIDENT_DRAFT: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS incident_draft (
+    draft_id        TEXT PRIMARY KEY NOT NULL,
+    incident_type   TEXT NOT NULL,
+    narrative       TEXT NOT NULL DEFAULT '',
+    latitude        REAL NULL,
+    longitude       REAL NULL,
+    accuracy_m      REAL NULL,
+    school_id       TEXT NULL,
+    c1_summary      TEXT NULL,
+    c1_action_taken TEXT NULL,
+    c1_status_notes TEXT NULL,
+    updated_at      TEXT NOT NULL
+  )`,
+];
+
+/**
  * Ordered migrations. Index 0 takes the DB from user_version 0 -> 1,
  * index 1 takes it 1 -> 2, and so on. Append only — never edit a
  * released entry (same rule as the backend's completed migration files).
@@ -453,6 +476,7 @@ export const LOCAL_MIGRATIONS: readonly (readonly string[])[] = [
   MIGRATION_006_TANOD_WORKFLOW,
   MIGRATION_007_INCIDENT_DISPLAY_ID,
   MIGRATION_008_SERVER_HISTORY,
+  MIGRATION_009_INCIDENT_DRAFT,
 ];
 
 /** Every table this cut is responsible for, for assertions/diagnostics. */
@@ -469,6 +493,7 @@ export const LOCAL_TABLES = [
   'referral_local',
   'school_checkin_local',
   'school_local',
+  'incident_draft',
 ] as const;
 
 export type LocalTableName = (typeof LOCAL_TABLES)[number];

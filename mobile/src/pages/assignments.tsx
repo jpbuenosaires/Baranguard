@@ -590,7 +590,7 @@ const AssignmentsPage: React.FC = () => {
                           </h4>
                           <span className="dispatch-card__location-sub">
                             <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)' }} aria-hidden="true" />
-                            <span>Barangay Dao &bull; {distanceStr}</span>
+                            <span>{distanceStr}</span>
                           </span>
                         </div>
                       </div>

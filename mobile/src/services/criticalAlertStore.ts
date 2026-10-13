@@ -64,6 +64,13 @@ let currentAlert: CriticalAlert | null = null;
 const listeners = new Set<Listener>();
 let listenersRegistered = false;
 
+// Tray-tap routing: the overlay (inside the router) registers a handler that
+// opens the Admin SOS tab when an SOS notification is tapped.
+let sosTapHandler: (() => void) | null = null;
+export function setSosTapHandler(handler: (() => void) | null): void {
+  sosTapHandler = handler;
+}
+
 function notify(): void {
   for (const listener of listeners) listener(currentAlert);
 }
@@ -166,6 +173,7 @@ export function registerCriticalAlertListeners(): void {
     if (alert) {
       currentAlert = alert;
       notify();
+      if (alert.notificationType === 'sos') sosTapHandler?.();
     }
   });
 }
